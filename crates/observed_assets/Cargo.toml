@@ -1,0 +1,10 @@
+[package]
+name = "observed_assets"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Pure drop-in asset slot metadata + present/absent filesystem checks. No Bevy and no
+# other dependencies (just `std::path`), so it unit-tests without a running app and
+# stays the single source of truth for asset slots shared by `asset_lab` and `game`.
+[dependencies]

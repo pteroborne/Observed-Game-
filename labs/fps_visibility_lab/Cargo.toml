@@ -1,0 +1,12 @@
+[package]
+name = "fps_visibility_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = ["3d", "png"] }
+observed_core = { path = "../../crates/observed_core" }
+# Projects the promoted observe/decohere model (refactor R5) — no cross-lab dependency.
+observed_observation = { path = "../../crates/observed_observation" }
+player_input = { path = "../../crates/player_input" }

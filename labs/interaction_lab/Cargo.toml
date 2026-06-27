@@ -1,0 +1,11 @@
+[package]
+name = "interaction_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = ["2d"] }
+observed_core = { path = "../../crates/observed_core" }
+# The interaction state machine now lives in the production crate; this lab projects it.
+observed_interaction = { path = "../../crates/observed_interaction" }

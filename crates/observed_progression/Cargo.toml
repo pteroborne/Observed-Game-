@@ -1,0 +1,16 @@
+[package]
+name = "observed_progression"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[features]
+# On by default so the labs/game (which insert the profile/session as ECS resources)
+# are unchanged. A pure consumer opts out with `default-features = false`: the career/
+# profile and session data are then plain serializable data (no ECS `Resource`).
+default = ["bevy"]
+bevy = ["dep:bevy"]
+
+[dependencies]
+observed_core = { path = "../observed_core" }
+bevy = { version = "0.18.1", default-features = false, optional = true }

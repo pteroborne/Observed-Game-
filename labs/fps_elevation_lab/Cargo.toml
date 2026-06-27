@@ -1,0 +1,10 @@
+[package]
+name = "fps_elevation_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = ["3d", "png"] }
+player_input = { path = "../../crates/player_input" }
+fps_controller_lab = { path = "../fps_controller_lab" }

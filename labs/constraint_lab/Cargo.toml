@@ -1,0 +1,12 @@
+[package]
+name = "constraint_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = ["2d", "png"] }
+observed_core = { path = "../../crates/observed_core" }
+# Projects the promoted constraint + observation models (refactor R6) — no cross-lab dep.
+observed_facility = { path = "../../crates/observed_facility" }
+observed_observation = { path = "../../crates/observed_observation" }

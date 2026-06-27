@@ -1,0 +1,16 @@
+[package]
+name = "semantic_vfx_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = [
+    "3d",
+    "png",
+    "bevy_post_process",
+] }
+# Phase A4 of the asset-integration roadmap. `0.18.0` is the Bevy `0.18`
+# compatible Hanabi line. Keep it lab-local and enable only 3D integration.
+bevy_hanabi = { version = "0.18.0", default-features = false, features = ["3d"] }
+observed_style = { path = "../../crates/observed_style" }

@@ -1,0 +1,17 @@
+[package]
+name = "fps_match_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = ["3d", "png"] }
+competition_lab = { path = "../competition_lab" }
+competitive_facility = { path = "../competitive_facility" }
+director_lab = { path = "../director_lab" }
+fps_facility_lab = { path = "../fps_facility_lab" }
+mutable_facility = { path = "../mutable_facility" }
+observation_lab = { path = "../observation_lab" }
+observed_core = { path = "../../crates/observed_core" }
+player_input = { path = "../../crates/player_input" }
+room_lab = { path = "../room_lab" }

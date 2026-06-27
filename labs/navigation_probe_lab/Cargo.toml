@@ -1,0 +1,26 @@
+[package]
+name = "navigation_probe_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Phase A8 of the Bevy asset-integration roadmap.
+#
+# `vleue_navigator` is pinned exactly for the Bevy 0.18 line: version 0.15.0
+# declares `bevy ^0.18.0` (with the `bevy_render`/`bevy_asset`/`bevy_log`
+# features), so it links cleanly against this workspace's pinned `0.18.1`. The
+# later `0.16+` line targets newer Bevy and is rejected for this workspace.
+#
+# `default-features = false` drops the crate's `debug-with-gizmos` default
+# (which would pull `bevy/bevy_gizmos` as a hard dependency of the asset). This
+# lab draws its own neon-noir debug overlay through `observed_style`, so it uses
+# the crate purely as a *navmesh builder + polyanya path query*
+# (`NavMesh::from_edge_and_obstacles` + `NavMesh::path`), not the auto-updater
+# plugin (which is built for physics-collider-driven obstacle meshes). This
+# mirrors the prior labs' stance: consume the asset's data model, not the part
+# that fights the architecture.
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = ["2d", "png"] }
+vleue_navigator = { version = "0.15.0", default-features = false }
+observed_core = { path = "../../crates/observed_core" }
+observed_style = { path = "../../crates/observed_style" }

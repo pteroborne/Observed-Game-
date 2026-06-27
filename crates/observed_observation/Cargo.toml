@@ -1,0 +1,19 @@
+[package]
+name = "observed_observation"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[features]
+# On by default so the labs/game (which use `ObservationWorld` as an ECS resource) are
+# unchanged. A pure consumer opts out with `default-features = false` and the model is
+# plain data (glam only, no ECS `Resource`).
+default = ["bevy"]
+bevy = ["dep:bevy"]
+
+[dependencies]
+observed_core = { path = "../observed_core" }
+# Vector math only (the same crate Bevy re-exports as `bevy::math`), so a position from
+# this model is type-compatible with Bevy presentation code.
+glam = "0.30"
+bevy = { version = "0.18.1", default-features = false, optional = true }

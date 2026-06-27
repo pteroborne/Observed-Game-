@@ -1,0 +1,634 @@
+{
+  "__FORCED_REFS": null,
+  "appBuildId": 1.5,
+  "backupLimit": 0,
+  "backupOnSave": false,
+  "backupRelPath": null,
+  "bgColor": "#FFFFFF",
+  "customCommands": [],
+  "defaultEntityHeight": 32,
+  "defaultEntityWidth": 32,
+  "defaultGridSize": 32,
+  "defaultLevelBgColor": "#FFFFFF",
+  "defaultLevelHeight": 160,
+  "defaultLevelWidth": 384,
+  "defaultPivotX": 0.0,
+  "defaultPivotY": 0.0,
+  "defs": {
+    "entities": [
+      {
+        "allowOutOfBounds": false,
+        "color": "#338CFF",
+        "doc": null,
+        "exportToToc": false,
+        "fieldDefs": [],
+        "fillOpacity": 0.35,
+        "height": 32,
+        "hollow": false,
+        "identifier": "Room",
+        "keepAspectRatio": false,
+        "limitBehavior": "MoveLastOne",
+        "limitScope": "PerLevel",
+        "lineOpacity": 1.0,
+        "maxCount": 0,
+        "maxHeight": null,
+        "maxWidth": null,
+        "minHeight": null,
+        "minWidth": null,
+        "nineSliceBorders": [],
+        "pivotX": 0.0,
+        "pivotY": 0.0,
+        "renderMode": "Rectangle",
+        "resizableX": false,
+        "resizableY": false,
+        "showName": false,
+        "tags": [],
+        "tileId": null,
+        "tileOpacity": 0.0,
+        "tileRect": null,
+        "tileRenderMode": "FitInside",
+        "tilesetId": null,
+        "uid": 1,
+        "uiTileRect": null,
+        "width": 32
+      },
+      {
+        "allowOutOfBounds": false,
+        "color": "#994DFF",
+        "doc": null,
+        "exportToToc": false,
+        "fieldDefs": [],
+        "fillOpacity": 0.35,
+        "height": 32,
+        "hollow": false,
+        "identifier": "Port",
+        "keepAspectRatio": false,
+        "limitBehavior": "MoveLastOne",
+        "limitScope": "PerLevel",
+        "lineOpacity": 1.0,
+        "maxCount": 0,
+        "maxHeight": null,
+        "maxWidth": null,
+        "minHeight": null,
+        "minWidth": null,
+        "nineSliceBorders": [],
+        "pivotX": 0.0,
+        "pivotY": 0.0,
+        "renderMode": "Rectangle",
+        "resizableX": false,
+        "resizableY": false,
+        "showName": false,
+        "tags": [],
+        "tileId": null,
+        "tileOpacity": 0.0,
+        "tileRect": null,
+        "tileRenderMode": "FitInside",
+        "tilesetId": null,
+        "uid": 2,
+        "uiTileRect": null,
+        "width": 32
+      }
+    ],
+    "enums": [],
+    "externalEnums": [],
+    "layers": [
+      {
+        "__type": "IntGrid",
+        "autoRuleGroups": [],
+        "autoSourceLayerDefUid": null,
+        "autoTilesetDefUid": null,
+        "autoTilesKilledByOtherLayerUid": null,
+        "biomeFieldUid": null,
+        "canSelectWhenInactive": false,
+        "displayOpacity": 1.0,
+        "doc": null,
+        "excludedTags": [],
+        "gridSize": 32,
+        "guideGridHei": 32,
+        "guideGridWid": 32,
+        "hideFieldsWhenInactive": false,
+        "hideInList": false,
+        "identifier": "SchematicCells",
+        "inactiveOpacity": 1.0,
+        "intGridValues": [
+          {
+            "color": "#338CFF",
+            "groupUid": 0,
+            "identifier": "Room",
+            "tile": null,
+            "value": 1
+          },
+          {
+            "color": "#FFC74D",
+            "groupUid": 0,
+            "identifier": "Corridor",
+            "tile": null,
+            "value": 2
+          },
+          {
+            "color": "#994DFF",
+            "groupUid": 0,
+            "identifier": "DoorThreshold",
+            "tile": null,
+            "value": 3
+          },
+          {
+            "color": "#99F2FF",
+            "groupUid": 0,
+            "identifier": "Spawn",
+            "tile": null,
+            "value": 4
+          },
+          {
+            "color": "#33FF66",
+            "groupUid": 0,
+            "identifier": "Objective",
+            "tile": null,
+            "value": 5
+          }
+        ],
+        "intGridValuesGroups": [],
+        "parallaxFactorX": 0.0,
+        "parallaxFactorY": 0.0,
+        "parallaxScaling": false,
+        "pxOffsetX": 0,
+        "pxOffsetY": 0,
+        "renderInWorldView": true,
+        "requiredTags": [],
+        "tilePivotX": 0.0,
+        "tilePivotY": 0.0,
+        "tilesetDefUid": null,
+        "type": "IntGrid",
+        "uiColor": null,
+        "uid": 1,
+        "uiFilterTags": [],
+        "useAsyncRender": false
+      },
+      {
+        "__type": "Entities",
+        "autoRuleGroups": [],
+        "autoSourceLayerDefUid": null,
+        "autoTilesetDefUid": null,
+        "autoTilesKilledByOtherLayerUid": null,
+        "biomeFieldUid": null,
+        "canSelectWhenInactive": false,
+        "displayOpacity": 1.0,
+        "doc": null,
+        "excludedTags": [],
+        "gridSize": 32,
+        "guideGridHei": 32,
+        "guideGridWid": 32,
+        "hideFieldsWhenInactive": false,
+        "hideInList": false,
+        "identifier": "SchematicEntities",
+        "inactiveOpacity": 1.0,
+        "intGridValues": [],
+        "intGridValuesGroups": [],
+        "parallaxFactorX": 0.0,
+        "parallaxFactorY": 0.0,
+        "parallaxScaling": false,
+        "pxOffsetX": 0,
+        "pxOffsetY": 0,
+        "renderInWorldView": true,
+        "requiredTags": [],
+        "tilePivotX": 0.0,
+        "tilePivotY": 0.0,
+        "tilesetDefUid": null,
+        "type": "Entities",
+        "uiColor": null,
+        "uid": 2,
+        "uiFilterTags": [],
+        "useAsyncRender": false
+      }
+    ],
+    "levelFields": [],
+    "tilesets": []
+  },
+  "dummyWorldIid": "world-schematic",
+  "exportLevelBg": false,
+  "exportPng": null,
+  "exportTiled": false,
+  "externalLevels": false,
+  "flags": [],
+  "identifierStyle": "Capitalize",
+  "iid": "observed2-ldtk-schematic",
+  "imageExportMode": "LayersAndLevels",
+  "jsonVersion": "1.5.3",
+  "levelNamePattern": "Level_%idx",
+  "levels": [
+    {
+      "__bgColor": "#FFFFFF",
+      "__bgPos": null,
+      "__neighbours": [],
+      "__smartColor": "#FFFFFF",
+      "bgColor": null,
+      "bgPivotX": 0.0,
+      "bgPivotY": 0.0,
+      "bgPos": null,
+      "bgRelPath": null,
+      "externalRelPath": null,
+      "fieldInstances": [],
+      "identifier": "TwoRoomSchematic",
+      "iid": "level-two-room-schematic",
+      "layerInstances": [
+        {
+          "__cHei": 5,
+          "__cWid": 12,
+          "__gridSize": 32,
+          "__identifier": "SchematicEntities",
+          "__opacity": 0.0,
+          "__pxTotalOffsetX": 0,
+          "__pxTotalOffsetY": 0,
+          "__tilesetDefUid": null,
+          "__tilesetRelPath": null,
+          "__type": "Entities",
+          "autoLayerTiles": [],
+          "entityInstances": [
+            {
+              "__grid": [
+                0,
+                0
+              ],
+              "__identifier": "Room",
+              "__pivot": [
+                0.0,
+                0.0
+              ],
+              "__smartColor": "#338CFF",
+              "__tags": [],
+              "__tile": null,
+              "__worldX": null,
+              "__worldY": null,
+              "defUid": 1,
+              "fieldInstances": [
+                {
+                  "__identifier": "id",
+                  "__tile": null,
+                  "__type": "Int",
+                  "__value": 1,
+                  "defUid": 1,
+                  "realEditorValues": []
+                },
+                {
+                  "__identifier": "label",
+                  "__tile": null,
+                  "__type": "String",
+                  "__value": "Room A",
+                  "defUid": 2,
+                  "realEditorValues": []
+                },
+                {
+                  "__identifier": "kind",
+                  "__tile": null,
+                  "__type": "String",
+                  "__value": "room",
+                  "defUid": 3,
+                  "realEditorValues": []
+                }
+              ],
+              "height": 160,
+              "iid": "room-a",
+              "px": [
+                0,
+                0
+              ],
+              "width": 128
+            },
+            {
+              "__grid": [
+                4,
+                2
+              ],
+              "__identifier": "Room",
+              "__pivot": [
+                0.0,
+                0.0
+              ],
+              "__smartColor": "#FFC74D",
+              "__tags": [],
+              "__tile": null,
+              "__worldX": null,
+              "__worldY": null,
+              "defUid": 1,
+              "fieldInstances": [
+                {
+                  "__identifier": "id",
+                  "__tile": null,
+                  "__type": "Int",
+                  "__value": 2,
+                  "defUid": 1,
+                  "realEditorValues": []
+                },
+                {
+                  "__identifier": "label",
+                  "__tile": null,
+                  "__type": "String",
+                  "__value": "Main corridor",
+                  "defUid": 2,
+                  "realEditorValues": []
+                },
+                {
+                  "__identifier": "kind",
+                  "__tile": null,
+                  "__type": "String",
+                  "__value": "corridor",
+                  "defUid": 3,
+                  "realEditorValues": []
+                }
+              ],
+              "height": 32,
+              "iid": "corridor",
+              "px": [
+                128,
+                64
+              ],
+              "width": 128
+            },
+            {
+              "__grid": [
+                8,
+                0
+              ],
+              "__identifier": "Room",
+              "__pivot": [
+                0.0,
+                0.0
+              ],
+              "__smartColor": "#338CFF",
+              "__tags": [],
+              "__tile": null,
+              "__worldX": null,
+              "__worldY": null,
+              "defUid": 1,
+              "fieldInstances": [
+                {
+                  "__identifier": "id",
+                  "__tile": null,
+                  "__type": "Int",
+                  "__value": 3,
+                  "defUid": 1,
+                  "realEditorValues": []
+                },
+                {
+                  "__identifier": "label",
+                  "__tile": null,
+                  "__type": "String",
+                  "__value": "Room B",
+                  "defUid": 2,
+                  "realEditorValues": []
+                },
+                {
+                  "__identifier": "kind",
+                  "__tile": null,
+                  "__type": "String",
+                  "__value": "room",
+                  "defUid": 3,
+                  "realEditorValues": []
+                }
+              ],
+              "height": 160,
+              "iid": "room-b",
+              "px": [
+                256,
+                0
+              ],
+              "width": 128
+            },
+            {
+              "__grid": [
+                4,
+                2
+              ],
+              "__identifier": "Port",
+              "__pivot": [
+                0.0,
+                0.0
+              ],
+              "__smartColor": "#994DFF",
+              "__tags": [],
+              "__tile": null,
+              "__worldX": null,
+              "__worldY": null,
+              "defUid": 2,
+              "fieldInstances": [
+                {
+                  "__identifier": "id",
+                  "__tile": null,
+                  "__type": "Int",
+                  "__value": 1,
+                  "defUid": 4,
+                  "realEditorValues": []
+                },
+                {
+                  "__identifier": "room_a",
+                  "__tile": null,
+                  "__type": "Int",
+                  "__value": 1,
+                  "defUid": 5,
+                  "realEditorValues": []
+                },
+                {
+                  "__identifier": "room_b",
+                  "__tile": null,
+                  "__type": "Int",
+                  "__value": 2,
+                  "defUid": 6,
+                  "realEditorValues": []
+                },
+                {
+                  "__identifier": "socket",
+                  "__tile": null,
+                  "__type": "String",
+                  "__value": "door",
+                  "defUid": 7,
+                  "realEditorValues": []
+                }
+              ],
+              "height": 32,
+              "iid": "port-a-corridor",
+              "px": [
+                128,
+                64
+              ],
+              "width": 32
+            },
+            {
+              "__grid": [
+                7,
+                2
+              ],
+              "__identifier": "Port",
+              "__pivot": [
+                0.0,
+                0.0
+              ],
+              "__smartColor": "#994DFF",
+              "__tags": [],
+              "__tile": null,
+              "__worldX": null,
+              "__worldY": null,
+              "defUid": 2,
+              "fieldInstances": [
+                {
+                  "__identifier": "id",
+                  "__tile": null,
+                  "__type": "Int",
+                  "__value": 2,
+                  "defUid": 4,
+                  "realEditorValues": []
+                },
+                {
+                  "__identifier": "room_a",
+                  "__tile": null,
+                  "__type": "Int",
+                  "__value": 2,
+                  "defUid": 5,
+                  "realEditorValues": []
+                },
+                {
+                  "__identifier": "room_b",
+                  "__tile": null,
+                  "__type": "Int",
+                  "__value": 3,
+                  "defUid": 6,
+                  "realEditorValues": []
+                },
+                {
+                  "__identifier": "socket",
+                  "__tile": null,
+                  "__type": "String",
+                  "__value": "door",
+                  "defUid": 7,
+                  "realEditorValues": []
+                }
+              ],
+              "height": 32,
+              "iid": "port-corridor-b",
+              "px": [
+                224,
+                64
+              ],
+              "width": 32
+            }
+          ],
+          "gridTiles": [],
+          "iid": "layer-entities",
+          "intGrid": null,
+          "intGridCsv": [],
+          "layerDefUid": 2,
+          "levelId": 1,
+          "optionalRules": [],
+          "overrideTilesetUid": null,
+          "pxOffsetX": 0,
+          "pxOffsetY": 0,
+          "seed": 0,
+          "visible": true
+        },
+        {
+          "__cHei": 5,
+          "__cWid": 12,
+          "__gridSize": 32,
+          "__identifier": "SchematicCells",
+          "__opacity": 0.0,
+          "__pxTotalOffsetX": 0,
+          "__pxTotalOffsetY": 0,
+          "__tilesetDefUid": null,
+          "__tilesetRelPath": null,
+          "__type": "IntGrid",
+          "autoLayerTiles": [],
+          "entityInstances": [],
+          "gridTiles": [],
+          "iid": "layer-cells",
+          "intGrid": null,
+          "intGridCsv": [
+            1,
+            1,
+            1,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            1,
+            1,
+            1,
+            1,
+            4,
+            1,
+            1,
+            3,
+            2,
+            2,
+            3,
+            1,
+            1,
+            5,
+            1,
+            1,
+            1,
+            1,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            1,
+            1,
+            1
+          ],
+          "layerDefUid": 1,
+          "levelId": 1,
+          "optionalRules": [],
+          "overrideTilesetUid": null,
+          "pxOffsetX": 0,
+          "pxOffsetY": 0,
+          "seed": 0,
+          "visible": true
+        }
+      ],
+      "pxHei": 160,
+      "pxWid": 384,
+      "uid": 1,
+      "useAutoIdentifier": false,
+      "worldDepth": 0,
+      "worldX": 0,
+      "worldY": 0
+    }
+  ],
+  "minifyJson": false,
+  "nextUid": 0,
+  "pngFilePattern": null,
+  "simplifiedExport": false,
+  "toc": [],
+  "tutorialDesc": null,
+  "worldGridHeight": 160,
+  "worldGridWidth": 384,
+  "worldLayout": "Free",
+  "worlds": []
+}

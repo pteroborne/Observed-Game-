@@ -1,0 +1,12 @@
+[package]
+name = "fps_rewire_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = ["3d", "png"] }
+fps_visibility_lab = { path = "../fps_visibility_lab" }
+observation_lab = { path = "../observation_lab" }
+observed_core = { path = "../../crates/observed_core" }
+player_input = { path = "../../crates/player_input" }

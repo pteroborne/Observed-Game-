@@ -1,0 +1,15 @@
+[package]
+name = "ldtk_schematic_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = ["2d", "png"] }
+# Phase A2 of the asset-integration roadmap: LDtk as an importer/schema for
+# top-down schematic authoring. Rendering is deliberately disabled; this lab reads
+# the LDtk project data and projects it into the game's own schematic model.
+bevy_ecs_ldtk = { version = "0.14", default-features = false, features = ["internal_levels"] }
+observed_core = { path = "../../crates/observed_core" }
+observed_style = { path = "../../crates/observed_style" }
+serde_json = "1.0"

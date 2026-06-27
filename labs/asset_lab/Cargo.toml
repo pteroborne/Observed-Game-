@@ -1,0 +1,19 @@
+[package]
+name = "asset_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+# The drop-in slot manifest now lives in the production crate; this lab is its
+# visual showcase.
+observed_assets = { path = "../../crates/observed_assets" }
+bevy = { version = "0.18.1", default-features = false, features = [
+    "3d",
+    "png",
+    "jpeg",
+    "bevy_gltf",
+    "bevy_audio",
+    "vorbis",
+    "wav",
+] }

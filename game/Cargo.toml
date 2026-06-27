@@ -1,0 +1,34 @@
+[package]
+name = "observed_game"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "observed"
+path = "src/main.rs"
+
+[dependencies]
+# The menus are UI overlays (camera-agnostic); the Match is a first-person 3D view,
+# so the assembled game renders in 3D. Image, glTF, HDR, and audio features cover
+# the complete drop-in asset plan.
+bevy = { version = "0.18.1", default-features = false, features = [
+    "3d",
+    "png",
+    "jpeg",
+    "hdr",
+    "bevy_gltf",
+    "bevy_audio",
+    "vorbis",
+    # Bloom (the neon glow for the match) lives in bevy_post_process, which `3d`
+    # does not pull; DefaultPlugins wires its PostProcessPlugin when enabled.
+    "bevy_post_process",
+] }
+observed_core = { path = "../crates/observed_core" }
+observed_style = { path = "../crates/observed_style" }
+observed_assets = { path = "../crates/observed_assets" }
+player_input = { path = "../crates/player_input" }
+observed_progression = { path = "../crates/observed_progression" }
+observed_net = { path = "../crates/observed_net" }
+observed_match = { path = "../crates/observed_match" }
+observed_traversal = { path = "../crates/observed_traversal" }

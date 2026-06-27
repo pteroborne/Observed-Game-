@@ -1,0 +1,12 @@
+[package]
+name = "observation_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = ["2d", "png"] }
+observed_core = { path = "../../crates/observed_core" }
+# The pure observe/decohere model now lives in the production crate; this lab re-exports
+# it as `model` and is its debug projection.
+observed_observation = { path = "../../crates/observed_observation" }

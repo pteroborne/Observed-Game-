@@ -1,0 +1,20 @@
+[package]
+name = "inspector_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[features]
+# Off by default so the normal workspace build/test pulls no egui. Enabling it adds the
+# live ECS inspector (the R11-accepted dev-only dependency). `bevy_screen_diagnostics` is
+# not 0.18-compatible, so FPS/frame timing uses Bevy's built-in FrameTimeDiagnosticsPlugin
+# instead (no extra dependency).
+default = []
+dev_tools = ["dep:bevy-inspector-egui"]
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = ["3d", "png"] }
+observed_core = { path = "../../crates/observed_core" }
+# Verified compatible with Bevy 0.18.1 (0.36.0 requires `bevy ^0.18.0`); optional and
+# default-off, so it only enters the build under `--features dev_tools`.
+bevy-inspector-egui = { version = "0.36", optional = true }

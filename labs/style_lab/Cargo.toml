@@ -1,0 +1,17 @@
+[package]
+name = "style_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+# The pure visual-language rules now live in the production crate; this lab is their
+# visual proof app.
+observed_style = { path = "../../crates/observed_style" }
+# `bevy_post_process` (not pulled by `3d`) provides Bloom — the glow that makes the
+# neon-noir emission read; DefaultPlugins wires its PostProcessPlugin when enabled.
+bevy = { version = "0.18.1", default-features = false, features = [
+    "3d",
+    "png",
+    "bevy_post_process",
+] }

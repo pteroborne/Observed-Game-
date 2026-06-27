@@ -1,0 +1,23 @@
+[package]
+name = "player_input"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[features]
+# On by default so existing consumers (the labs + game, which use these as ECS
+# components) are unchanged. A pure consumer — a bot, a replay tape, a network
+# packet, a model test — opts out with `default-features = false` and then depends on
+# the durable input data without pulling Bevy ECS at all (glam only).
+default = ["bevy"]
+# The Bevy adapter: derive `Component` on `PlayerId` / `PlayerIntent` so they are ECS
+# components. The pure data path is identical either way (the field type `glam::Vec2`
+# is exactly what Bevy re-exports as `bevy::math::Vec2`, so the types unify).
+bevy = ["dep:bevy"]
+
+[dependencies]
+# Pure vector math, the same crate (and version) Bevy re-exports as `bevy::math`, so a
+# `player_input::PlayerIntent` built without Bevy is type-compatible with one built
+# with it.
+glam = "0.30"
+bevy = { version = "0.18.1", default-features = false, optional = true }

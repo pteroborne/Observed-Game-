@@ -1,0 +1,20 @@
+[package]
+name = "observed_traversal"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[features]
+# On by default so consumers that insert the arena/config as ECS resources are
+# unchanged. A pure consumer (a bot, a replay tape, a network model, a determinism
+# test) opts out with `default-features = false`: the controller is then plain data
+# (glam + pure `player_input`), no Bevy ECS.
+default = ["bevy"]
+bevy = ["dep:bevy"]
+
+[dependencies]
+# The controller steps the durable `PlayerIntent`; it needs only the pure data, not
+# the ECS component, so it takes `player_input` without its Bevy adapter.
+player_input = { path = "../player_input", default-features = false }
+glam = "0.30"
+bevy = { version = "0.18.1", default-features = false, optional = true }

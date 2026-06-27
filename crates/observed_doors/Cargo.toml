@@ -1,0 +1,14 @@
+[package]
+name = "observed_doors"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Pure door-threshold model: open = observed/frozen, closed = free to rewire, a
+# protected spine, the reopen-reveals-change loop, and dead-ends that never sever the
+# exit. No Bevy at all (the door world is plain data; `door_lab` wraps it in its own
+# resource). Depends on `observed_observation` for the reused graph structure.
+[dependencies]
+observed_observation = { path = "../observed_observation", default-features = false }
+observed_core = { path = "../observed_core" }
+glam = "0.30"

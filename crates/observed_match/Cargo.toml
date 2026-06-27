@@ -1,0 +1,21 @@
+[package]
+name = "observed_match"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[features]
+# On by default so the labs/game (which insert the match worlds as ECS resources) are
+# unchanged. A pure consumer opts out with `default-features = false`: the whole match
+# brain is then plain data (glam + the pure domain crates, no ECS `Resource`).
+default = ["bevy"]
+bevy = ["dep:bevy"]
+
+[dependencies]
+observed_core = { path = "../observed_core" }
+observed_observation = { path = "../observed_observation", default-features = false }
+observed_facility = { path = "../observed_facility", default-features = false }
+observed_traversal = { path = "../observed_traversal", default-features = false }
+player_input = { path = "../player_input", default-features = false }
+glam = "0.30"
+bevy = { version = "0.18.1", default-features = false, optional = true }

@@ -1,0 +1,17 @@
+[package]
+name = "outline_legibility_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = [
+    "3d",
+    "png",
+    "bevy_post_process",
+] }
+# Phase A3 of the asset-integration roadmap. `0.12.1` depends on Bevy `0.18`
+# and is kept lab-local. Default features are disabled: the lab only needs the
+# core mesh-outline pass, not scene inheritance, flood fill, or interpolation.
+bevy_mod_outline = { version = "0.12.1", default-features = false }
+observed_style = { path = "../../crates/observed_style" }

@@ -1,0 +1,290 @@
+//! Authored hallway pieces for the **teleport-connected** facility.
+//!
+//! In the teleport model each graph edge is realised as a discrete, pre-generated
+//! **hallway piece** you teleport into: cross a room's doorway → you are placed at
+//! the entry of that edge's current hallway → walk it → cross its far doorway → you
+//! are placed in the destination room. Because you only ever occupy one space,
+//! everything else is *unobserved by construction*, so an edge can freely swap which
+//! hallway variation (and which destination) it shows whenever you are not inside it
+//! — no shared maze grid, no off-camera-swap gymnastics, no doorway/hall alignment to
+//! reconcile.
+//!
+//! This module is the pure data + selection: the authored template library and the
+//! deterministic edge → variation mapping. The controller/presentation consume it.
+
+use observed_core::RoomId;
+
+/// The traversal character of a hallway piece — the "edge personality" the
+/// nodes/edges canon asks for (corridors = traverse / danger / mystery).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HallwayFlavor {
+    /// A plain, short connector.
+    Straight,
+    /// A long, exposed run.
+    Long,
+    /// An L-bend that hides what's ahead.
+    Dogleg,
+    /// An S-bend: two staggered baffles force a slalom between the entry and exit, so
+    /// the way on is hidden twice over (the corridor reads as labyrinthine without a
+    /// full grid). The baffles render + collide through the shared interior-wall path.
+    Chicane,
+    /// A pressure-gate hazard spans the hall (the risky shortcut).
+    PressureGate,
+    /// A step-up climb toward the next level.
+    Climb,
+    /// A generated grid **labyrinth** — winding corridors, dead ends, and braided
+    /// loops between the single entrance and exit (see [`crate::maze`]).
+    Maze,
+}
+
+impl HallwayFlavor {
+    pub fn label(self) -> &'static str {
+        match self {
+            HallwayFlavor::Straight => "straight",
+            HallwayFlavor::Long => "long",
+            HallwayFlavor::Dogleg => "dogleg",
+            HallwayFlavor::Chicane => "chicane",
+            HallwayFlavor::PressureGate => "pressure gate",
+            HallwayFlavor::Climb => "climb",
+            HallwayFlavor::Maze => "labyrinth",
+        }
+    }
+
+    /// Whether this hallway carries a time-pressure hazard (drives the safe/risky
+    /// choice the match brain already models on spine legs).
+    pub fn is_hazardous(self) -> bool {
+        matches!(self, HallwayFlavor::PressureGate)
+    }
+}
+
+/// An authored hallway template: a discrete walkable piece between an entry and an
+/// exit doorway. Dimensions are world units; kept simple and data-driven so the
+/// library is easy to extend (the controller adds collision from these, the
+/// presentation renders them).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HallwayTemplate {
+    pub name: &'static str,
+    pub flavor: HallwayFlavor,
+    /// Walkable length from the entry doorway to the exit doorway. For a `Maze` this is
+    /// the derived footprint depth; the real geometry comes from `grid`.
+    pub length: f32,
+    /// Walkable width (derived footprint width for a `Maze`; see `grid`).
+    pub width: f32,
+    /// Net rise from entry to exit (0 for flat; positive climbs).
+    pub rise: f32,
+    /// For a `Maze` flavour, the labyrinth grid dimensions `(cols, rows)`; `None` for
+    /// the simple straight/dogleg/climb pieces.
+    pub grid: Option<(u8, u8)>,
+}
+
+/// The authored library. An index into this is a "variation". A *significant portion*
+/// of the pieces are generated labyrinths (`Maze`), the rest are quick connectors and
+/// set-pieces, so the facility's edges feel varied — some a single stride, some a maze.
+pub const TEMPLATES: [HallwayTemplate; 11] = [
+    HallwayTemplate {
+        name: "short connector",
+        flavor: HallwayFlavor::Straight,
+        length: 9.0,
+        width: 4.0,
+        rise: 0.0,
+        grid: None,
+    },
+    HallwayTemplate {
+        name: "long hall",
+        flavor: HallwayFlavor::Long,
+        length: 18.0,
+        width: 4.0,
+        rise: 0.0,
+        grid: None,
+    },
+    HallwayTemplate {
+        name: "dogleg",
+        flavor: HallwayFlavor::Dogleg,
+        length: 14.0,
+        width: 4.0,
+        rise: 0.0,
+        grid: None,
+    },
+    HallwayTemplate {
+        name: "chicane",
+        flavor: HallwayFlavor::Chicane,
+        length: 16.0,
+        // Wider than the corridor so the staggered baffles leave a walkable slalom.
+        width: 8.0,
+        rise: 0.0,
+        grid: None,
+    },
+    HallwayTemplate {
+        name: "pressure gate",
+        flavor: HallwayFlavor::PressureGate,
+        length: 12.0,
+        width: 5.0,
+        rise: 0.0,
+        grid: None,
+    },
+    HallwayTemplate {
+        name: "stair climb",
+        flavor: HallwayFlavor::Climb,
+        length: 12.0,
+        width: 4.0,
+        rise: 0.9,
+        grid: None,
+    },
+    // The labyrinths. `length`/`width` are the derived footprints (cols/rows × the
+    // maze cell size of 3.6) for readability; `grid` drives the actual geometry.
+    HallwayTemplate {
+        name: "small labyrinth",
+        flavor: HallwayFlavor::Maze,
+        length: 14.4,
+        width: 14.4,
+        rise: 0.0,
+        grid: Some((4, 4)),
+    },
+    HallwayTemplate {
+        name: "twisting labyrinth",
+        flavor: HallwayFlavor::Maze,
+        length: 21.6,
+        width: 18.0,
+        rise: 0.0,
+        grid: Some((5, 6)),
+    },
+    HallwayTemplate {
+        name: "deep labyrinth",
+        flavor: HallwayFlavor::Maze,
+        length: 25.2,
+        width: 21.6,
+        rise: 0.0,
+        grid: Some((6, 7)),
+    },
+    HallwayTemplate {
+        name: "wide labyrinth",
+        flavor: HallwayFlavor::Maze,
+        length: 18.0,
+        width: 25.2,
+        rise: 0.0,
+        grid: Some((7, 5)),
+    },
+    HallwayTemplate {
+        name: "tall labyrinth",
+        flavor: HallwayFlavor::Maze,
+        length: 28.8,
+        width: 14.4,
+        rise: 0.0,
+        grid: Some((4, 8)),
+    },
+];
+
+pub fn template(index: usize) -> &'static HallwayTemplate {
+    &TEMPLATES[index % TEMPLATES.len()]
+}
+
+/// An edge-symmetric 64-bit hash of the edge `(a, b)` plus a `mix` salt. The basis for
+/// both variation selection and maze layout, so both are deterministic and treat
+/// `(a, b)` the same as `(b, a)`.
+fn edge_hash(a: RoomId, b: RoomId, seed: u64, mix: u64) -> u64 {
+    let (lo, hi) = if a.0 <= b.0 { (a.0, b.0) } else { (b.0, a.0) };
+    let mut h = seed
+        ^ (lo as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        ^ (hi as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
+        ^ mix.wrapping_mul(0x1656_67B1_9E37_79F9);
+    h = (h ^ (h >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    h = (h ^ (h >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    h ^= h >> 31;
+    h
+}
+
+/// Deterministically pick a hallway variation for the edge between rooms `a` and `b`.
+/// `version` increments each time the edge decoheres (reroutes) so an *unobserved*
+/// edge can present a different piece next time — the "changed when you looked away"
+/// loop. Edge-symmetric: `(a, b)` and `(b, a)` choose the same piece.
+pub fn variation_for(a: RoomId, b: RoomId, seed: u64, version: u32) -> usize {
+    (edge_hash(a, b, seed, version as u64) as usize) % TEMPLATES.len()
+}
+
+/// The seed for a maze hallway's interior layout. Keyed by the edge and the chosen
+/// `variation`, so it is a pure function of the stored `Place::Hallway` — the maze
+/// can't reshuffle under the player's feet — yet still changes when a reroute rolls a
+/// new variation. Edge-symmetric, matching `variation_for`.
+pub fn layout_seed(a: RoomId, b: RoomId, variation: usize) -> u64 {
+    edge_hash(a, b, 0xA1B2_C3D4_5EED_F00D, variation as u64)
+}
+
+/// A deterministic length multiplier in `[0.55, 2.2]` for a straight-ish hallway, so
+/// repeated connector templates render at visibly different depths (the seed is the
+/// edge's `layout_seed`). Mazes ignore this — their size comes from their grid.
+pub fn length_scale(seed: u64) -> f32 {
+    const LO: f32 = 0.55;
+    const HI: f32 = 2.2;
+    // Mix the seed first so even small/sequential seeds spread evenly.
+    let mut h = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    h = (h ^ (h >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    h ^= h >> 31;
+    let t = (h >> 40) as f32 / (1u64 << 24) as f32;
+    LO + t * (HI - LO)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn library_is_non_empty_and_well_formed() {
+        assert!(!TEMPLATES.is_empty());
+        for t in TEMPLATES {
+            assert!(
+                t.length > 0.0 && t.width > 0.0,
+                "{} has real dimensions",
+                t.name
+            );
+        }
+        // Distinct names and distinct flavours (each piece is its own personality).
+        let mut names: Vec<&str> = TEMPLATES.iter().map(|t| t.name).collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), TEMPLATES.len(), "template names are unique");
+    }
+
+    #[test]
+    fn selection_is_deterministic_and_in_range() {
+        let a = RoomId(1);
+        let b = RoomId(5);
+        let first = variation_for(a, b, 7, 0);
+        assert_eq!(first, variation_for(a, b, 7, 0), "same inputs → same piece");
+        assert!(first < TEMPLATES.len());
+    }
+
+    #[test]
+    fn selection_is_edge_symmetric() {
+        for (a, b, seed, version) in [(0u32, 8u32, 1u64, 0u32), (3, 4, 99, 2), (2, 6, 42, 5)] {
+            assert_eq!(
+                variation_for(RoomId(a), RoomId(b), seed, version),
+                variation_for(RoomId(b), RoomId(a), seed, version),
+                "(a,b) and (b,a) pick the same hallway"
+            );
+        }
+    }
+
+    #[test]
+    fn decohering_an_edge_can_present_a_new_piece() {
+        // Across enough versions, at least one re-roll changes the chosen piece (the
+        // "changed when unobserved" loop has something to show).
+        let (a, b) = (RoomId(1), RoomId(2));
+        let base = variation_for(a, b, 3, 0);
+        let changed = (1..32).any(|version| variation_for(a, b, 3, version) != base);
+        assert!(
+            changed,
+            "rerolling an edge should eventually change its hallway"
+        );
+    }
+
+    #[test]
+    fn a_different_seed_diverges() {
+        let differ = (0..ROOM_PAIRS.len()).any(|i| {
+            let (a, b) = ROOM_PAIRS[i];
+            variation_for(RoomId(a), RoomId(b), 1, 0) != variation_for(RoomId(a), RoomId(b), 2, 0)
+        });
+        assert!(differ, "the seed actually influences selection");
+    }
+
+    const ROOM_PAIRS: [(u32, u32); 6] = [(0, 1), (1, 2), (2, 5), (5, 8), (3, 4), (4, 7)];
+}

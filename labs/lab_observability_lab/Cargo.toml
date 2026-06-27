@@ -1,0 +1,24 @@
+[package]
+name = "lab_observability_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# `bevy_mod_config` is pinned exactly for the Bevy 0.18 line with the egui editor
+# OFF (no `egui` feature) -- this lab renders its own neon-noir overlay rather than
+# adopting an egui UI stack. The `serde_json` feature enables JSON persistence.
+#
+# `bevy_log_events` is intentionally NOT a dependency: its only logging-capable
+# feature (`enabled`) force-pulls `bevy_egui` and its plugin build-asserts
+# `EguiPlugin`, which violates this project's dependency rule. The event-trace
+# capability it would provide is implemented lab-locally over Bevy `tracing`
+# (see `event_trace` in `lab.rs`). See the README and roadmap A7 for the finding.
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = ["2d", "png"] }
+bevy_mod_config = { version = "0.6.2", default-features = false, features = [
+    "std",
+    "serde",
+    "serde_json",
+] }
+observed_style = { path = "../../crates/observed_style" }
+player_input = { path = "../../crates/player_input" }

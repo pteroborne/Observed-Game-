@@ -1,0 +1,8 @@
+[package]
+name = "observed_core"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+player_input = { path = "../player_input" }

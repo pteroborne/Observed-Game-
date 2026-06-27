@@ -1,0 +1,13 @@
+[package]
+name = "net_match_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = ["2d", "png"] }
+observed_core = { path = "../../crates/observed_core" }
+player_input = { path = "../../crates/player_input" }
+# Projects the promoted match brain + networked match (refactor R9) — no cross-lab deps.
+observed_match = { path = "../../crates/observed_match" }
+observed_net = { path = "../../crates/observed_net" }

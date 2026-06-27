@@ -1,0 +1,17 @@
+[package]
+name = "observed_interaction"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[features]
+# On by default so the labs (which insert the worlds as ECS resources) are unchanged.
+# A pure consumer opts out with `default-features = false`: the interaction state
+# machine and equipment persistence are then plain data (glam only, no ECS `Resource`).
+default = ["bevy"]
+bevy = ["dep:bevy"]
+
+[dependencies]
+observed_core = { path = "../observed_core" }
+glam = "0.30"
+bevy = { version = "0.18.1", default-features = false, optional = true }

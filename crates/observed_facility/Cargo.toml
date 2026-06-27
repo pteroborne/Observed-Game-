@@ -1,0 +1,25 @@
+[package]
+name = "observed_facility"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[features]
+# On by default so the labs/game (which use the room registry / world / constraint
+# world as ECS resources, and the `color()` presentation helpers) are unchanged. A
+# pure consumer opts out with `default-features = false`: the topology, validated
+# connections, and graph constraints are then plain data (glam only, no ECS / Color).
+default = ["bevy"]
+bevy = ["dep:bevy"]
+
+[dependencies]
+observed_core = { path = "../observed_core" }
+# The constraint world builds on the observe/decohere graph; it embeds it as data, so
+# it needs no ECS from that crate.
+observed_observation = { path = "../observed_observation", default-features = false }
+glam = "0.30"
+# `bevy_color` provides `Color` for the `color()` presentation helpers (not pulled by
+# bare Bevy); `Resource` comes from bevy_ecs in the default-feature-free facade.
+bevy = { version = "0.18.1", default-features = false, features = [
+    "bevy_color",
+], optional = true }

@@ -1,0 +1,11 @@
+[package]
+name = "network_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = ["2d", "png"] }
+# The lockstep protocol + model now live in the production crate; this lab projects them.
+observed_net = { path = "../../crates/observed_net" }
+player_input = { path = "../../crates/player_input" }

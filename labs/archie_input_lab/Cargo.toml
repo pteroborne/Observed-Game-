@@ -1,0 +1,11 @@
+[package]
+name = "archie_input_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = ["2d", "png"] }
+bevy_archie = { version = "0.2.4", default-features = false }
+player_input = { path = "../../crates/player_input" }
+observed_style = { path = "../../crates/observed_style" }

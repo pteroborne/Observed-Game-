@@ -1,0 +1,23 @@
+[package]
+name = "observed_net"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[features]
+# On by default so the lab/game (which insert the lockstep world as an ECS resource)
+# are unchanged. A pure consumer opts out with `default-features = false`: the protocol
+# and lockstep model are then plain data (glam + pure controller, no ECS `Resource`).
+default = ["bevy"]
+bevy = ["dep:bevy"]
+
+[dependencies]
+# The protocol quantizes the durable `PlayerIntent`; the lockstep model steps the
+# production controller — both as pure data, so neither needs a Bevy adapter here.
+player_input = { path = "../player_input", default-features = false }
+observed_traversal = { path = "../observed_traversal", default-features = false }
+# `netmatch` replicates the hybrid match brain over the lockstep transport.
+observed_core = { path = "../observed_core" }
+observed_match = { path = "../observed_match", default-features = false }
+glam = "0.30"
+bevy = { version = "0.18.1", default-features = false, optional = true }

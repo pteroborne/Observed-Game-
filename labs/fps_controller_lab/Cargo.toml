@@ -1,0 +1,12 @@
+[package]
+name = "fps_controller_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = ["3d", "png"] }
+observed_core = { path = "../../crates/observed_core" }
+player_input = { path = "../../crates/player_input" }
+# The deterministic controller now lives in the production crate; this lab projects it.
+observed_traversal = { path = "../../crates/observed_traversal" }
