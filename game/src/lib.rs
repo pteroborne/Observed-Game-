@@ -286,6 +286,170 @@ mod tests {
     }
 
     #[test]
+    fn anchor_torch_tethers_current_thresholds_immediately() {
+        use observed_style::{self as style, MarkerRole};
+
+        let mut app = test_app();
+        go(&mut app, GameState::Match);
+        app.update(); // build the initial room.
+
+        let (room, target, visible_targets) = {
+            let runtime = app.world().resource::<screens::MatchRuntime>();
+            let tp = app.world().resource::<screens::TeleportState>();
+            let game = runtime.live.host_match();
+            let mut visible_targets: Vec<_> = tp.geom.gaps.iter().map(|gap| gap.target).collect();
+            visible_targets.sort_by_key(|room| room.0);
+            visible_targets.dedup();
+            (
+                game.local_room(),
+                game.local_target().expect("spine target"),
+                visible_targets,
+            )
+        };
+
+        tap_update(&mut app, KeyCode::KeyF);
+        app.update(); // rebuild place geometry/lights after the anchor changes nav.
+
+        {
+            let runtime = app.world().resource::<screens::MatchRuntime>();
+            let keys = app.world().resource::<keystones::KeystoneState>();
+            let items = app.world().resource::<items::ItemsState>();
+            let nav = screens::nav_from_brain(runtime.live.host_match(), keys, items);
+            let mut pinned_targets: Vec<_> = items.placed[0]
+                .pin_edges
+                .iter()
+                .filter_map(|&(a, b)| (a == room).then_some(b))
+                .collect();
+            pinned_targets.sort_by_key(|room| room.0);
+            pinned_targets.dedup();
+            assert_eq!(
+                pinned_targets, visible_targets,
+                "dropping the anchor freezes every threshold visible in the room"
+            );
+            assert_eq!(
+                nav.connections, visible_targets,
+                "a tethered room reads its frozen visible threshold table exactly"
+            );
+            assert!(
+                nav.is_tethered(room, target),
+                "dropping the anchor tethers the room's visible threshold relation"
+            );
+            assert!(
+                nav.connections.contains(&target),
+                "the tethered target remains present in the room nav"
+            );
+        }
+
+        let control = style::marker(MarkerRole::Control).base_color.to_srgba();
+        let has_control_light = {
+            let world = app.world_mut();
+            let mut q = world.query::<(&PointLight, &Name)>();
+            q.iter(world).any(|(light, name)| {
+                let c = light.color.to_srgba();
+                name.as_str() == "Doorframe tether light"
+                    && (c.red - control.red).abs() < 0.01
+                    && (c.green - control.green).abs() < 0.01
+                    && (c.blue - control.blue).abs() < 0.01
+            })
+        };
+        assert!(
+            has_control_light,
+            "a tethered threshold gets the anchor/control-coloured frame light"
+        );
+    }
+
+    #[test]
+    fn nav_keeps_a_tethered_relation_even_if_the_live_graph_drops_it() {
+        use crate::flow::MATCH_SEED;
+        use crate::teleport::Place;
+        use observed_core::RoomId;
+        use observed_match::hybrid::HybridMatch;
+
+        let game = HybridMatch::authored(MATCH_SEED);
+        let room = game.local_room();
+        let live = screens::connections_for(&game, room);
+        let absent = (0..9)
+            .map(RoomId)
+            .find(|candidate| *candidate != room && !live.contains(candidate))
+            .expect("the authored graph has at least one non-neighbour");
+
+        let mut items = items::ItemsState::single_player();
+        assert!(items.drop_anchor_torch(
+            Place::Room(room),
+            Vec2::ZERO,
+            game.reroute_commits,
+            &[absent],
+        ));
+        let keys = keystones::KeystoneState::new(MATCH_SEED);
+        let nav = screens::nav_for_room(&game, &keys, &items, room);
+
+        assert!(
+            nav.connections.contains(&absent),
+            "a tethered relation is added back to room nav even when absent from the live graph"
+        );
+        assert!(
+            nav.is_tethered(room, absent),
+            "the added relation is marked tethered for frame lights and hallway variation"
+        );
+    }
+
+    #[test]
+    fn room_anchor_locks_exact_threshold_set_and_rejects_new_live_edges() {
+        use crate::flow::MATCH_SEED;
+        use crate::teleport::Place;
+        use observed_core::RoomId;
+        use observed_match::hybrid::HybridMatch;
+
+        let mut game = HybridMatch::authored(MATCH_SEED);
+        let room = game.local_room();
+        let locked = screens::connections_for(&game, room);
+        assert!(
+            !locked.is_empty(),
+            "the authored start room has thresholds to freeze"
+        );
+        let absent = (0..9)
+            .map(RoomId)
+            .find(|candidate| *candidate != room && !locked.contains(candidate))
+            .expect("the authored graph has at least one non-neighbour");
+
+        let mut items = items::ItemsState::single_player();
+        assert!(items.drop_anchor_torch(
+            Place::Room(room),
+            Vec2::ZERO,
+            game.reroute_commits,
+            &locked,
+        ));
+
+        let mut injected = game
+            .rendered
+            .first()
+            .cloned()
+            .expect("authored match has at least one route");
+        injected.rooms = (room, absent);
+        game.rendered
+            .retain(|route| route.rooms.0 != room && route.rooms.1 != room);
+        game.rendered.push(injected);
+
+        let keys = keystones::KeystoneState::new(MATCH_SEED);
+        let nav = screens::nav_for_room(&game, &keys, &items, room);
+
+        assert_eq!(
+            nav.connections, locked,
+            "a room anchor uses the stored threshold table, not live graph drift"
+        );
+        assert!(
+            !nav.connections.contains(&absent),
+            "new live relations cannot appear as thresholds while the room is anchored"
+        );
+
+        let other_nav = screens::nav_for_room(&game, &keys, &items, absent);
+        assert!(
+            !other_nav.connections.contains(&room),
+            "an unanchored room cannot grow a new inbound threshold into a locked room"
+        );
+    }
+
+    #[test]
     fn teleport_pads_link_the_local_body_between_placed_pads() {
         use bevy::math::Vec2;
         let mut app = test_app();
@@ -340,20 +504,22 @@ mod tests {
     }
 
     #[test]
-    fn passage_doorways_spawn_openable_door_leaves_that_are_cleaned_up() {
+    fn passage_thresholds_are_open_and_any_leaves_are_sealed_and_cleaned_up() {
         let mut app = test_app();
         go(&mut app, GameState::Match);
         app.update(); // let rebuild_place build the start room's geometry
-        // The current place's passage doorways each carry an openable leaf for
-        // `animate_doors` to slide; sealed side doors carry non-openable leaves.
+        // Passage thresholds are always-open (transparent): no hiding leaf. Any door leaf
+        // present is a sealed side door / the locked exit — never an openable one.
         let openable = {
             let world = app.world_mut();
             let mut q = world.query::<&screens::DoorLeaf>();
             q.iter(world).filter(|leaf| leaf.openable).count()
         };
+        assert_eq!(openable, 0, "passage thresholds carry no hiding leaf");
+        // The forward doorway still reveals the place beyond (a transparent preview).
         assert!(
-            openable > 0,
-            "the spine forward doorway spawns an openable door leaf"
+            count::<screens::PassagePreview>(&mut app) > 0,
+            "an open threshold shows the neighbour you'll cross into"
         );
         // Leaving the Match despawns every leaf with the rest of the place geometry.
         finish_match(&mut app);
@@ -361,6 +527,30 @@ mod tests {
             count::<screens::DoorLeaf>(&mut app),
             0,
             "door leaves never leak past the Match"
+        );
+    }
+
+    #[test]
+    fn doorway_destinations_are_frozen_at_place_entry() {
+        let mut app = test_app();
+        go(&mut app, GameState::Match);
+        app.update();
+        let tp = app.world().resource::<screens::TeleportState>();
+        assert!(
+            !tp.gap_dests.is_empty(),
+            "the start room freezes its doorway destinations on entry"
+        );
+        // The forward doorway's frozen destination is the hallway you'll teleport into, so
+        // the preview and the crossing read the identical snapshot.
+        let forward = tp.geom.forward_gap().expect("a forward doorway");
+        let frozen = tp
+            .gap_dests
+            .iter()
+            .find(|d| (d.gap_center - forward.center).length() < 0.05)
+            .expect("the forward doorway has a frozen destination");
+        assert!(
+            matches!(frozen.place, crate::teleport::Place::Hallway { .. }),
+            "the forward doorway leads into a hallway"
         );
     }
 

@@ -613,7 +613,8 @@ After changing code:
 2. Run relevant tests.
 3. Run Clippy where practical.
 4. Launch or validate the affected lab.
-5. Report:
+5. If `Catalogue.md` was updated for the change, commit and push the verified work.
+6. Report:
 
    * What changed
    * What was tested

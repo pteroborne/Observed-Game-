@@ -22,8 +22,6 @@ pub enum HallwayFlavor {
     Straight,
     /// A long, exposed run.
     Long,
-    /// An L-bend that hides what's ahead.
-    Dogleg,
     /// An S-bend: two staggered baffles force a slalom between the entry and exit, so
     /// the way on is hidden twice over (the corridor reads as labyrinthine without a
     /// full grid). The baffles render + collide through the shared interior-wall path.
@@ -32,6 +30,11 @@ pub enum HallwayFlavor {
     PressureGate,
     /// A step-up climb toward the next level.
     Climb,
+    /// A wide, long **pseudo-room** that seems to go on — an open volume broken up by a
+    /// regular grid of bare structural pillars (the "unfinished megastructure" read), with
+    /// a clear central lane straight through. Expansive, not claustrophobic; branching
+    /// among the columns rather than a tight corridor.
+    Colonnade,
     /// A generated grid **labyrinth** — winding corridors, dead ends, and braided
     /// loops between the single entrance and exit (see [`crate::maze`]).
     Maze,
@@ -42,10 +45,10 @@ impl HallwayFlavor {
         match self {
             HallwayFlavor::Straight => "straight",
             HallwayFlavor::Long => "long",
-            HallwayFlavor::Dogleg => "dogleg",
             HallwayFlavor::Chicane => "chicane",
             HallwayFlavor::PressureGate => "pressure gate",
             HallwayFlavor::Climb => "climb",
+            HallwayFlavor::Colonnade => "colonnade",
             HallwayFlavor::Maze => "labyrinth",
         }
     }
@@ -80,95 +83,108 @@ pub struct HallwayTemplate {
 /// The authored library. An index into this is a "variation". A *significant portion*
 /// of the pieces are generated labyrinths (`Maze`), the rest are quick connectors and
 /// set-pieces, so the facility's edges feel varied — some a single stride, some a maze.
-pub const TEMPLATES: [HallwayTemplate; 11] = [
+pub const TEMPLATES: [HallwayTemplate; 12] = [
     HallwayTemplate {
         name: "short connector",
         flavor: HallwayFlavor::Straight,
-        length: 9.0,
-        width: 4.0,
+        // Even the "short" connector is a comfortable run, never a single stride; the
+        // length floor in `hallway_geom` keeps it that way under the scale multiplier.
+        length: 15.0,
+        width: 6.0,
         rise: 0.0,
         grid: None,
     },
     HallwayTemplate {
         name: "long hall",
         flavor: HallwayFlavor::Long,
-        length: 18.0,
-        width: 4.0,
-        rise: 0.0,
-        grid: None,
-    },
-    HallwayTemplate {
-        name: "dogleg",
-        flavor: HallwayFlavor::Dogleg,
-        length: 14.0,
-        width: 4.0,
+        length: 28.0,
+        width: 6.0,
         rise: 0.0,
         grid: None,
     },
     HallwayTemplate {
         name: "chicane",
         flavor: HallwayFlavor::Chicane,
-        length: 16.0,
+        length: 20.0,
         // Wider than the corridor so the staggered baffles leave a walkable slalom.
-        width: 8.0,
+        width: 10.0,
         rise: 0.0,
         grid: None,
     },
     HallwayTemplate {
         name: "pressure gate",
         flavor: HallwayFlavor::PressureGate,
-        length: 12.0,
-        width: 5.0,
+        length: 16.0,
+        width: 6.5,
         rise: 0.0,
         grid: None,
     },
     HallwayTemplate {
         name: "stair climb",
         flavor: HallwayFlavor::Climb,
-        length: 12.0,
-        width: 4.0,
+        length: 16.0,
+        width: 6.0,
         rise: 0.9,
         grid: None,
     },
+    // Pillared pseudo-rooms: wide, long, open volumes with a regular grid of structural
+    // columns and a clear central lane. The interior pillars are generated in
+    // `teleport::hallway_geom` from the footprint; `grid` stays `None`.
+    HallwayTemplate {
+        name: "colonnade",
+        flavor: HallwayFlavor::Colonnade,
+        length: 30.0,
+        width: 16.0,
+        rise: 0.0,
+        grid: None,
+    },
+    HallwayTemplate {
+        name: "great hall",
+        flavor: HallwayFlavor::Colonnade,
+        length: 26.0,
+        width: 22.0,
+        rise: 0.0,
+        grid: None,
+    },
     // The labyrinths. `length`/`width` are the derived footprints (cols/rows × the
-    // maze cell size of 3.6) for readability; `grid` drives the actual geometry.
+    // maze cell size of 4.2) for readability; `grid` drives the actual geometry.
     HallwayTemplate {
         name: "small labyrinth",
         flavor: HallwayFlavor::Maze,
-        length: 14.4,
-        width: 14.4,
+        length: 16.8,
+        width: 16.8,
         rise: 0.0,
         grid: Some((4, 4)),
     },
     HallwayTemplate {
         name: "twisting labyrinth",
         flavor: HallwayFlavor::Maze,
-        length: 21.6,
-        width: 18.0,
+        length: 25.2,
+        width: 21.0,
         rise: 0.0,
         grid: Some((5, 6)),
     },
     HallwayTemplate {
         name: "deep labyrinth",
         flavor: HallwayFlavor::Maze,
-        length: 25.2,
-        width: 21.6,
+        length: 29.4,
+        width: 25.2,
         rise: 0.0,
         grid: Some((6, 7)),
     },
     HallwayTemplate {
         name: "wide labyrinth",
         flavor: HallwayFlavor::Maze,
-        length: 18.0,
-        width: 25.2,
+        length: 21.0,
+        width: 29.4,
         rise: 0.0,
         grid: Some((7, 5)),
     },
     HallwayTemplate {
         name: "tall labyrinth",
         flavor: HallwayFlavor::Maze,
-        length: 28.8,
-        width: 14.4,
+        length: 33.6,
+        width: 16.8,
         rise: 0.0,
         grid: Some((4, 8)),
     },
@@ -209,11 +225,18 @@ pub fn layout_seed(a: RoomId, b: RoomId, variation: usize) -> u64 {
     edge_hash(a, b, 0xA1B2_C3D4_5EED_F00D, variation as u64)
 }
 
-/// A deterministic length multiplier in `[0.55, 2.2]` for a straight-ish hallway, so
+/// The shortest a hallway may ever be (world units). Even after the length multiplier,
+/// no hallway drops below this, so a corridor always feels like a journey rather than a
+/// single step (the "longer than expected" design rule). Applied in [`crate::teleport`].
+pub const MIN_HALL_LENGTH: f32 = 14.0;
+
+/// A deterministic length multiplier in `[1.0, 2.2]` for a straight-ish hallway, so
 /// repeated connector templates render at visibly different depths (the seed is the
-/// edge's `layout_seed`). Mazes ignore this — their size comes from their grid.
+/// edge's `layout_seed`). The floor is 1.0 so the multiplier only ever *lengthens* a
+/// hall past its authored base, never shrinks it below. Mazes ignore this — their size
+/// comes from their grid.
 pub fn length_scale(seed: u64) -> f32 {
-    const LO: f32 = 0.55;
+    const LO: f32 = 1.0;
     const HI: f32 = 2.2;
     // Mix the seed first so even small/sequential seeds spread evenly.
     let mut h = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15);

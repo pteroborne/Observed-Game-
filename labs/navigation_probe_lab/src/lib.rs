@@ -25,11 +25,13 @@
 
 mod facility;
 mod nav;
+mod threshold;
 
 pub use facility::{
     DOOR_COUNT, DoorId, Facility, ROOM_COUNT, Rect, all_doors, all_rooms, door_label, door_rooms,
 };
 pub use nav::{NavRoute, build_navmesh, query};
+pub use threshold::{RoomThresholdView, RuleAudit, SlotId, ThresholdAssignment, ThresholdState};
 
 use bevy::{
     app::AppExit,
@@ -165,6 +167,7 @@ impl Plugin for NavigationProbeLabPlugin {
         app.init_resource::<Facility>()
             .init_resource::<Probe>()
             .init_resource::<Bot>()
+            .init_resource::<ThresholdState>()
             .init_resource::<LabRuntime>()
             .init_resource::<ResetRequested>()
             .insert_resource(NavWorld {
@@ -176,7 +179,8 @@ impl Plugin for NavigationProbeLabPlugin {
                 Update,
                 (
                     handle_input.after(InputSystems),
-                    apply_reset,
+                    prepare_reset,
+                    rebuild_scene_after_reset,
                     rebuild_nav,
                     advance_bot,
                     update_door_colors,
@@ -205,13 +209,18 @@ pub fn run() {
         .add_plugins(NavigationProbeLabPlugin);
 
     if let Ok(path) = std::env::var("OBSERVED2_CAPTURE") {
-        // Show a reroute in the captured frame: close AB so the A->D route detours
-        // through C, and let the bot walk partway before the shot.
+        // Show both probes in the captured frame: close AB so A->D detours through C,
+        // then anchor room A so the threshold table visibly collapses to AC.
         app.world_mut()
             .resource_mut::<Facility>()
             .set_open(DoorId(0), false);
+        let facility = app.world().resource::<Facility>().clone();
+        app.world_mut()
+            .resource_mut::<ThresholdState>()
+            .lock_room(&facility, RoomId(0));
         app.world_mut().resource_mut::<LabRuntime>().last_event =
-            "Capture demo: AB closed, A -> D reroutes through C.".to_string();
+            "Capture demo: AB closed, room A anchored to AC, A -> D reroutes through C."
+                .to_string();
         app.insert_resource(CaptureRequest { path, frame: 0 })
             .add_systems(Update, capture_progress);
     }
@@ -363,14 +372,16 @@ fn setup_ui(mut commands: Commands) {
                 children![(
                     Text::new(
                         "NAVIGATION PROBE LAB (Phase A8)\n\
-                         R reset - F1 overlay\n\
+                         R reset - F1 overlay - T lock room A\n\
                          1-4 goal room A/B/C/D\n\
                          Z/X/C/V toggle door AB/AC/BD/CD\n\n\
                          gold line = navmesh route (vleue_navigator)\n\
                          cyan = probe bot / start, green = goal\n\
-                         green door = open, red door = closed\n\n\
+                         green door = open, red door = closed\n\
+                         purple diamond = locked threshold assignment\n\n\
                          The room graph is authoritative; the navmesh\n\
-                         is a derived consumer rebuilt on each change.",
+                         is a derived consumer rebuilt on each change.\n\
+                         Threshold slots are fixed; assignments collapse.",
                     ),
                     TextFont {
                         font_size: 13.0,
@@ -391,6 +402,7 @@ fn handle_input(
     mut facility: ResMut<Facility>,
     mut probe: ResMut<Probe>,
     mut nav: ResMut<NavWorld>,
+    mut thresholds: ResMut<ThresholdState>,
     mut runtime: ResMut<LabRuntime>,
     mut reset: ResMut<ResetRequested>,
 ) {
@@ -400,6 +412,14 @@ fn handle_input(
     }
     if keys.just_pressed(KeyCode::F1) {
         runtime.overlay_visible = !runtime.overlay_visible;
+    }
+    if keys.just_pressed(KeyCode::KeyT) {
+        let locked = thresholds.toggle_room_lock(&facility, RoomId(0));
+        runtime.last_event = if locked {
+            "Room A anchored: visible threshold assignment table collapsed.".to_string()
+        } else {
+            "Room A anchor removed: threshold assignments read the live graph again.".to_string()
+        };
     }
 
     let goal_keys = [
@@ -439,12 +459,30 @@ fn handle_input(
     }
 }
 
-fn apply_reset(
-    mut reset: ResMut<ResetRequested>,
+fn prepare_reset(
+    reset: Res<ResetRequested>,
     mut facility: ResMut<Facility>,
     mut probe: ResMut<Probe>,
     mut nav: ResMut<NavWorld>,
+    mut thresholds: ResMut<ThresholdState>,
     mut runtime: ResMut<LabRuntime>,
+) {
+    if !reset.0 {
+        return;
+    }
+    *facility = Facility::all_open();
+    *probe = Probe::default();
+    nav.dirty = true;
+    thresholds.clear();
+    runtime.reset_count += 1;
+    runtime.last_event = format!(
+        "Reset #{} -- all doors open, probe A -> D.",
+        runtime.reset_count
+    );
+}
+
+fn rebuild_scene_after_reset(
+    mut reset: ResMut<ResetRequested>,
     commands: Commands,
     existing: Query<Entity, With<LabSpawned>>,
 ) {
@@ -452,14 +490,6 @@ fn apply_reset(
         return;
     }
     reset.0 = false;
-    *facility = Facility::all_open();
-    *probe = Probe::default();
-    nav.dirty = true;
-    runtime.reset_count += 1;
-    runtime.last_event = format!(
-        "Reset #{} -- all doors open, probe A -> D.",
-        runtime.reset_count
-    );
     setup_scene(commands, existing);
 }
 
@@ -532,7 +562,14 @@ fn update_door_colors(facility: Res<Facility>, mut doors: Query<(&DoorMarker, &m
     }
 }
 
-fn draw_nav(nav: Res<NavWorld>, probe: Res<Probe>, bot: Res<Bot>, mut gizmos: Gizmos) {
+fn draw_nav(
+    nav: Res<NavWorld>,
+    facility: Res<Facility>,
+    probe: Res<Probe>,
+    bot: Res<Bot>,
+    thresholds: Res<ThresholdState>,
+    mut gizmos: Gizmos,
+) {
     // Room outlines.
     let room_edge = surface(SurfaceRole::Plain).edge.unwrap_or(Color::WHITE);
     for room in all_rooms() {
@@ -558,6 +595,25 @@ fn draw_nav(nav: Res<NavWorld>, probe: Res<Probe>, bot: Res<Bot>, mut gizmos: Gi
         let path_color = marker(MarkerRole::NextRoom).base_color;
         for pair in route.waypoints.windows(2) {
             gizmos.line(world(pair[0], 12.0), world(pair[1], 12.0), path_color);
+        }
+    }
+
+    // Threshold assignment markers: every visible assignment gets a diamond at its
+    // slot. Purple means a room lock collapsed that relation; green means live.
+    for room in all_rooms() {
+        let view = thresholds.room_view(&facility, room);
+        for assignment in view.assignments {
+            let locked = thresholds.relation_locked(room, assignment.target);
+            giz_diamond(
+                &mut gizmos,
+                threshold::slot_position(assignment.slot),
+                if locked { 1.15 } else { 0.75 },
+                if locked {
+                    marker(MarkerRole::Control).base_color
+                } else {
+                    marker(MarkerRole::Exit).base_color
+                },
+            );
         }
     }
 
@@ -620,6 +676,7 @@ fn update_overlay(
     facility: Res<Facility>,
     probe: Res<Probe>,
     bot: Res<Bot>,
+    thresholds: Res<ThresholdState>,
     runtime: Res<LabRuntime>,
     cameras: Query<(), With<NavCamera>>,
     ui_roots: Query<(), With<NavUiRoot>>,
@@ -649,7 +706,8 @@ fn update_overlay(
         && doors.iter().count() == DOOR_COUNT
         && labels.iter().count() == ROOM_COUNT
         && floors.iter().count() == 1;
-    let healthy = entities_ok && nav.agreement;
+    let threshold_audit = thresholds.audit(&facility);
+    let healthy = entities_ok && nav.agreement && threshold_audit.passed();
 
     let door_line = all_doors()
         .iter()
@@ -690,6 +748,40 @@ fn update_overlay(
                 .join(">")
         })
         .unwrap_or_else(|| "unreachable".to_string());
+    let locked_rooms = thresholds
+        .locked_rooms()
+        .into_iter()
+        .map(|room| facility::room_label(room).to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let locked_rooms = if locked_rooms.is_empty() {
+        "none".to_string()
+    } else {
+        locked_rooms
+    };
+    let threshold_line = all_rooms()
+        .into_iter()
+        .map(|room| {
+            let view = thresholds.room_view(&facility, room);
+            let targets = view
+                .assigned_targets()
+                .into_iter()
+                .map(|target| facility::room_label(target).to_string())
+                .collect::<Vec<_>>()
+                .join("");
+            format!(
+                "{}:{}{}",
+                facility::room_label(room),
+                if view.locked { "*" } else { "" },
+                if targets.is_empty() {
+                    "-".to_string()
+                } else {
+                    targets
+                }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("  ");
 
     let Ok(mut text) = text.single_mut() else {
         return;
@@ -702,6 +794,9 @@ fn update_overlay(
          navmesh route   {nav_rooms}  (len {nav_len})\n\
          graph route     {graph_route}\n\
          nav==graph      {}\n\
+         thresholds      {}\n\
+         locked rooms    {locked_rooms}\n\
+         threshold view  {threshold_line}\n\
          bot             {}\n\
          walls {}  doors {}  labels {}\n\
          resets          {}\n\n\
@@ -712,6 +807,7 @@ fn update_overlay(
         facility.open_count(),
         DOOR_COUNT,
         if nav.agreement { "agree" } else { "DISAGREE" },
+        threshold_audit.summary(),
         if bot.arrived { "arrived" } else { "walking" },
         walls.iter().count(),
         doors.iter().count(),
@@ -830,6 +926,49 @@ mod tests {
     }
 
     #[test]
+    fn threshold_lock_blocks_new_outbound_and_inbound_assignments_in_app() {
+        let mut app = test_app();
+        {
+            let mut facility = app.world_mut().resource_mut::<Facility>();
+            facility.set_open(DoorId(1), false); // hide AC before A collapses
+        }
+        {
+            let facility = app.world().resource::<Facility>().clone();
+            app.world_mut()
+                .resource_mut::<ThresholdState>()
+                .lock_room(&facility, RoomId(0));
+        }
+
+        {
+            let mut facility = app.world_mut().resource_mut::<Facility>();
+            facility.set_open(DoorId(0), false); // AB live edge disappears
+            facility.set_open(DoorId(1), true); // AC live edge appears
+        }
+        app.update();
+
+        let facility = app.world().resource::<Facility>();
+        let thresholds = app.world().resource::<ThresholdState>();
+        let a = thresholds.room_view(facility, RoomId(0));
+        let b = thresholds.room_view(facility, RoomId(1));
+        let c = thresholds.room_view(facility, RoomId(2));
+
+        assert_eq!(
+            a.assigned_targets(),
+            vec![RoomId(1)],
+            "room A remains collapsed to the threshold it had when locked"
+        );
+        assert!(
+            b.assigned_targets().contains(&RoomId(0)),
+            "B keeps the reciprocal pinned assignment back to locked A"
+        );
+        assert!(
+            !c.assigned_targets().contains(&RoomId(0)),
+            "C cannot grow a new inbound assignment into locked A"
+        );
+        assert!(thresholds.audit(facility).passed());
+    }
+
+    #[test]
     fn reset_rebuilds_the_scene_without_leaking_entities() {
         let mut app = test_app();
         // Perturb: close doors, change goal, then reset.
@@ -839,6 +978,12 @@ mod tests {
             facility.set_open(DoorId(2), false);
         }
         app.world_mut().resource_mut::<Probe>().goal = RoomId(1);
+        {
+            let facility = app.world().resource::<Facility>().clone();
+            app.world_mut()
+                .resource_mut::<ThresholdState>()
+                .lock_room(&facility, RoomId(0));
+        }
         app.world_mut().resource_mut::<NavWorld>().dirty = true;
         app.update();
 
@@ -858,6 +1003,7 @@ mod tests {
             // Reset restored all-open doors and the default A->D probe.
             assert_eq!(world.resource::<Facility>(), &Facility::all_open());
             assert_eq!(world.resource::<Probe>().goal, RoomId(3));
+            assert!(world.resource::<ThresholdState>().locked_rooms().is_empty());
             assert!(world.resource::<NavWorld>().agreement);
         }
     }

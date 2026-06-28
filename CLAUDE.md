@@ -255,6 +255,7 @@ invisible state; add or update tests; avoid unrelated refactoring.
 
 After changing code: `cargo fmt`, then run relevant tests and Clippy; launch or
 validate the affected lab (capture a screenshot for visible-mechanic/integration
-work); report what changed, what was tested, known limitations, and the next
-smallest step.
+work). If `Catalogue.md` was updated for the change, commit and push the verified
+work before reporting completion. Report what changed, what was tested, known
+limitations, and the next smallest step.
 

@@ -23,24 +23,15 @@ use crate::rivals;
 use crate::teleport::{self, GapKind, Place};
 
 /// Place the shared camera at the player's first-person eye in the current place's
-/// local frame (each place is centred at the origin).
+/// local frame (each place is centred at the origin). No shake — a reroute is felt
+/// through the world's flickering lights ([`super::flicker_lights`]), not the camera.
 pub(crate) fn present_match_camera(
-    time: Res<Time>,
     tp: Res<TeleportState>,
-    fx: Res<DecohereFx>,
     mut camera: Query<&mut Transform, With<GameCam>>,
 ) {
     if let Ok(mut transform) = camera.single_mut() {
         let eye = tp.body.eye(&tp.config);
         *transform = Transform::from_translation(eye).looking_to(tp.body.look_dir(), Vec3::Y);
-        // A decaying camera jolt while the decoherence feedback is active, so a reroute
-        // is felt, not just seen. Scaled by the remaining flash fraction so it settles.
-        if fx.flash > 0.0 {
-            let k = fx.flash / ROUTE_SHIFT_FLASH_SECS;
-            let t = time.elapsed_secs();
-            transform.rotate_local_x((t * 41.0).sin() * 0.03 * k);
-            transform.rotate_local_y((t * 33.0).cos() * 0.03 * k);
-        }
     }
 }
 
@@ -144,32 +135,39 @@ pub(crate) fn rebuild_place(
         }
     }
 
-    // A neon frame at each doorway. Behind a real passage we render a preview of the
-    // place you'll teleport into (the actual hallway from a room, the actual room from a
-    // hallway), with an animated leaf that hides it until you near. A side door is a
-    // sealed leaf on a solid wall until the room-discovery system makes it a connection.
+    // A neon frame at each doorway. A passage threshold is **always open** (transparent):
+    // behind it we render the frozen neighbour you'll teleport into — the actual hallway from
+    // a room, the actual room from a hallway — so what you see is what you walk into, and
+    // there's no hiding leaf. A side door is a sealed leaf on a solid wall; the keystone gate
+    // is a red locked leaf.
     for gap in &geom.gaps {
-        spawn_place_frame(&mut commands, &assets, gap);
+        // Whether this doorway's edge is anchored by a torch — drives the frame light.
+        let (ea, eb) = match tp.place {
+            Place::Room(r) => (r, gap.target),
+            Place::Hallway { from, to, .. } => (from, to),
+        };
+        let tethered = nav.is_tethered(ea, eb);
+        spawn_place_frame(&mut commands, &assets, gap, tethered);
         if gap.kind.is_passage() {
+            let dest = tp
+                .gap_dests
+                .iter()
+                .find(|d| (d.gap_center - gap.center).length() < 0.05)
+                .cloned()
+                .unwrap_or_else(|| fallback_dest(tp.place, gap, &nav, game));
             spawn_passage_preview(
                 &mut commands,
                 &assets,
                 &mut meshes,
                 gap,
                 tp.place,
+                &dest,
                 &nav,
                 game,
             );
-            spawn_leaf(
-                &mut commands,
-                &assets,
-                gap,
-                true,
-                assets.door_leaf_material.clone(),
-            );
         } else if gap.kind == GapKind::LockedExit {
             // The keystone gate: a red sealed door over the way out.
-            spawn_locked_leaf(&mut commands, &assets, gap);
+            spawn_locked_leaf(&mut commands, &assets, gap, tethered);
         } else {
             // A side door on a solid wall: a sealed leaf (never opens until the
             // room-discovery system turns it into a real connection).
@@ -193,20 +191,28 @@ pub(crate) fn rebuild_place(
         spawn_dropped_item(&mut commands, &assets, item);
     }
 
-    // Overhead fill so the place reads against the dim neon-noir ambient.
-    commands.spawn((
-        PlaceGeometry,
-        DespawnOnExit(GameState::Match),
-        PointLight {
-            color: Color::srgb(0.72, 0.86, 1.0),
-            intensity: FIXTURE_LIGHT_INTENSITY,
-            range: (hx.max(hz) + WALL_HEIGHT) * 1.6,
-            shadows_enabled: false,
-            ..default()
-        },
-        Transform::from_xyz(0.0, WALL_HEIGHT - 0.4, 0.0),
-        Name::new("Place light"),
-    ));
+    // The place's lighting: an overhead fill plus a few flickering ceiling fixtures, in the
+    // district's light temperature. Built once here and *identically* behind every doorway
+    // preview, so what you see through a door is lit exactly like what you walk into.
+    let district = district_for_place(tp.place);
+    let light_color = style::district(district).light_color;
+    spawn_place_lighting(
+        &mut commands,
+        &assets,
+        &geom,
+        light_color,
+        Transform::IDENTITY,
+        false,
+    );
+    let accent = assets.district_accent_materials[district.index()].clone();
+    spawn_surface_detail(
+        &mut commands,
+        &assets,
+        &geom,
+        accent,
+        Transform::IDENTITY,
+        false,
+    );
 }
 
 /// The Y rotation that aligns a unit cube's local +X with a doorway's tangent (so a
@@ -219,7 +225,12 @@ fn gap_yaw(normal: Vec2) -> f32 {
 
 /// A neon doorway frame (two posts + a lintel) at a gap, built from primitives and
 /// rotated to the gap's wall so it matches the opening at any angle.
-fn spawn_place_frame(commands: &mut Commands, assets: &MatchAssets, gap: &teleport::DoorGap) {
+fn spawn_place_frame(
+    commands: &mut Commands,
+    assets: &MatchAssets,
+    gap: &teleport::DoorGap,
+    tethered: bool,
+) {
     let material = assets.doorframe_material.clone();
     let along = Vec2::new(-gap.normal.y, gap.normal.x); // span (tangent) axis
     let rot = Quat::from_rotation_y(gap_yaw(gap.normal));
@@ -248,6 +259,26 @@ fn spawn_place_frame(commands: &mut Commands, assets: &MatchAssets, gap: &telepo
             .with_rotation(rot)
             .with_scale(Vec3::new(gap.width.max(0.3), 0.34, 0.24)),
         Name::new("Doorframe lintel"),
+    ));
+    // A small lamp on the lintel whose colour shows whether this edge is **tethered** by an
+    // anchor torch (the Control/anchor purple) or free (a neutral cool tone).
+    let tether_color = if tethered {
+        style::marker(MarkerRole::Control).base_color
+    } else {
+        Color::srgb(0.45, 0.62, 0.78)
+    };
+    commands.spawn((
+        PlaceGeometry,
+        DespawnOnExit(GameState::Match),
+        PointLight {
+            color: tether_color,
+            intensity: 1_400.0,
+            range: 5.0,
+            shadows_enabled: false,
+            ..default()
+        },
+        Transform::from_xyz(gap.center.x, WALL_HEIGHT - 0.35, gap.center.y),
+        Name::new("Doorframe tether light"),
     ));
 }
 
@@ -296,9 +327,13 @@ fn spawn_passage_stub(commands: &mut Commands, assets: &MatchAssets, gap: &telep
     }
 }
 
-/// How far to push a passage preview outward so its entry wall tucks behind the room
-/// wall (avoiding a z-fighting double wall at the threshold).
-const PREVIEW_OUTSET: f32 = 0.06;
+/// Build the renderer `Transform` that places a previewed child place per a
+/// [`teleport::Align2d`] (translate by its XZ offset, rotate by its yaw about +Y). The
+/// same alignment is used by the seamless crossing remap, so the preview and the place you
+/// teleport into coincide.
+fn align_transform(a: teleport::Align2d) -> Transform {
+    Transform::from_xyz(a.offset.x, 0.0, a.offset.y).with_rotation(Quat::from_rotation_y(a.yaw))
+}
 
 /// Render, behind an open passage doorway, a preview of the **actual place** you'll
 /// teleport into when you cross it: the real hallway from a room, or the real room from
@@ -306,21 +341,59 @@ const PREVIEW_OUTSET: f32 = 0.06;
 /// through the door. So an opened door reveals where you're actually going, not a
 /// featureless stub. Presentation-only: it reads the same `nav`/graph the crossing uses,
 /// so (absent a mid-place decohere) it matches what you enter.
+/// Resolve a doorway's destination live (used only when no frozen snapshot exists yet —
+/// e.g. the first render frame). Mirrors `compute_gap_dests` for one gap.
+fn fallback_dest(
+    place: Place,
+    gap: &teleport::DoorGap,
+    nav: &teleport::Nav,
+    game: &HybridMatch,
+) -> FrozenDest {
+    let (dest, _) = teleport::apply_crossing(place, gap, nav);
+    let (conns, target) = match dest {
+        Place::Room(r) => {
+            let c = connections_for(game, r);
+            let t = room_target(game, r, &c);
+            (c, t)
+        }
+        Place::Hallway { .. } => (Vec::new(), None),
+    };
+    FrozenDest {
+        gap_center: gap.center,
+        place: dest,
+        conns,
+        target,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn spawn_passage_preview(
     commands: &mut Commands,
     assets: &MatchAssets,
     meshes: &mut Assets<Mesh>,
     gap: &teleport::DoorGap,
     place: Place,
+    dest: &FrozenDest,
     nav: &teleport::Nav,
     game: &HybridMatch,
 ) {
-    let (next, _) = teleport::apply_crossing(place, gap, nav);
-    match next {
-        Place::Hallway { .. } => spawn_hallway_preview(commands, assets, gap, next, nav),
-        Place::Room(dest_room) => {
-            spawn_room_preview(commands, assets, meshes, gap, place, dest_room, nav, game)
-        }
+    // Render the **frozen** destination snapshotted at place-entry, so the preview is exactly
+    // the place you'll teleport into (a hallway carries its variation; a room its frozen
+    // connection shape) — observed → frozen.
+    match dest.place {
+        Place::Hallway { .. } => spawn_hallway_preview(commands, assets, gap, dest.place, nav),
+        Place::Room(dest_room) => spawn_room_preview(
+            commands,
+            assets,
+            meshes,
+            gap,
+            place,
+            dest_room,
+            &dest.conns,
+            dest.target,
+            nav,
+            game,
+        ),
     }
 }
 
@@ -337,13 +410,11 @@ fn spawn_hallway_preview(
     };
     let dest = teleport::geom_for(next, nav);
     let (hx, hz) = (dest.half.x, dest.half.y);
-    let n = gap.normal;
+    // The corridor reads in its own (current) district's light temperature.
+    let light_color = style::district(district_for_place(next)).light_color;
     // The hallway's local +Z (entry→exit) maps to the doorway's outward normal, and its
-    // entry sits just beyond the opening.
-    let yaw = n.x.atan2(n.y);
-    let center = gap.center + n * (hz + PREVIEW_OUTSET);
-    let parent =
-        Transform::from_xyz(center.x, 0.0, center.y).with_rotation(Quat::from_rotation_y(yaw));
+    // entry sits just beyond the opening — the same alignment the crossing remap uses.
+    let parent = align_transform(teleport::hallway_alignment(gap, hz));
     let place_in = |local: Transform| parent.mul_transform(local);
 
     // A pressure-gate hall keeps its hazard floor; everything else is the neutral surface.
@@ -395,41 +466,12 @@ fn spawn_hallway_preview(
             Name::new("Preview wall"),
         ));
     }
-    // Light the corridor so the way on reads through the open door: a bright fill at the
-    // mouth, and a dimmer one deeper in that falls off into the distance fog (the end
-    // stays a mystery). Two lights so even a long hall's entrance isn't a black slot.
-    commands.spawn((
-        PlaceGeometry,
-        PassagePreview,
-        DespawnOnExit(GameState::Match),
-        place_in(Transform::from_xyz(0.0, 1.5, -hz + 2.0)),
-        PointLight {
-            color: Color::srgb(0.72, 0.86, 1.0),
-            intensity: FIXTURE_LIGHT_INTENSITY * 1.6,
-            range: 18.0,
-            shadows_enabled: false,
-            ..default()
-        },
-        Name::new("Preview light (mouth)"),
-    ));
-    commands.spawn((
-        PlaceGeometry,
-        PassagePreview,
-        DespawnOnExit(GameState::Match),
-        place_in(Transform::from_xyz(
-            0.0,
-            WALL_HEIGHT * 0.62,
-            (-hz + 8.0).min(hz - 1.0),
-        )),
-        PointLight {
-            color: Color::srgb(0.60, 0.74, 1.0),
-            intensity: FIXTURE_LIGHT_INTENSITY * 0.7,
-            range: 14.0,
-            shadows_enabled: false,
-            ..default()
-        },
-        Name::new("Preview light (deep)"),
-    ));
+    // Light the preview with the *same* lighting the hallway will have when you walk in
+    // (identical overhead fill + flickering fixtures), so the doorway is never brighter or
+    // a different colour than the place beyond it. Same for the wall trim linework.
+    spawn_place_lighting(commands, assets, &dest, light_color, parent, true);
+    let accent = assets.district_accent_materials[district_for_place(next).index()].clone();
+    spawn_surface_detail(commands, assets, &dest, accent, parent, true);
 }
 
 /// The room preview (a polygon place): build the destination room's footprint, align the
@@ -444,6 +486,8 @@ fn spawn_room_preview(
     gap: &teleport::DoorGap,
     place: Place,
     dest_room: RoomId,
+    conns: &[RoomId],
+    target: Option<RoomId>,
     nav: &teleport::Nav,
     game: &HybridMatch,
 ) {
@@ -453,8 +497,9 @@ fn spawn_room_preview(
         return;
     };
     let back = if dest_room == to { from } else { to };
-    let conns = connections_for(game, dest_room);
-    let dest = teleport::room_preview_geom(dest_room, &conns, None, nav.seed);
+    // `conns` is the room's frozen connection set (snapshotted at place-entry), so the
+    // previewed shape matches the room you'll arrive in even if the brain rerolls it.
+    let dest = teleport::room_preview_geom(dest_room, conns, target, nav.seed);
     let Some(poly) = dest.poly.clone() else {
         return;
     };
@@ -464,21 +509,10 @@ fn spawn_room_preview(
         return;
     };
 
-    // Rigid alignment: rotate so the room doorway's outward normal faces back toward the
-    // player (−gap.normal), and translate so the doorway centre sits in the opening; the
-    // room then extends away through the door.
-    let n = gap.normal;
-    let world_out = -n;
-    let dn = src.normal;
-    let yaw = dn.y.atan2(dn.x) - world_out.y.atan2(world_out.x);
-    let rot = Quat::from_rotation_y(yaw);
-    let p = gap.center + n * PREVIEW_OUTSET;
-    let dc = Vec3::new(src.center.x, 0.0, src.center.y);
-    let parent = Transform {
-        translation: Vec3::new(p.x, 0.0, p.y) - rot * dc,
-        rotation: rot,
-        scale: Vec3::ONE,
-    };
+    // Rigid alignment (shared with the crossing remap): rotate so the room doorway's
+    // outward normal faces back toward the player (−gap.normal) and translate so the
+    // doorway centre sits in the opening; the room then extends away through the door.
+    let parent = align_transform(teleport::room_alignment(gap, &src));
 
     spawn_polygon_shell(
         commands,
@@ -489,33 +523,231 @@ fn spawn_room_preview(
         parent,
         true,
     );
-    // Open only the doorway you'd enter through; the room's other doorways stay walled.
+    // Open the doorway you'd enter through and any frozen passage already open in the room,
+    // so the preview has the same wall/ceiling cuts as the arrival geometry.
     spawn_polygon_walls(commands, assets, &poly, &dest.gaps, parent, true, |g| {
-        g.target == back
+        g.target == back || g.kind.is_passage()
     });
-    // A fill light at the room centre so it reads through the open door.
-    commands.spawn((
+    // Light the previewed room with the *same* lighting it will have when you arrive
+    // (district fill + fixtures), foreshadowing its neighbourhood, so the doorway and the
+    // room beyond read identically before and after you cross. Same for the wall trim.
+    let dest_district = district_for_place(Place::Room(dest_room));
+    spawn_place_lighting(
+        commands,
+        assets,
+        &dest,
+        style::district(dest_district).light_color,
+        parent,
+        true,
+    );
+    let accent = assets.district_accent_materials[dest_district.index()].clone();
+    spawn_surface_detail(commands, assets, &dest, accent, parent, true);
+
+    // Render the neighbour room's current occupants (rival bots) through the open threshold,
+    // so they're already visible and don't pop into existence when you cross in.
+    let present = rivals::rivals_in_room(&game.competitive, dest_room);
+    let n = present.len();
+    for (slot, _team) in present.iter().enumerate() {
+        let lane = (slot as f32 - (n as f32 - 1.0) * 0.5) * 1.3;
+        commands.spawn((
+            PlaceGeometry,
+            PassagePreview,
+            DespawnOnExit(GameState::Match),
+            Mesh3d(assets.rival_body_mesh.clone()),
+            MeshMaterial3d(assets.rival_material.clone()),
+            parent.mul_transform(Transform::from_xyz(lane, 0.82, 0.0)),
+            Name::new("Preview rival"),
+        ));
+    }
+}
+
+/// Spawn one place point light, tagged for teardown and the decoherence/idle flicker.
+fn spawn_place_light(
+    commands: &mut Commands,
+    transform: Transform,
+    color: Color,
+    range: f32,
+    flicker: FlickerLight,
+    preview: bool,
+) {
+    let intensity = flicker.base;
+    let mut light = commands.spawn((
         PlaceGeometry,
-        PassagePreview,
         DespawnOnExit(GameState::Match),
-        parent.mul_transform(Transform::from_xyz(0.0, WALL_HEIGHT * 0.62, 0.0)),
+        flicker,
         PointLight {
-            color: Color::srgb(0.70, 0.84, 1.0),
-            intensity: FIXTURE_LIGHT_INTENSITY,
-            range: 20.0,
+            color,
+            intensity,
+            range,
             shadows_enabled: false,
             ..default()
         },
-        Name::new("Preview room light"),
+        transform,
+        Name::new("Place light"),
     ));
+    if preview {
+        light.insert(PassagePreview);
+    }
 }
 
-/// A door leaf filling a doorway gap, flush with the wall, so the opening reads as shut
-/// rather than opening onto void. An `openable` (passage) leaf is tagged so
-/// [`animate_doors`] slides it up into the lintel by proximity; a sealed (side/locked)
-/// leaf stays put. `closed_y`/`open_y` bracket the slide: closed sits on the floor up to
-/// the lintel, open is lifted a full leaf-height so it tucks above the opening (and is
-/// hidden behind the ceiling/lintel).
+/// Local XZ positions for a place's ceiling fixtures: a couple of wall sconces in a polygon
+/// room, or overhead lights spaced down a hallway. Deterministic from the geometry so a
+/// place and its doorway preview place their fixtures identically.
+fn fixture_positions(geom: &teleport::PlaceGeom) -> Vec<Vec2> {
+    if let Some(poly) = geom.poly.as_ref() {
+        let n = poly.len();
+        if n < 3 {
+            return Vec::new();
+        }
+        [0usize, n / 2]
+            .into_iter()
+            .map(|i| (poly[i] + poly[(i + 1) % n]) * 0.5 * 0.78)
+            .collect()
+    } else {
+        let hz = geom.half.y;
+        let count = ((hz / 6.0).floor() as usize).clamp(1, 3);
+        (0..count)
+            .map(|k| Vec2::new(0.0, -hz + (k as f32 + 0.5) * (2.0 * hz / count as f32)))
+            .collect()
+    }
+}
+
+/// Spawn a place's full lighting — an overhead fill plus a few flickering ceiling fixtures
+/// — under `xform` (identity for the live place, the doorway-alignment transform for a
+/// preview, so a preview is lit identically to the place you cross into). `light_color` is
+/// the place's district temperature; the warm lamp bodies stay neutral.
+fn spawn_place_lighting(
+    commands: &mut Commands,
+    assets: &MatchAssets,
+    geom: &teleport::PlaceGeom,
+    light_color: Color,
+    xform: Transform,
+    preview: bool,
+) {
+    let (hx, hz) = (geom.half.x, geom.half.y);
+    let place_in = |local: Transform| xform.mul_transform(local);
+    // Overhead fill (steady; only the decoherence flash stutters it).
+    spawn_place_light(
+        commands,
+        place_in(Transform::from_xyz(0.0, WALL_HEIGHT - 0.4, 0.0)),
+        light_color,
+        (hx.max(hz) + WALL_HEIGHT) * 1.6,
+        FlickerLight {
+            base: FIXTURE_LIGHT_INTENSITY,
+            idle: 0.0,
+            phase: 0.0,
+        },
+        preview,
+    );
+    // Flickering ceiling fixtures: the "failing office light" look + per-place interest.
+    for (i, pos) in fixture_positions(geom).into_iter().enumerate() {
+        let phase = i as f32 * 1.7 + 0.4;
+        let mut lamp = commands.spawn((
+            PlaceGeometry,
+            DespawnOnExit(GameState::Match),
+            Mesh3d(assets.placeholder_mesh.clone()),
+            MeshMaterial3d(assets.lamp_material.clone()),
+            place_in(
+                Transform::from_xyz(pos.x, WALL_HEIGHT - 0.16, pos.y)
+                    .with_scale(Vec3::new(0.8, 0.12, 0.8)),
+            ),
+            Name::new("Ceiling fixture"),
+        ));
+        if preview {
+            lamp.insert(PassagePreview);
+        }
+        spawn_place_light(
+            commands,
+            place_in(Transform::from_xyz(pos.x, WALL_HEIGHT - 0.6, pos.y)),
+            light_color,
+            11.0,
+            FlickerLight {
+                base: FIXTURE_LIGHT_INTENSITY * 0.55,
+                idle: 0.7,
+                phase,
+            },
+            preview,
+        );
+    }
+}
+
+/// The inward unit normal of edge `a`→`b` of a polygon centred at the origin (points
+/// toward the interior), for tucking wall trim proud of the face.
+fn inward_normal(a: Vec2, b: Vec2) -> Vec2 {
+    let d = (b - a).normalize_or_zero();
+    let n = Vec2::new(-d.y, d.x);
+    if n.dot((a + b) * 0.5) > 0.0 { -n } else { n }
+}
+
+/// Draw the structural neon linework that gives a place's walls surface interest without
+/// any textures (code-as-art): a baseboard seam at the floor and a cornice seam under the
+/// ceiling, in the district's accent. Built under `xform` and tagged for the same
+/// teardown/preview path as the rest of the place, so previews match what you walk into.
+fn spawn_surface_detail(
+    commands: &mut Commands,
+    assets: &MatchAssets,
+    geom: &teleport::PlaceGeom,
+    accent: Handle<StandardMaterial>,
+    xform: Transform,
+    preview: bool,
+) {
+    const LOW: f32 = 0.12;
+    let high = WALL_HEIGHT - 0.18;
+    let mut strip = |center: Vec3, scale: Vec3, yaw: f32| {
+        let local = Transform::from_translation(center)
+            .with_rotation(Quat::from_rotation_y(yaw))
+            .with_scale(scale);
+        let mut e = commands.spawn((
+            PlaceGeometry,
+            DespawnOnExit(GameState::Match),
+            Mesh3d(assets.placeholder_mesh.clone()),
+            MeshMaterial3d(accent.clone()),
+            xform.mul_transform(local),
+            Name::new("Wall trim"),
+        ));
+        if preview {
+            e.insert(PassagePreview);
+        }
+    };
+    if let Some(poly) = geom.poly.as_ref() {
+        let n = poly.len();
+        for i in 0..n {
+            let (a, b) = (poly[i], poly[(i + 1) % n]);
+            let d = b - a;
+            let len = d.length();
+            if len < 0.05 {
+                continue;
+            }
+            let p = (a + b) * 0.5 + inward_normal(a, b) * 0.05;
+            let yaw = (-d.y).atan2(d.x);
+            for y in [LOW, high] {
+                strip(Vec3::new(p.x, y, p.y), Vec3::new(len, 0.08, 0.06), yaw);
+            }
+        }
+    } else {
+        let (hx, hz) = (geom.half.x, geom.half.y);
+        for y in [LOW, high] {
+            for s in [-1.0_f32, 1.0] {
+                // North/South walls run along X; West/East walls run along Z.
+                strip(
+                    Vec3::new(0.0, y, s * (hz - 0.05)),
+                    Vec3::new(2.0 * hx, 0.08, 0.06),
+                    0.0,
+                );
+                strip(
+                    Vec3::new(s * (hx - 0.05), y, 0.0),
+                    Vec3::new(0.06, 0.08, 2.0 * hz),
+                    0.0,
+                );
+            }
+        }
+    }
+}
+
+/// A door leaf filling a sealed doorway gap, flush with the wall, so the opening reads as
+/// shut rather than opening onto void. Transparent passage thresholds do not spawn leaves.
+/// `closed_y`/`open_y` bracket the slide: closed sits on the floor up to the lintel, open
+/// is lifted a full leaf-height so it tucks above the opening.
 fn spawn_leaf(
     commands: &mut Commands,
     assets: &MatchAssets,
@@ -547,8 +779,13 @@ fn spawn_leaf(
 
 /// A red **locked** door leaf over the facility exit while the keystone gate is shut: a
 /// sealed leaf (it never opens) plus its own neon frame.
-fn spawn_locked_leaf(commands: &mut Commands, assets: &MatchAssets, gap: &teleport::DoorGap) {
-    spawn_place_frame(commands, assets, gap);
+fn spawn_locked_leaf(
+    commands: &mut Commands,
+    assets: &MatchAssets,
+    gap: &teleport::DoorGap,
+    tethered: bool,
+) {
+    spawn_place_frame(commands, assets, gap, tethered);
     spawn_leaf(
         commands,
         assets,
@@ -821,10 +1058,10 @@ const DOOR_OPEN_RADIUS: f32 = 4.6;
 /// Door-leaf slide speed (world units of vertical travel per second).
 const DOOR_SLIDE_SPEED: f32 = 6.0;
 
-/// Slide each openable door leaf between shut and tucked-into-the-lintel by the player's
-/// proximity, so corridors stay hidden until you commit to them and re-hide as you pass.
-/// Sealed leaves (side doors, the locked exit) are left shut. Presentation-only — it
-/// reads the body position and never writes match state.
+/// Slide any future openable sealed leaf between shut and tucked-into-the-lintel by the
+/// player's proximity. Current transparent passage thresholds do not spawn leaves, so most
+/// leaves are sealed side doors / locked exits. Presentation-only: it reads the body
+/// position and never writes match state.
 pub(crate) fn animate_doors(
     time: Res<Time>,
     tp: Res<TeleportState>,

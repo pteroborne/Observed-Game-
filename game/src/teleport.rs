@@ -13,22 +13,25 @@
 
 use std::f32::consts::PI;
 
-use bevy::math::{Vec2, Vec3};
+use bevy::math::{Quat, Vec2, Vec3};
 use observed_core::RoomId;
 use observed_match::mutable::EXIT_ROOM;
 use observed_traversal::{Aabb3, FpsArena};
 
 use crate::{hallway, maze};
 
-/// Half-extent of a room's square footprint (world units).
-pub const ROOM_HALF: f32 = 6.0;
-/// Width of a doorway gap (world units) — matches a hallway piece's mouth.
-pub const GAP_WIDTH: f32 = 4.0;
+/// Half-extent of a room's square footprint (world units). Generous so rooms read as
+/// breathable volumes, not cells, and so the wider doorway gaps still fit on a polygon edge.
+pub const ROOM_HALF: f32 = 8.5;
+/// The **standard threshold width** (world units): every crossable doorway is this wide,
+/// clamped narrower only where a tight space (a maze corridor, a short polygon edge) forces
+/// it. One module so a doorway reads the same everywhere and rooms/halls line up cleanly.
+pub const THRESHOLD_WIDTH: f32 = 4.5;
 /// How far inside a place the body spawns from the doorway it entered through.
 pub const ENTRY_INSET: f32 = 1.2;
 /// Side length of one labyrinth cell (world units). The clear corridor is
 /// `MAZE_CELL - 2*MAZE_WALL_T`; with the controller's 0.4 body radius that stays roomy.
-pub const MAZE_CELL: f32 = 3.6;
+pub const MAZE_CELL: f32 = 4.2;
 /// Half-thickness of a labyrinth interior wall (world units).
 pub const MAZE_WALL_T: f32 = 0.3;
 
@@ -189,7 +192,7 @@ pub fn room_geom(connections: &[RoomId], target: Option<RoomId>, seed: u64) -> P
             DoorGap {
                 center: mid,
                 normal: outward_normal(a, b),
-                width: GAP_WIDTH.min(len - 1.0).max(1.5),
+                width: THRESHOLD_WIDTH.min(len - 1.0).max(1.5),
                 target: t,
                 kind: if Some(t) == target {
                     GapKind::Forward
@@ -207,6 +210,28 @@ pub fn room_geom(connections: &[RoomId], target: Option<RoomId>, seed: u64) -> P
         gaps,
         interior: Vec::new(),
         poly: Some(verts),
+    }
+}
+
+/// Re-open the doorway a room was *entered through* (toward `entry_from`) as an `Entry`
+/// passage instead of a sealed `Side` door. The doorway you just walked through then stays
+/// a real opening — matching the preview you crossed and letting you step back out — so
+/// entering a room is seamless rather than the opening popping into a wall behind you. A
+/// no-op for hallways, the start room (`entry_from == None`), or when that doorway is
+/// already the `Forward` passage.
+pub fn open_entry(geom: &mut PlaceGeom, entry_from: Option<RoomId>) {
+    let Some(from) = entry_from else {
+        return;
+    };
+    if geom.poly.is_none() {
+        return;
+    }
+    if let Some(gap) = geom
+        .gaps
+        .iter_mut()
+        .find(|g| g.target == from && g.kind == GapKind::Side)
+    {
+        gap.kind = GapKind::Entry;
     }
 }
 
@@ -257,10 +282,9 @@ pub fn contain(geom: &PlaceGeom, pos: Vec2, radius: f32) -> Vec2 {
 /// Build a hallway piece's footprint from its template. A `Maze` template is a
 /// generated labyrinth (interior walls between an entry on the −Z wall and an exit on
 /// the +Z wall, both always connected; see [`crate::maze`]); its concrete layout comes
-/// from `layout_seed`. A `Dogleg` is a **corner**: you enter the −Z wall and leave the
-/// perpendicular +X wall, so the exit is hidden until you turn. A `Chicane` is an
-/// **S-bend**: two staggered interior baffles force a slalom between an offset entry and
-/// exit. Every other flavour is a straight run whose *length* varies by template.
+/// from `layout_seed`. A `Chicane` is an **S-bend**: two staggered interior baffles force
+/// a slalom between an offset entry and exit (a gentle weave through a wide space, not a
+/// tight corner). Every other flavour is a straight run whose *length* varies by template.
 pub fn hallway_geom(
     from: RoomId,
     to: RoomId,
@@ -314,10 +338,11 @@ pub fn hallway_geom(
             poly: None,
         };
     }
-    // Straight/dogleg/chicane/climb pieces vary their length per edge (a deterministic
-    // 0.55×–2.2× of the template), so repeated connectors read as visibly different runs.
+    // Straight/chicane/climb pieces vary their length per edge (a deterministic
+    // 1.0×–2.2× of the template, never below the `MIN_HALL_LENGTH` floor), so repeated
+    // connectors read as visibly different runs while always staying a real journey.
     let w = template.width;
-    let len = template.length * hallway::length_scale(layout_seed);
+    let len = (template.length * hallway::length_scale(layout_seed)).max(hallway::MIN_HALL_LENGTH);
     if template.flavor == hallway::HallwayFlavor::Chicane {
         // An S-bend: a box with two staggered baffles, each sealing one side and leaving
         // a corridor `c` on the other, so the path slaloms from the +X entry up through
@@ -363,46 +388,65 @@ pub fn hallway_geom(
             poly: None,
         };
     }
-    if template.flavor == hallway::HallwayFlavor::Dogleg {
-        let s = (len * 0.45).max(w);
-        let half = Vec2::new(s, s);
+    if template.flavor == hallway::HallwayFlavor::Colonnade {
+        // A wide, long pseudo-room: a regular grid of square pillars straddling the centre
+        // axes (so a clear lane always runs straight down the middle, entry→exit, and a
+        // cross lane runs side to side), with a margin keeping the columns off the walls.
+        let hx = w * 0.5;
+        let hz = (len * 0.5).max(w);
+        let interior: Vec<WallSeg> = pillar_offsets(hx - PILLAR_MARGIN)
+            .into_iter()
+            .flat_map(|px| {
+                pillar_offsets(hz - PILLAR_MARGIN)
+                    .into_iter()
+                    .map(move |pz| WallSeg {
+                        center: Vec2::new(px, pz),
+                        half: Vec2::splat(PILLAR_HALF),
+                    })
+            })
+            .collect();
+        // The doorways open onto the clear central lane (no pillar sits at x = 0).
+        let lane = (PILLAR_SPACING - 2.0 * PILLAR_HALF).max(3.0);
         return PlaceGeom {
-            half,
+            half: Vec2::new(hx, hz),
             gaps: vec![
                 DoorGap {
-                    center: Vec2::new(0.0, -half.y),
+                    center: Vec2::new(0.0, -hz),
                     normal: Vec2::new(0.0, -1.0),
-                    width: w,
+                    width: lane,
                     target: from,
                     kind: GapKind::Entry,
                 },
                 DoorGap {
-                    center: Vec2::new(half.x, 0.0),
-                    normal: Vec2::new(1.0, 0.0),
-                    width: w,
+                    center: Vec2::new(0.0, hz),
+                    normal: Vec2::new(0.0, 1.0),
+                    width: lane,
                     target: to,
                     kind: exit_kind,
                 },
             ],
-            interior: Vec::new(),
+            interior,
             poly: None,
         };
     }
     let half = Vec2::new(w * 0.5, len * 0.5);
+    // A standard-width doorway centred on each end wall (the rest of the wider end is wall),
+    // so a simple hall's mouths match the room doorways they meet.
+    let door = THRESHOLD_WIDTH.min(w);
     PlaceGeom {
         half,
         gaps: vec![
             DoorGap {
                 center: Vec2::new(0.0, -half.y),
                 normal: Vec2::new(0.0, -1.0),
-                width: w,
+                width: door,
                 target: from,
                 kind: GapKind::Entry,
             },
             DoorGap {
                 center: Vec2::new(0.0, half.y),
                 normal: Vec2::new(0.0, 1.0),
-                width: w,
+                width: door,
                 target: to,
                 kind: exit_kind,
             },
@@ -410,6 +454,27 @@ pub fn hallway_geom(
         interior: Vec::new(),
         poly: None,
     }
+}
+
+/// Half-size of a colonnade's square structural pillars (world units).
+const PILLAR_HALF: f32 = 0.5;
+/// Centre-to-centre spacing of colonnade pillars; the clear lane between two columns is
+/// `PILLAR_SPACING - 2*PILLAR_HALF`, kept well above the body radius.
+const PILLAR_SPACING: f32 = 4.4;
+/// Keep pillars this far inside the perimeter so a lane runs around the edges too.
+const PILLAR_MARGIN: f32 = 2.6;
+
+/// Pillar-centre offsets along one axis within `±limit`, straddling 0 at half-spacing
+/// (so the centre axis at 0 is always a clear lane). Empty if `limit` is too small.
+fn pillar_offsets(limit: f32) -> Vec<f32> {
+    let mut out = Vec::new();
+    let mut x = PILLAR_SPACING * 0.5;
+    while x <= limit {
+        out.push(x);
+        out.push(-x);
+        x += PILLAR_SPACING;
+    }
+    out
 }
 
 /// A room's footprint geometry given its *own* connection set (not the nav snapshot's
@@ -488,6 +553,15 @@ impl Nav {
             .map(|p| p.version)
             .unwrap_or(self.version)
     }
+
+    /// Whether the edge `(x, y)` is **tethered** — frozen by a dropped anchor torch (its
+    /// variation pinned). A doorway's frame light reads this so a glance shows which edges
+    /// are anchored. Edge-unordered.
+    pub fn is_tethered(&self, x: RoomId, y: RoomId) -> bool {
+        let key = |a: RoomId, b: RoomId| if a.0 <= b.0 { (a.0, b.0) } else { (b.0, a.0) };
+        let want = key(x, y);
+        self.pins.iter().any(|p| key(p.a, p.b) == want)
+    }
 }
 
 /// Did the body's movement segment cross `gap` outward (from inside to outside),
@@ -538,6 +612,87 @@ pub fn apply_crossing(place: Place, gap: &DoorGap, nav: &Nav) -> (Place, Crossin
             )
         }
         Place::Hallway { .. } => (Place::Room(gap.target), Crossing::ArrivedRoom(gap.target)),
+    }
+}
+
+/// How far the place beyond a doorway is pushed outward so its entry wall tucks behind
+/// the current wall (avoids a z-fighting double wall at the threshold). Shared by the
+/// passage-preview renderer and the seamless crossing remap so the previewed geometry and
+/// the place you teleport into coincide exactly.
+pub const PREVIEW_OUTSET: f32 = 0.06;
+
+/// A 2D rigid transform on the XZ plane: rotate by `yaw` about +Y, then translate by
+/// `offset`. It places a *child* place's local frame into the **current** place's frame —
+/// exactly how the passage preview positions the place beyond a doorway. [`apply`] maps a
+/// child-frame point out into the current frame; [`inverse_apply`] maps a current-frame
+/// point into the child frame, which is what carries the body continuously through a
+/// doorway (no snap) when the child becomes the new current place.
+#[derive(Clone, Copy, Debug)]
+pub struct Align2d {
+    pub yaw: f32,
+    pub offset: Vec2,
+}
+
+/// Rotate an XZ point by `yaw` about +Y (matching `Quat::from_rotation_y`, so the maths
+/// agrees with the renderer's `Transform`).
+fn rot_y(yaw: f32, p: Vec2) -> Vec2 {
+    let r = Quat::from_rotation_y(yaw) * Vec3::new(p.x, 0.0, p.y);
+    Vec2::new(r.x, r.z)
+}
+
+impl Align2d {
+    /// Map a point in the child place's frame into the current place's frame.
+    pub fn apply(self, p: Vec2) -> Vec2 {
+        rot_y(self.yaw, p) + self.offset
+    }
+
+    /// Map a point in the current place's frame into the child place's frame (the inverse
+    /// of [`apply`]). Used to drop the body into the place it just crossed into at the
+    /// pose that keeps the camera continuous.
+    pub fn inverse_apply(self, p: Vec2) -> Vec2 {
+        rot_y(-self.yaw, p - self.offset)
+    }
+}
+
+/// The alignment placing the **hallway** you cross `gap` into: its entry tucks just beyond
+/// the opening and it extends away along the doorway's outward normal. `hallway_half_z` is
+/// the hallway footprint's half depth. Mirrors `spawn_hallway_preview`.
+pub fn hallway_alignment(gap: &DoorGap, hallway_half_z: f32) -> Align2d {
+    let n = gap.normal;
+    Align2d {
+        yaw: n.x.atan2(n.y),
+        offset: gap.center + n * (hallway_half_z + PREVIEW_OUTSET),
+    }
+}
+
+/// The alignment placing the **room** you cross `gap` into so its doorway `back` (the one
+/// facing back toward where you stand) sits in the opening and the room extends away.
+/// Mirrors `spawn_room_preview`.
+pub fn room_alignment(gap: &DoorGap, back: &DoorGap) -> Align2d {
+    let n = gap.normal;
+    let world_out = -n;
+    let yaw = back.normal.y.atan2(back.normal.x) - world_out.y.atan2(world_out.x);
+    let offset = (gap.center + n * PREVIEW_OUTSET) - rot_y(yaw, back.center);
+    Align2d { yaw, offset }
+}
+
+/// The alignment carrying the body from the current place, across `crossed`, into the new
+/// place `geom` it produced (a hallway uses its half-depth; a room uses its doorway back
+/// toward `from`). `None` if the destination room has no doorway back toward `from` (a
+/// mid-crossing decohere) — the caller then falls back to a plain entry snap.
+pub fn crossing_alignment(
+    geom: &PlaceGeom,
+    place: Place,
+    crossed: &DoorGap,
+    from: RoomId,
+) -> Option<Align2d> {
+    match place {
+        Place::Hallway { .. } => Some(hallway_alignment(crossed, geom.half.y)),
+        Place::Room(_) => geom
+            .gaps
+            .iter()
+            .find(|g| g.target == from)
+            .map(|back| room_alignment(crossed, back)),
     }
 }
 
@@ -741,33 +896,11 @@ mod tests {
     }
 
     #[test]
-    fn a_dogleg_hallway_turns_a_corner() {
-        // The dogleg template's entry and exit sit on perpendicular walls, so the exit
-        // is hidden until you turn — vs. a straight hall's opposite-wall exit.
-        let dogleg = hallway::TEMPLATES
-            .iter()
-            .find(|t| t.flavor == hallway::HallwayFlavor::Dogleg)
-            .expect("a dogleg template exists");
-        let geom = hallway_geom(RoomId(0), RoomId(1), dogleg, 0, false);
-        let entry = geom.gaps.iter().find(|g| g.kind == GapKind::Entry).unwrap();
-        let exit = geom.gaps.iter().find(|g| g.kind == GapKind::Exit).unwrap();
-        assert!(
-            entry.normal.dot(exit.normal).abs() < 0.01,
-            "a corner: entry and exit walls are perpendicular"
-        );
-        let straight = hallway::template(0);
-        let sg = hallway_geom(RoomId(0), RoomId(1), straight, 0, false);
-        let se = sg.gaps.iter().find(|g| g.kind == GapKind::Entry).unwrap();
-        let sx = sg.gaps.iter().find(|g| g.kind == GapKind::Exit).unwrap();
-        assert!(se.normal.dot(sx.normal) < -0.99, "straight: opposite walls");
-    }
-
-    #[test]
     fn crossing_detects_an_outward_pass_through_the_gap() {
         let gap = DoorGap {
             center: Vec2::new(0.0, -ROOM_HALF),
             normal: Vec2::new(0.0, -1.0),
-            width: GAP_WIDTH,
+            width: THRESHOLD_WIDTH,
             target: RoomId(2),
             kind: GapKind::Forward,
         };
@@ -785,8 +918,8 @@ mod tests {
         ));
         // Crossing the threshold plane but outside the gap width does not count.
         assert!(!crossed(
-            Vec2::new(GAP_WIDTH, -ROOM_HALF + 0.5),
-            Vec2::new(GAP_WIDTH, -ROOM_HALF - 0.5),
+            Vec2::new(THRESHOLD_WIDTH, -ROOM_HALF + 0.5),
+            Vec2::new(THRESHOLD_WIDTH, -ROOM_HALF - 0.5),
             &gap
         ));
     }
@@ -871,6 +1004,92 @@ mod tests {
         let back = geom.gaps.iter().find(|g| g.target == RoomId(0)).unwrap();
         // Spawn is inset inward from the gap (closer to the room centre).
         assert!(spawn.length() < back.center.length());
+    }
+
+    #[test]
+    fn align2d_inverse_round_trips() {
+        let a = Align2d {
+            yaw: 0.9,
+            offset: Vec2::new(3.0, -4.0),
+        };
+        for p in [Vec2::new(1.0, 2.0), Vec2::new(-5.0, 0.3), Vec2::ZERO] {
+            let back = a.inverse_apply(a.apply(p));
+            assert!((back - p).length() < 1e-4, "round trip {p:?} -> {back:?}");
+        }
+    }
+
+    #[test]
+    fn crossing_a_doorway_carries_the_body_in_continuously() {
+        // Room 0 → its 0→1 hallway across the forward gap: the alignment maps the body's
+        // pose continuously into the hallway frame — no snap, no view flip.
+        let nav = nav(&[1, 3], Some(1));
+        let room = Place::Room(RoomId(0));
+        let gap = *geom_for(room, &nav).forward_gap().unwrap();
+        let (hall, _) = apply_crossing(room, &gap, &nav);
+        let hgeom = geom_for(hall, &nav);
+        let align = crossing_alignment(&hgeom, hall, &gap, RoomId(0)).expect("hallway alignment");
+
+        // A body just past the room doorway (outward, along the gap normal) maps to just
+        // inside the hallway entry (−Z side of its footprint), not snapped elsewhere.
+        let threshold = gap.center + gap.normal * 0.3;
+        let inside = align.inverse_apply(threshold);
+        assert!(
+            inside.y < 0.0 && inside.y > -hgeom.half.y,
+            "lands just inside the hallway entry: {inside:?}"
+        );
+        assert!(inside.x.abs() <= hgeom.half.x, "within the hallway width");
+
+        // Heading carries through: walking out through the gap (forward == gap normal)
+        // becomes walking +Z into the hallway, regardless of the doorway's facing.
+        let old_yaw = gap.normal.x.atan2(-gap.normal.y); // forward(old_yaw) == gap.normal
+        let new_yaw = old_yaw + align.yaw;
+        let fwd = Vec2::new(new_yaw.sin(), -new_yaw.cos());
+        assert!(fwd.y > 0.9, "now facing into the hallway (+Z): {fwd:?}");
+    }
+
+    #[test]
+    fn entering_a_room_keeps_the_arrival_doorway_an_open_passage() {
+        // Room 1 connects back to 0 (where we came from) and on to 2 (the objective).
+        let mut geom = room_geom(&[RoomId(0), RoomId(2)], Some(RoomId(2)), 5);
+        // By default the doorway back toward 0 is a sealed Side wall.
+        let back = geom.gaps.iter().find(|g| g.target == RoomId(0)).unwrap();
+        assert_eq!(back.kind, GapKind::Side);
+        // Re-opening the arrival doorway makes it a real passage (so it doesn't pop into a
+        // wall behind you) while the forward objective doorway is untouched.
+        open_entry(&mut geom, Some(RoomId(0)));
+        let back = geom.gaps.iter().find(|g| g.target == RoomId(0)).unwrap();
+        assert_eq!(back.kind, GapKind::Entry);
+        assert!(back.kind.is_passage());
+        assert!(geom.forward_gap().is_some(), "forward doorway is preserved");
+        // The start room (no arrival doorway) keeps every non-forward door sealed.
+        let mut start = room_geom(&[RoomId(0), RoomId(2)], Some(RoomId(2)), 5);
+        open_entry(&mut start, None);
+        assert!(start.gaps.iter().all(|g| g.kind != GapKind::Entry));
+    }
+
+    #[test]
+    fn crossing_a_hallway_exit_carries_the_body_into_the_room_continuously() {
+        // Hallway 0→1 exit into room 1 (which connects back to 0 and on to 2).
+        let nav1 = nav(&[0, 2], Some(2));
+        let hall = Place::Hallway {
+            from: RoomId(0),
+            to: RoomId(1),
+            variation: hallway::variation_for(RoomId(0), RoomId(1), nav1.seed, nav1.version),
+        };
+        let hgeom = geom_for(hall, &nav1);
+        let exit = *hgeom.gaps.iter().find(|g| g.kind == GapKind::Exit).unwrap();
+        let mut rgeom = geom_for(Place::Room(RoomId(1)), &nav1);
+        open_entry(&mut rgeom, Some(RoomId(0)));
+        let align = crossing_alignment(&rgeom, Place::Room(RoomId(1)), &exit, RoomId(0))
+            .expect("the arrival doorway resolves an alignment");
+        // A body just past the hallway exit maps to inside the destination room footprint.
+        let threshold = exit.center + exit.normal * 0.3;
+        let inside = align.inverse_apply(threshold);
+        assert!(
+            inside.x.abs() <= rgeom.half.x + 0.6 && inside.y.abs() <= rgeom.half.y + 0.6,
+            "lands inside the room footprint: {inside:?} (half {:?})",
+            rgeom.half,
+        );
     }
 
     #[test]
@@ -1103,6 +1322,48 @@ mod tests {
                 maze_is_walkable(&geom),
                 "chicane (seed {seed}) must be walkable entry→exit"
             );
+        }
+    }
+
+    fn colonnade_templates() -> Vec<&'static hallway::HallwayTemplate> {
+        hallway::TEMPLATES
+            .iter()
+            .filter(|t| t.flavor == hallway::HallwayFlavor::Colonnade)
+            .collect()
+    }
+
+    #[test]
+    fn a_colonnade_is_a_walkable_pillared_pseudo_room() {
+        for template in colonnade_templates() {
+            for seed in 0..16u64 {
+                let geom = hallway_geom(RoomId(1), RoomId(4), template, seed, false);
+                // It is a real pillared volume (a grid of interior columns), open at both
+                // ends, and reachable entry→exit down the clear central lane.
+                assert!(
+                    geom.interior.len() >= 4,
+                    "{} (seed {seed}) has a grid of pillars",
+                    template.name
+                );
+                assert!(
+                    geom.gaps.iter().any(|g| g.kind == GapKind::Entry)
+                        && geom.gaps.iter().any(|g| g.kind == GapKind::Exit),
+                    "{} is open at both ends",
+                    template.name
+                );
+                // The central lane (x = 0) is clear: no pillar straddles it.
+                assert!(
+                    geom.interior
+                        .iter()
+                        .all(|p| p.center.x.abs() - p.half.x > 0.0),
+                    "{} keeps a clear central lane",
+                    template.name
+                );
+                assert!(
+                    maze_is_walkable(&geom),
+                    "{} (seed {seed}) must be walkable entry→exit",
+                    template.name
+                );
+            }
         }
     }
 

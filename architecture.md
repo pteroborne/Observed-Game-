@@ -151,6 +151,42 @@ add screen plugins, add match-view plugin, add capture plugin if environment
 variables request it. It should not know how to spawn a wall mesh or play a
 footstep.
 
+### Threshold Continuity Contract
+
+The room/hallway system needs stable language because threshold behavior touches
+geometry, lighting, observation, anchors, future map editing, and procedural
+generation.
+
+Terms:
+
+- A **threshold slot** is a possible doorway location on a room or hallway
+  template. In a future editor this is the authored port point; in procedural
+  generation it may be derived from room/hall type plus seed.
+- A **threshold assignment** is the current destination bound to a slot. This is
+  the part that may decohere while unobserved.
+- A **hallway edge** is the realized traversal space for one assignment. Its
+  template/variation can be selected by seed and edge identity, but once a
+  threshold is observed or anchored, the selected relation must be replayable.
+- A **room anchor** is a room-level lock. Dropping an anchor in a room stores the
+  room's complete visible threshold assignment table at that moment. While the
+  anchor remains, the room must render exactly that threshold count and exactly
+  those destinations. No new live graph relation may appear as a new threshold.
+- A **hallway anchor** is an edge-level lock. Dropping an anchor in a hallway
+  freezes that hallway relation and variation, but it does not by itself lock the
+  complete threshold set of either endpoint room.
+
+The invariant is: preview, crossing, arrival geometry, collision, and threshold
+lighting must all read the same threshold assignment snapshot. If a player sees a
+threshold previewing hallway A, crossing that threshold must enter hallway A. If
+a room is anchored with N visible thresholds, it must keep those N thresholds and
+only those N thresholds until the anchor is removed.
+
+The future map editor and any WFC/procedural system should therefore separate
+slot generation from assignment solving. Room type, hallway type, authored ports,
+and seed may decide how many slots exist and where they sit. The mutable graph or
+WFC solver decides where each slot leads. Observation and anchors freeze
+assignments, not ad-hoc rendered meshes.
+
 ### Style
 
 `style_lab` already contains the right abstraction: semantic role to visual

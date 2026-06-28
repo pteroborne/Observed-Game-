@@ -451,6 +451,154 @@ pub fn observed_modulate(mut t: Treatment, state: ObservedState) -> Treatment {
     }
 }
 
+/// The widest a district may set the global ambient fill. Districts vary the *mood* of a
+/// neighbourhood, but ambient must stay a fill — never a wash — so the dark neon-noir
+/// surfaces and the emissive signals keep doing the talking.
+pub const DISTRICT_MAX_AMBIENT_BRIGHTNESS: f32 = 200.0;
+/// The dimmest ambient a district may use, so structural surfaces stay readable.
+pub const DISTRICT_MIN_AMBIENT_BRIGHTNESS: f32 = 40.0;
+/// The nearest a district's distance fog may begin, so the near field is always clear.
+pub const DISTRICT_MIN_FOG_START: f32 = 8.0;
+
+/// A neighbourhood of the megastructure. A district varies only *atmosphere* — ambient
+/// fill, distance fog, light temperature, and a structural accent — never signal-tier
+/// markers or hazards, so the world reads as distinct places while the Legibility
+/// Contract holds everywhere. The mapping from graph region to district is deterministic
+/// ([`district_for`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum District {
+    /// Cold archival blue — the default, clinical baseline.
+    Archive,
+    /// Warm reactor amber — hot, close, faintly threatening.
+    Reactor,
+    /// Dim overgrown green — an atrium reclaimed by something.
+    Atrium,
+    /// Industrial orange — a half-built foundry.
+    Foundry,
+    /// Desaturated cool grey — unfinished, hollow, purpose abandoned mid-thought.
+    Hollow,
+    /// Teal spillway — flooded, distant, echoing.
+    Spillway,
+}
+
+impl District {
+    pub const ALL: [District; 6] = [
+        District::Archive,
+        District::Reactor,
+        District::Atrium,
+        District::Foundry,
+        District::Hollow,
+        District::Spillway,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            District::Archive => "archive",
+            District::Reactor => "reactor",
+            District::Atrium => "atrium",
+            District::Foundry => "foundry",
+            District::Hollow => "hollow",
+            District::Spillway => "spillway",
+        }
+    }
+
+    /// Stable index into [`District::ALL`] — lets a consumer key a parallel array (e.g.
+    /// precreated per-district materials) by district.
+    pub fn index(self) -> usize {
+        Self::ALL.iter().position(|&d| d == self).unwrap_or(0)
+    }
+}
+
+/// A district's atmosphere parameters. All are presentation-only inputs a consumer feeds
+/// to the global ambient light, the camera's distance fog, and the place fill lights.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DistrictPalette {
+    /// Global ambient fill colour.
+    pub ambient_color: Color,
+    /// Global ambient fill brightness (a *fill*, bounded by [`DISTRICT_MAX_AMBIENT_BRIGHTNESS`]).
+    pub ambient_brightness: f32,
+    /// Distance-fog colour (kept dark so it reads as depth, not haze).
+    pub fog_color: Color,
+    /// Distance-fog linear start/end (world units).
+    pub fog_start: f32,
+    pub fog_end: f32,
+    /// Tint for the place's structural fill lights (the "temperature" of the room).
+    pub light_color: Color,
+    /// A non-signal structural accent emission for the neighbourhood (kept below the
+    /// signal floor so it never competes with a real gameplay cue).
+    pub accent: LinearRgba,
+}
+
+/// The atmosphere palette for a district.
+pub fn district(d: District) -> DistrictPalette {
+    match d {
+        District::Archive => DistrictPalette {
+            ambient_color: Color::srgb(0.34, 0.42, 0.62),
+            ambient_brightness: 110.0,
+            fog_color: Color::srgb(0.010, 0.015, 0.035),
+            fog_start: 16.0,
+            fog_end: 72.0,
+            light_color: Color::srgb(0.72, 0.86, 1.0),
+            accent: LinearRgba::rgb(0.10, 0.30, 0.55),
+        },
+        District::Reactor => DistrictPalette {
+            ambient_color: Color::srgb(0.52, 0.38, 0.28),
+            ambient_brightness: 96.0,
+            fog_color: Color::srgb(0.040, 0.020, 0.012),
+            fog_start: 14.0,
+            fog_end: 60.0,
+            light_color: Color::srgb(1.0, 0.78, 0.52),
+            accent: LinearRgba::rgb(0.95, 0.45, 0.12),
+        },
+        District::Atrium => DistrictPalette {
+            ambient_color: Color::srgb(0.30, 0.46, 0.34),
+            ambient_brightness: 86.0,
+            fog_color: Color::srgb(0.012, 0.030, 0.016),
+            fog_start: 18.0,
+            fog_end: 66.0,
+            light_color: Color::srgb(0.66, 0.96, 0.72),
+            accent: LinearRgba::rgb(0.18, 0.70, 0.30),
+        },
+        District::Foundry => DistrictPalette {
+            ambient_color: Color::srgb(0.50, 0.36, 0.26),
+            ambient_brightness: 100.0,
+            fog_color: Color::srgb(0.036, 0.020, 0.013),
+            fog_start: 14.0,
+            fog_end: 58.0,
+            light_color: Color::srgb(1.0, 0.68, 0.42),
+            accent: LinearRgba::rgb(1.0, 0.52, 0.10),
+        },
+        District::Hollow => DistrictPalette {
+            ambient_color: Color::srgb(0.42, 0.45, 0.50),
+            ambient_brightness: 90.0,
+            fog_color: Color::srgb(0.020, 0.022, 0.026),
+            fog_start: 20.0,
+            fog_end: 80.0,
+            light_color: Color::srgb(0.82, 0.86, 0.92),
+            accent: LinearRgba::rgb(0.35, 0.40, 0.48),
+        },
+        District::Spillway => DistrictPalette {
+            ambient_color: Color::srgb(0.26, 0.46, 0.50),
+            ambient_brightness: 100.0,
+            fog_color: Color::srgb(0.010, 0.026, 0.030),
+            fog_start: 16.0,
+            fog_end: 70.0,
+            light_color: Color::srgb(0.50, 0.95, 0.98),
+            accent: LinearRgba::rgb(0.12, 0.60, 0.62),
+        },
+    }
+}
+
+/// Deterministic district for a region key (e.g. a room index), stable per facility
+/// `seed`, so a neighbourhood keeps its identity across a match.
+pub fn district_for(seed: u64, key: u32) -> District {
+    let mut h = seed ^ (key as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    h = (h ^ (h >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    h = (h ^ (h >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    h ^= h >> 31;
+    District::ALL[(h % District::ALL.len() as u64) as usize]
+}
+
 /// Every documented role and its treatment — the single source of truth for an
 /// on-screen legend. A consumer renders this so no coloured marker is unexplained.
 pub fn legend() -> Vec<(&'static str, Treatment)> {
@@ -610,6 +758,71 @@ mod tests {
                 role.label(),
             );
         }
+    }
+
+    #[test]
+    fn district_palettes_are_distinct() {
+        let pals: Vec<DistrictPalette> = District::ALL.iter().map(|d| district(*d)).collect();
+        for i in 0..pals.len() {
+            for j in (i + 1)..pals.len() {
+                assert!(
+                    pals[i].ambient_color != pals[j].ambient_color
+                        || pals[i].light_color != pals[j].light_color
+                        || pals[i].fog_color != pals[j].fog_color,
+                    "districts {} and {} look identical",
+                    District::ALL[i].label(),
+                    District::ALL[j].label(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn district_atmosphere_stays_within_legible_bounds() {
+        // Ambient is a bounded fill, fog is ordered and never crowds the near field, and
+        // the structural accent stays below the signal floor — so districts never wash out
+        // the neon-noir surfaces or masquerade as a gameplay signal.
+        for d in District::ALL {
+            let p = district(d);
+            assert!(
+                (DISTRICT_MIN_AMBIENT_BRIGHTNESS..=DISTRICT_MAX_AMBIENT_BRIGHTNESS)
+                    .contains(&p.ambient_brightness),
+                "{} ambient brightness out of bounds: {}",
+                d.label(),
+                p.ambient_brightness,
+            );
+            assert!(
+                p.fog_start >= DISTRICT_MIN_FOG_START && p.fog_end > p.fog_start + 10.0,
+                "{} fog range is not legible: {}..{}",
+                d.label(),
+                p.fog_start,
+                p.fog_end,
+            );
+            assert!(
+                luminance(p.accent) < SIGNAL_MIN_LUMINANCE,
+                "{} accent must not read as a signal",
+                d.label(),
+            );
+        }
+    }
+
+    #[test]
+    fn district_assignment_is_deterministic_and_covers_the_set() {
+        // Stable for a key, and across a facility's rooms every district can appear (the
+        // mapping isn't degenerate).
+        assert_eq!(district_for(42, 3), district_for(42, 3));
+        let mut seen: Vec<District> = Vec::new();
+        for key in 0..64u32 {
+            let d = district_for(7, key);
+            if !seen.contains(&d) {
+                seen.push(d);
+            }
+        }
+        assert!(
+            seen.len() >= 4,
+            "district mapping should spread across the set, saw {}",
+            seen.len()
+        );
     }
 
     #[test]

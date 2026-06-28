@@ -50,11 +50,13 @@ pub(crate) use match_runtime::*;
 pub(crate) use menu::*;
 pub(crate) use place::*;
 
-const WALL_HEIGHT: f32 = 3.4;
+// Taller than head height so the facility reads as a vast, breathable structure rather
+// than a tight corridor. Everything (frames, leaves, walls, ceiling) scales off this.
+const WALL_HEIGHT: f32 = 4.6;
 
-/// How long (seconds) the first-person decoherence feedback — the route-shift flash,
-/// camera jolt, and door slam — lasts after a reroute commits. Shared so the camera
-/// jolt ([`place::present_match_camera`]) and the feedback driver
+/// How long (seconds) the first-person decoherence feedback — the diegetic light flicker
+/// and door slam — lasts after a reroute commits. Shared so the flicker driver
+/// ([`match_runtime::flicker_lights`]) and the feedback driver
 /// ([`match_runtime::sync_decohere_fx`]) agree.
 pub(crate) const ROUTE_SHIFT_FLASH_SECS: f32 = 0.7;
 
@@ -248,6 +250,11 @@ pub struct MatchAssets {
     ceiling_material: Handle<StandardMaterial>,
     exit_panel_material: Handle<StandardMaterial>,
     fixture_glow_material: Handle<StandardMaterial>,
+    /// A warm, glowing lamp body for the per-place ceiling fixtures.
+    lamp_material: Handle<StandardMaterial>,
+    /// Emissive wall-trim materials, one per district (indexed by `District::index`), so
+    /// the structural baseboard/cornice linework carries the neighbourhood's accent.
+    district_accent_materials: [Handle<StandardMaterial>; 6],
     placeholder_material: Handle<StandardMaterial>,
     doorframe_material: Handle<StandardMaterial>,
     spine_doorframe_material: Handle<StandardMaterial>,
@@ -275,12 +282,10 @@ pub struct MatchAssets {
 #[derive(Component)]
 pub(crate) struct PlaceGeometry;
 
-/// An animated door leaf filling a doorway gap. A passage leaf (`openable`) slides up
-/// into the lintel as the player nears — restoring the "the corridor is hidden until
-/// you commit to it" mystery — and slams shut again when they leave or the structure
-/// decoheres. Sealed leaves (side doors, the locked exit) never open. `closed_y`/
-/// `open_y` are the leaf's local-Y at each extreme; `center` is the gap centre (XZ) for
-/// the proximity test. Presentation-only — driven entirely by `animate_doors`.
+/// An animated door leaf filling a sealed doorway gap. Transparent passage thresholds no
+/// longer get leaves; this remains for side doors / locked exits and any future sealed
+/// door that needs to slide or stay shut. `closed_y` / `open_y` are the leaf's local-Y at
+/// each extreme; `center` is the gap centre (XZ) for the proximity test. Presentation-only.
 #[derive(Component)]
 pub(crate) struct DoorLeaf {
     pub center: Vec2,
@@ -305,9 +310,16 @@ pub(crate) struct RivalAvatar {
     pub team: usize,
 }
 
-/// Full-screen reroute-flash overlay (shown briefly when the layout shifts).
+/// A place light driven by [`match_runtime::flicker_lights`]. `base` is its steady-state
+/// intensity. `idle` (0 = none) is the amplitude of a constant "failing fixture" flicker —
+/// occasional brief dropouts — and `phase` decorrelates each fixture so they stutter
+/// independently. A decoherence flash deepens every light's stutter on top of that.
 #[derive(Component)]
-pub(crate) struct RouteShiftPanel;
+pub(crate) struct FlickerLight {
+    pub base: f32,
+    pub idle: f32,
+    pub phase: f32,
+}
 
 /// Geometry rendered behind a room's open doorway as a preview of the actual hallway
 /// you'll teleport into (aligned to the opening). Also tagged [`PlaceGeometry`] so it is
@@ -326,15 +338,16 @@ pub(crate) enum MatchAudioCue {
 
 /// First-person feedback for graph **decoherence** (a committed reroute): when the
 /// brain's `reroute_commits` advances — the unobserved structure has rewired — the game
-/// fires a brief route-shift flash, an audio sting, a camera jolt, and slams the current
-/// place's doors shut (the "re-hide"). Presentation-only; driven by
-/// [`match_runtime::sync_decohere_fx`]. Initialised to the live commit count on entering
-/// the Match so it never flashes on the first frame.
+/// stutters the place's lights, fires an audio sting, and slams the current place's doors
+/// shut (the "re-hide"). No camera shake, no full-screen flash — the instability is
+/// diegetic. Presentation-only; driven by [`match_runtime::sync_decohere_fx`] (+
+/// [`match_runtime::flicker_lights`]). Initialised to the live commit count on entering
+/// the Match so it never fires on the first frame.
 #[derive(Resource, Default)]
 pub struct DecohereFx {
     /// The reroute-commit count we last reacted to.
     pub last_commits: u32,
-    /// Seconds remaining on the active route-shift feedback (0 = idle).
+    /// Seconds remaining on the active decoherence feedback (0 = idle).
     pub flash: f32,
 }
 
@@ -376,8 +389,35 @@ pub struct TeleportState {
     pub prev_xz: Vec2,
     /// Latched once the body crosses a hallway's exit, until the round commits.
     pub crossed_exit: bool,
+    /// The specific exit doorway crossed (held while `crossed_exit` is latched) so the
+    /// seamless crossing remap can align the next room to the doorway actually used.
+    pub pending_exit: Option<teleport::DoorGap>,
+    /// For a room, the room it was entered *from* — its doorway stays an open `Entry`
+    /// passage (not a sealed wall) so the way you came in matches the preview and you can
+    /// step back out. `None` in a hallway or the start room.
+    pub arrived_from: Option<RoomId>,
+    /// The **frozen** destination of each passage doorway of the current place, captured the
+    /// instant the place was entered (and re-used by both the doorway preview and the
+    /// crossing). This realises "observed → frozen": while you can see a neighbour through an
+    /// open threshold, what you see is exactly what you walk into, even if the brain rerolls
+    /// that edge under you (it only "changes" once you look away and re-enter).
+    pub gap_dests: Vec<FrozenDest>,
     /// The place the geometry currently reflects.
     pub rendered: Option<teleport::Place>,
+}
+
+/// A doorway's frozen destination: the resolved next [`teleport::Place`] (a hallway carries
+/// its variation; a room carries the `conns`/`target` that shape it), snapshotted at
+/// place-entry so the preview and the crossing can't diverge.
+#[derive(Clone)]
+pub struct FrozenDest {
+    /// The gap centre (current place's local frame) used to match the crossed doorway.
+    pub gap_center: Vec2,
+    pub place: teleport::Place,
+    /// For a room destination, its frozen connection set (shape); empty for a hallway.
+    pub conns: Vec<RoomId>,
+    /// For a room destination, its frozen spine target (which doorway stays forward).
+    pub target: Option<RoomId>,
 }
 
 #[derive(Resource)]
@@ -510,7 +550,9 @@ impl Plugin for MatchPlugin {
                     match_pump,
                     item_actions,
                     rebuild_place,
+                    apply_place_atmosphere,
                     sync_decohere_fx,
+                    flicker_lights,
                     keystone_pickup,
                     sync_rival_avatars,
                     sync_match_audio,

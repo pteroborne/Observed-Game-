@@ -58,6 +58,7 @@ pub(crate) fn setup_match(
     let start_place = Place::Room(game.local_room());
     let start_geom = teleport::geom_for(start_place, &nav_from_brain(game, &keys, &items));
     let start_arena = teleport::place_arena(&start_geom, 0.0, WALL_HEIGHT);
+    let start_gap_dests = compute_gap_dests(start_place, &start_geom, game, &keys, &items);
     let spawn = Vec3::new(0.0, tp_config.half_height, 0.0);
     commands.insert_resource(MatchRuntime {
         live,
@@ -87,6 +88,9 @@ pub(crate) fn setup_match(
         geom: start_geom,
         prev_xz: Vec2::ZERO,
         crossed_exit: false,
+        pending_exit: None,
+        arrived_from: None,
+        gap_dests: start_gap_dests,
         rendered: None,
     });
     commands.insert_resource(keys);
@@ -124,6 +128,25 @@ pub(crate) fn setup_match(
         emissive: LinearRgba::rgb(4.0, 7.0, 10.0),
         unlit: true,
         ..default()
+    });
+    // A warm, glowing bulb for the per-place ceiling fixtures — neutral enough not to be
+    // mistaken for a gameplay signal; the pool of light it casts is district-tinted.
+    let lamp_material = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.9, 0.85, 0.72),
+        emissive: LinearRgba::rgb(3.2, 2.7, 1.8),
+        unlit: true,
+        ..default()
+    });
+    // Per-district wall-trim materials (baseboard/cornice linework): the district accent,
+    // scaled up to read as a faint neon seam but kept below the gameplay-signal floor.
+    let district_accent_materials = std::array::from_fn(|i| {
+        let accent = style::district(style::District::ALL[i]).accent;
+        materials.add(StandardMaterial {
+            base_color: Color::srgb(0.02, 0.03, 0.05),
+            emissive: LinearRgba::rgb(accent.red * 4.0, accent.green * 4.0, accent.blue * 4.0),
+            unlit: true,
+            ..default()
+        })
     });
     // Missing GLB models fall back to a quiet steel-blue block (not glaring magenta),
     // so an absent asset reads as "a prop belongs here", not a rendering bug.
@@ -225,6 +248,8 @@ pub(crate) fn setup_match(
         ceiling_material,
         exit_panel_material,
         fixture_glow_material,
+        lamp_material,
+        district_accent_materials,
         placeholder_material,
         doorframe_material,
         spine_doorframe_material,
@@ -290,32 +315,6 @@ pub(crate) fn setup_match(
                         ..default()
                     },
                     TextColor(TITLE),
-                )],
-            ));
-            root.spawn((
-                RouteShiftPanel,
-                Visibility::Hidden,
-                Node {
-                    position_type: PositionType::Absolute,
-                    top: px(0),
-                    left: px(0),
-                    width: percent(100),
-                    height: percent(100),
-                    border: UiRect::all(px(10)),
-                    align_items: AlignItems::FlexEnd,
-                    justify_content: JustifyContent::Center,
-                    padding: UiRect::bottom(px(72)),
-                    ..default()
-                },
-                BorderColor::all(Color::srgba(1.0, 0.18, 0.82, 0.85)),
-                BackgroundColor(Color::srgba(0.45, 0.02, 0.34, 0.10)),
-                children![(
-                    Text::new("ROUTE SHIFT — PASSAGES CHANGED BEHIND YOU"),
-                    TextFont {
-                        font_size: 24.0,
-                        ..default()
-                    },
-                    TextColor(Color::srgb(1.0, 0.70, 0.94)),
                 )],
             ));
             // The tac-map overlay panel (top-right). Hidden until Tab; its room/route/
@@ -503,7 +502,30 @@ pub(crate) fn connections_for(game: &HybridMatch, room: RoomId) -> Vec<RoomId> {
     connections
 }
 
-fn room_target(game: &HybridMatch, room: RoomId, connections: &[RoomId]) -> Option<RoomId> {
+fn connections_for_nav(game: &HybridMatch, items: &ItemsState, room: RoomId) -> Vec<RoomId> {
+    if let Some(connections) = items.locked_room_connections(room) {
+        return connections;
+    }
+    let mut connections: Vec<RoomId> = connections_for(game, room)
+        .into_iter()
+        .filter(|&other| items.relation_allowed_by_room_locks(room, other))
+        .collect();
+    connections.extend(
+        items
+            .pinned_connections(room)
+            .into_iter()
+            .filter(|&other| items.relation_allowed_by_room_locks(room, other)),
+    );
+    connections.sort_by_key(|room| room.0);
+    connections.dedup();
+    connections
+}
+
+pub(crate) fn room_target(
+    game: &HybridMatch,
+    room: RoomId,
+    connections: &[RoomId],
+) -> Option<RoomId> {
     if room == game.local_room() {
         return game.local_target();
     }
@@ -516,14 +538,17 @@ fn room_target(game: &HybridMatch, room: RoomId, connections: &[RoomId]) -> Opti
 
 /// Build the navigation snapshot for a specific room: that room's rendered
 /// connections, the doorway that should remain passable, the live decohere version,
-/// the exit lock, and anchor-torch pins.
+/// the exit lock, and anchor-torch pins. A room anchor upgrades this from "live graph
+/// plus pinned edges" to "the room's exact stored threshold set": no new thresholds are
+/// admitted while the anchor remains, and live edges from other rooms are not allowed to
+/// point into a locked room unless the locked room's table already contains them.
 pub(crate) fn nav_for_room(
     game: &HybridMatch,
     keys: &KeystoneState,
     items: &ItemsState,
     room: RoomId,
 ) -> teleport::Nav {
-    let connections = connections_for(game, room);
+    let connections = connections_for_nav(game, items, room);
     let target_room = room_target(game, room, &connections);
     teleport::Nav {
         connections,
@@ -532,7 +557,59 @@ pub(crate) fn nav_for_room(
         version: game.reroute_commits,
         // The exit door stays locked until the player holds the required keystones.
         exit_locked: !keys.gate_open(),
-        pins: items.pins(|room| connections_for(game, room)),
+        pins: items.pins(),
+    }
+}
+
+/// The [`style::District`] of the player's current place: a room's own district, or — for
+/// a hallway — the district of the room it leads back *from*, so a corridor reads as
+/// continuous with the room you just left and the neighbourhood reveals its change as you
+/// arrive in the next room. Deterministic per facility seed.
+pub(crate) fn district_for_place(place: Place) -> style::District {
+    let key = match place {
+        Place::Room(room) => room.0,
+        Place::Hallway { from, .. } => from.0,
+    };
+    style::district_for(MATCH_SEED, key)
+}
+
+/// How fast (per second) the ambient/fog blend toward the current place's district, so a
+/// neighbourhood's mood eases in across a doorway rather than hard-cutting.
+const DISTRICT_BLEND_RATE: f32 = 2.5;
+
+fn lerp_f(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
+
+fn lerp_color(a: Color, b: Color, t: f32) -> Color {
+    let (a, b) = (a.to_srgba(), b.to_srgba());
+    Color::srgb(
+        lerp_f(a.red, b.red, t),
+        lerp_f(a.green, b.green, t),
+        lerp_f(a.blue, b.blue, t),
+    )
+}
+
+/// Ease the global ambient fill and the camera's distance fog toward the current place's
+/// district palette each frame, giving the megastructure visibly distinct neighbourhoods
+/// (cold archive, warm reactor, overgrown atrium …) from cheap param changes alone — within
+/// the Legibility Contract, since districts touch only atmosphere. Presentation-only.
+pub(crate) fn apply_place_atmosphere(
+    time: Res<Time>,
+    tp: Res<TeleportState>,
+    mut ambient: ResMut<GlobalAmbientLight>,
+    mut fog: Query<&mut DistanceFog, With<GameCam>>,
+) {
+    let pal = style::district(district_for_place(tp.place));
+    let t = (time.delta_secs() * DISTRICT_BLEND_RATE).clamp(0.0, 1.0);
+    ambient.color = lerp_color(ambient.color, pal.ambient_color, t);
+    ambient.brightness = lerp_f(ambient.brightness, pal.ambient_brightness, t);
+    if let Ok(mut f) = fog.single_mut() {
+        f.color = lerp_color(f.color, pal.fog_color, t);
+        if let FogFalloff::Linear { start, end } = &mut f.falloff {
+            *start = lerp_f(*start, pal.fog_start, t);
+            *end = lerp_f(*end, pal.fog_end, t);
+        }
     }
 }
 
@@ -560,23 +637,117 @@ pub(crate) fn nav_for_place(
     nav_for_room(game, keys, items, room)
 }
 
-/// Move the body into `place`, having arrived from room `from`: rebuild the collision
-/// arena and spawn the body just inside the doorway it entered through, facing in.
-fn place_body(tp: &mut TeleportState, place: Place, from: RoomId, nav: &teleport::Nav) {
-    let geom = teleport::geom_for(place, nav);
-    let spawn = teleport::entry_spawn(&geom, from);
-    let yaw = geom
-        .gaps
+/// Resolve and **freeze** the destination of every passage doorway of `place` *now* — the
+/// hallway each room doorway opens into (with its rolled variation locked in the `Place`),
+/// and the frozen connection set + spine target of the room each hallway doorway opens
+/// into. Captured once at place-entry so the doorway preview and the actual crossing read
+/// the identical snapshot ("observed → frozen"); see [`TeleportState::gap_dests`].
+pub(crate) fn compute_gap_dests(
+    place: Place,
+    geom: &teleport::PlaceGeom,
+    game: &HybridMatch,
+    keys: &KeystoneState,
+    items: &ItemsState,
+) -> Vec<FrozenDest> {
+    let nav = nav_for_place(game, keys, items, place);
+    geom.gaps
         .iter()
-        .find(|g| g.target == from)
-        .map(|g| (-g.normal.x).atan2(g.normal.y))
-        .unwrap_or(0.0);
-    tp.arena = teleport::place_arena(&geom, 0.0, WALL_HEIGHT);
+        .filter(|g| g.kind.is_passage())
+        .map(|gap| {
+            let (dest, _) = teleport::apply_crossing(place, gap, &nav);
+            let (conns, target) = match dest {
+                Place::Room(r) => {
+                    let c = connections_for_nav(game, items, r);
+                    let t = room_target(game, r, &c);
+                    (c, t)
+                }
+                Place::Hallway { .. } => (Vec::new(), None),
+            };
+            FrozenDest {
+                gap_center: gap.center,
+                place: dest,
+                conns,
+                target,
+            }
+        })
+        .collect()
+}
+
+/// The nav that rebuilds a [`FrozenDest`]'s geometry exactly as it was snapshotted: a
+/// hallway uses its frozen `Place` variation + the live exit lock; a room uses its frozen
+/// connections + target. (`geom_for` only reads these fields, so version/pins are inert.)
+fn frozen_nav(dest: &FrozenDest, keys: &KeystoneState) -> teleport::Nav {
+    teleport::Nav {
+        connections: dest.conns.clone(),
+        target_room: dest.target,
+        seed: MATCH_SEED,
+        version: 0,
+        exit_locked: !keys.gate_open(),
+        pins: Vec::new(),
+    }
+}
+
+/// The frozen destination snapshot for the doorway whose gap is `gap` (matched by centre).
+fn frozen_dest_for<'a>(tp: &'a TeleportState, gap: &teleport::DoorGap) -> Option<&'a FrozenDest> {
+    tp.gap_dests
+        .iter()
+        .find(|d| (d.gap_center - gap.center).length() < 0.05)
+}
+
+/// Move the body into `place`, having arrived from room `from`. When `crossed` (the
+/// doorway just stepped through, in the *old* place's frame) yields an alignment, the
+/// body's pre-swap pose is carried continuously into the new place so walking through a
+/// door has **no snap and no view reset** — the camera flows on. Otherwise (or for a
+/// non-crossing placement, `crossed = None`) the body snaps just inside the arrival
+/// doorway facing in, as before.
+fn place_body(
+    tp: &mut TeleportState,
+    place: Place,
+    from: RoomId,
+    crossed: Option<teleport::DoorGap>,
+    nav: &teleport::Nav,
+) {
+    let mut geom = teleport::geom_for(place, nav);
+    // Arriving in a room *through* a doorway: keep that doorway an open passage (matching
+    // the preview you crossed) so the entry doesn't pop into a wall. The start room and
+    // pad/debug placements pass `crossed = None`, so they keep the default sealed doors.
+    let arrived_from = match place {
+        Place::Room(_) if crossed.is_some() => Some(from),
+        _ => None,
+    };
+    teleport::open_entry(&mut geom, arrived_from);
+    let arena = teleport::place_arena(&geom, 0.0, WALL_HEIGHT);
+    let (pos, yaw, pitch) = crossed
+        .and_then(|gap| teleport::crossing_alignment(&geom, place, &gap, from))
+        .map(|align| {
+            // Continuous carry: the body's current XZ/heading mapped into the new frame.
+            let old = Vec2::new(tp.body.position.x, tp.body.position.z);
+            (
+                align.inverse_apply(old),
+                tp.body.yaw + align.yaw,
+                tp.body.pitch,
+            )
+        })
+        .unwrap_or_else(|| {
+            // Snap: just inside the arrival doorway, facing in (level pitch).
+            let spawn = teleport::entry_spawn(&geom, from);
+            let yaw = geom
+                .gaps
+                .iter()
+                .find(|g| g.target == from)
+                .map(|g| (-g.normal.x).atan2(g.normal.y))
+                .unwrap_or(0.0);
+            (spawn, yaw, 0.0)
+        });
+    tp.arena = arena;
     tp.geom = geom;
-    tp.body = FpsBody::spawned(Vec3::new(spawn.x, tp.config.half_height, spawn.y), yaw);
+    tp.body = FpsBody::spawned(Vec3::new(pos.x, tp.config.half_height, pos.y), yaw);
+    tp.body.pitch = pitch;
     tp.place = place;
-    tp.prev_xz = spawn;
+    tp.prev_xz = pos;
     tp.crossed_exit = false;
+    tp.pending_exit = None;
+    tp.arrived_from = arrived_from;
 }
 
 /// Move the body directly to a point in `place` without committing a match round.
@@ -593,6 +764,8 @@ fn place_body_at(tp: &mut TeleportState, place: Place, pos: Vec2, nav: &teleport
     tp.place = place;
     tp.prev_xz = pos;
     tp.crossed_exit = false;
+    tp.pending_exit = None;
+    tp.arrived_from = None;
     tp.rendered = None;
 }
 
@@ -608,7 +781,8 @@ pub(crate) fn debug_place_into(
     items: &ItemsState,
 ) {
     let nav = nav_for_place(runtime.live.host_match(), keys, items, place);
-    place_body(tp, place, from, &nav);
+    place_body(tp, place, from, None, &nav);
+    tp.gap_dests = compute_gap_dests(tp.place, &tp.geom, runtime.live.host_match(), keys, items);
 }
 
 const ITEM_INTERACT_RADIUS: f32 = 1.8;
@@ -655,7 +829,17 @@ pub(crate) fn item_actions(
     let mut changed = false;
 
     if intent.torch_action {
-        changed |= pickup_or_drop_item(&mut items, ItemKind::AnchorTorch, place, pos, version);
+        changed |= if items.pickup(ItemKind::AnchorTorch, place, pos, ITEM_INTERACT_RADIUS) {
+            true
+        } else {
+            let mut connections = match place {
+                Place::Room(_) => tp.geom.gaps.iter().map(|gap| gap.target).collect(),
+                Place::Hallway { .. } => Vec::new(),
+            };
+            connections.sort_by_key(|room| room.0);
+            connections.dedup();
+            items.drop_anchor_torch(place, pos, version, &connections)
+        };
     }
     if intent.pad_action {
         changed |= pickup_or_drop_item(&mut items, ItemKind::TeleportPad, place, pos, version);
@@ -666,10 +850,26 @@ pub(crate) fn item_actions(
     {
         let nav = nav_for_place(runtime.live.host_match(), &keys, &items, target_place);
         place_body_at(&mut tp, target_place, target_pos, &nav);
+        let dests = compute_gap_dests(tp.place, &tp.geom, runtime.live.host_match(), &keys, &items);
+        tp.gap_dests = dests;
         changed = true;
     }
 
     if changed {
+        let nav = nav_for_place(runtime.live.host_match(), &keys, &items, tp.place);
+        let mut geom = teleport::geom_for(tp.place, &nav);
+        if matches!(tp.place, Place::Room(_)) {
+            teleport::open_entry(&mut geom, tp.arrived_from);
+        }
+        tp.arena = teleport::place_arena(&geom, 0.0, WALL_HEIGHT);
+        if geom.poly.is_some() {
+            let clamped = teleport::contain(&geom, body_xz(&tp), tp.config.radius);
+            tp.body.position.x = clamped.x;
+            tp.body.position.z = clamped.y;
+        }
+        tp.geom = geom;
+        tp.gap_dests =
+            compute_gap_dests(tp.place, &tp.geom, runtime.live.host_match(), &keys, &items);
         tp.rendered = None;
     }
 }
@@ -708,27 +908,43 @@ pub(crate) fn teleport_sim(
     tp.prev_xz = next;
 
     // Crossing tests read the cached place geometry (so a labyrinth isn't regenerated
-    // every step); copy out the gaps we need before any teleport replaces it.
+    // every step); copy out the gaps we need before any teleport replaces it. Each crossing
+    // teleports into the **frozen** destination snapshotted at place-entry (so you enter
+    // exactly the place you saw through the doorway), falling back to a live resolve only if
+    // no snapshot exists.
+    let place_before = tp.place;
     match tp.place {
         Place::Room(room) => {
-            if let Some(gap) = tp.geom.forward_gap().copied()
-                && teleport::crossed(prev, next, &gap)
-            {
-                let (place, _) = teleport::apply_crossing(Place::Room(room), &gap, &nav);
-                place_body(tp, place, room, &nav);
-            }
-        }
-        Place::Hallway { from, to, .. } => {
-            let exit_crossed = tp
+            // Cross any open doorway — the forward (spine) passage *or* the entry doorway
+            // you came in through (now open, so you can step back into that hallway).
+            if let Some(gap) = tp
                 .geom
                 .gaps
                 .iter()
-                .filter(|g| g.kind == GapKind::Exit)
-                .any(|g| teleport::crossed(prev, next, g));
-            if !tp.crossed_exit && exit_crossed {
+                .filter(|g| g.kind.is_passage())
+                .find(|g| teleport::crossed(prev, next, g))
+                .copied()
+            {
+                cross_into(tp, &gap, Place::Room(room), room, &nav, &keys);
+            }
+        }
+        Place::Hallway { from, to, .. } => {
+            // Latch the *specific* exit gap crossed (a maze has several) so the seamless
+            // remap aligns to the doorway the player actually walked out of.
+            if !tp.crossed_exit
+                && let Some(exit) = tp
+                    .geom
+                    .gaps
+                    .iter()
+                    .filter(|g| g.kind == GapKind::Exit)
+                    .find(|g| teleport::crossed(prev, next, g))
+                    .copied()
+            {
                 tp.crossed_exit = true;
+                tp.pending_exit = Some(exit);
             }
             if tp.crossed_exit {
+                let exit_gap = tp.pending_exit;
                 // Commit the spine round only when this is the local team's current
                 // protected edge. Pad/backtrack-created traversal remains local.
                 let should_commit = {
@@ -736,29 +952,94 @@ pub(crate) fn teleport_sim(
                     game.local_room() == from && game.local_target() == Some(to)
                 };
                 if should_commit && runtime.live.force_round(LocalAction::Advance) {
-                    let game = runtime.live.host_match();
-                    let arrived = game.local_room();
-                    let nav2 = nav_from_brain(game, &keys, &items);
-                    place_body(tp, Place::Room(arrived), from, &nav2);
-                } else if !should_commit {
-                    let nav2 = nav_for_room(runtime.live.host_match(), &keys, &items, to);
-                    place_body(tp, Place::Room(to), from, &nav2);
+                    let arrived = runtime.live.host_match().local_room();
+                    if let Some(g) = exit_gap {
+                        cross_into_room(
+                            tp,
+                            &g,
+                            arrived,
+                            from,
+                            runtime.live.host_match(),
+                            &keys,
+                            &items,
+                        );
+                    }
+                } else if !should_commit && let Some(g) = exit_gap {
+                    cross_into_room(tp, &g, to, from, runtime.live.host_match(), &keys, &items);
                 }
             } else {
                 // Backtracking out the entrance returns to the room you came from (no
                 // round committed) — so wandering a maze's dead ends back to the mouth
                 // never walks the body into the void behind the open doorway.
-                let entry_crossed = tp
+                if let Some(entry) = tp
                     .geom
                     .gaps
                     .iter()
                     .filter(|g| g.kind == GapKind::Entry)
-                    .any(|g| teleport::crossed(prev, next, g));
-                if entry_crossed {
-                    let nav2 = nav_for_room(runtime.live.host_match(), &keys, &items, from);
-                    place_body(tp, Place::Room(from), to, &nav2);
+                    .find(|g| teleport::crossed(prev, next, g))
+                    .copied()
+                {
+                    cross_into_room(
+                        tp,
+                        &entry,
+                        from,
+                        to,
+                        runtime.live.host_match(),
+                        &keys,
+                        &items,
+                    );
                 }
             }
+        }
+    }
+
+    // On any teleport, re-freeze the new place's doorway destinations so the next set of
+    // previews and crossings stay self-consistent.
+    if tp.place != place_before {
+        let dests = compute_gap_dests(tp.place, &tp.geom, runtime.live.host_match(), &keys, &items);
+        tp.gap_dests = dests;
+    }
+}
+
+/// Cross `gap` into its frozen destination (a hallway from a room, etc.): use the snapshot
+/// taken at place-entry so the arrival matches the preview; fall back to a live resolve if
+/// the snapshot is missing. `cur` is the place being left, `from` the room you came from.
+fn cross_into(
+    tp: &mut TeleportState,
+    gap: &teleport::DoorGap,
+    cur: Place,
+    from: RoomId,
+    nav: &teleport::Nav,
+    keys: &KeystoneState,
+) {
+    if let Some(dest) = frozen_dest_for(tp, gap).cloned() {
+        place_body(tp, dest.place, from, Some(*gap), &frozen_nav(&dest, keys));
+    } else {
+        let (place, _) = teleport::apply_crossing(cur, gap, nav);
+        place_body(tp, place, from, Some(*gap), nav);
+    }
+}
+
+/// Cross `gap` into room `arrived` (from a hallway): prefer the frozen snapshot for that
+/// doorway (frozen shape), else rebuild from the live brain. `from` is the room the hallway
+/// came from (its arrival doorway stays open).
+#[allow(clippy::too_many_arguments)]
+fn cross_into_room(
+    tp: &mut TeleportState,
+    gap: &teleport::DoorGap,
+    arrived: RoomId,
+    from: RoomId,
+    game: &HybridMatch,
+    keys: &KeystoneState,
+    items: &ItemsState,
+) {
+    match frozen_dest_for(tp, gap).cloned() {
+        Some(dest) if dest.place == Place::Room(arrived) => {
+            place_body(tp, dest.place, from, Some(*gap), &frozen_nav(&dest, keys));
+        }
+        _ => {
+            let nav = nav_for_room(game, keys, items, arrived);
+            place_body(tp, Place::Room(arrived), from, Some(*gap), &nav);
         }
     }
 }
@@ -814,20 +1095,19 @@ pub(crate) fn match_pump(
 }
 
 /// Drive the first-person **decoherence** feedback. When the brain's `reroute_commits`
-/// advances — the unobserved structure has rewired behind the player — fire a brief
-/// route-shift flash overlay, an audio sting (throttled to once per shift), and slam the
-/// current place's doors shut so they re-hide what's beyond. The camera jolt is applied
-/// separately in `present_match_camera`, which reads the same `flash` timer. Observed
-/// rooms still don't change under the player — this is sensory feedback for a graph
-/// rewire that affects edges they haven't reached, not a live change to their room.
-#[allow(clippy::too_many_arguments)]
+/// advances — the unobserved structure has rewired behind the player — arm the `flash`
+/// timer (which `flicker_lights` turns into a diegetic light stutter), fire an audio sting
+/// (throttled to once per shift), and slam the current place's doors shut so they re-hide
+/// what's beyond. There is **no** camera shake and **no** full-screen overlay: the world's
+/// instability is felt through its own failing lights and the sting, not a UI punch.
+/// Observed rooms still don't change under the player — this is sensory feedback for a
+/// graph rewire that affects edges they haven't reached, not a live change to their room.
 pub(crate) fn sync_decohere_fx(
     time: Res<Time>,
     runtime: Res<MatchRuntime>,
     paused: Res<MatchPaused>,
     assets: Res<MatchAssets>,
     mut fx: ResMut<DecohereFx>,
-    mut panel: Query<&mut Visibility, With<RouteShiftPanel>>,
     mut leaves: Query<(&DoorLeaf, &mut Transform)>,
     mut commands: Commands,
 ) {
@@ -857,13 +1137,43 @@ pub(crate) fn sync_decohere_fx(
     if fx.flash > 0.0 {
         fx.flash = (fx.flash - time.delta_secs()).max(0.0);
     }
-    let visibility = if fx.flash > 0.0 {
-        Visibility::Visible
+}
+
+/// Stutter the place's structural lights during a decoherence shift — the diegetic
+/// "failing power" telegraph that replaces the old camera shake / full-screen flash. While
+/// the `flash` timer is live, every [`FlickerLight`] is driven to an irregular fraction of
+/// its steady intensity, the dip depth fading with the timer so the light eases back to
+/// full rather than snapping. Idle → lights sit at their base. Presentation-only.
+pub(crate) fn flicker_lights(
+    time: Res<Time>,
+    fx: Res<DecohereFx>,
+    mut lights: Query<(&FlickerLight, &mut PointLight)>,
+) {
+    let t = time.elapsed_secs();
+    let k = (fx.flash / ROUTE_SHIFT_FLASH_SECS).clamp(0.0, 1.0);
+    // The decoherence stutter — applied to every light, deepest at the shift, easing out.
+    let reroute = if k > 0.0 {
+        let blink = 0.5 + 0.5 * (t * 37.0).sin() * (t * 19.0).cos();
+        1.0 - 0.8 * k * (1.0 - blink)
     } else {
-        Visibility::Hidden
+        1.0
     };
-    if let Ok(mut vis) = panel.single_mut() {
-        *vis = visibility;
+    for (flicker, mut light) in &mut lights {
+        // The constant "failing office light" flicker: mostly full, with occasional brief
+        // rapid dropouts, independent per fixture (`phase`). Zero on the steady fill light.
+        let idle = if flicker.idle > 0.0 {
+            let slow =
+                (t * 6.3 + flicker.phase).sin() + 0.6 * (t * 11.0 + flicker.phase * 1.7).sin();
+            let dip = if slow > 1.1 {
+                0.3 + 0.7 * ((t * 46.0 + flicker.phase).sin() * 0.5 + 0.5)
+            } else {
+                1.0
+            };
+            1.0 - flicker.idle * (1.0 - dip)
+        } else {
+            1.0
+        };
+        light.intensity = flicker.base * reroute * idle;
     }
 }
 

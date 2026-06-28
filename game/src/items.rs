@@ -2,9 +2,10 @@
 //!
 //! Two tools, both *presentation-layer* (they never touch the deterministic/networked
 //! match brain):
-//! - the **anchor torch** — dropped, it *pins the structure* where it rests: the corridor
-//!   edges it touches stop re-rolling, a stable foothold in the shifting maze. Pick it up
-//!   and the shifting resumes.
+//! - the **anchor torch** — dropped in a room, it *locks that room's current threshold
+//!   set*: every visible threshold keeps its destination and no new thresholds appear
+//!   while the torch remains. Dropped in a hallway, it pins just that hallway edge. Pick
+//!   it up and the shifting resumes.
 //! - the **teleport pad** — drop two and they form a *reusable link*: step onto either and
 //!   activate to travel to the other. They persist until picked up.
 //!
@@ -26,7 +27,7 @@ pub enum ItemKind {
 }
 
 /// An item resting in the world, bound to the place it was dropped in.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct PlacedItem {
     pub kind: ItemKind,
     pub place: Place,
@@ -34,6 +35,9 @@ pub struct PlacedItem {
     /// For an anchor torch: the decohere version frozen at drop time (so its corridors
     /// keep the shape they had when you anchored them).
     pub pin_version: u32,
+    /// For an anchor torch: the exact room-pair relations frozen at drop time. This is
+    /// the "foreign key" of the tether; it does not follow later graph reroutes.
+    pub pin_edges: Vec<(RoomId, RoomId)>,
 }
 
 /// The single-player loadout plus everything dropped in the world.
@@ -91,9 +95,14 @@ impl ItemsState {
         }
     }
 
-    /// Drop a carried item of `kind` at `place`/`pos` (`version` freezes an anchor's
-    /// pin). Returns true if one was carried and dropped.
-    pub fn drop(&mut self, kind: ItemKind, place: Place, pos: Vec2, version: u32) -> bool {
+    fn drop_with_edges(
+        &mut self,
+        kind: ItemKind,
+        place: Place,
+        pos: Vec2,
+        version: u32,
+        pin_edges: Vec<(RoomId, RoomId)>,
+    ) -> bool {
         if self.carried(kind) == 0 {
             return false;
         }
@@ -103,8 +112,46 @@ impl ItemsState {
             place,
             pos,
             pin_version: version,
+            pin_edges,
         });
         true
+    }
+
+    /// Drop a carried item of `kind` at `place`/`pos` (`version` freezes an anchor's
+    /// pin). Returns true if one was carried and dropped.
+    ///
+    /// Room anchor torches need the room's current connections to freeze a relation; use
+    /// [`Self::drop_anchor_torch`] for gameplay. This generic helper still pins a torch
+    /// dropped inside a hallway, because the hallway already names its edge.
+    pub fn drop(&mut self, kind: ItemKind, place: Place, pos: Vec2, version: u32) -> bool {
+        let pin_edges = match (kind, place) {
+            (
+                ItemKind::AnchorTorch,
+                Place::Hallway {
+                    from,
+                    to,
+                    variation: _,
+                },
+            ) => vec![(from, to)],
+            _ => Vec::new(),
+        };
+        self.drop_with_edges(kind, place, pos, version, pin_edges)
+    }
+
+    /// Drop an anchor torch and freeze the exact relations it touches. A room anchor pins
+    /// each incident relation supplied by the caller; a hallway anchor pins just that edge.
+    pub fn drop_anchor_torch(
+        &mut self,
+        place: Place,
+        pos: Vec2,
+        version: u32,
+        room_connections: &[RoomId],
+    ) -> bool {
+        let pin_edges = match place {
+            Place::Room(room) => room_connections.iter().map(|&to| (room, to)).collect(),
+            Place::Hallway { from, to, .. } => vec![(from, to)],
+        };
+        self.drop_with_edges(ItemKind::AnchorTorch, place, pos, version, pin_edges)
     }
 
     /// Pick up the nearest placed item of `kind` in `place` within `radius` of `pos`.
@@ -130,38 +177,85 @@ impl ItemsState {
     pub fn placed_in(&self, place: Place) -> Vec<PlacedItem> {
         self.placed
             .iter()
-            .copied()
-            .filter(|it| same_place(it.place, place))
+            .filter(|&it| same_place(it.place, place))
+            .cloned()
             .collect()
     }
 
-    /// The edges frozen by dropped anchor torches: a torch in a room pins every edge
-    /// incident to it (its corridors stay put); a torch in a hallway pins that edge.
-    /// `connections_of` supplies a room's current connections.
-    pub fn pins(&self, connections_of: impl Fn(RoomId) -> Vec<RoomId>) -> Vec<PinnedEdge> {
+    /// Relations frozen by dropped anchor torches, expressed as pinned edges with their
+    /// drop-time decohere version. These edges are stored at drop time and do not follow
+    /// later graph reroutes.
+    pub fn pins(&self) -> Vec<PinnedEdge> {
         let mut out = Vec::new();
         for it in &self.placed {
             if it.kind != ItemKind::AnchorTorch {
                 continue;
             }
-            match it.place {
-                Place::Room(r) => {
-                    for c in connections_of(r) {
-                        out.push(PinnedEdge {
-                            a: r,
-                            b: c,
-                            version: it.pin_version,
-                        });
-                    }
-                }
-                Place::Hallway { from, to, .. } => out.push(PinnedEdge {
-                    a: from,
-                    b: to,
+            for &(a, b) in &it.pin_edges {
+                out.push(PinnedEdge {
+                    a,
+                    b,
                     version: it.pin_version,
-                }),
+                });
             }
         }
         out
+    }
+
+    /// Rooms that remain connected to `room` because an anchor froze that relation.
+    pub fn pinned_connections(&self, room: RoomId) -> Vec<RoomId> {
+        let mut out = Vec::new();
+        for pin in self.pins() {
+            if pin.a == room {
+                out.push(pin.b);
+            } else if pin.b == room {
+                out.push(pin.a);
+            }
+        }
+        out.sort_by_key(|room| room.0);
+        out.dedup();
+        out
+    }
+
+    /// If `room` contains an anchor torch, return the exact threshold set frozen when
+    /// the room was tethered. This is stricter than [`Self::pinned_connections`]: a
+    /// room-level lock is an exclusive table of thresholds, so live graph additions do
+    /// not create new doorways until the room anchor is picked up.
+    pub fn locked_room_connections(&self, room: RoomId) -> Option<Vec<RoomId>> {
+        let mut locked = false;
+        let mut out = Vec::new();
+        for it in &self.placed {
+            if it.kind != ItemKind::AnchorTorch || !matches!(it.place, Place::Room(r) if r == room)
+            {
+                continue;
+            }
+            locked = true;
+            for &(a, b) in &it.pin_edges {
+                if a == room {
+                    out.push(b);
+                } else if b == room {
+                    out.push(a);
+                }
+            }
+        }
+        if !locked {
+            return None;
+        }
+        out.sort_by_key(|room| room.0);
+        out.dedup();
+        Some(out)
+    }
+
+    /// Whether the current room-lock tables permit the relation `a <-> b`. If either
+    /// endpoint room is locked, that endpoint must have frozen the other room in its
+    /// threshold table; otherwise new live edges cannot point into a locked room from
+    /// the outside.
+    pub fn relation_allowed_by_room_locks(&self, a: RoomId, b: RoomId) -> bool {
+        let allows = |room: RoomId, other: RoomId| {
+            self.locked_room_connections(room)
+                .is_none_or(|connections| connections.contains(&other))
+        };
+        allows(a, b) && allows(b, a)
     }
 
     /// If the player at `place`/`pos` is standing on a placed teleport pad (within
@@ -184,7 +278,7 @@ impl ItemsState {
             .iter()
             .enumerate()
             .find(|(i, _)| *i != on)
-            .map(|(_, it)| **it)?;
+            .map(|(_, it)| (*it).clone())?;
         Some((other.place, other.pos))
     }
 }
@@ -251,17 +345,63 @@ mod tests {
     #[test]
     fn an_anchor_torch_in_a_room_pins_its_incident_edges() {
         let mut s = ItemsState::single_player();
-        s.drop(ItemKind::AnchorTorch, room(2), Vec2::ZERO, 5);
-        let pins = s.pins(|r| {
-            assert_eq!(r, RoomId(2));
-            vec![RoomId(1), RoomId(3)]
-        });
+        s.drop_anchor_torch(room(2), Vec2::ZERO, 5, &[RoomId(1), RoomId(3)]);
+        let pins = s.pins();
         assert_eq!(pins.len(), 2);
         assert!(pins.iter().all(|p| p.version == 5 && (p.a == RoomId(2))));
+        assert_eq!(s.pinned_connections(RoomId(2)), vec![RoomId(1), RoomId(3)]);
+        assert_eq!(s.pinned_connections(RoomId(1)), vec![RoomId(2)]);
         // A teleport pad pins nothing.
         let mut s2 = ItemsState::single_player();
         s2.drop(ItemKind::TeleportPad, room(2), Vec2::ZERO, 5);
-        assert!(s2.pins(|_| vec![RoomId(1)]).is_empty());
+        assert!(s2.pins().is_empty());
+    }
+
+    #[test]
+    fn a_room_anchor_keeps_its_original_relation_after_the_graph_changes() {
+        let mut s = ItemsState::single_player();
+        s.drop_anchor_torch(room(2), Vec2::ZERO, 5, &[RoomId(1), RoomId(3)]);
+        // The live room graph may later say room 2 connects somewhere else, but the
+        // anchor remains a stored relation, not a live query.
+        assert_eq!(s.pinned_connections(RoomId(2)), vec![RoomId(1), RoomId(3)]);
+        assert_eq!(
+            s.locked_room_connections(RoomId(2)),
+            Some(vec![RoomId(1), RoomId(3)])
+        );
+        let pins = s.pins();
+        assert!(pins.iter().any(|p| p.a == RoomId(2) && p.b == RoomId(1)));
+        assert!(pins.iter().any(|p| p.a == RoomId(2) && p.b == RoomId(3)));
+        assert!(!pins.iter().any(|p| p.a == RoomId(2) && p.b == RoomId(8)));
+    }
+
+    #[test]
+    fn only_a_room_anchor_locks_the_room_threshold_set() {
+        let mut s = ItemsState::single_player();
+        s.drop(
+            ItemKind::AnchorTorch,
+            Place::Hallway {
+                from: RoomId(1),
+                to: RoomId(4),
+                variation: 0,
+            },
+            Vec2::ZERO,
+            3,
+        );
+        assert_eq!(s.pinned_connections(RoomId(1)), vec![RoomId(4)]);
+        assert_eq!(s.locked_room_connections(RoomId(1)), None);
+    }
+
+    #[test]
+    fn a_locked_room_rejects_new_inbound_relations_too() {
+        let mut s = ItemsState::single_player();
+        s.drop_anchor_torch(room(2), Vec2::ZERO, 5, &[RoomId(1), RoomId(3)]);
+
+        assert!(s.relation_allowed_by_room_locks(RoomId(1), RoomId(2)));
+        assert!(s.relation_allowed_by_room_locks(RoomId(3), RoomId(2)));
+        assert!(
+            !s.relation_allowed_by_room_locks(RoomId(8), RoomId(2)),
+            "an outside room cannot grow a new threshold into the locked room"
+        );
     }
 
     #[test]
@@ -277,7 +417,7 @@ mod tests {
             Vec2::ZERO,
             3,
         );
-        let pins = s.pins(|_| panic!("a hallway pin should not query room connections"));
+        let pins = s.pins();
         assert_eq!(pins.len(), 1);
         assert_eq!(
             (pins[0].a, pins[0].b, pins[0].version),
