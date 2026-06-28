@@ -11,7 +11,7 @@ cargo run -p observed_game
 ```
 
 Splash → Main Menu → Loadout → Lobby → Match → Results, with a persistent career,
-a single visual theme, keyboard navigation, and an in-match pause. Nothing here
+a single visual theme, keyboard/controller navigation, and an in-match pause. Nothing here
 re-implements game logic: the career is
 [`progression_lab`](labs/progression_lab/README.md), the lobby is
 [`session_lab`](labs/session_lab/README.md), and the **Match is the live,

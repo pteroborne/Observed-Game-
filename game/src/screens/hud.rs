@@ -2,6 +2,7 @@
 //! tac-map ([`draw_tac_map`]), a top-down schematic rebuilt each frame from the live
 //! match and keystone inventory (see [`crate::tacmap`]).
 
+use bevy::input::gamepad::Gamepad;
 use bevy::prelude::*;
 use observed_core::RoomId;
 use observed_style::{self as style, MarkerRole};
@@ -22,10 +23,11 @@ const TAC_ROOM: f32 = 46.0; // room square size
 /// fills it while shown).
 pub(crate) fn toggle_tac_map(
     keyboard: Res<ButtonInput<KeyCode>>,
+    gamepads: Query<&Gamepad>,
     mut state: ResMut<TacMapState>,
     mut panel: Query<&mut Visibility, With<TacMapPanel>>,
 ) {
-    if keyboard.just_pressed(KeyCode::Tab) {
+    if keyboard.just_pressed(KeyCode::Tab) || gamepad_map_pressed(&gamepads) {
         state.0 = !state.0;
         if let Ok(mut visibility) = panel.single_mut() {
             *visibility = if state.0 {
@@ -204,7 +206,8 @@ pub(crate) fn match_draw(
              tools torch {}/{} | pads {}/{}\n\
              pressure gate {} | hits {}\n\n\
              NET lockstep {} | replica {}/{} {} | drop {} dup {} reorder {}\n\n\
-             WASD + mouse move | E seize/link | F torch | C pad | Tab map | Esc pause",
+             WASD+mouse or Deck controls | E/X seize/link | F/L1 torch | C/Y pad\n\
+             Tab/R1 map | Esc/Start pause",
             facility.round,
             local_status,
             facility.escaped_count(),

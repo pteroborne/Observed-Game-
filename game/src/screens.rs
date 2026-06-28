@@ -1,6 +1,6 @@
 //! The assembled game's UX: a Bevy state machine that strings the proven systems
 //! into one cohesive loop — Splash → Main Menu → Loadout → Lobby → Match → Results
-//! → Menu — with a persistent career, a unified visual theme, keyboard navigation,
+//! → Menu — with a persistent career, a unified visual theme, keyboard/controller navigation,
 //! a first-person 3D match with an in-match HUD and pause, and strict state-scoped
 //! cleanup (every screen's entities despawn on exit, so transitions never leak).
 //!
@@ -446,7 +446,7 @@ fn menu_button(index: usize, action: MenuAction, label: impl Into<String>) -> im
 
 // --- composition -----------------------------------------------------------
 /// The menu flow: every menu-like screen (splash/main-menu/loadout/lobby/results) and
-/// the shared keyboard navigation. Inert where there are no buttons.
+/// the shared keyboard/controller navigation. Inert where there are no buttons.
 pub(crate) struct ScreensPlugin;
 
 impl Plugin for ScreensPlugin {

@@ -4,7 +4,9 @@
 //! ([`teleport_sim`]), pump the lockstep transport and resolve the result
 //! ([`match_pump`]), and collect keystones ([`keystone_pickup`]).
 
+use bevy::ecs::system::SystemParam;
 use bevy::gltf::GltfAssetLabel;
+use bevy::input::gamepad::Gamepad;
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
@@ -24,6 +26,12 @@ use crate::flow::{Career, MATCH_SEED, resolve};
 use crate::items::{ItemKind, ItemsState};
 use crate::keystones::KeystoneState;
 use crate::teleport::{self, GapKind, Place};
+
+#[derive(SystemParam)]
+pub(crate) struct MatchPumpInput<'w, 's> {
+    keyboard: Res<'w, ButtonInput<KeyCode>>,
+    gamepads: Query<'w, 's, &'static Gamepad>,
+}
 
 // --- match (first-person 3D, networked) ------------------------------------
 pub(crate) fn setup_match(
@@ -276,7 +284,7 @@ pub(crate) fn setup_match(
                 },
                 BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.6)),
                 children![(
-                    Text::new("PAUSED\n\nEsc  Resume\nQ    Quit to menu"),
+                    Text::new("PAUSED\n\nEsc / Start  Resume\nQ / Y        Quit to menu"),
                     TextFont {
                         font_size: 28.0,
                         ..default()
@@ -759,19 +767,19 @@ pub(crate) fn teleport_sim(
 /// handle pause/quit, and resolve the result when the match ends.
 pub(crate) fn match_pump(
     time: Res<Time>,
-    keyboard: Res<ButtonInput<KeyCode>>,
+    input: MatchPumpInput,
     mut runtime: ResMut<MatchRuntime>,
     mut paused: ResMut<MatchPaused>,
     mut career: ResMut<Career>,
     mut next: ResMut<NextState<GameState>>,
     mut cursors: Query<&mut CursorOptions, With<PrimaryWindow>>,
 ) {
-    if keyboard.just_pressed(KeyCode::Escape) {
+    if input.keyboard.just_pressed(KeyCode::Escape) || gamepad_pause_pressed(&input.gamepads) {
         paused.0 = !paused.0;
         set_cursor_grab(&mut cursors, !paused.0);
     }
     if paused.0 {
-        if keyboard.just_pressed(KeyCode::KeyQ) {
+        if input.keyboard.just_pressed(KeyCode::KeyQ) || gamepad_quit_pressed(&input.gamepads) {
             next.set(GameState::MainMenu);
         }
         return;

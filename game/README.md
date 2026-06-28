@@ -76,8 +76,8 @@ open exit, uncollected keystones, rival teams, and your current room or hallway.
   exactly once.
 - **A first-person 3D match** — the Match is played in first person in the concrete,
   rerouting maze (the proven `fps_hybrid_match_lab` controller), with WASD + mouse
-  look; the menus are UI overlays on the same 3D camera. The maze is solid textured
-  geometry rebuilt when corridors reroute.
+  look or Steam Deck / standard gamepad controls; the menus are UI overlays on the
+  same 3D camera. The maze is solid textured geometry rebuilt when corridors reroute.
 - **Complete drop-in asset plan** — textured floors, walls, and ceilings; real
   ceiling fixtures with point lights; exit gate and emissive sign; teammate and
   rival models; doorway frames; route equipment; crates, consoles, and animated
@@ -88,8 +88,8 @@ open exit, uncollected keystones, rival teams, and your current room or hallway.
   remote peer over the hostile lockstep transport, which the HUD reports (replica
   rounds, in-sync, packet loss/duplication/reordering).
 - **Unified, consistent UX** — a single visual theme (title / accent / dim / panel),
-  keyboard navigation shared by every menu, an in-match HUD, and an in-match pause
-  overlay.
+  keyboard and controller navigation shared by every menu, an in-match HUD, and an
+  in-match pause overlay.
 - **Strict state-scoped cleanup** — every screen's entities carry `DespawnOnExit`, so
   exactly one screen is ever alive and transitions never leak (a test cycles the
   whole loop five times and asserts the screen count stays at one).
@@ -106,39 +106,42 @@ open exit, uncollected keystones, rival teams, and your current room or hallway.
 ## Screens & controls
 
 Navigation is the same everywhere: **Up/Down** (or **W/S**) to move, **Enter** (or
-**Space**) to confirm, **Esc** to go back.
+**Space**) to confirm, **Esc** to go back. On Steam Deck or a standard controller:
+**left stick/D-pad** selects, **A** confirms, and **B** goes back.
 
-- **Splash** — title card; Enter (or a short timer) advances to the menu.
+- **Splash** — title card; Enter/A (or a short timer) advances to the menu.
 - **Main Menu** — `Play` → Lobby, `Loadout`, `Quit`. Banner shows your live level/XP.
 - **Loadout** — browse the cosmetic catalog; Enter equips the selected one if it is
   unlocked. A header summarizes your level, unlock count, and equipped cosmetics.
 - **Lobby** — a balanced session formed by the matchmaker (two teams, players,
   ratings). `Launch match` drops in; you are Team 1.
 - **Match** — a live first-person 3D walk through the concrete maze. **WASD + mouse**
-  move/look; cross into the next gold-spine room to advance your team; **E** seizes
-  control in its room. Red is the pressure-gate shortcut; cyan is the safe bypass.
+  or **Deck controls** move/look; cross into the next gold-spine room to advance your
+  team; **E/X** seizes control or activates a nearby teleport pad link. Red is the
+  pressure-gate shortcut; cyan is the safe bypass.
   The HUD shows gate phase/hits, the round, your status, escaped / absorbed
   counts, the collapse line, and a **NET lockstep** line (profile, replica rounds,
-  in-sync, packet loss / duplication / reordering). **Tab** toggles the TAC-MAP.
-  **Esc** pauses (overlay with **Q** to quit to menu).
+  in-sync, packet loss / duplication / reordering). **Tab/R1** toggles the TAC-MAP.
+  **F/L1** drops or picks the anchor torch; **C/Y** drops or picks a teleport pad.
+  **Esc/Start** pauses (overlay with **Q/Y** to quit to menu).
 - **Results** — Victory / Escaped / Absorbed headline, placement, the XP/levels/
   unlocks the match awarded, then `Continue` back to the menu.
 
 ## Manual verification
 
 1. `cargo run -p observed_game`.
-2. From the splash, press Enter → the main menu. Note the banner (Level 0 on a fresh
+2. From the splash, press Enter/A → the main menu. Note the banner (Level 0 on a fresh
    profile).
 3. Open **Loadout**, equip a cosmetic, **Esc** back — the equipped summary persists.
 4. **Play** → the lobby shows a formed session; **Launch** drops you into the maze.
-5. Walk in first person (**WASD + mouse**) into the next gold-spine room to advance —
+5. Walk in first person (**WASD + mouse** or Deck controls) into the next gold-spine room to advance —
    the **NET lockstep** line shows your rounds replicating to the remote and the
-   packet loss/duplication/reordering of the hostile transport. **Esc** pauses
-   (cursor released); **Esc** again resumes.
+   packet loss/duplication/reordering of the hostile transport. **Esc/Start** pauses
+   (cursor released); **Esc/Start** again resumes.
 6. Compare a red pressure-gate shortcut with its cyan bypass. Confirm an active
    pulse returns you to the checkpoint without changing match progress, while the
    idle shortcut and safe bypass both remain usable.
-7. Press **Tab** and confirm the TAC-MAP appears in the top-right: gold spine,
+7. Press **Tab/R1** and confirm the TAC-MAP appears in the top-right: gold spine,
    red collapse / locked exit, green open exit once the keystones are collected,
    keystone pips, rival pips, and your marker updating between rooms/hallways.
 8. During the run, verify footsteps while moving, the mechanical cue plus route-

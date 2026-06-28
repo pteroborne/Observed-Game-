@@ -1,12 +1,18 @@
-//! Splash, main menu, results, and the shared keyboard menu navigation. Every
+//! Splash, main menu, results, and the shared keyboard/controller menu navigation. Every
 //! menu-like screen is a column of [`MenuButton`]s driven by the same cursor systems.
 
+use bevy::input::gamepad::Gamepad;
 use bevy::prelude::*;
 use observed_progression::progression::cosmetic;
 
 use super::*;
 use crate::GameState;
 use crate::flow::Career;
+
+#[derive(Default)]
+pub(crate) struct GamepadMenuAxis {
+    direction: i8,
+}
 
 // --- splash ----------------------------------------------------------------
 pub(crate) fn setup_splash(mut commands: Commands) {
@@ -20,17 +26,21 @@ pub(crate) fn setup_splash(mut commands: Commands) {
                 18.0,
                 DIM,
             ));
-            root.spawn(text("press Enter", 18.0, ACCENT));
+            root.spawn(text("press Enter / A", 18.0, ACCENT));
         });
 }
 
 pub(crate) fn splash_advance(
     time: Res<Time>,
     keyboard: Res<ButtonInput<KeyCode>>,
+    gamepads: Query<&Gamepad>,
     mut timer: ResMut<SplashTimer>,
     mut next: ResMut<NextState<GameState>>,
 ) {
-    if timer.0.tick(time.delta()).just_finished() || keyboard.just_pressed(KeyCode::Enter) {
+    if timer.0.tick(time.delta()).just_finished()
+        || keyboard.just_pressed(KeyCode::Enter)
+        || gamepad_confirm_pressed(&gamepads)
+    {
         next.set(GameState::MainMenu);
     }
 }
@@ -52,7 +62,11 @@ pub(crate) fn setup_main_menu(mut commands: Commands, mut cursor: ResMut<MenuCur
                 ));
                 p.spawn(menu_button(2, MenuAction::QuitApp, "Quit"));
             });
-            root.spawn(text("Up/Down select | Enter confirm | Esc quit", 15.0, DIM));
+            root.spawn(text(
+                "Up/Down or D-pad select | Enter/A confirm | Esc/B back",
+                15.0,
+                DIM,
+            ));
         });
 }
 
@@ -151,6 +165,8 @@ fn placement_label(placement: Option<u8>) -> String {
 // --- shared menu systems ---------------------------------------------------
 pub(crate) fn menu_navigate(
     keyboard: Res<ButtonInput<KeyCode>>,
+    gamepads: Query<&Gamepad>,
+    mut gamepad_axis: Local<GamepadMenuAxis>,
     mut cursor: ResMut<MenuCursor>,
     buttons: Query<&MenuButton>,
 ) {
@@ -164,6 +180,15 @@ pub(crate) fn menu_navigate(
     if keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::KeyW) {
         cursor.0 = (cursor.0 + count - 1) % count;
     }
+    let direction = gamepad_menu_axis(&gamepads);
+    if direction != 0 && direction != gamepad_axis.direction {
+        if direction < 0 {
+            cursor.0 = (cursor.0 + 1) % count;
+        } else {
+            cursor.0 = (cursor.0 + count - 1) % count;
+        }
+    }
+    gamepad_axis.direction = direction;
 }
 
 pub(crate) fn menu_highlight(
@@ -181,13 +206,17 @@ pub(crate) fn menu_highlight(
 
 pub(crate) fn menu_activate(
     keyboard: Res<ButtonInput<KeyCode>>,
+    gamepads: Query<&Gamepad>,
     cursor: Res<MenuCursor>,
     buttons: Query<&MenuButton>,
     mut career: ResMut<Career>,
     mut next: ResMut<NextState<GameState>>,
     mut exit: MessageWriter<bevy::app::AppExit>,
 ) {
-    if !keyboard.just_pressed(KeyCode::Enter) && !keyboard.just_pressed(KeyCode::Space) {
+    if !keyboard.just_pressed(KeyCode::Enter)
+        && !keyboard.just_pressed(KeyCode::Space)
+        && !gamepad_confirm_pressed(&gamepads)
+    {
         return;
     }
     let Some(button) = buttons.iter().find(|b| b.index == cursor.0) else {
@@ -208,11 +237,12 @@ pub(crate) fn menu_activate(
 
 pub(crate) fn menu_escape(
     keyboard: Res<ButtonInput<KeyCode>>,
+    gamepads: Query<&Gamepad>,
     state: Res<State<GameState>>,
     mut next: ResMut<NextState<GameState>>,
     mut exit: MessageWriter<bevy::app::AppExit>,
 ) {
-    if !keyboard.just_pressed(KeyCode::Escape) {
+    if !keyboard.just_pressed(KeyCode::Escape) && !gamepad_back_pressed(&gamepads) {
         return;
     }
     match state.get() {
