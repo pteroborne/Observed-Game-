@@ -521,6 +521,56 @@ fn connections_for_nav(game: &HybridMatch, items: &ItemsState, room: RoomId) -> 
     connections
 }
 
+fn rendered_slot_for(
+    game: &HybridMatch,
+    room: RoomId,
+    target: RoomId,
+) -> Option<teleport::ThresholdSlotId> {
+    game.rendered
+        .iter()
+        .find(|route| {
+            (route.rooms.0 == room && route.rooms.1 == target)
+                || (route.rooms.0 == target && route.rooms.1 == room)
+        })
+        .and_then(|route| {
+            [route.key.0, route.key.1]
+                .into_iter()
+                .find(|door| (door.0 as u32 / 4) == room.0)
+                .map(|door| teleport::ThresholdSlotId((door.0 % 4) as u8))
+        })
+}
+
+fn slot_for_connection(
+    game: &HybridMatch,
+    items: &ItemsState,
+    room: RoomId,
+    target: RoomId,
+) -> Option<teleport::ThresholdSlotId> {
+    rendered_slot_for(game, room, target).or_else(|| {
+        connections_for_nav(game, items, room)
+            .into_iter()
+            .position(|candidate| candidate == target)
+            .map(|slot| teleport::ThresholdSlotId(slot as u8))
+    })
+}
+
+fn room_connection_slots(
+    game: &HybridMatch,
+    items: &ItemsState,
+    room: RoomId,
+    connections: &[RoomId],
+) -> Vec<teleport::RoomConnectionSlot> {
+    connections
+        .iter()
+        .enumerate()
+        .map(|(fallback, &target)| teleport::RoomConnectionSlot {
+            target,
+            slot: slot_for_connection(game, items, room, target)
+                .unwrap_or(teleport::ThresholdSlotId(fallback as u8)),
+        })
+        .collect()
+}
+
 pub(crate) fn room_target(
     game: &HybridMatch,
     room: RoomId,
@@ -549,9 +599,13 @@ pub(crate) fn nav_for_room(
     room: RoomId,
 ) -> teleport::Nav {
     let connections = connections_for_nav(game, items, room);
+    let connection_slots = room_connection_slots(game, items, room, &connections);
     let target_room = room_target(game, room, &connections);
     teleport::Nav {
         connections,
+        connection_slots,
+        hallway_entry_room_slot: None,
+        hallway_exit_room_slot: None,
         target_room,
         seed: MATCH_SEED,
         version: game.reroute_commits,
@@ -630,11 +684,15 @@ pub(crate) fn nav_for_place(
     items: &ItemsState,
     place: Place,
 ) -> teleport::Nav {
-    let room = match place {
-        Place::Room(room) => room,
-        Place::Hallway { from, .. } => from,
-    };
-    nav_for_room(game, keys, items, room)
+    match place {
+        Place::Room(room) => nav_for_room(game, keys, items, room),
+        Place::Hallway { from, to, .. } => {
+            let mut nav = nav_for_room(game, keys, items, from);
+            nav.hallway_entry_room_slot = slot_for_connection(game, items, from, to);
+            nav.hallway_exit_room_slot = slot_for_connection(game, items, to, from);
+            nav
+        }
+    }
 }
 
 /// Resolve and **freeze** the destination of every passage doorway of `place` *now* — the
@@ -655,18 +713,30 @@ pub(crate) fn compute_gap_dests(
         .filter(|g| g.kind.is_passage())
         .map(|gap| {
             let (dest, _) = teleport::apply_crossing(place, gap, &nav);
-            let (conns, target) = match dest {
-                Place::Room(r) => {
-                    let c = connections_for_nav(game, items, r);
-                    let t = room_target(game, r, &c);
-                    (c, t)
-                }
-                Place::Hallway { .. } => (Vec::new(), None),
-            };
+            let (conns, connection_slots, hallway_entry_room_slot, hallway_exit_room_slot, target) =
+                match dest {
+                    Place::Room(r) => {
+                        let c = connections_for_nav(game, items, r);
+                        let slots = room_connection_slots(game, items, r, &c);
+                        let t = room_target(game, r, &c);
+                        (c, slots, None, None, t)
+                    }
+                    Place::Hallway { from, to, .. } => (
+                        Vec::new(),
+                        Vec::new(),
+                        Some(gap.threshold.room.slot),
+                        slot_for_connection(game, items, to, from),
+                        None,
+                    ),
+                };
             FrozenDest {
                 gap_center: gap.center,
+                threshold: gap.threshold,
                 place: dest,
                 conns,
+                connection_slots,
+                hallway_entry_room_slot,
+                hallway_exit_room_slot,
                 target,
             }
         })
@@ -679,6 +749,9 @@ pub(crate) fn compute_gap_dests(
 fn frozen_nav(dest: &FrozenDest, keys: &KeystoneState) -> teleport::Nav {
     teleport::Nav {
         connections: dest.conns.clone(),
+        connection_slots: dest.connection_slots.clone(),
+        hallway_entry_room_slot: dest.hallway_entry_room_slot,
+        hallway_exit_room_slot: dest.hallway_exit_room_slot,
         target_room: dest.target,
         seed: MATCH_SEED,
         version: 0,
@@ -687,11 +760,17 @@ fn frozen_nav(dest: &FrozenDest, keys: &KeystoneState) -> teleport::Nav {
     }
 }
 
-/// The frozen destination snapshot for the doorway whose gap is `gap` (matched by centre).
+/// The frozen destination snapshot for the doorway whose gap is `gap` (matched by
+/// threshold identity, with a centre fallback for old/debug snapshots).
 fn frozen_dest_for<'a>(tp: &'a TeleportState, gap: &teleport::DoorGap) -> Option<&'a FrozenDest> {
     tp.gap_dests
         .iter()
-        .find(|d| (d.gap_center - gap.center).length() < 0.05)
+        .find(|d| d.threshold == gap.threshold)
+        .or_else(|| {
+            tp.gap_dests
+                .iter()
+                .find(|d| (d.gap_center - gap.center).length() < 0.05)
+        })
 }
 
 /// Move the body into `place`, having arrived from room `from`. When `crossed` (the

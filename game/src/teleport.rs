@@ -70,6 +70,67 @@ impl GapKind {
     }
 }
 
+/// Stable ordinal of a threshold on one side of a room or hallway. Room slots mirror the
+/// authored observation sides (N/E/S/W as 0/1/2/3 when that data is available); hallway
+/// slots distinguish multiple apertures on the same end of a generated corridor.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ThresholdSlotId(pub u8);
+
+/// A room-side threshold endpoint.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct RoomThreshold {
+    pub room: RoomId,
+    pub slot: ThresholdSlotId,
+}
+
+/// Stable identity for the graph edge whose hallway is being projected. The hallway
+/// variation is presentation state; the logical hall is the unordered edge between rooms.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HallId {
+    pub a: RoomId,
+    pub b: RoomId,
+}
+
+impl HallId {
+    pub fn new(a: RoomId, b: RoomId) -> Self {
+        if a.0 <= b.0 {
+            Self { a, b }
+        } else {
+            Self { a: b, b: a }
+        }
+    }
+}
+
+/// A hallway-side threshold endpoint. `side` is the room this hallway aperture faces.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct HallThreshold {
+    pub hall: HallId,
+    pub side: RoomId,
+    pub slot: ThresholdSlotId,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ThresholdLocalSide {
+    Room,
+    Hall,
+}
+
+/// Full threshold identity: every rendered doorway knows both the room slot and the
+/// hallway slot it connects. Geometry matching uses this instead of "nearest centre".
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ThresholdLink {
+    pub room: RoomThreshold,
+    pub hall: HallThreshold,
+    pub local_side: ThresholdLocalSide,
+}
+
+/// A connected room plus the fixed room threshold slot used by that connection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RoomConnectionSlot {
+    pub target: RoomId,
+    pub slot: ThresholdSlotId,
+}
+
 /// A crossable gap on the current place's footprint edge, in the place's local frame.
 #[derive(Clone, Copy, Debug)]
 pub struct DoorGap {
@@ -81,6 +142,7 @@ pub struct DoorGap {
     /// The room this gap ultimately heads toward.
     pub target: RoomId,
     pub kind: GapKind,
+    pub threshold: ThresholdLink,
 }
 
 /// An interior wall segment inside a place's footprint (local frame, centred at 0).
@@ -171,20 +233,47 @@ fn outward_normal(a: Vec2, b: Vec2) -> Vec2 {
 /// connection, spread across its edges. The doorway whose target is the spine objective
 /// is flagged `Forward`; the rest are `Side` (closed) doors. `seed` keeps each room's
 /// shape stable.
-pub fn room_geom(connections: &[RoomId], target: Option<RoomId>, seed: u64) -> PlaceGeom {
+pub fn room_geom(
+    room: RoomId,
+    connections: &[RoomId],
+    target: Option<RoomId>,
+    seed: u64,
+) -> PlaceGeom {
+    room_geom_with_slots(room, connections, &[], target, seed)
+}
+
+pub fn room_geom_with_slots(
+    room: RoomId,
+    connections: &[RoomId],
+    connection_slots: &[RoomConnectionSlot],
+    target: Option<RoomId>,
+    seed: u64,
+) -> PlaceGeom {
     let mut conns: Vec<RoomId> = connections.to_vec();
     conns.sort_unstable_by_key(|r| r.0);
     conns.dedup();
-    let num = conns.len();
-    let verts = room_polygon(seed, num);
-    let n = verts.len();
-    let gaps = conns
-        .into_iter()
+    let mut assigned: Vec<(RoomId, ThresholdSlotId)> = conns
+        .iter()
         .enumerate()
-        .map(|(i, t)| {
-            // Spread the doorways evenly around the polygon's edges. (The closure only
-            // runs when there is at least one connection, so `num >= 1` here.)
-            let edge = (i * n) / num;
+        .map(|(fallback, &target)| {
+            let slot = connection_slots
+                .iter()
+                .find(|candidate| candidate.target == target)
+                .map(|candidate| candidate.slot)
+                .unwrap_or(ThresholdSlotId(fallback as u8));
+            (target, slot)
+        })
+        .collect();
+    assigned.sort_by_key(|(_, slot)| *slot);
+    assigned.dedup_by_key(|(_, slot)| *slot);
+    let verts = room_polygon(seed, 4);
+    let n = verts.len();
+    let gaps = assigned
+        .into_iter()
+        .map(|(t, slot)| {
+            // Fixed room slots keep a relation on the same wall even when other
+            // connections appear/disappear.
+            let edge = ((slot.0 as usize % 4) * n) / 4;
             let a = verts[edge];
             let b = verts[(edge + 1) % n];
             let mid = (a + b) * 0.5;
@@ -198,6 +287,15 @@ pub fn room_geom(connections: &[RoomId], target: Option<RoomId>, seed: u64) -> P
                     GapKind::Forward
                 } else {
                     GapKind::Side
+                },
+                threshold: ThresholdLink {
+                    room: RoomThreshold { room, slot },
+                    hall: HallThreshold {
+                        hall: HallId::new(room, t),
+                        side: room,
+                        slot: ThresholdSlotId(0),
+                    },
+                    local_side: ThresholdLocalSide::Room,
                 },
             }
         })
@@ -232,6 +330,36 @@ pub fn open_entry(geom: &mut PlaceGeom, entry_from: Option<RoomId>) {
         .find(|g| g.target == from && g.kind == GapKind::Side)
     {
         gap.kind = GapKind::Entry;
+    }
+}
+
+fn hallway_threshold(
+    from: RoomId,
+    to: RoomId,
+    side: RoomId,
+    slot: ThresholdSlotId,
+) -> HallThreshold {
+    HallThreshold {
+        hall: HallId::new(from, to),
+        side,
+        slot,
+    }
+}
+
+fn hallway_gap_threshold(
+    from: RoomId,
+    to: RoomId,
+    side: RoomId,
+    room_slot: ThresholdSlotId,
+    hall_slot: ThresholdSlotId,
+) -> ThresholdLink {
+    ThresholdLink {
+        room: RoomThreshold {
+            room: side,
+            slot: room_slot,
+        },
+        hall: hallway_threshold(from, to, side, hall_slot),
+        local_side: ThresholdLocalSide::Hall,
     }
 }
 
@@ -292,6 +420,26 @@ pub fn hallway_geom(
     layout_seed: u64,
     exit_locked: bool,
 ) -> PlaceGeom {
+    hallway_geom_with_slots(
+        from,
+        to,
+        ThresholdSlotId(0),
+        ThresholdSlotId(0),
+        template,
+        layout_seed,
+        exit_locked,
+    )
+}
+
+pub fn hallway_geom_with_slots(
+    from: RoomId,
+    to: RoomId,
+    from_room_slot: ThresholdSlotId,
+    to_room_slot: ThresholdSlotId,
+    template: &hallway::HallwayTemplate,
+    layout_seed: u64,
+    exit_locked: bool,
+) -> PlaceGeom {
     // A hallway heading into the facility exit shows a solid locked door while the
     // keystone gate is shut; otherwise its onward doorway is a normal passage.
     let exit_kind = if exit_locked && to.0 == EXIT_ROOM {
@@ -311,24 +459,28 @@ pub fn hallway_geom(
         // Multiple entrances (−Z, back to `from`) and exits (+Z, on to `to`); each at a
         // door column, all reachable from one another through the maze.
         let mut gaps = Vec::new();
-        for &ec in &m.entry_cols {
+        for (slot, &ec) in m.entry_cols.iter().enumerate() {
             let x = m.cell_center(ec, 0, MAZE_CELL).x;
+            let hall_slot = ThresholdSlotId(slot as u8);
             gaps.push(DoorGap {
                 center: Vec2::new(x, -footprint.y),
                 normal: Vec2::new(0.0, -1.0),
                 width: corridor,
                 target: from,
                 kind: GapKind::Entry,
+                threshold: hallway_gap_threshold(from, to, from, from_room_slot, hall_slot),
             });
         }
-        for &xc in &m.exit_cols {
+        for (slot, &xc) in m.exit_cols.iter().enumerate() {
             let x = m.cell_center(xc, m.rows - 1, MAZE_CELL).x;
+            let hall_slot = ThresholdSlotId(slot as u8);
             gaps.push(DoorGap {
                 center: Vec2::new(x, footprint.y),
                 normal: Vec2::new(0.0, 1.0),
                 width: corridor,
                 target: to,
                 kind: exit_kind,
+                threshold: hallway_gap_threshold(from, to, to, to_room_slot, hall_slot),
             });
         }
         return PlaceGeom {
@@ -375,6 +527,13 @@ pub fn hallway_geom(
                     width: c,
                     target: from,
                     kind: GapKind::Entry,
+                    threshold: hallway_gap_threshold(
+                        from,
+                        to,
+                        from,
+                        from_room_slot,
+                        ThresholdSlotId(0),
+                    ),
                 },
                 DoorGap {
                     center: Vec2::new(-off, hz),
@@ -382,6 +541,13 @@ pub fn hallway_geom(
                     width: c,
                     target: to,
                     kind: exit_kind,
+                    threshold: hallway_gap_threshold(
+                        from,
+                        to,
+                        to,
+                        to_room_slot,
+                        ThresholdSlotId(0),
+                    ),
                 },
             ],
             interior,
@@ -416,6 +582,13 @@ pub fn hallway_geom(
                     width: lane,
                     target: from,
                     kind: GapKind::Entry,
+                    threshold: hallway_gap_threshold(
+                        from,
+                        to,
+                        from,
+                        from_room_slot,
+                        ThresholdSlotId(0),
+                    ),
                 },
                 DoorGap {
                     center: Vec2::new(0.0, hz),
@@ -423,6 +596,13 @@ pub fn hallway_geom(
                     width: lane,
                     target: to,
                     kind: exit_kind,
+                    threshold: hallway_gap_threshold(
+                        from,
+                        to,
+                        to,
+                        to_room_slot,
+                        ThresholdSlotId(0),
+                    ),
                 },
             ],
             interior,
@@ -442,6 +622,13 @@ pub fn hallway_geom(
                 width: door,
                 target: from,
                 kind: GapKind::Entry,
+                threshold: hallway_gap_threshold(
+                    from,
+                    to,
+                    from,
+                    from_room_slot,
+                    ThresholdSlotId(0),
+                ),
             },
             DoorGap {
                 center: Vec2::new(0.0, half.y),
@@ -449,6 +636,7 @@ pub fn hallway_geom(
                 width: door,
                 target: to,
                 kind: exit_kind,
+                threshold: hallway_gap_threshold(from, to, to, to_room_slot, ThresholdSlotId(0)),
             },
         ],
         interior: Vec::new(),
@@ -483,10 +671,17 @@ fn pillar_offsets(limit: f32) -> Vec<f32> {
 pub fn room_preview_geom(
     room: RoomId,
     connections: &[RoomId],
+    connection_slots: &[RoomConnectionSlot],
     target: Option<RoomId>,
     base_seed: u64,
 ) -> PlaceGeom {
-    room_geom(connections, target, mix(base_seed, room.0 as u64))
+    room_geom_with_slots(
+        room,
+        connections,
+        connection_slots,
+        target,
+        mix(base_seed, room.0 as u64),
+    )
 }
 
 /// The footprint geometry for any place, given the current navigation snapshot.
@@ -494,8 +689,10 @@ pub fn geom_for(place: Place, nav: &Nav) -> PlaceGeom {
     match place {
         // The room shape is seeded by the room id + facility seed (not the decohere
         // version), so a room keeps a stable shape while its connections rewire.
-        Place::Room(room) => room_geom(
+        Place::Room(room) => room_geom_with_slots(
+            room,
             &nav.connections,
+            &nav.connection_slots,
             nav.target_room,
             mix(nav.seed, room.0 as u64),
         ),
@@ -503,9 +700,13 @@ pub fn geom_for(place: Place, nav: &Nav) -> PlaceGeom {
             from,
             to,
             variation,
-        } => hallway_geom(
+        } => hallway_geom_with_slots(
             from,
             to,
+            nav.hallway_entry_room_slot
+                .or_else(|| nav.slot_for(to))
+                .unwrap_or(ThresholdSlotId(0)),
+            nav.hallway_exit_room_slot.unwrap_or(ThresholdSlotId(0)),
             hallway::template(variation),
             hallway::layout_seed(from, to, variation),
             nav.exit_locked,
@@ -529,6 +730,13 @@ pub struct PinnedEdge {
 pub struct Nav {
     /// Rooms connected to the current room (its open doorways' partners).
     pub connections: Vec<RoomId>,
+    /// Fixed room threshold slots for the connections above, when the caller can resolve
+    /// them from the authoritative door IDs.
+    pub connection_slots: Vec<RoomConnectionSlot>,
+    /// For a rendered hallway, the room-side slot at the entry/back end.
+    pub hallway_entry_room_slot: Option<ThresholdSlotId>,
+    /// For a rendered hallway, the room-side slot at the exit/forward end.
+    pub hallway_exit_room_slot: Option<ThresholdSlotId>,
     /// The spine-forward objective room, if the local team is still running.
     pub target_room: Option<RoomId>,
     pub seed: u64,
@@ -542,6 +750,13 @@ pub struct Nav {
 }
 
 impl Nav {
+    pub fn slot_for(&self, target: RoomId) -> Option<ThresholdSlotId> {
+        self.connection_slots
+            .iter()
+            .find(|connection| connection.target == target)
+            .map(|connection| connection.slot)
+    }
+
     /// The decohere version to use for the edge `(x, y)`: the pinned version if an anchor
     /// torch froze it, otherwise the live `version`.
     pub fn effective_version(&self, x: RoomId, y: RoomId) -> u32 {
@@ -640,6 +855,10 @@ fn rot_y(yaw: f32, p: Vec2) -> Vec2 {
     Vec2::new(r.x, r.z)
 }
 
+fn yaw_mapping(local: Vec2, world: Vec2) -> f32 {
+    world.x.atan2(world.y) - local.x.atan2(local.y)
+}
+
 impl Align2d {
     /// Map a point in the child place's frame into the current place's frame.
     pub fn apply(self, p: Vec2) -> Vec2 {
@@ -654,14 +873,25 @@ impl Align2d {
     }
 }
 
-/// The alignment placing the **hallway** you cross `gap` into: its entry tucks just beyond
-/// the opening and it extends away along the doorway's outward normal. `hallway_half_z` is
-/// the hallway footprint's half depth. Mirrors `spawn_hallway_preview`.
-pub fn hallway_alignment(gap: &DoorGap, hallway_half_z: f32) -> Align2d {
+/// The alignment placing the **hallway** you cross `gap` into: the selected hallway-side
+/// threshold slot tucks just beyond the room opening and the hallway extends away along
+/// the doorway's outward normal. This is the slot-aware version of the preview/crossing
+/// contract; a multi-entrance maze hall is never aligned by its centreline.
+pub fn hallway_alignment(gap: &DoorGap, hallway: &PlaceGeom) -> Option<Align2d> {
+    let hall_gap = hallway.gaps.iter().find(|candidate| {
+        candidate.threshold.hall == gap.threshold.hall
+            && candidate.threshold.hall.side == gap.threshold.room.room
+            && candidate.threshold.local_side == ThresholdLocalSide::Hall
+    })?;
+    Some(hallway_gap_alignment(gap, hall_gap))
+}
+
+pub fn hallway_gap_alignment(gap: &DoorGap, hall_gap: &DoorGap) -> Align2d {
     let n = gap.normal;
+    let yaw = yaw_mapping(hall_gap.normal, -n);
     Align2d {
-        yaw: n.x.atan2(n.y),
-        offset: gap.center + n * (hallway_half_z + PREVIEW_OUTSET),
+        yaw,
+        offset: (gap.center + n * PREVIEW_OUTSET) - rot_y(yaw, hall_gap.center),
     }
 }
 
@@ -670,8 +900,7 @@ pub fn hallway_alignment(gap: &DoorGap, hallway_half_z: f32) -> Align2d {
 /// Mirrors `spawn_room_preview`.
 pub fn room_alignment(gap: &DoorGap, back: &DoorGap) -> Align2d {
     let n = gap.normal;
-    let world_out = -n;
-    let yaw = back.normal.y.atan2(back.normal.x) - world_out.y.atan2(world_out.x);
+    let yaw = yaw_mapping(back.normal, -n);
     let offset = (gap.center + n * PREVIEW_OUTSET) - rot_y(yaw, back.center);
     Align2d { yaw, offset }
 }
@@ -687,11 +916,12 @@ pub fn crossing_alignment(
     from: RoomId,
 ) -> Option<Align2d> {
     match place {
-        Place::Hallway { .. } => Some(hallway_alignment(crossed, geom.half.y)),
+        Place::Hallway { .. } => hallway_alignment(crossed, geom),
         Place::Room(_) => geom
             .gaps
             .iter()
-            .find(|g| g.target == from)
+            .find(|g| g.target == from && g.threshold.room == crossed.threshold.room)
+            .or_else(|| geom.gaps.iter().find(|g| g.target == from))
             .map(|back| room_alignment(crossed, back)),
     }
 }
@@ -808,6 +1038,16 @@ mod tests {
     fn nav(connections: &[u32], target: Option<u32>) -> Nav {
         Nav {
             connections: connections.iter().map(|&r| RoomId(r)).collect(),
+            connection_slots: connections
+                .iter()
+                .enumerate()
+                .map(|(slot, &target)| RoomConnectionSlot {
+                    target: RoomId(target),
+                    slot: ThresholdSlotId(slot as u8),
+                })
+                .collect(),
+            hallway_entry_room_slot: None,
+            hallway_exit_room_slot: None,
             target_room: target.map(RoomId),
             seed: 1,
             version: 0,
@@ -816,9 +1056,29 @@ mod tests {
         }
     }
 
+    fn test_threshold(room: RoomId, target: RoomId) -> ThresholdLink {
+        ThresholdLink {
+            room: RoomThreshold {
+                room,
+                slot: ThresholdSlotId(0),
+            },
+            hall: HallThreshold {
+                hall: HallId::new(room, target),
+                side: room,
+                slot: ThresholdSlotId(0),
+            },
+            local_side: ThresholdLocalSide::Room,
+        }
+    }
+
     #[test]
     fn room_geom_has_a_gap_per_connection_and_marks_the_forward_one() {
-        let geom = room_geom(&[RoomId(1), RoomId(3), RoomId(5)], Some(RoomId(3)), 7);
+        let geom = room_geom(
+            RoomId(0),
+            &[RoomId(1), RoomId(3), RoomId(5)],
+            Some(RoomId(3)),
+            7,
+        );
         assert_eq!(geom.gaps.len(), 3);
         let forward = geom
             .forward_gap()
@@ -834,11 +1094,60 @@ mod tests {
     }
 
     #[test]
+    fn room_threshold_slots_are_stable_across_connection_changes() {
+        let seed = 17;
+        let full = room_geom_with_slots(
+            RoomId(0),
+            &[RoomId(1), RoomId(3)],
+            &[
+                RoomConnectionSlot {
+                    target: RoomId(1),
+                    slot: ThresholdSlotId(1),
+                },
+                RoomConnectionSlot {
+                    target: RoomId(3),
+                    slot: ThresholdSlotId(3),
+                },
+            ],
+            Some(RoomId(1)),
+            seed,
+        );
+        let reduced = room_geom_with_slots(
+            RoomId(0),
+            &[RoomId(1)],
+            &[RoomConnectionSlot {
+                target: RoomId(1),
+                slot: ThresholdSlotId(1),
+            }],
+            Some(RoomId(1)),
+            seed,
+        );
+
+        let full_gap = full.gaps.iter().find(|g| g.target == RoomId(1)).unwrap();
+        let reduced_gap = reduced.gaps.iter().find(|g| g.target == RoomId(1)).unwrap();
+
+        assert_eq!(
+            full_gap.threshold.room,
+            RoomThreshold {
+                room: RoomId(0),
+                slot: ThresholdSlotId(1),
+            }
+        );
+        assert!((full_gap.center - reduced_gap.center).length() < 0.001);
+        assert!(full_gap.normal.dot(reduced_gap.normal) > 0.999);
+    }
+
+    #[test]
     fn rooms_are_convex_polygons_with_enough_edges_for_their_doorways() {
         // Across seeds, a room is a 4–8 sided convex polygon with at least one edge per
         // connection, and its gaps sit on distinct edges (their centres differ).
         for seed in 0..40u64 {
-            let geom = room_geom(&[RoomId(1), RoomId(3), RoomId(5)], Some(RoomId(3)), seed);
+            let geom = room_geom(
+                RoomId(0),
+                &[RoomId(1), RoomId(3), RoomId(5)],
+                Some(RoomId(3)),
+                seed,
+            );
             let poly = geom.poly.as_ref().expect("a room is a polygon");
             assert!(
                 (4..=8).contains(&poly.len()) && poly.len() >= geom.gaps.len(),
@@ -896,6 +1205,64 @@ mod tests {
     }
 
     #[test]
+    fn room_preview_and_crossing_align_to_the_same_hall_threshold_slot() {
+        let template = maze_templates()
+            .into_iter()
+            .find(|template| template.grid.is_some())
+            .expect("at least one maze hallway template");
+        let hall = (0..64_u64)
+            .map(|seed| {
+                hallway_geom_with_slots(
+                    RoomId(0),
+                    RoomId(1),
+                    ThresholdSlotId(2),
+                    ThresholdSlotId(1),
+                    template,
+                    seed,
+                    false,
+                )
+            })
+            .find(|geom| {
+                geom.gaps
+                    .iter()
+                    .filter(|g| g.kind == GapKind::Entry)
+                    .count()
+                    > 1
+            })
+            .expect("maze template exposes multiple entry apertures");
+        let room = room_geom_with_slots(
+            RoomId(0),
+            &[RoomId(1)],
+            &[RoomConnectionSlot {
+                target: RoomId(1),
+                slot: ThresholdSlotId(2),
+            }],
+            Some(RoomId(1)),
+            29,
+        );
+        let room_gap = *room.forward_gap().expect("room has a forward gap");
+        let selected_hall_gap = hall
+            .gaps
+            .iter()
+            .find(|gap| gap.threshold.hall == room_gap.threshold.hall)
+            .expect("hall contains the selected threshold slot");
+
+        let align = hallway_alignment(&room_gap, &hall).expect("slot alignment resolves");
+        let selected_world = align.apply(selected_hall_gap.center);
+        let expected = room_gap.center + room_gap.normal * PREVIEW_OUTSET;
+
+        assert_eq!(
+            room_gap.threshold.room,
+            RoomThreshold {
+                room: RoomId(0),
+                slot: ThresholdSlotId(2),
+            }
+        );
+        assert_eq!(selected_hall_gap.threshold.hall, room_gap.threshold.hall);
+        assert!((selected_world - expected).length() < 0.001);
+    }
+
+    #[test]
     fn crossing_detects_an_outward_pass_through_the_gap() {
         let gap = DoorGap {
             center: Vec2::new(0.0, -ROOM_HALF),
@@ -903,6 +1270,7 @@ mod tests {
             width: THRESHOLD_WIDTH,
             target: RoomId(2),
             kind: GapKind::Forward,
+            threshold: test_threshold(RoomId(0), RoomId(2)),
         };
         // Walk from inside (z > -ROOM_HALF) to outside (z < -ROOM_HALF), on-centre.
         assert!(crossed(
@@ -982,7 +1350,7 @@ mod tests {
         // A different edge is unaffected — it still re-rolls.
         assert_eq!(n.effective_version(RoomId(0), RoomId(3)), 5);
         // Crossing into the pinned edge yields the frozen variation, not the live one.
-        let gap = *room_geom(&n.connections, n.target_room, 1)
+        let gap = *room_geom(RoomId(0), &n.connections, n.target_room, 1)
             .forward_gap()
             .unwrap();
         let (place, _) = apply_crossing(Place::Room(RoomId(0)), &gap, &n);
@@ -999,7 +1367,7 @@ mod tests {
     #[test]
     fn entry_spawn_places_the_body_just_inside_the_arrival_gap() {
         // Arriving in a room from room 0: spawn just inside the doorway back to 0.
-        let geom = room_geom(&[RoomId(0), RoomId(2)], Some(RoomId(2)), 5);
+        let geom = room_geom(RoomId(1), &[RoomId(0), RoomId(2)], Some(RoomId(2)), 5);
         let spawn = entry_spawn(&geom, RoomId(0));
         let back = geom.gaps.iter().find(|g| g.target == RoomId(0)).unwrap();
         // Spawn is inset inward from the gap (closer to the room centre).
@@ -1050,7 +1418,7 @@ mod tests {
     #[test]
     fn entering_a_room_keeps_the_arrival_doorway_an_open_passage() {
         // Room 1 connects back to 0 (where we came from) and on to 2 (the objective).
-        let mut geom = room_geom(&[RoomId(0), RoomId(2)], Some(RoomId(2)), 5);
+        let mut geom = room_geom(RoomId(1), &[RoomId(0), RoomId(2)], Some(RoomId(2)), 5);
         // By default the doorway back toward 0 is a sealed Side wall.
         let back = geom.gaps.iter().find(|g| g.target == RoomId(0)).unwrap();
         assert_eq!(back.kind, GapKind::Side);
@@ -1062,7 +1430,7 @@ mod tests {
         assert!(back.kind.is_passage());
         assert!(geom.forward_gap().is_some(), "forward doorway is preserved");
         // The start room (no arrival doorway) keeps every non-forward door sealed.
-        let mut start = room_geom(&[RoomId(0), RoomId(2)], Some(RoomId(2)), 5);
+        let mut start = room_geom(RoomId(1), &[RoomId(0), RoomId(2)], Some(RoomId(2)), 5);
         open_entry(&mut start, None);
         assert!(start.gaps.iter().all(|g| g.kind != GapKind::Entry));
     }
@@ -1095,7 +1463,7 @@ mod tests {
     #[test]
     fn an_edge_rolls_its_hallway_by_decohere_version() {
         let nav = nav(&[1], Some(1));
-        let gap = *room_geom(&nav.connections, nav.target_room, 1)
+        let gap = *room_geom(RoomId(0), &nav.connections, nav.target_room, 1)
             .forward_gap()
             .unwrap();
         let (place, _) = apply_crossing(Place::Room(RoomId(0)), &gap, &nav);
@@ -1146,7 +1514,7 @@ mod tests {
 
     #[test]
     fn a_polygon_room_contains_the_body_but_opens_at_the_doorway() {
-        let geom = room_geom(&[RoomId(1)], Some(RoomId(1)), 4);
+        let geom = room_geom(RoomId(0), &[RoomId(1)], Some(RoomId(1)), 4);
         let r = 0.4;
         // A polygon room has no AABB walls — its angled walls are the `contain` clamp.
         assert!(
@@ -1372,7 +1740,12 @@ mod tests {
         // Rooms aren't all one size — some read as tight, some as hub-like.
         let areas: Vec<f32> = (0..24u64)
             .map(|seed| {
-                let g = room_geom(&[RoomId(1), RoomId(2), RoomId(3)], Some(RoomId(1)), seed);
+                let g = room_geom(
+                    RoomId(0),
+                    &[RoomId(1), RoomId(2), RoomId(3)],
+                    Some(RoomId(1)),
+                    seed,
+                );
                 g.half.x * g.half.y
             })
             .collect();

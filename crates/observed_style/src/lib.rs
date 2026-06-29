@@ -331,7 +331,7 @@ pub fn surface(role: SurfaceRole) -> Treatment {
     match role {
         SurfaceRole::Plain => Treatment {
             base_color: Color::srgb(0.03, 0.04, 0.07),
-            emissive: LinearRgba::rgb(0.0, 0.02, 0.05),
+            emissive: LinearRgba::rgb(0.10, 0.14, 0.22),
             signal: false,
             edge: Some(Color::srgb(0.10, 0.26, 0.40)),
         },
@@ -361,13 +361,13 @@ pub fn surface(role: SurfaceRole) -> Treatment {
         },
         SurfaceRole::Wall => Treatment {
             base_color: Color::srgb(0.04, 0.05, 0.08),
-            emissive: LinearRgba::rgb(0.0, 0.0, 0.0),
+            emissive: LinearRgba::rgb(0.12, 0.18, 0.28),
             signal: false,
             edge: Some(Color::srgb(0.12, 0.4, 0.62)),
         },
         SurfaceRole::Ceiling => Treatment {
             base_color: Color::srgb(0.02, 0.02, 0.035),
-            emissive: LinearRgba::rgb(0.0, 0.0, 0.0),
+            emissive: LinearRgba::rgb(0.08, 0.10, 0.16),
             signal: false,
             edge: None,
         },

@@ -6,7 +6,6 @@
 use std::path::PathBuf;
 
 use bevy::app::AppExit;
-use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use observed_core::RoomId;
@@ -272,8 +271,6 @@ fn capture_bot_pov_progress(
     keys: Option<ResMut<keystones::KeystoneState>>,
     tp: Option<Res<screens::TeleportState>>,
     mut cam: Query<&mut Transform, With<screens::GameCam>>,
-    mut ambient: ResMut<GlobalAmbientLight>,
-    mut fog: Query<&mut DistanceFog, With<screens::GameCam>>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -320,15 +317,6 @@ fn capture_bot_pov_progress(
         && let Some(tp) = tp
         && let Ok(mut transform) = cam.single_mut()
     {
-        ambient.color = Color::srgb(0.48, 0.54, 0.68);
-        ambient.brightness = 420.0;
-        if let Ok(mut fog) = fog.single_mut() {
-            fog.color = Color::srgb(0.01, 0.015, 0.025);
-            fog.falloff = FogFalloff::Linear {
-                start: 48.0,
-                end: 150.0,
-            };
-        }
         camera::bot_view(&tp.body, &tp.config).apply_to(&mut transform);
     }
 }

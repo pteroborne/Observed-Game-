@@ -152,7 +152,12 @@ pub(crate) fn rebuild_place(
             let dest = tp
                 .gap_dests
                 .iter()
-                .find(|d| (d.gap_center - gap.center).length() < 0.05)
+                .find(|d| d.threshold == gap.threshold)
+                .or_else(|| {
+                    tp.gap_dests
+                        .iter()
+                        .find(|d| (d.gap_center - gap.center).length() < 0.05)
+                })
                 .cloned()
                 .unwrap_or_else(|| fallback_dest(tp.place, gap, &nav, game));
             spawn_passage_preview(
@@ -352,8 +357,15 @@ fn fallback_dest(
     };
     FrozenDest {
         gap_center: gap.center,
+        threshold: gap.threshold,
         place: dest,
         conns,
+        connection_slots: Vec::new(),
+        hallway_entry_room_slot: match dest {
+            Place::Hallway { .. } => Some(gap.threshold.room.slot),
+            _ => None,
+        },
+        hallway_exit_room_slot: None,
         target,
     }
 }
@@ -382,6 +394,7 @@ fn spawn_passage_preview(
             place,
             dest_room,
             &dest.conns,
+            &dest.connection_slots,
             dest.target,
             nav,
             game,
@@ -406,7 +419,11 @@ fn spawn_hallway_preview(
     let light_color = style::district(district_for_place(next)).light_color;
     // The hallway's local +Z (entry→exit) maps to the doorway's outward normal, and its
     // entry sits just beyond the opening — the same alignment the crossing remap uses.
-    let parent = camera::alignment_transform(teleport::hallway_alignment(gap, hz));
+    let Some(align) = teleport::hallway_alignment(gap, &dest) else {
+        spawn_passage_stub(commands, assets, gap);
+        return;
+    };
+    let parent = camera::alignment_transform(align);
     let place_in = |local: Transform| parent.mul_transform(local);
 
     // A pressure-gate hall keeps its hazard floor; everything else is the neutral surface.
@@ -479,6 +496,7 @@ fn spawn_room_preview(
     place: Place,
     dest_room: RoomId,
     conns: &[RoomId],
+    connection_slots: &[teleport::RoomConnectionSlot],
     target: Option<RoomId>,
     nav: &teleport::Nav,
     game: &HybridMatch,
@@ -491,7 +509,7 @@ fn spawn_room_preview(
     let back = if dest_room == to { from } else { to };
     // `conns` is the room's frozen connection set (snapshotted at place-entry), so the
     // previewed shape matches the room you'll arrive in even if the brain rerolls it.
-    let dest = teleport::room_preview_geom(dest_room, conns, target, nav.seed);
+    let dest = teleport::room_preview_geom(dest_room, conns, connection_slots, target, nav.seed);
     let Some(poly) = dest.poly.clone() else {
         return;
     };

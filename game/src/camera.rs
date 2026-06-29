@@ -117,6 +117,21 @@ mod tests {
         transform.rotation * Vec3::NEG_Z
     }
 
+    fn test_threshold(room: RoomId, target: RoomId) -> teleport::ThresholdLink {
+        teleport::ThresholdLink {
+            room: teleport::RoomThreshold {
+                room,
+                slot: teleport::ThresholdSlotId(0),
+            },
+            hall: teleport::HallThreshold {
+                hall: teleport::HallId::new(room, target),
+                side: room,
+                slot: teleport::ThresholdSlotId(0),
+            },
+            local_side: teleport::ThresholdLocalSide::Room,
+        }
+    }
+
     #[test]
     fn doorway_preview_view_looks_through_the_gap_normal() {
         let gap = DoorGap {
@@ -125,6 +140,7 @@ mod tests {
             width: 4.0,
             target: RoomId(1),
             kind: teleport::GapKind::Forward,
+            threshold: test_threshold(RoomId(0), RoomId(1)),
         };
 
         let view = doorway_preview_view(&gap, 1.6, 2.0, -0.1);

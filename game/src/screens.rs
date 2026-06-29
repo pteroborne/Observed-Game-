@@ -413,9 +413,17 @@ pub struct TeleportState {
 pub struct FrozenDest {
     /// The gap centre (current place's local frame) used to match the crossed doorway.
     pub gap_center: Vec2,
+    /// Explicit threshold identity used to match preview/crossing/arrival.
+    pub threshold: teleport::ThresholdLink,
     pub place: teleport::Place,
     /// For a room destination, its frozen connection set (shape); empty for a hallway.
     pub conns: Vec<RoomId>,
+    /// For a room destination, its frozen room-side threshold slots.
+    pub connection_slots: Vec<teleport::RoomConnectionSlot>,
+    /// For a hallway destination, the room slot at the entry side.
+    pub hallway_entry_room_slot: Option<teleport::ThresholdSlotId>,
+    /// For a hallway destination, the room slot at the exit side.
+    pub hallway_exit_room_slot: Option<teleport::ThresholdSlotId>,
     /// For a room destination, its frozen spine target (which doorway stays forward).
     pub target: Option<RoomId>,
 }
