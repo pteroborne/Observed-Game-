@@ -785,6 +785,56 @@ pub(crate) fn debug_place_into(
     tp.gap_dests = compute_gap_dests(tp.place, &tp.geom, runtime.live.host_match(), keys, items);
 }
 
+/// Capture/diagnostic helper: complete a threshold crossing once a derived bot has
+/// physically routed to the doorway. This deliberately reuses the same frozen-destination
+/// crossing helpers as [`teleport_sim`]; it only bypasses the final sub-step crossing
+/// detection so evidence bots do not stall at a polygon or maze threshold.
+pub(crate) fn debug_cross_gap_for_capture(
+    tp: &mut TeleportState,
+    runtime: &mut MatchRuntime,
+    gap: teleport::DoorGap,
+    keys: &KeystoneState,
+    items: &ItemsState,
+) {
+    let place_before = tp.place;
+    match tp.place {
+        Place::Room(room) => {
+            let nav = nav_for_place(runtime.live.host_match(), keys, items, tp.place);
+            cross_into(tp, &gap, Place::Room(room), room, &nav, keys);
+        }
+        Place::Hallway { from, to, .. } if gap.kind == GapKind::Exit => {
+            let should_commit = {
+                let game = runtime.live.host_match();
+                game.local_room() == from && game.local_target() == Some(to)
+            };
+            if should_commit {
+                runtime.live.force_round(LocalAction::Advance);
+                let arrived = runtime.live.host_match().local_room();
+                cross_into_room(
+                    tp,
+                    &gap,
+                    arrived,
+                    from,
+                    runtime.live.host_match(),
+                    keys,
+                    items,
+                );
+            } else {
+                cross_into_room(tp, &gap, to, from, runtime.live.host_match(), keys, items);
+            }
+        }
+        Place::Hallway { from, to, .. } if gap.kind == GapKind::Entry => {
+            cross_into_room(tp, &gap, from, to, runtime.live.host_match(), keys, items);
+        }
+        _ => {}
+    }
+    if tp.place != place_before {
+        tp.gap_dests =
+            compute_gap_dests(tp.place, &tp.geom, runtime.live.host_match(), keys, items);
+        tp.rendered = None;
+    }
+}
+
 const ITEM_INTERACT_RADIUS: f32 = 1.8;
 const PAD_ACTIVATE_RADIUS: f32 = 1.25;
 

@@ -3,15 +3,21 @@
 //! drives the game into the Match, frames a deterministic shot, saves it, and exits.
 //! None of this runs in normal play.
 
+use std::path::PathBuf;
+
 use bevy::app::AppExit;
+use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use observed_core::RoomId;
 use observed_match::hybrid::{HybridMatch, LocalAction};
 use observed_match::maze::{GRID_H, GRID_W, TILE_SIZE};
+use observed_match::mutable::EXIT_ROOM;
+use observed_traversal::FIXED_DT;
+use player_input::PlayerIntent;
 
 use crate::flow::{self, Career};
-use crate::{GameState, hallway, items, keystones, screens, teleport};
+use crate::{GameState, bot, camera, hallway, items, keystones, screens, teleport};
 
 /// Wire up whichever capture system the environment requests (at most one). Called from
 /// [`crate::run`] after the game plugin is added; a no-op in normal play.
@@ -76,6 +82,19 @@ pub fn configure(app: &mut App) {
             Update,
             capture_doorway_progress.after(screens::present_match_camera),
         );
+    } else if let Ok(dir) = std::env::var("OBSERVED2_CAPTURE_BOT") {
+        let _ = std::fs::create_dir_all(&dir);
+        app.insert_resource(BotPovCaptureRequest::new(dir))
+            .add_systems(
+                FixedUpdate,
+                drive_bot_pov_capture
+                    .before(screens::teleport_sim)
+                    .run_if(in_state(GameState::Match)),
+            )
+            .add_systems(
+                Update,
+                capture_bot_pov_progress.after(screens::present_match_camera),
+            );
     } else if let Ok(path) = std::env::var("OBSERVED2_CAPTURE") {
         app.insert_resource(CaptureRequest { path, phase: 0 })
             .add_systems(Update, capture_progress);
@@ -104,6 +123,7 @@ fn capture_doorway_progress(
     keys: Option<Res<keystones::KeystoneState>>,
     item_state: Option<Res<items::ItemsState>>,
     mut leaves: Query<(&screens::DoorLeaf, &mut Transform)>,
+    mut cam: Query<&mut Transform, With<screens::GameCam>>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -156,15 +176,19 @@ fn capture_doorway_progress(
                     tp.geom.forward_gap().copied()
                 };
                 if let Some(gap) = aim {
-                    let n = gap.normal;
                     // Stand back from the door, looking through (+normal) and tilted down
-                    // a touch so the lit floor beyond frames up.
+                    // a touch so the lit floor beyond frames up. The pose comes from the
+                    // shared camera/view system used by the bot POV and debug views.
                     let back = if request.from_hallway { 3.0 } else { 1.6 };
-                    let stand = gap.center - n * back;
-                    let hh = tp.config.half_height;
-                    tp.body.position = Vec3::new(stand.x, hh, stand.y);
-                    tp.body.yaw = n.x.atan2(-n.y);
-                    tp.body.pitch = -0.14;
+                    let (position, yaw, pitch) =
+                        camera::doorway_body_pose(&gap, tp.config.half_height, back, -0.14);
+                    tp.body.position = position;
+                    tp.body.yaw = yaw;
+                    tp.body.pitch = pitch;
+                    if let Ok(mut transform) = cam.single_mut() {
+                        camera::doorway_preview_view(&gap, tp.config.eye_height, back, -0.14)
+                            .apply_to(&mut transform);
+                    }
                 }
                 // Force every leaf fully open so the preview behind is unobstructed.
                 for (leaf, mut transform) in &mut leaves {
@@ -186,6 +210,231 @@ fn capture_doorway_progress(
         }
         _ => {}
     }
+}
+
+/// Evidence capture: a derived bot walks the real first-person place geometry toward
+/// the exit, while timed screenshots are taken from that bot/player POV. Set
+/// `OBSERVED2_CAPTURE_BOT=<directory>`; the command writes `bot_pov_00.png`, ...
+#[derive(Resource)]
+struct BotPovCaptureRequest {
+    dir: PathBuf,
+    phase: u8,
+    next_shot_at: f32,
+    shot: usize,
+    route_place: Option<teleport::Place>,
+    route: Vec<Vec2>,
+    waypoint: usize,
+    finished: bool,
+    blocked_ticks: u32,
+}
+
+impl BotPovCaptureRequest {
+    fn new(dir: String) -> Self {
+        Self {
+            dir: PathBuf::from(dir),
+            phase: 0,
+            next_shot_at: 0.0,
+            shot: 0,
+            route_place: None,
+            route: Vec::new(),
+            waypoint: 0,
+            finished: false,
+            blocked_ticks: 0,
+        }
+    }
+
+    fn image_path(&self) -> String {
+        self.dir
+            .join(format!("bot_pov_{:02}.png", self.shot))
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    fn clear_route(&mut self) {
+        self.route_place = None;
+        self.route.clear();
+        self.waypoint = 0;
+    }
+}
+
+const BOT_CAPTURE_INTERVAL: f32 = 1.0;
+const BOT_CAPTURE_MAX_SHOTS: usize = 24;
+const BOT_WAYPOINT_RADIUS: f32 = 0.65;
+const BOT_CROSS_RADIUS: f32 = 1.05;
+const BOT_CAPTURE_SPEED: f32 = 9.0;
+
+#[allow(clippy::too_many_arguments)]
+fn capture_bot_pov_progress(
+    time: Res<Time>,
+    mut request: ResMut<BotPovCaptureRequest>,
+    mut next: ResMut<NextState<GameState>>,
+    runtime: Option<ResMut<screens::MatchRuntime>>,
+    keys: Option<ResMut<keystones::KeystoneState>>,
+    tp: Option<Res<screens::TeleportState>>,
+    mut cam: Query<&mut Transform, With<screens::GameCam>>,
+    mut ambient: ResMut<GlobalAmbientLight>,
+    mut fog: Query<&mut DistanceFog, With<screens::GameCam>>,
+    mut commands: Commands,
+    mut exit: MessageWriter<AppExit>,
+) {
+    let elapsed = time.elapsed_secs();
+    match request.phase {
+        0 => {
+            next.set(GameState::Match);
+            request.phase = 1;
+        }
+        1 => {
+            if let (Some(mut runtime), Some(mut keys)) = (runtime, keys) {
+                // Unlock the final gate so this diagnostic follows the full spine to the
+                // exit instead of turning into a keystone collection test.
+                let rooms = keys.rooms.clone();
+                for room in rooms {
+                    keys.collect(room);
+                }
+                runtime.done = false;
+                runtime.live.host.match_state.reroute_feedback_ticks = 0;
+                request.phase = 2;
+                request.next_shot_at = elapsed + 1.0;
+            }
+        }
+        2 => {
+            if elapsed >= request.next_shot_at {
+                commands
+                    .spawn(Screenshot::primary_window())
+                    .observe(save_to_disk(request.image_path()));
+                request.shot += 1;
+                request.next_shot_at = elapsed + BOT_CAPTURE_INTERVAL;
+            }
+            if request.finished || request.shot >= BOT_CAPTURE_MAX_SHOTS {
+                request.phase = 3;
+                request.next_shot_at = elapsed + 1.0;
+            }
+        }
+        3 if elapsed >= request.next_shot_at => {
+            exit.write(AppExit::Success);
+        }
+        _ => {}
+    }
+
+    if request.phase >= 2
+        && let Some(tp) = tp
+        && let Ok(mut transform) = cam.single_mut()
+    {
+        ambient.color = Color::srgb(0.48, 0.54, 0.68);
+        ambient.brightness = 420.0;
+        if let Ok(mut fog) = fog.single_mut() {
+            fog.color = Color::srgb(0.01, 0.015, 0.025);
+            fog.falloff = FogFalloff::Linear {
+                start: 48.0,
+                end: 150.0,
+            };
+        }
+        camera::bot_view(&tp.body, &tp.config).apply_to(&mut transform);
+    }
+}
+
+fn target_gap_for_bot(tp: &screens::TeleportState) -> Option<teleport::DoorGap> {
+    let here = Vec2::new(tp.body.position.x, tp.body.position.z);
+    match tp.place {
+        teleport::Place::Room(_) => tp.geom.forward_gap().copied(),
+        teleport::Place::Hallway { .. } => tp
+            .geom
+            .gaps
+            .iter()
+            .filter(|gap| gap.kind == teleport::GapKind::Exit)
+            .min_by(|a, b| {
+                here.distance_squared(a.center)
+                    .partial_cmp(&here.distance_squared(b.center))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .copied(),
+    }
+}
+
+fn drive_bot_pov_capture(
+    mut request: ResMut<BotPovCaptureRequest>,
+    mut runtime: ResMut<screens::MatchRuntime>,
+    mut tp: ResMut<screens::TeleportState>,
+    keys: Res<keystones::KeystoneState>,
+    items: Res<items::ItemsState>,
+    mut intent: ResMut<screens::MatchIntent>,
+) {
+    if request.phase < 2 || request.finished {
+        return;
+    }
+
+    if matches!(tp.place, teleport::Place::Room(room) if room.0 == EXIT_ROOM) {
+        request.finished = true;
+        intent.0 = PlayerIntent::default();
+        return;
+    }
+
+    if let Some(gap) = target_gap_for_bot(&tp) {
+        let here = Vec2::new(tp.body.position.x, tp.body.position.z);
+        let rel = here - gap.center;
+        let tangent = Vec2::new(-gap.normal.y, gap.normal.x);
+        let at_aperture =
+            rel.dot(gap.normal) > -0.45 && rel.dot(tangent).abs() <= gap.width * 0.5 + 0.35;
+        if here.distance(gap.center) <= BOT_CROSS_RADIUS || at_aperture {
+            screens::debug_cross_gap_for_capture(&mut tp, &mut runtime, gap, &keys, &items);
+            request.clear_route();
+            intent.0 = PlayerIntent::default();
+            return;
+        }
+    }
+
+    if request.route_place != Some(tp.place)
+        || request.waypoint >= request.route.len()
+        || request.route.is_empty()
+    {
+        let Some(gap) = target_gap_for_bot(&tp) else {
+            request.finished = runtime.live.host_match().local_target().is_none();
+            intent.0 = PlayerIntent::default();
+            return;
+        };
+        let start = Vec2::new(tp.body.position.x, tp.body.position.z);
+        if let Some(path) = bot::route_to_gap(&tp.geom, &tp.arena, &tp.config, start, &gap) {
+            request.route_place = Some(tp.place);
+            request.route = path.waypoints;
+            request.waypoint = 0;
+            request.blocked_ticks = 0;
+        } else {
+            request.blocked_ticks += 1;
+            intent.0 = PlayerIntent::default();
+            if request.blocked_ticks > 90 {
+                request.finished = true;
+            }
+            return;
+        }
+    }
+
+    let here = Vec2::new(tp.body.position.x, tp.body.position.z);
+    while request.waypoint + 1 < request.route.len()
+        && here.distance(request.route[request.waypoint]) <= BOT_WAYPOINT_RADIUS
+    {
+        request.waypoint += 1;
+    }
+
+    let target = request.route[request.waypoint];
+    let to = target - here;
+    if to.length_squared() < 0.04 {
+        intent.0 = PlayerIntent::default();
+        return;
+    }
+
+    let dir = to.normalize_or_zero();
+    tp.body.yaw = dir.x.atan2(-dir.y);
+    tp.body.pitch = -0.22;
+    let step = BOT_CAPTURE_SPEED * FIXED_DT;
+    let next = if to.length() <= step {
+        target
+    } else {
+        here + dir * step
+    };
+    tp.body.position.x = next.x;
+    tp.body.position.z = next.y;
+    tp.body.velocity = Vec3::ZERO;
+    intent.0 = PlayerIntent::default();
 }
 
 /// Evidence capture: drop into a keystone room first-person so the gold keystone item +

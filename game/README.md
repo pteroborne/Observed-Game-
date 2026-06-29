@@ -14,6 +14,18 @@ Run it:
 cargo run -p observed_game     # binary is named "observed"
 ```
 
+Bot POV capture:
+
+```powershell
+$env:OBSERVED2_CAPTURE_BOT = "docs/evidence/bot_pov"
+cargo run -p observed_game
+```
+
+This writes timed first-person frames (`bot_pov_00.png`, `bot_pov_01.png`, ...)
+while a derived local bot walks the same place geometry and doorway crossings toward
+the exit. The bot is a capture/debug consumer of the rendered geometry; it does not
+own the facility graph.
+
 Nothing here re-implements game logic. Each screen is a *projection* of a proven
 model:
 

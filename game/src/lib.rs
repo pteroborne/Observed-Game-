@@ -1,3 +1,5 @@
+mod bot;
+mod camera;
 mod capture;
 pub mod flow;
 pub mod hallway;

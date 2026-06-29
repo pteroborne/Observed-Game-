@@ -16,6 +16,7 @@ use observed_style::{self as style, MarkerRole};
 
 use super::*;
 use crate::GameState;
+use crate::camera;
 use crate::hallway::{self, HallwayFlavor};
 use crate::items::{ItemKind, ItemsState, PlacedItem};
 use crate::keystones::KeystoneState;
@@ -30,8 +31,7 @@ pub(crate) fn present_match_camera(
     mut camera: Query<&mut Transform, With<GameCam>>,
 ) {
     if let Ok(mut transform) = camera.single_mut() {
-        let eye = tp.body.eye(&tp.config);
-        *transform = Transform::from_translation(eye).looking_to(tp.body.look_dir(), Vec3::Y);
+        camera::player_view(&tp.body, &tp.config).apply_to(&mut transform);
     }
 }
 
@@ -327,14 +327,6 @@ fn spawn_passage_stub(commands: &mut Commands, assets: &MatchAssets, gap: &telep
     }
 }
 
-/// Build the renderer `Transform` that places a previewed child place per a
-/// [`teleport::Align2d`] (translate by its XZ offset, rotate by its yaw about +Y). The
-/// same alignment is used by the seamless crossing remap, so the preview and the place you
-/// teleport into coincide.
-fn align_transform(a: teleport::Align2d) -> Transform {
-    Transform::from_xyz(a.offset.x, 0.0, a.offset.y).with_rotation(Quat::from_rotation_y(a.yaw))
-}
-
 /// Render, behind an open passage doorway, a preview of the **actual place** you'll
 /// teleport into when you cross it: the real hallway from a room, or the real room from
 /// a hallway, aligned so its matching doorway sits in the opening and it extends away
@@ -414,7 +406,7 @@ fn spawn_hallway_preview(
     let light_color = style::district(district_for_place(next)).light_color;
     // The hallway's local +Z (entry→exit) maps to the doorway's outward normal, and its
     // entry sits just beyond the opening — the same alignment the crossing remap uses.
-    let parent = align_transform(teleport::hallway_alignment(gap, hz));
+    let parent = camera::alignment_transform(teleport::hallway_alignment(gap, hz));
     let place_in = |local: Transform| parent.mul_transform(local);
 
     // A pressure-gate hall keeps its hazard floor; everything else is the neutral surface.
@@ -512,7 +504,7 @@ fn spawn_room_preview(
     // Rigid alignment (shared with the crossing remap): rotate so the room doorway's
     // outward normal faces back toward the player (−gap.normal) and translate so the
     // doorway centre sits in the opening; the room then extends away through the door.
-    let parent = align_transform(teleport::room_alignment(gap, &src));
+    let parent = camera::alignment_transform(teleport::room_alignment(gap, &src));
 
     spawn_polygon_shell(
         commands,
