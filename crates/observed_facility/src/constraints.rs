@@ -6,7 +6,9 @@
 //! exists. Pure logic; the `Resource` derive is behind the `bevy` feature.
 
 use observed_core::{RoomId, SplitMix};
-use observed_observation::{DOOR_COUNT, Door, DoorId, ObservationWorld, ROOM_COUNT, Side};
+use observed_observation::{Door, DoorId, ObservationWorld, ROOM_COUNT, Side};
+
+use crate::map_spec::MapSpec;
 
 /// A spanning path through every room: the persistent backbone. Each entry is the
 /// two doorways of one protected connection. Because it visits all nine rooms, the
@@ -41,7 +43,7 @@ pub struct ConstraintWorld {
 impl ConstraintWorld {
     pub fn authored() -> Self {
         let graph = ObservationWorld::authored();
-        let mut protected = vec![false; DOOR_COUNT];
+        let mut protected = vec![false; graph.doors.len()];
         for ((room_a, side_a), (room_b, side_b)) in SPINE {
             protected[graph.door_id(RoomId(room_a), side_a).0 as usize] = true;
             protected[graph.door_id(RoomId(room_b), side_b).0 as usize] = true;
@@ -57,6 +59,38 @@ impl ConstraintWorld {
             reachable: ROOM_COUNT as u32,
             last_rewired: 0,
             last_event: "Gold routes persist; the rest rewires but stays connected.".to_string(),
+        };
+        world.recompute_connectivity();
+        world
+    }
+
+    pub fn from_map_spec(spec: &MapSpec) -> Self {
+        spec.validate_or_panic();
+        let start = spec.start_room().expect("validated start room");
+        let edges = spec
+            .edges
+            .iter()
+            .map(|edge| (edge.a.room, edge.a.side, edge.b.room, edge.b.side))
+            .collect::<Vec<_>>();
+        let graph = ObservationWorld::from_edges(
+            spec.room_count(),
+            &edges,
+            vec![start; observed_observation::PLAYER_COUNT],
+            0x5EC7_0A11_EE00_0001,
+        );
+        let mut world = Self {
+            protected: vec![false; graph.doors.len()],
+            graph,
+            protection_enabled: false,
+            base_seed: 0x5EED_C0DE_1234_5678,
+            decohere_count: 0,
+            connected: true,
+            reachable: spec.room_count() as u32,
+            last_rewired: 0,
+            last_event: format!(
+                "{} uses redundant connectivity; tools stabilize practical routes.",
+                spec.name
+            ),
         };
         world.recompute_connectivity();
         world
@@ -94,26 +128,42 @@ impl ConstraintWorld {
         self.decohere_count += 1;
         let before = self.graph.links.clone();
 
-        let mut free: Vec<DoorId> = (0..DOOR_COUNT)
+        let free: Vec<DoorId> = (0..self.graph.doors.len())
             .map(|i| DoorId(i as u16))
             .filter(|d| !self.is_frozen(*d))
             .collect();
 
-        let mut rng = SplitMix(
-            self.base_seed ^ (self.decohere_count as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
-        );
-        for i in (1..free.len()).rev() {
-            free.swap(i, rng.below(i + 1));
+        let mut accepted = None;
+        for attempt in 0..32u64 {
+            let mut candidate = before.clone();
+            let mut shuffled = free.clone();
+            let mut rng = SplitMix(
+                self.base_seed
+                    ^ (self.decohere_count as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                    ^ attempt.wrapping_mul(0xD1B5_4A32_D192_ED03),
+            );
+            for i in (1..shuffled.len()).rev() {
+                shuffled.swap(i, rng.below(i + 1));
+            }
+
+            let mut chunks = shuffled.chunks_exact(2);
+            for pair in chunks.by_ref() {
+                let (a, b) = (pair[0], pair[1]);
+                candidate[a.0 as usize] = b;
+                candidate[b.0 as usize] = a;
+            }
+            if let [leftover] = chunks.remainder() {
+                candidate[leftover.0 as usize] = *leftover;
+            }
+
+            if self.reachable_count_for_links(&candidate) == self.graph.room_count {
+                accepted = Some(candidate);
+                break;
+            }
         }
 
-        let mut chunks = free.chunks_exact(2);
-        for pair in chunks.by_ref() {
-            let (a, b) = (pair[0], pair[1]);
-            self.graph.links[a.0 as usize] = b;
-            self.graph.links[b.0 as usize] = a;
-        }
-        if let [leftover] = chunks.remainder() {
-            self.graph.links[leftover.0 as usize] = *leftover;
+        if let Some(candidate) = accepted {
+            self.graph.links = candidate;
         }
 
         self.last_rewired = (0..self.graph.links.len())
@@ -134,7 +184,7 @@ impl ConstraintWorld {
 
     /// Breadth-first reachability over the active passages, from room 0.
     pub fn reachable_set(&self) -> Vec<bool> {
-        let mut adjacency: Vec<Vec<u32>> = vec![Vec::new(); ROOM_COUNT];
+        let mut adjacency: Vec<Vec<u32>> = vec![Vec::new(); self.graph.room_count];
         for (a, b) in self.graph.connections() {
             let ra = self.graph.door(a).room.0;
             let rb = self.graph.door(b).room.0;
@@ -144,7 +194,7 @@ impl ConstraintWorld {
             }
         }
 
-        let mut seen = vec![false; ROOM_COUNT];
+        let mut seen = vec![false; self.graph.room_count];
         let mut stack = vec![0usize];
         seen[0] = true;
         while let Some(room) = stack.pop() {
@@ -161,11 +211,42 @@ impl ConstraintWorld {
     pub fn recompute_connectivity(&mut self) {
         let seen = self.reachable_set();
         self.reachable = seen.iter().filter(|s| **s).count() as u32;
-        self.connected = self.reachable as usize == ROOM_COUNT;
+        self.connected = self.reachable as usize == self.graph.room_count;
     }
 
     pub fn traverse(&mut self, player: usize, side: Side) -> bool {
         self.graph.traverse(player, side)
+    }
+
+    fn reachable_count_for_links(&self, links: &[DoorId]) -> usize {
+        let mut adjacency: Vec<Vec<u32>> = vec![Vec::new(); self.graph.room_count];
+        for (index, door) in self.graph.doors.iter().enumerate() {
+            let a = DoorId(index as u16);
+            let b = links[index];
+            if a.0 < b.0 {
+                let other = self.graph.door(b).room;
+                if door.room != other {
+                    adjacency[door.room.0 as usize].push(other.0);
+                    adjacency[other.0 as usize].push(door.room.0);
+                }
+            }
+        }
+        if adjacency.is_empty() {
+            return 0;
+        }
+        let mut seen = vec![false; self.graph.room_count];
+        let mut stack = vec![0usize];
+        seen[0] = true;
+        while let Some(room) = stack.pop() {
+            for &neighbour in &adjacency[room] {
+                let neighbour = neighbour as usize;
+                if !seen[neighbour] {
+                    seen[neighbour] = true;
+                    stack.push(neighbour);
+                }
+            }
+        }
+        seen.into_iter().filter(|seen| *seen).count()
     }
 }
 
@@ -174,7 +255,7 @@ mod tests {
     use super::*;
 
     fn spine_doors(world: &ConstraintWorld) -> Vec<DoorId> {
-        (0..DOOR_COUNT)
+        (0..world.graph.doors.len())
             .map(|i| DoorId(i as u16))
             .filter(|d| world.is_protected(*d))
             .collect()
@@ -220,23 +301,22 @@ mod tests {
     }
 
     #[test]
-    fn unprotected_rewiring_can_disconnect_the_graph() {
+    fn unprotected_rewiring_rejects_disconnected_candidates() {
         // Remove the observers so nothing is pinned, then drop protection.
         let mut world = ConstraintWorld::authored();
         world.graph.players = vec![RoomId(4); world.graph.players.len()];
         world.protection_enabled = false;
 
-        let mut isolated = false;
+        let before = world.graph.links.clone();
         for _ in 0..200 {
             world.decohere();
             if !world.connected {
-                isolated = true;
-                break;
+                panic!("connectivity-preserving decoherence rejected too few disconnected rewires");
             }
         }
-        assert!(
-            isolated,
-            "without the spine, some rewiring should isolate a room — that's why the constraint exists"
+        assert_ne!(
+            world.graph.links, before,
+            "the unprotected graph still mutates"
         );
     }
 

@@ -3,7 +3,7 @@ use crate::screens::{MatchPaused, MatchRuntime, TeleportState};
 use crate::teleport::Place;
 use bevy::prelude::*;
 use observed_core::RoomId;
-use observed_observation::{ObservationWorld, ROOM_COUNT, Side};
+use observed_observation::{ObservationWorld, Side};
 use std::collections::{HashSet, VecDeque};
 
 const GUARDIAN_SPEED: f32 = 2.5;
@@ -76,9 +76,9 @@ impl SimpleRng {
         z ^ (z >> 31)
     }
 
-    pub fn next_room(&mut self, exclude: RoomId) -> RoomId {
+    pub fn next_room(&mut self, exclude: RoomId, room_count: usize) -> RoomId {
         loop {
-            let r = (self.next_u64() % ROOM_COUNT as u64) as u32;
+            let r = (self.next_u64() % room_count.max(1) as u64) as u32;
             if r != exclude.0 {
                 return RoomId(r);
             }
@@ -156,10 +156,13 @@ pub fn find_shortest_path(
         return Some(vec![start]);
     }
 
-    let mut visited = [false; ROOM_COUNT];
-    let mut parent = [None; ROOM_COUNT];
+    let mut visited = vec![false; world.room_count];
+    let mut parent = vec![None; world.room_count];
     let mut queue = VecDeque::new();
 
+    if start.0 as usize >= world.room_count || target.0 as usize >= world.room_count {
+        return None;
+    }
     visited[start.0 as usize] = true;
     queue.push_back(start);
 
@@ -273,6 +276,7 @@ pub(crate) fn update_guardian_in_match(
 
     let is_static_capture = std::env::var("OBSERVED2_CAPTURE_TOUR").is_ok()
         || std::env::var("OBSERVED2_CAPTURE_MATCH").is_ok()
+        || std::env::var("OBSERVED2_CAPTURE_MAP_AUDIT").is_ok()
         || std::env::var("OBSERVED2_CAPTURE_ROOM").is_ok()
         || std::env::var("OBSERVED2_CAPTURE_KEYSTONE").is_ok()
         || std::env::var("OBSERVED2_CAPTURE_RIVALS").is_ok()
@@ -355,7 +359,7 @@ pub(crate) fn update_guardian_in_match(
         guardian.anchor_timer -= time.delta_secs();
         if guardian.anchor_timer <= 0.0 {
             // Banished! Teleport to a random room
-            let next = rng.next_room(guardian.room);
+            let next = rng.next_room(guardian.room, world.room_count);
             guardian.room = next;
             guardian.pos = Vec3::new(0.0, 0.76, 0.0);
             guardian.anchor_timer = 30.0;
@@ -380,7 +384,7 @@ pub(crate) fn update_guardian_in_match(
     if guardian.reassigned_target.is_some() && guardian.room == target_room {
         let caught_team = guardian.reassigned_target.unwrap();
         guardian.reassigned_target = None;
-        let next = rng.next_room(guardian.room);
+        let next = rng.next_room(guardian.room, world.room_count);
         guardian.room = next;
         guardian.pos = Vec3::new(0.0, 0.76, 0.0);
         tp.rendered = None;
@@ -401,7 +405,7 @@ pub(crate) fn update_guardian_in_match(
             // Check touch collision
             if (target - guardian.pos).length() < 1.1 {
                 // CAUGHT! Teleport player to a random room
-                let next = rng.next_room(player_room);
+                let next = rng.next_room(player_room, world.room_count);
                 tp.place = Place::Room(next);
                 tp.body.position = Vec3::new(0.0, tp.config.half_height, 0.0);
                 tp.rendered = None; // force reconstruct place scene

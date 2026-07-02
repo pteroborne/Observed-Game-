@@ -34,6 +34,8 @@ pub struct Nav {
     /// The keystone gate is shut: a hallway toward the facility exit shows a solid
     /// `LockedExit` instead of an open `Exit` until enough keystones are held.
     pub exit_locked: bool,
+    /// The active map's exit room.
+    pub exit_room: RoomId,
     /// Edges pinned by a dropped anchor torch (their variation is frozen).
     pub pins: Vec<PinnedEdge>,
 }

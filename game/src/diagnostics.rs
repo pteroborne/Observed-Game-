@@ -864,6 +864,7 @@ fn collect_geometry(
             seed: 0,
             version: 0,
             exit_locked: !keys.gate_open(),
+            exit_room: keys.exit_room,
             pins: Vec::new(),
         };
         let geom = teleport::geom_for(dest.place, &nav);

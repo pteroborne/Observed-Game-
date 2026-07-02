@@ -30,6 +30,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::PacketError;
 use crate::network::{NetworkProfile, SimulatedNetwork};
 use crate::protocol::{PEER_COUNT, PeerId};
+use observed_facility::map_spec::MapSpec;
 use observed_match::hybrid::{HybridMatch, HybridSnapshot, HybridTape, LOCAL_TEAM, LocalAction};
 use player_input::PlayerIntent;
 
@@ -169,6 +170,31 @@ pub struct NetPeer {
 impl NetPeer {
     pub fn new(id: PeerId, seed: u64) -> Self {
         let match_state = HybridMatch::authored(seed);
+        let snapshots = vec![match_state.snapshot()];
+        Self {
+            id,
+            match_state,
+            committed_round: 0,
+            snapshots,
+            sent_packets: 0,
+            resent_packets: 0,
+            received_packets: 0,
+            duplicate_actions: 0,
+            rejected_packets: 0,
+            wait_ticks: 0,
+            actions: BTreeMap::new(),
+            outbox: BTreeMap::new(),
+            send_counts: BTreeMap::new(),
+            received_rounds: BTreeSet::new(),
+            ack_through: None,
+            remote_ack_through: None,
+            next_produce: 0,
+            send_cursor: 0,
+        }
+    }
+
+    pub fn new_for_map_spec(id: PeerId, seed: u64, spec: MapSpec) -> Self {
+        let match_state = HybridMatch::for_map_spec(seed, spec);
         let snapshots = vec![match_state.snapshot()];
         Self {
             id,
@@ -425,6 +451,7 @@ pub struct LiveNetMatch {
     pub seed: u64,
     pub resolved: u32,
     pub transport_ticks: u32,
+    pub map_spec: Option<MapSpec>,
 }
 
 impl LiveNetMatch {
@@ -436,11 +463,28 @@ impl LiveNetMatch {
             seed,
             resolved: 0,
             transport_ticks: 0,
+            map_spec: None,
+        }
+    }
+
+    pub fn new_for_map_spec(seed: u64, profile: NetworkProfile, spec: MapSpec) -> Self {
+        Self {
+            host: NetPeer::new_for_map_spec(PeerId(0), seed, spec.clone()),
+            remote: NetPeer::new_for_map_spec(PeerId(1), seed, spec.clone()),
+            network: SimulatedNetwork::new(profile),
+            seed,
+            resolved: 0,
+            transport_ticks: 0,
+            map_spec: Some(spec),
         }
     }
 
     pub fn reset(&mut self, profile: NetworkProfile) {
-        *self = Self::new(self.seed, profile);
+        if let Some(spec) = self.map_spec.clone() {
+            *self = Self::new_for_map_spec(self.seed, profile, spec);
+        } else {
+            *self = Self::new(self.seed, profile);
+        }
     }
 
     pub fn host_match(&self) -> &HybridMatch {

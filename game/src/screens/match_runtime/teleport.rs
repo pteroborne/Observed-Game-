@@ -81,6 +81,7 @@ pub(super) fn frozen_nav(seed: u64, dest: &FrozenDest, keys: &KeystoneState) -> 
         seed,
         version: 0,
         exit_locked: !keys.gate_open(),
+        exit_room: keys.exit_room,
         pins: Vec::new(),
     }
 }

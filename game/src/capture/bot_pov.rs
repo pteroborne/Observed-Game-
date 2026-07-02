@@ -140,24 +140,6 @@ pub(super) fn capture_bot_pov_progress(
     }
 }
 
-fn target_gap_for_bot(tp: &TeleportState) -> Option<teleport::DoorGap> {
-    let here = Vec2::new(tp.body.position.x, tp.body.position.z);
-    match tp.place {
-        teleport::Place::Room(_) => tp.geom.forward_gap().copied(),
-        teleport::Place::Hallway { .. } => tp
-            .geom
-            .gaps
-            .iter()
-            .filter(|gap| gap.kind == teleport::GapKind::Exit)
-            .min_by(|a, b| {
-                here.distance_squared(a.center)
-                    .partial_cmp(&here.distance_squared(b.center))
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-            .copied(),
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn drive_bot_pov_capture(
     mut request: ResMut<BotPovCaptureRequest>,
@@ -186,7 +168,11 @@ pub(crate) fn drive_bot_pov_capture(
         return;
     }
 
-    if let Some(gap) = target_gap_for_bot(&tp) {
+    if let Some(gap) = bot::target_gap_for_place(
+        tp.place,
+        &tp.geom,
+        Vec2::new(tp.body.position.x, tp.body.position.z),
+    ) {
         let here = Vec2::new(tp.body.position.x, tp.body.position.z);
         let rel = here - gap.center;
         let tangent = Vec2::new(-gap.normal.y, gap.normal.x);
@@ -213,7 +199,11 @@ pub(crate) fn drive_bot_pov_capture(
         || request.waypoint >= request.route.len()
         || request.route.is_empty()
     {
-        let Some(gap) = target_gap_for_bot(&tp) else {
+        let Some(gap) = bot::target_gap_for_place(
+            tp.place,
+            &tp.geom,
+            Vec2::new(tp.body.position.x, tp.body.position.z),
+        ) else {
             info!("BOT_NAV: No target gap available in place {:?}", tp.place);
             request.finished = runtime.live.host_match().local_target().is_none();
             intent.0 = PlayerIntent::default();

@@ -5,6 +5,7 @@
 use bevy::input::gamepad::Gamepad;
 use bevy::prelude::*;
 use observed_core::RoomId;
+use observed_facility::map_spec::RoomRole;
 use observed_style::{self as style, MarkerRole};
 
 use super::*;
@@ -16,7 +17,6 @@ use crate::{GameState, tacmap};
 // Tac-map overlay layout (pixels). The 3×3 grid of rooms sits below a title strip.
 const TAC_TITLE_H: f32 = 26.0;
 const TAC_INSET: f32 = 22.0;
-const TAC_STEP: f32 = 92.0; // distance between adjacent room centres
 const TAC_ROOM: f32 = 46.0; // room square size
 
 /// Toggle the tac-map overlay with Tab (shows/hides the panel root; `draw_tac_map`
@@ -40,11 +40,29 @@ pub(crate) fn toggle_tac_map(
 }
 
 /// A room centre in the tac-map panel's local pixel frame.
-fn tac_center(room: RoomId) -> Vec2 {
-    let g = tacmap::grid_pos(room);
+fn tac_bounds(rooms: &[(RoomId, Vec2, RoomRole)]) -> (Vec2, Vec2) {
+    let mut min = Vec2::splat(f32::INFINITY);
+    let mut max = Vec2::splat(f32::NEG_INFINITY);
+    for (_, pos, _) in rooms {
+        min = min.min(*pos);
+        max = max.max(*pos);
+    }
+    if rooms.is_empty() {
+        (Vec2::ZERO, Vec2::ONE)
+    } else {
+        (min, max)
+    }
+}
+
+fn tac_center_for_pos(pos: Vec2, bounds: (Vec2, Vec2)) -> Vec2 {
+    let (min, max) = bounds;
+    let span = (max - min).max(Vec2::ONE);
+    let g = (pos - min) / span;
+    let usable_w = TAC_MAP_SIZE - TAC_INSET * 2.0 - TAC_ROOM;
+    let usable_h = TAC_MAP_SIZE - TAC_TITLE_H - TAC_INSET * 2.0 - TAC_ROOM;
     Vec2::new(
-        TAC_INSET + g.x * TAC_STEP + TAC_ROOM * 0.5,
-        TAC_TITLE_H + TAC_INSET + g.y * TAC_STEP + TAC_ROOM * 0.5,
+        TAC_INSET + g.x * usable_w + TAC_ROOM * 0.5,
+        TAC_TITLE_H + TAC_INSET + g.y * usable_h + TAC_ROOM * 0.5,
     )
 }
 
@@ -67,9 +85,12 @@ fn tac_box(center: Vec2, w: f32, h: f32, color: Color) -> impl Bundle {
 
 /// Rebuild the tac-map's room/route/marker nodes from the live match each frame while it
 /// is shown. Presentation-only — reads the brain + keystone inventory (see `tacmap`).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_tac_map(
     state: Res<TacMapState>,
     runtime: Res<MatchRuntime>,
+    series: Res<SeriesRuntime>,
+    spectator_bot: Option<Res<SpectatorBot>>,
     tp: Res<TeleportState>,
     keys: Res<KeystoneState>,
     panel: Query<Entity, With<TacMapPanel>>,
@@ -87,6 +108,18 @@ pub(crate) fn draw_tac_map(
         return;
     };
     let model = tacmap::build_map(&runtime.live.host_match().competitive, &keys, tp.place);
+    let bounds = tac_bounds(&model.rooms);
+    let room_centers: Vec<(RoomId, Vec2)> = model
+        .rooms
+        .iter()
+        .map(|(room, pos, _)| (*room, tac_center_for_pos(*pos, bounds)))
+        .collect();
+    let center_for = |room: RoomId| {
+        room_centers
+            .iter()
+            .find_map(|(id, center)| (*id == room).then_some(*center))
+            .unwrap_or_else(|| tac_center_for_pos(tacmap::grid_pos(room), bounds))
+    };
 
     // Palette: route/markers from the shared style markers so the map matches the
     // in-world legend; quiet fills for the room boxes themselves.
@@ -100,41 +133,49 @@ pub(crate) fn draw_tac_map(
     let locked_col = Color::srgb(1.0, 0.32, 0.22);
     let key_col = Color::srgb(1.0, 0.82, 0.3);
 
-    let spine = tacmap::spine();
     let rival_count = model.rivals.len() as f32;
 
     commands.entity(panel).with_children(|p| {
-        // Route bars first, under the rooms (every spine step is grid-axis-aligned).
-        for pair in spine.windows(2) {
-            let (c1, c2) = (tac_center(pair[0]), tac_center(pair[1]));
+        // Route bars first, under the rooms.
+        for &(a, b) in &model.routes {
+            let (c1, c2) = (center_for(a), center_for(b));
             let mid = (c1 + c2) * 0.5;
             let (w, h) = if (c1.y - c2.y).abs() < 1.0 {
                 ((c1.x - c2.x).abs(), 5.0)
-            } else {
+            } else if (c1.x - c2.x).abs() < 1.0 {
                 (5.0, (c1.y - c2.y).abs())
+            } else {
+                ((c1.x - c2.x).abs().max(5.0), (c1.y - c2.y).abs().max(5.0))
             };
             p.spawn((
                 tac_box(mid, w, h, route_col.with_alpha(0.5)),
-                crate::diagnostics::DiagnosticTacMapVisual::route(pair[0], pair[1]),
+                crate::diagnostics::DiagnosticTacMapVisual::route(a, b),
             ));
         }
-        // Room squares: collapse-swallowed rooms read red, spine rooms warm, rest dim.
-        for id in 0..9u32 {
-            let room = RoomId(id);
+        // Room squares: collapse-swallowed rooms read red; objective/tool rooms read warm.
+        for &(room, _, role) in &model.rooms {
             let fill = if model.collapse.contains(&room) {
                 collapse_col.with_alpha(0.55)
-            } else if spine.contains(&room) {
+            } else if matches!(
+                role,
+                RoomRole::Start
+                    | RoomRole::Exit
+                    | RoomRole::Keystone
+                    | RoomRole::AnchorCheckpoint
+                    | RoomRole::TeleportRelay
+                    | RoomRole::DualStation
+            ) {
                 spine_fill
             } else {
                 plain_fill
             };
             p.spawn((
-                tac_box(tac_center(room), TAC_ROOM, TAC_ROOM, fill),
+                tac_box(center_for(room), TAC_ROOM, TAC_ROOM, fill),
                 crate::diagnostics::DiagnosticTacMapVisual::room(room),
             ));
         }
         // The exit room: a green (open) or red (locked) outline.
-        let exit_center = tac_center(model.exit);
+        let exit_center = center_for(model.exit);
         p.spawn((
             TacMapElement,
             DespawnOnExit(GameState::Match),
@@ -159,7 +200,7 @@ pub(crate) fn draw_tac_map(
         ));
         // Keystone pips in the top-right of their room.
         for room in &model.keystones {
-            let c = tac_center(*room) + Vec2::new(TAC_ROOM * 0.5 - 7.0, -(TAC_ROOM * 0.5) + 7.0);
+            let c = center_for(*room) + Vec2::new(TAC_ROOM * 0.5 - 7.0, -(TAC_ROOM * 0.5) + 7.0);
             p.spawn((
                 tac_box(c, 10.0, 10.0, key_col),
                 crate::diagnostics::DiagnosticTacMapVisual::one(
@@ -172,17 +213,37 @@ pub(crate) fn draw_tac_map(
         for (slot, (_, room)) in model.rivals.iter().enumerate() {
             let off = Vec2::new((slot as f32 - (rival_count - 1.0) * 0.5) * 9.0, 8.0);
             p.spawn((
-                tac_box(tac_center(*room) + off, 13.0, 13.0, rival_col),
+                tac_box(center_for(*room) + off, 13.0, 13.0, rival_col),
                 crate::diagnostics::DiagnosticTacMapVisual::one(
                     crate::diagnostics::DiagnosticTacMapRole::Rival,
                     Some(*room),
                 ),
             ));
         }
+        if let Some(bot) = spectator_bot.as_ref()
+            && let Some(team) = bot.teamplay.team(bot.focused_team)
+        {
+            let member_count = team.members.len() as f32;
+            for (index, member) in team.members.iter().enumerate() {
+                let off = Vec2::new((index as f32 - (member_count - 1.0) * 0.5) * 12.0, -9.0);
+                p.spawn((
+                    tac_box(
+                        center_for(member.room) + off,
+                        9.0,
+                        9.0,
+                        you_col.with_alpha(0.85),
+                    ),
+                    crate::diagnostics::DiagnosticTacMapVisual::one(
+                        crate::diagnostics::DiagnosticTacMapRole::Player,
+                        Some(member.room),
+                    ),
+                ));
+            }
+        }
         // YOU: room centre, or the midpoint of the hallway you're walking.
         let you = match model.player {
-            tacmap::PlayerMark::Room(r) => tac_center(r),
-            tacmap::PlayerMark::Between(a, b) => (tac_center(a) + tac_center(b)) * 0.5,
+            tacmap::PlayerMark::Room(r) => center_for(r),
+            tacmap::PlayerMark::Between(a, b) => (center_for(a) + center_for(b)) * 0.5,
         };
         let player_room = match model.player {
             tacmap::PlayerMark::Room(room) => Some(room),
@@ -195,12 +256,39 @@ pub(crate) fn draw_tac_map(
                 player_room,
             ),
         ));
+        p.spawn((
+            TacMapElement,
+            DespawnOnExit(GameState::Match),
+            Node {
+                position_type: PositionType::Absolute,
+                left: px(10),
+                bottom: px(8),
+                ..default()
+            },
+            Text::new(format!(
+                "SERIES R{} | alive {} | countdown {}",
+                series.series.current.index,
+                series.series.active_team_count(),
+                series
+                    .series
+                    .current
+                    .remaining_countdown()
+                    .map_or("--".to_string(), |rounds| rounds.to_string())
+            )),
+            TextFont {
+                font_size: 11.0,
+                ..default()
+            },
+            TextColor(TITLE),
+        ));
     });
 }
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn match_draw(
     runtime: Res<MatchRuntime>,
+    series: Res<SeriesRuntime>,
+    spectator_bot: Option<Res<SpectatorBot>>,
     paused: Res<MatchPaused>,
     keys: Res<KeystoneState>,
     items: Res<ItemsState>,
@@ -212,6 +300,50 @@ pub(crate) fn match_draw(
     let live = &runtime.live;
     let game = live.host_match();
     let facility = &game.competitive;
+    let local_series = series.series.team_objective(LOCAL_TEAM);
+    let local_series_status = local_series
+        .map(|team| team.status_label(series.series.current.required_keystones()))
+        .unwrap_or_else(|| "between rounds".to_string());
+    let countdown = series
+        .series
+        .current
+        .remaining_countdown()
+        .map_or("--".to_string(), |rounds| rounds.to_string());
+    let control_line = spectator_bot.as_ref().map_or("manual control", |bot| {
+        if bot.finished {
+            "spectating AI: finished"
+        } else {
+            "spectating AI: bot driving"
+        }
+    });
+    let teamplay_line = spectator_bot.as_ref().map_or_else(String::new, |bot| {
+        let plan = &bot.teamplay.plan;
+        let focused = bot
+            .teamplay
+            .team(bot.focused_team)
+            .map(|team| team.status_line(plan.keystone_rooms.len()))
+            .unwrap_or_else(|| "focused team eliminated".to_string());
+        format!(
+            "BOT CO-OP seed {} R{} tick {} | gate R{} anchor R{} pads R{}->R{} guardian R{}\n\
+             focused: {} | co-op {} anchors {} pads {} pad jumps {} guardian catches {}\n\
+             bot event: {}",
+            bot.seed,
+            bot.teamplay.round_index,
+            bot.teamplay.tick,
+            plan.dual_station_room.0,
+            plan.anchor_room.0,
+            plan.relay_rooms.0.0,
+            plan.relay_rooms.1.0,
+            plan.guardian_room.0,
+            focused,
+            bot.teamplay.metrics.co_op_completions,
+            bot.teamplay.metrics.anchors_dropped,
+            bot.teamplay.metrics.pads_dropped,
+            bot.teamplay.metrics.pad_uses,
+            bot.teamplay.metrics.guardian_catches,
+            bot.last_teamplay_event,
+        )
+    });
 
     // Objective / threat / rival markers are diegetic — the keystone items and the rival
     // avatars walking your room (`sync_rival_avatars`) — so this only drives the HUD +
@@ -263,9 +395,13 @@ pub(crate) fn match_draw(
     if let Ok(mut hud) = hud.single_mut() {
         **hud = format!(
             "ROUND {}\nYou (Team 1): {}\nescaped {} | absorbed {}\ncollapse {:.0}%\n\
+             SERIES R{} | alive {} | adversary {} | countdown {}\n\
+             {}\n\
+             {}\n\
+             series objective: {} | event: {}\n\
              keystones {} / {} | EXIT {}\n\
              tools torch {}/{} | pads {}/{}\n\
-             pressure gate {} | hits {}\n\n\
+             route logic: decohere + anchor + relay\n\n\
              {}\
              {}\
              ACTION LOG:\n{}\n\
@@ -277,6 +413,14 @@ pub(crate) fn match_draw(
             facility.escaped_count(),
             facility.absorbed_count(),
             facility.purge_line.max(0.0) * 100.0,
+            series.series.current.index,
+            series.series.active_team_count(),
+            series.series.adversary_strength(),
+            countdown,
+            control_line,
+            teamplay_line,
+            local_series_status,
+            series.series.last_event,
             keys.held,
             keys.required,
             if keys.gate_open() { "OPEN" } else { "LOCKED" },
@@ -284,8 +428,6 @@ pub(crate) fn match_draw(
             placed_torches,
             items.carried(ItemKind::TeleportPad),
             placed_pads,
-            if game.trap_active() { "ACTIVE" } else { "idle" },
-            game.trap_hits,
             threshold_debug,
             freecam_debug,
             log_lines,

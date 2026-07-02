@@ -18,6 +18,7 @@ player_input = { path = "../player_input", default-features = false }
 observed_traversal = { path = "../observed_traversal", default-features = false }
 # `netmatch` replicates the hybrid match brain over the lockstep transport.
 observed_core = { path = "../observed_core" }
+observed_facility = { path = "../observed_facility", default-features = false }
 observed_match = { path = "../observed_match", default-features = false }
 glam = "0.30"
 bevy = { version = "0.18.1", default-features = false, optional = true }

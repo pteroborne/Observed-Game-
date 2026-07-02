@@ -18,8 +18,10 @@
 //! - [`constraints`] — the persistent route spine over the observe/decohere graph.
 
 pub mod constraints;
+pub mod map_spec;
 pub mod room_def;
 pub mod room_world;
 
+pub use map_spec::*;
 pub use room_def::*;
 pub use room_world::*;

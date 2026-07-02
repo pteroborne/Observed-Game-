@@ -44,6 +44,7 @@ pub struct Door {
 #[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
 #[derive(Clone, Debug)]
 pub struct ObservationWorld {
+    pub room_count: usize,
     pub doors: Vec<Door>,
     /// `links[d]` is the partner of door `d`; `links[d] == d` means a sealed wall.
     pub links: Vec<DoorId>,
@@ -57,8 +58,27 @@ pub struct ObservationWorld {
 
 impl ObservationWorld {
     pub fn authored() -> Self {
-        let mut doors = Vec::with_capacity(DOOR_COUNT);
-        for room_index in 0..ROOM_COUNT {
+        let mut world = Self::from_edges(
+            ROOM_COUNT,
+            &authored_edges(),
+            vec![RoomId(0), RoomId(2), RoomId(6), RoomId(8)],
+            0xA11C_E5EE_D5EE_D000,
+        );
+        world.rewires_last = 0;
+        world.locked_last = 0;
+        world
+    }
+
+    pub fn from_edges(
+        room_count: usize,
+        edges: &[(RoomId, Side, RoomId, Side)],
+        players: Vec<RoomId>,
+        base_seed: u64,
+    ) -> Self {
+        let door_count = room_count * 4;
+        assert!(door_count <= u16::MAX as usize, "door ids are u16-backed");
+        let mut doors = Vec::with_capacity(door_count);
+        for room_index in 0..room_count {
             for side in Side::ALL {
                 doors.push(Door {
                     id: DoorId((room_index * 4 + side.index()) as u16),
@@ -67,29 +87,28 @@ impl ObservationWorld {
                 });
             }
         }
-
-        // Start sealed, then wire the adjacency lattice (no wrap-around).
-        let mut links: Vec<DoorId> = (0..DOOR_COUNT).map(|i| DoorId(i as u16)).collect();
+        let mut links: Vec<DoorId> = (0..door_count).map(|i| DoorId(i as u16)).collect();
         let mut link = |a: DoorId, b: DoorId| {
             links[a.0 as usize] = b;
             links[b.0 as usize] = a;
         };
-        for r in 0..ROWS {
-            for c in 0..COLS {
-                if c + 1 < COLS {
-                    link(door_id(r, c, Side::East), door_id(r, c + 1, Side::West));
-                }
-                if r + 1 < ROWS {
-                    link(door_id(r, c, Side::South), door_id(r + 1, c, Side::North));
-                }
-            }
+        for &(room_a, side_a, room_b, side_b) in edges {
+            assert!(
+                (room_a.0 as usize) < room_count && (room_b.0 as usize) < room_count,
+                "edge endpoints must be in range"
+            );
+            link(
+                DoorId((room_a.0 as usize * 4 + side_a.index()) as u16),
+                DoorId((room_b.0 as usize * 4 + side_b.index()) as u16),
+            );
         }
 
         Self {
+            room_count,
             doors,
             links,
-            players: vec![RoomId(0), RoomId(2), RoomId(6), RoomId(8)],
-            base_seed: 0xA11C_E5EE_D5EE_D000,
+            players,
+            base_seed,
             decoherence_count: 0,
             rewires_last: 0,
             locked_last: 0,
@@ -133,11 +152,13 @@ impl ObservationWorld {
     }
 
     pub fn room_center(&self, room: RoomId) -> Vec2 {
-        let r = room.0 / COLS;
-        let c = room.0 % COLS;
+        let cols = layout_cols(self.room_count) as u32;
+        let rows = (self.room_count as u32).div_ceil(cols);
+        let r = room.0 / cols;
+        let c = room.0 % cols;
         Vec2::new(
-            (c as f32 - (COLS as f32 - 1.0) * 0.5) * ROOM_SPACING,
-            ((ROWS as f32 - 1.0) * 0.5 - r as f32) * ROOM_SPACING,
+            (c as f32 - (cols as f32 - 1.0) * 0.5) * ROOM_SPACING,
+            ((rows as f32 - 1.0) * 0.5 - r as f32) * ROOM_SPACING,
         )
     }
 
@@ -219,8 +240,27 @@ impl ObservationWorld {
     }
 }
 
-fn door_id(r: u32, c: u32, side: Side) -> DoorId {
-    DoorId(((r * COLS + c) as usize * 4 + side.index()) as u16)
+fn layout_cols(room_count: usize) -> usize {
+    if room_count == ROOM_COUNT {
+        return COLS as usize;
+    }
+    (room_count as f32).sqrt().ceil().max(1.0) as usize
+}
+
+fn authored_edges() -> Vec<(RoomId, Side, RoomId, Side)> {
+    let mut edges = Vec::new();
+    for r in 0..ROWS {
+        for c in 0..COLS {
+            let room = RoomId(r * COLS + c);
+            if c + 1 < COLS {
+                edges.push((room, Side::East, RoomId(r * COLS + c + 1), Side::West));
+            }
+            if r + 1 < ROWS {
+                edges.push((room, Side::South, RoomId((r + 1) * COLS + c), Side::North));
+            }
+        }
+    }
+    edges
 }
 
 #[cfg(test)]

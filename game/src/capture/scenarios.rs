@@ -6,9 +6,11 @@ use observed_match::hybrid::LocalAction;
 
 use crate::GameState;
 use crate::flow::{self, Career};
+use crate::map_validation;
 use crate::screens::{DoorLeaf, GameCam, MatchRuntime, PlaceGeometry, TeleportState};
 use crate::teleport::{self, Place};
 use crate::{camera, hallway, items, keystones};
+use std::path::PathBuf;
 
 // --- Ceiling ---
 
@@ -433,6 +435,153 @@ pub(super) fn capture_match_progress(
         request.phase = 3;
     } else if request.phase == 3 && elapsed >= 3.5 {
         exit.write(AppExit::Success);
+    }
+}
+
+// --- Semantic Map Audit ---
+
+#[derive(Resource)]
+pub(super) struct MapAuditCaptureRequest {
+    pub(super) dir: String,
+    pub(super) phase: u8,
+    pub(super) next_at: f32,
+    pub(super) index: usize,
+    pub(super) rooms: Vec<RoomId>,
+}
+
+impl MapAuditCaptureRequest {
+    pub(super) fn new(dir: String) -> Self {
+        let spec = observed_facility::map_spec::sector_relay_v1();
+        Self {
+            dir,
+            phase: 0,
+            next_at: 0.0,
+            index: 0,
+            rooms: map_validation::semantic_capture_rooms(&spec),
+        }
+    }
+
+    fn current_room(&self) -> Option<RoomId> {
+        self.rooms.get(self.index).copied()
+    }
+
+    fn screenshot_path(&self, room: RoomId) -> String {
+        let spec = observed_facility::map_spec::sector_relay_v1();
+        let role = spec
+            .room(room)
+            .map(|room| room.role.label())
+            .unwrap_or("unknown")
+            .replace(' ', "_");
+        PathBuf::from(&self.dir)
+            .join(format!(
+                "map_audit_{:02}_r{:02}_{role}.png",
+                self.index, room.0
+            ))
+            .to_string_lossy()
+            .into_owned()
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn capture_map_audit_progress(
+    time: Res<Time>,
+    mut request: ResMut<MapAuditCaptureRequest>,
+    mut next: ResMut<NextState<GameState>>,
+    mut runtime: Option<ResMut<MatchRuntime>>,
+    mut tp: Option<ResMut<TeleportState>>,
+    keys: Option<Res<keystones::KeystoneState>>,
+    item_state: Option<Res<items::ItemsState>>,
+    mut cam: Query<&mut Transform, With<GameCam>>,
+    geometry: Query<(Entity, &Name), With<PlaceGeometry>>,
+    mut commands: Commands,
+    mut exit: MessageWriter<AppExit>,
+) {
+    let elapsed = time.elapsed_secs();
+    match request.phase {
+        0 => {
+            next.set(GameState::Match);
+            request.phase = 1;
+        }
+        1 => {
+            if let (Some(rt), Some(tp), Some(keys), Some(item_state)) = (
+                runtime.as_mut(),
+                tp.as_mut(),
+                keys.as_ref(),
+                item_state.as_ref(),
+            ) {
+                rt.done = true;
+                rt.live.host.match_state.reroute_feedback_ticks = 0;
+                if let Some(room) = request.current_room() {
+                    crate::screens::debug_place_into(
+                        tp,
+                        rt,
+                        Place::Room(room),
+                        room,
+                        keys,
+                        item_state,
+                    );
+                    let y_offset = teleport::place_y_offset(tp.place);
+                    let frame = tp.geom.half.x.max(tp.geom.half.y).max(8.0);
+                    tp.body.position = Vec3::new(0.0, y_offset + frame * 0.8, frame * 1.15);
+                    tp.body.yaw = 0.0;
+                    tp.body.pitch = -0.62;
+                    request.phase = 2;
+                    request.next_at = elapsed + 0.7;
+                } else {
+                    request.phase = 4;
+                    request.next_at = elapsed + 0.2;
+                }
+            }
+        }
+        2 if elapsed >= request.next_at => {
+            for (entity, name) in &geometry {
+                if name.as_str() == "Place ceiling" {
+                    commands.entity(entity).despawn();
+                }
+            }
+            request.phase = 3;
+            request.next_at = elapsed + 0.25;
+        }
+        3 if elapsed >= request.next_at => {
+            if let Some(room) = request.current_room() {
+                let path = request.screenshot_path(room);
+                let report = map_validation::capture_report_for_room(
+                    &observed_facility::map_spec::sector_relay_v1(),
+                    flow::MATCH_SEED,
+                    0,
+                    room,
+                    path.clone(),
+                );
+                info!("MAP_AUDIT_CAPTURE: {report}");
+                commands
+                    .spawn(Screenshot::primary_window())
+                    .observe(save_to_disk(path));
+                request.index += 1;
+                request.phase = if request.index >= request.rooms.len() {
+                    4
+                } else {
+                    1
+                };
+                request.next_at = elapsed + 0.8;
+            } else {
+                request.phase = 4;
+                request.next_at = elapsed + 0.2;
+            }
+        }
+        4 if elapsed >= request.next_at => {
+            exit.write(AppExit::Success);
+        }
+        _ => {}
+    }
+
+    if request.phase >= 2
+        && request.phase <= 3
+        && let (Some(tp), Ok(mut transform)) = (tp.as_ref(), cam.single_mut())
+    {
+        let y_offset = teleport::place_y_offset(tp.place);
+        let frame = tp.geom.half.x.max(tp.geom.half.y).max(8.0);
+        *transform = Transform::from_xyz(0.0, y_offset + frame * 2.35, frame * 0.18)
+            .looking_at(Vec3::new(0.0, y_offset + 0.8, 0.0), Vec3::Y);
     }
 }
 

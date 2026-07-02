@@ -10,6 +10,7 @@ use std::collections::HashSet;
 
 use bevy::prelude::*;
 use observed_core::RoomId;
+use observed_facility::map_spec::{MapSpec, sector_relay_v1};
 use observed_match::mutable::{START_ROOM, spine_next};
 
 /// How many keystones the exit demands (clamped to the available spine rooms).
@@ -61,10 +62,15 @@ pub struct KeystoneState {
     /// Keystones the exit demands (derived from placement, so it is always attainable).
     pub required: u32,
     pub seed: u64,
+    pub exit_room: RoomId,
 }
 
 impl KeystoneState {
     pub fn new(seed: u64) -> Self {
+        Self::for_map(seed, &sector_relay_v1())
+    }
+
+    pub fn legacy(seed: u64) -> Self {
         let rooms = keystone_rooms(seed);
         let required = rooms.len() as u32;
         Self {
@@ -73,6 +79,24 @@ impl KeystoneState {
             held: 0,
             required,
             seed,
+            exit_room: RoomId(observed_match::mutable::EXIT_ROOM),
+        }
+    }
+
+    pub fn for_map(seed: u64, spec: &MapSpec) -> Self {
+        let mut rooms = spec.keystone_rooms();
+        rooms.sort_by_key(|room| room.0);
+        let required = rooms.len() as u32;
+        let exit_room = spec
+            .exit_room()
+            .unwrap_or(RoomId(observed_match::mutable::EXIT_ROOM));
+        Self {
+            rooms,
+            collected: HashSet::new(),
+            held: 0,
+            required,
+            seed,
+            exit_room,
         }
     }
 

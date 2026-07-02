@@ -33,10 +33,14 @@ pub fn build_navmesh(geom: &PlaceGeom, _arena: &FpsArena, config: &FpsConfig) ->
     let obs_margin = config.radius + 0.05;
     let mut obstacles = Vec::new();
     for seg in &geom.interior {
-        let min_x = seg.center.x - seg.half.x - obs_margin;
-        let max_x = seg.center.x + seg.half.x + obs_margin;
-        let min_z = seg.center.y - seg.half.y - obs_margin;
-        let max_z = seg.center.y + seg.half.y + obs_margin;
+        let min_x =
+            (seg.center.x - seg.half.x - obs_margin).clamp(-half.x + margin, half.x - margin);
+        let max_x =
+            (seg.center.x + seg.half.x + obs_margin).clamp(-half.x + margin, half.x - margin);
+        let min_z =
+            (seg.center.y - seg.half.y - obs_margin).clamp(-half.y + margin, half.y - margin);
+        let max_z =
+            (seg.center.y + seg.half.y + obs_margin).clamp(-half.y + margin, half.y - margin);
 
         if min_x < max_x && min_z < max_z {
             // CCW rectangle corners

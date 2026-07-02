@@ -26,6 +26,7 @@ mod tests {
             seed: 1,
             version: 0,
             exit_locked: false,
+            exit_room: RoomId(EXIT_ROOM),
             pins: Vec::new(),
         }
     }
@@ -205,10 +206,13 @@ mod tests {
         let hall = (0..64_u64)
             .map(|seed| {
                 hallway_geom_with_slots(
-                    RoomId(0),
-                    RoomId(1),
-                    ThresholdSlotId(2),
-                    ThresholdSlotId(1),
+                    HallwayGeomEndpoints {
+                        from: RoomId(0),
+                        to: RoomId(1),
+                        from_room_slot: ThresholdSlotId(2),
+                        to_room_slot: ThresholdSlotId(1),
+                        exit_room: RoomId(EXIT_ROOM),
+                    },
                     template,
                     seed,
                     false,

@@ -116,6 +116,7 @@ fn clamp_unit(value: Vec2) -> Vec2 {
 }
 
 /// Map keyboard + mouse + gamepads into the first-person `PlayerIntent` for this frame.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn match_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mouse: Option<Res<AccumulatedMouseMotion>>,
@@ -124,8 +125,9 @@ pub(crate) fn match_input(
     mut intent: ResMut<MatchIntent>,
     mut item_intent: ResMut<ItemIntent>,
     bot_capture: Option<Res<crate::capture::BotPovCaptureRequest>>,
+    spectator_bot: Option<Res<SpectatorBot>>,
 ) {
-    if bot_capture.is_some() {
+    if bot_capture.is_some() || spectator_bot.is_some() {
         return;
     }
     if crate::diagnostics::freecam_enabled() {

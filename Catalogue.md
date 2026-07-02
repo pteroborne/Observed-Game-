@@ -41,6 +41,8 @@ These crates represent the stable core of the game's simulation layer. They cont
    - *Purpose:* The competitive match brain, containing:
      - `competition`: team standings, race metrics, capacity-limited exit gates.
      - `director`: AI director pressure models, collapse scaling, and catch-up mechanisms.
+     - `elimination`: multi-round elimination-series state, first-escape countdowns, adversary escalation, and team-keyed tool ownership.
+     - `teamplay`: seeded two-member bot teamplay, co-op room beats, tool usage, guardian setbacks, and round outcomes for spectator-driven series play.
      - `maze`: seeded spatial labyrinth generator translating graphs into walkable corridor geometry.
      - `hybrid`: deterministic orchestration of the first-person hybrid round-stepping and matching.
 7. **`observed_net`** — [README](crates/observed_net/README.md)
@@ -112,7 +114,7 @@ The `game` package builds the final playable binary. It acts as an integration l
 
 - **`game/src/main.rs` & `lib.rs`:** App loop initialization, Bevy configuration, screen registry.
 - **`game/src/screens/`:** Concrete menu UI, Lobby status, HUD, and first-person Match Runtime orchestrators.
-- **`game/src/camera.rs` & `bot.rs`:** Shared viewport math (first-person, spectator, preview) and dynamic navmesh-based bot automation for walkthrough screenshots.
+- **`game/src/camera.rs`, `bot.rs` & `map_validation.rs`:** Shared viewport math (first-person, spectator, preview), dynamic navmesh/grid-fallback bot automation for walkthrough screenshots and the `Spectate AI` body, and pure semantic-map geometry audits.
 - **`game/src/teleport.rs`:** Discrete room/hallway footprint building, doorway gap geometry, and crossing triggers.
 
 ---

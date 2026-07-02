@@ -15,8 +15,9 @@
 
 use bevy::math::Vec2;
 use bevy::prelude::Resource;
-use observed_core::RoomId;
+use observed_core::{RoomId, TeamId};
 
+use crate::flow::LOCAL_TEAM;
 use crate::teleport::{PinnedEdge, Place};
 
 /// The two droppable item kinds.
@@ -29,6 +30,7 @@ pub enum ItemKind {
 /// An item resting in the world, bound to the place it was dropped in.
 #[derive(Clone, Debug)]
 pub struct PlacedItem {
+    pub team: TeamId,
     pub kind: ItemKind,
     pub place: Place,
     pub pos: Vec2,
@@ -43,6 +45,8 @@ pub struct PlacedItem {
 /// The single-player loadout plus everything dropped in the world.
 #[derive(Clone, Debug, Resource)]
 pub struct ItemsState {
+    /// Owning team for this inventory. Pads link only to pads with the same team key.
+    pub team: TeamId,
     /// Carried (un-dropped) anchor torches.
     pub torches: u8,
     /// Carried (un-dropped) teleport pads.
@@ -73,7 +77,12 @@ pub(crate) fn same_place(a: Place, b: Place) -> bool {
 impl ItemsState {
     /// The single-player loadout: one anchor torch, two teleport pads.
     pub fn single_player() -> Self {
+        Self::for_team(LOCAL_TEAM)
+    }
+
+    pub fn for_team(team: TeamId) -> Self {
         Self {
+            team,
             torches: 1,
             pads: 2,
             placed: Vec::new(),
@@ -108,6 +117,7 @@ impl ItemsState {
         }
         *self.carried_mut(kind) -= 1;
         self.placed.push(PlacedItem {
+            team: self.team,
             kind,
             place,
             pos,
@@ -262,11 +272,17 @@ impl ItemsState {
     /// `radius`) and a *second* pad is placed elsewhere, returns the place + position of
     /// that other pad — where activating the link sends you. `None` if not on a pad or
     /// fewer than two are down.
-    pub fn pad_link_target(&self, place: Place, pos: Vec2, radius: f32) -> Option<(Place, Vec2)> {
+    pub fn pad_link_target_for(
+        &self,
+        team: TeamId,
+        place: Place,
+        pos: Vec2,
+        radius: f32,
+    ) -> Option<(Place, Vec2)> {
         let pads: Vec<&PlacedItem> = self
             .placed
             .iter()
-            .filter(|it| it.kind == ItemKind::TeleportPad)
+            .filter(|it| it.team == team && it.kind == ItemKind::TeleportPad)
             .collect();
         if pads.len() < 2 {
             return None;
@@ -281,6 +297,10 @@ impl ItemsState {
             .map(|(_, it)| (*it).clone())?;
         Some((other.place, other.pos))
     }
+
+    pub fn pad_link_target(&self, place: Place, pos: Vec2, radius: f32) -> Option<(Place, Vec2)> {
+        self.pad_link_target_for(self.team, place, pos, radius)
+    }
 }
 
 #[cfg(test)]
@@ -294,6 +314,7 @@ mod tests {
     #[test]
     fn single_player_loadout_is_one_torch_two_pads() {
         let s = ItemsState::single_player();
+        assert_eq!(s.team, LOCAL_TEAM);
         assert_eq!(s.carried(ItemKind::AnchorTorch), 1);
         assert_eq!(s.carried(ItemKind::TeleportPad), 2);
         assert!(s.placed.is_empty());
@@ -443,5 +464,22 @@ mod tests {
         // Standing on the room-5 pad links back (reusable, bidirectional).
         let back = s.pad_link_target(room(5), Vec2::new(2.0, -1.0), 1.2);
         assert_eq!(back, Some((room(1), Vec2::new(0.0, 0.0))));
+    }
+
+    #[test]
+    fn teleport_pad_links_are_team_keyed() {
+        let mut s = ItemsState::for_team(TeamId(1));
+        s.drop(ItemKind::TeleportPad, room(1), Vec2::ZERO, 0);
+        s.drop(ItemKind::TeleportPad, room(5), Vec2::new(2.0, 0.0), 0);
+
+        assert!(
+            s.pad_link_target_for(TeamId(0), room(1), Vec2::ZERO, 1.2)
+                .is_none(),
+            "another team's key cannot activate this team's pad pair"
+        );
+        assert_eq!(
+            s.pad_link_target_for(TeamId(1), room(1), Vec2::ZERO, 1.2),
+            Some((room(5), Vec2::new(2.0, 0.0)))
+        );
     }
 }

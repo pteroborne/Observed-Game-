@@ -28,6 +28,13 @@ pub fn configure(app: &mut App) {
                 Update,
                 scenarios::capture_match_progress.after(screens::present_match_camera),
             );
+    } else if let Ok(dir) = std::env::var("OBSERVED2_CAPTURE_MAP_AUDIT") {
+        let _ = std::fs::create_dir_all(&dir);
+        app.insert_resource(scenarios::MapAuditCaptureRequest::new(dir))
+            .add_systems(
+                Update,
+                scenarios::capture_map_audit_progress.after(screens::present_match_camera),
+            );
     } else if let Ok((path, into_maze)) = std::env::var("OBSERVED2_CAPTURE_MAZE")
         .map(|p| (p, true))
         .or_else(|_| std::env::var("OBSERVED2_CAPTURE_ROOM").map(|p| (p, false)))

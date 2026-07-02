@@ -32,6 +32,7 @@ player_input = { path = "../crates/player_input" }
 observed_progression = { path = "../crates/observed_progression" }
 observed_net = { path = "../crates/observed_net" }
 observed_observation = { path = "../crates/observed_observation" }
+observed_facility = { path = "../crates/observed_facility" }
 observed_match = { path = "../crates/observed_match" }
 observed_traversal = { path = "../crates/observed_traversal" }
 ghx_proc_gen = "0.8.0"

@@ -17,7 +17,6 @@ use crate::maze::{
 };
 use glam::{Vec2, Vec3};
 use observed_core::{RoomId, TeamId};
-use observed_observation::ROOM_COUNT;
 use observed_traversal::{FIXED_DT, FpsArena, FpsBody, step_body};
 use player_input::PlayerIntent;
 use std::collections::{HashSet, VecDeque};
@@ -314,7 +313,7 @@ impl HybridMatch {
     }
 
     pub fn navigable(&self) -> bool {
-        self.reachable_rooms() == ROOM_COUNT
+        self.reachable_rooms() == self.competitive.structure.graph.room_count
     }
 }
 
@@ -338,7 +337,7 @@ pub fn route_all(
             } else {
                 (door_b, door_a)
             };
-            let spine = facility.structure.is_protected(door_a);
+            let spine = facility.map_spec.is_none() && facility.structure.is_protected(door_a);
             let choice = spine
                 .then(|| build_route_choice(base, &path, SPINE_RADIUS))
                 .flatten();
@@ -433,13 +432,15 @@ pub fn path_between_avoiding(
 pub fn reachable(tiles: &[Tile], elevation_steps: &[u8], rooms: &[RoomRect]) -> usize {
     let start = rooms[0].center_tile();
     let mut seen = vec![false; GRID_W * GRID_H];
-    let mut reached = [false; ROOM_COUNT];
+    let mut reached = vec![false; rooms.len()];
     let mut queue = VecDeque::new();
     seen[start.1 * GRID_W + start.0] = true;
     queue.push_back(start);
     while let Some((x, y)) = queue.pop_front() {
-        if let Tile::Room(room) = tiles[y * GRID_W + x] {
-            reached[room as usize] = true;
+        if let Tile::Room(room) = tiles[y * GRID_W + x]
+            && let Some(reached) = reached.get_mut(room as usize)
+        {
+            *reached = true;
         }
         for (nx, ny) in neighbours(x, y) {
             let index = ny * GRID_W + nx;

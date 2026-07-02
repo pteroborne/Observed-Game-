@@ -7,6 +7,7 @@ pub mod guardian;
 pub mod hallway;
 pub mod items;
 pub mod keystones;
+pub mod map_validation;
 pub mod maze;
 mod navmesh;
 pub mod rivals;
@@ -772,16 +773,23 @@ mod tests {
             Visibility::Visible,
             "Tab shows the tac-map panel"
         );
-        let expected_elements = (tacmap::spine().len() - 1)
-            + 9
+        let expected_model = {
+            let runtime = app.world().resource::<screens::MatchRuntime>();
+            let keys = app.world().resource::<keystones::KeystoneState>();
+            let tp = app.world().resource::<screens::TeleportState>();
+            tacmap::build_map(&runtime.live.host_match().competitive, keys, tp.place)
+        };
+        let expected_elements = expected_model.routes.len()
+            + expected_model.rooms.len()
             + 1
-            + keystones::REQUIRED
-            + (observed_match::facility::TEAM_COUNT - 1)
+            + expected_model.keystones.len()
+            + expected_model.rivals.len()
+            + 1
             + 1;
         assert_eq!(
             count::<screens::TacMapElement>(&mut app),
             expected_elements,
-            "the visible map draws route bars, nine rooms, exit, keys, rivals, and player"
+            "the visible map draws route bars, rooms, exit, keys, rivals, player, and series status"
         );
 
         app.world_mut()
@@ -908,6 +916,81 @@ mod tests {
         assert!(
             app.world().resource::<Career>().profile.is_equipped(id),
             "equipping from the loadout updates the persistent profile"
+        );
+    }
+
+    #[test]
+    fn spectate_ai_menu_option_launches_a_bot_driven_match() {
+        let mut app = test_app();
+        go(&mut app, GameState::MainMenu);
+        app.world_mut().resource_mut::<screens::MenuCursor>().0 = 1;
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::Enter);
+        app.world_mut().run_schedule(Update);
+        app.update();
+
+        assert_eq!(
+            *app.world().resource::<State<GameState>>().get(),
+            GameState::Match
+        );
+        assert!(app.world().contains_resource::<screens::SpectatorBot>());
+        assert_eq!(
+            app.world().resource::<flow::ActiveMatchSeed>().0,
+            flow::MATCH_SEED,
+            "spectator mode uses the fixed demo seed so bot crossings stay deterministic"
+        );
+        {
+            let bot = app.world().resource::<screens::SpectatorBot>();
+            assert_eq!(bot.seed, flow::MATCH_SEED);
+            assert!(
+                bot.teamplay.plan.solvable(),
+                "spectator mode owns a valid procedural co-op seed plan"
+            );
+            assert_eq!(
+                bot.teamplay
+                    .team(flow::LOCAL_TEAM)
+                    .expect("local bot team exists")
+                    .members
+                    .len(),
+                observed_match::facility::MEMBERS_PER_TEAM,
+                "spectator mode drives a two-member team, not a single abstract runner"
+            );
+        }
+
+        let before_teamplay_tick = app
+            .world()
+            .resource::<screens::SpectatorBot>()
+            .teamplay
+            .tick;
+        app.world_mut().run_schedule(FixedUpdate);
+        assert_eq!(
+            app.world()
+                .resource::<screens::SpectatorBot>()
+                .teamplay
+                .tick,
+            before_teamplay_tick,
+            "the procedural co-op brain should not fast-forward on a single fixed frame"
+        );
+        for _ in 1..screens::SPECTATOR_TEAMPLAY_STEP_FRAMES {
+            app.world_mut().run_schedule(FixedUpdate);
+        }
+        assert!(
+            app.world()
+                .resource::<screens::SpectatorBot>()
+                .teamplay
+                .tick
+                > before_teamplay_tick,
+            "the spectator bot should advance the procedural co-op brain"
+        );
+        assert!(
+            app.world().resource::<screens::MatchIntent>().0.movement.y > 0.0
+                || app
+                    .world()
+                    .resource::<screens::SpectatorBot>()
+                    .route_place
+                    .is_some(),
+            "the spectator bot should take over the player body"
         );
     }
 

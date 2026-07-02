@@ -6,8 +6,11 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy::window::{CursorOptions, PrimaryWindow};
 use observed_core::RoomId;
+use observed_facility::map_spec::{RoomRole, sector_relay_v1};
+use observed_match::elimination::{EliminationSeries, MAX_AUTOPLAY_TICKS};
 use observed_match::hybrid::{HybridMatch, LocalAction};
 use observed_match::maze::TILE_SIZE;
+use observed_match::teamplay::TeamplayMatch;
 use observed_net::netmatch::LiveNetMatch;
 use observed_net::network::NetworkProfile;
 use observed_style::{self as style, MarkerRole, SurfaceRole};
@@ -15,10 +18,14 @@ use observed_traversal::{FpsBody, FpsConfig};
 
 use super::*;
 use crate::GameState;
-use crate::flow::{Career, MATCH_SEED, resolve};
+use crate::flow::{Career, LOCAL_TEAM, MATCH_SEED, resolve};
 use crate::items::{ItemKind, ItemsState};
 use crate::keystones::KeystoneState;
 use crate::teleport::Place;
+
+const SPECTATOR_BOT_WAYPOINT_RADIUS: f32 = 0.9;
+const SPECTATOR_BOT_CROSS_RADIUS: f32 = 1.2;
+pub(crate) const SPECTATOR_TEAMPLAY_STEP_FRAMES: u8 = 30;
 
 // Re-exports
 pub(crate) use ambience::{
@@ -44,17 +51,24 @@ pub(crate) fn setup_match(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     seed: Option<Res<crate::flow::ActiveMatchSeed>>,
+    spectator_bot: Option<ResMut<SpectatorBot>>,
 ) {
     career.begin_match();
     if !all_planned_assets_present() {
         warn!("one or more planned match assets are absent; procedural fallbacks will be used");
     }
     let seed_val = seed.map(|s| s.0).unwrap_or(MATCH_SEED);
-    let live = LiveNetMatch::new(seed_val, NetworkProfile::Hostile);
+    if let Some(mut spectator) = spectator_bot
+        && spectator.seed != seed_val
+    {
+        *spectator = SpectatorBot::for_seed(seed_val);
+    }
+    let map_spec = sector_relay_v1();
+    let live = LiveNetMatch::new_for_map_spec(seed_val, NetworkProfile::Hostile, map_spec.clone());
     let game = live.host_match();
     let initial_escaped = game.competitive.escaped_count();
     let initial_commits = game.reroute_commits;
-    let keys = KeystoneState::new(seed_val);
+    let keys = KeystoneState::for_map(seed_val, &map_spec);
     let items = ItemsState::single_player();
     let tp_config = FpsConfig::default();
     let start_place = Place::Room(game.local_room());
@@ -68,6 +82,10 @@ pub(crate) fn setup_match(
         live,
         wait_timer: Timer::from_seconds(0.45, TimerMode::Repeating),
         done: false,
+    });
+    commands.insert_resource(SeriesRuntime {
+        series: EliminationSeries::new(seed_val),
+        autoplay_timer: Timer::from_seconds(0.45, TimerMode::Repeating),
     });
     commands.insert_resource(MatchPaused(false));
     commands.insert_resource(TacMapState(false));
@@ -98,7 +116,13 @@ pub(crate) fn setup_match(
     });
     commands.insert_resource(keys);
     commands.insert_resource(items);
-    commands.insert_resource(crate::guardian::Guardian::default());
+    let guardian_room = map_spec
+        .role_room(RoomRole::GuardianControl)
+        .unwrap_or(RoomId(8));
+    commands.insert_resource(crate::guardian::Guardian {
+        room: guardian_room,
+        ..default()
+    });
     commands.insert_resource(crate::guardian::ActionLog::default());
     commands.insert_resource(TeleportAnimation::default());
     commands.insert_resource(LastTeleportPad::default());
@@ -409,11 +433,7 @@ pub(crate) fn setup_match(
                         13.0,
                         style::marker(MarkerRole::Rival).base_color
                     ),
-                    text(
-                        "pressure gate (red when lit)",
-                        13.0,
-                        Color::srgb(1.0, 0.32, 0.22)
-                    ),
+                    text("mystery corridors", 13.0, Color::srgb(1.0, 0.32, 0.22)),
                 ],
             ));
         });
@@ -421,6 +441,8 @@ pub(crate) fn setup_match(
 
 pub(crate) fn cleanup_match_resources(mut commands: Commands) {
     commands.remove_resource::<MatchRuntime>();
+    commands.remove_resource::<SeriesRuntime>();
+    commands.remove_resource::<SpectatorBot>();
     commands.remove_resource::<MatchIntent>();
     commands.remove_resource::<ItemIntent>();
     commands.remove_resource::<MatchPaused>();
@@ -431,6 +453,176 @@ pub(crate) fn cleanup_match_resources(mut commands: Commands) {
     commands.remove_resource::<KeystoneState>();
     commands.remove_resource::<ItemsState>();
     commands.remove_resource::<DecohereFx>();
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn drive_spectator_bot(
+    paused: Res<MatchPaused>,
+    mut spectator: ResMut<SpectatorBot>,
+    mut runtime: ResMut<MatchRuntime>,
+    mut series_runtime: ResMut<SeriesRuntime>,
+    mut tp: ResMut<TeleportState>,
+    keys: Res<KeystoneState>,
+    items: Res<ItemsState>,
+    guardian: Res<crate::guardian::Guardian>,
+    mut intent: ResMut<MatchIntent>,
+    mut item_intent: ResMut<ItemIntent>,
+) {
+    spectator.teamplay_frame_accum = spectator.teamplay_frame_accum.saturating_add(1);
+    if spectator.teamplay_frame_accum >= SPECTATOR_TEAMPLAY_STEP_FRAMES {
+        spectator.teamplay_frame_accum = 0;
+        pump_spectator_teamplay(&mut spectator, &mut series_runtime.series);
+    }
+    if paused.0 || runtime.done {
+        intent.0 = PlayerIntent::default();
+        return;
+    }
+    if spectator.finished {
+        intent.0 = PlayerIntent::default();
+        return;
+    }
+
+    let here = body_xz(&tp);
+    let in_same_room = matches!(tp.place, Place::Room(room) if room == guardian.room);
+    if in_same_room && items.carried(ItemKind::AnchorTorch) > 0 {
+        item_intent.torch_action = true;
+    }
+
+    if matches!(tp.place, Place::Room(room) if room.0 == observed_match::mutable::EXIT_ROOM) {
+        spectator.finished = true;
+        spectator.clear_route();
+        intent.0 = PlayerIntent::default();
+        return;
+    }
+
+    if let Some(gap) = crate::bot::target_gap_for_place(tp.place, &tp.geom, here) {
+        let rel = here - gap.center;
+        let tangent = Vec2::new(-gap.normal.y, gap.normal.x);
+        let at_aperture =
+            rel.dot(gap.normal) > -0.45 && rel.dot(tangent).abs() <= gap.width * 0.5 + 0.35;
+        if here.distance(gap.center) <= SPECTATOR_BOT_CROSS_RADIUS || at_aperture {
+            debug_cross_gap_for_capture(&mut tp, &mut runtime, gap, &keys, &items);
+            spectator.clear_route();
+            intent.0 = PlayerIntent::default();
+            return;
+        }
+    }
+
+    if spectator.route_place != Some(tp.place)
+        || spectator.waypoint >= spectator.route.len()
+        || spectator.route.is_empty()
+    {
+        let Some(gap) = crate::bot::target_gap_for_place(tp.place, &tp.geom, here) else {
+            spectator.blocked_ticks += 1;
+            spectator.finished =
+                runtime.live.host_match().local_target().is_none() || spectator.blocked_ticks > 90;
+            intent.0 = PlayerIntent::default();
+            return;
+        };
+        if let Some(path) = crate::bot::route_to_gap(&tp.geom, &tp.arena, &tp.config, here, &gap) {
+            spectator.route_place = Some(tp.place);
+            spectator.route = path.waypoints;
+            spectator.waypoint = 0;
+            spectator.blocked_ticks = 0;
+        } else {
+            spectator.blocked_ticks += 1;
+            if spectator.blocked_ticks > 90 {
+                spectator.finished = true;
+            }
+            intent.0 = PlayerIntent::default();
+            return;
+        }
+    }
+
+    while spectator.waypoint + 1 < spectator.route.len()
+        && here.distance(spectator.route[spectator.waypoint]) <= SPECTATOR_BOT_WAYPOINT_RADIUS
+    {
+        spectator.waypoint += 1;
+    }
+
+    let target = spectator.route[spectator.waypoint];
+    let to = target - here;
+    if to.length_squared() < 0.04 {
+        intent.0 = PlayerIntent::default();
+        return;
+    }
+
+    let mut avoidance = Vec2::ZERO;
+    let safety_dist = tp.config.radius + 0.05;
+    let cy = tp.body.position.y;
+    let hy = tp.config.half_height;
+    for solid in &tp.arena.solids {
+        if cy - hy < solid.max.y && cy + hy > solid.min.y {
+            let closest_x = here.x.clamp(solid.min.x, solid.max.x);
+            let closest_z = here.y.clamp(solid.min.z, solid.max.z);
+            let closest = Vec2::new(closest_x, closest_z);
+            let diff = here - closest;
+            let dist = diff.length();
+            if dist > 0.0 && dist < safety_dist {
+                let weight = (safety_dist - dist) / safety_dist;
+                avoidance += diff.normalize() * weight * 1.8;
+            }
+        }
+    }
+
+    let mut dir = to.normalize_or_zero();
+    if avoidance.length_squared() > 1e-4 {
+        dir = (dir + avoidance).normalize_or_zero();
+    }
+    let forward_dir = Vec2::new(tp.body.forward().x, tp.body.forward().z).normalize_or_zero();
+    let is_sharp_turn = forward_dir.dot(dir) < 0.65;
+    tp.body.yaw = dir.x.atan2(-dir.y);
+    tp.body.pitch = -0.22;
+
+    intent.0 = PlayerIntent {
+        movement: Vec2::new(0.0, 1.0),
+        sprint_held: !is_sharp_turn,
+        ..default()
+    };
+}
+
+fn pump_spectator_teamplay(spectator: &mut SpectatorBot, series: &mut EliminationSeries) {
+    if series.finished() {
+        spectator.finished = true;
+        return;
+    }
+
+    if !spectator.teamplay.finished {
+        let events = spectator.teamplay.advance_bot_tick();
+        if let Some(event) = events.last() {
+            spectator.last_teamplay_event = event.summary();
+        }
+    }
+
+    let Some(outcome) = spectator.teamplay.round_outcome() else {
+        return;
+    };
+
+    series.apply_teamplay_round(outcome);
+    if series.finished() {
+        spectator.finished = true;
+        spectator.last_teamplay_event = series.last_event.clone();
+        return;
+    }
+
+    let next_seed = spectator
+        .seed
+        .wrapping_add(u64::from(series.current.index).wrapping_mul(0xA11_C0D3));
+    spectator.teamplay = TeamplayMatch::for_round(
+        next_seed,
+        series.current.index,
+        series.alive_teams.clone(),
+        series.adversary_strength(),
+    );
+    spectator.teamplay_frame_accum = 0;
+    spectator.focused_team = series
+        .alive_teams
+        .iter()
+        .copied()
+        .find(|team| *team == LOCAL_TEAM)
+        .unwrap_or_else(|| series.alive_teams[0]);
+    spectator.focused_member = 0;
+    spectator.last_teamplay_event = series.last_event.clone();
 }
 
 pub(crate) fn connections_for(game: &HybridMatch, room: RoomId) -> Vec<RoomId> {
@@ -559,6 +751,7 @@ pub(crate) fn nav_for_room(
         seed,
         version: game.reroute_commits,
         exit_locked: !keys.gate_open(),
+        exit_room: keys.exit_room,
         pins: items.pins(),
     }
 }
@@ -721,10 +914,13 @@ pub(crate) fn item_actions(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn match_pump(
     time: Res<Time>,
     input: MatchPumpInput,
     mut runtime: ResMut<MatchRuntime>,
+    mut series_runtime: ResMut<SeriesRuntime>,
+    spectator_bot: Option<Res<SpectatorBot>>,
     mut paused: ResMut<MatchPaused>,
     mut career: ResMut<Career>,
     mut next: ResMut<NextState<GameState>>,
@@ -744,6 +940,18 @@ pub(crate) fn match_pump(
         return;
     }
 
+    let spectator_driven_series = spectator_bot.is_some();
+
+    if !spectator_driven_series
+        && !series_runtime.series.finished()
+        && series_runtime
+            .autoplay_timer
+            .tick(time.delta())
+            .just_finished()
+    {
+        series_runtime.series.advance_autoplay_tick();
+    }
+
     for _ in 0..3 {
         runtime.live.pump();
     }
@@ -753,7 +961,11 @@ pub(crate) fn match_pump(
     {
         runtime.live.force_round(LocalAction::Wait);
     }
-    if runtime.live.finished() && !runtime.done {
+    if !spectator_driven_series && runtime.live.finished() && !series_runtime.series.finished() {
+        series_runtime.series.run_to_winner(MAX_AUTOPLAY_TICKS);
+    }
+
+    if (runtime.live.finished() || series_runtime.series.finished()) && !runtime.done {
         for _ in 0..64 {
             if runtime.live.in_sync() {
                 break;
@@ -761,7 +973,11 @@ pub(crate) fn match_pump(
             runtime.live.pump();
         }
         runtime.done = true;
-        let result = resolve(&runtime.live.host_match().competitive);
+        let result = if series_runtime.series.finished() {
+            crate::flow::resolve_series(&series_runtime.series)
+        } else {
+            resolve(&runtime.live.host_match().competitive)
+        };
         career.record(result);
         next.set(GameState::Results);
     }
@@ -770,6 +986,7 @@ pub(crate) fn match_pump(
 pub(crate) fn keystone_pickup(
     tp: Res<TeleportState>,
     mut keys: ResMut<KeystoneState>,
+    mut series: ResMut<SeriesRuntime>,
     items: Query<(Entity, &KeystoneItem, &GlobalTransform)>,
     mut commands: Commands,
 ) {
@@ -778,6 +995,12 @@ pub(crate) fn keystone_pickup(
     for (entity, item, transform) in &items {
         let here = Vec2::new(transform.translation().x, transform.translation().z);
         if body.distance(here) <= PICKUP_RADIUS && keys.collect(item.0) {
+            if let Some(team) = series.series.current.team_mut(LOCAL_TEAM)
+                && !team.collected_keystones.contains(&item.0)
+            {
+                team.collected_keystones.push(item.0);
+                team.collected_keystones.sort_by_key(|room| room.0);
+            }
             commands.entity(entity).despawn();
         }
     }

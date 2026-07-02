@@ -20,9 +20,11 @@ use std::path::PathBuf;
 
 use bevy::input::InputSystems;
 use bevy::prelude::*;
-use observed_core::RoomId;
+use observed_core::{RoomId, TeamId};
+use observed_match::elimination::EliminationSeries;
 use observed_match::facility::TEAM_COUNT;
 use observed_match::maze::{CORRIDOR_RADIUS, TILE_SIZE};
+use observed_match::teamplay::TeamplayMatch;
 use observed_net::netmatch::LiveNetMatch;
 use observed_progression::session::SessionLabWorld;
 use observed_style as style;
@@ -182,6 +184,7 @@ pub(crate) struct ScreenRoot;
 pub(crate) enum MenuAction {
     Goto(GameState),
     StartRun,
+    SpectateAi,
     Launch,
     Equip(u16),
     QuitApp,
@@ -220,6 +223,62 @@ pub struct MatchRuntime {
     /// remaining teams can finish.
     pub wait_timer: Timer,
     pub done: bool,
+}
+
+/// Autoplaying elimination-series state for the next playable slice. The existing
+/// first-person/networked match remains the presentation and manual-takeover surface;
+/// this pure model owns the multi-round "do not come in last" result.
+#[derive(Resource)]
+pub struct SeriesRuntime {
+    pub series: EliminationSeries,
+    pub autoplay_timer: Timer,
+}
+
+/// Menu-launched bot spectator mode. The bot drives the same first-person body and
+/// threshold-crossing systems a player uses; the camera simply follows that body.
+#[derive(Resource)]
+pub struct SpectatorBot {
+    pub seed: u64,
+    pub focused_team: TeamId,
+    pub focused_member: u8,
+    pub teamplay: TeamplayMatch,
+    pub last_teamplay_event: String,
+    pub teamplay_frame_accum: u8,
+    pub route_place: Option<Place>,
+    pub route: Vec<Vec2>,
+    pub waypoint: usize,
+    pub blocked_ticks: u32,
+    pub finished: bool,
+}
+
+impl Default for SpectatorBot {
+    fn default() -> Self {
+        Self::for_seed(crate::flow::MATCH_SEED)
+    }
+}
+
+impl SpectatorBot {
+    pub fn for_seed(seed: u64) -> Self {
+        Self {
+            seed,
+            focused_team: crate::flow::LOCAL_TEAM,
+            focused_member: 0,
+            teamplay: TeamplayMatch::new(seed),
+            last_teamplay_event: "Bot co-op team entered the procedural seed.".to_string(),
+            teamplay_frame_accum: 0,
+            route_place: None,
+            route: Vec::new(),
+            waypoint: 0,
+            blocked_ticks: 0,
+            finished: false,
+        }
+    }
+
+    pub fn clear_route(&mut self) {
+        self.route_place = None;
+        self.route.clear();
+        self.waypoint = 0;
+    }
 }
 
 /// The player's first-person intent for the current frame, consumed by the
@@ -604,6 +663,12 @@ impl Plugin for MatchPlugin {
                     cleanup_match_resources,
                     clear_match_atmosphere,
                 ),
+            )
+            .add_systems(
+                FixedUpdate,
+                drive_spectator_bot
+                    .run_if(in_match().and(resource_exists::<SpectatorBot>))
+                    .before(teleport_sim),
             )
             .add_systems(FixedUpdate, teleport_sim.run_if(in_match()))
             .add_systems(

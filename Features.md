@@ -32,10 +32,12 @@ presented through the teleport place model: the player occupies one room or one
 hallway piece at a time, crosses thresholds to transition, sees only the current
 place, and unobserved connections can re-roll their destination or hallway
 variation. The game currently includes keystone-gated exit progress, anchor
-torch threshold pinning, teleport pads, pressure-gate route risk, safe bypass
-signaling, rival avatars, a guardian, specialized rooms, a TAC-MAP, audio and
+torch threshold pinning, teleport pads, semantic Sector Relay map roles,
+mystery-corridor routing, rival avatars, a guardian, specialized rooms, a TAC-MAP, audio and
 route-shift feedback, progression, loadout, lobby projection, results, and
-drop-in asset fallbacks.
+drop-in asset fallbacks. The main menu also has a `Spectate AI` path that drives
+a procedural two-member co-op teamplay race and feeds its outcome into the
+elimination-series standings while the camera follows the visible first-person bot.
 
 ## Assembled Game Loop
 
@@ -50,9 +52,9 @@ drop-in asset fallbacks.
 | In-match pause | Game-integrated | `game/src/screens.rs`, `game/src/screens/input.rs` | Releases/re-grabs cursor and allows quitting back to menu. |
 | State-scoped cleanup | Game-integrated | `DespawnOnExit` in `game/src/screens.rs` | Tests assert screen entities/resources do not leak across repeated state cycles. |
 | Match HUD | Game-integrated | `game/src/screens/hud.rs` | Shows match status, gate/keystone/item state, network state, guardian/log status, and controls relevant to the current match. |
-| TAC-MAP overlay | Game-integrated | `game/src/tacmap.rs`, `game/src/screens/hud.rs` | `Tab` projects player location, rivals, collapse, spine route, keystones, and exit lock/open state from live sim state. |
+| TAC-MAP overlay | Game-integrated | `game/src/tacmap.rs`, `game/src/screens/hud.rs` | `Tab` projects player location, rivals, collapse, semantic routes, keystones, and exit lock/open state from live sim state. |
 | Audio cues and ambience | Game-integrated | `game/src/screens/audio.rs`, `game/src/screens/match_runtime/ambience.rs` | Includes ambience, footsteps, escape/success, door/reroute cues, and route-shift feedback. |
-| Capture scenarios | Tooling/support | `game/src/capture/` | Bot POV, tour, room, ceiling, and event capture paths produce visual evidence. |
+| Capture scenarios | Tooling/support | `game/src/capture/` | Bot POV, tour, room, ceiling, map-audit, and event capture paths produce visual evidence. |
 
 ## Input, Identity, and Determinism
 
@@ -81,7 +83,7 @@ drop-in asset fallbacks.
 | Per-hallway labyrinths | Game-integrated | `game/src/maze.rs`, `game/src/hallway.rs` | Randomized-DFS plus braid pass creates deterministic dead ends and loops inside hallway pieces. |
 | Whole-graph spatial maze | Production logic and lab-proven | `observed_match::maze`, `labs/fps_maze_lab` | Embeds the nine-room graph as real corridors; still important to the hybrid model, but the current game presentation uses the teleport place renderer. |
 | WFC hallway/interior generation | Tooling/support; not currently used by game runtime | `labs/wfc_proc_gen_lab`, `game/src/wfc_maze.rs` | Candidate WFC generator and helper exist; `game/src/wfc_maze.rs` is present but no current game callsite uses it. |
-| Local bot navigation | Game-integrated as debug/capture | `game/src/bot.rs`, `game/src/navmesh.rs` | Derived navmesh pathing consumes current place geometry for capture/debug; it is not authoritative simulation. |
+| Local bot navigation | Game-integrated as spectator/debug/capture | `game/src/bot.rs`, `game/src/navmesh.rs`, `game/src/screens.rs` | Derived navmesh pathing with a grid fallback consumes current place geometry for capture/debug and the `Spectate AI` body. Authoritative bot team decisions live in `observed_match::teamplay`. |
 
 ## Observation, Rewiring, and Facility Topology
 
@@ -109,13 +111,14 @@ drop-in asset fallbacks.
 | Keystone pickups | Game-integrated | `game/src/keystones.rs`, `game/src/screens/place/items.rs` | Walking over a room's uncollected keystone collects it once and removes it from the TAC-MAP. |
 | Locked exit doorway | Game-integrated | `game/src/teleport/`, `game/src/screens/place/strategies.rs` | Hallways toward the exit show a solid locked gate until keystone inventory opens it. |
 | Teleport pads | Game-integrated, local/presentation | `game/src/items.rs`, `game/src/screens/match_runtime/mod.rs` | Two dropped pads form a reusable bidirectional link activated from either pad. |
+| Procedural two-member teamplay | Production logic; game-integrated spectator | `observed_match::teamplay`, `game/src/screens.rs`, `game/src/screens/match_runtime/` | `Spectate AI` runs a seeded co-op plan with two members per team, a dual-station room, anchor beat, team-keyed pad relay, guardian setbacks, shared keystones, and deterministic round outcomes. |
 | General interaction framework | Production logic and lab-proven | `crates/observed_interaction`, `labs/interaction_lab` | Instant, sustained, exclusive, shared, interrupted, carry, socket, and climb interactions with stable IDs. |
 | Persistent equipment framework | Production logic and lab-proven | `crates/observed_interaction::equipment`, `labs/equipment_lab` | Batteries, structural jacks, cable spools, deployable lights, grapple devices, sockets, power drain, handoff, recover, and room replacement persistence. |
 | Full equipment set in assembled game | Deferred/partial | `game/src/items.rs`, `crates/observed_interaction` | The game currently has a smaller local item layer: anchor torch, teleport pads, and keystones. Battery/jack/cable/light/grapple remain lab/prod features, not current game equipment. |
 | Carryable power cell and powered door | Lab-proven | `labs/facility_sandbox`, `labs/equipment_lab` | End-to-end sandbox objective proves power source and powered-door gating. |
 | Structural jack bridge | Lab-proven | `labs/facility_sandbox`, `labs/equipment_lab` | Deployable jack bridges a pit in the sandbox; not in current assembled game. |
 | Player-built route cables | Lab-proven | `labs/route_lab` | Budget-limited team cables pin graph connections; opponents can cut them. Not integrated into the assembled game. |
-| Team cooperation mechanics | Lab-proven | `labs/team_lab` | Four players, two teams, item contention, narrow passage capacity, multi-player climb point, two-operator machine, separation/reunion tracking. |
+| Team cooperation mechanics | Production logic spectator; lab-proven manually | `observed_match::teamplay`, `labs/team_lab` | The game spectator now runs two-member bot teams through co-op room beats. Manual multi-player control, item contention, narrow passages, and reunion tracking remain lab-proven. |
 | Cooperative pressure hazard | Lab-proven | `labs/hazard_lab` | Director-steered pressure front requires two relief roles, can cross team boundaries, stalls advancement without damage. |
 | Pressure-gate route risk | Game-integrated | `observed_match::hybrid`, `game/src/hallway.rs`, `game/src/screens/place/preview.rs` | Red shortcut can pulse active and reset the body to checkpoint without reducing match progress. |
 | Safe bypass routes | Game-integrated | `observed_match::hybrid`, `observed_style::SurfaceRole::SafeBypass` | Cyan route avoids pressure tiles and is longer than the risky direct line. |
@@ -135,6 +138,7 @@ drop-in asset fallbacks.
 | First-person competitive match over portal facility | Lab-proven, superseded | `labs/fps_match_lab` | Full FPS competitive match and replay over the portal/module facility; superseded by hybrid maze and game presentation. |
 | First-person hybrid match | Production logic; game-integrated | `observed_match::hybrid`, `labs/fps_hybrid_match_lab`, `game` | Spatial action boundary, safe/risky routes, traps, reroute feedback, deterministic snapshots, and replay. |
 | Networked hybrid match | Production logic; game-integrated | `observed_net::netmatch`, `labs/net_match_lab`, `game` | Clean and hostile transports converge to identical match/maze/pose snapshots. |
+| Elimination series | Production logic; game-integrated spectator | `observed_match::elimination`, `observed_match::teamplay`, `game/src/screens/match_runtime/` | Repeated rounds continue until one team remains. In `Spectate AI`, procedural co-op round outcomes drive escapes, eliminations, adversary escalation, and final standings. |
 | Rival team markers/avatars | Game-integrated, local/presentation | `game/src/rivals.rs`, `game/src/screens/place/mod.rs`, TAC-MAP | Rivals are projected from deterministic team rooms and rendered only when co-present in the current room, plus map pips. |
 | Guardian AI | Game-integrated, local/presentation | `game/src/guardian.rs`, `labs/guardian_ai_lab` | Moves room-by-room toward target, freezes under gaze/anchor/rival observation, banishes under anchor light, teleports player on touch, and can be reassigned to rivals. |
 | Guardian Control Room | Game-integrated | `game/src/screens/place/mod.rs`, `ROADMAP.md` | Room 3 console reassigns guardian target to rival teams or local player. |
@@ -242,9 +246,10 @@ drop-in asset fallbacks.
 - Full equipment framework from `observed_interaction` is not yet the game
   inventory. The game has a small local item layer for keystones, anchor torch,
   and teleport pads.
-- Two-operator cooperative hazards and route cable competition remain lab-only.
-  The game has pressure-gate route risk and anchor pinning, but not the full
-  cooperative hazard/cable budget/cut loops.
+- Two-operator cooperative hazards are now represented in the bot-spectated pure
+  teamplay slice, but manual local/online co-op control remains future work.
+  Route cable competition remains lab-only; the game has pressure-gate route risk
+  and anchor pinning, but not the full cable budget/cut loop.
 - Authoring imports (`TrenchBroom`, `LDtk`, WFC) are proven candidates, not
   production game content sources.
 - Semantic outlines and particle VFX are proven readability candidates but are

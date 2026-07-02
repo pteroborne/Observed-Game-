@@ -13,6 +13,8 @@
 //!   resolves deterministically (fastest escapes, the rest are absorbed).
 //! - [`hybrid`] — the complete first-person hybrid match: fixed-step traversal in the
 //!   rerouting maze, round boundaries, safe/risky routes, and exact replay.
+//! - [`teamplay`] — deterministic two-member bot teams solving procedural co-op
+//!   room beats for the spectated elimination-series slice.
 //!
 //! Promoted out of `competition_lab`, `director_lab`, `mutable_facility`,
 //! `competitive_facility`, `fps_maze_lab`, and `fps_hybrid_match_lab` in refactor R9;
@@ -22,7 +24,9 @@
 
 pub mod competition;
 pub mod director;
+pub mod elimination;
 pub mod facility;
 pub mod hybrid;
 pub mod maze;
 pub mod mutable;
+pub mod teamplay;

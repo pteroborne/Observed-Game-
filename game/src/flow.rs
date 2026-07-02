@@ -11,6 +11,7 @@
 
 use bevy::prelude::Resource;
 use observed_core::TeamId;
+use observed_match::elimination::{EliminationSeries, MAX_AUTOPLAY_TICKS};
 use observed_match::facility::CompetitiveFacility;
 use observed_net::netmatch::NetMatch;
 use observed_net::network::NetworkProfile;
@@ -51,17 +52,23 @@ pub fn resolve(facility: &CompetitiveFacility) -> MatchResult {
     }
 }
 
+/// Read the local player's final outcome from a completed elimination series.
+pub fn resolve_series(series: &EliminationSeries) -> MatchResult {
+    MatchResult {
+        placement: series.placement_for(LOCAL_TEAM),
+        escaped: series.escaped_total(),
+        absorbed: series.absorbed_total(),
+        winner: series.winner,
+        local_won: series.winner == Some(LOCAL_TEAM),
+    }
+}
+
 /// Run a whole deterministic match to its end (headless — used by the career loop
 /// and tests). The interactive Match screen steps the same brain incrementally.
 pub fn play_match() -> MatchResult {
-    let mut facility = CompetitiveFacility::authored();
-    for _ in 0..10_000 {
-        if facility.finished {
-            break;
-        }
-        facility.advance_round(&[]);
-    }
-    resolve(&facility)
+    let mut series = EliminationSeries::new(MATCH_SEED);
+    series.run_to_winner(MAX_AUTOPLAY_TICKS);
+    resolve_series(&series)
 }
 
 /// Run the **networked first-person hybrid match** to convergence and resolve the
@@ -141,6 +148,7 @@ mod tests {
         assert_eq!(a, b);
         assert_eq!(a.placement, Some(1));
         assert!(a.local_won);
+        assert_eq!(a.escaped, 1);
         assert_eq!(a.escaped + a.absorbed, 4);
     }
 

@@ -13,6 +13,7 @@ use crate::maze::{
 use crate::mutable::spine_next;
 use glam::{Vec2, Vec3};
 use observed_core::RoomId;
+use observed_facility::map_spec::MapSpec;
 use observed_traversal::{FpsBody, FpsConfig};
 use std::collections::HashSet;
 
@@ -96,6 +97,52 @@ impl HybridMatch {
         }
     }
 
+    pub fn for_map_spec(seed: u64, spec: MapSpec) -> Self {
+        let competitive = CompetitiveFacility::for_map_spec(spec.clone());
+        let (base, rooms) = place_map_rooms(&spec);
+        let elevation_steps = generated_elevation_steps();
+        let rendered = super::round_step::route_all(&competitive, &base, &rooms);
+        let maze_tiles = rebuild(&base, &rendered);
+        let spine_tiles = collect_spine_tiles(&rendered);
+        let safe_tiles = collect_safe_tiles(&rendered);
+        let trap_tiles = collect_trap_tiles(&rendered);
+        let config = FpsConfig::default();
+        let start_room = spec.start_room().expect("validated start");
+        let start = room_world(start_room, &rooms);
+        let mut body = FpsBody::spawned(
+            Vec3::new(
+                start.x,
+                room_floor_height(start_room, &rooms, &elevation_steps) + config.half_height,
+                start.y,
+            ),
+            0.0,
+        );
+        body.grounded = true;
+        Self {
+            competitive,
+            seed,
+            base,
+            elevation_steps,
+            rooms,
+            target: rendered.clone(),
+            rendered,
+            maze_tiles,
+            spine_tiles,
+            safe_tiles,
+            trap_tiles,
+            body,
+            config,
+            reroute_commits: 0,
+            reroute_deferrals: 0,
+            hazard_tick: 0,
+            trap_hits: 0,
+            trap_cooldown_ticks: 0,
+            reroute_feedback_ticks: 0,
+            last_traversal: Vec::new(),
+            last_event: "Read the unstable graph; anchor and relay the route.".to_string(),
+        }
+    }
+
     pub fn local_index(&self) -> usize {
         self.competitive
             .teams
@@ -109,7 +156,7 @@ impl HybridMatch {
     }
 
     pub fn local_target(&self) -> Option<RoomId> {
-        spine_next(self.local_room()).map(|(room, _)| room)
+        self.competitive.next_room_for_team(self.local_index())
     }
 
     pub fn player_tile(&self) -> Option<(usize, usize)> {
@@ -292,6 +339,63 @@ pub fn room_world(room: RoomId, rooms: &[RoomRect]) -> Vec2 {
 pub fn room_floor_height(room: RoomId, rooms: &[RoomRect], elevation_steps: &[u8]) -> f32 {
     let (x, y) = rooms[room.0 as usize].center_tile();
     elevation_steps[y * GRID_W + x] as f32 * ELEVATION_STEP_HEIGHT
+}
+
+pub fn place_map_rooms(spec: &MapSpec) -> (Vec<Tile>, Vec<RoomRect>) {
+    let mut tiles = vec![Tile::Wall; GRID_W * GRID_H];
+    let min_x = spec
+        .rooms
+        .iter()
+        .map(|room| room.schematic.x)
+        .fold(f32::INFINITY, f32::min);
+    let max_x = spec
+        .rooms
+        .iter()
+        .map(|room| room.schematic.x)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let min_y = spec
+        .rooms
+        .iter()
+        .map(|room| room.schematic.y)
+        .fold(f32::INFINITY, f32::min);
+    let max_y = spec
+        .rooms
+        .iter()
+        .map(|room| room.schematic.y)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let sx = (max_x - min_x).max(1.0);
+    let sy = (max_y - min_y).max(1.0);
+    let mut rooms = vec![None; spec.room_count()];
+    for room in &spec.rooms {
+        let cx = 4.0 + ((room.schematic.x - min_x) / sx) * (GRID_W as f32 - 8.0);
+        let cy = 4.0 + ((room.schematic.y - min_y) / sy) * (GRID_H as f32 - 8.0);
+        let w = 5usize;
+        let h = 5usize;
+        let x =
+            (cx.round() as isize - (w as isize / 2)).clamp(1, (GRID_W - w - 1) as isize) as usize;
+        let y =
+            (cy.round() as isize - (h as isize / 2)).clamp(1, (GRID_H - h - 1) as isize) as usize;
+        let rect = RoomRect {
+            room: room.id,
+            x,
+            y,
+            w,
+            h,
+        };
+        for yy in y..y + h {
+            for xx in x..x + w {
+                tiles[yy * GRID_W + xx] = Tile::Room(room.id.0);
+            }
+        }
+        rooms[room.id.0 as usize] = Some(rect);
+    }
+    (
+        tiles,
+        rooms
+            .into_iter()
+            .map(|room| room.expect("room ids are dense for map specs"))
+            .collect(),
+    )
 }
 
 fn yaw_for_step(from: (usize, usize), to: (usize, usize)) -> f32 {

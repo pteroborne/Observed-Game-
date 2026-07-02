@@ -29,7 +29,11 @@ use crate::competition::RaceAction;
 use crate::director::Role;
 use crate::mutable::spine_next;
 use observed_core::{RoomId, TeamId};
-use observed_facility::constraints::ConstraintWorld;
+use observed_facility::{
+    constraints::ConstraintWorld,
+    map_spec::{MapSpec, RoomRole},
+};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 /// Re-exported from `mutable_facility` — the entrance and exit rooms this lab's
 /// presentation and tests refer to.
@@ -74,6 +78,7 @@ pub struct TeamRun {
     pub pace: f32,
     pub role: Role,
     pub placement: Option<u8>,
+    pub objective_index: usize,
 }
 
 impl TeamRun {
@@ -113,6 +118,7 @@ pub struct CompetitiveFacility {
     pub decohere_count: u32,
     pub finished: bool,
     pub last_event: String,
+    pub map_spec: Option<MapSpec>,
 }
 
 impl CompetitiveFacility {
@@ -132,6 +138,7 @@ impl CompetitiveFacility {
                 pace: 0.0,
                 role: Role::Runner,
                 placement: None,
+                objective_index: 0,
             })
             .collect();
 
@@ -151,11 +158,57 @@ impl CompetitiveFacility {
             last_event: format!(
                 "{TEAM_COUNT} teams race the shifting facility; {EXIT_CAPACITY} exits. Fall behind and it takes you."
             ),
+            map_spec: None,
+        }
+    }
+
+    pub fn for_map_spec(spec: MapSpec) -> Self {
+        spec.validate_or_panic();
+        let start = spec.start_room().expect("validated map start");
+        let mut structure = ConstraintWorld::from_map_spec(&spec);
+        structure.graph.players = vec![start; PLAYER_COUNT];
+        structure.recompute_connectivity();
+
+        let teams = (0..TEAM_COUNT)
+            .map(|i| TeamRun {
+                id: TeamId(i as u8),
+                member_base: i * MEMBERS_PER_TEAM,
+                members: MEMBERS_PER_TEAM as u8,
+                speed: SPEEDS[i],
+                pace: 0.0,
+                role: Role::Runner,
+                placement: None,
+                objective_index: 0,
+            })
+            .collect();
+
+        Self {
+            structure,
+            teams,
+            control_holder: None,
+            purge_line: -PURGE_GAP,
+            exit_capacity: EXIT_CAPACITY,
+            slots_remaining: EXIT_CAPACITY,
+            next_placement: 1,
+            winner: None,
+            director_actions: 0,
+            round: 0,
+            decohere_count: 0,
+            finished: false,
+            last_event: format!(
+                "{}: redundant graph, no protected route; tools stabilize practical paths.",
+                spec.name
+            ),
+            map_spec: Some(spec),
         }
     }
 
     pub fn reset(&mut self) {
-        *self = Self::authored();
+        if let Some(spec) = self.map_spec.clone() {
+            *self = Self::for_map_spec(spec);
+        } else {
+            *self = Self::authored();
+        }
     }
 
     pub fn team(&self, id: TeamId) -> Option<&TeamRun> {
@@ -169,6 +222,15 @@ impl CompetitiveFacility {
 
     /// A team's progress toward the exit, as a fraction of the spine.
     pub fn team_progress(&self, index: usize) -> f32 {
+        if self.map_spec.is_some() {
+            let sequence = self.objective_sequence();
+            if sequence.is_empty() {
+                return 0.0;
+            }
+            return (self.teams[index].objective_index.min(sequence.len()) as f32
+                / sequence.len() as f32)
+                .min(1.0);
+        }
         spine_index(self.team_room(index)) as f32 / SPINE_STEPS
     }
 
@@ -243,6 +305,10 @@ impl CompetitiveFacility {
     /// spine never rewires, this lands on the next spine room however the rest of
     /// the structure has decohered.
     fn step_team(&mut self, index: usize) {
+        if self.map_spec.is_some() {
+            self.step_team_toward_objective(index);
+            return;
+        }
         let room = self.team_room(index);
         if let Some((_next, side)) = spine_next(room) {
             let base = self.teams[index].member_base;
@@ -253,7 +319,86 @@ impl CompetitiveFacility {
     }
 
     fn team_at_exit(&self, index: usize) -> bool {
+        if let Some(spec) = &self.map_spec {
+            let at_exit = spec
+                .exit_room()
+                .is_some_and(|exit| self.team_room(index) == exit);
+            return at_exit && self.teams[index].objective_index >= self.objective_sequence().len();
+        }
         self.team_room(index).0 == EXIT_ROOM
+    }
+
+    pub fn next_room_for_team(&self, index: usize) -> Option<RoomId> {
+        if self.map_spec.is_none() {
+            return spine_next(self.team_room(index)).map(|(room, _)| room);
+        }
+        let goal = self.current_goal(index)?;
+        let room = self.team_room(index);
+        if room == goal {
+            return Some(goal);
+        }
+        graph_path(&self.structure.graph, room, goal).and_then(|path| path.get(1).copied())
+    }
+
+    fn step_team_toward_objective(&mut self, index: usize) {
+        self.sync_completed_objectives(index);
+        let Some(goal) = self.current_goal(index) else {
+            return;
+        };
+        let room = self.team_room(index);
+        if room == goal {
+            self.sync_completed_objectives(index);
+            return;
+        }
+        let Some(next) =
+            graph_path(&self.structure.graph, room, goal).and_then(|path| path.get(1).copied())
+        else {
+            return;
+        };
+        let Some(side) = side_to_neighbor(&self.structure.graph, room, next) else {
+            return;
+        };
+        let base = self.teams[index].member_base;
+        for offset in 0..self.teams[index].members as usize {
+            self.structure.traverse(base + offset, side);
+        }
+        self.sync_completed_objectives(index);
+    }
+
+    fn sync_completed_objectives(&mut self, index: usize) {
+        let sequence = self.objective_sequence();
+        while let Some(goal) = sequence.get(self.teams[index].objective_index).copied() {
+            if self.team_room(index) != goal {
+                break;
+            }
+            self.teams[index].objective_index += 1;
+        }
+    }
+
+    fn current_goal(&self, index: usize) -> Option<RoomId> {
+        let sequence = self.objective_sequence();
+        sequence.get(self.teams[index].objective_index).copied()
+    }
+
+    pub fn objective_sequence(&self) -> Vec<RoomId> {
+        let Some(spec) = &self.map_spec else {
+            return SPINE_ROOMS.iter().copied().map(RoomId).collect();
+        };
+        let mut sequence = Vec::new();
+        sequence.extend(spec.keystone_rooms());
+        for role in [
+            RoomRole::DualStation,
+            RoomRole::AnchorCheckpoint,
+            RoomRole::TeleportRelay,
+            RoomRole::Exit,
+        ] {
+            if let Some(room) = spec.role_room(role)
+                && !sequence.contains(&room)
+            {
+                sequence.push(room);
+            }
+        }
+        sequence
     }
 
     /// Advance the match by one round from per-team race actions (default
@@ -366,6 +511,18 @@ impl CompetitiveFacility {
     /// The spine rooms the collapse has already swallowed (progress fraction at or
     /// below the collapse line). Used to draw the creeping collapse frontier.
     pub fn collapse_rooms(&self) -> Vec<RoomId> {
+        if self.map_spec.is_some() {
+            let sequence = self.objective_sequence();
+            if sequence.is_empty() {
+                return Vec::new();
+            }
+            return sequence
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| (*i as f32 / sequence.len() as f32) <= self.purge_line)
+                .map(|(_, &room)| room)
+                .collect();
+        }
         SPINE_ROOMS
             .iter()
             .enumerate()
@@ -393,6 +550,70 @@ impl CompetitiveFacility {
         );
         true
     }
+}
+
+fn graph_path(
+    graph: &observed_observation::ObservationWorld,
+    start: RoomId,
+    goal: RoomId,
+) -> Option<Vec<RoomId>> {
+    if start == goal {
+        return Some(vec![start]);
+    }
+    if start.0 as usize >= graph.room_count || goal.0 as usize >= graph.room_count {
+        return None;
+    }
+    let mut parent = BTreeMap::<RoomId, RoomId>::new();
+    let mut seen = BTreeSet::new();
+    let mut queue = VecDeque::new();
+    seen.insert(start);
+    queue.push_back(start);
+    while let Some(room) = queue.pop_front() {
+        for next in graph_neighbors(graph, room) {
+            if seen.insert(next) {
+                parent.insert(next, room);
+                if next == goal {
+                    let mut path = vec![goal];
+                    let mut current = goal;
+                    while let Some(&prev) = parent.get(&current) {
+                        path.push(prev);
+                        current = prev;
+                        if current == start {
+                            break;
+                        }
+                    }
+                    path.reverse();
+                    return Some(path);
+                }
+                queue.push_back(next);
+            }
+        }
+    }
+    None
+}
+
+fn graph_neighbors(graph: &observed_observation::ObservationWorld, room: RoomId) -> Vec<RoomId> {
+    let mut out = Vec::new();
+    for side in observed_observation::Side::ALL {
+        let door = graph.door_id(room, side);
+        if !graph.is_sealed(door) {
+            out.push(graph.door(graph.partner(door)).room);
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+fn side_to_neighbor(
+    graph: &observed_observation::ObservationWorld,
+    room: RoomId,
+    neighbor: RoomId,
+) -> Option<observed_observation::Side> {
+    observed_observation::Side::ALL.into_iter().find(|&side| {
+        let door = graph.door_id(room, side);
+        !graph.is_sealed(door) && graph.door(graph.partner(door)).room == neighbor
+    })
 }
 
 #[cfg(test)]

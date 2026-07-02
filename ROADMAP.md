@@ -16,6 +16,36 @@ This document outlines the current active development goals, completed milestone
 
 ## Recent Milestones (Completed)
 
+### Phase 36 - Map Iteration & Render-Bounds Validation `[x]`
+Added a validation loop for the semantic Sector Relay map before expanding map content:
+- **Pure semantic map audit:** `game::map_validation` builds teleport-place nav snapshots from `MapSpec`, then checks room bounds, doorway gaps, polygon wall splits, interior wall bounds, and representative semantic room coverage.
+- **Many-iteration traversal check:** Sector Relay rooms and hallways are audited across multiple match seeds and decoherence versions; failures report map name, seed, version, place, room role, connections, bounds, gap count, and spawn.
+- **Bot routing hardening:** local bot routing keeps the existing navmesh fast path and now falls back to a conservative grid route when generated labyrinth obstacles defeat the navmesh.
+- **Visual evidence hook:** `OBSERVED2_CAPTURE_MAP_AUDIT=<dir>` captures representative semantic rooms for quick review without changing normal play.
+
+### Phase 35 — Bot-Spectated Procedural Co-op Race `[x]`
+Integrated the original co-op/team race goals into the AI spectator path:
+- **Procedural co-op seed plan:** seeded role assignment now chooses keystone rooms, a two-operator gate, an anchor beat, a team-keyed teleport relay, a guardian pressure room, and a control room over the protected nine-room route.
+- **Pure two-member teamplay brain:** `observed_match::teamplay` simulates two members per team, co-op station completion, shared keystones, anchor torch use, team-keyed teleport pads, guardian setbacks, decoherence events, and deterministic round outcomes.
+- **Elimination-series bridge:** bot-spectated co-op outcomes now feed the existing series rules, so escapes, eliminations, adversary growth, and final standings come from the teamplay run instead of an unrelated autoplay timer.
+- **Spectator integration:** `Spectate AI` owns the procedural co-op state, advances it while the first-person bot drives the visible body, and reports seed/plan/team metrics in the HUD and TAC-MAP.
+- **Focused verification:** added pure tests for seed solvability, two-operator gating, tool use, guardian setbacks, determinism, and game integration assertions for the spectator menu path.
+
+### Phase 34 — Spectate AI Menu Mode `[x]`
+Integrated the autoplay slice with the assembled first-person match:
+- **Main-menu spectator option:** added `Spectate AI`, launching directly into the 3D Match on the fixed demo seed.
+- **Bot-controlled first-person body:** reused the capture bot's navmesh/threshold routing so the spectator follows a real body through the same collision, doorway, teleport, keystone, and guardian systems.
+- **Manual input handoff boundary:** normal Play still uses player input; Spectate AI suppresses manual movement and keeps the cursor unlocked while the bot drives.
+- **HUD feedback:** the Match HUD clearly reports when the body is AI-controlled.
+
+### Phase 33 — AI Elimination-Series Slice `[x]`
+Added the next match layer implied by the finished roadmap reflection:
+- **Elimination series:** active teams race repeated keystone-route rounds until one team remains.
+- **First escape countdown:** the first team through the exit starts a deterministic countdown; teams that fail to escape before survivor slots fill or the countdown expires are eliminated.
+- **Adversary escalation:** eliminated teams join the facility adversary for later rounds, raising pressure in the autoplay model.
+- **Fully AI playtest path:** every team can run automatically for capture/evidence, while the assembled game keeps the first-person match as a manual takeover surface.
+- **Team-keyed tools:** pads and anchor state now carry team identity so future team inventories can share the same rule boundary.
+
 ### Phase 32 — ASCII Map Editor & Topology Validation `[x]`
 Add structured editing and geometry validation capabilities to prepare the workspace for custom facility topologies:
 - **ASCII Map Editor:** Design a simple, human-readable text representation of rooms, hallways, and portals, along with a parser that constructs the in-memory graph.

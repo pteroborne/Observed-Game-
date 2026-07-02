@@ -269,29 +269,63 @@ pub fn hallway_geom(
     layout_seed: u64,
     exit_locked: bool,
 ) -> PlaceGeom {
-    hallway_geom_with_slots(
+    hallway_geom_for_exit(
         from,
         to,
-        ThresholdSlotId(0),
-        ThresholdSlotId(0),
+        template,
+        layout_seed,
+        exit_locked,
+        RoomId(EXIT_ROOM),
+    )
+}
+
+pub fn hallway_geom_for_exit(
+    from: RoomId,
+    to: RoomId,
+    template: &hallway::HallwayTemplate,
+    layout_seed: u64,
+    exit_locked: bool,
+    exit_room: RoomId,
+) -> PlaceGeom {
+    hallway_geom_with_slots(
+        HallwayGeomEndpoints {
+            from,
+            to,
+            from_room_slot: ThresholdSlotId(0),
+            to_room_slot: ThresholdSlotId(0),
+            exit_room,
+        },
         template,
         layout_seed,
         exit_locked,
     )
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HallwayGeomEndpoints {
+    pub from: RoomId,
+    pub to: RoomId,
+    pub from_room_slot: ThresholdSlotId,
+    pub to_room_slot: ThresholdSlotId,
+    pub exit_room: RoomId,
+}
+
 pub fn hallway_geom_with_slots(
-    from: RoomId,
-    to: RoomId,
-    from_room_slot: ThresholdSlotId,
-    to_room_slot: ThresholdSlotId,
+    endpoints: HallwayGeomEndpoints,
     template: &hallway::HallwayTemplate,
     layout_seed: u64,
     exit_locked: bool,
 ) -> PlaceGeom {
+    let HallwayGeomEndpoints {
+        from,
+        to,
+        from_room_slot,
+        to_room_slot,
+        exit_room,
+    } = endpoints;
     // A hallway heading into the facility exit shows a solid locked door while the
     // keystone gate is shut; otherwise its onward doorway is a normal passage.
-    let exit_kind = if exit_locked && to.0 == EXIT_ROOM {
+    let exit_kind = if exit_locked && to == exit_room {
         GapKind::LockedExit
     } else {
         GapKind::Exit
@@ -550,12 +584,16 @@ pub fn geom_for(place: Place, nav: &Nav) -> PlaceGeom {
             to,
             variation,
         } => hallway_geom_with_slots(
-            from,
-            to,
-            nav.hallway_entry_room_slot
-                .or_else(|| nav.slot_for(to))
-                .unwrap_or(ThresholdSlotId(0)),
-            nav.hallway_exit_room_slot.unwrap_or(ThresholdSlotId(0)),
+            HallwayGeomEndpoints {
+                from,
+                to,
+                from_room_slot: nav
+                    .hallway_entry_room_slot
+                    .or_else(|| nav.slot_for(to))
+                    .unwrap_or(ThresholdSlotId(0)),
+                to_room_slot: nav.hallway_exit_room_slot.unwrap_or(ThresholdSlotId(0)),
+                exit_room: nav.exit_room,
+            },
             hallway::template(variation),
             hallway::layout_seed(from, to, variation),
             nav.exit_locked,

@@ -13,6 +13,7 @@
 
 use bevy::prelude::Vec2;
 use observed_core::RoomId;
+use observed_facility::map_spec::RoomRole;
 use observed_match::facility::{CompetitiveFacility, TEAM_COUNT};
 use observed_match::mutable::{EXIT_ROOM, START_ROOM, spine_next};
 
@@ -46,6 +47,8 @@ pub enum PlayerMark {
 /// Everything the overlay needs to draw, snapshotted from the live match.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MapModel {
+    pub rooms: Vec<(RoomId, Vec2, RoomRole)>,
+    pub routes: Vec<(RoomId, RoomId)>,
     pub player: PlayerMark,
     /// `(rival team index, its room)` for each still-running rival.
     pub rivals: Vec<(usize, RoomId)>,
@@ -75,7 +78,38 @@ pub fn build_map(facility: &CompetitiveFacility, keys: &KeystoneState, place: Pl
         .copied()
         .filter(|&r| keys.has_uncollected(r))
         .collect();
+    let (rooms, routes) = if let Some(spec) = &facility.map_spec {
+        (
+            spec.rooms
+                .iter()
+                .map(|room| (room.id, room.schematic, room.role))
+                .collect(),
+            spec.edges
+                .iter()
+                .map(|edge| (edge.a.room, edge.b.room))
+                .collect(),
+        )
+    } else {
+        (
+            (0..9)
+                .map(|id| {
+                    let room = RoomId(id);
+                    let role = if id == START_ROOM {
+                        RoomRole::Start
+                    } else if id == EXIT_ROOM {
+                        RoomRole::Exit
+                    } else {
+                        RoomRole::Decision
+                    };
+                    (room, grid_pos(room), role)
+                })
+                .collect(),
+            spine().windows(2).map(|pair| (pair[0], pair[1])).collect(),
+        )
+    };
     MapModel {
+        rooms,
+        routes,
         player,
         rivals,
         collapse: facility.collapse_rooms(),
@@ -128,6 +162,7 @@ mod tests {
         );
         assert_eq!(model.exit, RoomId(EXIT_ROOM));
         assert!(!model.keystones.is_empty(), "keystones are placed to find");
+        assert_eq!(model.rooms.len(), 9);
     }
 
     #[test]
