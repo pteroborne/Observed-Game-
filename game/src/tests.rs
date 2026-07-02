@@ -1035,3 +1035,33 @@ fn driving_spine_rounds_advances_the_brain_with_the_place_renderer_live() {
         "the place renderer keeps geometry live across rounds"
     );
 }
+
+/// Arc G3 characterization: the match's outcome authority. Today the interactive
+/// match ends when either the live hybrid match or the elimination series finishes,
+/// fast-forwards the series if the live match won the race, and resolves the result
+/// from the series. The headless career match (`flow::play_match`) must produce the
+/// exact same result for the same seed — the HUD, the Results screen, and the career
+/// all describe one match, not three.
+#[test]
+fn headless_and_interactive_matches_agree_on_the_result() {
+    let headless = crate::flow::play_match();
+
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    finish_match(&mut app);
+    let interactive = app
+        .world()
+        .resource::<Career>()
+        .last_result
+        .clone()
+        .expect("finishing the interactive match records a result");
+
+    assert_eq!(
+        interactive, headless,
+        "the interactive match and the headless career run must resolve identically"
+    );
+    assert!(
+        interactive.placement.is_some(),
+        "the elimination series always places the local team"
+    );
+}
