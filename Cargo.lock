@@ -2382,6 +2382,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "contention_lab"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "observed_core",
+ "observed_observation",
+]
+
+[[package]]
 name = "control_lab"
 version = "0.1.0"
 dependencies = [

@@ -5,7 +5,8 @@
 //! off, the same rewiring can disconnect the graph — which is why the constraint
 //! exists. Pure logic; the `Resource` derive is behind the `bevy` feature.
 
-use observed_core::{RoomId, SplitMix};
+use observed_core::{RoomId, SplitMix, TeamId};
+use observed_observation::contention::Anchor;
 use observed_observation::{Door, DoorId, ObservationWorld, ROOM_COUNT, Side};
 
 use crate::map_spec::MapSpec;
@@ -38,6 +39,11 @@ pub struct ConstraintWorld {
     pub reachable: u32,
     pub last_rewired: u32,
     pub last_event: String,
+    /// Team-keyed hard freezes, shared across every team (Phase 38). Reuses
+    /// [`observed_observation::contention::Anchor`] verbatim — see
+    /// `ContentionWorld::place_anchor`/`remove_anchor` for the semantics this
+    /// mirrors.
+    pub anchors: Vec<Anchor>,
 }
 
 impl ConstraintWorld {
@@ -59,6 +65,7 @@ impl ConstraintWorld {
             reachable: ROOM_COUNT as u32,
             last_rewired: 0,
             last_event: "Gold routes persist; the rest rewires but stays connected.".to_string(),
+            anchors: Vec::new(),
         };
         world.recompute_connectivity();
         world
@@ -91,6 +98,7 @@ impl ConstraintWorld {
                 "{} uses redundant connectivity; tools stabilize practical routes.",
                 spec.name
             ),
+            anchors: Vec::new(),
         };
         world.recompute_connectivity();
         world
@@ -104,10 +112,50 @@ impl ConstraintWorld {
         self.protected[door.0 as usize]
     }
 
-    /// A door is frozen when observation pins it, or when the spine protects it
-    /// (and protection is on).
+    /// Whether any team has an anchor placed on `room`. Mirrors
+    /// `ContentionWorld::anchored`.
+    fn anchored(&self, room: RoomId) -> bool {
+        self.anchors.iter().any(|anchor| anchor.room == room)
+    }
+
+    /// Place `team`'s anchor on `room`. Idempotent per (team, room) — placing
+    /// the same team's anchor on the same room twice is a no-op that still
+    /// returns `true`. Anchor-vs-anchor agrees: two teams may anchor the same
+    /// room simultaneously and both facts are recorded. Semantics identical to
+    /// `observed_observation::contention::ContentionWorld::place_anchor`.
+    pub fn place_anchor(&mut self, team: TeamId, room: RoomId) -> bool {
+        if self
+            .anchors
+            .iter()
+            .any(|anchor| anchor.team == team && anchor.room == room)
+        {
+            return true;
+        }
+        self.anchors.push(Anchor { team, room });
+        true
+    }
+
+    /// Remove `team`'s anchor from `room`, if present. Only ever removes the
+    /// calling team's own anchor; another team's anchor on the same room is
+    /// untouched. Returns whether an anchor was actually removed. Semantics
+    /// identical to `ContentionWorld::remove_anchor`.
+    pub fn remove_anchor(&mut self, team: TeamId, room: RoomId) -> bool {
+        let before = self.anchors.len();
+        self.anchors
+            .retain(|anchor| !(anchor.team == team && anchor.room == room));
+        self.anchors.len() != before
+    }
+
+    /// A door is frozen when observation pins it, the spine protects it (and
+    /// protection is on), or either end's room is anchored by any team.
+    /// Mirrors `ObservationWorld::is_pinned`'s both-ends rule: a door's own
+    /// room and its partner's room are both checked, so a sealed door (whose
+    /// partner is itself) is covered by the same single check.
     pub fn is_frozen(&self, door: DoorId) -> bool {
-        self.graph.is_pinned(door) || (self.protection_enabled && self.is_protected(door))
+        self.graph.is_pinned(door)
+            || (self.protection_enabled && self.is_protected(door))
+            || self.anchored(self.graph.door(door).room)
+            || self.anchored(self.graph.door(self.graph.partner(door)).room)
     }
 
     pub fn door(&self, door: DoorId) -> &Door {
@@ -367,5 +415,76 @@ mod tests {
         assert_eq!(world.decohere_count, 0);
         assert!(world.protection_enabled);
         assert!(world.connected);
+        assert!(world.anchors.is_empty());
+    }
+
+    #[test]
+    fn anchored_room_doorways_never_rewire_while_unanchored_ones_do() {
+        use observed_core::TeamId;
+
+        // No presence anywhere and protection off, so only anchors freeze doors.
+        let mut world = ConstraintWorld::authored();
+        world.graph.players.clear();
+        world.protection_enabled = false;
+
+        // Anchor room 4 (a non-spine-adjacent-only room with real free doors).
+        assert!(world.place_anchor(TeamId(0), RoomId(4)));
+        let watched: Vec<(DoorId, DoorId)> = Side::ALL
+            .iter()
+            .map(|side| {
+                let d = world.graph.door_id(RoomId(4), *side);
+                (d, world.graph.partner(d))
+            })
+            .collect();
+
+        // Track an unanchored room's doorway too, to prove decoherence is still
+        // happening elsewhere in the same run.
+        let free_door = world.graph.door_id(RoomId(0), Side::North);
+        let mut saw_free_door_rewire = false;
+        let mut saw_anchored_survive_every_time = true;
+
+        for _ in 0..40 {
+            let free_partner_before = world.graph.partner(free_door);
+            world.decohere();
+            for (door, expected) in &watched {
+                if world.graph.partner(*door) != *expected {
+                    saw_anchored_survive_every_time = false;
+                }
+            }
+            if world.graph.partner(free_door) != free_partner_before {
+                saw_free_door_rewire = true;
+            }
+            assert!(
+                world.connected,
+                "connectivity guard must hold with anchors present"
+            );
+        }
+
+        assert!(
+            saw_anchored_survive_every_time,
+            "an anchored room's doorways must never rewire across many decoheres"
+        );
+        assert!(
+            saw_free_door_rewire,
+            "unanchored doorways must still be free to rewire"
+        );
+
+        // Removing the anchor frees the room up again.
+        assert!(world.remove_anchor(TeamId(0), RoomId(4)));
+        assert!(!world.is_frozen(watched[0].0) || world.is_protected(watched[0].0));
+    }
+
+    #[test]
+    fn anchors_do_not_change_behavior_when_absent() {
+        // With no anchors placed, is_frozen must behave exactly as before
+        // (observation-or-protection only). This guards against a regression
+        // where the anchors check accidentally widens the frozen set.
+        let mut a = ConstraintWorld::authored();
+        let mut b = ConstraintWorld::authored();
+        for _ in 0..10 {
+            a.decohere();
+            b.decohere();
+        }
+        assert_eq!(a.graph.links, b.graph.links);
     }
 }

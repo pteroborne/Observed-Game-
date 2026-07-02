@@ -33,6 +33,8 @@ use observed_facility::{
     constraints::ConstraintWorld,
     map_spec::{MapSpec, RoomRole},
 };
+use observed_observation::DoorId;
+use observed_observation::contention::PinSource;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 /// Re-exported from `mutable_facility` — the entrance and exit rooms this lab's
@@ -218,6 +220,77 @@ impl CompetitiveFacility {
     /// The room a team's clump currently occupies (its lead member).
     pub fn team_room(&self, index: usize) -> RoomId {
         self.structure.graph.players[self.teams[index].member_base]
+    }
+
+    /// Place `team`'s anchor on `room`, freezing that room's doorways (for
+    /// every team) until removed. Passthrough to
+    /// [`ConstraintWorld::place_anchor`] — see there for the idempotency and
+    /// anchor-vs-anchor semantics.
+    pub fn place_team_anchor(&mut self, team: TeamId, room: RoomId) -> bool {
+        self.structure.place_anchor(team, room)
+    }
+
+    /// Remove `team`'s anchor from `room`, if present. Passthrough to
+    /// [`ConstraintWorld::remove_anchor`]; only ever removes the calling
+    /// team's own anchor.
+    pub fn remove_team_anchor(&mut self, team: TeamId, room: RoomId) -> bool {
+        self.structure.remove_anchor(team, room)
+    }
+
+    /// The team that owns the member at global player index `player`, if any.
+    /// A player belongs to team `i` when `member_base <= player < member_base
+    /// + members`.
+    fn team_of_player(&self, player: usize) -> Option<TeamId> {
+        self.teams
+            .iter()
+            .find(|team| {
+                player >= team.member_base && player < team.member_base + team.members as usize
+            })
+            .map(|team| team.id)
+    }
+
+    /// Every reason `door` is currently frozen, deduped, in deterministic
+    /// order: presence sources ordered by team id, then anchor sources
+    /// ordered by team id. Mirrors
+    /// `observed_observation::contention::ContentionWorld::pin_sources` —
+    /// presentation uses this to attribute blame (whose tether light should
+    /// show on this frame) across every team, not just the local one.
+    pub fn pin_sources(&self, door: DoorId) -> Vec<PinSource> {
+        let rooms = [
+            self.structure.graph.door(door).room,
+            self.structure
+                .graph
+                .door(self.structure.graph.partner(door))
+                .room,
+        ];
+
+        let mut presence_teams: Vec<TeamId> = self
+            .structure
+            .graph
+            .players
+            .iter()
+            .enumerate()
+            .filter(|&(_, &room)| rooms.contains(&room))
+            .filter_map(|(index, _)| self.team_of_player(index))
+            .collect();
+        presence_teams.sort_by_key(|team| team.0);
+        presence_teams.dedup();
+
+        let mut anchor_teams: Vec<TeamId> = self
+            .structure
+            .anchors
+            .iter()
+            .filter(|anchor| rooms.contains(&anchor.room))
+            .map(|anchor| anchor.team)
+            .collect();
+        anchor_teams.sort_by_key(|team| team.0);
+        anchor_teams.dedup();
+
+        presence_teams
+            .into_iter()
+            .map(PinSource::Presence)
+            .chain(anchor_teams.into_iter().map(PinSource::Anchor))
+            .collect()
     }
 
     /// A team's progress toward the exit, as a fraction of the spine.
@@ -784,5 +857,126 @@ mod tests {
         assert_eq!(world.director_strength(), 0);
         assert!((0..TEAM_COUNT).all(|i| world.team_room(i).0 == START_ROOM));
         assert!(world.teams.iter().all(TeamRun::active_runner));
+    }
+
+    #[test]
+    fn placing_a_team_anchor_freezes_those_doors_through_decohere_for_every_team() {
+        // Split every team apart so nobody's presence happens to pin room 4, then
+        // anchor room 4 with team 2 (an uninvolved team) and confirm its doorways
+        // survive repeated decohere/advance_round cycles regardless of which team
+        // is racing through the rest of the structure.
+        let mut world = CompetitiveFacility::authored();
+        // Scatter teams away from room 4 so only the anchor pins it.
+        for (i, room) in [0u32, 1, 2, 3].into_iter().enumerate() {
+            let base = world.teams[i].member_base;
+            for offset in 0..world.teams[i].members as usize {
+                world.structure.graph.players[base + offset] = RoomId(room);
+            }
+        }
+        world.structure.recompute_connectivity();
+
+        assert!(world.place_team_anchor(TeamId(2), RoomId(4)));
+        let watched: Vec<(DoorId, DoorId)> = observed_observation::Side::ALL
+            .iter()
+            .map(|side| {
+                let d = world.structure.graph.door_id(RoomId(4), *side);
+                (d, world.structure.graph.partner(d))
+            })
+            .collect();
+
+        for _ in 0..30 {
+            world.advance_round(&[]);
+            for (door, expected) in &watched {
+                assert_eq!(
+                    world.structure.graph.partner(*door),
+                    *expected,
+                    "an anchored room's doorways must stay frozen for every team"
+                );
+            }
+            if world.finished {
+                break;
+            }
+        }
+
+        assert!(world.remove_team_anchor(TeamId(2), RoomId(4)));
+        assert!(!world.remove_team_anchor(TeamId(2), RoomId(4)));
+    }
+
+    #[test]
+    fn pin_sources_attributes_a_rivals_presence_correctly() {
+        let mut world = CompetitiveFacility::authored();
+        // Team 0's clump sits in room 4; team 1's clump sits in room 0 (elsewhere).
+        let base0 = world.teams[0].member_base;
+        for offset in 0..world.teams[0].members as usize {
+            world.structure.graph.players[base0 + offset] = RoomId(4);
+        }
+        let base1 = world.teams[1].member_base;
+        for offset in 0..world.teams[1].members as usize {
+            world.structure.graph.players[base1 + offset] = RoomId(0);
+        }
+        world.structure.recompute_connectivity();
+
+        let door = world
+            .structure
+            .graph
+            .door_id(RoomId(4), observed_observation::Side::East);
+        let sources = world.pin_sources(door);
+        assert!(
+            sources.contains(&PinSource::Presence(TeamId(0))),
+            "room 4's occupant (team 0) must be attributed on its doorway"
+        );
+        assert!(
+            !sources.contains(&PinSource::Presence(TeamId(1))),
+            "team 1 is elsewhere and must not be attributed"
+        );
+
+        // Now anchor the same door's room with team 3 and confirm both sources
+        // appear, deduped and in deterministic (presence-then-anchor, team-id)
+        // order.
+        assert!(world.place_team_anchor(TeamId(3), RoomId(4)));
+        let sources = world.pin_sources(door);
+        assert_eq!(
+            sources,
+            vec![PinSource::Presence(TeamId(0)), PinSource::Anchor(TeamId(3))]
+        );
+    }
+
+    #[test]
+    fn anchor_scripts_are_deterministic_across_identically_seeded_facilities() {
+        fn script(world: &mut CompetitiveFacility) {
+            world.place_team_anchor(TeamId(1), RoomId(4));
+            world.advance_round(&[]);
+            world.advance_round(&[]);
+            world.place_team_anchor(TeamId(2), RoomId(6));
+            world.advance_round(&[]);
+            world.remove_team_anchor(TeamId(1), RoomId(4));
+            world.advance_round(&[]);
+        }
+
+        let mut a = CompetitiveFacility::authored();
+        let mut b = CompetitiveFacility::authored();
+        script(&mut a);
+        script(&mut b);
+
+        assert_eq!(a.structure.graph.links, b.structure.graph.links);
+        assert_eq!(a.structure.anchors.len(), b.structure.anchors.len());
+        assert_eq!(
+            (0..TEAM_COUNT).map(|i| a.team_room(i)).collect::<Vec<_>>(),
+            (0..TEAM_COUNT).map(|i| b.team_room(i)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn no_anchors_means_no_behavior_change_from_the_existing_suite() {
+        // Guard: with zero anchors placed, results must match the pre-Phase-38
+        // baseline exactly (this mirrors `the_match_is_deterministic` but exists
+        // specifically to catch any accidental widening of `is_frozen`).
+        let mut a = CompetitiveFacility::authored();
+        let mut b = CompetitiveFacility::authored();
+        run_to_finish(&mut a, &[]);
+        run_to_finish(&mut b, &[]);
+        assert_eq!(a.structure.graph.links, b.structure.graph.links);
+        assert_eq!(a.winner, b.winner);
+        assert!(a.structure.anchors.is_empty());
     }
 }

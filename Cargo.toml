@@ -23,6 +23,7 @@ members = [
     "labs/team_lab",
     "labs/facility_sandbox",
     "labs/observation_lab",
+    "labs/contention_lab",
     "labs/constraint_lab",
     "labs/competition_lab",
     "labs/director_lab",
