@@ -1,6 +1,5 @@
 use bevy::app::AppExit;
 use bevy::prelude::*;
-use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use observed_match::mutable::EXIT_ROOM;
 use player_input::PlayerIntent;
 use std::path::PathBuf;
@@ -91,7 +90,7 @@ pub(super) fn capture_bot_pov_progress(
                     keys.collect(room);
                 }
                 runtime.done = false;
-                runtime.live.host.match_state.reroute_feedback_ticks = 0;
+                runtime.suppress_reroute_feedback();
 
                 if let Some(mut ts) = tac_state {
                     ts.0 = true;
@@ -117,9 +116,7 @@ pub(super) fn capture_bot_pov_progress(
                         request.shot
                     );
                 }
-                commands
-                    .spawn(Screenshot::primary_window())
-                    .observe(save_to_disk(request.image_path()));
+                crate::evidence::driver::screenshot_to(&mut commands, request.image_path());
                 request.shot += 1;
                 request.next_shot_at = elapsed + BOT_CAPTURE_INTERVAL;
             }

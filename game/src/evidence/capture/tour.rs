@@ -1,7 +1,6 @@
 use bevy::app::AppExit;
 use bevy::prelude::*;
-use bevy::render::view::screenshot::{Screenshot, save_to_disk};
-use observed_match::hybrid::{HybridMatch, LocalAction};
+use observed_match::hybrid::HybridMatch;
 use observed_match::maze::{GRID_H, GRID_W, TILE_SIZE};
 
 use crate::GameState;
@@ -61,23 +60,7 @@ pub(super) fn capture_tour_progress(
         }
         1 => {
             if let Some(rt) = runtime.as_mut() {
-                for _ in 0..5 {
-                    if rt.live.finished() {
-                        break;
-                    }
-                    let action = if rt.live.local_active() {
-                        LocalAction::Advance
-                    } else {
-                        LocalAction::Wait
-                    };
-                    rt.live.force_round(action);
-                    for _ in 0..400 {
-                        if rt.live.in_sync() {
-                            break;
-                        }
-                        rt.live.pump();
-                    }
-                }
+                rt.force_scripted_rounds(5);
                 rt.done = true;
                 tour.phase = 2;
                 tour.next_at = elapsed + 1.2;
@@ -101,9 +84,7 @@ pub(super) fn capture_tour_progress(
                         TOUR_ROOMS[tour.shot - 1].1
                     )
                 };
-                commands
-                    .spawn(Screenshot::primary_window())
-                    .observe(save_to_disk(path));
+                crate::evidence::driver::screenshot_to(&mut commands, path);
                 tour.shot += 1;
                 tour.next_at = elapsed + 0.7;
                 if tour.shot >= total {

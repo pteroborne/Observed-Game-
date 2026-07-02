@@ -2,8 +2,7 @@
 mod arch_check;
 mod bot;
 mod camera;
-mod capture;
-mod diagnostics;
+mod evidence;
 pub mod flow;
 pub mod guardian;
 pub mod hallway;
@@ -109,8 +108,7 @@ pub fn run() {
         .add_plugins(ObservedGamePlugin);
 
     // Opt-in evidence capture (no-op in normal play).
-    capture::configure(&mut app);
-    diagnostics::configure(&mut app);
+    evidence::configure(&mut app);
 
     app.run();
 }

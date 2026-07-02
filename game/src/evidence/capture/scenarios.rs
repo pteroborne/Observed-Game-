@@ -1,6 +1,5 @@
 use bevy::app::AppExit;
 use bevy::prelude::*;
-use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use observed_core::RoomId;
 use observed_match::hybrid::LocalAction;
 
@@ -46,7 +45,7 @@ pub(super) fn capture_ceiling_progress(
         1 => {
             if let (Some(mut rt), Some(mut tp)) = (runtime, tp) {
                 rt.done = true;
-                rt.live.host.match_state.reroute_feedback_ticks = 0;
+                rt.suppress_reroute_feedback();
                 tp.body.position = Vec3::new(0.0, tp.config.half_height, 0.0);
                 tp.body.yaw = 0.0;
                 tp.body.pitch = 1.22;
@@ -54,9 +53,7 @@ pub(super) fn capture_ceiling_progress(
             }
         }
         2 if elapsed >= 0.8 => {
-            commands
-                .spawn(Screenshot::primary_window())
-                .observe(save_to_disk(request.path.clone()));
+            crate::evidence::driver::screenshot_to(&mut commands, request.path.clone());
             request.phase = 3;
         }
         3 if elapsed >= 1.8 => {
@@ -114,7 +111,7 @@ pub(super) fn capture_doorway_progress(
                 (runtime, tp, keys, item_state)
             {
                 rt.done = true;
-                rt.live.host.match_state.reroute_feedback_ticks = 0;
+                rt.suppress_reroute_feedback();
                 if request.from_hallway {
                     let (from, to) = {
                         let game = rt.live.host_match();
@@ -185,9 +182,7 @@ pub(super) fn capture_doorway_progress(
             }
         }
         2 if elapsed >= request.next_at => {
-            commands
-                .spawn(Screenshot::primary_window())
-                .observe(save_to_disk(request.path.clone()));
+            crate::evidence::driver::screenshot_to(&mut commands, request.path.clone());
             request.phase = 3;
             request.next_at = elapsed + 1.0;
         }
@@ -251,9 +246,7 @@ pub(super) fn capture_keystone_progress(
             }
         }
         2 if elapsed >= 0.8 => {
-            commands
-                .spawn(Screenshot::primary_window())
-                .observe(save_to_disk(request.path.clone()));
+            crate::evidence::driver::screenshot_to(&mut commands, request.path.clone());
             request.phase = 3;
         }
         3 if elapsed >= 1.8 => {
@@ -322,9 +315,7 @@ pub(super) fn capture_rivals_progress(
             request.next_at = elapsed + 0.4;
         }
         3 if elapsed >= request.next_at => {
-            commands
-                .spawn(Screenshot::primary_window())
-                .observe(save_to_disk(request.path.clone()));
+            crate::evidence::driver::screenshot_to(&mut commands, request.path.clone());
             request.phase = 4;
             request.next_at = elapsed + 1.0;
         }
@@ -372,9 +363,7 @@ pub(super) fn capture_progress(
         next.set(GameState::MainMenu);
         request.phase = 1;
     } else if request.phase == 1 && elapsed >= 0.8 {
-        commands
-            .spawn(Screenshot::primary_window())
-            .observe(save_to_disk(request.path.clone()));
+        crate::evidence::driver::screenshot_to(&mut commands, request.path.clone());
         request.phase = 2;
     } else if request.phase == 2 && elapsed >= 1.6 {
         exit.write(AppExit::Success);
@@ -409,31 +398,13 @@ pub(super) fn capture_match_progress(
         request.phase = 1;
     } else if request.phase == 1 {
         if let Some(runtime) = runtime.as_mut() {
-            for _ in 0..5 {
-                if runtime.live.finished() {
-                    break;
-                }
-                let action = if runtime.live.local_active() {
-                    LocalAction::Advance
-                } else {
-                    LocalAction::Wait
-                };
-                runtime.live.force_round(action);
-                for _ in 0..400 {
-                    if runtime.live.in_sync() {
-                        break;
-                    }
-                    runtime.live.pump();
-                }
-            }
+            runtime.force_scripted_rounds(5);
             runtime.done = true;
-            runtime.live.host.match_state.reroute_feedback_ticks = 0;
+            runtime.suppress_reroute_feedback();
             request.phase = 2;
         }
     } else if request.phase == 2 && elapsed >= 2.5 {
-        commands
-            .spawn(Screenshot::primary_window())
-            .observe(save_to_disk(request.path.clone()));
+        crate::evidence::driver::screenshot_to(&mut commands, request.path.clone());
         request.phase = 3;
     } else if request.phase == 3 && elapsed >= 3.5 {
         exit.write(AppExit::Success);
@@ -512,7 +483,7 @@ pub(super) fn capture_map_audit_progress(
                 item_state.as_ref(),
             ) {
                 rt.done = true;
-                rt.live.host.match_state.reroute_feedback_ticks = 0;
+                rt.suppress_reroute_feedback();
                 if let Some(room) = request.current_room() {
                     crate::screens::match_runtime::debug_place_into(
                         tp,
@@ -555,9 +526,7 @@ pub(super) fn capture_map_audit_progress(
                     path.clone(),
                 );
                 info!("MAP_AUDIT_CAPTURE: {report}");
-                commands
-                    .spawn(Screenshot::primary_window())
-                    .observe(save_to_disk(path));
+                crate::evidence::driver::screenshot_to(&mut commands, path);
                 request.index += 1;
                 request.phase = if request.index >= request.rooms.len() {
                     4
@@ -702,9 +671,7 @@ pub(super) fn capture_maze_progress(
         }
         3 => {
             if elapsed >= request.next_at {
-                commands
-                    .spawn(Screenshot::primary_window())
-                    .observe(save_to_disk(request.path.clone()));
+                crate::evidence::driver::screenshot_to(&mut commands, request.path.clone());
                 request.phase = 4;
                 request.next_at = elapsed + 1.0;
             }

@@ -15,7 +15,7 @@ pub(crate) use bot_pov::BotPovCaptureRequest;
 
 /// Wire up whichever capture system the environment requests (at most one). Called from
 /// [`crate::run`] after the game plugin is added; a no-op in normal play.
-pub fn configure(app: &mut App) {
+pub(super) fn configure_captures(app: &mut App) {
     if std::env::var("OBSERVED2_CAPTURE_TOUR").is_ok() {
         app.insert_resource(tour::TourCapture::new()).add_systems(
             Update,

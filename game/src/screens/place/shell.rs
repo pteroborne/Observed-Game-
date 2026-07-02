@@ -162,15 +162,15 @@ fn spawn_place_frame(
     let along = Vec2::new(-gap.normal.y, gap.normal.x);
     let rot = Quat::from_rotation_y(gap_yaw(gap.normal));
     let half = gap.width * 0.5;
-    let status = crate::diagnostics::threshold_status(gap, tethered);
+    let status = crate::evidence::threshold_status(gap, tethered);
     for offset in [half, -half] {
         let p = gap.center + along * offset;
         commands.spawn((
             PlaceGeometry,
             DespawnOnExit(GameState::Match),
-            crate::diagnostics::DiagnosticThresholdVisual {
+            crate::evidence::DiagnosticThresholdVisual {
                 threshold: gap.threshold,
-                kind: crate::diagnostics::DiagnosticThresholdVisualKind::Frame,
+                kind: crate::evidence::DiagnosticThresholdVisualKind::Frame,
                 status,
             },
             Mesh3d(assets.placeholder_mesh.clone()),
@@ -186,9 +186,9 @@ fn spawn_place_frame(
     commands.spawn((
         PlaceGeometry,
         DespawnOnExit(GameState::Match),
-        crate::diagnostics::DiagnosticThresholdVisual {
+        crate::evidence::DiagnosticThresholdVisual {
             threshold: gap.threshold,
-            kind: crate::diagnostics::DiagnosticThresholdVisualKind::Frame,
+            kind: crate::evidence::DiagnosticThresholdVisualKind::Frame,
             status,
         },
         Mesh3d(assets.placeholder_mesh.clone()),
@@ -207,9 +207,9 @@ fn spawn_place_frame(
     commands.spawn((
         PlaceGeometry,
         DespawnOnExit(GameState::Match),
-        crate::diagnostics::DiagnosticThresholdVisual {
+        crate::evidence::DiagnosticThresholdVisual {
             threshold: gap.threshold,
-            kind: crate::diagnostics::DiagnosticThresholdVisualKind::FrameLight,
+            kind: crate::evidence::DiagnosticThresholdVisualKind::FrameLight,
             status,
         },
         PointLight {
@@ -223,16 +223,16 @@ fn spawn_place_frame(
         Name::new("Doorframe tether light"),
     ));
 
-    if crate::diagnostics::visual_audit_enabled() {
+    if crate::evidence::visual_audit_enabled() {
         commands.spawn((
             PlaceGeometry,
             DespawnOnExit(GameState::Match),
-            crate::diagnostics::DiagnosticThresholdVisual {
+            crate::evidence::DiagnosticThresholdVisual {
                 threshold: gap.threshold,
-                kind: crate::diagnostics::DiagnosticThresholdVisualKind::Label,
+                kind: crate::evidence::DiagnosticThresholdVisualKind::Label,
                 status,
             },
-            Text2d::new(crate::diagnostics::threshold_label(&gap.threshold)),
+            Text2d::new(crate::evidence::threshold_label(&gap.threshold)),
             TextFont {
                 font_size: 16.0,
                 ..default()
@@ -262,10 +262,10 @@ fn spawn_leaf(
     commands.spawn((
         PlaceGeometry,
         DespawnOnExit(GameState::Match),
-        crate::diagnostics::DiagnosticThresholdVisual {
+        crate::evidence::DiagnosticThresholdVisual {
             threshold: gap.threshold,
-            kind: crate::diagnostics::DiagnosticThresholdVisualKind::Leaf,
-            status: crate::diagnostics::threshold_status(gap, false),
+            kind: crate::evidence::DiagnosticThresholdVisualKind::Leaf,
+            status: crate::evidence::threshold_status(gap, false),
         },
         DoorLeaf {
             center: gap.center,

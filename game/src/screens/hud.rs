@@ -155,7 +155,7 @@ pub(crate) fn draw_tac_map(
             };
             p.spawn((
                 tac_box(mid, w, h, route_col.with_alpha(0.5)),
-                crate::diagnostics::DiagnosticTacMapVisual::route(a, b),
+                crate::evidence::DiagnosticTacMapVisual::route(a, b),
             ));
         }
         // Room squares: collapse-swallowed rooms read red; objective/tool rooms read warm.
@@ -177,7 +177,7 @@ pub(crate) fn draw_tac_map(
             };
             p.spawn((
                 tac_box(center_for(room), TAC_ROOM, TAC_ROOM, fill),
-                crate::diagnostics::DiagnosticTacMapVisual::room(room),
+                crate::evidence::DiagnosticTacMapVisual::room(room),
             ));
         }
         // The exit room: a green (open) or red (locked) outline.
@@ -199,8 +199,8 @@ pub(crate) fn draw_tac_map(
             } else {
                 locked_col
             }),
-            crate::diagnostics::DiagnosticTacMapVisual::one(
-                crate::diagnostics::DiagnosticTacMapRole::Exit,
+            crate::evidence::DiagnosticTacMapVisual::one(
+                crate::evidence::DiagnosticTacMapRole::Exit,
                 Some(model.exit),
             ),
         ));
@@ -209,8 +209,8 @@ pub(crate) fn draw_tac_map(
             let c = center_for(*room) + Vec2::new(TAC_ROOM * 0.5 - 7.0, -(TAC_ROOM * 0.5) + 7.0);
             p.spawn((
                 tac_box(c, 10.0, 10.0, key_col),
-                crate::diagnostics::DiagnosticTacMapVisual::one(
-                    crate::diagnostics::DiagnosticTacMapRole::Keystone,
+                crate::evidence::DiagnosticTacMapVisual::one(
+                    crate::evidence::DiagnosticTacMapRole::Keystone,
                     Some(*room),
                 ),
             ));
@@ -220,8 +220,8 @@ pub(crate) fn draw_tac_map(
             let off = Vec2::new((slot as f32 - (rival_count - 1.0) * 0.5) * 9.0, 8.0);
             p.spawn((
                 tac_box(center_for(*room) + off, 13.0, 13.0, rival_col),
-                crate::diagnostics::DiagnosticTacMapVisual::one(
-                    crate::diagnostics::DiagnosticTacMapRole::Rival,
+                crate::evidence::DiagnosticTacMapVisual::one(
+                    crate::evidence::DiagnosticTacMapRole::Rival,
                     Some(*room),
                 ),
             ));
@@ -239,8 +239,8 @@ pub(crate) fn draw_tac_map(
                         9.0,
                         you_col.with_alpha(0.85),
                     ),
-                    crate::diagnostics::DiagnosticTacMapVisual::one(
-                        crate::diagnostics::DiagnosticTacMapRole::Player,
+                    crate::evidence::DiagnosticTacMapVisual::one(
+                        crate::evidence::DiagnosticTacMapRole::Player,
                         Some(member.room),
                     ),
                 ));
@@ -257,8 +257,8 @@ pub(crate) fn draw_tac_map(
         };
         p.spawn((
             tac_box(you, 16.0, 16.0, you_col),
-            crate::diagnostics::DiagnosticTacMapVisual::one(
-                crate::diagnostics::DiagnosticTacMapRole::Player,
+            crate::evidence::DiagnosticTacMapVisual::one(
+                crate::evidence::DiagnosticTacMapRole::Player,
                 player_room,
             ),
         ));
@@ -376,13 +376,13 @@ pub(crate) fn match_draw(
     for entry in &log.entries {
         log_lines.push_str(&format!("  - {}\n", entry));
     }
-    let threshold_debug = if crate::diagnostics::visual_audit_enabled() {
+    let threshold_debug = if crate::evidence::visual_audit_enabled() {
         let mut lines = String::new();
         for gap in &tp.geom.gaps {
             if gap.kind != crate::teleport::GapKind::OneWayEntry {
                 lines.push_str(&format!(
                     "  {}\n",
-                    crate::diagnostics::threshold_label(&gap.threshold)
+                    crate::evidence::threshold_label(&gap.threshold)
                 ));
             }
         }
@@ -390,7 +390,7 @@ pub(crate) fn match_draw(
     } else {
         String::new()
     };
-    let freecam_debug = if crate::diagnostics::freecam_enabled() {
+    let freecam_debug = if crate::evidence::freecam_enabled() {
         "\nFREECAM: WASD move | Space/E up | Ctrl/Q down | RMB/Arrows look | R top-down\n"
             .to_string()
     } else {
