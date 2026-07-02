@@ -5,7 +5,7 @@ use observed_match::hybrid::HybridMatch;
 use observed_style as style;
 use std::f32::consts::PI;
 
-use super::factory::RoomMaterialFactory;
+use super::factory::{room_floor_material, room_light_color};
 use super::lighting::{spawn_place_lighting, spawn_surface_detail};
 use super::mesh::{spawn_polygon_shell, spawn_polygon_walls};
 use crate::GameState;
@@ -261,10 +261,8 @@ pub(crate) fn spawn_room_preview(
     let mut parent = camera::alignment_transform(teleport::room_alignment(gap, &src));
     parent.translation.y = y_offset;
 
-    // Use RoomMaterialFactory to build floor material and light colors cleanly!
-    let floor_material =
-        RoomMaterialFactory::create_floor_material(dest_room, &assets.floor_material, materials);
-    let light_color = RoomMaterialFactory::create_light_color(dest_room);
+    let floor_material = room_floor_material(dest_room, &assets.floor_material, materials);
+    let light_color = room_light_color(dest_room);
 
     spawn_polygon_shell(
         commands,
