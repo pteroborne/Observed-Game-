@@ -22,7 +22,8 @@ use crate::keystones::KeystoneState;
 use crate::layout::WALL_HEIGHT;
 use crate::rivals;
 use crate::screens::match_runtime::{self, district_for_place};
-use crate::sim::state::{MatchPaused, MatchRuntime, TeleportState};
+use crate::sim::director::MatchDirector;
+use crate::sim::state::{MatchPaused, TeleportState};
 use crate::teleport::{self, GapKind, Place};
 use crate::view::assets::{DOOR_LEAF_D, DOOR_LINTEL_H, MatchAssets};
 use crate::view::components::{DoorLeaf, GameCam, PlaceGeometry, RivalAvatar, TeleportPadGlow};
@@ -52,7 +53,7 @@ pub(crate) fn rebuild_place(
     keys: Res<KeystoneState>,
     items: Res<ItemsState>,
     guardian: Res<crate::guardian::Guardian>,
-    runtime: Res<MatchRuntime>,
+    runtime: Res<MatchDirector>,
     existing: Query<Entity, With<PlaceGeometry>>,
     last_sig: Option<ResMut<LastRenderedSignature>>,
     mut commands: Commands,
@@ -942,7 +943,7 @@ pub(crate) fn animate_doors(
 
 pub(crate) fn sync_rival_avatars(
     time: Res<Time>,
-    runtime: Res<MatchRuntime>,
+    runtime: Res<MatchDirector>,
     tp: Res<TeleportState>,
     assets: Res<MatchAssets>,
     paused: Res<MatchPaused>,

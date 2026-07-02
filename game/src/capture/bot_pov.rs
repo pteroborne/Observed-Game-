@@ -10,7 +10,8 @@ use crate::bot;
 use crate::camera;
 use crate::items;
 use crate::keystones;
-use crate::sim::state::{ItemIntent, MatchIntent, MatchRuntime, TeleportState};
+use crate::sim::director::MatchDirector;
+use crate::sim::state::{ItemIntent, MatchIntent, TeleportState};
 use crate::teleport;
 use crate::view::components::GameCam;
 
@@ -66,7 +67,7 @@ pub(super) fn capture_bot_pov_progress(
     time: Res<Time>,
     mut request: ResMut<BotPovCaptureRequest>,
     mut next: ResMut<NextState<GameState>>,
-    runtime: Option<ResMut<MatchRuntime>>,
+    runtime: Option<ResMut<MatchDirector>>,
     keys: Option<ResMut<keystones::KeystoneState>>,
     tp: Option<Res<TeleportState>>,
     mut cam: Query<&mut Transform, With<GameCam>>,
@@ -144,7 +145,7 @@ pub(super) fn capture_bot_pov_progress(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn drive_bot_pov_capture(
     mut request: ResMut<BotPovCaptureRequest>,
-    mut runtime: ResMut<MatchRuntime>,
+    mut runtime: ResMut<MatchDirector>,
     mut tp: ResMut<TeleportState>,
     keys: Res<keystones::KeystoneState>,
     items: Res<items::ItemsState>,

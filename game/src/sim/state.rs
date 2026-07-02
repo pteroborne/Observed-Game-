@@ -6,34 +6,12 @@
 
 use bevy::prelude::*;
 use observed_core::{RoomId, TeamId};
-use observed_match::elimination::EliminationSeries;
 use observed_match::teamplay::TeamplayMatch;
-use observed_net::netmatch::LiveNetMatch;
 use observed_progression::session::SessionLabWorld;
 use observed_traversal::{FpsArena, FpsBody, FpsConfig};
 use player_input::PlayerIntent;
 
 use crate::teleport::{self, Place};
-
-#[derive(Resource)]
-pub struct MatchRuntime {
-    /// The live, host-authoritative networked first-person match: the host is the
-    /// locally-played match, replicated over the lockstep transport to a remote.
-    pub live: LiveNetMatch,
-    /// Resolves a round when the local team is no longer an active runner so the
-    /// remaining teams can finish.
-    pub wait_timer: Timer,
-    pub done: bool,
-}
-
-/// Autoplaying elimination-series state for the next playable slice. The existing
-/// first-person/networked match remains the presentation and manual-takeover surface;
-/// this pure model owns the multi-round "do not come in last" result.
-#[derive(Resource)]
-pub struct SeriesRuntime {
-    pub series: EliminationSeries,
-    pub autoplay_timer: Timer,
-}
 
 /// Menu-launched bot spectator mode. The bot drives the same first-person body and
 /// threshold-crossing systems a player uses; the camera simply follows that body.

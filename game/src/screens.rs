@@ -19,7 +19,8 @@ use bevy::input::InputSystems;
 use bevy::prelude::*;
 
 use crate::GameState;
-use crate::sim::state::{MatchRuntime, SpectatorBot};
+use crate::sim::director::MatchDirector;
+use crate::sim::state::SpectatorBot;
 use crate::view::theme::DIM;
 
 pub(crate) mod audio;
@@ -109,7 +110,7 @@ pub(crate) struct MatchPlugin;
 
 impl Plugin for MatchPlugin {
     fn build(&self, app: &mut App) {
-        let in_match = || in_state(GameState::Match).and(resource_exists::<MatchRuntime>);
+        let in_match = || in_state(GameState::Match).and(resource_exists::<MatchDirector>);
         app.insert_resource(Time::<Fixed>::from_hz(60.0))
             .init_resource::<place::LastRenderedSignature>()
             .add_systems(

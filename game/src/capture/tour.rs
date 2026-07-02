@@ -5,7 +5,7 @@ use observed_match::hybrid::{HybridMatch, LocalAction};
 use observed_match::maze::{GRID_H, GRID_W, TILE_SIZE};
 
 use crate::GameState;
-use crate::sim::state::MatchRuntime;
+use crate::sim::director::MatchDirector;
 use crate::view::components::GameCam;
 
 /// Rooms (and labels) the diagnostic tour photographs from above, after the
@@ -47,7 +47,7 @@ fn tour_vantage(shot: usize, game: &HybridMatch) -> Transform {
 pub(super) fn capture_tour_progress(
     time: Res<Time>,
     mut tour: ResMut<TourCapture>,
-    mut runtime: Option<ResMut<MatchRuntime>>,
+    mut runtime: Option<ResMut<MatchDirector>>,
     mut next: ResMut<NextState<GameState>>,
     mut cam: Query<&mut Transform, With<GameCam>>,
     mut commands: Commands,

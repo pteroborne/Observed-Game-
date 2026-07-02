@@ -7,20 +7,16 @@ use bevy::prelude::*;
 use bevy::window::{CursorOptions, PrimaryWindow};
 use observed_core::RoomId;
 use observed_facility::map_spec::{RoomRole, sector_relay_v1};
-use observed_match::elimination::{EliminationSeries, MAX_AUTOPLAY_TICKS};
-use observed_match::hybrid::{HybridMatch, LocalAction};
-use observed_match::teamplay::TeamplayMatch;
-use observed_net::netmatch::LiveNetMatch;
-use observed_net::network::NetworkProfile;
+use observed_match::hybrid::HybridMatch;
 use observed_style::{self as style, MarkerRole};
 use observed_traversal::{FpsBody, FpsConfig};
 use player_input::PlayerIntent;
 
 use super::input::{gamepad_pause_pressed, gamepad_quit_pressed};
 use crate::layout::WALL_HEIGHT;
+use crate::sim::director::MatchDirector;
 use crate::sim::state::{
-    ItemIntent, LastTeleportPad, MatchIntent, MatchPaused, MatchRuntime, SeriesRuntime,
-    SpectatorBot, TeleportState,
+    ItemIntent, LastTeleportPad, MatchIntent, MatchPaused, SpectatorBot, TeleportState,
 };
 use crate::view::assets::{MatchAssets, all_planned_assets_present};
 use crate::view::components::{
@@ -30,7 +26,7 @@ use crate::view::components::{
 use crate::view::theme::{BORDER, PANEL, TAC_MAP_SIZE, TITLE, screen_root, text};
 
 use crate::GameState;
-use crate::flow::{Career, LOCAL_TEAM, MATCH_SEED, resolve};
+use crate::flow::{Career, MATCH_SEED};
 use crate::items::{ItemKind, ItemsState};
 use crate::keystones::KeystoneState;
 use crate::teleport::Place;
@@ -72,8 +68,8 @@ pub(crate) fn setup_match(
         *spectator = SpectatorBot::for_seed(seed_val);
     }
     let map_spec = sector_relay_v1();
-    let live = LiveNetMatch::new_for_map_spec(seed_val, NetworkProfile::Hostile, map_spec.clone());
-    let game = live.host_match();
+    let director = MatchDirector::new(seed_val, map_spec.clone());
+    let game = director.live.host_match();
     let initial_escaped = game.competitive.escaped_count();
     let initial_commits = game.reroute_commits;
     let keys = KeystoneState::for_map(seed_val, &map_spec);
@@ -86,15 +82,7 @@ pub(crate) fn setup_match(
     let start_gap_dests =
         compute_gap_dests(seed_val, start_place, &start_geom, game, &keys, &items);
     let spawn = Vec3::new(0.0, tp_config.half_height, 0.0);
-    commands.insert_resource(MatchRuntime {
-        live,
-        wait_timer: Timer::from_seconds(0.45, TimerMode::Repeating),
-        done: false,
-    });
-    commands.insert_resource(SeriesRuntime {
-        series: EliminationSeries::new(seed_val),
-        autoplay_timer: Timer::from_seconds(0.45, TimerMode::Repeating),
-    });
+    commands.insert_resource(director);
     commands.insert_resource(MatchPaused(false));
     commands.insert_resource(TacMapState(false));
     commands.insert_resource(MatchIntent::default());
@@ -273,8 +261,7 @@ pub(crate) fn setup_match(
 }
 
 pub(crate) fn cleanup_match_resources(mut commands: Commands) {
-    commands.remove_resource::<MatchRuntime>();
-    commands.remove_resource::<SeriesRuntime>();
+    commands.remove_resource::<MatchDirector>();
     commands.remove_resource::<SpectatorBot>();
     commands.remove_resource::<MatchIntent>();
     commands.remove_resource::<ItemIntent>();
@@ -292,8 +279,7 @@ pub(crate) fn cleanup_match_resources(mut commands: Commands) {
 pub(crate) fn drive_spectator_bot(
     paused: Res<MatchPaused>,
     mut spectator: ResMut<SpectatorBot>,
-    mut runtime: ResMut<MatchRuntime>,
-    mut series_runtime: ResMut<SeriesRuntime>,
+    mut director: ResMut<MatchDirector>,
     mut tp: ResMut<TeleportState>,
     keys: Res<KeystoneState>,
     items: Res<ItemsState>,
@@ -304,9 +290,9 @@ pub(crate) fn drive_spectator_bot(
     spectator.teamplay_frame_accum = spectator.teamplay_frame_accum.saturating_add(1);
     if spectator.teamplay_frame_accum >= SPECTATOR_TEAMPLAY_STEP_FRAMES {
         spectator.teamplay_frame_accum = 0;
-        pump_spectator_teamplay(&mut spectator, &mut series_runtime.series);
+        director.pump_spectator(&mut spectator);
     }
-    if paused.0 || runtime.done {
+    if paused.0 || director.done {
         intent.0 = PlayerIntent::default();
         return;
     }
@@ -334,7 +320,7 @@ pub(crate) fn drive_spectator_bot(
         let at_aperture =
             rel.dot(gap.normal) > -0.45 && rel.dot(tangent).abs() <= gap.width * 0.5 + 0.35;
         if here.distance(gap.center) <= SPECTATOR_BOT_CROSS_RADIUS || at_aperture {
-            debug_cross_gap_for_capture(&mut tp, &mut runtime, gap, &keys, &items);
+            debug_cross_gap_for_capture(&mut tp, &mut director, gap, &keys, &items);
             spectator.clear_route();
             intent.0 = PlayerIntent::default();
             return;
@@ -348,7 +334,7 @@ pub(crate) fn drive_spectator_bot(
         let Some(gap) = crate::bot::target_gap_for_place(tp.place, &tp.geom, here) else {
             spectator.blocked_ticks += 1;
             spectator.finished =
-                runtime.live.host_match().local_target().is_none() || spectator.blocked_ticks > 90;
+                director.live.host_match().local_target().is_none() || spectator.blocked_ticks > 90;
             intent.0 = PlayerIntent::default();
             return;
         };
@@ -412,50 +398,6 @@ pub(crate) fn drive_spectator_bot(
         sprint_held: !is_sharp_turn,
         ..default()
     };
-}
-
-fn pump_spectator_teamplay(spectator: &mut SpectatorBot, series: &mut EliminationSeries) {
-    if series.finished() {
-        spectator.finished = true;
-        return;
-    }
-
-    if !spectator.teamplay.finished {
-        let events = spectator.teamplay.advance_bot_tick();
-        if let Some(event) = events.last() {
-            spectator.last_teamplay_event = event.summary();
-        }
-    }
-
-    let Some(outcome) = spectator.teamplay.round_outcome() else {
-        return;
-    };
-
-    series.apply_teamplay_round(outcome);
-    if series.finished() {
-        spectator.finished = true;
-        spectator.last_teamplay_event = series.last_event.clone();
-        return;
-    }
-
-    let next_seed = spectator
-        .seed
-        .wrapping_add(u64::from(series.current.index).wrapping_mul(0xA11_C0D3));
-    spectator.teamplay = TeamplayMatch::for_round(
-        next_seed,
-        series.current.index,
-        series.alive_teams.clone(),
-        series.adversary_strength(),
-    );
-    spectator.teamplay_frame_accum = 0;
-    spectator.focused_team = series
-        .alive_teams
-        .iter()
-        .copied()
-        .find(|team| *team == LOCAL_TEAM)
-        .unwrap_or_else(|| series.alive_teams[0]);
-    spectator.focused_member = 0;
-    spectator.last_teamplay_event = series.last_event.clone();
 }
 
 pub(crate) fn connections_for(game: &HybridMatch, room: RoomId) -> Vec<RoomId> {
@@ -639,7 +581,7 @@ fn pickup_or_drop_item(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn item_actions(
-    runtime: Res<MatchRuntime>,
+    director: Res<MatchDirector>,
     keys: Res<KeystoneState>,
     mut tp: ResMut<TeleportState>,
     mut items: ResMut<ItemsState>,
@@ -651,7 +593,7 @@ pub(crate) fn item_actions(
     seed: Option<Res<crate::flow::ActiveMatchSeed>>,
 ) {
     let intent = std::mem::take(&mut *item_intent);
-    if paused.0 || runtime.done {
+    if paused.0 || director.done {
         return;
     }
 
@@ -659,7 +601,7 @@ pub(crate) fn item_actions(
 
     let pos = body_xz(&tp);
     let place = tp.place;
-    let version = runtime.live.host_match().reroute_commits;
+    let version = director.live.host_match().reroute_commits;
     let mut changed = false;
 
     if intent.torch_action {
@@ -698,7 +640,7 @@ pub(crate) fn item_actions(
         if let Some((target_place, target_pos)) = on_pad_link {
             let nav = nav_for_place(
                 seed_val,
-                runtime.live.host_match(),
+                director.live.host_match(),
                 &keys,
                 &items,
                 target_place,
@@ -708,7 +650,7 @@ pub(crate) fn item_actions(
                 seed_val,
                 tp.place,
                 &tp.geom,
-                runtime.live.host_match(),
+                director.live.host_match(),
                 &keys,
                 &items,
             );
@@ -723,7 +665,13 @@ pub(crate) fn item_actions(
     }
 
     if changed {
-        let nav = nav_for_place(seed_val, runtime.live.host_match(), &keys, &items, tp.place);
+        let nav = nav_for_place(
+            seed_val,
+            director.live.host_match(),
+            &keys,
+            &items,
+            tp.place,
+        );
         let mut geom = crate::teleport::geom_for(tp.place, &nav);
         if matches!(tp.place, Place::Room(_)) {
             crate::teleport::open_entry(&mut geom, tp.arrived_from);
@@ -739,7 +687,7 @@ pub(crate) fn item_actions(
             seed_val,
             tp.place,
             &tp.geom,
-            runtime.live.host_match(),
+            director.live.host_match(),
             &keys,
             &items,
         );
@@ -751,8 +699,7 @@ pub(crate) fn item_actions(
 pub(crate) fn match_pump(
     time: Res<Time>,
     input: MatchPumpInput,
-    mut runtime: ResMut<MatchRuntime>,
-    mut series_runtime: ResMut<SeriesRuntime>,
+    mut director: ResMut<MatchDirector>,
     spectator_bot: Option<Res<SpectatorBot>>,
     mut paused: ResMut<MatchPaused>,
     mut career: ResMut<Career>,
@@ -769,48 +716,7 @@ pub(crate) fn match_pump(
         }
         return;
     }
-    if runtime.done {
-        return;
-    }
-
-    let spectator_driven_series = spectator_bot.is_some();
-
-    if !spectator_driven_series
-        && !series_runtime.series.finished()
-        && series_runtime
-            .autoplay_timer
-            .tick(time.delta())
-            .just_finished()
-    {
-        series_runtime.series.advance_autoplay_tick();
-    }
-
-    for _ in 0..3 {
-        runtime.live.pump();
-    }
-    if !runtime.live.finished()
-        && !runtime.live.local_active()
-        && runtime.wait_timer.tick(time.delta()).just_finished()
-    {
-        runtime.live.force_round(LocalAction::Wait);
-    }
-    if !spectator_driven_series && runtime.live.finished() && !series_runtime.series.finished() {
-        series_runtime.series.run_to_winner(MAX_AUTOPLAY_TICKS);
-    }
-
-    if (runtime.live.finished() || series_runtime.series.finished()) && !runtime.done {
-        for _ in 0..64 {
-            if runtime.live.in_sync() {
-                break;
-            }
-            runtime.live.pump();
-        }
-        runtime.done = true;
-        let result = if series_runtime.series.finished() {
-            crate::flow::resolve_series(&series_runtime.series)
-        } else {
-            resolve(&runtime.live.host_match().competitive)
-        };
+    if let Some(result) = director.tick(time.delta(), spectator_bot.is_some()) {
         career.record(result);
         next.set(GameState::Results);
     }
@@ -819,7 +725,7 @@ pub(crate) fn match_pump(
 pub(crate) fn keystone_pickup(
     tp: Res<TeleportState>,
     mut keys: ResMut<KeystoneState>,
-    mut series: ResMut<SeriesRuntime>,
+    mut director: ResMut<MatchDirector>,
     items: Query<(Entity, &KeystoneItem, &GlobalTransform)>,
     mut commands: Commands,
 ) {
@@ -828,12 +734,7 @@ pub(crate) fn keystone_pickup(
     for (entity, item, transform) in &items {
         let here = Vec2::new(transform.translation().x, transform.translation().z);
         if body.distance(here) <= PICKUP_RADIUS && keys.collect(item.0) {
-            if let Some(team) = series.series.current.team_mut(LOCAL_TEAM)
-                && !team.collected_keystones.contains(&item.0)
-            {
-                team.collected_keystones.push(item.0);
-                team.collected_keystones.sort_by_key(|room| room.0);
-            }
+            director.record_local_keystone(item.0);
             commands.entity(entity).despawn();
         }
     }

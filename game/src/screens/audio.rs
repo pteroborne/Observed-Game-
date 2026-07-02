@@ -7,7 +7,8 @@ use bevy::audio::Volume;
 use bevy::prelude::*;
 
 use crate::GameState;
-use crate::sim::state::{MatchPaused, MatchRuntime, TeleportState};
+use crate::sim::director::MatchDirector;
+use crate::sim::state::{MatchPaused, TeleportState};
 use crate::view::assets::MatchAssets;
 use crate::view::components::{MatchAudioCue, MatchAudioState};
 
@@ -49,7 +50,7 @@ pub(crate) fn spawn_match_setpieces(assets: Res<MatchAssets>, mut commands: Comm
 
 pub(crate) fn sync_match_audio(
     mut commands: Commands,
-    runtime: Res<MatchRuntime>,
+    runtime: Res<MatchDirector>,
     tp: Res<TeleportState>,
     paused: Res<MatchPaused>,
     assets: Res<MatchAssets>,

@@ -11,7 +11,8 @@ use crate::flow::MATCH_SEED;
 use crate::items::ItemsState;
 use crate::keystones::KeystoneState;
 use crate::layout::WALL_HEIGHT;
-use crate::sim::state::{FrozenDest, MatchIntent, MatchPaused, MatchRuntime, TeleportState};
+use crate::sim::director::MatchDirector;
+use crate::sim::state::{FrozenDest, MatchIntent, MatchPaused, TeleportState};
 use crate::teleport::{self, GapKind, Place};
 
 fn body_xz(tp: &TeleportState) -> Vec2 {
@@ -246,7 +247,7 @@ pub(super) fn cross_into_room(
 /// exit commits the spine `Advance` to the match brain and teleports into the next
 /// room. The brain (rounds / networking / replay) is untouched.
 pub(crate) fn teleport_sim(
-    mut runtime: ResMut<MatchRuntime>,
+    mut runtime: ResMut<MatchDirector>,
     tp: ResMut<TeleportState>,
     keys: Res<KeystoneState>,
     items: Res<ItemsState>,
@@ -375,7 +376,7 @@ pub(crate) fn teleport_sim(
 /// crossing. Used by the maze evidence capture in `crate::capture`.
 pub(crate) fn debug_place_into(
     tp: &mut TeleportState,
-    runtime: &MatchRuntime,
+    runtime: &MatchDirector,
     place: Place,
     from: RoomId,
     keys: &KeystoneState,
@@ -399,7 +400,7 @@ pub(crate) fn debug_place_into(
 /// detection so evidence bots do not stall at a polygon or maze threshold.
 pub(crate) fn debug_cross_gap_for_capture(
     tp: &mut TeleportState,
-    runtime: &mut MatchRuntime,
+    runtime: &mut MatchDirector,
     gap: teleport::DoorGap,
     keys: &KeystoneState,
     items: &ItemsState,

@@ -1,5 +1,6 @@
 use crate::items::{ItemKind, ItemsState};
-use crate::sim::state::{MatchPaused, MatchRuntime, TeleportState};
+use crate::sim::director::MatchDirector;
+use crate::sim::state::{MatchPaused, TeleportState};
 use crate::teleport::Place;
 use bevy::prelude::*;
 use observed_core::{RoomId, SplitMix};
@@ -210,7 +211,7 @@ pub(crate) fn update_guardian_in_match(
     items: Res<ItemsState>,
     mut log: ResMut<ActionLog>,
     mut rng: Local<SimpleRng>,
-    runtime: Res<MatchRuntime>,
+    runtime: Res<MatchDirector>,
     paused: Res<MatchPaused>,
     mut move_timer: Local<GuardianMoveTimer>,
     mut guardian_q: Query<&mut Transform, With<GuardianModel>>,

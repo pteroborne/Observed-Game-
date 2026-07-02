@@ -7,7 +7,8 @@ use observed_match::hybrid::LocalAction;
 use crate::GameState;
 use crate::flow::{self, Career};
 use crate::map_validation;
-use crate::sim::state::{MatchRuntime, TeleportState};
+use crate::sim::director::MatchDirector;
+use crate::sim::state::TeleportState;
 use crate::teleport::{self, Place};
 use crate::view::components::{DoorLeaf, GameCam, PlaceGeometry};
 use crate::{camera, hallway, items, keystones};
@@ -31,7 +32,7 @@ pub(super) fn capture_ceiling_progress(
     time: Res<Time>,
     mut request: ResMut<CeilingCaptureRequest>,
     mut next: ResMut<NextState<GameState>>,
-    runtime: Option<ResMut<MatchRuntime>>,
+    runtime: Option<ResMut<MatchDirector>>,
     tp: Option<ResMut<TeleportState>>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
@@ -91,7 +92,7 @@ pub(super) fn capture_doorway_progress(
     time: Res<Time>,
     mut request: ResMut<DoorwayCaptureRequest>,
     mut next: ResMut<NextState<GameState>>,
-    runtime: Option<ResMut<MatchRuntime>>,
+    runtime: Option<ResMut<MatchDirector>>,
     tp: Option<ResMut<TeleportState>>,
     keys: Option<Res<keystones::KeystoneState>>,
     item_state: Option<Res<items::ItemsState>>,
@@ -216,7 +217,7 @@ pub(super) fn capture_keystone_progress(
     time: Res<Time>,
     mut request: ResMut<KeystoneCaptureRequest>,
     mut next: ResMut<NextState<GameState>>,
-    runtime: Option<ResMut<MatchRuntime>>,
+    runtime: Option<ResMut<MatchDirector>>,
     tp: Option<ResMut<TeleportState>>,
     keys: Option<Res<keystones::KeystoneState>>,
     item_state: Option<Res<items::ItemsState>>,
@@ -292,7 +293,7 @@ pub(super) fn capture_rivals_progress(
     time: Res<Time>,
     mut request: ResMut<RivalCaptureRequest>,
     mut next: ResMut<NextState<GameState>>,
-    mut runtime: Option<ResMut<MatchRuntime>>,
+    mut runtime: Option<ResMut<MatchDirector>>,
     mut cam: Query<&mut Transform, With<GameCam>>,
     geometry: Query<(Entity, &Name), With<PlaceGeometry>>,
     mut commands: Commands,
@@ -398,7 +399,7 @@ pub(super) fn capture_match_progress(
     time: Res<Time>,
     mut request: ResMut<MatchCaptureRequest>,
     mut next: ResMut<NextState<GameState>>,
-    mut runtime: Option<ResMut<MatchRuntime>>,
+    mut runtime: Option<ResMut<MatchDirector>>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -488,7 +489,7 @@ pub(super) fn capture_map_audit_progress(
     time: Res<Time>,
     mut request: ResMut<MapAuditCaptureRequest>,
     mut next: ResMut<NextState<GameState>>,
-    mut runtime: Option<ResMut<MatchRuntime>>,
+    mut runtime: Option<ResMut<MatchDirector>>,
     mut tp: Option<ResMut<TeleportState>>,
     keys: Option<Res<keystones::KeystoneState>>,
     item_state: Option<Res<items::ItemsState>>,
@@ -612,7 +613,7 @@ pub(super) fn capture_maze_progress(
     time: Res<Time>,
     mut request: ResMut<MazeCaptureRequest>,
     mut next: ResMut<NextState<GameState>>,
-    runtime: Option<ResMut<MatchRuntime>>,
+    runtime: Option<ResMut<MatchDirector>>,
     tp: Option<ResMut<TeleportState>>,
     keys: Option<Res<keystones::KeystoneState>>,
     item_state: Option<Res<items::ItemsState>>,

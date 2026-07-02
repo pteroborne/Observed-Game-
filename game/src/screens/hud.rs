@@ -12,7 +12,8 @@ use super::input::gamepad_map_pressed;
 use crate::flow::LOCAL_TEAM;
 use crate::items::{ItemKind, ItemsState};
 use crate::keystones::KeystoneState;
-use crate::sim::state::{MatchPaused, MatchRuntime, SeriesRuntime, SpectatorBot, TeleportState};
+use crate::sim::director::MatchDirector;
+use crate::sim::state::{MatchPaused, SpectatorBot, TeleportState};
 use crate::view::components::{
     MatchHud, PausePanel, TacMapElement, TacMapPanel, TacMapState, TeleportAnimation,
     TeleportOverlay,
@@ -94,8 +95,7 @@ fn tac_box(center: Vec2, w: f32, h: f32, color: Color) -> impl Bundle {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_tac_map(
     state: Res<TacMapState>,
-    runtime: Res<MatchRuntime>,
-    series: Res<SeriesRuntime>,
+    director: Res<MatchDirector>,
     spectator_bot: Option<Res<SpectatorBot>>,
     tp: Res<TeleportState>,
     keys: Res<KeystoneState>,
@@ -113,7 +113,7 @@ pub(crate) fn draw_tac_map(
     let Ok(panel) = panel.single() else {
         return;
     };
-    let model = tacmap::build_map(&runtime.live.host_match().competitive, &keys, tp.place);
+    let model = tacmap::build_map(&director.live.host_match().competitive, &keys, tp.place);
     let bounds = tac_bounds(&model.rooms);
     let room_centers: Vec<(RoomId, Vec2)> = model
         .rooms
@@ -273,9 +273,9 @@ pub(crate) fn draw_tac_map(
             },
             Text::new(format!(
                 "SERIES R{} | alive {} | countdown {}",
-                series.series.current.index,
-                series.series.active_team_count(),
-                series
+                director.series.current.index,
+                director.series.active_team_count(),
+                director
                     .series
                     .current
                     .remaining_countdown()
@@ -292,8 +292,7 @@ pub(crate) fn draw_tac_map(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn match_draw(
-    runtime: Res<MatchRuntime>,
-    series: Res<SeriesRuntime>,
+    director: Res<MatchDirector>,
     spectator_bot: Option<Res<SpectatorBot>>,
     paused: Res<MatchPaused>,
     keys: Res<KeystoneState>,
@@ -303,14 +302,14 @@ pub(crate) fn match_draw(
     mut hud: Query<&mut Text, With<MatchHud>>,
     mut pause_panel: Query<&mut Visibility, With<PausePanel>>,
 ) {
-    let live = &runtime.live;
+    let live = &director.live;
     let game = live.host_match();
     let facility = &game.competitive;
-    let local_series = series.series.team_objective(LOCAL_TEAM);
+    let local_series = director.series.team_objective(LOCAL_TEAM);
     let local_series_status = local_series
-        .map(|team| team.status_label(series.series.current.required_keystones()))
+        .map(|team| team.status_label(director.series.current.required_keystones()))
         .unwrap_or_else(|| "between rounds".to_string());
-    let countdown = series
+    let countdown = director
         .series
         .current
         .remaining_countdown()
@@ -419,14 +418,14 @@ pub(crate) fn match_draw(
             facility.escaped_count(),
             facility.absorbed_count(),
             facility.purge_line.max(0.0) * 100.0,
-            series.series.current.index,
-            series.series.active_team_count(),
-            series.series.adversary_strength(),
+            director.series.current.index,
+            director.series.active_team_count(),
+            director.series.adversary_strength(),
             countdown,
             control_line,
             teamplay_line,
             local_series_status,
-            series.series.last_event,
+            director.series.last_event,
             keys.held,
             keys.required,
             if keys.gate_open() { "OPEN" } else { "LOCKED" },

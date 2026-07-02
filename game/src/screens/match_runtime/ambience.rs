@@ -6,7 +6,8 @@ use observed_style as style;
 
 use crate::flow::MATCH_SEED;
 use crate::screens::audio::play_one_shot;
-use crate::sim::state::{MatchPaused, MatchRuntime, TeleportState};
+use crate::sim::director::MatchDirector;
+use crate::sim::state::{MatchPaused, TeleportState};
 use crate::teleport::Place;
 use crate::view::assets::MatchAssets;
 use crate::view::components::{
@@ -120,7 +121,7 @@ pub(crate) fn apply_place_atmosphere(
 
 pub(crate) fn sync_decohere_fx(
     time: Res<Time>,
-    runtime: Res<MatchRuntime>,
+    runtime: Res<MatchDirector>,
     paused: Res<MatchPaused>,
     assets: Res<MatchAssets>,
     mut fx: ResMut<DecohereFx>,

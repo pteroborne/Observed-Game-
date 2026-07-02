@@ -30,7 +30,8 @@ use crate::items::{ItemKind, ItemsState};
 use crate::keystones::KeystoneState;
 use crate::screens::place::{GuardianConsole, TetherCameraMonitor};
 use crate::screens::{self};
-use crate::sim::state::{MatchRuntime, TeleportState};
+use crate::sim::director::MatchDirector;
+use crate::sim::state::TeleportState;
 use crate::teleport::{self, DoorGap, GapKind, Place, ThresholdLink};
 use crate::view::components::{
     DroppedItemVisual, GameCam, KeystoneItem, RivalAvatar, TacMapElement, TacMapPanel, TacMapState,
@@ -265,7 +266,7 @@ impl VisualAudit {
 
 #[derive(SystemParam)]
 struct VisualAuditParams<'w, 's> {
-    runtime: Option<ResMut<'w, MatchRuntime>>,
+    runtime: Option<ResMut<'w, MatchDirector>>,
     tp: Option<ResMut<'w, TeleportState>>,
     keys: Option<Res<'w, KeystoneState>>,
     items: Option<ResMut<'w, ItemsState>>,
@@ -284,7 +285,7 @@ struct VisualAuditParams<'w, 's> {
 }
 
 struct ScenarioPrep<'a, 'w, 's> {
-    runtime: &'a mut MatchRuntime,
+    runtime: &'a mut MatchDirector,
     tp: &'a mut TeleportState,
     keys: &'a KeystoneState,
     items: &'a mut ItemsState,
@@ -331,7 +332,7 @@ impl DebugMatchCoercion {
 
 #[derive(SystemParam)]
 struct DebugCoercionParams<'w> {
-    runtime: Option<ResMut<'w, MatchRuntime>>,
+    runtime: Option<ResMut<'w, MatchDirector>>,
     tp: Option<ResMut<'w, TeleportState>>,
     keys: Option<Res<'w, KeystoneState>>,
     items: Option<ResMut<'w, ItemsState>>,
@@ -828,7 +829,7 @@ fn collect_snapshot(
     run_id: &str,
     scenario: AuditScenario,
     frame_index: u32,
-    runtime: &MatchRuntime,
+    runtime: &MatchDirector,
     tp: &TeleportState,
     keys: &KeystoneState,
     items: &ItemsState,
@@ -864,7 +865,7 @@ fn collect_snapshot(
 }
 
 fn collect_geometry(
-    runtime: &MatchRuntime,
+    runtime: &MatchDirector,
     tp: &TeleportState,
     keys: &KeystoneState,
     items: &ItemsState,
@@ -917,7 +918,7 @@ fn collect_geometry(
 }
 
 fn collect_atlas_geometry(
-    runtime: &MatchRuntime,
+    runtime: &MatchDirector,
     keys: &KeystoneState,
     items: &ItemsState,
 ) -> GeometrySnapshot {
@@ -973,7 +974,7 @@ fn atlas_room_center(room: RoomId) -> Vec2 {
 }
 
 fn atlas_layout(
-    runtime: &MatchRuntime,
+    runtime: &MatchDirector,
     keys: &KeystoneState,
     items: &ItemsState,
 ) -> Vec<AtlasEntry> {
@@ -1072,7 +1073,7 @@ fn atlas_bounds(entries: &[AtlasEntry]) -> Option<(Vec2, Vec2)> {
 
 fn spawn_footprint_atlas(
     commands: &mut Commands,
-    runtime: &MatchRuntime,
+    runtime: &MatchDirector,
     keys: &KeystoneState,
     items: &ItemsState,
 ) {
@@ -1182,7 +1183,7 @@ fn preview_aabb(
 }
 
 fn collect_thresholds(
-    runtime: &MatchRuntime,
+    runtime: &MatchDirector,
     tp: &TeleportState,
     keys: &KeystoneState,
     items: &ItemsState,
@@ -1307,7 +1308,7 @@ fn collect_materials(
 }
 
 fn collect_tac_map(
-    runtime: &MatchRuntime,
+    runtime: &MatchDirector,
     tp: &TeleportState,
     keys: &KeystoneState,
     visuals: &Query<&DiagnosticTacMapVisual, With<TacMapElement>>,

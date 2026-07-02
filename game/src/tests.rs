@@ -102,7 +102,7 @@ fn finish_match(app: &mut App) {
     {
         let mut rt = app
             .world_mut()
-            .resource_mut::<crate::sim::state::MatchRuntime>();
+            .resource_mut::<crate::sim::director::MatchDirector>();
         rt.live.run_to_completion_headless(100_000);
     }
     app.update(); // match_pump records the result and requests Results
@@ -190,7 +190,9 @@ fn anchor_torch_can_be_dropped_pins_edges_and_can_be_picked_back_up() {
         assert_eq!(items.placed[0].kind, items::ItemKind::AnchorTorch);
     }
     let pins = {
-        let runtime = app.world().resource::<crate::sim::state::MatchRuntime>();
+        let runtime = app
+            .world()
+            .resource::<crate::sim::director::MatchDirector>();
         let keys = app.world().resource::<keystones::KeystoneState>();
         let items = app.world().resource::<items::ItemsState>();
         crate::screens::match_runtime::nav_from_brain(
@@ -234,7 +236,9 @@ fn anchor_torch_tethers_current_thresholds_immediately() {
     app.update(); // build the initial room.
 
     let (room, target, visible_targets) = {
-        let runtime = app.world().resource::<crate::sim::state::MatchRuntime>();
+        let runtime = app
+            .world()
+            .resource::<crate::sim::director::MatchDirector>();
         let tp = app.world().resource::<crate::sim::state::TeleportState>();
         let game = runtime.live.host_match();
         let mut visible_targets: Vec<_> = tp.geom.gaps.iter().map(|gap| gap.target).collect();
@@ -251,7 +255,9 @@ fn anchor_torch_tethers_current_thresholds_immediately() {
     app.update(); // rebuild place geometry/lights after the anchor changes nav.
 
     {
-        let runtime = app.world().resource::<crate::sim::state::MatchRuntime>();
+        let runtime = app
+            .world()
+            .resource::<crate::sim::director::MatchDirector>();
         let keys = app.world().resource::<keystones::KeystoneState>();
         let items = app.world().resource::<items::ItemsState>();
         let nav = crate::screens::match_runtime::nav_from_brain(
@@ -529,7 +535,7 @@ fn a_hallway_doorway_previews_the_room_beyond() {
     // destination room — the symmetric case to a room previewing its hallway.
     app.world_mut()
         .resource_scope(|world, mut tp: Mut<crate::sim::state::TeleportState>| {
-            let runtime = world.resource::<crate::sim::state::MatchRuntime>();
+            let runtime = world.resource::<crate::sim::director::MatchDirector>();
             let keys = world.resource::<keystones::KeystoneState>();
             let items = world.resource::<items::ItemsState>();
             let game = runtime.live.host_match();
@@ -598,7 +604,7 @@ fn hallway_room_threshold_does_not_draw_wall_trim_across_opening() {
     app.update();
     app.world_mut()
         .resource_scope(|world, mut tp: Mut<crate::sim::state::TeleportState>| {
-            let runtime = world.resource::<crate::sim::state::MatchRuntime>();
+            let runtime = world.resource::<crate::sim::director::MatchDirector>();
             let keys = world.resource::<keystones::KeystoneState>();
             let items = world.resource::<items::ItemsState>();
             let game = runtime.live.host_match();
@@ -683,7 +689,9 @@ fn tab_toggles_the_tac_map_and_draws_the_live_schematic() {
         "Tab shows the tac-map panel"
     );
     let expected_model = {
-        let runtime = app.world().resource::<crate::sim::state::MatchRuntime>();
+        let runtime = app
+            .world()
+            .resource::<crate::sim::director::MatchDirector>();
         let keys = app.world().resource::<keystones::KeystoneState>();
         let tp = app.world().resource::<crate::sim::state::TeleportState>();
         tacmap::build_map(&runtime.live.host_match().competitive, keys, tp.place)
@@ -768,7 +776,7 @@ fn the_full_career_loop_runs_and_grows_the_persistent_profile() {
     go(&mut app, GameState::Match);
     assert!(
         app.world()
-            .contains_resource::<crate::sim::state::MatchRuntime>()
+            .contains_resource::<crate::sim::director::MatchDirector>()
     );
 
     finish_match(&mut app);
@@ -963,7 +971,9 @@ fn the_match_renders_the_current_place_and_starts_on_the_spine() {
 
     // The player begins in the local team's spine room.
     let start_room = {
-        let rt = app.world().resource::<crate::sim::state::MatchRuntime>();
+        let rt = app
+            .world()
+            .resource::<crate::sim::director::MatchDirector>();
         rt.live.host_match().local_room()
     };
     assert_eq!(
@@ -1003,7 +1013,9 @@ fn driving_spine_rounds_advances_the_brain_with_the_place_renderer_live() {
     let mut app = test_app();
     go(&mut app, GameState::Match);
     let before = {
-        let rt = app.world().resource::<crate::sim::state::MatchRuntime>();
+        let rt = app
+            .world()
+            .resource::<crate::sim::director::MatchDirector>();
         rt.live.host_match().competitive.round
     };
     // Commit a few spine rounds (as the player's crossings would); the place
@@ -1011,7 +1023,7 @@ fn driving_spine_rounds_advances_the_brain_with_the_place_renderer_live() {
     {
         let mut rt = app
             .world_mut()
-            .resource_mut::<crate::sim::state::MatchRuntime>();
+            .resource_mut::<crate::sim::director::MatchDirector>();
         for _ in 0..4 {
             if rt.live.finished() {
                 break;
@@ -1026,7 +1038,9 @@ fn driving_spine_rounds_advances_the_brain_with_the_place_renderer_live() {
     }
     app.update();
     let after = {
-        let rt = app.world().resource::<crate::sim::state::MatchRuntime>();
+        let rt = app
+            .world()
+            .resource::<crate::sim::director::MatchDirector>();
         rt.live.host_match().competitive.round
     };
     assert!(after > before, "spine rounds advanced the match brain");

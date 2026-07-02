@@ -202,7 +202,7 @@ here instead as `game/src/arch_check.rs` — three source-scanning tests: no glo
 re-exports, no non-test `use super::*`, and sim never imports view/screens.
 Verified: 107 game tests, 670 workspace tests, clippy clean.
 
-### G3 — One match brain (2–3 days, the real fix; do after G2 so the state has one home)
+### G3 — One match brain — DONE 2026-07-02
 1. Create `MatchDirector` (candidate promotion into `observed_match` as a pure
    orchestrator): owns the `LiveNetMatch`, the `EliminationSeries`, and (spectator)
    `TeamplayMatch`; exposes `tick(dt)`, `finished()`, `outcome() -> MatchResult`.
@@ -218,6 +218,22 @@ Verified: 107 game tests, 670 workspace tests, clippy clean.
    `observed_net`. Headless result == on-screen result, asserted by a test.
 - **Verify:** existing match/series/career tests + a new "HUD numbers come from the
   director" test; bot-POV GIF capture to eyeball behavior.
+
+**As landed:** `game/src/sim/director.rs` (207 lines) — `MatchDirector` is the single
+resource owning `live` + `series` + the cadence timers, replacing `MatchRuntime` and
+`SeriesRuntime`. `tick(dt, spectator_driven)` encapsulates the whole per-frame rule
+and yields the `MatchResult` exactly once; `run_to_completion()` is the headless
+career path; `outcome()` is the one resolution rule (finished series is authority);
+`pump_spectator()` and `record_local_keystone()` absorb the two out-of-band series
+writers. `match_pump` is now pause-input + one `tick` call. `flow::play_match()` runs
+the same director, and the pre-refactor characterization test
+(`headless_and_interactive_matches_agree_on_the_result`, committed first as G3a)
+pins headless == interactive. Behavior was preserved exactly — the current
+either-model-ends rule is documented in the director; changing it (if ever) is now a
+one-place, visible edit. `match_runtime/mod.rs` is 741 lines (from 1,007); the <400
+target waits on G4 moving the nav derivation + spectator steering out.
+`play_networked_match` stays as the transport-orthogonality test helper.
+Verified: 671 workspace tests, workspace clippy clean.
 
 ### G4 — Flatten renderer patterns & split the remaining big files (1–2 days)
 1. Replace `SpawningStrategy` `Box<dyn>` with two plain functions called from the
