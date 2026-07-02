@@ -278,7 +278,7 @@ staging both pipelines hand-rolled became two `MatchDirector` methods
 go through the same director API as play. Item 3 had already fallen out of G2–G4.
 Verified: 672 workspace tests (set identical by name pre/post), clippy clean.
 
-### G6 — Docs & Catalogue truth-sync (half a day)
+### G6 — Docs & Catalogue truth-sync — DONE 2026-07-02 (ARC COMPLETE)
 - Update `Catalogue.md`: correct the SplitMix "Centralized" claim (fixed for real in
   G1), refresh the bloated-files list, document the `sim`/`view`/`screens`/`evidence`
   layout and the explicit-imports rule.
@@ -286,6 +286,27 @@ Verified: 672 workspace tests (set identical by name pre/post), clippy clean.
   presentation (`view`) reads simulation (`sim`), never the reverse; no glob
   re-exports between sibling modules."*
 - Note in `ROADMAP.md` as the completed Arc G.
+
+**As landed:** Catalogue.md's Assembled Game section now describes the real
+`sim`/`view`/`layout`/`screens`/`evidence` tree; the SplitMix entry documents the
+G1 fix and names the three intentional hash finalizers that must never be
+"unified"; Arc G is entry 5 in Completed Refactorings and Phase 37 in ROADMAP.md.
+agents.md gained the "Keep the game's module flow one-way and explicit" rule
+(pointing at the arch_check ratchet).
+
+---
+
+## Arc retrospective (all six phases landed 2026-07-02)
+
+Headline numbers: `screens.rs` 710 → 177, `place/mod.rs` 1,288 → 42,
+`match_runtime/mod.rs` 1,007 → 218, `lib.rs` 1,101 → 113, `diagnostics.rs`
+1,552 → dissolved into evidence/{audit 757, snapshot 729, tags 143}. One dead
+module + dependency removed (archived, per direction), four leaking resources
+fixed, four parallel match models unified under one director with a
+characterization-pinned outcome, and three ratchet tests keeping it that way.
+672 workspace tests green at every stage. Deferred (deliberately): crate-side
+big files (room_world, equipment, observed_style), lab-local PRNG copies, and
+any change to the either-model-ends match rule — now a one-place edit if wanted.
 
 ---
 

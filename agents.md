@@ -104,6 +104,16 @@ Logical state should not depend on sprites, cameras, UI entities, or rendered sc
 * Player ownership must not be inferred from sprite appearance.
 * Map and spectator views should read simulation state rather than reconstruct it from rendering entities.
 
+### Keep the game's module flow one-way and explicit
+
+Inside `game/`, presentation reads simulation, never the reverse: `view/` and the
+screen systems may import `sim/`; `sim/` must never import `view/` or `screens/`.
+State imports explicitly from its owning module — no glob re-exports
+(`pub use x::*`) between modules and no `use super::*` outside `#[cfg(test)]`
+modules, so every file states what it actually depends on. These rules are enforced
+by the `arch_check` ratchet tests in `game/src/arch_check.rs`; if one fails, fix the
+dependency direction rather than the test.
+
 ### Use stable domain identifiers
 
 Do not use Bevy `Entity` values as persistent game identities.
