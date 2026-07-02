@@ -11,12 +11,12 @@ use observed_facility::map_spec::{RoomRole, sector_relay_v1};
 use observed_traversal::{FpsBody, FpsConfig};
 
 use super::crossing::compute_gap_dests;
-use super::nav_from_brain;
 use crate::flow::{Career, MATCH_SEED};
 use crate::items::ItemsState;
 use crate::keystones::KeystoneState;
 use crate::layout::WALL_HEIGHT;
 use crate::sim::director::MatchDirector;
+use crate::sim::nav::nav_from_brain;
 use crate::sim::state::{
     ItemIntent, LastTeleportPad, MatchIntent, MatchPaused, SpectatorBot, TeleportState,
 };

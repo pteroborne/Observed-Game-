@@ -3,15 +3,15 @@ use observed_core::RoomId;
 use observed_match::hybrid::{HybridMatch, LocalAction};
 use observed_traversal::{FIXED_DT, FpsBody, step_body};
 
-use super::{
-    connections_for_nav, nav_for_place, nav_for_room, room_connection_slots, room_target,
-    slot_for_connection,
-};
 use crate::flow::MATCH_SEED;
 use crate::items::ItemsState;
 use crate::keystones::KeystoneState;
 use crate::layout::WALL_HEIGHT;
 use crate::sim::director::MatchDirector;
+use crate::sim::nav::{
+    connections_for_nav, nav_for_place, nav_for_room, room_connection_slots, room_target,
+    slot_for_connection,
+};
 use crate::sim::state::{FrozenDest, MatchIntent, MatchPaused, TeleportState};
 use crate::teleport::{self, GapKind, Place};
 

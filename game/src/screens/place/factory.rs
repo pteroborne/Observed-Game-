@@ -76,7 +76,7 @@ pub(crate) fn rebuild_place(
     let tp = tp.into_inner();
     let game = runtime.live.host_match();
     let seed_val = seed.map(|s| s.0).unwrap_or(crate::flow::MATCH_SEED);
-    let nav = match_runtime::nav_for_place(seed_val, game, &keys, &items, tp.place);
+    let nav = crate::sim::nav::nav_for_place(seed_val, game, &keys, &items, tp.place);
 
     // Signature to detect if the place needs rebuilding (e.g. dropped items or tethers changed)
     let signature = {

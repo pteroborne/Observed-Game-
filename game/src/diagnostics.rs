@@ -430,7 +430,7 @@ fn apply_debug_match_coercion(
             continue;
         }
         items.torches = items.torches.saturating_add(1);
-        let connections = crate::screens::match_runtime::connections_for(game, room);
+        let connections = crate::sim::nav::connections_for(game, room);
         if items.drop_anchor_torch(Place::Room(room), Vec2::ZERO, version, &connections)
             && let Some(log) = params.log.as_mut()
         {
@@ -984,7 +984,7 @@ fn atlas_layout(
 
     for id in 0..9u32 {
         let room = RoomId(id);
-        let nav = crate::screens::match_runtime::nav_for_place(
+        let nav = crate::sim::nav::nav_for_place(
             crate::flow::MATCH_SEED,
             game,
             keys,
@@ -1009,13 +1009,7 @@ fn atlas_layout(
             to,
             variation,
         };
-        let nav = crate::screens::match_runtime::nav_for_place(
-            crate::flow::MATCH_SEED,
-            game,
-            keys,
-            items,
-            place,
-        );
+        let nav = crate::sim::nav::nav_for_place(crate::flow::MATCH_SEED, game, keys, items, place);
         let geom = teleport::geom_for(place, &nav);
         hallways.push(AtlasEntry {
             subject: format!("atlas hallway {} -> {} v{}", from.0, to.0, variation),
@@ -1190,13 +1184,7 @@ fn collect_thresholds(
     visuals: &Query<ThresholdVisualQueryData>,
 ) -> Vec<ThresholdSnapshot> {
     let game = runtime.live.host_match();
-    let nav = crate::screens::match_runtime::nav_for_place(
-        crate::flow::MATCH_SEED,
-        game,
-        keys,
-        items,
-        tp.place,
-    );
+    let nav = crate::sim::nav::nav_for_place(crate::flow::MATCH_SEED, game, keys, items, tp.place);
     tp.geom
         .gaps
         .iter()

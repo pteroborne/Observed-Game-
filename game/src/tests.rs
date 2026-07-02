@@ -195,13 +195,7 @@ fn anchor_torch_can_be_dropped_pins_edges_and_can_be_picked_back_up() {
             .resource::<crate::sim::director::MatchDirector>();
         let keys = app.world().resource::<keystones::KeystoneState>();
         let items = app.world().resource::<items::ItemsState>();
-        crate::screens::match_runtime::nav_from_brain(
-            MATCH_SEED,
-            runtime.live.host_match(),
-            keys,
-            items,
-        )
-        .pins
+        crate::sim::nav::nav_from_brain(MATCH_SEED, runtime.live.host_match(), keys, items).pins
     };
     assert!(
         !pins.is_empty(),
@@ -260,12 +254,8 @@ fn anchor_torch_tethers_current_thresholds_immediately() {
             .resource::<crate::sim::director::MatchDirector>();
         let keys = app.world().resource::<keystones::KeystoneState>();
         let items = app.world().resource::<items::ItemsState>();
-        let nav = crate::screens::match_runtime::nav_from_brain(
-            MATCH_SEED,
-            runtime.live.host_match(),
-            keys,
-            items,
-        );
+        let nav =
+            crate::sim::nav::nav_from_brain(MATCH_SEED, runtime.live.host_match(), keys, items);
         let mut pinned_targets: Vec<_> = items.placed[0]
             .pin_edges
             .iter()
@@ -318,7 +308,7 @@ fn nav_keeps_a_tethered_relation_even_if_the_live_graph_drops_it() {
 
     let game = HybridMatch::authored(MATCH_SEED);
     let room = game.local_room();
-    let live = crate::screens::match_runtime::connections_for(&game, room);
+    let live = crate::sim::nav::connections_for(&game, room);
     let absent = (0..9)
         .map(RoomId)
         .find(|candidate| *candidate != room && !live.contains(candidate))
@@ -332,7 +322,7 @@ fn nav_keeps_a_tethered_relation_even_if_the_live_graph_drops_it() {
         &[absent],
     ));
     let keys = keystones::KeystoneState::new(MATCH_SEED);
-    let nav = crate::screens::match_runtime::nav_for_room(MATCH_SEED, &game, &keys, &items, room);
+    let nav = crate::sim::nav::nav_for_room(MATCH_SEED, &game, &keys, &items, room);
 
     assert!(
         nav.connections.contains(&absent),
@@ -353,7 +343,7 @@ fn room_anchor_locks_exact_threshold_set_and_rejects_new_live_edges() {
 
     let mut game = HybridMatch::authored(MATCH_SEED);
     let room = game.local_room();
-    let locked = crate::screens::match_runtime::connections_for(&game, room);
+    let locked = crate::sim::nav::connections_for(&game, room);
     assert!(
         !locked.is_empty(),
         "the authored start room has thresholds to freeze"
@@ -377,7 +367,7 @@ fn room_anchor_locks_exact_threshold_set_and_rejects_new_live_edges() {
     game.rendered.push(injected);
 
     let keys = keystones::KeystoneState::new(MATCH_SEED);
-    let nav = crate::screens::match_runtime::nav_for_room(MATCH_SEED, &game, &keys, &items, room);
+    let nav = crate::sim::nav::nav_for_room(MATCH_SEED, &game, &keys, &items, room);
 
     assert_eq!(
         nav.connections, locked,
@@ -388,8 +378,7 @@ fn room_anchor_locks_exact_threshold_set_and_rejects_new_live_edges() {
         "new live relations cannot appear as thresholds while the room is anchored"
     );
 
-    let other_nav =
-        crate::screens::match_runtime::nav_for_room(MATCH_SEED, &game, &keys, &items, absent);
+    let other_nav = crate::sim::nav::nav_for_room(MATCH_SEED, &game, &keys, &items, absent);
     assert!(
         !other_nav.connections.contains(&room),
         "an unanchored room cannot grow a new inbound threshold into a locked room"
@@ -908,7 +897,7 @@ fn spectate_ai_menu_option_launches_a_bot_driven_match() {
         before_teamplay_tick,
         "the procedural co-op brain should not fast-forward on a single fixed frame"
     );
-    for _ in 1..crate::screens::match_runtime::SPECTATOR_TEAMPLAY_STEP_FRAMES {
+    for _ in 1..crate::screens::match_runtime::spectator::SPECTATOR_TEAMPLAY_STEP_FRAMES {
         app.world_mut().run_schedule(FixedUpdate);
     }
     assert!(
