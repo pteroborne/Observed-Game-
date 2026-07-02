@@ -146,6 +146,11 @@ pub(crate) fn rebuild_place(
             Place::Hallway { from, to, .. } => (from, to),
         };
         let tethered = nav.is_tethered(ea, eb);
+        // Phase 38 contested observation: a rival team standing in the room beyond
+        // this threshold pins it for everyone — show whose grip it is.
+        let rival_holding = crate::rivals::rivals_in_room(&game.competitive, gap.target)
+            .first()
+            .copied();
 
         if gap.kind.is_passage() {
             let dest = tp
@@ -196,7 +201,7 @@ pub(crate) fn rebuild_place(
                 &mut commands,
                 &assets,
                 gap,
-                shell::ThresholdStyle::passage(tethered),
+                shell::ThresholdStyle::passage(tethered, rival_holding),
                 y_offset,
             );
         } else if gap.kind == GapKind::LockedExit {

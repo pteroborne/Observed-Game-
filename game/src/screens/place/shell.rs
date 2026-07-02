@@ -91,15 +91,21 @@ pub(crate) struct ThresholdStyle {
     leaf_material: Option<Handle<StandardMaterial>>,
     openable: bool,
     tethered: bool,
+    /// A rival team index whose presence beyond this threshold pins it (Phase 38
+    /// contested observation): the frame light takes that team's colour so the
+    /// player reads "a rival is holding this door open".
+    rival: Option<usize>,
 }
 
 impl ThresholdStyle {
-    /// An always-open passage: frame only, no hiding leaf.
-    pub(crate) fn passage(tethered: bool) -> Self {
+    /// An always-open passage: frame only, no hiding leaf. `rival` tints the
+    /// frame light when a rival team's presence pins the connection beyond it.
+    pub(crate) fn passage(tethered: bool, rival: Option<usize>) -> Self {
         Self {
             leaf_material: None,
             openable: false,
             tethered,
+            rival,
         }
     }
 
@@ -109,6 +115,7 @@ impl ThresholdStyle {
             leaf_material: Some(assets.trap_active_material.clone()),
             openable: false,
             tethered,
+            rival: None,
         }
     }
 
@@ -118,6 +125,7 @@ impl ThresholdStyle {
             leaf_material: Some(assets.door_leaf_material.clone()),
             openable: false,
             tethered: false,
+            rival: None,
         }
     }
 }
@@ -131,7 +139,14 @@ pub(crate) fn spawn_threshold_gateway(
     threshold_style: ThresholdStyle,
     y_offset: f32,
 ) {
-    spawn_place_frame(commands, assets, gap, threshold_style.tethered, y_offset);
+    spawn_place_frame(
+        commands,
+        assets,
+        gap,
+        threshold_style.tethered,
+        threshold_style.rival,
+        y_offset,
+    );
     if let Some(leaf_material) = threshold_style.leaf_material {
         spawn_leaf(
             commands,
@@ -156,6 +171,7 @@ fn spawn_place_frame(
     assets: &MatchAssets,
     gap: &DoorGap,
     tethered: bool,
+    rival: Option<usize>,
     y_offset: f32,
 ) {
     let material = assets.doorframe_material.clone();
@@ -199,8 +215,12 @@ fn spawn_place_frame(
         Name::new("Doorframe lintel"),
     ));
 
+    // Light priority: your own tether (control colour) outranks a rival's grip,
+    // which outranks the neutral idle frame.
     let tether_color = if tethered {
         style::marker(MarkerRole::Control).base_color
+    } else if let Some(team) = rival {
+        crate::view::theme::TEAM_COLORS[team % crate::view::theme::TEAM_COLORS.len()]
     } else {
         Color::srgb(0.45, 0.62, 0.78)
     };

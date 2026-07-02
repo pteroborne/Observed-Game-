@@ -1088,3 +1088,50 @@ fn every_match_resource_is_removed_when_the_match_ends() {
     }
     crate::screens::match_runtime::session::for_each_match_resource!(assert_removed);
 }
+
+/// Phase 38 (contested observation): a rival team standing in the room beyond a
+/// threshold pins that connection for everyone — and the doorframe light takes the
+/// rival team's colour so the player can read whose grip holds the door.
+#[test]
+fn a_rival_in_the_neighbouring_room_tints_the_threshold_light_with_its_colour() {
+    use crate::sim::director::MatchDirector;
+    use crate::sim::state::TeleportState;
+    use crate::view::theme::TEAM_COLORS;
+
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    app.update(); // build the start room
+
+    // Move rival team 1's clump into the first room visible through a doorway.
+    let neighbour = {
+        let rt = app.world().resource::<MatchDirector>();
+        let game = rt.live.host_match();
+        let conns = crate::sim::nav::connections_for(game, game.local_room());
+        *conns.first().expect("the start room has a neighbour")
+    };
+    {
+        let mut rt = app.world_mut().resource_mut::<MatchDirector>();
+        let base = rt.live.host.match_state.competitive.teams[1].member_base;
+        rt.live.host.match_state.competitive.structure.graph.players[base] = neighbour;
+    }
+    // Force a rebuild of the place presentation.
+    app.world_mut().resource_mut::<TeleportState>().rendered = None;
+    app.update();
+
+    let rival = TEAM_COLORS[1].to_srgba();
+    let found = {
+        let world = app.world_mut();
+        let mut lights = world.query::<(&PointLight, &Name)>();
+        lights.iter(world).any(|(light, name)| {
+            let c = light.color.to_srgba();
+            name.as_str() == "Doorframe tether light"
+                && (c.red - rival.red).abs() < 0.01
+                && (c.green - rival.green).abs() < 0.01
+                && (c.blue - rival.blue).abs() < 0.01
+        })
+    };
+    assert!(
+        found,
+        "a threshold into a rival-occupied room carries that team's frame light"
+    );
+}

@@ -11,6 +11,7 @@
 //! A solvability guard ensures no member is ever stranded from the exit, even as
 //! teams strategically position members and anchors to rewire the unobserved graph.
 
+pub mod experiment;
 mod lab;
 
 use bevy::app::AppExit;
