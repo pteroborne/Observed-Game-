@@ -235,7 +235,7 @@ target waits on G4 moving the nav derivation + spectator steering out.
 `play_networked_match` stays as the transport-orthogonality test helper.
 Verified: 671 workspace tests, workspace clippy clean.
 
-### G4 — Flatten renderer patterns & split the remaining big files (1–2 days)
+### G4 — Flatten renderer patterns & split the remaining big files — DONE 2026-07-02
 1. Replace `SpawningStrategy` `Box<dyn>` with two plain functions called from the
    existing `match tp.place`. Replace `GatewayPolicy` + three structs with a
    `ThresholdStyle { leaf_material: Option<...>, openable: bool, tethered: bool }`
@@ -247,6 +247,18 @@ Verified: 671 workspace tests, workspace clippy clean.
    `init_match_session`/`teardown_match_session` pair in a single file, with a test
    asserting the world has no match resources after `OnExit(Match)` — enumerated in
    one place so additions can't be forgotten.
+
+**As landed (commits G4a–G4d):** `strategies.rs` → `shell.rs` (Box<dyn> trait → two
+functions; `GatewayPolicy` + 3 structs → `ThresholdStyle` data with 3 constructors).
+`place/mod.rs` 1,288 → 42 lines (factory / monitors / animate / shell splits, named
+re-exports preserve the surface). `match_runtime/session.rs` owns setup/teardown with
+the resource set enumerated once in `for_each_match_resource!` (drives teardown AND
+the new no-leak test) — this **fixed a real leak**: `Guardian`, `ActionLog`,
+`TeleportAnimation`, `LastTeleportPad` were inserted per match but never removed.
+The HUD chrome moved from setup_match into `hud::spawn_match_hud`. G4d moved the pure
+nav derivation to `sim/nav.rs` and spectator steering to `match_runtime/spectator.rs`;
+`match_runtime/mod.rs` is 218 lines (was 1,007 pre-G3, target was <400).
+Verified: 672 workspace tests (incl. the new leak test), clippy clean.
 
 ### G5 — Evidence pipeline consolidation (1–2 days, optional but pays off for agents)
 1. Split `diagnostics.rs` into `evidence/` modules: `scenarios.rs` (shared with
