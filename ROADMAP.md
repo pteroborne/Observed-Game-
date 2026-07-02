@@ -10,7 +10,22 @@ This document outlines the current active development goals, completed milestone
 
 ## Active & Upcoming Phases
 
-*(No upcoming active phases currently scheduled. All target phases completed!)*
+**Arc C — Contention & Depth** (plan and design rules: [docs/contention_arc_plan.md](docs/contention_arc_plan.md)). The design arc that turns the proven observe-to-freeze foundation into a game worth racing: observation becomes a shared, contested resource between teams, and the board gains the identity, verticality, and visible pressure to make that contest legible. Lab-first throughout; solvability ("no team is ever left without a path") is the arc-wide invariant.
+
+### Phase 38 — Contested Observation `[ ]`
+The sauce activator, and the arc's one non-negotiable: **observation is objective and shared** — any team's presence or anchor freezes a connection for every team, while *knowledge* of the graph stays team-local (a fog of war over truth, surfaced through the tac-map). Proven in a new `contention_lab` over the pure crates: bot-vs-bot series must show route denial changing outcomes, byte-identical determinism/replay, zero solvability violations across a seed corpus, and no freeze-everything stalemate (a decoherence counter-tool is added only if stalemates appear).
+
+### Phase 39 — Doors With Identity `[ ]`
+Surface the existing semantic board (`RoomRole`, the discovery_lab typed-room feasibility) to the player: a doorframe glyph language via `observed_style` (legend-backed), sensory bleed through open thresholds (district light, room-type ambience), and type-true payoffs behind the read (Sensor feeds the team-local map; Decoy lies about the exit). Success: a reader bot beats a random-door bot by a target margin.
+
+### Phase 40 — The Gantry (Jump-Map Halls) `[ ]`
+New `HallwayFlavor::Gantry`: a two-level hall where raised platforms are the fast route and **falling is a setback, not death** — you land in a visible understory whose exits are *different* threshold nodes (gravity rewires your crossing). Platform edges lit, failure landing visible before the jump (chosen, readable irreversibility). Builds on `fps_elevation_lab`; proven in `gantry_lab` with clean-jump / fall-recover / safe-bypass timing targets and guaranteed-navigable understories.
+
+### Phase 41 — Pressure Made Flesh `[ ]`
+The director's pressure becomes visible: dying districts drain light and palette before closing, collapsed edges return as rubble-sealed hallway variations, and the first-escape countdown drives a facility-wide lighting state. Collapse overrides freezing — the one force anchors cannot hold. Design experiment: does the guardian's gaze *observe* (freezing thresholds as it patrols)?
+
+### Phase 42 — The Race Reads as a Race `[ ]`
+Rivals become presences: team-colored anchor torches and frame lights on edges they froze, sound bleeding through occupied thresholds, recognizable bot-team personalities (the freezer, the sprinter, the saboteur), and tac-map attribution of rival-frozen edges ("Team 3 was here"). Human multiplayer remains the post-arc horizon — the lockstep spine is ready; the race has to be worth racing first.
 
 ---
 
