@@ -48,6 +48,9 @@ const WAIT_ROUND_SECS: f32 = 0.45;
 const SYNC_PUMP_BUDGET: usize = 64;
 /// Pump budget for running the live match to completion headlessly.
 const HEADLESS_PUMP_BUDGET: u32 = 100_000;
+/// Pump budget for settling the transport after each scripted (evidence-driver)
+/// round.
+const SCRIPTED_ROUND_PUMP_BUDGET: usize = 400;
 
 #[derive(Resource)]
 pub struct MatchDirector {
@@ -203,5 +206,35 @@ impl MatchDirector {
             }
             self.live.pump();
         }
+    }
+
+    /// Drive up to `rounds` scripted rounds (Advance while the local team is an
+    /// active runner, Wait otherwise), pumping the transport to sync after each.
+    /// The staging helper the scripted evidence drivers (captures, visual audit,
+    /// tour) use to fast-forward the match into a photographable state.
+    pub fn force_scripted_rounds(&mut self, rounds: usize) {
+        for _ in 0..rounds {
+            if self.live.finished() {
+                break;
+            }
+            let action = if self.live.local_active() {
+                LocalAction::Advance
+            } else {
+                LocalAction::Wait
+            };
+            self.live.force_round(action);
+            for _ in 0..SCRIPTED_ROUND_PUMP_BUDGET {
+                if self.live.in_sync() {
+                    break;
+                }
+                self.live.pump();
+            }
+        }
+    }
+
+    /// Clear the brain's pending reroute-feedback window so scripted evidence shots
+    /// aren't taken mid light-flicker/door-slam.
+    pub fn suppress_reroute_feedback(&mut self) {
+        self.live.host.match_state.reroute_feedback_ticks = 0;
     }
 }
