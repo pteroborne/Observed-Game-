@@ -1,15 +1,13 @@
 pub(crate) mod ambience;
 pub(crate) mod crossing;
 pub(crate) mod input;
+pub(crate) mod session;
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy::window::{CursorOptions, PrimaryWindow};
 use observed_core::RoomId;
-use observed_facility::map_spec::{RoomRole, sector_relay_v1};
 use observed_match::hybrid::HybridMatch;
-use observed_style::{self as style, MarkerRole};
-use observed_traversal::{FpsBody, FpsConfig};
 use player_input::PlayerIntent;
 
 use super::input::{gamepad_pause_pressed, gamepad_quit_pressed};
@@ -18,12 +16,7 @@ use crate::sim::director::MatchDirector;
 use crate::sim::state::{
     ItemIntent, LastTeleportPad, MatchIntent, MatchPaused, SpectatorBot, TeleportState,
 };
-use crate::view::assets::{MatchAssets, all_planned_assets_present};
-use crate::view::components::{
-    DecohereFx, KeystoneItem, MatchAudioState, MatchHud, PausePanel, TacMapPanel, TacMapState,
-    TeleportAnimation, TeleportOverlay,
-};
-use crate::view::theme::{BORDER, PANEL, TAC_MAP_SIZE, TITLE, screen_root, text};
+use crate::view::components::{KeystoneItem, TeleportAnimation};
 
 use crate::GameState;
 use crate::flow::{Career, MATCH_SEED};
@@ -40,239 +33,12 @@ pub(crate) use ambience::district_for_place;
 pub(crate) use crossing::{
     compute_gap_dests, debug_cross_gap_for_capture, debug_place_into, place_body_at, teleport_sim,
 };
+pub(crate) use session::{cleanup_match_resources, setup_match};
 
 #[derive(SystemParam)]
 pub(crate) struct MatchPumpInput<'w, 's> {
     keyboard: Res<'w, ButtonInput<KeyCode>>,
     gamepads: Query<'w, 's, &'static Gamepad>,
-}
-
-// --- match (first-person 3D, networked) ------------------------------------
-pub(crate) fn setup_match(
-    mut commands: Commands,
-    mut career: ResMut<Career>,
-    asset_server: Res<AssetServer>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    seed: Option<Res<crate::flow::ActiveMatchSeed>>,
-    spectator_bot: Option<ResMut<SpectatorBot>>,
-) {
-    career.begin_match();
-    if !all_planned_assets_present() {
-        warn!("one or more planned match assets are absent; procedural fallbacks will be used");
-    }
-    let seed_val = seed.map(|s| s.0).unwrap_or(MATCH_SEED);
-    if let Some(mut spectator) = spectator_bot
-        && spectator.seed != seed_val
-    {
-        *spectator = SpectatorBot::for_seed(seed_val);
-    }
-    let map_spec = sector_relay_v1();
-    let director = MatchDirector::new(seed_val, map_spec.clone());
-    let game = director.live.host_match();
-    let initial_escaped = game.competitive.escaped_count();
-    let initial_commits = game.reroute_commits;
-    let keys = KeystoneState::for_map(seed_val, &map_spec);
-    let items = ItemsState::single_player();
-    let tp_config = FpsConfig::default();
-    let start_place = Place::Room(game.local_room());
-    let start_geom =
-        crate::teleport::geom_for(start_place, &nav_from_brain(seed_val, game, &keys, &items));
-    let start_arena = crate::teleport::place_arena(&start_geom, 0.0, WALL_HEIGHT);
-    let start_gap_dests =
-        compute_gap_dests(seed_val, start_place, &start_geom, game, &keys, &items);
-    let spawn = Vec3::new(0.0, tp_config.half_height, 0.0);
-    commands.insert_resource(director);
-    commands.insert_resource(MatchPaused(false));
-    commands.insert_resource(TacMapState(false));
-    commands.insert_resource(MatchIntent::default());
-    commands.insert_resource(ItemIntent::default());
-    commands.insert_resource(DecohereFx {
-        last_commits: initial_commits,
-        flash: 0.0,
-    });
-    commands.insert_resource(MatchAudioState {
-        last_position: spawn,
-        stride_distance: 0.0,
-        last_place: start_place,
-        escaped_count: initial_escaped,
-    });
-    commands.insert_resource(TeleportState {
-        place: start_place,
-        body: FpsBody::spawned(spawn, 0.0),
-        config: tp_config,
-        arena: start_arena,
-        geom: start_geom,
-        prev_xz: Vec2::ZERO,
-        crossed_exit: false,
-        pending_exit: None,
-        arrived_from: None,
-        gap_dests: start_gap_dests,
-        rendered: None,
-    });
-    commands.insert_resource(keys);
-    commands.insert_resource(items);
-    let guardian_room = map_spec
-        .role_room(RoomRole::GuardianControl)
-        .unwrap_or(RoomId(8));
-    commands.insert_resource(crate::guardian::Guardian {
-        room: guardian_room,
-        ..default()
-    });
-    commands.insert_resource(crate::guardian::ActionLog::default());
-    commands.insert_resource(TeleportAnimation::default());
-    commands.insert_resource(LastTeleportPad::default());
-
-    commands.insert_resource(MatchAssets::load(
-        &asset_server,
-        &mut meshes,
-        &mut materials,
-    ));
-
-    commands
-        .spawn(screen_root(GameState::Match))
-        .with_children(|root| {
-            root.spawn((
-                MatchHud,
-                Node {
-                    position_type: PositionType::Absolute,
-                    top: px(16),
-                    left: px(16),
-                    padding: UiRect::all(px(12)),
-                    border: UiRect::all(px(1)),
-                    ..default()
-                },
-                BackgroundColor(PANEL),
-                BorderColor::all(BORDER),
-                Text::new("Match starting…"),
-                TextFont {
-                    font_size: 16.0,
-                    ..default()
-                },
-                TextColor(TITLE),
-            ));
-            root.spawn((
-                TeleportOverlay,
-                Visibility::Hidden,
-                Node {
-                    position_type: PositionType::Absolute,
-                    top: px(0),
-                    left: px(0),
-                    width: percent(100),
-                    height: percent(100),
-                    ..default()
-                },
-                BackgroundColor(Color::NONE),
-            ));
-            root.spawn((
-                PausePanel,
-                Visibility::Hidden,
-                Node {
-                    position_type: PositionType::Absolute,
-                    top: px(0),
-                    left: px(0),
-                    width: percent(100),
-                    height: percent(100),
-                    align_items: AlignItems::Center,
-                    justify_content: JustifyContent::Center,
-                    ..default()
-                },
-                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.6)),
-                children![(
-                    Text::new("PAUSED\n\nEsc / Start  Resume\nQ / Y        Quit to menu"),
-                    TextFont {
-                        font_size: 28.0,
-                        ..default()
-                    },
-                    TextColor(TITLE),
-                )],
-            ));
-            root.spawn((
-                TacMapPanel,
-                Visibility::Hidden,
-                Node {
-                    position_type: PositionType::Absolute,
-                    top: px(16),
-                    right: px(16),
-                    width: px(TAC_MAP_SIZE),
-                    height: px(TAC_MAP_SIZE),
-                    border: UiRect::all(px(1)),
-                    ..default()
-                },
-                BackgroundColor(PANEL),
-                BorderColor::all(BORDER),
-                children![(
-                    Node {
-                        position_type: PositionType::Absolute,
-                        top: px(6),
-                        left: px(10),
-                        ..default()
-                    },
-                    Text::new("TAC-MAP"),
-                    TextFont {
-                        font_size: 14.0,
-                        ..default()
-                    },
-                    TextColor(TITLE),
-                )],
-            ));
-            root.spawn((
-                Node {
-                    position_type: PositionType::Absolute,
-                    bottom: px(16),
-                    left: px(16),
-                    padding: UiRect::all(px(12)),
-                    border: UiRect::all(px(1)),
-                    flex_direction: FlexDirection::Column,
-                    row_gap: px(3),
-                    ..default()
-                },
-                BackgroundColor(PANEL),
-                BorderColor::all(BORDER),
-                children![
-                    text("LEGEND", 15.0, TITLE),
-                    text("exit", 13.0, style::marker(MarkerRole::Exit).base_color),
-                    text("keystone — pick up", 13.0, Color::srgb(1.0, 0.82, 0.3)),
-                    text(
-                        "anchor torch - F drop/pick",
-                        13.0,
-                        style::marker(MarkerRole::Control).base_color
-                    ),
-                    text(
-                        "teleport pad - C drop/pick, E link",
-                        13.0,
-                        style::marker(MarkerRole::You).base_color
-                    ),
-                    text("locked exit (red door)", 13.0, Color::srgb(1.0, 0.32, 0.22)),
-                    text(
-                        "collapse — threat",
-                        13.0,
-                        style::marker(MarkerRole::Collapse).base_color
-                    ),
-                    text(
-                        "rival teams",
-                        13.0,
-                        style::marker(MarkerRole::Rival).base_color
-                    ),
-                    text("mystery corridors", 13.0, Color::srgb(1.0, 0.32, 0.22)),
-                ],
-            ));
-        });
-}
-
-pub(crate) fn cleanup_match_resources(mut commands: Commands) {
-    commands.remove_resource::<MatchDirector>();
-    commands.remove_resource::<SpectatorBot>();
-    commands.remove_resource::<MatchIntent>();
-    commands.remove_resource::<ItemIntent>();
-    commands.remove_resource::<MatchPaused>();
-    commands.remove_resource::<TacMapState>();
-    commands.remove_resource::<MatchAssets>();
-    commands.remove_resource::<MatchAudioState>();
-    commands.remove_resource::<TeleportState>();
-    commands.remove_resource::<KeystoneState>();
-    commands.remove_resource::<ItemsState>();
-    commands.remove_resource::<DecohereFx>();
 }
 
 #[allow(clippy::too_many_arguments)]

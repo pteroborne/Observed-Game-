@@ -1079,3 +1079,23 @@ fn headless_and_interactive_matches_agree_on_the_result() {
         "the elimination series always places the local team"
     );
 }
+
+/// Arc G4: the Match session's resources are enumerated once
+/// (`for_each_match_resource` in `screens::match_runtime::session`) and every one of
+/// them must be gone after the Match exits. Before this consolidation, `Guardian`,
+/// `ActionLog`, `TeleportAnimation`, and `LastTeleportPad` leaked across matches.
+#[test]
+fn every_match_resource_is_removed_when_the_match_ends() {
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    finish_match(&mut app);
+    macro_rules! assert_removed {
+        ($ty:ty) => {
+            assert!(
+                !app.world().contains_resource::<$ty>(),
+                concat!(stringify!($ty), " leaked past the Match")
+            );
+        };
+    }
+    crate::screens::match_runtime::session::for_each_match_resource!(assert_removed);
+}

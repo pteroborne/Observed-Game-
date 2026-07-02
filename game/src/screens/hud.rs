@@ -18,7 +18,7 @@ use crate::view::components::{
     MatchHud, PausePanel, TacMapElement, TacMapPanel, TacMapState, TeleportAnimation,
     TeleportOverlay,
 };
-use crate::view::theme::{TAC_MAP_SIZE, TITLE};
+use crate::view::theme::{BORDER, PANEL, TAC_MAP_SIZE, TITLE, screen_root, text};
 use crate::{GameState, tacmap};
 
 // Tac-map overlay layout (pixels). The 3×3 grid of rooms sits below a title strip.
@@ -472,4 +472,139 @@ pub(crate) fn update_teleport_animation(
             *visibility = Visibility::Hidden;
         }
     }
+}
+
+/// Spawn the Match's screen-rooted HUD chrome: the status panel, the teleport
+/// overlay, the pause panel, the tac-map panel, and the legend. State-scoped to the
+/// Match, so it despawns with the screen.
+pub(crate) fn spawn_match_hud(commands: &mut Commands) {
+    commands
+        .spawn(screen_root(GameState::Match))
+        .with_children(|root| {
+            root.spawn((
+                MatchHud,
+                Node {
+                    position_type: PositionType::Absolute,
+                    top: px(16),
+                    left: px(16),
+                    padding: UiRect::all(px(12)),
+                    border: UiRect::all(px(1)),
+                    ..default()
+                },
+                BackgroundColor(PANEL),
+                BorderColor::all(BORDER),
+                Text::new("Match starting…"),
+                TextFont {
+                    font_size: 16.0,
+                    ..default()
+                },
+                TextColor(TITLE),
+            ));
+            root.spawn((
+                TeleportOverlay,
+                Visibility::Hidden,
+                Node {
+                    position_type: PositionType::Absolute,
+                    top: px(0),
+                    left: px(0),
+                    width: percent(100),
+                    height: percent(100),
+                    ..default()
+                },
+                BackgroundColor(Color::NONE),
+            ));
+            root.spawn((
+                PausePanel,
+                Visibility::Hidden,
+                Node {
+                    position_type: PositionType::Absolute,
+                    top: px(0),
+                    left: px(0),
+                    width: percent(100),
+                    height: percent(100),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.6)),
+                children![(
+                    Text::new("PAUSED\n\nEsc / Start  Resume\nQ / Y        Quit to menu"),
+                    TextFont {
+                        font_size: 28.0,
+                        ..default()
+                    },
+                    TextColor(TITLE),
+                )],
+            ));
+            root.spawn((
+                TacMapPanel,
+                Visibility::Hidden,
+                Node {
+                    position_type: PositionType::Absolute,
+                    top: px(16),
+                    right: px(16),
+                    width: px(TAC_MAP_SIZE),
+                    height: px(TAC_MAP_SIZE),
+                    border: UiRect::all(px(1)),
+                    ..default()
+                },
+                BackgroundColor(PANEL),
+                BorderColor::all(BORDER),
+                children![(
+                    Node {
+                        position_type: PositionType::Absolute,
+                        top: px(6),
+                        left: px(10),
+                        ..default()
+                    },
+                    Text::new("TAC-MAP"),
+                    TextFont {
+                        font_size: 14.0,
+                        ..default()
+                    },
+                    TextColor(TITLE),
+                )],
+            ));
+            root.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    bottom: px(16),
+                    left: px(16),
+                    padding: UiRect::all(px(12)),
+                    border: UiRect::all(px(1)),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(3),
+                    ..default()
+                },
+                BackgroundColor(PANEL),
+                BorderColor::all(BORDER),
+                children![
+                    text("LEGEND", 15.0, TITLE),
+                    text("exit", 13.0, style::marker(MarkerRole::Exit).base_color),
+                    text("keystone — pick up", 13.0, Color::srgb(1.0, 0.82, 0.3)),
+                    text(
+                        "anchor torch - F drop/pick",
+                        13.0,
+                        style::marker(MarkerRole::Control).base_color
+                    ),
+                    text(
+                        "teleport pad - C drop/pick, E link",
+                        13.0,
+                        style::marker(MarkerRole::You).base_color
+                    ),
+                    text("locked exit (red door)", 13.0, Color::srgb(1.0, 0.32, 0.22)),
+                    text(
+                        "collapse — threat",
+                        13.0,
+                        style::marker(MarkerRole::Collapse).base_color
+                    ),
+                    text(
+                        "rival teams",
+                        13.0,
+                        style::marker(MarkerRole::Rival).base_color
+                    ),
+                    text("mystery corridors", 13.0, Color::srgb(1.0, 0.32, 0.22)),
+                ],
+            ));
+        });
 }
