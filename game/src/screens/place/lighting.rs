@@ -1,10 +1,11 @@
 use crate::screens::{
-    DespawnOnExit, FIXTURE_LIGHT_INTENSITY, FlickerLight, GameState, MatchAssets, PassagePreview,
-    PlaceGeometry, WALL_HEIGHT,
+    DespawnOnExit, FlickerLight, GameState, MatchAssets, PassagePreview, PlaceGeometry, WALL_HEIGHT,
 };
 use crate::teleport;
 use bevy::prelude::*;
 use std::f32::consts::PI;
+
+pub(crate) const FIXTURE_LIGHT_INTENSITY: f32 = 2_800.0;
 
 const TRIM_LOW_Y: f32 = 0.12;
 const TRIM_HEIGHT: f32 = 0.08;

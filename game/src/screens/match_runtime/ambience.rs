@@ -7,10 +7,14 @@ use observed_style as style;
 use crate::flow::MATCH_SEED;
 use crate::screens::{
     DecohereFx, DoorLeaf, FlickerLight, GameCam, GameSun, GlobalAmbientLight, MENU_SUN_ILLUMINANCE,
-    MatchAssets, MatchAudioCue, MatchPaused, MatchRuntime, ROUTE_SHIFT_FLASH_SECS, TeleportState,
-    play_one_shot,
+    MatchAssets, MatchAudioCue, MatchPaused, MatchRuntime, TeleportState, play_one_shot,
 };
 use crate::teleport::Place;
+
+/// How long (seconds) the first-person decoherence feedback — the diegetic light flicker
+/// and door slam — lasts after a reroute commits. Shared so the flicker driver
+/// ([`flicker_lights`]) and the feedback driver ([`sync_decohere_fx`]) agree.
+pub(crate) const ROUTE_SHIFT_FLASH_SECS: f32 = 0.7;
 
 /// Ease the global ambient fill and the camera's distance fog toward the current place's
 /// district palette each frame, giving the megastructure visibly distinct neighbourhoods

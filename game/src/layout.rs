@@ -13,3 +13,7 @@ pub(crate) const PLACE_TILE: f32 = 2.2;
 /// Every hallway is carved three tiles wide, and doorway frames span the full hall
 /// width so doorways and hallways line up by design.
 pub(crate) const HALL_WIDTH: f32 = 3.0 * PLACE_TILE;
+
+/// Taller than head height so the facility reads as a vast, breathable structure rather
+/// than a tight corridor. Everything (frames, leaves, walls, ceiling) scales off this.
+pub(crate) const WALL_HEIGHT: f32 = 4.6;

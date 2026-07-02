@@ -5,13 +5,14 @@
 //! avatars. Rebuilds only when the player teleports.
 
 pub(crate) mod factory;
-pub(crate) mod items;
+pub(crate) mod item_visuals;
 pub(crate) mod lighting;
 pub(crate) mod mesh;
 pub(crate) mod preview;
 pub(crate) mod strategies;
 
 use bevy::prelude::*;
+use observed_core::RoomId;
 use observed_style::{self as style, MarkerRole};
 
 use super::*;
@@ -249,12 +250,12 @@ pub(crate) fn rebuild_place(
     if let Place::Room(room) = tp.place
         && keys.has_uncollected(room)
     {
-        items::spawn_keystone_item(&mut commands, &assets, room, y_offset);
+        item_visuals::spawn_keystone_item(&mut commands, &assets, room, y_offset);
     }
 
     // Spawn dropped items
     for item in items.placed_in(tp.place) {
-        items::spawn_dropped_item(&mut commands, &assets, item, y_offset);
+        item_visuals::spawn_dropped_item(&mut commands, &assets, item, y_offset);
     }
 
     // Lighting and surface details

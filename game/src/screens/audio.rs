@@ -9,6 +9,8 @@ use bevy::prelude::*;
 use super::*;
 use crate::GameState;
 
+const FOOTSTEP_STRIDE: f32 = 1.8;
+
 pub(crate) fn play_one_shot(
     commands: &mut Commands,
     sound: &Option<Handle<AudioSource>>,

@@ -1,8 +1,7 @@
 pub(crate) mod ambience;
+pub(crate) mod crossing;
 pub(crate) mod input;
-pub(crate) mod teleport;
 
-use crate::layout::{HALL_WIDTH, PLACE_TILE};
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy::window::{CursorOptions, PrimaryWindow};
@@ -13,8 +12,9 @@ use observed_match::hybrid::{HybridMatch, LocalAction};
 use observed_match::teamplay::TeamplayMatch;
 use observed_net::netmatch::LiveNetMatch;
 use observed_net::network::NetworkProfile;
-use observed_style::{self as style, MarkerRole, SurfaceRole};
+use observed_style::{self as style, MarkerRole};
 use observed_traversal::{FpsBody, FpsConfig};
+use player_input::PlayerIntent;
 
 use super::*;
 use crate::GameState;
@@ -32,10 +32,10 @@ pub(crate) use ambience::{
     apply_match_atmosphere, apply_place_atmosphere, clear_match_atmosphere, district_for_place,
     flicker_lights, sync_decohere_fx,
 };
-pub(crate) use input::{grab_match_cursor, release_match_cursor};
-pub(crate) use teleport::{
+pub(crate) use crossing::{
     compute_gap_dests, debug_cross_gap_for_capture, debug_place_into, place_body_at, teleport_sim,
 };
+pub(crate) use input::{grab_match_cursor, release_match_cursor};
 
 #[derive(SystemParam)]
 pub(crate) struct MatchPumpInput<'w, 's> {
@@ -127,186 +127,11 @@ pub(crate) fn setup_match(
     commands.insert_resource(TeleportAnimation::default());
     commands.insert_resource(LastTeleportPad::default());
 
-    let load_texture =
-        |path: &'static str| asset_present(path).then(|| asset_server.load::<Image>(path));
-    let wall_texture = load_texture(WALL_TEX);
-    let floor_texture = load_texture(FLOOR_TEX);
-    let ceiling_texture = load_texture(CEILING_TEX);
-
-    let floor_material = materials.add(textured_neon_material(
-        &style::surface(SurfaceRole::Plain),
-        floor_texture.clone(),
+    commands.insert_resource(MatchAssets::load(
+        &asset_server,
+        &mut meshes,
+        &mut materials,
     ));
-    let spine_floor_material = materials.add(textured_neon_material(
-        &style::surface(SurfaceRole::Spine),
-        floor_texture.clone(),
-    ));
-    let safe_floor_material = materials.add(textured_neon_material(
-        &style::surface(SurfaceRole::SafeBypass),
-        floor_texture.clone(),
-    ));
-    let trap_active_material = materials.add(textured_neon_material(
-        &style::surface(SurfaceRole::TrapArmed),
-        floor_texture.clone(),
-    ));
-    let trap_idle_material = materials.add(textured_neon_material(
-        &style::surface(SurfaceRole::TrapIdle),
-        floor_texture,
-    ));
-    let wall_material = materials.add(textured_neon_material(
-        &style::surface(SurfaceRole::Wall),
-        wall_texture,
-    ));
-    let ceiling_material = materials.add(StandardMaterial {
-        cull_mode: None,
-        double_sided: true,
-        ..textured_neon_material(&style::surface(SurfaceRole::Ceiling), ceiling_texture)
-    });
-    let exit_panel_material = materials.add(StandardMaterial {
-        base_color: Color::WHITE,
-        base_color_texture: asset_present(EXIT_PANEL_TEX)
-            .then(|| asset_server.load(EXIT_PANEL_TEX)),
-        emissive: LinearRgba::rgb(0.08, 5.0, 0.35),
-        unlit: true,
-        cull_mode: None,
-        double_sided: true,
-        ..default()
-    });
-    let fixture_glow_material = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.75, 0.9, 1.0),
-        emissive: LinearRgba::rgb(4.0, 7.0, 10.0),
-        unlit: true,
-        ..default()
-    });
-    let lamp_material = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.9, 0.85, 0.72),
-        emissive: LinearRgba::rgb(3.2, 2.7, 1.8),
-        unlit: true,
-        ..default()
-    });
-    let district_accent_materials = std::array::from_fn(|i| {
-        let accent = style::district(style::District::ALL[i]).accent;
-        materials.add(StandardMaterial {
-            base_color: Color::srgb(0.02, 0.03, 0.05),
-            emissive: LinearRgba::rgb(accent.red * 10.0, accent.green * 10.0, accent.blue * 10.0),
-            unlit: true,
-            ..default()
-        })
-    });
-    let placeholder_material = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.08, 0.10, 0.14),
-        emissive: LinearRgba::rgb(0.10, 0.30, 0.45),
-        perceptual_roughness: 0.7,
-        ..default()
-    });
-    let doorframe_material = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.05, 0.07, 0.11),
-        emissive: LinearRgba::rgb(0.35, 1.9, 2.5),
-        perceptual_roughness: 0.5,
-        ..default()
-    });
-    let spine_doorframe_material = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.10, 0.08, 0.03),
-        emissive: LinearRgba::rgb(2.6, 1.7, 0.5),
-        perceptual_roughness: 0.5,
-        ..default()
-    });
-    let door_leaf_material = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.05, 0.06, 0.10),
-        emissive: LinearRgba::rgb(0.10, 0.32, 0.5),
-        perceptual_roughness: 0.55,
-        ..default()
-    });
-    let objective = style::marker(MarkerRole::NextRoom);
-    let objective_material = materials.add(StandardMaterial {
-        base_color: objective.base_color,
-        emissive: objective.emissive,
-        unlit: true,
-        ..default()
-    });
-    let rival = style::marker(MarkerRole::Rival);
-    let rival_material = materials.add(StandardMaterial {
-        base_color: rival.base_color,
-        emissive: rival.emissive,
-        perceptual_roughness: 0.6,
-        ..default()
-    });
-    let anchor = style::marker(MarkerRole::Control);
-    let anchor_torch_material = materials.add(StandardMaterial {
-        base_color: anchor.base_color,
-        emissive: anchor.emissive,
-        unlit: true,
-        ..default()
-    });
-    let pad = style::marker(MarkerRole::You);
-    let teleport_pad_material = materials.add(StandardMaterial {
-        base_color: pad.base_color,
-        emissive: pad.emissive,
-        unlit: true,
-        ..default()
-    });
-    let team_materials = TEAM_COLORS.map(|color| {
-        materials.add(StandardMaterial {
-            base_color: color.with_alpha(0.58),
-            emissive: color.to_linear() * 1.5,
-            alpha_mode: AlphaMode::Blend,
-            ..default()
-        })
-    });
-    let load_scene = |path: &'static str| {
-        asset_present(path).then(|| asset_server.load(GltfAssetLabel::Scene(0).from_asset(path)))
-    };
-    let load_sound =
-        |path: &'static str| asset_present(path).then(|| asset_server.load::<AudioSource>(path));
-
-    commands.insert_resource(MatchAssets {
-        floor_mesh: meshes.add(Plane3d::default().mesh().size(PLACE_TILE, PLACE_TILE)),
-        wall_mesh: meshes.add(Cuboid::new(PLACE_TILE, WALL_HEIGHT, PLACE_TILE)),
-        ceiling_mesh: meshes.add(Plane3d::default().mesh().size(PLACE_TILE, PLACE_TILE)),
-        panel_mesh: meshes.add(Rectangle::new(4.4, 2.2)),
-        placeholder_mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
-        halo_mesh: meshes.add(Cylinder::new(0.46, 0.025)),
-        door_post_mesh: meshes.add(Cuboid::new(DOOR_POST_W, WALL_HEIGHT, DOOR_POST_D)),
-        door_lintel_mesh: meshes.add(Cuboid::new(HALL_WIDTH, DOOR_LINTEL_H, DOOR_POST_D)),
-        door_leaf_mesh: meshes.add(Cuboid::new(
-            HALL_WIDTH - 2.0 * DOOR_POST_W,
-            WALL_HEIGHT - DOOR_LINTEL_H,
-            DOOR_LEAF_D,
-        )),
-        objective_beam_mesh: meshes.add(Cylinder::new(0.16, 9.0)),
-        rival_body_mesh: meshes.add(Capsule3d::new(0.32, 1.0)),
-        floor_material,
-        spine_floor_material,
-        safe_floor_material,
-        trap_active_material,
-        trap_idle_material,
-        wall_material,
-        ceiling_material,
-        exit_panel_material,
-        fixture_glow_material,
-        lamp_material,
-        district_accent_materials,
-        placeholder_material,
-        doorframe_material,
-        spine_doorframe_material,
-        door_leaf_material,
-        objective_material,
-        rival_material,
-        anchor_torch_material,
-        teleport_pad_material,
-        team_materials,
-        light_fixture: load_scene(LIGHT_FIXTURE_MODEL),
-        exit_gate: load_scene(EXIT_GATE_MODEL),
-        player: load_scene(PLAYER_MODEL),
-        bot: load_scene(BOT_MODEL),
-        equipment: load_scene(EQUIPMENT_MODEL),
-        hazard: load_scene(HAZARD_MODEL),
-        footstep: load_sound(FOOTSTEP_SOUND),
-        reroute: load_sound(REROUTE_SOUND),
-        escape: load_sound(ESCAPE_SOUND),
-        ambience: load_sound(AMBIENCE_SOUND),
-        door: load_sound(DOOR_SOUND),
-    });
 
     commands
         .spawn(screen_root(GameState::Match))

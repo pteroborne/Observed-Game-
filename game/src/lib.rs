@@ -13,8 +13,10 @@ pub mod maze;
 mod navmesh;
 pub mod rivals;
 mod screens;
+mod sim;
 pub mod tacmap;
 pub mod teleport;
+mod view;
 
 use bevy::{
     asset::AssetPlugin,
