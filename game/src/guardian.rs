@@ -1,5 +1,5 @@
 use crate::items::{ItemKind, ItemsState};
-use crate::screens::{MatchPaused, MatchRuntime, TeleportState};
+use crate::sim::state::{MatchPaused, MatchRuntime, TeleportState};
 use crate::teleport::Place;
 use bevy::prelude::*;
 use observed_core::{RoomId, SplitMix};
@@ -217,7 +217,7 @@ pub(crate) fn update_guardian_in_match(
     mut commands: Commands,
     mut screenshot_count: Local<usize>,
     mut pending_screenshots: Local<Vec<(String, u32)>>,
-    mut anim: ResMut<crate::screens::TeleportAnimation>,
+    mut anim: ResMut<crate::view::components::TeleportAnimation>,
 ) {
     if paused.0 || runtime.done {
         return;

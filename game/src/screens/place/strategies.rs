@@ -1,6 +1,9 @@
+use crate::GameState;
+use crate::layout::WALL_HEIGHT;
 use crate::screens::place::mesh;
-use crate::screens::{DespawnOnExit, GameState, MatchAssets, PlaceGeometry, WALL_HEIGHT};
 use crate::teleport::{DoorGap, PlaceGeom};
+use crate::view::assets::MatchAssets;
+use crate::view::components::PlaceGeometry;
 use bevy::prelude::*;
 
 // ==========================================

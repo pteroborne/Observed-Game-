@@ -1,7 +1,8 @@
-use crate::screens::{
-    DespawnOnExit, FlickerLight, GameState, MatchAssets, PassagePreview, PlaceGeometry, WALL_HEIGHT,
-};
+use crate::GameState;
+use crate::layout::WALL_HEIGHT;
 use crate::teleport;
+use crate::view::assets::MatchAssets;
+use crate::view::components::{FlickerLight, PassagePreview, PlaceGeometry};
 use bevy::prelude::*;
 use std::f32::consts::PI;
 

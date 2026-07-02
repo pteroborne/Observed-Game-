@@ -5,8 +5,10 @@
 use bevy::prelude::*;
 use observed_progression::session::SessionLabWorld;
 
-use super::*;
+use super::{MenuAction, MenuCursor, menu_button};
 use crate::GameState;
+use crate::sim::state::LobbyRuntime;
+use crate::view::theme::{DIM, TITLE, panel, screen_root, text};
 
 pub(crate) fn setup_lobby(mut commands: Commands, mut cursor: ResMut<MenuCursor>) {
     cursor.0 = 0;

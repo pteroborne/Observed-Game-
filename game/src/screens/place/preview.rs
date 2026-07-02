@@ -8,14 +8,16 @@ use std::f32::consts::PI;
 use super::factory::RoomMaterialFactory;
 use super::lighting::{spawn_place_lighting, spawn_surface_detail};
 use super::mesh::{spawn_polygon_shell, spawn_polygon_walls};
+use crate::GameState;
 use crate::camera;
 use crate::hallway::{self, HallwayFlavor};
+use crate::layout::WALL_HEIGHT;
 use crate::rivals;
-use crate::screens::{
-    DespawnOnExit, FrozenDest, GameState, MatchAssets, PassagePreview, PlaceGeometry, WALL_HEIGHT,
-    connections_for, district_for_place, room_target,
-};
+use crate::screens::match_runtime::{connections_for, district_for_place, room_target};
+use crate::sim::state::FrozenDest;
 use crate::teleport::{self, DoorGap, Place};
+use crate::view::assets::MatchAssets;
+use crate::view::components::{PassagePreview, PlaceGeometry};
 
 fn gap_yaw(normal: Vec2) -> f32 {
     (-normal.y).atan2(normal.x)

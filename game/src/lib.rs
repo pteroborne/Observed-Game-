@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod arch_check;
 mod bot;
 mod camera;
 mod capture;
@@ -57,16 +59,16 @@ impl Plugin for ObservedGamePlugin {
 fn setup_camera(mut commands: Commands) {
     commands.spawn((
         Camera3d::default(),
-        screens::GameCam,
+        crate::view::components::GameCam,
         Transform::from_xyz(0.0, 2.0, 0.0),
         Name::new("Observed 2 Camera"),
     ));
     commands.spawn((
         DirectionalLight {
-            illuminance: screens::MENU_SUN_ILLUMINANCE,
+            illuminance: crate::view::components::MENU_SUN_ILLUMINANCE,
             ..default()
         },
-        screens::GameSun,
+        crate::view::components::GameSun,
         Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.85, -0.6, 0.0)),
         Name::new("Observed 2 Sun"),
     ));
@@ -88,7 +90,9 @@ pub fn run() {
                 // (Bevy otherwise reads `assets/` relative to the crate dir under
                 // `cargo run`, missing files dropped at the repo root).
                 .set(AssetPlugin {
-                    file_path: screens::assets_dir().to_string_lossy().into_owned(),
+                    file_path: crate::view::assets::assets_dir()
+                        .to_string_lossy()
+                        .into_owned(),
                     ..default()
                 })
                 .set(WindowPlugin {

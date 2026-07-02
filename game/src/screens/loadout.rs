@@ -4,9 +4,10 @@
 use bevy::prelude::*;
 use observed_progression::progression::{Slot, catalog, cosmetic};
 
-use super::*;
+use super::{LoadoutHeader, MenuAction, MenuCursor, menu_button};
 use crate::GameState;
 use crate::flow::Career;
+use crate::view::theme::{ACCENT, DIM, TITLE, panel, screen_root, text};
 
 pub(crate) fn setup_loadout(mut commands: Commands, mut cursor: ResMut<MenuCursor>) {
     cursor.0 = 0;

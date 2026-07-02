@@ -5,11 +5,13 @@ use bevy::render::view::Hdr;
 use observed_style as style;
 
 use crate::flow::MATCH_SEED;
-use crate::screens::{
-    DecohereFx, DoorLeaf, FlickerLight, GameCam, GameSun, GlobalAmbientLight, MENU_SUN_ILLUMINANCE,
-    MatchAssets, MatchAudioCue, MatchPaused, MatchRuntime, TeleportState, play_one_shot,
-};
+use crate::screens::audio::play_one_shot;
+use crate::sim::state::{MatchPaused, MatchRuntime, TeleportState};
 use crate::teleport::Place;
+use crate::view::assets::MatchAssets;
+use crate::view::components::{
+    DecohereFx, DoorLeaf, FlickerLight, GameCam, GameSun, MENU_SUN_ILLUMINANCE, MatchAudioCue,
+};
 
 /// How long (seconds) the first-person decoherence feedback — the diegetic light flicker
 /// and door slam — lasts after a reroute commits. Shared so the flicker driver

@@ -28,11 +28,13 @@ use crate::camera;
 use crate::guardian::{ActionLog, Guardian, GuardianModel, GuardianState};
 use crate::items::{ItemKind, ItemsState};
 use crate::keystones::KeystoneState;
-use crate::screens::{
-    self, DroppedItemVisual, GameCam, GuardianConsole, KeystoneItem, MatchRuntime, RivalAvatar,
-    TacMapElement, TacMapPanel, TacMapState, TeleportState, TetherCameraMonitor,
-};
+use crate::screens::place::{GuardianConsole, TetherCameraMonitor};
+use crate::screens::{self};
+use crate::sim::state::{MatchRuntime, TeleportState};
 use crate::teleport::{self, DoorGap, GapKind, Place, ThresholdLink};
+use crate::view::components::{
+    DroppedItemVisual, GameCam, KeystoneItem, RivalAvatar, TacMapElement, TacMapPanel, TacMapState,
+};
 use crate::{GameState, tacmap};
 
 #[derive(Clone, Copy, Component, Debug, Eq, PartialEq)]
@@ -217,12 +219,13 @@ type MaterialDiagnosticQueryData = (
 
 type MonitorDiagnosticQueryData = (
     Option<&'static TetherCameraMonitor>,
-    Option<&'static screens::GuardianObservationMonitor>,
+    Option<&'static crate::screens::place::GuardianObservationMonitor>,
     &'static MeshMaterial3d<StandardMaterial>,
     Option<&'static Name>,
 );
 
-type MonitorLabelSegmentDiagnosticQueryData = &'static screens::ObservationMonitorLabelSegment;
+type MonitorLabelSegmentDiagnosticQueryData =
+    &'static crate::screens::place::ObservationMonitorLabelSegment;
 
 impl VisualAudit {
     fn new(dir: PathBuf, scenarios: Vec<AuditScenario>) -> Self {
@@ -341,7 +344,7 @@ pub(crate) fn configure(app: &mut App) {
         app.insert_resource(coercion).add_systems(
             Update,
             apply_debug_match_coercion
-                .before(screens::rebuild_place)
+                .before(crate::screens::place::rebuild_place)
                 .run_if(in_state(GameState::Match)),
         );
     }
@@ -356,14 +359,16 @@ pub(crate) fn configure(app: &mut App) {
             .add_systems(
                 Update,
                 visual_audit_progress
-                    .after(screens::present_match_camera)
-                    .after(screens::draw_tac_map),
+                    .after(crate::screens::place::present_match_camera)
+                    .after(screens::hud::draw_tac_map),
             );
     }
 
     if freecam_enabled() {
-        app.init_resource::<FreeCamState>()
-            .add_systems(Update, freecam_control.after(screens::present_match_camera));
+        app.init_resource::<FreeCamState>().add_systems(
+            Update,
+            freecam_control.after(crate::screens::place::present_match_camera),
+        );
     }
 }
 
@@ -424,7 +429,7 @@ fn apply_debug_match_coercion(
             continue;
         }
         items.torches = items.torches.saturating_add(1);
-        let connections = screens::connections_for(game, room);
+        let connections = crate::screens::match_runtime::connections_for(game, room);
         if items.drop_anchor_torch(Place::Room(room), Vec2::ZERO, version, &connections)
             && let Some(log) = params.log.as_mut()
         {
@@ -448,7 +453,7 @@ fn apply_debug_match_coercion(
         Place::Room(room) => room,
         Place::Hallway { from, .. } => from,
     };
-    screens::debug_place_into(tp, runtime, target_place, from, keys, items);
+    crate::screens::match_runtime::debug_place_into(tp, runtime, target_place, from, keys, items);
     tp.rendered = None;
     if let Some(room) = coercion.player_room
         && let Some(log) = params.log.as_mut()
@@ -636,11 +641,25 @@ fn prepare_scenario(scenario: AuditScenario, prep: ScenarioPrep) {
         | AuditScenario::Lighting
         | AuditScenario::FootprintAtlas => {
             let room = runtime.live.host_match().local_room();
-            screens::debug_place_into(tp, runtime, Place::Room(room), room, keys, items);
+            crate::screens::match_runtime::debug_place_into(
+                tp,
+                runtime,
+                Place::Room(room),
+                room,
+                keys,
+                items,
+            );
         }
         AuditScenario::TacMap => {
             let room = runtime.live.host_match().local_room();
-            screens::debug_place_into(tp, runtime, Place::Room(room), room, keys, items);
+            crate::screens::match_runtime::debug_place_into(
+                tp,
+                runtime,
+                Place::Room(room),
+                room,
+                keys,
+                items,
+            );
         }
         AuditScenario::TetherCameraRoom => {
             if !items
@@ -652,12 +671,26 @@ fn prepare_scenario(scenario: AuditScenario, prep: ScenarioPrep) {
                 let version = runtime.live.host_match().reroute_commits;
                 let _ = items.drop_anchor_torch(Place::Room(RoomId(0)), Vec2::ZERO, version, &[]);
             }
-            screens::debug_place_into(tp, runtime, Place::Room(RoomId(5)), RoomId(5), keys, items);
+            crate::screens::match_runtime::debug_place_into(
+                tp,
+                runtime,
+                Place::Room(RoomId(5)),
+                RoomId(5),
+                keys,
+                items,
+            );
         }
         AuditScenario::GuardianCameraRoom => {
             guardian.room = RoomId(4);
             guardian.pos = Vec3::new(0.0, 0.76, 0.0);
-            screens::debug_place_into(tp, runtime, Place::Room(RoomId(6)), RoomId(6), keys, items);
+            crate::screens::match_runtime::debug_place_into(
+                tp,
+                runtime,
+                Place::Room(RoomId(6)),
+                RoomId(6),
+                keys,
+                items,
+            );
         }
     }
     tp.rendered = None;
@@ -674,7 +707,7 @@ fn frame_camera(
     let y = teleport::place_y_offset(tp.place);
     match scenario {
         AuditScenario::Geometry => {
-            *transform = Transform::from_xyz(0.0, y + screens::WALL_HEIGHT - 0.7, 0.1)
+            *transform = Transform::from_xyz(0.0, y + crate::layout::WALL_HEIGHT - 0.7, 0.1)
                 .looking_at(Vec3::new(0.0, y + 0.05, 0.0), Vec3::NEG_Z);
         }
         AuditScenario::Thresholds => {
@@ -735,7 +768,8 @@ fn freecam_control(
         let radius = tp.geom.half.x.max(tp.geom.half.y);
         transform.translation = Vec3::new(
             0.0,
-            teleport::place_y_offset(tp.place) + (radius * 2.4).max(screens::WALL_HEIGHT * 8.0),
+            teleport::place_y_offset(tp.place)
+                + (radius * 2.4).max(crate::layout::WALL_HEIGHT * 8.0),
             0.1,
         );
         state.yaw = 0.0;
@@ -949,7 +983,7 @@ fn atlas_layout(
 
     for id in 0..9u32 {
         let room = RoomId(id);
-        let nav = screens::nav_for_place(
+        let nav = crate::screens::match_runtime::nav_for_place(
             crate::flow::MATCH_SEED,
             game,
             keys,
@@ -974,7 +1008,13 @@ fn atlas_layout(
             to,
             variation,
         };
-        let nav = screens::nav_for_place(crate::flow::MATCH_SEED, game, keys, items, place);
+        let nav = crate::screens::match_runtime::nav_for_place(
+            crate::flow::MATCH_SEED,
+            game,
+            keys,
+            items,
+            place,
+        );
         let geom = teleport::geom_for(place, &nav);
         hallways.push(AtlasEntry {
             subject: format!("atlas hallway {} -> {} v{}", from.0, to.0, variation),
@@ -1149,7 +1189,13 @@ fn collect_thresholds(
     visuals: &Query<ThresholdVisualQueryData>,
 ) -> Vec<ThresholdSnapshot> {
     let game = runtime.live.host_match();
-    let nav = screens::nav_for_place(crate::flow::MATCH_SEED, game, keys, items, tp.place);
+    let nav = crate::screens::match_runtime::nav_for_place(
+        crate::flow::MATCH_SEED,
+        game,
+        keys,
+        items,
+        tp.place,
+    );
     tp.geom
         .gaps
         .iter()
@@ -1333,8 +1379,8 @@ fn collect_monitors(
             let (kind, monitor_kind, kind_key, room, active) = if let Some(monitor) = tether {
                 (
                     "tether",
-                    screens::ObservationMonitorKind::Tether,
-                    monitor_kind_key(screens::ObservationMonitorKind::Tether),
+                    crate::screens::place::ObservationMonitorKind::Tether,
+                    monitor_kind_key(crate::screens::place::ObservationMonitorKind::Tether),
                     monitor.room,
                     items.placed.iter().any(|item| {
                         item.kind == ItemKind::AnchorTorch
@@ -1344,8 +1390,8 @@ fn collect_monitors(
             } else if let Some(monitor) = guardian_monitor {
                 (
                     "guardian",
-                    screens::ObservationMonitorKind::Guardian,
-                    monitor_kind_key(screens::ObservationMonitorKind::Guardian),
+                    crate::screens::place::ObservationMonitorKind::Guardian,
+                    monitor_kind_key(crate::screens::place::ObservationMonitorKind::Guardian),
                     monitor.room,
                     guardian.room == monitor.room,
                 )
@@ -1357,7 +1403,7 @@ fn collect_monitors(
                 room: room.0,
                 active,
                 visible: true,
-                label: screens::monitor_label(monitor_kind, room, active),
+                label: crate::screens::place::monitor_label(monitor_kind, room, active),
                 label_segment_count: segment_counts
                     .get(&(kind_key, room.0))
                     .copied()
@@ -1371,10 +1417,10 @@ fn collect_monitors(
         .collect()
 }
 
-fn monitor_kind_key(kind: screens::ObservationMonitorKind) -> u8 {
+fn monitor_kind_key(kind: crate::screens::place::ObservationMonitorKind) -> u8 {
     match kind {
-        screens::ObservationMonitorKind::Tether => 0,
-        screens::ObservationMonitorKind::Guardian => 1,
+        crate::screens::place::ObservationMonitorKind::Tether => 0,
+        crate::screens::place::ObservationMonitorKind::Guardian => 1,
     }
 }
 

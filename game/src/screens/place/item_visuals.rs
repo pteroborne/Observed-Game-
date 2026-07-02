@@ -1,8 +1,7 @@
+use crate::GameState;
 use crate::items::{ItemKind, PlacedItem};
-use crate::screens::{
-    DespawnOnExit, DroppedItemVisual, GameState, KeystoneItem, MatchAssets, PlaceGeometry,
-    TeleportPadGlow,
-};
+use crate::view::assets::MatchAssets;
+use crate::view::components::{DroppedItemVisual, KeystoneItem, PlaceGeometry, TeleportPadGlow};
 use bevy::prelude::*;
 use observed_core::RoomId;
 use observed_style::{self as style, MarkerRole};

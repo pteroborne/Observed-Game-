@@ -19,34 +19,17 @@ use bevy::input::InputSystems;
 use bevy::prelude::*;
 
 use crate::GameState;
+use crate::sim::state::{MatchRuntime, SpectatorBot};
+use crate::view::theme::DIM;
 
-mod audio;
-mod hud;
-mod input;
-mod loadout;
-mod lobby;
-mod match_runtime;
-mod menu;
-mod place;
-
-pub(crate) use audio::*;
-pub(crate) use hud::*;
-pub(crate) use input::*;
-pub(crate) use loadout::*;
-pub(crate) use lobby::*;
-pub(crate) use match_runtime::*;
-pub(crate) use menu::*;
-pub(crate) use place::*;
-
-// --- TEMPORARY bridges (Arc G2, stage B removes them) ------------------------
-// The shared items extracted from this module are re-exported here so the submodules'
-// `use super::*` and external `screens::X` paths keep resolving while consumers are
-// converted to explicit imports, group by group.
-pub(crate) use crate::layout::WALL_HEIGHT;
-pub(crate) use crate::sim::state::*;
-pub(crate) use crate::view::assets::*;
-pub(crate) use crate::view::components::*;
-pub(crate) use crate::view::theme::*;
+pub(crate) mod audio;
+pub(crate) mod hud;
+pub(crate) mod input;
+pub(crate) mod loadout;
+pub(crate) mod lobby;
+pub(crate) mod match_runtime;
+pub(crate) mod menu;
+pub(crate) mod place;
 
 // --- menu domain -------------------------------------------------------------
 #[derive(Clone, Copy)]
@@ -97,23 +80,23 @@ pub(crate) struct ScreensPlugin;
 impl Plugin for ScreensPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MenuCursor>()
-            .add_systems(OnEnter(GameState::Splash), setup_splash)
-            .add_systems(OnEnter(GameState::MainMenu), setup_main_menu)
-            .add_systems(OnEnter(GameState::Loadout), setup_loadout)
-            .add_systems(OnEnter(GameState::Lobby), setup_lobby)
-            .add_systems(OnEnter(GameState::Results), setup_results)
+            .add_systems(OnEnter(GameState::Splash), menu::setup_splash)
+            .add_systems(OnEnter(GameState::MainMenu), menu::setup_main_menu)
+            .add_systems(OnEnter(GameState::Loadout), loadout::setup_loadout)
+            .add_systems(OnEnter(GameState::Lobby), lobby::setup_lobby)
+            .add_systems(OnEnter(GameState::Results), menu::setup_results)
             .add_systems(
                 Update,
                 (
                     // Menu navigation is shared across every menu-like screen and is
                     // inert where there are no buttons (Splash/Match).
-                    menu_navigate.after(InputSystems),
-                    menu_highlight,
-                    menu_activate,
-                    menu_escape,
-                    splash_advance.run_if(in_state(GameState::Splash)),
-                    main_menu_banner.run_if(in_state(GameState::MainMenu)),
-                    loadout_header.run_if(in_state(GameState::Loadout)),
+                    menu::menu_navigate.after(InputSystems),
+                    menu::menu_highlight,
+                    menu::menu_activate,
+                    menu::menu_escape,
+                    menu::splash_advance.run_if(in_state(GameState::Splash)),
+                    menu::main_menu_banner.run_if(in_state(GameState::MainMenu)),
+                    loadout::loadout_header.run_if(in_state(GameState::Loadout)),
                 )
                     .chain(),
             );
@@ -132,10 +115,10 @@ impl Plugin for MatchPlugin {
             .add_systems(
                 OnEnter(GameState::Match),
                 (
-                    setup_match,
-                    spawn_match_setpieces,
-                    grab_match_cursor,
-                    apply_match_atmosphere,
+                    match_runtime::setup_match,
+                    audio::spawn_match_setpieces,
+                    match_runtime::input::grab_match_cursor,
+                    match_runtime::ambience::apply_match_atmosphere,
                 )
                     .chain(),
             )
@@ -143,27 +126,30 @@ impl Plugin for MatchPlugin {
             .add_systems(
                 OnExit(GameState::Match),
                 (
-                    release_match_cursor,
-                    cleanup_match_resources,
-                    clear_match_atmosphere,
+                    match_runtime::input::release_match_cursor,
+                    match_runtime::cleanup_match_resources,
+                    match_runtime::ambience::clear_match_atmosphere,
                 ),
             )
             .add_systems(
                 FixedUpdate,
-                drive_spectator_bot
+                match_runtime::drive_spectator_bot
                     .run_if(in_match().and(resource_exists::<SpectatorBot>))
-                    .before(teleport_sim),
+                    .before(match_runtime::crossing::teleport_sim),
             )
-            .add_systems(FixedUpdate, teleport_sim.run_if(in_match()))
+            .add_systems(
+                FixedUpdate,
+                match_runtime::crossing::teleport_sim.run_if(in_match()),
+            )
             .add_systems(
                 Update,
                 (
-                    match_input.after(InputSystems),
-                    toggle_tac_map,
-                    match_pump,
-                    item_actions,
+                    input::match_input.after(InputSystems),
+                    hud::toggle_tac_map,
+                    match_runtime::match_pump,
+                    match_runtime::item_actions,
                     crate::guardian::update_guardian_in_match,
-                    rebuild_place,
+                    place::rebuild_place,
                     place::update_tether_monitors,
                     place::update_guardian_monitors,
                     place::interact_guardian_console,
@@ -174,18 +160,18 @@ impl Plugin for MatchPlugin {
             .add_systems(
                 Update,
                 (
-                    apply_place_atmosphere,
-                    sync_decohere_fx,
-                    flicker_lights,
-                    keystone_pickup,
-                    sync_rival_avatars,
-                    sync_match_audio,
-                    animate_doors,
+                    match_runtime::ambience::apply_place_atmosphere,
+                    match_runtime::ambience::sync_decohere_fx,
+                    match_runtime::ambience::flicker_lights,
+                    match_runtime::keystone_pickup,
+                    place::sync_rival_avatars,
+                    audio::sync_match_audio,
+                    place::animate_doors,
                     hud::update_teleport_animation,
                     place::animate_teleport_pad_glow,
-                    present_match_camera,
-                    match_draw,
-                    draw_tac_map,
+                    place::present_match_camera,
+                    hud::match_draw,
+                    hud::draw_tac_map,
                 )
                     .chain()
                     .run_if(in_match()),

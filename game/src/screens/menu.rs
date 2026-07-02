@@ -5,9 +5,12 @@ use bevy::input::gamepad::Gamepad;
 use bevy::prelude::*;
 use observed_progression::progression::cosmetic;
 
-use super::*;
+use super::input::{gamepad_back_pressed, gamepad_confirm_pressed, gamepad_menu_axis};
+use super::{MenuAction, MenuBanner, MenuButton, MenuCursor, SplashTimer, menu_button};
 use crate::GameState;
 use crate::flow::Career;
+use crate::sim::state::SpectatorBot;
+use crate::view::theme::{ACCENT, DIM, TITLE, panel, screen_root, text};
 
 #[derive(Default)]
 pub(crate) struct GamepadMenuAxis {

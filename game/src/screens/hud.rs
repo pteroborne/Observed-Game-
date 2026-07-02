@@ -8,10 +8,16 @@ use observed_core::RoomId;
 use observed_facility::map_spec::RoomRole;
 use observed_style::{self as style, MarkerRole};
 
-use super::*;
+use super::input::gamepad_map_pressed;
 use crate::flow::LOCAL_TEAM;
 use crate::items::{ItemKind, ItemsState};
 use crate::keystones::KeystoneState;
+use crate::sim::state::{MatchPaused, MatchRuntime, SeriesRuntime, SpectatorBot, TeleportState};
+use crate::view::components::{
+    MatchHud, PausePanel, TacMapElement, TacMapPanel, TacMapState, TeleportAnimation,
+    TeleportOverlay,
+};
+use crate::view::theme::{TAC_MAP_SIZE, TITLE};
 use crate::{GameState, tacmap};
 
 // Tac-map overlay layout (pixels). The 3×3 grid of rooms sits below a title strip.

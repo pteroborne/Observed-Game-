@@ -5,7 +5,8 @@ use observed_match::hybrid::{HybridMatch, LocalAction};
 use observed_match::maze::{GRID_H, GRID_W, TILE_SIZE};
 
 use crate::GameState;
-use crate::screens::{GameCam, MatchRuntime};
+use crate::sim::state::MatchRuntime;
+use crate::view::components::GameCam;
 
 /// Rooms (and labels) the diagnostic tour photographs from above, after the
 /// overview shot. 0=start, 1=a decor room, 3=control, 8=exit.

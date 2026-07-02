@@ -7,8 +7,9 @@ use observed_match::hybrid::LocalAction;
 use crate::GameState;
 use crate::flow::{self, Career};
 use crate::map_validation;
-use crate::screens::{DoorLeaf, GameCam, MatchRuntime, PlaceGeometry, TeleportState};
+use crate::sim::state::{MatchRuntime, TeleportState};
 use crate::teleport::{self, Place};
+use crate::view::components::{DoorLeaf, GameCam, PlaceGeometry};
 use crate::{camera, hallway, items, keystones};
 use std::path::PathBuf;
 
@@ -126,7 +127,7 @@ pub(super) fn capture_doorway_progress(
                         flow::MATCH_SEED,
                         rt.live.host_match().reroute_commits,
                     );
-                    crate::screens::debug_place_into(
+                    crate::screens::match_runtime::debug_place_into(
                         &mut tp,
                         &rt,
                         Place::Hallway {
@@ -235,7 +236,7 @@ pub(super) fn capture_keystone_progress(
             {
                 rt.done = true;
                 if let Some(&room) = keys.rooms.first() {
-                    crate::screens::debug_place_into(
+                    crate::screens::match_runtime::debug_place_into(
                         &mut tp,
                         &rt,
                         Place::Room(room),
@@ -512,7 +513,7 @@ pub(super) fn capture_map_audit_progress(
                 rt.done = true;
                 rt.live.host.match_state.reroute_feedback_ticks = 0;
                 if let Some(room) = request.current_room() {
-                    crate::screens::debug_place_into(
+                    crate::screens::match_runtime::debug_place_into(
                         tp,
                         rt,
                         Place::Room(room),
@@ -642,7 +643,7 @@ pub(super) fn capture_maze_progress(
                         .iter()
                         .position(|t| t.grid == Some((6, 7)))
                         .unwrap_or(0);
-                    crate::screens::debug_place_into(
+                    crate::screens::match_runtime::debug_place_into(
                         &mut tp,
                         &rt,
                         Place::Hallway {
@@ -658,7 +659,7 @@ pub(super) fn capture_maze_progress(
                 if !request.into_maze {
                     for _ in 0..12 {
                         let room = rt.live.host_match().local_room();
-                        crate::screens::debug_place_into(
+                        crate::screens::match_runtime::debug_place_into(
                             &mut tp,
                             &rt,
                             Place::Room(room),

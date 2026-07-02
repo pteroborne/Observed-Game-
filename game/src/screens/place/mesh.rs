@@ -1,5 +1,8 @@
-use crate::screens::{GameState, MatchAssets, PassagePreview, PlaceGeometry, WALL_HEIGHT};
+use crate::GameState;
+use crate::layout::WALL_HEIGHT;
 use crate::teleport;
+use crate::view::assets::MatchAssets;
+use crate::view::components::{PassagePreview, PlaceGeometry};
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;

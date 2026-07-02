@@ -15,13 +15,17 @@ use bevy::prelude::*;
 use observed_core::RoomId;
 use observed_style::{self as style, MarkerRole};
 
-use super::*;
 use crate::GameState;
 use crate::camera;
 use crate::items::{ItemKind, ItemsState};
 use crate::keystones::KeystoneState;
+use crate::layout::WALL_HEIGHT;
 use crate::rivals;
+use crate::screens::match_runtime::{self, district_for_place};
+use crate::sim::state::{MatchPaused, MatchRuntime, TeleportState};
 use crate::teleport::{self, GapKind, Place};
+use crate::view::assets::{DOOR_LEAF_D, DOOR_LINTEL_H, MatchAssets};
+use crate::view::components::{DoorLeaf, GameCam, PlaceGeometry, RivalAvatar, TeleportPadGlow};
 
 /// Place the shared camera at the player's first-person eye in the current place's
 /// local frame (each place is centred at the origin). No shake — a reroute is felt

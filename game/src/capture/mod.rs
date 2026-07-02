@@ -10,7 +10,6 @@ pub(crate) mod tour;
 use bevy::prelude::*;
 
 use crate::GameState;
-use crate::screens;
 
 pub(crate) use bot_pov::BotPovCaptureRequest;
 
@@ -20,20 +19,22 @@ pub fn configure(app: &mut App) {
     if std::env::var("OBSERVED2_CAPTURE_TOUR").is_ok() {
         app.insert_resource(tour::TourCapture::new()).add_systems(
             Update,
-            tour::capture_tour_progress.after(screens::present_match_camera),
+            tour::capture_tour_progress.after(crate::screens::place::present_match_camera),
         );
     } else if let Ok(path) = std::env::var("OBSERVED2_CAPTURE_MATCH") {
         app.insert_resource(scenarios::MatchCaptureRequest::new(path))
             .add_systems(
                 Update,
-                scenarios::capture_match_progress.after(screens::present_match_camera),
+                scenarios::capture_match_progress
+                    .after(crate::screens::place::present_match_camera),
             );
     } else if let Ok(dir) = std::env::var("OBSERVED2_CAPTURE_MAP_AUDIT") {
         let _ = std::fs::create_dir_all(&dir);
         app.insert_resource(scenarios::MapAuditCaptureRequest::new(dir))
             .add_systems(
                 Update,
-                scenarios::capture_map_audit_progress.after(screens::present_match_camera),
+                scenarios::capture_map_audit_progress
+                    .after(crate::screens::place::present_match_camera),
             );
     } else if let Ok((path, into_maze)) = std::env::var("OBSERVED2_CAPTURE_MAZE")
         .map(|p| (p, true))
@@ -42,19 +43,21 @@ pub fn configure(app: &mut App) {
         app.insert_resource(scenarios::MazeCaptureRequest::new(path, into_maze))
             .add_systems(
                 Update,
-                scenarios::capture_maze_progress.after(screens::present_match_camera),
+                scenarios::capture_maze_progress.after(crate::screens::place::present_match_camera),
             );
     } else if let Ok(path) = std::env::var("OBSERVED2_CAPTURE_KEYSTONE") {
         app.insert_resource(scenarios::KeystoneCaptureRequest::new(path))
             .add_systems(
                 Update,
-                scenarios::capture_keystone_progress.after(screens::present_match_camera),
+                scenarios::capture_keystone_progress
+                    .after(crate::screens::place::present_match_camera),
             );
     } else if let Ok(path) = std::env::var("OBSERVED2_CAPTURE_RIVALS") {
         app.insert_resource(scenarios::RivalCaptureRequest::new(path))
             .add_systems(
                 Update,
-                scenarios::capture_rivals_progress.after(screens::present_match_camera),
+                scenarios::capture_rivals_progress
+                    .after(crate::screens::place::present_match_camera),
             );
     } else if let Ok((path, from_hallway)) = std::env::var("OBSERVED2_CAPTURE_DOORWAY_HALL")
         .map(|p| (p, true))
@@ -63,13 +66,15 @@ pub fn configure(app: &mut App) {
         app.insert_resource(scenarios::DoorwayCaptureRequest::new(path, from_hallway))
             .add_systems(
                 Update,
-                scenarios::capture_doorway_progress.after(screens::present_match_camera),
+                scenarios::capture_doorway_progress
+                    .after(crate::screens::place::present_match_camera),
             );
     } else if let Ok(path) = std::env::var("OBSERVED2_CAPTURE_CEILING") {
         app.insert_resource(scenarios::CeilingCaptureRequest::new(path))
             .add_systems(
                 Update,
-                scenarios::capture_ceiling_progress.after(screens::present_match_camera),
+                scenarios::capture_ceiling_progress
+                    .after(crate::screens::place::present_match_camera),
             );
     } else if let Ok(dir) = std::env::var("OBSERVED2_CAPTURE_BOT") {
         let _ = std::fs::create_dir_all(&dir);
@@ -77,12 +82,13 @@ pub fn configure(app: &mut App) {
             .add_systems(
                 FixedUpdate,
                 bot_pov::drive_bot_pov_capture
-                    .before(screens::teleport_sim)
+                    .before(crate::screens::match_runtime::teleport_sim)
                     .run_if(in_state(GameState::Match)),
             )
             .add_systems(
                 Update,
-                bot_pov::capture_bot_pov_progress.after(screens::present_match_camera),
+                bot_pov::capture_bot_pov_progress
+                    .after(crate::screens::place::present_match_camera),
             );
     } else if let Ok(path) = std::env::var("OBSERVED2_CAPTURE") {
         app.insert_resource(scenarios::CaptureRequest::new(path))

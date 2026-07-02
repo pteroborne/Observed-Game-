@@ -16,7 +16,19 @@ use observed_style::{self as style, MarkerRole};
 use observed_traversal::{FpsBody, FpsConfig};
 use player_input::PlayerIntent;
 
-use super::*;
+use super::input::{gamepad_pause_pressed, gamepad_quit_pressed};
+use crate::layout::WALL_HEIGHT;
+use crate::sim::state::{
+    ItemIntent, LastTeleportPad, MatchIntent, MatchPaused, MatchRuntime, SeriesRuntime,
+    SpectatorBot, TeleportState,
+};
+use crate::view::assets::{MatchAssets, all_planned_assets_present};
+use crate::view::components::{
+    DecohereFx, KeystoneItem, MatchAudioState, MatchHud, PausePanel, TacMapPanel, TacMapState,
+    TeleportAnimation, TeleportOverlay,
+};
+use crate::view::theme::{BORDER, PANEL, TAC_MAP_SIZE, TITLE, screen_root, text};
+
 use crate::GameState;
 use crate::flow::{Career, LOCAL_TEAM, MATCH_SEED, resolve};
 use crate::items::{ItemKind, ItemsState};
@@ -28,14 +40,10 @@ const SPECTATOR_BOT_CROSS_RADIUS: f32 = 1.2;
 pub(crate) const SPECTATOR_TEAMPLAY_STEP_FRAMES: u8 = 30;
 
 // Re-exports
-pub(crate) use ambience::{
-    apply_match_atmosphere, apply_place_atmosphere, clear_match_atmosphere, district_for_place,
-    flicker_lights, sync_decohere_fx,
-};
+pub(crate) use ambience::district_for_place;
 pub(crate) use crossing::{
     compute_gap_dests, debug_cross_gap_for_capture, debug_place_into, place_body_at, teleport_sim,
 };
-pub(crate) use input::{grab_match_cursor, release_match_cursor};
 
 #[derive(SystemParam)]
 pub(crate) struct MatchPumpInput<'w, 's> {

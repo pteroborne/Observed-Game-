@@ -10,8 +10,9 @@ use crate::bot;
 use crate::camera;
 use crate::items;
 use crate::keystones;
-use crate::screens::{GameCam, ItemIntent, MatchIntent, MatchRuntime, TeleportState};
+use crate::sim::state::{ItemIntent, MatchIntent, MatchRuntime, TeleportState};
 use crate::teleport;
+use crate::view::components::GameCam;
 
 const BOT_CAPTURE_INTERVAL: f32 = 1.0;
 const BOT_CAPTURE_MAX_SHOTS: usize = 120;
@@ -71,8 +72,8 @@ pub(super) fn capture_bot_pov_progress(
     mut cam: Query<&mut Transform, With<GameCam>>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
-    tac_state: Option<ResMut<crate::screens::TacMapState>>,
-    mut panel: Query<&mut Visibility, With<crate::screens::TacMapPanel>>,
+    tac_state: Option<ResMut<crate::view::components::TacMapState>>,
+    mut panel: Query<&mut Visibility, With<crate::view::components::TacMapPanel>>,
 ) {
     let elapsed = time.elapsed_secs();
     match request.phase {
@@ -187,7 +188,13 @@ pub(crate) fn drive_bot_pov_capture(
                 here.distance(gap.center),
                 at_aperture
             );
-            crate::screens::debug_cross_gap_for_capture(&mut tp, &mut runtime, gap, &keys, &items);
+            crate::screens::match_runtime::debug_cross_gap_for_capture(
+                &mut tp,
+                &mut runtime,
+                gap,
+                &keys,
+                &items,
+            );
             info!("BOT_NAV: Crossed into new place: {:?}", tp.place);
             request.clear_route();
             intent.0 = PlayerIntent::default();

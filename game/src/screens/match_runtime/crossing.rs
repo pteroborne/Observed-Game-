@@ -10,9 +10,8 @@ use super::{
 use crate::flow::MATCH_SEED;
 use crate::items::ItemsState;
 use crate::keystones::KeystoneState;
-use crate::screens::{
-    FrozenDest, MatchIntent, MatchPaused, MatchRuntime, TeleportState, WALL_HEIGHT,
-};
+use crate::layout::WALL_HEIGHT;
+use crate::sim::state::{FrozenDest, MatchIntent, MatchPaused, MatchRuntime, TeleportState};
 use crate::teleport::{self, GapKind, Place};
 
 fn body_xz(tp: &TeleportState) -> Vec2 {

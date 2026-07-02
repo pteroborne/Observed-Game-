@@ -1,8 +1,8 @@
 use super::*;
 use crate::flow::MATCH_SEED;
+use crate::view::theme::ScreenRoot;
 use bevy::{asset::AssetPlugin, gizmos::GizmoPlugin, input::InputPlugin, state::app::StatesPlugin};
 use observed_match::hybrid::LocalAction;
-use screens::ScreenRoot;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -10,7 +10,9 @@ fn test_app() -> App {
         MinimalPlugins,
         StatesPlugin,
         AssetPlugin {
-            file_path: screens::assets_dir().to_string_lossy().into_owned(),
+            file_path: crate::view::assets::assets_dir()
+                .to_string_lossy()
+                .into_owned(),
             ..default()
         },
         InputPlugin,
@@ -35,9 +37,9 @@ fn count<T: Component>(app: &mut App) -> usize {
     query.iter(world).count()
 }
 
-fn count_audio_cue(app: &mut App, expected: screens::MatchAudioCue) -> usize {
+fn count_audio_cue(app: &mut App, expected: crate::view::components::MatchAudioCue) -> usize {
     let world = app.world_mut();
-    let mut query = world.query::<&screens::MatchAudioCue>();
+    let mut query = world.query::<&crate::view::components::MatchAudioCue>();
     query.iter(world).filter(|cue| **cue == expected).count()
 }
 
@@ -69,7 +71,8 @@ fn single_visibility<T: Component>(app: &mut App) -> Visibility {
 
 fn menu_sun_illuminance(app: &mut App) -> f32 {
     let world = app.world_mut();
-    let mut query = world.query_filtered::<&DirectionalLight, With<screens::GameSun>>();
+    let mut query =
+        world.query_filtered::<&DirectionalLight, With<crate::view::components::GameSun>>();
     query
         .single(world)
         .expect("expected exactly one startup sun")
@@ -97,7 +100,9 @@ fn tap_update(app: &mut App, key: KeyCode) {
 /// systems resolve it.
 fn finish_match(app: &mut App) {
     {
-        let mut rt = app.world_mut().resource_mut::<screens::MatchRuntime>();
+        let mut rt = app
+            .world_mut()
+            .resource_mut::<crate::sim::state::MatchRuntime>();
         rt.live.run_to_completion_headless(100_000);
     }
     app.update(); // match_pump records the result and requests Results
@@ -160,9 +165,12 @@ fn droppable_items_start_in_inventory_and_are_cleaned_up() {
     finish_match(&mut app);
 
     assert!(!app.world().contains_resource::<items::ItemsState>());
-    assert!(!app.world().contains_resource::<screens::ItemIntent>());
+    assert!(
+        !app.world()
+            .contains_resource::<crate::sim::state::ItemIntent>()
+    );
     assert_eq!(
-        count::<screens::DroppedItemVisual>(&mut app),
+        count::<crate::view::components::DroppedItemVisual>(&mut app),
         0,
         "dropped item visuals never leak past the Match"
     );
@@ -182,17 +190,23 @@ fn anchor_torch_can_be_dropped_pins_edges_and_can_be_picked_back_up() {
         assert_eq!(items.placed[0].kind, items::ItemKind::AnchorTorch);
     }
     let pins = {
-        let runtime = app.world().resource::<screens::MatchRuntime>();
+        let runtime = app.world().resource::<crate::sim::state::MatchRuntime>();
         let keys = app.world().resource::<keystones::KeystoneState>();
         let items = app.world().resource::<items::ItemsState>();
-        screens::nav_from_brain(MATCH_SEED, runtime.live.host_match(), keys, items).pins
+        crate::screens::match_runtime::nav_from_brain(
+            MATCH_SEED,
+            runtime.live.host_match(),
+            keys,
+            items,
+        )
+        .pins
     };
     assert!(
         !pins.is_empty(),
         "a dropped anchor torch pins the current room's incident edges"
     );
     assert_eq!(
-        count::<screens::DroppedItemVisual>(&mut app),
+        count::<crate::view::components::DroppedItemVisual>(&mut app),
         1,
         "dropping the torch renders a visible tool"
     );
@@ -205,7 +219,7 @@ fn anchor_torch_can_be_dropped_pins_edges_and_can_be_picked_back_up() {
         assert!(items.placed.is_empty());
     }
     assert_eq!(
-        count::<screens::DroppedItemVisual>(&mut app),
+        count::<crate::view::components::DroppedItemVisual>(&mut app),
         0,
         "picking the torch back up removes its place visual"
     );
@@ -220,8 +234,8 @@ fn anchor_torch_tethers_current_thresholds_immediately() {
     app.update(); // build the initial room.
 
     let (room, target, visible_targets) = {
-        let runtime = app.world().resource::<screens::MatchRuntime>();
-        let tp = app.world().resource::<screens::TeleportState>();
+        let runtime = app.world().resource::<crate::sim::state::MatchRuntime>();
+        let tp = app.world().resource::<crate::sim::state::TeleportState>();
         let game = runtime.live.host_match();
         let mut visible_targets: Vec<_> = tp.geom.gaps.iter().map(|gap| gap.target).collect();
         visible_targets.sort_by_key(|room| room.0);
@@ -237,10 +251,15 @@ fn anchor_torch_tethers_current_thresholds_immediately() {
     app.update(); // rebuild place geometry/lights after the anchor changes nav.
 
     {
-        let runtime = app.world().resource::<screens::MatchRuntime>();
+        let runtime = app.world().resource::<crate::sim::state::MatchRuntime>();
         let keys = app.world().resource::<keystones::KeystoneState>();
         let items = app.world().resource::<items::ItemsState>();
-        let nav = screens::nav_from_brain(MATCH_SEED, runtime.live.host_match(), keys, items);
+        let nav = crate::screens::match_runtime::nav_from_brain(
+            MATCH_SEED,
+            runtime.live.host_match(),
+            keys,
+            items,
+        );
         let mut pinned_targets: Vec<_> = items.placed[0]
             .pin_edges
             .iter()
@@ -293,7 +312,7 @@ fn nav_keeps_a_tethered_relation_even_if_the_live_graph_drops_it() {
 
     let game = HybridMatch::authored(MATCH_SEED);
     let room = game.local_room();
-    let live = screens::connections_for(&game, room);
+    let live = crate::screens::match_runtime::connections_for(&game, room);
     let absent = (0..9)
         .map(RoomId)
         .find(|candidate| *candidate != room && !live.contains(candidate))
@@ -307,7 +326,7 @@ fn nav_keeps_a_tethered_relation_even_if_the_live_graph_drops_it() {
         &[absent],
     ));
     let keys = keystones::KeystoneState::new(MATCH_SEED);
-    let nav = screens::nav_for_room(MATCH_SEED, &game, &keys, &items, room);
+    let nav = crate::screens::match_runtime::nav_for_room(MATCH_SEED, &game, &keys, &items, room);
 
     assert!(
         nav.connections.contains(&absent),
@@ -328,7 +347,7 @@ fn room_anchor_locks_exact_threshold_set_and_rejects_new_live_edges() {
 
     let mut game = HybridMatch::authored(MATCH_SEED);
     let room = game.local_room();
-    let locked = screens::connections_for(&game, room);
+    let locked = crate::screens::match_runtime::connections_for(&game, room);
     assert!(
         !locked.is_empty(),
         "the authored start room has thresholds to freeze"
@@ -352,7 +371,7 @@ fn room_anchor_locks_exact_threshold_set_and_rejects_new_live_edges() {
     game.rendered.push(injected);
 
     let keys = keystones::KeystoneState::new(MATCH_SEED);
-    let nav = screens::nav_for_room(MATCH_SEED, &game, &keys, &items, room);
+    let nav = crate::screens::match_runtime::nav_for_room(MATCH_SEED, &game, &keys, &items, room);
 
     assert_eq!(
         nav.connections, locked,
@@ -363,7 +382,8 @@ fn room_anchor_locks_exact_threshold_set_and_rejects_new_live_edges() {
         "new live relations cannot appear as thresholds while the room is anchored"
     );
 
-    let other_nav = screens::nav_for_room(MATCH_SEED, &game, &keys, &items, absent);
+    let other_nav =
+        crate::screens::match_runtime::nav_for_room(MATCH_SEED, &game, &keys, &items, absent);
     assert!(
         !other_nav.connections.contains(&room),
         "an unanchored room cannot grow a new inbound threshold into a locked room"
@@ -375,14 +395,19 @@ fn teleport_pads_link_the_local_body_between_placed_pads() {
     use bevy::math::Vec2;
     let mut app = test_app();
     go(&mut app, GameState::Match);
-    let place = app.world().resource::<screens::TeleportState>().place;
+    let place = app
+        .world()
+        .resource::<crate::sim::state::TeleportState>()
+        .place;
     {
         let mut items = app.world_mut().resource_mut::<items::ItemsState>();
         assert!(items.drop(items::ItemKind::TeleportPad, place, Vec2::new(0.0, 0.0), 0));
         assert!(items.drop(items::ItemKind::TeleportPad, place, Vec2::new(2.0, 0.0), 0));
     }
     {
-        let mut tp = app.world_mut().resource_mut::<screens::TeleportState>();
+        let mut tp = app
+            .world_mut()
+            .resource_mut::<crate::sim::state::TeleportState>();
         let half_height = tp.config.half_height;
         tp.body.position = Vec3::new(0.0, half_height, 0.0);
         tp.rendered = None;
@@ -390,14 +415,14 @@ fn teleport_pads_link_the_local_body_between_placed_pads() {
 
     tap_update(&mut app, KeyCode::KeyE);
 
-    let tp = app.world().resource::<screens::TeleportState>();
+    let tp = app.world().resource::<crate::sim::state::TeleportState>();
     assert_eq!(tp.place, place);
     assert!(
         (tp.body.position.x - 2.0).abs() < 0.01 && tp.body.position.z.abs() < 0.01,
         "activating a pad moves the local body to its paired pad"
     );
     assert_eq!(
-        count::<screens::DroppedItemVisual>(&mut app),
+        count::<crate::view::components::DroppedItemVisual>(&mut app),
         2,
         "both placed pads stay visible after using the link"
     );
@@ -411,14 +436,14 @@ fn rival_avatars_walk_the_room_you_share_and_are_cleaned_up() {
     app.update(); // let sync_rival_avatars reconcile the start room
     // Every team starts clumped at the entrance, so the three rivals appear there.
     assert_eq!(
-        count::<screens::RivalAvatar>(&mut app),
+        count::<crate::view::components::RivalAvatar>(&mut app),
         TEAM_COUNT - 1,
         "the rivals you share the entrance with are rendered as walking figures"
     );
     // Leaving the Match despawns them with the rest of the state-scoped entities.
     finish_match(&mut app);
     assert_eq!(
-        count::<screens::RivalAvatar>(&mut app),
+        count::<crate::view::components::RivalAvatar>(&mut app),
         0,
         "rival avatars never leak past the Match"
     );
@@ -433,19 +458,19 @@ fn passage_thresholds_are_open_and_any_leaves_are_sealed_and_cleaned_up() {
     // present is a sealed side door / the locked exit — never an openable one.
     let openable = {
         let world = app.world_mut();
-        let mut q = world.query::<&screens::DoorLeaf>();
+        let mut q = world.query::<&crate::view::components::DoorLeaf>();
         q.iter(world).filter(|leaf| leaf.openable).count()
     };
     assert_eq!(openable, 0, "passage thresholds carry no hiding leaf");
     // The forward doorway still reveals the place beyond (a transparent preview).
     assert!(
-        count::<screens::PassagePreview>(&mut app) > 0,
+        count::<crate::view::components::PassagePreview>(&mut app) > 0,
         "an open threshold shows the neighbour you'll cross into"
     );
     // Leaving the Match despawns every leaf with the rest of the place geometry.
     finish_match(&mut app);
     assert_eq!(
-        count::<screens::DoorLeaf>(&mut app),
+        count::<crate::view::components::DoorLeaf>(&mut app),
         0,
         "door leaves never leak past the Match"
     );
@@ -456,7 +481,7 @@ fn doorway_destinations_are_frozen_at_place_entry() {
     let mut app = test_app();
     go(&mut app, GameState::Match);
     app.update();
-    let tp = app.world().resource::<screens::TeleportState>();
+    let tp = app.world().resource::<crate::sim::state::TeleportState>();
     assert!(
         !tp.gap_dests.is_empty(),
         "the start room freezes its doorway destinations on entry"
@@ -481,12 +506,12 @@ fn a_room_doorway_previews_the_hallway_beyond_and_is_cleaned_up() {
     go(&mut app, GameState::Match);
     app.update(); // let rebuild_place build the start room + its forward preview
     assert!(
-        count::<screens::PassagePreview>(&mut app) > 0,
+        count::<crate::view::components::PassagePreview>(&mut app) > 0,
         "the forward doorway previews the actual hallway you'll enter"
     );
     finish_match(&mut app);
     assert_eq!(
-        count::<screens::PassagePreview>(&mut app),
+        count::<crate::view::components::PassagePreview>(&mut app),
         0,
         "passage preview geometry never leaks past the Match"
     );
@@ -503,15 +528,15 @@ fn a_hallway_doorway_previews_the_room_beyond() {
     // Drop into a spine hallway, then rebuild: its exit (and entry) should preview the
     // destination room — the symmetric case to a room previewing its hallway.
     app.world_mut()
-        .resource_scope(|world, mut tp: Mut<screens::TeleportState>| {
-            let runtime = world.resource::<screens::MatchRuntime>();
+        .resource_scope(|world, mut tp: Mut<crate::sim::state::TeleportState>| {
+            let runtime = world.resource::<crate::sim::state::MatchRuntime>();
             let keys = world.resource::<keystones::KeystoneState>();
             let items = world.resource::<items::ItemsState>();
             let game = runtime.live.host_match();
             let from = game.local_room();
             let to = game.local_target().unwrap_or(RoomId(from.0 + 1));
             let variation = hallway::variation_for(from, to, MATCH_SEED, game.reroute_commits);
-            screens::debug_place_into(
+            crate::screens::match_runtime::debug_place_into(
                 &mut tp,
                 runtime,
                 Place::Hallway {
@@ -526,7 +551,7 @@ fn a_hallway_doorway_previews_the_room_beyond() {
         });
     app.update(); // rebuild_place builds the hallway + previews the rooms at its ends
     assert!(
-        count::<screens::PassagePreview>(&mut app) > 0,
+        count::<crate::view::components::PassagePreview>(&mut app) > 0,
         "a hallway's doorway previews the room you'll enter"
     );
 }
@@ -572,15 +597,15 @@ fn hallway_room_threshold_does_not_draw_wall_trim_across_opening() {
     go(&mut app, GameState::Match);
     app.update();
     app.world_mut()
-        .resource_scope(|world, mut tp: Mut<screens::TeleportState>| {
-            let runtime = world.resource::<screens::MatchRuntime>();
+        .resource_scope(|world, mut tp: Mut<crate::sim::state::TeleportState>| {
+            let runtime = world.resource::<crate::sim::state::MatchRuntime>();
             let keys = world.resource::<keystones::KeystoneState>();
             let items = world.resource::<items::ItemsState>();
             let game = runtime.live.host_match();
             let from = game.local_room();
             let to = game.local_target().unwrap_or(RoomId(from.0 + 1));
             let variation = hallway::variation_for(from, to, MATCH_SEED, game.reroute_commits);
-            screens::debug_place_into(
+            crate::screens::match_runtime::debug_place_into(
                 &mut tp,
                 runtime,
                 Place::Hallway {
@@ -597,7 +622,7 @@ fn hallway_room_threshold_does_not_draw_wall_trim_across_opening() {
 
     let open_gaps: Vec<_> = app
         .world()
-        .resource::<screens::TeleportState>()
+        .resource::<crate::sim::state::TeleportState>()
         .geom
         .gaps
         .iter()
@@ -630,12 +655,12 @@ fn tab_toggles_the_tac_map_and_draws_the_live_schematic() {
     go(&mut app, GameState::Match);
 
     assert_eq!(
-        single_visibility::<screens::TacMapPanel>(&mut app),
+        single_visibility::<crate::view::components::TacMapPanel>(&mut app),
         Visibility::Hidden,
         "the tac-map starts hidden"
     );
     assert_eq!(
-        count::<screens::TacMapElement>(&mut app),
+        count::<crate::view::components::TacMapElement>(&mut app),
         0,
         "hidden map has no dynamic room/marker nodes"
     );
@@ -647,16 +672,20 @@ fn tab_toggles_the_tac_map_and_draws_the_live_schematic() {
         .press(KeyCode::Tab);
     app.world_mut().run_schedule(Update);
 
-    assert!(app.world().resource::<screens::TacMapState>().0);
+    assert!(
+        app.world()
+            .resource::<crate::view::components::TacMapState>()
+            .0
+    );
     assert_eq!(
-        single_visibility::<screens::TacMapPanel>(&mut app),
+        single_visibility::<crate::view::components::TacMapPanel>(&mut app),
         Visibility::Visible,
         "Tab shows the tac-map panel"
     );
     let expected_model = {
-        let runtime = app.world().resource::<screens::MatchRuntime>();
+        let runtime = app.world().resource::<crate::sim::state::MatchRuntime>();
         let keys = app.world().resource::<keystones::KeystoneState>();
-        let tp = app.world().resource::<screens::TeleportState>();
+        let tp = app.world().resource::<crate::sim::state::TeleportState>();
         tacmap::build_map(&runtime.live.host_match().competitive, keys, tp.place)
     };
     let expected_elements = expected_model.routes.len()
@@ -667,7 +696,7 @@ fn tab_toggles_the_tac_map_and_draws_the_live_schematic() {
         + 1
         + 1;
     assert_eq!(
-        count::<screens::TacMapElement>(&mut app),
+        count::<crate::view::components::TacMapElement>(&mut app),
         expected_elements,
         "the visible map draws route bars, rooms, exit, keys, rivals, player, and series status"
     );
@@ -680,14 +709,18 @@ fn tab_toggles_the_tac_map_and_draws_the_live_schematic() {
         .press(KeyCode::Tab);
     app.world_mut().run_schedule(Update);
 
-    assert!(!app.world().resource::<screens::TacMapState>().0);
+    assert!(
+        !app.world()
+            .resource::<crate::view::components::TacMapState>()
+            .0
+    );
     assert_eq!(
-        single_visibility::<screens::TacMapPanel>(&mut app),
+        single_visibility::<crate::view::components::TacMapPanel>(&mut app),
         Visibility::Hidden,
         "a second Tab hides the tac-map panel"
     );
     assert_eq!(
-        count::<screens::TacMapElement>(&mut app),
+        count::<crate::view::components::TacMapElement>(&mut app),
         0,
         "hiding the map removes its dynamic nodes"
     );
@@ -701,14 +734,20 @@ fn tac_map_state_and_elements_are_cleaned_up_after_match() {
         .resource_mut::<ButtonInput<KeyCode>>()
         .press(KeyCode::Tab);
     app.world_mut().run_schedule(Update);
-    assert!(app.world().contains_resource::<screens::TacMapState>());
-    assert!(count::<screens::TacMapElement>(&mut app) > 0);
+    assert!(
+        app.world()
+            .contains_resource::<crate::view::components::TacMapState>()
+    );
+    assert!(count::<crate::view::components::TacMapElement>(&mut app) > 0);
 
     finish_match(&mut app);
 
-    assert!(!app.world().contains_resource::<screens::TacMapState>());
+    assert!(
+        !app.world()
+            .contains_resource::<crate::view::components::TacMapState>()
+    );
     assert_eq!(
-        count::<screens::TacMapElement>(&mut app),
+        count::<crate::view::components::TacMapElement>(&mut app),
         0,
         "tac-map UI never leaks past the Match state"
     );
@@ -721,10 +760,16 @@ fn the_full_career_loop_runs_and_grows_the_persistent_profile() {
     assert_eq!(count::<ScreenRoot>(&mut app), 1);
 
     go(&mut app, GameState::Lobby);
-    assert!(app.world().contains_resource::<screens::LobbyRuntime>());
+    assert!(
+        app.world()
+            .contains_resource::<crate::sim::state::LobbyRuntime>()
+    );
 
     go(&mut app, GameState::Match);
-    assert!(app.world().contains_resource::<screens::MatchRuntime>());
+    assert!(
+        app.world()
+            .contains_resource::<crate::sim::state::MatchRuntime>()
+    );
 
     finish_match(&mut app);
     // The result was awarded into the persistent career.
@@ -814,14 +859,17 @@ fn spectate_ai_menu_option_launches_a_bot_driven_match() {
         *app.world().resource::<State<GameState>>().get(),
         GameState::Match
     );
-    assert!(app.world().contains_resource::<screens::SpectatorBot>());
+    assert!(
+        app.world()
+            .contains_resource::<crate::sim::state::SpectatorBot>()
+    );
     assert_eq!(
         app.world().resource::<flow::ActiveMatchSeed>().0,
         flow::MATCH_SEED,
         "spectator mode uses the fixed demo seed so bot crossings stay deterministic"
     );
     {
-        let bot = app.world().resource::<screens::SpectatorBot>();
+        let bot = app.world().resource::<crate::sim::state::SpectatorBot>();
         assert_eq!(bot.seed, flow::MATCH_SEED);
         assert!(
             bot.teamplay.plan.solvable(),
@@ -840,34 +888,39 @@ fn spectate_ai_menu_option_launches_a_bot_driven_match() {
 
     let before_teamplay_tick = app
         .world()
-        .resource::<screens::SpectatorBot>()
+        .resource::<crate::sim::state::SpectatorBot>()
         .teamplay
         .tick;
     app.world_mut().run_schedule(FixedUpdate);
     assert_eq!(
         app.world()
-            .resource::<screens::SpectatorBot>()
+            .resource::<crate::sim::state::SpectatorBot>()
             .teamplay
             .tick,
         before_teamplay_tick,
         "the procedural co-op brain should not fast-forward on a single fixed frame"
     );
-    for _ in 1..screens::SPECTATOR_TEAMPLAY_STEP_FRAMES {
+    for _ in 1..crate::screens::match_runtime::SPECTATOR_TEAMPLAY_STEP_FRAMES {
         app.world_mut().run_schedule(FixedUpdate);
     }
     assert!(
         app.world()
-            .resource::<screens::SpectatorBot>()
+            .resource::<crate::sim::state::SpectatorBot>()
             .teamplay
             .tick
             > before_teamplay_tick,
         "the spectator bot should advance the procedural co-op brain"
     );
     assert!(
-        app.world().resource::<screens::MatchIntent>().0.movement.y > 0.0
+        app.world()
+            .resource::<crate::sim::state::MatchIntent>()
+            .0
+            .movement
+            .y
+            > 0.0
             || app
                 .world()
-                .resource::<screens::SpectatorBot>()
+                .resource::<crate::sim::state::SpectatorBot>()
                 .route_place
                 .is_some(),
         "the spectator bot should take over the player body"
@@ -878,16 +931,16 @@ fn spectate_ai_menu_option_launches_a_bot_driven_match() {
 fn the_match_renders_the_current_place_and_starts_on_the_spine() {
     let mut app = test_app();
     assert!(
-        screens::PLANNED_ASSET_PATHS
+        crate::view::assets::PLANNED_ASSET_PATHS
             .iter()
-            .all(|path| screens::assets_dir().join(path).is_file()),
+            .all(|path| crate::view::assets::assets_dir().join(path).is_file()),
         "every planned drop-in file must be present"
     );
 
     go(&mut app, GameState::Match);
     // The current place renders as neon-noir geometry (floor/walls/ceiling/frames).
     assert!(
-        count::<screens::PlaceGeometry>(&mut app) > 0,
+        count::<crate::view::components::PlaceGeometry>(&mut app) > 0,
         "the current place is rendered"
     );
     assert!(
@@ -903,18 +956,20 @@ fn the_match_renders_the_current_place_and_starts_on_the_spine() {
         "rendered ceiling material should use the ceiling texture slot"
     );
     assert_eq!(
-        count_audio_cue(&mut app, screens::MatchAudioCue::Ambience),
+        count_audio_cue(&mut app, crate::view::components::MatchAudioCue::Ambience),
         1,
         "the facility ambience starts with the Match"
     );
 
     // The player begins in the local team's spine room.
     let start_room = {
-        let rt = app.world().resource::<screens::MatchRuntime>();
+        let rt = app.world().resource::<crate::sim::state::MatchRuntime>();
         rt.live.host_match().local_room()
     };
     assert_eq!(
-        app.world().resource::<screens::TeleportState>().place,
+        app.world()
+            .resource::<crate::sim::state::TeleportState>()
+            .place,
         teleport::Place::Room(start_room),
         "the teleport state starts in the local team's room"
     );
@@ -925,7 +980,7 @@ fn match_atmosphere_disables_the_startup_sun_and_restores_it_on_exit() {
     let mut app = test_app();
     assert_eq!(
         menu_sun_illuminance(&mut app),
-        screens::MENU_SUN_ILLUMINANCE
+        crate::view::components::MENU_SUN_ILLUMINANCE
     );
 
     go(&mut app, GameState::Match);
@@ -938,7 +993,7 @@ fn match_atmosphere_disables_the_startup_sun_and_restores_it_on_exit() {
     finish_match(&mut app);
     assert_eq!(
         menu_sun_illuminance(&mut app),
-        screens::MENU_SUN_ILLUMINANCE,
+        crate::view::components::MENU_SUN_ILLUMINANCE,
         "leaving the match restores the menu sun"
     );
 }
@@ -948,13 +1003,15 @@ fn driving_spine_rounds_advances_the_brain_with_the_place_renderer_live() {
     let mut app = test_app();
     go(&mut app, GameState::Match);
     let before = {
-        let rt = app.world().resource::<screens::MatchRuntime>();
+        let rt = app.world().resource::<crate::sim::state::MatchRuntime>();
         rt.live.host_match().competitive.round
     };
     // Commit a few spine rounds (as the player's crossings would); the place
     // geometry stays live across the round/teleport churn.
     {
-        let mut rt = app.world_mut().resource_mut::<screens::MatchRuntime>();
+        let mut rt = app
+            .world_mut()
+            .resource_mut::<crate::sim::state::MatchRuntime>();
         for _ in 0..4 {
             if rt.live.finished() {
                 break;
@@ -969,12 +1026,12 @@ fn driving_spine_rounds_advances_the_brain_with_the_place_renderer_live() {
     }
     app.update();
     let after = {
-        let rt = app.world().resource::<screens::MatchRuntime>();
+        let rt = app.world().resource::<crate::sim::state::MatchRuntime>();
         rt.live.host_match().competitive.round
     };
     assert!(after > before, "spine rounds advanced the match brain");
     assert!(
-        count::<screens::PlaceGeometry>(&mut app) > 0,
+        count::<crate::view::components::PlaceGeometry>(&mut app) > 0,
         "the place renderer keeps geometry live across rounds"
     );
 }

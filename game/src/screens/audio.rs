@@ -6,8 +6,10 @@ use crate::layout::PLACE_TILE;
 use bevy::audio::Volume;
 use bevy::prelude::*;
 
-use super::*;
 use crate::GameState;
+use crate::sim::state::{MatchPaused, MatchRuntime, TeleportState};
+use crate::view::assets::MatchAssets;
+use crate::view::components::{MatchAudioCue, MatchAudioState};
 
 const FOOTSTEP_STRIDE: f32 = 1.8;
 

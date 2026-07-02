@@ -16,7 +16,7 @@ pub(super) fn set_cursor_grab(
 }
 
 pub(crate) fn grab_match_cursor(
-    spectator_bot: Option<Res<crate::screens::SpectatorBot>>,
+    spectator_bot: Option<Res<crate::sim::state::SpectatorBot>>,
     mut cursors: Query<&mut CursorOptions, With<PrimaryWindow>>,
 ) {
     set_cursor_grab(&mut cursors, spectator_bot.is_none());

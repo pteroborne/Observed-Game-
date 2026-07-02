@@ -178,7 +178,7 @@ risk-ascending so early wins de-risk the later surgery.
 5. `we-need-to-come-tidy-emerson.md` → `docs/threshold_consistency_plan_2026-06.md`
    (it was a completed feature plan, archived under a descriptive name).
 
-### G2 — Dissolve the `screens` hub (2–3 days, mechanical but wide)
+### G2 — Dissolve the `screens` hub — DONE 2026-07-02
 1. Extract from `screens.rs` into new homes (types unchanged, imports explicit):
    theme/UI helpers → `view/theme.rs`; `MatchAssets` + material fns → `view/assets.rs`
    (give it real constructors/accessors instead of descendant-privacy);
@@ -191,6 +191,16 @@ risk-ascending so early wins de-risk the later surgery.
 4. `screens.rs` shrinks to the state machine + `ScreensPlugin`/`MatchPlugin`
    composition. Ratchet check from G0 goes to zero.
 - **Verify:** pure moves — full test suite + one capture screenshot diff.
+
+**As landed:** `screens.rs` is 177 lines (was 710): menu domain + the two plugins,
+with every system referenced by qualified path (`menu::`, `hud::`,
+`match_runtime::ambience::`, `place::`…). All 8 submodule glob re-exports and all
+`use super::*` (outside `#[cfg(test)]`) are gone; shared state lives in
+`sim/state.rs`, `view/{theme,assets,components}.rs`, `layout.rs`; `MatchAssets`
+gained a `load()` constructor (moved out of `setup_match`). The G0 ratchet landed
+here instead as `game/src/arch_check.rs` — three source-scanning tests: no glob
+re-exports, no non-test `use super::*`, and sim never imports view/screens.
+Verified: 107 game tests, 670 workspace tests, clippy clean.
 
 ### G3 — One match brain (2–3 days, the real fix; do after G2 so the state has one home)
 1. Create `MatchDirector` (candidate promotion into `observed_match` as a pure
