@@ -1,7 +1,7 @@
+use crate::layout::PLACE_TILE;
 use bevy::prelude::*;
 use observed_core::RoomId;
 use observed_match::hybrid::HybridMatch;
-use observed_match::maze::TILE_SIZE;
 use observed_style as style;
 use std::f32::consts::PI;
 
@@ -169,7 +169,7 @@ pub(crate) fn spawn_hallway_preview(
         assets.floor_material.clone()
     };
 
-    let plane_scale = Vec3::new(hx * 2.0 / TILE_SIZE, 1.0, hz * 2.0 / TILE_SIZE);
+    let plane_scale = Vec3::new(hx * 2.0 / PLACE_TILE, 1.0, hz * 2.0 / PLACE_TILE);
     commands.spawn((
         PlaceGeometry,
         PassagePreview,

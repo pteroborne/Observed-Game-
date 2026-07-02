@@ -35,6 +35,5 @@ observed_observation = { path = "../crates/observed_observation" }
 observed_facility = { path = "../crates/observed_facility" }
 observed_match = { path = "../crates/observed_match" }
 observed_traversal = { path = "../crates/observed_traversal" }
-ghx_proc_gen = "0.8.0"
 vleue_navigator = { version = "0.15.0", default-features = false }
 serde_json = "1.0"

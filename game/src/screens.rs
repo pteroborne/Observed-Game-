@@ -23,7 +23,6 @@ use bevy::prelude::*;
 use observed_core::{RoomId, TeamId};
 use observed_match::elimination::EliminationSeries;
 use observed_match::facility::TEAM_COUNT;
-use observed_match::maze::{CORRIDOR_RADIUS, TILE_SIZE};
 use observed_match::teamplay::TeamplayMatch;
 use observed_net::netmatch::LiveNetMatch;
 use observed_progression::session::SessionLabWorld;
@@ -94,10 +93,9 @@ const FIXTURE_LIGHT_INTENSITY: f32 = 2_800.0;
 const FOOTSTEP_STRIDE: f32 = 1.8;
 
 // Procedural neon doorways (code-as-art; no GLB). A closed leaf hides the corridor
-// beyond (mystery) and slides up into the lintel as the player approaches.
-// The frame spans the FULL hall width so doorways and hallways line up by design —
-// corridors are carved to `CORRIDOR_RADIUS` (1 ⇒ 3 tiles wide), not one tile.
-const HALL_WIDTH: f32 = (2 * CORRIDOR_RADIUS + 1) as f32 * TILE_SIZE;
+// beyond (mystery) and slides up into the lintel as the player approaches. The frame
+// spans the FULL hall width ([`crate::layout::HALL_WIDTH`]) so doorways and hallways
+// line up by design.
 const DOOR_POST_W: f32 = 0.22;
 const DOOR_POST_D: f32 = 0.5;
 const DOOR_LINTEL_H: f32 = 0.34;

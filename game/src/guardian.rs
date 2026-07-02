@@ -2,7 +2,7 @@ use crate::items::{ItemKind, ItemsState};
 use crate::screens::{MatchPaused, MatchRuntime, TeleportState};
 use crate::teleport::Place;
 use bevy::prelude::*;
-use observed_core::RoomId;
+use observed_core::{RoomId, SplitMix};
 use observed_observation::{ObservationWorld, Side};
 use std::collections::{HashSet, VecDeque};
 
@@ -54,31 +54,24 @@ impl ActionLog {
     }
 }
 
-/// Simple seeded PRNG for banishment choose.
-pub struct SimpleRng(u64);
+/// Seeded PRNG for the banishment choose — the shared splitmix64
+/// ([`observed_core::SplitMix`]) behind a `Default` so it can live in a Bevy `Local`.
+pub struct SimpleRng(SplitMix);
 
 impl Default for SimpleRng {
     fn default() -> Self {
-        Self(98765)
+        Self(SplitMix::new(98765))
     }
 }
 
 impl SimpleRng {
     pub fn new(seed: u64) -> Self {
-        Self(seed)
-    }
-
-    pub fn next_u64(&mut self) -> u64 {
-        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
-        let mut z = self.0;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        z ^ (z >> 31)
+        Self(SplitMix::new(seed))
     }
 
     pub fn next_room(&mut self, exclude: RoomId, room_count: usize) -> RoomId {
         loop {
-            let r = (self.next_u64() % room_count.max(1) as u64) as u32;
+            let r = (self.0.next_u64() % room_count.max(1) as u64) as u32;
             if r != exclude.0 {
                 return RoomId(r);
             }
@@ -231,7 +224,7 @@ pub(crate) fn update_guardian_in_match(
     }
 
     // Initialize SimpleRng local state on first run
-    if rng.0 == 0 {
+    if rng.0 == SplitMix(0) {
         *rng = SimpleRng::new(98765);
     }
 

@@ -5146,7 +5146,6 @@ name = "observed_game"
 version = "0.1.0"
 dependencies = [
  "bevy",
- "ghx_proc_gen",
  "observed_assets",
  "observed_core",
  "observed_diagnostics",

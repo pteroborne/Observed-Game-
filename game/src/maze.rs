@@ -20,30 +20,12 @@
 //! interior walls between cells.
 
 use bevy::math::Vec2;
+use observed_core::SplitMix;
 
 /// Percent chance (out of 100) that a given dead end gets braided open into a loop.
 /// Low enough to keep the labyrinth full of dead ends while still offering alternate
 /// routes through it.
 const BRAID_PERCENT: usize = 30;
-
-/// A tiny deterministic PRNG (splitmix64), using the same mixing constants as the rest
-/// of the project's hashing so a maze is fully reproducible from its seed.
-struct Rng(u64);
-
-impl Rng {
-    fn next_u64(&mut self) -> u64 {
-        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
-        let mut z = self.0;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        z ^ (z >> 31)
-    }
-
-    /// A value in `0..n` (n must be > 0).
-    fn below(&mut self, n: usize) -> usize {
-        (self.next_u64() % n as u64) as usize
-    }
-}
 
 /// How many entrances (and, separately, exits) a maze of `cols` columns gets — one for
 /// a narrow maze, up to three for a wide one. Multiple openings on each side make a
@@ -54,7 +36,7 @@ fn door_count(cols: usize) -> usize {
 
 /// Pick `count` distinct, spread-out door columns from `0..cols` (a random start plus
 /// even spacing), so multiple entrances/exits never bunch up on one side.
-fn pick_doors(rng: &mut Rng, cols: usize, count: usize) -> Vec<usize> {
+fn pick_doors(rng: &mut SplitMix, cols: usize, count: usize) -> Vec<usize> {
     let count = count.clamp(1, cols);
     let start = rng.below(cols);
     let step = (cols / count).max(1);
@@ -89,7 +71,7 @@ impl Maze {
     pub fn generate(cols: usize, rows: usize, seed: u64) -> Maze {
         let cols = cols.max(1);
         let rows = rows.max(1);
-        let mut rng = Rng(seed);
+        let mut rng = SplitMix::new(seed);
         let doors = door_count(cols);
         let entry_cols = pick_doors(&mut rng, cols, doors);
         let exit_cols = pick_doors(&mut rng, cols, doors);
@@ -166,7 +148,7 @@ impl Maze {
     /// Randomized depth-first search from the entrance cell, carving a passage to one
     /// random unvisited neighbour at a time. Every cell is visited, so the result is a
     /// spanning tree: fully connected (entrance↔exit always reachable) with dead ends.
-    fn carve_spanning_tree(&mut self, rng: &mut Rng) {
+    fn carve_spanning_tree(&mut self, rng: &mut SplitMix) {
         let count = self.cols * self.rows;
         let mut visited = vec![false; count];
         let start = (self.entry_cols[0], 0);
@@ -212,7 +194,7 @@ impl Maze {
     /// stays fully connected and most dead ends survive. A floor keeps at least one dead
     /// end (a labyrinth without any isn't a labyrinth); since one braid can clear at
     /// most two dead ends, we only braid while three or more remain.
-    fn braid(&mut self, rng: &mut Rng) {
+    fn braid(&mut self, rng: &mut SplitMix) {
         for r in 0..self.rows {
             for c in 0..self.cols {
                 if self.degree(c, r) != 1 {

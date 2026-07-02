@@ -65,9 +65,9 @@ impl SpawningStrategy for HallwaySpawningStrategy {
     ) {
         let (hx, hz) = (geom.half.x, geom.half.y);
         let plane_scale = Vec3::new(
-            hx * 2.0 / observed_match::maze::TILE_SIZE,
+            hx * 2.0 / crate::layout::PLACE_TILE,
             1.0,
-            hz * 2.0 / observed_match::maze::TILE_SIZE,
+            hz * 2.0 / crate::layout::PLACE_TILE,
         );
         commands.spawn((
             PlaceGeometry,

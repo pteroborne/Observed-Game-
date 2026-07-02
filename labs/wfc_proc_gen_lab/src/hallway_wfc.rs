@@ -1,4 +1,20 @@
-use crate::teleport::WallSeg;
+//! **Archived** hallway-interior WFC generator, moved here from `game/src/wfc_maze.rs`
+//! (refactor Arc G1, 2026-07-02).
+//!
+//! This was the game's Wave-Function-Collapse alternative for carving a teleport
+//! hallway's interior walls; the shipping generator is the randomized-DFS + braid maze
+//! in `game/src/maze.rs`, and nothing in the game called this. It is kept compiling
+//! (and connectivity-smoke-tested) in this lab — the workspace's home for `ghx_proc_gen`
+//! feasibility work — in case WFC is later adopted for map generation. If that happens,
+//! port it against the then-current place-geometry API rather than resurrecting the
+//! game module wholesale.
+//!
+//! The contract it implemented: given a hallway interior of `cols × rows` cells with
+//! door openings on the bottom (`entry_cols`) and top (`exit_cols`) edges, produce the
+//! interior wall segments such that every entrance reaches every exit and no walkable
+//! cell is unreachable. Returns an empty `Vec` if no consistent layout is found within
+//! the retry budget.
+
 use bevy::math::Vec2;
 use ghx_proc_gen::{
     generator::{
@@ -13,6 +29,15 @@ use ghx_proc_gen::{
         grid::{Grid, GridData},
     },
 };
+
+/// An axis-aligned interior wall segment (centre + half-extents in the hallway's local
+/// XZ plane). Mirrors the shape of the game's `teleport::WallSeg` at archive time, so a
+/// future port maps 1:1.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WallSeg {
+    pub center: Vec2,
+    pub half: Vec2,
+}
 
 fn generate_wfc_grid(
     cols: usize,
@@ -90,16 +115,6 @@ fn generate_wfc_grid(
     let rules = RulesBuilder::new_cartesian_2d(models.clone(), sockets)
         .build()
         .map_err(|e| format!("Rules builder error: {:?}", e))?;
-
-    println!(
-        "WFC MODEL INDICES -> void: {}, cross: {}, straight: {}, corner: {}, t: {}, end: {}",
-        void_model.index(),
-        _cross_model.index(),
-        _straight_model.index(),
-        _corner_model.index(),
-        _t_model.index(),
-        end_model.index()
-    );
 
     let grid = CartesianGrid::new_cartesian_2d(cols as u32, rows as u32, false, false);
 
@@ -364,4 +379,21 @@ pub fn generate_wfc_interior_walls(
     }
 
     walls
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The archived generator still produces a consistent, connected interior: walls
+    /// come back non-empty for a feasible seed, and the connectivity gate (every
+    /// entrance reaches every exit, no orphaned walkable cells) held during generation.
+    #[test]
+    fn archived_hallway_wfc_still_generates_connected_interiors() {
+        let walls = generate_wfc_interior_walls(7, 5, &[1], &[5], 1, 2.2, 0.12);
+        assert!(
+            !walls.is_empty(),
+            "a 7x5 hallway with one entry and one exit should solve within the retry budget"
+        );
+    }
 }

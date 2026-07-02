@@ -2,6 +2,7 @@ pub(crate) mod ambience;
 pub(crate) mod input;
 pub(crate) mod teleport;
 
+use crate::layout::{HALL_WIDTH, PLACE_TILE};
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy::window::{CursorOptions, PrimaryWindow};
@@ -9,7 +10,6 @@ use observed_core::RoomId;
 use observed_facility::map_spec::{RoomRole, sector_relay_v1};
 use observed_match::elimination::{EliminationSeries, MAX_AUTOPLAY_TICKS};
 use observed_match::hybrid::{HybridMatch, LocalAction};
-use observed_match::maze::TILE_SIZE;
 use observed_match::teamplay::TeamplayMatch;
 use observed_net::netmatch::LiveNetMatch;
 use observed_net::network::NetworkProfile;
@@ -260,9 +260,9 @@ pub(crate) fn setup_match(
         |path: &'static str| asset_present(path).then(|| asset_server.load::<AudioSource>(path));
 
     commands.insert_resource(MatchAssets {
-        floor_mesh: meshes.add(Plane3d::default().mesh().size(TILE_SIZE, TILE_SIZE)),
-        wall_mesh: meshes.add(Cuboid::new(TILE_SIZE, WALL_HEIGHT, TILE_SIZE)),
-        ceiling_mesh: meshes.add(Plane3d::default().mesh().size(TILE_SIZE, TILE_SIZE)),
+        floor_mesh: meshes.add(Plane3d::default().mesh().size(PLACE_TILE, PLACE_TILE)),
+        wall_mesh: meshes.add(Cuboid::new(PLACE_TILE, WALL_HEIGHT, PLACE_TILE)),
+        ceiling_mesh: meshes.add(Plane3d::default().mesh().size(PLACE_TILE, PLACE_TILE)),
         panel_mesh: meshes.add(Rectangle::new(4.4, 2.2)),
         placeholder_mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
         halo_mesh: meshes.add(Cylinder::new(0.46, 0.025)),

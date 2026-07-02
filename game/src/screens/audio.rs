@@ -2,9 +2,9 @@
 //! teleport between places, and an escape sting — each played as a drop-in cue if its
 //! sound was provided, silent otherwise.
 
+use crate::layout::PLACE_TILE;
 use bevy::audio::Volume;
 use bevy::prelude::*;
-use observed_match::maze::TILE_SIZE;
 
 use super::*;
 use crate::GameState;
@@ -59,7 +59,7 @@ pub(crate) fn sync_match_audio(
             - Vec2::new(audio_state.last_position.x, audio_state.last_position.z);
         let distance = horizontal_delta.length();
         // The width guard skips the position jump on a teleport between places.
-        if tp.body.grounded && distance < TILE_SIZE * 0.5 {
+        if tp.body.grounded && distance < PLACE_TILE * 0.5 {
             audio_state.stride_distance += distance;
             if audio_state.stride_distance >= FOOTSTEP_STRIDE {
                 play_one_shot(
