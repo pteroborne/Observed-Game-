@@ -9,7 +9,7 @@ pub(crate) mod item_visuals;
 pub(crate) mod lighting;
 pub(crate) mod mesh;
 pub(crate) mod preview;
-pub(crate) mod strategies;
+pub(crate) mod shell;
 
 use bevy::prelude::*;
 use observed_core::RoomId;
@@ -99,36 +99,34 @@ pub(crate) fn rebuild_place(
     let geom = tp.geom.clone();
     let y_offset = teleport::place_y_offset(tp.place);
 
-    // ==========================================
-    // STRATEGY PATTERN: Spawn floor, ceiling, and walls
-    // ==========================================
-    let strategy: Box<dyn strategies::SpawningStrategy> = match tp.place {
-        Place::Room(_) => Box::new(strategies::RoomSpawningStrategy),
-        Place::Hallway { .. } => Box::new(strategies::HallwaySpawningStrategy),
-    };
-
-    let floor_material = match tp.place {
-        Place::Room(room) => factory::RoomMaterialFactory::create_floor_material(
-            room,
-            &assets.floor_material,
-            &mut materials,
+    // The place's structural shell (floor/ceiling/walls), by place shape.
+    match tp.place {
+        Place::Room(room) => {
+            let floor_material = factory::RoomMaterialFactory::create_floor_material(
+                room,
+                &assets.floor_material,
+                &mut materials,
+            );
+            shell::spawn_room_shell(
+                &mut commands,
+                &assets,
+                &mut meshes,
+                &geom,
+                floor_material,
+                y_offset,
+            );
+        }
+        Place::Hallway { .. } => shell::spawn_hallway_shell(
+            &mut commands,
+            &assets,
+            &geom,
+            assets.floor_material.clone(),
+            &tp.arena.solids,
+            y_offset,
         ),
-        Place::Hallway { .. } => assets.floor_material.clone(),
-    };
+    }
 
-    strategy.spawn_geometry(
-        &mut commands,
-        &assets,
-        &mut meshes,
-        &geom,
-        floor_material,
-        &tp.arena.solids,
-        y_offset,
-    );
-
-    // ==========================================
-    // TEMPLATE METHOD PATTERN: Spawn threshold gateways
-    // ==========================================
+    // The threshold gateways cut into that shell.
     for gap in &geom.gaps {
         if gap.kind == teleport::GapKind::OneWayEntry {
             continue;
@@ -184,27 +182,27 @@ pub(crate) fn rebuild_place(
                 );
             }
 
-            strategies::spawn_threshold_gateway(
+            shell::spawn_threshold_gateway(
                 &mut commands,
                 &assets,
                 gap,
-                strategies::PassagePolicy { tethered },
+                shell::ThresholdStyle::passage(tethered),
                 y_offset,
             );
         } else if gap.kind == GapKind::LockedExit {
-            strategies::spawn_threshold_gateway(
+            shell::spawn_threshold_gateway(
                 &mut commands,
                 &assets,
                 gap,
-                strategies::LockedExitPolicy { tethered },
+                shell::ThresholdStyle::locked_exit(&assets, tethered),
                 y_offset,
             );
         } else {
-            strategies::spawn_threshold_gateway(
+            shell::spawn_threshold_gateway(
                 &mut commands,
                 &assets,
                 gap,
-                strategies::SideDoorPolicy,
+                shell::ThresholdStyle::side_door(&assets),
                 y_offset,
             );
         }
