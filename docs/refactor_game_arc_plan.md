@@ -260,12 +260,23 @@ nav derivation to `sim/nav.rs` and spectator steering to `match_runtime/spectato
 `match_runtime/mod.rs` is 218 lines (was 1,007 pre-G3, target was <400).
 Verified: 672 workspace tests (incl. the new leak test), clippy clean.
 
-### G5 — Evidence pipeline consolidation (1–2 days, optional but pays off for agents)
+### G5 — Evidence pipeline consolidation — DONE 2026-07-02
 1. Split `diagnostics.rs` into `evidence/` modules: `scenarios.rs` (shared with
    capture), `snapshot.rs` (world → `observed_diagnostics` schema), `runner.rs`.
 2. `capture/scenarios.rs` and the vis-audit drive scenarios through one
    `ScenarioDriver` (place the body, step N frames, screenshot) instead of two.
 3. Diagnostics reads sim state via `sim/state.rs` types instead of screens internals.
+
+**As landed:** everything evidence-related now lives under `game/src/evidence/`:
+`audit.rs` (the vis-audit runner), `snapshot.rs` (world → `observed_diagnostics`
+collectors + footprint atlas), `tags.rs` (the components the renderer attaches so
+the audit can identify visuals — the piece hud/shell/input actually import),
+`capture/` (moved wholesale), and `driver.rs` (shared `screenshot_to`). One
+`evidence::configure()` wires the unchanged `OBSERVED2_*` env surface. The brain
+staging both pipelines hand-rolled became two `MatchDirector` methods
+(`force_scripted_rounds`, `suppress_reroute_feedback`) — the scripted drivers now
+go through the same director API as play. Item 3 had already fallen out of G2–G4.
+Verified: 672 workspace tests (set identical by name pre/post), clippy clean.
 
 ### G6 — Docs & Catalogue truth-sync (half a day)
 - Update `Catalogue.md`: correct the SplitMix "Centralized" claim (fixed for real in
