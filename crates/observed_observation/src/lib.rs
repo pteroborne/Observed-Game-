@@ -19,6 +19,8 @@
 use glam::Vec2;
 use observed_core::{RoomId, SplitMix};
 
+pub mod contention;
+
 pub const ROWS: u32 = 3;
 pub const COLS: u32 = 3;
 pub const ROOM_COUNT: usize = (ROWS * COLS) as usize;
@@ -191,19 +193,38 @@ impl ObservationWorld {
     /// Re-match every unobserved, unpinned doorway into a fresh perfect matching.
     /// Observed connections are untouched. Deterministic for a given state.
     pub fn decohere(&mut self) {
+        self.decohere_with(&|_| false, 0);
+    }
+
+    /// Re-match every doorway that is neither presence-pinned (via
+    /// [`Self::is_pinned`]) nor pinned by `extra_pinned`, using `salt` to vary
+    /// the deterministic shuffle.
+    ///
+    /// `salt == 0` reproduces the exact stream `decohere()` has always used —
+    /// this is the "legacy stream" and is load-bearing for replays that predate
+    /// `extra_pinned`/`salt`. Nonzero salts are for callers (contention's
+    /// solvability guard) that need an alternate deterministic shuffle of the
+    /// *same* state without advancing `decoherence_count` again.
+    pub fn decohere_with(&mut self, extra_pinned: &dyn Fn(DoorId) -> bool, salt: u64) {
         self.decoherence_count += 1;
         let before = self.links.clone();
 
         let mut free: Vec<DoorId> = (0..self.doors.len())
             .map(|i| DoorId(i as u16))
-            .filter(|d| !self.is_pinned(*d))
+            .filter(|d| !self.is_pinned(*d) && !extra_pinned(*d))
             .collect();
         self.locked_last = (self.doors.len() - free.len()) as u32;
 
-        // Deterministic Fisher–Yates shuffle of the free set.
-        let mut rng = SplitMix(
-            self.base_seed ^ (self.decoherence_count as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
-        );
+        // Deterministic Fisher–Yates shuffle of the free set. Salt 0 is the
+        // legacy stream (byte-identical to the pre-refactor implementation);
+        // any other salt additionally folds in a distinct constant so a retry
+        // at the same decoherence_count still diverges deterministically.
+        let mut seed =
+            self.base_seed ^ (self.decoherence_count as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        if salt != 0 {
+            seed ^= salt.wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        }
+        let mut rng = SplitMix(seed);
         for i in (1..free.len()).rev() {
             free.swap(i, rng.below(i + 1));
         }
