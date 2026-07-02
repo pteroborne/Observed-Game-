@@ -25,10 +25,15 @@ bevy = { version = "0.18.1", default-features = false, features = [
     "bevy_post_process",
 ] }
 observed_core = { path = "../crates/observed_core" }
+observed_diagnostics = { path = "../crates/observed_diagnostics" }
 observed_style = { path = "../crates/observed_style" }
 observed_assets = { path = "../crates/observed_assets" }
 player_input = { path = "../crates/player_input" }
 observed_progression = { path = "../crates/observed_progression" }
 observed_net = { path = "../crates/observed_net" }
+observed_observation = { path = "../crates/observed_observation" }
 observed_match = { path = "../crates/observed_match" }
 observed_traversal = { path = "../crates/observed_traversal" }
+ghx_proc_gen = "0.8.0"
+vleue_navigator = { version = "0.15.0", default-features = false }
+serde_json = "1.0"

@@ -4,6 +4,9 @@ All assets added for `ASSET_PLAN.md` are released under
 [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). They were retrieved
 on June 20, 2026.
 
+The basic dev/debug wall and floor texture slots were refreshed from ambientCG on
+July 1, 2026.
+
 License references: [Kenney support](https://kenney.nl/support),
 [ambientCG license](https://docs.ambientcg.com/license/), and
 [Poly Haven license](https://polyhaven.com/license).
@@ -15,6 +18,8 @@ ceiling fixture uses a top-center pivot.
 
 | Repository path | Original asset | Source |
 | --- | --- | --- |
+| `textures/wall.png` | `SheetMetal002_1K-PNG_Color.png` | [ambientCG Sheet Metal 002](https://ambientcg.com/view?id=SheetMetal002) |
+| `textures/floor.png` | `Concrete048_1K-PNG_Color.png` | [ambientCG Concrete 048](https://ambientcg.com/view?id=Concrete048) |
 | `textures/ceiling.png` | `MetalPlates006_1K-PNG_Color.png` | [ambientCG MetalPlates006](https://ambientcg.com/view?id=MetalPlates006) |
 | `models/light_fixture.glb` | `lampSquareCeiling.glb` | [Kenney Furniture Kit](https://kenney.nl/assets/furniture-kit) |
 | `models/exit_gate.glb` | `gate.glb` | [Kenney Modular Space Kit](https://kenney.nl/assets/modular-space-kit) |
@@ -41,5 +46,4 @@ ceiling fixture uses a top-center pivot.
   an equirectangular `.hdr`. To use it, bake `empty_warehouse_01` to a `.ktx2` cubemap
   (diffuse + specular) and wire an `EnvironmentMapLight` + `Skybox`; until then the
   match is lit by the directional sun, ambient, and fixture point lights.
-- `wall.png`, `floor.png`, and `prop.glb` predated this sourcing pass and are not
-  covered by this ledger.
+- `prop.glb` predated this sourcing pass and is not covered by this ledger.

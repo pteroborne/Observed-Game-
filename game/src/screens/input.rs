@@ -123,7 +123,16 @@ pub(crate) fn match_input(
     paused: Res<MatchPaused>,
     mut intent: ResMut<MatchIntent>,
     mut item_intent: ResMut<ItemIntent>,
+    bot_capture: Option<Res<crate::capture::BotPovCaptureRequest>>,
 ) {
+    if bot_capture.is_some() {
+        return;
+    }
+    if crate::diagnostics::freecam_enabled() {
+        intent.0 = PlayerIntent::default();
+        *item_intent = ItemIntent::default();
+        return;
+    }
     if paused.0 {
         intent.0 = PlayerIntent::default();
         *item_intent = ItemIntent::default();

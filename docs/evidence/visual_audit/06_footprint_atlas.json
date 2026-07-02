@@ -1,0 +1,706 @@
+{
+  "schema_version": 1,
+  "run_id": "observed-vis-audit-1782919217206",
+  "scenario": "footprint_atlas",
+  "frame_index": 6,
+  "place": {
+    "label": "room 0",
+    "player_position": [
+      0.0,
+      0.9,
+      0.0
+    ],
+    "player_yaw": 0.0,
+    "player_pitch": 0.0
+  },
+  "geometry": {
+    "footprints": [
+      {
+        "subject": "atlas room 0",
+        "center": [
+          -50.753555,
+          -50.753555
+        ],
+        "half": [
+          8.931165,
+          12.991409
+        ],
+        "allow_overlap": false
+      },
+      {
+        "subject": "atlas room 1",
+        "center": [
+          0.0,
+          -50.753555
+        ],
+        "half": [
+          11.789509,
+          13.249237
+        ],
+        "allow_overlap": false
+      },
+      {
+        "subject": "atlas room 2",
+        "center": [
+          50.753555,
+          -50.753555
+        ],
+        "half": [
+          12.326821,
+          12.279713
+        ],
+        "allow_overlap": false
+      },
+      {
+        "subject": "atlas room 3",
+        "center": [
+          -50.753555,
+          0.0
+        ],
+        "half": [
+          11.32274,
+          10.875236
+        ],
+        "allow_overlap": false
+      },
+      {
+        "subject": "atlas room 4",
+        "center": [
+          0.0,
+          0.0
+        ],
+        "half": [
+          9.611476,
+          13.170946
+        ],
+        "allow_overlap": false
+      },
+      {
+        "subject": "atlas room 5",
+        "center": [
+          50.753555,
+          0.0
+        ],
+        "half": [
+          18.370987,
+          18.321075
+        ],
+        "allow_overlap": false
+      },
+      {
+        "subject": "atlas room 6",
+        "center": [
+          -50.753555,
+          50.753555
+        ],
+        "half": [
+          18.376778,
+          18.305796
+        ],
+        "allow_overlap": false
+      },
+      {
+        "subject": "atlas room 7",
+        "center": [
+          0.0,
+          50.753555
+        ],
+        "half": [
+          8.965241,
+          9.4730835
+        ],
+        "allow_overlap": false
+      },
+      {
+        "subject": "atlas room 8",
+        "center": [
+          50.753555,
+          50.753555
+        ],
+        "half": [
+          12.5697,
+          11.843694
+        ],
+        "allow_overlap": false
+      },
+      {
+        "subject": "atlas hallway 0 -> 1 v8",
+        "center": [
+          119.83033,
+          -69.29137
+        ],
+        "half": [
+          10.5,
+          12.599999
+        ],
+        "allow_overlap": false
+      },
+      {
+        "subject": "atlas hallway 0 -> 3 v7",
+        "center": [
+          163.23033,
+          -69.29137
+        ],
+        "half": [
+          8.4,
+          8.4
+        ],
+        "allow_overlap": false
+      },
+      {
+        "subject": "atlas hallway 1 -> 2 v4",
+        "center": [
+          206.63033,
+          -69.29137
+        ],
+        "half": [
+          3.0,
+          14.248215
+        ],
+        "allow_overlap": false
+      },
+      {
+        "subject": "atlas hallway 1 -> 4 v0",
+        "center": [
+          250.03033,
+          -69.29137
+        ],
+        "half": [
+          3.0,
+          14.373931
+        ],
+        "allow_overlap": false
+      },
+      {
+        "subject": "atlas hallway 2 -> 5 v2",
+        "center": [
+          119.83033,
+          0.0
+        ],
+        "half": [
+          5.0,
+          20.62561
+        ],
+        "allow_overlap": false
+      },
+      {
+        "subject": "atlas hallway 3 -> 4 v1",
+        "center": [
+          163.23033,
+          0.0
+        ],
+        "half": [
+          3.0,
+          20.020397
+        ],
+        "allow_overlap": false
+      },
+      {
+        "subject": "atlas hallway 3 -> 6 v1",
+        "center": [
+          206.63033,
+          0.0
+        ],
+        "half": [
+          3.0,
+          27.645685
+        ],
+        "allow_overlap": false
+      },
+      {
+        "subject": "atlas hallway 4 -> 5 v10",
+        "center": [
+          250.03033,
+          0.0
+        ],
+        "half": [
+          14.699999,
+          10.5
+        ],
+        "allow_overlap": false
+      },
+      {
+        "subject": "atlas hallway 4 -> 7 v9",
+        "center": [
+          119.83033,
+          69.29137
+        ],
+        "half": [
+          12.599999,
+          14.699999
+        ],
+        "allow_overlap": false
+      },
+      {
+        "subject": "atlas hallway 5 -> 8 v9",
+        "center": [
+          163.23033,
+          69.29137
+        ],
+        "half": [
+          12.599999,
+          14.699999
+        ],
+        "allow_overlap": false
+      },
+      {
+        "subject": "atlas hallway 6 -> 7 v8",
+        "center": [
+          206.63033,
+          69.29137
+        ],
+        "half": [
+          10.5,
+          12.599999
+        ],
+        "allow_overlap": false
+      },
+      {
+        "subject": "atlas hallway 7 -> 8 v7",
+        "center": [
+          250.03033,
+          69.29137
+        ],
+        "half": [
+          8.4,
+          8.4
+        ],
+        "allow_overlap": false
+      }
+    ]
+  },
+  "thresholds": [],
+  "lights": [
+    {
+      "subject": "Place light",
+      "intensity": 2800.0,
+      "range": 28.146255,
+      "color_rgb": [
+        0.46043968,
+        0.4843367,
+        0.5380446
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "Place light",
+      "intensity": 1540.0,
+      "range": 11.0,
+      "color_rgb": [
+        0.46043968,
+        0.4843367,
+        0.5380446
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "Place light",
+      "intensity": 1540.0,
+      "range": 11.0,
+      "color_rgb": [
+        0.46043968,
+        0.4843367,
+        0.5380446
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "unnamed light",
+      "intensity": 1900.0,
+      "range": 6.5,
+      "color_rgb": [
+        0.6,
+        0.3,
+        1.0
+      ],
+      "expected_min_intensity": 1.0
+    }
+  ],
+  "materials": [
+    {
+      "subject": "Rival team 1",
+      "signal": true,
+      "base_rgb": [
+        1.0,
+        0.5,
+        0.15
+      ],
+      "emissive_rgb": [
+        8.0,
+        2.6,
+        0.4
+      ],
+      "emissive_luminance": 3.5892,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Rival team 2",
+      "signal": true,
+      "base_rgb": [
+        1.0,
+        0.5,
+        0.15
+      ],
+      "emissive_rgb": [
+        8.0,
+        2.6,
+        0.4
+      ],
+      "emissive_luminance": 3.5892,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Rival team 3",
+      "signal": true,
+      "base_rgb": [
+        1.0,
+        0.5,
+        0.15
+      ],
+      "emissive_rgb": [
+        8.0,
+        2.6,
+        0.4
+      ],
+      "emissive_luminance": 3.5892,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Place floor",
+      "signal": false,
+      "base_rgb": [
+        0.3137255,
+        0.3356863,
+        0.37960786
+      ],
+      "emissive_rgb": [
+        0.24065948,
+        0.27650505,
+        0.35706684
+      ],
+      "emissive_luminance": 0.27470085,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Place ceiling",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.02,
+        0.035
+      ],
+      "emissive_rgb": [
+        0.08,
+        0.1,
+        0.16
+      ],
+      "emissive_luminance": 0.10008,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Room wall",
+      "signal": false,
+      "base_rgb": [
+        0.04,
+        0.05,
+        0.08
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Room wall",
+      "signal": false,
+      "base_rgb": [
+        0.04,
+        0.05,
+        0.08
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Room wall",
+      "signal": false,
+      "base_rgb": [
+        0.04,
+        0.05,
+        0.08
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Room wall",
+      "signal": false,
+      "base_rgb": [
+        0.04,
+        0.05,
+        0.08
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling fixture",
+      "signal": false,
+      "base_rgb": [
+        0.9,
+        0.85,
+        0.72
+      ],
+      "emissive_rgb": [
+        3.2,
+        2.7,
+        1.8
+      ],
+      "emissive_luminance": 2.7413201,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling fixture",
+      "signal": false,
+      "base_rgb": [
+        0.9,
+        0.85,
+        0.72
+      ],
+      "emissive_rgb": [
+        3.2,
+        2.7,
+        1.8
+      ],
+      "emissive_luminance": 2.7413201,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Anchor torch",
+      "signal": true,
+      "base_rgb": [
+        0.6,
+        0.3,
+        1.0
+      ],
+      "emissive_rgb": [
+        4.5,
+        1.2,
+        9.0
+      ],
+      "emissive_luminance": 2.46474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Anchor torch floor halo",
+      "signal": false,
+      "base_rgb": [
+        0.6,
+        0.3,
+        1.0
+      ],
+      "emissive_rgb": [
+        4.5,
+        1.2,
+        9.0
+      ],
+      "emissive_luminance": 2.46474,
+      "min_luminance": 2.0
+    }
+  ],
+  "tac_map": {
+    "visible": false,
+    "expected_elements": 24,
+    "rendered_elements": 0,
+    "expected_rooms": 9,
+    "rendered_rooms": 0,
+    "expected_routes": 8,
+    "rendered_routes": 0,
+    "expected_keystones": 2,
+    "rendered_keystones": 0,
+    "expected_rivals": 3,
+    "rendered_rivals": 0,
+    "player_marker_count": 0,
+    "player_model": "room 0"
+  },
+  "monitors": [],
+  "findings": []
+}

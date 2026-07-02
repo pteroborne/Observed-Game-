@@ -21,10 +21,20 @@ $env:OBSERVED2_CAPTURE_BOT = "docs/evidence/bot_pov"
 cargo run -p observed_game
 ```
 
-This writes timed first-person frames (`bot_pov_00.png`, `bot_pov_01.png`, ...)
+This writes timed first-person frames (`bot_pov_000.png`, `bot_pov_001.png`, ...)
 while a derived local bot walks the same place geometry and doorway crossings toward
 the exit. The bot is a capture/debug consumer of the rendered geometry; it does not
 own the facility graph.
+
+Ceiling/room-shell capture:
+
+```powershell
+$env:OBSERVED2_CAPTURE_CEILING = "$env:TEMP\observed2_ceiling_check.png"
+cargo run -p observed_game
+```
+
+This freezes the match and pitches the player camera up at the authored room ceiling,
+including the procedural ceiling ribs that make the shell boundary visible.
 
 Nothing here re-implements game logic. Each screen is a *projection* of a proven
 model:

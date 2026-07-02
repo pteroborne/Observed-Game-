@@ -20,7 +20,7 @@
 use std::collections::VecDeque;
 
 use glam::{Vec2, Vec3};
-use observed_core::RoomId;
+use observed_core::{RoomId, SplitMix};
 use observed_observation::{DoorId, ObservationWorld, ROOM_COUNT};
 use observed_traversal::{Aabb3, FpsArena};
 
@@ -204,25 +204,6 @@ fn offset_tile(tile: (usize, usize), delta: (isize, isize)) -> Option<(usize, us
     let x = tile.0.checked_add_signed(delta.0)?;
     let y = tile.1.checked_add_signed(delta.1)?;
     (x < GRID_W && y < GRID_H).then_some((x, y))
-}
-
-struct SplitMix(u64);
-
-impl SplitMix {
-    fn next(&mut self) -> u64 {
-        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
-        let mut z = self.0;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        z ^ (z >> 31)
-    }
-    fn below(&mut self, bound: usize) -> usize {
-        if bound == 0 {
-            0
-        } else {
-            (self.next() % bound as u64) as usize
-        }
-    }
 }
 
 #[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]

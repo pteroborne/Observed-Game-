@@ -27,6 +27,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::PacketError;
 use crate::network::{NetworkProfile, SimulatedNetwork};
 use crate::protocol::{PEER_COUNT, PeerId};
 use observed_match::hybrid::{HybridMatch, HybridSnapshot, HybridTape, LOCAL_TEAM, LocalAction};
@@ -72,16 +73,6 @@ pub struct ActionPacket {
     pub sender: PeerId,
     pub action: Option<(u32, LocalAction)>,
     pub ack_through: Option<u32>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PacketError {
-    WrongLength,
-    WrongMagic,
-    UnsupportedVersion,
-    InvalidPeer,
-    InvalidAction,
-    BadChecksum,
 }
 
 impl ActionPacket {

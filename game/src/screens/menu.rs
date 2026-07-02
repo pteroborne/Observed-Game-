@@ -204,7 +204,9 @@ pub(crate) fn menu_highlight(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn menu_activate(
+    mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
     gamepads: Query<&Gamepad>,
     cursor: Res<MenuCursor>,
@@ -225,7 +227,14 @@ pub(crate) fn menu_activate(
     match button.action {
         MenuAction::Goto(state) => next.set(state),
         MenuAction::StartRun => next.set(GameState::Lobby),
-        MenuAction::Launch => next.set(GameState::Match),
+        MenuAction::Launch => {
+            let random_seed = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos() as u64)
+                .unwrap_or(1);
+            commands.insert_resource(crate::flow::ActiveMatchSeed(random_seed));
+            next.set(GameState::Match);
+        }
         MenuAction::Equip(id) => {
             career.profile.equip(id);
         }

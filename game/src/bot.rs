@@ -4,15 +4,10 @@
 //! footprint, doorway gaps, and collision arena, then produces a local path toward a
 //! passage threshold. The normal player controller still performs movement and crossing.
 
-use std::collections::{HashMap, VecDeque};
-
 use bevy::prelude::*;
 use observed_traversal::{FpsArena, FpsConfig};
 
-use crate::teleport::{self, DoorGap, PlaceGeom};
-
-const GRID_STEP: f32 = 0.55;
-const NEAREST_SCAN: i32 = 10;
+use crate::teleport::{DoorGap, PlaceGeom};
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct BotPath {
@@ -39,6 +34,25 @@ pub(crate) fn route_to_gap(
     Some(BotPath { waypoints })
 }
 
+fn clamp_to_place(p: Vec2, geom: &PlaceGeom) -> Vec2 {
+    let mut clamped = p;
+    let margin = 0.05;
+    clamped.x = clamped.x.clamp(-geom.half.x + margin, geom.half.x - margin);
+    clamped.y = clamped.y.clamp(-geom.half.y + margin, geom.half.y - margin);
+
+    for gap in &geom.gaps {
+        let rel = clamped - gap.center;
+        let depth = rel.dot(gap.normal);
+        let tangent = Vec2::new(-gap.normal.y, gap.normal.x);
+        let lateral = rel.dot(tangent).abs();
+
+        if lateral <= gap.width * 0.5 + 0.4 && depth > -0.1 {
+            clamped = gap.center - gap.normal * 0.1 + tangent * rel.dot(tangent);
+        }
+    }
+    clamped
+}
+
 fn route_between(
     geom: &PlaceGeom,
     arena: &FpsArena,
@@ -46,147 +60,34 @@ fn route_between(
     start: Vec2,
     goal: Vec2,
 ) -> Option<Vec<Vec2>> {
-    if line_walkable(geom, arena, config, start, goal) {
-        return Some(vec![goal]);
-    }
+    let navmesh = crate::navmesh::build_navmesh(geom, arena, config);
 
-    let start_key = nearest_walkable_key(geom, arena, config, key(start))?;
-    let goal_key = nearest_walkable_key(geom, arena, config, key(goal))?;
-    let mut queue = VecDeque::new();
-    let mut came_from: HashMap<(i32, i32), (i32, i32)> = HashMap::new();
-    came_from.insert(start_key, start_key);
-    queue.push_back(start_key);
+    let clamped_start = clamp_to_place(start, geom);
+    let clamped_goal = clamp_to_place(goal, geom);
 
-    while let Some(cur) = queue.pop_front() {
-        if cur == goal_key {
-            break;
-        }
-        for next in neighbours(cur) {
-            if came_from.contains_key(&next) {
-                continue;
-            }
-            let p = point(next);
-            if !point_walkable(geom, arena, config, p) {
-                continue;
-            }
-            came_from.insert(next, cur);
-            queue.push_back(next);
-        }
-    }
-
-    if !came_from.contains_key(&goal_key) {
+    let path = navmesh.path(clamped_start, clamped_goal);
+    if path.is_none() {
+        info!(
+            "BOT_NAV: route_between failed. start={:?} (clamped: {:?}), goal={:?} (clamped: {:?}), start_in_mesh={}, goal_in_mesh={}, geom.half={:?}, geom.gaps={:?}",
+            start,
+            clamped_start,
+            goal,
+            clamped_goal,
+            navmesh.is_in_mesh(clamped_start),
+            navmesh.is_in_mesh(clamped_goal),
+            geom.half,
+            geom.gaps
+                .iter()
+                .map(|g| (g.center, g.normal, g.kind))
+                .collect::<Vec<_>>()
+        );
         return None;
     }
-
-    let mut cells = vec![goal_key];
-    let mut cur = goal_key;
-    while cur != start_key {
-        cur = came_from[&cur];
-        cells.push(cur);
+    let mut waypoints = path.unwrap().path;
+    if waypoints.is_empty() {
+        waypoints.push(clamped_goal);
     }
-    cells.reverse();
-
-    let mut waypoints: Vec<Vec2> = cells.into_iter().skip(1).map(point).collect();
-    waypoints.push(goal);
-    Some(prune_collinear(waypoints))
-}
-
-fn key(p: Vec2) -> (i32, i32) {
-    (
-        (p.x / GRID_STEP).round() as i32,
-        (p.y / GRID_STEP).round() as i32,
-    )
-}
-
-fn point((x, z): (i32, i32)) -> Vec2 {
-    Vec2::new(x as f32 * GRID_STEP, z as f32 * GRID_STEP)
-}
-
-fn neighbours((x, z): (i32, i32)) -> [(i32, i32); 8] {
-    [
-        (x + 1, z),
-        (x - 1, z),
-        (x, z + 1),
-        (x, z - 1),
-        (x + 1, z + 1),
-        (x + 1, z - 1),
-        (x - 1, z + 1),
-        (x - 1, z - 1),
-    ]
-}
-
-fn nearest_walkable_key(
-    geom: &PlaceGeom,
-    arena: &FpsArena,
-    config: &FpsConfig,
-    origin: (i32, i32),
-) -> Option<(i32, i32)> {
-    (0..=NEAREST_SCAN)
-        .flat_map(|r| {
-            (-r..=r).flat_map(move |dx| {
-                (-r..=r).filter_map(move |dz| {
-                    (dx.abs().max(dz.abs()) == r).then_some((origin.0 + dx, origin.1 + dz))
-                })
-            })
-        })
-        .filter(|candidate| point_walkable(geom, arena, config, point(*candidate)))
-        .min_by(|a, b| {
-            let da = (point(*a) - point(origin)).length_squared();
-            let db = (point(*b) - point(origin)).length_squared();
-            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-        })
-}
-
-fn line_walkable(geom: &PlaceGeom, arena: &FpsArena, config: &FpsConfig, a: Vec2, b: Vec2) -> bool {
-    let dist = a.distance(b);
-    let steps = (dist / (GRID_STEP * 0.5)).ceil().max(1.0) as usize;
-    (0..=steps).all(|i| {
-        let t = i as f32 / steps as f32;
-        point_walkable(geom, arena, config, a.lerp(b, t))
-    })
-}
-
-fn point_walkable(geom: &PlaceGeom, arena: &FpsArena, config: &FpsConfig, p: Vec2) -> bool {
-    let margin = config.radius + 0.03;
-    if p.x.abs() > geom.half.x - margin || p.y.abs() > geom.half.y - margin {
-        return false;
-    }
-
-    if geom.poly.is_some() {
-        return (teleport::contain(geom, p, config.radius) - p).length() < 0.05;
-    }
-
-    let r = config.radius;
-    let cy = config.half_height;
-    let hy = config.half_height;
-    !arena.solids.iter().any(|solid| {
-        p.x - r < solid.max.x
-            && p.x + r > solid.min.x
-            && cy - hy < solid.max.y
-            && cy + hy > solid.min.y
-            && p.y - r < solid.max.z
-            && p.y + r > solid.min.z
-    })
-}
-
-fn prune_collinear(points: Vec<Vec2>) -> Vec<Vec2> {
-    if points.len() < 3 {
-        return points;
-    }
-    let mut out = Vec::with_capacity(points.len());
-    out.push(points[0]);
-    for window in points.windows(3) {
-        let a = window[0];
-        let b = window[1];
-        let c = window[2];
-        let ab = (b - a).normalize_or_zero();
-        let bc = (c - b).normalize_or_zero();
-        if ab.dot(bc) < 0.999 {
-            out.push(b);
-        }
-    }
-    out.push(*points.last().expect("points is non-empty"));
-    out
+    Some(waypoints)
 }
 
 #[cfg(test)]
@@ -195,6 +96,7 @@ mod tests {
 
     use super::*;
     use crate::hallway::{self, HallwayFlavor};
+    use crate::teleport;
 
     fn config() -> FpsConfig {
         FpsConfig::default()

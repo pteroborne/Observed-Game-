@@ -15,6 +15,12 @@
 
 pub use player_input::{PlayerId, PlayerIntent};
 
+pub mod prng;
+pub use prng::SplitMix;
+
+pub mod direction;
+pub use direction::Direction;
+
 /// Stable identifier for a logical room instance.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RoomId(pub u32);

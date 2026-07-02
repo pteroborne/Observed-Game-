@@ -113,7 +113,10 @@ pub(crate) fn draw_tac_map(
             } else {
                 (5.0, (c1.y - c2.y).abs())
             };
-            p.spawn(tac_box(mid, w, h, route_col.with_alpha(0.5)));
+            p.spawn((
+                tac_box(mid, w, h, route_col.with_alpha(0.5)),
+                crate::diagnostics::DiagnosticTacMapVisual::route(pair[0], pair[1]),
+            ));
         }
         // Room squares: collapse-swallowed rooms read red, spine rooms warm, rest dim.
         for id in 0..9u32 {
@@ -125,7 +128,10 @@ pub(crate) fn draw_tac_map(
             } else {
                 plain_fill
             };
-            p.spawn(tac_box(tac_center(room), TAC_ROOM, TAC_ROOM, fill));
+            p.spawn((
+                tac_box(tac_center(room), TAC_ROOM, TAC_ROOM, fill),
+                crate::diagnostics::DiagnosticTacMapVisual::room(room),
+            ));
         }
         // The exit room: a green (open) or red (locked) outline.
         let exit_center = tac_center(model.exit);
@@ -146,31 +152,60 @@ pub(crate) fn draw_tac_map(
             } else {
                 locked_col
             }),
+            crate::diagnostics::DiagnosticTacMapVisual::one(
+                crate::diagnostics::DiagnosticTacMapRole::Exit,
+                Some(model.exit),
+            ),
         ));
         // Keystone pips in the top-right of their room.
         for room in &model.keystones {
             let c = tac_center(*room) + Vec2::new(TAC_ROOM * 0.5 - 7.0, -(TAC_ROOM * 0.5) + 7.0);
-            p.spawn(tac_box(c, 10.0, 10.0, key_col));
+            p.spawn((
+                tac_box(c, 10.0, 10.0, key_col),
+                crate::diagnostics::DiagnosticTacMapVisual::one(
+                    crate::diagnostics::DiagnosticTacMapRole::Keystone,
+                    Some(*room),
+                ),
+            ));
         }
         // Rival pips, fanned so several in one room stay distinct.
         for (slot, (_, room)) in model.rivals.iter().enumerate() {
             let off = Vec2::new((slot as f32 - (rival_count - 1.0) * 0.5) * 9.0, 8.0);
-            p.spawn(tac_box(tac_center(*room) + off, 13.0, 13.0, rival_col));
+            p.spawn((
+                tac_box(tac_center(*room) + off, 13.0, 13.0, rival_col),
+                crate::diagnostics::DiagnosticTacMapVisual::one(
+                    crate::diagnostics::DiagnosticTacMapRole::Rival,
+                    Some(*room),
+                ),
+            ));
         }
         // YOU: room centre, or the midpoint of the hallway you're walking.
         let you = match model.player {
             tacmap::PlayerMark::Room(r) => tac_center(r),
             tacmap::PlayerMark::Between(a, b) => (tac_center(a) + tac_center(b)) * 0.5,
         };
-        p.spawn(tac_box(you, 16.0, 16.0, you_col));
+        let player_room = match model.player {
+            tacmap::PlayerMark::Room(room) => Some(room),
+            tacmap::PlayerMark::Between(_, _) => None,
+        };
+        p.spawn((
+            tac_box(you, 16.0, 16.0, you_col),
+            crate::diagnostics::DiagnosticTacMapVisual::one(
+                crate::diagnostics::DiagnosticTacMapRole::Player,
+                player_room,
+            ),
+        ));
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn match_draw(
     runtime: Res<MatchRuntime>,
     paused: Res<MatchPaused>,
     keys: Res<KeystoneState>,
     items: Res<ItemsState>,
+    log: Res<crate::guardian::ActionLog>,
+    tp: Res<TeleportState>,
     mut hud: Query<&mut Text, With<MatchHud>>,
     mut pause_panel: Query<&mut Visibility, With<PausePanel>>,
 ) {
@@ -199,12 +234,41 @@ pub(crate) fn match_draw(
         .iter()
         .filter(|item| item.kind == ItemKind::TeleportPad)
         .count();
+
+    let mut log_lines = String::new();
+    for entry in &log.entries {
+        log_lines.push_str(&format!("  - {}\n", entry));
+    }
+    let threshold_debug = if crate::diagnostics::visual_audit_enabled() {
+        let mut lines = String::new();
+        for gap in &tp.geom.gaps {
+            if gap.kind != crate::teleport::GapKind::OneWayEntry {
+                lines.push_str(&format!(
+                    "  {}\n",
+                    crate::diagnostics::threshold_label(&gap.threshold)
+                ));
+            }
+        }
+        format!("\nTHRESHOLDS:\n{lines}")
+    } else {
+        String::new()
+    };
+    let freecam_debug = if crate::diagnostics::freecam_enabled() {
+        "\nFREECAM: WASD move | Space/E up | Ctrl/Q down | RMB/Arrows look | R top-down\n"
+            .to_string()
+    } else {
+        String::new()
+    };
+
     if let Ok(mut hud) = hud.single_mut() {
         **hud = format!(
             "ROUND {}\nYou (Team 1): {}\nescaped {} | absorbed {}\ncollapse {:.0}%\n\
              keystones {} / {} | EXIT {}\n\
              tools torch {}/{} | pads {}/{}\n\
              pressure gate {} | hits {}\n\n\
+             {}\
+             {}\
+             ACTION LOG:\n{}\n\
              NET lockstep {} | replica {}/{} {} | drop {} dup {} reorder {}\n\n\
              WASD+mouse or Deck controls | E/X seize/link | F/L1 torch | C/Y pad\n\
              Tab/R1 map | Esc/Start pause",
@@ -222,6 +286,9 @@ pub(crate) fn match_draw(
             placed_pads,
             if game.trap_active() { "ACTIVE" } else { "idle" },
             game.trap_hits,
+            threshold_debug,
+            freecam_debug,
+            log_lines,
             live.network.profile.label(),
             live.remote.committed_round,
             live.resolved,
@@ -237,5 +304,25 @@ pub(crate) fn match_draw(
         } else {
             Visibility::Hidden
         };
+    }
+}
+
+pub(crate) fn update_teleport_animation(
+    time: Res<Time>,
+    mut anim: ResMut<TeleportAnimation>,
+    mut overlay: Query<(&mut Visibility, &mut BackgroundColor), With<TeleportOverlay>>,
+) {
+    if anim.timer > 0.0 {
+        anim.timer = (anim.timer - time.delta_secs()).max(0.0);
+        if let Ok((mut visibility, mut bg_color)) = overlay.single_mut() {
+            *visibility = Visibility::Visible;
+            let ratio = anim.timer / anim.max_time;
+            let alpha = ratio * ratio; // smooth exponential fade
+            *bg_color = BackgroundColor(anim.color.with_alpha(alpha));
+        }
+    } else {
+        if let Ok((mut visibility, _)) = overlay.single_mut() {
+            *visibility = Visibility::Hidden;
+        }
     }
 }

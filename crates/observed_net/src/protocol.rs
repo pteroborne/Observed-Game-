@@ -3,6 +3,7 @@
 //! the network transmits quantized values so every peer reconstructs identical
 //! inputs without depending on platform-specific serialization.
 
+use crate::PacketError;
 use glam::Vec2;
 use player_input::PlayerIntent;
 
@@ -107,16 +108,6 @@ pub struct StatusPacket {
     /// State after this many committed lockstep frames.
     pub state_frame: u32,
     pub state_hash: u64,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PacketError {
-    WrongLength,
-    WrongMagic,
-    UnsupportedVersion,
-    InvalidPeer,
-    InvalidFlags,
-    BadChecksum,
 }
 
 impl StatusPacket {

@@ -1,0 +1,10 @@
+[package]
+name = "guardian_ai_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = ["2d", "png"] }
+observed_core = { path = "../../crates/observed_core" }
+observed_observation = { path = "../../crates/observed_observation" }

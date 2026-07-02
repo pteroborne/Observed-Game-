@@ -6,3 +6,4 @@ publish = false
 
 [dependencies]
 player_input = { path = "../player_input" }
+glam = "0.30"

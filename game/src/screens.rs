@@ -52,7 +52,7 @@ pub(crate) use place::*;
 
 // Taller than head height so the facility reads as a vast, breathable structure rather
 // than a tight corridor. Everything (frames, leaves, walls, ceiling) scales off this.
-const WALL_HEIGHT: f32 = 4.6;
+pub(crate) const WALL_HEIGHT: f32 = 4.6;
 
 /// How long (seconds) the first-person decoherence feedback — the diegetic light flicker
 /// and door slam — lasts after a reroute commits. Shared so the flicker driver
@@ -67,6 +67,8 @@ const TAC_MAP_SIZE: f32 = 300.0;
 // shared `observed_assets` manifest (the single source of truth `asset_lab` also
 // reads). Drop a file at a slot's path and the match uses it; leave it absent and the
 // match falls back procedurally.
+const WALL_TEX: &str = observed_assets::WALL.path;
+const FLOOR_TEX: &str = observed_assets::FLOOR.path;
 const CEILING_TEX: &str = observed_assets::CEILING.path;
 const EXIT_PANEL_TEX: &str = observed_assets::EXIT_PANEL.path;
 // Present in the asset inventory but not rendered: proper HDRI image-based lighting
@@ -122,7 +124,23 @@ fn neon_material(t: &style::Treatment) -> StandardMaterial {
     }
 }
 
-pub(crate) const PLANNED_ASSET_PATHS: [&str; 13] = [
+fn textured_neon_material(
+    t: &style::Treatment,
+    texture: Option<Handle<Image>>,
+) -> StandardMaterial {
+    let has_texture = texture.is_some();
+    let mut material = neon_material(t);
+    material.base_color_texture = texture;
+    if has_texture {
+        material.base_color = Color::WHITE;
+        material.unlit = true;
+    }
+    material
+}
+
+pub(crate) const PLANNED_ASSET_PATHS: [&str; 15] = [
+    WALL_TEX,
+    FLOOR_TEX,
     CEILING_TEX,
     LIGHT_FIXTURE_MODEL,
     EXIT_GATE_MODEL,
@@ -223,6 +241,12 @@ pub struct ItemIntent {
 #[derive(Component)]
 pub(crate) struct GameCam;
 
+/// Marks the startup directional light used for menus and non-match screens.
+#[derive(Component)]
+pub(crate) struct GameSun;
+
+pub(crate) const MENU_SUN_ILLUMINANCE: f32 = 6_000.0;
+
 /// Shared meshes/materials for the solid maze, resolved with the drop-in convention:
 /// textured/models/audio if present, procedural fallbacks otherwise.
 #[derive(Resource)]
@@ -301,6 +325,36 @@ pub(crate) struct KeystoneItem(pub RoomId);
 /// A droppable single-player tool visible in the current place.
 #[derive(Component)]
 pub(crate) struct DroppedItemVisual;
+
+/// Teleport animation resource for screen transitions
+#[derive(Resource, Default, Debug)]
+pub struct TeleportAnimation {
+    pub timer: f32,
+    pub max_time: f32,
+    pub color: Color,
+}
+
+impl TeleportAnimation {
+    pub fn trigger(&mut self, duration: f32, color: Color) {
+        self.timer = duration;
+        self.max_time = duration;
+        self.color = color;
+    }
+}
+
+/// Latch resource to prevent infinite teleport pad loops
+#[derive(Resource, Default, Debug)]
+pub struct LastTeleportPad {
+    pub last_used_pos: Option<(Place, Vec2)>,
+}
+
+/// Marker component for the full-screen teleport overlay UI node
+#[derive(Component)]
+pub(crate) struct TeleportOverlay;
+
+/// Marker component for the rotating stargate glow cylinder
+#[derive(Component)]
+pub(crate) struct TeleportPadGlow;
 
 /// A rival team's avatar, walking the player's current room while that team's clump
 /// shares it. Holds the rival team index; managed entirely by `sync_rival_avatars`
@@ -531,6 +585,7 @@ impl Plugin for MatchPlugin {
     fn build(&self, app: &mut App) {
         let in_match = || in_state(GameState::Match).and(resource_exists::<MatchRuntime>);
         app.insert_resource(Time::<Fixed>::from_hz(60.0))
+            .init_resource::<place::LastRenderedSignature>()
             .add_systems(
                 OnEnter(GameState::Match),
                 (
@@ -541,6 +596,7 @@ impl Plugin for MatchPlugin {
                 )
                     .chain(),
             )
+            .add_systems(Update, place::update_carried_torch_light.run_if(in_match()))
             .add_systems(
                 OnExit(GameState::Match),
                 (
@@ -557,7 +613,18 @@ impl Plugin for MatchPlugin {
                     toggle_tac_map,
                     match_pump,
                     item_actions,
+                    crate::guardian::update_guardian_in_match,
                     rebuild_place,
+                    place::update_tether_monitors,
+                    place::update_guardian_monitors,
+                    place::interact_guardian_console,
+                )
+                    .chain()
+                    .run_if(in_match()),
+            )
+            .add_systems(
+                Update,
+                (
                     apply_place_atmosphere,
                     sync_decohere_fx,
                     flicker_lights,
@@ -565,6 +632,8 @@ impl Plugin for MatchPlugin {
                     sync_rival_avatars,
                     sync_match_audio,
                     animate_doors,
+                    hud::update_teleport_animation,
+                    place::animate_teleport_pad_glow,
                     present_match_camera,
                     match_draw,
                     draw_tac_map,

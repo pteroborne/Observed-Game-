@@ -423,6 +423,236 @@ fn compatible_alignment(
         })
 }
 
+pub fn validate_world(
+    world: &RoomWorld,
+    registry: &RoomRegistry,
+    min_wall_length: f32,
+) -> Result<(), String> {
+    // 1. Check overlaps
+    let instances = world.rooms.values().collect::<Vec<_>>();
+    for i in 0..instances.len() {
+        for j in i + 1..instances.len() {
+            let ra = instances[i];
+            let rb = instances[j];
+            let def_a = registry
+                .load(ra.template)
+                .ok_or_else(|| format!("Missing definition for template {:?}", ra.template))?;
+            let def_b = registry
+                .load(rb.template)
+                .ok_or_else(|| format!("Missing definition for template {:?}", rb.template))?;
+            let size_a = ra.transform.rotation.rotate_size(def_a.bounds.size);
+            let size_b = rb.transform.rotation.rotate_size(def_b.bounds.size);
+            let half_a = size_a * 0.5;
+            let half_b = size_b * 0.5;
+            let center_a = ra.transform.translation;
+            let center_b = rb.transform.translation;
+            let dx = (center_a.x - center_b.x).abs();
+            let dy = (center_a.y - center_b.y).abs();
+            // Check if they intersect with a 0.1 margin to ignore exact boundary touching.
+            if dx < (half_a.x + half_b.x - 0.1) && dy < (half_a.y + half_b.y - 0.1) {
+                return Err(format!(
+                    "Overlapping rooms: Room {} and Room {}",
+                    ra.id.0, rb.id.0
+                ));
+            }
+        }
+    }
+
+    // 2. Check connection port alignments
+    for conn in &world.connections {
+        let a_world = world
+            .port(registry, conn.a)
+            .map_err(|e| format!("Error getting port a of connection: {:?}", e))?;
+        let b_world = world
+            .port(registry, conn.b)
+            .map_err(|e| format!("Error getting port b of connection: {:?}", e))?;
+        if a_world.kind != b_world.kind {
+            return Err(format!(
+                "Port type mismatch on connection: {:?} vs {:?}",
+                a_world.kind, b_world.kind
+            ));
+        }
+        if a_world.position.distance(b_world.position) > ALIGNMENT_EPSILON {
+            return Err(format!(
+                "Port position alignment mismatch on connection: position {:?} vs {:?}",
+                a_world.position, b_world.position
+            ));
+        }
+        if a_world.facing.opposite() != b_world.facing {
+            return Err(format!(
+                "Port facing mismatch on connection: facing {:?} vs {:?}",
+                a_world.facing, b_world.facing
+            ));
+        }
+    }
+
+    // 3. Check min wall length on each registry definition's collision surfaces
+    // and port proximity on the same facing.
+    for instance in world.rooms.values() {
+        let def = registry
+            .load(instance.template)
+            .ok_or_else(|| format!("Missing definition for template {:?}", instance.template))?;
+        for surface in &def.surfaces {
+            if surface.collision {
+                let max_dim = surface.size.x.max(surface.size.y);
+                if max_dim < min_wall_length - 0.01 {
+                    return Err(format!(
+                        "Collision surface in room template {:?} has a size dimension {} shorter than minimum wall length {}",
+                        instance.template, max_dim, min_wall_length
+                    ));
+                }
+            }
+        }
+        // Port proximity check on same wall (same facing)
+        let ports = &def.ports;
+        for i in 0..ports.len() {
+            for j in i + 1..ports.len() {
+                if ports[i].facing == ports[j].facing {
+                    let dist = ports[i].local_position.distance(ports[j].local_position);
+                    if dist < min_wall_length - 0.01 {
+                        return Err(format!(
+                            "Ports {} and {} in room template {:?} are too close on the same facing (distance {} < {})",
+                            ports[i].id.0, ports[j].id.0, instance.template, dist, min_wall_length
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+pub fn parse_ascii_map(input: &str, registry: &RoomRegistry) -> Result<RoomWorld, String> {
+    let mut world = RoomWorld::empty();
+    let mut section = "";
+
+    for line in input.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        if trimmed == "ROOMS" || trimmed == "[ROOMS]" {
+            section = "rooms";
+            continue;
+        } else if trimmed == "CONNECTIONS" || trimmed == "[CONNECTIONS]" {
+            section = "connections";
+            continue;
+        }
+
+        match section {
+            "rooms" => {
+                // Parse format: ID: TemplateName, (X, Y), Rotation
+                // e.g. 0: StraightCorridor, (-700.0, -120.0), R0
+                let parts: Vec<&str> = trimmed.split(':').collect();
+                if parts.len() < 2 {
+                    return Err(format!("Malformed Room line: {}", trimmed));
+                }
+                let id_val: u32 = parts[0]
+                    .trim()
+                    .parse()
+                    .map_err(|_| format!("Invalid Room ID: {}", parts[0]))?;
+
+                let info_parts: Vec<&str> = parts[1].split(',').collect();
+                if info_parts.len() < 4 {
+                    return Err(format!("Malformed Room info: {}", parts[1]));
+                }
+                let template_str = info_parts[0].trim();
+                let template = match template_str {
+                    "StraightCorridor" | "Straight corridor" => RoomTemplate::StraightCorridor,
+                    "Corner" => RoomTemplate::Corner,
+                    "Junction" => RoomTemplate::Junction,
+                    "ControlRoom" | "Control room" => RoomTemplate::ControlRoom,
+                    "MachineChamber" | "Machine chamber" => RoomTemplate::MachineChamber,
+                    "FreightRoom" | "Freight room" => RoomTemplate::FreightRoom,
+                    "Shaft" => RoomTemplate::Shaft,
+                    "PlatformRoom" | "Platform room" => RoomTemplate::PlatformRoom,
+                    _ => return Err(format!("Unknown Room Template: {}", template_str)),
+                };
+
+                let x_str = info_parts[1].trim().replace(['(', ')'], "");
+                let y_str = info_parts[2].trim().replace(['(', ')'], "");
+                let x: f32 = x_str
+                    .parse()
+                    .map_err(|_| format!("Invalid X coordinate: {}", x_str))?;
+                let y: f32 = y_str
+                    .parse()
+                    .map_err(|_| format!("Invalid Y coordinate: {}", y_str))?;
+
+                let rot_str = info_parts[3].trim();
+                let rotation = match rot_str {
+                    "R0" => QuarterTurn::R0,
+                    "R90" => QuarterTurn::R90,
+                    "R180" => QuarterTurn::R180,
+                    "R270" => QuarterTurn::R270,
+                    _ => return Err(format!("Invalid rotation: {}", rot_str)),
+                };
+
+                // Spawn the room directly in our parsed RoomWorld
+                let room_id = RoomId(id_val);
+                world.next_room_id = world.next_room_id.max(id_val + 1);
+                world.spawn_count += 1;
+                world.rooms.insert(
+                    room_id,
+                    RoomInstance {
+                        id: room_id,
+                        template,
+                        transform: RoomTransform {
+                            translation: Vec2::new(x, y),
+                            rotation,
+                        },
+                        revision: 0,
+                    },
+                );
+            }
+            "connections" => {
+                // Parse format: RoomA, PortA <-> RoomB, PortB
+                // e.g. 0, 1 <-> 1, 0
+                let parts: Vec<&str> = trimmed.split("<->").collect();
+                if parts.len() != 2 {
+                    return Err(format!("Malformed Connection line: {}", trimmed));
+                }
+
+                let parse_ep = |s: &str| -> Result<PortRef, String> {
+                    let ep_parts: Vec<&str> = s.trim().split(',').collect();
+                    if ep_parts.len() != 2 {
+                        return Err(format!("Invalid endpoint format: {}", s));
+                    }
+                    let room_val: u32 = ep_parts[0]
+                        .trim()
+                        .parse()
+                        .map_err(|_| format!("Invalid Room ID: {}", ep_parts[0]))?;
+                    let port_val: u32 = ep_parts[1]
+                        .trim()
+                        .parse()
+                        .map_err(|_| format!("Invalid Port ID: {}", ep_parts[1]))?;
+                    Ok(PortRef {
+                        room: RoomId(room_val),
+                        port: PortId(port_val),
+                    })
+                };
+
+                let ep_a = parse_ep(parts[0])?;
+                let ep_b = parse_ep(parts[1])?;
+
+                world.connect(registry, ep_a, ep_b).map_err(|e| {
+                    format!(
+                        "Connection error between room {}, port {} and room {}, port {}: {:?}",
+                        ep_a.room.0, ep_a.port.0, ep_b.room.0, ep_b.port.0, e
+                    )
+                })?;
+            }
+            _ => {}
+        }
+    }
+
+    // Validate the parsed world topology!
+    validate_world(&world, registry, 1.5)?;
+
+    Ok(world)
+}
+
 pub fn port_types_match(left: PortType, right: PortType) -> bool {
     left == right
 }
@@ -682,5 +912,70 @@ mod tests {
                 .iter()
                 .any(|connection| connection.contains(target))
         );
+    }
+
+    #[test]
+    fn test_ascii_parser_valid() {
+        let registry = RoomRegistry::default();
+        let map_literal = r#"
+            [ROOMS]
+            0: StraightCorridor, (-200, 0), R0
+            1: StraightCorridor, (0, 0), R0
+            2: Corner, (200, 0), R0
+
+            [CONNECTIONS]
+            0, 1 <-> 1, 0
+            1, 1 <-> 2, 0
+        "#;
+        let world = parse_ascii_map(map_literal, &registry).unwrap();
+        assert_eq!(world.rooms.len(), 3);
+        assert_eq!(world.connections.len(), 2);
+        assert_eq!(
+            world.room(RoomId(0)).unwrap().template,
+            RoomTemplate::StraightCorridor
+        );
+        assert_eq!(
+            world.room(RoomId(2)).unwrap().template,
+            RoomTemplate::Corner
+        );
+    }
+
+    #[test]
+    fn test_validation_overlaps() {
+        let registry = RoomRegistry::default();
+        // Room 0 and Room 1 are placed overlapping each other
+        let map_literal = r#"
+            [ROOMS]
+            0: StraightCorridor, (0, 0), R0
+            1: StraightCorridor, (10, 10), R0
+        "#;
+        let result = parse_ascii_map(map_literal, &registry);
+        assert!(result.is_err());
+        assert!(result.err().unwrap().contains("Overlapping rooms"));
+    }
+
+    #[test]
+    fn test_validation_misaligned_ports() {
+        let registry = RoomRegistry::default();
+        // StraightCorridor has port 1 at (100, 0) facing East.
+        // If we connect it to a corner at (300, 0), port 0 of Corner is at (-100, 0) relative to (300, 0), so it is at (200, 0).
+        // This leaves a gap of 100 units, which fails validation.
+        let map_literal = r#"
+            [ROOMS]
+            0: StraightCorridor, (0, 0), R0
+            1: Corner, (300, 0), R0
+
+            [CONNECTIONS]
+            0, 1 <-> 1, 0
+        "#;
+        let result = parse_ascii_map(map_literal, &registry);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validation_too_close_ports() {
+        let registry = RoomRegistry::default();
+        let world = RoomWorld::authored_facility(&registry);
+        assert!(validate_world(&world, &registry, 1.5).is_ok());
     }
 }

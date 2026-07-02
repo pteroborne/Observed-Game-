@@ -1,15 +1,19 @@
 mod bot;
 mod camera;
 mod capture;
+mod diagnostics;
 pub mod flow;
+pub mod guardian;
 pub mod hallway;
 pub mod items;
 pub mod keystones;
 pub mod maze;
+mod navmesh;
 pub mod rivals;
 mod screens;
 pub mod tacmap;
 pub mod teleport;
+pub mod wfc_maze;
 
 use bevy::{
     asset::AssetPlugin,
@@ -41,6 +45,7 @@ impl Plugin for ObservedGamePlugin {
         // for its responsibility (see `screens`); evidence capture is wired in `run`.
         app.init_state::<GameState>()
             .init_resource::<Career>()
+            .init_resource::<crate::flow::ActiveMatchSeed>()
             .add_systems(Startup, setup_camera)
             .add_plugins((screens::ScreensPlugin, screens::MatchPlugin));
     }
@@ -55,9 +60,10 @@ fn setup_camera(mut commands: Commands) {
     ));
     commands.spawn((
         DirectionalLight {
-            illuminance: 6_000.0,
+            illuminance: screens::MENU_SUN_ILLUMINANCE,
             ..default()
         },
+        screens::GameSun,
         Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.85, -0.6, 0.0)),
         Name::new("Observed 2 Sun"),
     ));
@@ -97,6 +103,7 @@ pub fn run() {
 
     // Opt-in evidence capture (no-op in normal play).
     capture::configure(&mut app);
+    diagnostics::configure(&mut app);
 
     app.run();
 }
@@ -104,6 +111,7 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::flow::MATCH_SEED;
     use bevy::{
         asset::AssetPlugin, gizmos::GizmoPlugin, input::InputPlugin, state::app::StatesPlugin,
     };
@@ -115,7 +123,10 @@ mod tests {
         app.add_plugins((
             MinimalPlugins,
             StatesPlugin,
-            AssetPlugin::default(),
+            AssetPlugin {
+                file_path: screens::assets_dir().to_string_lossy().into_owned(),
+                ..default()
+            },
             InputPlugin,
             GizmoPlugin,
         ))
@@ -144,12 +155,39 @@ mod tests {
         query.iter(world).filter(|cue| **cue == expected).count()
     }
 
+    fn material_named_has_texture(app: &mut App, expected_name: &str) -> bool {
+        let handles: Vec<Handle<StandardMaterial>> = {
+            let world = app.world_mut();
+            let mut query = world.query::<(&Name, &MeshMaterial3d<StandardMaterial>)>();
+            query
+                .iter(world)
+                .filter(|(name, _)| name.as_str() == expected_name)
+                .map(|(_, handle)| handle.0.clone())
+                .collect()
+        };
+        let materials = app.world().resource::<Assets<StandardMaterial>>();
+        handles.iter().any(|handle| {
+            materials
+                .get(handle)
+                .is_some_and(|material| material.base_color_texture.is_some())
+        })
+    }
+
     fn single_visibility<T: Component>(app: &mut App) -> Visibility {
         let world = app.world_mut();
         let mut query = world.query_filtered::<&Visibility, With<T>>();
         *query
             .single(world)
             .expect("expected exactly one matching visibility component")
+    }
+
+    fn menu_sun_illuminance(app: &mut App) -> f32 {
+        let world = app.world_mut();
+        let mut query = world.query_filtered::<&DirectionalLight, With<screens::GameSun>>();
+        query
+            .single(world)
+            .expect("expected exactly one startup sun")
+            .illuminance
     }
 
     fn go(app: &mut App, state: GameState) {
@@ -261,7 +299,7 @@ mod tests {
             let runtime = app.world().resource::<screens::MatchRuntime>();
             let keys = app.world().resource::<keystones::KeystoneState>();
             let items = app.world().resource::<items::ItemsState>();
-            screens::nav_from_brain(runtime.live.host_match(), keys, items).pins
+            screens::nav_from_brain(MATCH_SEED, runtime.live.host_match(), keys, items).pins
         };
         assert!(
             !pins.is_empty(),
@@ -316,7 +354,7 @@ mod tests {
             let runtime = app.world().resource::<screens::MatchRuntime>();
             let keys = app.world().resource::<keystones::KeystoneState>();
             let items = app.world().resource::<items::ItemsState>();
-            let nav = screens::nav_from_brain(runtime.live.host_match(), keys, items);
+            let nav = screens::nav_from_brain(MATCH_SEED, runtime.live.host_match(), keys, items);
             let mut pinned_targets: Vec<_> = items.placed[0]
                 .pin_edges
                 .iter()
@@ -383,7 +421,7 @@ mod tests {
             &[absent],
         ));
         let keys = keystones::KeystoneState::new(MATCH_SEED);
-        let nav = screens::nav_for_room(&game, &keys, &items, room);
+        let nav = screens::nav_for_room(MATCH_SEED, &game, &keys, &items, room);
 
         assert!(
             nav.connections.contains(&absent),
@@ -433,7 +471,7 @@ mod tests {
         game.rendered.push(injected);
 
         let keys = keystones::KeystoneState::new(MATCH_SEED);
-        let nav = screens::nav_for_room(&game, &keys, &items, room);
+        let nav = screens::nav_for_room(MATCH_SEED, &game, &keys, &items, room);
 
         assert_eq!(
             nav.connections, locked,
@@ -444,7 +482,7 @@ mod tests {
             "new live relations cannot appear as thresholds while the room is anchored"
         );
 
-        let other_nav = screens::nav_for_room(&game, &keys, &items, absent);
+        let other_nav = screens::nav_for_room(MATCH_SEED, &game, &keys, &items, absent);
         assert!(
             !other_nav.connections.contains(&room),
             "an unanchored room cannot grow a new inbound threshold into a locked room"
@@ -609,6 +647,99 @@ mod tests {
         assert!(
             count::<screens::PassagePreview>(&mut app) > 0,
             "a hallway's doorway previews the room you'll enter"
+        );
+    }
+
+    #[test]
+    fn hallway_room_threshold_does_not_draw_wall_trim_across_opening() {
+        use crate::flow::MATCH_SEED;
+        use crate::teleport::{GapKind, Place};
+        use observed_core::RoomId;
+
+        fn trim_crosses_gap(transform: &Transform, gap: &teleport::DoorGap) -> bool {
+            let center = Vec2::new(transform.translation.x, transform.translation.z);
+            let normal_dist = (center - gap.center).dot(gap.normal).abs();
+            if normal_dist > 0.35 {
+                return false;
+            }
+
+            let tangent = Vec2::new(-gap.normal.y, gap.normal.x);
+            let x_axis = transform.rotation * Vec3::X;
+            let z_axis = transform.rotation * Vec3::Z;
+            let (axis, half_len) = if transform.scale.x >= transform.scale.z {
+                (
+                    Vec2::new(x_axis.x, x_axis.z).normalize_or_zero(),
+                    transform.scale.x * 0.5,
+                )
+            } else {
+                (
+                    Vec2::new(z_axis.x, z_axis.z).normalize_or_zero(),
+                    transform.scale.z * 0.5,
+                )
+            };
+            if axis.dot(tangent).abs() < 0.92 {
+                return false;
+            }
+
+            let center_along = (center - gap.center).dot(tangent);
+            let lo = center_along - half_len;
+            let hi = center_along + half_len;
+            lo < gap.width * 0.5 - 0.02 && hi > -gap.width * 0.5 + 0.02
+        }
+
+        let mut app = test_app();
+        go(&mut app, GameState::Match);
+        app.update();
+        app.world_mut()
+            .resource_scope(|world, mut tp: Mut<screens::TeleportState>| {
+                let runtime = world.resource::<screens::MatchRuntime>();
+                let keys = world.resource::<keystones::KeystoneState>();
+                let items = world.resource::<items::ItemsState>();
+                let game = runtime.live.host_match();
+                let from = game.local_room();
+                let to = game.local_target().unwrap_or(RoomId(from.0 + 1));
+                let variation = hallway::variation_for(from, to, MATCH_SEED, game.reroute_commits);
+                screens::debug_place_into(
+                    &mut tp,
+                    runtime,
+                    Place::Hallway {
+                        from,
+                        to,
+                        variation,
+                    },
+                    from,
+                    keys,
+                    items,
+                );
+            });
+        app.update();
+
+        let open_gaps: Vec<_> = app
+            .world()
+            .resource::<screens::TeleportState>()
+            .geom
+            .gaps
+            .iter()
+            .copied()
+            .filter(|gap| matches!(gap.kind, GapKind::Entry | GapKind::Exit))
+            .collect();
+        let blocking_trims: Vec<_> = {
+            let world = app.world_mut();
+            let mut trims = world.query::<(&Name, &Transform)>();
+            trims
+                .iter(world)
+                .filter(|(name, transform)| {
+                    name.as_str() == "Wall trim"
+                        && open_gaps.iter().any(|gap| trim_crosses_gap(transform, gap))
+                })
+                .map(|(_, transform)| (transform.translation, transform.scale))
+                .collect()
+        };
+
+        assert_eq!(
+            blocking_trims.len(),
+            0,
+            "wall trim must be split around open hallway-room thresholds: {blocking_trims:?}"
         );
     }
 
@@ -796,6 +927,18 @@ mod tests {
             count::<screens::PlaceGeometry>(&mut app) > 0,
             "the current place is rendered"
         );
+        assert!(
+            material_named_has_texture(&mut app, "Place floor"),
+            "rendered floor material should use the floor texture slot"
+        );
+        assert!(
+            material_named_has_texture(&mut app, "Room wall"),
+            "rendered wall material should use the wall texture slot"
+        );
+        assert!(
+            material_named_has_texture(&mut app, "Place ceiling"),
+            "rendered ceiling material should use the ceiling texture slot"
+        );
         assert_eq!(
             count_audio_cue(&mut app, screens::MatchAudioCue::Ambience),
             1,
@@ -811,6 +954,29 @@ mod tests {
             app.world().resource::<screens::TeleportState>().place,
             teleport::Place::Room(start_room),
             "the teleport state starts in the local team's room"
+        );
+    }
+
+    #[test]
+    fn match_atmosphere_disables_the_startup_sun_and_restores_it_on_exit() {
+        let mut app = test_app();
+        assert_eq!(
+            menu_sun_illuminance(&mut app),
+            screens::MENU_SUN_ILLUMINANCE
+        );
+
+        go(&mut app, GameState::Match);
+        assert_eq!(
+            menu_sun_illuminance(&mut app),
+            0.0,
+            "the match relies on place-local lights, not the menu sun"
+        );
+
+        finish_match(&mut app);
+        assert_eq!(
+            menu_sun_illuminance(&mut app),
+            screens::MENU_SUN_ILLUMINANCE,
+            "leaving the match restores the menu sun"
         );
     }
 

@@ -107,33 +107,7 @@ impl PortType {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Cardinal {
-    North,
-    East,
-    South,
-    West,
-}
-
-impl Cardinal {
-    pub fn vector(self) -> Vec2 {
-        match self {
-            Self::North => Vec2::Y,
-            Self::East => Vec2::X,
-            Self::South => Vec2::NEG_Y,
-            Self::West => Vec2::NEG_X,
-        }
-    }
-
-    pub fn opposite(self) -> Self {
-        match self {
-            Self::North => Self::South,
-            Self::East => Self::West,
-            Self::South => Self::North,
-            Self::West => Self::East,
-        }
-    }
-}
+pub use observed_core::Direction as Cardinal;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum QuarterTurn {

@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "run_id": "observed-vis-audit-1782919217206",
+  "scenarios": [
+    "geometry",
+    "thresholds",
+    "lighting",
+    "tacmap",
+    "tether_camera_room",
+    "guardian_camera_room",
+    "footprint_atlas"
+  ],
+  "snapshots": [
+    {
+      "scenario": "geometry",
+      "image_path": "docs/evidence/visual_audit/00_geometry.png",
+      "json_path": "docs/evidence/visual_audit/00_geometry.json",
+      "finding_count": 0
+    },
+    {
+      "scenario": "thresholds",
+      "image_path": "docs/evidence/visual_audit/01_thresholds.png",
+      "json_path": "docs/evidence/visual_audit/01_thresholds.json",
+      "finding_count": 0
+    },
+    {
+      "scenario": "lighting",
+      "image_path": "docs/evidence/visual_audit/02_lighting.png",
+      "json_path": "docs/evidence/visual_audit/02_lighting.json",
+      "finding_count": 0
+    },
+    {
+      "scenario": "tacmap",
+      "image_path": "docs/evidence/visual_audit/03_tacmap.png",
+      "json_path": "docs/evidence/visual_audit/03_tacmap.json",
+      "finding_count": 0
+    },
+    {
+      "scenario": "tether_camera_room",
+      "image_path": "docs/evidence/visual_audit/04_tether_camera_room.png",
+      "json_path": "docs/evidence/visual_audit/04_tether_camera_room.json",
+      "finding_count": 0
+    },
+    {
+      "scenario": "guardian_camera_room",
+      "image_path": "docs/evidence/visual_audit/05_guardian_camera_room.png",
+      "json_path": "docs/evidence/visual_audit/05_guardian_camera_room.json",
+      "finding_count": 0
+    },
+    {
+      "scenario": "footprint_atlas",
+      "image_path": "docs/evidence/visual_audit/06_footprint_atlas.png",
+      "json_path": "docs/evidence/visual_audit/06_footprint_atlas.json",
+      "finding_count": 0
+    }
+  ],
+  "findings": []
+}

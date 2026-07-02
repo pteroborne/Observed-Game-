@@ -22,6 +22,15 @@ pub const LOCAL_TEAM: TeamId = TeamId(0);
 /// The seed the assembled game's match runs on.
 pub const MATCH_SEED: u64 = 1;
 
+#[derive(Resource, Copy, Clone, Debug, PartialEq, Eq)]
+pub struct ActiveMatchSeed(pub u64);
+
+impl Default for ActiveMatchSeed {
+    fn default() -> Self {
+        Self(MATCH_SEED)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MatchResult {
     pub placement: Option<u8>,

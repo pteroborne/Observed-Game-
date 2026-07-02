@@ -16,7 +16,7 @@
 
 use bevy::math::Vec2;
 use bevy::prelude::Resource;
-use observed_core::RoomId;
+use observed_core::{RoomId, SplitMix};
 use observed_observation::{DOOR_COUNT, DoorId, ObservationWorld, ROOM_COUNT, Side};
 use player_input::PlayerIntent;
 
@@ -152,21 +152,7 @@ pub fn visible(eye: Vec2, fwd: Vec2, p: Vec2, walls: &[Seg]) -> bool {
     walls.iter().all(|w| !segments_cross(eye, p, w.a, w.b))
 }
 
-struct SplitMix(u64);
-
-impl SplitMix {
-    fn next(&mut self) -> u64 {
-        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
-        let mut z = self.0;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        z ^ (z >> 31)
-    }
-
-    fn below(&mut self, bound: usize) -> usize {
-        (self.next() % bound as u64) as usize
-    }
-}
+// Replaced duplicate SplitMix with shared observed_core::SplitMix
 
 #[derive(Resource, Clone, Debug)]
 pub struct VisionField {

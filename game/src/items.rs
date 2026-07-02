@@ -66,7 +66,7 @@ fn place_key(p: Place) -> (u8, u32, u32) {
     }
 }
 
-fn same_place(a: Place, b: Place) -> bool {
+pub(crate) fn same_place(a: Place, b: Place) -> bool {
     place_key(a) == place_key(b)
 }
 

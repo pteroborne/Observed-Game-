@@ -16,3 +16,14 @@
 pub mod netmatch;
 pub mod network;
 pub mod protocol;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PacketError {
+    WrongLength,
+    WrongMagic,
+    UnsupportedVersion,
+    InvalidPeer,
+    InvalidFlags,
+    InvalidAction,
+    BadChecksum,
+}

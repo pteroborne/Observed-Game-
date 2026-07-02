@@ -17,7 +17,7 @@
 //! re-exports this crate as its `model` and is the debug projection.
 
 use glam::Vec2;
-use observed_core::RoomId;
+use observed_core::{RoomId, SplitMix};
 
 pub const ROWS: u32 = 3;
 pub const COLS: u32 = 3;
@@ -27,47 +27,10 @@ pub const PLAYER_COUNT: usize = 4;
 pub const ROOM_HALF: f32 = 120.0;
 const ROOM_SPACING: f32 = 320.0;
 
+pub use observed_core::Direction as Side;
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DoorId(pub u16);
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Side {
-    North,
-    East,
-    South,
-    West,
-}
-
-impl Side {
-    pub const ALL: [Side; 4] = [Side::North, Side::East, Side::South, Side::West];
-
-    pub fn index(self) -> usize {
-        match self {
-            Side::North => 0,
-            Side::East => 1,
-            Side::South => 2,
-            Side::West => 3,
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Side::North => "N",
-            Side::East => "E",
-            Side::South => "S",
-            Side::West => "W",
-        }
-    }
-
-    pub fn offset(self) -> Vec2 {
-        match self {
-            Side::North => Vec2::new(0.0, ROOM_HALF),
-            Side::East => Vec2::new(ROOM_HALF, 0.0),
-            Side::South => Vec2::new(0.0, -ROOM_HALF),
-            Side::West => Vec2::new(-ROOM_HALF, 0.0),
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Door {
@@ -76,22 +39,7 @@ pub struct Door {
     pub side: Side,
 }
 
-/// A small deterministic PRNG (splitmix64) so decoherence is replayable.
-struct SplitMix(u64);
-
-impl SplitMix {
-    fn next(&mut self) -> u64 {
-        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
-        let mut z = self.0;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        z ^ (z >> 31)
-    }
-
-    fn below(&mut self, bound: usize) -> usize {
-        (self.next() % bound as u64) as usize
-    }
-}
+// Replaced duplicate SplitMix with shared observed_core::SplitMix
 
 #[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
 #[derive(Clone, Debug)]
@@ -195,7 +143,7 @@ impl ObservationWorld {
 
     pub fn door_position(&self, id: DoorId) -> Vec2 {
         let door = self.door(id);
-        self.room_center(door.room) + door.side.offset()
+        self.room_center(door.room) + door.side.vector() * ROOM_HALF
     }
 
     /// Unique active passages (a < b, linked, not sealed).

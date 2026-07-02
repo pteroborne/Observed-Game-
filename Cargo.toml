@@ -2,6 +2,7 @@
 members = [
     "crates/player_input",
     "crates/observed_core",
+    "crates/observed_diagnostics",
     "crates/observed_style",
     "crates/observed_assets",
     "crates/observed_observation",
@@ -59,6 +60,9 @@ members = [
     "labs/archie_input_lab",
     "labs/lab_observability_lab",
     "labs/navigation_probe_lab",
+    "labs/wfc_proc_gen_lab",
+    "labs/guardian_ai_lab",
+    "labs/topology_lab",
     "game",
 ]
 resolver = "3"

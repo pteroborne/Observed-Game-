@@ -1,0 +1,18 @@
+[package]
+name = "wfc_proc_gen_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "wfc_proc_gen_lab"
+path = "src/main.rs"
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = [
+    "2d",
+    "png",
+] }
+bevy_ghx_proc_gen = "0.8.0"
+ghx_proc_gen = "0.8.0"
+observed_style = { path = "../../crates/observed_style" }
