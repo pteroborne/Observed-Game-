@@ -185,10 +185,12 @@ pub enum SurfaceRole {
     Wall,
     /// An overhead ceiling panel.
     Ceiling,
+    /// A collapse-sealed threshold's rubble fill: the territory the facility has taken back.
+    Rubble,
 }
 
 impl SurfaceRole {
-    pub const ALL: [SurfaceRole; 10] = [
+    pub const ALL: [SurfaceRole; 11] = [
         SurfaceRole::Plain,
         SurfaceRole::Spine,
         SurfaceRole::SafeBypass,
@@ -199,6 +201,7 @@ impl SurfaceRole {
         SurfaceRole::TrapIdle,
         SurfaceRole::Wall,
         SurfaceRole::Ceiling,
+        SurfaceRole::Rubble,
     ];
 
     pub fn label(self) -> &'static str {
@@ -213,6 +216,7 @@ impl SurfaceRole {
             SurfaceRole::TrapIdle => "trap idle",
             SurfaceRole::Wall => "wall",
             SurfaceRole::Ceiling => "ceiling",
+            SurfaceRole::Rubble => "collapsed threshold — rubble",
         }
     }
 }
@@ -482,6 +486,12 @@ pub fn surface(role: SurfaceRole) -> Treatment {
             signal: false,
             edge: None,
         },
+        SurfaceRole::Rubble => Treatment {
+            base_color: Color::srgb(0.055, 0.05, 0.055),
+            emissive: LinearRgba::rgb(7.0, 1.75, 0.62),
+            signal: true,
+            edge: Some(Color::srgb(1.0, 0.52, 0.18)),
+        },
     }
 }
 
@@ -535,6 +545,18 @@ pub fn door_identity(role: DoorIdentityRole) -> Treatment {
         emissive,
         signal: true,
         edge: Some(base),
+    }
+}
+
+/// The facility-wide countdown state: once the first team escapes, every district's
+/// lighting drops into this red alarm tier. Signal-tier so it stays legible as the
+/// collapse approaches.
+pub fn klaxon() -> Treatment {
+    Treatment {
+        base_color: Color::srgb(0.35, 0.04, 0.04),
+        emissive: LinearRgba::rgb(7.2, 0.65, 0.52),
+        signal: true,
+        edge: Some(Color::srgb(1.0, 0.3, 0.2)),
     }
 }
 
@@ -738,6 +760,60 @@ pub fn district(d: District) -> DistrictPalette {
             light_color: Color::srgb(0.50, 0.95, 0.98),
             accent: LinearRgba::rgb(0.12, 0.60, 0.62),
         },
+    }
+}
+
+/// The palette a district drains toward while the collapse approaches (Phase 41):
+/// drained, grey, faintly warning-lit. Every color is desaturated toward grey and dimmed
+/// to ~55% brightness, with a faint warning cast. The atmosphere only — the Legibility
+/// Contract still guarantees signals punch through.
+pub fn drained(palette: &DistrictPalette) -> DistrictPalette {
+    // Helper to compute the luminance grey of a color in sRGB space.
+    fn luminance_grey(c: Color) -> Color {
+        let linear = c.to_linear();
+        let lum = luminance(linear);
+        Color::srgb(lum, lum, lum)
+    }
+
+    // Desaturate each color 60% toward its own luminance grey, then dim to 55%.
+    let desaturate = |c: Color| {
+        let grey = luminance_grey(c);
+        let srgb_c = c.to_srgba();
+        let srgb_g = grey.to_srgba();
+        let desaturated = Color::srgb(
+            srgb_c.red * 0.4 + srgb_g.red * 0.6,
+            srgb_c.green * 0.4 + srgb_g.green * 0.6,
+            srgb_c.blue * 0.4 + srgb_g.blue * 0.6,
+        );
+        dim(desaturated, 0.55)
+    };
+
+    DistrictPalette {
+        ambient_color: {
+            let c = desaturate(palette.ambient_color);
+            let srgb = c.to_srgba();
+            // Add srgb(0.06, 0.01, 0.0) for faint warning cast.
+            Color::srgb(
+                (srgb.red + 0.06).min(1.0),
+                (srgb.green + 0.01).min(1.0),
+                srgb.blue.min(1.0),
+            )
+        },
+        ambient_brightness: palette.ambient_brightness * 0.55,
+        fog_color: {
+            let c = desaturate(palette.fog_color);
+            let srgb = c.to_srgba();
+            // Add srgb(0.06, 0.01, 0.0) for faint warning cast.
+            Color::srgb(
+                (srgb.red + 0.06).min(1.0),
+                (srgb.green + 0.01).min(1.0),
+                srgb.blue.min(1.0),
+            )
+        },
+        fog_start: palette.fog_start,
+        fog_end: palette.fog_end,
+        light_color: desaturate(palette.light_color),
+        accent: scale(palette.accent, 0.55),
     }
 }
 
@@ -1015,6 +1091,41 @@ mod tests {
     }
 
     #[test]
+    fn drained_palette_is_deterministic_and_dimmer() {
+        for d in District::ALL {
+            let orig = district(d);
+            let drained1 = drained(&orig);
+            let drained2 = drained(&orig);
+            // Deterministic: calling drained twice yields the same result.
+            assert_eq!(
+                drained1.ambient_color,
+                drained2.ambient_color,
+                "{} drained palette must be deterministic",
+                d.label(),
+            );
+            assert_eq!(
+                drained1.ambient_brightness,
+                drained2.ambient_brightness,
+                "{} drained brightness must be deterministic",
+                d.label(),
+            );
+            // Dimmer: brightness fields are strictly less.
+            assert!(
+                drained1.ambient_brightness < orig.ambient_brightness,
+                "{} drained ambient brightness must be dimmer: {} vs {}",
+                d.label(),
+                drained1.ambient_brightness,
+                orig.ambient_brightness,
+            );
+            assert!(
+                luminance(drained1.accent) < luminance(orig.accent),
+                "{} drained accent must be dimmer",
+                d.label(),
+            );
+        }
+    }
+
+    #[test]
     fn legend_covers_every_role_uniquely() {
         let legend = legend();
         assert_eq!(
@@ -1025,6 +1136,17 @@ mod tests {
         labels.sort_unstable();
         labels.dedup();
         assert_eq!(labels.len(), legend.len(), "every legend entry is unique");
+    }
+
+    #[test]
+    fn klaxon_is_signal_tier_and_readable() {
+        let t = klaxon();
+        assert!(t.signal, "klaxon must be signal-tier");
+        assert!(
+            luminance(t.emissive) >= SIGNAL_MIN_LUMINANCE,
+            "klaxon must punch through fog: {}",
+            luminance(t.emissive),
+        );
     }
 
     #[test]

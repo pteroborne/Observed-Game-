@@ -27,7 +27,9 @@ use bevy::{
     window::{PresentMode, WindowResolution},
 };
 
-use observed_style::{DoorIdentityRole, MarkerRole, ObservedState, SurfaceRole, Treatment};
+use observed_style::{
+    District, DoorIdentityRole, MarkerRole, ObservedState, SurfaceRole, Treatment,
+};
 
 /// Marks the showcase camera.
 #[derive(Component)]
@@ -246,6 +248,38 @@ fn setup(
         );
     }
 
+    // Row 5 (far back) - klaxon (escape countdown state) and drained district examples.
+    // Klaxon on the left.
+    let klaxon_t = style::klaxon();
+    place_tile(
+        &mut commands,
+        &unit_cube,
+        &mut materials,
+        &klaxon_t,
+        Vec3::new(-4.0, 0.0, -9.5),
+    );
+
+    // Drained palettes from a few districts to the right.
+    let drained_dists = [District::Archive, District::Reactor, District::Foundry];
+    for (i, d) in drained_dists.iter().enumerate() {
+        let orig = style::district(*d);
+        let drained_pal = style::drained(&orig);
+        // Render the drained palette's ambient color as a surface.
+        let drained_t = Treatment {
+            base_color: drained_pal.ambient_color,
+            emissive: drained_pal.accent,
+            signal: false,
+            edge: None,
+        };
+        place_tile(
+            &mut commands,
+            &unit_cube,
+            &mut materials,
+            &drained_t,
+            Vec3::new(-2.0 + (i as f32) * 1.5, 0.0, -9.5),
+        );
+    }
+
     spawn_ui(&mut commands);
 }
 
@@ -271,6 +305,9 @@ fn spawn_ui(commands: &mut Commands) {
     for state in ObservedState::ALL {
         legend.push_str(&format!("  - {}\n", state.label()));
     }
+    legend.push_str("\nPHASE 41 (far back):\n");
+    legend.push_str("  - escape countdown — klaxon lighting (left)\n");
+    legend.push_str("  - drained archive / reactor / foundry (center-right)\n");
 
     commands
         .spawn((
@@ -413,7 +450,7 @@ fn update_debug_text(
         "STYLE LAB  {}\n\n\
          neon-noir visual language\n\
          surfaces {} | markers {} | door reads {} | observed {}\n\
-         neon edges {}\n\
+         klaxon + drained districts | neon edges {}\n\
          signal min luminance {:.1}\n\n\
          cameras {cams}  UI {ui_roots}\n\n\
          R reset · F1 toggle overlay",
