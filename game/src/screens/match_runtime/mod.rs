@@ -22,7 +22,10 @@ use crate::keystones::KeystoneState;
 use crate::teleport::Place;
 
 // Re-exports
-pub(crate) use ambience::district_for_place;
+pub(crate) use ambience::{
+    collapse_state_for_place, countdown_klaxon_active, district_for_place, palette_for_game,
+    palette_for_match,
+};
 pub(crate) use crossing::{
     compute_gap_dests, debug_cross_gap_for_capture, debug_place_into, place_body_at, teleport_sim,
 };
@@ -193,7 +196,14 @@ pub(crate) fn match_pump(
         }
         return;
     }
-    if let Some(result) = director.tick(time.delta(), spectator_bot.is_some()) {
+    let spectator_visible_finished = spectator_bot
+        .as_ref()
+        .is_some_and(|spectator| spectator.finished);
+    if let Some(result) = director.tick(
+        time.delta(),
+        spectator_bot.is_some(),
+        spectator_visible_finished,
+    ) {
         career.record(result);
         next.set(GameState::Results);
     }

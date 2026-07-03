@@ -99,6 +99,17 @@ pub fn room_geom_with_slots(
     target: Option<RoomId>,
     seed: u64,
 ) -> PlaceGeom {
+    room_geom_with_slots_and_seals(room, connections, connection_slots, &[], target, seed)
+}
+
+pub fn room_geom_with_slots_and_seals(
+    room: RoomId,
+    connections: &[RoomId],
+    connection_slots: &[RoomConnectionSlot],
+    sealed_slots: &[ThresholdSlotId],
+    target: Option<RoomId>,
+    seed: u64,
+) -> PlaceGeom {
     let mut conns: Vec<RoomId> = connections.to_vec();
     conns.sort_unstable_by_key(|r| r.0);
     conns.dedup();
@@ -118,20 +129,33 @@ pub fn room_geom_with_slots(
     assigned.dedup_by_key(|(_, slot)| *slot);
     let verts = room_polygon(room, seed);
     let n = verts.len();
-    let gaps = assigned
+    let mut assigned_slots: Vec<ThresholdSlotId> = assigned.iter().map(|(_, slot)| *slot).collect();
+    assigned_slots.sort_unstable();
+    assigned_slots.dedup();
+
+    let gap_for_slot = |slot: ThresholdSlotId| {
+        // Fixed room slots keep a relation on the same wall even when other
+        // connections appear/disappear.
+        let edge = ((slot.0 as usize % 4) * n) / 4;
+        let a = verts[edge];
+        let b = verts[(edge + 1) % n];
+        let mid = (a + b) * 0.5;
+        let len = (b - a).length();
+        (
+            mid,
+            outward_normal(a, b),
+            THRESHOLD_WIDTH.min(len - 1.0).max(1.5),
+        )
+    };
+
+    let mut gaps: Vec<DoorGap> = assigned
         .into_iter()
         .map(|(t, slot)| {
-            // Fixed room slots keep a relation on the same wall even when other
-            // connections appear/disappear.
-            let edge = ((slot.0 as usize % 4) * n) / 4;
-            let a = verts[edge];
-            let b = verts[(edge + 1) % n];
-            let mid = (a + b) * 0.5;
-            let len = (b - a).length();
+            let (mid, normal, width) = gap_for_slot(slot);
             DoorGap {
                 center: mid,
-                normal: outward_normal(a, b),
-                width: THRESHOLD_WIDTH.min(len - 1.0).max(1.5),
+                normal,
+                width,
                 target: t,
                 kind: if Some(t) == target {
                     GapKind::Forward
@@ -151,6 +175,30 @@ pub fn room_geom_with_slots(
             }
         })
         .collect();
+    for slot in sealed_slots.iter().copied() {
+        if assigned_slots.contains(&slot) {
+            continue;
+        }
+        let (center, normal, width) = gap_for_slot(slot);
+        gaps.push(DoorGap {
+            center,
+            normal,
+            width,
+            target: room,
+            kind: GapKind::Collapsed,
+            threshold: ThresholdLink {
+                room: RoomThreshold { room, slot },
+                hall: HallThreshold {
+                    hall: HallId::new(room, room),
+                    side: room,
+                    slot,
+                },
+                local_side: ThresholdLocalSide::Room,
+            },
+            floor_y: 0.0,
+        });
+    }
+    gaps.sort_by_key(|gap| gap.threshold.room.slot);
     let half = verts.iter().fold(Vec2::ZERO, |acc, v| {
         Vec2::new(acc.x.max(v.x.abs()), acc.y.max(v.y.abs()))
     });
@@ -699,13 +747,15 @@ pub fn room_preview_geom(
     room: RoomId,
     connections: &[RoomId],
     connection_slots: &[RoomConnectionSlot],
+    sealed_slots: &[ThresholdSlotId],
     target: Option<RoomId>,
     base_seed: u64,
 ) -> PlaceGeom {
-    room_geom_with_slots(
+    room_geom_with_slots_and_seals(
         room,
         connections,
         connection_slots,
+        sealed_slots,
         target,
         mix(base_seed, room.0 as u64),
     )
@@ -716,10 +766,11 @@ pub fn geom_for(place: Place, nav: &Nav) -> PlaceGeom {
     match place {
         // The room shape is seeded by the room id + facility seed (not the decohere
         // version), so a room keeps a stable shape while its connections rewire.
-        Place::Room(room) => room_geom_with_slots(
+        Place::Room(room) => room_geom_with_slots_and_seals(
             room,
             &nav.connections,
             &nav.connection_slots,
+            &nav.sealed_slots,
             nav.target_room,
             mix(nav.seed, room.0 as u64),
         ),

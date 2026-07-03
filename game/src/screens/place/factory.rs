@@ -5,11 +5,11 @@
 
 use bevy::prelude::*;
 use observed_core::RoomId;
-use observed_style as style;
 
 use crate::GameState;
 use crate::items::ItemsState;
 use crate::keystones::KeystoneState;
+use crate::layout::WALL_HEIGHT;
 use crate::screens::match_runtime;
 use crate::sim::director::MatchDirector;
 use crate::sim::state::TeleportState;
@@ -46,16 +46,17 @@ pub(crate) fn room_floor_material(
     materials.add(mat)
 }
 
-pub(crate) fn room_light_color(room_id: RoomId) -> Color {
-    let col = room_color(room_id);
-    let r = 0.3 + (col.to_linear().red) * 2.0;
-    let g = 0.3 + (col.to_linear().green) * 2.0;
-    let b = 0.3 + (col.to_linear().blue) * 2.0;
-    Color::srgb(r.min(1.0), g.min(1.0), b.min(1.0))
-}
-
 #[derive(Resource, Default)]
-pub(crate) struct LastRenderedSignature(pub(crate) Option<(Place, u64, usize)>);
+pub(crate) struct LastRenderedSignature(
+    pub(crate)  Option<(
+        Place,
+        u64,
+        usize,
+        Vec<teleport::ThresholdSlotId>,
+        observed_match::facility::CollapseState,
+        bool,
+    )>,
+);
 
 /// Rebuild the place presentation geometry (floors, walls, ceiling, previews, lights, items).
 #[allow(clippy::too_many_arguments)]
@@ -87,12 +88,19 @@ pub(crate) fn rebuild_place(
             }
         }
         let item_count = items.placed_in(tp.place).len();
-        (tp.place, tethers_hash, item_count)
+        (
+            tp.place,
+            tethers_hash,
+            item_count,
+            nav.sealed_slots.clone(),
+            match_runtime::collapse_state_for_place(game, tp.place),
+            match_runtime::countdown_klaxon_active(&runtime),
+        )
     };
 
     let mut rebuild = true;
     if let Some(mut sig) = last_sig {
-        if tp.rendered == Some(tp.place) && sig.0 == Some(signature) {
+        if tp.rendered == Some(tp.place) && sig.0.as_ref() == Some(&signature) {
             rebuild = false;
         } else {
             sig.0 = Some(signature);
@@ -110,8 +118,23 @@ pub(crate) fn rebuild_place(
         commands.entity(entity).despawn();
     }
 
-    let geom = tp.geom.clone();
     let y_offset = teleport::place_y_offset(tp.place);
+    let mut geom = teleport::geom_for(tp.place, &nav);
+    if matches!(tp.place, Place::Room(_)) {
+        teleport::open_entry(&mut geom, tp.arrived_from);
+    }
+    tp.arena = teleport::place_arena(&geom, y_offset, WALL_HEIGHT);
+    if geom.poly.is_some() {
+        let clamped = teleport::contain(
+            &geom,
+            Vec2::new(tp.body.position.x, tp.body.position.z),
+            tp.config.radius,
+        );
+        tp.body.position.x = clamped.x;
+        tp.body.position.z = clamped.y;
+    }
+    tp.gap_dests = match_runtime::compute_gap_dests(seed_val, tp.place, &geom, game, &keys, &items);
+    tp.geom = geom.clone();
 
     // The place's structural shell (floor/ceiling/walls), by place shape.
     match tp.place {
@@ -194,6 +217,7 @@ pub(crate) fn rebuild_place(
                     &dest,
                     &nav,
                     game,
+                    match_runtime::countdown_klaxon_active(&runtime),
                 );
             }
 
@@ -210,6 +234,14 @@ pub(crate) fn rebuild_place(
                 &assets,
                 gap,
                 shell::ThresholdStyle::locked_exit(&assets, tethered),
+                y_offset,
+            );
+        } else if gap.kind == GapKind::Collapsed {
+            shell::spawn_threshold_gateway(
+                &mut commands,
+                &assets,
+                gap,
+                shell::ThresholdStyle::collapsed(&assets),
                 y_offset,
             );
         } else {
@@ -277,11 +309,8 @@ pub(crate) fn rebuild_place(
     }
 
     // Lighting and surface details
-    let district = match_runtime::district_for_place(seed_val, tp.place);
-    let light_color = match tp.place {
-        Place::Room(room) => room_light_color(room),
-        Place::Hallway { .. } => style::district(district).light_color,
-    };
+    let palette = match_runtime::palette_for_match(seed_val, tp.place, &runtime);
+    let light_color = palette.light_color;
 
     let place_transform = Transform::from_xyz(0.0, y_offset, 0.0);
     lighting::spawn_place_lighting(
@@ -293,7 +322,16 @@ pub(crate) fn rebuild_place(
         false,
     );
 
-    let accent = assets.district_accent_materials[district.index()].clone();
+    let accent = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.02, 0.03, 0.05),
+        emissive: LinearRgba::rgb(
+            palette.accent.red * 10.0,
+            palette.accent.green * 10.0,
+            palette.accent.blue * 10.0,
+        ),
+        unlit: true,
+        ..default()
+    });
     lighting::spawn_surface_detail(
         &mut commands,
         &assets,

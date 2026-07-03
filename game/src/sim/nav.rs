@@ -35,22 +35,50 @@ pub(crate) fn connections_for_nav(
     items: &ItemsState,
     room: RoomId,
 ) -> Vec<RoomId> {
+    if game.competitive.structure.is_sealed_room(room) {
+        return Vec::new();
+    }
+    let relation_allowed = |other: RoomId| {
+        !game.competitive.structure.is_sealed_room(other)
+            && items.relation_allowed_by_room_locks(room, other)
+    };
     if let Some(connections) = items.locked_room_connections(room) {
-        return connections;
+        return connections
+            .into_iter()
+            .filter(|&other| relation_allowed(other))
+            .collect();
     }
     let mut connections: Vec<RoomId> = connections_for(game, room)
         .into_iter()
-        .filter(|&other| items.relation_allowed_by_room_locks(room, other))
+        .filter(|&other| relation_allowed(other))
         .collect();
     connections.extend(
         items
             .pinned_connections(room)
             .into_iter()
-            .filter(|&other| items.relation_allowed_by_room_locks(room, other)),
+            .filter(|&other| relation_allowed(other)),
     );
     connections.sort_by_key(|room| room.0);
     connections.dedup();
     connections
+}
+
+pub(crate) fn sealed_slots_for_room(
+    game: &HybridMatch,
+    room: RoomId,
+) -> Vec<crate::teleport::ThresholdSlotId> {
+    observed_observation::Side::ALL
+        .iter()
+        .enumerate()
+        .filter_map(|(slot, side)| {
+            let door = game.competitive.structure.graph.door_id(room, *side);
+            game.competitive
+                .structure
+                .graph
+                .is_sealed(door)
+                .then_some(crate::teleport::ThresholdSlotId(slot as u8))
+        })
+        .collect()
 }
 
 fn rendered_slot_for(
@@ -127,10 +155,12 @@ pub(crate) fn nav_for_room(
 ) -> crate::teleport::Nav {
     let connections = connections_for_nav(game, items, room);
     let connection_slots = room_connection_slots(game, items, room, &connections);
+    let sealed_slots = sealed_slots_for_room(game, room);
     let target_room = room_target(game, room, &connections);
     crate::teleport::Nav {
         connections,
         connection_slots,
+        sealed_slots,
         hallway_entry_room_slot: None,
         hallway_exit_room_slot: None,
         target_room,

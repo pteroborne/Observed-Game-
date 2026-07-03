@@ -31,14 +31,14 @@ pub(crate) fn drive_spectator_bot(
     mut intent: ResMut<MatchIntent>,
     mut item_intent: ResMut<ItemIntent>,
 ) {
+    if paused.0 || director.done {
+        intent.0 = PlayerIntent::default();
+        return;
+    }
     spectator.teamplay_frame_accum = spectator.teamplay_frame_accum.saturating_add(1);
     if spectator.teamplay_frame_accum >= SPECTATOR_TEAMPLAY_STEP_FRAMES {
         spectator.teamplay_frame_accum = 0;
         director.pump_spectator(&mut spectator);
-    }
-    if paused.0 || director.done {
-        intent.0 = PlayerIntent::default();
-        return;
     }
     if spectator.finished {
         intent.0 = PlayerIntent::default();

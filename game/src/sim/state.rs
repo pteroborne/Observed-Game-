@@ -130,6 +130,8 @@ pub struct FrozenDest {
     pub conns: Vec<RoomId>,
     /// For a room destination, its frozen room-side threshold slots.
     pub connection_slots: Vec<teleport::RoomConnectionSlot>,
+    /// For a room destination, its frozen collapse-sealed room-side threshold slots.
+    pub sealed_slots: Vec<teleport::ThresholdSlotId>,
     /// For a hallway destination, the room slot at the entry side.
     pub hallway_entry_room_slot: Option<teleport::ThresholdSlotId>,
     /// For a hallway destination, the room slot at the exit side.

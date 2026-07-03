@@ -925,6 +925,92 @@ fn spectate_ai_menu_option_launches_a_bot_driven_match() {
 }
 
 #[test]
+fn spectate_mode_waits_for_the_visible_run_when_the_series_result_is_ready() {
+    let mut app = test_app();
+    app.world_mut()
+        .insert_resource(flow::ActiveMatchSeed(flow::MATCH_SEED));
+    app.world_mut()
+        .insert_resource(crate::sim::state::SpectatorBot::for_seed(flow::MATCH_SEED));
+    go(&mut app, GameState::Match);
+
+    {
+        let mut director = app
+            .world_mut()
+            .resource_mut::<crate::sim::director::MatchDirector>();
+        assert!(
+            !director.live.finished(),
+            "the visible first-person run starts unfinished"
+        );
+        director
+            .series
+            .run_to_winner(observed_match::elimination::MAX_AUTOPLAY_TICKS);
+        assert!(
+            director.series.finished(),
+            "the regression forces a ready series result before the rendered run finishes"
+        );
+    }
+
+    app.world_mut()
+        .resource_mut::<crate::sim::state::SpectatorBot>()
+        .teamplay_frame_accum =
+        crate::screens::match_runtime::spectator::SPECTATOR_TEAMPLAY_STEP_FRAMES - 1;
+    app.world_mut().run_schedule(FixedUpdate);
+    assert!(
+        !app.world()
+            .resource::<crate::sim::state::SpectatorBot>()
+            .finished,
+        "a ready series result must not mark the visible spectator run as finished"
+    );
+
+    app.update();
+    assert_eq!(
+        *app.world().resource::<State<GameState>>().get(),
+        GameState::Match,
+        "Spectate must not jump to Results before the rendered run catches up"
+    );
+    assert!(
+        app.world().resource::<Career>().last_result.is_none(),
+        "no result should be recorded while the visible run is still in progress"
+    );
+    assert!(
+        !app.world()
+            .resource::<crate::sim::director::MatchDirector>()
+            .done
+    );
+}
+
+#[test]
+fn paused_spectate_mode_does_not_advance_the_teamplay_brain() {
+    let mut app = test_app();
+    app.world_mut()
+        .insert_resource(flow::ActiveMatchSeed(flow::MATCH_SEED));
+    app.world_mut()
+        .insert_resource(crate::sim::state::SpectatorBot::for_seed(flow::MATCH_SEED));
+    go(&mut app, GameState::Match);
+    app.world_mut()
+        .resource_mut::<crate::sim::state::MatchPaused>()
+        .0 = true;
+
+    let before = app
+        .world()
+        .resource::<crate::sim::state::SpectatorBot>()
+        .teamplay
+        .tick;
+    for _ in 0..crate::screens::match_runtime::spectator::SPECTATOR_TEAMPLAY_STEP_FRAMES {
+        app.world_mut().run_schedule(FixedUpdate);
+    }
+
+    assert_eq!(
+        app.world()
+            .resource::<crate::sim::state::SpectatorBot>()
+            .teamplay
+            .tick,
+        before,
+        "paused Spectate mode should not let simulation progress outrun the frozen view"
+    );
+}
+
+#[test]
 fn the_match_renders_the_current_place_and_starts_on_the_spine() {
     let mut app = test_app();
     assert!(
@@ -1133,6 +1219,126 @@ fn a_rival_in_the_neighbouring_room_tints_the_threshold_light_with_its_colour() 
     assert!(
         found,
         "a threshold into a rival-occupied room carries that team's frame light"
+    );
+}
+
+/// Phase 41 (pressure made flesh): collapse state drives presentation palettes.
+#[test]
+fn collapse_state_drains_place_palette_and_countdown_triggers_klaxon() {
+    use observed_core::{RoomId, TeamId};
+    use observed_facility::map_spec::sector_relay_v1;
+    use observed_match::elimination::EscapeCountdown;
+    use observed_match::hybrid::HybridMatch;
+
+    let mut game = HybridMatch::authored(MATCH_SEED);
+    game.competitive.purge_line = 0.0;
+    let dying_room = game
+        .competitive
+        .dying_room()
+        .expect("a room ahead of the collapse is dying");
+
+    let intact = crate::screens::match_runtime::palette_for_game(
+        MATCH_SEED,
+        teleport::Place::Room(RoomId(8)),
+        &game,
+        false,
+    );
+    let dying = crate::screens::match_runtime::palette_for_game(
+        MATCH_SEED,
+        teleport::Place::Room(dying_room),
+        &game,
+        false,
+    );
+    assert!(
+        dying.ambient_brightness < intact.ambient_brightness,
+        "a dying district should drain before it closes"
+    );
+
+    let mut director = crate::sim::director::MatchDirector::new(MATCH_SEED, sector_relay_v1());
+    let normal = crate::screens::match_runtime::palette_for_match(
+        MATCH_SEED,
+        teleport::Place::Room(RoomId(0)),
+        &director,
+    );
+    director.series.current.countdown = Some(EscapeCountdown {
+        started_by: TeamId(0),
+        duration_rounds: 4,
+        remaining_rounds: 3,
+    });
+    assert!(crate::screens::match_runtime::countdown_klaxon_active(
+        &director
+    ));
+    let klaxon = crate::screens::match_runtime::palette_for_match(
+        MATCH_SEED,
+        teleport::Place::Room(RoomId(0)),
+        &director,
+    );
+    let klaxon_light = klaxon.light_color.to_srgba();
+    assert!(
+        klaxon.light_color != normal.light_color
+            && klaxon_light.red > klaxon_light.green
+            && klaxon_light.red > klaxon_light.blue,
+        "the first-escape countdown should push the facility into red klaxon lighting"
+    );
+}
+
+/// Phase 41 (pressure made flesh): collapse-sealed thresholds remain visible as rubble
+/// instead of disappearing from the room wall.
+#[test]
+fn collapse_sealed_thresholds_render_rubble_from_the_style_module() {
+    use crate::sim::director::MatchDirector;
+    use crate::sim::state::TeleportState;
+    use observed_style::{self as style, SurfaceRole};
+
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    app.update();
+
+    let room = {
+        let runtime = app.world().resource::<MatchDirector>();
+        runtime.live.host_match().local_room()
+    };
+    {
+        let mut runtime = app.world_mut().resource_mut::<MatchDirector>();
+        runtime
+            .live
+            .host
+            .match_state
+            .competitive
+            .structure
+            .seal_room(room);
+    }
+    app.world_mut().resource_mut::<TeleportState>().rendered = None;
+    app.update();
+
+    let expected = style::surface(SurfaceRole::Rubble);
+    let rubble_handles: Vec<Handle<StandardMaterial>> = {
+        let world = app.world_mut();
+        let mut query = world.query::<(&Name, &MeshMaterial3d<StandardMaterial>)>();
+        query
+            .iter(world)
+            .filter(|(name, _)| name.as_str() == "Collapsed rubble")
+            .map(|(_, handle)| handle.0.clone())
+            .collect()
+    };
+    let found_rubble = {
+        let materials = app.world().resource::<Assets<StandardMaterial>>();
+        rubble_handles.iter().any(|handle| {
+            materials.get(handle).is_some_and(|material| {
+                material.base_color == expected.base_color
+                    && material.emissive == expected.emissive
+                    && material.unlit
+            })
+        })
+    };
+    assert!(
+        found_rubble,
+        "a collapse-sealed threshold should render a SurfaceRole::Rubble leaf"
+    );
+    assert_eq!(
+        count::<crate::view::components::PassagePreview>(&mut app),
+        0,
+        "collapsed thresholds are not traversable previews"
     );
 }
 

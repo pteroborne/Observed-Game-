@@ -2,10 +2,9 @@ use crate::layout::PLACE_TILE;
 use bevy::prelude::*;
 use observed_core::RoomId;
 use observed_match::hybrid::HybridMatch;
-use observed_style as style;
 use std::f32::consts::PI;
 
-use super::factory::{room_floor_material, room_light_color};
+use super::factory::room_floor_material;
 use super::lighting::{spawn_place_lighting, spawn_surface_detail};
 use super::mesh::{spawn_polygon_shell, spawn_polygon_walls};
 use crate::GameState;
@@ -13,7 +12,7 @@ use crate::camera;
 use crate::hallway::{self, HallwayFlavor};
 use crate::layout::WALL_HEIGHT;
 use crate::rivals;
-use crate::screens::match_runtime::district_for_place;
+use crate::screens::match_runtime::{district_for_place, palette_for_game};
 use crate::sim::nav::{connections_for, room_target};
 use crate::sim::state::FrozenDest;
 use crate::teleport::{self, DoorGap, Place};
@@ -100,6 +99,10 @@ pub(crate) fn fallback_dest(
         place: dest,
         conns,
         connection_slots: Vec::new(),
+        sealed_slots: match dest {
+            Place::Room(r) => crate::sim::nav::sealed_slots_for_room(game, r),
+            Place::Hallway { .. } => Vec::new(),
+        },
         hallway_entry_room_slot: match dest {
             Place::Hallway { .. } => Some(gap.threshold.room.slot),
             _ => None,
@@ -120,12 +123,19 @@ pub(crate) fn spawn_passage_preview(
     dest: &FrozenDest,
     nav: &teleport::Nav,
     game: &HybridMatch,
+    klaxon_active: bool,
 ) {
     let y_offset = teleport::place_y_offset(place);
     match dest.place {
-        Place::Hallway { .. } => {
-            spawn_hallway_preview(commands, assets, gap, dest.place, nav, y_offset)
-        }
+        Place::Hallway { .. } => spawn_hallway_preview(
+            commands,
+            assets,
+            gap,
+            dest.place,
+            nav,
+            palette_for_game(nav.seed, dest.place, game, klaxon_active),
+            y_offset,
+        ),
         Place::Room(dest_room) => spawn_room_preview(
             commands,
             assets,
@@ -136,9 +146,11 @@ pub(crate) fn spawn_passage_preview(
             dest_room,
             &dest.conns,
             &dest.connection_slots,
+            &dest.sealed_slots,
             dest.target,
             nav,
             game,
+            klaxon_active,
         ),
     }
 }
@@ -150,6 +162,7 @@ pub(crate) fn spawn_hallway_preview(
     gap: &DoorGap,
     next: Place,
     nav: &teleport::Nav,
+    palette: observed_style::DistrictPalette,
     y_offset: f32,
 ) {
     let Place::Hallway { variation, .. } = next else {
@@ -157,7 +170,7 @@ pub(crate) fn spawn_hallway_preview(
     };
     let dest = teleport::geom_for(next, nav);
     let (hx, hz) = (dest.half.x, dest.half.y);
-    let light_color = style::district(district_for_place(nav.seed, next)).light_color;
+    let light_color = palette.light_color;
     let Some(align) = teleport::hallway_alignment(gap, &dest) else {
         spawn_passage_stub(commands, assets, gap, y_offset);
         return;
@@ -233,9 +246,11 @@ pub(crate) fn spawn_room_preview(
     dest_room: RoomId,
     conns: &[RoomId],
     connection_slots: &[teleport::RoomConnectionSlot],
+    sealed_slots: &[teleport::ThresholdSlotId],
     target: Option<RoomId>,
     nav: &teleport::Nav,
     game: &HybridMatch,
+    klaxon_active: bool,
 ) {
     let back = match place {
         Place::Hallway { from, to, .. } => {
@@ -247,8 +262,14 @@ pub(crate) fn spawn_room_preview(
         }
         Place::Room(src_room) => src_room,
     };
-    let mut dest =
-        teleport::room_preview_geom(dest_room, conns, connection_slots, target, nav.seed);
+    let mut dest = teleport::room_preview_geom(
+        dest_room,
+        conns,
+        connection_slots,
+        sealed_slots,
+        target,
+        nav.seed,
+    );
     teleport::open_entry(&mut dest, Some(back));
     let Some(poly) = dest.poly.clone() else {
         return;
@@ -263,7 +284,8 @@ pub(crate) fn spawn_room_preview(
     parent.translation.y = y_offset;
 
     let floor_material = room_floor_material(dest_room, &assets.floor_material, materials);
-    let light_color = room_light_color(dest_room);
+    let palette = palette_for_game(nav.seed, Place::Room(dest_room), game, klaxon_active);
+    let light_color = palette.light_color;
 
     spawn_polygon_shell(
         commands,
@@ -278,8 +300,16 @@ pub(crate) fn spawn_room_preview(
         g.target == back || g.kind.is_passage()
     });
     spawn_place_lighting(commands, assets, &dest, light_color, parent, true);
-    let dest_district = district_for_place(nav.seed, Place::Room(dest_room));
-    let accent = assets.district_accent_materials[dest_district.index()].clone();
+    let accent = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.02, 0.03, 0.05),
+        emissive: LinearRgba::rgb(
+            palette.accent.red * 10.0,
+            palette.accent.green * 10.0,
+            palette.accent.blue * 10.0,
+        ),
+        unlit: true,
+        ..default()
+    });
     spawn_surface_detail(commands, assets, &dest, accent, parent, true);
 
     let present = rivals::rivals_in_room(&game.competitive, dest_room);

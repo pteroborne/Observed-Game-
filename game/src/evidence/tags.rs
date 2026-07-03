@@ -23,6 +23,7 @@ pub(crate) enum DiagnosticThresholdStatus {
     Passage,
     TetheredPassage,
     Locked,
+    Collapsed,
     Sealed,
 }
 
@@ -32,6 +33,7 @@ impl DiagnosticThresholdStatus {
             DiagnosticThresholdStatus::Passage => "passage",
             DiagnosticThresholdStatus::TetheredPassage => "tethered_passage",
             DiagnosticThresholdStatus::Locked => "locked",
+            DiagnosticThresholdStatus::Collapsed => "collapsed_rubble",
             DiagnosticThresholdStatus::Sealed => "sealed",
         }
     }
@@ -112,6 +114,8 @@ pub(crate) fn threshold_status(gap: &DoorGap, tethered: bool) -> DiagnosticThres
         DiagnosticThresholdStatus::TetheredPassage
     } else if gap.kind == GapKind::LockedExit {
         DiagnosticThresholdStatus::Locked
+    } else if gap.kind == GapKind::Collapsed {
+        DiagnosticThresholdStatus::Collapsed
     } else if gap.kind.is_passage() {
         DiagnosticThresholdStatus::Passage
     } else {

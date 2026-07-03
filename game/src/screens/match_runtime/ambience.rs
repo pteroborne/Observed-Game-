@@ -2,6 +2,8 @@ use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
 use bevy::render::view::Hdr;
+use observed_match::facility::CollapseState;
+use observed_match::hybrid::HybridMatch;
 use observed_style as style;
 
 use crate::flow::MATCH_SEED;
@@ -83,6 +85,68 @@ pub(crate) fn district_for_place(seed: u64, place: Place) -> style::District {
     style::district_for(seed, key)
 }
 
+pub(crate) fn collapse_state_for_place(game: &HybridMatch, place: Place) -> CollapseState {
+    match place {
+        Place::Room(room) => game.competitive.room_collapse(room),
+        Place::Hallway { from, to, .. } => {
+            let from_state = game.competitive.room_collapse(from);
+            let to_state = game.competitive.room_collapse(to);
+            if from_state == CollapseState::Collapsed || to_state == CollapseState::Collapsed {
+                CollapseState::Collapsed
+            } else if from_state == CollapseState::Dying || to_state == CollapseState::Dying {
+                CollapseState::Dying
+            } else {
+                CollapseState::Intact
+            }
+        }
+    }
+}
+
+pub(crate) fn countdown_klaxon_active(runtime: &MatchDirector) -> bool {
+    runtime.series.current.remaining_countdown().is_some()
+}
+
+pub(crate) fn palette_for_game(
+    seed: u64,
+    place: Place,
+    game: &HybridMatch,
+    klaxon_active: bool,
+) -> style::DistrictPalette {
+    let mut palette = style::district(district_for_place(seed, place));
+    if collapse_state_for_place(game, place) != CollapseState::Intact {
+        palette = style::drained(&palette);
+    }
+    if klaxon_active {
+        palette = klaxon_palette(palette);
+    }
+    palette
+}
+
+pub(crate) fn palette_for_match(
+    seed: u64,
+    place: Place,
+    runtime: &MatchDirector,
+) -> style::DistrictPalette {
+    palette_for_game(
+        seed,
+        place,
+        runtime.live.host_match(),
+        countdown_klaxon_active(runtime),
+    )
+}
+
+fn klaxon_palette(mut palette: style::DistrictPalette) -> style::DistrictPalette {
+    let alarm = style::klaxon();
+    palette.ambient_color = lerp_color(palette.ambient_color, alarm.base_color, 0.72);
+    palette.ambient_brightness = (palette.ambient_brightness * 0.9).clamp(
+        style::DISTRICT_MIN_AMBIENT_BRIGHTNESS,
+        style::DISTRICT_MAX_AMBIENT_BRIGHTNESS,
+    );
+    palette.fog_color = lerp_color(palette.fog_color, alarm.base_color, 0.35);
+    palette.light_color = alarm.edge.unwrap_or(alarm.base_color);
+    palette
+}
+
 const DISTRICT_BLEND_RATE: f32 = 2.5;
 
 fn lerp_f(a: f32, b: f32, t: f32) -> f32 {
@@ -101,12 +165,13 @@ fn lerp_color(a: Color, b: Color, t: f32) -> Color {
 pub(crate) fn apply_place_atmosphere(
     time: Res<Time>,
     tp: Res<TeleportState>,
+    runtime: Res<MatchDirector>,
     mut ambient: ResMut<GlobalAmbientLight>,
     mut fog: Query<&mut DistanceFog, With<GameCam>>,
     seed: Option<Res<crate::flow::ActiveMatchSeed>>,
 ) {
     let seed_val = seed.map(|s| s.0).unwrap_or(MATCH_SEED);
-    let pal = style::district(district_for_place(seed_val, tp.place));
+    let pal = palette_for_match(seed_val, tp.place, &runtime);
     let t = (time.delta_secs() * DISTRICT_BLEND_RATE).clamp(0.0, 1.0);
     ambient.color = lerp_color(ambient.color, pal.ambient_color, t);
     ambient.brightness = lerp_f(ambient.brightness, pal.ambient_brightness, t);

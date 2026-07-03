@@ -134,6 +134,8 @@ pub struct MatchAssets {
     pub(crate) gantry_edge_material: Handle<StandardMaterial>,
     /// The gantry's lower understory landing — "where a fall puts you".
     pub(crate) understory_material: Handle<StandardMaterial>,
+    /// Collapse-sealed doorway fill. Signal-tier rubble from the shared style module.
+    pub(crate) rubble_material: Handle<StandardMaterial>,
     pub(crate) wall_material: Handle<StandardMaterial>,
     pub(crate) ceiling_material: Handle<StandardMaterial>,
     pub(crate) exit_panel_material: Handle<StandardMaterial>,
@@ -218,6 +220,13 @@ impl MatchAssets {
         let understory_material = materials.add(StandardMaterial {
             base_color: understory_treatment.base_color,
             emissive: understory_treatment.emissive,
+            unlit: true,
+            ..default()
+        });
+        let rubble_treatment = style::surface(SurfaceRole::Rubble);
+        let rubble_material = materials.add(StandardMaterial {
+            base_color: rubble_treatment.base_color,
+            emissive: rubble_treatment.emissive,
             unlit: true,
             ..default()
         });
@@ -357,6 +366,7 @@ impl MatchAssets {
             gantry_deck_material,
             gantry_edge_material,
             understory_material,
+            rubble_material,
             wall_material,
             ceiling_material,
             exit_panel_material,

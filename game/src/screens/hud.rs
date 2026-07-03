@@ -316,7 +316,9 @@ pub(crate) fn match_draw(
         .map_or("--".to_string(), |rounds| rounds.to_string());
     let control_line = spectator_bot.as_ref().map_or("manual control", |bot| {
         if bot.finished {
-            "spectating AI: finished"
+            "spectating AI: visible run stopped"
+        } else if director.series.finished() {
+            "spectating AI: series ready, finishing visible run"
         } else {
             "spectating AI: bot driving"
         }
@@ -598,6 +600,12 @@ pub(crate) fn spawn_match_hud(commands: &mut Commands) {
                         13.0,
                         style::marker(MarkerRole::Collapse).base_color
                     ),
+                    text(
+                        "rubble threshold",
+                        13.0,
+                        style::surface(SurfaceRole::Rubble).base_color
+                    ),
+                    text("klaxon countdown", 13.0, style::klaxon().base_color),
                     text(
                         "rival teams",
                         13.0,

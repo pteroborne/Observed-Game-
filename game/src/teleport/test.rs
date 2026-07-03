@@ -20,6 +20,7 @@ mod tests {
                     slot: ThresholdSlotId(slot as u8),
                 })
                 .collect(),
+            sealed_slots: Vec::new(),
             hallway_entry_room_slot: None,
             hallway_exit_room_slot: None,
             target_room: target.map(RoomId),

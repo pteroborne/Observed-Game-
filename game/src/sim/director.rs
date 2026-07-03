@@ -76,8 +76,10 @@ impl MatchDirector {
         }
     }
 
-    /// The match is over once either model crosses its finish line; `tick` /
-    /// `run_to_completion` then settle and resolve.
+    /// Raw model completion: either the live run or the elimination series has crossed
+    /// its finish line. `tick` applies the presentation-facing policy on top of this
+    /// predicate; Spectate mode may hold a ready series result until the visible
+    /// first-person body finishes or stops.
     pub fn finished(&self) -> bool {
         self.live.finished() || self.series.finished()
     }
@@ -96,7 +98,12 @@ impl MatchDirector {
     /// wall-clock series autoplay (spectator mode feeds the series through
     /// [`Self::pump_spectator`] instead). Returns the [`MatchResult`] exactly once —
     /// the frame the match completes.
-    pub fn tick(&mut self, dt: Duration, spectator_driven_series: bool) -> Option<MatchResult> {
+    pub fn tick(
+        &mut self,
+        dt: Duration,
+        spectator_driven_series: bool,
+        spectator_visible_finished: bool,
+    ) -> Option<MatchResult> {
         if self.done {
             return None;
         }
@@ -118,7 +125,12 @@ impl MatchDirector {
         if !spectator_driven_series && self.live.finished() && !self.series.finished() {
             self.series.run_to_winner(MAX_AUTOPLAY_TICKS);
         }
-        if self.finished() {
+        let screen_finished = if spectator_driven_series {
+            self.live.finished() || (self.series.finished() && spectator_visible_finished)
+        } else {
+            self.finished()
+        };
+        if screen_finished {
             self.settle_transport();
             self.done = true;
             return Some(self.outcome());
@@ -144,7 +156,7 @@ impl MatchDirector {
     /// for the next round and refocus the spectator on a surviving team.
     pub fn pump_spectator(&mut self, spectator: &mut SpectatorBot) {
         if self.series.finished() {
-            spectator.finished = true;
+            spectator.last_teamplay_event = self.series.last_event.clone();
             return;
         }
 
@@ -161,7 +173,6 @@ impl MatchDirector {
 
         self.series.apply_teamplay_round(outcome);
         if self.series.finished() {
-            spectator.finished = true;
             spectator.last_teamplay_event = self.series.last_event.clone();
             return;
         }

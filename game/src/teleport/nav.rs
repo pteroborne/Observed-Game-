@@ -22,6 +22,9 @@ pub struct Nav {
     /// Fixed room threshold slots for the connections above, when the caller can resolve
     /// them from the authoritative door IDs.
     pub connection_slots: Vec<RoomConnectionSlot>,
+    /// Fixed room threshold slots sealed by the collapse. They render as rubble and are
+    /// never crossable, even if an anchor previously froze that relation.
+    pub sealed_slots: Vec<ThresholdSlotId>,
     /// For a rendered hallway, the room-side slot at the entry/back end.
     pub hallway_entry_room_slot: Option<ThresholdSlotId>,
     /// For a rendered hallway, the room-side slot at the exit/forward end.

@@ -216,6 +216,7 @@ pub(crate) fn spawn_gantry_decks(
 /// open passages, the locked exit, and sealed side doors — each a constructor here.
 pub(crate) struct ThresholdStyle {
     leaf_material: Option<Handle<StandardMaterial>>,
+    leaf_name: &'static str,
     openable: bool,
     tethered: bool,
     /// A rival team index whose presence beyond this threshold pins it (Phase 38
@@ -230,6 +231,7 @@ impl ThresholdStyle {
     pub(crate) fn passage(tethered: bool, rival: Option<usize>) -> Self {
         Self {
             leaf_material: None,
+            leaf_name: "Door leaf",
             openable: false,
             tethered,
             rival,
@@ -240,8 +242,20 @@ impl ThresholdStyle {
     pub(crate) fn locked_exit(assets: &MatchAssets, tethered: bool) -> Self {
         Self {
             leaf_material: Some(assets.trap_active_material.clone()),
+            leaf_name: "Locked exit",
             openable: false,
             tethered,
+            rival: None,
+        }
+    }
+
+    /// A collapse-sealed threshold: visible rubble, never traversable or tethered.
+    pub(crate) fn collapsed(assets: &MatchAssets) -> Self {
+        Self {
+            leaf_material: Some(assets.rubble_material.clone()),
+            leaf_name: "Collapsed rubble",
+            openable: false,
+            tethered: false,
             rival: None,
         }
     }
@@ -250,6 +264,7 @@ impl ThresholdStyle {
     pub(crate) fn side_door(assets: &MatchAssets) -> Self {
         Self {
             leaf_material: Some(assets.door_leaf_material.clone()),
+            leaf_name: "Closed door",
             openable: false,
             tethered: false,
             rival: None,
@@ -281,6 +296,7 @@ pub(crate) fn spawn_threshold_gateway(
             gap,
             threshold_style.openable,
             leaf_material,
+            threshold_style.leaf_name,
             y_offset,
         );
     }
@@ -344,12 +360,17 @@ fn spawn_place_frame(
 
     // Light priority: your own tether (control colour) outranks a rival's grip,
     // which outranks the neutral idle frame.
-    let tether_color = if tethered {
-        style::marker(MarkerRole::Control).base_color
-    } else if let Some(team) = rival {
-        crate::view::theme::TEAM_COLORS[team % crate::view::theme::TEAM_COLORS.len()]
-    } else {
-        Color::srgb(0.45, 0.62, 0.78)
+    let tether_color = match status {
+        crate::evidence::DiagnosticThresholdStatus::Collapsed => {
+            style::surface(style::SurfaceRole::Rubble)
+                .edge
+                .unwrap_or(style::marker(MarkerRole::Collapse).base_color)
+        }
+        _ if tethered => style::marker(MarkerRole::Control).base_color,
+        _ if let Some(team) = rival => {
+            crate::view::theme::TEAM_COLORS[team % crate::view::theme::TEAM_COLORS.len()]
+        }
+        _ => Color::srgb(0.45, 0.62, 0.78),
     };
     commands.spawn((
         PlaceGeometry,
@@ -400,6 +421,7 @@ fn spawn_leaf(
     gap: &DoorGap,
     openable: bool,
     material: Handle<StandardMaterial>,
+    name: &'static str,
     y_offset: f32,
 ) {
     let rot = Quat::from_rotation_y(gap_yaw(gap.normal));
@@ -425,6 +447,6 @@ fn spawn_leaf(
         Transform::from_xyz(gap.center.x, closed_y, gap.center.y)
             .with_rotation(rot)
             .with_scale(Vec3::new(gap.width.max(0.1), leaf_h, DOOR_LEAF_D)),
-        Name::new(if openable { "Door leaf" } else { "Closed door" }),
+        Name::new(if openable { "Door leaf" } else { name }),
     ));
 }

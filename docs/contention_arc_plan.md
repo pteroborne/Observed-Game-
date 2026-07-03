@@ -132,6 +132,15 @@ clean-jump / fall-recover / safe-bypass hits design targets (fast / medium / slo
   environmental one. Whether the guardian's gaze *observes* — freezing thresholds
   as it patrols — is this phase's design experiment.)
 
+**As landed:** Phase 41 keeps collapse-owned threshold slots visible as
+`GapKind::Collapsed` rubble rather than removing them from the room wall, derives
+that rubble from `observed_style::SurfaceRole::Rubble`, drains dying/collapsed
+place palettes through `observed_style::drained`, and maps the elimination
+first-escape countdown onto `observed_style::klaxon` lighting. Collapse still
+overrides anchors and protection at the simulation layer; the game presentation
+now rebuilds the current place when sealed slots, collapse state, or countdown
+state changes.
+
 ## Phase 42 — The Race Reads as a Race (rival legibility)
 
 **One question:** does a solo player *feel* three other teams existing?

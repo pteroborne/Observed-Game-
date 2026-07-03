@@ -255,6 +255,7 @@ fn nav_for_spec_room(spec: &MapSpec, seed: u64, version: u32, room: RoomId) -> N
     Nav {
         connections,
         connection_slots,
+        sealed_slots: Vec::new(),
         hallway_entry_room_slot: None,
         hallway_exit_room_slot: None,
         target_room,

@@ -133,6 +133,7 @@ fn collect_geometry(
         let nav = teleport::Nav {
             connections: dest.conns.clone(),
             connection_slots: dest.connection_slots.clone(),
+            sealed_slots: dest.sealed_slots.clone(),
             hallway_entry_room_slot: dest.hallway_entry_room_slot,
             hallway_exit_room_slot: dest.hallway_exit_room_slot,
             target_room: dest.target,
@@ -656,6 +657,9 @@ fn monitor_kind_key(kind: crate::screens::place::ObservationMonitorKind) -> u8 {
 fn expected_threshold_light(status: DiagnosticThresholdStatus) -> Color {
     match status {
         DiagnosticThresholdStatus::TetheredPassage => style::marker(MarkerRole::Control).base_color,
+        DiagnosticThresholdStatus::Collapsed => style::surface(style::SurfaceRole::Rubble)
+            .edge
+            .unwrap_or(style::marker(MarkerRole::Collapse).base_color),
         _ => Color::srgb(0.45, 0.62, 0.78),
     }
 }

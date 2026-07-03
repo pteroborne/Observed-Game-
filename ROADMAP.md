@@ -12,15 +12,20 @@ This document outlines the current active development goals, completed milestone
 
 **Arc C — Contention & Depth** (plan and design rules: [docs/contention_arc_plan.md](docs/contention_arc_plan.md)). The design arc that turns the proven observe-to-freeze foundation into a game worth racing: observation becomes a shared, contested resource between teams, and the board gains the identity, verticality, and visible pressure to make that contest legible. Lab-first throughout; solvability ("no team is ever left without a path") is the arc-wide invariant.
 
-### Phase 41 — Pressure Made Flesh `[ ]`
-The director's pressure becomes visible: dying districts drain light and palette before closing, collapsed edges return as rubble-sealed hallway variations, and the first-escape countdown drives a facility-wide lighting state. Collapse overrides freezing — the one force anchors cannot hold. Design experiment: does the guardian's gaze *observe* (freezing thresholds as it patrols)?
-
 ### Phase 42 — The Race Reads as a Race `[ ]`
 Rivals become presences: team-colored anchor torches and frame lights on edges they froze, sound bleeding through occupied thresholds, recognizable bot-team personalities (the freezer, the sprinter, the saboteur), and tac-map attribution of rival-frozen edges ("Team 3 was here"). Human multiplayer remains the post-arc horizon — the lockstep spine is ready; the race has to be worth racing first.
 
 ---
 
 ## Recent Milestones (Completed)
+
+### Phase 41 — Pressure Made Flesh `[x]`
+Made the director's pressure readable in the played game:
+- **Collapse in geometry:** collapse-sealed room slots now stay in the room nav as non-traversable `GapKind::Collapsed` thresholds, so claimed doorways render as rubble instead of silently disappearing.
+- **Style-owned rubble:** the match asset registry builds a `SurfaceRole::Rubble` material, collapsed thresholds spawn `Collapsed rubble` leaves, and the visual audit status distinguishes `collapsed_rubble`.
+- **Drained and klaxon lighting:** place palettes now derive from live collapse state; dying/collapsed places use `observed_style::drained`, and the elimination first-escape countdown drives a facility-wide `observed_style::klaxon` light state.
+- **Presentation refresh:** the place render signature tracks sealed slots, collapse state, and countdown state, so pressure changes rebuild the current place without waiting for another teleport.
+- **Verification:** added Phase 41 game regressions for drained/klaxon palette state and rubble threshold rendering. `cargo test --workspace` and `cargo clippy --workspace --all-targets -- -D warnings` pass.
 
 ### Phase 40b — The Gantry Made Real `[x]`
 Replaced the flat in-game placeholder with the genuine two-level jump-map hall:

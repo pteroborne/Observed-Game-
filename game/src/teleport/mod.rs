@@ -60,6 +60,9 @@ pub enum GapKind {
     /// A hallway's exit toward the facility exit while the **keystone gate is locked** —
     /// a solid, closed door (not a passage) until enough keystones are held.
     LockedExit,
+    /// A collapse-sealed threshold: rubble fills the doorway, and no observation or
+    /// anchor can reopen it.
+    Collapsed,
     /// A direct one-way exit from the Master Room.
     OneWayExit,
     /// An invisible, non-traversable incoming connection from the Master Room.

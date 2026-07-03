@@ -20,9 +20,9 @@ pub(crate) mod snapshot;
 pub(crate) mod tags;
 
 pub(crate) use tags::{
-    DiagnosticTacMapRole, DiagnosticTacMapVisual, DiagnosticThresholdVisual,
-    DiagnosticThresholdVisualKind, freecam_enabled, threshold_label, threshold_status,
-    visual_audit_enabled,
+    DiagnosticTacMapRole, DiagnosticTacMapVisual, DiagnosticThresholdStatus,
+    DiagnosticThresholdVisual, DiagnosticThresholdVisualKind, freecam_enabled, threshold_label,
+    threshold_status, visual_audit_enabled,
 };
 
 use bevy::prelude::*;
