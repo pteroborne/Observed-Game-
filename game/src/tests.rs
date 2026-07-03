@@ -1461,3 +1461,75 @@ fn gantry_deck_material_is_built_from_the_style_treatment() {
         "a textured neon material goes unlit once a texture is bound"
     );
 }
+
+/// Phase 42 (team colours become a style-owned semantic signal): the theme's
+/// `TEAM_COLORS`/`team_color` must read exactly the same base colours the shared
+/// `observed_style::team` palette defines — this refactor is required to produce zero
+/// visual change.
+#[test]
+fn theme_team_colors_match_style_team_colors() {
+    use crate::view::theme::{TEAM_COLORS, team_color};
+
+    for (i, &color) in TEAM_COLORS.iter().enumerate() {
+        assert_eq!(
+            color,
+            observed_style::team(i).base_color,
+            "theme TEAM_COLORS[{i}] must match observed_style::team({i})",
+        );
+        assert_eq!(
+            team_color(i),
+            observed_style::team(i).base_color,
+            "theme::team_color({i}) must match observed_style::team({i})",
+        );
+    }
+}
+
+/// Phase 42 (fix the stale-frame-light defect): before this fix, `LastRenderedSignature`
+/// did not track rival presence/anchor state, so a rival moving into a neighbouring room
+/// with everything else unchanged (sealed slots, item count, collapse state, klaxon)
+/// left the cached signature untouched and the place never rebuilt — the frame light
+/// stayed stale. This mirrors `a_rival_in_the_neighbouring_room_tints_the_threshold_light_with_its_colour`
+/// but deliberately does NOT clear `tp.rendered`, so only the signature hash — not the
+/// "place changed" shortcut — can trigger the rebuild.
+#[test]
+fn a_rival_moving_into_a_neighbour_refreshes_the_frame_light_without_a_place_change() {
+    use crate::sim::director::MatchDirector;
+    use crate::view::theme::TEAM_COLORS;
+
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    app.update(); // build the start room
+
+    let neighbour = {
+        let rt = app.world().resource::<MatchDirector>();
+        let game = rt.live.host_match();
+        let conns = crate::sim::nav::connections_for(game, game.local_room());
+        *conns.first().expect("the start room has a neighbour")
+    };
+    {
+        let mut rt = app.world_mut().resource_mut::<MatchDirector>();
+        let base = rt.live.host.match_state.competitive.teams[1].member_base;
+        rt.live.host.match_state.competitive.structure.graph.players[base] = neighbour;
+    }
+    // Deliberately do NOT reset `tp.rendered` — the only thing that can force a rebuild
+    // here is the rival-state hash in `LastRenderedSignature`.
+    app.update();
+
+    let rival = TEAM_COLORS[1].to_srgba();
+    let found = {
+        let world = app.world_mut();
+        let mut lights = world.query::<(&PointLight, &Name)>();
+        lights.iter(world).any(|(light, name)| {
+            let c = light.color.to_srgba();
+            name.as_str() == "Doorframe tether light"
+                && (c.red - rival.red).abs() < 0.01
+                && (c.green - rival.green).abs() < 0.01
+                && (c.blue - rival.blue).abs() < 0.01
+        })
+    };
+    assert!(
+        found,
+        "moving a rival into a neighbour must rebuild the place and refresh the frame \
+         light even without a place/teleport change"
+    );
+}

@@ -4,12 +4,74 @@
 //! diagnostics all read. No Bevy systems or presentation types — this is the one
 //! place the "which thresholds does this room have right now" question is answered.
 
-use observed_core::RoomId;
+use observed_core::{RoomId, TeamId};
 use observed_match::hybrid::HybridMatch;
 
 use crate::items::ItemsState;
 use crate::keystones::KeystoneState;
 use crate::teleport::Place;
+
+/// One neighbour's rival attribution: whether a rival team's clump currently occupies
+/// it, and whether a rival team has anchored it. Both can be `Some` (a team may anchor
+/// a room and stand in it), and they can name different teams.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct RivalSignal {
+    pub(crate) neighbor: RoomId,
+    pub(crate) presence: Option<TeamId>,
+    pub(crate) anchor: Option<TeamId>,
+}
+
+/// Every rival-relevant neighbour of `room` — the room's current rendered connections
+/// plus its four graph-side base neighbours (so a collapsed/unrendered side still gets
+/// an attribution if a rival is somehow attributed to it) — with a deterministic
+/// presence/anchor projection for each. This is the single reconciliation point between
+/// the room-occupancy heuristic (`crate::rivals::rivals_in_room`, kept for the rival
+/// avatar walk) and `CompetitiveFacility::pin_sources`' anchor bookkeeping: the frame
+/// style factory must consume this projection, not re-derive its own.
+pub(crate) fn rival_signals(
+    game: &HybridMatch,
+    local_team: usize,
+    room: RoomId,
+) -> Vec<RivalSignal> {
+    let facility = &game.competitive;
+    let mut neighbors = connections_for(game, room);
+    for side in observed_observation::Side::ALL {
+        let door = facility.structure.graph.door_id(room, side);
+        let partner = facility.structure.graph.partner(door);
+        let other = facility.structure.graph.door(partner).room;
+        // A door can partner back to its own room (e.g. a sealed/self-linked side); that
+        // is not a neighbour a threshold frame can point rivals at.
+        if other != room {
+            neighbors.push(other);
+        }
+    }
+    neighbors.sort_unstable_by_key(|r| r.0);
+    neighbors.dedup();
+
+    neighbors
+        .into_iter()
+        .map(|neighbor| {
+            let presence = (0..facility.teams.len())
+                .filter(|&i| i != local_team)
+                .find(|&i| facility.teams[i].active_runner() && facility.team_room(i) == neighbor)
+                .map(|i| facility.teams[i].id);
+
+            let anchor = facility
+                .structure
+                .anchors
+                .iter()
+                .filter(|anchor| anchor.room == neighbor && anchor.team.0 as usize != local_team)
+                .map(|anchor| anchor.team)
+                .min_by_key(|team| team.0);
+
+            RivalSignal {
+                neighbor,
+                presence,
+                anchor,
+            }
+        })
+        .collect()
+}
 
 pub(crate) fn connections_for(game: &HybridMatch, room: RoomId) -> Vec<RoomId> {
     let mut connections: Vec<RoomId> = game
@@ -196,5 +258,122 @@ pub(crate) fn nav_for_place(
             nav.hallway_exit_room_slot = slot_for_connection(game, items, to, from);
             nav
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use observed_match::hybrid::HybridMatch;
+
+    const SEED: u64 = 1;
+
+    #[test]
+    fn no_rivals_means_every_signal_is_none() {
+        let game = HybridMatch::authored(SEED);
+        let room = game.local_room();
+        let signals = rival_signals(&game, 0, room);
+        assert!(!signals.is_empty(), "a room has at least one neighbour");
+        for s in &signals {
+            assert_ne!(s.neighbor, room, "a room is never its own neighbour");
+            assert_eq!(s.presence, None, "no rival has moved yet");
+            assert_eq!(s.anchor, None, "no anchor has been placed yet");
+        }
+    }
+
+    #[test]
+    fn a_rival_clump_in_a_neighbour_is_reported_as_presence_only() {
+        let mut game = HybridMatch::authored(SEED);
+        let room = game.local_room();
+        let neighbor = connections_for(&game, room)
+            .first()
+            .copied()
+            .expect("the start room has a neighbour");
+        let base = game.competitive.teams[1].member_base;
+        game.competitive.structure.graph.players[base] = neighbor;
+
+        let signals = rival_signals(&game, 0, room);
+        let signal = signals
+            .iter()
+            .find(|s| s.neighbor == neighbor)
+            .expect("the neighbour is in the projection");
+        assert_eq!(signal.presence, Some(observed_core::TeamId(1)));
+        assert_eq!(signal.anchor, None, "presence without an anchor");
+    }
+
+    #[test]
+    fn a_rival_anchor_in_a_neighbour_is_reported_as_anchor_only() {
+        let mut game = HybridMatch::authored(SEED);
+        let room = game.local_room();
+        let neighbor = connections_for(&game, room)
+            .first()
+            .copied()
+            .expect("the start room has a neighbour");
+        game.competitive
+            .place_team_anchor(observed_core::TeamId(2), neighbor);
+
+        let signals = rival_signals(&game, 0, room);
+        let signal = signals
+            .iter()
+            .find(|s| s.neighbor == neighbor)
+            .expect("the neighbour is in the projection");
+        assert_eq!(signal.presence, None, "no team is standing there");
+        assert_eq!(signal.anchor, Some(observed_core::TeamId(2)));
+    }
+
+    #[test]
+    fn a_neighbour_can_carry_both_presence_and_a_different_anchor() {
+        let mut game = HybridMatch::authored(SEED);
+        let room = game.local_room();
+        let neighbor = connections_for(&game, room)
+            .first()
+            .copied()
+            .expect("the start room has a neighbour");
+        let base = game.competitive.teams[1].member_base;
+        game.competitive.structure.graph.players[base] = neighbor;
+        game.competitive
+            .place_team_anchor(observed_core::TeamId(2), neighbor);
+
+        let signals = rival_signals(&game, 0, room);
+        let signal = signals
+            .iter()
+            .find(|s| s.neighbor == neighbor)
+            .expect("the neighbour is in the projection");
+        assert_eq!(signal.presence, Some(observed_core::TeamId(1)));
+        assert_eq!(signal.anchor, Some(observed_core::TeamId(2)));
+    }
+
+    #[test]
+    fn the_local_team_is_never_reported_as_a_rival_signal() {
+        let mut game = HybridMatch::authored(SEED);
+        let room = game.local_room();
+        let neighbor = connections_for(&game, room)
+            .first()
+            .copied()
+            .expect("the start room has a neighbour");
+        // Move the local team's own clump and anchor into the neighbour: neither
+        // should ever surface as a rival signal for itself.
+        let base = game.competitive.teams[0].member_base;
+        game.competitive.structure.graph.players[base] = neighbor;
+        game.competitive
+            .place_team_anchor(observed_core::TeamId(0), neighbor);
+
+        let signals = rival_signals(&game, 0, room);
+        let signal = signals
+            .iter()
+            .find(|s| s.neighbor == neighbor)
+            .expect("the neighbour is in the projection");
+        assert_eq!(signal.presence, None, "the local team is never a rival");
+        assert_eq!(
+            signal.anchor, None,
+            "the local team's own anchor is not a rival"
+        );
+    }
+
+    #[test]
+    fn signals_are_deterministic_across_calls() {
+        let game = HybridMatch::authored(SEED);
+        let room = game.local_room();
+        assert_eq!(rival_signals(&game, 0, room), rival_signals(&game, 0, room));
     }
 }

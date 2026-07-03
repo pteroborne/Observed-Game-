@@ -22,6 +22,8 @@ treatment**:
   false exit / decoy / dead-end door reads) — every read is **signal tier** and
   glyph-backed
 - `ObservedState` (frozen / unobserved / rerouting) — a modifier on a surface
+- Team palette (`team(index)` / `TEAM_COUNT` = 4) — every team is **signal tier**;
+  base colours match the game's pre-existing `TEAM_COLORS` so nothing shifts visually
 
 A `Treatment` is data (`base_color`, HDR `emissive`, a `signal` flag, an optional
 neon `edge`), not rendering. Consumers — the labs and the assembled `game` — turn
@@ -39,9 +41,9 @@ surfaces stay dark; an armed trap stays legible even when unobserved; and
 cargo run -p style_lab
 ```
 
-Renders four rows in neon-noir — surfaces (middle), signal markers (front),
-doorframe identity reads (front-most), and the spine surface in each observed state
-(back) — with an on-screen legend.
+Renders five rows in neon-noir — surfaces (middle), signal markers (front),
+doorframe identity reads (front-most), the spine surface in each observed state
+(back), and the team palette (far front) — with an on-screen legend.
 
 - `R` — reset (rebuilds the scene without restarting; no leaked entities)
 - `F1` — toggle the overlay panels

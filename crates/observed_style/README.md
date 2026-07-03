@@ -9,10 +9,11 @@ This crate defines the semantic design tokens for the game's neon-noir aesthetic
 - **Rubble Surfaces:** Collapse-sealed thresholds rendered as dark ash rubble fill with dying-ember emissive, signal-tier to stay legible.
 - **District Palettes:** Defines structural lighting tones for facility sectors, including drained collapse-state transitions.
 - **Klaxon State:** Facility-wide escape countdown lighting (red alarm tier, signal-tier for legibility).
+- **Team Palette:** `team(index)` maps a team index (mod `TEAM_COUNT`, style-local — does not depend on `observed_match`) to a signal-tier treatment; base colours match the game's pre-existing team colours so nothing shifts visually. `team_label`/`team_legend` back every team with a unique legend entry.
 - **Legibility Rules:** Enforces minimum contrast constraints and floor lighting values so players, hazards, and pathways are never hidden by atmospheric bloom or fog.
 
 ## Module Structure
-- **[`lib.rs`](src/lib.rs):** Defines semantic roles (`MarkerRole`, `DoorIdentityRole`, `OutlineRole`, `SurfaceRole`), color palettes, brightness checks, and visual legends.
+- **[`lib.rs`](src/lib.rs):** Defines semantic roles (`MarkerRole`, `DoorIdentityRole`, `OutlineRole`, `SurfaceRole`), the team palette, color palettes, brightness checks, and visual legends.
 
 ## Audit Notes
 - **Bloat:** `lib.rs` (792 lines) is relatively large but holds the complete visual language logic, keeping presentation code strictly separated.

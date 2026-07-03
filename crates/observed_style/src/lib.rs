@@ -548,6 +548,63 @@ pub fn door_identity(role: DoorIdentityRole) -> Treatment {
     }
 }
 
+/// How many teams the facility fields. Style-local: this crate must not depend on
+/// `observed_match`, so the team palette carries its own copy of the count rather than
+/// importing the match crate's `TEAM_COUNT`. Consumers with a match-side `TEAM_COUNT`
+/// are expected to keep the two in sync (both are 4 today).
+pub const TEAM_COUNT: usize = 4;
+
+/// The base colour for each of the four teams (Phase 42: team colours become a
+/// style-owned semantic signal — they've been a gameplay signal since rival frame
+/// tints landed in Phase 38/41). These values must equal the game's pre-existing
+/// `TEAM_COLORS` so nothing visually shifts when call sites re-point here.
+const TEAM_BASE_COLORS: [(f32, f32, f32); TEAM_COUNT] = [
+    (0.96, 0.28, 0.34),
+    (0.32, 0.62, 1.0),
+    (0.72, 0.46, 1.0),
+    (1.0, 0.62, 0.20),
+];
+
+const TEAM_NAMES: [&str; TEAM_COUNT] = ["crimson", "azure", "violet", "amber"];
+
+/// The neon-noir treatment for team `index` (wraps modulo [`TEAM_COUNT`]). Signal-tier:
+/// a team's presence/anchor/avatar reads must punch through fog like any other signal.
+/// The emissive is the base colour scaled up until it clears [`SIGNAL_MIN_LUMINANCE`],
+/// mirroring how [`klaxon`] and `SurfaceRole::Rubble` derive their emissive from a base
+/// hue rather than hand-tuning independent numbers.
+pub fn team(index: usize) -> Treatment {
+    let (r, g, b) = TEAM_BASE_COLORS[index % TEAM_COUNT];
+    let base = Color::srgb(r, g, b);
+    let base_linear = LinearRgba::rgb(r, g, b);
+    let base_luminance = luminance(base_linear);
+    let scale_factor = if base_luminance > 0.0 {
+        (SIGNAL_MIN_LUMINANCE / base_luminance).max(1.0) * 1.4
+    } else {
+        8.0
+    };
+    Treatment {
+        base_color: base,
+        emissive: scale(base_linear, scale_factor),
+        signal: true,
+        edge: Some(base),
+    }
+}
+
+/// The legend label for team `index` (wraps modulo [`TEAM_COUNT`]), e.g. `"team 1 —
+/// crimson"`.
+pub fn team_label(index: usize) -> String {
+    format!(
+        "team {} — {}",
+        index % TEAM_COUNT,
+        TEAM_NAMES[index % TEAM_COUNT]
+    )
+}
+
+/// Every team and its treatment, for lab/game legends.
+pub fn team_legend() -> Vec<(String, Treatment)> {
+    (0..TEAM_COUNT).map(|i| (team_label(i), team(i))).collect()
+}
+
 /// The facility-wide countdown state: once the first team escapes, every district's
 /// lighting drops into this red alarm tier. Signal-tier so it stays legible as the
 /// collapse approaches.
@@ -1136,6 +1193,63 @@ mod tests {
         labels.sort_unstable();
         labels.dedup();
         assert_eq!(labels.len(), legend.len(), "every legend entry is unique");
+    }
+
+    #[test]
+    fn team_colours_match_the_games_pre_existing_values() {
+        // Locks the base colours to the game's current `TEAM_COLORS` (Phase 42): this
+        // refactor must produce zero visual change.
+        let expected = [
+            (0.96, 0.28, 0.34),
+            (0.32, 0.62, 1.0),
+            (0.72, 0.46, 1.0),
+            (1.0, 0.62, 0.20),
+        ];
+        for (i, (r, g, b)) in expected.into_iter().enumerate() {
+            let t = team(i);
+            assert_eq!(t.base_color, Color::srgb(r, g, b), "team {i} base colour");
+        }
+    }
+
+    #[test]
+    fn every_team_is_signal_tier_and_distinct() {
+        let treatments: Vec<Treatment> = (0..TEAM_COUNT).map(team).collect();
+        for (i, t) in treatments.iter().enumerate() {
+            assert!(t.signal, "team {i} must be signal-tier");
+            assert!(
+                luminance(t.emissive) >= SIGNAL_MIN_LUMINANCE,
+                "team {i} must punch through fog: {:?}",
+                t.emissive,
+            );
+        }
+        for i in 0..treatments.len() {
+            for j in (i + 1)..treatments.len() {
+                assert!(
+                    treatments[i].base_color != treatments[j].base_color,
+                    "team {i} and team {j} look identical",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn team_index_wraps_modulo_team_count() {
+        assert_eq!(team(0), team(TEAM_COUNT));
+        assert_eq!(team_label(0), team_label(TEAM_COUNT));
+    }
+
+    #[test]
+    fn team_legend_covers_every_team_uniquely() {
+        let legend = team_legend();
+        assert_eq!(legend.len(), TEAM_COUNT);
+        let mut labels: Vec<String> = legend.iter().map(|(name, _)| name.clone()).collect();
+        labels.sort_unstable();
+        labels.dedup();
+        assert_eq!(
+            labels.len(),
+            legend.len(),
+            "every team legend entry is unique"
+        );
     }
 
     #[test]

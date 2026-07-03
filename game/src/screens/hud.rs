@@ -616,6 +616,11 @@ pub(crate) fn spawn_match_hud(commands: &mut Commands) {
                         13.0,
                         style::marker(MarkerRole::Rival).base_color
                     ),
+                    text(
+                        "rival anchor — their torch holds the door",
+                        13.0,
+                        style::team(1).base_color
+                    ),
                     text("mystery corridors", 13.0, Color::srgb(1.0, 0.32, 0.22)),
                     text(
                         "gantry edge — jump line",

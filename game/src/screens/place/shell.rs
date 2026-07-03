@@ -9,6 +9,7 @@ use crate::GameState;
 use crate::layout::{PLACE_TILE, WALL_HEIGHT};
 use crate::view::assets::{DOOR_LEAF_D, DOOR_LINTEL_H, MatchAssets};
 use crate::view::components::{DoorLeaf, PlaceGeometry};
+use crate::view::theme::team_color;
 
 use super::mesh;
 use crate::teleport::{DeckSeg, DoorGap, PlaceGeom};
@@ -222,19 +223,30 @@ pub(crate) struct ThresholdStyle {
     /// A rival team index whose presence beyond this threshold pins it (Phase 38
     /// contested observation): the frame light takes that team's colour so the
     /// player reads "a rival is holding this door open".
-    rival: Option<usize>,
+    rival_presence: Option<usize>,
+    /// A rival team index that has an anchor on the room beyond this threshold
+    /// (Phase 42): rendered as a torch prop plus a brighter frame light than mere
+    /// presence, since an anchor is a durable claim rather than a passer-through.
+    rival_anchor: Option<usize>,
 }
 
 impl ThresholdStyle {
-    /// An always-open passage: frame only, no hiding leaf. `rival` tints the
-    /// frame light when a rival team's presence pins the connection beyond it.
-    pub(crate) fn passage(tethered: bool, rival: Option<usize>) -> Self {
+    /// An always-open passage: frame only, no hiding leaf. `rival_presence` tints the
+    /// frame light when a rival team's presence pins the connection beyond it;
+    /// `rival_anchor` additionally spawns a torch prop and takes priority over mere
+    /// presence when both are set (an anchor can outlast the team that placed it).
+    pub(crate) fn passage(
+        tethered: bool,
+        rival_presence: Option<usize>,
+        rival_anchor: Option<usize>,
+    ) -> Self {
         Self {
             leaf_material: None,
             leaf_name: "Door leaf",
             openable: false,
             tethered,
-            rival,
+            rival_presence,
+            rival_anchor,
         }
     }
 
@@ -245,7 +257,8 @@ impl ThresholdStyle {
             leaf_name: "Locked exit",
             openable: false,
             tethered,
-            rival: None,
+            rival_presence: None,
+            rival_anchor: None,
         }
     }
 
@@ -256,7 +269,8 @@ impl ThresholdStyle {
             leaf_name: "Collapsed rubble",
             openable: false,
             tethered: false,
-            rival: None,
+            rival_presence: None,
+            rival_anchor: None,
         }
     }
 
@@ -267,7 +281,8 @@ impl ThresholdStyle {
             leaf_name: "Closed door",
             openable: false,
             tethered: false,
-            rival: None,
+            rival_presence: None,
+            rival_anchor: None,
         }
     }
 }
@@ -286,7 +301,8 @@ pub(crate) fn spawn_threshold_gateway(
         assets,
         gap,
         threshold_style.tethered,
-        threshold_style.rival,
+        threshold_style.rival_presence,
+        threshold_style.rival_anchor,
         y_offset,
     );
     if let Some(leaf_material) = threshold_style.leaf_material {
@@ -307,6 +323,55 @@ fn gap_yaw(normal: Vec2) -> f32 {
     (-along.y).atan2(along.x)
 }
 
+/// A rival team's anchor torch prop at a threshold frame (Phase 42): a small emissive
+/// box (from the shared placeholder mesh) plus a floor halo, team-coloured, so a
+/// rival-anchored doorway reads as "their torch holds this door" rather than only a
+/// tinted light. Mirrors `item_visuals::spawn_anchor_torch`'s box + halo shape.
+fn spawn_rival_anchor_torch(
+    commands: &mut Commands,
+    assets: &MatchAssets,
+    gap: &DoorGap,
+    team: usize,
+    y_offset: f32,
+) {
+    let along = Vec2::new(-gap.normal.y, gap.normal.x);
+    let pos = gap.center + along * (gap.width * 0.5 + 0.3);
+    let color = team_color(team);
+    let material = assets
+        .team_materials
+        .get(team % assets.team_materials.len())
+        .cloned()
+        .unwrap_or_else(|| assets.rival_material.clone());
+    commands
+        .spawn((
+            PlaceGeometry,
+            DespawnOnExit(GameState::Match),
+            Mesh3d(assets.placeholder_mesh.clone()),
+            MeshMaterial3d(material.clone()),
+            Transform::from_xyz(pos.x, y_offset + 0.55, pos.y)
+                .with_scale(Vec3::new(0.18, 1.1, 0.18)),
+            Name::new("Rival anchor torch"),
+        ))
+        .with_children(|torch| {
+            torch.spawn((
+                Mesh3d(assets.halo_mesh.clone()),
+                MeshMaterial3d(material),
+                Transform::from_xyz(0.0, -0.52, 0.0).with_scale(Vec3::new(1.3, 1.0, 1.3)),
+                Name::new("Rival anchor torch floor halo"),
+            ));
+            torch.spawn((
+                PointLight {
+                    color,
+                    intensity: 1_900.0,
+                    range: 6.5,
+                    shadows_enabled: false,
+                    ..default()
+                },
+                Transform::from_xyz(0.0, 0.45, 0.0),
+            ));
+        });
+}
+
 /// A neon doorway frame (two posts + a lintel) at a gap, built from primitives and
 /// rotated to the gap's wall so it matches the opening at any angle.
 fn spawn_place_frame(
@@ -314,7 +379,8 @@ fn spawn_place_frame(
     assets: &MatchAssets,
     gap: &DoorGap,
     tethered: bool,
-    rival: Option<usize>,
+    rival_presence: Option<usize>,
+    rival_anchor: Option<usize>,
     y_offset: f32,
 ) {
     let material = assets.doorframe_material.clone();
@@ -358,19 +424,27 @@ fn spawn_place_frame(
         Name::new("Doorframe lintel"),
     ));
 
-    // Light priority: your own tether (control colour) outranks a rival's grip,
-    // which outranks the neutral idle frame.
-    let tether_color = match status {
-        crate::evidence::DiagnosticThresholdStatus::Collapsed => {
+    // Light priority (Phase 41 collapse override, Phase 42 rival attribution): your
+    // own tether (control colour) outranks a rival's anchor, which outranks a rival's
+    // mere presence, which outranks the neutral idle frame. Collapse overrides all of
+    // it — it's the one force even an anchor cannot hold back. An anchor is a durable
+    // claim, so it burns brighter than a passer-through's presence.
+    const PRESENCE_INTENSITY: f32 = 1_400.0;
+    const ANCHOR_INTENSITY: f32 = 2_200.0;
+    let (tether_color, intensity) = match status {
+        crate::evidence::DiagnosticThresholdStatus::Collapsed => (
             style::surface(style::SurfaceRole::Rubble)
                 .edge
-                .unwrap_or(style::marker(MarkerRole::Collapse).base_color)
-        }
-        _ if tethered => style::marker(MarkerRole::Control).base_color,
-        _ if let Some(team) = rival => {
-            crate::view::theme::TEAM_COLORS[team % crate::view::theme::TEAM_COLORS.len()]
-        }
-        _ => Color::srgb(0.45, 0.62, 0.78),
+                .unwrap_or(style::marker(MarkerRole::Collapse).base_color),
+            PRESENCE_INTENSITY,
+        ),
+        _ if tethered => (
+            style::marker(MarkerRole::Control).base_color,
+            PRESENCE_INTENSITY,
+        ),
+        _ if let Some(team) = rival_anchor => (team_color(team), ANCHOR_INTENSITY),
+        _ if let Some(team) = rival_presence => (team_color(team), PRESENCE_INTENSITY),
+        _ => (Color::srgb(0.45, 0.62, 0.78), PRESENCE_INTENSITY),
     };
     commands.spawn((
         PlaceGeometry,
@@ -382,7 +456,7 @@ fn spawn_place_frame(
         },
         PointLight {
             color: tether_color,
-            intensity: 1_400.0,
+            intensity,
             range: 5.0,
             shadows_enabled: false,
             ..default()
@@ -390,6 +464,14 @@ fn spawn_place_frame(
         Transform::from_xyz(gap.center.x, y_offset + WALL_HEIGHT - 0.35, gap.center.y),
         Name::new("Doorframe tether light"),
     ));
+
+    // A rival anchor beyond this threshold also gets a physical torch prop at the
+    // frame (unless collapse has sealed the threshold — rubble is the whole read then).
+    if status != crate::evidence::DiagnosticThresholdStatus::Collapsed
+        && let Some(team) = rival_anchor
+    {
+        spawn_rival_anchor_torch(commands, assets, gap, team, y_offset);
+    }
 
     if crate::evidence::visual_audit_enabled() {
         commands.spawn((

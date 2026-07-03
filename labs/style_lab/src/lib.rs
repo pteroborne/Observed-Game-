@@ -280,6 +280,19 @@ fn setup(
         );
     }
 
+    // Row 6 (far front) - the team palette (Phase 42: team colours as a style-owned
+    // signal).
+    for i in 0..style::TEAM_COUNT {
+        let t = style::team(i);
+        place_beacon(
+            &mut commands,
+            &unit_cube,
+            &mut materials,
+            &t,
+            Vec3::new(row_x(i, style::TEAM_COUNT), 1.1, 10.4),
+        );
+    }
+
     spawn_ui(&mut commands);
 }
 
@@ -308,6 +321,10 @@ fn spawn_ui(commands: &mut Commands) {
     legend.push_str("\nPHASE 41 (far back):\n");
     legend.push_str("  - escape countdown — klaxon lighting (left)\n");
     legend.push_str("  - drained archive / reactor / foundry (center-right)\n");
+    legend.push_str("\nPHASE 42 — TEAM PALETTE (far front, L→R):\n");
+    for i in 0..style::TEAM_COUNT {
+        legend.push_str(&format!("  - {}\n", style::team_label(i)));
+    }
 
     commands
         .spawn((
@@ -449,7 +466,7 @@ fn update_debug_text(
     **text = format!(
         "STYLE LAB  {}\n\n\
          neon-noir visual language\n\
-         surfaces {} | markers {} | door reads {} | observed {}\n\
+         surfaces {} | markers {} | door reads {} | observed {} | teams {}\n\
          klaxon + drained districts | neon edges {}\n\
          signal min luminance {:.1}\n\n\
          cameras {cams}  UI {ui_roots}\n\n\
@@ -459,6 +476,7 @@ fn update_debug_text(
         MarkerRole::ALL.len(),
         DoorIdentityRole::ALL.len(),
         ObservedState::ALL.len(),
+        style::TEAM_COUNT,
         edges.iter().count(),
         style::SIGNAL_MIN_LUMINANCE,
     );
@@ -542,10 +560,11 @@ mod tests {
         let mut app = test_app();
         assert_eq!(count::<StyleCam>(&mut app), 1);
         assert_eq!(count::<StyleUiRoot>(&mut app), 1);
-        // Edged surfaces + 8 markers + 9 door reads + 3 observed spine swatches
-        // are neon-edged; only the ceiling surface intentionally has no edge.
+        // Edged surfaces + 8 markers + 9 door reads + 3 observed spine swatches + 4
+        // team beacons are neon-edged; only the ceiling surface intentionally has no
+        // edge.
         assert!(
-            count::<NeonEdge>(&mut app) >= 26,
+            count::<NeonEdge>(&mut app) >= 30,
             "every distinct role renders a swatch with a neon edge",
         );
     }

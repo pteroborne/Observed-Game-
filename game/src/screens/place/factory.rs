@@ -4,7 +4,7 @@
 //! helpers it uses to give each room a distinct hue.
 
 use bevy::prelude::*;
-use observed_core::RoomId;
+use observed_core::{RoomId, SplitMix};
 
 use crate::GameState;
 use crate::items::ItemsState;
@@ -46,17 +46,49 @@ pub(crate) fn room_floor_material(
     materials.add(mat)
 }
 
-#[derive(Resource, Default)]
-pub(crate) struct LastRenderedSignature(
-    pub(crate)  Option<(
-        Place,
-        u64,
-        usize,
-        Vec<teleport::ThresholdSlotId>,
-        observed_match::facility::CollapseState,
-        bool,
-    )>,
+/// The place-rebuild signature: everything that must be identical for a cached place
+/// to stay valid. `u64` is the tether hash, the trailing `u64` is `rival_signature_hash`
+/// (Phase 42: refreshes the place when a rival's presence/anchor changes on any
+/// neighbour, closing the stale-frame-light gap the tuple used to leave open).
+type PlaceSignature = (
+    Place,
+    u64,
+    usize,
+    Vec<teleport::ThresholdSlotId>,
+    observed_match::facility::CollapseState,
+    bool,
+    u64,
 );
+
+#[derive(Resource, Default)]
+pub(crate) struct LastRenderedSignature(pub(crate) Option<PlaceSignature>);
+
+/// Mix every neighbour's rival presence/anchor attribution into one hash so the place
+/// signature changes whenever a rival moves into/out of a neighbour or plants/removes
+/// an anchor there — otherwise a rival-state change with everything else unchanged
+/// (sealed slots, item count, collapse state, klaxon) would leave the cached signature
+/// untouched and the stale frame light would never refresh (mirrors how `tethers_hash`
+/// above folds per-connection state into the signature).
+fn rival_signature_hash(signals: &[crate::sim::nav::RivalSignal]) -> u64 {
+    let mut mix = SplitMix(0x5257_4956_414C_2148);
+    for signal in signals {
+        mix.0 = mix.0.wrapping_add(signal.neighbor.0 as u64).wrapping_add(1);
+        let _ = mix.next_u64();
+        if let Some(team) = signal.presence {
+            mix.0 = mix
+                .0
+                .wrapping_add((team.0 as u64).wrapping_mul(0x1000_0001));
+            let _ = mix.next_u64();
+        }
+        if let Some(team) = signal.anchor {
+            mix.0 = mix
+                .0
+                .wrapping_add((team.0 as u64).wrapping_mul(0x2000_0003));
+            let _ = mix.next_u64();
+        }
+    }
+    mix.0
+}
 
 /// Rebuild the place presentation geometry (floors, walls, ceiling, previews, lights, items).
 #[allow(clippy::too_many_arguments)]
@@ -79,6 +111,15 @@ pub(crate) fn rebuild_place(
     let seed_val = seed.map(|s| s.0).unwrap_or(crate::flow::MATCH_SEED);
     let nav = crate::sim::nav::nav_for_place(seed_val, game, &keys, &items, tp.place);
 
+    // The room whose thresholds are on screen right now — the room side of a
+    // `Place::Room`, or the room the player is standing in for a hallway.
+    let signal_room = match tp.place {
+        Place::Room(room) => room,
+        Place::Hallway { from, .. } => from,
+    };
+    let local_team = crate::flow::LOCAL_TEAM.0 as usize;
+    let rival_signals = crate::sim::nav::rival_signals(game, local_team, signal_room);
+
     // Signature to detect if the place needs rebuilding (e.g. dropped items or tethers changed)
     let signature = {
         let mut tethers_hash = 0u64;
@@ -95,6 +136,7 @@ pub(crate) fn rebuild_place(
             nav.sealed_slots.clone(),
             match_runtime::collapse_state_for_place(game, tp.place),
             match_runtime::countdown_klaxon_active(&runtime),
+            rival_signature_hash(&rival_signals),
         )
     };
 
@@ -170,10 +212,15 @@ pub(crate) fn rebuild_place(
         };
         let tethered = nav.is_tethered(ea, eb);
         // Phase 38 contested observation: a rival team standing in the room beyond
-        // this threshold pins it for everyone — show whose grip it is.
-        let rival_holding = crate::rivals::rivals_in_room(&game.competitive, gap.target)
-            .first()
+        // this threshold pins it for everyone; Phase 42 also attributes a rival's
+        // *anchor* there (`rival_signals` is the one reconciliation point between
+        // that heuristic and `CompetitiveFacility::pin_sources`' anchor bookkeeping).
+        let rival_signal = rival_signals
+            .iter()
+            .find(|signal| signal.neighbor == gap.target)
             .copied();
+        let rival_presence = rival_signal.and_then(|s| s.presence).map(|t| t.0 as usize);
+        let rival_anchor = rival_signal.and_then(|s| s.anchor).map(|t| t.0 as usize);
 
         if gap.kind.is_passage() {
             let dest = tp
@@ -225,7 +272,7 @@ pub(crate) fn rebuild_place(
                 &mut commands,
                 &assets,
                 gap,
-                shell::ThresholdStyle::passage(tethered, rival_holding),
+                shell::ThresholdStyle::passage(tethered, rival_presence, rival_anchor),
                 y_offset,
             );
         } else if gap.kind == GapKind::LockedExit {
