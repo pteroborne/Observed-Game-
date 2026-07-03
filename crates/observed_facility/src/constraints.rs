@@ -44,6 +44,11 @@ pub struct ConstraintWorld {
     /// `ContentionWorld::place_anchor`/`remove_anchor` for the semantics this
     /// mirrors.
     pub anchors: Vec<Anchor>,
+    /// Rooms the collapse has permanently claimed (Phase 41): every doorway of
+    /// a sealed room is a self-link wall. Dedup, insertion order. Sealing is
+    /// the one force that overrides every freeze — pins, anchors, and even the
+    /// protected spine — see [`Self::seal_room`].
+    pub sealed_rooms: Vec<RoomId>,
 }
 
 impl ConstraintWorld {
@@ -66,6 +71,7 @@ impl ConstraintWorld {
             last_rewired: 0,
             last_event: "Gold routes persist; the rest rewires but stays connected.".to_string(),
             anchors: Vec::new(),
+            sealed_rooms: Vec::new(),
         };
         world.recompute_connectivity();
         world
@@ -99,6 +105,7 @@ impl ConstraintWorld {
                 spec.name
             ),
             anchors: Vec::new(),
+            sealed_rooms: Vec::new(),
         };
         world.recompute_connectivity();
         world
@@ -116,6 +123,33 @@ impl ConstraintWorld {
     /// `ContentionWorld::anchored`.
     fn anchored(&self, room: RoomId) -> bool {
         self.anchors.iter().any(|anchor| anchor.room == room)
+    }
+
+    /// Whether the collapse has already claimed `room` (Phase 41).
+    pub fn is_sealed_room(&self, room: RoomId) -> bool {
+        self.sealed_rooms.contains(&room)
+    }
+
+    /// Seal every doorway of `room` — and each doorway's partner — to a
+    /// self-link wall, **unconditionally**. This is the collapse's override:
+    /// unlike every other freeze in this world (observation pins, anchors,
+    /// the protected spine), sealing does not check `is_frozen` and cannot be
+    /// blocked by one. The collapse is "the one force anchors cannot hold
+    /// back" — territory it claims stays claimed regardless of what was
+    /// pinning those doors before. Idempotent: sealing an already-sealed room
+    /// is a no-op past the first call (doors are already self-linked and
+    /// `sealed_rooms` dedups).
+    pub fn seal_room(&mut self, room: RoomId) {
+        for side in Side::ALL {
+            let door = self.graph.door_id(room, side);
+            let partner = self.graph.partner(door);
+            self.graph.links[door.0 as usize] = door;
+            self.graph.links[partner.0 as usize] = partner;
+        }
+        if !self.sealed_rooms.contains(&room) {
+            self.sealed_rooms.push(room);
+        }
+        self.recompute_connectivity();
     }
 
     /// Place `team`'s anchor on `room`. Idempotent per (team, room) — placing
@@ -147,15 +181,25 @@ impl ConstraintWorld {
     }
 
     /// A door is frozen when observation pins it, the spine protects it (and
-    /// protection is on), or either end's room is anchored by any team.
-    /// Mirrors `ObservationWorld::is_pinned`'s both-ends rule: a door's own
-    /// room and its partner's room are both checked, so a sealed door (whose
+    /// protection is on), either end's room is anchored by any team, or
+    /// either end's room has been sealed by the collapse (Phase 41). Mirrors
+    /// `ObservationWorld::is_pinned`'s both-ends rule: a door's own room and
+    /// its partner's room are both checked, so a sealed-wall door (whose
     /// partner is itself) is covered by the same single check.
+    ///
+    /// Sealed rooms must be included here even though [`Self::seal_room`]
+    /// already writes self-links directly: a sealed room's doors are
+    /// otherwise unpinned (no observer necessarily standing there, no anchor
+    /// necessarily placed), so without this check `decohere`'s free-door
+    /// filter would treat them as eligible and re-match them away from their
+    /// self-link on the very next call.
     pub fn is_frozen(&self, door: DoorId) -> bool {
         self.graph.is_pinned(door)
             || (self.protection_enabled && self.is_protected(door))
             || self.anchored(self.graph.door(door).room)
             || self.anchored(self.graph.door(self.graph.partner(door)).room)
+            || self.is_sealed_room(self.graph.door(door).room)
+            || self.is_sealed_room(self.graph.door(self.graph.partner(door)).room)
     }
 
     pub fn door(&self, door: DoorId) -> &Door {
@@ -416,6 +460,7 @@ mod tests {
         assert!(world.protection_enabled);
         assert!(world.connected);
         assert!(world.anchors.is_empty());
+        assert!(world.sealed_rooms.is_empty());
     }
 
     #[test]
@@ -486,5 +531,62 @@ mod tests {
             b.decohere();
         }
         assert_eq!(a.graph.links, b.graph.links);
+    }
+
+    #[test]
+    fn seal_room_self_links_every_doorway_and_records_it() {
+        let mut world = ConstraintWorld::authored();
+        world.seal_room(RoomId(4));
+        for side in Side::ALL {
+            let door = world.graph.door_id(RoomId(4), side);
+            assert!(
+                world.graph.is_sealed(door),
+                "every doorway of a sealed room must self-link"
+            );
+        }
+        assert_eq!(world.sealed_rooms, vec![RoomId(4)]);
+
+        // Idempotent: sealing again doesn't duplicate the record.
+        world.seal_room(RoomId(4));
+        assert_eq!(world.sealed_rooms, vec![RoomId(4)]);
+    }
+
+    #[test]
+    fn collapse_overrides_anchors_protection_and_presence() {
+        // A room that is simultaneously observed, anchored, and spine-protected
+        // must still seal — the collapse is the one force nothing else holds
+        // back.
+        let mut world = ConstraintWorld::authored();
+        world.graph.players = vec![RoomId(1); world.graph.players.len()];
+        assert!(world.place_anchor(TeamId(0), RoomId(1)));
+        assert!(world.is_protected(world.graph.door_id(RoomId(1), Side::East)));
+
+        world.seal_room(RoomId(1));
+        for side in Side::ALL {
+            let door = world.graph.door_id(RoomId(1), side);
+            assert!(
+                world.graph.is_sealed(door),
+                "sealing must override presence, anchors, and spine protection"
+            );
+        }
+    }
+
+    #[test]
+    fn sealed_rooms_never_rewire_across_many_decoheres() {
+        let mut world = ConstraintWorld::authored();
+        // Clear presence so nothing but the seal itself protects room 4.
+        world.graph.players.clear();
+        world.seal_room(RoomId(4));
+
+        for _ in 0..100 {
+            world.decohere();
+            for side in Side::ALL {
+                let door = world.graph.door_id(RoomId(4), side);
+                assert!(
+                    world.graph.is_sealed(door),
+                    "a sealed room must stay sealed across every decohere"
+                );
+            }
+        }
     }
 }

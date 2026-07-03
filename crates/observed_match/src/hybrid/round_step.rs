@@ -312,8 +312,33 @@ impl HybridMatch {
         reachable(&self.maze_tiles, &self.elevation_steps, &self.rooms)
     }
 
+    /// Whether the local team can still walk from its current room to the
+    /// exit.
+    ///
+    /// Phase 41: the collapse permanently seals rooms it claims, so a sealed
+    /// room's tiles are meant to fall out of the walkable set — the
+    /// pre-Phase-41 "every room in the graph, including the entrance, stays
+    /// mutually reachable" invariant no longer holds once the collapse has
+    /// taken territory (the entrance is the first room it claims). What must
+    /// still hold — the actual gameplay guarantee, and the one
+    /// `CompetitiveFacility::advance_round` enforces at the graph level (see
+    /// its solvability tests) — is that an active runner can always reach the
+    /// exit. This checks exactly that at the tile level: a floor path from
+    /// the local team's current room to the exit room.
+    ///
+    /// (Whole-room-count reachability isn't used here because the maze's
+    /// corridor thickening can incidentally route a corridor tile next to a
+    /// sealed room's rect without an actual `CorridorRoute` connecting to it —
+    /// harmless for solvability, since that stray tile adjacency never has to
+    /// carry traffic, but it would make a strict "exactly N rooms reachable"
+    /// count over-count and flake.)
     pub fn navigable(&self) -> bool {
-        self.reachable_rooms() == self.competitive.structure.graph.room_count
+        let Some(exit) = self.competitive.exit_room() else {
+            return true;
+        };
+        let local = self.rooms[self.local_room().0 as usize].center_tile();
+        let goal = self.rooms[exit.0 as usize].center_tile();
+        path_between(&self.maze_tiles, &self.elevation_steps, local, goal).is_some()
     }
 }
 
@@ -430,7 +455,18 @@ pub fn path_between_avoiding(
 }
 
 pub fn reachable(tiles: &[Tile], elevation_steps: &[u8], rooms: &[RoomRect]) -> usize {
-    let start = rooms[0].center_tile();
+    reachable_from(tiles, elevation_steps, rooms, rooms[0].center_tile())
+}
+
+/// Same walk as [`reachable`], but from a caller-supplied starting tile
+/// rather than always room 0 — needed once room 0 (the entrance) can itself
+/// be sealed shut by the collapse (Phase 41).
+pub fn reachable_from(
+    tiles: &[Tile],
+    elevation_steps: &[u8],
+    rooms: &[RoomRect],
+    start: (usize, usize),
+) -> usize {
     let mut seen = vec![false; GRID_W * GRID_H];
     let mut reached = vec![false; rooms.len()];
     let mut queue = VecDeque::new();

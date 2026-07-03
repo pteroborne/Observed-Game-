@@ -100,6 +100,17 @@ impl TeamRun {
     }
 }
 
+/// A room's relationship to the collapse (Phase 41): [`CollapseState::Collapsed`]
+/// rooms are sealed territory; [`CollapseState::Dying`] is the single next
+/// room the frontier is about to take; everything else is
+/// [`CollapseState::Intact`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum CollapseState {
+    Intact,
+    Dying,
+    Collapsed,
+}
+
 #[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
 #[derive(Clone, Debug)]
 pub struct CompetitiveFacility {
@@ -401,6 +412,17 @@ impl CompetitiveFacility {
         self.team_room(index).0 == EXIT_ROOM
     }
 
+    /// The room a team must ultimately reach — `EXIT_ROOM` for the authored
+    /// spine, or the map spec's exit room. Used by callers that need to prove
+    /// solvability (e.g. the hybrid maze's navigability check) without caring
+    /// which mode built this facility.
+    pub fn exit_room(&self) -> Option<RoomId> {
+        if let Some(spec) = &self.map_spec {
+            return spec.exit_room();
+        }
+        Some(RoomId(EXIT_ROOM))
+    }
+
     pub fn next_room_for_team(&self, index: usize) -> Option<RoomId> {
         if self.map_spec.is_none() {
             return spine_next(self.team_room(index)).map(|(room, _)| room);
@@ -561,7 +583,35 @@ impl CompetitiveFacility {
             }
         }
 
-        // 7. Once the exits are full, anyone still running is locked out and taken.
+        // 7. The collapse claims territory: newly-collapsed rooms seal shut.
+        //    This runs after absorption (step 6) so no alive Runner ever
+        //    stands in a room being sealed — absorption already emptied every
+        //    room behind the (now current) purge line of active runners.
+        //    `collapse_rooms()` uses a `<=` progress-fraction cutoff while
+        //    absorption uses a strict `<`, so a runner sitting exactly on the
+        //    line is not absorbed yet could nominally share a room with a
+        //    "collapsed" index; to keep sealing strictly safe we additionally
+        //    never seal a room any active runner currently occupies.
+        let occupied: BTreeSet<RoomId> = (0..self.teams.len())
+            .filter(|&i| self.teams[i].active_runner())
+            .map(|i| self.team_room(i))
+            .collect();
+        let mut newly_sealed = Vec::new();
+        for room in self.collapse_rooms() {
+            if occupied.contains(&room) || self.structure.is_sealed_room(room) {
+                continue;
+            }
+            self.structure.seal_room(room);
+            newly_sealed.push(room);
+        }
+        if let Some(&room) = newly_sealed.last() {
+            self.last_event = format!(
+                "The collapse sealed room {} — its doorways are gone for good.",
+                room.0
+            );
+        }
+
+        // 8. Once the exits are full, anyone still running is locked out and taken.
         if self.slots_remaining == 0 {
             for team in &mut self.teams {
                 if team.active_runner() {
@@ -570,7 +620,7 @@ impl CompetitiveFacility {
             }
         }
 
-        // 8. Resolve.
+        // 9. Resolve.
         self.finished = !self.teams.iter().any(TeamRun::active_runner);
         if self.finished {
             self.last_event = format!(
@@ -607,6 +657,32 @@ impl CompetitiveFacility {
     /// The furthest spine room the collapse currently reaches (its frontier).
     pub fn collapse_frontier(&self) -> Option<RoomId> {
         self.collapse_rooms().into_iter().next_back()
+    }
+
+    /// The single objective-sequence/spine room strictly ahead of the
+    /// frontier — the next room the collapse is about to take. `None` once
+    /// the sequence is exhausted (every room already collapsed, or the
+    /// sequence is empty).
+    pub fn dying_room(&self) -> Option<RoomId> {
+        let sequence = if self.map_spec.is_some() {
+            self.objective_sequence()
+        } else {
+            SPINE_ROOMS.iter().copied().map(RoomId).collect()
+        };
+        let collapsed_count = self.collapse_rooms().len();
+        sequence.get(collapsed_count).copied()
+    }
+
+    /// `room`'s relationship to the collapse: deterministic and pure — derived
+    /// entirely from [`Self::collapse_rooms`] and [`Self::dying_room`].
+    pub fn room_collapse(&self, room: RoomId) -> CollapseState {
+        if self.collapse_rooms().contains(&room) {
+            CollapseState::Collapsed
+        } else if self.dying_room() == Some(room) {
+            CollapseState::Dying
+        } else {
+            CollapseState::Intact
+        }
     }
 
     /// A joined (director) team shoves the collapse forward. Only absorbed teams
@@ -738,6 +814,14 @@ mod tests {
 
     #[test]
     fn the_structure_keeps_shifting_yet_stays_traversable() {
+        // Phase 41 update: once the collapse can seal territory, a room it has
+        // already claimed is *meant* to become unreachable (that's the whole
+        // point — the entrance is gone once nobody needs to backtrack to it).
+        // So whole-graph `connected()` is no longer the right invariant for a
+        // full run; every active runner reaching the exit is (see the
+        // dedicated solvability test below). This test now checks that
+        // invariant instead of the pre-Phase-41 "everything stays reachable"
+        // one, and still confirms the structure actually rewires.
         let mut world = CompetitiveFacility::authored();
         let initial_links = world.structure.graph.links.clone();
         for _ in 0..30 {
@@ -745,7 +829,16 @@ mod tests {
                 break;
             }
             world.advance_round(&[]);
-            assert!(world.connected(), "the spine keeps the exit reachable");
+            for i in 0..TEAM_COUNT {
+                if !world.teams[i].active_runner() {
+                    continue;
+                }
+                let room = world.team_room(i);
+                assert!(
+                    graph_path(&world.structure.graph, room, RoomId(EXIT_ROOM)).is_some(),
+                    "an active runner must always be able to reach the exit"
+                );
+            }
         }
         assert_ne!(
             world.structure.graph.links, initial_links,
@@ -865,13 +958,25 @@ mod tests {
         // anchor room 4 with team 2 (an uninvolved team) and confirm its doorways
         // survive repeated decohere/advance_round cycles regardless of which team
         // is racing through the rest of the structure.
+        //
+        // Phase 41 note: sealing overrides anchors (see
+        // `collapse_overrides_anchors_reaching_an_anchored_room`), and sealing a
+        // room also seals the doorway of any *neighbor* room that bordered it
+        // (both ends of a claimed connection go dark). So this test keeps every
+        // team parked on low-spine-index rooms with speed 0 — well clear of
+        // room 4 *and* its spine neighbors (rooms 3 and 5) — so the purge line
+        // never advances far enough to touch room 4 from any side. This test is
+        // specifically about anchors surviving decohere, not about the
+        // (separately tested) collapse override.
         let mut world = CompetitiveFacility::authored();
-        // Scatter teams away from room 4 so only the anchor pins it.
-        for (i, room) in [0u32, 1, 2, 3].into_iter().enumerate() {
+        // Scatter teams away from room 4 (and its spine neighbors) so only the
+        // anchor pins it.
+        for (i, room) in [0u32, 1, 0, 1].into_iter().enumerate() {
             let base = world.teams[i].member_base;
             for offset in 0..world.teams[i].members as usize {
                 world.structure.graph.players[base + offset] = RoomId(room);
             }
+            world.teams[i].speed = 0.0;
         }
         world.structure.recompute_connectivity();
 
@@ -978,5 +1083,191 @@ mod tests {
         assert_eq!(a.structure.graph.links, b.structure.graph.links);
         assert_eq!(a.winner, b.winner);
         assert!(a.structure.anchors.is_empty());
+    }
+
+    // -- Phase 41: collapse claims territory ------------------------------
+
+    #[test]
+    fn collapse_state_reports_collapsed_dying_and_intact_in_sequence_order() {
+        let mut world = CompetitiveFacility::authored();
+        // Drive the purge line forward directly (pure query test — no need to
+        // run a full match) far enough to collapse a few spine rooms.
+        world.purge_line = 3.0 / SPINE_STEPS;
+
+        let collapsed = world.collapse_rooms();
+        assert!(!collapsed.is_empty(), "some rooms must be collapsed");
+        for &room in &collapsed {
+            assert_eq!(world.room_collapse(room), CollapseState::Collapsed);
+        }
+
+        let dying = world.dying_room();
+        assert!(dying.is_some(), "exactly one room should be dying");
+        let dying = dying.unwrap();
+        assert!(
+            !collapsed.contains(&dying),
+            "dying room is not yet collapsed"
+        );
+        assert_eq!(world.room_collapse(dying), CollapseState::Dying);
+
+        // Confirm dying is the sequence entry immediately after the frontier.
+        let sequence: Vec<RoomId> = SPINE_ROOMS.iter().copied().map(RoomId).collect();
+        let dying_pos = sequence.iter().position(|&r| r == dying).unwrap();
+        assert_eq!(dying_pos, collapsed.len());
+
+        // Everything else in the sequence is Intact.
+        for (i, &room) in sequence.iter().enumerate() {
+            if i < collapsed.len() {
+                continue;
+            }
+            if room == dying {
+                continue;
+            }
+            assert_eq!(
+                world.room_collapse(room),
+                CollapseState::Intact,
+                "room {i} should be untouched by the collapse"
+            );
+        }
+    }
+
+    #[test]
+    fn dying_room_is_none_once_the_sequence_is_exhausted() {
+        let mut world = CompetitiveFacility::authored();
+        world.purge_line = 1.0;
+        assert_eq!(
+            world.collapse_rooms().len(),
+            SPINE_ROOMS.len(),
+            "a full purge line collapses the entire sequence"
+        );
+        assert_eq!(world.dying_room(), None);
+    }
+
+    #[test]
+    fn collapse_overrides_anchors_reaching_an_anchored_room() {
+        // Anchor a spine room, then drive the purge line (via scrambles from
+        // absorbed teams) far enough that the collapse reaches it, and prove
+        // the anchor does not save it — sealing overrides every freeze.
+        let mut world = CompetitiveFacility::authored();
+        // Room 2 is SPINE_ROOMS[2]; anchor it with an uninvolved team.
+        let anchored_room = RoomId(SPINE_ROOMS[2]);
+        assert!(world.place_team_anchor(TeamId(3), anchored_room));
+
+        // Force team 3 into the director role and scramble repeatedly to push
+        // the purge line past room 2's progress fraction, without needing the
+        // full race to play out (keeps the test fast and deterministic).
+        world.teams[3].role = Role::Director;
+        for _ in 0..50 {
+            world.scramble(TeamId(3));
+            if world.purge_line >= 3.0 / SPINE_STEPS {
+                break;
+            }
+        }
+        assert!(
+            world.purge_line >= 2.0 / SPINE_STEPS,
+            "the purge line must have advanced past room 2"
+        );
+
+        // Move every runner off the anchored room so sealing isn't blocked by
+        // the "never seal an occupied room" safety check, then advance a
+        // round so the sealing step runs.
+        world.structure.graph.players = vec![RoomId(START_ROOM); PLAYER_COUNT];
+        world.structure.recompute_connectivity();
+        world.advance_round(&[]);
+
+        assert!(
+            world.structure.is_sealed_room(anchored_room),
+            "the collapse must seal an anchored room once it reaches it"
+        );
+        for side in observed_observation::Side::ALL {
+            let door = world.structure.graph.door_id(anchored_room, side);
+            assert!(
+                world.structure.graph.is_sealed(door),
+                "an anchored room's doorways must seal once the collapse claims it"
+            );
+        }
+    }
+
+    #[test]
+    fn sealed_rooms_never_rewire_across_many_rounds() {
+        let mut world = CompetitiveFacility::authored();
+        world.purge_line = 2.0 / SPINE_STEPS;
+        world.structure.graph.players = vec![RoomId(START_ROOM); PLAYER_COUNT];
+        world.structure.recompute_connectivity();
+        world.advance_round(&[]);
+
+        let sealed_before = world.structure.sealed_rooms.clone();
+        assert!(
+            !sealed_before.is_empty(),
+            "some rooms must already be sealed"
+        );
+
+        for _ in 0..60 {
+            world.structure.decohere();
+            for &room in &sealed_before {
+                for side in observed_observation::Side::ALL {
+                    let door = world.structure.graph.door_id(room, side);
+                    assert!(
+                        world.structure.graph.is_sealed(door),
+                        "a sealed room must never rewire"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn alive_runners_always_reach_the_exit_after_every_round_across_seeds() {
+        // Solvability guard: whatever the collapse seals, every active
+        // Runner's room must still reach the exit through current links.
+        for seed in [
+            0x5EED_C0DE_1234_5678u64,
+            0x1,
+            0xDEAD_BEEF_1234_5678,
+            0x00C0_FFEE_0BAD_F00D,
+            0x1357_9BDF_2468_ACE0,
+            0xFFFF_FFFF_FFFF_FFFF,
+            0x0000_0000_0000_0001,
+            0x9E37_79B9_7F4A_7C15,
+        ] {
+            let mut world = CompetitiveFacility::authored();
+            world.structure.base_seed = seed;
+            for round in 0..2000 {
+                if world.finished {
+                    break;
+                }
+                world.advance_round(&[]);
+                for i in 0..TEAM_COUNT {
+                    if !world.teams[i].active_runner() {
+                        continue;
+                    }
+                    let room = world.team_room(i);
+                    assert!(
+                        graph_path(&world.structure.graph, room, RoomId(EXIT_ROOM)).is_some(),
+                        "seed {seed:#x} round {round}: active runner team {i} in room {room:?} \
+                         cannot reach the exit"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn sealing_is_deterministic_across_identically_seeded_facilities() {
+        fn script(world: &mut CompetitiveFacility) {
+            for _ in 0..40 {
+                if world.finished {
+                    break;
+                }
+                world.advance_round(&[]);
+            }
+        }
+
+        let mut a = CompetitiveFacility::authored();
+        let mut b = CompetitiveFacility::authored();
+        script(&mut a);
+        script(&mut b);
+
+        assert_eq!(a.structure.sealed_rooms, b.structure.sealed_rooms);
+        assert_eq!(a.structure.graph.links, b.structure.graph.links);
     }
 }
