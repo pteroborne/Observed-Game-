@@ -116,6 +116,8 @@ tunable failure rate; success = fall recovery always lands in a navigable
 understory with at least one exit (solvability), and timing spread between
 clean-jump / fall-recover / safe-bypass hits design targets (fast / medium / slow).
 
+**As landed:** Phase 40 shipped the pure model (`observed_traversal::gantry`), `gantry_lab`, and initially only a flat footprint projection in the game; the review flagged that gap, and Phase 40b (2026-07-03) closed it — height-gated `DoorGap.floor_y` crossings, `DeckSeg` decks extruded into the arena, the four-threshold projection (two exits to the destination at different heights, understory side exit home), mount stairs, and GantryDeck/GantryEdge/Understory rendering with a legend entry. Note the remaining deliberate deferral: the side exit targets the origin room (`from`); routing it to a genuinely *different* neighbor awaits a hall contract that carries a third endpoint, which is Phase 41/42 territory if wanted.
+
 ## Phase 41 — Pressure Made Flesh (collapse in the world)
 
 **One question:** can the director's pressure be *seen*, not read?

@@ -12,12 +12,6 @@ This document outlines the current active development goals, completed milestone
 
 **Arc C — Contention & Depth** (plan and design rules: [docs/contention_arc_plan.md](docs/contention_arc_plan.md)). The design arc that turns the proven observe-to-freeze foundation into a game worth racing: observation becomes a shared, contested resource between teams, and the board gains the identity, verticality, and visible pressure to make that contest legible. Lab-first throughout; solvability ("no team is ever left without a path") is the arc-wide invariant.
 
-### Phase 39 — Doors With Identity `[x]`
-Surface the existing semantic board (`RoomRole`, the discovery_lab typed-room feasibility) to the player: a doorframe glyph language via `observed_style` (legend-backed), sensory bleed through open thresholds (district light, room-type ambience), and type-true payoffs behind the read (Sensor feeds the team-local map; Decoy lies about the exit). Success: a reader bot beats a random-door bot by a target margin.
-
-### Phase 40 — The Gantry (Jump-Map Halls) `[x]`
-New `HallwayFlavor::Gantry`: a two-level hall where raised platforms are the fast route and **falling is a setback, not death** — you land in a visible understory whose exits are *different* threshold nodes (gravity rewires your crossing). Platform edges lit, failure landing visible before the jump (chosen, readable irreversibility). Builds on `fps_elevation_lab`; proven in `gantry_lab` with clean-jump / fall-recover / safe-bypass timing targets and guaranteed-navigable understories.
-
 ### Phase 41 — Pressure Made Flesh `[ ]`
 The director's pressure becomes visible: dying districts drain light and palette before closing, collapsed edges return as rubble-sealed hallway variations, and the first-escape countdown drives a facility-wide lighting state. Collapse overrides freezing — the one force anchors cannot hold. Design experiment: does the guardian's gaze *observe* (freezing thresholds as it patrols)?
 
@@ -27,6 +21,14 @@ Rivals become presences: team-colored anchor torches and frame lights on edges t
 ---
 
 ## Recent Milestones (Completed)
+
+### Phase 40b — The Gantry Made Real `[x]`
+Replaced the flat in-game placeholder with the genuine two-level jump-map hall:
+- **Height-aware thresholds:** `DoorGap` carries `floor_y` and crossings are feet-height gated, so the deck-level exit is reachable only from the deck a ground body walks beneath.
+- **Walkable decks:** `PlaceGeom` carries `DeckSeg` decks that `place_arena` extrudes as standable solids; the gantry projects the pure course's six platforms plus a five-step mount stair under the controller's 0.45 step limit.
+- **Four real thresholds:** ground entry, deck-level upper exit to the destination, ground safe-bypass to the destination, and the understory side exit back the way you came — falling now genuinely reroutes the crossing.
+- **Readable commitment:** decks render with the `GantryDeck` surface, emissive `GantryEdge` rim strips mark every jump line, and an `Understory` landing marker shows where a fall puts you before you jump; legend-backed per the Legibility Contract.
+- **Verification:** 116 game tests and workspace clippy clean; the capture helper now honors a gap's true target so evidence drivers cannot misroute the side exit.
 
 ### Phase 40 — The Gantry (Jump-Map Halls) `[x]`
 Finished the Phase 40 vertical corridor proof:
