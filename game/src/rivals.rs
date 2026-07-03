@@ -120,6 +120,7 @@ mod tests {
             gaps: Vec::new(), // no forward gap → +Z fallback
             interior: Vec::new(),
             poly: None,
+            decks: Vec::new(),
         };
         let (a, b) = pace_segment(&geom);
         let bound = geom.half.min_element();

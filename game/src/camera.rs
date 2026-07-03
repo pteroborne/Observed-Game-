@@ -141,6 +141,7 @@ mod tests {
             target: RoomId(1),
             kind: teleport::GapKind::Forward,
             threshold: test_threshold(RoomId(0), RoomId(1)),
+            floor_y: 0.0,
         };
 
         let view = doorway_preview_view(&gap, 1.6, 2.0, -0.1);

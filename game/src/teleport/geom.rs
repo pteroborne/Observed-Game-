@@ -10,7 +10,7 @@ use crate::maze;
 use bevy::math::Vec2;
 use observed_core::RoomId;
 use observed_match::mutable::EXIT_ROOM;
-use observed_traversal::gantry::{self, SAFE_BYPASS_X};
+use observed_traversal::gantry;
 use std::f32::consts::PI;
 
 /// A small deterministic hash (splitmix64 finalizer) for seeding room shapes.
@@ -147,6 +147,7 @@ pub fn room_geom_with_slots(
                     },
                     local_side: ThresholdLocalSide::Room,
                 },
+                floor_y: 0.0,
             }
         })
         .collect();
@@ -158,6 +159,7 @@ pub fn room_geom_with_slots(
         gaps,
         interior: Vec::new(),
         poly: Some(verts),
+        decks: Vec::new(),
     }
 }
 
@@ -353,6 +355,7 @@ pub fn hallway_geom_with_slots(
                 target: from,
                 kind: GapKind::Entry,
                 threshold: hallway_gap_threshold(from, to, from, from_room_slot, hall_slot),
+                floor_y: 0.0,
             });
         }
         for (slot, &xc) in m.exit_cols.iter().enumerate() {
@@ -365,6 +368,7 @@ pub fn hallway_geom_with_slots(
                 target: to,
                 kind: exit_kind,
                 threshold: hallway_gap_threshold(from, to, to, to_room_slot, hall_slot),
+                floor_y: 0.0,
             });
         }
         return PlaceGeom {
@@ -372,6 +376,7 @@ pub fn hallway_geom_with_slots(
             gaps,
             interior,
             poly: None,
+            decks: Vec::new(),
         };
     }
     // Straight/chicane/climb pieces vary their length per edge (a deterministic
@@ -418,6 +423,7 @@ pub fn hallway_geom_with_slots(
                         from_room_slot,
                         ThresholdSlotId(0),
                     ),
+                    floor_y: 0.0,
                 },
                 DoorGap {
                     center: Vec2::new(-off, hz),
@@ -432,37 +438,81 @@ pub fn hallway_geom_with_slots(
                         to_room_slot,
                         ThresholdSlotId(0),
                     ),
+                    floor_y: 0.0,
                 },
             ],
             interior,
             poly: None,
+            decks: Vec::new(),
         };
     }
     if template.flavor == hallway::HallwayFlavor::Gantry {
-        // The pure gantry model is two-level and has an understory side exit; the current
-        // teleport hallway contract only carries the edge's two endpoint rooms, so the
-        // assembled game consumes the guaranteed lower safe-bypass projection. The support
-        // footprints match the jump-map decks from `observed_traversal::gantry`, keeping
-        // the shape aligned with the lab proof while avoiding hidden graph exits.
+        // The real gantry projection: two levels, four thresholds, matching the pure
+        // jump-map model in `observed_traversal::gantry` bolt for bolt (no re-authored
+        // numbers). The hall's local frame lines up with the course's own frame (entry at
+        // -Z, exit at +Z), so every dimension below is read straight off the course.
         let course = gantry::GantryCourse::authored();
         let hx = gantry::GANTRY_WIDTH * 0.5;
         let hz = gantry::GANTRY_LENGTH * 0.5;
-        let interior = course
+
+        // Decks: the six jump-map platforms, plus a 5-step mount stair (rise 0.42/step,
+        // <= the controller's 0.45 step_height so walking up needs no jump) leading from
+        // the ground up onto platform[0]'s near edge. The stair sits in the platform lane
+        // (x = 0), tucked between the entry wall and platform[0] so it reads as the
+        // deliberate way up rather than a jump-only route.
+        let mut decks: Vec<super::DeckSeg> = course
             .platforms
             .iter()
-            .map(|platform| WallSeg {
+            .map(|platform| super::DeckSeg {
                 center: platform.center,
                 half: platform.half,
+                top_y: platform.top_y,
             })
             .collect();
-        let door = 2.7_f32.min(template.width);
+        let stair_steps = 5;
+        let stair_rise = gantry::UPPER_DECK_Y / stair_steps as f32;
+        let stair_tread_half_z = 0.15;
+        let platform0_min_z = course.platforms[0].min_z();
+        let mut tread_max_z = platform0_min_z;
+        let mut stair = Vec::with_capacity(stair_steps);
+        for step in (0..stair_steps).rev() {
+            let tread_min_z = tread_max_z - 2.0 * stair_tread_half_z;
+            stair.push(super::DeckSeg {
+                center: Vec2::new(0.0, (tread_min_z + tread_max_z) * 0.5),
+                half: Vec2::new(course.platforms[0].half.x, stair_tread_half_z),
+                top_y: stair_rise * (step + 1) as f32,
+            });
+            tread_max_z = tread_min_z;
+        }
+        stair.reverse();
+        decks.extend(stair);
+
+        // Gaps: entry (ground) + upper exit (deck-only, floor_y = UPPER_DECK_Y) + the
+        // safe-bypass exit (ground, slow lane) + the understory side exit (ground,
+        // fall-recovery shortcut back to `from`). The side exit targets `from` like the
+        // entry, but is typed `Exit` rather than a second `Entry`: `teleport_sim`'s
+        // `!crossed_exit` branch in `crossing.rs` treats every `Entry`-kind gap as "walked
+        // back out before ever reaching the hallway's exit" and, once one is crossed,
+        // never re-checks the other passages that tick — a second `Entry` gap sitting on
+        // a different wall would silently race the real entry doorway for that one match.
+        // `Exit` has no such special-cased single-purpose branch (the exit-side code keys
+        // off `tp.crossed_exit`/`pending_exit`, not "which specific gap"), so a
+        // `from`-targeting `Exit` is a normal crossable passage (`is_passage` covers
+        // `Exit`) that reaches `cross_into_room(.., from, to, ..)` through the same path
+        // as the safe-bypass and upper exits, just aimed back at `from` instead of `to`.
+        // (`open_entry`, the other `Entry`-specific consumer, is a no-op for hallways —
+        // it only reopens a room's arrival doorway — so it is not a factor either way.)
+        let entry_threshold = course.threshold(gantry::GantryExit::UnderstoryReturn);
+        let upper_threshold = course.threshold(gantry::GantryExit::UpperExit);
+        let bypass_threshold = course.threshold(gantry::GantryExit::SafeBypassExit);
+        let side_threshold = course.threshold(gantry::GantryExit::UnderstorySideExit);
         return PlaceGeom {
             half: Vec2::new(hx, hz),
             gaps: vec![
                 DoorGap {
-                    center: Vec2::new(SAFE_BYPASS_X, -hz),
-                    normal: Vec2::new(0.0, -1.0),
-                    width: door,
+                    center: entry_threshold.center,
+                    normal: entry_threshold.normal,
+                    width: entry_threshold.width,
                     target: from,
                     kind: GapKind::Entry,
                     threshold: hallway_gap_threshold(
@@ -472,11 +522,12 @@ pub fn hallway_geom_with_slots(
                         from_room_slot,
                         ThresholdSlotId(0),
                     ),
+                    floor_y: entry_threshold.floor_y,
                 },
                 DoorGap {
-                    center: Vec2::new(SAFE_BYPASS_X, hz),
-                    normal: Vec2::new(0.0, 1.0),
-                    width: door,
+                    center: upper_threshold.center,
+                    normal: upper_threshold.normal,
+                    width: upper_threshold.width,
                     target: to,
                     kind: exit_kind,
                     threshold: hallway_gap_threshold(
@@ -486,10 +537,42 @@ pub fn hallway_geom_with_slots(
                         to_room_slot,
                         ThresholdSlotId(0),
                     ),
+                    floor_y: upper_threshold.floor_y,
+                },
+                DoorGap {
+                    center: bypass_threshold.center,
+                    normal: bypass_threshold.normal,
+                    width: bypass_threshold.width,
+                    target: to,
+                    kind: exit_kind,
+                    threshold: hallway_gap_threshold(
+                        from,
+                        to,
+                        to,
+                        to_room_slot,
+                        ThresholdSlotId(1),
+                    ),
+                    floor_y: bypass_threshold.floor_y,
+                },
+                DoorGap {
+                    center: side_threshold.center,
+                    normal: side_threshold.normal,
+                    width: side_threshold.width,
+                    target: from,
+                    kind: GapKind::Exit,
+                    threshold: hallway_gap_threshold(
+                        from,
+                        to,
+                        from,
+                        from_room_slot,
+                        ThresholdSlotId(1),
+                    ),
+                    floor_y: side_threshold.floor_y,
                 },
             ],
-            interior,
+            interior: Vec::new(),
             poly: None,
+            decks,
         };
     }
     if template.flavor == hallway::HallwayFlavor::Colonnade {
@@ -527,6 +610,7 @@ pub fn hallway_geom_with_slots(
                         from_room_slot,
                         ThresholdSlotId(0),
                     ),
+                    floor_y: 0.0,
                 },
                 DoorGap {
                     center: Vec2::new(0.0, hz),
@@ -541,10 +625,12 @@ pub fn hallway_geom_with_slots(
                         to_room_slot,
                         ThresholdSlotId(0),
                     ),
+                    floor_y: 0.0,
                 },
             ],
             interior,
             poly: None,
+            decks: Vec::new(),
         };
     }
     let half = Vec2::new(w * 0.5, len * 0.5);
@@ -567,6 +653,7 @@ pub fn hallway_geom_with_slots(
                     from_room_slot,
                     ThresholdSlotId(0),
                 ),
+                floor_y: 0.0,
             },
             DoorGap {
                 center: Vec2::new(0.0, half.y),
@@ -575,10 +662,12 @@ pub fn hallway_geom_with_slots(
                 target: to,
                 kind: exit_kind,
                 threshold: hallway_gap_threshold(from, to, to, to_room_slot, ThresholdSlotId(0)),
+                floor_y: 0.0,
             },
         ],
         interior: Vec::new(),
         poly: None,
+        decks: Vec::new(),
     }
 }
 

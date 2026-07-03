@@ -150,6 +150,11 @@ pub struct DoorGap {
     pub target: RoomId,
     pub kind: GapKind,
     pub threshold: ThresholdLink,
+    /// The local floor height a body must have its feet at (within a small tolerance) to
+    /// use this gap. `0.0` for every ground-level doorway; a raised-deck exit (the gantry's
+    /// upper exit) sets this above zero so a ground-level body walking under its XZ span
+    /// does not also "cross" it.
+    pub floor_y: f32,
 }
 
 /// An interior wall segment inside a place's footprint (local frame, centred at 0).
@@ -158,6 +163,17 @@ pub struct DoorGap {
 pub struct WallSeg {
     pub center: Vec2,
     pub half: Vec2,
+}
+
+/// A walkable raised deck inside a place's footprint (local frame, centred at 0): solid
+/// from the place's floor up to `top_y`, so a body can stand on top of it (and walk
+/// underneath, if nothing else blocks). Used to project the gantry's jump-map platforms
+/// and its mount stair; empty everywhere else.
+#[derive(Clone, Copy, Debug)]
+pub struct DeckSeg {
+    pub center: Vec2,
+    pub half: Vec2,
+    pub top_y: f32,
 }
 
 /// The current place's footprint + its doorway gaps (local frame, centred at 0).
@@ -173,6 +189,8 @@ pub struct PlaceGeom {
     pub gaps: Vec<DoorGap>,
     pub interior: Vec<WallSeg>,
     pub poly: Option<Vec<Vec2>>,
+    /// Walkable raised decks (the gantry's platforms + mount stair); empty everywhere else.
+    pub decks: Vec<DeckSeg>,
 }
 
 impl PlaceGeom {
@@ -194,6 +212,7 @@ pub use geom::{
 };
 pub use nav::{Nav, PinnedEdge};
 pub use transition::{
-    Align2d, Crossing, PREVIEW_OUTSET, apply_crossing, crossed, crossing_alignment, entry_spawn,
-    hallway_alignment, hallway_gap_alignment, place_arena, room_alignment,
+    Align2d, Crossing, GAP_FLOOR_TOLERANCE, PREVIEW_OUTSET, apply_crossing, crossed,
+    crossing_alignment, entry_spawn, feet_at_gap_floor, hallway_alignment, hallway_gap_alignment,
+    place_arena, room_alignment,
 };

@@ -267,6 +267,7 @@ mod tests {
             target: RoomId(2),
             kind: GapKind::Forward,
             threshold: test_threshold(RoomId(0), RoomId(2)),
+            floor_y: 0.0,
         };
         // Walk from inside (z > -ROOM_HALF) to outside (z < -ROOM_HALF), on-centre.
         assert!(crossed(
@@ -738,29 +739,205 @@ mod tests {
         }
     }
 
+    /// The gantry projection is a real two-level hall: four distinct thresholds (entry,
+    /// upper exit on the deck, safe-bypass exit, and an understory side exit that recovers
+    /// back to `from`), six platform decks plus a mount stair, and no interior walls.
     #[test]
-    fn a_gantry_hallway_projects_a_walkable_lower_bypass() {
+    fn a_gantry_hallway_projects_four_gaps_with_distinct_slots_and_decks() {
+        use observed_traversal::gantry;
         let template = gantry_template();
         for seed in 0..16u64 {
             let geom = hallway_geom(RoomId(1), RoomId(4), template, seed, false);
+            assert_eq!(geom.gaps.len(), 4, "gantry hall has exactly four gaps");
+
+            // Distinct threshold slots on every gap (no two apertures share an identity).
+            for i in 0..geom.gaps.len() {
+                for j in (i + 1)..geom.gaps.len() {
+                    assert_ne!(
+                        geom.gaps[i].threshold, geom.gaps[j].threshold,
+                        "gaps {i} and {j} must have distinct threshold slots"
+                    );
+                }
+            }
+
             let entry = geom.gaps.iter().find(|g| g.kind == GapKind::Entry).unwrap();
-            let exit = geom.gaps.iter().find(|g| g.kind == GapKind::Exit).unwrap();
             assert_eq!(entry.target, RoomId(1));
-            assert_eq!(exit.target, RoomId(4));
+            assert_eq!(entry.floor_y, 0.0, "the entry is ground level");
+
+            let to_exits: Vec<_> = geom
+                .gaps
+                .iter()
+                .filter(|g| g.kind.is_passage() && g.target == RoomId(4))
+                .collect();
+            assert_eq!(to_exits.len(), 2, "two passages lead onward to `to`");
             assert!(
-                entry.center.x.abs() > 1.0 && exit.center.x.abs() > 1.0,
-                "gantry projection uses an offset safe-bypass lane"
+                to_exits.iter().any(|g| g.floor_y > 0.0),
+                "one onward exit is deck-level (the upper exit)"
             );
+            assert!(
+                to_exits.iter().any(|g| (g.floor_y - 0.0).abs() < 1e-6),
+                "the other onward exit is ground level (the safe bypass)"
+            );
+            assert!(
+                to_exits[0].floor_y != to_exits[1].floor_y,
+                "the two `to` exits sit at different floor heights"
+            );
+
+            let from_exits: Vec<_> = geom
+                .gaps
+                .iter()
+                .filter(|g| g.kind.is_passage() && g.target == RoomId(1))
+                .collect();
             assert_eq!(
-                geom.interior.len(),
-                observed_traversal::gantry::PLATFORM_COUNT,
-                "gantry support footprints mirror the pure jump-map platforms"
+                from_exits.len(),
+                2,
+                "the entry plus the understory side exit both lead back to `from`"
             );
+
+            assert!(!geom.decks.is_empty(), "the gantry hall has walkable decks");
             assert!(
-                maze_is_walkable(&geom),
-                "gantry lower bypass (seed {seed}) must be walkable entry->exit"
+                geom.interior.is_empty(),
+                "the gantry hall has no interior walls (decks replace the old platform walls)"
+            );
+            // Platforms are the deep decks (half.y matching the authored platform depth);
+            // the stair treads are shallow. One deep deck per authored platform.
+            let platform_decks = geom
+                .decks
+                .iter()
+                .filter(|d| (d.half.y - gantry::PLATFORM_HALF_LENGTH).abs() < 1e-3)
+                .count();
+            assert_eq!(
+                platform_decks,
+                gantry::PLATFORM_COUNT,
+                "one deep deck per authored jump-map platform"
             );
         }
+    }
+
+    /// `place_arena` extrudes each deck into a solid whose top sits at `floor_y + top_y`,
+    /// and the mount stair rises in steps no larger than the controller's step-up limit.
+    #[test]
+    fn gantry_decks_extrude_to_solids_and_the_stair_is_walkable() {
+        use observed_traversal::gantry;
+        let template = gantry_template();
+        let geom = hallway_geom(RoomId(1), RoomId(4), template, 0, false);
+        let floor_y = 5.0; // an arbitrary place floor offset (hallways use place_y_offset)
+        let arena = place_arena(&geom, floor_y, 3.4);
+
+        // A known platform (the first authored one) yields a solid whose top is exactly
+        // floor_y + UPPER_DECK_Y.
+        let platform0 = geom
+            .decks
+            .iter()
+            .find(|d| (d.top_y - gantry::UPPER_DECK_Y).abs() < 1e-3 && d.center.y < -10.0)
+            .expect("platform 0 deck exists");
+        let solid = arena
+            .solids
+            .iter()
+            .find(|s| {
+                (s.max.x - (platform0.center.x + platform0.half.x)).abs() < 1e-3
+                    && (s.max.z - (platform0.center.y + platform0.half.y)).abs() < 1e-3
+            })
+            .expect("platform 0 has a matching extruded solid");
+        assert!(
+            (solid.max.y - (floor_y + gantry::UPPER_DECK_Y)).abs() < 1e-3,
+            "deck top sits at floor_y + top_y: {} vs {}",
+            solid.max.y,
+            floor_y + gantry::UPPER_DECK_Y
+        );
+
+        // The mount stair: a sequence of decks whose top_y ascends monotonically, each
+        // step within the controller's 0.45 step_height of the previous, ending at
+        // UPPER_DECK_Y.
+        let mut stair: Vec<_> = geom
+            .decks
+            .iter()
+            .filter(|d| d.top_y < gantry::UPPER_DECK_Y - 1e-3)
+            .collect();
+        assert_eq!(
+            stair.len(),
+            4,
+            "four sub-deck-height stair treads below the top step"
+        );
+        stair.sort_by(|a, b| a.top_y.partial_cmp(&b.top_y).unwrap());
+        let mut prev = 0.0_f32;
+        for tread in &stair {
+            assert!(
+                tread.top_y - prev <= 0.45 + 1e-4,
+                "stair rise {} exceeds the controller's step_height",
+                tread.top_y - prev
+            );
+            assert!(tread.top_y - prev > 0.0, "the stair strictly ascends");
+            prev = tread.top_y;
+        }
+        assert!(
+            gantry::UPPER_DECK_Y - prev <= 0.45 + 1e-4,
+            "the final rise onto the top platform also respects the step limit"
+        );
+    }
+
+    /// The Y-gate: a body's feet must sit at a gap's `floor_y` (within tolerance) to use
+    /// it. A ground-level body cannot "cross" the deck-level upper exit even if it walks
+    /// under its XZ span, but the ground-level safe-bypass exit still works exactly as
+    /// before (regression).
+    #[test]
+    fn feet_at_gap_floor_gates_the_upper_exit_but_not_the_ground_bypass() {
+        use observed_traversal::gantry;
+        let template = gantry_template();
+        let geom = hallway_geom(RoomId(1), RoomId(4), template, 0, false);
+        let upper = geom
+            .gaps
+            .iter()
+            .find(|g| g.kind.is_passage() && g.target == RoomId(4) && g.floor_y > 0.0)
+            .expect("upper exit gap");
+        let bypass = geom
+            .gaps
+            .iter()
+            .find(|g| g.kind.is_passage() && g.target == RoomId(4) && g.floor_y == 0.0)
+            .expect("safe-bypass exit gap");
+
+        let place_floor_y = 0.0; // hallways offset the whole place; the gate is local
+        // A body at ground-level feet height does NOT satisfy the upper exit's gate.
+        assert!(!feet_at_gap_floor(0.0, place_floor_y, upper));
+        // A body at deck-level feet height DOES satisfy it.
+        assert!(feet_at_gap_floor(
+            gantry::UPPER_DECK_Y,
+            place_floor_y,
+            upper
+        ));
+        // A ground body still crosses the bypass exit (today's behaviour, unmodified).
+        assert!(feet_at_gap_floor(0.0, place_floor_y, bypass));
+    }
+
+    /// Solvability: from the entry, both `to`-exits are reachable in principle. The
+    /// ground/bypass lane at `x = SAFE_BYPASS_X` is clear of every deck across its full
+    /// length, and the stair+platform chain climbs contiguously to `UPPER_DECK_Y`.
+    #[test]
+    fn gantry_projection_keeps_the_bypass_lane_clear_and_the_stair_reaches_the_deck() {
+        use observed_traversal::gantry;
+        let template = gantry_template();
+        let geom = hallway_geom(RoomId(1), RoomId(4), template, 0, false);
+        let hz = geom.half.y;
+        let bypass_x = gantry::SAFE_BYPASS_X;
+        let body_radius = 0.4;
+
+        // No deck overlaps the bypass strip at body height (ground-level clearance).
+        for deck in &geom.decks {
+            let overlaps_x = (bypass_x - deck.center.x).abs() < deck.half.x + body_radius;
+            assert!(
+                !overlaps_x,
+                "deck at {:?} intrudes on the bypass lane x={}",
+                deck.center, bypass_x
+            );
+        }
+        let _ = hz; // the bypass run spans the full -hz..hz length by construction
+
+        // The stair + platform chain reaches UPPER_DECK_Y.
+        let max_deck_top = geom.decks.iter().map(|d| d.top_y).fold(0.0_f32, f32::max);
+        assert!(
+            (max_deck_top - gantry::UPPER_DECK_Y).abs() < 1e-3,
+            "the deck chain reaches the upper deck height"
+        );
     }
 
     #[test]

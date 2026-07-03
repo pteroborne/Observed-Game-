@@ -275,6 +275,15 @@ pub(crate) fn teleport_sim(
     let next = body_xz(tp);
     tp.prev_xz = next;
 
+    // A body may only actually cross a gap while its feet sit at the local floor height
+    // that gap requires (the gantry hall's upper exit sits on the deck at UPPER_DECK_Y,
+    // so a ground-level body walking under its XZ span must not also "cross" it). Ground
+    // gaps (`floor_y == 0.0`) keep today's behaviour: any grounded body still crosses.
+    let place_floor_y = teleport::place_y_offset(tp.place);
+    let world_feet_y = tp.body.position.y - config.half_height;
+    let at_gap_floor =
+        |g: &&teleport::DoorGap| teleport::feet_at_gap_floor(world_feet_y, place_floor_y, g);
+
     let place_before = tp.place;
     match tp.place {
         Place::Room(room) => {
@@ -283,6 +292,7 @@ pub(crate) fn teleport_sim(
                 .gaps
                 .iter()
                 .filter(|g| g.kind.is_passage())
+                .filter(at_gap_floor)
                 .find(|g| teleport::crossed(prev, next, g))
                 .copied()
             {
@@ -296,6 +306,7 @@ pub(crate) fn teleport_sim(
                     .gaps
                     .iter()
                     .filter(|g| g.kind == GapKind::Exit)
+                    .filter(at_gap_floor)
                     .find(|g| teleport::crossed(prev, next, g))
                     .copied()
             {
@@ -340,6 +351,7 @@ pub(crate) fn teleport_sim(
                     .gaps
                     .iter()
                     .filter(|g| g.kind == GapKind::Entry)
+                    .filter(at_gap_floor)
                     .find(|g| teleport::crossed(prev, next, g))
                     .copied()
                 {
@@ -411,10 +423,12 @@ pub(crate) fn debug_cross_gap_for_capture(
             let nav = nav_for_place(MATCH_SEED, runtime.live.host_match(), keys, items, tp.place);
             cross_into(MATCH_SEED, tp, &gap, Place::Room(room), room, &nav, keys);
         }
+        // A gantry hall's understory side exit is Exit-kind but targets `from`;
+        // only a genuine onward crossing (toward `to`) may commit a round.
         Place::Hallway { from, to, .. } if gap.kind == GapKind::Exit => {
             let should_commit = {
                 let game = runtime.live.host_match();
-                game.local_room() == from && game.local_target() == Some(to)
+                gap.target == to && game.local_room() == from && game.local_target() == Some(to)
             };
             if should_commit {
                 runtime.live.force_round(LocalAction::Advance);
@@ -434,7 +448,7 @@ pub(crate) fn debug_cross_gap_for_capture(
                     MATCH_SEED,
                     tp,
                     &gap,
-                    to,
+                    gap.target,
                     from,
                     runtime.live.host_match(),
                     keys,

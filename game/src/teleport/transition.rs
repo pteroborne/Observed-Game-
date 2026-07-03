@@ -24,6 +24,23 @@ pub fn crossed(prev: Vec2, next: Vec2, gap: &DoorGap) -> bool {
     (point - gap.center).dot(tangent).abs() <= gap.width * 0.5
 }
 
+/// How far a body's feet (`world_feet_y`, in world space) may sit from a gap's local
+/// `floor_y` and still be considered "at" that floor for the purposes of using the gap. A
+/// generous tolerance: it just needs to be tighter than the gap between two distinct
+/// floors the gantry hall uses (0 vs `UPPER_DECK_Y` = 2.1), never zero-crossing rounding.
+pub const GAP_FLOOR_TOLERANCE: f32 = 1.2;
+
+/// Are a body's feet at the local floor height `gap.floor_y` requires, within tolerance?
+/// `world_feet_y` is the body's feet in world space (`position.y - half_height`);
+/// `place_floor_y` is the current place's world floor offset (`place_y_offset`), so the
+/// comparison is done in the place's local frame the same way `DoorGap`/`GantryThreshold`
+/// author their `floor_y`. Ground-level gaps (`floor_y == 0.0`) keep today's behaviour
+/// exactly: any grounded body within the tolerance of the floor still crosses.
+pub fn feet_at_gap_floor(world_feet_y: f32, place_floor_y: f32, gap: &DoorGap) -> bool {
+    let local_feet_y = world_feet_y - place_floor_y;
+    (local_feet_y - gap.floor_y).abs() <= GAP_FLOOR_TOLERANCE
+}
+
 /// The result of crossing a doorway.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Crossing {
@@ -249,6 +266,16 @@ pub fn place_arena(geom: &PlaceGeom, floor_y: f32, wall_height: f32) -> FpsArena
     // renderer spawns one wall cube per arena solid, so these render for free.
     for seg in &geom.interior {
         segment(seg.center.x, seg.center.y, seg.half.x, seg.half.y);
+    }
+
+    // Walkable raised decks (the gantry's platforms + mount stair): solid from the
+    // place's floor up to `top_y`, so the proven controller lands on their Aabb3 tops
+    // exactly as it does on the pure gantry model's own platform solids.
+    for deck in &geom.decks {
+        solids.push(Aabb3::from_center_half(
+            Vec3::new(deck.center.x, floor_y + deck.top_y * 0.5, deck.center.y),
+            Vec3::new(deck.half.x, deck.top_y * 0.5, deck.half.y),
+        ));
     }
 
     FpsArena {
