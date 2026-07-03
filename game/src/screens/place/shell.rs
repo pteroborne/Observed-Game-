@@ -11,7 +11,7 @@ use crate::view::assets::{DOOR_LEAF_D, DOOR_LINTEL_H, MatchAssets};
 use crate::view::components::{DoorLeaf, PlaceGeometry};
 
 use super::mesh;
-use crate::teleport::{DoorGap, PlaceGeom};
+use crate::teleport::{DeckSeg, DoorGap, PlaceGeom};
 
 /// A polygon room's shell: the extruded floor/ceiling shell plus per-edge walls with
 /// passage openings left open.
@@ -40,8 +40,28 @@ pub(crate) fn spawn_room_shell(
     }
 }
 
+/// Whether an arena solid is the collision box `place_arena` generated for `deck`
+/// (see `teleport::transition::place_arena`'s deck loop: a box centred at the deck's
+/// XZ centre, spanning the deck's XZ half-extent, from the place floor up to `top_y`).
+/// Matched by footprint + top height rather than object identity, since the arena
+/// only stores `Aabb3`s — this is the explicit, named discrimination that keeps deck
+/// solids out of the generic "Place wall" render path.
+fn solid_is_deck(solid: &observed_traversal::Aabb3, deck: &DeckSeg, floor_y: f32) -> bool {
+    const EPS: f32 = 0.02;
+    let center = (solid.min + solid.max) * 0.5;
+    let half = (solid.max - solid.min) * 0.5;
+    (center.x - deck.center.x).abs() < EPS
+        && (center.z - deck.center.y).abs() < EPS
+        && (half.x - deck.half.x).abs() < EPS
+        && (half.z - deck.half.y).abs() < EPS
+        && (solid.min.y - floor_y).abs() < EPS
+        && (solid.max.y - (floor_y + deck.top_y)).abs() < EPS
+}
+
 /// A box hallway's shell: scaled floor/ceiling planes plus the collision arena's
-/// interior maze walls rendered as solid blocks.
+/// interior maze walls rendered as solid blocks. `decks` (the gantry's platforms +
+/// mount stair, empty everywhere else) are rendered separately by
+/// [`spawn_gantry_decks`] and excluded here so they never double up as generic walls.
 pub(crate) fn spawn_hallway_shell(
     commands: &mut Commands,
     assets: &MatchAssets,
@@ -71,6 +91,13 @@ pub(crate) fn spawn_hallway_shell(
         Name::new("Place ceiling"),
     ));
     for solid in solids {
+        if geom
+            .decks
+            .iter()
+            .any(|deck| solid_is_deck(solid, deck, y_offset))
+        {
+            continue;
+        }
         let center = (solid.min + solid.max) * 0.5;
         let size = solid.max - solid.min;
         commands.spawn((
@@ -82,6 +109,106 @@ pub(crate) fn spawn_hallway_shell(
             Name::new("Place wall"),
         ));
     }
+    if !geom.decks.is_empty() {
+        spawn_gantry_decks(commands, assets, &geom.decks, y_offset);
+    }
+}
+
+/// Half-thickness of a deck's lit rim strip (world units); slightly proud of the deck
+/// top so it reads as a distinct edge line rather than blending into the deck surface.
+const DECK_EDGE_THICKNESS: f32 = 0.08;
+const DECK_EDGE_PROUD: f32 = 0.03;
+
+/// Render the gantry's walkable decks (six jump-map platforms + the mount stair) as
+/// standable, readable geometry: a deck box in the `GantryDeck` treatment, plus four
+/// thin emissive rim strips along its top edges in the `GantryEdge` treatment — "chosen,
+/// readable irreversibility" (docs/contention_arc_plan.md, Phase 40): the platform edges
+/// must be lit and the commitment legible before the jump. Also drops one understory
+/// landing marker spanning the platform lane's footprint at ground level, the visible
+/// "where a fall puts you" read.
+pub(crate) fn spawn_gantry_decks(
+    commands: &mut Commands,
+    assets: &MatchAssets,
+    decks: &[DeckSeg],
+    y_offset: f32,
+) {
+    for deck in decks {
+        let top_world_y = y_offset + deck.top_y;
+        let center_world_y = y_offset + deck.top_y * 0.5;
+        commands.spawn((
+            PlaceGeometry,
+            DespawnOnExit(GameState::Match),
+            Mesh3d(assets.placeholder_mesh.clone()),
+            MeshMaterial3d(assets.gantry_deck_material.clone()),
+            Transform::from_xyz(deck.center.x, center_world_y, deck.center.y).with_scale(
+                Vec3::new(deck.half.x * 2.0, deck.top_y.max(0.02), deck.half.y * 2.0),
+            ),
+            Name::new("Gantry deck"),
+        ));
+
+        // Four rim strips along the deck's top edges (±X and ±Z sides), proud of the
+        // deck surface so the platform boundary reads as a lit commitment line.
+        let edge_y = top_world_y + DECK_EDGE_PROUD;
+        let edges = [
+            // -X / +X edges run along Z.
+            (
+                Vec3::new(deck.center.x - deck.half.x, edge_y, deck.center.y),
+                Vec3::new(DECK_EDGE_THICKNESS, DECK_EDGE_THICKNESS, deck.half.y * 2.0),
+            ),
+            (
+                Vec3::new(deck.center.x + deck.half.x, edge_y, deck.center.y),
+                Vec3::new(DECK_EDGE_THICKNESS, DECK_EDGE_THICKNESS, deck.half.y * 2.0),
+            ),
+            // -Z / +Z edges run along X.
+            (
+                Vec3::new(deck.center.x, edge_y, deck.center.y - deck.half.y),
+                Vec3::new(deck.half.x * 2.0, DECK_EDGE_THICKNESS, DECK_EDGE_THICKNESS),
+            ),
+            (
+                Vec3::new(deck.center.x, edge_y, deck.center.y + deck.half.y),
+                Vec3::new(deck.half.x * 2.0, DECK_EDGE_THICKNESS, DECK_EDGE_THICKNESS),
+            ),
+        ];
+        for (center, scale) in edges {
+            commands.spawn((
+                PlaceGeometry,
+                DespawnOnExit(GameState::Match),
+                Mesh3d(assets.placeholder_mesh.clone()),
+                MeshMaterial3d(assets.gantry_edge_material.clone()),
+                Transform::from_translation(center).with_scale(scale),
+                Name::new("Gantry deck edge"),
+            ));
+        }
+    }
+
+    // The understory floor beneath the platform lane: one flat marker spanning every
+    // deck's XZ footprint at ground level — the visible "where failure puts you" read.
+    let lane_min = decks.iter().fold(Vec2::splat(f32::INFINITY), |acc, d| {
+        acc.min(d.center - d.half)
+    });
+    let lane_max = decks.iter().fold(Vec2::splat(f32::NEG_INFINITY), |acc, d| {
+        acc.max(d.center + d.half)
+    });
+    let lane_center = (lane_min + lane_max) * 0.5;
+    let lane_half = (lane_max - lane_min) * 0.5;
+    const UNDERSTORY_THICKNESS: f32 = 0.06;
+    commands.spawn((
+        PlaceGeometry,
+        DespawnOnExit(GameState::Match),
+        Mesh3d(assets.placeholder_mesh.clone()),
+        MeshMaterial3d(assets.understory_material.clone()),
+        Transform::from_xyz(
+            lane_center.x,
+            y_offset + UNDERSTORY_THICKNESS * 0.5,
+            lane_center.y,
+        )
+        .with_scale(Vec3::new(
+            (lane_half.x * 2.0).max(0.1),
+            UNDERSTORY_THICKNESS,
+            (lane_half.y * 2.0).max(0.1),
+        )),
+        Name::new("Understory landing"),
+    ));
 }
 
 /// How a threshold gateway is dressed: an optional sealed leaf (and whether it can

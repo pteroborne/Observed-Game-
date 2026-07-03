@@ -128,6 +128,12 @@ pub struct MatchAssets {
     pub(crate) safe_floor_material: Handle<StandardMaterial>,
     pub(crate) trap_active_material: Handle<StandardMaterial>,
     pub(crate) trap_idle_material: Handle<StandardMaterial>,
+    /// The gantry's raised jump-map deck surface (upper route).
+    pub(crate) gantry_deck_material: Handle<StandardMaterial>,
+    /// The gantry deck's lit rim — the readable jump/fall commitment line.
+    pub(crate) gantry_edge_material: Handle<StandardMaterial>,
+    /// The gantry's lower understory landing — "where a fall puts you".
+    pub(crate) understory_material: Handle<StandardMaterial>,
     pub(crate) wall_material: Handle<StandardMaterial>,
     pub(crate) ceiling_material: Handle<StandardMaterial>,
     pub(crate) exit_panel_material: Handle<StandardMaterial>,
@@ -192,8 +198,29 @@ impl MatchAssets {
         ));
         let trap_idle_material = materials.add(textured_neon_material(
             &style::surface(SurfaceRole::TrapIdle),
+            floor_texture.clone(),
+        ));
+        let gantry_deck_material = materials.add(textured_neon_material(
+            &style::surface(SurfaceRole::GantryDeck),
             floor_texture,
         ));
+        // The commitment line and the understory landing are both `signal: true`
+        // treatments (Legibility Contract: gameplay-critical reads stay unlit/emissive
+        // like the district accents, not modulated by scene lighting).
+        let gantry_edge_treatment = style::surface(SurfaceRole::GantryEdge);
+        let gantry_edge_material = materials.add(StandardMaterial {
+            base_color: gantry_edge_treatment.base_color,
+            emissive: gantry_edge_treatment.emissive,
+            unlit: true,
+            ..default()
+        });
+        let understory_treatment = style::surface(SurfaceRole::Understory);
+        let understory_material = materials.add(StandardMaterial {
+            base_color: understory_treatment.base_color,
+            emissive: understory_treatment.emissive,
+            unlit: true,
+            ..default()
+        });
         let wall_material = materials.add(textured_neon_material(
             &style::surface(SurfaceRole::Wall),
             wall_texture,
@@ -327,6 +354,9 @@ impl MatchAssets {
             safe_floor_material,
             trap_active_material,
             trap_idle_material,
+            gantry_deck_material,
+            gantry_edge_material,
+            understory_material,
             wall_material,
             ceiling_material,
             exit_panel_material,

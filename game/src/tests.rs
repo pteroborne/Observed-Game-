@@ -1135,3 +1135,123 @@ fn a_rival_in_the_neighbouring_room_tints_the_threshold_light_with_its_colour() 
         "a threshold into a rival-occupied room carries that team's frame light"
     );
 }
+
+/// Phase 40b (readable irreversibility): placing into a Gantry hallway renders the
+/// jump-map decks as standable, lit, legible geometry — not as generic "Place wall"
+/// blocks — so the commitment is visible before the jump.
+#[test]
+fn a_gantry_hallway_renders_readable_decks_and_no_deck_leaks_into_the_wall_path() {
+    use crate::hallway::{HallwayFlavor, TEMPLATES};
+    use crate::teleport::Place;
+    use observed_core::RoomId;
+
+    let gantry_variation = TEMPLATES
+        .iter()
+        .position(|t| t.flavor == HallwayFlavor::Gantry)
+        .expect("a Gantry template exists in the hallway library");
+
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    app.update();
+    app.world_mut()
+        .resource_scope(|world, mut tp: Mut<crate::sim::state::TeleportState>| {
+            let runtime = world.resource::<crate::sim::director::MatchDirector>();
+            let keys = world.resource::<keystones::KeystoneState>();
+            let items = world.resource::<items::ItemsState>();
+            let game = runtime.live.host_match();
+            let from = game.local_room();
+            let to = game.local_target().unwrap_or(RoomId(from.0 + 1));
+            crate::screens::match_runtime::debug_place_into(
+                &mut tp,
+                runtime,
+                Place::Hallway {
+                    from,
+                    to,
+                    variation: gantry_variation,
+                },
+                from,
+                keys,
+                items,
+            );
+        });
+    app.update();
+
+    let names: Vec<String> = {
+        let world = app.world_mut();
+        let mut query = world.query::<&Name>();
+        query.iter(world).map(|n| n.as_str().to_string()).collect()
+    };
+
+    let deck_count = names.iter().filter(|n| n.as_str() == "Gantry deck").count();
+    let edge_count = names
+        .iter()
+        .filter(|n| n.as_str() == "Gantry deck edge")
+        .count();
+    let understory_count = names
+        .iter()
+        .filter(|n| n.as_str() == "Understory landing")
+        .count();
+    assert!(
+        deck_count >= 6,
+        "expected >= 6 Gantry deck entities (6 platforms + stair treads), got {deck_count}"
+    );
+    assert!(
+        edge_count >= 4,
+        "expected >= 4 Gantry deck edge entities (one platform's worth of rim strips), got {edge_count}"
+    );
+    assert!(
+        understory_count >= 1,
+        "expected >= 1 Understory landing marker, got {understory_count}"
+    );
+
+    // No deck solid should have leaked into the generic "Place wall" render path: a
+    // deck's collision box only ever spans up to its (short) top_y, while every real
+    // wall spans the full WALL_HEIGHT, so a wall-named entity with a short y-scale
+    // means `spawn_hallway_shell`'s deck-solid exclusion missed a match.
+    let leaked_wall = {
+        let world = app.world_mut();
+        let mut query = world.query::<(&Name, &Transform)>();
+        query
+            .iter(world)
+            .any(|(name, transform)| name.as_str() == "Place wall" && transform.scale.y < 3.0)
+    };
+    assert!(
+        !leaked_wall,
+        "no 'Place wall' entity should have a deck-scale (< 3.0) y-extent"
+    );
+}
+
+/// The gantry deck material is built from the `GantryDeck` treatment (through the same
+/// `textured_neon_material` helper every other floor-like surface uses) rather than an
+/// ad-hoc colour choice — the Legibility Contract requires every rendered surface trace
+/// back to a shared `observed_style` role. Since the floor texture drop-in slot is
+/// present in this workspace, the built material — like the other textured surfaces —
+/// reads `base_color: WHITE` with the texture bound and `unlit: true` (mirroring
+/// `material_named_has_texture`'s existing textured-surface assertions); the
+/// entity is also named "Gantry deck" so it is queryable like every other place mesh.
+#[test]
+fn gantry_deck_material_is_built_from_the_style_treatment() {
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    app.update();
+
+    let assets = app.world().resource::<crate::view::assets::MatchAssets>();
+    let handle = assets.gantry_deck_material.clone();
+    let materials = app.world().resource::<Assets<StandardMaterial>>();
+    let mat = materials
+        .get(&handle)
+        .expect("gantry deck material registered in MatchAssets");
+    assert!(
+        mat.base_color_texture.is_some(),
+        "gantry deck material should be built via textured_neon_material like the other floor surfaces"
+    );
+    assert_eq!(
+        mat.base_color,
+        Color::WHITE,
+        "a textured neon material reads WHITE base_color with the texture carrying colour"
+    );
+    assert!(
+        mat.unlit,
+        "a textured neon material goes unlit once a texture is bound"
+    );
+}

@@ -6,7 +6,7 @@ use bevy::input::gamepad::Gamepad;
 use bevy::prelude::*;
 use observed_core::RoomId;
 use observed_facility::map_spec::RoomRole;
-use observed_style::{self as style, MarkerRole};
+use observed_style::{self as style, MarkerRole, SurfaceRole};
 
 use super::input::gamepad_map_pressed;
 use crate::flow::LOCAL_TEAM;
@@ -609,6 +609,11 @@ pub(crate) fn spawn_match_hud(commands: &mut Commands) {
                         style::marker(MarkerRole::Rival).base_color
                     ),
                     text("mystery corridors", 13.0, Color::srgb(1.0, 0.32, 0.22)),
+                    text(
+                        "gantry edge — jump line",
+                        13.0,
+                        style::surface(SurfaceRole::GantryEdge).base_color
+                    ),
                 ],
             ));
         });
