@@ -182,6 +182,7 @@ impl MatchDirector {
             .wrapping_add(u64::from(self.series.current.index).wrapping_mul(0xA11_C0D3));
         spectator.teamplay = TeamplayMatch::for_round(
             next_seed,
+            spectator.seed,
             self.series.current.index,
             self.series.alive_teams.clone(),
             self.series.adversary_strength(),
