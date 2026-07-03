@@ -18,6 +18,9 @@ treatment**:
   ceiling)
 - `MarkerRole` (next-room beacon / exit / control / collapse / you / teammate /
   rival / director) — every marker is **signal tier**
+- `DoorIdentityRole` (keystone / power / reactor / control / survey / sensor /
+  false exit / decoy / dead-end door reads) — every read is **signal tier** and
+  glyph-backed
 - `ObservedState` (frozen / unobserved / rerouting) — a modifier on a surface
 
 A `Treatment` is data (`base_color`, HDR `emissive`, a `signal` flag, an optional
@@ -36,8 +39,9 @@ surfaces stay dark; an armed trap stays legible even when unobserved; and
 cargo run -p style_lab
 ```
 
-Renders three rows in neon-noir — surfaces (middle), signal markers (front),
-and the spine surface in each observed state (back) — with an on-screen legend.
+Renders four rows in neon-noir — surfaces (middle), signal markers (front),
+doorframe identity reads (front-most), and the spine surface in each observed state
+(back) — with an on-screen legend.
 
 - `R` — reset (rebuilds the scene without restarting; no leaked entities)
 - `F1` — toggle the overlay panels
@@ -50,7 +54,8 @@ $env:OBSERVED2_CAPTURE = "docs/evidence/style_lab.png"; cargo run -p style_lab
 
 ## Success conditions
 
-- Every `SurfaceRole` and `MarkerRole` reads as a **distinct** swatch.
+- Every `SurfaceRole`, `MarkerRole`, and `DoorIdentityRole` reads as a **distinct**
+  swatch.
 - Signal markers and the armed trap glow clearly through the fog; plain
   floors/walls/ceilings recede into dark atmosphere.
 - The overlay shows `[PASS]` (one camera, one UI root) and the full legend.
@@ -58,7 +63,8 @@ $env:OBSERVED2_CAPTURE = "docs/evidence/style_lab.png"; cargo run -p style_lab
 
 ## Tests
 
-`cargo test -p observed_style` covers the pure rules (distinctness, the signal
-luminance floor, dark atmosphere, observed modulation, legend completeness).
+`cargo test -p observed_style` covers the pure rules (distinctness, door-read
+glyph coverage, the signal luminance floor, dark atmosphere, observed modulation,
+legend completeness).
 `cargo test -p style_lab` covers the Bevy lifecycle (boots with one camera +
 overlay + every role rendered; reset rebuilds without leaking).

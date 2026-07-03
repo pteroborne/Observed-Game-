@@ -49,6 +49,7 @@ members = [
     "labs/asset_lab",
     "labs/net_match_lab",
     "labs/fps_elevation_lab",
+    "labs/gantry_lab",
     "labs/style_lab",
     "labs/door_lab",
     "labs/discovery_lab",

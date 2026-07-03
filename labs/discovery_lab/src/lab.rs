@@ -1,33 +1,20 @@
 use bevy::{ecs::system::SystemParam, prelude::*};
+use observed_style as style;
 
-use crate::model::{DiscoveryWorld, REQUIRED_KEYSTONES, REQUIRED_POWER, ROOM_COUNT, RoomType};
+use crate::model::{
+    DiscoveryWorld, KnowledgeSource, REQUIRED_KEYSTONES, REQUIRED_POWER, ROOM_COUNT, RoomType,
+    identity_for_room_type,
+};
 
 /// Spacing between room tiles in the 3×3 schematic.
 const SPACING: f32 = 160.0;
 const TILE: f32 = 120.0;
 
-const GOLD: Color = Color::srgb(1.0, 0.80, 0.28);
-const CYAN: Color = Color::srgb(0.30, 0.80, 1.0);
-const AZURE: Color = Color::srgb(0.42, 0.52, 1.0);
-const GREEN: Color = Color::srgb(0.40, 1.0, 0.60);
-const TEAL: Color = Color::srgb(0.30, 0.92, 0.82);
-const PURPLE: Color = Color::srgb(0.78, 0.50, 1.0);
-const MAGENTA: Color = Color::srgb(0.95, 0.35, 0.65);
-const DIMGRAY: Color = Color::srgb(0.28, 0.32, 0.40);
 const UNKNOWN: Color = Color::srgb(0.12, 0.15, 0.20);
 const RED: Color = Color::srgb(1.0, 0.36, 0.34);
 
 fn type_color(t: RoomType) -> Color {
-    match t {
-        RoomType::KeystoneVault => GOLD,
-        RoomType::PowerCache => CYAN,
-        RoomType::Reactor => AZURE,
-        RoomType::Survey => GREEN,
-        RoomType::Sensor => TEAL,
-        RoomType::Control => PURPLE,
-        RoomType::Decoy => MAGENTA,
-        RoomType::DeadEnd => DIMGRAY,
-    }
+    style::door_identity(identity_for_room_type(t)).base_color
 }
 
 /// The world-space centre of a room tile in the 3×3 schematic.
@@ -48,6 +35,15 @@ pub(crate) struct RoomTile(pub usize);
 
 #[derive(Component)]
 pub(crate) struct RoomGlyph(pub usize);
+
+#[derive(Component)]
+pub(crate) struct DoorReadFrame(pub usize);
+
+#[derive(Component)]
+pub(crate) struct DoorReadGlyph(pub usize);
+
+#[derive(Component)]
+pub(crate) struct DoorReadBleed(pub usize);
 
 #[derive(Component)]
 struct DebugText;
@@ -106,6 +102,26 @@ pub(crate) fn setup_lab(mut commands: Commands) {
                     ))
                     .with_children(|tile| {
                         tile.spawn((
+                            DoorReadBleed(room),
+                            Sprite::from_color(Color::NONE, Vec2::splat(TILE + 34.0)),
+                            Transform::from_xyz(0.0, 0.0, -0.2),
+                        ));
+                        tile.spawn((
+                            DoorReadFrame(room),
+                            Sprite::from_color(UNKNOWN, Vec2::new(TILE + 24.0, 12.0)),
+                            Transform::from_xyz(0.0, TILE * 0.5 + 13.0, 1.2),
+                        ));
+                        tile.spawn((
+                            DoorReadGlyph(room),
+                            Text2d::new(" "),
+                            TextFont {
+                                font_size: 24.0,
+                                ..default()
+                            },
+                            TextColor(Color::srgb(0.02, 0.03, 0.04)),
+                            Transform::from_xyz(0.0, TILE * 0.5 + 12.0, 1.5),
+                        ));
+                        tile.spawn((
                             RoomGlyph(room),
                             Text2d::new("?"),
                             TextFont {
@@ -151,7 +167,7 @@ fn spawn_ui(commands: &mut Commands) {
                 BorderColor::all(Color::srgba(1.0, 0.80, 0.28, 0.6)),
                 children![(
                     DebugText,
-                    Text::new("Discovery diagnostics starting…"),
+                    Text::new("Discovery diagnostics starting..."),
                     TextFont {
                         font_size: 15.0,
                         ..default()
@@ -172,19 +188,21 @@ fn spawn_ui(commands: &mut Commands) {
                 children![(
                     Text::new(
                         "DISCOVERY LAB\n\
-                         1–9    Visit a room (reveal + harvest its type)\n\
+                         1-9    Visit a room (reveal + harvest its type)\n\
                          Space  Shift unobserved rooms now\n\
                          X      Try the gated exit\n\
                          A      Auto-explore on/off\n\
                          C      Toggle the solvability constraint\n\
-                         R      Reset · F1 Toggle debug\n\n\
+                         R      Reset | F1 Toggle debug\n\n\
                          K=Keystone Vault  P=Power Cache  R=Reactor(+2)\n\
                          C=Control  S=Survey  N=Sensor(reveal nearby)\n\
-                         !=Decoy(lies, yields nothing)  .=Dead-end\n\
+                         E=False exit read  !=Decoy exposed  .=Dead-end\n\
                          ?=undiscovered\n\n\
+                         Tile fill is team-map knowledge; the top doorframe\n\
+                         glyph and glow are the current threshold read.\n\
                          The exit is locked until you collect the keystones.\n\
-                         Rooms shift their type when unobserved. A Decoy shows\n\
-                         as a vault until you reach it — then it's nothing.\n\
+                         Rooms shift their type when unobserved. A Decoy\n\
+                         advertises an exit signal until you reach it.\n\
                          With the constraint ON the objective is always\n\
                          solvable; turn it OFF and a keystone can strand.",
                     ),
@@ -232,9 +250,9 @@ pub(crate) fn handle_input(
         world.constraint_enabled = !world.constraint_enabled;
         world.recompute_solvability();
         world.last_event = if world.constraint_enabled {
-            "Constraint ON — keystones can't strand; always solvable.".to_string()
+            "Constraint ON - keystones can't strand; always solvable.".to_string()
         } else {
-            "Constraint OFF — keystones may strand on spent rooms.".to_string()
+            "Constraint OFF - keystones may strand on spent rooms.".to_string()
         };
     }
     if keyboard.just_pressed(KeyCode::F1) {
@@ -308,6 +326,53 @@ pub(crate) fn present_rooms(
     }
 }
 
+pub(crate) fn present_door_frames(
+    world: Res<DiscoveryWorld>,
+    mut frames: Query<(&DoorReadFrame, &mut Sprite)>,
+) {
+    for (frame, mut sprite) in &mut frames {
+        let Some(role) = world.door_read(frame.0) else {
+            continue;
+        };
+        let treatment = style::door_identity(role);
+        let alpha = if world.harvested[frame.0] { 0.55 } else { 0.94 };
+        sprite.color = treatment.base_color.with_alpha(alpha);
+    }
+}
+
+pub(crate) fn present_door_glyphs(
+    world: Res<DiscoveryWorld>,
+    mut glyphs: Query<(&DoorReadGlyph, &mut Text2d, &mut TextColor)>,
+) {
+    for (glyph, mut text, mut color) in &mut glyphs {
+        let Some(role) = world.door_read(glyph.0) else {
+            continue;
+        };
+        text.0 = role.glyph().to_string();
+        color.0 = Color::srgb(0.02, 0.03, 0.04);
+    }
+}
+
+pub(crate) fn present_door_bleeds(
+    world: Res<DiscoveryWorld>,
+    mut bleeds: Query<(&DoorReadBleed, &mut Sprite)>,
+) {
+    for (bleed, mut sprite) in &mut bleeds {
+        let Some(role) = world.door_read(bleed.0) else {
+            continue;
+        };
+        let treatment = style::door_identity(role);
+        let alpha = if world.at == Some(bleed.0) {
+            0.30
+        } else if world.harvested[bleed.0] {
+            0.08
+        } else {
+            0.16
+        };
+        sprite.color = Color::from(treatment.emissive).with_alpha(alpha);
+    }
+}
+
 pub(crate) fn draw_debug(
     runtime: Res<DiscoveryRuntime>,
     world: Res<DiscoveryWorld>,
@@ -336,7 +401,11 @@ pub(crate) fn draw_debug(
     gizmos.rect_2d(
         gate,
         Vec2::new(TILE, 44.0),
-        if world.gate_open() { GOLD } else { RED },
+        if world.gate_open() {
+            style::marker(style::MarkerRole::Exit).base_color
+        } else {
+            RED
+        },
     );
 }
 
@@ -345,6 +414,7 @@ pub(crate) struct DebugContext<'w, 's> {
     runtime: Res<'w, DiscoveryRuntime>,
     world: Res<'w, DiscoveryWorld>,
     tiles: Query<'w, 's, (), With<RoomTile>>,
+    frames: Query<'w, 's, (), With<DoorReadFrame>>,
     ui_roots: Query<'w, 's, (), With<DiscUiRoot>>,
     text: Single<'w, 's, &'static mut Text, With<DebugText>>,
     panel: Single<'w, 's, &'static mut Visibility, (With<DebugPanel>, Without<HelpText>)>,
@@ -362,9 +432,15 @@ pub(crate) fn update_debug_text(mut context: DebugContext) {
 
     let world = &*context.world;
     let tiles = context.tiles.iter().count();
+    let frames = context.frames.iter().count();
     let ui_roots = context.ui_roots.iter().count();
-    let healthy = tiles == ROOM_COUNT && ui_roots == 1;
-    let discovered = world.known.iter().filter(|k| k.is_some()).count();
+    let healthy = tiles == ROOM_COUNT && frames == ROOM_COUNT && ui_roots == 1;
+    let discovered = world.team_map_known_count();
+    let sensor_known = world
+        .known_source
+        .iter()
+        .filter(|source| **source == Some(KnowledgeSource::Sensor))
+        .count();
 
     let mut text = context.text.into_inner();
     **text = format!(
@@ -377,10 +453,12 @@ pub(crate) fn update_debug_text(mut context: DebugContext) {
          collectable vaults  {}   caches {}\n\
          rooms harvested     {} / {}\n\
          rooms discovered    {} / {}\n\
+         sensor map entries  {}   updates {}\n\
+         decoy lies resolved {}\n\
          shifts / visits     {} / {}\n\
          constraint          {}\n\
          stabilised (Control){}\n\
-         tiles {tiles}  UI {ui_roots}   resets {}\n\n\
+         tiles {tiles}  reads {frames}  UI {ui_roots}   resets {}\n\n\
          {}",
         if healthy { "[PASS]" } else { "[FAIL]" },
         if world.escaped {
@@ -396,7 +474,7 @@ pub(crate) fn update_debug_text(mut context: DebugContext) {
         if world.solvable {
             "yes"
         } else {
-            "NO — run lost"
+            "NO - run lost"
         },
         world.collectable_keystones(),
         world.collectable_power(),
@@ -404,6 +482,9 @@ pub(crate) fn update_debug_text(mut context: DebugContext) {
         ROOM_COUNT,
         discovered,
         ROOM_COUNT,
+        sensor_known,
+        world.sensor_map_updates,
+        world.decoy_lies_resolved,
         world.shift_count,
         world.visit_count,
         if world.constraint_enabled {

@@ -696,6 +696,13 @@ mod tests {
             .collect()
     }
 
+    fn gantry_template() -> &'static hallway::HallwayTemplate {
+        hallway::TEMPLATES
+            .iter()
+            .find(|t| t.flavor == hallway::HallwayFlavor::Gantry)
+            .expect("a gantry template exists")
+    }
+
     #[test]
     fn a_colonnade_is_a_walkable_pillared_pseudo_room() {
         for template in colonnade_templates() {
@@ -728,6 +735,31 @@ mod tests {
                     template.name
                 );
             }
+        }
+    }
+
+    #[test]
+    fn a_gantry_hallway_projects_a_walkable_lower_bypass() {
+        let template = gantry_template();
+        for seed in 0..16u64 {
+            let geom = hallway_geom(RoomId(1), RoomId(4), template, seed, false);
+            let entry = geom.gaps.iter().find(|g| g.kind == GapKind::Entry).unwrap();
+            let exit = geom.gaps.iter().find(|g| g.kind == GapKind::Exit).unwrap();
+            assert_eq!(entry.target, RoomId(1));
+            assert_eq!(exit.target, RoomId(4));
+            assert!(
+                entry.center.x.abs() > 1.0 && exit.center.x.abs() > 1.0,
+                "gantry projection uses an offset safe-bypass lane"
+            );
+            assert_eq!(
+                geom.interior.len(),
+                observed_traversal::gantry::PLATFORM_COUNT,
+                "gantry support footprints mirror the pure jump-map platforms"
+            );
+            assert!(
+                maze_is_walkable(&geom),
+                "gantry lower bypass (seed {seed}) must be walkable entry->exit"
+            );
         }
     }
 

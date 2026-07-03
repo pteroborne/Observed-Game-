@@ -25,6 +25,7 @@
 //! constraint exists. Everything here is deterministic.
 
 use observed_core::SplitMix;
+use observed_style::DoorIdentityRole;
 
 use bevy::prelude::*;
 
@@ -90,6 +91,51 @@ impl RoomType {
 
 /// Facility grid dimensions (a 3×3 schematic). Adjacency for [`RoomType::Sensor`] is the
 /// 4-neighbourhood on this grid.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KnowledgeSource {
+    Visit,
+    Survey,
+    Sensor,
+}
+
+impl KnowledgeSource {
+    pub fn label(self) -> &'static str {
+        match self {
+            KnowledgeSource::Visit => "visit",
+            KnowledgeSource::Survey => "survey",
+            KnowledgeSource::Sensor => "sensor",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BotStrategy {
+    Reader,
+    Random,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BotRunOutcome {
+    pub strategy: BotStrategy,
+    pub seed: u64,
+    pub escaped: bool,
+    pub visits: u32,
+    pub shifts: u32,
+    pub wasted_visits: u32,
+    pub sensor_map_updates: u32,
+    pub decoy_lies_resolved: u32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BotComparison {
+    pub seeds: u32,
+    pub reader_escapes: u32,
+    pub random_escapes: u32,
+    pub reader_mean_visits: f32,
+    pub random_mean_visits: f32,
+    pub visit_margin: f32,
+}
+
 pub const GRID_COLS: usize = 3;
 pub const GRID_ROWS: usize = 3;
 /// Number of rooms in the lab facility.
@@ -116,6 +162,8 @@ const BASE_TYPES: [RoomType; ROOM_COUNT] = [
 pub const REQUIRED_KEYSTONES: u32 = 2;
 /// Power the gate needs to unlock (less than the available supply, so there is some slack).
 pub const REQUIRED_POWER: u32 = 2;
+pub const READER_BOT_SEEDS: u32 = 200;
+pub const READER_BOT_TARGET_VISIT_MARGIN: f32 = 2.0;
 
 /// The 4-neighbour rooms (up/down/left/right) of `room` on the facility grid.
 pub fn neighbors(room: usize) -> Vec<usize> {
@@ -130,6 +178,27 @@ pub fn neighbors(room: usize) -> Vec<usize> {
     out
 }
 
+pub fn identity_for_room_type(room_type: RoomType) -> DoorIdentityRole {
+    match room_type {
+        RoomType::KeystoneVault => DoorIdentityRole::KeystoneVault,
+        RoomType::PowerCache => DoorIdentityRole::PowerCache,
+        RoomType::Reactor => DoorIdentityRole::Reactor,
+        RoomType::Control => DoorIdentityRole::Control,
+        RoomType::Survey => DoorIdentityRole::Survey,
+        RoomType::Sensor => DoorIdentityRole::Sensor,
+        RoomType::Decoy => DoorIdentityRole::Decoy,
+        RoomType::DeadEnd => DoorIdentityRole::DeadEnd,
+    }
+}
+
+pub fn door_read_for_room_type(room_type: RoomType, harvested: bool) -> DoorIdentityRole {
+    if room_type == RoomType::Decoy && !harvested {
+        DoorIdentityRole::FalseExit
+    } else {
+        identity_for_room_type(room_type)
+    }
+}
+
 // Replaced duplicate SplitMix with shared observed_core::SplitMix
 
 #[derive(Resource, Clone, Debug)]
@@ -142,6 +211,7 @@ pub struct DiscoveryWorld {
     /// For a Decoy this records the *displayed* lie when revealed remotely, and the truth
     /// once it is actually visited.
     pub known: Vec<Option<RoomType>>,
+    pub known_source: Vec<Option<KnowledgeSource>>,
     /// The room the team currently occupies — observed, so it never shifts. `None` at
     /// the start (nothing observed yet).
     pub at: Option<usize>,
@@ -156,6 +226,8 @@ pub struct DiscoveryWorld {
     pub base_seed: u64,
     pub shift_count: u32,
     pub visit_count: u32,
+    pub sensor_map_updates: u32,
+    pub decoy_lies_resolved: u32,
     /// Whether the objective is still completable (enough keystones/power collectable).
     pub solvable: bool,
     pub last_event: String,
@@ -167,6 +239,7 @@ impl DiscoveryWorld {
             types: BASE_TYPES.to_vec(),
             harvested: vec![false; ROOM_COUNT],
             known: vec![None; ROOM_COUNT],
+            known_source: vec![None; ROOM_COUNT],
             at: None,
             keystones: 0,
             power: 0,
@@ -176,6 +249,8 @@ impl DiscoveryWorld {
             base_seed: 0x5EED_D15C_0FEE_1234,
             shift_count: 0,
             visit_count: 0,
+            sensor_map_updates: 0,
+            decoy_lies_resolved: 0,
             solvable: true,
             last_event: "Find the keystones; the exit is locked until you do.".to_string(),
         };
@@ -206,6 +281,20 @@ impl DiscoveryWorld {
         }
     }
 
+    /// The doorframe read available before committing to `room`. Decoys keep their true
+    /// payoff hidden by presenting an exit-like signal until directly visited.
+    pub fn door_read(&self, room: usize) -> Option<DoorIdentityRole> {
+        (room < ROOM_COUNT).then(|| door_read_for_room_type(self.types[room], self.harvested[room]))
+    }
+
+    pub fn door_bleed_label(&self, room: usize) -> Option<&'static str> {
+        self.door_read(room).map(DoorIdentityRole::ambience_label)
+    }
+
+    pub fn team_map_known_count(&self) -> usize {
+        self.known.iter().filter(|entry| entry.is_some()).count()
+    }
+
     /// Keystones still collectable: **real** Keystone Vaults sitting on unharvested rooms
     /// (Decoys are excluded — they never count, which is what keeps deception from
     /// affecting solvability).
@@ -233,8 +322,11 @@ impl DiscoveryWorld {
 
     /// Reveal `room`'s type into `known`, using the displayed (possibly lying) type — this
     /// is how Survey/Sensor learn rooms at a distance.
-    fn reveal(&mut self, room: usize) {
+    fn reveal_from(&mut self, room: usize, source: KnowledgeSource) {
         self.known[room] = Some(self.displayed_type(room));
+        if self.known_source[room] != Some(KnowledgeSource::Visit) {
+            self.known_source[room] = Some(source);
+        }
     }
 
     /// Visit a room: it becomes observed (frozen), and on the first visit it is harvested
@@ -247,6 +339,7 @@ impl DiscoveryWorld {
         self.at = Some(room);
         // A direct visit always learns the truth (overriding any earlier remote lie).
         self.known[room] = Some(self.types[room]);
+        self.known_source[room] = Some(KnowledgeSource::Visit);
         if self.harvested[room] {
             self.last_event = format!("Room {room} is spent ({}).", self.types[room].label());
             return None;
@@ -270,23 +363,30 @@ impl DiscoveryWorld {
             }
             RoomType::Control => {
                 self.stabilized = true;
-                self.last_event = "Control seized — the facility stops shifting.".to_string();
+                self.last_event = "Control seized - the facility stops shifting.".to_string();
             }
             RoomType::Survey => {
                 for r in 0..ROOM_COUNT {
-                    self.reveal(r);
+                    self.reveal_from(r, KnowledgeSource::Survey);
                 }
-                self.last_event = "Survey ping — every room's current type revealed.".to_string();
+                self.last_event = "Survey ping - every room's current type revealed.".to_string();
             }
             RoomType::Sensor => {
+                let mut updates = 0;
                 for r in neighbors(room) {
-                    self.reveal(r);
+                    if self.known_source[r] != Some(KnowledgeSource::Visit) {
+                        updates += 1;
+                    }
+                    self.reveal_from(r, KnowledgeSource::Sensor);
                 }
-                self.last_event = "Sensor sweep — adjacent rooms revealed.".to_string();
+                self.sensor_map_updates += updates;
+                self.last_event =
+                    format!("Sensor sweep - {updates} adjacent rooms fed to the team map.");
             }
             RoomType::Decoy => {
                 // The betrayal: it looked like a vault, it was a lie.
-                self.last_event = format!("Room {room} was a DECOY — nothing here.");
+                self.decoy_lies_resolved += 1;
+                self.last_event = format!("Room {room} was a DECOY - nothing here.");
             }
             RoomType::DeadEnd => {
                 self.last_event = format!("Room {room}: dead end. Nothing here.");
@@ -300,7 +400,7 @@ impl DiscoveryWorld {
     pub fn escape(&mut self) -> bool {
         if self.gate_open() {
             self.escaped = true;
-            self.last_event = "Gate unlocked — escaped the facility!".to_string();
+            self.last_event = "Gate unlocked - escaped the facility!".to_string();
             true
         } else {
             self.last_event = format!(
@@ -316,7 +416,7 @@ impl DiscoveryWorld {
     pub fn shift(&mut self) {
         if self.stabilized || self.escaped {
             self.last_event = if self.stabilized {
-                "Facility stabilised — types hold.".to_string()
+                "Facility stabilised - types hold.".to_string()
             } else {
                 self.last_event.clone()
             };
@@ -344,13 +444,122 @@ impl DiscoveryWorld {
         self.last_event = if self.solvable {
             format!("Rooms shifted ({} unseen). The layout changed.", pool.len())
         } else {
-            "A keystone stranded on a spent room — objective lost!".to_string()
+            "A keystone stranded on a spent room - objective lost!".to_string()
         };
     }
 
     /// Lowest-index room that is still worth visiting (unharvested), if any.
     pub fn next_unharvested(&self) -> Option<usize> {
         (0..ROOM_COUNT).find(|&r| !self.harvested[r])
+    }
+}
+
+fn unharvested_rooms(world: &DiscoveryWorld) -> Vec<usize> {
+    (0..ROOM_COUNT).filter(|&r| !world.harvested[r]).collect()
+}
+
+fn reader_score(world: &DiscoveryWorld, room: usize) -> i32 {
+    let needs_key = world.keystones < REQUIRED_KEYSTONES;
+    let needs_power = world.power < REQUIRED_POWER;
+    match world.door_read(room).expect("room index is valid") {
+        DoorIdentityRole::KeystoneVault if needs_key => 120,
+        DoorIdentityRole::Reactor if needs_power => 105,
+        DoorIdentityRole::PowerCache if needs_power => 95,
+        DoorIdentityRole::Sensor if world.team_map_known_count() < ROOM_COUNT => 70,
+        DoorIdentityRole::Survey if world.team_map_known_count() < ROOM_COUNT => 65,
+        DoorIdentityRole::Control => 45,
+        DoorIdentityRole::KeystoneVault => 35,
+        DoorIdentityRole::Reactor | DoorIdentityRole::PowerCache => 25,
+        DoorIdentityRole::FalseExit => {
+            if world.gate_open() {
+                80
+            } else {
+                -30
+            }
+        }
+        DoorIdentityRole::Decoy => -35,
+        DoorIdentityRole::DeadEnd => -45,
+        DoorIdentityRole::Sensor | DoorIdentityRole::Survey => 10,
+    }
+}
+
+fn choose_reader_room(world: &DiscoveryWorld) -> Option<usize> {
+    unharvested_rooms(world)
+        .into_iter()
+        .max_by_key(|&room| (reader_score(world, room), std::cmp::Reverse(room)))
+}
+
+fn choose_random_room(world: &DiscoveryWorld, rng: &mut SplitMix) -> Option<usize> {
+    let candidates = unharvested_rooms(world);
+    candidates.get(rng.below(candidates.len())).copied()
+}
+
+pub fn run_bot(seed: u64, strategy: BotStrategy) -> BotRunOutcome {
+    let mut world = DiscoveryWorld::authored();
+    world.base_seed = seed ^ 0xD00A_D155_C0DE_0027;
+    world.constraint_enabled = true;
+    world.shift();
+    let mut rng = SplitMix::new(seed ^ 0xA11C_E5CE_39B0_7A11);
+    let mut wasted_visits = 0;
+
+    for _ in 0..(ROOM_COUNT * 3) {
+        if world.gate_open() {
+            break;
+        }
+        let Some(room) = (match strategy {
+            BotStrategy::Reader => choose_reader_room(&world),
+            BotStrategy::Random => choose_random_room(&world, &mut rng),
+        }) else {
+            break;
+        };
+        let found = world.visit(room);
+        if matches!(found, Some(RoomType::Decoy | RoomType::DeadEnd)) {
+            wasted_visits += 1;
+        }
+        if !world.gate_open() {
+            world.shift();
+        }
+    }
+    let escaped = world.escape();
+
+    BotRunOutcome {
+        strategy,
+        seed,
+        escaped,
+        visits: world.visit_count,
+        shifts: world.shift_count,
+        wasted_visits,
+        sensor_map_updates: world.sensor_map_updates,
+        decoy_lies_resolved: world.decoy_lies_resolved,
+    }
+}
+
+pub fn compare_reader_and_random(seeds: u32) -> BotComparison {
+    let mut reader_escapes = 0;
+    let mut random_escapes = 0;
+    let mut reader_visits = 0;
+    let mut random_visits = 0;
+
+    for seed in 0..seeds {
+        let seed = seed as u64;
+        let reader = run_bot(seed, BotStrategy::Reader);
+        let random = run_bot(seed, BotStrategy::Random);
+        reader_escapes += u32::from(reader.escaped);
+        random_escapes += u32::from(random.escaped);
+        reader_visits += reader.visits;
+        random_visits += random.visits;
+    }
+
+    let seeds_f = seeds.max(1) as f32;
+    let reader_mean_visits = reader_visits as f32 / seeds_f;
+    let random_mean_visits = random_visits as f32 / seeds_f;
+    BotComparison {
+        seeds,
+        reader_escapes,
+        random_escapes,
+        reader_mean_visits,
+        random_mean_visits,
+        visit_margin: random_mean_visits - reader_mean_visits,
     }
 }
 
@@ -534,10 +743,16 @@ mod tests {
         world.visit(7);
         for r in [4, 6, 8] {
             assert!(world.known[r].is_some(), "neighbour {r} revealed");
+            assert_eq!(
+                world.known_source[r],
+                Some(KnowledgeSource::Sensor),
+                "neighbour {r} is marked as sensor-fed map knowledge",
+            );
         }
         for r in [0, 1, 2, 3, 5] {
             assert!(world.known[r].is_none(), "non-neighbour {r} stays unknown");
         }
+        assert_eq!(world.sensor_map_updates, 3);
     }
 
     #[test]
@@ -550,6 +765,12 @@ mod tests {
             2,
             "the decoy is not a keystone"
         );
+        assert_eq!(
+            world.door_read(8),
+            Some(DoorIdentityRole::FalseExit),
+            "an unvisited decoy advertises an exit-like door read",
+        );
+        assert_eq!(world.door_bleed_label(8), Some("exit choir"));
 
         // Revealed remotely (here via Survey at room 3) the decoy *displays* as a vault.
         world.visit(3);
@@ -564,10 +785,44 @@ mod tests {
         let found = world.visit(8);
         assert_eq!(found, Some(RoomType::Decoy));
         assert_eq!(world.keystones, before, "a decoy yields no keystone");
+        assert_eq!(world.decoy_lies_resolved, 1);
         assert_eq!(
             world.known[8],
             Some(RoomType::Decoy),
             "the visit reveals truth"
+        );
+        assert_eq!(
+            world.door_read(8),
+            Some(DoorIdentityRole::Decoy),
+            "once resolved, the door read no longer masquerades as an exit",
+        );
+    }
+
+    #[test]
+    fn door_identity_reads_are_style_owned_and_type_true() {
+        let world = DiscoveryWorld::authored();
+        for room in 0..ROOM_COUNT {
+            let read = world.door_read(room).expect("room has a read");
+            if world.types[room] == RoomType::Decoy {
+                assert_eq!(read, DoorIdentityRole::FalseExit);
+            } else {
+                assert_eq!(read, identity_for_room_type(world.types[room]));
+            }
+        }
+    }
+
+    #[test]
+    fn reader_bot_beats_random_door_bot_by_the_phase_margin() {
+        let comparison = compare_reader_and_random(READER_BOT_SEEDS);
+        assert_eq!(comparison.reader_escapes, READER_BOT_SEEDS);
+        assert_eq!(comparison.random_escapes, READER_BOT_SEEDS);
+        assert!(
+            comparison.visit_margin >= READER_BOT_TARGET_VISIT_MARGIN,
+            "reader mean {:.2}, random mean {:.2}, margin {:.2} below target {:.2}",
+            comparison.reader_mean_visits,
+            comparison.random_mean_visits,
+            comparison.visit_margin,
+            READER_BOT_TARGET_VISIT_MARGIN,
         );
     }
 
@@ -584,8 +839,11 @@ mod tests {
         assert_eq!(world.shift_count, 0);
         assert_eq!(world.visit_count, 0);
         assert_eq!(world.keystones, 0);
+        assert_eq!(world.sensor_map_updates, 0);
+        assert_eq!(world.decoy_lies_resolved, 0);
         assert!(!world.escaped);
         assert!(world.solvable);
         assert!(world.known.iter().all(|k| k.is_none()));
+        assert!(world.known_source.iter().all(|source| source.is_none()));
     }
 }

@@ -1,4 +1,4 @@
-# discovery_lab — typed rooms, a gated exit, and Betrayal-style shifting
+# discovery_lab — typed rooms, door reads, and Betrayal-style shifting
 
 A pure-logic feasibility lab for the **room-discovery + gated-objective** mechanic (the
 "Part 3" room types in [ROADMAP.md](../../ROADMAP.md)).
@@ -18,6 +18,13 @@ The facility's rooms have a hidden **type** (the core 5, plus three more proven 
 | `!` | **Decoy** | nothing — but it **lies**: displays as a vault until visited |
 | `.` | **Dead-end** | nothing (the bust) |
 
+Phase 39 adds a separate **doorframe read** layer on top of that truth table:
+the tile fill is team-local map knowledge, while the top frame/glyph/glow is
+the current threshold read from [`observed_style`](../../crates/observed_style).
+Most reads match their room type (`K`, `P`, `R`, `C`, `S`, `N`, `.`). An
+unvisited Decoy reads as `E` (a false exit signal with exit-coloured sensory
+bleed) until direct visitation exposes it as `!`.
+
 You only learn a room's type by **visiting** it, and unobserved rooms **shift** their
 types when you look away — so a remembered vault may be a dead end on return. The exit
 is **gated**: locked until the team collects `REQUIRED_KEYSTONES` keystones and
@@ -30,6 +37,10 @@ ping. **Decoy** is the deepest Betrayal turn: it shows as a Keystone Vault when 
 *remotely* (by a Survey or Sensor), but a direct visit reveals it yields nothing. A decoy
 is **never** counted as a real keystone, so deception can mislead the player but can never
 strand the run or affect solvability.
+
+For Phase 39, **Sensor** also tags the source of team-map knowledge (`Sensor`) so the
+payoff is testable instead of just visual, and **Decoy** also resolves an exit-like
+door read (`E`) into the true empty room (`!`) once visited.
 
 The primary question — the analogue of `constraint_lab`'s protected spine — is
 **solvability**: one rule (only shift types among *unharvested* rooms) keeps the
@@ -67,14 +78,21 @@ $env:OBSERVED2_CAPTURE = "docs/evidence/discovery_lab.png"; cargo run -p discove
   keystone and flip it to `NO — run lost`.
 - A **Reactor** adds 2 power at once; a **Sensor** lights up only its neighbours; a
   **Decoy** reads as a gold vault when surveyed from afar, then turns out empty on arrival.
-- The `[PASS]` line confirms one tile per room and a single UI root; reset restores a
-  fresh facility with no leaked entities.
+- The doorframe read layer is backed by `observed_style::DoorIdentityRole`, has one
+  frame/glyph/bleed entity per room, and reset does not leak those entities.
+- A **Sensor** feed records adjacent rooms into the team-local map with `Sensor` as the
+  source, and an unvisited **Decoy** advertises a false `E` exit read before resolving
+  to `!`.
+- The seeded bot experiment confirms a scripted **reader** bot beats a random-door bot
+  by at least `READER_BOT_TARGET_VISIT_MARGIN` mean visits over `READER_BOT_SEEDS`.
+- The `[PASS]` line confirms one tile and one read frame per room plus a single UI root;
+  reset restores a fresh facility with no leaked entities.
 
 ## What it deliberately does not do
 
 Traversal, competition, equipment, and the real 3D facility are out of scope — this lab
 isolates the discovery/gate/solvability logic. Integration reuses `competitive_facility`
 + `equipment_lab` + `incentive_lab` when the gated exit is folded into the teleport
-facility. The vocabulary is now 8 types; the remaining candidates toward ~10 (Anchor —
-pin one room; Trap — scramble memory; Relay — calm the shifting) can be added the same
-way as this expansion.
+facility. The truth vocabulary is still 8 room types, with a 9-role door-read layer for
+the false exit signal; remaining room candidates toward ~10 (Anchor — pin one room; Trap
+— scramble memory; Relay — calm the shifting) can be added the same way as this expansion.

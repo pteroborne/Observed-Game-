@@ -83,7 +83,7 @@ The following duplication patterns have been identified in the codebase. These s
 
 ## Feasibility Labs (`labs/`)
 
-The 50 prototype labs in `labs/` are independent Bevy applications designed to isolate and test specific technical questions. They follow a strict sandbox model, allowing full reset (`R` key) without restarting. They are grouped here by testing domain:
+The 51 prototype labs in `labs/` are independent Bevy applications designed to isolate and test specific technical questions. They follow a strict sandbox model, allowing full reset (`R` key) without restarting. They are grouped here by testing domain:
 
 ### Foundation & Controls
 - `menu_lab` & `control_lab`: Boot states, pause systems, rebind overlays, intent playback, controller assignment.
@@ -91,7 +91,7 @@ The 50 prototype labs in `labs/` are independent Bevy applications designed to i
 
 ### Traversal & Physics
 - `movement_lab` & `climbing_lab`: Walk, run, jump, coyote buffers, ladders, ledge-grabbing, socket-based grapple ropes.
-- `fps_controller_lab` & `fps_elevation_lab`: 3D transition, dynamic AABB collision, elevation changes.
+- `fps_controller_lab`, `fps_elevation_lab` & `gantry_lab`: 3D transition, dynamic AABB collision, elevation changes, and two-level jump-map hallway timing.
 
 ### Observation & Procedural Geometry
 - `observation_lab` & `door_lab`: 2D graph transitions, unobserved doorway rewiring, door leaf slam animations.

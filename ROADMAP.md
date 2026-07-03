@@ -12,10 +12,10 @@ This document outlines the current active development goals, completed milestone
 
 **Arc C — Contention & Depth** (plan and design rules: [docs/contention_arc_plan.md](docs/contention_arc_plan.md)). The design arc that turns the proven observe-to-freeze foundation into a game worth racing: observation becomes a shared, contested resource between teams, and the board gains the identity, verticality, and visible pressure to make that contest legible. Lab-first throughout; solvability ("no team is ever left without a path") is the arc-wide invariant.
 
-### Phase 39 — Doors With Identity `[ ]`
+### Phase 39 — Doors With Identity `[x]`
 Surface the existing semantic board (`RoomRole`, the discovery_lab typed-room feasibility) to the player: a doorframe glyph language via `observed_style` (legend-backed), sensory bleed through open thresholds (district light, room-type ambience), and type-true payoffs behind the read (Sensor feeds the team-local map; Decoy lies about the exit). Success: a reader bot beats a random-door bot by a target margin.
 
-### Phase 40 — The Gantry (Jump-Map Halls) `[ ]`
+### Phase 40 — The Gantry (Jump-Map Halls) `[x]`
 New `HallwayFlavor::Gantry`: a two-level hall where raised platforms are the fast route and **falling is a setback, not death** — you land in a visible understory whose exits are *different* threshold nodes (gravity rewires your crossing). Platform edges lit, failure landing visible before the jump (chosen, readable irreversibility). Builds on `fps_elevation_lab`; proven in `gantry_lab` with clean-jump / fall-recover / safe-bypass timing targets and guaranteed-navigable understories.
 
 ### Phase 41 — Pressure Made Flesh `[ ]`
@@ -27,6 +27,22 @@ Rivals become presences: team-colored anchor torches and frame lights on edges t
 ---
 
 ## Recent Milestones (Completed)
+
+### Phase 40 — The Gantry (Jump-Map Halls) `[x]`
+Finished the Phase 40 vertical corridor proof:
+- **Pure traversal model:** `observed_traversal::gantry` owns the authored two-level course, upper platform thresholds, lower understory exits, deterministic route runner, and timing windows.
+- **Readable style roles:** `observed_style` now includes semantic treatments for gantry decks, lit jump edges, and visible understory landings, keeping platform commitment cues legend-backed.
+- **Playable lab:** new `gantry_lab` renders the jump-map hall and lets agents review clean-jump, fall-recover, and safe-bypass runs (`1`/`2`/`3`, `R` reset).
+- **Game template hook:** `HallwayFlavor::Gantry` is in the assembled game's hallway library with a walkable lower-bypass projection that respects the current two-endpoint teleport contract.
+- **Verification:** focused tests are green for `observed_traversal`, `observed_style`, `gantry_lab`, `style_lab`, and the game hallway/bot gantry paths.
+
+### Phase 39 — Doors With Identity `[x]`
+Finished the Phase 39 `discovery_lab` read-layer proof that typed rooms can be read before commitment:
+- **Style-owned door reads:** `observed_style::DoorIdentityRole` now owns legend-backed glyphs, colors, emissions, and ambience labels for typed-room doorframes, and `style_lab` renders the new semantic row.
+- **Threshold reads vs truth:** `discovery_lab` separates team-map knowledge (tile fill) from current doorframe reads (frame/glyph/bleed). Decoys advertise an exit-like `E` signal until direct visitation resolves the truth as `!`.
+- **Type-true payoffs:** Sensor visits tag adjacent rooms as Sensor-fed team-local map knowledge; Decoys never count as keystones and track resolved false-exit lies.
+- **Reader bot proof:** the seeded corpus asserts a scripted reader bot escapes every run and beats the random-door bot by at least `READER_BOT_TARGET_VISIT_MARGIN` mean visits over `READER_BOT_SEEDS`.
+- **Verification:** focused tests are green for `observed_style`, `style_lab`, and `discovery_lab`.
 
 ### Phase 38 — Contested Observation `[x]`
 Finished the Phase 38 `contention_lab` proof that observation is objective and shared while knowledge remains team-local:

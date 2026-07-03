@@ -27,7 +27,7 @@ use bevy::{
     window::{PresentMode, WindowResolution},
 };
 
-use observed_style::{MarkerRole, ObservedState, SurfaceRole, Treatment};
+use observed_style::{DoorIdentityRole, MarkerRole, ObservedState, SurfaceRole, Treatment};
 
 /// Marks the showcase camera.
 #[derive(Component)]
@@ -221,7 +221,19 @@ fn setup(
         );
     }
 
-    // Row 3 (back) — the spine surface in each observed state.
+    // Row 3 (front-most) - doorframe identity reads.
+    for (i, role) in DoorIdentityRole::ALL.iter().enumerate() {
+        let t = style::door_identity(*role);
+        place_tile(
+            &mut commands,
+            &unit_cube,
+            &mut materials,
+            &t,
+            Vec3::new(row_x(i, DoorIdentityRole::ALL.len()), 0.0, 6.8),
+        );
+    }
+
+    // Row 4 (back) - the spine surface in each observed state.
     let spine = style::surface(SurfaceRole::Spine);
     for (i, state) in ObservedState::ALL.iter().enumerate() {
         let t = style::observed_modulate(spine, *state);
@@ -245,6 +257,15 @@ fn spawn_ui(commands: &mut Commands) {
     legend.push_str("\nMARKERS / SIGNALS (front row, L→R):\n");
     for role in MarkerRole::ALL {
         legend.push_str(&format!("  - {}\n", role.label()));
+    }
+    legend.push_str("\nDOORFRAME READS (front-most row, L→R):\n");
+    for role in DoorIdentityRole::ALL {
+        legend.push_str(&format!(
+            "  - {} [{}; {}]\n",
+            role.label(),
+            role.glyph(),
+            role.ambience_label()
+        ));
     }
     legend.push_str("\nOBSERVED STATES (back row — spine):\n");
     for state in ObservedState::ALL {
@@ -391,7 +412,7 @@ fn update_debug_text(
     **text = format!(
         "STYLE LAB  {}\n\n\
          neon-noir visual language\n\
-         surfaces {} | markers {} | observed {}\n\
+         surfaces {} | markers {} | door reads {} | observed {}\n\
          neon edges {}\n\
          signal min luminance {:.1}\n\n\
          cameras {cams}  UI {ui_roots}\n\n\
@@ -399,6 +420,7 @@ fn update_debug_text(
         if healthy { "[PASS]" } else { "[FAIL]" },
         SurfaceRole::ALL.len(),
         MarkerRole::ALL.len(),
+        DoorIdentityRole::ALL.len(),
         ObservedState::ALL.len(),
         edges.iter().count(),
         style::SIGNAL_MIN_LUMINANCE,
@@ -483,9 +505,10 @@ mod tests {
         let mut app = test_app();
         assert_eq!(count::<StyleCam>(&mut app), 1);
         assert_eq!(count::<StyleUiRoot>(&mut app), 1);
-        // 6 edged surfaces + 8 markers + 3 observed spine swatches are neon-edged.
+        // Edged surfaces + 8 markers + 9 door reads + 3 observed spine swatches
+        // are neon-edged; only the ceiling surface intentionally has no edge.
         assert!(
-            count::<NeonEdge>(&mut app) >= 15,
+            count::<NeonEdge>(&mut app) >= 26,
             "every distinct role renders a swatch with a neon edge",
         );
     }

@@ -7,3 +7,4 @@ publish = false
 [dependencies]
 bevy = { version = "0.18.1", default-features = false, features = ["2d", "png"] }
 observed_core = { path = "../../crates/observed_core" }
+observed_style = { path = "../../crates/observed_style" }

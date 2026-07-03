@@ -20,6 +20,8 @@ use std::f32::consts::TAU;
 use glam::Vec3;
 use player_input::PlayerIntent;
 
+pub mod gantry;
+
 /// Fixed simulation timestep. The controller is only ever stepped at this dt.
 pub const FIXED_DT: f32 = 1.0 / 60.0;
 

@@ -10,6 +10,7 @@ use crate::maze;
 use bevy::math::Vec2;
 use observed_core::RoomId;
 use observed_match::mutable::EXIT_ROOM;
+use observed_traversal::gantry::{self, SAFE_BYPASS_X};
 use std::f32::consts::PI;
 
 /// A small deterministic hash (splitmix64 finalizer) for seeding room shapes.
@@ -422,6 +423,60 @@ pub fn hallway_geom_with_slots(
                     center: Vec2::new(-off, hz),
                     normal: Vec2::new(0.0, 1.0),
                     width: c,
+                    target: to,
+                    kind: exit_kind,
+                    threshold: hallway_gap_threshold(
+                        from,
+                        to,
+                        to,
+                        to_room_slot,
+                        ThresholdSlotId(0),
+                    ),
+                },
+            ],
+            interior,
+            poly: None,
+        };
+    }
+    if template.flavor == hallway::HallwayFlavor::Gantry {
+        // The pure gantry model is two-level and has an understory side exit; the current
+        // teleport hallway contract only carries the edge's two endpoint rooms, so the
+        // assembled game consumes the guaranteed lower safe-bypass projection. The support
+        // footprints match the jump-map decks from `observed_traversal::gantry`, keeping
+        // the shape aligned with the lab proof while avoiding hidden graph exits.
+        let course = gantry::GantryCourse::authored();
+        let hx = gantry::GANTRY_WIDTH * 0.5;
+        let hz = gantry::GANTRY_LENGTH * 0.5;
+        let interior = course
+            .platforms
+            .iter()
+            .map(|platform| WallSeg {
+                center: platform.center,
+                half: platform.half,
+            })
+            .collect();
+        let door = 2.7_f32.min(template.width);
+        return PlaceGeom {
+            half: Vec2::new(hx, hz),
+            gaps: vec![
+                DoorGap {
+                    center: Vec2::new(SAFE_BYPASS_X, -hz),
+                    normal: Vec2::new(0.0, -1.0),
+                    width: door,
+                    target: from,
+                    kind: GapKind::Entry,
+                    threshold: hallway_gap_threshold(
+                        from,
+                        to,
+                        from,
+                        from_room_slot,
+                        ThresholdSlotId(0),
+                    ),
+                },
+                DoorGap {
+                    center: Vec2::new(SAFE_BYPASS_X, hz),
+                    normal: Vec2::new(0.0, 1.0),
+                    width: door,
                     target: to,
                     kind: exit_kind,
                     threshold: hallway_gap_threshold(

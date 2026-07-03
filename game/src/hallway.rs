@@ -13,6 +13,7 @@
 //! deterministic edge → variation mapping. The controller/presentation consume it.
 
 use observed_core::RoomId;
+use observed_traversal::gantry::{GANTRY_LENGTH, GANTRY_WIDTH, UPPER_DECK_Y};
 
 /// The traversal character of a hallway piece — the "edge personality" the
 /// nodes/edges canon asks for (corridors = traverse / danger / mystery).
@@ -38,6 +39,10 @@ pub enum HallwayFlavor {
     /// A generated grid **labyrinth** — winding corridors, dead ends, and braided
     /// loops between the single entrance and exit (see [`crate::maze`]).
     Maze,
+    /// A two-level jump-map hall. The pure two-level route proof lives in
+    /// `observed_traversal::gantry`; the assembled teleport model projects its lower
+    /// safe-bypass footprint until hallway-side third thresholds are supported.
+    Gantry,
 }
 
 impl HallwayFlavor {
@@ -50,6 +55,7 @@ impl HallwayFlavor {
             HallwayFlavor::Climb => "climb",
             HallwayFlavor::Colonnade => "colonnade",
             HallwayFlavor::Maze => "labyrinth",
+            HallwayFlavor::Gantry => "gantry",
         }
     }
 
@@ -83,7 +89,7 @@ pub struct HallwayTemplate {
 /// The authored library. An index into this is a "variation". A *significant portion*
 /// of the pieces are generated labyrinths (`Maze`), the rest are quick connectors and
 /// set-pieces, so the facility's edges feel varied — some a single stride, some a maze.
-pub const TEMPLATES: [HallwayTemplate; 12] = [
+pub const TEMPLATES: [HallwayTemplate; 13] = [
     HallwayTemplate {
         name: "short connector",
         flavor: HallwayFlavor::Straight,
@@ -144,6 +150,14 @@ pub const TEMPLATES: [HallwayTemplate; 12] = [
         length: 26.0,
         width: 22.0,
         rise: 0.0,
+        grid: None,
+    },
+    HallwayTemplate {
+        name: "gantry",
+        flavor: HallwayFlavor::Gantry,
+        length: GANTRY_LENGTH,
+        width: GANTRY_WIDTH,
+        rise: UPPER_DECK_Y,
         grid: None,
     },
     // The labyrinths. `length`/`width` are the derived footprints (cols/rows × the

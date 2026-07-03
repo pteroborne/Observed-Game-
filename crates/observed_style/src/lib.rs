@@ -6,7 +6,7 @@
 //! generated entirely from code (no authored textures/meshes), which plays to an
 //! agent's strengths and is verifiable through the `OBSERVED2_CAPTURE` screenshot
 //! loop. The crate encodes the **Legibility Contract**: any treatment flagged as a
-//! *signal* (your path, threats, interactables, actors) must stay bright enough to
+//! *signal* (your path, threats, interactables, actors, door reads) must stay bright enough to
 //! punch through the atmosphere, and every on-screen role has exactly one documented
 //! entry here (`legend`), so nothing is ever an unlabelled coloured marker.
 //!
@@ -171,6 +171,12 @@ pub enum SurfaceRole {
     Spine,
     /// The longer, safe bypass around a hazard.
     SafeBypass,
+    /// A raised gantry deck: the fast traversal route across a vertical hallway.
+    GantryDeck,
+    /// A lit gantry platform edge: the readable jump/fall commitment line.
+    GantryEdge,
+    /// A visible lower landing under a gantry jump map.
+    Understory,
     /// A pressure-gate shortcut while it is dangerous to cross.
     TrapArmed,
     /// A pressure-gate shortcut while it is safe to cross.
@@ -182,10 +188,13 @@ pub enum SurfaceRole {
 }
 
 impl SurfaceRole {
-    pub const ALL: [SurfaceRole; 7] = [
+    pub const ALL: [SurfaceRole; 10] = [
         SurfaceRole::Plain,
         SurfaceRole::Spine,
         SurfaceRole::SafeBypass,
+        SurfaceRole::GantryDeck,
+        SurfaceRole::GantryEdge,
+        SurfaceRole::Understory,
         SurfaceRole::TrapArmed,
         SurfaceRole::TrapIdle,
         SurfaceRole::Wall,
@@ -197,6 +206,9 @@ impl SurfaceRole {
             SurfaceRole::Plain => "plain floor",
             SurfaceRole::Spine => "spine route",
             SurfaceRole::SafeBypass => "safe bypass",
+            SurfaceRole::GantryDeck => "gantry upper route",
+            SurfaceRole::GantryEdge => "gantry jump edge",
+            SurfaceRole::Understory => "gantry understory landing",
             SurfaceRole::TrapArmed => "trap armed",
             SurfaceRole::TrapIdle => "trap idle",
             SurfaceRole::Wall => "wall",
@@ -224,6 +236,31 @@ pub enum MarkerRole {
     Rival,
     /// The facility director (the AI adversary).
     Director,
+}
+
+/// A semantic read shown on a doorframe before committing to the room beyond it.
+/// These are signal-tier because they are decision cues, and every glyph is backed
+/// by a treatment here rather than by lab-local colour choices.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DoorIdentityRole {
+    /// A side objective room holding a keystone.
+    KeystoneVault,
+    /// A power room with a small yield.
+    PowerCache,
+    /// A higher-pressure power room with a larger yield.
+    Reactor,
+    /// A room that can stabilise or command the facility.
+    Control,
+    /// A room that reveals broad map knowledge.
+    Survey,
+    /// A room that feeds nearby knowledge into the team-local map.
+    Sensor,
+    /// A false exit signal: the door advertises escape, but the room is a decoy.
+    FalseExit,
+    /// A directly exposed decoy after the lie has been resolved.
+    Decoy,
+    /// A low-value or empty room.
+    DeadEnd,
 }
 
 /// Gameplay-critical mesh outline roles.
@@ -299,6 +336,62 @@ impl MarkerRole {
     }
 }
 
+impl DoorIdentityRole {
+    pub const ALL: [DoorIdentityRole; 9] = [
+        DoorIdentityRole::KeystoneVault,
+        DoorIdentityRole::PowerCache,
+        DoorIdentityRole::Reactor,
+        DoorIdentityRole::Control,
+        DoorIdentityRole::Survey,
+        DoorIdentityRole::Sensor,
+        DoorIdentityRole::FalseExit,
+        DoorIdentityRole::Decoy,
+        DoorIdentityRole::DeadEnd,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            DoorIdentityRole::KeystoneVault => "door read: keystone vault",
+            DoorIdentityRole::PowerCache => "door read: power cache",
+            DoorIdentityRole::Reactor => "door read: reactor",
+            DoorIdentityRole::Control => "door read: control",
+            DoorIdentityRole::Survey => "door read: survey",
+            DoorIdentityRole::Sensor => "door read: sensor",
+            DoorIdentityRole::FalseExit => "door read: false exit signal",
+            DoorIdentityRole::Decoy => "door read: decoy exposed",
+            DoorIdentityRole::DeadEnd => "door read: dead-end",
+        }
+    }
+
+    pub fn glyph(self) -> char {
+        match self {
+            DoorIdentityRole::KeystoneVault => 'K',
+            DoorIdentityRole::PowerCache => 'P',
+            DoorIdentityRole::Reactor => 'R',
+            DoorIdentityRole::Control => 'C',
+            DoorIdentityRole::Survey => 'S',
+            DoorIdentityRole::Sensor => 'N',
+            DoorIdentityRole::FalseExit => 'E',
+            DoorIdentityRole::Decoy => '!',
+            DoorIdentityRole::DeadEnd => '.',
+        }
+    }
+
+    pub fn ambience_label(self) -> &'static str {
+        match self {
+            DoorIdentityRole::KeystoneVault => "key chime",
+            DoorIdentityRole::PowerCache => "capacitor hum",
+            DoorIdentityRole::Reactor => "reactor thrum",
+            DoorIdentityRole::Control => "servo chatter",
+            DoorIdentityRole::Survey => "wideband ping",
+            DoorIdentityRole::Sensor => "local scan ticks",
+            DoorIdentityRole::FalseExit => "exit choir",
+            DoorIdentityRole::Decoy => "broken exit echo",
+            DoorIdentityRole::DeadEnd => "dead air",
+        }
+    }
+}
+
 /// How an observed/decohering region currently reads.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ObservedState {
@@ -347,6 +440,24 @@ pub fn surface(role: SurfaceRole) -> Treatment {
             signal: false,
             edge: Some(Color::srgb(0.2, 0.9, 1.0)),
         },
+        SurfaceRole::GantryDeck => Treatment {
+            base_color: Color::srgb(0.035, 0.045, 0.060),
+            emissive: LinearRgba::rgb(0.16, 0.22, 0.30),
+            signal: false,
+            edge: Some(Color::srgb(0.42, 0.92, 1.0)),
+        },
+        SurfaceRole::GantryEdge => Treatment {
+            base_color: Color::srgb(0.08, 0.05, 0.01),
+            emissive: LinearRgba::rgb(7.0, 4.8, 0.8),
+            signal: true,
+            edge: Some(Color::srgb(1.0, 0.84, 0.26)),
+        },
+        SurfaceRole::Understory => Treatment {
+            base_color: Color::srgb(0.01, 0.06, 0.055),
+            emissive: LinearRgba::rgb(0.55, 4.4, 3.8),
+            signal: true,
+            edge: Some(Color::srgb(0.16, 1.0, 0.82)),
+        },
         SurfaceRole::TrapArmed => Treatment {
             base_color: Color::srgb(0.10, 0.0, 0.0),
             emissive: LinearRgba::rgb(9.0, 0.4, 0.2),
@@ -394,6 +505,39 @@ pub fn marker(role: MarkerRole) -> Treatment {
     }
 }
 
+/// The neon-noir treatment for a doorframe semantic read. Door reads are
+/// gameplay-critical choice cues, so they are signal-tier and carry meaning through
+/// glyph, colour, and ambience label instead of colour alone.
+pub fn door_identity(role: DoorIdentityRole) -> Treatment {
+    let (base, emissive) = match role {
+        DoorIdentityRole::KeystoneVault => {
+            (Color::srgb(1.0, 0.82, 0.3), LinearRgba::rgb(6.0, 4.2, 1.0))
+        }
+        DoorIdentityRole::PowerCache => {
+            (Color::srgb(0.25, 0.82, 1.0), LinearRgba::rgb(0.8, 5.6, 6.8))
+        }
+        DoorIdentityRole::Reactor => (Color::srgb(1.0, 0.48, 0.18), LinearRgba::rgb(8.0, 3.2, 0.6)),
+        DoorIdentityRole::Control => (Color::srgb(0.6, 0.3, 1.0), LinearRgba::rgb(4.5, 1.2, 9.0)),
+        DoorIdentityRole::Survey => (Color::srgb(0.48, 1.0, 0.52), LinearRgba::rgb(1.0, 6.5, 1.8)),
+        DoorIdentityRole::Sensor => (
+            Color::srgb(0.20, 0.95, 0.86),
+            LinearRgba::rgb(0.7, 5.2, 5.2),
+        ),
+        DoorIdentityRole::FalseExit => (Color::srgb(0.2, 1.0, 0.4), LinearRgba::rgb(0.4, 8.0, 1.4)),
+        DoorIdentityRole::Decoy => (Color::srgb(1.0, 0.28, 0.75), LinearRgba::rgb(8.0, 0.8, 6.0)),
+        DoorIdentityRole::DeadEnd => (
+            Color::srgb(0.58, 0.62, 0.70),
+            LinearRgba::rgb(2.4, 2.4, 2.4),
+        ),
+    };
+    Treatment {
+        base_color: base,
+        emissive,
+        signal: true,
+        edge: Some(base),
+    }
+}
+
 /// The mesh-outline treatment for a gameplay-critical object. These are all
 /// signal-tier because the whole point of the outline layer is to keep essential
 /// gameplay state visible through fog, bloom, distance, and overlap.
@@ -420,6 +564,14 @@ pub fn outline_legend() -> Vec<(&'static str, OutlineTreatment)> {
     OutlineRole::ALL
         .iter()
         .map(|role| (role.label(), outline(*role)))
+        .collect()
+}
+
+/// Every documented door identity and treatment, for lab/game legends.
+pub fn door_identity_legend() -> Vec<(&'static str, Treatment)> {
+    DoorIdentityRole::ALL
+        .iter()
+        .map(|role| (role.label(), door_identity(*role)))
         .collect()
 }
 
@@ -602,12 +754,17 @@ pub fn district_for(seed: u64, key: u32) -> District {
 /// Every documented role and its treatment — the single source of truth for an
 /// on-screen legend. A consumer renders this so no coloured marker is unexplained.
 pub fn legend() -> Vec<(&'static str, Treatment)> {
-    let mut out = Vec::with_capacity(SurfaceRole::ALL.len() + MarkerRole::ALL.len());
+    let mut out = Vec::with_capacity(
+        SurfaceRole::ALL.len() + MarkerRole::ALL.len() + DoorIdentityRole::ALL.len(),
+    );
     for role in SurfaceRole::ALL {
         out.push((role.label(), surface(role)));
     }
     for role in MarkerRole::ALL {
         out.push((role.label(), marker(role)));
+    }
+    for role in DoorIdentityRole::ALL {
+        out.push((role.label(), door_identity(role)));
     }
     out
 }
@@ -646,6 +803,35 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn door_identity_roles_are_distinct_and_glyph_backed() {
+        let treatments: Vec<Treatment> = DoorIdentityRole::ALL
+            .iter()
+            .map(|r| door_identity(*r))
+            .collect();
+        let mut glyphs = Vec::new();
+        for i in 0..treatments.len() {
+            glyphs.push(DoorIdentityRole::ALL[i].glyph());
+            for j in (i + 1)..treatments.len() {
+                assert!(
+                    treatments[i].base_color != treatments[j].base_color
+                        || treatments[i].emissive != treatments[j].emissive
+                        || DoorIdentityRole::ALL[i].glyph() != DoorIdentityRole::ALL[j].glyph(),
+                    "{} and {} look identical",
+                    DoorIdentityRole::ALL[i].label(),
+                    DoorIdentityRole::ALL[j].label(),
+                );
+            }
+        }
+        glyphs.sort_unstable();
+        glyphs.dedup();
+        assert_eq!(
+            glyphs.len(),
+            DoorIdentityRole::ALL.len(),
+            "door identity glyphs are a non-colour channel and must stay unique",
+        );
     }
 
     #[test]
@@ -699,6 +885,9 @@ mod tests {
         let mut signals: Vec<Treatment> = Vec::new();
         for role in MarkerRole::ALL {
             signals.push(marker(role));
+        }
+        for role in DoorIdentityRole::ALL {
+            signals.push(door_identity(role));
         }
         for role in SurfaceRole::ALL {
             let base = surface(role);
@@ -828,11 +1017,28 @@ mod tests {
     #[test]
     fn legend_covers_every_role_uniquely() {
         let legend = legend();
-        assert_eq!(legend.len(), SurfaceRole::ALL.len() + MarkerRole::ALL.len(),);
+        assert_eq!(
+            legend.len(),
+            SurfaceRole::ALL.len() + MarkerRole::ALL.len() + DoorIdentityRole::ALL.len(),
+        );
         let mut labels: Vec<&str> = legend.iter().map(|(name, _)| *name).collect();
         labels.sort_unstable();
         labels.dedup();
         assert_eq!(labels.len(), legend.len(), "every legend entry is unique");
+    }
+
+    #[test]
+    fn door_identity_legend_covers_every_role_uniquely() {
+        let legend = door_identity_legend();
+        assert_eq!(legend.len(), DoorIdentityRole::ALL.len());
+        let mut labels: Vec<&str> = legend.iter().map(|(name, _)| *name).collect();
+        labels.sort_unstable();
+        labels.dedup();
+        assert_eq!(
+            labels.len(),
+            legend.len(),
+            "every door identity legend entry is unique"
+        );
     }
 
     #[test]
