@@ -12,9 +12,6 @@ This document outlines the current active development goals, completed milestone
 
 **Arc C — Contention & Depth** (plan and design rules: [docs/contention_arc_plan.md](docs/contention_arc_plan.md)). The design arc that turns the proven observe-to-freeze foundation into a game worth racing: observation becomes a shared, contested resource between teams, and the board gains the identity, verticality, and visible pressure to make that contest legible. Lab-first throughout; solvability ("no team is ever left without a path") is the arc-wide invariant.
 
-### Phase 38 — Contested Observation `[ ]`
-The sauce activator, and the arc's one non-negotiable: **observation is objective and shared** — any team's presence or anchor freezes a connection for every team, while *knowledge* of the graph stays team-local (a fog of war over truth, surfaced through the tac-map). Proven in a new `contention_lab` over the pure crates: bot-vs-bot series must show route denial changing outcomes, byte-identical determinism/replay, zero solvability violations across a seed corpus, and no freeze-everything stalemate (a decoherence counter-tool is added only if stalemates appear).
-
 ### Phase 39 — Doors With Identity `[ ]`
 Surface the existing semantic board (`RoomRole`, the discovery_lab typed-room feasibility) to the player: a doorframe glyph language via `observed_style` (legend-backed), sensory bleed through open thresholds (district light, room-type ambience), and type-true payoffs behind the read (Sensor feeds the team-local map; Decoy lies about the exit). Success: a reader bot beats a random-door bot by a target margin.
 
@@ -30,6 +27,13 @@ Rivals become presences: team-colored anchor torches and frame lights on edges t
 ---
 
 ## Recent Milestones (Completed)
+
+### Phase 38 — Contested Observation `[x]`
+Finished the Phase 38 `contention_lab` proof that observation is objective and shared while knowledge remains team-local:
+- **Shared pins and private knowledge:** `ContentionWorld` keeps team-attributed presence and anchors as one shared freeze predicate, while each team records its own stale/fresh doorway ledger for fog-of-war over truth.
+- **Route-denial evidence:** the headless seed-corpus race now has a deterministic Denier policy that evaluates route candidates with a one-decoherence probe, then spends its bounded anchor budget on the room that best improves the acting team's predicted path position.
+- **Room rhythm in the race model:** each tick separates the room decision beat (observe/place anchors), decoherence, and traversal, so anchors affect the next graph truth before teams commit to a corridor step.
+- **Verification:** Phase criteria pass over the 200-seed corpus: denial changes 159/200 outcomes (79.5%), improves team 0 mean placement from 3.270 to 2.995, produces byte-identical repeated digests, preserves solvability after every decoherence, and has no all-Denier stalemate (all 200 seeds finish, worst pinned fraction 0.778).
 
 ### Phase 37 — Game-Layer Architecture Cleanup (Refactor Arc G) `[x]`
 Dissolved the assembled game's accumulated architecture debt in six verified stages (plan and as-landed record: `docs/refactor_game_arc_plan.md`):

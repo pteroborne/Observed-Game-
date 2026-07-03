@@ -59,7 +59,11 @@ and current knowledge view mode.
 
 ## Seed-corpus experiments
 
-Experiments (seed-driven probe tests) live in `src/experiment.rs` (added by a separate task).
+Experiments (seed-driven probe tests) live in `src/experiment.rs`. They run a pure
+four-team race over the shared contention graph and assert the Phase 38 criteria:
+route denial changes outcomes and helps the acting team, repeated runs are
+byte-identical, solvability holds after every decoherence, and four deniers do not
+freeze the board into a stalemate.
 
 ## Manual verification
 

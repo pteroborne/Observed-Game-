@@ -39,18 +39,23 @@ const ROOM_COUNT: usize = (ROWS * COLS) as usize;
 /// lattice, matching the lab's live scene).
 const EXIT_ROOM: RoomId = RoomId(8);
 
-/// Starting rooms for the race's four teams, chosen to mirror
-/// `ContentionLabPlugin`'s live scene exactly (see `lib.rs`): room 0
-/// (top-left corner), room 2 (top-right corner), room 6 (bottom-left
-/// corner), room 4 (center). All four are distinct and none is the exit
-/// (room 8, bottom-right corner) — a spread of three corners plus the
-/// center gives every team a meaningfully different opening distance to the
-/// exit rather than a symmetric or trivially-tied layout.
-const START_ROOMS: [RoomId; 4] = [RoomId(0), RoomId(2), RoomId(6), RoomId(4)];
+/// Starting rooms for the race's four teams: 0, 1, 3, 4. Chosen over the
+/// live lab's scene (corners 0/2/6 plus center 4) because two of those
+/// corners sit only BFS-distance 2 from the exit on the authored lattice.
+/// 0/1/3/4 keeps every start room distinct, none is the exit (room 8), and
+/// spans the authored lattice's actual distance range (room 0 at distance 4
+/// down to room 4 at distance 2).
+const START_ROOMS: [RoomId; 4] = [RoomId(0), RoomId(1), RoomId(3), RoomId(4)];
 
 /// Hard ceiling on anchors a single `Denier` team holds at once. Oldest is
 /// dropped first when a new anchor would exceed this.
 const MAX_ANCHORS: usize = 2;
+
+/// Fallback path length for a simulated state that cannot reach the exit.
+/// The solvability guard should prevent this in accepted worlds, but the
+/// score stays total so lookahead remains deterministic if a future change
+/// exposes a disconnected probe.
+const UNREACHABLE_PATH_LEN: u32 = ROOM_COUNT as u32 + 10;
 
 /// Rebuilds the authored 3x3 lattice edges. `observed_observation::authored_edges`
 /// is private to that crate, so this mirrors it verbatim (identical to the
@@ -88,12 +93,13 @@ fn lattice_edges() -> Vec<(RoomId, Direction, RoomId, Direction)> {
 pub enum Policy {
     /// Never places anchors. The control condition.
     Naive,
-    /// Anchors its own current room whenever that room sits on a fork of at
-    /// least three unsealed doors (a deterministic, purely local heuristic —
-    /// no lookahead into rivals' paths, no global search). Anchors advance
-    /// with the team: the oldest anchor is dropped once a new one would push
-    /// the team over [`MAX_ANCHORS`], so a denier always holds at most
-    /// `MAX_ANCHORS` rooms frozen, biased toward its most recent ones.
+    /// Evaluates route candidates and freezes the room whose
+    /// next-decoherence probe gives the acting team the best predicted path
+    /// position. Candidates come from rival routes and the team's own route,
+    /// so the same rule can either deny a rival line or stabilize a
+    /// favorable self line. Anchors accumulate as the race goes on; the
+    /// oldest is dropped once a new one would push the team over
+    /// [`MAX_ANCHORS`].
     Denier,
 }
 
@@ -228,6 +234,8 @@ fn run_race_with_hook(
     while tick < config.tick_budget && finished.iter().any(|&done| !done) {
         world.tick = u64::from(tick);
 
+        // Decision beat: teams observe from their current rooms and place
+        // any anchors before the graph's unobserved parts decohere.
         for team in 0..config.teams {
             if finished[team] {
                 continue;
@@ -241,6 +249,30 @@ fn run_race_with_hook(
                 Policy::Naive => {}
                 Policy::Denier => apply_denier_policy(&mut world, team, room, &mut denier_state),
             }
+        }
+
+        max_pinned_fraction = max_pinned_fraction.max(pinned_fraction(&world));
+
+        if (tick + 1).is_multiple_of(config.decohere_every) {
+            world.decohere();
+            decoheres += 1;
+            if world.last_decohere_reverted {
+                reverted += 1;
+            }
+            on_after_decohere(&world, tick + 1);
+            max_pinned_fraction = max_pinned_fraction.max(pinned_fraction(&world));
+        }
+
+        // Traversal beat: every still-racing team re-routes over the current
+        // shared truth and takes one step.
+        for team in 0..config.teams {
+            if finished[team] {
+                continue;
+            }
+            world.record_observations();
+
+            let member_index = team; // one member per team, indices line up 1:1
+            let room = world.members[member_index].room;
 
             if room == world.exit {
                 finished[team] = true;
@@ -263,15 +295,6 @@ fn run_race_with_hook(
         max_pinned_fraction = max_pinned_fraction.max(pinned_fraction(&world));
 
         tick += 1;
-        if tick.is_multiple_of(config.decohere_every) {
-            world.decohere();
-            decoheres += 1;
-            if world.last_decohere_reverted {
-                reverted += 1;
-            }
-            on_after_decohere(&world, tick);
-            max_pinned_fraction = max_pinned_fraction.max(pinned_fraction(&world));
-        }
     }
 
     let unfinished = finished.iter().filter(|&&done| !done).count();
@@ -329,31 +352,40 @@ pub fn race_digest(config: &RaceConfig) -> u64 {
     outcome.digest(&world.world.links)
 }
 
-/// Fraction of rooms currently pinned (observed or anchored, shared across
-/// teams) out of `ROOM_COUNT`.
+/// Fraction of rooms that are themselves pinned (occupied or anchored,
+/// shared across teams) out of `ROOM_COUNT`.
+///
+/// Deliberately does *not* go through `ContentionWorld::is_pinned` on a
+/// room's doors: a doorway pins if *either* endpoint room is pinned, so a
+/// room merely adjacent to an occupied room has all its doors reported as
+/// pinned without the room itself being occupied or anchored. That would
+/// conflate "next to a frozen room" with "frozen," inflating this fraction
+/// toward 1.0 on every tick regardless of how contested the race actually
+/// is. `room_pins` (the room-level predicate `is_pinned` builds on) is
+/// private, so it is re-derived here from the public `observed()` query and
+/// the public `anchors` list instead.
 fn pinned_fraction(world: &ContentionWorld) -> f32 {
     let pinned_rooms = (0..ROOM_COUNT)
         .filter(|&index| {
             let room = RoomId(index as u32);
-            // A room is pinned iff any of its doors is pinned; probing one
-            // door per side is equivalent to `ContentionWorld::room_pins`,
-            // which is private, so re-derive via `is_pinned` on each side's
-            // door (any true hit means the room pins).
-            Direction::ALL
-                .iter()
-                .any(|&side| world.is_pinned(world.world.door_id(room, side)))
+            world.observed(room) || world.anchors.iter().any(|anchor| anchor.room == room)
         })
         .count();
     pinned_rooms as f32 / ROOM_COUNT as f32
 }
 
-/// `Denier`'s anchor heuristic: if the team's current room has at least
-/// three unsealed doors (a "fork") and the team holds fewer than
-/// `MAX_ANCHORS` anchors on rooms it hasn't already anchored, anchor it.
-/// Anchors advance with the team — the oldest is released once a new one
-/// would exceed the budget. Entirely local and deterministic: no inspection
-/// of rival positions or paths, matching the plan's "simpler deterministic
-/// heuristic" allowance.
+/// `Denier`'s anchor heuristic: evaluate unobserved rooms on rival routes
+/// and on the acting team's own route, simulate the next decoherence with
+/// each candidate anchor, and place the anchor that gives the acting team
+/// the best predicted path position. Anchoring the room a rival is about to
+/// enter is redundant with that rival's presence pin at the next decoherence
+/// boundary, so candidates come from downstream route rooms when available.
+///
+/// Deterministic: candidates are sorted by `RoomId`, every probe uses the
+/// same guarded `decohere()` stream the real race will use, and score ties
+/// fall to the lower room id. Anchors accumulate as the denier advances; the
+/// oldest is released once a new one would push the team over
+/// [`MAX_ANCHORS`].
 fn apply_denier_policy(
     world: &mut ContentionWorld,
     team: usize,
@@ -361,17 +393,18 @@ fn apply_denier_policy(
     denier_state: &mut BTreeMap<usize, DenierState>,
 ) {
     let team_id = TeamId(team as u8);
-    let unsealed_doors = Direction::ALL
-        .iter()
-        .filter(|&&side| !world.world.is_sealed(world.world.door_id(room, side)))
-        .count();
 
-    if unsealed_doors < 3 {
+    let state_snapshot = denier_state.get(&team).cloned().unwrap_or_default();
+    let candidates = anchor_candidates(world, team, room);
+    let Some(target_room) = candidates
+        .into_iter()
+        .min_by_key(|&candidate| anchor_score(world, team, candidate, &state_snapshot))
+    else {
         return;
-    }
+    };
 
     let state = denier_state.entry(team).or_default();
-    if state.anchor_order.contains(&room) {
+    if state.anchor_order.contains(&target_room) {
         return;
     }
 
@@ -379,8 +412,109 @@ fn apply_denier_policy(
         let oldest = state.anchor_order.remove(0);
         world.remove_anchor(team_id, oldest);
     }
-    world.place_anchor(team_id, room);
-    state.anchor_order.push(room);
+    world.place_anchor(team_id, target_room);
+    state.anchor_order.push(target_room);
+}
+
+fn anchor_candidates(world: &ContentionWorld, team: usize, room: RoomId) -> Vec<RoomId> {
+    let mut candidates = Vec::new();
+    for (rival_index, member) in world.members.iter().enumerate() {
+        if rival_index == team || member.room == world.exit {
+            continue;
+        }
+        if let Some(route_rooms) = path_rooms(world, member.room) {
+            candidates.extend(
+                route_rooms
+                    .into_iter()
+                    .skip(1)
+                    .filter(|&candidate| !world.observed(candidate)),
+            );
+        }
+    }
+
+    if let Some(route_rooms) = path_rooms(world, room) {
+        candidates.extend(
+            route_rooms
+                .into_iter()
+                .skip(1)
+                .filter(|&candidate| !world.observed(candidate)),
+        );
+    }
+
+    if candidates.is_empty() && room != world.exit {
+        candidates.push(world.exit);
+    }
+
+    candidates.sort_by_key(|room| room.0);
+    candidates.dedup();
+    candidates
+}
+
+fn path_rooms(world: &ContentionWorld, from: RoomId) -> Option<Vec<RoomId>> {
+    let path = world.path_to_exit(from)?;
+    let mut current = from;
+    let mut rooms = Vec::with_capacity(path.len());
+    for side in path {
+        current = destination(world, current, side);
+        rooms.push(current);
+    }
+    Some(rooms)
+}
+
+fn destination(world: &ContentionWorld, room: RoomId, side: Direction) -> RoomId {
+    world
+        .world
+        .door(world.world.partner(world.world.door_id(room, side)))
+        .room
+}
+
+fn anchor_score(
+    world: &ContentionWorld,
+    team: usize,
+    candidate: RoomId,
+    state: &DenierState,
+) -> (u32, u32, i32, i32, u32) {
+    let team_id = TeamId(team as u8);
+    let mut probe = world.clone();
+    if !state.anchor_order.contains(&candidate)
+        && state.anchor_order.len() >= MAX_ANCHORS
+        && let Some(&oldest) = state.anchor_order.first()
+    {
+        probe.remove_anchor(team_id, oldest);
+    }
+    probe.place_anchor(team_id, candidate);
+    probe.decohere();
+
+    let own_len = path_len(&probe, probe.members[team].room);
+    let mut predicted_rank = 1u32;
+    let mut rival_sum = 0u32;
+    let mut closest_rival = UNREACHABLE_PATH_LEN;
+    for (rival_index, member) in probe.members.iter().enumerate() {
+        if rival_index == team {
+            continue;
+        }
+        let rival_len = path_len(&probe, member.room);
+        if rival_len < own_len || (rival_len == own_len && rival_index < team) {
+            predicted_rank += 1;
+        }
+        rival_sum = rival_sum.saturating_add(rival_len);
+        closest_rival = closest_rival.min(rival_len);
+    }
+
+    (
+        predicted_rank,
+        own_len,
+        -(rival_sum as i32),
+        -(closest_rival as i32),
+        candidate.0,
+    )
+}
+
+fn path_len(world: &ContentionWorld, room: RoomId) -> u32 {
+    world
+        .path_to_exit(room)
+        .map(|path| path.len() as u32)
+        .unwrap_or(UNREACHABLE_PATH_LEN)
 }
 
 #[cfg(test)]
@@ -397,7 +531,7 @@ mod tests {
         RaceConfig {
             seed,
             teams: 4,
-            decohere_every: 3,
+            decohere_every: 1,
             tick_budget: 400,
             policies,
         }
@@ -440,7 +574,7 @@ mod tests {
             .map(|t| {
                 (
                     t,
-                    outcome.finish_ticks[t].unwrap_or(u32::MAX - t as u32 + 1000),
+                    outcome.finish_ticks[t].unwrap_or(u32::MAX - 1000 + t as u32),
                 )
             })
             .collect();
