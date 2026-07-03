@@ -4,6 +4,8 @@
 //! controller, and match-pump systems write them. Nothing here references rendering,
 //! UI, audio, or asset types.
 
+use std::collections::BTreeMap;
+
 use bevy::prelude::*;
 use observed_core::{RoomId, TeamId};
 use observed_match::teamplay::TeamplayMatch;
@@ -146,4 +148,138 @@ pub struct LobbyRuntime {
     /// matchmaking state stays live; the screen renders from it at spawn time.
     #[allow(dead_code)]
     pub world: SessionLabWorld,
+}
+
+/// How a rival trace was witnessed. `Seen` (a rival clump physically sharing your room
+/// or standing in a neighbour you can see through an open threshold) outranks `Heard`
+/// (sound bleed only). `AnchorSpotted` (a rival's anchor torch witnessed through a
+/// threshold or preview) is kept over a mere `Seen` at the same room when both would
+/// apply — an anchor is a durable claim, so once you've clocked it, a passer-through
+/// `Seen` at the same room should not downgrade what you know about that room.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SightingKind {
+    Heard,
+    Seen,
+    AnchorSpotted,
+}
+
+/// One recorded sighting of a rival team's trace in a room: what kind of evidence it
+/// was, and the `reroute_commits` value at the moment it was recorded (staleness is
+/// `game.reroute_commits - commits_seen`, computed by the reader, not stored).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Sighting {
+    pub kind: SightingKind,
+    pub commits_seen: u32,
+}
+
+/// The team-local **sighting ledger**: fog of war over the live rival truth. The tac-map
+/// projects rival pips from this, not from live team-room positions — a rival only
+/// appears on your map where and when *you* actually witnessed a trace of them, and that
+/// sighting goes stale (fades) rather than tracking them live. Keyed by rival team index
+/// (`0..TEAM_COUNT`, excluding the local team) then by the room the trace was witnessed
+/// in. Your own team and the facility structure stay live elsewhere; this ledger only
+/// demotes *rival* presence.
+#[derive(Resource, Default, Debug)]
+pub struct RivalSightings {
+    pub teams: BTreeMap<u8, BTreeMap<RoomId, Sighting>>,
+}
+
+impl RivalSightings {
+    /// Record a sighting of `team` at `room`, replacing any existing entry for that
+    /// room unless the existing entry is a higher-information kind recorded at least as
+    /// recently is retained (an `AnchorSpotted` is never downgraded to a same-room
+    /// `Seen`/`Heard`; a `Seen` is never downgraded to a `Heard`). A strictly newer
+    /// sighting of the *same or higher* kind always replaces the old one so staleness
+    /// resets.
+    pub fn record(&mut self, team: TeamId, room: RoomId, kind: SightingKind, commits: u32) {
+        let rooms = self.teams.entry(team.0).or_default();
+        match rooms.get(&room) {
+            Some(existing) if existing.kind > kind => {
+                // A higher-information kind already on record for this room stays,
+                // but only refresh its recency if this new (lower-kind) witnessing is
+                // at least as recent — otherwise stale data would look fresher.
+                if commits > existing.commits_seen {
+                    rooms.insert(
+                        room,
+                        Sighting {
+                            kind: existing.kind,
+                            commits_seen: commits,
+                        },
+                    );
+                }
+            }
+            _ => {
+                rooms.insert(
+                    room,
+                    Sighting {
+                        kind,
+                        commits_seen: commits,
+                    },
+                );
+            }
+        }
+    }
+
+    /// The last-witnessed sighting of `team` in `room`, if any.
+    pub fn get(&self, team: TeamId, room: RoomId) -> Option<Sighting> {
+        self.teams.get(&team.0)?.get(&room).copied()
+    }
+}
+
+#[cfg(test)]
+mod sighting_tests {
+    use super::*;
+
+    #[test]
+    fn a_newer_sighting_of_the_same_kind_replaces_the_older_one() {
+        let mut ledger = RivalSightings::default();
+        ledger.record(TeamId(1), RoomId(2), SightingKind::Seen, 0);
+        ledger.record(TeamId(1), RoomId(2), SightingKind::Seen, 3);
+        assert_eq!(
+            ledger.get(TeamId(1), RoomId(2)),
+            Some(Sighting {
+                kind: SightingKind::Seen,
+                commits_seen: 3
+            })
+        );
+    }
+
+    #[test]
+    fn seen_outranks_heard_and_is_not_downgraded() {
+        let mut ledger = RivalSightings::default();
+        ledger.record(TeamId(1), RoomId(2), SightingKind::Seen, 1);
+        ledger.record(TeamId(1), RoomId(2), SightingKind::Heard, 2);
+        assert_eq!(
+            ledger.get(TeamId(1), RoomId(2)).unwrap().kind,
+            SightingKind::Seen,
+            "a later Heard must not downgrade an existing Seen"
+        );
+    }
+
+    #[test]
+    fn anchor_spotted_outranks_seen_and_is_not_downgraded() {
+        let mut ledger = RivalSightings::default();
+        ledger.record(TeamId(1), RoomId(2), SightingKind::AnchorSpotted, 1);
+        ledger.record(TeamId(1), RoomId(2), SightingKind::Seen, 2);
+        assert_eq!(
+            ledger.get(TeamId(1), RoomId(2)).unwrap().kind,
+            SightingKind::AnchorSpotted,
+            "a later Seen must not downgrade an existing AnchorSpotted"
+        );
+    }
+
+    #[test]
+    fn a_different_room_does_not_affect_an_existing_sighting() {
+        let mut ledger = RivalSightings::default();
+        ledger.record(TeamId(1), RoomId(2), SightingKind::Seen, 1);
+        ledger.record(TeamId(1), RoomId(5), SightingKind::Heard, 2);
+        assert_eq!(
+            ledger.get(TeamId(1), RoomId(2)).unwrap().kind,
+            SightingKind::Seen
+        );
+        assert_eq!(
+            ledger.get(TeamId(1), RoomId(5)).unwrap().kind,
+            SightingKind::Heard
+        );
+    }
 }

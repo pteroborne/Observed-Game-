@@ -682,14 +682,28 @@ fn tab_toggles_the_tac_map_and_draws_the_live_schematic() {
             .world()
             .resource::<crate::sim::director::MatchDirector>();
         let keys = app.world().resource::<keystones::KeystoneState>();
+        let sightings = app.world().resource::<crate::sim::state::RivalSightings>();
         let tp = app.world().resource::<crate::sim::state::TeleportState>();
-        tacmap::build_map(&runtime.live.host_match().competitive, keys, tp.place)
+        let game = runtime.live.host_match();
+        tacmap::build_map(
+            &game.competitive,
+            keys,
+            sightings,
+            game.reroute_commits,
+            tp.place,
+        )
     };
+    assert!(
+        !expected_model.rivals.is_empty(),
+        "the rivals sharing the entrance at match start should already be witnessed"
+    );
+    // Each rival pip also draws a team-label text node (Phase 42c), so the dynamic
+    // element count carries one extra tagged node per pip beyond the box/outline itself.
     let expected_elements = expected_model.routes.len()
         + expected_model.rooms.len()
         + 1
         + expected_model.keystones.len()
-        + expected_model.rivals.len()
+        + expected_model.rivals.len() * 2
         + 1
         + 1;
     assert_eq!(
@@ -1175,6 +1189,40 @@ fn every_match_resource_is_removed_when_the_match_ends() {
     crate::screens::match_runtime::session::for_each_match_resource!(assert_removed);
 }
 
+/// Phase 42c (a): the sighting ledger's writer (`sim::sightings::record_rival_sightings`)
+/// turns a rival clump moving into a witnessed neighbour into a recorded `Seen` sighting
+/// — the tac-map's fog-of-war input, not the live facility position.
+#[test]
+fn placing_a_rival_in_a_neighbour_and_rebuilding_records_a_seen_sighting() {
+    use crate::sim::director::MatchDirector;
+    use crate::sim::state::{RivalSightings, SightingKind};
+    use observed_core::TeamId;
+
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    app.update(); // build the start room
+
+    let neighbour = {
+        let rt = app.world().resource::<MatchDirector>();
+        let game = rt.live.host_match();
+        let conns = crate::sim::nav::connections_for(game, game.local_room());
+        *conns.first().expect("the start room has a neighbour")
+    };
+    {
+        let mut rt = app.world_mut().resource_mut::<MatchDirector>();
+        let base = rt.live.host.match_state.competitive.teams[1].member_base;
+        rt.live.host.match_state.competitive.structure.graph.players[base] = neighbour;
+    }
+    app.update();
+
+    let sightings = app.world().resource::<RivalSightings>();
+    let sighting = sightings.get(TeamId(1), neighbour);
+    assert!(
+        sighting.is_some_and(|s| s.kind == SightingKind::Seen),
+        "a rival standing in a witnessed neighbour must be recorded as Seen"
+    );
+}
+
 /// Phase 38 (contested observation): a rival team standing in the room beyond a
 /// threshold pins that connection for everyone — and the doorframe light takes the
 /// rival team's colour so the player can read whose grip holds the door.
@@ -1219,6 +1267,104 @@ fn a_rival_in_the_neighbouring_room_tints_the_threshold_light_with_its_colour() 
     assert!(
         found,
         "a threshold into a rival-occupied room carries that team's frame light"
+    );
+}
+
+/// Phase 42c (c): a rival team's presence appearing in a neighbouring room plays
+/// exactly one `RivalBleed` cue (not one per frame while it stays there), and it is
+/// distinguishable from the player's own `Footstep` cue.
+#[test]
+fn a_rival_appearing_in_a_neighbour_bleeds_exactly_one_sound_cue() {
+    use crate::sim::director::MatchDirector;
+    use crate::sim::state::{RivalSightings, SightingKind};
+    use crate::view::components::MatchAudioCue;
+    use observed_core::TeamId;
+
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    app.update(); // build the start room
+
+    let neighbour = {
+        let rt = app.world().resource::<MatchDirector>();
+        let game = rt.live.host_match();
+        let conns = crate::sim::nav::connections_for(game, game.local_room());
+        *conns.first().expect("the start room has a neighbour")
+    };
+    {
+        let mut rt = app.world_mut().resource_mut::<MatchDirector>();
+        let base = rt.live.host.match_state.competitive.teams[1].member_base;
+        rt.live.host.match_state.competitive.structure.graph.players[base] = neighbour;
+    }
+    // Several frames with the rival unmoved: still exactly one bleed cue total.
+    app.update();
+    app.update();
+    app.update();
+
+    assert_eq!(
+        count_audio_cue(&mut app, MatchAudioCue::RivalBleed),
+        1,
+        "a rival holding steady in a witnessed neighbour bleeds sound exactly once"
+    );
+    assert_eq!(
+        count_audio_cue(&mut app, MatchAudioCue::Footstep),
+        0,
+        "a stationary player takes no footsteps of their own here"
+    );
+
+    // The neighbour is *also* a `rival_signals` presence hit, so the witnessing writer
+    // (`record_rival_sightings`) records `Seen` for it in the same frame the bleed
+    // system records `Heard` — and `Seen` outranks `Heard`, so the ledger correctly
+    // keeps the higher-information kind. This still proves the bleed system only ever
+    // *attempts* a `Heard` write (never a `Seen`/`AnchorSpotted` one): see the sibling
+    // sighting-ledger unit tests for `Heard` sticking when nothing outranks it.
+    let sightings = app.world().resource::<RivalSightings>();
+    assert_eq!(
+        sightings.get(TeamId(1), neighbour).map(|s| s.kind),
+        Some(SightingKind::Seen),
+        "a witnessed presence outranks the bleed system's Heard write for the same room"
+    );
+}
+
+/// Phase 42c (d): a doorway preview into a room carrying a rival anchor also renders
+/// that rival's anchor torch prop — "preview == arrival honesty" — not just once you
+/// physically cross into the room.
+#[test]
+fn a_doorway_preview_into_an_anchored_room_renders_the_rival_anchor_torch() {
+    use crate::sim::director::MatchDirector;
+    use crate::sim::state::TeleportState;
+
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    app.update(); // build the start room
+
+    let neighbour = {
+        let rt = app.world().resource::<MatchDirector>();
+        let game = rt.live.host_match();
+        let conns = crate::sim::nav::connections_for(game, game.local_room());
+        *conns.first().expect("the start room has a neighbour")
+    };
+    {
+        let mut rt = app.world_mut().resource_mut::<MatchDirector>();
+        rt.live
+            .host
+            .match_state
+            .competitive
+            .place_team_anchor(observed_core::TeamId(1), neighbour);
+    }
+    app.world_mut().resource_mut::<TeleportState>().rendered = None;
+    app.update();
+
+    let found = count::<crate::view::components::PassagePreview>(&mut app) > 0 && {
+        let world = app.world_mut();
+        let mut query = world.query::<&Name>();
+        query
+            .iter(world)
+            .any(|name| name.as_str() == "Rival anchor torch")
+    };
+    assert!(
+        found,
+        "a previewed room carrying a rival anchor must render its anchor torch prop \
+         ahead of arrival"
     );
 }
 

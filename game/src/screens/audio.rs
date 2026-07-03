@@ -1,18 +1,28 @@
 //! Match audio: footstep cadence from the controller's stride, a door thunk on each
-//! teleport between places, and an escape sting — each played as a drop-in cue if its
-//! sound was provided, silent otherwise.
+//! teleport between places, an escape sting, and rival **sound bleed** — each played as
+//! a drop-in cue if its sound was provided, silent otherwise.
 
 use crate::layout::PLACE_TILE;
 use bevy::audio::Volume;
 use bevy::prelude::*;
+use observed_core::RoomId;
 
 use crate::GameState;
 use crate::sim::director::MatchDirector;
-use crate::sim::state::{MatchPaused, TeleportState};
+use crate::sim::nav::rival_signals;
+use crate::sim::state::{MatchPaused, RivalSightings, SightingKind, TeleportState};
+use crate::teleport::Place;
 use crate::view::assets::MatchAssets;
-use crate::view::components::{MatchAudioCue, MatchAudioState};
+use crate::view::components::{MatchAudioCue, MatchAudioState, RivalBleedState};
 
 const FOOTSTEP_STRIDE: f32 = 1.8;
+/// Sound-bleed volume clamp (Design ruling): attenuated by distance to the threshold's
+/// gap centre, but never silent (a rival is always at least faintly audible through the
+/// wall) nor as loud as a footstep in the same room.
+const BLEED_VOLUME_MIN: f32 = 0.15;
+const BLEED_VOLUME_MAX: f32 = 0.45;
+/// Distance (world units) at which attenuation bottoms out at [`BLEED_VOLUME_MIN`].
+const BLEED_ATTENUATION_RANGE: f32 = 12.0;
 
 pub(crate) fn play_one_shot(
     commands: &mut Commands,
@@ -97,4 +107,74 @@ pub(crate) fn sync_match_audio(
         );
         audio_state.escaped_count = escaped;
     }
+}
+
+/// Rival **sound bleed** (Phase 42c): when a rival team's presence first appears (or
+/// changes room) among the current place's `rival_signals` since the last frame, play
+/// the same footstep cue at reduced, distance-attenuated volume and record a `Heard`
+/// sighting. Diegetic, procedural (no new assets — reuses `assets.footstep`), and
+/// presentation-only: this is the sighting ledger's *other* writer, but it only ever
+/// records [`SightingKind::Heard`] through the same [`RivalSightings::record`] rule the
+/// witnessing system uses, so there remains exactly one *rule* even though two systems
+/// call it for two different evidence sources.
+pub(crate) fn bleed_rival_sound(
+    mut commands: Commands,
+    runtime: Res<MatchDirector>,
+    tp: Res<TeleportState>,
+    paused: Res<MatchPaused>,
+    assets: Res<MatchAssets>,
+    mut sightings: ResMut<RivalSightings>,
+    mut bleed: ResMut<RivalBleedState>,
+) {
+    if paused.0 {
+        return;
+    }
+    let game = runtime.live.host_match();
+    let commits = game.reroute_commits;
+    let local_team = crate::flow::LOCAL_TEAM.0 as usize;
+    let signal_room = match tp.place {
+        Place::Room(room) => room,
+        Place::Hallway { from, .. } => from,
+    };
+    let body = Vec2::new(tp.body.position.x, tp.body.position.z);
+
+    let present: Vec<(usize, RoomId)> = rival_signals(game, local_team, signal_room)
+        .into_iter()
+        .filter_map(|signal| {
+            signal
+                .presence
+                .map(|team| (team.0 as usize, signal.neighbor))
+        })
+        .collect();
+
+    for &(team_index, room) in &present {
+        let first_appearance_or_room_change = !bleed
+            .last_heard
+            .iter()
+            .any(|&(t, r)| t == team_index && r == room);
+        if first_appearance_or_room_change {
+            let gap_center = tp
+                .geom
+                .gaps
+                .iter()
+                .find(|gap| gap.target == room)
+                .map(|gap| gap.center)
+                .unwrap_or(body);
+            let distance = body.distance(gap_center);
+            let t = (distance / BLEED_ATTENUATION_RANGE).clamp(0.0, 1.0);
+            let volume = BLEED_VOLUME_MAX - t * (BLEED_VOLUME_MAX - BLEED_VOLUME_MIN);
+            if let Some(sound) = &assets.footstep {
+                commands.spawn((
+                    MatchAudioCue::RivalBleed,
+                    DespawnOnExit(GameState::Match),
+                    AudioPlayer(sound.clone()),
+                    PlaybackSettings::DESPAWN.with_volume(Volume::Linear(volume)),
+                    Name::new("Rival sound bleed"),
+                ));
+            }
+            let team_id = game.competitive.teams[team_index].id;
+            sightings.record(team_id, room, SightingKind::Heard, commits);
+        }
+    }
+    bleed.last_heard = present;
 }

@@ -13,7 +13,7 @@ use crate::flow::LOCAL_TEAM;
 use crate::items::{ItemKind, ItemsState};
 use crate::keystones::KeystoneState;
 use crate::sim::director::MatchDirector;
-use crate::sim::state::{MatchPaused, SpectatorBot, TeleportState};
+use crate::sim::state::{MatchPaused, RivalSightings, SightingKind, SpectatorBot, TeleportState};
 use crate::view::components::{
     MatchHud, PausePanel, TacMapElement, TacMapPanel, TacMapState, TeleportAnimation,
     TeleportOverlay,
@@ -99,6 +99,7 @@ pub(crate) fn draw_tac_map(
     spectator_bot: Option<Res<SpectatorBot>>,
     tp: Res<TeleportState>,
     keys: Res<KeystoneState>,
+    sightings: Res<RivalSightings>,
     panel: Query<Entity, With<TacMapPanel>>,
     existing: Query<Entity, With<TacMapElement>>,
     mut commands: Commands,
@@ -113,7 +114,14 @@ pub(crate) fn draw_tac_map(
     let Ok(panel) = panel.single() else {
         return;
     };
-    let model = tacmap::build_map(&director.live.host_match().competitive, &keys, tp.place);
+    let game = director.live.host_match();
+    let model = tacmap::build_map(
+        &game.competitive,
+        &keys,
+        &sightings,
+        game.reroute_commits,
+        tp.place,
+    );
     let bounds = tac_bounds(&model.rooms);
     let room_centers: Vec<(RoomId, Vec2)> = model
         .rooms
@@ -215,14 +223,75 @@ pub(crate) fn draw_tac_map(
                 ),
             ));
         }
-        // Rival pips, fanned so several in one room stay distinct.
-        for (slot, (_, room)) in model.rivals.iter().enumerate() {
+        // Rival pips (Phase 42c: fog of war). Each pip is a *sighting*, not live truth:
+        // its alpha fades with staleness (`RivalPip::alpha`) and a hollow outline marks
+        // `Heard`-only evidence (a sound-bleed trace, not an eyes-on witnessing) versus a
+        // filled box for `Seen`/`AnchorSpotted`. Fanned so several in one room stay
+        // distinct.
+        for (slot, pip) in model.rivals.iter().enumerate() {
             let off = Vec2::new((slot as f32 - (rival_count - 1.0) * 0.5) * 9.0, 8.0);
+            let center = center_for(pip.room) + off;
+            let alpha = pip.alpha();
+            if pip.kind == SightingKind::Heard {
+                p.spawn((
+                    TacMapElement,
+                    DespawnOnExit(GameState::Match),
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: px(center.x - 6.5),
+                        top: px(center.y - 6.5),
+                        width: px(13.0),
+                        height: px(13.0),
+                        border: UiRect::all(px(2)),
+                        ..default()
+                    },
+                    BorderColor::all(rival_col.with_alpha(alpha)),
+                    crate::evidence::DiagnosticTacMapVisual::one(
+                        crate::evidence::DiagnosticTacMapRole::Rival,
+                        Some(pip.room),
+                    ),
+                ));
+            } else {
+                p.spawn((
+                    tac_box(center, 13.0, 13.0, rival_col.with_alpha(alpha)),
+                    crate::evidence::DiagnosticTacMapVisual::one(
+                        crate::evidence::DiagnosticTacMapRole::Rival,
+                        Some(pip.room),
+                    ),
+                ));
+            }
+        }
+        // Team labels for witnessed rivals: plain "Team N" in normal play, with the
+        // personality label appended ONLY in spectator mode (personalities are a
+        // teamplay/spectator concept — the live race never invents them).
+        for pip in &model.rivals {
+            let center = center_for(pip.room) + Vec2::new(0.0, 20.0);
+            let label = match spectator_bot.as_ref() {
+                Some(bot) => match bot.teamplay.policy(observed_core::TeamId(pip.team as u8)) {
+                    Some(policy) => format!("Team {} ({})", pip.team + 1, policy.label()),
+                    None => format!("Team {}", pip.team + 1),
+                },
+                None => format!("Team {}", pip.team + 1),
+            };
             p.spawn((
-                tac_box(center_for(*room) + off, 13.0, 13.0, rival_col),
+                TacMapElement,
+                DespawnOnExit(GameState::Match),
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: px(center.x - 30.0),
+                    top: px(center.y - 6.0),
+                    width: px(60.0),
+                    ..default()
+                },
+                Text::new(label),
+                TextFont {
+                    font_size: 9.0,
+                    ..default()
+                },
+                TextColor(rival_col.with_alpha(pip.alpha())),
                 crate::evidence::DiagnosticTacMapVisual::one(
                     crate::evidence::DiagnosticTacMapRole::Rival,
-                    Some(*room),
+                    Some(pip.room),
                 ),
             ));
         }
@@ -608,6 +677,11 @@ pub(crate) fn spawn_match_hud(commands: &mut Commands) {
                     text("klaxon countdown", 13.0, style::klaxon().base_color),
                     text(
                         "rival teams",
+                        13.0,
+                        style::marker(MarkerRole::Rival).base_color
+                    ),
+                    text(
+                        "rival sighting — fades as it ages",
                         13.0,
                         style::marker(MarkerRole::Rival).base_color
                     ),

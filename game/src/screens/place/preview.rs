@@ -7,6 +7,7 @@ use std::f32::consts::PI;
 use super::factory::room_floor_material;
 use super::lighting::{spawn_place_lighting, spawn_surface_detail};
 use super::mesh::{spawn_polygon_shell, spawn_polygon_walls};
+use super::shell;
 use crate::GameState;
 use crate::camera;
 use crate::hallway::{self, HallwayFlavor};
@@ -325,5 +326,29 @@ pub(crate) fn spawn_room_preview(
             parent.mul_transform(Transform::from_xyz(lane, 0.82, 0.0)),
             Name::new("Preview rival"),
         ));
+    }
+
+    // Preview == arrival honesty (Phase 42c ruling): if the previewed room carries a
+    // rival anchor, its torch prop renders here too, not just once you actually cross
+    // into the room. Presence avatars stay same-room-only (above); the anchor is a
+    // durable claim so it is honest to show ahead of arrival. The lowest team index
+    // wins ties, mirroring `sim::nav::rival_signals`'s anchor resolution.
+    let local_team = crate::flow::LOCAL_TEAM.0 as usize;
+    if let Some(anchor_team) = game
+        .competitive
+        .structure
+        .anchors
+        .iter()
+        .filter(|anchor| anchor.room == dest_room && anchor.team.0 as usize != local_team)
+        .map(|anchor| anchor.team)
+        .min_by_key(|team| team.0)
+    {
+        let root = parent.mul_transform(
+            Transform::from_xyz(src.width * 0.5 + 0.3, 0.55, 0.6)
+                .with_scale(Vec3::new(0.18, 1.1, 0.18)),
+        );
+        let torch =
+            shell::spawn_rival_anchor_torch_at(commands, assets, root, anchor_team.0 as usize);
+        commands.entity(torch).insert(PassagePreview);
     }
 }

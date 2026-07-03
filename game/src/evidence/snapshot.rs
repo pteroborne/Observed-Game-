@@ -27,7 +27,7 @@ use crate::guardian::Guardian;
 use crate::items::{ItemKind, ItemsState};
 use crate::keystones::KeystoneState;
 use crate::sim::director::MatchDirector;
-use crate::sim::state::TeleportState;
+use crate::sim::state::{RivalSightings, TeleportState};
 use crate::tacmap;
 use crate::teleport::{self, DoorGap, GapKind, Place};
 use crate::view::components::{DroppedItemVisual, KeystoneItem, RivalAvatar, TacMapElement};
@@ -74,6 +74,7 @@ pub(super) fn collect_snapshot(
     keys: &KeystoneState,
     items: &ItemsState,
     guardian: &Guardian,
+    sightings: &RivalSightings,
     threshold_visuals: &Query<ThresholdVisualQueryData>,
     lights: &Query<LightQueryData>,
     materials_query: &Query<MaterialDiagnosticQueryData>,
@@ -93,7 +94,7 @@ pub(super) fn collect_snapshot(
     snapshot.thresholds = collect_thresholds(runtime, tp, keys, items, threshold_visuals);
     snapshot.lights = collect_lights(lights);
     snapshot.materials = collect_materials(materials_query, materials);
-    snapshot.tac_map = Some(collect_tac_map(runtime, tp, keys, tac_visuals));
+    snapshot.tac_map = Some(collect_tac_map(runtime, tp, keys, sightings, tac_visuals));
     snapshot.monitors = collect_monitors(
         items,
         guardian,
@@ -540,13 +541,23 @@ fn collect_tac_map(
     runtime: &MatchDirector,
     tp: &TeleportState,
     keys: &KeystoneState,
+    sightings: &RivalSightings,
     visuals: &Query<&DiagnosticTacMapVisual, With<TacMapElement>>,
 ) -> TacMapSnapshot {
-    let model = tacmap::build_map(&runtime.live.host_match().competitive, keys, tp.place);
+    let game = runtime.live.host_match();
+    let model = tacmap::build_map(
+        &game.competitive,
+        keys,
+        sightings,
+        game.reroute_commits,
+        tp.place,
+    );
     let expected_routes = tacmap::spine().len().saturating_sub(1);
     let expected_rooms = 9;
     let expected_keystones = model.keystones.len();
-    let expected_rivals = model.rivals.len();
+    // Each rival pip also draws a team-label text node tagged with the same `Rival`
+    // role (Phase 42c), so both the diagnostic count and the element total double it.
+    let expected_rivals = model.rivals.len() * 2;
     let expected_elements =
         expected_routes + expected_rooms + 1 + expected_keystones + expected_rivals + 1;
 

@@ -29,7 +29,7 @@ use crate::keystones::KeystoneState;
 use crate::screens::place::{GuardianConsole, TetherCameraMonitor};
 use crate::screens::{self};
 use crate::sim::director::MatchDirector;
-use crate::sim::state::TeleportState;
+use crate::sim::state::{RivalSightings, TeleportState};
 use crate::teleport::{self, Place};
 use crate::view::components::{
     DroppedItemVisual, GameCam, KeystoneItem, RivalAvatar, TacMapElement, TacMapPanel, TacMapState,
@@ -191,6 +191,7 @@ struct VisualAuditParams<'w, 's> {
     keys: Option<Res<'w, KeystoneState>>,
     items: Option<ResMut<'w, ItemsState>>,
     guardian: Option<ResMut<'w, Guardian>>,
+    sightings: Option<Res<'w, RivalSightings>>,
     camera: Query<'w, 's, &'static mut Transform, With<GameCam>>,
     fog: Query<'w, 's, &'static mut DistanceFog, With<GameCam>>,
     tac_state: Option<ResMut<'w, TacMapState>>,
@@ -437,12 +438,20 @@ fn visual_audit_progress(
             let Some(scenario) = audit.current() else {
                 return;
             };
-            if let (Some(runtime), Some(tp), Some(keys), Some(items), Some(guardian)) = (
+            if let (
+                Some(runtime),
+                Some(tp),
+                Some(keys),
+                Some(items),
+                Some(guardian),
+                Some(sightings),
+            ) = (
                 params.runtime.as_ref(),
                 params.tp.as_ref(),
                 params.keys.as_ref(),
                 params.items.as_ref(),
                 params.guardian.as_ref(),
+                params.sightings.as_ref(),
             ) {
                 if scenario == AuditScenario::FootprintAtlas {
                     relax_debug_fog(&mut params.fog);
@@ -457,6 +466,7 @@ fn visual_audit_progress(
                     keys,
                     items,
                     guardian,
+                    sightings,
                     &params.threshold_visuals,
                     &params.lights,
                     &params.materials_query,

@@ -336,6 +336,25 @@ fn spawn_rival_anchor_torch(
 ) {
     let along = Vec2::new(-gap.normal.y, gap.normal.x);
     let pos = gap.center + along * (gap.width * 0.5 + 0.3);
+    let root =
+        Transform::from_xyz(pos.x, y_offset + 0.55, pos.y).with_scale(Vec3::new(0.18, 1.1, 0.18));
+    spawn_rival_anchor_torch_at(commands, assets, root, team);
+}
+
+/// The rival-anchor-torch shape (Phase 42, extended Phase 42c for doorway previews): a
+/// small emissive box plus a floor halo and point light, team-coloured, spawned at an
+/// already-resolved root `Transform` — a world-frame threshold placement (the caller
+/// above) or a place-preview's local frame (`super::preview::spawn_preview_anchor_torch`,
+/// composed under the preview's parent transform the same way `preview::spawn_room_preview`
+/// composes its rival avatars). Also tagged [`super::super::view::components::PassagePreview`]-adjacent
+/// callers should add that marker themselves so it despawns/queries like other preview
+/// geometry; this helper only owns the shape.
+pub(crate) fn spawn_rival_anchor_torch_at(
+    commands: &mut Commands,
+    assets: &MatchAssets,
+    root: Transform,
+    team: usize,
+) -> Entity {
     let color = team_color(team);
     let material = assets
         .team_materials
@@ -348,8 +367,7 @@ fn spawn_rival_anchor_torch(
             DespawnOnExit(GameState::Match),
             Mesh3d(assets.placeholder_mesh.clone()),
             MeshMaterial3d(material.clone()),
-            Transform::from_xyz(pos.x, y_offset + 0.55, pos.y)
-                .with_scale(Vec3::new(0.18, 1.1, 0.18)),
+            root,
             Name::new("Rival anchor torch"),
         ))
         .with_children(|torch| {
@@ -369,7 +387,8 @@ fn spawn_rival_anchor_torch(
                 },
                 Transform::from_xyz(0.0, 0.45, 0.0),
             ));
-        });
+        })
+        .id()
 }
 
 /// A neon doorway frame (two posts + a lintel) at a gap, built from primitives and

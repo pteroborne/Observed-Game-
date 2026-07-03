@@ -99,6 +99,12 @@ pub(crate) enum MatchAudioCue {
     Door,
     Escape,
     Reroute,
+    /// A rival team's footsteps bleeding through from a neighbouring room (Phase 42c
+    /// sound bleed): reuses the same `footstep.ogg` drop-in slot as the player's own
+    /// footstep cue, at reduced/attenuated volume, but tagged with its own cue variant
+    /// so audits and tests can tell "I heard a rival" from "I took a step" without
+    /// re-deriving it from volume/name heuristics.
+    RivalBleed,
 }
 
 /// First-person feedback for graph **decoherence** (a committed reroute): when the
@@ -122,6 +128,17 @@ pub struct MatchAudioState {
     pub(crate) stride_distance: f32,
     pub(crate) last_place: Place,
     pub(crate) escaped_count: usize,
+}
+
+/// Tracks which rival team/room pairing the sound-bleed system last cued, so a rival
+/// standing in the same neighbouring room for many frames plays exactly one cue on
+/// *first* appearance (or on changing room), not one per frame. Presentation-only
+/// bookkeeping — reset every match, never read by the deterministic brain.
+#[derive(Resource, Default, Debug)]
+pub struct RivalBleedState {
+    /// `(rival team index, last-heard room)` for every rival team currently bleeding
+    /// sound into the player's current place.
+    pub(crate) last_heard: Vec<(usize, RoomId)>,
 }
 
 /// Whether the tac-map overlay is currently shown (toggled with Tab).

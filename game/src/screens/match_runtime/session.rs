@@ -18,11 +18,14 @@ use crate::layout::WALL_HEIGHT;
 use crate::sim::director::MatchDirector;
 use crate::sim::nav::nav_from_brain;
 use crate::sim::state::{
-    ItemIntent, LastTeleportPad, MatchIntent, MatchPaused, SpectatorBot, TeleportState,
+    ItemIntent, LastTeleportPad, MatchIntent, MatchPaused, RivalSightings, SpectatorBot,
+    TeleportState,
 };
 use crate::teleport::Place;
 use crate::view::assets::{MatchAssets, all_planned_assets_present};
-use crate::view::components::{DecohereFx, MatchAudioState, TacMapState, TeleportAnimation};
+use crate::view::components::{
+    DecohereFx, MatchAudioState, RivalBleedState, TacMapState, TeleportAnimation,
+};
 
 // --- match (first-person 3D, networked) ------------------------------------
 pub(crate) fn setup_match(
@@ -74,6 +77,7 @@ pub(crate) fn setup_match(
         last_place: start_place,
         escaped_count: initial_escaped,
     });
+    commands.insert_resource(RivalBleedState::default());
     commands.insert_resource(TeleportState {
         place: start_place,
         body: FpsBody::spawned(spawn, 0.0),
@@ -89,6 +93,7 @@ pub(crate) fn setup_match(
     });
     commands.insert_resource(keys);
     commands.insert_resource(items);
+    commands.insert_resource(RivalSightings::default());
     let guardian_room = map_spec
         .role_room(RoomRole::GuardianControl)
         .unwrap_or(RoomId(8));
@@ -125,9 +130,11 @@ macro_rules! for_each_match_resource {
         $apply!(crate::view::assets::MatchAssets);
         $apply!(crate::view::components::TacMapState);
         $apply!(crate::view::components::MatchAudioState);
+        $apply!(crate::view::components::RivalBleedState);
         $apply!(crate::view::components::DecohereFx);
         $apply!(crate::view::components::TeleportAnimation);
         $apply!(crate::keystones::KeystoneState);
+        $apply!(crate::sim::state::RivalSightings);
         $apply!(crate::items::ItemsState);
         $apply!(crate::guardian::Guardian);
         $apply!(crate::guardian::ActionLog);
