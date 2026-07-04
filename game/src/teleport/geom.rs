@@ -514,9 +514,16 @@ pub fn hallway_geom_with_slots(
             .map(|platform| super::DeckSeg {
                 center: platform.center,
                 half: platform.half,
+                bottom_y: platform.bottom_y,
                 top_y: platform.top_y,
             })
             .collect();
+        decks.push(super::DeckSeg {
+            center: course.upper_landing.center,
+            half: course.upper_landing.half,
+            bottom_y: course.upper_landing.bottom_y,
+            top_y: course.upper_landing.top_y,
+        });
         let stair_steps = 5;
         let stair_rise = gantry::UPPER_DECK_Y / stair_steps as f32;
         let stair_tread_half_z = 0.15;
@@ -528,6 +535,7 @@ pub fn hallway_geom_with_slots(
             stair.push(super::DeckSeg {
                 center: Vec2::new(0.0, (tread_min_z + tread_max_z) * 0.5),
                 half: Vec2::new(course.platforms[0].half.x, stair_tread_half_z),
+                bottom_y: 0.0,
                 top_y: stair_rise * (step + 1) as f32,
             });
             tread_max_z = tread_min_z;

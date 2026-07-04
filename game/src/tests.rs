@@ -1556,20 +1556,19 @@ fn a_gantry_hallway_renders_readable_decks_and_no_deck_leaks_into_the_wall_path(
         "expected >= 1 Understory landing marker, got {understory_count}"
     );
 
-    // No deck solid should have leaked into the generic "Place wall" render path: a
-    // deck's collision box only ever spans up to its (short) top_y, while every real
-    // wall spans the full WALL_HEIGHT, so a wall-named entity with a short y-scale
-    // means `spawn_hallway_shell`'s deck-solid exclusion missed a match.
+    // No deck solid should have leaked into the generic "Place wall" render path.
+    // The gantry now has legitimate shorter wall fragments around raised/lower
+    // doorway cuts, so this only flags slab/stair-scale wall meshes.
     let leaked_wall = {
         let world = app.world_mut();
         let mut query = world.query::<(&Name, &Transform)>();
         query
             .iter(world)
-            .any(|(name, transform)| name.as_str() == "Place wall" && transform.scale.y < 3.0)
+            .any(|(name, transform)| name.as_str() == "Place wall" && transform.scale.y < 0.6)
     };
     assert!(
         !leaked_wall,
-        "no 'Place wall' entity should have a deck-scale (< 3.0) y-extent"
+        "no 'Place wall' entity should have a slab/stair-scale (< 0.6) y-extent"
     );
 }
 

@@ -167,12 +167,9 @@ pub(crate) fn drive_bot_pov_capture(
         return;
     }
 
-    if let Some(gap) = bot::target_gap_for_place(
-        tp.place,
-        &tp.geom,
-        Vec2::new(tp.body.position.x, tp.body.position.z),
-    ) {
-        let here = Vec2::new(tp.body.position.x, tp.body.position.z);
+    let here = Vec2::new(tp.body.position.x, tp.body.position.z);
+    let local_feet_y = bot::local_feet_y(tp.body.position.y - tp.config.half_height, tp.place);
+    if let Some(gap) = bot::target_gap_for_place(tp.place, &tp.geom, here, local_feet_y) {
         let rel = here - gap.center;
         let tangent = Vec2::new(-gap.normal.y, gap.normal.x);
         let at_aperture =
@@ -204,11 +201,7 @@ pub(crate) fn drive_bot_pov_capture(
         || request.waypoint >= request.route.len()
         || request.route.is_empty()
     {
-        let Some(gap) = bot::target_gap_for_place(
-            tp.place,
-            &tp.geom,
-            Vec2::new(tp.body.position.x, tp.body.position.z),
-        ) else {
+        let Some(gap) = bot::target_gap_for_place(tp.place, &tp.geom, here, local_feet_y) else {
             info!("BOT_NAV: No target gap available in place {:?}", tp.place);
             request.finished = runtime.live.host_match().local_target().is_none();
             intent.0 = PlayerIntent::default();

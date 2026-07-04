@@ -201,6 +201,18 @@ pub fn wall_spans(half_len: f32, mut gaps: Vec<(f32, f32)>) -> Vec<(f32, f32)> {
     out
 }
 
+/// Structural height for a box place. Raised thresholds need a full doorway-height
+/// opening above their local floor, so a split-level hall raises the shell by the
+/// tallest threshold floor.
+pub fn structural_height(geom: &PlaceGeom, wall_height: f32) -> f32 {
+    wall_height
+        + geom
+            .gaps
+            .iter()
+            .map(|gap| gap.floor_y)
+            .fold(0.0_f32, f32::max)
+}
+
 /// Build the collision world for a place: perimeter walls (as the proven controller's
 /// AABB solids) around the footprint, each split into segments around its doorway
 /// gaps so the body can walk out through the openings, plus any interior (maze) walls.
@@ -218,14 +230,14 @@ pub fn place_arena(geom: &PlaceGeom, floor_y: f32, wall_height: f32) -> FpsArena
         };
     }
 
-    let h = wall_height * 0.5;
-    let cy = floor_y + h;
+    let total_height = structural_height(geom, wall_height);
     let mut solids = solids;
-    let mut segment = |cx: f32, cz: f32, hx: f32, hz: f32| {
-        if hx > 0.01 && hz > 0.01 {
+    let mut segment = |cx: f32, cz: f32, hx: f32, hz: f32, y_min: f32, y_max: f32| {
+        let height = y_max - y_min;
+        if hx > 0.01 && hz > 0.01 && height > 0.01 {
             solids.push(Aabb3::from_center_half(
-                Vec3::new(cx, cy, cz),
-                Vec3::new(hx, h, hz),
+                Vec3::new(cx, floor_y + y_min + height * 0.5, cz),
+                Vec3::new(hx, height * 0.5, hz),
             ));
         }
     };
@@ -234,47 +246,93 @@ pub fn place_arena(geom: &PlaceGeom, floor_y: f32, wall_height: f32) -> FpsArena
     // gaps (a Side door stays a solid wall, so the body can't walk out into the void).
     for sign in [-1.0_f32, 1.0] {
         let x = sign * half.x;
-        let gaps: Vec<(f32, f32)> = geom
+        let side_gaps: Vec<&DoorGap> = geom
             .gaps
             .iter()
             .filter(|g| {
                 g.kind.is_passage() && (g.normal.x - sign).abs() < 0.5 && g.normal.y.abs() < 0.5
             })
+            .collect();
+        let gaps = side_gaps
+            .iter()
             .map(|g| (g.center.y, g.width * 0.5))
             .collect();
         for (cz, hz) in wall_spans(half.y, gaps) {
-            segment(x, cz, T, hz);
+            segment(x, cz, T, hz, 0.0, total_height);
+        }
+        for gap in side_gaps {
+            let lo = (gap.center.y - gap.width * 0.5).max(-half.y);
+            let hi = (gap.center.y + gap.width * 0.5).min(half.y);
+            let cz = (lo + hi) * 0.5;
+            let hz = (hi - lo) * 0.5;
+            if gap.floor_y > 0.0 {
+                segment(x, cz, T, hz, 0.0, gap.floor_y);
+            }
+            let aperture_top = gap.floor_y + wall_height;
+            if aperture_top < total_height {
+                segment(x, cz, T, hz, aperture_top, total_height);
+            }
         }
     }
     // North (âˆ’Z) / South (+Z) walls run along X, split around their X-centred passage gaps.
     for sign in [-1.0_f32, 1.0] {
         let z = sign * half.y;
-        let gaps: Vec<(f32, f32)> = geom
+        let side_gaps: Vec<&DoorGap> = geom
             .gaps
             .iter()
             .filter(|g| {
                 g.kind.is_passage() && (g.normal.y - sign).abs() < 0.5 && g.normal.x.abs() < 0.5
             })
+            .collect();
+        let gaps = side_gaps
+            .iter()
             .map(|g| (g.center.x, g.width * 0.5))
             .collect();
         for (cx, hx) in wall_spans(half.x, gaps) {
-            segment(cx, z, hx, T);
+            segment(cx, z, hx, T, 0.0, total_height);
+        }
+        for gap in side_gaps {
+            let lo = (gap.center.x - gap.width * 0.5).max(-half.x);
+            let hi = (gap.center.x + gap.width * 0.5).min(half.x);
+            let cx = (lo + hi) * 0.5;
+            let hx = (hi - lo) * 0.5;
+            if gap.floor_y > 0.0 {
+                segment(cx, z, hx, T, 0.0, gap.floor_y);
+            }
+            let aperture_top = gap.floor_y + wall_height;
+            if aperture_top < total_height {
+                segment(cx, z, hx, T, aperture_top, total_height);
+            }
         }
     }
 
     // Interior walls (a labyrinth's maze walls), straight from the geometry. The
     // renderer spawns one wall cube per arena solid, so these render for free.
     for seg in &geom.interior {
-        segment(seg.center.x, seg.center.y, seg.half.x, seg.half.y);
+        segment(
+            seg.center.x,
+            seg.center.y,
+            seg.half.x,
+            seg.half.y,
+            0.0,
+            wall_height,
+        );
     }
 
-    // Walkable raised decks (the gantry's platforms + mount stair): solid from the
-    // place's floor up to `top_y`, so the proven controller lands on their Aabb3 tops
-    // exactly as it does on the pure gantry model's own platform solids.
+    // Walkable raised decks. Platforms are thin upper slabs with lower-floor clearance;
+    // stair treads remain floor-to-top blocks so the controller can step onto them.
     for deck in &geom.decks {
+        let height = deck.top_y - deck.bottom_y;
+        if height <= 0.01 {
+            continue;
+        }
         solids.push(Aabb3::from_center_half(
-            Vec3::new(deck.center.x, floor_y + deck.top_y * 0.5, deck.center.y),
-            Vec3::new(deck.half.x, deck.top_y * 0.5, deck.half.y),
+            Vec3::new(
+                deck.center.x,
+                floor_y + deck.bottom_y + height * 0.5,
+                deck.center.y,
+            ),
+            Vec3::new(deck.half.x, height * 0.5, deck.half.y),
         ));
     }
 

@@ -187,6 +187,13 @@ fn spawn_course(
     for platform in &course.platforms {
         spawn_platform(commands, meshes, deck.clone(), edge.clone(), *platform);
     }
+    spawn_platform(
+        commands,
+        meshes,
+        deck.clone(),
+        edge.clone(),
+        course.upper_landing,
+    );
     spawn_threshold_markers(commands, meshes, materials, course);
 }
 
@@ -197,12 +204,17 @@ fn spawn_platform(
     edge: Handle<StandardMaterial>,
     platform: GantryPlatform,
 ) {
+    let height = (platform.top_y - platform.bottom_y).max(0.02);
     spawn_box(
         commands,
         meshes,
         deck,
-        Vec3::new(platform.center.x, platform.top_y * 0.5, platform.center.y),
-        Vec3::new(platform.half.x * 2.0, platform.top_y, platform.half.y * 2.0),
+        Vec3::new(
+            platform.center.x,
+            platform.bottom_y + height * 0.5,
+            platform.center.y,
+        ),
+        Vec3::new(platform.half.x * 2.0, height, platform.half.y * 2.0),
         "Gantry platform",
     );
     let y = platform.top_y + 0.055;

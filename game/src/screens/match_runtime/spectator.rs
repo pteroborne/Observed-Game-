@@ -46,6 +46,8 @@ pub(crate) fn drive_spectator_bot(
     }
 
     let here = body_xz(&tp);
+    let local_feet_y =
+        crate::bot::local_feet_y(tp.body.position.y - tp.config.half_height, tp.place);
     let in_same_room = matches!(tp.place, Place::Room(room) if room == guardian.room);
     if in_same_room && items.carried(ItemKind::AnchorTorch) > 0 {
         item_intent.torch_action = true;
@@ -58,7 +60,7 @@ pub(crate) fn drive_spectator_bot(
         return;
     }
 
-    if let Some(gap) = crate::bot::target_gap_for_place(tp.place, &tp.geom, here) {
+    if let Some(gap) = crate::bot::target_gap_for_place(tp.place, &tp.geom, here, local_feet_y) {
         let rel = here - gap.center;
         let tangent = Vec2::new(-gap.normal.y, gap.normal.x);
         let at_aperture =
@@ -75,7 +77,8 @@ pub(crate) fn drive_spectator_bot(
         || spectator.waypoint >= spectator.route.len()
         || spectator.route.is_empty()
     {
-        let Some(gap) = crate::bot::target_gap_for_place(tp.place, &tp.geom, here) else {
+        let Some(gap) = crate::bot::target_gap_for_place(tp.place, &tp.geom, here, local_feet_y)
+        else {
             spectator.blocked_ticks += 1;
             spectator.finished =
                 director.live.host_match().local_target().is_none() || spectator.blocked_ticks > 90;

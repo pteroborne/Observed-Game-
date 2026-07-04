@@ -16,6 +16,7 @@ pub const GANTRY_WIDTH: f32 = 12.0;
 pub const UPPER_DECK_Y: f32 = 2.1;
 pub const PLATFORM_HALF_WIDTH: f32 = 1.35;
 pub const PLATFORM_HALF_LENGTH: f32 = 1.7;
+pub const PLATFORM_THICKNESS: f32 = 0.18;
 pub const PLATFORM_SPACING: f32 = 5.45;
 pub const PLATFORM_COUNT: usize = 6;
 pub const SAFE_BYPASS_X: f32 = -4.6;
@@ -82,6 +83,7 @@ pub struct GantryPlatform {
     /// X/Z position in the hallway local frame.
     pub center: Vec2,
     pub half: Vec2,
+    pub bottom_y: f32,
     pub top_y: f32,
 }
 
@@ -100,9 +102,11 @@ impl GantryPlatform {
     }
 
     pub fn solid(self, floor_y: f32) -> Aabb3 {
-        let height = self.top_y - floor_y;
+        let bottom = floor_y + self.bottom_y;
+        let top = floor_y + self.top_y;
+        let height = top - bottom;
         Aabb3::from_center_half(
-            Vec3::new(self.center.x, floor_y + height * 0.5, self.center.y),
+            Vec3::new(self.center.x, bottom + height * 0.5, self.center.y),
             Vec3::new(self.half.x, height * 0.5, self.half.y),
         )
     }
@@ -112,6 +116,7 @@ impl GantryPlatform {
 pub struct GantryCourse {
     pub arena: FpsArena,
     pub platforms: Vec<GantryPlatform>,
+    pub upper_landing: GantryPlatform,
     pub thresholds: Vec<GantryThreshold>,
 }
 
@@ -124,6 +129,7 @@ impl Default for GantryCourse {
 impl GantryCourse {
     pub fn authored() -> Self {
         let platforms = authored_platforms();
+        let upper_landing = authored_upper_landing(&platforms);
         let mut solids = Vec::new();
 
         let side_wall = |x: f32| {
@@ -135,6 +141,7 @@ impl GantryCourse {
         solids.push(side_wall(-GANTRY_WIDTH * 0.5));
         solids.push(side_wall(GANTRY_WIDTH * 0.5));
         solids.extend(platforms.iter().map(|platform| platform.solid(0.0)));
+        solids.push(upper_landing.solid(0.0));
 
         Self {
             arena: FpsArena {
@@ -143,6 +150,7 @@ impl GantryCourse {
                 floor_half: GANTRY_LENGTH * 0.5 + 4.0,
             },
             platforms,
+            upper_landing,
             thresholds: vec![
                 GantryThreshold {
                     exit: GantryExit::UnderstoryReturn,
@@ -473,9 +481,26 @@ fn authored_platforms() -> Vec<GantryPlatform> {
             index,
             center: Vec2::new(0.0, first_z + index as f32 * PLATFORM_SPACING),
             half: Vec2::new(PLATFORM_HALF_WIDTH, PLATFORM_HALF_LENGTH),
+            bottom_y: UPPER_DECK_Y - PLATFORM_THICKNESS,
             top_y: UPPER_DECK_Y,
         })
         .collect()
+}
+
+fn authored_upper_landing(platforms: &[GantryPlatform]) -> GantryPlatform {
+    let last = platforms
+        .last()
+        .copied()
+        .expect("authored gantry has at least one platform");
+    let min_z = last.max_z();
+    let max_z = GANTRY_LENGTH * 0.5;
+    GantryPlatform {
+        index: PLATFORM_COUNT,
+        center: Vec2::new(0.0, (min_z + max_z) * 0.5),
+        half: Vec2::new(PLATFORM_HALF_WIDTH, (max_z - min_z) * 0.5),
+        bottom_y: UPPER_DECK_Y - PLATFORM_THICKNESS,
+        top_y: UPPER_DECK_Y,
+    }
 }
 
 fn yaw_toward(from: Vec2, to: Vec2) -> f32 {
@@ -561,5 +586,42 @@ mod tests {
         assert!(upper.floor_y > side.floor_y);
         assert_ne!(upper.center, side.center);
         assert_ne!(safe.center, side.center);
+    }
+
+    #[test]
+    fn platform_slabs_leave_lower_floor_clearance() {
+        let course = GantryCourse::authored();
+        let config = config();
+        let platform = course.platforms[2];
+        let solid = platform.solid(0.0);
+        let lower_body_center = Vec3::new(platform.center.x, config.half_height, platform.center.y);
+        let body_half = Vec3::new(config.radius, config.half_height, config.radius);
+
+        assert!(
+            solid.min.y > config.half_height * 2.0,
+            "the slab underside must clear a standing lower-floor body"
+        );
+        assert!(
+            !solid.overlaps(lower_body_center, body_half),
+            "a body walking under the upper route must not collide with the platform slab"
+        );
+    }
+
+    #[test]
+    fn upper_landing_extends_the_deck_to_the_upper_exit() {
+        let course = GantryCourse::authored();
+        let landing = course.upper_landing;
+        let upper = course.threshold(GantryExit::UpperExit);
+
+        assert_eq!(landing.top_y, UPPER_DECK_Y);
+        assert_eq!(landing.bottom_y, UPPER_DECK_Y - PLATFORM_THICKNESS);
+        assert!(
+            landing.max_z() >= upper.center.y - 0.01,
+            "upper landing must reach the raised exit threshold"
+        );
+        assert!(
+            landing.min_z() <= course.platforms.last().unwrap().max_z() + 0.01,
+            "upper landing must be contiguous with the final jump platform"
+        );
     }
 }

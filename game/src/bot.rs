@@ -35,20 +35,46 @@ pub(crate) fn route_to_gap(
     Some(BotPath { waypoints })
 }
 
-pub(crate) fn target_gap_for_place(place: Place, geom: &PlaceGeom, here: Vec2) -> Option<DoorGap> {
+pub(crate) fn target_gap_for_place(
+    place: Place,
+    geom: &PlaceGeom,
+    here: Vec2,
+    local_feet_y: f32,
+) -> Option<DoorGap> {
+    let at_current_floor =
+        |gap: &&DoorGap| (local_feet_y - gap.floor_y).abs() <= crate::teleport::GAP_FLOOR_TOLERANCE;
     match place {
         Place::Room(_) => geom.forward_gap().copied(),
-        Place::Hallway { .. } => geom
+        Place::Hallway { to, .. } => geom
             .gaps
             .iter()
             .filter(|gap| gap.kind == GapKind::Exit)
+            .filter(at_current_floor)
             .min_by(|a, b| {
-                here.distance_squared(a.center)
-                    .partial_cmp(&here.distance_squared(b.center))
-                    .unwrap_or(std::cmp::Ordering::Equal)
+                let a_forward = a.target == to;
+                let b_forward = b.target == to;
+                b_forward.cmp(&a_forward).then_with(|| {
+                    here.distance_squared(a.center)
+                        .partial_cmp(&here.distance_squared(b.center))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+            })
+            .or_else(|| {
+                geom.gaps
+                    .iter()
+                    .filter(|gap| gap.kind == GapKind::Exit)
+                    .min_by(|a, b| {
+                        here.distance_squared(a.center)
+                            .partial_cmp(&here.distance_squared(b.center))
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
             })
             .copied(),
     }
+}
+
+pub(crate) fn local_feet_y(world_feet_y: f32, place: Place) -> f32 {
+    world_feet_y - crate::teleport::place_y_offset(place)
 }
 
 fn clamp_to_place(p: Vec2, geom: &PlaceGeom) -> Vec2 {
@@ -244,18 +270,25 @@ mod tests {
                 let geom = teleport::hallway_geom(RoomId(0), RoomId(1), template, seed, false);
                 let arena = teleport::place_arena(&geom, 0.0, 4.6);
                 let start = teleport::entry_spawn(&geom, RoomId(0));
-                let exit = geom
-                    .gaps
-                    .iter()
-                    .find(|gap| gap.kind == teleport::GapKind::Exit)
-                    .expect("hallway has an exit");
+                let exit = target_gap_for_place(
+                    teleport::Place::Hallway {
+                        from: RoomId(0),
+                        to: RoomId(1),
+                        variation: index,
+                    },
+                    &geom,
+                    start,
+                    0.0,
+                )
+                .expect("hallway has an exit");
 
-                let path = route_to_gap(&geom, &arena, &config, start, exit).unwrap_or_else(|| {
-                    panic!(
-                        "template {index} ({:?}) seed {seed} must route entry -> exit",
-                        template.flavor
-                    )
-                });
+                let path =
+                    route_to_gap(&geom, &arena, &config, start, &exit).unwrap_or_else(|| {
+                        panic!(
+                            "template {index} ({:?}) seed {seed} must route entry -> exit",
+                            template.flavor
+                        )
+                    });
 
                 assert!(path.waypoints.len() >= 2);
                 assert!(
@@ -266,6 +299,33 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn ground_level_gantry_bot_targets_the_safe_onward_exit() {
+        let template = hallway::TEMPLATES
+            .iter()
+            .find(|template| template.flavor == HallwayFlavor::Gantry)
+            .unwrap();
+        let geom = teleport::hallway_geom(RoomId(0), RoomId(1), template, 0, false);
+        let start = teleport::entry_spawn(&geom, RoomId(0));
+        let gap = target_gap_for_place(
+            teleport::Place::Hallway {
+                from: RoomId(0),
+                to: RoomId(1),
+                variation: 0,
+            },
+            &geom,
+            start,
+            0.0,
+        )
+        .expect("ground route has an onward exit");
+
+        assert_eq!(gap.target, RoomId(1), "bot should prefer onward exits");
+        assert_eq!(
+            gap.floor_y, 0.0,
+            "ground bot should not target the upper exit"
+        );
     }
 
     #[test]

@@ -846,6 +846,16 @@ mod tests {
             solid.max.y,
             floor_y + gantry::UPPER_DECK_Y
         );
+        assert!(
+            (solid.min.y - (floor_y + platform0.bottom_y)).abs() < 1e-3,
+            "deck bottom sits at floor_y + bottom_y: {} vs {}",
+            solid.min.y,
+            floor_y + platform0.bottom_y
+        );
+        assert!(
+            solid.max.y - solid.min.y < 0.25,
+            "jump platforms are thin slabs, not floor-to-top blocks"
+        );
 
         // The mount stair: a sequence of decks whose top_y ascends monotonically, each
         // step within the controller's 0.45 step_height of the previous, ending at
@@ -908,6 +918,55 @@ mod tests {
         ));
         // A ground body still crosses the bypass exit (today's behaviour, unmodified).
         assert!(feet_at_gap_floor(0.0, place_floor_y, bypass));
+    }
+
+    #[test]
+    fn gantry_wall_cuts_are_height_aware_and_raise_the_ceiling() {
+        use observed_traversal::gantry;
+        let template = gantry_template();
+        let geom = hallway_geom(RoomId(1), RoomId(4), template, 0, false);
+        let wall_height = 3.4;
+        let arena = place_arena(&geom, 0.0, wall_height);
+        let upper = geom
+            .gaps
+            .iter()
+            .find(|g| g.kind.is_passage() && g.target == RoomId(4) && g.floor_y > 0.0)
+            .expect("upper exit gap");
+        let safe = geom
+            .gaps
+            .iter()
+            .find(|g| g.kind.is_passage() && g.target == RoomId(4) && g.floor_y == 0.0)
+            .expect("safe-bypass exit gap");
+
+        assert!(
+            (structural_height(&geom, wall_height) - (wall_height + gantry::UPPER_DECK_Y)).abs()
+                < 1e-3,
+            "a raised threshold lifts the hallway shell height"
+        );
+
+        let lower_wall_under_upper = arena.solids.iter().any(|solid| {
+            (solid.max.z - geom.half.y).abs() < 0.5
+                && solid.min.y <= 0.01
+                && solid.max.y <= upper.floor_y + 0.01
+                && solid.min.x < upper.center.x
+                && solid.max.x > upper.center.x
+        });
+        assert!(
+            lower_wall_under_upper,
+            "the upper exit must have real wall below the raised opening"
+        );
+
+        let upper_lintel_over_safe = arena.solids.iter().any(|solid| {
+            (solid.max.z - geom.half.y).abs() < 0.5
+                && solid.min.y >= wall_height - 0.01
+                && solid.max.y <= wall_height + gantry::UPPER_DECK_Y + 0.01
+                && solid.min.x < safe.center.x
+                && solid.max.x > safe.center.x
+        });
+        assert!(
+            upper_lintel_over_safe,
+            "the lower safe-bypass exit keeps an upper wall/lintel in the taller gantry shell"
+        );
     }
 
     /// Solvability: from the entry, both `to`-exits are reachable in principle. The

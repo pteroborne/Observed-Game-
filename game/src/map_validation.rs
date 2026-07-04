@@ -404,7 +404,12 @@ fn audit_hallway_geom(
     let Some(exit) = geom
         .gaps
         .iter()
-        .find(|gap| gap.kind == GapKind::Exit && gap.target == to)
+        .filter(|gap| gap.kind == GapKind::Exit && gap.target == to)
+        .min_by(|a, b| {
+            a.floor_y
+                .partial_cmp(&b.floor_y)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
     else {
         push_issue(
             issues,

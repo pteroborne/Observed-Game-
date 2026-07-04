@@ -176,6 +176,8 @@ pub struct WallSeg {
 pub struct DeckSeg {
     pub center: Vec2,
     pub half: Vec2,
+    /// Local bottom height relative to the place floor.
+    pub bottom_y: f32,
     pub top_y: f32,
 }
 
@@ -217,5 +219,5 @@ pub use nav::{Nav, PinnedEdge};
 pub use transition::{
     Align2d, Crossing, GAP_FLOOR_TOLERANCE, PREVIEW_OUTSET, apply_crossing, crossed,
     crossing_alignment, entry_spawn, feet_at_gap_floor, hallway_alignment, hallway_gap_alignment,
-    place_arena, room_alignment,
+    place_arena, room_alignment, structural_height,
 };

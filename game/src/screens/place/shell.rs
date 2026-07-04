@@ -43,7 +43,7 @@ pub(crate) fn spawn_room_shell(
 
 /// Whether an arena solid is the collision box `place_arena` generated for `deck`
 /// (see `teleport::transition::place_arena`'s deck loop: a box centred at the deck's
-/// XZ centre, spanning the deck's XZ half-extent, from the place floor up to `top_y`).
+/// XZ centre, spanning the deck's XZ half-extent, from `bottom_y` to `top_y`).
 /// Matched by footprint + top height rather than object identity, since the arena
 /// only stores `Aabb3`s — this is the explicit, named discrimination that keeps deck
 /// solids out of the generic "Place wall" render path.
@@ -55,7 +55,7 @@ fn solid_is_deck(solid: &observed_traversal::Aabb3, deck: &DeckSeg, floor_y: f32
         && (center.z - deck.center.y).abs() < EPS
         && (half.x - deck.half.x).abs() < EPS
         && (half.z - deck.half.y).abs() < EPS
-        && (solid.min.y - floor_y).abs() < EPS
+        && (solid.min.y - (floor_y + deck.bottom_y)).abs() < EPS
         && (solid.max.y - (floor_y + deck.top_y)).abs() < EPS
 }
 
@@ -72,6 +72,7 @@ pub(crate) fn spawn_hallway_shell(
     y_offset: f32,
 ) {
     let (hx, hz) = (geom.half.x, geom.half.y);
+    let shell_height = crate::teleport::structural_height(geom, WALL_HEIGHT);
     let plane_scale = Vec3::new(hx * 2.0 / PLACE_TILE, 1.0, hz * 2.0 / PLACE_TILE);
     commands.spawn((
         PlaceGeometry,
@@ -86,7 +87,7 @@ pub(crate) fn spawn_hallway_shell(
         DespawnOnExit(GameState::Match),
         Mesh3d(assets.ceiling_mesh.clone()),
         MeshMaterial3d(assets.ceiling_material.clone()),
-        Transform::from_xyz(0.0, y_offset + WALL_HEIGHT, 0.0)
+        Transform::from_xyz(0.0, y_offset + shell_height, 0.0)
             .with_rotation(Quat::from_rotation_x(std::f32::consts::PI))
             .with_scale(plane_scale),
         Name::new("Place ceiling"),
@@ -134,16 +135,16 @@ pub(crate) fn spawn_gantry_decks(
     y_offset: f32,
 ) {
     for deck in decks {
+        let deck_height = (deck.top_y - deck.bottom_y).max(0.02);
         let top_world_y = y_offset + deck.top_y;
-        let center_world_y = y_offset + deck.top_y * 0.5;
+        let center_world_y = y_offset + deck.bottom_y + deck_height * 0.5;
         commands.spawn((
             PlaceGeometry,
             DespawnOnExit(GameState::Match),
             Mesh3d(assets.placeholder_mesh.clone()),
             MeshMaterial3d(assets.gantry_deck_material.clone()),
-            Transform::from_xyz(deck.center.x, center_world_y, deck.center.y).with_scale(
-                Vec3::new(deck.half.x * 2.0, deck.top_y.max(0.02), deck.half.y * 2.0),
-            ),
+            Transform::from_xyz(deck.center.x, center_world_y, deck.center.y)
+                .with_scale(Vec3::new(deck.half.x * 2.0, deck_height, deck.half.y * 2.0)),
             Name::new("Gantry deck"),
         ));
 
@@ -336,8 +337,8 @@ fn spawn_rival_anchor_torch(
 ) {
     let along = Vec2::new(-gap.normal.y, gap.normal.x);
     let pos = gap.center + along * (gap.width * 0.5 + 0.3);
-    let root =
-        Transform::from_xyz(pos.x, y_offset + 0.55, pos.y).with_scale(Vec3::new(0.18, 1.1, 0.18));
+    let root = Transform::from_xyz(pos.x, y_offset + gap.floor_y + 0.55, pos.y)
+        .with_scale(Vec3::new(0.18, 1.1, 0.18));
     spawn_rival_anchor_torch_at(commands, assets, root, team);
 }
 
@@ -406,6 +407,7 @@ fn spawn_place_frame(
     let along = Vec2::new(-gap.normal.y, gap.normal.x);
     let rot = Quat::from_rotation_y(gap_yaw(gap.normal));
     let half = gap.width * 0.5;
+    let base_y = y_offset + gap.floor_y;
     let status = crate::evidence::threshold_status(gap, tethered);
     for offset in [half, -half] {
         let p = gap.center + along * offset;
@@ -419,7 +421,7 @@ fn spawn_place_frame(
             },
             Mesh3d(assets.placeholder_mesh.clone()),
             MeshMaterial3d(material.clone()),
-            Transform::from_xyz(p.x, y_offset + WALL_HEIGHT * 0.5, p.y).with_scale(Vec3::new(
+            Transform::from_xyz(p.x, base_y + WALL_HEIGHT * 0.5, p.y).with_scale(Vec3::new(
                 0.24,
                 WALL_HEIGHT,
                 0.24,
@@ -437,7 +439,7 @@ fn spawn_place_frame(
         },
         Mesh3d(assets.placeholder_mesh.clone()),
         MeshMaterial3d(material),
-        Transform::from_xyz(gap.center.x, y_offset + WALL_HEIGHT - 0.2, gap.center.y)
+        Transform::from_xyz(gap.center.x, base_y + WALL_HEIGHT - 0.2, gap.center.y)
             .with_rotation(rot)
             .with_scale(Vec3::new(gap.width.max(0.3), 0.34, 0.24)),
         Name::new("Doorframe lintel"),
@@ -480,7 +482,7 @@ fn spawn_place_frame(
             shadows_enabled: false,
             ..default()
         },
-        Transform::from_xyz(gap.center.x, y_offset + WALL_HEIGHT - 0.35, gap.center.y),
+        Transform::from_xyz(gap.center.x, base_y + WALL_HEIGHT - 0.35, gap.center.y),
         Name::new("Doorframe tether light"),
     ));
 
@@ -507,7 +509,7 @@ fn spawn_place_frame(
                 ..default()
             },
             TextColor(Color::WHITE),
-            Transform::from_xyz(gap.center.x, y_offset + WALL_HEIGHT + 0.35, gap.center.y)
+            Transform::from_xyz(gap.center.x, base_y + WALL_HEIGHT + 0.35, gap.center.y)
                 .with_rotation(rot)
                 .with_scale(Vec3::splat(0.035)),
             Name::new("Threshold debug label"),
@@ -527,7 +529,8 @@ fn spawn_leaf(
 ) {
     let rot = Quat::from_rotation_y(gap_yaw(gap.normal));
     let leaf_h = WALL_HEIGHT - DOOR_LINTEL_H;
-    let closed_y = y_offset + leaf_h * 0.5;
+    let base_y = y_offset + gap.floor_y;
+    let closed_y = base_y + leaf_h * 0.5;
     let open_y = closed_y + leaf_h;
     commands.spawn((
         PlaceGeometry,

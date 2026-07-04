@@ -39,13 +39,14 @@ pub(crate) fn spawn_passage_stub(
     let rot = Quat::from_rotation_y(gap_yaw(gap.normal)); // local X = tangent, Z = normal
     let foot = |c: Vec2| Vec3::new(c.x, 0.0, c.y);
     let floor_material = assets.floor_material.clone();
+    let base_y = y_offset + gap.floor_y;
     commands.spawn((
         PlaceGeometry,
         PassagePreview,
         DespawnOnExit(GameState::Match),
         Mesh3d(assets.placeholder_mesh.clone()),
         MeshMaterial3d(floor_material),
-        Transform::from_translation(foot(centre) + Vec3::Y * (y_offset + 0.02))
+        Transform::from_translation(foot(centre) + Vec3::Y * (base_y + 0.02))
             .with_rotation(rot)
             .with_scale(Vec3::new(gap.width.max(0.1), 0.04, DEPTH)),
         Name::new("Passage stub floor"),
@@ -56,7 +57,7 @@ pub(crate) fn spawn_passage_stub(
         DespawnOnExit(GameState::Match),
         Mesh3d(assets.placeholder_mesh.clone()),
         MeshMaterial3d(assets.ceiling_material.clone()),
-        Transform::from_translation(foot(centre) + Vec3::Y * (y_offset + WALL_HEIGHT))
+        Transform::from_translation(foot(centre) + Vec3::Y * (base_y + WALL_HEIGHT))
             .with_rotation(rot)
             .with_scale(Vec3::new(gap.width.max(0.1), 0.04, DEPTH)),
         Name::new("Passage stub ceiling"),
@@ -69,7 +70,7 @@ pub(crate) fn spawn_passage_stub(
             DespawnOnExit(GameState::Match),
             Mesh3d(assets.placeholder_mesh.clone()),
             MeshMaterial3d(assets.wall_material.clone()),
-            Transform::from_translation(foot(wc) + Vec3::Y * (y_offset + WALL_HEIGHT * 0.5))
+            Transform::from_translation(foot(wc) + Vec3::Y * (base_y + WALL_HEIGHT * 0.5))
                 .with_rotation(rot)
                 .with_scale(Vec3::new(0.2, WALL_HEIGHT, DEPTH)),
             Name::new("Passage stub wall"),
@@ -176,8 +177,18 @@ pub(crate) fn spawn_hallway_preview(
         spawn_passage_stub(commands, assets, gap, y_offset);
         return;
     };
+    let preview_floor_y = dest
+        .gaps
+        .iter()
+        .find(|candidate| {
+            candidate.threshold.hall == gap.threshold.hall
+                && candidate.threshold.hall.side == gap.threshold.room.room
+                && candidate.threshold.local_side == teleport::ThresholdLocalSide::Hall
+        })
+        .map(|candidate| candidate.floor_y)
+        .unwrap_or(0.0);
     let mut parent = camera::alignment_transform(align);
-    parent.translation.y = y_offset;
+    parent.translation.y = y_offset + gap.floor_y - preview_floor_y;
     let place_in = |local: Transform| parent.mul_transform(local);
 
     let floor_material = if hallway::template(variation).flavor == HallwayFlavor::PressureGate {
@@ -187,6 +198,7 @@ pub(crate) fn spawn_hallway_preview(
     };
 
     let plane_scale = Vec3::new(hx * 2.0 / PLACE_TILE, 1.0, hz * 2.0 / PLACE_TILE);
+    let shell_height = teleport::structural_height(&dest, WALL_HEIGHT);
     commands.spawn((
         PlaceGeometry,
         PassagePreview,
@@ -203,7 +215,7 @@ pub(crate) fn spawn_hallway_preview(
         Mesh3d(assets.ceiling_mesh.clone()),
         MeshMaterial3d(assets.ceiling_material.clone()),
         place_in(
-            Transform::from_xyz(0.0, WALL_HEIGHT, 0.0)
+            Transform::from_xyz(0.0, shell_height, 0.0)
                 .with_rotation(Quat::from_rotation_x(PI))
                 .with_scale(plane_scale),
         ),
@@ -282,7 +294,7 @@ pub(crate) fn spawn_room_preview(
     };
 
     let mut parent = camera::alignment_transform(teleport::room_alignment(gap, &src));
-    parent.translation.y = y_offset;
+    parent.translation.y = y_offset + gap.floor_y - src.floor_y;
 
     let floor_material = room_floor_material(dest_room, &assets.floor_material, materials);
     let palette = palette_for_game(nav.seed, Place::Room(dest_room), game, klaxon_active);
