@@ -20,6 +20,11 @@ use crate::teleport::{
 
 pub const DEFAULT_ITERATION_COUNT: usize = 24;
 pub const DEFAULT_DECOHERE_VERSIONS: u32 = 4;
+/// Phase 46's liminal scale pass intentionally allows the longest authored connector
+/// templates to reach about 56 world units at their maximum deterministic stretch. Keep
+/// this audit as a runaway-geometry guard, but size it for the liminal renderer frame
+/// rather than the old dev-scale frame.
+const MAX_EXPECTED_PLACE_HALF: f32 = 64.0;
 pub const MAP_AUDIT_CAPTURE_ROLES: [RoomRole; 6] = [
     RoomRole::Start,
     RoomRole::Keystone,
@@ -444,7 +449,7 @@ fn audit_common(issues: &mut Vec<MapValidationIssue>, report: MapPlaceReport, ge
     if !finite_vec2(geom.half) || geom.half.x <= 0.5 || geom.half.y <= 0.5 {
         push_issue(issues, report.clone(), "place bounds are invalid");
     }
-    if geom.half.x.max(geom.half.y) > 48.0 {
+    if geom.half.x.max(geom.half.y) > MAX_EXPECTED_PLACE_HALF {
         push_issue(
             issues,
             report.clone(),

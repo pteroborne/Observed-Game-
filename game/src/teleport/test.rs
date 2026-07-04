@@ -169,6 +169,51 @@ mod tests {
     }
 
     #[test]
+    fn liminal_room_footprints_scale_by_room_role() {
+        let seed = 7;
+        let connections = &[RoomId(1), RoomId(3), RoomId(5)];
+        let target = Some(RoomId(3));
+        let standard = room_geom_with_slots_and_seals_for_role(
+            RoomId(0),
+            connections,
+            &[],
+            &[],
+            target,
+            Some(RoomRole::Keystone),
+            seed,
+        );
+        let no_role = room_geom_with_slots_and_seals_for_role(
+            RoomId(0),
+            connections,
+            &[],
+            &[],
+            target,
+            None,
+            seed,
+        );
+        let hub = room_geom_with_slots_and_seals_for_role(
+            RoomId(0),
+            connections,
+            &[],
+            &[],
+            target,
+            Some(RoomRole::Start),
+            seed,
+        );
+
+        assert_eq!(
+            no_role.half, standard.half,
+            "unknown/non-special roles use the standard liminal scale"
+        );
+        let standard_area = standard.half.x * standard.half.y;
+        let hub_area = hub.half.x * hub.half.y;
+        assert!(
+            hub_area > standard_area * 1.4,
+            "hub rooms should breathe larger than standard rooms ({hub_area} vs {standard_area})"
+        );
+    }
+
+    #[test]
     fn varied_straight_hallways_have_distinct_lengths() {
         // The straight connector renders at visibly different depths per edge seed.
         let template = hallway::template(0);
@@ -187,6 +232,31 @@ mod tests {
             differ,
             "straight hallway length should vary with the edge seed"
         );
+    }
+
+    #[test]
+    fn hallway_geom_uses_liminal_scaled_connector_dimensions() {
+        let template = hallway::TEMPLATES
+            .iter()
+            .find(|template| {
+                template.grid.is_none() && template.flavor != hallway::HallwayFlavor::Gantry
+            })
+            .expect("a non-grid, non-gantry template exists");
+        let seed = 5;
+        let geom = hallway_geom(RoomId(0), RoomId(1), template, seed, false);
+        let (scaled_len, scaled_width) = hallway::scaled_dims(template);
+        let expected_len = (scaled_len * hallway::length_scale(seed)).max(hallway::MIN_HALL_LENGTH);
+
+        assert!(
+            geom.half.x > template.width * 0.5,
+            "the authored width should be widened in geometry"
+        );
+        assert!(
+            geom.half.y > template.length * 0.5,
+            "the authored length should be stretched in geometry"
+        );
+        assert!((geom.half.x - scaled_width * 0.5).abs() < 1e-4);
+        assert!((geom.half.y - expected_len * 0.5).abs() < 1e-4);
     }
 
     #[test]

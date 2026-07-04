@@ -15,6 +15,8 @@
 use observed_core::RoomId;
 use observed_traversal::gantry::{GANTRY_LENGTH, GANTRY_WIDTH, UPPER_DECK_Y};
 
+use crate::layout::{HALL_STRETCH, HALL_WIDEN};
+
 /// The traversal character of a hallway piece — the "edge personality" the
 /// nodes/edges canon asks for (corridors = traverse / danger / mystery).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -208,6 +210,22 @@ pub fn template(index: usize) -> &'static HallwayTemplate {
     &TEMPLATES[index % TEMPLATES.len()]
 }
 
+/// The liminal-scaled (length, width) for `template` (the Phase 46b dials in
+/// `layout.rs`): `HALL_STRETCH`/`HALL_WIDEN` apply to every authored connector/set-piece
+/// template EXCEPT the Gantry (its dimensions are the pure jump-map course's own
+/// constants, authored and untouched) and the `grid`-driven labyrinths (their footprint
+/// is cell-derived — `MAZE_CELL` × `grid`'s cols/rows in `teleport::geom::hallway_geom`
+/// — so stretching the authored `length`/`width` fields here would only relabel that
+/// cell-driven geometry without actually lengthening the maze; growing a labyrinth means
+/// more cells, which reshuffles its interior generation, so it is left alone here and the
+/// grid dimensions stay the tuning lever for maze size instead).
+pub fn scaled_dims(template: &HallwayTemplate) -> (f32, f32) {
+    if template.flavor == HallwayFlavor::Gantry || template.grid.is_some() {
+        return (template.length, template.width);
+    }
+    (template.length * HALL_STRETCH, template.width * HALL_WIDEN)
+}
+
 /// An edge-symmetric 64-bit hash of the edge `(a, b)` plus a `mix` salt. The basis for
 /// both variation selection and maze layout, so both are deterministic and treat
 /// `(a, b)` the same as `(b, a)`.
@@ -321,6 +339,43 @@ mod tests {
             variation_for(RoomId(a), RoomId(b), 1, 0) != variation_for(RoomId(a), RoomId(b), 2, 0)
         });
         assert!(differ, "the seed actually influences selection");
+    }
+
+    #[test]
+    fn liminal_scale_dials_apply_only_to_authored_connector_templates() {
+        let straight = TEMPLATES
+            .iter()
+            .find(|template| template.grid.is_none() && template.flavor != HallwayFlavor::Gantry)
+            .expect("a non-grid, non-gantry template exists");
+        let (straight_len, straight_width) = scaled_dims(straight);
+        assert!(
+            straight_len > straight.length,
+            "authored connector length should get the liminal stretch"
+        );
+        assert!(
+            straight_width > straight.width,
+            "authored connector width should get the liminal widen pass"
+        );
+
+        let maze = TEMPLATES
+            .iter()
+            .find(|template| template.grid.is_some())
+            .expect("a grid-driven maze template exists");
+        assert_eq!(
+            scaled_dims(maze),
+            (maze.length, maze.width),
+            "grid-driven mazes keep their cell-derived footprint"
+        );
+
+        let gantry = TEMPLATES
+            .iter()
+            .find(|template| template.flavor == HallwayFlavor::Gantry)
+            .expect("a gantry template exists");
+        assert_eq!(
+            scaled_dims(gantry),
+            (gantry.length, gantry.width),
+            "the pure gantry course keeps authored traversal dimensions"
+        );
     }
 
     const ROOM_PAIRS: [(u32, u32); 6] = [(0, 1), (1, 2), (2, 5), (5, 8), (3, 4), (4, 7)];

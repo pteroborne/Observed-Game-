@@ -28,7 +28,7 @@ Add selection layer and builder contract: `game::map_catalog::active_map_spec(se
 ### Phase 45 — WFC Topology In The Lab `[x]`
 Procedural generation proof: `observed_facility::wfc` (feature-gated) implements Wave Function Collapse topology generation. Extended `wfc_proc_gen_lab` emits validated MapSpecs (24–32 rooms, role coverage including 6+ Monitor rooms, protected spine). Corpus tests validate generation determinism, spine coverage, role distribution, bounded retry, and MapSpec validation across 50+ seeds.
 
-### Phase 46 — The Liminal Flip `[ ]`
+### Phase 46 — The Liminal Flip `[x]`
 Default switch + comfort scale pass: WFC maps become default (OBSERVED2_MAP=dev reverts to sector_relay_v1); room/hall dimensions scale by role for liminal breathing; district assignment and palette variance across the bigger map; per-seed memoization for fast test iteration; characterization + solvability corpus gates re-run on generated maps and evidence refreshed.
 
 ### Phase 47 — WFC Corridor Interiors `[ ]`
@@ -37,6 +37,14 @@ DFS-maze hallways: archived `hallway_wfc.rs` ported onto WallSeg geometry; role-
 ---
 
 ## Recent Milestones (Completed)
+
+### Phase 46 — The Liminal Flip `[x]`
+Completed Arc D's default-map flip and liminal comfort pass:
+- **Generated maps by default:** `game::map_catalog` now defaults to `liminal_wfc_v1`; `OBSERVED2_MAP=dev` / `sector_relay_v1` keeps the old authored fixture available for regression testing.
+- **Fast generated-map iteration:** map specs are memoized per `(map, seed)`, and the game-side corpus proves generated maps produce complete placed matches across seeded `MatchDirector` runs.
+- **Liminal scale dials:** `game::layout` owns room and hall scale multipliers; room footprints scale by `RoomRole`, while authored non-grid/non-Gantry hallway templates stretch/widen without changing edge variation determinism.
+- **Validation and evidence:** semantic map geometry audits now use a liminal renderer-frame bound, and the generated-map audit evidence in `docs/evidence/map_audit/` was refreshed after the scale pass.
+- **Verification:** `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test -p observed_game`, `cargo test --workspace`, and `OBSERVED2_CAPTURE_MAP_AUDIT=docs/evidence/map_audit cargo run -p observed_game` pass.
 
 ### Phase 44 — Map-Agnostic Plumbing `[x]`
 Added the map selection layer needed before generated maps enter the game:

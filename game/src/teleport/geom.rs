@@ -6,6 +6,7 @@ use super::{
     ThresholdLocalSide, ThresholdSlotId, WallSeg,
 };
 use crate::hallway;
+use crate::layout::{ROOM_SCALE_HUB, ROOM_SCALE_MONITOR, ROOM_SCALE_STANDARD};
 use crate::maze;
 use bevy::math::Vec2;
 use observed_core::RoomId;
@@ -30,16 +31,42 @@ fn unit(seed: u64, salt: u64) -> f32 {
 const OBSERVATION_ROOM_SIDES: usize = 13;
 const OBSERVATION_ROOM_SCALE: f32 = 2.1;
 
-fn uses_observation_room_footprint(_room: RoomId, role: Option<RoomRole>) -> bool {
+fn uses_observation_room_footprint(role: Option<RoomRole>) -> bool {
     role == Some(RoomRole::Monitor)
+}
+
+/// Whether `role` is a hub-style room (`Start`/`Exit`/`Decision`): the rooms teams
+/// linger in to read doors, call routes, and make decisions, so they get the most
+/// generous footprint (`ROOM_SCALE_HUB`, the liminal-scale dial in `layout.rs`).
+fn is_hub_role(role: Option<RoomRole>) -> bool {
+    matches!(
+        role,
+        Some(RoomRole::Start) | Some(RoomRole::Exit) | Some(RoomRole::Decision)
+    )
+}
+
+/// The liminal-scale footprint multiplier for `role` (see the dials documented in
+/// `layout.rs`): hub rooms read as the biggest, monitor rooms scale their many-sided
+/// panel-bank shape up, and everything else gets the standard liminal bump.
+fn room_scale_for_role(role: Option<RoomRole>) -> f32 {
+    if uses_observation_room_footprint(role) {
+        ROOM_SCALE_MONITOR
+    } else if is_hub_role(role) {
+        ROOM_SCALE_HUB
+    } else {
+        ROOM_SCALE_STANDARD
+    }
 }
 
 /// A room's footprint polygon (CCW, centred at the origin), seeded so each room keeps a
 /// stable shape: a varied **rectangle** (4 sides) or a regular **polygon** of 5â€“8 sides
 /// (a pentagon/hexagon/heptagon/octagon, with a random orientation). `min_sides` forces
-/// enough edges to host every doorway.
-fn room_polygon(room: RoomId, seed: u64, role: Option<RoomRole>) -> Vec<Vec2> {
-    let observation_room = uses_observation_room_footprint(room, role);
+/// enough edges to host every doorway. Scaled by `room_scale_for_role` (the Phase 46b
+/// liminal-scale dials in `layout.rs`) so hub/monitor/standard rooms breathe at
+/// role-appropriate volumes on top of the seeded per-room variety.
+fn room_polygon(seed: u64, role: Option<RoomRole>) -> Vec<Vec2> {
+    let observation_room = uses_observation_room_footprint(role);
+    let scale = room_scale_for_role(role);
     let n = if observation_room {
         OBSERVATION_ROOM_SIDES
     } else {
@@ -47,8 +74,8 @@ fn room_polygon(room: RoomId, seed: u64, role: Option<RoomRole>) -> Vec<Vec2> {
     };
     if n == 4 {
         // A varied rectangle for visual distinction from the polygons.
-        let hx = ROOM_HALF * (0.85 + unit(seed, 2) * 0.7);
-        let hz = ROOM_HALF * (0.85 + unit(seed, 3) * 0.7);
+        let hx = ROOM_HALF * scale * (0.85 + unit(seed, 2) * 0.7);
+        let hz = ROOM_HALF * scale * (0.85 + unit(seed, 3) * 0.7);
         return vec![
             Vec2::new(-hx, -hz),
             Vec2::new(hx, -hz),
@@ -60,9 +87,9 @@ fn room_polygon(room: RoomId, seed: u64, role: Option<RoomRole>) -> Vec<Vec2> {
     // rooms vary in size (some tight, some hub-like) the way the rectangles already do;
     // a random rotation keeps orientations varied.
     let apothem = if observation_room {
-        ROOM_HALF * OBSERVATION_ROOM_SCALE
+        ROOM_HALF * OBSERVATION_ROOM_SCALE * scale
     } else {
-        ROOM_HALF * (0.9 + unit(seed, 5) * 0.5)
+        ROOM_HALF * scale * (0.9 + unit(seed, 5) * 0.5)
     };
     let circumradius = apothem / (PI / n as f32).cos();
     let rot = unit(seed, 4) * (2.0 * PI / n as f32);
@@ -153,7 +180,7 @@ pub fn room_geom_with_slots_and_seals_for_role(
         .collect();
     assigned.sort_by_key(|(_, slot)| *slot);
     assigned.dedup_by_key(|(_, slot)| *slot);
-    let verts = room_polygon(room, seed, role);
+    let verts = room_polygon(seed, role);
     let n = verts.len();
     let mut assigned_slots: Vec<ThresholdSlotId> = assigned.iter().map(|(_, slot)| *slot).collect();
     assigned_slots.sort_unstable();
@@ -456,8 +483,8 @@ pub fn hallway_geom_with_slots(
     // Straight/chicane/climb pieces vary their length per edge (a deterministic
     // 1.0Ã—â€“2.2Ã— of the template, never below the `MIN_HALL_LENGTH` floor), so repeated
     // connectors read as visibly different runs while always staying a real journey.
-    let w = template.width;
-    let len = (template.length * hallway::length_scale(layout_seed)).max(hallway::MIN_HALL_LENGTH);
+    let (base_len, w) = hallway::scaled_dims(template);
+    let len = (base_len * hallway::length_scale(layout_seed)).max(hallway::MIN_HALL_LENGTH);
     if template.flavor == hallway::HallwayFlavor::Chicane {
         // An S-bend: a box with two staggered baffles, each sealing one side and leaving
         // a corridor `c` on the other, so the path slaloms from the +X entry up through
