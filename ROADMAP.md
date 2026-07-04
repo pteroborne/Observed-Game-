@@ -25,7 +25,7 @@ Fix shipped features (no map changes): role-driven monitor rooms render real pre
 ### Phase 44 — Map-Agnostic Plumbing `[x]`
 Add selection layer and builder contract: `game::map_catalog::active_map_spec(seed)` returns the active MapSpec; `OBSERVED2_MAP` env var selects by name (default sector_relay_v1). Pure refactor; lands green.
 
-### Phase 45 — WFC Topology In The Lab `[ ]`
+### Phase 45 — WFC Topology In The Lab `[x]`
 Procedural generation proof: `observed_facility::wfc` (feature-gated) implements Wave Function Collapse topology generation. Extended `wfc_proc_gen_lab` emits validated MapSpecs (24–32 rooms, role coverage including 6+ Monitor rooms, protected spine). Corpus tests validate generation determinism, spine coverage, role distribution, bounded retry, and MapSpec validation across 50+ seeds.
 
 ### Phase 46 — The Liminal Flip `[ ]`
