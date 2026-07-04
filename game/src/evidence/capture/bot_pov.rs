@@ -153,6 +153,7 @@ pub(crate) fn drive_bot_pov_capture(
     mut intent: ResMut<MatchIntent>,
     mut item_intent: ResMut<ItemIntent>,
     guardian: Res<crate::guardian::Guardian>,
+    seed: Option<Res<crate::flow::ActiveMatchSeed>>,
 ) {
     if request.phase < 2 || request.finished {
         return;
@@ -173,6 +174,7 @@ pub(crate) fn drive_bot_pov_capture(
     }
 
     let here = Vec2::new(tp.body.position.x, tp.body.position.z);
+    let seed_val = seed.map(|seed| seed.0).unwrap_or(crate::flow::MATCH_SEED);
     let local_feet_y = bot::local_feet_y(tp.body.position.y - tp.config.half_height, tp.place);
     if let Some(gap) = bot::target_gap_for_place(tp.place, &tp.geom, here, local_feet_y) {
         let rel = here - gap.center;
@@ -189,6 +191,7 @@ pub(crate) fn drive_bot_pov_capture(
                 at_aperture
             );
             crate::screens::match_runtime::debug_cross_gap_for_capture(
+                seed_val,
                 &mut tp,
                 &mut runtime,
                 gap,
@@ -280,11 +283,18 @@ pub(crate) fn drive_bot_pov_capture(
     }
 
     let target = request.route[request.waypoint];
-    let jump_pressed = request
+    let leg_needs_jump = request
         .route_jumps
         .get(request.waypoint)
         .copied()
         .unwrap_or(false);
+    let jump_pressed = bot::gantry_jump_pressed_for_leg(
+        &tp.geom,
+        here,
+        local_feet_y,
+        tp.body.grounded,
+        leg_needs_jump,
+    );
     let to = target - here;
     if to.length_squared() < 0.04 {
         intent.0 = PlayerIntent::default();

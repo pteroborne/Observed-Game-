@@ -204,6 +204,17 @@ pub(crate) fn match_pump(
         spectator_bot.is_some(),
         spectator_visible_finished,
     ) {
+        info!(
+            "MATCH_END seed={} live_finished={} live_winner={:?} series_finished={} series_winner={:?} result_winner={:?} placement={:?} series_event={}",
+            director.live.seed,
+            director.live.finished(),
+            director.live.host_match().competitive.winner,
+            director.series.finished(),
+            director.series.winner,
+            result.winner,
+            result.placement,
+            director.series.last_event
+        );
         career.record(result);
         next.set(GameState::Results);
     }

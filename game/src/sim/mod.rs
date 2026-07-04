@@ -4,5 +4,6 @@
 
 pub(crate) mod director;
 pub(crate) mod nav;
+pub(crate) mod replay;
 pub(crate) mod sightings;
 pub(crate) mod state;

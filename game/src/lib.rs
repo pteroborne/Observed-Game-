@@ -39,6 +39,7 @@ pub enum GameState {
     Lobby,
     Match,
     Results,
+    Replay,
 }
 
 pub struct ObservedGamePlugin;

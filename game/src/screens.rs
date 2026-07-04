@@ -31,6 +31,7 @@ pub(crate) mod lobby;
 pub(crate) mod match_runtime;
 pub(crate) mod menu;
 pub(crate) mod place;
+pub(crate) mod replay;
 
 // --- menu domain -------------------------------------------------------------
 #[derive(Clone, Copy)]
@@ -86,6 +87,7 @@ impl Plugin for ScreensPlugin {
             .add_systems(OnEnter(GameState::Loadout), loadout::setup_loadout)
             .add_systems(OnEnter(GameState::Lobby), lobby::setup_lobby)
             .add_systems(OnEnter(GameState::Results), menu::setup_results)
+            .add_systems(OnEnter(GameState::Replay), replay::setup_replay)
             .add_systems(
                 Update,
                 (
@@ -98,6 +100,9 @@ impl Plugin for ScreensPlugin {
                     menu::splash_advance.run_if(in_state(GameState::Splash)),
                     menu::main_menu_banner.run_if(in_state(GameState::MainMenu)),
                     loadout::loadout_header.run_if(in_state(GameState::Loadout)),
+                    replay::replay_controls.run_if(in_state(GameState::Replay)),
+                    replay::update_replay_info.run_if(in_state(GameState::Replay)),
+                    replay::draw_replay_map.run_if(in_state(GameState::Replay)),
                 )
                     .chain(),
             );
@@ -175,6 +180,7 @@ impl Plugin for MatchPlugin {
                     place::present_match_camera,
                     hud::match_draw,
                     hud::draw_tac_map,
+                    crate::sim::replay::record_match_replay_sample,
                 )
                     .chain()
                     .run_if(in_match()),

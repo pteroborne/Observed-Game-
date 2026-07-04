@@ -24,6 +24,7 @@ pub const LOCAL_TEAM: TeamId = TeamId(0);
 
 /// The seed the assembled game's match runs on.
 pub const MATCH_SEED: u64 = 1;
+pub const SEED_OVERRIDE_ENV: &str = "OBSERVED2_SEED";
 
 #[derive(Resource, Copy, Clone, Debug, PartialEq, Eq)]
 pub struct ActiveMatchSeed(pub u64);
@@ -32,6 +33,33 @@ impl Default for ActiveMatchSeed {
     fn default() -> Self {
         Self(MATCH_SEED)
     }
+}
+
+pub fn parse_seed_override(value: &str) -> Option<u64> {
+    let trimmed = value.trim();
+    if let Some(hex) = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+    {
+        u64::from_str_radix(hex, 16).ok()
+    } else {
+        trimmed.parse::<u64>().ok()
+    }
+}
+
+pub fn launch_seed() -> u64 {
+    if let Ok(value) = std::env::var(SEED_OVERRIDE_ENV)
+        && let Some(seed) = parse_seed_override(&value)
+    {
+        return seed;
+    }
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| {
+            let nanos = d.as_nanos() as u64;
+            nanos ^ u64::from(std::process::id()).rotate_left(17)
+        })
+        .unwrap_or(MATCH_SEED)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -199,6 +227,13 @@ mod tests {
         assert!(hostile.local_won);
         assert_eq!(hostile.placement, Some(1));
         assert_eq!(hostile.escaped + hostile.absorbed, 4);
+    }
+
+    #[test]
+    fn seed_override_accepts_decimal_and_hex_values() {
+        assert_eq!(parse_seed_override("42"), Some(42));
+        assert_eq!(parse_seed_override(" 0x2a "), Some(42));
+        assert_eq!(parse_seed_override("not-a-seed"), None);
     }
 
     #[test]

@@ -442,6 +442,7 @@ pub(crate) fn debug_place_into(
 /// crossing helpers as [`teleport_sim`]; it only bypasses the final sub-step crossing
 /// detection so evidence bots do not stall at a polygon or maze threshold.
 pub(crate) fn debug_cross_gap_for_capture(
+    seed: u64,
     tp: &mut TeleportState,
     runtime: &mut MatchDirector,
     gap: teleport::DoorGap,
@@ -451,8 +452,8 @@ pub(crate) fn debug_cross_gap_for_capture(
     let place_before = tp.place;
     match tp.place {
         Place::Room(room) => {
-            let nav = nav_for_place(MATCH_SEED, runtime.live.host_match(), keys, items, tp.place);
-            cross_into(MATCH_SEED, tp, &gap, Place::Room(room), room, &nav, keys);
+            let nav = nav_for_place(seed, runtime.live.host_match(), keys, items, tp.place);
+            cross_into(seed, tp, &gap, Place::Room(room), room, &nav, keys);
         }
         // A gantry hall's understory side exit is Exit-kind but targets `from`;
         // only a genuine onward crossing (toward `to`) may commit a round.
@@ -465,7 +466,7 @@ pub(crate) fn debug_cross_gap_for_capture(
                 runtime.live.force_round(LocalAction::Advance);
                 let arrived = runtime.live.host_match().local_room();
                 cross_into_room(
-                    MATCH_SEED,
+                    seed,
                     tp,
                     &gap,
                     arrived,
@@ -476,7 +477,7 @@ pub(crate) fn debug_cross_gap_for_capture(
                 );
             } else {
                 cross_into_room(
-                    MATCH_SEED,
+                    seed,
                     tp,
                     &gap,
                     gap.target,
@@ -489,7 +490,7 @@ pub(crate) fn debug_cross_gap_for_capture(
         }
         Place::Hallway { from, to, .. } if gap.kind == GapKind::Entry => {
             cross_into_room(
-                MATCH_SEED,
+                seed,
                 tp,
                 &gap,
                 from,
@@ -503,7 +504,7 @@ pub(crate) fn debug_cross_gap_for_capture(
     }
     if tp.place != place_before {
         tp.gap_dests = compute_gap_dests(
-            MATCH_SEED,
+            seed,
             tp.place,
             &tp.geom,
             runtime.live.host_match(),

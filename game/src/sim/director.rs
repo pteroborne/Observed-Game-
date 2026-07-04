@@ -102,7 +102,7 @@ impl MatchDirector {
         &mut self,
         dt: Duration,
         spectator_driven_series: bool,
-        spectator_visible_finished: bool,
+        _spectator_visible_finished: bool,
     ) -> Option<MatchResult> {
         if self.done {
             return None;
@@ -125,11 +125,7 @@ impl MatchDirector {
         if !spectator_driven_series && self.live.finished() && !self.series.finished() {
             self.series.run_to_winner(MAX_AUTOPLAY_TICKS);
         }
-        let screen_finished = if spectator_driven_series {
-            self.live.finished() || (self.series.finished() && spectator_visible_finished)
-        } else {
-            self.finished()
-        };
+        let screen_finished = self.finished();
         if screen_finished {
             self.settle_transport();
             self.done = true;

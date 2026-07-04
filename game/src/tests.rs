@@ -792,6 +792,41 @@ fn the_full_career_loop_runs_and_grows_the_persistent_profile() {
 }
 
 #[test]
+fn completed_match_records_a_replay_and_results_can_open_it() {
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    finish_match(&mut app);
+
+    {
+        let tape = app.world().resource::<crate::sim::replay::ReplayTape>();
+        assert!(!tape.is_empty(), "the match records replay samples");
+        assert!(tape.result.is_some(), "the replay stores the final result");
+        assert!(
+            !tape.markers.is_empty(),
+            "the replay includes event markers for inspection"
+        );
+    }
+
+    app.world_mut().resource_mut::<screens::MenuCursor>().0 = 0;
+    app.world_mut()
+        .resource_mut::<ButtonInput<KeyCode>>()
+        .press(KeyCode::Enter);
+    app.world_mut().run_schedule(Update);
+    app.update();
+
+    assert_eq!(
+        *app.world().resource::<State<GameState>>().get(),
+        GameState::Replay
+    );
+    assert_eq!(count::<ScreenRoot>(&mut app), 1);
+    assert!(
+        app.world()
+            .contains_resource::<screens::replay::ReplayPlayback>()
+    );
+    assert_eq!(count::<screens::replay::ReplayMapPanel>(&mut app), 1);
+}
+
+#[test]
 fn screens_are_state_scoped_and_never_leak_across_the_loop() {
     let mut app = test_app();
     // Enter the menu once; the loop then only ever transitions between distinct
@@ -874,14 +909,13 @@ fn spectate_ai_menu_option_launches_a_bot_driven_match() {
         app.world()
             .contains_resource::<crate::sim::state::SpectatorBot>()
     );
-    assert_eq!(
-        app.world().resource::<flow::ActiveMatchSeed>().0,
-        flow::MATCH_SEED,
-        "spectator mode uses the fixed demo seed so bot crossings stay deterministic"
-    );
+    let active_seed = app.world().resource::<flow::ActiveMatchSeed>().0;
     {
         let bot = app.world().resource::<crate::sim::state::SpectatorBot>();
-        assert_eq!(bot.seed, flow::MATCH_SEED);
+        assert_eq!(
+            bot.seed, active_seed,
+            "spectator mode and the match use the same launch seed"
+        );
         assert!(
             bot.teamplay.plan.solvable(),
             "spectator mode owns a valid procedural co-op seed plan"
@@ -939,7 +973,7 @@ fn spectate_ai_menu_option_launches_a_bot_driven_match() {
 }
 
 #[test]
-fn spectate_mode_waits_for_the_visible_run_when_the_series_result_is_ready() {
+fn spectate_mode_records_the_result_when_the_series_result_is_ready() {
     let mut app = test_app();
     app.world_mut()
         .insert_resource(flow::ActiveMatchSeed(flow::MATCH_SEED));
@@ -977,19 +1011,27 @@ fn spectate_mode_waits_for_the_visible_run_when_the_series_result_is_ready() {
     );
 
     app.update();
-    assert_eq!(
-        *app.world().resource::<State<GameState>>().get(),
-        GameState::Match,
-        "Spectate must not jump to Results before the rendered run catches up"
+    assert!(
+        app.world().resource::<Career>().last_result.is_some(),
+        "Spectate records the authoritative match result even if the visible body did not catch up"
     );
     assert!(
-        app.world().resource::<Career>().last_result.is_none(),
-        "no result should be recorded while the visible run is still in progress"
-    );
-    assert!(
-        !app.world()
+        app.world()
             .resource::<crate::sim::director::MatchDirector>()
             .done
+    );
+    assert!(
+        app.world()
+            .resource::<crate::sim::replay::ReplayTape>()
+            .result
+            .is_some(),
+        "the replay tape keeps the completed result for post-match inspection"
+    );
+    app.update();
+    assert_eq!(
+        *app.world().resource::<State<GameState>>().get(),
+        GameState::Results,
+        "Spectate follows normal match completion into Results"
     );
 }
 

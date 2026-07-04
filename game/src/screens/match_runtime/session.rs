@@ -16,6 +16,7 @@ use crate::keystones::KeystoneState;
 use crate::layout::WALL_HEIGHT;
 use crate::sim::director::MatchDirector;
 use crate::sim::nav::nav_from_brain;
+use crate::sim::replay::ReplayTape;
 use crate::sim::state::{
     ItemIntent, LastTeleportPad, MatchIntent, MatchPaused, RivalSightings, SpectatorBot,
     TeleportState,
@@ -41,12 +42,17 @@ pub(crate) fn setup_match(
         warn!("one or more planned match assets are absent; procedural fallbacks will be used");
     }
     let seed_val = seed.map(|s| s.0).unwrap_or(MATCH_SEED);
+    let has_spectator = spectator_bot.is_some();
     if let Some(mut spectator) = spectator_bot
         && spectator.seed != seed_val
     {
         *spectator = SpectatorBot::for_seed(seed_val);
     }
     let map_spec = crate::map_catalog::active_map_spec(seed_val);
+    info!(
+        "MATCH_START seed={} map={} spectator={}",
+        seed_val, map_spec.name, has_spectator
+    );
     let director = MatchDirector::new(seed_val, map_spec.clone());
     let game = director.live.host_match();
     let initial_escaped = game.competitive.escaped_count();
@@ -62,6 +68,7 @@ pub(crate) fn setup_match(
         compute_gap_dests(seed_val, start_place, &start_geom, game, &keys, &items);
     let spawn = Vec3::new(0.0, tp_config.half_height, 0.0);
     commands.insert_resource(director);
+    commands.insert_resource(ReplayTape::new(seed_val, &map_spec));
     commands.insert_resource(MatchPaused(false));
     commands.insert_resource(TacMapState(false));
     commands.insert_resource(MatchIntent::default());

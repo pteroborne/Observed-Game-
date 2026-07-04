@@ -150,6 +150,11 @@ pub(crate) fn setup_results(
             root.spawn(panel()).with_children(|p| {
                 p.spawn(menu_button(
                     0,
+                    MenuAction::Goto(GameState::Replay),
+                    "Watch replay",
+                ));
+                p.spawn(menu_button(
+                    1,
                     MenuAction::Goto(GameState::MainMenu),
                     "Continue",
                 ));
@@ -235,16 +240,16 @@ pub(crate) fn menu_activate(
             next.set(GameState::Lobby);
         }
         MenuAction::SpectateAi => {
-            commands.insert_resource(crate::flow::ActiveMatchSeed(crate::flow::MATCH_SEED));
-            commands.insert_resource(SpectatorBot::for_seed(crate::flow::MATCH_SEED));
+            let seed = crate::flow::launch_seed();
+            info!("MATCH_START mode=spectate seed={seed}");
+            commands.insert_resource(crate::flow::ActiveMatchSeed(seed));
+            commands.insert_resource(SpectatorBot::for_seed(seed));
             next.set(GameState::Match);
         }
         MenuAction::Launch => {
-            let random_seed = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos() as u64)
-                .unwrap_or(1);
-            commands.insert_resource(crate::flow::ActiveMatchSeed(random_seed));
+            let seed = crate::flow::launch_seed();
+            info!("MATCH_START mode=play seed={seed}");
+            commands.insert_resource(crate::flow::ActiveMatchSeed(seed));
             commands.remove_resource::<SpectatorBot>();
             next.set(GameState::Match);
         }
@@ -272,6 +277,7 @@ pub(crate) fn menu_escape(
             exit.write(bevy::app::AppExit::Success);
         }
         GameState::Loadout | GameState::Lobby | GameState::Results => next.set(GameState::MainMenu),
+        GameState::Replay => next.set(GameState::Results),
         _ => {}
     }
 }

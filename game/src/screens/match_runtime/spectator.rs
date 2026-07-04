@@ -28,6 +28,7 @@ pub(crate) fn drive_spectator_bot(
     keys: Res<KeystoneState>,
     items: Res<ItemsState>,
     guardian: Res<crate::guardian::Guardian>,
+    seed: Option<Res<crate::flow::ActiveMatchSeed>>,
     mut intent: ResMut<MatchIntent>,
     mut item_intent: ResMut<ItemIntent>,
 ) {
@@ -46,6 +47,7 @@ pub(crate) fn drive_spectator_bot(
     }
 
     let here = body_xz(&tp);
+    let seed_val = seed.map(|seed| seed.0).unwrap_or(crate::flow::MATCH_SEED);
     let local_feet_y =
         crate::bot::local_feet_y(tp.body.position.y - tp.config.half_height, tp.place);
     let in_same_room = matches!(tp.place, Place::Room(room) if room == guardian.room);
@@ -67,7 +69,7 @@ pub(crate) fn drive_spectator_bot(
         let at_aperture =
             rel.dot(gap.normal) > -0.45 && rel.dot(tangent).abs() <= gap.width * 0.5 + 0.35;
         if here.distance(gap.center) <= SPECTATOR_BOT_CROSS_RADIUS || at_aperture {
-            debug_cross_gap_for_capture(&mut tp, &mut director, gap, &keys, &items);
+            debug_cross_gap_for_capture(seed_val, &mut tp, &mut director, gap, &keys, &items);
             spectator.clear_route();
             intent.0 = PlayerIntent::default();
             return;
@@ -126,11 +128,18 @@ pub(crate) fn drive_spectator_bot(
     }
 
     let target = spectator.route[spectator.waypoint];
-    let jump_pressed = spectator
+    let leg_needs_jump = spectator
         .route_jumps
         .get(spectator.waypoint)
         .copied()
         .unwrap_or(false);
+    let jump_pressed = crate::bot::gantry_jump_pressed_for_leg(
+        &tp.geom,
+        here,
+        local_feet_y,
+        tp.body.grounded,
+        leg_needs_jump,
+    );
     let to = target - here;
     if to.length_squared() < 0.04 {
         intent.0 = PlayerIntent::default();

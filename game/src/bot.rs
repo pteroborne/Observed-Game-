@@ -40,6 +40,28 @@ pub(crate) fn at_deck_height(local_feet_y: f32) -> bool {
     (local_feet_y - gantry::UPPER_DECK_Y).abs() <= DECK_HEIGHT_TOLERANCE
 }
 
+/// Whether a deck-piloted Gantry leg should fire the jump button this fixed tick.
+///
+/// `leg_needs_jump` says the current route segment crosses a real platform gap. The
+/// button itself should only fire once the body is grounded on the current upper deck and
+/// has committed to the platform's far edge, mirroring the pure gantry runner.
+pub(crate) fn gantry_jump_pressed_for_leg(
+    geom: &PlaceGeom,
+    here: Vec2,
+    local_feet_y: f32,
+    grounded: bool,
+    leg_needs_jump: bool,
+) -> bool {
+    if !leg_needs_jump || !grounded || !at_deck_height(local_feet_y) {
+        return false;
+    }
+    platform_decks(&geom.decks).into_iter().any(|platform| {
+        (here.x - platform.center.x).abs() <= platform.half.x + 0.25
+            && (here.y - platform.center.y).abs() <= platform.half.y + 0.25
+            && here.y >= platform.center.y + platform.half.y - 0.55
+    })
+}
+
 /// The platform-only decks of a Gantry hallway's `geom.decks`, ordered by Z (excludes the
 /// upper/entry landings, which are wider/shallower than the authored jump platforms).
 fn platform_decks(decks: &[DeckSeg]) -> Vec<&DeckSeg> {
@@ -512,6 +534,47 @@ mod tests {
         assert!(
             platform_to_platform_legs.iter().all(|(_, jump)| *jump),
             "every platform-to-platform leg crosses a real jump-map gap: {platform_to_platform_legs:?}"
+        );
+    }
+
+    #[test]
+    fn gantry_jump_button_fires_only_at_the_platform_edge() {
+        use observed_traversal::gantry;
+
+        let template = hallway::TEMPLATES
+            .iter()
+            .find(|template| template.flavor == HallwayFlavor::Gantry)
+            .unwrap();
+        let geom = teleport::hallway_geom(RoomId(0), RoomId(1), template, 0, false);
+        let platform = geom
+            .decks
+            .iter()
+            .find(|deck| (deck.half.y - gantry::PLATFORM_HALF_LENGTH).abs() < 1e-2)
+            .expect("gantry has a jump platform");
+
+        assert!(
+            !gantry_jump_pressed_for_leg(&geom, platform.center, gantry::UPPER_DECK_Y, true, true,),
+            "standing at platform center should not jump yet"
+        );
+        assert!(
+            gantry_jump_pressed_for_leg(
+                &geom,
+                Vec2::new(platform.center.x, platform.center.y + platform.half.y - 0.2),
+                gantry::UPPER_DECK_Y,
+                true,
+                true,
+            ),
+            "grounded at the far edge of a jump leg should fire jump"
+        );
+        assert!(
+            !gantry_jump_pressed_for_leg(
+                &geom,
+                Vec2::new(platform.center.x, platform.center.y + platform.half.y - 0.2),
+                gantry::UPPER_DECK_Y,
+                true,
+                false,
+            ),
+            "contiguous legs should never jump"
         );
     }
 

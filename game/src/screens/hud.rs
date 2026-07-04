@@ -368,6 +368,7 @@ pub(crate) fn match_draw(
     items: Res<ItemsState>,
     log: Res<crate::guardian::ActionLog>,
     tp: Res<TeleportState>,
+    seed: Option<Res<crate::flow::ActiveMatchSeed>>,
     mut hud: Query<&mut Text, With<MatchHud>>,
     mut pause_panel: Query<&mut Visibility, With<PausePanel>>,
 ) {
@@ -469,8 +470,9 @@ pub(crate) fn match_draw(
     };
 
     if let Ok(mut hud) = hud.single_mut() {
+        let seed_val = seed.map(|seed| seed.0).unwrap_or(crate::flow::MATCH_SEED);
         **hud = format!(
-            "ROUND {}\nYou (Team 1): {}\nescaped {} | absorbed {}\ncollapse {:.0}%\n\
+            "SEED {}\nROUND {}\nYou (Team 1): {}\nescaped {} | absorbed {}\ncollapse {:.0}%\n\
              SERIES R{} | alive {} | adversary {} | countdown {}\n\
              {}\n\
              {}\n\
@@ -484,6 +486,7 @@ pub(crate) fn match_draw(
              NET lockstep {} | replica {}/{} {} | drop {} dup {} reorder {}\n\n\
              WASD+mouse or Deck controls | E/X seize/link | F/L1 torch | C/Y pad\n\
              Tab/R1 map | Esc/Start pause",
+            seed_val,
             facility.round,
             local_status,
             facility.escaped_count(),
