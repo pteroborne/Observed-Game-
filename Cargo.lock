@@ -5155,6 +5155,7 @@ name = "observed_facility"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "ghx_proc_gen",
  "glam 0.30.10",
  "observed_core",
  "observed_observation",
@@ -7130,6 +7131,9 @@ dependencies = [
  "bevy",
  "bevy_ghx_proc_gen",
  "ghx_proc_gen",
+ "observed_core",
+ "observed_facility",
+ "observed_match",
  "observed_style",
 ]
 

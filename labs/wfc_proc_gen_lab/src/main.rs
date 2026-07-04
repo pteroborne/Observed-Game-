@@ -13,6 +13,9 @@ use ghx_proc_gen::{
         grid::{Grid, GridData},
     },
 };
+use wfc_proc_gen_lab::map_topology::{
+    MapTopologyState, handle_map_topology_input, render_map_topology, setup_map_topology_ui,
+};
 
 // TILE_SIZE for sprite rendering
 const VIEW_TILE_SIZE: f32 = 45.0;
@@ -59,8 +62,21 @@ fn main() {
             entrance_idx: 0,
             exit_idx: 0,
         })
-        .add_systems(Startup, (setup_camera, setup_ui, init_map))
-        .add_systems(Update, (handle_input, render_map, update_ui))
+        .init_resource::<MapTopologyState>()
+        .add_systems(
+            Startup,
+            (setup_camera, setup_ui, init_map, setup_map_topology_ui),
+        )
+        .add_systems(
+            Update,
+            (
+                handle_input,
+                render_map,
+                update_ui,
+                handle_map_topology_input,
+                render_map_topology,
+            ),
+        )
         .run();
 }
 

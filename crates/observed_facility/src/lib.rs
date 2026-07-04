@@ -21,6 +21,8 @@ pub mod constraints;
 pub mod map_spec;
 pub mod room_def;
 pub mod room_world;
+#[cfg(feature = "wfc")]
+pub mod wfc;
 
 pub use map_spec::*;
 pub use room_def::*;

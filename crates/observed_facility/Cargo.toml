@@ -11,6 +11,11 @@ publish = false
 # connections, and graph constraints are then plain data (glam only, no ECS / Color).
 default = ["bevy"]
 bevy = ["dep:bevy"]
+# Wave Function Collapse liminal-map generation (Phase 45 / Arc D). Off by default:
+# the authored `sector_relay_v1` catalog map remains the only map the game ever
+# builds against until Phase 46 flips the default. See `src/wfc.rs` and the crate
+# README for the R11 dependency-bar writeup (problem, adapter, fallback, proof).
+wfc = ["dep:ghx_proc_gen"]
 
 [dependencies]
 observed_core = { path = "../observed_core" }
@@ -23,3 +28,5 @@ glam = "0.30"
 bevy = { version = "0.18.1", default-features = false, features = [
     "bevy_color",
 ], optional = true }
+# Seeded topology generation for the `wfc` feature only; see feature comment above.
+ghx_proc_gen = { version = "0.8.0", optional = true }
