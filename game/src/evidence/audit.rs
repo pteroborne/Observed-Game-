@@ -15,7 +15,7 @@ use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::prelude::*;
 use observed_core::RoomId;
 use observed_diagnostics::{DiagnosticRun, DiagnosticSnapshotSummary};
-use observed_facility::map_spec::{RoomRole, sector_relay_v1};
+use observed_facility::map_spec::RoomRole;
 
 use super::snapshot::{
     ATLAS_Y, collect_snapshot, finish_audit, path_string, run_id, spawn_footprint_atlas,
@@ -311,14 +311,18 @@ fn parse_debug_room(value: &str) -> Option<RoomId> {
             .unwrap_or(&token)
             .parse::<u32>()
             .ok()
-            .filter(|room| sector_relay_v1().room(RoomId(*room)).is_some())
+            .filter(|room| {
+                crate::map_catalog::active_map_spec(crate::flow::MATCH_SEED)
+                    .room(RoomId(*room))
+                    .is_some()
+            })
             .map(RoomId),
     }
 }
 
 fn parse_debug_room_list(value: &str) -> Vec<RoomId> {
     if value.trim().eq_ignore_ascii_case("all") {
-        return sector_relay_v1()
+        return crate::map_catalog::active_map_spec(crate::flow::MATCH_SEED)
             .rooms
             .into_iter()
             .map(|room| room.id)
@@ -334,7 +338,7 @@ fn parse_debug_room_list(value: &str) -> Vec<RoomId> {
 }
 
 fn default_role_room(role: RoomRole) -> Option<RoomId> {
-    sector_relay_v1().role_room(role)
+    crate::map_catalog::active_map_spec(crate::flow::MATCH_SEED).role_room(role)
 }
 
 fn current_role_room(runtime: &MatchDirector, role: RoomRole, fallback: RoomId) -> RoomId {

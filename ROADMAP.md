@@ -22,7 +22,7 @@ Rivals become presences: team-colored anchor torches and frame lights on edges t
 ### Phase 43 — Living Fixtures `[x]`
 Fix shipped features (no map changes): role-driven monitor rooms render real previews via a shared room-preview helper, monitor sightings feed the RivalSightings ledger as read-only, guardian console lands on an interactive RoomRole::GuardianControl object, gantry entry becomes deck-level (no mount stairs), spectator bot visibly pilots gantry jumps with fall recovery, and EXIT_ROOM consumers migrate to CompetitiveFacility::exit_room().
 
-### Phase 44 — Map-Agnostic Plumbing `[ ]`
+### Phase 44 — Map-Agnostic Plumbing `[x]`
 Add selection layer and builder contract: `game::map_catalog::active_map_spec(seed)` returns the active MapSpec; `OBSERVED2_MAP` env var selects by name (default sector_relay_v1). Pure refactor; lands green.
 
 ### Phase 45 — WFC Topology In The Lab `[ ]`
@@ -37,6 +37,13 @@ DFS-maze hallways: archived `hallway_wfc.rs` ported onto WallSeg geometry; role-
 ---
 
 ## Recent Milestones (Completed)
+
+### Phase 44 — Map-Agnostic Plumbing `[x]`
+Added the map selection layer needed before generated maps enter the game:
+- **Validated catalog:** `game::map_catalog` owns active map selection, normalizes `OBSERVED2_MAP`, defaults to `sector_relay_v1`, and validates every registered `MapSpec` builder before returning it.
+- **Startup plumbing:** interactive match setup, headless `play_match()`, keystone defaults, debug room coercion, and map-audit capture now read the active map spec rather than directly constructing Sector Relay.
+- **Role-aware geometry:** the teleport `Nav` snapshot now carries the active map room role so monitor-room footprint shaping comes from the selected `MapSpec`, not a hard-coded sector lookup.
+- **Verification:** added catalog tests for default selection, aliases, and unknown-name rejection; `cargo test -p observed_game` passes.
 
 ### Phase 41 — Pressure Made Flesh `[x]`
 Made the director's pressure readable in the played game:

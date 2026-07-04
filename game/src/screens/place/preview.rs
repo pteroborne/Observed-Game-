@@ -111,6 +111,14 @@ pub(crate) fn fallback_dest(
         },
         hallway_exit_room_slot: None,
         target,
+        room_role: match dest {
+            Place::Room(room) => game
+                .competitive
+                .map_spec
+                .as_ref()
+                .and_then(|spec| spec.room(room).map(|room| room.role)),
+            Place::Hallway { .. } => None,
+        },
     }
 }
 
@@ -281,6 +289,10 @@ pub(crate) fn spawn_room_preview(
         connection_slots,
         sealed_slots,
         target,
+        game.competitive
+            .map_spec
+            .as_ref()
+            .and_then(|spec| spec.room(dest_room).map(|room| room.role)),
         nav.seed,
     );
     teleport::open_entry(&mut dest, Some(back));

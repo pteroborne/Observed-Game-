@@ -1,6 +1,7 @@
 use bevy::app::AppExit;
 use bevy::prelude::*;
 use observed_core::RoomId;
+use observed_facility::map_spec::MapSpec;
 use observed_match::hybrid::LocalAction;
 
 use crate::GameState;
@@ -416,6 +417,7 @@ pub(super) fn capture_match_progress(
 #[derive(Resource)]
 pub(super) struct MapAuditCaptureRequest {
     pub(super) dir: String,
+    pub(super) spec: MapSpec,
     pub(super) phase: u8,
     pub(super) next_at: f32,
     pub(super) index: usize,
@@ -424,13 +426,15 @@ pub(super) struct MapAuditCaptureRequest {
 
 impl MapAuditCaptureRequest {
     pub(super) fn new(dir: String) -> Self {
-        let spec = observed_facility::map_spec::sector_relay_v1();
+        let spec = crate::map_catalog::active_map_spec(flow::MATCH_SEED);
+        let rooms = map_validation::semantic_capture_rooms(&spec);
         Self {
             dir,
+            spec,
             phase: 0,
             next_at: 0.0,
             index: 0,
-            rooms: map_validation::semantic_capture_rooms(&spec),
+            rooms,
         }
     }
 
@@ -439,8 +443,8 @@ impl MapAuditCaptureRequest {
     }
 
     fn screenshot_path(&self, room: RoomId) -> String {
-        let spec = observed_facility::map_spec::sector_relay_v1();
-        let role = spec
+        let role = self
+            .spec
             .room(room)
             .map(|room| room.role.label())
             .unwrap_or("unknown")
@@ -519,7 +523,7 @@ pub(super) fn capture_map_audit_progress(
             if let Some(room) = request.current_room() {
                 let path = request.screenshot_path(room);
                 let report = map_validation::capture_report_for_room(
-                    &observed_facility::map_spec::sector_relay_v1(),
+                    &request.spec,
                     flow::MATCH_SEED,
                     0,
                     room,

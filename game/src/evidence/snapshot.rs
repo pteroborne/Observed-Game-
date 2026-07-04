@@ -138,6 +138,7 @@ fn collect_geometry(
             hallway_entry_room_slot: dest.hallway_entry_room_slot,
             hallway_exit_room_slot: dest.hallway_exit_room_slot,
             target_room: dest.target,
+            room_role: dest.room_role,
             seed: 0,
             version: 0,
             exit_locked: !keys.gate_open(),

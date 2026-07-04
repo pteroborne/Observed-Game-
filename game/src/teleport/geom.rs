@@ -9,7 +9,7 @@ use crate::hallway;
 use crate::maze;
 use bevy::math::Vec2;
 use observed_core::RoomId;
-use observed_facility::map_spec::{RoomRole, sector_relay_v1};
+use observed_facility::map_spec::RoomRole;
 use observed_match::mutable::EXIT_ROOM;
 use observed_traversal::gantry;
 use std::f32::consts::PI;
@@ -30,19 +30,16 @@ fn unit(seed: u64, salt: u64) -> f32 {
 const OBSERVATION_ROOM_SIDES: usize = 13;
 const OBSERVATION_ROOM_SCALE: f32 = 2.1;
 
-fn uses_observation_room_footprint(room: RoomId) -> bool {
-    sector_relay_v1()
-        .room(room)
-        .is_some_and(|room| room.role == RoomRole::Monitor)
-        || matches!(room.0, 5 | 6)
+fn uses_observation_room_footprint(room: RoomId, role: Option<RoomRole>) -> bool {
+    role == Some(RoomRole::Monitor) || matches!(room.0, 5 | 6)
 }
 
 /// A room's footprint polygon (CCW, centred at the origin), seeded so each room keeps a
 /// stable shape: a varied **rectangle** (4 sides) or a regular **polygon** of 5â€“8 sides
 /// (a pentagon/hexagon/heptagon/octagon, with a random orientation). `min_sides` forces
 /// enough edges to host every doorway.
-fn room_polygon(room: RoomId, seed: u64) -> Vec<Vec2> {
-    let observation_room = uses_observation_room_footprint(room);
+fn room_polygon(room: RoomId, seed: u64, role: Option<RoomRole>) -> Vec<Vec2> {
+    let observation_room = uses_observation_room_footprint(room, role);
     let n = if observation_room {
         OBSERVATION_ROOM_SIDES
     } else {
@@ -119,6 +116,26 @@ pub fn room_geom_with_slots_and_seals(
     target: Option<RoomId>,
     seed: u64,
 ) -> PlaceGeom {
+    room_geom_with_slots_and_seals_for_role(
+        room,
+        connections,
+        connection_slots,
+        sealed_slots,
+        target,
+        None,
+        seed,
+    )
+}
+
+pub fn room_geom_with_slots_and_seals_for_role(
+    room: RoomId,
+    connections: &[RoomId],
+    connection_slots: &[RoomConnectionSlot],
+    sealed_slots: &[ThresholdSlotId],
+    target: Option<RoomId>,
+    role: Option<RoomRole>,
+    seed: u64,
+) -> PlaceGeom {
     let mut conns: Vec<RoomId> = connections.to_vec();
     conns.sort_unstable_by_key(|r| r.0);
     conns.dedup();
@@ -136,7 +153,7 @@ pub fn room_geom_with_slots_and_seals(
         .collect();
     assigned.sort_by_key(|(_, slot)| *slot);
     assigned.dedup_by_key(|(_, slot)| *slot);
-    let verts = room_polygon(room, seed);
+    let verts = room_polygon(room, seed, role);
     let n = verts.len();
     let mut assigned_slots: Vec<ThresholdSlotId> = assigned.iter().map(|(_, slot)| *slot).collect();
     assigned_slots.sort_unstable();
@@ -780,14 +797,16 @@ pub fn room_preview_geom(
     connection_slots: &[RoomConnectionSlot],
     sealed_slots: &[ThresholdSlotId],
     target: Option<RoomId>,
+    role: Option<RoomRole>,
     base_seed: u64,
 ) -> PlaceGeom {
-    room_geom_with_slots_and_seals(
+    room_geom_with_slots_and_seals_for_role(
         room,
         connections,
         connection_slots,
         sealed_slots,
         target,
+        role,
         mix(base_seed, room.0 as u64),
     )
 }
@@ -797,12 +816,13 @@ pub fn geom_for(place: Place, nav: &Nav) -> PlaceGeom {
     match place {
         // The room shape is seeded by the room id + facility seed (not the decohere
         // version), so a room keeps a stable shape while its connections rewire.
-        Place::Room(room) => room_geom_with_slots_and_seals(
+        Place::Room(room) => room_geom_with_slots_and_seals_for_role(
             room,
             &nav.connections,
             &nav.connection_slots,
             &nav.sealed_slots,
             nav.target_room,
+            nav.room_role,
             mix(nav.seed, room.0 as u64),
         ),
         Place::Hallway {

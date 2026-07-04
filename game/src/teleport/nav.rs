@@ -2,6 +2,7 @@
 
 use super::{RoomConnectionSlot, ThresholdSlotId};
 use observed_core::RoomId;
+use observed_facility::map_spec::RoomRole;
 
 /// An edge `(a, b)` whose hallway variation is frozen at `version` â€” an **anchor torch**
 /// pins the structure so the corridor there stops re-rolling, even as the rest of the
@@ -31,6 +32,9 @@ pub struct Nav {
     pub hallway_exit_room_slot: Option<ThresholdSlotId>,
     /// The spine-forward objective room, if the local team is still running.
     pub target_room: Option<RoomId>,
+    /// The active map role for a rendered room, when known. Geometry uses this for
+    /// role-shaped footprints without reaching back into a global map singleton.
+    pub room_role: Option<RoomRole>,
     pub seed: u64,
     /// Increments when the graph decoheres, so an edge re-rolls its hallway.
     pub version: u32,

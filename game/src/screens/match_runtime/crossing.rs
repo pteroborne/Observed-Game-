@@ -72,6 +72,14 @@ pub(crate) fn compute_gap_dests(
                 hallway_entry_room_slot,
                 hallway_exit_room_slot,
                 target,
+                room_role: match dest {
+                    Place::Room(room) => game
+                        .competitive
+                        .map_spec
+                        .as_ref()
+                        .and_then(|spec| spec.room(room).map(|room| room.role)),
+                    Place::Hallway { .. } => None,
+                },
             }
         })
         .collect()
@@ -88,6 +96,7 @@ pub(super) fn frozen_nav(seed: u64, dest: &FrozenDest, keys: &KeystoneState) -> 
         hallway_entry_room_slot: dest.hallway_entry_room_slot,
         hallway_exit_room_slot: dest.hallway_exit_room_slot,
         target_room: dest.target,
+        room_role: dest.room_role,
         seed,
         version: 0,
         exit_locked: !keys.gate_open(),

@@ -24,6 +24,7 @@ mod tests {
             hallway_entry_room_slot: None,
             hallway_exit_room_slot: None,
             target_room: target.map(RoomId),
+            room_role: None,
             seed: 1,
             version: 0,
             exit_locked: false,

@@ -102,6 +102,16 @@ pub fn audit_sector_relay_v1() -> Vec<MapValidationIssue> {
     )
 }
 
+pub fn audit_active_map() -> Vec<MapValidationIssue> {
+    let spec = crate::map_catalog::active_map_spec(MATCH_SEED);
+    audit_map_iterations(
+        &spec,
+        MATCH_SEED,
+        DEFAULT_ITERATION_COUNT,
+        DEFAULT_DECOHERE_VERSIONS,
+    )
+}
+
 pub fn audit_map_iterations(
     spec: &MapSpec,
     base_seed: u64,
@@ -259,6 +269,7 @@ fn nav_for_spec_room(spec: &MapSpec, seed: u64, version: u32, room: RoomId) -> N
         hallway_entry_room_slot: None,
         hallway_exit_room_slot: None,
         target_room,
+        room_role: spec.room(room).map(|room| room.role),
         seed,
         version,
         exit_locked: true,

@@ -219,6 +219,11 @@ pub(crate) fn nav_for_room(
     let connection_slots = room_connection_slots(game, items, room, &connections);
     let sealed_slots = sealed_slots_for_room(game, room);
     let target_room = room_target(game, room, &connections);
+    let room_role = game
+        .competitive
+        .map_spec
+        .as_ref()
+        .and_then(|spec| spec.room(room).map(|room| room.role));
     crate::teleport::Nav {
         connections,
         connection_slots,
@@ -226,6 +231,7 @@ pub(crate) fn nav_for_room(
         hallway_entry_room_slot: None,
         hallway_exit_room_slot: None,
         target_room,
+        room_role,
         seed,
         version: game.reroute_commits,
         exit_locked: !keys.gate_open(),

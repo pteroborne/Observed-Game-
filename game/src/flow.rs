@@ -11,7 +11,6 @@
 
 use bevy::prelude::Resource;
 use observed_core::TeamId;
-use observed_facility::map_spec::sector_relay_v1;
 use observed_match::elimination::EliminationSeries;
 use observed_match::facility::CompetitiveFacility;
 use observed_net::netmatch::NetMatch;
@@ -72,7 +71,8 @@ pub fn resolve_series(series: &EliminationSeries) -> MatchResult {
 /// and an on-screen match of the same seed resolve identically (pinned by the
 /// `headless_and_interactive_matches_agree_on_the_result` characterization test).
 pub fn play_match() -> MatchResult {
-    let mut director = MatchDirector::new(MATCH_SEED, sector_relay_v1());
+    let mut director =
+        MatchDirector::new(MATCH_SEED, crate::map_catalog::active_map_spec(MATCH_SEED));
     director.run_to_completion()
 }
 

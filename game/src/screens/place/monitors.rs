@@ -371,7 +371,12 @@ fn spawn_wall_monitor(
     // A monitor room's own panel shows the target room's shell only, never that room's
     // own nested monitor contents — this never recurses into `spawn_wall_monitor` for the
     // target room, regardless of its role.
-    let dest = teleport::room_preview_geom(room, &[], &[], &[], None, seed);
+    let role = game
+        .competitive
+        .map_spec
+        .as_ref()
+        .and_then(|spec| spec.room(room).map(|room| room.role));
+    let dest = teleport::room_preview_geom(room, &[], &[], &[], None, role, seed);
     if let Some(poly) = dest.poly.clone() {
         let inward_yaw = mount.yaw + std::f32::consts::PI;
         let miniature_center = mount.center + mount.inward * (MONITOR_DEPTH * 0.5 + 0.02);

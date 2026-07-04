@@ -7,7 +7,7 @@
 
 use bevy::prelude::*;
 use observed_core::RoomId;
-use observed_facility::map_spec::{RoomRole, sector_relay_v1};
+use observed_facility::map_spec::RoomRole;
 use observed_traversal::{FpsBody, FpsConfig};
 
 use super::crossing::compute_gap_dests;
@@ -47,7 +47,7 @@ pub(crate) fn setup_match(
     {
         *spectator = SpectatorBot::for_seed(seed_val);
     }
-    let map_spec = sector_relay_v1();
+    let map_spec = crate::map_catalog::active_map_spec(seed_val);
     let director = MatchDirector::new(seed_val, map_spec.clone());
     let game = director.live.host_match();
     let initial_escaped = game.competitive.escaped_count();

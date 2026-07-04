@@ -9,6 +9,7 @@ pub mod hallway;
 pub mod items;
 pub mod keystones;
 mod layout;
+pub mod map_catalog;
 pub mod map_validation;
 pub mod maze;
 mod navmesh;

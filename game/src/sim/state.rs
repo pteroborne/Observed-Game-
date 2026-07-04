@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 
 use bevy::prelude::*;
 use observed_core::{RoomId, TeamId};
+use observed_facility::map_spec::RoomRole;
 use observed_match::teamplay::TeamplayMatch;
 use observed_progression::session::SessionLabWorld;
 use observed_traversal::{FpsArena, FpsBody, FpsConfig};
@@ -146,6 +147,8 @@ pub struct FrozenDest {
     pub hallway_exit_room_slot: Option<teleport::ThresholdSlotId>,
     /// For a room destination, its frozen spine target (which doorway stays forward).
     pub target: Option<RoomId>,
+    /// For a room destination, the active map role that shapes its presentation.
+    pub room_role: Option<RoomRole>,
 }
 
 #[derive(Resource)]
