@@ -117,6 +117,7 @@ pub struct GantryCourse {
     pub arena: FpsArena,
     pub platforms: Vec<GantryPlatform>,
     pub upper_landing: GantryPlatform,
+    pub entry_landing: GantryPlatform,
     pub thresholds: Vec<GantryThreshold>,
 }
 
@@ -130,6 +131,7 @@ impl GantryCourse {
     pub fn authored() -> Self {
         let platforms = authored_platforms();
         let upper_landing = authored_upper_landing(&platforms);
+        let entry_landing = authored_entry_landing(&platforms);
         let mut solids = Vec::new();
 
         let side_wall = |x: f32| {
@@ -142,6 +144,7 @@ impl GantryCourse {
         solids.push(side_wall(GANTRY_WIDTH * 0.5));
         solids.extend(platforms.iter().map(|platform| platform.solid(0.0)));
         solids.push(upper_landing.solid(0.0));
+        solids.push(entry_landing.solid(0.0));
 
         Self {
             arena: FpsArena {
@@ -151,6 +154,7 @@ impl GantryCourse {
             },
             platforms,
             upper_landing,
+            entry_landing,
             thresholds: vec![
                 GantryThreshold {
                     exit: GantryExit::UnderstoryReturn,
@@ -503,6 +507,26 @@ fn authored_upper_landing(platforms: &[GantryPlatform]) -> GantryPlatform {
     }
 }
 
+/// The entry landing: a deck-height slab spanning the −Z entry threshold, contiguous
+/// with the first jump platform's near edge, so a threshold crossing (which teleports
+/// the body, per the user's no-stairs ruling) delivers it directly onto the deck instead
+/// of a ground-level mount stair. Mirrors [`authored_upper_landing`] on the opposite end.
+fn authored_entry_landing(platforms: &[GantryPlatform]) -> GantryPlatform {
+    let first = platforms
+        .first()
+        .copied()
+        .expect("authored gantry has at least one platform");
+    let max_z = first.min_z();
+    let min_z = -GANTRY_LENGTH * 0.5;
+    GantryPlatform {
+        index: PLATFORM_COUNT + 1,
+        center: Vec2::new(0.0, (min_z + max_z) * 0.5),
+        half: Vec2::new(PLATFORM_HALF_WIDTH, (max_z - min_z) * 0.5),
+        bottom_y: UPPER_DECK_Y - PLATFORM_THICKNESS,
+        top_y: UPPER_DECK_Y,
+    }
+}
+
 fn yaw_toward(from: Vec2, to: Vec2) -> f32 {
     let dir = (to - from).normalize_or_zero();
     dir.x.atan2(-dir.y)
@@ -622,6 +646,24 @@ mod tests {
         assert!(
             landing.min_z() <= course.platforms.last().unwrap().max_z() + 0.01,
             "upper landing must be contiguous with the final jump platform"
+        );
+    }
+
+    #[test]
+    fn entry_landing_reaches_the_entry_threshold_and_the_first_platform() {
+        let course = GantryCourse::authored();
+        let landing = course.entry_landing;
+        let entry = course.threshold(GantryExit::UnderstoryReturn);
+
+        assert_eq!(landing.top_y, UPPER_DECK_Y);
+        assert_eq!(landing.bottom_y, UPPER_DECK_Y - PLATFORM_THICKNESS);
+        assert!(
+            landing.min_z() <= entry.center.y + 0.01,
+            "entry landing must reach the entry threshold at the -Z wall"
+        );
+        assert!(
+            landing.max_z() >= course.platforms[0].min_z() - 0.01,
+            "entry landing must be contiguous with the first jump platform"
         );
     }
 }

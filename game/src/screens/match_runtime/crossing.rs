@@ -136,6 +136,14 @@ pub(super) fn place_body(
     teleport::open_entry(&mut geom, arrived_from);
     let y_offset = teleport::place_y_offset(place);
     let arena = teleport::place_arena(&geom, y_offset, WALL_HEIGHT);
+    // The arrival gap's local floor_y (0 for every ground-level doorway; a gantry hall's
+    // deck entry sits at UPPER_DECK_Y), so a deck-level arrival stands ON the landing
+    // instead of sinking to the place's ground floor.
+    let arrival_floor_y = crossed
+        .as_ref()
+        .and_then(|gap| teleport::arrival_gap(&geom, place, gap, from))
+        .map(|gap| gap.floor_y)
+        .unwrap_or(0.0);
     let (pos, yaw, pitch) = crossed
         .and_then(|gap| teleport::crossing_alignment(&geom, place, &gap, from))
         .map(|align| {
@@ -161,7 +169,11 @@ pub(super) fn place_body(
     tp.arena = arena;
     tp.geom = geom;
     tp.body = FpsBody::spawned(
-        Vec3::new(pos.x, y_offset + tp.config.half_height, pos.y),
+        Vec3::new(
+            pos.x,
+            y_offset + arrival_floor_y + tp.config.half_height,
+            pos.y,
+        ),
         yaw,
     );
     tp.body.pitch = pitch;

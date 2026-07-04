@@ -27,6 +27,10 @@ pub struct SpectatorBot {
     pub teamplay_frame_accum: u8,
     pub route_place: Option<Place>,
     pub route: Vec<Vec2>,
+    /// Parallel to `route`: whether the leg arriving at that waypoint should hold
+    /// `jump_pressed` (set when piloting a Gantry hallway's deck; empty/all-`false` for a
+    /// normal 2D-navigated route, where the front sprint intent never jumps).
+    pub route_jumps: Vec<bool>,
     pub waypoint: usize,
     pub blocked_ticks: u32,
     pub finished: bool,
@@ -49,6 +53,7 @@ impl SpectatorBot {
             teamplay_frame_accum: 0,
             route_place: None,
             route: Vec::new(),
+            route_jumps: Vec::new(),
             waypoint: 0,
             blocked_ticks: 0,
             finished: false,
@@ -58,6 +63,7 @@ impl SpectatorBot {
     pub fn clear_route(&mut self) {
         self.route_place = None;
         self.route.clear();
+        self.route_jumps.clear();
         self.waypoint = 0;
     }
 }

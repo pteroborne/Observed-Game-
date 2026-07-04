@@ -1024,6 +1024,53 @@ fn paused_spectate_mode_does_not_advance_the_teamplay_brain() {
     );
 }
 
+/// The spectator's finish check now reads `game.competitive.exit_room()` (the map-spec
+/// aware accessor) rather than the raw `observed_match::mutable::EXIT_ROOM` constant, so
+/// it still recognises arrival at whatever room the live match actually treats as the
+/// exit.
+#[test]
+fn spectator_finishes_when_placed_in_the_competitive_exit_room() {
+    let mut app = test_app();
+    app.world_mut()
+        .insert_resource(flow::ActiveMatchSeed(flow::MATCH_SEED));
+    app.world_mut()
+        .insert_resource(crate::sim::state::SpectatorBot::for_seed(flow::MATCH_SEED));
+    go(&mut app, GameState::Match);
+
+    let exit_room = app
+        .world()
+        .resource::<crate::sim::director::MatchDirector>()
+        .live
+        .host_match()
+        .competitive
+        .exit_room()
+        .expect("the authored facility has an exit room");
+
+    app.world_mut()
+        .resource_scope(|world, mut tp: Mut<crate::sim::state::TeleportState>| {
+            let runtime = world.resource::<crate::sim::director::MatchDirector>();
+            let keys = world.resource::<keystones::KeystoneState>();
+            let items = world.resource::<items::ItemsState>();
+            let from = runtime.live.host_match().local_room();
+            crate::screens::match_runtime::debug_place_into(
+                &mut tp,
+                runtime,
+                crate::teleport::Place::Room(exit_room),
+                from,
+                keys,
+                items,
+            );
+        });
+
+    app.world_mut().run_schedule(FixedUpdate);
+    assert!(
+        app.world()
+            .resource::<crate::sim::state::SpectatorBot>()
+            .finished,
+        "the spectator bot must finish once placed in the live match's exit_room()"
+    );
+}
+
 #[test]
 fn the_match_renders_the_current_place_and_starts_on_the_spine() {
     let mut app = test_app();
@@ -1544,8 +1591,8 @@ fn a_gantry_hallway_renders_readable_decks_and_no_deck_leaks_into_the_wall_path(
         .filter(|n| n.as_str() == "Understory landing")
         .count();
     assert!(
-        deck_count >= 6,
-        "expected >= 6 Gantry deck entities (6 platforms + stair treads), got {deck_count}"
+        deck_count >= 8,
+        "expected >= 8 Gantry deck entities (6 platforms + upper + entry landings), got {deck_count}"
     );
     assert!(
         edge_count >= 4,
@@ -1676,5 +1723,158 @@ fn a_rival_moving_into_a_neighbour_refreshes_the_frame_light_without_a_place_cha
         found,
         "moving a rival into a neighbour must rebuild the place and refresh the frame \
          light even without a place/teleport change"
+    );
+}
+
+/// Teleport the local player straight into `room` (as a debug/test placement, not a
+/// physical crossing) and force a full place rebuild, mirroring the pattern the other
+/// `tp.place = ...; tp.rendered = None;` tests in this module use.
+fn teleport_into_room(app: &mut App, room: observed_core::RoomId) {
+    {
+        let mut tp = app
+            .world_mut()
+            .resource_mut::<crate::sim::state::TeleportState>();
+        tp.place = teleport::Place::Room(room);
+        tp.rendered = None;
+    }
+    app.update();
+}
+
+/// Arc D stage D1 fix: the wall-monitor rooms and the guardian console must spawn from
+/// the active map spec's [`observed_facility::map_spec::RoomRole::Monitor`] /
+/// `GuardianControl` rooms, never a hardcoded room id — the bug the user reported ("the
+/// observation rooms with monitors don't display the rooms correctly") traced back to
+/// `factory.rs` checking `room.0 == 5/6/3`, which silently stopped matching once the
+/// match moved to `sector_relay_v1` (Monitor = room 8, GuardianControl = room 7).
+#[test]
+fn monitor_room_renders_miniatures_for_its_page_and_guardian_console_spawns_in_its_role_room() {
+    use observed_core::RoomId;
+    use observed_facility::map_spec::{RoomRole, sector_relay_v1};
+
+    let spec = sector_relay_v1();
+    let monitor_room = spec
+        .role_room(RoomRole::Monitor)
+        .expect("sector_relay_v1 has a Monitor room");
+    let console_room = spec
+        .role_room(RoomRole::GuardianControl)
+        .expect("sector_relay_v1 has a GuardianControl room");
+    assert_eq!(monitor_room, RoomId(8));
+    assert_eq!(console_room, RoomId(7));
+
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    app.update();
+
+    teleport_into_room(&mut app, monitor_room);
+    let miniature_rooms: Vec<RoomId> = {
+        let world = app.world_mut();
+        let mut query = world.query::<&crate::screens::place::MonitorMiniature>();
+        query.iter(world).map(|m| m.room).collect()
+    };
+    assert!(
+        !miniature_rooms.is_empty(),
+        "the Monitor room must render at least one panel miniature"
+    );
+    let expected_page = crate::screens::place::monitor_page_for(&spec, monitor_room)
+        .expect("the Monitor room has a panel page");
+    for room in &miniature_rooms {
+        assert!(
+            expected_page.contains(room),
+            "panel miniature for {room:?} must be part of the room's own monitor page"
+        );
+    }
+    assert!(
+        count::<crate::screens::place::MonitorMiniature>(&mut app) <= expected_page.len() * 2,
+        "at most one miniature per panel per bank (tether + guardian banks share the page)"
+    );
+
+    // The Guardian starts in the GuardianControl-role room (session.rs's role-driven
+    // spawn), so walking straight in would trigger its same-room "catch" and bounce the
+    // player elsewhere before this frame's rebuild — move it away first so the test can
+    // observe the console deterministically.
+    {
+        let mut guardian = app.world_mut().resource_mut::<crate::guardian::Guardian>();
+        guardian.room = spec
+            .rooms
+            .iter()
+            .map(|r| r.id)
+            .find(|&id| id != console_room)
+            .expect("the map has another room for the guardian to occupy");
+    }
+    teleport_into_room(&mut app, console_room);
+    assert_eq!(
+        count::<crate::screens::place::GuardianConsole>(&mut app),
+        1,
+        "the interactive console spawns exactly once, in the GuardianControl-role room"
+    );
+}
+
+/// A monitor panel is an observation like any other: a rival visible on it must be
+/// recorded in the same one-writer sighting ledger threshold previews and audio bleed
+/// use (Phase 39 Sensor payoff meeting the Phase 42 ledger).
+#[test]
+fn a_rival_visible_on_a_monitor_panel_records_a_seen_sighting() {
+    use crate::sim::director::MatchDirector;
+    use crate::sim::state::{RivalSightings, SightingKind};
+    use observed_core::TeamId;
+    use observed_facility::map_spec::{RoomRole, sector_relay_v1};
+
+    let spec = sector_relay_v1();
+    let monitor_room = spec
+        .role_room(RoomRole::Monitor)
+        .expect("sector_relay_v1 has a Monitor room");
+    let page = crate::screens::place::monitor_page_for(&spec, monitor_room)
+        .expect("the Monitor room has a panel page");
+    let shown_room = *page
+        .first()
+        .expect("the Monitor room's page is non-empty on this map");
+
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    app.update();
+
+    {
+        let mut rt = app.world_mut().resource_mut::<MatchDirector>();
+        let base = rt.live.host.match_state.competitive.teams[1].member_base;
+        rt.live.host.match_state.competitive.structure.graph.players[base] = shown_room;
+    }
+    teleport_into_room(&mut app, monitor_room);
+
+    let sightings = app.world().resource::<RivalSightings>();
+    let sighting = sightings.get(TeamId(1), shown_room);
+    assert!(
+        sighting.is_some_and(|s| s.kind == SightingKind::Seen),
+        "a rival shown on a monitor panel must be recorded as Seen in the ledger"
+    );
+}
+
+/// Per-panel entity budget (Arc D stage D1): a monitor panel's miniature must stay cheap
+/// — shell + door states + a couple of overlay markers, not a full room's worth of detail.
+#[test]
+fn monitor_panels_stay_within_the_per_panel_entity_budget() {
+    use observed_facility::map_spec::{RoomRole, sector_relay_v1};
+
+    let spec = sector_relay_v1();
+    let monitor_room = spec
+        .role_room(RoomRole::Monitor)
+        .expect("sector_relay_v1 has a Monitor room");
+    let page = crate::screens::place::monitor_page_for(&spec, monitor_room)
+        .expect("the Monitor room has a panel page");
+
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    app.update();
+    let before = count::<crate::view::components::PlaceGeometry>(&mut app);
+    teleport_into_room(&mut app, monitor_room);
+    let after = count::<crate::view::components::PlaceGeometry>(&mut app);
+
+    let panel_count = count::<crate::screens::place::MonitorMiniature>(&mut app).max(1);
+    let per_panel_avg = (after.saturating_sub(before)) / panel_count;
+    assert!(
+        per_panel_avg <= crate::screens::place::MONITOR_PANEL_ENTITY_BUDGET,
+        "average entities per panel ({per_panel_avg}) exceeds the per-panel budget \
+         ({} panels, {} total place-geometry entities in the Monitor room)",
+        page.len(),
+        after
     );
 }

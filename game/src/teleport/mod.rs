@@ -217,7 +217,7 @@ pub use geom::{
 };
 pub use nav::{Nav, PinnedEdge};
 pub use transition::{
-    Align2d, Crossing, GAP_FLOOR_TOLERANCE, PREVIEW_OUTSET, apply_crossing, crossed,
+    Align2d, Crossing, GAP_FLOOR_TOLERANCE, PREVIEW_OUTSET, apply_crossing, arrival_gap, crossed,
     crossing_alignment, entry_spawn, feet_at_gap_floor, hallway_alignment, hallway_gap_alignment,
     place_arena, room_alignment, structural_height,
 };

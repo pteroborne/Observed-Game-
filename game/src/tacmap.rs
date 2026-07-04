@@ -170,7 +170,7 @@ pub fn build_map(
         rivals,
         collapse: facility.collapse_rooms(),
         keystones,
-        exit: RoomId(EXIT_ROOM),
+        exit: keys.exit_room,
         exit_open: keys.gate_open(),
     }
 }
@@ -238,7 +238,10 @@ mod tests {
             !model.exit_open,
             "the exit starts locked (keystones uncollected)"
         );
-        assert_eq!(model.exit, RoomId(EXIT_ROOM));
+        assert_eq!(
+            model.exit, keys.exit_room,
+            "the map's exit room drives the model, not the legacy spine constant"
+        );
         assert!(!model.keystones.is_empty(), "keystones are placed to find");
         assert_eq!(model.rooms.len(), 9);
     }

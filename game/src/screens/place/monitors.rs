@@ -2,18 +2,33 @@
 //! see anchor/guardian state from a distance, the interactive Guardian Control Console,
 //! and the systems that keep their glowing materials and room-id glyph labels in sync
 //! with live game state.
+//!
+//! **Role-driven, not room-id-driven** (Arc D stage D1 fix): both monitor banks and the
+//! console spawn from a [`MapSpec`]'s [`RoomRole::Monitor`] / [`RoomRole::GuardianControl`]
+//! rooms — never a literal room id — so any map spec wires up correctly. [`monitor_pages`]
+//! partitions the map's rooms across a Monitor room's panels (9 per room, in room-id
+//! order); each panel then renders its assigned room's *current* structural state as a
+//! miniature via [`super::preview::spawn_room_miniature`] (shell + door states + a
+//! room-id label), never the old static "R{n}\nSTATUS" text-only glow. Monitors are
+//! presentation-only: they read live state but never freeze, decohere, or otherwise
+//! mutate anything the deterministic brain owns.
 
 use bevy::prelude::*;
 use observed_core::RoomId;
+use observed_facility::map_spec::{MapSpec, RoomRole};
+use observed_match::hybrid::HybridMatch;
 
 use crate::GameState;
 use crate::items::{ItemKind, ItemsState};
 use crate::layout::WALL_HEIGHT;
+use crate::rivals;
 use crate::screens::match_runtime::district_for_place;
-use crate::sim::state::TeleportState;
+use crate::sim::state::{RivalSightings, SightingKind, TeleportState};
 use crate::teleport::{self, Place};
 use crate::view::assets::MatchAssets;
 use crate::view::components::PlaceGeometry;
+
+use super::preview::{RoomMiniatureOverlays, spawn_room_miniature};
 
 const MONITOR_COUNT: usize = 9;
 const MONITOR_FACE_OFFSET: f32 = 0.28;
@@ -25,7 +40,35 @@ const MONITOR_HORIZONTAL_MARGIN: f32 = 0.7;
 const MONITOR_VERTICAL_MARGIN: f32 = 0.45;
 const MONITOR_GLYPH_FACE_OFFSET: f32 = 0.2;
 const MONITOR_GLYPH_DEPTH: f32 = 0.035;
-const WALL_MONITOR_ROOM_ORDER: [u32; MONITOR_COUNT] = [0, 1, 4, 2, 3, 5, 6, 7, 8];
+
+/// Partition every room of `spec` (sorted by [`RoomId`]) across the map's
+/// [`RoomRole::Monitor`] rooms (also in [`RoomId`] order): [`MONITOR_COUNT`] panels per
+/// monitor room, each map room appearing on at most one panel across the whole map.
+/// Extra panels (a monitor room past the room count, or a map with more rooms than
+/// `9 * monitor_room_count` can show) simply stay dark — callers render a page's `Vec`
+/// shorter than [`MONITOR_COUNT`] by leaving the remaining wall mounts idle.
+pub(crate) fn monitor_pages(spec: &MapSpec) -> Vec<Vec<RoomId>> {
+    let mut rooms: Vec<RoomId> = spec.rooms.iter().map(|room| room.id).collect();
+    rooms.sort_unstable_by_key(|room| room.0);
+    let monitor_rooms = spec.rooms_with_role(RoomRole::Monitor);
+
+    rooms
+        .chunks(MONITOR_COUNT)
+        .map(<[RoomId]>::to_vec)
+        .chain(std::iter::repeat(Vec::new()))
+        .take(monitor_rooms.len())
+        .collect()
+}
+
+/// The panel page for one specific [`RoomRole::Monitor`] room (its position among the
+/// map's monitor rooms in [`RoomId`] order selects its [`monitor_pages`] entry). `None`
+/// if `room` does not hold the `Monitor` role.
+pub(crate) fn monitor_page_for(spec: &MapSpec, room: RoomId) -> Option<Vec<RoomId>> {
+    let mut monitor_rooms = spec.rooms_with_role(RoomRole::Monitor);
+    monitor_rooms.sort_unstable_by_key(|r| r.0);
+    let index = monitor_rooms.iter().position(|&r| r == room)?;
+    monitor_pages(spec).into_iter().nth(index)
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ObservationMonitorKind {
@@ -99,14 +142,38 @@ fn wall_monitor_mounts(geom: &teleport::PlaceGeom) -> Vec<WallMonitorMount> {
     mounts
 }
 
+/// Per-panel entity budget (Arc D stage D1): a monitor panel's miniature must stay cheap
+/// — the screen quad, its border (4), the two-glyph room-id label (up to ~12 segments),
+/// plus a handful of shell/overlay entities from [`spawn_room_miniature`] (floor, ceiling,
+/// per-edge walls, one light, a couple of surface-detail strips, and at most one rival
+/// avatar since a monitor renders shell + a same-room presence marker only, never a
+/// nested monitor's own contents). Tests assert the real spawn stays under this.
+#[cfg(test)]
+pub(crate) const MONITOR_PANEL_ENTITY_BUDGET: usize = 60;
+
+/// Half-size (world units) a monitor panel's room miniature is scaled to, so a full room
+/// footprint reads as a small diorama on the wall rather than a life-size room punched
+/// into it.
+const MONITOR_MINIATURE_SCALE: f32 = 0.05;
+
+/// Spawn the tether-camera bank on a Monitor room's wall mounts starting at mount index
+/// `mount_offset` (so a Guardian bank sharing the same room can start after it — see
+/// [`spawn_guardian_observation_monitors`]), one panel per room in `page`.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_tether_camera_monitors(
     commands: &mut Commands,
     assets: &MatchAssets,
+    meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     geom: &teleport::PlaceGeom,
     y_offset: f32,
     seed: u64,
     room: RoomId,
+    mount_offset: usize,
+    page: &[RoomId],
+    game: &HybridMatch,
+    klaxon_active: bool,
+    sightings: &mut RivalSightings,
 ) {
     let border_material = assets.district_accent_materials
         [district_for_place(seed, Place::Room(room)).index()]
@@ -114,22 +181,39 @@ pub(crate) fn spawn_tether_camera_monitors(
     spawn_wall_monitors(
         commands,
         assets,
+        meshes,
         materials,
         geom,
         y_offset,
+        seed,
         border_material,
         ObservationMonitorKind::Tether,
+        mount_offset,
+        page,
+        game,
+        klaxon_active,
+        sightings,
     );
 }
 
+/// Spawn the guardian-observation bank on a Monitor room's wall mounts starting at mount
+/// index `mount_offset`, one panel per room in `page`. Coexists with
+/// [`spawn_tether_camera_monitors`] in the same room by claiming a disjoint mount range.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_guardian_observation_monitors(
     commands: &mut Commands,
     assets: &MatchAssets,
+    meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     geom: &teleport::PlaceGeom,
     y_offset: f32,
     seed: u64,
     room: RoomId,
+    mount_offset: usize,
+    page: &[RoomId],
+    game: &HybridMatch,
+    klaxon_active: bool,
+    sightings: &mut RivalSightings,
 ) {
     let border_material = assets.district_accent_materials
         [district_for_place(seed, Place::Room(room)).index()]
@@ -137,39 +221,68 @@ pub(crate) fn spawn_guardian_observation_monitors(
     spawn_wall_monitors(
         commands,
         assets,
+        meshes,
         materials,
         geom,
         y_offset,
+        seed,
         border_material,
         ObservationMonitorKind::Guardian,
+        mount_offset,
+        page,
+        game,
+        klaxon_active,
+        sightings,
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_wall_monitors(
     commands: &mut Commands,
     assets: &MatchAssets,
+    meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     geom: &teleport::PlaceGeom,
     y_offset: f32,
+    seed: u64,
     border_material: Handle<StandardMaterial>,
     kind: ObservationMonitorKind,
+    mount_offset: usize,
+    page: &[RoomId],
+    game: &HybridMatch,
+    klaxon_active: bool,
+    sightings: &mut RivalSightings,
 ) {
-    for (slot, mount) in wall_monitor_mounts(geom)
+    for (mount, &room) in wall_monitor_mounts(geom)
         .into_iter()
+        .skip(mount_offset)
         .take(MONITOR_COUNT)
-        .enumerate()
+        .zip(page.iter())
     {
-        let room = RoomId(WALL_MONITOR_ROOM_ORDER[slot]);
         spawn_wall_monitor(
             commands,
             assets,
+            meshes,
             materials,
             border_material.clone(),
             mount,
             y_offset,
+            seed,
             room,
             kind,
+            game,
+            klaxon_active,
         );
+
+        // Phase 39/42 payoff: a monitor panel that currently shows a rival occupying its
+        // target room is itself an observation, exactly like a threshold or an audio
+        // bleed — so it writes into the same one-writer sighting ledger
+        // (`RivalSightings::record`, see `sim::sightings`'s module doc).
+        let commits = game.reroute_commits;
+        for team_index in rivals::rivals_in_room(&game.competitive, room) {
+            let team = game.competitive.teams[team_index].id;
+            sightings.record(team, room, SightingKind::Seen, commits);
+        }
     }
 }
 
@@ -177,12 +290,16 @@ fn spawn_wall_monitors(
 fn spawn_wall_monitor(
     commands: &mut Commands,
     assets: &MatchAssets,
+    meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     border_material: Handle<StandardMaterial>,
     mount: WallMonitorMount,
     y_offset: f32,
+    seed: u64,
     room: RoomId,
     kind: ObservationMonitorKind,
+    game: &HybridMatch,
+    klaxon_active: bool,
 ) {
     let height = WALL_HEIGHT - MONITOR_VERTICAL_MARGIN * 2.0;
     let center_y = y_offset + WALL_HEIGHT * 0.5;
@@ -244,6 +361,66 @@ fn spawn_wall_monitor(
         .with_rotation(Quat::from_rotation_y(mount.yaw));
     let glyph_material = materials.add(monitor_label_segment_material(kind, false));
     spawn_monitor_room_id_glyph(commands, assets, glyph_material, glyph_base, room, kind);
+
+    // The panel's actual payoff (Arc D stage D1 fix): the target room's *current*
+    // structural state as a real miniature, via the same technique the threshold
+    // previews use (`preview::spawn_room_miniature`) — never the flat status-only glow
+    // the old wall-monitor scheme rendered. Presentation-only: a monitor never freezes
+    // or decoheres anything, it only reads and displays live state.
+    //
+    // A monitor room's own panel shows the target room's shell only, never that room's
+    // own nested monitor contents — this never recurses into `spawn_wall_monitor` for the
+    // target room, regardless of its role.
+    let dest = teleport::room_preview_geom(room, &[], &[], &[], None, seed);
+    if let Some(poly) = dest.poly.clone() {
+        let inward_yaw = mount.yaw + std::f32::consts::PI;
+        let miniature_center = mount.center + mount.inward * (MONITOR_DEPTH * 0.5 + 0.02);
+        let parent = Transform::from_xyz(miniature_center.x, center_y, miniature_center.y)
+            .with_rotation(Quat::from_rotation_y(inward_yaw))
+            .with_scale(Vec3::splat(MONITOR_MINIATURE_SCALE));
+
+        // A named, tagged marker at the miniature's root so tests (and any future
+        // inspection tooling) can find "the miniature for panel/room X" without having to
+        // pattern-match the shared helper's generic shell entity names.
+        commands.spawn((
+            PlaceGeometry,
+            DespawnOnExit(GameState::Match),
+            MonitorMiniature { room },
+            parent,
+            Name::new("Monitor miniature"),
+        ));
+
+        spawn_room_miniature(
+            commands,
+            assets,
+            meshes,
+            materials,
+            &dest,
+            &poly,
+            room,
+            parent,
+            seed,
+            game,
+            klaxon_active,
+            RoomMiniatureOverlays {
+                open_edge_target: None,
+                rival_lane_origin: Vec3::new(0.0, 0.82, 0.0),
+                anchor_torch_root: Vec3::new(dest.half.x * 0.5 + 0.3, 0.55, 0.6),
+            },
+        );
+    }
+}
+
+/// Marks a monitor panel's miniature root (an invisible anchor entity, no mesh) so tests
+/// and diagnostics can find "the miniature currently showing room X" directly, without
+/// pattern-matching the shared preview helper's generic shell entity names.
+#[derive(Component)]
+pub(crate) struct MonitorMiniature {
+    // Read by tests only today (e.g. `game::tests::monitor_room_renders_miniatures_...`);
+    // kept a real field rather than a unit marker since it's the natural hook for a future
+    // visual-audit scenario (`evidence::audit`) to report "panel N shows room Y".
+    #[allow(dead_code)]
+    pub(crate) room: RoomId,
 }
 
 pub(crate) fn monitor_label(kind: ObservationMonitorKind, room: RoomId, active: bool) -> String {
@@ -591,17 +768,25 @@ pub(crate) fn update_guardian_monitors(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn interact_guardian_console(
     keyboard: Res<ButtonInput<KeyCode>>,
     gamepads: Query<&bevy::input::gamepad::Gamepad>,
     tp: Res<TeleportState>,
+    runtime: Res<crate::sim::director::MatchDirector>,
     mut guardian: ResMut<crate::guardian::Guardian>,
     mut log: ResMut<crate::guardian::ActionLog>,
     consoles: Query<&MeshMaterial3d<StandardMaterial>, With<GuardianConsole>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let in_room_3 = matches!(tp.place, Place::Room(RoomId(3)));
-    if !in_room_3 {
+    let console_room = runtime
+        .live
+        .host_match()
+        .competitive
+        .map_spec
+        .as_ref()
+        .and_then(|spec| spec.role_room(RoomRole::GuardianControl));
+    if console_room.is_none_or(|room| tp.place != Place::Room(room)) {
         return;
     }
 
@@ -652,6 +837,7 @@ pub(crate) fn interact_guardian_console(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use observed_facility::map_spec::sector_relay_v1;
 
     #[test]
     fn monitor_labels_encode_room_and_state() {
@@ -676,5 +862,64 @@ mod tests {
         let front = Quat::from_rotation_y(yaw) * Vec3::Z;
         assert!((front.x - inward.x).abs() < 0.0001);
         assert!((front.z - inward.y).abs() < 0.0001);
+    }
+
+    #[test]
+    fn monitor_pages_partition_every_room_at_most_once() {
+        let spec = sector_relay_v1();
+        let pages = monitor_pages(&spec);
+        let monitor_room_count = spec.rooms_with_role(RoomRole::Monitor).len();
+        assert_eq!(
+            pages.len(),
+            monitor_room_count,
+            "one page per Monitor-role room"
+        );
+
+        let mut seen = std::collections::BTreeSet::new();
+        let mut total = 0;
+        for page in &pages {
+            assert!(
+                page.len() <= MONITOR_COUNT,
+                "a page never exceeds the physical panel count"
+            );
+            for &room in page {
+                assert!(
+                    seen.insert(room),
+                    "{room:?} must appear on at most one panel across every monitor room"
+                );
+                total += 1;
+            }
+        }
+        assert!(total <= spec.room_count(), "never invents rooms");
+    }
+
+    #[test]
+    fn monitor_pages_are_deterministic() {
+        let spec = sector_relay_v1();
+        assert_eq!(monitor_pages(&spec), monitor_pages(&spec));
+    }
+
+    #[test]
+    fn monitor_page_for_matches_the_room_s_slot_in_monitor_pages() {
+        let spec = sector_relay_v1();
+        let monitor_room = spec
+            .rooms_with_role(RoomRole::Monitor)
+            .first()
+            .copied()
+            .expect("sector_relay_v1 has a Monitor room");
+        let page = monitor_page_for(&spec, monitor_room).expect("the Monitor room has a page");
+        assert_eq!(page, monitor_pages(&spec)[0]);
+    }
+
+    #[test]
+    fn monitor_page_for_a_non_monitor_room_is_none() {
+        let spec = sector_relay_v1();
+        let non_monitor = spec
+            .rooms
+            .iter()
+            .find(|room| room.role != RoomRole::Monitor)
+            .map(|room| room.id)
+            .expect("sector_relay_v1 has non-monitor rooms");
+        assert_eq!(monitor_page_for(&spec, non_monitor), None);
     }
 }

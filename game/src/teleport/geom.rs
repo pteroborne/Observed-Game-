@@ -495,19 +495,20 @@ pub fn hallway_geom_with_slots(
         };
     }
     if template.flavor == hallway::HallwayFlavor::Gantry {
-        // The real gantry projection: two levels, four thresholds, matching the pure
-        // jump-map model in `observed_traversal::gantry` bolt for bolt (no re-authored
-        // numbers). The hall's local frame lines up with the course's own frame (entry at
-        // -Z, exit at +Z), so every dimension below is read straight off the course.
+        // The real gantry projection: two levels, five gaps across the pure jump-map
+        // model's four thresholds (the entry threshold now yields both the deck-level
+        // arrival and a ground-level return), matching `observed_traversal::gantry` bolt
+        // for bolt (no re-authored numbers). The hall's local frame lines up with the
+        // course's own frame (entry at -Z, exit at +Z), so every dimension below is read
+        // straight off the course.
         let course = gantry::GantryCourse::authored();
         let hx = gantry::GANTRY_WIDTH * 0.5;
         let hz = gantry::GANTRY_LENGTH * 0.5;
 
-        // Decks: the six jump-map platforms, plus a 5-step mount stair (rise 0.42/step,
-        // <= the controller's 0.45 step_height so walking up needs no jump) leading from
-        // the ground up onto platform[0]'s near edge. The stair sits in the platform lane
-        // (x = 0), tucked between the entry wall and platform[0] so it reads as the
-        // deliberate way up rather than a jump-only route.
+        // Decks: the six jump-map platforms, the upper landing, and the entry landing.
+        // Thresholds teleport the body directly (user design ruling: no stairs), so the
+        // entry threshold delivers the body straight onto the deck over `entry_landing`
+        // (mirroring `upper_landing` on the exit end) instead of climbing a mount stair.
         let mut decks: Vec<super::DeckSeg> = course
             .platforms
             .iter()
@@ -524,44 +525,42 @@ pub fn hallway_geom_with_slots(
             bottom_y: course.upper_landing.bottom_y,
             top_y: course.upper_landing.top_y,
         });
-        let stair_steps = 5;
-        let stair_rise = gantry::UPPER_DECK_Y / stair_steps as f32;
-        let stair_tread_half_z = 0.15;
-        let platform0_min_z = course.platforms[0].min_z();
-        let mut tread_max_z = platform0_min_z;
-        let mut stair = Vec::with_capacity(stair_steps);
-        for step in (0..stair_steps).rev() {
-            let tread_min_z = tread_max_z - 2.0 * stair_tread_half_z;
-            stair.push(super::DeckSeg {
-                center: Vec2::new(0.0, (tread_min_z + tread_max_z) * 0.5),
-                half: Vec2::new(course.platforms[0].half.x, stair_tread_half_z),
-                bottom_y: 0.0,
-                top_y: stair_rise * (step + 1) as f32,
-            });
-            tread_max_z = tread_min_z;
-        }
-        stair.reverse();
-        decks.extend(stair);
+        decks.push(super::DeckSeg {
+            center: course.entry_landing.center,
+            half: course.entry_landing.half,
+            bottom_y: course.entry_landing.bottom_y,
+            top_y: course.entry_landing.top_y,
+        });
 
-        // Gaps: entry (ground) + upper exit (deck-only, floor_y = UPPER_DECK_Y) + the
+        // Gaps: deck entry (delivers the body onto `entry_landing` at UPPER_DECK_Y) + a
+        // ground-level return (the understory walk-back, so a fallen body can still leave
+        // the way it came) + upper exit (deck-only, floor_y = UPPER_DECK_Y) + the
         // safe-bypass exit (ground, slow lane) + the understory side exit (ground,
-        // fall-recovery shortcut back to `from`). The side exit targets `from` like the
-        // entry, but is typed `Exit` rather than a second `Entry`: `teleport_sim`'s
-        // `!crossed_exit` branch in `crossing.rs` treats every `Entry`-kind gap as "walked
-        // back out before ever reaching the hallway's exit" and, once one is crossed,
-        // never re-checks the other passages that tick — a second `Entry` gap sitting on
-        // a different wall would silently race the real entry doorway for that one match.
-        // `Exit` has no such special-cased single-purpose branch (the exit-side code keys
-        // off `tp.crossed_exit`/`pending_exit`, not "which specific gap"), so a
+        // fall-recovery shortcut back to `from`). The ground return and the side exit both
+        // target `from` like the entry, but are typed `Exit` rather than a second `Entry`:
+        // `teleport_sim`'s `!crossed_exit` branch in `crossing.rs` treats every
+        // `Entry`-kind gap as "walked back out before ever reaching the hallway's exit"
+        // and, once one is crossed, never re-checks the other passages that tick — a
+        // second `Entry` gap sitting on a different wall would silently race the real
+        // entry doorway for that one match. `Exit` has no such special-cased
+        // single-purpose branch (the exit-side code keys off
+        // `tp.crossed_exit`/`pending_exit`, not "which specific gap"), so a
         // `from`-targeting `Exit` is a normal crossable passage (`is_passage` covers
         // `Exit`) that reaches `cross_into_room(.., from, to, ..)` through the same path
         // as the safe-bypass and upper exits, just aimed back at `from` instead of `to`.
         // (`open_entry`, the other `Entry`-specific consumer, is a no-op for hallways —
         // it only reopens a room's arrival doorway — so it is not a factor either way.)
+        // The ground return sits in the bypass lane (x = SAFE_BYPASS_X) rather than under
+        // the deck entry: `place_arena`'s wall-cutting solidifies/apertures a `-Z` wall
+        // span per gap by `(center.x, width)`, so a ground gap sharing the deck entry's XZ
+        // span would fight it for the same wall segment (two different floor_y apertures
+        // can't coexist on one span). The bypass lane is already proven clear of every
+        // deck the full length of the hall, so the ground return opens there instead.
         let entry_threshold = course.threshold(gantry::GantryExit::UnderstoryReturn);
         let upper_threshold = course.threshold(gantry::GantryExit::UpperExit);
         let bypass_threshold = course.threshold(gantry::GantryExit::SafeBypassExit);
         let side_threshold = course.threshold(gantry::GantryExit::UnderstorySideExit);
+        let ground_return_center = Vec2::new(gantry::SAFE_BYPASS_X, entry_threshold.center.y);
         return PlaceGeom {
             half: Vec2::new(hx, hz),
             gaps: vec![
@@ -577,6 +576,21 @@ pub fn hallway_geom_with_slots(
                         from,
                         from_room_slot,
                         ThresholdSlotId(0),
+                    ),
+                    floor_y: gantry::UPPER_DECK_Y,
+                },
+                DoorGap {
+                    center: ground_return_center,
+                    normal: entry_threshold.normal,
+                    width: entry_threshold.width,
+                    target: from,
+                    kind: GapKind::Exit,
+                    threshold: hallway_gap_threshold(
+                        from,
+                        to,
+                        from,
+                        from_room_slot,
+                        ThresholdSlotId(2),
                     ),
                     floor_y: entry_threshold.floor_y,
                 },

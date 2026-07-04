@@ -5,6 +5,7 @@
 
 use bevy::prelude::*;
 use observed_core::{RoomId, SplitMix};
+use observed_facility::map_spec::RoomRole;
 
 use crate::GameState;
 use crate::items::ItemsState;
@@ -12,13 +13,14 @@ use crate::keystones::KeystoneState;
 use crate::layout::WALL_HEIGHT;
 use crate::screens::match_runtime;
 use crate::sim::director::MatchDirector;
-use crate::sim::state::TeleportState;
+use crate::sim::state::{RivalSightings, TeleportState};
 use crate::teleport::{self, GapKind, Place};
 use crate::view::assets::MatchAssets;
 use crate::view::components::PlaceGeometry;
 
 use super::monitors::{
-    GuardianConsole, spawn_guardian_observation_monitors, spawn_tether_camera_monitors,
+    GuardianConsole, monitor_page_for, spawn_guardian_observation_monitors,
+    spawn_tether_camera_monitors,
 };
 use super::{item_visuals, lighting, preview, shell};
 
@@ -101,6 +103,7 @@ pub(crate) fn rebuild_place(
     items: Res<ItemsState>,
     guardian: Res<crate::guardian::Guardian>,
     runtime: Res<MatchDirector>,
+    mut sightings: ResMut<RivalSightings>,
     existing: Query<Entity, With<PlaceGeometry>>,
     last_sig: Option<ResMut<LastRenderedSignature>>,
     mut commands: Commands,
@@ -302,29 +305,57 @@ pub(crate) fn rebuild_place(
         }
     }
 
-    // Spawn specialized room visual elements (monitors, interactive console)
-    if let Place::Room(room) = tp.place {
-        if room.0 == 5 {
+    // Spawn specialized room visual elements (monitors, interactive console) — driven by
+    // the active map spec's semantic roles, never a literal room id (Arc D stage D1 fix:
+    // the old `room.0 == 5/6/3` checks silently stopped matching once the map moved to
+    // `sector_relay_v1`, which is why the observation rooms stopped showing anything).
+    if let Place::Room(room) = tp.place
+        && let Some(spec) = &game.competitive.map_spec
+    {
+        if spec.room(room).is_some_and(|r| r.role == RoomRole::Monitor)
+            && let Some(page) = monitor_page_for(spec, room)
+        {
+            // The Monitor room's panel page splits across two co-located banks (the
+            // tether-camera wall + the guardian-observation wall) on disjoint wall
+            // mounts, so both legacy camera "systems" keep working under a map with a
+            // single semantic Monitor room instead of the old two-room split.
+            let klaxon_active = match_runtime::countdown_klaxon_active(&runtime);
+            let split = page.len().div_ceil(2);
+            let (tether_page, guardian_page) = page.split_at(split);
             spawn_tether_camera_monitors(
                 &mut commands,
                 &assets,
+                &mut meshes,
                 &mut materials,
                 &geom,
                 y_offset,
                 seed_val,
                 room,
+                0,
+                tether_page,
+                game,
+                klaxon_active,
+                &mut sightings,
             );
-        } else if room.0 == 6 {
             spawn_guardian_observation_monitors(
                 &mut commands,
                 &assets,
+                &mut meshes,
                 &mut materials,
                 &geom,
                 y_offset,
                 seed_val,
                 room,
+                tether_page.len(),
+                guardian_page,
+                game,
+                klaxon_active,
+                &mut sightings,
             );
-        } else if room.0 == 3 {
+        } else if spec
+            .room(room)
+            .is_some_and(|r| r.role == RoomRole::GuardianControl)
+        {
             // Guardian Control Room: central interactive console
             let console_inactive = materials.add(StandardMaterial {
                 base_color: Color::srgb(0.2, 0.2, 0.2),

@@ -28,6 +28,11 @@ pub(crate) use monitors::{
     ObservationMonitorLabelSegment, TetherCameraMonitor, interact_guardian_console, monitor_label,
     update_guardian_monitors, update_tether_monitors,
 };
+// Test-only: `game::tests` reaches these through `crate::screens::place::...` rather than
+// `crate::screens::place::monitors::...` to match the rest of that module's style; nothing
+// in the production build needs them re-exported at this level.
+#[cfg(test)]
+pub(crate) use monitors::{MONITOR_PANEL_ENTITY_BUDGET, MonitorMiniature, monitor_page_for};
 
 /// Place the shared camera at the player's first-person eye in the current place's
 /// local frame (each place is centred at the origin). No shake — a reroute is felt

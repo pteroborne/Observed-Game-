@@ -740,16 +740,19 @@ mod tests {
         }
     }
 
-    /// The gantry projection is a real two-level hall: four distinct thresholds (entry,
-    /// upper exit on the deck, safe-bypass exit, and an understory side exit that recovers
-    /// back to `from`), six platform decks plus a mount stair, and no interior walls.
+    /// The gantry projection is a real two-level hall: five gaps across four thresholds
+    /// (a deck-level entry that delivers the body straight onto the deck, per the
+    /// no-stairs design ruling, plus the ground-level understory-return it now shares its
+    /// wall with; the upper exit on the deck; the safe-bypass exit; and an understory side
+    /// exit that recovers back to `from`), six platform decks plus the upper and entry
+    /// landings, and no interior walls.
     #[test]
-    fn a_gantry_hallway_projects_four_gaps_with_distinct_slots_and_decks() {
+    fn a_gantry_hallway_projects_five_gaps_with_distinct_slots_and_decks() {
         use observed_traversal::gantry;
         let template = gantry_template();
         for seed in 0..16u64 {
             let geom = hallway_geom(RoomId(1), RoomId(4), template, seed, false);
-            assert_eq!(geom.gaps.len(), 4, "gantry hall has exactly four gaps");
+            assert_eq!(geom.gaps.len(), 5, "gantry hall has exactly five gaps");
 
             // Distinct threshold slots on every gap (no two apertures share an identity).
             for i in 0..geom.gaps.len() {
@@ -763,7 +766,11 @@ mod tests {
 
             let entry = geom.gaps.iter().find(|g| g.kind == GapKind::Entry).unwrap();
             assert_eq!(entry.target, RoomId(1));
-            assert_eq!(entry.floor_y, 0.0, "the entry is ground level");
+            assert_eq!(
+                entry.floor_y,
+                gantry::UPPER_DECK_Y,
+                "the entry threshold now delivers the body directly onto the deck"
+            );
 
             let to_exits: Vec<_> = geom
                 .gaps
@@ -791,8 +798,17 @@ mod tests {
                 .collect();
             assert_eq!(
                 from_exits.len(),
+                3,
+                "the deck entry, the ground return, and the understory side exit all lead back to `from`"
+            );
+            assert!(
+                from_exits.iter().any(|g| g.floor_y > 0.0),
+                "the deck entry is deck-level"
+            );
+            assert_eq!(
+                from_exits.iter().filter(|g| g.floor_y == 0.0).count(),
                 2,
-                "the entry plus the understory side exit both lead back to `from`"
+                "the ground return and the understory side exit are both ground level"
             );
 
             assert!(!geom.decks.is_empty(), "the gantry hall has walkable decks");
@@ -801,7 +817,7 @@ mod tests {
                 "the gantry hall has no interior walls (decks replace the old platform walls)"
             );
             // Platforms are the deep decks (half.y matching the authored platform depth);
-            // the stair treads are shallow. One deep deck per authored platform.
+            // the landings are shallower. One deep deck per authored platform.
             let platform_decks = geom
                 .decks
                 .iter()
@@ -815,10 +831,9 @@ mod tests {
         }
     }
 
-    /// `place_arena` extrudes each deck into a solid whose top sits at `floor_y + top_y`,
-    /// and the mount stair rises in steps no larger than the controller's step-up limit.
+    /// `place_arena` extrudes each deck into a solid whose top sits at `floor_y + top_y`.
     #[test]
-    fn gantry_decks_extrude_to_solids_and_the_stair_is_walkable() {
+    fn gantry_decks_extrude_to_solids_at_the_deck_height() {
         use observed_traversal::gantry;
         let template = gantry_template();
         let geom = hallway_geom(RoomId(1), RoomId(4), template, 0, false);
@@ -856,34 +871,53 @@ mod tests {
             solid.max.y - solid.min.y < 0.25,
             "jump platforms are thin slabs, not floor-to-top blocks"
         );
+    }
 
-        // The mount stair: a sequence of decks whose top_y ascends monotonically, each
-        // step within the controller's 0.45 step_height of the previous, ending at
-        // UPPER_DECK_Y.
-        let mut stair: Vec<_> = geom
+    /// Thresholds teleport the body directly (user design ruling: no stairs), so every
+    /// deck in the projection — including the entry landing — sits flush at `UPPER_DECK_Y`;
+    /// there is no sub-deck-height mount stair left to climb, and the entry gap sits over
+    /// the entry landing rather than at the ground. This replaces the old
+    /// `gantry_decks_extrude_to_solids_and_the_stair_is_walkable` stair-rise assertion,
+    /// which no longer applies now the mount stair is deleted.
+    #[test]
+    fn the_entry_landing_sits_flush_with_every_other_deck_and_no_stair_remains() {
+        use observed_traversal::gantry;
+        let template = gantry_template();
+        let geom = hallway_geom(RoomId(1), RoomId(4), template, 0, false);
+
+        assert!(
+            geom.decks
+                .iter()
+                .all(|d| (d.top_y - gantry::UPPER_DECK_Y).abs() < 1e-3),
+            "every deck (platforms + both landings) sits at UPPER_DECK_Y; no sub-deck-height stair treads remain"
+        );
+
+        let course = gantry::GantryCourse::authored();
+        let entry_landing = course.entry_landing;
+        let entry_deck = geom
             .decks
             .iter()
-            .filter(|d| d.top_y < gantry::UPPER_DECK_Y - 1e-3)
-            .collect();
-        assert_eq!(
-            stair.len(),
-            4,
-            "four sub-deck-height stair treads below the top step"
-        );
-        stair.sort_by(|a, b| a.top_y.partial_cmp(&b.top_y).unwrap());
-        let mut prev = 0.0_f32;
-        for tread in &stair {
-            assert!(
-                tread.top_y - prev <= 0.45 + 1e-4,
-                "stair rise {} exceeds the controller's step_height",
-                tread.top_y - prev
-            );
-            assert!(tread.top_y - prev > 0.0, "the stair strictly ascends");
-            prev = tread.top_y;
-        }
+            .find(|d| (d.center - entry_landing.center).length() < 1e-3)
+            .expect("the entry landing deck is projected");
         assert!(
-            gantry::UPPER_DECK_Y - prev <= 0.45 + 1e-4,
-            "the final rise onto the top platform also respects the step limit"
+            (entry_deck.half - entry_landing.half).length() < 1e-3,
+            "the projected entry landing matches the authored course dimensions"
+        );
+
+        let entry = geom
+            .gaps
+            .iter()
+            .find(|g| g.kind == GapKind::Entry)
+            .expect("a deck-level entry gap exists");
+        assert_eq!(
+            entry.floor_y,
+            gantry::UPPER_DECK_Y,
+            "the entry threshold delivers the body directly onto the deck"
+        );
+        assert!(
+            entry.center.y >= entry_landing.min_z() - 0.01
+                && entry.center.y <= entry_landing.max_z() + 0.01,
+            "the entry gap sits over the entry landing's footprint"
         );
     }
 
@@ -973,7 +1007,7 @@ mod tests {
     /// ground/bypass lane at `x = SAFE_BYPASS_X` is clear of every deck across its full
     /// length, and the stair+platform chain climbs contiguously to `UPPER_DECK_Y`.
     #[test]
-    fn gantry_projection_keeps_the_bypass_lane_clear_and_the_stair_reaches_the_deck() {
+    fn gantry_projection_keeps_the_bypass_lane_clear_and_the_deck_chain_reaches_the_deck() {
         use observed_traversal::gantry;
         let template = gantry_template();
         let geom = hallway_geom(RoomId(1), RoomId(4), template, 0, false);
@@ -981,7 +1015,8 @@ mod tests {
         let bypass_x = gantry::SAFE_BYPASS_X;
         let body_radius = 0.4;
 
-        // No deck overlaps the bypass strip at body height (ground-level clearance).
+        // No deck overlaps the bypass strip at body height (ground-level clearance) — the
+        // ground return gap also opens in this lane, so it must stay deck-free too.
         for deck in &geom.decks {
             let overlaps_x = (bypass_x - deck.center.x).abs() < deck.half.x + body_radius;
             assert!(
@@ -992,11 +1027,81 @@ mod tests {
         }
         let _ = hz; // the bypass run spans the full -hz..hz length by construction
 
-        // The stair + platform chain reaches UPPER_DECK_Y.
+        // The platform + landing chain reaches UPPER_DECK_Y.
         let max_deck_top = geom.decks.iter().map(|d| d.top_y).fold(0.0_f32, f32::max);
         assert!(
             (max_deck_top - gantry::UPPER_DECK_Y).abs() < 1e-3,
             "the deck chain reaches the upper deck height"
+        );
+    }
+
+    /// Arrival-height regression (deck case): crossing a room's forward doorway into a
+    /// Gantry hallway resolves the **deck-level** entry gap (not the ground-level return
+    /// that now shares `target == from`), so `place_body`'s
+    /// `arrival_floor_y = arrival_gap(...).floor_y` lands the body on the entry landing,
+    /// not sunk to the hallway's ground floor. This is the site `crossing.rs::place_body`
+    /// reads: `gap.floor_y` feeds directly into the spawn Y (`y_offset + floor_y +
+    /// half_height`).
+    #[test]
+    fn arrival_gap_resolves_the_deck_level_entry_not_the_ground_return() {
+        use observed_traversal::gantry;
+        let template = gantry_template();
+        let from = RoomId(1);
+        let to = RoomId(4);
+        let room_gap = *room_geom(from, &[to], Some(to), 3)
+            .forward_gap()
+            .expect("room has a forward gap toward the gantry hallway");
+        // `arrival_gap`'s `Place::Hallway` branch only matches on the `Place` variant, not
+        // the `variation`/`to` fields, so any Gantry-flavoured hallway place works here.
+        let hall = Place::Hallway {
+            from,
+            to,
+            variation: 0,
+        };
+        let hgeom = hallway_geom(from, to, template, 0, false);
+
+        let arrived = arrival_gap(&hgeom, hall, &room_gap, from).expect("entry gap resolves");
+        assert_eq!(arrived.kind, GapKind::Entry);
+        assert_eq!(arrived.target, from);
+        assert_eq!(
+            arrived.floor_y,
+            gantry::UPPER_DECK_Y,
+            "the resolved arrival gap is the deck-level entry, not the ground-level return"
+        );
+
+        // The ground-level return shares `target == from` but is a distinct threshold —
+        // a naive "first gap targeting `from`" lookup (what `entry_spawn` still does for
+        // the no-`crossed` snap fallback) would be ambiguous; `arrival_gap` disambiguates
+        // by matching the crossed doorway's threshold identity instead.
+        let ground_return = hgeom
+            .gaps
+            .iter()
+            .find(|g| g.kind == GapKind::Exit && g.target == from && g.floor_y == 0.0)
+            .expect("a ground-level return gap exists");
+        assert_ne!(arrived.threshold, ground_return.threshold);
+    }
+
+    /// Arrival-height regression (ground case): every room-side gap keeps `floor_y == 0.0`,
+    /// so `arrival_gap`'s resolved floor_y for an ordinary room arrival is unaffected —
+    /// `place_body`'s spawn Y stays exactly `y_offset + half_height` as before.
+    #[test]
+    fn arrival_gap_stays_ground_level_for_an_ordinary_room_arrival() {
+        let nav1 = nav(&[0, 2], Some(2));
+        let hall = Place::Hallway {
+            from: RoomId(0),
+            to: RoomId(1),
+            variation: hallway::variation_for(RoomId(0), RoomId(1), nav1.seed, nav1.version),
+        };
+        let hgeom = geom_for(hall, &nav1);
+        let exit = *hgeom.gaps.iter().find(|g| g.kind == GapKind::Exit).unwrap();
+        let mut rgeom = geom_for(Place::Room(RoomId(1)), &nav1);
+        open_entry(&mut rgeom, Some(RoomId(0)));
+
+        let arrived = arrival_gap(&rgeom, Place::Room(RoomId(1)), &exit, RoomId(0))
+            .expect("the arrival doorway resolves");
+        assert_eq!(
+            arrived.floor_y, 0.0,
+            "a room arrival's floor_y is unaffected by the gantry deck-entry change"
         );
     }
 

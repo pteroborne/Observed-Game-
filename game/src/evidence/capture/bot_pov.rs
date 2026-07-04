@@ -27,6 +27,9 @@ pub(crate) struct BotPovCaptureRequest {
     pub(super) shot: usize,
     pub(super) route_place: Option<teleport::Place>,
     pub(super) route: Vec<Vec2>,
+    /// Parallel to `route`: whether the leg arriving at that waypoint should hold
+    /// `jump_pressed` (set when piloting a Gantry hallway's deck).
+    pub(super) route_jumps: Vec<bool>,
     pub(super) waypoint: usize,
     pub(super) finished: bool,
     pub(super) blocked_ticks: u32,
@@ -41,6 +44,7 @@ impl BotPovCaptureRequest {
             shot: 0,
             route_place: None,
             route: Vec::new(),
+            route_jumps: Vec::new(),
             waypoint: 0,
             finished: false,
             blocked_ticks: 0,
@@ -57,6 +61,7 @@ impl BotPovCaptureRequest {
     pub(super) fn clear_route(&mut self) {
         self.route_place = None;
         self.route.clear();
+        self.route_jumps.clear();
         self.waypoint = 0;
     }
 }
@@ -208,7 +213,27 @@ pub(crate) fn drive_bot_pov_capture(
             return;
         };
         let start = Vec2::new(tp.body.position.x, tp.body.position.z);
-        if let Some(path) = bot::route_to_gap(&tp.geom, &tp.arena, &tp.config, start, &gap) {
+        // On a Gantry hallway's deck, pilot the platform-centre jump line toward the upper
+        // exit instead of the generic 2D navmesh route; a ground-level body still takes
+        // the ordinary route to whatever onward exit the feet-height gate selected.
+        let deck_pilot = bot::at_deck_height(local_feet_y)
+            .then(|| bot::gantry_deck_route(&tp.geom, start, &gap))
+            .flatten();
+        if let Some(pilot) = deck_pilot {
+            info!(
+                "BOT_NAV: Deck-piloting {:?} from {:?} toward upper exit (center: {:?}). Waypoints: {}",
+                tp.place,
+                start,
+                gap.center,
+                pilot.waypoints.len()
+            );
+            let (waypoints, jumps): (Vec<_>, Vec<_>) = pilot.waypoints.into_iter().unzip();
+            request.route_place = Some(tp.place);
+            request.route = waypoints;
+            request.route_jumps = jumps;
+            request.waypoint = 0;
+            request.blocked_ticks = 0;
+        } else if let Some(path) = bot::route_to_gap(&tp.geom, &tp.arena, &tp.config, start, &gap) {
             info!(
                 "BOT_NAV: Computed new route in {:?} from {:?} to gap (center: {:?}, normal: {:?}). Waypoints count: {}. Path: {:?}",
                 tp.place,
@@ -220,6 +245,7 @@ pub(crate) fn drive_bot_pov_capture(
             );
             request.route_place = Some(tp.place);
             request.route = path.waypoints;
+            request.route_jumps = vec![false; request.route.len()];
             request.waypoint = 0;
             request.blocked_ticks = 0;
         } else {
@@ -254,6 +280,11 @@ pub(crate) fn drive_bot_pov_capture(
     }
 
     let target = request.route[request.waypoint];
+    let jump_pressed = request
+        .route_jumps
+        .get(request.waypoint)
+        .copied()
+        .unwrap_or(false);
     let to = target - here;
     if to.length_squared() < 0.04 {
         intent.0 = PlayerIntent::default();
@@ -297,6 +328,7 @@ pub(crate) fn drive_bot_pov_capture(
     // Set movement intent instead of overriding position so the physics/collision systems handle it.
     intent.0.movement = Vec2::new(0.0, 1.0); // Move forward relative to yaw
     intent.0.sprint_held = !is_sharp_turn; // Sprint only on straightaways or gentle turns to reduce inertia drift
+    intent.0.jump_pressed = jump_pressed;
 
     // Coordinate logging to track progress
     info!(

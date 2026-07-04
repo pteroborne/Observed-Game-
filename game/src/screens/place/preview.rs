@@ -296,23 +296,71 @@ pub(crate) fn spawn_room_preview(
     let mut parent = camera::alignment_transform(teleport::room_alignment(gap, &src));
     parent.translation.y = y_offset + gap.floor_y - src.floor_y;
 
-    let floor_material = room_floor_material(dest_room, &assets.floor_material, materials);
-    let palette = palette_for_game(nav.seed, Place::Room(dest_room), game, klaxon_active);
-    let light_color = palette.light_color;
-
-    spawn_polygon_shell(
+    spawn_room_miniature(
         commands,
         assets,
         meshes,
+        materials,
+        &dest,
         &poly,
-        floor_material,
+        dest_room,
         parent,
-        true,
+        nav.seed,
+        game,
+        klaxon_active,
+        RoomMiniatureOverlays {
+            open_edge_target: Some(back),
+            rival_lane_origin: Vec3::new(0.0, 0.82, 0.0),
+            anchor_torch_root: Vec3::new(src.width * 0.5 + 0.3, 0.55, 0.6),
+        },
     );
-    spawn_polygon_walls(commands, assets, &poly, &dest.gaps, parent, true, |g| {
-        g.target == back || g.kind.is_passage()
+}
+
+/// What [`spawn_room_miniature`] draws on top of a room's bare shell, parameterized so a
+/// full-scale threshold preview and a wall-mounted monitor panel can each place the same
+/// overlays sensibly in their own local frame.
+pub(crate) struct RoomMiniatureOverlays {
+    /// A gap whose wall should stay split open (the doorway you're looking back through).
+    /// `None` for a monitor panel, which has no "back" doorway — its shell renders fully
+    /// closed except for the room's own passable thresholds.
+    pub(crate) open_edge_target: Option<RoomId>,
+    /// Local-frame origin a present rival's walking lane is centred on.
+    pub(crate) rival_lane_origin: Vec3,
+    /// Local-frame root for a rival anchor torch prop, if the room carries one.
+    pub(crate) anchor_torch_root: Vec3,
+}
+
+/// The reusable core of a room preview: the destination room's shell (floor/ceiling/walls
+/// honoring its live door/threshold states), lighting, surface detail, and the rival
+/// presence/anchor overlays — all spawned under `parent`, at whatever scale `parent`
+/// carries. Shared by the full-scale doorway preview ([`spawn_room_preview`], scale 1,
+/// doorway-aligned) and the miniature wall-monitor panels
+/// (`super::monitors`, scale « 1, wall-mounted) so "the room preview technique the
+/// thresholds use" is the same technique everywhere, not reinvented per caller.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn spawn_room_miniature(
+    commands: &mut Commands,
+    assets: &MatchAssets,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    dest: &teleport::PlaceGeom,
+    poly: &[Vec2],
+    dest_room: RoomId,
+    parent: Transform,
+    seed: u64,
+    game: &HybridMatch,
+    klaxon_active: bool,
+    overlays: RoomMiniatureOverlays,
+) {
+    let floor_material = room_floor_material(dest_room, &assets.floor_material, materials);
+    let palette = palette_for_game(seed, Place::Room(dest_room), game, klaxon_active);
+    let light_color = palette.light_color;
+
+    spawn_polygon_shell(commands, assets, meshes, poly, floor_material, parent, true);
+    spawn_polygon_walls(commands, assets, poly, &dest.gaps, parent, true, |g| {
+        overlays.open_edge_target == Some(g.target) || g.kind.is_passage()
     });
-    spawn_place_lighting(commands, assets, &dest, light_color, parent, true);
+    spawn_place_lighting(commands, assets, dest, light_color, parent, true);
     let accent = materials.add(StandardMaterial {
         base_color: Color::srgb(0.02, 0.03, 0.05),
         emissive: LinearRgba::rgb(
@@ -323,7 +371,7 @@ pub(crate) fn spawn_room_preview(
         unlit: true,
         ..default()
     });
-    spawn_surface_detail(commands, assets, &dest, accent, parent, true);
+    spawn_surface_detail(commands, assets, dest, accent, parent, true);
 
     let present = rivals::rivals_in_room(&game.competitive, dest_room);
     let n = present.len();
@@ -335,7 +383,11 @@ pub(crate) fn spawn_room_preview(
             DespawnOnExit(GameState::Match),
             Mesh3d(assets.rival_body_mesh.clone()),
             MeshMaterial3d(assets.rival_material.clone()),
-            parent.mul_transform(Transform::from_xyz(lane, 0.82, 0.0)),
+            parent.mul_transform(Transform::from_xyz(
+                overlays.rival_lane_origin.x + lane,
+                overlays.rival_lane_origin.y,
+                overlays.rival_lane_origin.z,
+            )),
             Name::new("Preview rival"),
         ));
     }
@@ -356,7 +408,7 @@ pub(crate) fn spawn_room_preview(
         .min_by_key(|team| team.0)
     {
         let root = parent.mul_transform(
-            Transform::from_xyz(src.width * 0.5 + 0.3, 0.55, 0.6)
+            Transform::from_translation(overlays.anchor_torch_root)
                 .with_scale(Vec3::new(0.18, 1.1, 0.18)),
         );
         let torch =

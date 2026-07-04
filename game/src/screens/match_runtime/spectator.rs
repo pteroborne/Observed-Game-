@@ -53,7 +53,8 @@ pub(crate) fn drive_spectator_bot(
         item_intent.torch_action = true;
     }
 
-    if matches!(tp.place, Place::Room(room) if room.0 == observed_match::mutable::EXIT_ROOM) {
+    let exit_room = director.live.host_match().competitive.exit_room();
+    if matches!(tp.place, Place::Room(room) if Some(room) == exit_room) {
         spectator.finished = true;
         spectator.clear_route();
         intent.0 = PlayerIntent::default();
@@ -85,9 +86,27 @@ pub(crate) fn drive_spectator_bot(
             intent.0 = PlayerIntent::default();
             return;
         };
-        if let Some(path) = crate::bot::route_to_gap(&tp.geom, &tp.arena, &tp.config, here, &gap) {
+        // On a Gantry hallway's deck, run the platform-centre jump line toward the upper
+        // exit instead of the generic 2D navmesh route (which has no notion of a
+        // platform-to-platform jump); a ground-level body (fell, or arrived fallen) still
+        // takes the ordinary route to the safe-bypass exit `target_gap_for_place` already
+        // selected via the feet-height gate.
+        let deck_pilot = crate::bot::at_deck_height(local_feet_y)
+            .then(|| crate::bot::gantry_deck_route(&tp.geom, here, &gap))
+            .flatten();
+        if let Some(pilot) = deck_pilot {
+            spectator.route_place = Some(tp.place);
+            let (waypoints, jumps): (Vec<_>, Vec<_>) = pilot.waypoints.into_iter().unzip();
+            spectator.route = waypoints;
+            spectator.route_jumps = jumps;
+            spectator.waypoint = 0;
+            spectator.blocked_ticks = 0;
+        } else if let Some(path) =
+            crate::bot::route_to_gap(&tp.geom, &tp.arena, &tp.config, here, &gap)
+        {
             spectator.route_place = Some(tp.place);
             spectator.route = path.waypoints;
+            spectator.route_jumps = vec![false; spectator.route.len()];
             spectator.waypoint = 0;
             spectator.blocked_ticks = 0;
         } else {
@@ -107,6 +126,11 @@ pub(crate) fn drive_spectator_bot(
     }
 
     let target = spectator.route[spectator.waypoint];
+    let jump_pressed = spectator
+        .route_jumps
+        .get(spectator.waypoint)
+        .copied()
+        .unwrap_or(false);
     let to = target - here;
     if to.length_squared() < 0.04 {
         intent.0 = PlayerIntent::default();
@@ -143,6 +167,7 @@ pub(crate) fn drive_spectator_bot(
     intent.0 = PlayerIntent {
         movement: Vec2::new(0.0, 1.0),
         sprint_held: !is_sharp_turn,
+        jump_pressed,
         ..default()
     };
 }

@@ -194,6 +194,13 @@ fn spawn_course(
         edge.clone(),
         course.upper_landing,
     );
+    spawn_platform(
+        commands,
+        meshes,
+        deck.clone(),
+        edge.clone(),
+        course.entry_landing,
+    );
     spawn_threshold_markers(commands, meshes, materials, course);
 }
 

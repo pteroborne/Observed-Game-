@@ -161,12 +161,36 @@ pub fn crossing_alignment(
 ) -> Option<Align2d> {
     match place {
         Place::Hallway { .. } => hallway_alignment(crossed, geom),
+        Place::Room(_) => {
+            arrival_gap(geom, place, crossed, from).map(|back| room_alignment(crossed, back))
+        }
+    }
+}
+
+/// The specific gap in the new place `geom` that the body arrives through, having crossed
+/// `crossed` from room `from`. This is the same match `crossing_alignment` resolves
+/// internally, exposed so callers can read the arrival gap's `floor_y` (a gantry hall's
+/// entry now yields both a deck-level arrival and a ground-level return sharing
+/// `target == from`, so a plain "first gap targeting `from`" lookup is ambiguous; matching
+/// the crossed doorway's threshold identity picks the right one). `None` if the
+/// destination room has no doorway back toward `from` (a mid-crossing decohere).
+pub fn arrival_gap<'a>(
+    geom: &'a PlaceGeom,
+    place: Place,
+    crossed: &DoorGap,
+    from: RoomId,
+) -> Option<&'a DoorGap> {
+    match place {
+        Place::Hallway { .. } => geom.gaps.iter().find(|candidate| {
+            candidate.threshold.hall == crossed.threshold.hall
+                && candidate.threshold.hall.side == crossed.threshold.room.room
+                && candidate.threshold.local_side == ThresholdLocalSide::Hall
+        }),
         Place::Room(_) => geom
             .gaps
             .iter()
             .find(|g| g.target == from && g.threshold.room == crossed.threshold.room)
-            .or_else(|| geom.gaps.iter().find(|g| g.target == from))
-            .map(|back| room_alignment(crossed, back)),
+            .or_else(|| geom.gaps.iter().find(|g| g.target == from)),
     }
 }
 
