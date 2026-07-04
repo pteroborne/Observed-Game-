@@ -11,44 +11,6 @@ use std::collections::HashSet;
 use bevy::prelude::*;
 use observed_core::RoomId;
 use observed_facility::map_spec::MapSpec;
-use observed_match::mutable::{START_ROOM, spine_next};
-
-/// How many keystones the exit demands (clamped to the available spine rooms).
-pub const REQUIRED: usize = 3;
-
-/// The spine, in order from the entrance to the exit (`0,1,2,5,4,3,6,7,8`).
-fn spine_sequence() -> Vec<RoomId> {
-    let mut seq = vec![RoomId(START_ROOM)];
-    let mut room = RoomId(START_ROOM);
-    while let Some((next, _)) = spine_next(room) {
-        seq.push(next);
-        room = next;
-    }
-    seq
-}
-
-/// The spine rooms that hold a keystone item: a deterministic spread of `REQUIRED`
-/// distinct *intermediate* rooms (never the entrance or the exit), always including the
-/// last room before the exit so the objective is collectable on the way through.
-pub fn keystone_rooms(seed: u64) -> Vec<RoomId> {
-    let seq = spine_sequence();
-    if seq.len() < 3 {
-        return Vec::new();
-    }
-    let inter: Vec<RoomId> = seq[1..seq.len() - 1].to_vec();
-    let required = REQUIRED.min(inter.len());
-    let mut chosen = vec![*inter.last().expect("intermediates non-empty")];
-    let mut i = (seed % inter.len() as u64) as usize;
-    while chosen.len() < required {
-        let room = inter[i % inter.len()];
-        if !chosen.contains(&room) {
-            chosen.push(room);
-        }
-        i += 1;
-    }
-    chosen.sort_by_key(|r| r.0);
-    chosen
-}
 
 /// The player's keystone inventory + the fixed placement for this match.
 #[derive(Resource, Clone, Debug)]
@@ -70,26 +32,17 @@ impl KeystoneState {
         Self::for_map(seed, &crate::map_catalog::active_map_spec(seed))
     }
 
-    pub fn legacy(seed: u64) -> Self {
-        let rooms = keystone_rooms(seed);
-        let required = rooms.len() as u32;
-        Self {
-            rooms,
-            collected: HashSet::new(),
-            held: 0,
-            required,
-            seed,
-            exit_room: RoomId(observed_match::mutable::EXIT_ROOM),
-        }
-    }
-
     pub fn for_map(seed: u64, spec: &MapSpec) -> Self {
         let mut rooms = spec.keystone_rooms();
         rooms.sort_by_key(|room| room.0);
         let required = rooms.len() as u32;
-        let exit_room = spec
-            .exit_room()
-            .unwrap_or(RoomId(observed_match::mutable::EXIT_ROOM));
+        let exit_room = spec.exit_room().unwrap_or_else(|| {
+            panic!(
+                "active map spec `{}` is missing a required Exit room; \
+                 every catalog map must satisfy MapSpec::validate()",
+                spec.name
+            )
+        });
         Self {
             rooms,
             collected: HashSet::new(),
@@ -129,35 +82,29 @@ impl KeystoneState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use observed_match::mutable::EXIT_ROOM;
 
+    /// The generated map's keystone placement (spec-driven: whatever
+    /// `MapSpec::keystone_rooms` returns, never the map's own start/exit) is
+    /// deterministic and self-consistent for a given seed.
     #[test]
-    fn placement_is_deterministic_and_required_distinct_intermediate_rooms() {
+    fn placement_is_deterministic_and_never_the_entrance_or_exit() {
         for seed in 0..40u64 {
-            let a = keystone_rooms(seed);
-            assert_eq!(a, keystone_rooms(seed), "deterministic");
-            assert_eq!(a.len(), REQUIRED, "exactly REQUIRED keystones placed");
-            // Distinct, and never the entrance or the exit.
-            let mut d = a.clone();
-            d.dedup();
-            assert_eq!(d.len(), a.len(), "distinct rooms");
-            assert!(!a.contains(&RoomId(START_ROOM)), "never the entrance");
-            assert!(!a.contains(&RoomId(EXIT_ROOM)), "never the exit");
-        }
-    }
-
-    #[test]
-    fn the_last_room_before_the_exit_always_holds_a_keystone() {
-        // spine = ...,7,8 — room 7 is the last intermediate, always reachable on the way.
-        let last_intermediate = {
-            let seq = spine_sequence();
-            seq[seq.len() - 2]
-        };
-        for seed in 0..40u64 {
-            assert!(
-                keystone_rooms(seed).contains(&last_intermediate),
-                "the last pre-exit room must hold a keystone (seed {seed})"
+            let spec = crate::map_catalog::default_map_spec(seed);
+            let a = KeystoneState::for_map(seed, &spec);
+            let b = KeystoneState::for_map(seed, &spec);
+            assert_eq!(a.rooms, b.rooms, "deterministic for a given (seed, spec)");
+            assert_eq!(
+                a.rooms.len(),
+                a.required as usize,
+                "required is derived from placement, so it is always attainable"
             );
+            let mut d = a.rooms.clone();
+            d.dedup();
+            assert_eq!(d.len(), a.rooms.len(), "distinct rooms");
+            if let Some(start) = spec.start_room() {
+                assert!(!a.rooms.contains(&start), "never the entrance");
+            }
+            assert!(!a.rooms.contains(&a.exit_room), "never the exit");
         }
     }
 

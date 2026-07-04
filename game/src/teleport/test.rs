@@ -1,10 +1,11 @@
 #[cfg(test)]
 mod tests {
     use crate::hallway;
-    use crate::teleport::geom::outward_normal;
+    use crate::teleport::geom::{outward_normal, room_geom_with_slots_and_seals_for_role};
     use crate::teleport::*;
     use bevy::math::{Vec2, Vec3};
     use observed_core::RoomId;
+    use observed_facility::map_spec::RoomRole;
     use observed_match::mutable::EXIT_ROOM;
     use observed_traversal::FpsArena;
     use std::f32::consts::PI;
@@ -146,11 +147,16 @@ mod tests {
 
     #[test]
     fn observation_rooms_have_monitor_walls_plus_doorway_edges() {
+        // Role-driven only (no more legacy room-id arm): a room's Monitor footprint
+        // comes from its `RoomRole`, not a hardcoded id.
         for room in [RoomId(5), RoomId(6)] {
-            let geom = room_geom(
+            let geom = room_geom_with_slots_and_seals_for_role(
                 room,
                 &[RoomId(1), RoomId(3), RoomId(7), RoomId(8)],
+                &[],
+                &[],
                 Some(RoomId(8)),
+                Some(RoomRole::Monitor),
                 7,
             );
             let poly = geom.poly.as_ref().expect("a room is a polygon");

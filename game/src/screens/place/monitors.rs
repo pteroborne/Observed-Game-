@@ -871,31 +871,39 @@ mod tests {
 
     #[test]
     fn monitor_pages_partition_every_room_at_most_once() {
-        let spec = sector_relay_v1();
-        let pages = monitor_pages(&spec);
-        let monitor_room_count = spec.rooms_with_role(RoomRole::Monitor).len();
-        assert_eq!(
-            pages.len(),
-            monitor_room_count,
-            "one page per Monitor-role room"
-        );
-
-        let mut seen = std::collections::BTreeSet::new();
-        let mut total = 0;
-        for page in &pages {
-            assert!(
-                page.len() <= MONITOR_COUNT,
-                "a page never exceeds the physical panel count"
+        for spec in [sector_relay_v1(), crate::map_catalog::default_map_spec(0)] {
+            let pages = monitor_pages(&spec);
+            let monitor_room_count = spec.rooms_with_role(RoomRole::Monitor).len();
+            assert_eq!(
+                pages.len(),
+                monitor_room_count,
+                "one page per Monitor-role room ({})",
+                spec.name
             );
-            for &room in page {
+
+            let mut seen = std::collections::BTreeSet::new();
+            let mut total = 0;
+            for page in &pages {
                 assert!(
-                    seen.insert(room),
-                    "{room:?} must appear on at most one panel across every monitor room"
+                    page.len() <= MONITOR_COUNT,
+                    "a page never exceeds the physical panel count ({})",
+                    spec.name
                 );
-                total += 1;
+                for &room in page {
+                    assert!(
+                        seen.insert(room),
+                        "{room:?} must appear on at most one panel across every monitor room ({})",
+                        spec.name
+                    );
+                    total += 1;
+                }
             }
+            assert!(
+                total <= spec.room_count(),
+                "never invents rooms ({})",
+                spec.name
+            );
         }
-        assert!(total <= spec.room_count(), "never invents rooms");
     }
 
     #[test]

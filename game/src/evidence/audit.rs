@@ -341,7 +341,7 @@ fn default_role_room(role: RoomRole) -> Option<RoomId> {
     crate::map_catalog::active_map_spec(crate::flow::MATCH_SEED).role_room(role)
 }
 
-fn current_role_room(runtime: &MatchDirector, role: RoomRole, fallback: RoomId) -> RoomId {
+fn current_role_room(runtime: &MatchDirector, role: RoomRole) -> RoomId {
     runtime
         .live
         .host_match()
@@ -349,7 +349,12 @@ fn current_role_room(runtime: &MatchDirector, role: RoomRole, fallback: RoomId) 
         .map_spec
         .as_ref()
         .and_then(|spec| spec.role_room(role))
-        .unwrap_or(fallback)
+        .unwrap_or_else(|| {
+            panic!(
+                "active map spec is missing a required {role:?} room; \
+                 every catalog map must satisfy MapSpec::validate()"
+            )
+        })
 }
 
 fn apply_debug_match_coercion(
@@ -588,7 +593,7 @@ fn prepare_scenario(scenario: AuditScenario, prep: ScenarioPrep) {
             );
         }
         AuditScenario::TetherCameraRoom => {
-            let monitor_room = current_role_room(runtime, RoomRole::Monitor, RoomId(5));
+            let monitor_room = current_role_room(runtime, RoomRole::Monitor);
             if !items
                 .placed
                 .iter()
@@ -608,8 +613,12 @@ fn prepare_scenario(scenario: AuditScenario, prep: ScenarioPrep) {
             );
         }
         AuditScenario::GuardianCameraRoom => {
-            let monitor_room = current_role_room(runtime, RoomRole::Monitor, RoomId(6));
-            guardian.room = RoomId(4);
+            let monitor_room = current_role_room(runtime, RoomRole::Monitor);
+            let game = runtime.live.host_match();
+            let spec = game.competitive.map_spec.as_ref();
+            guardian.room = spec
+                .and_then(|spec| spec.neighbors(monitor_room).into_iter().min_by_key(|r| r.0))
+                .unwrap_or(monitor_room);
             guardian.pos = Vec3::new(0.0, 0.76, 0.0);
             crate::screens::match_runtime::debug_place_into(
                 tp,
@@ -768,35 +777,73 @@ mod tests {
         assert_eq!(AuditScenario::parse("all").len(), AuditScenario::ALL.len());
     }
 
+    /// Spec-driven: `parse_debug_room`'s aliases resolve via the active map spec's
+    /// role rooms (`default_role_room`), not a pinned catalog map's literal ids, so
+    /// this queries the same active spec the parser itself reads from.
     #[test]
     fn debug_room_parser_accepts_aliases_and_room_ids() {
-        assert_eq!(parse_debug_room("guardian"), Some(RoomId(7)));
-        assert_eq!(parse_debug_room("guardian_camera"), Some(RoomId(8)));
-        assert_eq!(parse_debug_room("tether"), Some(RoomId(8)));
-        assert_eq!(parse_debug_room("r4"), Some(RoomId(4)));
-        assert_eq!(parse_debug_room("room9"), Some(RoomId(9)));
-        assert_eq!(parse_debug_room("room14"), None);
+        let spec = crate::map_catalog::active_map_spec(crate::flow::MATCH_SEED);
+        let guardian_room = spec
+            .role_room(RoomRole::GuardianControl)
+            .expect("active map has a GuardianControl room");
+        let monitor_room = spec
+            .role_room(RoomRole::Monitor)
+            .expect("active map has a Monitor room");
+
+        assert_eq!(parse_debug_room("guardian"), Some(guardian_room));
+        assert_eq!(parse_debug_room("guardian_camera"), Some(monitor_room));
+        assert_eq!(parse_debug_room("tether"), Some(monitor_room));
+
+        let some_room = spec.rooms.first().expect("active map has rooms").id;
+        assert_eq!(
+            parse_debug_room(&format!("r{}", some_room.0)),
+            Some(some_room)
+        );
+        assert_eq!(
+            parse_debug_room(&format!("room{}", some_room.0)),
+            Some(some_room)
+        );
+        assert_eq!(
+            parse_debug_room(&format!("room{}", spec.room_count())),
+            None,
+            "one past the last valid room index must be rejected"
+        );
     }
 
     #[test]
     fn debug_coercion_reads_tethers_guardian_and_player_room() {
+        let spec = crate::map_catalog::active_map_spec(crate::flow::MATCH_SEED);
+        let guardian_room = spec
+            .role_room(RoomRole::GuardianControl)
+            .expect("active map has a GuardianControl room");
+        let monitor_room = spec
+            .role_room(RoomRole::Monitor)
+            .expect("active map has a Monitor room");
+        let mut sample_rooms: Vec<RoomId> = spec.rooms.iter().map(|room| room.id).take(3).collect();
+        sample_rooms.sort_by_key(|room| room.0);
+        let sample_list = sample_rooms
+            .iter()
+            .map(|room| format!("r{}", room.0))
+            .collect::<Vec<_>>()
+            .join(", ");
+
         let coercion = DebugMatchCoercion::from_values(
-            Some("4, r0, room13, nope"),
+            Some(&format!("{sample_list}, nope")),
             Some("guardian_control"),
             Some("monitor"),
         )
         .expect("coercion should be enabled");
-        assert_eq!(
-            coercion.tether_rooms,
-            vec![RoomId(0), RoomId(4), RoomId(13)]
-        );
-        assert_eq!(coercion.guardian_room, Some(RoomId(7)));
-        assert_eq!(coercion.player_room, Some(RoomId(8)));
+        assert_eq!(coercion.tether_rooms, sample_rooms);
+        assert_eq!(coercion.guardian_room, Some(guardian_room));
+        assert_eq!(coercion.player_room, Some(monitor_room));
         assert!(!coercion.applied);
 
         let all = parse_debug_room_list("all");
-        assert_eq!(all.len(), 14);
-        assert_eq!(all[0], RoomId(0));
-        assert_eq!(all[13], RoomId(13));
+        let mut expected_all: Vec<RoomId> = spec.rooms.iter().map(|room| room.id).collect();
+        expected_all.sort_by_key(|room| room.0);
+        assert_eq!(
+            all, expected_all,
+            "\"all\" spans every room in the active spec"
+        );
     }
 }

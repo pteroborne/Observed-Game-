@@ -1216,6 +1216,25 @@ fn headless_and_interactive_matches_agree_on_the_result() {
     );
 }
 
+/// Phase 46 (Arc D, the liminal flip): the generated default map must produce complete,
+/// placed matches across a spread of seeds — not just the pinned `MATCH_SEED`. This is
+/// the game-side corpus gate alongside `observed_facility::wfc`'s own generation corpus:
+/// that crate proves the *map* generates and validates; this proves a full
+/// `MatchDirector` run over that generated map — decoherence, elimination series,
+/// keystones and all — reaches a placed outcome with no hangs or panics.
+#[test]
+fn generated_maps_run_complete_matches_across_a_seed_corpus() {
+    for seed in 0..12u64 {
+        let map_spec = crate::map_catalog::default_map_spec(seed);
+        let mut director = crate::sim::director::MatchDirector::new(seed, map_spec);
+        let result = director.run_to_completion();
+        assert!(
+            result.placement.is_some(),
+            "seed {seed}: the elimination series must place the local team"
+        );
+    }
+}
+
 /// Arc G4: the Match session's resources are enumerated once
 /// (`for_each_match_resource` in `screens::match_runtime::session`) and every one of
 /// them must be gone after the Match exits. Before this consolidation, `Guardian`,
@@ -1283,12 +1302,16 @@ fn a_rival_in_the_neighbouring_room_tints_the_threshold_light_with_its_colour() 
     go(&mut app, GameState::Match);
     app.update(); // build the start room
 
-    // Move rival team 1's clump into the first room visible through a doorway.
+    // Move rival team 1's clump into the spine-forward neighbour — the one doorway
+    // that renders as an open `GapKind::Forward` passage (every other connection is a
+    // closed `Side` door and never shows a frame light, by design: you cannot see
+    // through a shut door). A generic "first connection" is not guaranteed to be the
+    // open one on a generated map, so this must target the actual forward room.
     let neighbour = {
         let rt = app.world().resource::<MatchDirector>();
         let game = rt.live.host_match();
-        let conns = crate::sim::nav::connections_for(game, game.local_room());
-        *conns.first().expect("the start room has a neighbour")
+        game.local_target()
+            .expect("the local team has a spine-forward target")
     };
     {
         let mut rt = app.world_mut().resource_mut::<MatchDirector>();
@@ -1384,11 +1407,14 @@ fn a_doorway_preview_into_an_anchored_room_renders_the_rival_anchor_torch() {
     go(&mut app, GameState::Match);
     app.update(); // build the start room
 
+    // The spine-forward neighbour, not just any connection: only the open
+    // `GapKind::Forward` doorway renders a passage preview (and thus an anchor torch
+    // prop); every other connection is a closed `Side` door with nothing to preview.
     let neighbour = {
         let rt = app.world().resource::<MatchDirector>();
         let game = rt.live.host_match();
-        let conns = crate::sim::nav::connections_for(game, game.local_room());
-        *conns.first().expect("the start room has a neighbour")
+        game.local_target()
+            .expect("the local team has a spine-forward target")
     };
     {
         let mut rt = app.world_mut().resource_mut::<MatchDirector>();
@@ -1692,11 +1718,13 @@ fn a_rival_moving_into_a_neighbour_refreshes_the_frame_light_without_a_place_cha
     go(&mut app, GameState::Match);
     app.update(); // build the start room
 
+    // The spine-forward neighbour: only that open `GapKind::Forward` doorway ever
+    // shows a frame light tint (every other connection is a closed `Side` door).
     let neighbour = {
         let rt = app.world().resource::<MatchDirector>();
         let game = rt.live.host_match();
-        let conns = crate::sim::nav::connections_for(game, game.local_room());
-        *conns.first().expect("the start room has a neighbour")
+        game.local_target()
+            .expect("the local team has a spine-forward target")
     };
     {
         let mut rt = app.world_mut().resource_mut::<MatchDirector>();
@@ -1744,22 +1772,21 @@ fn teleport_into_room(app: &mut App, room: observed_core::RoomId) {
 /// the active map spec's [`observed_facility::map_spec::RoomRole::Monitor`] /
 /// `GuardianControl` rooms, never a hardcoded room id — the bug the user reported ("the
 /// observation rooms with monitors don't display the rooms correctly") traced back to
-/// `factory.rs` checking `room.0 == 5/6/3`, which silently stopped matching once the
-/// match moved to `sector_relay_v1` (Monitor = room 8, GuardianControl = room 7).
+/// `factory.rs` checking `room.0 == 5/6/3`, which silently stopped matching once the map
+/// moved on. This is spec-driven (queries the app's own active map, whatever it is)
+/// rather than pinning any one catalog map's room ids.
 #[test]
 fn monitor_room_renders_miniatures_for_its_page_and_guardian_console_spawns_in_its_role_room() {
     use observed_core::RoomId;
-    use observed_facility::map_spec::{RoomRole, sector_relay_v1};
+    use observed_facility::map_spec::RoomRole;
 
-    let spec = sector_relay_v1();
+    let spec = crate::map_catalog::active_map_spec(MATCH_SEED);
     let monitor_room = spec
         .role_room(RoomRole::Monitor)
-        .expect("sector_relay_v1 has a Monitor room");
+        .expect("the active map has a Monitor room");
     let console_room = spec
         .role_room(RoomRole::GuardianControl)
-        .expect("sector_relay_v1 has a GuardianControl room");
-    assert_eq!(monitor_room, RoomId(8));
-    assert_eq!(console_room, RoomId(7));
+        .expect("the active map has a GuardianControl room");
 
     let mut app = test_app();
     go(&mut app, GameState::Match);
@@ -1817,12 +1844,12 @@ fn a_rival_visible_on_a_monitor_panel_records_a_seen_sighting() {
     use crate::sim::director::MatchDirector;
     use crate::sim::state::{RivalSightings, SightingKind};
     use observed_core::TeamId;
-    use observed_facility::map_spec::{RoomRole, sector_relay_v1};
+    use observed_facility::map_spec::RoomRole;
 
-    let spec = sector_relay_v1();
+    let spec = crate::map_catalog::active_map_spec(MATCH_SEED);
     let monitor_room = spec
         .role_room(RoomRole::Monitor)
-        .expect("sector_relay_v1 has a Monitor room");
+        .expect("the active map has a Monitor room");
     let page = crate::screens::place::monitor_page_for(&spec, monitor_room)
         .expect("the Monitor room has a panel page");
     let shown_room = *page
@@ -1852,12 +1879,12 @@ fn a_rival_visible_on_a_monitor_panel_records_a_seen_sighting() {
 /// — shell + door states + a couple of overlay markers, not a full room's worth of detail.
 #[test]
 fn monitor_panels_stay_within_the_per_panel_entity_budget() {
-    use observed_facility::map_spec::{RoomRole, sector_relay_v1};
+    use observed_facility::map_spec::RoomRole;
 
-    let spec = sector_relay_v1();
+    let spec = crate::map_catalog::active_map_spec(MATCH_SEED);
     let monitor_room = spec
         .role_room(RoomRole::Monitor)
-        .expect("sector_relay_v1 has a Monitor room");
+        .expect("the active map has a Monitor room");
     let page = crate::screens::place::monitor_page_for(&spec, monitor_room)
         .expect("the Monitor room has a panel page");
 

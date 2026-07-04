@@ -556,4 +556,22 @@ mod tests {
                 .join("\n")
         );
     }
+
+    /// Phase 46: the generated default map (whatever the active catalog selection is,
+    /// normally `liminal_wfc_v1`) must pass the same teleport-place geometry audit the
+    /// authored map does — this is the game-side proof that generated rooms/hallways
+    /// produce valid place geometry, not just a valid abstract `MapSpec` graph.
+    #[test]
+    fn active_map_places_validate_across_map_iterations() {
+        let issues = audit_active_map();
+        assert!(
+            issues.is_empty(),
+            "semantic map geometry validation failed on the active map:\n{}",
+            issues
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+    }
 }

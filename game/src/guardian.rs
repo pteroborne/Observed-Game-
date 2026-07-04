@@ -28,7 +28,9 @@ pub struct Guardian {
 impl Default for Guardian {
     fn default() -> Self {
         Self {
-            room: RoomId(8), // Starts in room 8 (bottom-right)
+            // Placeholder only: `session::setup_match` always overrides this with the
+            // active map spec's `RoomRole::GuardianControl` room before the Match starts.
+            room: RoomId(0),
             pos: Vec3::new(0.0, 0.76, 0.0),
             anchor_timer: 30.0,
             state: GuardianState::Active,

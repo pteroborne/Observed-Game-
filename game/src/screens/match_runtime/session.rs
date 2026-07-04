@@ -6,7 +6,6 @@
 //! across matches again.
 
 use bevy::prelude::*;
-use observed_core::RoomId;
 use observed_facility::map_spec::RoomRole;
 use observed_traversal::{FpsBody, FpsConfig};
 
@@ -96,7 +95,13 @@ pub(crate) fn setup_match(
     commands.insert_resource(RivalSightings::default());
     let guardian_room = map_spec
         .role_room(RoomRole::GuardianControl)
-        .unwrap_or(RoomId(8));
+        .unwrap_or_else(|| {
+            panic!(
+                "active map spec `{}` is missing a required GuardianControl room; \
+             every catalog map must satisfy MapSpec::validate()",
+                map_spec.name
+            )
+        });
     commands.insert_resource(crate::guardian::Guardian {
         room: guardian_room,
         ..default()

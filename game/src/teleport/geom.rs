@@ -30,8 +30,8 @@ fn unit(seed: u64, salt: u64) -> f32 {
 const OBSERVATION_ROOM_SIDES: usize = 13;
 const OBSERVATION_ROOM_SCALE: f32 = 2.1;
 
-fn uses_observation_room_footprint(room: RoomId, role: Option<RoomRole>) -> bool {
-    role == Some(RoomRole::Monitor) || matches!(room.0, 5 | 6)
+fn uses_observation_room_footprint(_room: RoomId, role: Option<RoomRole>) -> bool {
+    role == Some(RoomRole::Monitor)
 }
 
 /// A room's footprint polygon (CCW, centred at the origin), seeded so each room keeps a
