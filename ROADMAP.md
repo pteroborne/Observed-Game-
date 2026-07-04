@@ -19,7 +19,7 @@ Rivals become presences: team-colored anchor torches and frame lights on edges t
 
 **Arc D — Liminal Scale & Living Fixtures** (plan and design rules: [docs/liminal_arc_plan.md](docs/liminal_arc_plan.md)). The scaling arc that expands the facility from a proof-of-concept nine-room dev map into a liminal, humanoid-scale labyrinth (24–32 rooms, procedurally generated) and repairs two incomplete shipped features (observation monitors, spectator piloting). Generation is proven lab-first; the spine (start → keystones → exit) is a first-class protected output with corpus validators. All arc-C invariants (determinism, solvability under collapse/anchors) are re-proven on generated maps. Human multiplayer remains the post-arc horizon — the lockstep spine is proven; the race has to be worth racing first.
 
-### Phase 43 — Living Fixtures `[ ]`
+### Phase 43 — Living Fixtures `[x]`
 Fix shipped features (no map changes): role-driven monitor rooms render real previews via a shared room-preview helper, monitor sightings feed the RivalSightings ledger as read-only, guardian console lands on an interactive RoomRole::GuardianControl object, gantry entry becomes deck-level (no mount stairs), spectator bot visibly pilots gantry jumps with fall recovery, and EXIT_ROOM consumers migrate to CompetitiveFacility::exit_room().
 
 ### Phase 44 — Map-Agnostic Plumbing `[ ]`

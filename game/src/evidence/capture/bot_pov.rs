@@ -1,6 +1,5 @@
 use bevy::app::AppExit;
 use bevy::prelude::*;
-use observed_match::mutable::EXIT_ROOM;
 use player_input::PlayerIntent;
 use std::path::PathBuf;
 
@@ -165,7 +164,8 @@ pub(crate) fn drive_bot_pov_capture(
         info!("BOT_NAV: Bot dropped anchor torch to freeze guardian!");
     }
 
-    if matches!(tp.place, teleport::Place::Room(room) if room.0 == EXIT_ROOM) {
+    let exit_room = runtime.live.host_match().competitive.exit_room();
+    if matches!(tp.place, teleport::Place::Room(room) if Some(room) == exit_room) {
         info!("BOT_NAV: Exit room reached!");
         request.finished = true;
         intent.0 = PlayerIntent::default();

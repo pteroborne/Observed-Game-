@@ -9,6 +9,7 @@ use crate::hallway;
 use crate::maze;
 use bevy::math::Vec2;
 use observed_core::RoomId;
+use observed_facility::map_spec::{RoomRole, sector_relay_v1};
 use observed_match::mutable::EXIT_ROOM;
 use observed_traversal::gantry;
 use std::f32::consts::PI;
@@ -29,12 +30,20 @@ fn unit(seed: u64, salt: u64) -> f32 {
 const OBSERVATION_ROOM_SIDES: usize = 13;
 const OBSERVATION_ROOM_SCALE: f32 = 2.1;
 
+fn uses_observation_room_footprint(room: RoomId) -> bool {
+    sector_relay_v1()
+        .room(room)
+        .is_some_and(|room| room.role == RoomRole::Monitor)
+        || matches!(room.0, 5 | 6)
+}
+
 /// A room's footprint polygon (CCW, centred at the origin), seeded so each room keeps a
 /// stable shape: a varied **rectangle** (4 sides) or a regular **polygon** of 5â€“8 sides
 /// (a pentagon/hexagon/heptagon/octagon, with a random orientation). `min_sides` forces
 /// enough edges to host every doorway.
 fn room_polygon(room: RoomId, seed: u64) -> Vec<Vec2> {
-    let n = if matches!(room.0, 5 | 6) {
+    let observation_room = uses_observation_room_footprint(room);
+    let n = if observation_room {
         OBSERVATION_ROOM_SIDES
     } else {
         4 + (mix(seed, 1) % 5) as usize
@@ -53,7 +62,7 @@ fn room_polygon(room: RoomId, seed: u64) -> Vec<Vec2> {
     // A regular n-gon whose apothem (inradius) is a seeded 0.9Ã—â€“1.4Ã— of ROOM_HALF, so
     // rooms vary in size (some tight, some hub-like) the way the rectangles already do;
     // a random rotation keeps orientations varied.
-    let apothem = if matches!(room.0, 5 | 6) {
+    let apothem = if observation_room {
         ROOM_HALF * OBSERVATION_ROOM_SCALE
     } else {
         ROOM_HALF * (0.9 + unit(seed, 5) * 0.5)

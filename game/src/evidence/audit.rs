@@ -15,6 +15,7 @@ use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::prelude::*;
 use observed_core::RoomId;
 use observed_diagnostics::{DiagnosticRun, DiagnosticSnapshotSummary};
+use observed_facility::map_spec::{RoomRole, sector_relay_v1};
 
 use super::snapshot::{
     ATLAS_Y, collect_snapshot, finish_audit, path_string, run_id, spawn_footprint_atlas,
@@ -297,22 +298,31 @@ pub(super) fn configure_audit(app: &mut App) {
 fn parse_debug_room(value: &str) -> Option<RoomId> {
     let token = value.trim().to_ascii_lowercase();
     match token.as_str() {
-        "tether" | "tether_camera" | "tether-camera" | "camera" => Some(RoomId(5)),
-        "guardian" | "guardian_camera" | "guardian-camera" | "observation" => Some(RoomId(6)),
+        "monitor" | "monitors" | "tether" | "tether_camera" | "tether-camera" | "camera"
+        | "guardian_camera" | "guardian-camera" | "observation" => {
+            default_role_room(RoomRole::Monitor)
+        }
+        "guardian" | "guardian_control" | "guardian-control" | "control" | "console" => {
+            default_role_room(RoomRole::GuardianControl)
+        }
         _ => token
             .strip_prefix("room")
             .or_else(|| token.strip_prefix('r'))
             .unwrap_or(&token)
             .parse::<u32>()
             .ok()
-            .filter(|room| *room < 9)
+            .filter(|room| sector_relay_v1().room(RoomId(*room)).is_some())
             .map(RoomId),
     }
 }
 
 fn parse_debug_room_list(value: &str) -> Vec<RoomId> {
     if value.trim().eq_ignore_ascii_case("all") {
-        return (0..9).map(RoomId).collect();
+        return sector_relay_v1()
+            .rooms
+            .into_iter()
+            .map(|room| room.id)
+            .collect();
     }
     let mut rooms: Vec<RoomId> = value
         .split([',', ';', ' '])
@@ -321,6 +331,21 @@ fn parse_debug_room_list(value: &str) -> Vec<RoomId> {
     rooms.sort_unstable_by_key(|room| room.0);
     rooms.dedup();
     rooms
+}
+
+fn default_role_room(role: RoomRole) -> Option<RoomId> {
+    sector_relay_v1().role_room(role)
+}
+
+fn current_role_room(runtime: &MatchDirector, role: RoomRole, fallback: RoomId) -> RoomId {
+    runtime
+        .live
+        .host_match()
+        .competitive
+        .map_spec
+        .as_ref()
+        .and_then(|spec| spec.role_room(role))
+        .unwrap_or(fallback)
 }
 
 fn apply_debug_match_coercion(
@@ -559,6 +584,7 @@ fn prepare_scenario(scenario: AuditScenario, prep: ScenarioPrep) {
             );
         }
         AuditScenario::TetherCameraRoom => {
+            let monitor_room = current_role_room(runtime, RoomRole::Monitor, RoomId(5));
             if !items
                 .placed
                 .iter()
@@ -571,20 +597,21 @@ fn prepare_scenario(scenario: AuditScenario, prep: ScenarioPrep) {
             crate::screens::match_runtime::debug_place_into(
                 tp,
                 runtime,
-                Place::Room(RoomId(5)),
-                RoomId(5),
+                Place::Room(monitor_room),
+                monitor_room,
                 keys,
                 items,
             );
         }
         AuditScenario::GuardianCameraRoom => {
+            let monitor_room = current_role_room(runtime, RoomRole::Monitor, RoomId(6));
             guardian.room = RoomId(4);
             guardian.pos = Vec3::new(0.0, 0.76, 0.0);
             crate::screens::match_runtime::debug_place_into(
                 tp,
                 runtime,
-                Place::Room(RoomId(6)),
-                RoomId(6),
+                Place::Room(monitor_room),
+                monitor_room,
                 keys,
                 items,
             );
@@ -739,29 +766,33 @@ mod tests {
 
     #[test]
     fn debug_room_parser_accepts_aliases_and_room_ids() {
-        assert_eq!(parse_debug_room("guardian"), Some(RoomId(6)));
-        assert_eq!(parse_debug_room("tether"), Some(RoomId(5)));
+        assert_eq!(parse_debug_room("guardian"), Some(RoomId(7)));
+        assert_eq!(parse_debug_room("guardian_camera"), Some(RoomId(8)));
+        assert_eq!(parse_debug_room("tether"), Some(RoomId(8)));
         assert_eq!(parse_debug_room("r4"), Some(RoomId(4)));
-        assert_eq!(parse_debug_room("room8"), Some(RoomId(8)));
-        assert_eq!(parse_debug_room("room9"), None);
+        assert_eq!(parse_debug_room("room9"), Some(RoomId(9)));
+        assert_eq!(parse_debug_room("room14"), None);
     }
 
     #[test]
     fn debug_coercion_reads_tethers_guardian_and_player_room() {
         let coercion = DebugMatchCoercion::from_values(
-            Some("4, r0, room8, nope"),
-            Some("guardian"),
-            Some("tether"),
+            Some("4, r0, room13, nope"),
+            Some("guardian_control"),
+            Some("monitor"),
         )
         .expect("coercion should be enabled");
-        assert_eq!(coercion.tether_rooms, vec![RoomId(0), RoomId(4), RoomId(8)]);
-        assert_eq!(coercion.guardian_room, Some(RoomId(6)));
-        assert_eq!(coercion.player_room, Some(RoomId(5)));
+        assert_eq!(
+            coercion.tether_rooms,
+            vec![RoomId(0), RoomId(4), RoomId(13)]
+        );
+        assert_eq!(coercion.guardian_room, Some(RoomId(7)));
+        assert_eq!(coercion.player_room, Some(RoomId(8)));
         assert!(!coercion.applied);
 
         let all = parse_debug_room_list("all");
-        assert_eq!(all.len(), 9);
+        assert_eq!(all.len(), 14);
         assert_eq!(all[0], RoomId(0));
-        assert_eq!(all[8], RoomId(8));
+        assert_eq!(all[13], RoomId(13));
     }
 }

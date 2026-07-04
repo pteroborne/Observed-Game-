@@ -210,11 +210,6 @@ impl AtlasEntry {
     }
 }
 
-fn atlas_room_center(room: RoomId) -> Vec2 {
-    let grid = tacmap::grid_pos(room);
-    Vec2::new(grid.x - 1.0, grid.y - 1.0)
-}
-
 fn atlas_layout(
     runtime: &MatchDirector,
     keys: &KeystoneState,
@@ -223,9 +218,27 @@ fn atlas_layout(
     let game = runtime.live.host_match();
     let mut rooms = Vec::new();
     let mut hallways = Vec::new();
+    let room_entries: Vec<(RoomId, Vec2)> = game
+        .competitive
+        .map_spec
+        .as_ref()
+        .map(|spec| {
+            spec.rooms
+                .iter()
+                .map(|room| (room.id, room.schematic))
+                .collect()
+        })
+        .unwrap_or_else(|| {
+            (0..9u32)
+                .map(|id| {
+                    let room = RoomId(id);
+                    let grid = tacmap::grid_pos(room);
+                    (room, Vec2::new(grid.x - 1.0, grid.y - 1.0))
+                })
+                .collect()
+        });
 
-    for id in 0..9u32 {
-        let room = RoomId(id);
+    for (room, schematic) in room_entries {
         let nav = crate::sim::nav::nav_for_place(
             crate::flow::MATCH_SEED,
             game,
@@ -236,7 +249,7 @@ fn atlas_layout(
         let geom = teleport::geom_for(Place::Room(room), &nav);
         rooms.push(AtlasEntry {
             subject: format!("atlas room {}", room.0),
-            center: atlas_room_center(room),
+            center: schematic,
             half: geom.half,
             kind: AtlasKind::Room,
         });
@@ -274,7 +287,10 @@ fn atlas_layout(
     let hall_max_half = max_half(&hallways);
     let hall_step_x = (hall_max_half.x * 2.0 + ATLAS_LAYOUT_MARGIN).max(1.0);
     let hall_step_y = (hall_max_half.y * 2.0 + ATLAS_LAYOUT_MARGIN).max(1.0);
-    let room_right = room_step + room_max_half.x;
+    let room_right = rooms
+        .iter()
+        .map(|entry| entry.center.x + entry.half.x)
+        .fold(room_step + room_max_half.x, f32::max);
     let first_hall_center_x = room_right + ATLAS_GROUP_GAP + hall_max_half.x;
     let hall_cols = 4usize;
     for (index, hallway) in hallways.iter_mut().enumerate() {
@@ -552,8 +568,8 @@ fn collect_tac_map(
         game.reroute_commits,
         tp.place,
     );
-    let expected_routes = tacmap::spine().len().saturating_sub(1);
-    let expected_rooms = 9;
+    let expected_routes = model.routes.len();
+    let expected_rooms = model.rooms.len();
     let expected_keystones = model.keystones.len();
     // Each rival pip also draws a team-label text node tagged with the same `Rival`
     // role (Phase 42c), so both the diagnostic count and the element total double it.

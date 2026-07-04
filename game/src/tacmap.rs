@@ -15,7 +15,7 @@ use bevy::prelude::Vec2;
 use observed_core::RoomId;
 use observed_facility::map_spec::RoomRole;
 use observed_match::facility::{CompetitiveFacility, TEAM_COUNT};
-use observed_match::mutable::{EXIT_ROOM, START_ROOM, spine_next};
+use observed_match::mutable::{START_ROOM, spine_next};
 
 use crate::flow::LOCAL_TEAM;
 use crate::keystones::KeystoneState;
@@ -152,7 +152,7 @@ pub fn build_map(
                     let room = RoomId(id);
                     let role = if id == START_ROOM {
                         RoomRole::Start
-                    } else if id == EXIT_ROOM {
+                    } else if room == keys.exit_room {
                         RoomRole::Exit
                     } else {
                         RoomRole::Decision
@@ -181,6 +181,8 @@ mod tests {
 
     #[test]
     fn the_spine_runs_entrance_to_exit_and_every_step_is_grid_adjacent() {
+        use observed_match::mutable::EXIT_ROOM;
+
         let spine = spine();
         assert_eq!(spine.len(), 9, "all nine rooms are on the spine");
         assert_eq!(spine.first(), Some(&RoomId(START_ROOM)));
