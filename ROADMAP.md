@@ -12,8 +12,27 @@ This document outlines the current active development goals, completed milestone
 
 **Arc C — Contention & Depth** (plan and design rules: [docs/contention_arc_plan.md](docs/contention_arc_plan.md)). The design arc that turns the proven observe-to-freeze foundation into a game worth racing: observation becomes a shared, contested resource between teams, and the board gains the identity, verticality, and visible pressure to make that contest legible. Lab-first throughout; solvability ("no team is ever left without a path") is the arc-wide invariant.
 
-### Phase 42 — The Race Reads as a Race `[ ]`
+### Phase 42 — The Race Reads as a Race `[x]`
 Rivals become presences: team-colored anchor torches and frame lights on edges they froze, sound bleeding through occupied thresholds, recognizable bot-team personalities (the freezer, the sprinter, the saboteur), and tac-map attribution of rival-frozen edges ("Team 3 was here"). Human multiplayer remains the post-arc horizon — the lockstep spine is ready; the race has to be worth racing first.
+
+---
+
+**Arc D — Liminal Scale & Living Fixtures** (plan and design rules: [docs/liminal_arc_plan.md](docs/liminal_arc_plan.md)). The scaling arc that expands the facility from a proof-of-concept nine-room dev map into a liminal, humanoid-scale labyrinth (24–32 rooms, procedurally generated) and repairs two incomplete shipped features (observation monitors, spectator piloting). Generation is proven lab-first; the spine (start → keystones → exit) is a first-class protected output with corpus validators. All arc-C invariants (determinism, solvability under collapse/anchors) are re-proven on generated maps. Human multiplayer remains the post-arc horizon — the lockstep spine is proven; the race has to be worth racing first.
+
+### Phase 43 — Living Fixtures `[ ]`
+Fix shipped features (no map changes): role-driven monitor rooms render real previews via a shared room-preview helper, monitor sightings feed the RivalSightings ledger as read-only, guardian console lands on an interactive RoomRole::GuardianControl object, gantry entry becomes deck-level (no mount stairs), spectator bot visibly pilots gantry jumps with fall recovery, and EXIT_ROOM consumers migrate to CompetitiveFacility::exit_room().
+
+### Phase 44 — Map-Agnostic Plumbing `[ ]`
+Add selection layer and builder contract: `game::map_catalog::active_map_spec(seed)` returns the active MapSpec; `OBSERVED2_MAP` env var selects by name (default sector_relay_v1). Pure refactor; lands green.
+
+### Phase 45 — WFC Topology In The Lab `[ ]`
+Procedural generation proof: `observed_facility::wfc` (feature-gated) implements Wave Function Collapse topology generation. Extended `wfc_proc_gen_lab` emits validated MapSpecs (24–32 rooms, role coverage including 6+ Monitor rooms, protected spine). Corpus tests validate generation determinism, spine coverage, role distribution, bounded retry, and MapSpec validation across 50+ seeds.
+
+### Phase 46 — The Liminal Flip `[ ]`
+Default switch + comfort scale pass: WFC maps become default (OBSERVED2_MAP=dev reverts to sector_relay_v1); room/hall dimensions scale by role for liminal breathing; district assignment and palette variance across the bigger map; per-seed memoization for fast test iteration; characterization + solvability corpus gates re-run on generated maps and evidence refreshed.
+
+### Phase 47 — WFC Corridor Interiors `[ ]`
+DFS-maze hallways: archived `hallway_wfc.rs` ported onto WallSeg geometry; role-driven interiors (Decision corridors get mazes, Pressure corridors simpler); DFS fallback on WFC timeout; representative pinned seeds for manual review; bot routing and solvability tests pass with interior mazes.
 
 ---
 
