@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 use bevy::prelude::*;
 use observed_core::{RoomId, TeamId};
-use observed_facility::map_spec::RoomRole;
+use observed_facility::map_spec::{CorridorRole, RoomRole};
 use observed_match::teamplay::TeamplayMatch;
 use observed_progression::session::SessionLabWorld;
 use observed_traversal::{FpsArena, FpsBody, FpsConfig};
@@ -149,6 +149,11 @@ pub struct FrozenDest {
     pub target: Option<RoomId>,
     /// For a room destination, the active map role that shapes its presentation.
     pub room_role: Option<RoomRole>,
+    /// For a hallway destination, the active map's [`CorridorRole`] for that edge
+    /// (`None` for a room, or when the current map has no spec / no role for this
+    /// edge). Geometry uses this to pick the hallway's interior generator (WFC vs.
+    /// DFS+braid maze); frozen here so the preview and the actual crossing agree.
+    pub corridor_role: Option<CorridorRole>,
 }
 
 #[derive(Resource)]

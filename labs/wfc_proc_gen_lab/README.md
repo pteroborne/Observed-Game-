@@ -65,3 +65,17 @@ graph, with the retry budget as a safety net rather than the whole strategy.
 `crates/observed_facility`'s own `#[cfg(all(test, feature = "wfc"))]` tests cover
 a smaller 20-seed slice of the same properties directly against `MapSpec`,
 independent of this lab's visualization and `observed_match` dependency.
+
+## `hallway_wfc.rs` — archived, now re-exported (Phase 47 / Arc D5)
+
+`hallway_wfc.rs` used to be a full copy of the game's former hallway-*interior*
+WFC generator (archived here in refactor Arc G1, 2026-07-02, when nothing in the
+game called it). Phase 47 ported that generator onto the current place-geometry
+API as `observed_facility::wfc::generate_interior_walls`/`InteriorSeg` (see that
+crate's README), and the game adopted it for `CorridorRole::Mystery` hallway
+interiors (`game::wfc_interior`, selected in
+`game::teleport::geom::hallway_geom_with_slots_and_role`, DFS-maze fallback on
+`WfcInteriorError`). `hallway_wfc.rs` is now a thin re-export of the live
+`observed_facility::wfc` functions (plus the old `generate_wfc_interior_walls`
+name, for any lab code still spelling it) — its smoke test exercises the real
+production code rather than a second, drifting copy.

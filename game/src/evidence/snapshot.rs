@@ -131,6 +131,14 @@ fn collect_geometry(
         else {
             continue;
         };
+        // `geom_for`'s Hallway arm looks up `Nav::corridor_role_for(to)`, so the
+        // already-resolved frozen edge role (see `crossing::compute_gap_dests`) only
+        // needs keying by the hallway's own `to` — the only neighbour a hallway
+        // `Place` is ever queried about.
+        let corridor_roles = match (dest.place, dest.corridor_role) {
+            (Place::Hallway { to, .. }, Some(role)) => vec![(to, role)],
+            _ => Vec::new(),
+        };
         let nav = teleport::Nav {
             connections: dest.conns.clone(),
             connection_slots: dest.connection_slots.clone(),
@@ -139,6 +147,7 @@ fn collect_geometry(
             hallway_exit_room_slot: dest.hallway_exit_room_slot,
             target_room: dest.target,
             room_role: dest.room_role,
+            corridor_roles,
             seed: 0,
             version: 0,
             exit_locked: !keys.gate_open(),

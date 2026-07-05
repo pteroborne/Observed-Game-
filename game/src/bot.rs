@@ -427,6 +427,72 @@ mod tests {
         }
     }
 
+    /// Phase 47: a bot routes through a WFC-selected (`CorridorRole::Mystery`) hallway
+    /// interior exactly as it does through the DFS+braid maze — navmesh/arena
+    /// consumption is plumbing-neutral to which generator produced the `WallSeg`s,
+    /// since both emit the same `PlaceGeom.interior` shape. Mirrors
+    /// `routes_through_every_hallway_template_from_entry_to_exit` above, but forces the
+    /// WFC path via `corridor_role: Some(Mystery)` on every maze-grid template.
+    #[test]
+    fn a_bot_routes_through_a_wfc_selected_hallway_interior() {
+        use crate::teleport::{
+            HallwayGeomEndpoints, ThresholdSlotId, hallway_geom_with_slots_and_role,
+        };
+        use observed_facility::map_spec::CorridorRole;
+        use observed_match::mutable::EXIT_ROOM;
+
+        let config = config();
+        for (index, template) in hallway::TEMPLATES.iter().enumerate() {
+            if template.grid.is_none() {
+                continue;
+            }
+            for seed in 0..8_u64 {
+                let geom = hallway_geom_with_slots_and_role(
+                    HallwayGeomEndpoints {
+                        from: RoomId(0),
+                        to: RoomId(1),
+                        from_room_slot: ThresholdSlotId(0),
+                        to_room_slot: ThresholdSlotId(0),
+                        exit_room: RoomId(EXIT_ROOM),
+                    },
+                    template,
+                    seed,
+                    false,
+                    Some(CorridorRole::Mystery),
+                );
+                let arena = teleport::place_arena(&geom, 0.0, 4.6);
+                let start = teleport::entry_spawn(&geom, RoomId(0));
+                let exit = target_gap_for_place(
+                    teleport::Place::Hallway {
+                        from: RoomId(0),
+                        to: RoomId(1),
+                        variation: index,
+                    },
+                    &geom,
+                    start,
+                    0.0,
+                )
+                .expect("hallway has an exit");
+
+                let path =
+                    route_to_gap(&geom, &arena, &config, start, &exit).unwrap_or_else(|| {
+                        panic!(
+                            "WFC template {index} ({:?}) seed {seed} must route entry -> exit",
+                            template.flavor
+                        )
+                    });
+
+                assert!(path.waypoints.len() >= 2);
+                assert!(
+                    path.waypoints
+                        .last()
+                        .is_some_and(|p| (*p - exit.center).dot(exit.normal) > 0.0),
+                    "last waypoint crosses outside the exit threshold"
+                );
+            }
+        }
+    }
+
     #[test]
     fn ground_level_gantry_bot_targets_the_safe_onward_exit() {
         let template = hallway::TEMPLATES

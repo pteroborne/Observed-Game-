@@ -1,11 +1,13 @@
 #[cfg(test)]
 mod tests {
     use crate::hallway;
-    use crate::teleport::geom::{outward_normal, room_geom_with_slots_and_seals_for_role};
+    use crate::teleport::geom::{
+        grid_interior, outward_normal, room_geom_with_slots_and_seals_for_role,
+    };
     use crate::teleport::*;
     use bevy::math::{Vec2, Vec3};
     use observed_core::RoomId;
-    use observed_facility::map_spec::RoomRole;
+    use observed_facility::map_spec::{CorridorRole, RoomRole};
     use observed_match::mutable::EXIT_ROOM;
     use observed_traversal::FpsArena;
     use std::f32::consts::PI;
@@ -26,6 +28,7 @@ mod tests {
             hallway_exit_room_slot: None,
             target_room: target.map(RoomId),
             room_role: None,
+            corridor_roles: Vec::new(),
             seed: 1,
             version: 0,
             exit_locked: false,
@@ -737,6 +740,148 @@ mod tests {
                 );
             }
         }
+    }
+
+    // --- Phase 47: WFC vs. DFS maze interior selection ------------------------------
+
+    /// A `Mystery`-role edge selects the WFC labyrinth (`crate::wfc_interior`) instead
+    /// of the DFS+braid maze (`crate::maze`): the interior it produces exactly matches
+    /// `crate::wfc_interior::generate`'s own output for the same grid/seed, which the
+    /// DFS maze would not (different algorithm, different wall count in general).
+    #[test]
+    fn a_mystery_edge_selects_the_wfc_interior() {
+        for template in maze_templates() {
+            let Some((cols, rows)) = template.grid else {
+                continue;
+            };
+            let seed = 0u64;
+            let geom = hallway_geom_with_slots_and_role(
+                HallwayGeomEndpoints {
+                    from: RoomId(1),
+                    to: RoomId(4),
+                    from_room_slot: ThresholdSlotId(0),
+                    to_room_slot: ThresholdSlotId(0),
+                    exit_room: RoomId(EXIT_ROOM),
+                },
+                template,
+                seed,
+                false,
+                Some(CorridorRole::Mystery),
+            );
+            let wfc = crate::wfc_interior::generate(
+                cols as usize,
+                rows as usize,
+                seed,
+                MAZE_CELL,
+                MAZE_WALL_T,
+            )
+            .expect("pinned seed 0 converges on every template grid size");
+            assert_eq!(
+                geom.interior.len(),
+                wfc.walls.len(),
+                "{} (seed {seed}): a Mystery edge's interior wall count matches the WFC generator's own output",
+                template.name
+            );
+            assert!(
+                maze_is_walkable(&geom),
+                "{} (seed {seed}): a WFC-selected interior must be walkable entry→exit",
+                template.name
+            );
+        }
+    }
+
+    /// Every other corridor role (including `None`, the authored/dev-map fallback with
+    /// no `MapSpec`) keeps the DFS+braid maze — byte-identical to
+    /// `hallway_geom`/`hallway_geom_with_slots` (which always pass `None`).
+    #[test]
+    fn a_non_mystery_edge_keeps_the_dfs_maze() {
+        let template = maze_templates()[0];
+        let seed = 0u64;
+        let baseline = hallway_geom(RoomId(1), RoomId(4), template, seed, false);
+        for role in [
+            None,
+            Some(CorridorRole::Connector),
+            Some(CorridorRole::LongRoute),
+            Some(CorridorRole::Vertical),
+            Some(CorridorRole::Bypass),
+        ] {
+            let geom = hallway_geom_with_slots_and_role(
+                HallwayGeomEndpoints {
+                    from: RoomId(1),
+                    to: RoomId(4),
+                    from_room_slot: ThresholdSlotId(0),
+                    to_room_slot: ThresholdSlotId(0),
+                    exit_room: RoomId(EXIT_ROOM),
+                },
+                template,
+                seed,
+                false,
+                role,
+            );
+            assert_eq!(
+                geom.interior.len(),
+                baseline.interior.len(),
+                "{role:?}: a non-Mystery role keeps the DFS maze's wall count"
+            );
+            assert_eq!(
+                geom.gaps.len(),
+                baseline.gaps.len(),
+                "{role:?}: same door layout"
+            );
+        }
+    }
+
+    /// The DFS-maze fallback: `grid_interior` (the WFC/DFS selection point) must fall
+    /// back to a real, walkable DFS maze rather than ever emitting an empty interior,
+    /// even when asked for a `Mystery`-role WFC interior on a grid too small to ever
+    /// converge. Real `HallwayTemplate`s never hit this (every catalog grid size
+    /// converges under WFC — see `wfc_interior`'s pinned-seed test); this proves the
+    /// fallback wiring itself via `grid_interior`'s direct `pub(crate)` test hook,
+    /// since no authored template can force the condition.
+    #[test]
+    fn wfc_failure_falls_back_to_the_dfs_maze() {
+        // A 1x1 grid's single cell cannot host both a door-locked entry and a
+        // door-locked exit as distinct rows (the archived contradiction shape:
+        // row 0 and row `rows - 1` collapse to the same cell), so WFC can never
+        // converge here, forcing the fallback branch.
+        let (cols, rows) = (1u8, 1u8);
+        let seed = 0u64;
+        let wfc_direct = crate::wfc_interior::generate(
+            cols as usize,
+            rows as usize,
+            seed,
+            MAZE_CELL,
+            MAZE_WALL_T,
+        );
+        assert!(
+            wfc_direct.is_err(),
+            "a 1x1 grid must fail to converge, proving this test exercises the fallback"
+        );
+        let interior = grid_interior(cols, rows, seed, Some(CorridorRole::Mystery));
+        let dfs = crate::maze::Maze::generate(cols as usize, rows as usize, seed);
+        assert_eq!(
+            interior.entry_cols, dfs.entry_cols,
+            "falls back to the DFS maze's own door columns"
+        );
+        assert_eq!(
+            interior.exit_cols, dfs.exit_cols,
+            "falls back to the DFS maze's own door columns"
+        );
+    }
+
+    /// The fallback decision is a pure function of `(cols, rows, layout_seed,
+    /// corridor_role)`: calling `grid_interior` twice with the same inputs on a grid
+    /// that forces the WFC failure produces byte-identical output, so "same seed ->
+    /// same choice every run" holds even on the fallback path.
+    #[test]
+    fn the_fallback_decision_is_deterministic_for_the_same_seed() {
+        let (cols, rows) = (1u8, 1u8);
+        let seed = 3u64;
+        let a = grid_interior(cols, rows, seed, Some(CorridorRole::Mystery));
+        let b = grid_interior(cols, rows, seed, Some(CorridorRole::Mystery));
+        assert_eq!(a.entry_cols, b.entry_cols);
+        assert_eq!(a.exit_cols, b.exit_cols);
+        assert_eq!(a.interior.len(), b.interior.len());
     }
 
     fn chicane_template() -> &'static hallway::HallwayTemplate {

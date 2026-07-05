@@ -10,7 +10,7 @@ use crate::layout::{ROOM_SCALE_HUB, ROOM_SCALE_MONITOR, ROOM_SCALE_STANDARD};
 use crate::maze;
 use bevy::math::Vec2;
 use observed_core::RoomId;
-use observed_facility::map_spec::RoomRole;
+use observed_facility::map_spec::{CorridorRole, RoomRole};
 use observed_match::mutable::EXIT_ROOM;
 use observed_traversal::gantry;
 use std::f32::consts::PI;
@@ -414,11 +414,91 @@ pub struct HallwayGeomEndpoints {
     pub exit_room: RoomId,
 }
 
+/// A grid-driven hallway interior's shared shape, regardless of which generator
+/// (WFC or the DFS+braid maze) produced it: the footprint, its interior walls, and
+/// the entry/exit door columns to place gaps at. See [`grid_interior`] for the
+/// selection between the two generators.
+pub(crate) struct GridInterior {
+    pub(crate) footprint: Vec2,
+    pub(crate) interior: Vec<WallSeg>,
+    pub(crate) entry_cols: Vec<usize>,
+    pub(crate) exit_cols: Vec<usize>,
+}
+
+/// Picks and runs the interior generator for a `grid`-driven hallway template: the
+/// WFC labyrinth (`crate::wfc_interior`) for a [`CorridorRole::Mystery`] edge, the
+/// shipping DFS+braid maze (`crate::maze`) for every other role (including when the
+/// edge's role is unknown — an authored/dev map fallback with no `MapSpec`, or a
+/// non-`Mystery` generated edge). If WFC generation fails to converge within its
+/// retry budget, this falls back to the DFS maze for that hallway rather than ever
+/// failing to emit a hallway; the fallback decision is a pure function of
+/// `(cols, rows, layout_seed)`, so the same seed always makes the same choice.
+///
+/// Silence is deliberate on the WFC fallback path: this runs on the hot per-hallway
+/// selection path (every hallway render, not just generation), so it does not log —
+/// unlike `observed_facility::wfc::generate_liminal_map`'s retry exhaustion, which is
+/// a rare, one-shot, already-logged map-build event.
+///
+/// `pub(crate)` (rather than private) only so `teleport::test` has a hook to prove
+/// the fallback: real hallway grid sizes always converge under WFC (see
+/// `wfc_interior`'s pinned-seed test), so exercising the DFS fallback branch needs
+/// calling this directly with an out-of-catalog grid size small enough to be
+/// unsolvable, which no `HallwayTemplate` ever produces.
+pub(crate) fn grid_interior(
+    cols: u8,
+    rows: u8,
+    layout_seed: u64,
+    corridor_role: Option<CorridorRole>,
+) -> GridInterior {
+    let (cols, rows) = (cols as usize, rows as usize);
+    if corridor_role == Some(CorridorRole::Mystery)
+        && let Ok(wfc) =
+            crate::wfc_interior::generate(cols, rows, layout_seed, MAZE_CELL, MAZE_WALL_T)
+    {
+        let footprint = Vec2::new(cols as f32 * MAZE_CELL * 0.5, rows as f32 * MAZE_CELL * 0.5);
+        return GridInterior {
+            footprint,
+            interior: wfc.walls,
+            entry_cols: wfc.entry_cols,
+            exit_cols: wfc.exit_cols,
+        };
+    }
+    let m = maze::Maze::generate(cols, rows, layout_seed);
+    let footprint = m.footprint_half(MAZE_CELL);
+    let interior = m
+        .interior_walls(MAZE_CELL, MAZE_WALL_T)
+        .into_iter()
+        .map(|(center, half)| WallSeg { center, half })
+        .collect();
+    GridInterior {
+        footprint,
+        interior,
+        entry_cols: m.entry_cols.clone(),
+        exit_cols: m.exit_cols.clone(),
+    }
+}
+
 pub fn hallway_geom_with_slots(
     endpoints: HallwayGeomEndpoints,
     template: &hallway::HallwayTemplate,
     layout_seed: u64,
     exit_locked: bool,
+) -> PlaceGeom {
+    hallway_geom_with_slots_and_role(endpoints, template, layout_seed, exit_locked, None)
+}
+
+/// The role-aware entry point [`geom_for`] and the map-validation audit use: same as
+/// [`hallway_geom_with_slots`], but threads the edge's [`CorridorRole`] (when known
+/// from the active map spec) through to [`grid_interior`]'s WFC/DFS selection.
+/// Every non-`grid` template ignores `corridor_role` entirely, and callers with no
+/// map spec (authored/dev fallbacks) pass `None`, which keeps `grid` templates on the
+/// DFS maze — byte-identical to before this selection existed.
+pub fn hallway_geom_with_slots_and_role(
+    endpoints: HallwayGeomEndpoints,
+    template: &hallway::HallwayTemplate,
+    layout_seed: u64,
+    exit_locked: bool,
+    corridor_role: Option<CorridorRole>,
 ) -> PlaceGeom {
     let HallwayGeomEndpoints {
         from,
@@ -435,19 +515,25 @@ pub fn hallway_geom_with_slots(
         GapKind::Exit
     };
     if let Some((cols, rows)) = template.grid {
-        let m = maze::Maze::generate(cols as usize, rows as usize, layout_seed);
-        let footprint = m.footprint_half(MAZE_CELL);
+        let GridInterior {
+            footprint,
+            interior,
+            entry_cols,
+            exit_cols,
+        } = grid_interior(cols, rows, layout_seed, corridor_role);
         let corridor = MAZE_CELL - 2.0 * MAZE_WALL_T;
-        let interior = m
-            .interior_walls(MAZE_CELL, MAZE_WALL_T)
-            .into_iter()
-            .map(|(center, half)| WallSeg { center, half })
-            .collect();
+        let cell_center = |c: usize, r: usize| -> Vec2 {
+            Vec2::new(
+                -footprint.x + (c as f32 + 0.5) * MAZE_CELL,
+                -footprint.y + (r as f32 + 0.5) * MAZE_CELL,
+            )
+        };
+        let rows_usize = rows as usize;
         // Multiple entrances (âˆ’Z, back to `from`) and exits (+Z, on to `to`); each at a
         // door column, all reachable from one another through the maze.
         let mut gaps = Vec::new();
-        for (slot, &ec) in m.entry_cols.iter().enumerate() {
-            let x = m.cell_center(ec, 0, MAZE_CELL).x;
+        for (slot, &ec) in entry_cols.iter().enumerate() {
+            let x = cell_center(ec, 0).x;
             let hall_slot = ThresholdSlotId(slot as u8);
             gaps.push(DoorGap {
                 center: Vec2::new(x, -footprint.y),
@@ -459,8 +545,8 @@ pub fn hallway_geom_with_slots(
                 floor_y: 0.0,
             });
         }
-        for (slot, &xc) in m.exit_cols.iter().enumerate() {
-            let x = m.cell_center(xc, m.rows - 1, MAZE_CELL).x;
+        for (slot, &xc) in exit_cols.iter().enumerate() {
+            let x = cell_center(xc, rows_usize - 1).x;
             let hall_slot = ThresholdSlotId(slot as u8);
             gaps.push(DoorGap {
                 center: Vec2::new(x, footprint.y),
@@ -856,7 +942,7 @@ pub fn geom_for(place: Place, nav: &Nav) -> PlaceGeom {
             from,
             to,
             variation,
-        } => hallway_geom_with_slots(
+        } => hallway_geom_with_slots_and_role(
             HallwayGeomEndpoints {
                 from,
                 to,
@@ -870,6 +956,7 @@ pub fn geom_for(place: Place, nav: &Nav) -> PlaceGeom {
             hallway::template(variation),
             hallway::layout_seed(from, to, variation),
             nav.exit_locked,
+            nav.corridor_role_for(to),
         ),
     }
 }

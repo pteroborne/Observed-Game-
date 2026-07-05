@@ -224,6 +224,20 @@ pub(crate) fn nav_for_room(
         .map_spec
         .as_ref()
         .and_then(|spec| spec.room(room).map(|room| room.role));
+    let corridor_roles = game
+        .competitive
+        .map_spec
+        .as_ref()
+        .map(|spec| {
+            connections
+                .iter()
+                .filter_map(|&target| {
+                    spec.corridor_role_between(room, target)
+                        .map(|role| (target, role))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     crate::teleport::Nav {
         connections,
         connection_slots,
@@ -232,6 +246,7 @@ pub(crate) fn nav_for_room(
         hallway_exit_room_slot: None,
         target_room,
         room_role,
+        corridor_roles,
         seed,
         version: game.reroute_commits,
         exit_locked: !keys.gate_open(),
@@ -262,6 +277,20 @@ pub(crate) fn nav_for_place(
             let mut nav = nav_for_room(seed, game, keys, items, from);
             nav.hallway_entry_room_slot = slot_for_connection(game, items, from, to);
             nav.hallway_exit_room_slot = slot_for_connection(game, items, to, from);
+            // `nav_for_room`'s `corridor_roles` is keyed off `from`'s *live* rendered
+            // connections, which should include `to` — but a hallway can be rendered
+            // for a `to` that just decohered off that list, so make sure this specific
+            // edge's role is present regardless of whether `to` still counts as a live
+            // connection of `from`.
+            if nav.corridor_role_for(to).is_none()
+                && let Some(role) = game
+                    .competitive
+                    .map_spec
+                    .as_ref()
+                    .and_then(|spec| spec.corridor_role_between(from, to))
+            {
+                nav.corridor_roles.push((to, role));
+            }
             nav
         }
     }

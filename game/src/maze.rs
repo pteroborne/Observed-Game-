@@ -46,6 +46,19 @@ fn pick_doors(rng: &mut SplitMix, cols: usize, count: usize) -> Vec<usize> {
     cols_out
 }
 
+/// The entry/exit door columns [`Maze::generate`] would pick for a `cols`-wide grid
+/// from `seed` — exposed so an alternate interior generator (the WFC labyrinth) can
+/// pick the *same* door columns for the same seed, keeping the two interior
+/// generators visually and behaviorally consistent for a given edge.
+pub(crate) fn door_columns(cols: usize, seed: u64) -> (Vec<usize>, Vec<usize>) {
+    let cols = cols.max(1);
+    let mut rng = SplitMix::new(seed);
+    let doors = door_count(cols);
+    let entry_cols = pick_doors(&mut rng, cols, doors);
+    let exit_cols = pick_doors(&mut rng, cols, doors);
+    (entry_cols, exit_cols)
+}
+
 /// A generated hallway-interior maze on a `cols` × `rows` grid of square cells.
 ///
 /// Cell `(c, r)` has column `c` in `0..cols` along +X and row `r` in `0..rows` along

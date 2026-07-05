@@ -212,8 +212,9 @@ pub mod transition;
 pub mod test;
 
 pub use geom::{
-    HallwayGeomEndpoints, contain, geom_for, hallway_geom, hallway_geom_with_slots, open_entry,
-    room_geom, room_geom_with_slots, room_preview_geom,
+    HallwayGeomEndpoints, contain, geom_for, hallway_geom, hallway_geom_with_slots,
+    hallway_geom_with_slots_and_role, open_entry, room_geom, room_geom_with_slots,
+    room_preview_geom,
 };
 pub use nav::{Nav, PinnedEdge};
 pub use transition::{

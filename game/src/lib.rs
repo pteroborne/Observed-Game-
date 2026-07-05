@@ -19,6 +19,7 @@ mod sim;
 pub mod tacmap;
 pub mod teleport;
 mod view;
+mod wfc_interior;
 
 use bevy::{
     asset::AssetPlugin,

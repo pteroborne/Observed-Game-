@@ -191,6 +191,17 @@ impl MapSpec {
         shortest_path(self.room_ids(), &self.edge_pairs(), start, goal)
     }
 
+    /// The [`CorridorRole`] of the edge between `a` and `b`, if one exists (edge
+    /// endpoints are unordered — `(a, b)` and `(b, a)` return the same role).
+    pub fn corridor_role_between(&self, a: RoomId, b: RoomId) -> Option<CorridorRole> {
+        self.edges
+            .iter()
+            .find(|edge| {
+                (edge.a.room == a && edge.b.room == b) || (edge.a.room == b && edge.b.room == a)
+            })
+            .map(|edge| edge.role)
+    }
+
     pub fn next_step_toward(&self, start: RoomId, goal: RoomId) -> Option<RoomId> {
         let path = self.shortest_path(start, goal)?;
         path.get(1).copied()
@@ -582,6 +593,24 @@ mod tests {
         assert_eq!(
             map.keystone_rooms(),
             vec![RoomId(2), RoomId(12), RoomId(13)]
+        );
+    }
+
+    #[test]
+    fn corridor_role_between_is_edge_symmetric_and_none_off_graph() {
+        let map = sector_relay_v1();
+        let role = map
+            .corridor_role_between(RoomId(1), RoomId(2))
+            .expect("rooms 1-2 are connected");
+        assert_eq!(
+            map.corridor_role_between(RoomId(2), RoomId(1)),
+            Some(role),
+            "edge lookup is unordered"
+        );
+        assert_eq!(
+            map.corridor_role_between(RoomId(0), RoomId(11)),
+            None,
+            "unconnected rooms have no corridor role"
         );
     }
 

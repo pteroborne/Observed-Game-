@@ -226,7 +226,7 @@ fn audit_edge_direction(
         to,
         variation,
     };
-    let geom = teleport::hallway_geom_with_slots(
+    let geom = teleport::hallway_geom_with_slots_and_role(
         HallwayGeomEndpoints {
             from,
             to,
@@ -237,6 +237,7 @@ fn audit_edge_direction(
         hallway::template(variation),
         hallway::layout_seed(from, to, variation),
         false,
+        context.spec.corridor_role_between(from, to),
     );
     let spawn = teleport::entry_spawn(&geom, from);
     let report = MapPlaceReport {
@@ -267,6 +268,13 @@ fn nav_for_spec_room(spec: &MapSpec, seed: u64, version: u32, room: RoomId) -> N
                 .unwrap_or(ThresholdSlotId(fallback as u8)),
         })
         .collect();
+    let corridor_roles = connections
+        .iter()
+        .filter_map(|&target| {
+            spec.corridor_role_between(room, target)
+                .map(|role| (target, role))
+        })
+        .collect();
     Nav {
         connections,
         connection_slots,
@@ -275,6 +283,7 @@ fn nav_for_spec_room(spec: &MapSpec, seed: u64, version: u32, room: RoomId) -> N
         hallway_exit_room_slot: None,
         target_room,
         room_role: spec.room(room).map(|room| room.role),
+        corridor_roles,
         seed,
         version,
         exit_locked: true,

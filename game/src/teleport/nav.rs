@@ -2,7 +2,7 @@
 
 use super::{RoomConnectionSlot, ThresholdSlotId};
 use observed_core::RoomId;
-use observed_facility::map_spec::RoomRole;
+use observed_facility::map_spec::{CorridorRole, RoomRole};
 
 /// An edge `(a, b)` whose hallway variation is frozen at `version` â€” an **anchor torch**
 /// pins the structure so the corridor there stops re-rolling, even as the rest of the
@@ -35,6 +35,15 @@ pub struct Nav {
     /// The active map role for a rendered room, when known. Geometry uses this for
     /// role-shaped footprints without reaching back into a global map singleton.
     pub room_role: Option<RoomRole>,
+    /// The active map's [`CorridorRole`] for each of this room's connections (the edge
+    /// to that neighbour), when known from the map spec. A room can have several
+    /// doorways to distinct edges with distinct roles, so this is a per-neighbour list
+    /// (paralleling `connection_slots`) rather than one scalar — [`Nav::corridor_role_for`]
+    /// resolves the role for a specific hallway's `to` room. Geometry uses this to pick
+    /// a hallway's interior generator (WFC vs. DFS+braid maze) without reaching back
+    /// into a global map singleton. Empty when the current map has no spec
+    /// (authored/dev fallbacks).
+    pub corridor_roles: Vec<(RoomId, CorridorRole)>,
     pub seed: u64,
     /// Increments when the graph decoheres, so an edge re-rolls its hallway.
     pub version: u32,
@@ -53,6 +62,15 @@ impl Nav {
             .iter()
             .find(|connection| connection.target == target)
             .map(|connection| connection.slot)
+    }
+
+    /// The [`CorridorRole`] of the edge from this room to `target`, if the active map
+    /// spec has one for that pair.
+    pub fn corridor_role_for(&self, target: RoomId) -> Option<CorridorRole> {
+        self.corridor_roles
+            .iter()
+            .find(|(room, _)| *room == target)
+            .map(|(_, role)| *role)
     }
 
     /// The decohere version to use for the edge `(x, y)`: the pinned version if an anchor

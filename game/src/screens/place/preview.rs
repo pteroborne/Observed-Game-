@@ -119,6 +119,14 @@ pub(crate) fn fallback_dest(
                 .and_then(|spec| spec.room(room).map(|room| room.role)),
             Place::Hallway { .. } => None,
         },
+        corridor_role: match dest {
+            Place::Room(_) => None,
+            Place::Hallway { from, to, .. } => game
+                .competitive
+                .map_spec
+                .as_ref()
+                .and_then(|spec| spec.corridor_role_between(from, to)),
+        },
     }
 }
 

@@ -80,6 +80,14 @@ pub(crate) fn compute_gap_dests(
                         .and_then(|spec| spec.room(room).map(|room| room.role)),
                     Place::Hallway { .. } => None,
                 },
+                corridor_role: match dest {
+                    Place::Room(_) => None,
+                    Place::Hallway { from, to, .. } => game
+                        .competitive
+                        .map_spec
+                        .as_ref()
+                        .and_then(|spec| spec.corridor_role_between(from, to)),
+                },
             }
         })
         .collect()
@@ -89,6 +97,13 @@ pub(crate) fn compute_gap_dests(
 /// hallway uses its frozen `Place` variation + the live exit lock; a room uses its frozen
 /// connections + target. (`geom_for` only reads these fields, so version/pins are inert.)
 pub(super) fn frozen_nav(seed: u64, dest: &FrozenDest, keys: &KeystoneState) -> teleport::Nav {
+    // `geom_for`'s Hallway arm looks up `Nav::corridor_role_for(to)`, so the frozen
+    // edge role needs to be keyed by the hallway's own `to` — the only neighbour a
+    // hallway `Place` is ever queried about.
+    let corridor_roles = match (dest.place, dest.corridor_role) {
+        (Place::Hallway { to, .. }, Some(role)) => vec![(to, role)],
+        _ => Vec::new(),
+    };
     teleport::Nav {
         connections: dest.conns.clone(),
         connection_slots: dest.connection_slots.clone(),
@@ -97,6 +112,7 @@ pub(super) fn frozen_nav(seed: u64, dest: &FrozenDest, keys: &KeystoneState) -> 
         hallway_exit_room_slot: dest.hallway_exit_room_slot,
         target_room: dest.target,
         room_role: dest.room_role,
+        corridor_roles,
         seed,
         version: 0,
         exit_locked: !keys.gate_open(),
