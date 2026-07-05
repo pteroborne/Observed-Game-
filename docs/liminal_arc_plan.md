@@ -167,6 +167,50 @@ regenerated; characterization and collapse tests pin determini­sm and solvabili
 **Verification:** corridor interiors render correctly; bot navmesh/routing adapts to
 maze passages; characterization + solvability tests pass with interior corridors.
 
+**As landed (2026-07-04, commit `47a6034`):** the archived generator moved into
+`observed_facility::wfc` behind the `wfc` feature (`generate_interior_walls`/
+`InteriorSeg`), keeping `ghx_proc_gen` out of the game; `game::wfc_interior` is the
+pure `InteriorSeg → WallSeg` adapter, and it picks the same door columns the DFS maze
+would so a fallback is seamless. Selection landed simpler than the plan's sketch:
+only `CorridorRole::Mystery` edges take the WFC interior — every other role (and the
+specless dev map) keeps the DFS+braid maze — resolved via the new
+`MapSpec::corridor_role_between` and **frozen into `FrozenDest.corridor_role`** so the
+doorway preview and the real crossing can't diverge (the same observe-to-freeze
+discipline the whole teleport model rests on). A WFC non-convergence falls back to DFS
+as a pure function of the seed. The load-bearing proof: a pinned-seed test shows WFC
+converges with **zero retries** on every real hallway grid size (4×4/5×6/6×7/7×5/4×8),
+so these are genuine WFC interiors, not silent fallback. The lab archive shrank to a
+re-export of the live code. 800 workspace tests, 35 `--features wfc` tests, clippy
+clean both feature-ways.
+
+---
+
+## Arc retrospective (Phases 43–47 landed 2026-07-03/04)
+
+Arc D took the facility from a nine-room dev map to a generated, liminal-scale
+labyrinth — and did it without ever letting the arc-C invariants slip. **The one
+thing that changed the game:** the default course is now `liminal_wfc_v1`, ~30 rooms
+of WFC-generated topology with a protected objective spine, role-typed rooms and
+corridors, and liminal-scaled dimensions. Everything the earlier arcs built —
+contested observation, door identity, the gantry, collapse, rival legibility — now
+plays out on generated ground.
+
+**What held the line:** the spine was treated as a first-class generated output (not
+an afterthought), so progress/collapse/absorption/solvability never broke at scale;
+the headless==interactive characterization test and a new full-match seed corpus were
+re-proven *on generated maps* before the default flipped; generation is memoized so
+the ~150-Match test suite still runs in ~5 seconds; and the WFC dependency stayed
+behind a feature flag with an authored fallback per the R11 bar. Two shipped features
+that the scale/gantry work exposed were repaired first (D1): monitors now render real
+room miniatures via the shared preview technique, and spectator bots visibly pilot the
+gantry's jump line.
+
+**Deferred, deliberately:** `LocalAction::PlaceAnchor` (first-person anchors into the
+lockstep race — a wire-protocol change, the recorded next mechanical step); a third
+hall endpoint so the gantry understory reaches a different neighbour; the decoherence
+counter-tool (never triggered). **Horizon:** human multiplayer over the proven
+lockstep spine.
+
 ---
 
 ## Horizon (explicitly after the arc)

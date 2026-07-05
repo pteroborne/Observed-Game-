@@ -10,33 +10,20 @@ This document outlines the current active development goals, completed milestone
 
 ## Active & Upcoming Phases
 
-**Arc C — Contention & Depth** (plan and design rules: [docs/contention_arc_plan.md](docs/contention_arc_plan.md)). The design arc that turns the proven observe-to-freeze foundation into a game worth racing: observation becomes a shared, contested resource between teams, and the board gains the identity, verticality, and visible pressure to make that contest legible. Lab-first throughout; solvability ("no team is ever left without a path") is the arc-wide invariant.
+*Arc C — Contention & Depth ([docs/contention_arc_plan.md](docs/contention_arc_plan.md)) and Arc D — Liminal Scale & Living Fixtures ([docs/liminal_arc_plan.md](docs/liminal_arc_plan.md)) are both complete (Phases 38–47; see Recent Milestones). No active phase is scheduled.*
 
-### Phase 42 — The Race Reads as a Race `[x]`
-Rivals become presences: team-colored anchor torches and frame lights on edges they froze, sound bleeding through occupied thresholds, recognizable bot-team personalities (the freezer, the sprinter, the saboteur), and tac-map attribution of rival-frozen edges ("Team 3 was here"). Human multiplayer remains the post-arc horizon — the lockstep spine is ready; the race has to be worth racing first.
-
----
-
-**Arc D — Liminal Scale & Living Fixtures** (plan and design rules: [docs/liminal_arc_plan.md](docs/liminal_arc_plan.md)). The scaling arc that expands the facility from a proof-of-concept nine-room dev map into a liminal, humanoid-scale labyrinth (24–32 rooms, procedurally generated) and repairs two incomplete shipped features (observation monitors, spectator piloting). Generation is proven lab-first; the spine (start → keystones → exit) is a first-class protected output with corpus validators. All arc-C invariants (determinism, solvability under collapse/anchors) are re-proven on generated maps. Human multiplayer remains the post-arc horizon — the lockstep spine is proven; the race has to be worth racing first.
-
-### Phase 43 — Living Fixtures `[x]`
-Fix shipped features (no map changes): role-driven monitor rooms render real previews via a shared room-preview helper, monitor sightings feed the RivalSightings ledger as read-only, guardian console lands on an interactive RoomRole::GuardianControl object, gantry entry becomes deck-level (no mount stairs), spectator bot visibly pilots gantry jumps with fall recovery, and EXIT_ROOM consumers migrate to CompetitiveFacility::exit_room().
-
-### Phase 44 — Map-Agnostic Plumbing `[x]`
-Add selection layer and builder contract: `game::map_catalog::active_map_spec(seed)` returns the active MapSpec; `OBSERVED2_MAP` env var selects by name (default sector_relay_v1). Pure refactor; lands green.
-
-### Phase 45 — WFC Topology In The Lab `[x]`
-Procedural generation proof: `observed_facility::wfc` (feature-gated) implements Wave Function Collapse topology generation. Extended `wfc_proc_gen_lab` emits validated MapSpecs (24–32 rooms, role coverage including 6+ Monitor rooms, protected spine). Corpus tests validate generation determinism, spine coverage, role distribution, bounded retry, and MapSpec validation across 50+ seeds.
-
-### Phase 46 — The Liminal Flip `[x]`
-Default switch + comfort scale pass: WFC maps become default (OBSERVED2_MAP=dev reverts to sector_relay_v1); room/hall dimensions scale by role for liminal breathing; district assignment and palette variance across the bigger map; per-seed memoization for fast test iteration; characterization + solvability corpus gates re-run on generated maps and evidence refreshed.
-
-### Phase 47 — WFC Corridor Interiors `[ ]`
-DFS-maze hallways: archived `hallway_wfc.rs` ported onto WallSeg geometry; role-driven interiors (Decision corridors get mazes, Pressure corridors simpler); DFS fallback on WFC timeout; representative pinned seeds for manual review; bot routing and solvability tests pass with interior mazes.
+**Post-arc horizon.** The next mechanical step is **`LocalAction::PlaceAnchor`** — bringing first-person anchor placement into the shared lockstep race (a deliberate wire-protocol/replay-format change, held out of Arc C on purpose). Beyond that: **human multiplayer** over the proven lockstep spine — the transport is ready; the arcs made the race worth racing. Smaller queued follow-ups: a third hall endpoint so the gantry's understory exit reaches a genuinely different neighbour; the decoherence counter-tool (Phase 38's criterion (d) never triggered it).
 
 ---
 
 ## Recent Milestones (Completed)
+
+### Phase 47 — WFC Corridor Interiors `[x]`
+Closed Arc D by reviving the archived hallway-interior WFC generator into the game:
+- **Generator home:** the hallway-interior WFC logic archived in Arc G1 now lives in `observed_facility::wfc` behind the `wfc` feature (`generate_interior_walls`/`InteriorSeg`), so `ghx_proc_gen` stays out of the game crate; `game::wfc_interior` is the pure `InteriorSeg → WallSeg` adapter that picks the same door columns the DFS maze would.
+- **Role-driven, deterministic selection:** a grid hallway on a `CorridorRole::Mystery` edge (resolved via `MapSpec::corridor_role_between`, frozen into `FrozenDest.corridor_role` so preview and crossing agree) renders a WFC labyrinth; every other role and the specless dev map keep the DFS+braid maze; a WFC non-convergence falls back to DFS as a pure function of the seed.
+- **Proven real, not silent fallback:** a pinned-seed test shows WFC converges with zero retries on every real hallway grid size (4×4/5×6/6×7/7×5/4×8); selection, fallback determinism, and bot routing through a WFC interior are all covered. The lab archive shrank to a re-export of the live code.
+- **Verification:** 800 workspace tests, 35 `observed_facility --features wfc` tests, clippy clean with the feature on and off.
 
 ### Phase 46 — The Liminal Flip `[x]`
 Completed Arc D's default-map flip and liminal comfort pass:
