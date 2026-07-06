@@ -35,6 +35,18 @@ ceiling fixture uses a top-center pivot.
 | `sounds/reroute.ogg` | `doorClose_002.ogg` | [Kenney Sci-Fi Sounds](https://kenney.nl/assets/sci-fi-sounds) |
 | `sounds/escape.ogg` | `confirmation_004.ogg` | [Kenney Interface Sounds](https://kenney.nl/assets/interface-sounds) |
 | `sounds/ambience.ogg` | `spaceEngineLow_000.ogg` | [Kenney Sci-Fi Sounds](https://kenney.nl/assets/sci-fi-sounds) |
+| `sounds/klaxon.ogg` | `computerNoise_002.ogg` | [Kenney Sci-Fi Sounds](https://kenney.nl/assets/sci-fi-sounds) |
+| `sounds/collapse_sting.ogg` | `explosionCrunch_004.ogg` | [Kenney Sci-Fi Sounds](https://kenney.nl/assets/sci-fi-sounds) |
+| `sounds/ui_click.ogg` | `click_001.ogg` | [Kenney Interface Sounds](https://kenney.nl/assets/interface-sounds) |
+| `sounds/ui_hover.ogg` | `tick_001.ogg` | [Kenney Interface Sounds](https://kenney.nl/assets/interface-sounds) |
+| `sounds/jump.ogg` | `phaseJump1.ogg` | [Kenney Digital Audio](https://kenney.nl/assets/digital-audio) |
+| `sounds/land.ogg` | `footstep04.ogg` | [Kenney RPG Audio](https://kenney.nl/assets/rpg-audio) |
+| `sounds/ambience_reactor.ogg` | `spaceEngineLarge_000.ogg` | [Kenney Sci-Fi Sounds](https://kenney.nl/assets/sci-fi-sounds) |
+| `sounds/ambience_junction.ogg` | `engineCircular_000.ogg` | [Kenney Sci-Fi Sounds](https://kenney.nl/assets/sci-fi-sounds) |
+| `sounds/ambience_monument.ogg` | `spaceEngine_000.ogg` | [Kenney Sci-Fi Sounds](https://kenney.nl/assets/sci-fi-sounds) |
+| `sounds/ambience_gantry.ogg` | `thrusterFire_000.ogg` | [Kenney Sci-Fi Sounds](https://kenney.nl/assets/sci-fi-sounds) |
+| `sounds/ambience_corridor.ogg` | `spaceEngineSmall_000.ogg` | [Kenney Sci-Fi Sounds](https://kenney.nl/assets/sci-fi-sounds) |
+| `sounds/ambience_void.ogg` | `spaceEngineLow_000.ogg` | [Kenney Sci-Fi Sounds](https://kenney.nl/assets/sci-fi-sounds) |
 | `textures/environment.hdr` | `empty_warehouse_01_1k.hdr` | [Poly Haven Empty Warehouse 01](https://polyhaven.com/a/empty_warehouse_01) |
 
 ## Notes

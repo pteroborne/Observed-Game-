@@ -14,7 +14,7 @@ use crate::sim::nav::{
 };
 use crate::sim::state::{FrozenDest, MatchIntent, MatchPaused, TeleportState};
 use crate::teleport::{self, GapKind, Place};
-use crate::view::components::{CameraJuice, MatchAudioCue, TeleportAnimation};
+use crate::view::components::{CameraJuice, MatchAudioCue};
 
 fn body_xz(tp: &TeleportState) -> Vec2 {
     Vec2::new(tp.body.position.x, tp.body.position.z)
@@ -304,7 +304,6 @@ pub(crate) fn teleport_sim(
     mut intent: ResMut<MatchIntent>,
     paused: Res<MatchPaused>,
     seed: Option<Res<crate::flow::ActiveMatchSeed>>,
-    mut anim: ResMut<TeleportAnimation>,
     assets: Res<crate::view::assets::MatchAssets>,
     settings: Res<crate::settings::Settings>,
     mut juice: ResMut<CameraJuice>,
@@ -453,8 +452,6 @@ pub(crate) fn teleport_sim(
     }
 
     if tp.place != place_before {
-        anim.trigger(0.35, Color::srgba(0.05, 0.05, 0.08, 0.95));
-        juice.teleport_shake = 0.3;
         let dests = compute_gap_dests(
             seed_val,
             tp.place,
