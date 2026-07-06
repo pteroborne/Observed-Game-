@@ -10,9 +10,27 @@ This document outlines the current active development goals, completed milestone
 
 ## Active & Upcoming Phases
 
-*Arc C — Contention & Depth ([docs/contention_arc_plan.md](docs/contention_arc_plan.md)) and Arc D — Liminal Scale & Living Fixtures ([docs/liminal_arc_plan.md](docs/liminal_arc_plan.md)) are both complete (Phases 38–47; see Recent Milestones). No active phase is scheduled.*
+**Arc E — Ready to Race** (plan and design rules: [docs/ready_to_race_arc_plan.md](docs/ready_to_race_arc_plan.md)). The polish-and-presence arc: make the proven race a finished game a real person wants to play — onboarding, settings, audio, game-feel, and HUD clarity — then put a second real person across the table over the LAN. Polish/QoL land first; multiplayer targets LAN only (a real socket transport over the proven deterministic lockstep spine — no NAT/relay/online matchmaking, which are the next arc's horizon). Determinism and the Legibility Contract stay inviolable; the risky networking pieces are proven lab-first. Because the teleport model shows each player only their own place, LAN play needs no split-screen — each machine renders its own view of the shared lockstep match.
 
-**Post-arc horizon.** The next mechanical step is **`LocalAction::PlaceAnchor`** — bringing first-person anchor placement into the shared lockstep race (a deliberate wire-protocol/replay-format change, held out of Arc C on purpose). Beyond that: **human multiplayer** over the proven lockstep spine — the transport is ready; the arcs made the race worth racing. Smaller queued follow-ups: a third hall endpoint so the gantry's understory exit reaches a genuinely different neighbour; the decoherence counter-tool (Phase 38's criterion (d) never triggered it).
+### Phase 48 — Onboarding & Settings `[ ]`
+Close the biggest QoL gap for a real player: first-run teaching of the core loop (observe-to-freeze, anchors, the tac-map, the gantry, the collapse) surfaced through the existing legend/discovery/hint systems; a real settings screen (volume, mouse sensitivity, key rebinding via the proven `control_lab` overlays and the `player_input` abstraction, plus `observed_style` accessibility toggles), persisted with the career profile; and context control hints.
+
+### Phase 49 — Audio & Game Feel `[ ]`
+Deepen the audio (spatial/attenuated cues, per-district ambient beds, collapse/klaxon/escape stings, UI sounds — all drop-in) and add movement/camera juice (teleport transitions, crossing feedback, gantry jump/land feel, restrained collapse camera). Every effect verified against the Legibility Contract — atmosphere never hides a signal — with refreshed evidence GIFs.
+
+### Phase 50 — HUD & Results Clarity `[ ]`
+An at-a-glance HUD: exit/keystone/collapse-frontier/series-standing legibility a first-timer parses instantly, plus a post-match summary that reads the outcome and the run's story (placement, escapes, what the collapse took) and a cleaner path back into the loop. Readability assertions on the generated default map.
+
+### Phase 51 — Shared Actions (LocalAction::PlaceAnchor) `[ ]`
+The recorded next mechanical step and the foundation both local and LAN play need: first-person tool actions (anchor placement, etc.) enter the shared lockstep action stream as deterministic, replayable inputs — turning the game-local anchor torch into a real shared freeze every peer computes identically — with a versioned replay format. Proven lab-first (`net_match_lab`); determinism, replay, and desync tests hold with the new action in the stream.
+
+### Phase 52 — Real Transport (loopback → LAN) `[ ]`
+A real socket transport adapter behind `observed_net`'s lockstep interface (the simulated hostile-condition transport stays for tests); proven byte-identical on loopback (two processes, one machine) first, then across the LAN. Dependencies evaluated against the R11 bar (`std::net` first). Loopback/LAN runs converge to the same deterministic result the in-process transport produces.
+
+### Phase 53 — LAN Lobby & the Real Race `[ ]`
+Wire `observed_progression`'s lobby/session/matchmaking (proven in `session_lab`) to real LAN discovery, connect, and reconnect over the Phase-52 transport — and land the payoff: two or more humans in a full contested first-person match over the LAN, each on their own machine and view, attacking each other's reality at last. A two-endpoint LAN match completes with a consistent result on both ends; reconnect recovers a dropped peer; the headless==interactive and solvability invariants hold for networked matches.
+
+**Horizon (after the arc).** Full **online** play — real transport over the internet with NAT traversal / relay and online matchmaking — is the next arc, built on the LAN transport this arc proves. Smaller queued follow-ups carried from Arc C/D: a third hall endpoint so the gantry's understory exit reaches a genuinely different neighbour; the decoherence counter-tool (Phase 38's criterion (d) never triggered it).
 
 ---
 
