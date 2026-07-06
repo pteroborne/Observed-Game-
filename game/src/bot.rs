@@ -141,6 +141,32 @@ pub(crate) fn gantry_deck_route(
     Some(GantryPilot { waypoints })
 }
 
+/// A fallen gantry bot's recovery route to the ground-level onward exit `gap` (the safe
+/// bypass). The understory's centre lane is spanned by the jump platforms' footprints,
+/// which the 2D navmesh (height-unaware) treats as walls, so instead of `route_to_gap`
+/// this steers into the clear bypass lane (`gap`'s own X, e.g. `SAFE_BYPASS_X`) and then
+/// straight up it and out — the platforms are floating slabs offset from that lane, so it
+/// is always walkable. Guarantees the visible run still completes after a missed jump
+/// ("fall reroutes you, it does not kill you"). Only meaningful when `gap` is a
+/// ground-level gantry exit; the caller gates on `geom.decks` being non-empty.
+pub(crate) fn gantry_ground_recovery_route(
+    config: &FpsConfig,
+    here: Vec2,
+    gap: &DoorGap,
+) -> BotPath {
+    let lane_x = gap.center.x;
+    let inside = gap.center - gap.normal * (config.radius + 0.45);
+    let outside = gap.center + gap.normal * (config.radius + 0.85);
+    let mut waypoints = Vec::new();
+    if (here.x - lane_x).abs() > 0.6 {
+        // Step laterally into the clear lane first (away from the platform footprints).
+        waypoints.push(Vec2::new(lane_x, here.y));
+    }
+    waypoints.push(inside);
+    waypoints.push(outside);
+    BotPath { waypoints }
+}
+
 /// Route from `start` to just inside `gap`, then append an outside crossing point so the
 /// normal doorway-crossing code takes over. Returns `None` if the current place has no
 /// valid local walk to that threshold.
@@ -517,6 +543,45 @@ mod tests {
         assert_eq!(
             gap.floor_y, 0.0,
             "ground bot should not target the upper exit"
+        );
+    }
+
+    /// A bot that fell to the understory (its deck route is dead) recovers to the ground
+    /// bypass exit down its clear lane: the route steps laterally into the lane first —
+    /// away from the centre platform footprints the 2D navmesh would treat as walls — then
+    /// runs straight up it and out past the exit so the crossing fires.
+    #[test]
+    fn fallen_gantry_bot_recovers_down_the_clear_bypass_lane() {
+        let template = hallway::TEMPLATES
+            .iter()
+            .find(|template| template.flavor == HallwayFlavor::Gantry)
+            .unwrap();
+        let geom = teleport::hallway_geom(RoomId(0), RoomId(1), template, 0, false);
+        // Fallen in the centre platform lane, mid-hall (where the deck route stranded it).
+        let here = Vec2::new(0.0, 0.0);
+        let gap = target_gap_for_place(
+            teleport::Place::Hallway {
+                from: RoomId(0),
+                to: RoomId(1),
+                variation: 0,
+            },
+            &geom,
+            here,
+            0.0,
+        )
+        .expect("ground route has an onward exit");
+        let config = FpsConfig::default();
+        let path = gantry_ground_recovery_route(&config, here, &gap);
+
+        assert!(path.waypoints.len() >= 2);
+        assert!(
+            (path.waypoints[0].x - gap.center.x).abs() < 0.01,
+            "the recovery steps into the bypass lane (off the centre platform lane) first"
+        );
+        let last = *path.waypoints.last().unwrap();
+        assert!(
+            (last - gap.center).dot(gap.normal) > 0.0,
+            "the recovery ends past the exit threshold so the crossing check fires"
         );
     }
 

@@ -76,9 +76,15 @@ pub(crate) fn drive_spectator_bot(
         }
     }
 
+    // A deck route's waypoints are platform centres reachable only at deck height; if the
+    // body has dropped to the understory (a missed jump), that route is dead — force a
+    // re-plan so the recovery path (below) takes over instead of freezing on the deck plan.
+    let fell_off_deck =
+        spectator.route_deck && !crate::bot::at_deck_height(local_feet_y) && tp.body.grounded;
     if spectator.route_place != Some(tp.place)
         || spectator.waypoint >= spectator.route.len()
         || spectator.route.is_empty()
+        || fell_off_deck
     {
         let Some(gap) = crate::bot::target_gap_for_place(tp.place, &tp.geom, here, local_feet_y)
         else {
@@ -88,19 +94,31 @@ pub(crate) fn drive_spectator_bot(
             intent.0 = PlayerIntent::default();
             return;
         };
-        // On a Gantry hallway's deck, run the platform-centre jump line toward the upper
-        // exit instead of the generic 2D navmesh route (which has no notion of a
-        // platform-to-platform jump); a ground-level body (fell, or arrived fallen) still
-        // takes the ordinary route to the safe-bypass exit `target_gap_for_place` already
-        // selected via the feet-height gate.
+        // Route selection, by height regime:
+        // - on a Gantry deck: run the platform-centre jump line toward the upper exit;
+        // - fallen to the understory of a Gantry: recover to the ground bypass exit down
+        //   its clear lane (the 2D navmesh can't, since platform footprints look like
+        //   walls to it);
+        // - anywhere else: the ordinary 2D route to the selected exit.
         let deck_pilot = crate::bot::at_deck_height(local_feet_y)
             .then(|| crate::bot::gantry_deck_route(&tp.geom, here, &gap))
             .flatten();
+        let in_gantry_understory =
+            !tp.geom.decks.is_empty() && !crate::bot::at_deck_height(local_feet_y);
         if let Some(pilot) = deck_pilot {
             spectator.route_place = Some(tp.place);
             let (waypoints, jumps): (Vec<_>, Vec<_>) = pilot.waypoints.into_iter().unzip();
             spectator.route = waypoints;
             spectator.route_jumps = jumps;
+            spectator.route_deck = true;
+            spectator.waypoint = 0;
+            spectator.blocked_ticks = 0;
+        } else if in_gantry_understory {
+            let path = crate::bot::gantry_ground_recovery_route(&tp.config, here, &gap);
+            spectator.route_place = Some(tp.place);
+            spectator.route_jumps = vec![false; path.waypoints.len()];
+            spectator.route = path.waypoints;
+            spectator.route_deck = false;
             spectator.waypoint = 0;
             spectator.blocked_ticks = 0;
         } else if let Some(path) =
@@ -109,6 +127,7 @@ pub(crate) fn drive_spectator_bot(
             spectator.route_place = Some(tp.place);
             spectator.route = path.waypoints;
             spectator.route_jumps = vec![false; spectator.route.len()];
+            spectator.route_deck = false;
             spectator.waypoint = 0;
             spectator.blocked_ticks = 0;
         } else {
@@ -142,6 +161,15 @@ pub(crate) fn drive_spectator_bot(
     );
     let to = target - here;
     if to.length_squared() < 0.04 {
+        // Sitting on the final waypoint without the crossing firing is a stall: count it
+        // so a wedged bot eventually gives up (setting `finished`) rather than hanging the
+        // match — the director's spectator match-end gate waits on this flag.
+        if spectator.waypoint + 1 >= spectator.route.len() {
+            spectator.blocked_ticks += 1;
+            if spectator.blocked_ticks > 90 {
+                spectator.finished = true;
+            }
+        }
         intent.0 = PlayerIntent::default();
         return;
     }

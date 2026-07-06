@@ -973,7 +973,7 @@ fn spectate_ai_menu_option_launches_a_bot_driven_match() {
 }
 
 #[test]
-fn spectate_mode_records_the_result_when_the_series_result_is_ready() {
+fn spectate_mode_holds_the_match_open_until_the_visible_body_finishes() {
     let mut app = test_app();
     app.world_mut()
         .insert_resource(flow::ActiveMatchSeed(flow::MATCH_SEED));
@@ -981,6 +981,9 @@ fn spectate_mode_records_the_result_when_the_series_result_is_ready() {
         .insert_resource(crate::sim::state::SpectatorBot::for_seed(flow::MATCH_SEED));
     go(&mut app, GameState::Match);
 
+    // Force a ready series result before the visible first-person run has finished — the
+    // teamplay series resolves the whole elimination in a handful of ticks, long before
+    // the bot has physically walked a large facility.
     {
         let mut director = app
             .world_mut()
@@ -992,28 +995,33 @@ fn spectate_mode_records_the_result_when_the_series_result_is_ready() {
         director
             .series
             .run_to_winner(observed_match::elimination::MAX_AUTOPLAY_TICKS);
-        assert!(
-            director.series.finished(),
-            "the regression forces a ready series result before the rendered run finishes"
-        );
+        assert!(director.series.finished());
     }
 
-    app.world_mut()
-        .resource_mut::<crate::sim::state::SpectatorBot>()
-        .teamplay_frame_accum =
-        crate::screens::match_runtime::spectator::SPECTATOR_TEAMPLAY_STEP_FRAMES - 1;
-    app.world_mut().run_schedule(FixedUpdate);
+    // A ready series result must NOT end the match while the visible body is still
+    // running: ending there is exactly the "the game ends too quickly" report — the
+    // camera would cut to Results with the bot abandoned mid-facility.
+    app.update();
+    assert!(
+        app.world().resource::<Career>().last_result.is_none(),
+        "a ready series result does not end the match while the visible body is still running"
+    );
     assert!(
         !app.world()
-            .resource::<crate::sim::state::SpectatorBot>()
-            .finished,
-        "a ready series result must not mark the visible spectator run as finished"
+            .resource::<crate::sim::director::MatchDirector>()
+            .done,
+        "the match stays live until the visible run catches up"
     );
 
+    // Once the visible body finishes (reached the exit, or gave up after being wedged),
+    // the ready series result is recorded and Spectate follows into Results.
+    app.world_mut()
+        .resource_mut::<crate::sim::state::SpectatorBot>()
+        .finished = true;
     app.update();
     assert!(
         app.world().resource::<Career>().last_result.is_some(),
-        "Spectate records the authoritative match result even if the visible body did not catch up"
+        "with the series ready and the visible body finished, the match records its result"
     );
     assert!(
         app.world()

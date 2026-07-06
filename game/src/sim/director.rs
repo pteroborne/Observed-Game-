@@ -102,7 +102,7 @@ impl MatchDirector {
         &mut self,
         dt: Duration,
         spectator_driven_series: bool,
-        _spectator_visible_finished: bool,
+        spectator_visible_finished: bool,
     ) -> Option<MatchResult> {
         if self.done {
             return None;
@@ -122,10 +122,25 @@ impl MatchDirector {
         {
             self.live.force_round(LocalAction::Wait);
         }
-        if !spectator_driven_series && self.live.finished() && !self.series.finished() {
+        if self.live.finished() && !self.series.finished() {
             self.series.run_to_winner(MAX_AUTOPLAY_TICKS);
         }
-        let screen_finished = self.finished();
+        // Match-end is gated on the *visible* run, never on the independently-paced
+        // series alone: the series autoplays on a wall-clock timer (normal play) or a
+        // teamplay pump (spectator), which on a large generated map resolves the whole
+        // elimination long before the player/bot has physically traversed the facility.
+        // Ending on the series there made the match feel like it "ended too quickly".
+        // - Normal play: end when the first-person run finishes (`self.live`); the
+        //   series is resolved above for the placement `outcome()` reads.
+        // - Spectator: end when the live run finishes, or when the teamplay series is
+        //   done *and* the visible bot has reached the exit or given up
+        //   (`spectator_visible_finished`) — so the camera body is never abandoned
+        //   mid-facility.
+        let screen_finished = if spectator_driven_series {
+            self.live.finished() || (self.series.finished() && spectator_visible_finished)
+        } else {
+            self.live.finished()
+        };
         if screen_finished {
             self.settle_transport();
             self.done = true;

@@ -32,6 +32,11 @@ pub struct SpectatorBot {
     /// `jump_pressed` (set when piloting a Gantry hallway's deck; empty/all-`false` for a
     /// normal 2D-navigated route, where the front sprint intent never jumps).
     pub route_jumps: Vec<bool>,
+    /// Whether the current `route` was planned on a Gantry deck (at deck height). If the
+    /// body later drops to the understory, the deck waypoints become unreachable, so this
+    /// flag lets the driver notice the fall and re-plan a ground recovery instead of
+    /// freezing at an unreachable platform waypoint.
+    pub route_deck: bool,
     pub waypoint: usize,
     pub blocked_ticks: u32,
     pub finished: bool,
@@ -55,6 +60,7 @@ impl SpectatorBot {
             route_place: None,
             route: Vec::new(),
             route_jumps: Vec::new(),
+            route_deck: false,
             waypoint: 0,
             blocked_ticks: 0,
             finished: false,
@@ -65,6 +71,7 @@ impl SpectatorBot {
         self.route_place = None;
         self.route.clear();
         self.route_jumps.clear();
+        self.route_deck = false;
         self.waypoint = 0;
     }
 }

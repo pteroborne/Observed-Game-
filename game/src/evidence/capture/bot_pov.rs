@@ -29,6 +29,9 @@ pub(crate) struct BotPovCaptureRequest {
     /// Parallel to `route`: whether the leg arriving at that waypoint should hold
     /// `jump_pressed` (set when piloting a Gantry hallway's deck).
     pub(super) route_jumps: Vec<bool>,
+    /// Whether `route` was planned on a Gantry deck — lets the driver notice a fall to the
+    /// understory (unreachable deck waypoints) and re-plan a ground recovery.
+    pub(super) route_deck: bool,
     pub(super) waypoint: usize,
     pub(super) finished: bool,
     pub(super) blocked_ticks: u32,
@@ -44,6 +47,7 @@ impl BotPovCaptureRequest {
             route_place: None,
             route: Vec::new(),
             route_jumps: Vec::new(),
+            route_deck: false,
             waypoint: 0,
             finished: false,
             blocked_ticks: 0,
@@ -61,6 +65,7 @@ impl BotPovCaptureRequest {
         self.route_place = None;
         self.route.clear();
         self.route_jumps.clear();
+        self.route_deck = false;
         self.waypoint = 0;
     }
 }
@@ -205,9 +210,12 @@ pub(crate) fn drive_bot_pov_capture(
         }
     }
 
+    let fell_off_deck =
+        request.route_deck && !bot::at_deck_height(local_feet_y) && tp.body.grounded;
     if request.route_place != Some(tp.place)
         || request.waypoint >= request.route.len()
         || request.route.is_empty()
+        || fell_off_deck
     {
         let Some(gap) = bot::target_gap_for_place(tp.place, &tp.geom, here, local_feet_y) else {
             info!("BOT_NAV: No target gap available in place {:?}", tp.place);
@@ -217,11 +225,13 @@ pub(crate) fn drive_bot_pov_capture(
         };
         let start = Vec2::new(tp.body.position.x, tp.body.position.z);
         // On a Gantry hallway's deck, pilot the platform-centre jump line toward the upper
-        // exit instead of the generic 2D navmesh route; a ground-level body still takes
-        // the ordinary route to whatever onward exit the feet-height gate selected.
+        // exit; if the body fell to the understory, recover down the clear bypass lane;
+        // otherwise take the ordinary 2D route to whatever onward exit the feet-height
+        // gate selected.
         let deck_pilot = bot::at_deck_height(local_feet_y)
             .then(|| bot::gantry_deck_route(&tp.geom, start, &gap))
             .flatten();
+        let in_gantry_understory = !tp.geom.decks.is_empty() && !bot::at_deck_height(local_feet_y);
         if let Some(pilot) = deck_pilot {
             info!(
                 "BOT_NAV: Deck-piloting {:?} from {:?} toward upper exit (center: {:?}). Waypoints: {}",
@@ -234,6 +244,16 @@ pub(crate) fn drive_bot_pov_capture(
             request.route_place = Some(tp.place);
             request.route = waypoints;
             request.route_jumps = jumps;
+            request.route_deck = true;
+            request.waypoint = 0;
+            request.blocked_ticks = 0;
+        } else if in_gantry_understory {
+            info!("BOT_NAV: Fell off the gantry deck — recovering to the bypass exit.");
+            let path = bot::gantry_ground_recovery_route(&tp.config, start, &gap);
+            request.route_place = Some(tp.place);
+            request.route_jumps = vec![false; path.waypoints.len()];
+            request.route = path.waypoints;
+            request.route_deck = false;
             request.waypoint = 0;
             request.blocked_ticks = 0;
         } else if let Some(path) = bot::route_to_gap(&tp.geom, &tp.arena, &tp.config, start, &gap) {
@@ -249,6 +269,7 @@ pub(crate) fn drive_bot_pov_capture(
             request.route_place = Some(tp.place);
             request.route = path.waypoints;
             request.route_jumps = vec![false; request.route.len()];
+            request.route_deck = false;
             request.waypoint = 0;
             request.blocked_ticks = 0;
         } else {
