@@ -1151,7 +1151,7 @@ fn the_match_renders_the_current_place_and_starts_on_the_spine() {
     );
     assert_eq!(
         count_audio_cue(&mut app, crate::view::components::MatchAudioCue::Ambience),
-        1,
+        6,
         "the facility ambience starts with the Match"
     );
 

@@ -130,6 +130,7 @@ pub struct TeleportState {
     pub gap_dests: Vec<FrozenDest>,
     /// The place the geometry currently reflects.
     pub rendered: Option<teleport::Place>,
+    pub prev_grounded: bool,
 }
 
 /// A doorway's frozen destination: the resolved next [`teleport::Place`] (a hallway carries

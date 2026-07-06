@@ -56,9 +56,21 @@ impl Plugin for ObservedGamePlugin {
             .init_resource::<crate::flow::ActiveMatchSeed>()
             .insert_resource(crate::flow::load_career())
             .insert_resource(crate::settings::load_settings())
-            .add_systems(Startup, setup_camera)
+            .add_systems(Startup, (setup_camera, setup_ui_assets))
             .add_plugins((screens::ScreensPlugin, screens::MatchPlugin));
     }
+}
+
+fn setup_ui_assets(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let load_sound = |path: &'static str| {
+        let slot = observed_assets::slot(path);
+        let present = observed_assets::slot_present(&slot, &observed_assets::assets_root());
+        present.then(|| asset_server.load::<AudioSource>(slot.path))
+    };
+    commands.insert_resource(crate::view::components::UiAssets {
+        click: load_sound("click"),
+        hover: load_sound("hover"),
+    });
 }
 
 fn setup_camera(mut commands: Commands) {

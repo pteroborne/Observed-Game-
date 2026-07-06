@@ -107,18 +107,23 @@ pub(crate) fn draw_pause_settings(
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn pause_settings_navigate(
+    mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
     gamepads: Query<&Gamepad>,
     paused: Res<MatchPaused>,
     open: Res<PauseSettingsOpen>,
     rebind: Res<PauseSettingsRebind>,
     mut cursor: ResMut<PauseSettingsCursor>,
+    ui_assets: Res<crate::view::components::UiAssets>,
+    settings: Res<Settings>,
 ) {
     if !paused.0 || !open.0 || rebind.0.is_some() {
         return;
     }
     let count = SettingsRow::all().len();
+    let old_val = cursor.0;
     if keyboard.just_pressed(KeyCode::ArrowDown) {
         cursor.0 = (cursor.0 + 1) % count;
     }
@@ -133,19 +138,30 @@ pub(crate) fn pause_settings_navigate(
             cursor.0 = (cursor.0 + count - 1) % count;
         }
     }
+    if cursor.0 != old_val {
+        crate::screens::audio::play_ui_sound(
+            &mut commands,
+            &ui_assets.hover,
+            settings.effective_sfx_volume(),
+            crate::view::components::MatchAudioCue::UiHover,
+        );
+    }
 }
 
 fn adjust_volume(value: &mut f32, delta: f32) {
     *value = (*value + delta).clamp(0.0, 1.0);
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn pause_settings_adjust(
+    mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
     paused: Res<MatchPaused>,
     open: Res<PauseSettingsOpen>,
     rebind: Res<PauseSettingsRebind>,
     cursor: Res<PauseSettingsCursor>,
     mut settings: ResMut<Settings>,
+    ui_assets: Res<crate::view::components::UiAssets>,
 ) {
     if !paused.0 || !open.0 || rebind.0.is_some() {
         return;
@@ -169,18 +185,27 @@ pub(crate) fn pause_settings_adjust(
                 .clamp(SENSITIVITY_MIN, SENSITIVITY_MAX);
         }
         SettingsRow::HighContrast => settings.high_contrast = !settings.high_contrast,
-        SettingsRow::Binding(_) | SettingsRow::Back => {}
+        SettingsRow::Binding(_) | SettingsRow::Back => return, // inert rows do not play click
     }
+    crate::screens::audio::play_ui_sound(
+        &mut commands,
+        &ui_assets.click,
+        settings.effective_sfx_volume(),
+        crate::view::components::MatchAudioCue::UiClick,
+    );
     save_settings(&settings);
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn pause_settings_activate(
+    mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
     paused: Res<MatchPaused>,
     open: Res<PauseSettingsOpen>,
     cursor: Res<PauseSettingsCursor>,
     mut rebind: ResMut<PauseSettingsRebind>,
     mut settings: ResMut<Settings>,
+    ui_assets: Res<crate::view::components::UiAssets>,
 ) {
     if !paused.0 || !open.0 || rebind.0.is_some() || !keyboard.just_pressed(KeyCode::Enter) {
         return;
@@ -189,6 +214,12 @@ pub(crate) fn pause_settings_activate(
     let Some(row) = rows.get(cursor.0).copied() else {
         return;
     };
+    crate::screens::audio::play_ui_sound(
+        &mut commands,
+        &ui_assets.click,
+        settings.effective_sfx_volume(),
+        crate::view::components::MatchAudioCue::UiClick,
+    );
     match row {
         SettingsRow::Binding(slot) => rebind.0 = Some(slot),
         SettingsRow::HighContrast => {

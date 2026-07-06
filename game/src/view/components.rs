@@ -105,6 +105,12 @@ pub(crate) enum MatchAudioCue {
     /// so audits and tests can tell "I heard a rival" from "I took a step" without
     /// re-deriving it from volume/name heuristics.
     RivalBleed,
+    UiClick,
+    UiHover,
+    Jump,
+    Land,
+    Klaxon,
+    CollapseSting,
 }
 
 /// First-person feedback for graph **decoherence** (a committed reroute): when the
@@ -171,3 +177,19 @@ pub(crate) struct PauseSettingsPanel;
 /// convention as [`TacMapElement`]).
 #[derive(Component)]
 pub(crate) struct PauseSettingsElement;
+
+/// Global UI sounds (available outside GameState::Match)
+#[derive(Resource)]
+pub(crate) struct UiAssets {
+    pub(crate) click: Option<Handle<AudioSource>>,
+    pub(crate) hover: Option<Handle<AudioSource>>,
+}
+
+/// Camera shake and elevation juice resource
+#[derive(Resource, Default, Debug)]
+pub(crate) struct CameraJuice {
+    pub(crate) land_timer: f32,
+    pub(crate) jump_timer: f32,
+    pub(crate) teleport_shake: f32,
+    pub(crate) collapse_sting_played: bool,
+}

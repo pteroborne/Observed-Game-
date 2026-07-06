@@ -15,6 +15,7 @@ use crate::sim::state::{MatchPaused, RivalSightings, SightingKind, TeleportState
 use crate::teleport::Place;
 use crate::view::assets::MatchAssets;
 use crate::view::components::{MatchAudioCue, MatchAudioState, RivalBleedState};
+use observed_match::facility::CollapseState;
 
 const FOOTSTEP_STRIDE: f32 = 1.8;
 /// Sound-bleed volume clamp (Design ruling): attenuated by distance to the threshold's
@@ -48,20 +49,28 @@ pub(crate) fn play_one_shot(
 /// teleport model the per-place renderer (`rebuild_place`) builds whatever is in the
 /// current place, and `sync_rival_avatars` brings rival figures into the room you share
 /// with them.
+#[derive(Component)]
+pub(crate) struct DistrictAmbience(pub(crate) observed_style::District);
+
 pub(crate) fn spawn_match_setpieces(
     assets: Res<MatchAssets>,
-    settings: Res<Settings>,
+    _settings: Res<Settings>,
     mut commands: Commands,
 ) {
-    if let Some(ambience) = &assets.ambience {
-        commands.spawn((
-            MatchAudioCue::Ambience,
-            DespawnOnExit(GameState::Match),
-            AudioPlayer(ambience.clone()),
-            PlaybackSettings::LOOP
-                .with_volume(Volume::Linear(0.24 * settings.effective_music_volume())),
-            Name::new("Facility ambience"),
-        ));
+    for district in observed_style::District::ALL {
+        let sound = &assets.district_ambience[district.index()];
+        let fallback = &assets.ambience;
+        let selected = sound.as_ref().or(fallback.as_ref());
+        if let Some(selected) = selected {
+            commands.spawn((
+                DistrictAmbience(district),
+                MatchAudioCue::Ambience,
+                DespawnOnExit(GameState::Match),
+                AudioPlayer(selected.clone()),
+                PlaybackSettings::LOOP.with_volume(Volume::Linear(0.0)),
+                Name::new(format!("District ambience: {}", district.label())),
+            ));
+        }
     }
 }
 
@@ -197,4 +206,96 @@ pub(crate) fn bleed_rival_sound(
         }
     }
     bleed.last_heard = present;
+}
+
+#[derive(Component)]
+pub(crate) struct KlaxonSound;
+
+pub(crate) fn sync_match_stings(
+    mut commands: Commands,
+    runtime: Res<MatchDirector>,
+    assets: Res<MatchAssets>,
+    settings: Res<Settings>,
+    tp: Res<TeleportState>,
+    mut juice: ResMut<crate::view::components::CameraJuice>,
+    klaxons: Query<Entity, With<KlaxonSound>>,
+) {
+    let klaxon_active = crate::screens::match_runtime::ambience::countdown_klaxon_active(&runtime);
+    if klaxon_active && klaxons.is_empty() {
+        if let Some(klaxon_sound) = &assets.klaxon {
+            commands.spawn((
+                KlaxonSound,
+                MatchAudioCue::Klaxon,
+                DespawnOnExit(GameState::Match),
+                AudioPlayer(klaxon_sound.clone()),
+                PlaybackSettings::LOOP
+                    .with_volume(Volume::Linear(0.35 * settings.effective_sfx_volume())),
+                Name::new("Klaxon alarm"),
+            ));
+        }
+    } else if !klaxon_active && !klaxons.is_empty() {
+        for entity in &klaxons {
+            commands.entity(entity).despawn();
+        }
+    }
+
+    let game = runtime.live.host_match();
+    let collapse_state =
+        crate::screens::match_runtime::ambience::collapse_state_for_place(game, tp.place);
+    if collapse_state == CollapseState::Dying {
+        if !juice.collapse_sting_played {
+            play_one_shot(
+                &mut commands,
+                &assets.collapse_sting,
+                MatchAudioCue::CollapseSting,
+                "Collapse warning sting",
+                settings.effective_sfx_volume() * 0.8,
+            );
+            juice.collapse_sting_played = true;
+        }
+    } else if collapse_state == CollapseState::Intact {
+        juice.collapse_sting_played = false;
+    }
+}
+
+pub(crate) fn play_ui_sound(
+    commands: &mut Commands,
+    sound: &Option<Handle<AudioSource>>,
+    volume: f32,
+    cue: MatchAudioCue,
+) {
+    if let Some(sound) = sound {
+        commands.spawn((
+            cue,
+            AudioPlayer(sound.clone()),
+            PlaybackSettings::DESPAWN.with_volume(Volume::Linear(volume)),
+        ));
+    }
+}
+
+pub(crate) fn fade_district_ambience(
+    time: Res<Time>,
+    tp: Res<TeleportState>,
+    _runtime: Res<MatchDirector>,
+    settings: Res<Settings>,
+    seed: Option<Res<crate::flow::ActiveMatchSeed>>,
+    mut query: Query<(&DistrictAmbience, &mut AudioSink)>,
+) {
+    let seed_val = seed.map(|s| s.0).unwrap_or(crate::flow::MATCH_SEED);
+    let active_district =
+        crate::screens::match_runtime::ambience::district_for_place(seed_val, tp.place);
+    let music_volume = settings.effective_music_volume();
+
+    let dt = time.delta_secs() * 1.5;
+
+    for (ambience, mut sink) in &mut query {
+        let target = if ambience.0 == active_district {
+            0.24 * music_volume
+        } else {
+            0.0
+        };
+        let current = sink.volume().to_linear();
+        let next = current + (target - current) * dt;
+        sink.set_volume(bevy::audio::Volume::Linear(next));
+    }
 }

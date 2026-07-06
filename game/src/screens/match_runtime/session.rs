@@ -24,7 +24,7 @@ use crate::sim::state::{
 use crate::teleport::Place;
 use crate::view::assets::{MatchAssets, all_planned_assets_present};
 use crate::view::components::{
-    DecohereFx, MatchAudioState, RivalBleedState, TacMapState, TeleportAnimation,
+    CameraJuice, DecohereFx, MatchAudioState, RivalBleedState, TacMapState, TeleportAnimation,
 };
 
 // --- match (first-person 3D, networked) ------------------------------------
@@ -98,6 +98,7 @@ pub(crate) fn setup_match(
         arrived_from: None,
         gap_dests: start_gap_dests,
         rendered: None,
+        prev_grounded: false,
     });
     commands.insert_resource(keys);
     commands.insert_resource(items);
@@ -118,6 +119,7 @@ pub(crate) fn setup_match(
     commands.insert_resource(crate::guardian::ActionLog::default());
     commands.insert_resource(TeleportAnimation::default());
     commands.insert_resource(LastTeleportPad::default());
+    commands.insert_resource(CameraJuice::default());
 
     commands.insert_resource(MatchAssets::load(
         &asset_server,
@@ -147,6 +149,7 @@ macro_rules! for_each_match_resource {
         $apply!(crate::view::components::RivalBleedState);
         $apply!(crate::view::components::DecohereFx);
         $apply!(crate::view::components::TeleportAnimation);
+        $apply!(crate::view::components::CameraJuice);
         $apply!(crate::keystones::KeystoneState);
         $apply!(crate::sim::state::RivalSightings);
         $apply!(crate::items::ItemsState);

@@ -12,6 +12,8 @@ use crate::flow::Career;
 use crate::sim::state::SpectatorBot;
 use crate::view::theme::{ACCENT, DIM, TITLE, panel, screen_root, text};
 
+use crate::view::components::UiAssets;
+
 #[derive(Default)]
 pub(crate) struct GamepadMenuAxis {
     direction: i8,
@@ -179,17 +181,22 @@ fn placement_label(placement: Option<u8>) -> String {
 }
 
 // --- shared menu systems ---------------------------------------------------
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn menu_navigate(
+    mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
     gamepads: Query<&Gamepad>,
     mut gamepad_axis: Local<GamepadMenuAxis>,
     mut cursor: ResMut<MenuCursor>,
     buttons: Query<&MenuButton>,
+    ui_assets: Res<UiAssets>,
+    settings: Res<crate::settings::Settings>,
 ) {
     let count = buttons.iter().count();
     if count == 0 {
         return;
     }
+    let old_val = cursor.0;
     if keyboard.just_pressed(KeyCode::ArrowDown) || keyboard.just_pressed(KeyCode::KeyS) {
         cursor.0 = (cursor.0 + 1) % count;
     }
@@ -205,6 +212,15 @@ pub(crate) fn menu_navigate(
         }
     }
     gamepad_axis.direction = direction;
+
+    if cursor.0 != old_val {
+        crate::screens::audio::play_ui_sound(
+            &mut commands,
+            &ui_assets.hover,
+            settings.effective_sfx_volume(),
+            crate::view::components::MatchAudioCue::UiHover,
+        );
+    }
 }
 
 pub(crate) fn menu_highlight(
@@ -230,6 +246,8 @@ pub(crate) fn menu_activate(
     mut career: ResMut<Career>,
     mut next: ResMut<NextState<GameState>>,
     mut exit: MessageWriter<bevy::app::AppExit>,
+    ui_assets: Res<UiAssets>,
+    settings: Res<crate::settings::Settings>,
 ) {
     if !keyboard.just_pressed(KeyCode::Enter)
         && !keyboard.just_pressed(KeyCode::Space)
@@ -240,6 +258,12 @@ pub(crate) fn menu_activate(
     let Some(button) = buttons.iter().find(|b| b.index == cursor.0) else {
         return;
     };
+    crate::screens::audio::play_ui_sound(
+        &mut commands,
+        &ui_assets.click,
+        settings.effective_sfx_volume(),
+        crate::view::components::MatchAudioCue::UiClick,
+    );
     match button.action {
         MenuAction::Goto(state) => next.set(state),
         MenuAction::StartRun => {

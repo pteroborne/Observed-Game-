@@ -36,6 +36,12 @@ const AMBIENCE_SOUND: &str = observed_assets::AMBIENCE.path;
 // Optional (not in the required asset plan): a door open/close thunk on entering or
 // leaving a place. Silent until a file is dropped here.
 const DOOR_SOUND: &str = observed_assets::DOOR.path;
+const KLAXON_SOUND: &str = observed_assets::KLAXON.path;
+const COLLAPSE_STING_SOUND: &str = observed_assets::COLLAPSE_STING.path;
+const UI_CLICK_SOUND: &str = observed_assets::UI_CLICK.path;
+const UI_HOVER_SOUND: &str = observed_assets::UI_HOVER.path;
+const JUMP_SOUND: &str = observed_assets::JUMP.path;
+const LAND_SOUND: &str = observed_assets::LAND.path;
 
 // Procedural neon doorways (code-as-art; no GLB). A closed leaf hides the corridor
 // beyond (mystery) and slides up into the lintel as the player approaches. The frame
@@ -165,6 +171,13 @@ pub struct MatchAssets {
     pub(crate) escape: Option<Handle<AudioSource>>,
     pub(crate) ambience: Option<Handle<AudioSource>>,
     pub(crate) door: Option<Handle<AudioSource>>,
+    pub(crate) klaxon: Option<Handle<AudioSource>>,
+    pub(crate) collapse_sting: Option<Handle<AudioSource>>,
+    pub(crate) click_sound: Option<Handle<AudioSource>>,
+    pub(crate) hover_sound: Option<Handle<AudioSource>>,
+    pub(crate) jump: Option<Handle<AudioSource>>,
+    pub(crate) land: Option<Handle<AudioSource>>,
+    pub(crate) district_ambience: [Option<Handle<AudioSource>>; 6],
 }
 
 impl MatchAssets {
@@ -393,6 +406,20 @@ impl MatchAssets {
             escape: load_sound(ESCAPE_SOUND),
             ambience: load_sound(AMBIENCE_SOUND),
             door: load_sound(DOOR_SOUND),
+            klaxon: load_sound(KLAXON_SOUND),
+            collapse_sting: load_sound(COLLAPSE_STING_SOUND),
+            click_sound: load_sound(UI_CLICK_SOUND),
+            hover_sound: load_sound(UI_HOVER_SOUND),
+            jump: load_sound(JUMP_SOUND),
+            land: load_sound(LAND_SOUND),
+            district_ambience: [
+                load_sound("sounds/ambience_archive.ogg"),
+                load_sound("sounds/ambience_reactor.ogg"),
+                load_sound("sounds/ambience_atrium.ogg"),
+                load_sound("sounds/ambience_foundry.ogg"),
+                load_sound("sounds/ambience_hollow.ogg"),
+                load_sound("sounds/ambience_spillway.ogg"),
+            ],
         }
     }
 }

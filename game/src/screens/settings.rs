@@ -120,12 +120,16 @@ pub(crate) fn setup_settings(
 /// used by both the standalone screen and the pause overlay. Suspended while a rebind
 /// capture is in progress (arrow keys during capture would otherwise both navigate and
 /// almost-certainly not be the intended new binding).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn settings_navigate(
+    mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
     gamepads: Query<&Gamepad>,
     rebind: Res<SettingsRebind>,
     mut cursor: ResMut<SettingsCursor>,
     rows: Query<&SettingsRowText>,
+    ui_assets: Res<crate::view::components::UiAssets>,
+    settings: Res<crate::settings::Settings>,
 ) {
     if rebind.0.is_some() {
         return;
@@ -134,6 +138,7 @@ pub(crate) fn settings_navigate(
     if count == 0 {
         return;
     }
+    let old_val = cursor.0;
     if keyboard.just_pressed(KeyCode::ArrowDown) || keyboard.just_pressed(KeyCode::KeyS) {
         cursor.0 = (cursor.0 + 1) % count;
     }
@@ -145,6 +150,15 @@ pub(crate) fn settings_navigate(
         cursor.0 = (cursor.0 + 1) % count;
     } else if direction > 0 {
         cursor.0 = (cursor.0 + count - 1) % count;
+    }
+
+    if cursor.0 != old_val {
+        crate::screens::audio::play_ui_sound(
+            &mut commands,
+            &ui_assets.hover,
+            settings.effective_sfx_volume(),
+            crate::view::components::MatchAudioCue::UiHover,
+        );
     }
 }
 
@@ -187,13 +201,16 @@ fn adjust_volume(value: &mut f32, delta: f32) {
 /// Left/Right (or gamepad stick/D-pad) adjusts the row under the cursor: nudges a
 /// slider, flips the accessibility toggle, or (for a binding row) is a no-op — bindings
 /// only change via a rebind capture (Enter), never an axis nudge.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn settings_adjust(
+    mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
     gamepads: Query<&Gamepad>,
     cursor: Res<SettingsCursor>,
     rebind: Res<SettingsRebind>,
     order: Query<&SettingsRowText>,
     mut settings: ResMut<Settings>,
+    ui_assets: Res<crate::view::components::UiAssets>,
 ) {
     if rebind.0.is_some() {
         return;
@@ -224,8 +241,14 @@ pub(crate) fn settings_adjust(
                 .clamp(SENSITIVITY_MIN, SENSITIVITY_MAX);
         }
         SettingsRow::HighContrast => settings.high_contrast = !settings.high_contrast,
-        SettingsRow::Binding(_) | SettingsRow::Back => {}
+        SettingsRow::Binding(_) | SettingsRow::Back => return, // inert rows do not play click
     }
+    crate::screens::audio::play_ui_sound(
+        &mut commands,
+        &ui_assets.click,
+        settings.effective_sfx_volume(),
+        crate::view::components::MatchAudioCue::UiClick,
+    );
     save_settings(&settings);
 }
 
@@ -233,13 +256,16 @@ pub(crate) fn settings_adjust(
 /// toggle row flips (mirrors `settings_adjust`'s toggle path, since a toggle has no
 /// natural "left vs right" distinction worth requiring); every other row is inert
 /// (sliders are adjusted with Left/Right, not activated).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn settings_activate(
+    mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
     gamepads: Query<&Gamepad>,
     cursor: Res<SettingsCursor>,
     order: Query<&SettingsRowText>,
     mut rebind: ResMut<SettingsRebind>,
     mut settings: ResMut<Settings>,
+    ui_assets: Res<crate::view::components::UiAssets>,
 ) {
     if rebind.0.is_some() {
         return;
@@ -254,6 +280,12 @@ pub(crate) fn settings_activate(
     let Some(row) = ordered.get(cursor.0).copied() else {
         return;
     };
+    crate::screens::audio::play_ui_sound(
+        &mut commands,
+        &ui_assets.click,
+        settings.effective_sfx_volume(),
+        crate::view::components::MatchAudioCue::UiClick,
+    );
     match row {
         SettingsRow::Binding(slot) => rebind.0 = Some(slot),
         SettingsRow::HighContrast => {

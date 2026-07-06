@@ -187,6 +187,42 @@ pub const DOOR: AssetSlot = AssetSlot {
     path: "sounds/door.ogg",
     hint: "door open/close thunk on entering or leaving a place",
 };
+pub const KLAXON: AssetSlot = AssetSlot {
+    name: "klaxon",
+    kind: AssetKind::Sound,
+    path: "sounds/klaxon.ogg",
+    hint: "looping alarm sting when first-escape countdown is active",
+};
+pub const COLLAPSE_STING: AssetSlot = AssetSlot {
+    name: "collapse_sting",
+    kind: AssetKind::Sound,
+    path: "sounds/collapse_sting.ogg",
+    hint: "alarm warning when room collapse starts",
+};
+pub const UI_CLICK: AssetSlot = AssetSlot {
+    name: "click",
+    kind: AssetKind::Sound,
+    path: "sounds/click.ogg",
+    hint: "UI button click sound",
+};
+pub const UI_HOVER: AssetSlot = AssetSlot {
+    name: "hover",
+    kind: AssetKind::Sound,
+    path: "sounds/hover.ogg",
+    hint: "UI button hover/highlight sound",
+};
+pub const JUMP: AssetSlot = AssetSlot {
+    name: "jump",
+    kind: AssetKind::Sound,
+    path: "sounds/jump.ogg",
+    hint: "mechanical/gantry jump start cue",
+};
+pub const LAND: AssetSlot = AssetSlot {
+    name: "land",
+    kind: AssetKind::Sound,
+    path: "sounds/land.ogg",
+    hint: "mechanical/gantry land/impact cue",
+};
 
 /// Every authored slot, in showcase order. Add a row (and a named const above) to
 /// add a drop-in point.
@@ -212,6 +248,12 @@ pub const SLOTS: &[AssetSlot] = &[
     ESCAPE,
     AMBIENCE,
     DOOR,
+    KLAXON,
+    COLLAPSE_STING,
+    UI_CLICK,
+    UI_HOVER,
+    JUMP,
+    LAND,
 ];
 
 /// The authored slots a showcase wires up, as an owned vector (back-compat with the

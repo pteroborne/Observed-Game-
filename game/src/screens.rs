@@ -211,6 +211,8 @@ impl Plugin for MatchPlugin {
                     place::sync_rival_avatars,
                     audio::sync_match_audio,
                     audio::bleed_rival_sound,
+                    audio::fade_district_ambience,
+                    audio::sync_match_stings,
                     place::animate_doors,
                     hud::update_teleport_animation,
                     place::animate_teleport_pad_glow,

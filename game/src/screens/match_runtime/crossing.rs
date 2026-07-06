@@ -14,6 +14,7 @@ use crate::sim::nav::{
 };
 use crate::sim::state::{FrozenDest, MatchIntent, MatchPaused, TeleportState};
 use crate::teleport::{self, GapKind, Place};
+use crate::view::components::{CameraJuice, MatchAudioCue, TeleportAnimation};
 
 fn body_xz(tp: &TeleportState) -> Vec2 {
     Vec2::new(tp.body.position.x, tp.body.position.z)
@@ -293,7 +294,9 @@ pub(super) fn cross_into_room(
 /// the forward doorway teleports into the edge's hallway, and reaching the hallway's
 /// exit commits the spine `Advance` to the match brain and teleports into the next
 /// room. The brain (rounds / networking / replay) is untouched.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn teleport_sim(
+    mut commands: Commands,
     mut runtime: ResMut<MatchDirector>,
     tp: ResMut<TeleportState>,
     keys: Res<KeystoneState>,
@@ -301,6 +304,10 @@ pub(crate) fn teleport_sim(
     mut intent: ResMut<MatchIntent>,
     paused: Res<MatchPaused>,
     seed: Option<Res<crate::flow::ActiveMatchSeed>>,
+    mut anim: ResMut<TeleportAnimation>,
+    assets: Res<crate::view::assets::MatchAssets>,
+    settings: Res<crate::settings::Settings>,
+    mut juice: ResMut<CameraJuice>,
 ) {
     if paused.0 || runtime.done {
         return;
@@ -311,8 +318,36 @@ pub(crate) fn teleport_sim(
     let prev = body_xz(tp);
     let config = tp.config;
     let arena = tp.arena.clone();
+
+    let prev_grounded = tp.prev_grounded;
+
     step_body(&mut tp.body, intent.0, &arena, &config, FIXED_DT);
     intent.0.interact_pressed = false;
+
+    tp.prev_grounded = tp.body.grounded;
+
+    // Detect jump/land stings
+    let sfx_volume = settings.effective_sfx_volume();
+    if prev_grounded && !tp.body.grounded && tp.body.velocity.y > 0.0 {
+        juice.jump_timer = 0.20;
+        crate::screens::audio::play_one_shot(
+            &mut commands,
+            &assets.jump,
+            MatchAudioCue::Jump,
+            "Jump sting",
+            sfx_volume * 0.7,
+        );
+    } else if !prev_grounded && tp.body.grounded {
+        juice.land_timer = 0.25;
+        crate::screens::audio::play_one_shot(
+            &mut commands,
+            &assets.land,
+            MatchAudioCue::Land,
+            "Land sting",
+            sfx_volume * 0.9,
+        );
+    }
+
     if tp.geom.poly.is_some() {
         let here = body_xz(tp);
         let clamped = teleport::contain(&tp.geom, here, config.radius);
@@ -418,6 +453,8 @@ pub(crate) fn teleport_sim(
     }
 
     if tp.place != place_before {
+        anim.trigger(0.35, Color::srgba(0.05, 0.05, 0.08, 0.95));
+        juice.teleport_shake = 0.3;
         let dests = compute_gap_dests(
             seed_val,
             tp.place,
