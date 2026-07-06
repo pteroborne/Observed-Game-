@@ -184,11 +184,13 @@ pub(crate) fn apply_place_atmosphere(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn sync_decohere_fx(
     time: Res<Time>,
     runtime: Res<MatchDirector>,
     paused: Res<MatchPaused>,
     assets: Res<MatchAssets>,
+    settings: Res<crate::settings::Settings>,
     mut fx: ResMut<DecohereFx>,
     mut leaves: Query<(&DoorLeaf, &mut Transform)>,
     mut commands: Commands,
@@ -207,6 +209,7 @@ pub(crate) fn sync_decohere_fx(
                 &assets.reroute,
                 MatchAudioCue::Reroute,
                 "Route shift",
+                settings.effective_sfx_volume(),
             );
         }
         for (leaf, mut transform) in &mut leaves {

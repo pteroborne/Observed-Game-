@@ -64,7 +64,12 @@ pub(crate) fn setup_main_menu(mut commands: Commands, mut cursor: ResMut<MenuCur
                     MenuAction::Goto(GameState::Loadout),
                     "Loadout",
                 ));
-                p.spawn(menu_button(3, MenuAction::QuitApp, "Quit"));
+                p.spawn(menu_button(
+                    3,
+                    MenuAction::Goto(GameState::Settings),
+                    "Settings",
+                ));
+                p.spawn(menu_button(4, MenuAction::QuitApp, "Quit"));
             });
             root.spawn(text(
                 "Up/Down or D-pad select | Enter/A confirm | Esc/B back",
@@ -95,7 +100,9 @@ pub(crate) fn setup_results(
     mut cursor: ResMut<MenuCursor>,
 ) {
     cursor.0 = 0;
-    career.award();
+    if career.award() {
+        crate::flow::save_profile(&career.profile);
+    }
 
     let result = career.last_result.clone();
     let unlocked: Vec<String> = career
@@ -254,7 +261,9 @@ pub(crate) fn menu_activate(
             next.set(GameState::Match);
         }
         MenuAction::Equip(id) => {
-            career.profile.equip(id);
+            if career.profile.equip(id) {
+                crate::flow::save_profile(&career.profile);
+            }
         }
         MenuAction::QuitApp => {
             exit.write(bevy::app::AppExit::Success);

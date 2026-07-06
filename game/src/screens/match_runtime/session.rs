@@ -28,6 +28,7 @@ use crate::view::components::{
 };
 
 // --- match (first-person 3D, networked) ------------------------------------
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn setup_match(
     mut commands: Commands,
     mut career: ResMut<Career>,
@@ -36,6 +37,7 @@ pub(crate) fn setup_match(
     mut materials: ResMut<Assets<StandardMaterial>>,
     seed: Option<Res<crate::flow::ActiveMatchSeed>>,
     spectator_bot: Option<ResMut<SpectatorBot>>,
+    settings: Res<crate::settings::Settings>,
 ) {
     career.begin_match();
     if !all_planned_assets_present() {
@@ -123,7 +125,7 @@ pub(crate) fn setup_match(
         &mut materials,
     ));
 
-    super::super::hud::spawn_match_hud(&mut commands);
+    super::super::hud::spawn_match_hud(&mut commands, settings.high_contrast);
 }
 
 /// Every resource the Match session owns, enumerated once. `setup_match` inserts
@@ -150,6 +152,7 @@ macro_rules! for_each_match_resource {
         $apply!(crate::items::ItemsState);
         $apply!(crate::guardian::Guardian);
         $apply!(crate::guardian::ActionLog);
+        $apply!(crate::screens::onboarding::OnboardingState);
     };
 }
 #[cfg(test)]

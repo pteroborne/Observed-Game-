@@ -8,6 +8,7 @@ use bevy::prelude::*;
 use observed_core::RoomId;
 
 use crate::GameState;
+use crate::settings::Settings;
 use crate::sim::director::MatchDirector;
 use crate::sim::nav::rival_signals;
 use crate::sim::state::{MatchPaused, RivalSightings, SightingKind, TeleportState};
@@ -29,13 +30,14 @@ pub(crate) fn play_one_shot(
     sound: &Option<Handle<AudioSource>>,
     cue: MatchAudioCue,
     name: &'static str,
+    volume: f32,
 ) {
     if let Some(sound) = sound {
         commands.spawn((
             cue,
             DespawnOnExit(GameState::Match),
             AudioPlayer(sound.clone()),
-            PlaybackSettings::DESPAWN,
+            PlaybackSettings::DESPAWN.with_volume(Volume::Linear(volume)),
             Name::new(name),
         ));
     }
@@ -46,13 +48,18 @@ pub(crate) fn play_one_shot(
 /// teleport model the per-place renderer (`rebuild_place`) builds whatever is in the
 /// current place, and `sync_rival_avatars` brings rival figures into the room you share
 /// with them.
-pub(crate) fn spawn_match_setpieces(assets: Res<MatchAssets>, mut commands: Commands) {
+pub(crate) fn spawn_match_setpieces(
+    assets: Res<MatchAssets>,
+    settings: Res<Settings>,
+    mut commands: Commands,
+) {
     if let Some(ambience) = &assets.ambience {
         commands.spawn((
             MatchAudioCue::Ambience,
             DespawnOnExit(GameState::Match),
             AudioPlayer(ambience.clone()),
-            PlaybackSettings::LOOP.with_volume(Volume::Linear(0.24)),
+            PlaybackSettings::LOOP
+                .with_volume(Volume::Linear(0.24 * settings.effective_music_volume())),
             Name::new("Facility ambience"),
         ));
     }
@@ -64,10 +71,12 @@ pub(crate) fn sync_match_audio(
     tp: Res<TeleportState>,
     paused: Res<MatchPaused>,
     assets: Res<MatchAssets>,
+    settings: Res<Settings>,
     mut audio_state: ResMut<MatchAudioState>,
 ) {
     let game = runtime.live.host_match();
     let position = tp.body.position;
+    let sfx_volume = settings.effective_sfx_volume();
 
     if !paused.0 {
         let horizontal_delta = Vec2::new(position.x, position.z)
@@ -82,6 +91,7 @@ pub(crate) fn sync_match_audio(
                     &assets.footstep,
                     MatchAudioCue::Footstep,
                     "Player footstep",
+                    sfx_volume,
                 );
                 audio_state.stride_distance -= FOOTSTEP_STRIDE;
             }
@@ -94,7 +104,13 @@ pub(crate) fn sync_match_audio(
     // A door thunk on entering/leaving a place (a teleport) — not the old per-round
     // high-pitch reroute zap. Silent until a `door.ogg` is dropped in.
     if tp.place != audio_state.last_place {
-        play_one_shot(&mut commands, &assets.door, MatchAudioCue::Door, "Door");
+        play_one_shot(
+            &mut commands,
+            &assets.door,
+            MatchAudioCue::Door,
+            "Door",
+            sfx_volume,
+        );
         audio_state.last_place = tp.place;
     }
     let escaped = game.competitive.escaped_count();
@@ -104,6 +120,7 @@ pub(crate) fn sync_match_audio(
             &assets.escape,
             MatchAudioCue::Escape,
             "Escape success",
+            sfx_volume,
         );
         audio_state.escaped_count = escaped;
     }
@@ -117,12 +134,14 @@ pub(crate) fn sync_match_audio(
 /// records [`SightingKind::Heard`] through the same [`RivalSightings::record`] rule the
 /// witnessing system uses, so there remains exactly one *rule* even though two systems
 /// call it for two different evidence sources.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn bleed_rival_sound(
     mut commands: Commands,
     runtime: Res<MatchDirector>,
     tp: Res<TeleportState>,
     paused: Res<MatchPaused>,
     assets: Res<MatchAssets>,
+    settings: Res<Settings>,
     mut sightings: ResMut<RivalSightings>,
     mut bleed: ResMut<RivalBleedState>,
 ) {
@@ -162,7 +181,8 @@ pub(crate) fn bleed_rival_sound(
                 .unwrap_or(body);
             let distance = body.distance(gap_center);
             let t = (distance / BLEED_ATTENUATION_RANGE).clamp(0.0, 1.0);
-            let volume = BLEED_VOLUME_MAX - t * (BLEED_VOLUME_MAX - BLEED_VOLUME_MIN);
+            let volume = (BLEED_VOLUME_MAX - t * (BLEED_VOLUME_MAX - BLEED_VOLUME_MIN))
+                * settings.effective_sfx_volume();
             if let Some(sound) = &assets.footstep {
                 commands.spawn((
                     MatchAudioCue::RivalBleed,

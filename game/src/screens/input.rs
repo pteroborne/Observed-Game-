@@ -2,13 +2,13 @@
 //! [`PlayerIntent`] for the frame, consumed by the fixed-timestep controller in
 //! [`super::match_runtime`].
 
+use crate::settings::Settings;
 use crate::sim::state::{ItemIntent, MatchIntent, MatchPaused, SpectatorBot};
 use bevy::input::gamepad::{Gamepad, GamepadButton};
 use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::prelude::*;
 use player_input::PlayerIntent;
 
-const MOUSE_SENSITIVITY: f32 = 0.12;
 const GAMEPAD_DEADZONE: f32 = 0.18;
 const GAMEPAD_LOOK_SCALE: f32 = 2.2;
 const MENU_STICK_THRESHOLD: f32 = 0.55;
@@ -115,12 +115,16 @@ fn clamp_unit(value: Vec2) -> Vec2 {
 }
 
 /// Map keyboard + mouse + gamepads into the first-person `PlayerIntent` for this frame.
+/// Keyboard reads route through [`Settings::bindings`] + `mouse_sensitivity` (Phase
+/// 48) instead of literal `KeyCode`s, so a rebind changes the intent this produces
+/// without touching gamepad mapping (unchanged, per the README ruling).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn match_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mouse: Option<Res<AccumulatedMouseMotion>>,
     gamepads: Query<&Gamepad>,
     paused: Res<MatchPaused>,
+    settings: Res<Settings>,
     mut intent: ResMut<MatchIntent>,
     mut item_intent: ResMut<ItemIntent>,
     bot_capture: Option<Res<crate::evidence::capture::BotPovCaptureRequest>>,
@@ -139,17 +143,18 @@ pub(crate) fn match_input(
         *item_intent = ItemIntent::default();
         return;
     }
+    let bindings = &settings.bindings;
     let axis = |negative: KeyCode, positive: KeyCode| {
         (keyboard.pressed(positive) as i32 - keyboard.pressed(negative) as i32) as f32
     };
     let delta = mouse.map(|motion| motion.delta).unwrap_or(Vec2::ZERO);
     let mut movement = Vec2::new(
-        axis(KeyCode::KeyA, KeyCode::KeyD),
-        axis(KeyCode::KeyS, KeyCode::KeyW),
+        axis(bindings.move_left, bindings.move_right),
+        axis(bindings.move_back, bindings.move_forward),
     );
     let mut look = Vec2::new(
-        axis(KeyCode::ArrowLeft, KeyCode::ArrowRight) + delta.x * MOUSE_SENSITIVITY,
-        axis(KeyCode::ArrowUp, KeyCode::ArrowDown) + delta.y * MOUSE_SENSITIVITY,
+        axis(bindings.look_left, bindings.look_right) + delta.x * settings.mouse_sensitivity,
+        axis(bindings.look_up, bindings.look_down) + delta.y * settings.mouse_sensitivity,
     );
     let mut gamepad_intent = PlayerIntent::default();
     let mut gamepad_item = ItemIntent::default();
@@ -172,18 +177,19 @@ pub(crate) fn match_input(
     intent.0 = PlayerIntent {
         movement,
         look,
-        jump_pressed: keyboard.pressed(KeyCode::Space) || gamepad_intent.jump_pressed,
-        sprint_held: keyboard.pressed(KeyCode::ShiftLeft)
-            || keyboard.pressed(KeyCode::ShiftRight)
+        jump_pressed: keyboard.pressed(bindings.jump) || gamepad_intent.jump_pressed,
+        sprint_held: keyboard.pressed(bindings.sprint)
+            || keyboard.pressed(bindings.sprint_alt)
             || gamepad_intent.sprint_held,
-        interact_pressed: keyboard.just_pressed(KeyCode::KeyE) || gamepad_intent.interact_pressed,
-        interact_held: keyboard.pressed(KeyCode::KeyE) || gamepad_intent.interact_held,
+        interact_pressed: keyboard.just_pressed(bindings.interact)
+            || gamepad_intent.interact_pressed,
+        interact_held: keyboard.pressed(bindings.interact) || gamepad_intent.interact_held,
         climb_pressed: gamepad_intent.climb_pressed,
     };
     *item_intent = ItemIntent {
-        torch_action: keyboard.just_pressed(KeyCode::KeyF) || gamepad_item.torch_action,
-        pad_action: keyboard.just_pressed(KeyCode::KeyC) || gamepad_item.pad_action,
-        activate_pad: keyboard.just_pressed(KeyCode::KeyE) || gamepad_item.activate_pad,
+        torch_action: keyboard.just_pressed(bindings.torch) || gamepad_item.torch_action,
+        pad_action: keyboard.just_pressed(bindings.pad) || gamepad_item.pad_action,
+        activate_pad: keyboard.just_pressed(bindings.activate_pad) || gamepad_item.activate_pad,
     };
 }
 

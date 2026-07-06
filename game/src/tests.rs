@@ -1955,3 +1955,267 @@ fn monitor_panels_stay_within_the_per_panel_entity_budget() {
         after
     );
 }
+
+// --- Phase 48: onboarding & settings ----------------------------------------
+
+/// `Settings` is inserted once at startup (app-lifetime, like `Career`) — never as
+/// part of the Match resource lifecycle, and it must already be present the moment
+/// the app boots (input systems read it unconditionally).
+#[test]
+fn settings_is_inserted_at_startup_and_survives_state_changes() {
+    let mut app = test_app();
+    assert!(app.world().contains_resource::<crate::settings::Settings>());
+    go(&mut app, GameState::MainMenu);
+    assert!(app.world().contains_resource::<crate::settings::Settings>());
+    go(&mut app, GameState::Match);
+    assert!(app.world().contains_resource::<crate::settings::Settings>());
+    finish_match(&mut app);
+    assert!(
+        app.world().contains_resource::<crate::settings::Settings>(),
+        "Settings is app-lifetime, not match-scoped"
+    );
+}
+
+/// Rebinding a key through `Settings` changes the `PlayerIntent` `match_input`
+/// produces — the input abstraction invariant: gameplay never reads hardware
+/// directly, so proving the rebind takes effect at the `MatchIntent` level (not just
+/// inside the `Settings` resource) proves the whole path is wired, not just stored.
+#[test]
+fn rebinding_a_key_changes_the_intent_it_produces() {
+    use crate::settings::{BindingSlot, Settings};
+
+    let mut app = test_app();
+    app.insert_resource(crate::settings::Settings::default());
+    go(&mut app, GameState::Match);
+
+    // Default binding: KeyW drives forward movement.
+    tap_update(&mut app, KeyCode::KeyW);
+    assert!(
+        app.world()
+            .resource::<crate::sim::state::MatchIntent>()
+            .0
+            .movement
+            .y
+            > 0.0,
+        "the default binding (W) drives forward movement"
+    );
+
+    // Rebind "move forward" to KeyJ; the old key (W) must stop working and the new
+    // key (J) must now drive the identical intent.
+    {
+        let mut settings = app.world_mut().resource_mut::<Settings>();
+        BindingSlot::MoveForward.set(&mut settings.bindings, KeyCode::KeyJ);
+    }
+    app.world_mut()
+        .resource_mut::<ButtonInput<KeyCode>>()
+        .reset(KeyCode::KeyW);
+    tap_update(&mut app, KeyCode::KeyW);
+    assert_eq!(
+        app.world()
+            .resource::<crate::sim::state::MatchIntent>()
+            .0
+            .movement
+            .y,
+        0.0,
+        "the old key no longer drives movement once rebound"
+    );
+
+    tap_update(&mut app, KeyCode::KeyJ);
+    assert!(
+        app.world()
+            .resource::<crate::sim::state::MatchIntent>()
+            .0
+            .movement
+            .y
+            > 0.0,
+        "the rebound key drives the same forward-movement intent"
+    );
+}
+
+/// Rebinding a keyboard binding must never touch gamepad mapping (README invariant:
+/// gamepad support must not regress). `read_gamepad_match` is a pure function of the
+/// `Gamepad` input alone, so this asserts it still produces the same jump intent for
+/// the identical stick/button state regardless of what `Settings.bindings` holds.
+#[test]
+fn rebinding_a_keyboard_key_does_not_affect_gamepad_mapping() {
+    use crate::screens::input::read_gamepad_match;
+    use crate::settings::{BindingSlot, Settings};
+    use bevy::input::gamepad::{Gamepad, GamepadButton};
+
+    let mut app = test_app();
+    app.insert_resource(crate::settings::Settings::default());
+    go(&mut app, GameState::Match);
+    {
+        let mut settings = app.world_mut().resource_mut::<Settings>();
+        BindingSlot::Jump.set(&mut settings.bindings, KeyCode::KeyJ);
+    }
+
+    let mut gamepad = Gamepad::default();
+    gamepad.digital_mut().press(GamepadButton::South);
+    let (intent, _) = read_gamepad_match(&gamepad);
+    assert!(
+        intent.jump_pressed,
+        "gamepad South still jumps after a keyboard jump rebind"
+    );
+}
+
+/// The Settings screen is a proper state-scoped screen (mirrors `Loadout`): entering
+/// it spawns exactly one screen root that despawns cleanly on exit, and Up/Down moves
+/// the row cursor.
+#[test]
+fn settings_screen_is_state_scoped_and_navigable() {
+    let mut app = test_app();
+    go(&mut app, GameState::MainMenu);
+    go(&mut app, GameState::Settings);
+    assert_eq!(count::<crate::view::theme::ScreenRoot>(&mut app), 1);
+    assert!(
+        count::<crate::screens::settings::SettingsRowText>(&mut app) > 0,
+        "the settings screen renders its row list"
+    );
+
+    let before = app
+        .world()
+        .resource::<crate::screens::settings::SettingsCursor>()
+        .0;
+    tap_update(&mut app, KeyCode::ArrowDown);
+    let after = app
+        .world()
+        .resource::<crate::screens::settings::SettingsCursor>()
+        .0;
+    assert_ne!(before, after, "Down moves the settings cursor");
+
+    go(&mut app, GameState::MainMenu);
+    assert_eq!(
+        count::<crate::screens::settings::SettingsRowText>(&mut app),
+        0,
+        "settings rows never leak past the screen"
+    );
+    assert_eq!(count::<crate::view::theme::ScreenRoot>(&mut app), 1);
+}
+
+/// `Settings::default()` reproduces the exact hardcoded bindings/sensitivity that
+/// shipped before Phase 48 — the game plays identically until the player edits a
+/// setting. Cross-checked here (not just in `settings::tests`) against the actual
+/// `MatchIntent` a fresh Match produces for the legacy keys.
+#[test]
+fn default_settings_reproduce_the_shipped_bindings_and_sensitivity() {
+    let settings = crate::settings::Settings::default();
+    assert_eq!(
+        settings.mouse_sensitivity,
+        crate::settings::DEFAULT_MOUSE_SENSITIVITY
+    );
+
+    let mut app = test_app();
+    app.insert_resource(crate::settings::Settings::default());
+    go(&mut app, GameState::Match);
+    tap_update(&mut app, KeyCode::KeyW);
+    assert!(
+        app.world()
+            .resource::<crate::sim::state::MatchIntent>()
+            .0
+            .movement
+            .y
+            > 0.0,
+        "a fresh app's default bindings still drive W as forward"
+    );
+}
+
+/// Serializing and deserializing `Settings` (via `serde_json`, the persistence
+/// format) is the identity — the round-trip the save/load path relies on.
+#[test]
+fn settings_round_trip_through_serde() {
+    use crate::settings::{BindingSlot, Settings};
+
+    let mut settings = Settings {
+        master_volume: 0.4,
+        mouse_sensitivity: 0.5,
+        high_contrast: true,
+        first_run: false,
+        ..Default::default()
+    };
+    BindingSlot::Pause.set(&mut settings.bindings, KeyCode::KeyP);
+
+    let json = serde_json::to_string(&settings).unwrap();
+    let loaded: Settings = serde_json::from_str(&json).unwrap();
+    assert_eq!(settings, loaded);
+}
+
+/// First-run onboarding: on a fresh `Settings` (first_run == true), entering the
+/// Match spawns the onboarding panel; dismissing it (Escape) flips the flag so it
+/// will not show again on a subsequent match with the same `Settings`.
+#[test]
+fn first_run_onboarding_shows_once() {
+    let mut app = test_app();
+    app.insert_resource(crate::settings::Settings::default());
+    go(&mut app, GameState::Match);
+    assert_eq!(
+        count::<crate::screens::onboarding::OnboardingPanel>(&mut app),
+        1,
+        "a fresh Settings (first_run) shows the onboarding panel on the first match"
+    );
+
+    // Dismiss it explicitly.
+    tap_update(&mut app, KeyCode::Escape);
+    app.world_mut()
+        .resource_mut::<crate::sim::state::MatchPaused>()
+        .0 = false;
+    assert!(
+        !app.world()
+            .resource::<crate::settings::Settings>()
+            .first_run,
+        "dismissing onboarding flips first_run false"
+    );
+    assert_eq!(
+        count::<crate::screens::onboarding::OnboardingPanel>(&mut app),
+        0,
+        "the onboarding panel despawns once dismissed"
+    );
+
+    finish_match(&mut app);
+    go(&mut app, GameState::MainMenu);
+    go(&mut app, GameState::Lobby);
+    go(&mut app, GameState::Match);
+    assert_eq!(
+        count::<crate::screens::onboarding::OnboardingPanel>(&mut app),
+        0,
+        "onboarding does not show again once first_run has flipped"
+    );
+}
+
+/// The pause-menu settings overlay starts collapsed on a fresh Match (never leaking
+/// open state from a previous session) and toggles with `O` while paused.
+#[test]
+fn pause_settings_panel_is_hidden_on_a_fresh_match_and_toggles_while_paused() {
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+
+    assert_eq!(
+        single_visibility::<crate::view::components::PauseSettingsPanel>(&mut app),
+        Visibility::Hidden,
+        "the pause settings overlay starts hidden"
+    );
+
+    app.world_mut()
+        .resource_mut::<crate::sim::state::MatchPaused>()
+        .0 = true;
+    tap_update(&mut app, KeyCode::KeyO);
+    assert_eq!(
+        single_visibility::<crate::view::components::PauseSettingsPanel>(&mut app),
+        Visibility::Visible,
+        "O opens the pause settings overlay while paused"
+    );
+    assert!(
+        count::<crate::view::components::PauseSettingsElement>(&mut app) > 0,
+        "the open overlay draws its settings rows"
+    );
+
+    app.world_mut()
+        .resource_mut::<ButtonInput<KeyCode>>()
+        .reset(KeyCode::KeyO);
+    tap_update(&mut app, KeyCode::KeyO);
+    assert_eq!(
+        single_visibility::<crate::view::components::PauseSettingsPanel>(&mut app),
+        Visibility::Hidden,
+        "a second O closes the pause settings overlay"
+    );
+}

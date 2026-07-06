@@ -12,7 +12,7 @@ This document outlines the current active development goals, completed milestone
 
 **Arc E — Ready to Race** (plan and design rules: [docs/ready_to_race_arc_plan.md](docs/ready_to_race_arc_plan.md)). The polish-and-presence arc: make the proven race a finished game a real person wants to play — onboarding, settings, audio, game-feel, and HUD clarity — then put a second real person across the table over the LAN. Polish/QoL land first; multiplayer targets LAN only (a real socket transport over the proven deterministic lockstep spine — no NAT/relay/online matchmaking, which are the next arc's horizon). Determinism and the Legibility Contract stay inviolable; the risky networking pieces are proven lab-first. Because the teleport model shows each player only their own place, LAN play needs no split-screen — each machine renders its own view of the shared lockstep match.
 
-### Phase 48 — Onboarding & Settings `[ ]`
+### Phase 48 — Onboarding & Settings `[x]`
 Close the biggest QoL gap for a real player: first-run teaching of the core loop (observe-to-freeze, anchors, the tac-map, the gantry, the collapse) surfaced through the existing legend/discovery/hint systems; a real settings screen (volume, mouse sensitivity, key rebinding via the proven `control_lab` overlays and the `player_input` abstraction, plus `observed_style` accessibility toggles), persisted with the career profile; and context control hints.
 
 ### Phase 49 — Audio & Game Feel `[ ]`

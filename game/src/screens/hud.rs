@@ -15,26 +15,27 @@ use crate::keystones::KeystoneState;
 use crate::sim::director::MatchDirector;
 use crate::sim::state::{MatchPaused, RivalSightings, SightingKind, SpectatorBot, TeleportState};
 use crate::view::components::{
-    MatchHud, PausePanel, TacMapElement, TacMapPanel, TacMapState, TeleportAnimation,
-    TeleportOverlay,
+    MatchHud, PausePanel, PauseSettingsPanel, TacMapElement, TacMapPanel, TacMapState,
+    TeleportAnimation, TeleportOverlay,
 };
 use crate::view::theme::{BORDER, PANEL, TAC_MAP_SIZE, TITLE, screen_root, text};
-use crate::{GameState, tacmap};
+use crate::{GameState, settings::key_name, tacmap};
 
 // Tac-map overlay layout (pixels). The 3×3 grid of rooms sits below a title strip.
 const TAC_TITLE_H: f32 = 26.0;
 const TAC_INSET: f32 = 22.0;
 const TAC_ROOM: f32 = 46.0; // room square size
 
-/// Toggle the tac-map overlay with Tab (shows/hides the panel root; `draw_tac_map`
-/// fills it while shown).
+/// Toggle the tac-map overlay with the bound tac-map key (default Tab; shows/hides the
+/// panel root, `draw_tac_map` fills it while shown).
 pub(crate) fn toggle_tac_map(
     keyboard: Res<ButtonInput<KeyCode>>,
     gamepads: Query<&Gamepad>,
+    settings: Res<crate::settings::Settings>,
     mut state: ResMut<TacMapState>,
     mut panel: Query<&mut Visibility, With<TacMapPanel>>,
 ) {
-    if keyboard.just_pressed(KeyCode::Tab) || gamepad_map_pressed(&gamepads) {
+    if keyboard.just_pressed(settings.bindings.tac_map) || gamepad_map_pressed(&gamepads) {
         state.0 = !state.0;
         if let Ok(mut visibility) = panel.single_mut() {
             *visibility = if state.0 {
@@ -369,6 +370,7 @@ pub(crate) fn match_draw(
     log: Res<crate::guardian::ActionLog>,
     tp: Res<TeleportState>,
     seed: Option<Res<crate::flow::ActiveMatchSeed>>,
+    settings: Res<crate::settings::Settings>,
     mut hud: Query<&mut Text, With<MatchHud>>,
     mut pause_panel: Query<&mut Visibility, With<PausePanel>>,
 ) {
@@ -471,6 +473,24 @@ pub(crate) fn match_draw(
 
     if let Ok(mut hud) = hud.single_mut() {
         let seed_val = seed.map(|seed| seed.0).unwrap_or(crate::flow::MATCH_SEED);
+        let bindings = &settings.bindings;
+        let movement_keys = format!(
+            "{}{}{}{}",
+            key_name(bindings.move_forward),
+            key_name(bindings.move_left),
+            key_name(bindings.move_back),
+            key_name(bindings.move_right)
+        );
+        let controls_hint_line = format!(
+            "{}+mouse or Deck controls | {}/X seize/link | {}/L1 torch | {}/Y pad\n\
+             {}/R1 map | {}/Start pause",
+            movement_keys,
+            key_name(bindings.interact),
+            key_name(bindings.torch),
+            key_name(bindings.pad),
+            key_name(bindings.tac_map),
+            key_name(bindings.pause),
+        );
         **hud = format!(
             "SEED {}\nROUND {}\nYou (Team 1): {}\nescaped {} | absorbed {}\ncollapse {:.0}%\n\
              SERIES R{} | alive {} | adversary {} | countdown {}\n\
@@ -484,8 +504,7 @@ pub(crate) fn match_draw(
              {}\
              ACTION LOG:\n{}\n\
              NET lockstep {} | replica {}/{} {} | drop {} dup {} reorder {}\n\n\
-             WASD+mouse or Deck controls | E/X seize/link | F/L1 torch | C/Y pad\n\
-             Tab/R1 map | Esc/Start pause",
+             {}",
             seed_val,
             facility.round,
             local_status,
@@ -517,6 +536,7 @@ pub(crate) fn match_draw(
             live.network.dropped,
             live.network.duplicated,
             live.network.reordered,
+            controls_hint_line,
         );
     }
     if let Ok(mut visibility) = pause_panel.single_mut() {
@@ -548,10 +568,70 @@ pub(crate) fn update_teleport_animation(
     }
 }
 
+/// Legend text scales up under the accessibility high-contrast toggle (Phase 48):
+/// the standard "large text" accessibility pattern, legend-backed and Legibility-
+/// Contract-safe — it boosts legibility of the *existing* semantic colours rather
+/// than inventing new ones.
+const LEGEND_FONT_BASE: f32 = 13.0;
+const LEGEND_FONT_HIGH_CONTRAST: f32 = 17.0;
+const LEGEND_BORDER_BASE: f32 = 1.0;
+const LEGEND_BORDER_HIGH_CONTRAST: f32 = 2.5;
+
 /// Spawn the Match's screen-rooted HUD chrome: the status panel, the teleport
 /// overlay, the pause panel, the tac-map panel, and the legend. State-scoped to the
-/// Match, so it despawns with the screen.
-pub(crate) fn spawn_match_hud(commands: &mut Commands) {
+/// Match, so it despawns with the screen. `high_contrast` (from `Settings`) scales the
+/// legend's text and border for readability.
+pub(crate) fn spawn_match_hud(commands: &mut Commands, high_contrast: bool) {
+    let legend_font = if high_contrast {
+        LEGEND_FONT_HIGH_CONTRAST
+    } else {
+        LEGEND_FONT_BASE
+    };
+    let legend_border = if high_contrast {
+        LEGEND_BORDER_HIGH_CONTRAST
+    } else {
+        LEGEND_BORDER_BASE
+    };
+    let legend_rows: Vec<(&str, Color)> = vec![
+        ("exit", style::marker(MarkerRole::Exit).base_color),
+        ("keystone — pick up", Color::srgb(1.0, 0.82, 0.3)),
+        (
+            "anchor torch - F drop/pick",
+            style::marker(MarkerRole::Control).base_color,
+        ),
+        (
+            "teleport pad - C drop/pick, E link",
+            style::marker(MarkerRole::You).base_color,
+        ),
+        ("locked exit (red door)", Color::srgb(1.0, 0.32, 0.22)),
+        (
+            "collapse — threat",
+            style::marker(MarkerRole::Collapse).base_color,
+        ),
+        (
+            "rubble threshold",
+            style::surface(SurfaceRole::Rubble).base_color,
+        ),
+        ("klaxon countdown", style::klaxon().base_color),
+        ("rival teams", style::marker(MarkerRole::Rival).base_color),
+        (
+            "rival sighting — fades as it ages",
+            style::marker(MarkerRole::Rival).base_color,
+        ),
+        (
+            "rival-held door (their colour)",
+            style::marker(MarkerRole::Rival).base_color,
+        ),
+        (
+            "rival anchor — their torch holds the door",
+            style::team(1).base_color,
+        ),
+        ("mystery corridors", Color::srgb(1.0, 0.32, 0.22)),
+        (
+            "gantry edge — jump line",
+            style::surface(SurfaceRole::GantryEdge).base_color,
+        ),
+    ];
     commands
         .spawn(screen_root(GameState::Match))
         .with_children(|root| {
@@ -601,14 +681,33 @@ pub(crate) fn spawn_match_hud(commands: &mut Commands) {
                     ..default()
                 },
                 BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.6)),
-                children![(
-                    Text::new("PAUSED\n\nEsc / Start  Resume\nQ / Y        Quit to menu"),
-                    TextFont {
-                        font_size: 28.0,
-                        ..default()
-                    },
-                    TextColor(TITLE),
-                )],
+                children![
+                    (
+                        Text::new(
+                            "PAUSED\n\nEsc / Start  Resume\nO              Settings\nQ / Y        Quit to menu"
+                        ),
+                        TextFont {
+                            font_size: 28.0,
+                            ..default()
+                        },
+                        TextColor(TITLE),
+                    ),
+                    (
+                        PauseSettingsPanel,
+                        Visibility::Hidden,
+                        Node {
+                            margin: UiRect::top(px(18)),
+                            padding: UiRect::all(px(16)),
+                            border: UiRect::all(px(1)),
+                            flex_direction: FlexDirection::Column,
+                            align_items: AlignItems::FlexStart,
+                            row_gap: px(4),
+                            ..default()
+                        },
+                        BackgroundColor(PANEL),
+                        BorderColor::all(BORDER),
+                    )
+                ],
             ));
             root.spawn((
                 TacMapPanel,
@@ -645,66 +744,19 @@ pub(crate) fn spawn_match_hud(commands: &mut Commands) {
                     bottom: px(16),
                     left: px(16),
                     padding: UiRect::all(px(12)),
-                    border: UiRect::all(px(1)),
+                    border: UiRect::all(px(legend_border)),
                     flex_direction: FlexDirection::Column,
                     row_gap: px(3),
                     ..default()
                 },
                 BackgroundColor(PANEL),
                 BorderColor::all(BORDER),
-                children![
-                    text("LEGEND", 15.0, TITLE),
-                    text("exit", 13.0, style::marker(MarkerRole::Exit).base_color),
-                    text("keystone — pick up", 13.0, Color::srgb(1.0, 0.82, 0.3)),
-                    text(
-                        "anchor torch - F drop/pick",
-                        13.0,
-                        style::marker(MarkerRole::Control).base_color
-                    ),
-                    text(
-                        "teleport pad - C drop/pick, E link",
-                        13.0,
-                        style::marker(MarkerRole::You).base_color
-                    ),
-                    text("locked exit (red door)", 13.0, Color::srgb(1.0, 0.32, 0.22)),
-                    text(
-                        "collapse — threat",
-                        13.0,
-                        style::marker(MarkerRole::Collapse).base_color
-                    ),
-                    text(
-                        "rubble threshold",
-                        13.0,
-                        style::surface(SurfaceRole::Rubble).base_color
-                    ),
-                    text("klaxon countdown", 13.0, style::klaxon().base_color),
-                    text(
-                        "rival teams",
-                        13.0,
-                        style::marker(MarkerRole::Rival).base_color
-                    ),
-                    text(
-                        "rival sighting — fades as it ages",
-                        13.0,
-                        style::marker(MarkerRole::Rival).base_color
-                    ),
-                    text(
-                        "rival-held door (their colour)",
-                        13.0,
-                        style::marker(MarkerRole::Rival).base_color
-                    ),
-                    text(
-                        "rival anchor — their torch holds the door",
-                        13.0,
-                        style::team(1).base_color
-                    ),
-                    text("mystery corridors", 13.0, Color::srgb(1.0, 0.32, 0.22)),
-                    text(
-                        "gantry edge — jump line",
-                        13.0,
-                        style::surface(SurfaceRole::GantryEdge).base_color
-                    ),
-                ],
-            ));
+            ))
+            .with_children(|legend| {
+                legend.spawn(text("LEGEND", legend_font + 2.0, TITLE));
+                for (label, color) in legend_rows {
+                    legend.spawn(text(label, legend_font, color));
+                }
+            });
         });
 }

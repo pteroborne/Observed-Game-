@@ -1,6 +1,7 @@
 pub(crate) mod ambience;
 pub(crate) mod crossing;
 pub(crate) mod input;
+pub(crate) mod pause_settings;
 pub(crate) mod session;
 pub(crate) mod spectator;
 
@@ -179,6 +180,7 @@ pub(crate) fn item_actions(
 pub(crate) fn match_pump(
     time: Res<Time>,
     input: MatchPumpInput,
+    settings: Res<crate::settings::Settings>,
     mut director: ResMut<MatchDirector>,
     spectator_bot: Option<Res<SpectatorBot>>,
     mut paused: ResMut<MatchPaused>,
@@ -186,7 +188,9 @@ pub(crate) fn match_pump(
     mut next: ResMut<NextState<GameState>>,
     mut cursors: Query<&mut CursorOptions, With<PrimaryWindow>>,
 ) {
-    if input.keyboard.just_pressed(KeyCode::Escape) || gamepad_pause_pressed(&input.gamepads) {
+    if input.keyboard.just_pressed(settings.bindings.pause)
+        || gamepad_pause_pressed(&input.gamepads)
+    {
         paused.0 = !paused.0;
         input::set_cursor_grab(&mut cursors, !paused.0);
     }

@@ -169,6 +169,32 @@ impl Career {
     }
 }
 
+/// Load the persisted `Profile` (Phase 48: profile disk-persistence, folded in
+/// alongside Settings using the profile's existing `serialize`/`parse` — see
+/// `crate::settings::profile_save_path`) into a fresh [`Career`]; a missing or
+/// malformed save falls back to `Profile::new()` exactly like a first launch, never
+/// panicking on a bad file.
+pub fn load_career() -> Career {
+    let profile = std::fs::read_to_string(crate::settings::profile_save_path())
+        .ok()
+        .and_then(|text| Profile::parse(&text))
+        .unwrap_or_default();
+    Career {
+        profile,
+        ..Career::default()
+    }
+}
+
+/// Persist the career's profile to disk (best-effort — a write failure is silently
+/// ignored, matching `settings::save_settings`'s convention).
+pub fn save_profile(profile: &Profile) {
+    let path = crate::settings::profile_save_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(path, profile.serialize());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -30,8 +30,10 @@ pub(crate) mod loadout;
 pub(crate) mod lobby;
 pub(crate) mod match_runtime;
 pub(crate) mod menu;
+pub(crate) mod onboarding;
 pub(crate) mod place;
 pub(crate) mod replay;
+pub(crate) mod settings;
 
 // --- menu domain -------------------------------------------------------------
 #[derive(Clone, Copy)]
@@ -82,12 +84,15 @@ pub(crate) struct ScreensPlugin;
 impl Plugin for ScreensPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MenuCursor>()
+            .init_resource::<settings::SettingsCursor>()
+            .init_resource::<settings::SettingsRebind>()
             .add_systems(OnEnter(GameState::Splash), menu::setup_splash)
             .add_systems(OnEnter(GameState::MainMenu), menu::setup_main_menu)
             .add_systems(OnEnter(GameState::Loadout), loadout::setup_loadout)
             .add_systems(OnEnter(GameState::Lobby), lobby::setup_lobby)
             .add_systems(OnEnter(GameState::Results), menu::setup_results)
             .add_systems(OnEnter(GameState::Replay), replay::setup_replay)
+            .add_systems(OnEnter(GameState::Settings), settings::setup_settings)
             .add_systems(
                 Update,
                 (
@@ -105,6 +110,20 @@ impl Plugin for ScreensPlugin {
                     replay::draw_replay_map.run_if(in_state(GameState::Replay)),
                 )
                     .chain(),
+            )
+            .add_systems(
+                Update,
+                (
+                    settings::settings_navigate.after(InputSystems),
+                    settings::settings_highlight,
+                    settings::settings_adjust,
+                    settings::settings_activate,
+                    settings::settings_capture_rebind,
+                    settings::settings_refresh_labels,
+                    settings::settings_escape,
+                )
+                    .chain()
+                    .run_if(in_state(GameState::Settings)),
             );
     }
 }
@@ -118,6 +137,9 @@ impl Plugin for MatchPlugin {
         let in_match = || in_state(GameState::Match).and(resource_exists::<MatchDirector>);
         app.insert_resource(Time::<Fixed>::from_hz(60.0))
             .init_resource::<place::LastRenderedSignature>()
+            .init_resource::<match_runtime::pause_settings::PauseSettingsOpen>()
+            .init_resource::<match_runtime::pause_settings::PauseSettingsCursor>()
+            .init_resource::<match_runtime::pause_settings::PauseSettingsRebind>()
             .add_systems(
                 OnEnter(GameState::Match),
                 (
@@ -125,6 +147,7 @@ impl Plugin for MatchPlugin {
                     audio::spawn_match_setpieces,
                     match_runtime::input::grab_match_cursor,
                     match_runtime::ambience::apply_match_atmosphere,
+                    onboarding::spawn_onboarding,
                 )
                     .chain(),
             )
@@ -164,6 +187,20 @@ impl Plugin for MatchPlugin {
                     .chain()
                     .run_if(in_match()),
             )
+            .add_systems(
+                Update,
+                (
+                    match_runtime::pause_settings::toggle_pause_settings,
+                    match_runtime::pause_settings::pause_settings_navigate,
+                    match_runtime::pause_settings::pause_settings_adjust,
+                    match_runtime::pause_settings::pause_settings_activate,
+                    match_runtime::pause_settings::pause_settings_capture_rebind,
+                    match_runtime::pause_settings::draw_pause_settings,
+                )
+                    .chain()
+                    .run_if(in_match()),
+            )
+            .add_systems(Update, onboarding::drive_onboarding.run_if(in_match()))
             .add_systems(
                 Update,
                 (

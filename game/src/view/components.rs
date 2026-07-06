@@ -160,3 +160,14 @@ pub(crate) struct MatchHud;
 /// The full-screen pause overlay.
 #[derive(Component)]
 pub(crate) struct PausePanel;
+
+/// The in-match settings panel nested inside the pause overlay (Phase 48: the
+/// pause-menu route to Settings — an overlay rather than a `GameState` transition,
+/// since leaving `GameState::Match` tears down the whole session).
+#[derive(Component)]
+pub(crate) struct PauseSettingsPanel;
+
+/// A dynamic row inside [`PauseSettingsPanel`], rebuilt each frame while shown (same
+/// convention as [`TacMapElement`]).
+#[derive(Component)]
+pub(crate) struct PauseSettingsElement;

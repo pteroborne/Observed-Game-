@@ -15,6 +15,7 @@ pub mod maze;
 mod navmesh;
 pub mod rivals;
 mod screens;
+pub mod settings;
 mod sim;
 pub mod tacmap;
 pub mod teleport;
@@ -41,6 +42,7 @@ pub enum GameState {
     Match,
     Results,
     Replay,
+    Settings,
 }
 
 pub struct ObservedGamePlugin;
@@ -51,8 +53,9 @@ impl Plugin for ObservedGamePlugin {
         // shared camera, and the two screen/match plugins. Each plugin owns the systems
         // for its responsibility (see `screens`); evidence capture is wired in `run`.
         app.init_state::<GameState>()
-            .init_resource::<Career>()
             .init_resource::<crate::flow::ActiveMatchSeed>()
+            .insert_resource(crate::flow::load_career())
+            .insert_resource(crate::settings::load_settings())
             .add_systems(Startup, setup_camera)
             .add_plugins((screens::ScreensPlugin, screens::MatchPlugin));
     }
