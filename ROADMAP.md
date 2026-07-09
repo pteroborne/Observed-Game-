@@ -10,31 +10,73 @@ This document outlines the current active development goals, completed milestone
 
 ## Active & Upcoming Phases
 
-**Arc E — Ready to Race** (plan and design rules: [docs/ready_to_race_arc_plan.md](docs/ready_to_race_arc_plan.md)). The polish-and-presence arc: make the proven race a finished game a real person wants to play — onboarding, settings, audio, game-feel, and HUD clarity — then put a second real person across the table over the LAN. Polish/QoL land first; multiplayer targets LAN only (a real socket transport over the proven deterministic lockstep spine — no NAT/relay/online matchmaking, which are the next arc's horizon). Determinism and the Legibility Contract stay inviolable; the risky networking pieces are proven lab-first. Because the teleport model shows each player only their own place, LAN play needs no split-screen — each machine renders its own view of the shared lockstep match.
+**Arc E — Ready to Race** (plan and design rules: [docs/ready_to_race_arc_plan.md](docs/ready_to_race_arc_plan.md)). The polish-and-presence arc: make the proven race a finished game a real person wants to play — onboarding, settings, audio, game-feel, and HUD clarity. **Scope ruling 2026-07-09:** the arc ends when Phase 50 lands; the LAN multiplayer phases (51–53) are deferred to the Post-MVP Backlog below (absorbed into "true LAN multiplayer with dedicated servers" — their design docs in `docs/arc_e/` are retained as design input).
 
 ### Phase 48 — Onboarding & Settings `[x]`
 Close the biggest QoL gap for a real player: first-run teaching of the core loop (observe-to-freeze, anchors, the tac-map, the gantry, the collapse) surfaced through the existing legend/discovery/hint systems; a real settings screen (volume, mouse sensitivity, key rebinding via the proven `control_lab` overlays and the `player_input` abstraction, plus `observed_style` accessibility toggles), persisted with the career profile; and context control hints.
 
-### Phase 49 — Audio & Game Feel `[ ]`
+### Phase 49 — Audio & Game Feel `[x]`
 Deepen the audio (spatial/attenuated cues, per-district ambient beds, collapse/klaxon/escape stings, UI sounds — all drop-in) and add movement/camera juice (teleport transitions, crossing feedback, gantry jump/land feel, restrained collapse camera). Every effect verified against the Legibility Contract — atmosphere never hides a signal — with refreshed evidence GIFs.
 
 ### Phase 50 — HUD & Results Clarity `[ ]`
-An at-a-glance HUD: exit/keystone/collapse-frontier/series-standing legibility a first-timer parses instantly, plus a post-match summary that reads the outcome and the run's story (placement, escapes, what the collapse took) and a cleaner path back into the loop. Readability assertions on the generated default map.
+Immersion-first presentation (redirected 2026-07-09, see [docs/arc_e/phase_50_hud_results_clarity.md](docs/arc_e/phase_50_hud_results_clarity.md)): normal play is HUD-free — the status readouts and legend are debug-only (`OBSERVED2_DEBUG_HUD`) — and the Tab tac-map is a fog-of-war survivor's sketch that draws only rooms/connections the player has personally witnessed (`MapKnowledge` ledger): glimpsed rooms as hollow outlines, the exit unmarked until found, witnessed edges silently dropping off when a reroute removes them. Remaining: the post-match summary that reads the outcome and the run's story (placement, escapes, what the collapse took) and a cleaner path back into the loop.
 
-### Phase 51 — Shared Actions (LocalAction::PlaceAnchor) `[ ]`
-The recorded next mechanical step and the foundation both local and LAN play need: first-person tool actions (anchor placement, etc.) enter the shared lockstep action stream as deterministic, replayable inputs — turning the game-local anchor torch into a real shared freeze every peer computes identically — with a versioned replay format. Proven lab-first (`net_match_lab`); determinism, replay, and desync tests hold with the new action in the stream.
+### Phases 51–53 — LAN Multiplayer `[deferred to Post-MVP]`
+Shared Actions (`LocalAction::PlaceAnchor`), Real Transport (loopback → LAN), and the LAN Lobby were planned as Arc E's back half and are deferred whole to the Post-MVP Backlog (2026-07-09 ruling). The designs stay valid — first-person actions entering the lockstep stream, a socket adapter behind `observed_net`, lobby/discovery over `observed_progression` — and live in [docs/arc_e/phase_51_shared_actions.md](docs/arc_e/phase_51_shared_actions.md), [phase_52_real_transport.md](docs/arc_e/phase_52_real_transport.md), and [phase_53_lan_lobby.md](docs/arc_e/phase_53_lan_lobby.md).
 
-### Phase 52 — Real Transport (loopback → LAN) `[ ]`
-A real socket transport adapter behind `observed_net`'s lockstep interface (the simulated hostile-condition transport stays for tests); proven byte-identical on loopback (two processes, one machine) first, then across the LAN. Dependencies evaluated against the R11 bar (`std::net` first). Loopback/LAN runs converge to the same deterministic result the in-process transport produces.
+---
 
-### Phase 53 — LAN Lobby & the Real Race `[ ]`
-Wire `observed_progression`'s lobby/session/matchmaking (proven in `session_lab`) to real LAN discovery, connect, and reconnect over the Phase-52 transport — and land the payoff: two or more humans in a full contested first-person match over the LAN, each on their own machine and view, attacking each other's reality at last. A two-endpoint LAN match completes with a consistent result on both ends; reconnect recovers a dropped peer; the headless==interactive and solvability invariants hold for networked matches.
+**Arc F — Sight & Sound** (plan: [docs/sight_and_sound_arc_plan.md](docs/sight_and_sound_arc_plan.md); per-phase sub-agent hand-offs: [docs/arc_f/](docs/arc_f/README.md)). The MVP-closing arc: a True-Singleplayer foundation phase, then the two remaining presentation systems — audio and the 2.5D sprite layer — in two file-disjoint tracks built for concurrent sub-agents (dispatch waves: [54∥57] → [55∥58] → [56∥59] → [60]). Track A perfects audio architecture-first (one director, buses, ducking, structural cooldowns; then spatial classes, coverage, CC0-only inventory). Track B executes the rewritten [sprite_roadmap.md](sprite_roadmap.md) (pipeline+lab → objects → directional actors → dressing/textures). The Legibility Contract, the HUD-free immersion ruling, drop-in fallbacks, and determinism hygiene bind every phase.
 
-**Horizon (after the arc).** Full **online** play — real transport over the internet with NAT traversal / relay and online matchmaking — is the next arc, built on the LAN transport this arc proves. Smaller queued follow-ups carried from Arc C/D: a third hall endpoint so the gantry's understory exit reaches a genuinely different neighbour; the decoherence counter-tool (Phase 38's criterion (d) never triggered it).
+### Phase 54 — True Singleplayer (bot & guardian toggles) `[ ]`
+Menu/settings toggles that disable rival teams, own AI teammates, and the guardian separately — for a "True Singleplayer" facility used both for gameplay and clean testing. Implemented as deterministic match configuration (disabled populations never spawn in the sim; headless == interactive), following the `OBSERVED2_MAP` precedent with an `OBSERVED2_BOTS` override, persisted with the career profile; all-on default pinned byte-identical, solo matches end and report sanely. ([docs/arc_f/phase_54_true_singleplayer.md](docs/arc_f/phase_54_true_singleplayer.md))
+
+### Phase 55 — Audio Architecture (the mixer) `[ ]`
+One `AudioDirector` owns every cue decision through a single data-driven cue table: bus model (master/music/sfx/ui over the Phase-48 settings channels), sting-ducks-ambience easing (volume-only, never stream restarts), and structural per-class cooldowns/instance caps so the next event-spam bug is inaudible by construction. Every spawn site migrates to director requests; no audible identity changes. ([docs/arc_f/phase_55_audio_architecture.md](docs/arc_f/phase_55_audio_architecture.md))
+
+### Phase 56 — Audio Content & Spatial Depth `[ ]`
+An audited cue set on top of the director: a test-enforced coverage table mapping every gameplay-critical signal to a cue (or an explicit silence ruling), distance-rolloff and through-wall occlusion classes, richer district beds, and the CC-BY reference libraries replaced with CC0 and removed — closing the license caveat for good. ([docs/arc_f/phase_56_audio_content_spatial.md](docs/arc_f/phase_56_audio_content_spatial.md))
+
+### Phase 57 — Sprite Metadata Pipeline & the OGA Lab `[ ]`
+The raw OpenGameArt intake becomes a metadata-driven pipeline: checked-in frame metadata (rects, pivots, ppm, directional counts, semantic clips), a deterministic derive script into `assets/oga_25d/derived/`, `TextureAtlasLayout` support, and an `oga_25d_lab` (grown from `sprite3d_placeholder_lab`) proving actors, objects, decorations, and direction/clip debugging — game untouched. ([docs/arc_f/phase_57_sprite_pipeline_lab.md](docs/arc_f/phase_57_sprite_pipeline_lab.md))
+
+### Phase 58 — Gameplay Object Sprites `[ ]`
+OGA objects enter the played game first: eight semantic object slots (keystone card/core, exit access card, anchor torch, route cell, relay device, battery, repair token) driven by existing match state, with `observed_style` halos layered over the art, clean despawn on reset/exit, and procedural fallbacks intact. ([docs/arc_f/phase_58_gameplay_object_sprites.md](docs/arc_f/phase_58_gameplay_object_sprites.md))
+
+### Phase 59 — Directional Actors `[ ]`
+Rivals and the guardian move to directional sheets: direction from camera-relative angle, clip from existing presentation state (combat frames remapped to operate/alert/disrupted/exit or dropped), frame selection a tested pure function, guardian light/halo signals independent of the art, and all three fallback rungs (sheet → single-frame → capsule) working. ([docs/arc_f/phase_59_directional_actors.md](docs/arc_f/phase_59_directional_actors.md))
+
+### Phase 60 — Room Dressing, Textures & Interaction Read `[ ]`
+The atmosphere payoff: seeded, role-driven props under three hard rules (never cover a threshold, never steal a signal color, always dimmer than interactables), optional LAB albedo variants under style tint, and a documented ruling on the interaction read (diegetic cue preferred over any crosshair — normal play stays HUD-free). Full visual-audit and evidence refresh closes the arc. ([docs/arc_f/phase_60_dressing_textures_reticle.md](docs/arc_f/phase_60_dressing_textures_reticle.md))
+
+---
+
+## Post-MVP Backlog (listed, not scheduled)
+
+Recorded so the horizon is explicit; none of this is being built yet.
+
+1. **True LAN multiplayer with dedicated servers.** The deferred Arc E designs (Phases 51–53: shared lockstep actions, socket transport behind `observed_net`, LAN lobby/discovery) plus a dedicated-server deployment model — a headless deterministic host that peers connect to, replacing pure peer-to-peer session ownership. Full online play (NAT traversal / relay / matchmaking) remains beyond even that.
+2. **World interaction.** Players act on the facility graph itself: explorers "hacking" a room console to connect it to a specified room ID (player-driven rerouting, subject to the solvability invariant and decoherence rules), and fallen/absorbed teams connecting nodes from a top-down view — extending "eliminated teams join the adversary" into an active graph-editing role that keeps every player playing to the end.
+3. **Carried follow-ups from Arcs C/D:** a third hall endpoint so the gantry's understory exit reaches a genuinely different neighbour; the decoherence counter-tool (Phase 38's criterion (d) never triggered it).
 
 ---
 
 ## Recent Milestones (Completed)
+
+### Sprite3D Dev Placeholder Pass `[x]`
+Added a Bevy `0.18`-compatible 2.5D sprite placeholder path for dev-visible actors
+and devices. `sprite3d_placeholder_lab` proves `bevy_sprite3d` with loaded-image
+gating, fallback meshes, yaw-facing billboards, and reset safety; the assembled game
+now uses checked-in CC0 Kenney sprite slots for rival avatars, the guardian, and the
+anchor/control device when loaded, while preserving procedural fallbacks.
+
+### Phase 49 - Audio & Game Feel `[x]`
+Finished the Arc E audio/game-feel pass:
+- **Manifest-owned audio slots:** per-district ambience now lives in `observed_assets::DISTRICT_AMBIENCE`, and UI sound slots point at the checked-in `ui_click`/`ui_hover` drop-ins, so the game layer no longer hard-codes district sound paths or string slot names.
+- **Stutter diagnosis and fix:** the WIP pause/resume ambience path and hot diagnostics logging were removed; ambience beds are stable loop entities that cross-fade volume only, avoiding stream restart churn. The persistent "Geiger counter" artifact was confirmed as repeated landing cue spawns from exact floor/deck contact toggling airborne/grounded in `observed_traversal`; resting support now stays grounded and reports `landed` only on an actual fall-to-support transition. Muted SFX channels suppress one-shot cue entities instead of spawning silent sounds.
+- **Stings and movement feel:** rival bleed stays attenuated, collapse and klaxon stings are settings-gated and one-per-event/loop, jump/land cues feed smooth camera easing, and teleport/collapse feedback uses small height/level offsets instead of shake or full-screen violence.
+- **Evidence and verification:** added Phase 49 regression tests for manifest alignment, UI slot loading, muted cue gating, one-shot/loop sting behavior, idle-match audio cue stability, and traversal resting support. `OBSERVED2_VIS_AUDIT=docs/evidence/visual_audit` reports zero findings, and `docs/evidence/bot_pov/bot_pov.gif` was refreshed from 120 captured frames.
+- **Verification:** `cargo fmt --all`, `cargo test -p observed_traversal` (17 tests), `cargo test -p observed_game` (195 tests), `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` pass.
 
 ### Phase 47 — WFC Corridor Interiors `[x]`
 Closed Arc D by reviving the archived hallway-interior WFC generator into the game:

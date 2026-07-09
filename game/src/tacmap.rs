@@ -1,15 +1,19 @@
 //! Pure model for the toggleable **tac-map** overlay — the teleport-model heir of
 //! `fps_match_lab`'s Tab tac-map and `match_replay`'s schematic.
 //!
-//! The map is a top-down schematic of the nine-room facility graph laid out on a 3×3
-//! grid by `RoomId`. The protected spine `[0,1,2,5,4,3,6,7,8]` snakes through that grid
-//! (a boustrophedon), so every spine step is to a *grid-adjacent* room — which lets the
-//! overlay draw the route as plain horizontal/vertical bars (no rotated lines) and renders
-//! cleanly as UI nodes, no second camera needed.
+//! The map is a top-down schematic of the facility graph, but it is a *survivor's
+//! sketch*, not a blueprint (Phase 50 ruling): the player explores an ever-changing
+//! maze, so the map draws only what [`MapKnowledge`] records they have personally
+//! witnessed. Rooms never entered are simply absent; rooms only seen through an open
+//! threshold are hollow "something is there" outlines; connections appear only once a
+//! doorway was seen or a hallway walked — and silently drop off when a reroute removes
+//! them, because the projection filters the player's notes against the live spec.
 //!
-//! This is pure projection of the deterministic brain (`team_room` / `collapse_rooms`) plus
-//! the local keystone inventory; it never writes match state, so determinism/replay/lockstep
-//! are untouched. `screens::draw_tac_map` builds the UI from this model.
+//! This is pure projection of the deterministic brain (`team_room` / `collapse_rooms`)
+//! plus the local keystone inventory and the two team-local fog-of-war ledgers
+//! ([`RivalSightings`], [`MapKnowledge`]); it never writes match state, so
+//! determinism/replay/lockstep are untouched. `screens::draw_tac_map` builds the UI
+//! from this model.
 
 use bevy::prelude::Vec2;
 use observed_core::RoomId;
@@ -19,7 +23,7 @@ use observed_match::mutable::{START_ROOM, spine_next};
 
 use crate::flow::LOCAL_TEAM;
 use crate::keystones::KeystoneState;
-use crate::sim::state::{RivalSightings, SightingKind};
+use crate::sim::state::{MapKnowledge, RivalSightings, SightingKind};
 use crate::teleport::Place;
 
 /// A rival's staleness floor (Design ruling: full alpha at 0 commits old, fading to a
@@ -75,35 +79,103 @@ pub enum PlayerMark {
     Between(RoomId, RoomId),
 }
 
-/// Everything the overlay needs to draw, snapshotted from the live match.
+/// Everything the overlay needs to draw, snapshotted from the live match and filtered
+/// through the player's [`MapKnowledge`] — the model itself never carries a fact the
+/// player hasn't witnessed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MapModel {
+    /// Rooms the player has physically stood in, with their true roles.
     pub rooms: Vec<(RoomId, Vec2, RoomRole)>,
+    /// Rooms only ever seen through an open threshold: their position on the sketch is
+    /// known, their role and contents are not.
+    pub glimpsed: Vec<(RoomId, Vec2)>,
+    /// Connections the player witnessed that still exist in the live facility.
     pub routes: Vec<(RoomId, RoomId)>,
+    /// Schematic bounds of the FULL facility, not just the known part, so discovered
+    /// rooms keep stable positions as the sketch fills in.
+    pub bounds: (Vec2, Vec2),
+    /// Full facility room count — stable room-square sizing while exploring.
+    pub total_rooms: usize,
     pub player: PlayerMark,
     /// One pip per rival team the local player has ever *witnessed* a trace of — fog of
     /// war over the live truth (Design ruling): a rival still running but never seen or
     /// heard by the local player produces no pip at all. Position is the last-witnessed
     /// room, not the rival's live room.
     pub rivals: Vec<RivalPip>,
-    /// Spine rooms the collapse has already swallowed.
+    /// Known rooms the collapse has already swallowed.
     pub collapse: Vec<RoomId>,
-    /// Rooms still holding an uncollected keystone.
+    /// Known rooms still holding an uncollected keystone.
     pub keystones: Vec<RoomId>,
     pub exit: RoomId,
+    /// Whether the player has actually found the exit room; until then the map draws no
+    /// exit marker at all.
+    pub exit_known: bool,
     pub exit_open: bool,
 }
 
-/// Build the map model from the live facility, the keystone inventory, the team-local
-/// rival sighting ledger, the current `reroute_commits` (for staleness), and the
-/// player's current teleport place. Rival pips come entirely from `sightings` (fog of
-/// war): a still-running rival the local player has never witnessed simply produces no
-/// pip. The local team's own position stays live (`player`, below), as does all
-/// structure (rooms/routes/collapse/exit/keystones).
+pub fn route_segment_count(model: &MapModel) -> usize {
+    model
+        .routes
+        .iter()
+        .map(|&(a, b)| {
+            let Some(a_pos) = room_position(model, a) else {
+                return 1;
+            };
+            let Some(b_pos) = room_position(model, b) else {
+                return 1;
+            };
+            if (a_pos.x - b_pos.x).abs() < 0.01 || (a_pos.y - b_pos.y).abs() < 0.01 {
+                1
+            } else {
+                2
+            }
+        })
+        .sum()
+}
+
+fn room_position(model: &MapModel, room: RoomId) -> Option<Vec2> {
+    model
+        .rooms
+        .iter()
+        .find_map(|(candidate, pos, _)| (*candidate == room).then_some(*pos))
+        .or_else(|| {
+            model
+                .glimpsed
+                .iter()
+                .find_map(|(candidate, pos)| (*candidate == room).then_some(*pos))
+        })
+}
+
+/// A room's identity, schematic position, and role — one full-facility layout row.
+type SchematicRoom = (RoomId, Vec2, RoomRole);
+
+/// The schematic min/max over the full facility's room positions.
+fn schematic_bounds(rooms: &[SchematicRoom]) -> (Vec2, Vec2) {
+    let mut min = Vec2::splat(f32::INFINITY);
+    let mut max = Vec2::splat(f32::NEG_INFINITY);
+    for (_, pos, _) in rooms {
+        min = min.min(*pos);
+        max = max.max(*pos);
+    }
+    if rooms.is_empty() {
+        (Vec2::ZERO, Vec2::ONE)
+    } else {
+        (min, max)
+    }
+}
+
+/// Build the map model from the live facility, the keystone inventory, the two
+/// team-local fog-of-war ledgers, the current `reroute_commits` (for staleness), and
+/// the player's current teleport place. Rival pips come entirely from `sightings`, and
+/// *all structure* (rooms/routes/collapse/exit/keystones) is filtered through
+/// `knowledge`: a room the player never witnessed simply is not on the map, and a
+/// witnessed edge a reroute later removed drops back off. Only the player's own
+/// position stays live.
 pub fn build_map(
     facility: &CompetitiveFacility,
     keys: &KeystoneState,
     sightings: &RivalSightings,
+    knowledge: &MapKnowledge,
     commits: u32,
     place: Place,
 ) -> MapModel {
@@ -111,7 +183,7 @@ pub fn build_map(
         Place::Room(r) => PlayerMark::Room(r),
         Place::Hallway { from, to, .. } => PlayerMark::Between(from, to),
     };
-    let rivals = (0..TEAM_COUNT)
+    let rivals: Vec<RivalPip> = (0..TEAM_COUNT)
         .filter(|&i| i as u8 != LOCAL_TEAM.0)
         .filter(|&i| facility.teams.get(i).is_some_and(|t| t.active_runner()))
         .filter_map(|i| {
@@ -127,50 +199,77 @@ pub fn build_map(
                     staleness: commits.saturating_sub(sighting.commits_seen),
                 })
         })
+        .filter(|pip| knowledge.knows_room(pip.room))
         .collect();
     let keystones = keys
         .rooms
         .iter()
         .copied()
-        .filter(|&r| keys.has_uncollected(r))
+        .filter(|&r| keys.has_uncollected(r) && knowledge.knows_room(r))
         .collect();
-    let (rooms, routes) = if let Some(spec) = &facility.map_spec {
-        (
-            spec.rooms
-                .iter()
-                .map(|room| (room.id, room.schematic, room.role))
-                .collect(),
-            spec.edges
-                .iter()
-                .map(|edge| (edge.a.room, edge.b.room))
-                .collect(),
-        )
-    } else {
-        (
-            (0..9)
-                .map(|id| {
-                    let room = RoomId(id);
-                    let role = if id == START_ROOM {
-                        RoomRole::Start
-                    } else if room == keys.exit_room {
-                        RoomRole::Exit
-                    } else {
-                        RoomRole::Decision
-                    };
-                    (room, grid_pos(room), role)
-                })
-                .collect(),
-            spine().windows(2).map(|pair| (pair[0], pair[1])).collect(),
-        )
-    };
+    let (all_rooms, all_routes): (Vec<SchematicRoom>, Vec<(RoomId, RoomId)>) =
+        if let Some(spec) = &facility.map_spec {
+            (
+                spec.rooms
+                    .iter()
+                    .map(|room| (room.id, room.schematic, room.role))
+                    .collect(),
+                spec.edges
+                    .iter()
+                    .map(|edge| (edge.a.room, edge.b.room))
+                    .collect(),
+            )
+        } else {
+            (
+                (0..9)
+                    .map(|id| {
+                        let room = RoomId(id);
+                        let role = if id == START_ROOM {
+                            RoomRole::Start
+                        } else if room == keys.exit_room {
+                            RoomRole::Exit
+                        } else {
+                            RoomRole::Decision
+                        };
+                        (room, grid_pos(room), role)
+                    })
+                    .collect(),
+                spine().windows(2).map(|pair| (pair[0], pair[1])).collect(),
+            )
+        };
+    let bounds = schematic_bounds(&all_rooms);
+    let total_rooms = all_rooms.len();
+    let rooms = all_rooms
+        .iter()
+        .filter(|(room, _, _)| knowledge.visited.contains(room))
+        .cloned()
+        .collect();
+    let glimpsed = all_rooms
+        .iter()
+        .filter(|(room, _, _)| knowledge.glimpsed.contains(room))
+        .map(|(room, pos, _)| (*room, *pos))
+        .collect();
+    let routes = all_routes
+        .into_iter()
+        .filter(|&(a, b)| knowledge.knows_edge(a, b))
+        .collect();
+    let collapse = facility
+        .collapse_rooms()
+        .into_iter()
+        .filter(|&room| knowledge.knows_room(room))
+        .collect();
     MapModel {
         rooms,
+        glimpsed,
         routes,
+        bounds,
+        total_rooms,
         player,
         rivals,
-        collapse: facility.collapse_rooms(),
+        collapse,
         keystones,
         exit: keys.exit_room,
+        exit_known: knowledge.knows_room(keys.exit_room),
         exit_open: keys.gate_open(),
     }
 }
@@ -214,13 +313,50 @@ mod tests {
         sightings
     }
 
+    /// A knowledge ledger that has witnessed the whole facility — the pre-Phase-50
+    /// "blueprint" view, used where a test exercises live-truth projection rather than
+    /// the fog of war itself. Also witnesses the keystone/exit rooms, which
+    /// `KeystoneState::new` seeds from the *generated catalog map* while these fixture
+    /// tests run the authored nine-room facility.
+    fn omniscient(facility: &CompetitiveFacility, keys: &KeystoneState) -> MapKnowledge {
+        let mut knowledge = MapKnowledge::default();
+        if let Some(spec) = &facility.map_spec {
+            for room in &spec.rooms {
+                knowledge.visit(room.id);
+            }
+            for edge in &spec.edges {
+                knowledge.connect(edge.a.room, edge.b.room);
+            }
+        } else {
+            for id in 0..9 {
+                knowledge.visit(RoomId(id));
+            }
+            for pair in spine().windows(2) {
+                knowledge.connect(pair[0], pair[1]);
+            }
+        }
+        for &room in &keys.rooms {
+            knowledge.visit(room);
+        }
+        knowledge.visit(keys.exit_room);
+        knowledge
+    }
+
     #[test]
     fn at_match_start_the_map_shows_you_and_the_witnessed_rivals_at_the_entrance_exit_locked() {
         let facility = CompetitiveFacility::authored();
         let keys = KeystoneState::new(crate::flow::MATCH_SEED);
         let entrance = facility.team_room(0);
         let sightings = all_rivals_seen_at(&facility, entrance);
-        let model = build_map(&facility, &keys, &sightings, 0, Place::Room(entrance));
+        let knowledge = omniscient(&facility, &keys);
+        let model = build_map(
+            &facility,
+            &keys,
+            &sightings,
+            &knowledge,
+            0,
+            Place::Room(entrance),
+        );
 
         assert_eq!(model.player, PlayerMark::Room(entrance));
         assert_eq!(
@@ -253,10 +389,12 @@ mod tests {
         let facility = CompetitiveFacility::authored();
         let keys = KeystoneState::new(crate::flow::MATCH_SEED);
         let sightings = RivalSightings::default();
+        let knowledge = omniscient(&facility, &keys);
         let model = build_map(
             &facility,
             &keys,
             &sightings,
+            &knowledge,
             0,
             Place::Room(facility.team_room(0)),
         );
@@ -270,6 +408,7 @@ mod tests {
     fn a_witnessed_rival_shows_at_its_last_sighted_room_and_fades_with_staleness() {
         let facility = CompetitiveFacility::authored();
         let keys = KeystoneState::new(crate::flow::MATCH_SEED);
+        let knowledge = omniscient(&facility, &keys);
         let mut sightings = RivalSightings::default();
         let last_sighted_room = RoomId(4);
         sightings.record(
@@ -280,7 +419,14 @@ mod tests {
         );
 
         // Freshly witnessed: staleness 0, full alpha.
-        let fresh = build_map(&facility, &keys, &sightings, 2, Place::Room(RoomId(0)));
+        let fresh = build_map(
+            &facility,
+            &keys,
+            &sightings,
+            &knowledge,
+            2,
+            Place::Room(RoomId(0)),
+        );
         let pip = fresh
             .rivals
             .iter()
@@ -292,7 +438,14 @@ mod tests {
 
         // Many reroute commits later without a fresh witnessing: the pip stays at the
         // same last-sighted room (never the rival's live room) but reads stale.
-        let stale = build_map(&facility, &keys, &sightings, 8, Place::Room(RoomId(0)));
+        let stale = build_map(
+            &facility,
+            &keys,
+            &sightings,
+            &knowledge,
+            8,
+            Place::Room(RoomId(0)),
+        );
         let stale_pip = stale.rivals.iter().find(|p| p.team == 1).unwrap();
         assert_eq!(
             stale_pip.room, last_sighted_room,
@@ -311,10 +464,12 @@ mod tests {
         let facility = CompetitiveFacility::authored();
         let keys = KeystoneState::new(crate::flow::MATCH_SEED);
         let sightings = RivalSightings::default();
+        let knowledge = MapKnowledge::default();
         let model = build_map(
             &facility,
             &keys,
             &sightings,
+            &knowledge,
             0,
             Place::Hallway {
                 from: RoomId(0),
@@ -326,16 +481,54 @@ mod tests {
     }
 
     #[test]
+    fn diagonal_routes_count_as_two_ui_segments() {
+        let model = MapModel {
+            rooms: vec![
+                (RoomId(0), Vec2::new(0.0, 0.0), RoomRole::Start),
+                (RoomId(1), Vec2::new(1.0, 1.0), RoomRole::Exit),
+            ],
+            glimpsed: Vec::new(),
+            routes: vec![(RoomId(0), RoomId(1))],
+            bounds: (Vec2::ZERO, Vec2::ONE),
+            total_rooms: 2,
+            player: PlayerMark::Room(RoomId(0)),
+            rivals: Vec::new(),
+            collapse: Vec::new(),
+            keystones: Vec::new(),
+            exit: RoomId(1),
+            exit_known: true,
+            exit_open: false,
+        };
+
+        assert_eq!(route_segment_count(&model), 2);
+    }
+
+    #[test]
     fn collected_keystones_drop_off_the_map_and_opening_the_gate_flips_exit_open() {
         let facility = CompetitiveFacility::authored();
         let mut keys = KeystoneState::new(crate::flow::MATCH_SEED);
         let sightings = RivalSightings::default();
-        let before = build_map(&facility, &keys, &sightings, 0, Place::Room(RoomId(0)))
-            .keystones
-            .len();
+        let knowledge = omniscient(&facility, &keys);
+        let before = build_map(
+            &facility,
+            &keys,
+            &sightings,
+            &knowledge,
+            0,
+            Place::Room(RoomId(0)),
+        )
+        .keystones
+        .len();
         let rooms = keys.rooms.clone();
         keys.collect(rooms[0]);
-        let after = build_map(&facility, &keys, &sightings, 0, Place::Room(RoomId(0)));
+        let after = build_map(
+            &facility,
+            &keys,
+            &sightings,
+            &knowledge,
+            0,
+            Place::Room(RoomId(0)),
+        );
         assert_eq!(
             after.keystones.len(),
             before - 1,
@@ -345,11 +538,118 @@ mod tests {
         for room in rooms {
             keys.collect(room);
         }
-        let open = build_map(&facility, &keys, &sightings, 0, Place::Room(RoomId(0)));
+        let open = build_map(
+            &facility,
+            &keys,
+            &sightings,
+            &knowledge,
+            0,
+            Place::Room(RoomId(0)),
+        );
         assert!(
             open.exit_open,
             "all keystones held opens the exit on the map"
         );
         assert!(open.keystones.is_empty());
+    }
+
+    #[test]
+    fn an_unwitnessed_facility_yields_an_empty_sketch_with_stable_bounds() {
+        let facility = CompetitiveFacility::authored();
+        let keys = KeystoneState::new(crate::flow::MATCH_SEED);
+        let sightings = RivalSightings::default();
+        let knowledge = MapKnowledge::default();
+        let model = build_map(
+            &facility,
+            &keys,
+            &sightings,
+            &knowledge,
+            0,
+            Place::Room(RoomId(0)),
+        );
+        assert!(model.rooms.is_empty(), "no room witnessed, no room drawn");
+        assert!(model.glimpsed.is_empty());
+        assert!(model.routes.is_empty());
+        assert!(model.keystones.is_empty(), "keystones hide in the unknown");
+        assert!(!model.exit_known, "the exit must be found, not given");
+        assert_eq!(
+            model.total_rooms, 9,
+            "sizing stays stable at the full facility count"
+        );
+        assert_eq!(
+            model.bounds,
+            (Vec2::ZERO, Vec2::new(2.0, 2.0)),
+            "bounds span the full 3x3 schematic so discovered rooms never shift"
+        );
+    }
+
+    #[test]
+    fn a_glimpsed_room_is_a_position_only_outline_until_visited() {
+        let facility = CompetitiveFacility::authored();
+        let keys = KeystoneState::new(crate::flow::MATCH_SEED);
+        let sightings = RivalSightings::default();
+        let mut knowledge = MapKnowledge::default();
+        knowledge.visit(RoomId(0));
+        knowledge.glimpse(RoomId(1));
+        knowledge.connect(RoomId(0), RoomId(1));
+
+        let model = build_map(
+            &facility,
+            &keys,
+            &sightings,
+            &knowledge,
+            0,
+            Place::Room(RoomId(0)),
+        );
+        assert_eq!(model.rooms.len(), 1, "only the visited entrance is a room");
+        assert_eq!(model.rooms[0].0, RoomId(0));
+        assert_eq!(
+            model.glimpsed,
+            vec![(RoomId(1), grid_pos(RoomId(1)))],
+            "the doorway neighbour is a bare position, no role"
+        );
+        assert_eq!(
+            model.routes,
+            vec![(RoomId(0), RoomId(1))],
+            "the witnessed doorway is the only known connection"
+        );
+
+        knowledge.visit(RoomId(1));
+        let model = build_map(
+            &facility,
+            &keys,
+            &sightings,
+            &knowledge,
+            0,
+            Place::Room(RoomId(1)),
+        );
+        assert_eq!(model.rooms.len(), 2, "entering promotes the glimpse");
+        assert!(model.glimpsed.is_empty());
+    }
+
+    #[test]
+    fn a_witnessed_connection_the_facility_no_longer_has_drops_off_the_map() {
+        let facility = CompetitiveFacility::authored();
+        let keys = KeystoneState::new(crate::flow::MATCH_SEED);
+        let sightings = RivalSightings::default();
+        let mut knowledge = MapKnowledge::default();
+        knowledge.visit(RoomId(0));
+        knowledge.visit(RoomId(4));
+        // The player once knew a 0–4 connection, but the authored spine has no such
+        // edge any more: the sketch silently loses it (the maze owes no corrections).
+        knowledge.connect(RoomId(0), RoomId(4));
+
+        let model = build_map(
+            &facility,
+            &keys,
+            &sightings,
+            &knowledge,
+            0,
+            Place::Room(RoomId(0)),
+        );
+        assert!(
+            model.routes.is_empty(),
+            "a remembered edge that no longer exists is not drawn"
+        );
     }
 }

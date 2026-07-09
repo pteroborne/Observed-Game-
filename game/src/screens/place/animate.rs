@@ -2,6 +2,7 @@
 //! the rival avatars along their pace segment, pulsing the teleport pad glow, and
 //! attaching/detaching the carried-torch point light to the camera.
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use observed_style::{self as style, MarkerRole};
 
@@ -16,6 +17,23 @@ use crate::view::components::{DoorLeaf, GameCam, RivalAvatar, TeleportPadGlow};
 
 const DOOR_OPEN_RADIUS: f32 = 4.6;
 const DOOR_SLIDE_SPEED: f32 = 6.0;
+
+#[derive(SystemParam)]
+pub(crate) struct RivalAvatarVisuals<'w, 's> {
+    assets: Res<'w, MatchAssets>,
+    images: Res<'w, Assets<Image>>,
+    paused: Res<'w, MatchPaused>,
+    avatars: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static RivalAvatar,
+            &'static mut Transform,
+            Option<&'static mut Sprite>,
+        ),
+    >,
+}
 
 /// Slide any future openable sealed leaf between shut and tucked-into-the-lintel by the
 /// player's proximity.
@@ -45,9 +63,7 @@ pub(crate) fn sync_rival_avatars(
     time: Res<Time>,
     runtime: Res<MatchDirector>,
     tp: Res<TeleportState>,
-    assets: Res<MatchAssets>,
-    paused: Res<MatchPaused>,
-    mut avatars: Query<(Entity, &RivalAvatar, &mut Transform)>,
+    mut visuals: RivalAvatarVisuals,
     mut commands: Commands,
 ) {
     let game = runtime.live.host_match();
@@ -62,13 +78,17 @@ pub(crate) fn sync_rival_avatars(
     let n = present.len();
 
     let mut have: Vec<usize> = Vec::new();
-    for (entity, avatar, mut transform) in &mut avatars {
+    for (entity, avatar, mut transform, maybe_sprite) in &mut visuals.avatars {
         let Some(slot) = present.iter().position(|&t| t == avatar.team) else {
             commands.entity(entity).despawn();
             continue;
         };
+        if maybe_sprite.is_none() && visuals.assets.rival_sprite(&visuals.images, 0).is_some() {
+            commands.entity(entity).despawn();
+            continue;
+        }
         have.push(avatar.team);
-        if paused.0 {
+        if visuals.paused.0 {
             continue;
         }
         let phase = avatar.team as f32 * 0.7;
@@ -76,20 +96,48 @@ pub(crate) fn sync_rival_avatars(
         let u = rivals::triangle_wave(theta);
         let lane = (slot as f32 - (n as f32 - 1.0) * 0.5) * 1.3;
         let foot = a + along * u + tangent * lane;
-        let bob = (theta * 6.0).sin() * 0.06;
-        transform.translation = Vec3::new(foot.x, 0.82 + bob, foot.y);
+        let bob = (theta * 6.0).sin().max(0.0) * 0.08;
+        transform.translation = if maybe_sprite.is_some() {
+            Vec3::new(foot.x, 0.02 + bob, foot.y)
+        } else {
+            Vec3::new(foot.x, 0.82 + bob, foot.y)
+        };
+        if let Some(mut sprite) = maybe_sprite {
+            let frame = 1 + ((theta * 4.0).floor() as usize % 2);
+            if let Some(image) = visuals
+                .assets
+                .rival_sprite(&visuals.images, frame)
+                .or_else(|| visuals.assets.rival_sprite(&visuals.images, 0))
+            {
+                sprite.image = image;
+            }
+        }
     }
 
     for &team in &present {
         if !have.contains(&team) {
-            commands.spawn((
-                RivalAvatar { team },
-                DespawnOnExit(GameState::Match),
-                Mesh3d(assets.rival_body_mesh.clone()),
-                MeshMaterial3d(assets.rival_material.clone()),
-                Transform::from_xyz(a.x, 0.82, a.y),
-                Name::new(format!("Rival team {team}")),
-            ));
+            if let Some(image) = visuals.assets.rival_sprite(&visuals.images, 0) {
+                commands.spawn((
+                    RivalAvatar { team },
+                    DespawnOnExit(GameState::Match),
+                    crate::view::sprites::sprite3d_components(
+                        image,
+                        &style::marker(MarkerRole::Rival),
+                        crate::view::sprites::ACTOR_PIXELS_PER_METRE,
+                    ),
+                    Transform::from_xyz(a.x, 0.02, a.y),
+                    Name::new(format!("Rival team {team} sprite")),
+                ));
+            } else {
+                commands.spawn((
+                    RivalAvatar { team },
+                    DespawnOnExit(GameState::Match),
+                    Mesh3d(visuals.assets.rival_body_mesh.clone()),
+                    MeshMaterial3d(visuals.assets.rival_material.clone()),
+                    Transform::from_xyz(a.x, 0.82, a.y),
+                    Name::new(format!("Rival team {team}")),
+                ));
+            }
         }
     }
 }

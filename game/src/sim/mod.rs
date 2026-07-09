@@ -3,6 +3,7 @@
 //! reads these; only input/controller/match-pump systems write them.
 
 pub(crate) mod director;
+pub(crate) mod knowledge;
 pub(crate) mod nav;
 pub(crate) mod replay;
 pub(crate) mod sightings;

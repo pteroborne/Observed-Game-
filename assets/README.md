@@ -17,6 +17,10 @@ cargo run -p asset_lab     # the overlay lists every slot + its exact path + sta
 | `floor` | `assets/textures/floor.png` | PNG / JPG   | [ambientCG](https://ambientcg.com/) |
 | `prop`  | `assets/models/prop.glb`    | glTF / GLB  | [Kenney](https://kenney.nl/assets), [Quaternius](https://quaternius.com/), [Poly Pizza](https://poly.pizza/) |
 | `chime` | `assets/sounds/chime.ogg`   | OGG / WAV   | [Kenney audio](https://kenney.nl/assets?q=audio), [Freesound](https://freesound.org/) (filter to CC0) |
+| `runner_stand` / `runner_walk1` / `runner_walk2` | `assets/sprites/runner_*.png` | PNG | [Kenney Platformer Characters](https://kenney.nl/assets/platformer-characters) |
+| `rival_stand` / `rival_walk1` / `rival_walk2` | `assets/sprites/rival_*.png` | PNG | [Kenney Platformer Characters](https://kenney.nl/assets/platformer-characters) |
+| `guardian_stand` | `assets/sprites/guardian_stand.png` | PNG | [Kenney Platformer Characters](https://kenney.nl/assets/platformer-characters) |
+| `control_device` | `assets/sprites/control_device.png` | PNG | [Kenney Sci-Fi RTS](https://kenney.nl/assets/sci-fi-rts) |
 
 The larger first-person asset set is listed in
 [`ASSET_PLAN.md`](ASSET_PLAN.md). Its completed selections and exact CC0
@@ -30,7 +34,9 @@ add a named `AssetSlot` const and a `SLOTS` row in
 The **assembled game** (`cargo run -p observed_game`) consumes the full
 [`ASSET_PLAN.md`](ASSET_PLAN.md): structure, fixtures, characters, gameplay props,
 decor, hazard markers, four audio cues, and the optional HDR environment. Missing
-files retain procedural mesh/colour or silent fallbacks.
+files retain procedural mesh/colour or silent fallbacks. The first-person match also
+uses 2.5D sprite placeholders for dev-visible actors and devices; missing sprite
+slots fall back to the existing procedural meshes.
 
 > Note: both `asset_lab` and `observed_game` point Bevy's asset reader at this
 > workspace `assets/` directory. (By default Bevy resolves `assets/` relative to the

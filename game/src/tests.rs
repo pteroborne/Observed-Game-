@@ -23,6 +23,7 @@ fn test_app() -> App {
     .init_asset::<Mesh>()
     .init_asset::<StandardMaterial>()
     .init_asset::<Image>()
+    .init_asset::<TextureAtlasLayout>()
     .init_asset::<Scene>()
     .init_asset::<AudioSource>()
     .insert_resource(ClearColor(Color::BLACK))
@@ -35,6 +36,29 @@ fn count<T: Component>(app: &mut App) -> usize {
     let world = app.world_mut();
     let mut query = world.query_filtered::<Entity, With<T>>();
     query.iter(world).count()
+}
+
+fn hud_readout(
+    app: &mut App,
+    expected: crate::view::components::MatchHudReadout,
+) -> Option<String> {
+    let world = app.world_mut();
+    let mut query = world.query::<(&crate::view::components::MatchHudReadout, &Text)>();
+    query
+        .iter(world)
+        .find_map(|(readout, text)| (*readout == expected).then(|| (**text).to_string()))
+}
+
+fn result_summary_texts(app: &mut App) -> Vec<String> {
+    let world = app.world_mut();
+    let mut query = world.query_filtered::<&Text, With<crate::screens::menu::ResultsSummaryText>>();
+    query.iter(world).map(|text| (**text).to_string()).collect()
+}
+
+fn all_texts(app: &mut App) -> Vec<String> {
+    let world = app.world_mut();
+    let mut query = world.query::<&Text>();
+    query.iter(world).map(|text| (**text).to_string()).collect()
 }
 
 fn count_audio_cue(app: &mut App, expected: crate::view::components::MatchAudioCue) -> usize {
@@ -683,12 +707,14 @@ fn tab_toggles_the_tac_map_and_draws_the_live_schematic() {
             .resource::<crate::sim::director::MatchDirector>();
         let keys = app.world().resource::<keystones::KeystoneState>();
         let sightings = app.world().resource::<crate::sim::state::RivalSightings>();
+        let knowledge = app.world().resource::<crate::sim::state::MapKnowledge>();
         let tp = app.world().resource::<crate::sim::state::TeleportState>();
         let game = runtime.live.host_match();
         tacmap::build_map(
             &game.competitive,
             keys,
             sightings,
+            knowledge,
             game.reroute_commits,
             tp.place,
         )
@@ -697,19 +723,20 @@ fn tab_toggles_the_tac_map_and_draws_the_live_schematic() {
         !expected_model.rivals.is_empty(),
         "the rivals sharing the entrance at match start should already be witnessed"
     );
-    // Each rival pip also draws a team-label text node (Phase 42c), so the dynamic
-    // element count carries one extra tagged node per pip beyond the box/outline itself.
-    let expected_elements = expected_model.routes.len()
+    // Phase 50 fog of war: rival pips carry no team-label text in the live race, the
+    // exit only draws once found, glimpsed rooms add hollow outlines, and the series
+    // status line is debug-HUD-only.
+    let expected_elements = tacmap::route_segment_count(&expected_model)
         + expected_model.rooms.len()
-        + 1
+        + expected_model.glimpsed.len()
+        + usize::from(expected_model.exit_known)
         + expected_model.keystones.len()
-        + expected_model.rivals.len() * 2
-        + 1
+        + expected_model.rivals.len()
         + 1;
     assert_eq!(
         count::<crate::view::components::TacMapElement>(&mut app),
         expected_elements,
-        "the visible map draws route bars, rooms, exit, keys, rivals, player, and series status"
+        "the visible map draws route bars, known rooms, glimpses, keys, rivals, and the player"
     );
 
     app.world_mut()
@@ -765,6 +792,174 @@ fn tac_map_state_and_elements_are_cleaned_up_after_match() {
 }
 
 #[test]
+fn without_the_debug_flag_the_match_spawns_no_status_hud_or_legend() {
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    app.update();
+
+    assert_eq!(
+        count::<crate::view::components::MatchHud>(&mut app),
+        0,
+        "normal play is HUD-free: no status readout panel"
+    );
+    let world = app.world_mut();
+    let mut readouts = world.query::<&crate::view::components::MatchHudReadout>();
+    assert_eq!(
+        readouts.iter(world).count(),
+        0,
+        "no readout entities exist without the debug HUD"
+    );
+    let texts = all_texts(&mut app);
+    assert!(
+        !texts.iter().any(|text| text.contains("LEGEND")),
+        "the legend is debug-only"
+    );
+    // The player-facing overlays survive the HUD removal.
+    assert_eq!(
+        count::<crate::view::components::TacMapPanel>(&mut app),
+        1,
+        "the tac-map stays available"
+    );
+    assert_eq!(
+        count::<crate::view::components::PausePanel>(&mut app),
+        1,
+        "the pause overlay stays available"
+    );
+}
+
+#[test]
+fn the_tac_map_is_a_survivors_sketch_not_a_blueprint() {
+    let default_spec = crate::map_catalog::default_map_spec(MATCH_SEED);
+    assert!(
+        default_spec.room_count() >= 24,
+        "the fog-of-war assertion must exercise the generated default map"
+    );
+
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    app.update();
+
+    let model = {
+        let runtime = app
+            .world()
+            .resource::<crate::sim::director::MatchDirector>();
+        let keys = app.world().resource::<keystones::KeystoneState>();
+        let sightings = app.world().resource::<crate::sim::state::RivalSightings>();
+        let knowledge = app.world().resource::<crate::sim::state::MapKnowledge>();
+        let tp = app.world().resource::<crate::sim::state::TeleportState>();
+        let game = runtime.live.host_match();
+        tacmap::build_map(
+            &game.competitive,
+            keys,
+            sightings,
+            knowledge,
+            game.reroute_commits,
+            tp.place,
+        )
+    };
+    assert_eq!(
+        model.rooms.len(),
+        1,
+        "at match start the player has only stood in the entrance"
+    );
+    assert!(
+        !model.glimpsed.is_empty(),
+        "the entrance's open doorways are glimpsed neighbours"
+    );
+    assert!(
+        model.rooms.len() + model.glimpsed.len() < model.total_rooms,
+        "most of the generated facility must start unknown"
+    );
+    let entrance = model.rooms[0].0;
+    assert!(
+        !model.routes.is_empty(),
+        "the doorways visible from the entrance are known connections"
+    );
+    assert!(
+        model
+            .routes
+            .iter()
+            .all(|&(a, b)| a == entrance || b == entrance),
+        "every known connection touches the entrance — nothing beyond the player's eyes"
+    );
+    let knowledge = app.world().resource::<crate::sim::state::MapKnowledge>();
+    assert_eq!(
+        model.exit_known,
+        knowledge.knows_room(model.exit),
+        "the exit marker exists exactly when the player has witnessed the exit room"
+    );
+}
+
+#[test]
+fn hud_shows_objective_keystone_and_collapse_readouts_on_the_generated_map() {
+    let default_spec = crate::map_catalog::default_map_spec(MATCH_SEED);
+    assert!(
+        default_spec.room_count() >= 24,
+        "Phase 50's HUD assertion must exercise the generated default map, not the old authored fixture"
+    );
+
+    let mut app = test_app();
+    // The status readouts are debug-only (Phase 50): flip the app-level flag the way
+    // OBSERVED2_DEBUG_HUD would before the match spawns.
+    app.world_mut()
+        .resource_mut::<crate::view::components::DebugHud>()
+        .0 = true;
+    go(&mut app, GameState::Match);
+    app.update();
+
+    let live_room_count = {
+        let director = app
+            .world()
+            .resource::<crate::sim::director::MatchDirector>();
+        director
+            .live
+            .host_match()
+            .competitive
+            .map_spec
+            .as_ref()
+            .expect("game match uses a MapSpec")
+            .room_count()
+    };
+    assert_eq!(
+        live_room_count,
+        default_spec.room_count(),
+        "HUD test should run against map_catalog::default_map_spec"
+    );
+    let required_keys = app.world().resource::<keystones::KeystoneState>().required;
+
+    let objective = hud_readout(
+        &mut app,
+        crate::view::components::MatchHudReadout::Objective,
+    )
+    .expect("objective readout");
+    assert!(objective.contains("EXIT LOCKED"));
+    assert!(
+        objective.contains("tac-map"),
+        "exit geography belongs in the tac-map, not a route hint"
+    );
+
+    let keystones = hud_readout(&mut app, crate::view::components::MatchHudReadout::Keystone)
+        .expect("keystone readout");
+    assert!(keystones.contains("KEYSTONES"));
+    assert!(keystones.contains(&format!("0 / {required_keys}")));
+
+    let collapse = hud_readout(&mut app, crate::view::components::MatchHudReadout::Collapse)
+        .expect("collapse readout");
+    assert!(collapse.contains("COLLAPSE"));
+    assert!(collapse.contains("sealed"));
+    assert!(collapse.contains("frontier"));
+
+    let standing = hud_readout(&mut app, crate::view::components::MatchHudReadout::Standing)
+        .expect("standing readout");
+    assert!(standing.contains("LEADER"));
+    assert!(standing.contains("SERIES"));
+
+    let controls = hud_readout(&mut app, crate::view::components::MatchHudReadout::Controls)
+        .expect("controls readout");
+    assert!(controls.contains("tac-map"));
+}
+
+#[test]
 fn the_full_career_loop_runs_and_grows_the_persistent_profile() {
     let mut app = test_app();
     go(&mut app, GameState::MainMenu);
@@ -807,7 +1002,7 @@ fn completed_match_records_a_replay_and_results_can_open_it() {
         );
     }
 
-    app.world_mut().resource_mut::<screens::MenuCursor>().0 = 0;
+    app.world_mut().resource_mut::<screens::MenuCursor>().0 = 1;
     app.world_mut()
         .resource_mut::<ButtonInput<KeyCode>>()
         .press(KeyCode::Enter);
@@ -824,6 +1019,88 @@ fn completed_match_records_a_replay_and_results_can_open_it() {
             .contains_resource::<screens::replay::ReplayPlayback>()
     );
     assert_eq!(count::<screens::replay::ReplayMapPanel>(&mut app), 1);
+}
+
+#[test]
+fn results_screen_renders_every_outcome_shape() {
+    use observed_core::TeamId;
+
+    let cases = [
+        (
+            flow::MatchResult {
+                placement: Some(1),
+                escaped: 1,
+                absorbed: 3,
+                winner: Some(TeamId(0)),
+                local_won: true,
+            },
+            "VICTORY",
+            "placement 1st",
+        ),
+        (
+            flow::MatchResult {
+                placement: Some(2),
+                escaped: 1,
+                absorbed: 3,
+                winner: Some(TeamId(1)),
+                local_won: false,
+            },
+            "PLACED",
+            "placement 2nd",
+        ),
+        (
+            flow::MatchResult {
+                placement: None,
+                escaped: 1,
+                absorbed: 3,
+                winner: Some(TeamId(2)),
+                local_won: false,
+            },
+            "ABSORBED",
+            "placement",
+        ),
+        (
+            flow::MatchResult {
+                placement: Some(4),
+                escaped: 1,
+                absorbed: 3,
+                winner: Some(TeamId(3)),
+                local_won: false,
+            },
+            "ABSORBED",
+            "placement 4th",
+        ),
+    ];
+
+    for (result, headline, placement_text) in cases {
+        let mut app = test_app();
+        app.world_mut()
+            .resource_mut::<Career>()
+            .record(result.clone());
+        let spec = crate::map_catalog::default_map_spec(MATCH_SEED);
+        let mut tape = crate::sim::replay::ReplayTape::new(MATCH_SEED, &spec);
+        tape.push_sample(0, 1, Vec::new());
+        tape.push_marker(0, 1, "series: test outcome");
+        tape.result = Some(result);
+        app.insert_resource(tape);
+
+        go(&mut app, GameState::Results);
+
+        let all_text = all_texts(&mut app).join("\n");
+        assert!(
+            all_text.contains(headline),
+            "results headline should include {headline}; rendered:\n{all_text}"
+        );
+        let summary = result_summary_texts(&mut app).join("\n");
+        assert!(
+            summary.contains(placement_text),
+            "summary should include {placement_text}; rendered:\n{summary}"
+        );
+        assert!(summary.contains("escaped"));
+        assert!(summary.contains("absorbed"));
+        assert!(summary.contains("seed"));
+        assert!(summary.contains("series: test outcome"));
+    }
 }
 
 #[test]
@@ -2217,5 +2494,222 @@ fn pause_settings_panel_is_hidden_on_a_fresh_match_and_toggles_while_paused() {
         single_visibility::<crate::view::components::PauseSettingsPanel>(&mut app),
         Visibility::Hidden,
         "a second O closes the pause settings overlay"
+    );
+}
+
+// --- Phase 49: audio & game feel -------------------------------------------
+
+#[test]
+fn district_ambience_and_ui_audio_slots_are_manifest_driven() {
+    assert_eq!(
+        observed_assets::DISTRICT_AMBIENCE.len(),
+        observed_style::District::ALL.len(),
+        "the asset manifest must expose exactly one ambience slot per style district"
+    );
+    assert!(
+        crate::view::assets::asset_present(observed_assets::UI_CLICK.path),
+        "the UI click slot should point at the checked-in drop-in file"
+    );
+    assert!(
+        crate::view::assets::asset_present(observed_assets::UI_HOVER.path),
+        "the UI hover slot should point at the checked-in drop-in file"
+    );
+
+    let app = test_app();
+    let ui = app.world().resource::<crate::view::components::UiAssets>();
+    assert!(ui.click.is_some(), "UI click sound handle should load");
+    assert!(ui.hover.is_some(), "UI hover sound handle should load");
+}
+
+#[test]
+fn sprite_placeholder_slots_are_manifest_driven() {
+    for slot in [
+        observed_assets::RUNNER_STAND,
+        observed_assets::RUNNER_WALK1,
+        observed_assets::RUNNER_WALK2,
+        observed_assets::RIVAL_STAND,
+        observed_assets::RIVAL_WALK1,
+        observed_assets::RIVAL_WALK2,
+        observed_assets::GUARDIAN_STAND,
+        observed_assets::CONTROL_DEVICE,
+    ] {
+        assert!(
+            crate::view::assets::asset_present(slot.path),
+            "{} should point at a checked-in 2.5D placeholder sprite",
+            slot.name
+        );
+    }
+}
+
+#[test]
+fn muted_sfx_suppresses_rival_bleed_cue_without_blocking_detection() {
+    use crate::sim::director::MatchDirector;
+    use crate::view::components::MatchAudioCue;
+
+    let mut app = test_app();
+    app.insert_resource(crate::settings::Settings {
+        sfx_volume: 0.0,
+        first_run: false,
+        ..Default::default()
+    });
+    go(&mut app, GameState::Match);
+    app.update();
+
+    let neighbour = {
+        let rt = app.world().resource::<MatchDirector>();
+        let game = rt.live.host_match();
+        let conns = crate::sim::nav::connections_for(game, game.local_room());
+        *conns.first().expect("the start room has a neighbour")
+    };
+    {
+        let mut rt = app.world_mut().resource_mut::<MatchDirector>();
+        let base = rt.live.host.match_state.competitive.teams[1].member_base;
+        rt.live.host.match_state.competitive.structure.graph.players[base] = neighbour;
+    }
+    app.update();
+    app.update();
+
+    assert_eq!(
+        count_audio_cue(&mut app, MatchAudioCue::RivalBleed),
+        0,
+        "muted SFX must not spawn inaudible rival-bleed cue entities"
+    );
+    assert!(
+        app.world()
+            .resource::<crate::view::components::RivalBleedState>()
+            .last_heard
+            .iter()
+            .any(|&(_, room)| room == neighbour),
+        "the detection bookkeeping still updates even when the player's SFX channel is muted"
+    );
+}
+
+#[test]
+fn collapse_and_klaxon_stings_are_gated_by_volume_and_fire_once() {
+    use crate::sim::director::MatchDirector;
+    use crate::sim::state::TeleportState;
+    use crate::view::components::MatchAudioCue;
+    use observed_core::TeamId;
+    use observed_match::elimination::EscapeCountdown;
+
+    let mut app = test_app();
+    app.insert_resource(crate::settings::Settings {
+        sfx_volume: 0.0,
+        first_run: false,
+        ..Default::default()
+    });
+    go(&mut app, GameState::Match);
+    app.update();
+
+    let dying_room = {
+        let mut rt = app.world_mut().resource_mut::<MatchDirector>();
+        rt.live.host.match_state.competitive.purge_line = 0.0;
+        rt.live
+            .host_match()
+            .competitive
+            .dying_room()
+            .expect("a room ahead of the collapse is dying")
+    };
+    {
+        let mut tp = app.world_mut().resource_mut::<TeleportState>();
+        tp.place = teleport::Place::Room(dying_room);
+        tp.rendered = None;
+    }
+    {
+        let mut rt = app.world_mut().resource_mut::<MatchDirector>();
+        rt.series.current.countdown = Some(EscapeCountdown {
+            started_by: TeamId(0),
+            duration_rounds: 4,
+            remaining_rounds: 3,
+        });
+    }
+
+    app.update();
+    assert_eq!(
+        count_audio_cue(&mut app, MatchAudioCue::CollapseSting),
+        0,
+        "muted SFX suppresses the collapse sting"
+    );
+    assert_eq!(
+        count_audio_cue(&mut app, MatchAudioCue::Klaxon),
+        0,
+        "muted SFX suppresses the klaxon loop"
+    );
+
+    app.world_mut()
+        .resource_mut::<crate::settings::Settings>()
+        .sfx_volume = 1.0;
+    app.update();
+    app.update();
+    assert_eq!(
+        count_audio_cue(&mut app, MatchAudioCue::CollapseSting),
+        1,
+        "the collapse sting fires once when the channel becomes audible"
+    );
+    assert_eq!(
+        count_audio_cue(&mut app, MatchAudioCue::Klaxon),
+        1,
+        "the active countdown owns one klaxon loop"
+    );
+
+    app.update();
+    assert_eq!(
+        count_audio_cue(&mut app, MatchAudioCue::CollapseSting),
+        1,
+        "the collapse sting does not refire every frame"
+    );
+    assert_eq!(
+        count_audio_cue(&mut app, MatchAudioCue::Klaxon),
+        1,
+        "the klaxon loop is not duplicated while the countdown remains active"
+    );
+}
+
+#[test]
+fn idle_match_does_not_spawn_repeating_audio_cues() {
+    use crate::view::components::MatchAudioCue;
+
+    let mut app = test_app();
+    app.insert_resource(crate::settings::Settings {
+        first_run: false,
+        ..Default::default()
+    });
+    go(&mut app, GameState::Match);
+    let ambience_count = count_audio_cue(&mut app, MatchAudioCue::Ambience);
+    assert!(
+        ambience_count <= observed_style::District::ALL.len() + 1,
+        "ambience beds should be a bounded match setup cost, not per-frame spawns"
+    );
+
+    for _ in 0..180 {
+        app.update();
+    }
+
+    assert_eq!(
+        count_audio_cue(&mut app, MatchAudioCue::Ambience),
+        ambience_count,
+        "idle updates must not spawn additional ambience loop entities"
+    );
+    for cue in [
+        MatchAudioCue::Footstep,
+        MatchAudioCue::Door,
+        MatchAudioCue::Escape,
+        MatchAudioCue::Reroute,
+        MatchAudioCue::RivalBleed,
+        MatchAudioCue::UiClick,
+        MatchAudioCue::UiHover,
+        MatchAudioCue::Jump,
+        MatchAudioCue::Klaxon,
+        MatchAudioCue::CollapseSting,
+    ] {
+        assert_eq!(
+            count_audio_cue(&mut app, cue),
+            0,
+            "idle match spawned unexpected repeated cue {cue:?}"
+        );
+    }
+    assert!(
+        count_audio_cue(&mut app, MatchAudioCue::Land) <= 1,
+        "the first grounded fixed-step may produce one landing cue, never a stream"
     );
 }

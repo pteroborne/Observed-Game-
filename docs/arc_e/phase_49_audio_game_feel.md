@@ -75,3 +75,35 @@ Per the README recipe, plus the Legibility Contract audit run
 (`OBSERVED2_VIS_AUDIT`) and a refreshed bot-POV evidence GIF. Report: new cues/slots
 added, the attenuation/occlusion model, the game-feel effects and how each stays inside
 the comfort language, Legibility audit result, verification results.
+
+## As landed
+
+- Added manifest-owned per-district ambience slots in `observed_assets::DISTRICT_AMBIENCE`
+  and loaded them from `MatchAssets`, eliminating district sound path literals from the
+  game layer. The UI sound slots now point at the checked-in `ui_click` and `ui_hover`
+  files and are loaded through named manifest constants.
+- Diagnosed the audio stutter risk in the WIP path as stream pause/resume churn plus
+  always-on diagnostics logging. The landed path keeps district ambience loop entities
+  warm and cross-fades only their volume, while muted SFX channels no longer spawn
+  inaudible one-shot cue entities.
+- Follow-up diagnosis confirmed the remaining "Geiger counter" stutter was a rapid
+  one-shot stream, not faulty media playback: an idle match repeatedly spawned `Land`
+  cue entities because exact floor/deck contact could toggle the traversal body from
+  grounded to airborne and back each fixed step. `observed_traversal` now keeps exact
+  resting support grounded and reports `landed` only on an actual fall-to-support
+  transition.
+- Collapse/klaxon stings are SFX-volume-gated and fire once per event/active loop.
+  Rival bleed remains distance-attenuated through the existing threshold-distance model.
+- Camera feedback now uses smooth jump/land/teleport height easing and a tiny steady
+  collapse level offset. The old teleport/collapse jitter was removed to keep the
+  comfort ruling binding: no camera shake and no full-screen flash/jolt for route
+  instability or collapse.
+- Added regressions covering district manifest alignment, UI slot loading, muted cue
+  gating, one-shot/loop sting behavior, idle-match audio cue stability, and traversal
+  resting support.
+- Verification passed: `cargo fmt --all`, `cargo test -p observed_traversal` (17 tests),
+  `cargo test -p observed_game` (195 tests),
+  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`,
+  `OBSERVED2_VIS_AUDIT=docs/evidence/visual_audit cargo run -p observed_game` (zero
+  findings), `OBSERVED2_CAPTURE_BOT=docs/evidence/bot_pov cargo run -p observed_game`,
+  and the refreshed FFmpeg palette/GIF pass for `docs/evidence/bot_pov/bot_pov.gif`.

@@ -96,6 +96,7 @@ fn rival_signature_hash(signals: &[crate::sim::nav::RivalSignal]) -> u64 {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn rebuild_place(
     assets: Res<MatchAssets>,
+    images: Res<Assets<Image>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     tp: ResMut<TeleportState>,
@@ -383,7 +384,7 @@ pub(crate) fn rebuild_place(
 
     // Spawn dropped items
     for item in items.placed_in(tp.place) {
-        item_visuals::spawn_dropped_item(&mut commands, &assets, item, y_offset);
+        item_visuals::spawn_dropped_item(&mut commands, &assets, &images, item, y_offset);
     }
 
     // Lighting and surface details
@@ -423,11 +424,45 @@ pub(crate) fn rebuild_place(
     if let Place::Room(room) = tp.place
         && room == guardian.room
     {
-        spawn_guardian_model(&mut commands, &assets, guardian.pos);
+        spawn_guardian_model(&mut commands, &assets, &images, guardian.pos);
     }
 }
 
-pub(crate) fn spawn_guardian_model(commands: &mut Commands, assets: &MatchAssets, pos: Vec3) {
+pub(crate) fn spawn_guardian_model(
+    commands: &mut Commands,
+    assets: &MatchAssets,
+    images: &Assets<Image>,
+    pos: Vec3,
+) {
+    if let Some(image) = assets.guardian_sprite(images) {
+        commands
+            .spawn((
+                crate::guardian::GuardianModel,
+                PlaceGeometry,
+                DespawnOnExit(GameState::Match),
+                crate::view::sprites::sprite3d_components(
+                    image,
+                    &observed_style::marker(observed_style::MarkerRole::Director),
+                    crate::view::sprites::ACTOR_PIXELS_PER_METRE,
+                ),
+                Transform::from_xyz(pos.x, (pos.y - 0.76).max(0.0) + 0.02, pos.z),
+                Name::new("Guardian sprite"),
+            ))
+            .with_children(|g| {
+                g.spawn((
+                    PointLight {
+                        color: Color::srgb(1.0, 0.05, 0.05),
+                        intensity: 3000.0,
+                        range: 9.0,
+                        shadows_enabled: false,
+                        ..default()
+                    },
+                    Transform::from_xyz(0.0, 0.9, 0.0),
+                ));
+            });
+        return;
+    }
+
     commands
         .spawn((
             crate::guardian::GuardianModel,

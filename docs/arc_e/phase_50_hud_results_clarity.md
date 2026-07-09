@@ -4,6 +4,23 @@
 how close is the collapse" at a glance, and the results screen tells the run's story
 legibly. Read [README.md](README.md) first.
 
+> **2026-07-09 immersion redirection (supersedes rulings 1–2 below).** The first HUD
+> pass shipped an always-on multi-line status panel; playtest direction reversed it:
+>
+> - **Normal play is HUD-free.** The status readouts and the legend spawn only under
+>   the app-level `DebugHud` flag (`OBSERVED2_DEBUG_HUD`, implied by
+>   `OBSERVED2_VIS_AUDIT`/`OBSERVED2_FREECAM`). The world communicates diegetically;
+>   the pause overlay and Tab tac-map remain player-facing.
+> - **The tac-map is a survivor's sketch, not a blueprint.** A `MapKnowledge` ledger
+>   (sibling of `RivalSightings`, written in `sim/knowledge.rs` from the player's
+>   teleport place) records visited rooms, doorway-glimpsed rooms, and witnessed
+>   connections; `tacmap::build_map` filters ALL structure through it. Unknown rooms
+>   are absent, glimpsed rooms are hollow outlines, the exit marker appears only once
+>   the exit room is witnessed, keystone/collapse/rival marks only on known rooms, and
+>   a witnessed edge a reroute removed silently drops off. Bounds/sizing come from the
+>   full facility so discovered rooms never shift. Rival team labels are
+>   spectator-mode-only; the series status line is debug-HUD-only.
+
 ## Read first
 
 - `game/src/screens/hud.rs` — `spawn_match_hud` (status panel, pause, tac-map panel,

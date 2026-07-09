@@ -97,6 +97,14 @@ pub(crate) fn freecam_enabled() -> bool {
     std::env::var("OBSERVED2_FREECAM").is_ok()
 }
 
+/// Whether the match spawns the debug status HUD (top-left readouts) and the legend.
+/// Off by default (Phase 50): normal play communicates diegetically and through the
+/// tac-map. `OBSERVED2_DEBUG_HUD` turns it on explicitly; a visual-audit or freecam
+/// session implies it, since those flows read the on-screen readouts.
+pub(crate) fn debug_hud_enabled() -> bool {
+    std::env::var("OBSERVED2_DEBUG_HUD").is_ok() || visual_audit_enabled() || freecam_enabled()
+}
+
 pub(crate) fn threshold_label(threshold: &ThresholdLink) -> String {
     format!(
         "R{}:S{} -> H{}-{}:{}:S{}",

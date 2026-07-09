@@ -83,7 +83,7 @@ The following duplication patterns have been identified in the codebase. These s
 
 ## Feasibility Labs (`labs/`)
 
-The 51 prototype labs in `labs/` are independent Bevy applications designed to isolate and test specific technical questions. They follow a strict sandbox model, allowing full reset (`R` key) without restarting. They are grouped here by testing domain:
+The 52 prototype labs in `labs/` are independent Bevy applications designed to isolate and test specific technical questions. They follow a strict sandbox model, allowing full reset (`R` key) without restarting. They are grouped here by testing domain:
 
 ### Foundation & Controls
 - `menu_lab` & `control_lab`: Boot states, pause systems, rebind overlays, intent playback, controller assignment.
@@ -106,6 +106,9 @@ The 51 prototype labs in `labs/` are independent Bevy applications designed to i
 
 ### Networking
 - `network_lab` & `net_match_lab`: Simulated packet drop/jitter repair, lockstep synchronizers, live multiplayer match sessions.
+
+### Presentation & Asset Integration
+- `sprite3d_placeholder_lab`: Bevy `bevy_sprite3d` proof for CC0 2.5D dev sprites in the 3D match scene, including image-readiness fallback, yaw-facing billboards, and reset-safe projected entities.
 
 ---
 

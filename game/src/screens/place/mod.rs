@@ -52,68 +52,37 @@ pub(crate) fn present_match_camera(
         let dt = time.delta_secs();
         juice.land_timer = (juice.land_timer - dt).max(0.0);
         juice.jump_timer = (juice.jump_timer - dt).max(0.0);
-        juice.teleport_shake = (juice.teleport_shake - dt).max(0.0);
+        juice.teleport_ease_timer = (juice.teleport_ease_timer - dt).max(0.0);
 
         let mut offset = Vec3::ZERO;
 
-        // 1. Landing camera dip
         if juice.land_timer > 0.0 {
             let t = juice.land_timer / 0.25;
             offset.y -= (t * std::f32::consts::PI).sin() * 0.18;
         }
 
-        // 2. Jumping camera lift
         if juice.jump_timer > 0.0 {
             let t = juice.jump_timer / 0.20;
             offset.y += (t * std::f32::consts::PI).sin() * 0.08;
         }
 
-        // 3. Teleport transition shake
-        let mut shake_rot = Quat::IDENTITY;
-        let elapsed = time.elapsed_secs();
-        if juice.teleport_shake > 0.0 {
-            let t = juice.teleport_shake;
-            offset.x += (elapsed * 55.0).sin() * t * 0.15;
-            offset.y += (elapsed * 47.0).cos() * t * 0.15;
-
-            let rot_t = t * 0.02;
-            shake_rot = Quat::from_euler(
-                EulerRot::YXZ,
-                (elapsed * 49.0).cos() * rot_t,
-                (elapsed * 61.0).sin() * rot_t,
-                0.0,
-            );
+        if juice.teleport_ease_timer > 0.0 {
+            const TELEPORT_CAMERA_EASE_SECS: f32 = 0.45;
+            let t = (juice.teleport_ease_timer / TELEPORT_CAMERA_EASE_SECS).clamp(0.0, 1.0);
+            let pulse = (t * std::f32::consts::PI).sin();
+            offset.y += pulse * 0.10;
+            offset.z -= pulse * 0.04;
         }
 
-        // 4. Collapse camera shake
         let game = runtime.live.host_match();
         let collapse_state =
             crate::screens::match_runtime::ambience::collapse_state_for_place(game, tp.place);
 
         if collapse_state == observed_match::facility::CollapseState::Dying {
-            let intensity = 0.04;
-            offset.x += (elapsed * 43.0).sin() * intensity * 0.5;
-            offset.y += (elapsed * 37.0).cos() * intensity * 0.5;
-            offset.z += (elapsed * 51.0).sin() * intensity * 0.5;
-
-            let rot_intensity = 0.003;
-            let pitch = (elapsed * 47.0).sin() * rot_intensity;
-            let yaw = (elapsed * 39.0).cos() * rot_intensity;
-            let roll = (elapsed * 53.0).sin() * rot_intensity;
-            shake_rot *= Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll);
+            offset.y -= 0.025;
         }
 
-        let klaxon_active =
-            crate::screens::match_runtime::ambience::countdown_klaxon_active(&runtime);
-        if klaxon_active {
-            let pulse = ((elapsed * std::f32::consts::PI).sin() * 0.5 + 0.5).powf(3.0);
-            let intensity = pulse * 0.015;
-            offset.y += (elapsed * 23.0).sin() * intensity;
-        }
-
-        // Apply offsets in camera space
         let local_offset = transform.rotation * offset;
         transform.translation += local_offset;
-        transform.rotation *= shake_rot;
     }
 }

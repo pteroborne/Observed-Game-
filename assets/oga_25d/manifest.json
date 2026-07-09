@@ -1,0 +1,155 @@
+{
+  "name": "OpenGameArt 2.5D FPS intake",
+  "collection_url": "https://opengameart.org/content/25d-fps-cc0",
+  "retrieved_on": "2026-07-09",
+  "status": "raw_intake",
+  "entries": [
+    {
+      "id": "nmn_items",
+      "title": "Items - armor, health, ammo",
+      "source_url": "https://opengameart.org/content/items-armor-health-ammo",
+      "author": "Nmn",
+      "license": "CC0",
+      "files": ["raw/nmn_items/items_paletted.png"],
+      "intended_roles": ["battery_charge", "route_cell", "repair_token", "equipment_pickup"]
+    },
+    {
+      "id": "nmn_decorations",
+      "title": "Decorations - torches, trees, some corpses",
+      "source_url": "https://opengameart.org/content/decorations-torches-trees-some-corpses",
+      "author": "Nmn",
+      "license": "CC0",
+      "files": ["raw/nmn_decorations/decorations_a_paletted.png"],
+      "intended_roles": ["room_decoration", "animated_prop", "anchor_torch_candidate"]
+    },
+    {
+      "id": "mutantleg_lab_sprites",
+      "title": "LAB sprites",
+      "source_url": "https://opengameart.org/content/lab-sprites",
+      "author": "mutantleg",
+      "license": "CC0",
+      "files": ["raw/mutantleg_lab_sprites/lab_sprite.zip"],
+      "intended_roles": ["actor_sheet", "object_sheet", "lab_prop"]
+    },
+    {
+      "id": "mutantleg_lab_textures",
+      "title": "LAB textures",
+      "source_url": "https://opengameart.org/content/lab-textures",
+      "author": "mutantleg",
+      "license": "CC0",
+      "files": ["raw/mutantleg_lab_textures/lab_texture.zip"],
+      "intended_roles": ["wall_texture", "floor_texture", "ceiling_texture"]
+    },
+    {
+      "id": "nmn_human_guard",
+      "title": "Human guard for Sprite Based FPS",
+      "source_url": "https://opengameart.org/content/human-guard-for-sprite-based-fps",
+      "author": "Nmn",
+      "license": "CC0",
+      "files": ["raw/nmn_human_guard/enforcer_palette.png"],
+      "intended_roles": ["rival_actor", "directional_actor_sheet"]
+    },
+    {
+      "id": "knekko_oldschool_decorations",
+      "title": "Oldschool FPS decoration sprites",
+      "source_url": "https://opengameart.org/content/oldschool-fps-decoration-sprites",
+      "author": "knekko",
+      "license": "CC0",
+      "files": ["raw/knekko_oldschool_decorations/oldschool_fps_decoration_sprites.zip"],
+      "intended_roles": ["room_decoration", "pickup_candidate", "equipment_candidate"]
+    },
+    {
+      "id": "knekko_guard",
+      "title": "The Guard",
+      "source_url": "https://opengameart.org/content/the-guard",
+      "author": "knekko",
+      "license": "CC0",
+      "files": ["raw/knekko_guard/guard_spritesheet.png"],
+      "intended_roles": ["rival_actor", "guardian_candidate", "directional_actor_sheet"]
+    },
+    {
+      "id": "xcvg_keycards",
+      "title": "Key/Credit Cards",
+      "source_url": "https://opengameart.org/content/keycredit-cards",
+      "author": "XCVG",
+      "license": "CC0",
+      "files": [
+        "raw/xcvg_keycards/xcvg_cardkeys_premade.zip",
+        "raw/xcvg_keycards/xcvg_cardkeys_doom.zip"
+      ],
+      "intended_roles": ["keystone_card", "exit_access_card", "hud_inventory_icon"]
+    },
+    {
+      "id": "pasmate_crosshairs64",
+      "title": "64 crosshairs pack",
+      "source_url": "https://opengameart.org/content/64-crosshairs-pack",
+      "author": "para",
+      "license": "CC0",
+      "files": [
+        "raw/pasmate_crosshairs64/crosshairs64.png",
+        "raw/pasmate_crosshairs64/pasmateRs_crosshairs64.zip"
+      ],
+      "intended_roles": ["interaction_reticle", "hud_icon"]
+    },
+    {
+      "id": "pasmate_crosshairs64_split",
+      "title": "64 crosshairs pack - Split",
+      "source_url": "https://opengameart.org/content/64-crosshairs-pack-split",
+      "author": "LoneCoder",
+      "license": "CC0",
+      "files": ["raw/pasmate_crosshairs64_split/Crosshairs_64.zip"],
+      "intended_roles": ["interaction_reticle", "hud_icon"]
+    },
+    {
+      "id": "cursor_pack",
+      "title": "Cursor Pack",
+      "source_url": "https://opengameart.org/content/cursor-pack",
+      "author": "Ivan Voirol",
+      "license": "CC0",
+      "files": [
+        "raw/cursor_pack/cursor_6.png",
+        "raw/cursor_pack/cursor_7.png",
+        "raw/cursor_pack/icon_12.png",
+        "raw/cursor_pack/gif1.png",
+        "raw/cursor_pack/gif2.png",
+        "raw/cursor_pack/gif3.png",
+        "raw/cursor_pack/gif4.png",
+        "raw/cursor_pack/gif5.png"
+      ],
+      "intended_roles": ["interaction_reticle", "cursor_reference"]
+    },
+    {
+      "id": "fps_weapons_overlay",
+      "title": "FPS Weapons Overlay",
+      "source_url": "https://opengameart.org/content/fps-weapons-overlay",
+      "author": "knekko",
+      "license": "CC0",
+      "files": [
+        "raw/fps_weapons_overlay/fps_weapons.png",
+        "raw/fps_weapons_overlay/fps_weapons_0.png"
+      ],
+      "intended_roles": ["first_person_tool_reference"],
+      "notes": "Non-combat use only: scanner, grapple, route-cable, relay placer, or observation tool."
+    },
+    {
+      "id": "sci_fi_sound_library",
+      "title": "Sci-Fi Sound Effects Library",
+      "source_url": "https://opengameart.org/content/sci-fi-sound-effects-library",
+      "author": "Little Robot Sound Factory",
+      "license": "CC-BY 3.0",
+      "files": ["raw/sci_fi_sound_library/Sci-Fi_Sound_Library.zip"],
+      "intended_roles": ["reference_audio"],
+      "notes": "Reference-only until attribution support is planned or a CC0 replacement is selected."
+    },
+    {
+      "id": "ui_sound_library",
+      "title": "UI Sound Effects Library",
+      "source_url": "https://opengameart.org/content/ui-sound-effects-library",
+      "author": "Little Robot Sound Factory",
+      "license": "CC-BY 3.0",
+      "files": ["raw/ui_sound_library/UI_Sound_Library.zip"],
+      "intended_roles": ["reference_audio"],
+      "notes": "Reference-only until attribution support is planned or a CC0 replacement is selected."
+    }
+  ]
+}

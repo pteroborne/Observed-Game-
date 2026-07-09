@@ -18,13 +18,14 @@ use crate::sim::director::MatchDirector;
 use crate::sim::nav::nav_from_brain;
 use crate::sim::replay::ReplayTape;
 use crate::sim::state::{
-    ItemIntent, LastTeleportPad, MatchIntent, MatchPaused, RivalSightings, SpectatorBot,
-    TeleportState,
+    ItemIntent, LastTeleportPad, MapKnowledge, MatchIntent, MatchPaused, RivalSightings,
+    SpectatorBot, TeleportState,
 };
 use crate::teleport::Place;
 use crate::view::assets::{MatchAssets, all_planned_assets_present};
 use crate::view::components::{
-    CameraJuice, DecohereFx, MatchAudioState, RivalBleedState, TacMapState, TeleportAnimation,
+    CameraJuice, DebugHud, DecohereFx, MatchAudioState, RivalBleedState, TacMapState,
+    TeleportAnimation,
 };
 
 // --- match (first-person 3D, networked) ------------------------------------
@@ -38,6 +39,7 @@ pub(crate) fn setup_match(
     seed: Option<Res<crate::flow::ActiveMatchSeed>>,
     spectator_bot: Option<ResMut<SpectatorBot>>,
     settings: Res<crate::settings::Settings>,
+    debug_hud: Res<DebugHud>,
 ) {
     career.begin_match();
     if !all_planned_assets_present() {
@@ -84,6 +86,7 @@ pub(crate) fn setup_match(
         stride_distance: 0.0,
         last_place: start_place,
         escaped_count: initial_escaped,
+        collapse_sting_place: None,
     });
     commands.insert_resource(RivalBleedState::default());
     commands.insert_resource(TeleportState {
@@ -103,6 +106,7 @@ pub(crate) fn setup_match(
     commands.insert_resource(keys);
     commands.insert_resource(items);
     commands.insert_resource(RivalSightings::default());
+    commands.insert_resource(MapKnowledge::default());
     let guardian_room = map_spec
         .role_room(RoomRole::GuardianControl)
         .unwrap_or_else(|| {
@@ -127,7 +131,7 @@ pub(crate) fn setup_match(
         &mut materials,
     ));
 
-    super::super::hud::spawn_match_hud(&mut commands, settings.high_contrast);
+    super::super::hud::spawn_match_hud(&mut commands, settings.high_contrast, debug_hud.0);
 }
 
 /// Every resource the Match session owns, enumerated once. `setup_match` inserts
@@ -152,6 +156,7 @@ macro_rules! for_each_match_resource {
         $apply!(crate::view::components::CameraJuice);
         $apply!(crate::keystones::KeystoneState);
         $apply!(crate::sim::state::RivalSightings);
+        $apply!(crate::sim::state::MapKnowledge);
         $apply!(crate::items::ItemsState);
         $apply!(crate::guardian::Guardian);
         $apply!(crate::guardian::ActionLog);

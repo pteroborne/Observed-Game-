@@ -4,7 +4,7 @@
 //! controller, and match-pump systems write them. Nothing here references rendering,
 //! UI, audio, or asset types.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use bevy::prelude::*;
 use observed_core::{RoomId, TeamId};
@@ -245,6 +245,97 @@ impl RivalSightings {
     /// The last-witnessed sighting of `team` in `room`, if any.
     pub fn get(&self, team: TeamId, room: RoomId) -> Option<Sighting> {
         self.teams.get(&team.0)?.get(&room).copied()
+    }
+}
+
+/// The team-local **map knowledge ledger**: fog of war over the facility's *structure*,
+/// the sibling of [`RivalSightings`] (which demotes rival presence). The tac-map draws
+/// only what the local player has personally witnessed — the ever-changing maze must be
+/// explored, never read off a complete schematic:
+///
+/// - `visited` — rooms the player has physically stood in.
+/// - `glimpsed` — rooms seen through an open threshold (a doorway preview) but never
+///   entered. They read as "somewhere is there", not what it is.
+/// - `edges` — connections witnessed first-hand: a doorway seen from inside a room, or a
+///   hallway actually walked. A reroute that removes an edge silently drops it from the
+///   map (the projection filters against the live spec), which is exactly the feel:
+///   your notes go stale, the facility does not owe you corrections.
+///
+/// Presentation-only: written from the player's teleport place each frame, never read by
+/// the deterministic brain, so determinism/replay/lockstep are untouched.
+#[derive(Resource, Default, Debug, Clone)]
+pub struct MapKnowledge {
+    pub visited: BTreeSet<RoomId>,
+    pub glimpsed: BTreeSet<RoomId>,
+    pub edges: BTreeSet<(RoomId, RoomId)>,
+}
+
+impl MapKnowledge {
+    fn edge_key(a: RoomId, b: RoomId) -> (RoomId, RoomId) {
+        if a.0 <= b.0 { (a, b) } else { (b, a) }
+    }
+
+    /// The player stands in `room`: it is fully known from now on.
+    pub fn visit(&mut self, room: RoomId) {
+        self.glimpsed.remove(&room);
+        self.visited.insert(room);
+    }
+
+    /// The player saw `room` through an open threshold without entering it. A visit
+    /// always outranks a glimpse.
+    pub fn glimpse(&mut self, room: RoomId) {
+        if !self.visited.contains(&room) {
+            self.glimpsed.insert(room);
+        }
+    }
+
+    /// The player witnessed a connection between `a` and `b` (saw the doorway, or
+    /// walked the hallway). Stored undirected.
+    pub fn connect(&mut self, a: RoomId, b: RoomId) {
+        self.edges.insert(Self::edge_key(a, b));
+    }
+
+    /// Whether `room` appears on the player's map at all (visited or glimpsed).
+    pub fn knows_room(&self, room: RoomId) -> bool {
+        self.visited.contains(&room) || self.glimpsed.contains(&room)
+    }
+
+    /// Whether the player has witnessed the `a`–`b` connection.
+    pub fn knows_edge(&self, a: RoomId, b: RoomId) -> bool {
+        self.edges.contains(&Self::edge_key(a, b))
+    }
+}
+
+#[cfg(test)]
+mod knowledge_tests {
+    use super::*;
+
+    #[test]
+    fn a_visit_outranks_and_clears_a_glimpse() {
+        let mut knowledge = MapKnowledge::default();
+        knowledge.glimpse(RoomId(3));
+        assert!(knowledge.knows_room(RoomId(3)));
+        assert!(knowledge.glimpsed.contains(&RoomId(3)));
+
+        knowledge.visit(RoomId(3));
+        assert!(knowledge.visited.contains(&RoomId(3)));
+        assert!(!knowledge.glimpsed.contains(&RoomId(3)));
+
+        // A later glimpse of an already-visited room never demotes it.
+        knowledge.glimpse(RoomId(3));
+        assert!(!knowledge.glimpsed.contains(&RoomId(3)));
+    }
+
+    #[test]
+    fn edges_are_undirected_and_unknown_rooms_stay_unknown() {
+        let mut knowledge = MapKnowledge::default();
+        knowledge.connect(RoomId(5), RoomId(2));
+        assert!(knowledge.knows_edge(RoomId(2), RoomId(5)));
+        assert!(knowledge.knows_edge(RoomId(5), RoomId(2)));
+        assert!(
+            !knowledge.knows_room(RoomId(7)),
+            "a room never witnessed stays off the map"
+        );
     }
 }
 

@@ -27,6 +27,7 @@ use bevy::{
     prelude::*,
     window::{PresentMode, WindowResolution},
 };
+use bevy_sprite3d::prelude::Sprite3dPlugin;
 
 pub use flow::{Career, MatchResult};
 
@@ -56,20 +57,22 @@ impl Plugin for ObservedGamePlugin {
             .init_resource::<crate::flow::ActiveMatchSeed>()
             .insert_resource(crate::flow::load_career())
             .insert_resource(crate::settings::load_settings())
+            .insert_resource(crate::view::components::DebugHud(
+                crate::evidence::debug_hud_enabled(),
+            ))
             .add_systems(Startup, (setup_camera, setup_ui_assets))
-            .add_plugins((screens::ScreensPlugin, screens::MatchPlugin));
+            .add_plugins((Sprite3dPlugin, screens::ScreensPlugin, screens::MatchPlugin));
     }
 }
 
 fn setup_ui_assets(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let load_sound = |path: &'static str| {
-        let slot = observed_assets::slot(path);
-        let present = observed_assets::slot_present(&slot, &observed_assets::assets_root());
-        present.then(|| asset_server.load::<AudioSource>(slot.path))
+    let load_sound = |slot: observed_assets::AssetSlot| {
+        crate::view::assets::asset_present(slot.path)
+            .then(|| asset_server.load::<AudioSource>(slot.path))
     };
     commands.insert_resource(crate::view::components::UiAssets {
-        click: load_sound("click"),
-        hover: load_sound("hover"),
+        click: load_sound(observed_assets::UI_CLICK),
+        hover: load_sound(observed_assets::UI_HOVER),
     });
 }
 

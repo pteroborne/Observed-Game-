@@ -43,11 +43,12 @@ pub(crate) fn spawn_keystone_item(
 pub(crate) fn spawn_dropped_item(
     commands: &mut Commands,
     assets: &MatchAssets,
+    images: &Assets<Image>,
     item: PlacedItem,
     y_offset: f32,
 ) {
     match item.kind {
-        ItemKind::AnchorTorch => spawn_anchor_torch(commands, assets, item.pos, y_offset),
+        ItemKind::AnchorTorch => spawn_anchor_torch(commands, assets, images, item.pos, y_offset),
         ItemKind::TeleportPad => spawn_teleport_pad(commands, assets, item.pos, y_offset),
     }
 }
@@ -55,9 +56,45 @@ pub(crate) fn spawn_dropped_item(
 pub(crate) fn spawn_anchor_torch(
     commands: &mut Commands,
     assets: &MatchAssets,
+    images: &Assets<Image>,
     pos: Vec2,
     y_offset: f32,
 ) {
+    if let Some(image) = assets.control_device_sprite(images) {
+        commands
+            .spawn((
+                DroppedItemVisual,
+                PlaceGeometry,
+                DespawnOnExit(GameState::Match),
+                crate::view::sprites::sprite3d_components(
+                    image,
+                    &style::marker(MarkerRole::Control),
+                    crate::view::sprites::DEVICE_PIXELS_PER_METRE,
+                ),
+                Transform::from_xyz(pos.x, y_offset + 0.03, pos.y),
+                Name::new("Anchor torch sprite"),
+            ))
+            .with_children(|torch| {
+                torch.spawn((
+                    Mesh3d(assets.halo_mesh.clone()),
+                    MeshMaterial3d(assets.anchor_torch_material.clone()),
+                    Transform::from_xyz(0.0, -0.02, 0.0).with_scale(Vec3::new(1.3, 1.0, 1.3)),
+                    Name::new("Anchor torch floor halo"),
+                ));
+                torch.spawn((
+                    PointLight {
+                        color: style::marker(MarkerRole::Control).base_color,
+                        intensity: 1_900.0,
+                        range: 6.5,
+                        shadows_enabled: false,
+                        ..default()
+                    },
+                    Transform::from_xyz(0.0, 0.45, 0.0),
+                ));
+            });
+        return;
+    }
+
     commands
         .spawn((
             DroppedItemVisual,

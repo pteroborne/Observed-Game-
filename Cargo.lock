@@ -1665,6 +1665,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_sprite3d"
+version = "8.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4d48211f81bf10733ae4b4e90311a62b3ec72f2a80d100ad24be78676d7ecc5"
+dependencies = [
+ "bevy",
+]
+
+[[package]]
 name = "bevy_sprite_render"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5185,6 +5194,7 @@ name = "observed_game"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy_sprite3d",
  "observed_assets",
  "observed_core",
  "observed_diagnostics",
@@ -6334,6 +6344,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eda41003dc44290527a59b13432d4a0379379fa074b70174882adfbdfd917844"
 dependencies = [
  "bitflags 2.13.0",
+]
+
+[[package]]
+name = "sprite3d_placeholder_lab"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_sprite3d",
+ "observed_assets",
+ "observed_style",
 ]
 
 [[package]]

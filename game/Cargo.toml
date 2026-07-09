@@ -41,5 +41,7 @@ observed_facility = { path = "../crates/observed_facility", features = ["wfc"] }
 observed_match = { path = "../crates/observed_match" }
 observed_traversal = { path = "../crates/observed_traversal" }
 vleue_navigator = { version = "0.15.0", default-features = false }
+# Bevy 0.18-compatible line. The latest bevy_sprite3d 9.x targets Bevy 0.19.
+bevy_sprite3d = { version = "=8.0.0", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

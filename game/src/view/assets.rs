@@ -13,6 +13,8 @@ use observed_style::{self as style, MarkerRole, SurfaceRole};
 use crate::layout::{HALL_WIDTH, PLACE_TILE, WALL_HEIGHT};
 use crate::view::theme::TEAM_COLORS;
 
+pub(crate) const DISTRICT_COUNT: usize = observed_style::District::ALL.len();
+
 // Drop-in asset slots — the paths are *not* re-declared here; they come from the
 // shared `observed_assets` manifest (the single source of truth `asset_lab` also
 // reads).
@@ -29,6 +31,14 @@ const PLAYER_MODEL: &str = observed_assets::PLAYER.path;
 const BOT_MODEL: &str = observed_assets::BOT.path;
 const EQUIPMENT_MODEL: &str = observed_assets::EQUIPMENT.path;
 const HAZARD_MODEL: &str = observed_assets::HAZARD.path;
+const RUNNER_STAND_SPRITE: &str = observed_assets::RUNNER_STAND.path;
+const RUNNER_WALK1_SPRITE: &str = observed_assets::RUNNER_WALK1.path;
+const RUNNER_WALK2_SPRITE: &str = observed_assets::RUNNER_WALK2.path;
+const RIVAL_STAND_SPRITE: &str = observed_assets::RIVAL_STAND.path;
+const RIVAL_WALK1_SPRITE: &str = observed_assets::RIVAL_WALK1.path;
+const RIVAL_WALK2_SPRITE: &str = observed_assets::RIVAL_WALK2.path;
+const GUARDIAN_STAND_SPRITE: &str = observed_assets::GUARDIAN_STAND.path;
+const CONTROL_DEVICE_SPRITE: &str = observed_assets::CONTROL_DEVICE.path;
 const FOOTSTEP_SOUND: &str = observed_assets::FOOTSTEP.path;
 const REROUTE_SOUND: &str = observed_assets::REROUTE.path;
 const ESCAPE_SOUND: &str = observed_assets::ESCAPE.path;
@@ -166,6 +176,14 @@ pub struct MatchAssets {
     pub(crate) bot: Option<Handle<Scene>>,
     pub(crate) equipment: Option<Handle<Scene>>,
     pub(crate) hazard: Option<Handle<Scene>>,
+    pub(crate) runner_stand: Option<Handle<Image>>,
+    pub(crate) runner_walk1: Option<Handle<Image>>,
+    pub(crate) runner_walk2: Option<Handle<Image>>,
+    pub(crate) rival_stand: Option<Handle<Image>>,
+    pub(crate) rival_walk1: Option<Handle<Image>>,
+    pub(crate) rival_walk2: Option<Handle<Image>>,
+    pub(crate) guardian_stand: Option<Handle<Image>>,
+    pub(crate) control_device: Option<Handle<Image>>,
     pub(crate) footstep: Option<Handle<AudioSource>>,
     pub(crate) reroute: Option<Handle<AudioSource>>,
     pub(crate) escape: Option<Handle<AudioSource>>,
@@ -177,7 +195,7 @@ pub struct MatchAssets {
     pub(crate) hover_sound: Option<Handle<AudioSource>>,
     pub(crate) jump: Option<Handle<AudioSource>>,
     pub(crate) land: Option<Handle<AudioSource>>,
-    pub(crate) district_ambience: [Option<Handle<AudioSource>>; 6],
+    pub(crate) district_ambience: [Option<Handle<AudioSource>>; DISTRICT_COUNT],
 }
 
 impl MatchAssets {
@@ -354,6 +372,11 @@ impl MatchAssets {
         let load_sound = |path: &'static str| {
             asset_present(path).then(|| asset_server.load::<AudioSource>(path))
         };
+        debug_assert_eq!(
+            observed_assets::DISTRICT_AMBIENCE.len(),
+            observed_style::District::ALL.len(),
+            "district ambience manifest must stay aligned with observed_style::District::ALL",
+        );
 
         Self {
             floor_mesh: meshes.add(Plane3d::default().mesh().size(PLACE_TILE, PLACE_TILE)),
@@ -401,6 +424,14 @@ impl MatchAssets {
             bot: load_scene(BOT_MODEL),
             equipment: load_scene(EQUIPMENT_MODEL),
             hazard: load_scene(HAZARD_MODEL),
+            runner_stand: load_texture(RUNNER_STAND_SPRITE),
+            runner_walk1: load_texture(RUNNER_WALK1_SPRITE),
+            runner_walk2: load_texture(RUNNER_WALK2_SPRITE),
+            rival_stand: load_texture(RIVAL_STAND_SPRITE),
+            rival_walk1: load_texture(RIVAL_WALK1_SPRITE),
+            rival_walk2: load_texture(RIVAL_WALK2_SPRITE),
+            guardian_stand: load_texture(GUARDIAN_STAND_SPRITE),
+            control_device: load_texture(CONTROL_DEVICE_SPRITE),
             footstep: load_sound(FOOTSTEP_SOUND),
             reroute: load_sound(REROUTE_SOUND),
             escape: load_sound(ESCAPE_SOUND),
@@ -412,14 +443,30 @@ impl MatchAssets {
             hover_sound: load_sound(UI_HOVER_SOUND),
             jump: load_sound(JUMP_SOUND),
             land: load_sound(LAND_SOUND),
-            district_ambience: [
-                load_sound("sounds/ambience_archive.ogg"),
-                load_sound("sounds/ambience_reactor.ogg"),
-                load_sound("sounds/ambience_atrium.ogg"),
-                load_sound("sounds/ambience_foundry.ogg"),
-                load_sound("sounds/ambience_hollow.ogg"),
-                load_sound("sounds/ambience_spillway.ogg"),
-            ],
+            district_ambience: std::array::from_fn(|i| {
+                load_sound(observed_assets::DISTRICT_AMBIENCE[i].path)
+            }),
         }
+    }
+
+    pub(crate) fn rival_sprite(
+        &self,
+        images: &Assets<Image>,
+        frame: usize,
+    ) -> Option<Handle<Image>> {
+        let image = match frame % 3 {
+            1 => &self.rival_walk1,
+            2 => &self.rival_walk2,
+            _ => &self.rival_stand,
+        };
+        crate::view::sprites::ready_image(images, image)
+    }
+
+    pub(crate) fn guardian_sprite(&self, images: &Assets<Image>) -> Option<Handle<Image>> {
+        crate::view::sprites::ready_image(images, &self.guardian_stand)
+    }
+
+    pub(crate) fn control_device_sprite(&self, images: &Assets<Image>) -> Option<Handle<Image>> {
+        crate::view::sprites::ready_image(images, &self.control_device)
     }
 }

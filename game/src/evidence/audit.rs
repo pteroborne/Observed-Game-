@@ -30,7 +30,7 @@ use crate::keystones::KeystoneState;
 use crate::screens::place::{GuardianConsole, TetherCameraMonitor};
 use crate::screens::{self};
 use crate::sim::director::MatchDirector;
-use crate::sim::state::{RivalSightings, TeleportState};
+use crate::sim::state::{MapKnowledge, RivalSightings, TeleportState};
 use crate::teleport::{self, Place};
 use crate::view::components::{
     DroppedItemVisual, GameCam, KeystoneItem, RivalAvatar, TacMapElement, TacMapPanel, TacMapState,
@@ -193,6 +193,7 @@ struct VisualAuditParams<'w, 's> {
     items: Option<ResMut<'w, ItemsState>>,
     guardian: Option<ResMut<'w, Guardian>>,
     sightings: Option<Res<'w, RivalSightings>>,
+    knowledge: Option<Res<'w, MapKnowledge>>,
     camera: Query<'w, 's, &'static mut Transform, With<GameCam>>,
     fog: Query<'w, 's, &'static mut DistanceFog, With<GameCam>>,
     tac_state: Option<ResMut<'w, TacMapState>>,
@@ -479,6 +480,7 @@ fn visual_audit_progress(
                 Some(items),
                 Some(guardian),
                 Some(sightings),
+                Some(knowledge),
             ) = (
                 params.runtime.as_ref(),
                 params.tp.as_ref(),
@@ -486,6 +488,7 @@ fn visual_audit_progress(
                 params.items.as_ref(),
                 params.guardian.as_ref(),
                 params.sightings.as_ref(),
+                params.knowledge.as_ref(),
             ) {
                 if scenario == AuditScenario::FootprintAtlas {
                     relax_debug_fog(&mut params.fog);
@@ -501,6 +504,7 @@ fn visual_audit_progress(
                     items,
                     guardian,
                     sightings,
+                    knowledge,
                     &params.threshold_visuals,
                     &params.lights,
                     &params.materials_query,

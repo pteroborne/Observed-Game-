@@ -27,7 +27,7 @@ use crate::guardian::Guardian;
 use crate::items::{ItemKind, ItemsState};
 use crate::keystones::KeystoneState;
 use crate::sim::director::MatchDirector;
-use crate::sim::state::{RivalSightings, TeleportState};
+use crate::sim::state::{MapKnowledge, RivalSightings, TeleportState};
 use crate::tacmap;
 use crate::teleport::{self, DoorGap, GapKind, Place};
 use crate::view::components::{DroppedItemVisual, KeystoneItem, RivalAvatar, TacMapElement};
@@ -75,6 +75,7 @@ pub(super) fn collect_snapshot(
     items: &ItemsState,
     guardian: &Guardian,
     sightings: &RivalSightings,
+    knowledge: &MapKnowledge,
     threshold_visuals: &Query<ThresholdVisualQueryData>,
     lights: &Query<LightQueryData>,
     materials_query: &Query<MaterialDiagnosticQueryData>,
@@ -94,7 +95,14 @@ pub(super) fn collect_snapshot(
     snapshot.thresholds = collect_thresholds(runtime, tp, keys, items, threshold_visuals);
     snapshot.lights = collect_lights(lights);
     snapshot.materials = collect_materials(materials_query, materials);
-    snapshot.tac_map = Some(collect_tac_map(runtime, tp, keys, sightings, tac_visuals));
+    snapshot.tac_map = Some(collect_tac_map(
+        runtime,
+        tp,
+        keys,
+        sightings,
+        knowledge,
+        tac_visuals,
+    ));
     snapshot.monitors = collect_monitors(
         items,
         guardian,
@@ -568,6 +576,7 @@ fn collect_tac_map(
     tp: &TeleportState,
     keys: &KeystoneState,
     sightings: &RivalSightings,
+    knowledge: &MapKnowledge,
     visuals: &Query<&DiagnosticTacMapVisual, With<TacMapElement>>,
 ) -> TacMapSnapshot {
     let game = runtime.live.host_match();
@@ -575,17 +584,22 @@ fn collect_tac_map(
         &game.competitive,
         keys,
         sightings,
+        knowledge,
         game.reroute_commits,
         tp.place,
     );
-    let expected_routes = model.routes.len();
-    let expected_rooms = model.rooms.len();
+    let expected_routes = tacmap::route_segment_count(&model);
+    // Visited rooms draw filled squares; glimpsed rooms draw hollow outlines — both are
+    // tagged `Room` (Phase 50 fog of war).
+    let expected_rooms = model.rooms.len() + model.glimpsed.len();
     let expected_keystones = model.keystones.len();
-    // Each rival pip also draws a team-label text node tagged with the same `Rival`
-    // role (Phase 42c), so both the diagnostic count and the element total double it.
-    let expected_rivals = model.rivals.len() * 2;
+    // Rival team labels only exist in spectator mode (Phase 50); the audit always runs
+    // the live race, so each pip is exactly one tagged node.
+    let expected_rivals = model.rivals.len();
+    // The exit outline only draws once the player has actually found the exit room.
+    let expected_exit = usize::from(model.exit_known);
     let expected_elements =
-        expected_routes + expected_rooms + 1 + expected_keystones + expected_rivals + 1;
+        expected_routes + expected_rooms + expected_exit + expected_keystones + expected_rivals + 1;
 
     let mut rendered_routes = 0;
     let mut rendered_rooms = 0;

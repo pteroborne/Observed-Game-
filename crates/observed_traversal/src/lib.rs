@@ -321,6 +321,8 @@ fn collide(
     }
 
     // Y axis.
+    let was_grounded = body.grounded;
+    let was_falling = !was_grounded && body.velocity.y < -0.001;
     body.position.y += sub.y;
     body.grounded = false;
     for solid in &arena.solids {
@@ -343,21 +345,46 @@ fn collide(
             if feet_before >= solid.max.y - UNDERFOOT_EPS {
                 body.position.y = solid.max.y + config.half_height;
                 body.grounded = true;
-                report.landed = true;
+                if was_falling {
+                    report.landed = true;
+                }
                 body.velocity.y = 0.0;
             }
         }
     }
 
-    // Floor.
+    // Floor and exact resting support. Without this tolerance a body standing exactly
+    // on a floor/deck can end this substep ungrounded (strict AABB overlap does not
+    // count touching faces), then "land" again on the next fixed step.
     let feet = body.position.y - config.half_height;
-    if feet < arena.floor_y {
-        if !body.grounded {
-            report.landed = true;
+    if body.velocity.y <= 0.0 {
+        let mut support_y = if feet <= arena.floor_y + UNDERFOOT_EPS {
+            Some(arena.floor_y)
+        } else {
+            None
+        };
+        let body_min_x = body.position.x - config.radius;
+        let body_max_x = body.position.x + config.radius;
+        let body_min_z = body.position.z - config.radius;
+        let body_max_z = body.position.z + config.radius;
+        for solid in &arena.solids {
+            let xz_overlap = body_min_x < solid.max.x
+                && body_max_x > solid.min.x
+                && body_min_z < solid.max.z
+                && body_max_z > solid.min.z;
+            let top = solid.max.y;
+            if xz_overlap && feet >= top - UNDERFOOT_EPS && feet <= top + UNDERFOOT_EPS {
+                support_y = Some(support_y.map_or(top, |current: f32| current.max(top)));
+            }
         }
-        body.position.y = arena.floor_y + config.half_height;
-        body.velocity.y = 0.0;
-        body.grounded = true;
+        if let Some(support_y) = support_y {
+            if was_falling {
+                report.landed = true;
+            }
+            body.position.y = support_y + config.half_height;
+            body.velocity.y = 0.0;
+            body.grounded = true;
+        }
     }
 }
 
@@ -583,6 +610,75 @@ mod tests {
             }
         }
         assert!(landed && body.grounded, "gravity returned it to the floor");
+    }
+
+    #[test]
+    fn resting_on_floor_stays_grounded_without_repeated_landings() {
+        let arena = FpsArena::authored();
+        let config = FpsConfig::default();
+        let mut body = FpsBody::spawned(Vec3::new(0.0, config.half_height, 0.0), 0.0);
+        let mut landed_count = 0;
+
+        for _ in 0..120 {
+            let report = step_body(
+                &mut body,
+                PlayerIntent::default(),
+                &arena,
+                &config,
+                FIXED_DT,
+            );
+            landed_count += usize::from(report.landed);
+            assert!(
+                body.grounded,
+                "exact floor support should remain grounded after each fixed step"
+            );
+        }
+
+        assert_eq!(
+            landed_count, 1,
+            "settling onto the floor may land once, but must not produce a stream"
+        );
+    }
+
+    #[test]
+    fn resting_on_deck_stays_grounded_without_repeated_landings() {
+        let config = FpsConfig::default();
+        let deck_top = 0.4;
+        let arena = FpsArena {
+            solids: vec![Aabb3 {
+                min: Vec3::new(-2.0, 0.0, -2.0),
+                max: Vec3::new(2.0, deck_top, 2.0),
+            }],
+            floor_y: 0.0,
+            floor_half: 10.0,
+        };
+        let mut body = FpsBody::spawned(Vec3::new(0.0, deck_top + config.half_height, 0.0), 0.0);
+        let mut landed_count = 0;
+
+        for _ in 0..120 {
+            let report = step_body(
+                &mut body,
+                PlayerIntent::default(),
+                &arena,
+                &config,
+                FIXED_DT,
+            );
+            landed_count += usize::from(report.landed);
+            assert!(
+                body.grounded,
+                "exact deck support should remain grounded after each fixed step"
+            );
+            assert_eq!(
+                body.position.y,
+                deck_top + config.half_height,
+                "resting support should keep the body flush with the deck"
+            );
+        }
+
+        assert_eq!(
+            landed_count, 1,
+            "settling onto the deck may land once, but must not produce a stream"
+        );
     }
 
     #[test]

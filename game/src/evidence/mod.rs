@@ -21,8 +21,8 @@ pub(crate) mod tags;
 
 pub(crate) use tags::{
     DiagnosticTacMapRole, DiagnosticTacMapVisual, DiagnosticThresholdStatus,
-    DiagnosticThresholdVisual, DiagnosticThresholdVisualKind, freecam_enabled, threshold_label,
-    threshold_status, visual_audit_enabled,
+    DiagnosticThresholdVisual, DiagnosticThresholdVisualKind, debug_hud_enabled, freecam_enabled,
+    threshold_label, threshold_status, visual_audit_enabled,
 };
 
 use bevy::prelude::*;

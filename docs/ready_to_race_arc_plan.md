@@ -1,5 +1,11 @@
 # Arc E — Ready to Race (polish, comfort, and the real race)
 
+> **Scope ruling 2026-07-09:** this arc ends when Phase 50 lands. Phases 51–53 (all
+> LAN multiplayer work) are **deferred to the ROADMAP Post-MVP Backlog** ("true LAN
+> multiplayer with dedicated servers"); their designs below and in `docs/arc_e/`
+> remain valid as design input but are not scheduled. The follow-on arc is
+> [Arc F — Sight & Sound](sight_and_sound_arc_plan.md).
+
 Planned 2026-07-06, after Arc D ([liminal_arc_plan.md](liminal_arc_plan.md)) took the
 facility to generated liminal scale. Arcs C and D made the race *worth racing* and
 gave it a body to race in. This arc makes it a **finished game a real person wants to

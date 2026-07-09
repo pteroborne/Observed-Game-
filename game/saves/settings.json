@@ -1,0 +1,27 @@
+{
+  "master_volume": 1.0,
+  "sfx_volume": 1.0,
+  "music_volume": 1.0,
+  "mouse_sensitivity": 0.12,
+  "bindings": {
+    "move_left": "KeyA",
+    "move_right": "KeyD",
+    "move_back": "KeyS",
+    "move_forward": "KeyW",
+    "look_left": "ArrowLeft",
+    "look_right": "ArrowRight",
+    "look_up": "ArrowUp",
+    "look_down": "ArrowDown",
+    "jump": "Space",
+    "sprint": "ShiftLeft",
+    "sprint_alt": "ShiftRight",
+    "interact": "KeyE",
+    "torch": "KeyF",
+    "pad": "KeyC",
+    "activate_pad": "KeyE",
+    "tac_map": "Tab",
+    "pause": "Escape"
+  },
+  "high_contrast": false,
+  "first_run": false
+}

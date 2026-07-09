@@ -81,12 +81,21 @@ lights, props, avatars, and hazards all render at the simulation height.
 Each protected route now presents a visible choice: the red direct lane crosses a
 pulsing pressure gate, while cyan marks a longer safe bypass. Hitting an active
 gate returns you to the current-room checkpoint and briefly stalls movement; match
-progress never decreases. When unseen passages commit a reroute, the existing
-mechanical cue is joined by a screen-edge route-shift flash and camera jolt.
+progress never decreases. When unseen passages commit a reroute, the mechanical
+cue is joined by diegetic fixture flicker and door re-hide feedback, with no
+camera jolt or full-screen flash.
 
-Pressing `Tab` opens the in-match TAC-MAP: a top-right schematic projected from
-the live match state, showing the protected spine, collapsed rooms, the locked or
-open exit, uncollected keystones, rival teams, and your current room or hallway.
+Pressing `Tab` opens the in-match TAC-MAP: a top-right **survivor's sketch** built
+from what you have personally witnessed (Phase 50 fog of war). Rooms you have stood
+in draw filled; rooms only seen through a doorway draw as hollow outlines; rooms
+never witnessed are absent, and connections appear only after you have seen the
+doorway or walked the hallway — a reroute that removes one silently erases it from
+your notes. The exit marker only appears once you have actually found the exit room.
+
+Normal play is otherwise **HUD-free**: door colours, keystone glow, the klaxon, and
+the tac-map carry the information. Set `OBSERVED2_DEBUG_HUD=1` to spawn the developer
+status readouts (objective/keystones/collapse/standings/NET lockstep) and the legend;
+a visual-audit or freecam session implies the flag.
 
 ## What it demonstrates
 
@@ -107,11 +116,12 @@ open exit, uncollected keystones, rival teams, and your current room or hallway.
   industrial HDR panorama used as the environment and an in-facility viewport.
   Missing files retain procedural colour/model fallbacks.
 - **Networked during play** — each round the player resolves is replicated live to a
-  remote peer over the hostile lockstep transport, which the HUD reports (replica
-  rounds, in-sync, packet loss/duplication/reordering).
+  remote peer over the hostile lockstep transport, which the debug HUD reports
+  (replica rounds, in-sync, packet loss/duplication/reordering) under
+  `OBSERVED2_DEBUG_HUD`.
 - **Unified, consistent UX** — a single visual theme (title / accent / dim / panel),
-  keyboard and controller navigation shared by every menu, an in-match HUD, and an
-  in-match pause overlay.
+  keyboard and controller navigation shared by every menu, HUD-free immersive play
+  (with a debug-flag status HUD for development), and an in-match pause overlay.
 - **Strict state-scoped cleanup** — every screen's entities carry `DespawnOnExit`, so
   exactly one screen is ever alive and transitions never leak (a test cycles the
   whole loop five times and asserts the screen count stays at one).
@@ -121,9 +131,11 @@ open exit, uncollected keystones, rival teams, and your current room or hallway.
 - **Readable traversal risk** — pressure emitters, pulsing red floor/light, cyan
   bypasses, HUD phase/hit counters, and checkpoint setbacks make the route choice
   explicit without adding combat or damage.
-- **A live TAC-MAP** - `Tab` toggles a schematic overlay built from the same match
-  brain and shared visual language as the world: gold spine route, red collapse /
-  locked exit, green open exit, keystones, rivals, and your current room or hallway.
+- **A live TAC-MAP** - `Tab` toggles a fog-of-war sketch built from the same match
+  brain and shared visual language as the world, filtered through what the player
+  has personally witnessed: visited rooms filled, glimpsed rooms hollow, unknown
+  rooms absent, red collapse, green/red exit once found, keystones, witnessed rival
+  sightings, and your current room or hallway.
 
 ## Screens & controls
 
@@ -141,9 +153,10 @@ Navigation is the same everywhere: **Up/Down** (or **W/S**) to move, **Enter** (
   or **Deck controls** move/look; cross into the next gold-spine room to advance your
   team; **E/X** seizes control or activates a nearby teleport pad link. Red is the
   pressure-gate shortcut; cyan is the safe bypass.
-  The HUD shows gate phase/hits, the round, your status, escaped / absorbed
-  counts, the collapse line, and a **NET lockstep** line (profile, replica rounds,
-  in-sync, packet loss / duplication / reordering). **Tab/R1** toggles the TAC-MAP.
+  Play is HUD-free; with `OBSERVED2_DEBUG_HUD` set, status readouts show the
+  objective, keystones, the collapse line, standings, and a **NET lockstep** line
+  (profile, replica rounds, in-sync, packet loss / duplication / reordering).
+  **Tab/R1** toggles the TAC-MAP.
   **F/L1** drops or picks the anchor torch; **C/Y** drops or picks a teleport pad.
   **Esc/Start** pauses (overlay with **Q/Y** to quit to menu).
 - **Results** — Victory / Escaped / Absorbed headline, placement, the XP/levels/
@@ -157,18 +170,22 @@ Navigation is the same everywhere: **Up/Down** (or **W/S**) to move, **Enter** (
 3. Open **Loadout**, equip a cosmetic, **Esc** back — the equipped summary persists.
 4. **Play** → the lobby shows a formed session; **Launch** drops you into the maze.
 5. Walk in first person (**WASD + mouse** or Deck controls) into the next gold-spine room to advance —
-   the **NET lockstep** line shows your rounds replicating to the remote and the
-   packet loss/duplication/reordering of the hostile transport. **Esc/Start** pauses
-   (cursor released); **Esc/Start** again resumes.
+   with `OBSERVED2_DEBUG_HUD=1` the **NET lockstep** readout shows your rounds
+   replicating to the remote and the packet loss/duplication/reordering of the
+   hostile transport. **Esc/Start** pauses (cursor released); **Esc/Start** again
+   resumes.
 6. Compare a red pressure-gate shortcut with its cyan bypass. Confirm an active
    pulse returns you to the checkpoint without changing match progress, while the
    idle shortcut and safe bypass both remain usable.
-7. Press **Tab/R1** and confirm the TAC-MAP appears in the top-right: gold spine,
-   red collapse / locked exit, green open exit once the keystones are collected,
-   keystone pips, rival pips, and your marker updating between rooms/hallways.
-8. During the run, verify footsteps while moving, the mechanical cue plus route-
-   shift flash/jolt after an off-camera reroute, warning beacons in collapsed rooms,
-   and the success sting when a team escapes.
+7. Press **Tab/R1** and confirm the TAC-MAP appears in the top-right as a fog-of-war
+   sketch: at first just your entrance plus hollow outlines for the doorway
+   neighbours, filling in as you explore; red collapse on known rooms, the exit
+   outline only after you find the exit room (green once the keystones are
+   collected), keystone pips in known rooms, witnessed rival pips, and your marker
+   updating between rooms/hallways.
+8. During the run, verify footsteps while moving, the mechanical cue plus diegetic
+   fixture flicker after an off-camera reroute, warning beacons in collapsed rooms,
+   the klaxon/collapse stings, and the success sting when a team escapes.
 9. On **Results**, confirm the placement and that XP was awarded; **Continue**.
 9. Back on the menu the banner now reads a higher level / XP / match count — the
    career persisted. Repeat: it keeps growing.
@@ -192,5 +209,8 @@ lifecycle:
   overlay, and dynamic hazard beacon, is represented in the Match state;
 - an active pressure gate resets the body without changing the competitive round
   or earned room progress;
-- the TAC-MAP starts hidden, toggles with `Tab`, draws live route/room/marker UI,
-  hides cleanly, and leaves no state or UI entities after the Match.
+- the TAC-MAP starts hidden, toggles with `Tab`, draws only witnessed
+  rooms/routes/markers (fog of war), hides cleanly, and leaves no state or UI
+  entities after the Match;
+- without `OBSERVED2_DEBUG_HUD` the match spawns no status HUD or legend, while the
+  tac-map and pause overlays stay available.

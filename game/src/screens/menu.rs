@@ -9,6 +9,7 @@ use super::input::{gamepad_back_pressed, gamepad_confirm_pressed, gamepad_menu_a
 use super::{MenuAction, MenuBanner, MenuButton, MenuCursor, SplashTimer, menu_button};
 use crate::GameState;
 use crate::flow::Career;
+use crate::sim::replay::ReplayTape;
 use crate::sim::state::SpectatorBot;
 use crate::view::theme::{ACCENT, DIM, TITLE, panel, screen_root, text};
 
@@ -18,6 +19,9 @@ use crate::view::components::UiAssets;
 pub(crate) struct GamepadMenuAxis {
     direction: i8,
 }
+
+#[derive(Component)]
+pub(crate) struct ResultsSummaryText;
 
 // --- splash ----------------------------------------------------------------
 pub(crate) fn setup_splash(mut commands: Commands) {
@@ -100,6 +104,7 @@ pub(crate) fn setup_results(
     mut commands: Commands,
     mut career: ResMut<Career>,
     mut cursor: ResMut<MenuCursor>,
+    tape: Option<Res<ReplayTape>>,
 ) {
     cursor.0 = 0;
     if career.award() {
@@ -107,17 +112,14 @@ pub(crate) fn setup_results(
     }
 
     let result = career.last_result.clone();
+    let tape = tape.as_deref();
     let unlocked: Vec<String> = career
         .last_unlocks
         .iter()
         .filter_map(|id| cosmetic(*id))
         .map(|c| c.name.to_string())
         .collect();
-    let headline = match result.as_ref().map(|r| r.placement) {
-        Some(Some(1)) => "VICTORY",
-        Some(Some(_)) => "ESCAPED",
-        _ => "ABSORBED",
-    };
+    let headline = result_headline(result.as_ref());
 
     commands
         .spawn(screen_root(GameState::Results))
@@ -125,50 +127,94 @@ pub(crate) fn setup_results(
             root.spawn(text(headline, 48.0, TITLE));
             root.spawn(panel()).with_children(|p| {
                 if let Some(r) = &result {
-                    p.spawn(text(
-                        format!("placement {}", placement_label(r.placement)),
-                        20.0,
-                        DIM,
+                    p.spawn((
+                        ResultsSummaryText,
+                        text(
+                            format!(
+                                "placement {} | {}",
+                                placement_label(r.placement),
+                                if r.local_won {
+                                    "series won"
+                                } else {
+                                    "series lost"
+                                }
+                            ),
+                            20.0,
+                            TITLE,
+                        ),
                     ));
-                    p.spawn(text(
-                        format!("{} escaped | {} absorbed", r.escaped, r.absorbed),
-                        18.0,
-                        DIM,
+                    p.spawn((
+                        ResultsSummaryText,
+                        text(
+                            format!(
+                                "winner {} | {} escaped | {} absorbed",
+                                r.winner
+                                    .map(|team| team.label())
+                                    .unwrap_or_else(|| "none".to_string()),
+                                r.escaped,
+                                r.absorbed
+                            ),
+                            18.0,
+                            DIM,
+                        ),
                     ));
                 }
-                p.spawn(text(
-                    format!(
-                        "Level {} | {} XP | {} matches",
-                        career.profile.level(),
-                        career.profile.xp,
-                        career.profile.matches_played
+                p.spawn((
+                    ResultsSummaryText,
+                    text(replay_summary_line(tape), 18.0, DIM),
+                ));
+                for line in replay_story_lines(tape) {
+                    p.spawn((ResultsSummaryText, text(line, 15.0, DIM)));
+                }
+                p.spawn((
+                    ResultsSummaryText,
+                    text(
+                        format!(
+                            "Level {} | {} XP | {} matches",
+                            career.profile.level(),
+                            career.profile.xp,
+                            career.profile.matches_played
+                        ),
+                        18.0,
+                        ACCENT,
                     ),
-                    18.0,
-                    ACCENT,
                 ));
                 if unlocked.is_empty() {
-                    p.spawn(text("no new unlocks", 16.0, DIM));
+                    p.spawn((ResultsSummaryText, text("no new unlocks", 16.0, DIM)));
                 } else {
-                    p.spawn(text(
-                        format!("unlocked: {}", unlocked.join(", ")),
-                        16.0,
-                        ACCENT,
+                    p.spawn((
+                        ResultsSummaryText,
+                        text(format!("unlocked: {}", unlocked.join(", ")), 16.0, ACCENT),
                     ));
                 }
             });
             root.spawn(panel()).with_children(|p| {
+                p.spawn(menu_button(0, MenuAction::StartRun, "Play again"));
                 p.spawn(menu_button(
-                    0,
+                    1,
                     MenuAction::Goto(GameState::Replay),
                     "Watch replay",
                 ));
                 p.spawn(menu_button(
-                    1,
+                    2,
                     MenuAction::Goto(GameState::MainMenu),
-                    "Continue",
+                    "Main menu",
                 ));
             });
         });
+}
+
+fn result_headline(result: Option<&crate::flow::MatchResult>) -> &'static str {
+    match result {
+        Some(result) if result.local_won || result.placement == Some(1) => "VICTORY",
+        Some(result) if is_non_winning_placement(result.placement) => "PLACED",
+        Some(_) => "ABSORBED",
+        None => "RESULTS",
+    }
+}
+
+fn is_non_winning_placement(placement: Option<u8>) -> bool {
+    placement.is_some_and(|place| usize::from(place) < observed_match::facility::TEAM_COUNT)
 }
 
 fn placement_label(placement: Option<u8>) -> String {
@@ -177,6 +223,39 @@ fn placement_label(placement: Option<u8>) -> String {
         Some(2) => "2nd".to_string(),
         Some(n) => format!("{n}th"),
         None => "—".to_string(),
+    }
+}
+
+fn replay_summary_line(tape: Option<&ReplayTape>) -> String {
+    tape.map(|tape| {
+        format!(
+            "seed {} | {} | {} replay samples",
+            tape.seed,
+            tape.map_name,
+            tape.samples.len()
+        )
+    })
+    .unwrap_or_else(|| "no replay tape available".to_string())
+}
+
+fn replay_story_lines(tape: Option<&ReplayTape>) -> Vec<String> {
+    let Some(tape) = tape else {
+        return vec!["story: no replay events recorded".to_string()];
+    };
+    let mut lines: Vec<String> = tape
+        .markers
+        .iter()
+        .rev()
+        .take(4)
+        .map(|marker| format!("r{} {}", marker.live_round, marker.label))
+        .collect();
+    lines.reverse();
+    if lines.is_empty() {
+        vec!["story: no replay events recorded".to_string()]
+    } else {
+        let mut out = vec!["story:".to_string()];
+        out.extend(lines);
+        out
     }
 }
 

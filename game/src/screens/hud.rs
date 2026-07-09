@@ -1,11 +1,18 @@
-//! The in-match 2D overlay: the text HUD + pause panel ([`match_draw`]) and the Tab
-//! tac-map ([`draw_tac_map`]), a top-down schematic rebuilt each frame from the live
-//! match and keystone inventory (see [`crate::tacmap`]).
+//! The in-match 2D overlay: the pause panel + optional debug HUD ([`match_draw`]) and
+//! the Tab tac-map ([`draw_tac_map`]), a survivor's-sketch schematic rebuilt each frame
+//! from the live match filtered through the player's own witnessed knowledge (see
+//! [`crate::tacmap`]).
+//!
+//! Phase 50 immersion ruling: normal play draws **no** status HUD and no legend — the
+//! world communicates diegetically (door colours, keystone glow, the klaxon) plus the
+//! tac-map sketch. The top-left readouts and the legend only spawn under
+//! [`DebugHud`] (`OBSERVED2_DEBUG_HUD`, or a visual-audit/freecam session).
 
 use bevy::input::gamepad::Gamepad;
 use bevy::prelude::*;
 use observed_core::RoomId;
 use observed_facility::map_spec::RoomRole;
+use observed_match::facility::{CollapseState, CompetitiveFacility};
 use observed_style::{self as style, MarkerRole, SurfaceRole};
 
 use super::input::gamepad_map_pressed;
@@ -13,18 +20,21 @@ use crate::flow::LOCAL_TEAM;
 use crate::items::{ItemKind, ItemsState};
 use crate::keystones::KeystoneState;
 use crate::sim::director::MatchDirector;
-use crate::sim::state::{MatchPaused, RivalSightings, SightingKind, SpectatorBot, TeleportState};
-use crate::view::components::{
-    MatchHud, PausePanel, PauseSettingsPanel, TacMapElement, TacMapPanel, TacMapState,
-    TeleportAnimation, TeleportOverlay,
+use crate::sim::state::{
+    MapKnowledge, MatchPaused, RivalSightings, SightingKind, SpectatorBot, TeleportState,
 };
-use crate::view::theme::{BORDER, PANEL, TAC_MAP_SIZE, TITLE, screen_root, text};
+use crate::view::components::{
+    DebugHud, MatchHud, MatchHudReadout, PausePanel, PauseSettingsPanel, TacMapElement,
+    TacMapPanel, TacMapState, TeleportAnimation, TeleportOverlay,
+};
+use crate::view::theme::{BORDER, DIM, PANEL, TAC_MAP_SIZE, TITLE, screen_root, text};
 use crate::{GameState, settings::key_name, tacmap};
 
 // Tac-map overlay layout (pixels). The 3×3 grid of rooms sits below a title strip.
 const TAC_TITLE_H: f32 = 26.0;
 const TAC_INSET: f32 = 22.0;
-const TAC_ROOM: f32 = 46.0; // room square size
+const TAC_ROOM_MAX: f32 = 46.0;
+const TAC_ROOM_MIN: f32 = 18.0;
 
 /// Toggle the tac-map overlay with the bound tac-map key (default Tab; shows/hides the
 /// panel root, `draw_tac_map` fills it while shown).
@@ -47,30 +57,22 @@ pub(crate) fn toggle_tac_map(
     }
 }
 
-/// A room centre in the tac-map panel's local pixel frame.
-fn tac_bounds(rooms: &[(RoomId, Vec2, RoomRole)]) -> (Vec2, Vec2) {
-    let mut min = Vec2::splat(f32::INFINITY);
-    let mut max = Vec2::splat(f32::NEG_INFINITY);
-    for (_, pos, _) in rooms {
-        min = min.min(*pos);
-        max = max.max(*pos);
+fn tac_room_size(room_count: usize) -> f32 {
+    if room_count <= 12 {
+        return TAC_ROOM_MAX;
     }
-    if rooms.is_empty() {
-        (Vec2::ZERO, Vec2::ONE)
-    } else {
-        (min, max)
-    }
+    (TAC_ROOM_MAX * (12.0 / room_count as f32).sqrt()).clamp(TAC_ROOM_MIN, TAC_ROOM_MAX)
 }
 
-fn tac_center_for_pos(pos: Vec2, bounds: (Vec2, Vec2)) -> Vec2 {
+fn tac_center_for_pos(pos: Vec2, bounds: (Vec2, Vec2), room_size: f32) -> Vec2 {
     let (min, max) = bounds;
     let span = (max - min).max(Vec2::ONE);
     let g = (pos - min) / span;
-    let usable_w = TAC_MAP_SIZE - TAC_INSET * 2.0 - TAC_ROOM;
-    let usable_h = TAC_MAP_SIZE - TAC_TITLE_H - TAC_INSET * 2.0 - TAC_ROOM;
+    let usable_w = TAC_MAP_SIZE - TAC_INSET * 2.0 - room_size;
+    let usable_h = TAC_MAP_SIZE - TAC_TITLE_H - TAC_INSET * 2.0 - room_size;
     Vec2::new(
-        TAC_INSET + g.x * usable_w + TAC_ROOM * 0.5,
-        TAC_TITLE_H + TAC_INSET + g.y * usable_h + TAC_ROOM * 0.5,
+        TAC_INSET + g.x * usable_w + room_size * 0.5,
+        TAC_TITLE_H + TAC_INSET + g.y * usable_h + room_size * 0.5,
     )
 }
 
@@ -91,8 +93,18 @@ fn tac_box(center: Vec2, w: f32, h: f32, color: Color) -> impl Bundle {
     )
 }
 
-/// Rebuild the tac-map's room/route/marker nodes from the live match each frame while it
-/// is shown. Presentation-only — reads the brain + keystone inventory (see `tacmap`).
+fn tac_route_bar(a: Vec2, b: Vec2, thickness: f32) -> (Vec2, f32, f32) {
+    let mid = (a + b) * 0.5;
+    let w = (a.x - b.x).abs().max(thickness);
+    let h = (a.y - b.y).abs().max(thickness);
+    (mid, w, h)
+}
+
+/// Rebuild the tac-map's room/route/marker nodes from the live match each frame while
+/// it is shown. Presentation-only — reads the brain + keystone inventory filtered
+/// through the player's witnessed [`MapKnowledge`] (see `tacmap`): unknown rooms are
+/// simply absent, glimpsed rooms are hollow outlines, and the exit only appears once
+/// found.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_tac_map(
     state: Res<TacMapState>,
@@ -101,6 +113,8 @@ pub(crate) fn draw_tac_map(
     tp: Res<TeleportState>,
     keys: Res<KeystoneState>,
     sightings: Res<RivalSightings>,
+    knowledge: Res<MapKnowledge>,
+    debug_hud: Res<DebugHud>,
     panel: Query<Entity, With<TacMapPanel>>,
     existing: Query<Entity, With<TacMapElement>>,
     mut commands: Commands,
@@ -120,20 +134,31 @@ pub(crate) fn draw_tac_map(
         &game.competitive,
         &keys,
         &sightings,
+        &knowledge,
         game.reroute_commits,
         tp.place,
     );
-    let bounds = tac_bounds(&model.rooms);
+    // Bounds/sizing come from the FULL facility so the sketch's rooms never shift or
+    // resize as more of the maze is discovered.
+    let bounds = model.bounds;
+    let room_size = tac_room_size(model.total_rooms);
+    let route_thickness = (room_size * 0.12).clamp(3.0, 5.0);
     let room_centers: Vec<(RoomId, Vec2)> = model
         .rooms
         .iter()
-        .map(|(room, pos, _)| (*room, tac_center_for_pos(*pos, bounds)))
+        .map(|(room, pos, _)| (*room, tac_center_for_pos(*pos, bounds, room_size)))
+        .chain(
+            model
+                .glimpsed
+                .iter()
+                .map(|(room, pos)| (*room, tac_center_for_pos(*pos, bounds, room_size))),
+        )
         .collect();
     let center_for = |room: RoomId| {
         room_centers
             .iter()
             .find_map(|(id, center)| (*id == room).then_some(*center))
-            .unwrap_or_else(|| tac_center_for_pos(tacmap::grid_pos(room), bounds))
+            .unwrap_or_else(|| tac_center_for_pos(tacmap::grid_pos(room), bounds, room_size))
     };
 
     // Palette: route/markers from the shared style markers so the map matches the
@@ -149,25 +174,34 @@ pub(crate) fn draw_tac_map(
     let key_col = Color::srgb(1.0, 0.82, 0.3);
 
     let rival_count = model.rivals.len() as f32;
+    let key_size = (room_size * 0.22).clamp(6.0, 10.0);
+    let rival_size = (room_size * 0.28).clamp(8.0, 13.0);
+    let player_size = (room_size * 0.35).clamp(10.0, 16.0);
+    let member_size = (room_size * 0.22).clamp(7.0, 9.0);
 
     commands.entity(panel).with_children(|p| {
         // Route bars first, under the rooms.
         for &(a, b) in &model.routes {
             let (c1, c2) = (center_for(a), center_for(b));
-            let mid = (c1 + c2) * 0.5;
-            let (w, h) = if (c1.y - c2.y).abs() < 1.0 {
-                ((c1.x - c2.x).abs(), 5.0)
-            } else if (c1.x - c2.x).abs() < 1.0 {
-                (5.0, (c1.y - c2.y).abs())
+            if (c1.y - c2.y).abs() < 1.0 || (c1.x - c2.x).abs() < 1.0 {
+                let (mid, w, h) = tac_route_bar(c1, c2, route_thickness);
+                p.spawn((
+                    tac_box(mid, w, h, route_col.with_alpha(0.5)),
+                    crate::evidence::DiagnosticTacMapVisual::route(a, b),
+                ));
             } else {
-                ((c1.x - c2.x).abs().max(5.0), (c1.y - c2.y).abs().max(5.0))
-            };
-            p.spawn((
-                tac_box(mid, w, h, route_col.with_alpha(0.5)),
-                crate::evidence::DiagnosticTacMapVisual::route(a, b),
-            ));
+                let bend = Vec2::new(c2.x, c1.y);
+                for (start, end) in [(c1, bend), (bend, c2)] {
+                    let (mid, w, h) = tac_route_bar(start, end, route_thickness);
+                    p.spawn((
+                        tac_box(mid, w, h, route_col.with_alpha(0.5)),
+                        crate::evidence::DiagnosticTacMapVisual::route(a, b),
+                    ));
+                }
+            }
         }
-        // Room squares: collapse-swallowed rooms read red; objective/tool rooms read warm.
+        // Visited rooms: filled squares — collapse-swallowed read red; objective/tool
+        // rooms read warm.
         for &(room, _, role) in &model.rooms {
             let fill = if model.collapse.contains(&room) {
                 collapse_col.with_alpha(0.55)
@@ -185,39 +219,70 @@ pub(crate) fn draw_tac_map(
                 plain_fill
             };
             p.spawn((
-                tac_box(center_for(room), TAC_ROOM, TAC_ROOM, fill),
+                tac_box(center_for(room), room_size, room_size, fill),
                 crate::evidence::DiagnosticTacMapVisual::room(room),
             ));
         }
-        // The exit room: a green (open) or red (locked) outline.
-        let exit_center = center_for(model.exit);
-        p.spawn((
-            TacMapElement,
-            DespawnOnExit(GameState::Match),
-            Node {
-                position_type: PositionType::Absolute,
-                left: px(exit_center.x - TAC_ROOM * 0.5),
-                top: px(exit_center.y - TAC_ROOM * 0.5),
-                width: px(TAC_ROOM),
-                height: px(TAC_ROOM),
-                border: UiRect::all(px(3)),
-                ..default()
-            },
-            BorderColor::all(if model.exit_open {
-                exit_open_col
+        // Glimpsed rooms: hollow outlines — the player saw *that something is there*
+        // through a threshold, nothing more. A sealed glimpse still reads as threat.
+        for &(room, _) in &model.glimpsed {
+            let center = center_for(room);
+            let outline = if model.collapse.contains(&room) {
+                collapse_col.with_alpha(0.6)
             } else {
-                locked_col
-            }),
-            crate::evidence::DiagnosticTacMapVisual::one(
-                crate::evidence::DiagnosticTacMapRole::Exit,
-                Some(model.exit),
-            ),
-        ));
+                DIM.with_alpha(0.45)
+            };
+            p.spawn((
+                TacMapElement,
+                DespawnOnExit(GameState::Match),
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: px(center.x - room_size * 0.5),
+                    top: px(center.y - room_size * 0.5),
+                    width: px(room_size),
+                    height: px(room_size),
+                    border: UiRect::all(px(2)),
+                    ..default()
+                },
+                BorderColor::all(outline),
+                crate::evidence::DiagnosticTacMapVisual::room(room),
+            ));
+        }
+        // The exit room, once actually found: a green (open) or red (locked) outline.
+        if model.exit_known {
+            let exit_center = center_for(model.exit);
+            p.spawn((
+                TacMapElement,
+                DespawnOnExit(GameState::Match),
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: px(exit_center.x - room_size * 0.5),
+                    top: px(exit_center.y - room_size * 0.5),
+                    width: px(room_size),
+                    height: px(room_size),
+                    border: UiRect::all(px(3)),
+                    ..default()
+                },
+                BorderColor::all(if model.exit_open {
+                    exit_open_col
+                } else {
+                    locked_col
+                }),
+                crate::evidence::DiagnosticTacMapVisual::one(
+                    crate::evidence::DiagnosticTacMapRole::Exit,
+                    Some(model.exit),
+                ),
+            ));
+        }
         // Keystone pips in the top-right of their room.
         for room in &model.keystones {
-            let c = center_for(*room) + Vec2::new(TAC_ROOM * 0.5 - 7.0, -(TAC_ROOM * 0.5) + 7.0);
+            let c = center_for(*room)
+                + Vec2::new(
+                    room_size * 0.5 - key_size * 0.7,
+                    -(room_size * 0.5) + key_size * 0.7,
+                );
             p.spawn((
-                tac_box(c, 10.0, 10.0, key_col),
+                tac_box(c, key_size, key_size, key_col),
                 crate::evidence::DiagnosticTacMapVisual::one(
                     crate::evidence::DiagnosticTacMapRole::Keystone,
                     Some(*room),
@@ -230,7 +295,10 @@ pub(crate) fn draw_tac_map(
         // filled box for `Seen`/`AnchorSpotted`. Fanned so several in one room stay
         // distinct.
         for (slot, pip) in model.rivals.iter().enumerate() {
-            let off = Vec2::new((slot as f32 - (rival_count - 1.0) * 0.5) * 9.0, 8.0);
+            let off = Vec2::new(
+                (slot as f32 - (rival_count - 1.0) * 0.5) * rival_size * 0.7,
+                room_size * 0.18,
+            );
             let center = center_for(pip.room) + off;
             let alpha = pip.alpha();
             if pip.kind == SightingKind::Heard {
@@ -239,10 +307,10 @@ pub(crate) fn draw_tac_map(
                     DespawnOnExit(GameState::Match),
                     Node {
                         position_type: PositionType::Absolute,
-                        left: px(center.x - 6.5),
-                        top: px(center.y - 6.5),
-                        width: px(13.0),
-                        height: px(13.0),
+                        left: px(center.x - rival_size * 0.5),
+                        top: px(center.y - rival_size * 0.5),
+                        width: px(rival_size),
+                        height: px(rival_size),
                         border: UiRect::all(px(2)),
                         ..default()
                     },
@@ -254,7 +322,7 @@ pub(crate) fn draw_tac_map(
                 ));
             } else {
                 p.spawn((
-                    tac_box(center, 13.0, 13.0, rival_col.with_alpha(alpha)),
+                    tac_box(center, rival_size, rival_size, rival_col.with_alpha(alpha)),
                     crate::evidence::DiagnosticTacMapVisual::one(
                         crate::evidence::DiagnosticTacMapRole::Rival,
                         Some(pip.room),
@@ -262,51 +330,54 @@ pub(crate) fn draw_tac_map(
                 ));
             }
         }
-        // Team labels for witnessed rivals: plain "Team N" in normal play, with the
-        // personality label appended ONLY in spectator mode (personalities are a
-        // teamplay/spectator concept — the live race never invents them).
-        for pip in &model.rivals {
-            let center = center_for(pip.room) + Vec2::new(0.0, 20.0);
-            let label = match spectator_bot.as_ref() {
-                Some(bot) => match bot.teamplay.policy(observed_core::TeamId(pip.team as u8)) {
+        // Team labels for witnessed rivals appear ONLY in spectator mode (Phase 50
+        // immersion ruling): in the live race a sighting is just an anonymous mark on a
+        // survivor's sketch — "someone was here" — while the spectator overlay is an
+        // observer's tool and may name teams and their personalities.
+        if let Some(bot) = spectator_bot.as_ref() {
+            for pip in &model.rivals {
+                let center = center_for(pip.room) + Vec2::new(0.0, room_size * 0.48);
+                let label = match bot.teamplay.policy(observed_core::TeamId(pip.team as u8)) {
                     Some(policy) => format!("Team {} ({})", pip.team + 1, policy.label()),
                     None => format!("Team {}", pip.team + 1),
-                },
-                None => format!("Team {}", pip.team + 1),
-            };
-            p.spawn((
-                TacMapElement,
-                DespawnOnExit(GameState::Match),
-                Node {
-                    position_type: PositionType::Absolute,
-                    left: px(center.x - 30.0),
-                    top: px(center.y - 6.0),
-                    width: px(60.0),
-                    ..default()
-                },
-                Text::new(label),
-                TextFont {
-                    font_size: 9.0,
-                    ..default()
-                },
-                TextColor(rival_col.with_alpha(pip.alpha())),
-                crate::evidence::DiagnosticTacMapVisual::one(
-                    crate::evidence::DiagnosticTacMapRole::Rival,
-                    Some(pip.room),
-                ),
-            ));
+                };
+                p.spawn((
+                    TacMapElement,
+                    DespawnOnExit(GameState::Match),
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: px(center.x - 30.0),
+                        top: px(center.y - 6.0),
+                        width: px(60.0),
+                        ..default()
+                    },
+                    Text::new(label),
+                    TextFont {
+                        font_size: (room_size * 0.2).clamp(7.0, 9.0),
+                        ..default()
+                    },
+                    TextColor(rival_col.with_alpha(pip.alpha())),
+                    crate::evidence::DiagnosticTacMapVisual::one(
+                        crate::evidence::DiagnosticTacMapRole::Rival,
+                        Some(pip.room),
+                    ),
+                ));
+            }
         }
         if let Some(bot) = spectator_bot.as_ref()
             && let Some(team) = bot.teamplay.team(bot.focused_team)
         {
             let member_count = team.members.len() as f32;
             for (index, member) in team.members.iter().enumerate() {
-                let off = Vec2::new((index as f32 - (member_count - 1.0) * 0.5) * 12.0, -9.0);
+                let off = Vec2::new(
+                    (index as f32 - (member_count - 1.0) * 0.5) * member_size * 1.3,
+                    -room_size * 0.2,
+                );
                 p.spawn((
                     tac_box(
                         center_for(member.room) + off,
-                        9.0,
-                        9.0,
+                        member_size,
+                        member_size,
                         you_col.with_alpha(0.85),
                     ),
                     crate::evidence::DiagnosticTacMapVisual::one(
@@ -326,37 +397,41 @@ pub(crate) fn draw_tac_map(
             tacmap::PlayerMark::Between(_, _) => None,
         };
         p.spawn((
-            tac_box(you, 16.0, 16.0, you_col),
+            tac_box(you, player_size, player_size, you_col),
             crate::evidence::DiagnosticTacMapVisual::one(
                 crate::evidence::DiagnosticTacMapRole::Player,
                 player_room,
             ),
         ));
-        p.spawn((
-            TacMapElement,
-            DespawnOnExit(GameState::Match),
-            Node {
-                position_type: PositionType::Absolute,
-                left: px(10),
-                bottom: px(8),
-                ..default()
-            },
-            Text::new(format!(
-                "SERIES R{} | alive {} | countdown {}",
-                director.series.current.index,
-                director.series.active_team_count(),
-                director
-                    .series
-                    .current
-                    .remaining_countdown()
-                    .map_or("--".to_string(), |rounds| rounds.to_string())
-            )),
-            TextFont {
-                font_size: 11.0,
-                ..default()
-            },
-            TextColor(TITLE),
-        ));
+        // The series meta-status line is developer telemetry, not something a runner's
+        // sketch would carry — debug HUD only.
+        if debug_hud.0 {
+            p.spawn((
+                TacMapElement,
+                DespawnOnExit(GameState::Match),
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: px(10),
+                    bottom: px(8),
+                    ..default()
+                },
+                Text::new(format!(
+                    "SERIES R{} | alive {} | countdown {}",
+                    director.series.current.index,
+                    director.series.active_team_count(),
+                    director
+                        .series
+                        .current
+                        .remaining_countdown()
+                        .map_or("--".to_string(), |rounds| rounds.to_string())
+                )),
+                TextFont {
+                    font_size: 11.0,
+                    ..default()
+                },
+                TextColor(TITLE),
+            ));
+        }
     });
 }
 
@@ -371,9 +446,21 @@ pub(crate) fn match_draw(
     tp: Res<TeleportState>,
     seed: Option<Res<crate::flow::ActiveMatchSeed>>,
     settings: Res<crate::settings::Settings>,
-    mut hud: Query<&mut Text, With<MatchHud>>,
+    mut hud: Query<(&MatchHudReadout, &mut Text)>,
     mut pause_panel: Query<&mut Visibility, With<PausePanel>>,
 ) {
+    if let Ok(mut visibility) = pause_panel.single_mut() {
+        *visibility = if paused.0 {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
+    // Without the debug HUD (normal, immersive play) there are no readout entities to
+    // fill — skip assembling the status text entirely.
+    if hud.is_empty() {
+        return;
+    }
     let live = &director.live;
     let game = live.host_match();
     let facility = &game.competitive;
@@ -471,61 +558,95 @@ pub(crate) fn match_draw(
         String::new()
     };
 
-    if let Ok(mut hud) = hud.single_mut() {
-        let seed_val = seed.map(|seed| seed.0).unwrap_or(crate::flow::MATCH_SEED);
-        let bindings = &settings.bindings;
-        let movement_keys = format!(
-            "{}{}{}{}",
-            key_name(bindings.move_forward),
-            key_name(bindings.move_left),
-            key_name(bindings.move_back),
-            key_name(bindings.move_right)
-        );
-        let controls_hint_line = format!(
-            "{}+mouse or Deck controls | {}/X seize/link | {}/L1 torch | {}/Y pad\n\
-             {}/R1 map | {}/Start pause",
-            movement_keys,
-            key_name(bindings.interact),
-            key_name(bindings.torch),
-            key_name(bindings.pad),
-            key_name(bindings.tac_map),
-            key_name(bindings.pause),
-        );
-        **hud = format!(
-            "SEED {}\nROUND {}\nYou (Team 1): {}\nescaped {} | absorbed {}\ncollapse {:.0}%\n\
-             SERIES R{} | alive {} | adversary {} | countdown {}\n\
-             {}\n\
-             {}\n\
+    let seed_val = seed.map(|seed| seed.0).unwrap_or(crate::flow::MATCH_SEED);
+    let bindings = &settings.bindings;
+    let movement_keys = format!(
+        "{}{}{}{}",
+        key_name(bindings.move_forward),
+        key_name(bindings.move_left),
+        key_name(bindings.move_back),
+        key_name(bindings.move_right)
+    );
+    let controls_hint_line = format!(
+        "{}+mouse / Deck | {}/X seize/link | {}/L1 torch | {}/Y pad | {}/R1 tac-map | {}/Start pause",
+        movement_keys,
+        key_name(bindings.interact),
+        key_name(bindings.torch),
+        key_name(bindings.pad),
+        key_name(bindings.tac_map),
+        key_name(bindings.pause),
+    );
+    let objective_line = if keys.gate_open() {
+        "EXIT OPEN | reach the exit room on the tac-map".to_string()
+    } else {
+        format!(
+            "EXIT LOCKED | {} opens tac-map for the exit",
+            key_name(bindings.tac_map)
+        )
+    };
+    let remaining_keys = keys.required.saturating_sub(keys.held);
+    let keystone_line = format!(
+        "KEYSTONES {} / {} | {} remaining | torch {}/{} | pads {}/{}",
+        keys.held,
+        keys.required,
+        remaining_keys,
+        items.carried(ItemKind::AnchorTorch),
+        placed_torches,
+        items.carried(ItemKind::TeleportPad),
+        placed_pads,
+    );
+    let here_collapse = collapse_state_for_place(facility, tp.place);
+    let collapse_rooms = facility.collapse_rooms();
+    let objective_rooms = facility.objective_sequence().len().max(1);
+    let frontier = if facility.collapse_frontier().is_some() {
+        "active"
+    } else {
+        "none"
+    };
+    let collapse_line = format!(
+        "COLLAPSE {:.0}% | sealed {}/{} | frontier {} | here {}",
+        facility.purge_line.max(0.0) * 100.0,
+        collapse_rooms.len(),
+        objective_rooms,
+        frontier,
+        collapse_state_label(here_collapse),
+    );
+    let standings = facility.standings();
+    let leader = standings
+        .first()
+        .map(|team| team.label())
+        .unwrap_or_else(|| "none".to_string());
+    let you_rank = standings
+        .iter()
+        .position(|team| *team == LOCAL_TEAM)
+        .map(|index| ordinal(index as u8 + 1))
+        .unwrap_or_else(|| "--".to_string());
+    let standing_line = format!(
+        "LEADER {} | you {} ({}) | SERIES R{} alive {} adv {} countdown {}",
+        leader,
+        you_rank,
+        local_status,
+        director.series.current.index,
+        director.series.active_team_count(),
+        director.series.adversary_strength(),
+        countdown,
+    );
+    let debug_enabled =
+        crate::evidence::visual_audit_enabled() || crate::evidence::freecam_enabled();
+    let debug_line = if debug_enabled {
+        format!(
+            "DEBUG seed {} round {} | escaped {} absorbed {}\n\
              series objective: {} | event: {}\n\
-             keystones {} / {} | EXIT {}\n\
-             tools torch {}/{} | pads {}/{}\n\
-             route logic: decohere + anchor + relay\n\n\
-             {}\
-             {}\
+             {}{}\n\
              ACTION LOG:\n{}\n\
-             NET lockstep {} | replica {}/{} {} | drop {} dup {} reorder {}\n\n\
+             NET {} | replica {}/{} {} | drop {} dup {} reorder {}\n\
              {}",
             seed_val,
             facility.round,
-            local_status,
             facility.escaped_count(),
             facility.absorbed_count(),
-            facility.purge_line.max(0.0) * 100.0,
-            director.series.current.index,
-            director.series.active_team_count(),
-            director.series.adversary_strength(),
-            countdown,
-            control_line,
-            teamplay_line,
             local_series_status,
             director.series.last_event,
-            keys.held,
-            keys.required,
-            if keys.gate_open() { "OPEN" } else { "LOCKED" },
-            items.carried(ItemKind::AnchorTorch),
-            placed_torches,
-            items.carried(ItemKind::TeleportPad),
-            placed_pads,
             threshold_debug,
             freecam_debug,
             log_lines,
@@ -536,15 +657,58 @@ pub(crate) fn match_draw(
             live.network.dropped,
             live.network.duplicated,
             live.network.reordered,
-            controls_hint_line,
-        );
-    }
-    if let Ok(mut visibility) = pause_panel.single_mut() {
-        *visibility = if paused.0 {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
+            teamplay_line,
+        )
+    } else {
+        String::new()
+    };
+
+    for (readout, mut text) in &mut hud {
+        **text = match readout {
+            MatchHudReadout::Objective => objective_line.clone(),
+            MatchHudReadout::Keystone => keystone_line.clone(),
+            MatchHudReadout::Collapse => collapse_line.clone(),
+            MatchHudReadout::Standing => standing_line.clone(),
+            MatchHudReadout::Controls => format!("{control_line} | {controls_hint_line}"),
+            MatchHudReadout::Debug => debug_line.clone(),
         };
+    }
+}
+
+fn collapse_state_for_place(
+    facility: &CompetitiveFacility,
+    place: crate::teleport::Place,
+) -> CollapseState {
+    match place {
+        crate::teleport::Place::Room(room) => facility.room_collapse(room),
+        crate::teleport::Place::Hallway { from, to, .. } => {
+            strongest_collapse(facility.room_collapse(from), facility.room_collapse(to))
+        }
+    }
+}
+
+fn strongest_collapse(a: CollapseState, b: CollapseState) -> CollapseState {
+    match (a, b) {
+        (CollapseState::Collapsed, _) | (_, CollapseState::Collapsed) => CollapseState::Collapsed,
+        (CollapseState::Dying, _) | (_, CollapseState::Dying) => CollapseState::Dying,
+        _ => CollapseState::Intact,
+    }
+}
+
+fn collapse_state_label(state: CollapseState) -> &'static str {
+    match state {
+        CollapseState::Intact => "safe",
+        CollapseState::Dying => "dying",
+        CollapseState::Collapsed => "sealed",
+    }
+}
+
+fn ordinal(rank: u8) -> String {
+    match rank {
+        1 => "1st".to_string(),
+        2 => "2nd".to_string(),
+        3 => "3rd".to_string(),
+        n => format!("{n}th"),
     }
 }
 
@@ -577,11 +741,13 @@ const LEGEND_FONT_HIGH_CONTRAST: f32 = 17.0;
 const LEGEND_BORDER_BASE: f32 = 1.0;
 const LEGEND_BORDER_HIGH_CONTRAST: f32 = 2.5;
 
-/// Spawn the Match's screen-rooted HUD chrome: the status panel, the teleport
-/// overlay, the pause panel, the tac-map panel, and the legend. State-scoped to the
-/// Match, so it despawns with the screen. `high_contrast` (from `Settings`) scales the
-/// legend's text and border for readability.
-pub(crate) fn spawn_match_hud(commands: &mut Commands, high_contrast: bool) {
+/// Spawn the Match's screen-rooted overlay chrome: the teleport overlay, the pause
+/// panel, and the tac-map panel — plus, ONLY when `debug_hud` is set, the status
+/// readout panel and the legend (Phase 50: normal play is HUD-free; the world and the
+/// tac-map sketch carry the information). State-scoped to the Match, so it despawns
+/// with the screen. `high_contrast` (from `Settings`) scales the legend's text and
+/// border for readability.
+pub(crate) fn spawn_match_hud(commands: &mut Commands, high_contrast: bool, debug_hud: bool) {
     let legend_font = if high_contrast {
         LEGEND_FONT_HIGH_CONTRAST
     } else {
@@ -635,25 +801,58 @@ pub(crate) fn spawn_match_hud(commands: &mut Commands, high_contrast: bool) {
     commands
         .spawn(screen_root(GameState::Match))
         .with_children(|root| {
-            root.spawn((
-                MatchHud,
-                Node {
-                    position_type: PositionType::Absolute,
-                    top: px(16),
-                    left: px(16),
-                    padding: UiRect::all(px(12)),
-                    border: UiRect::all(px(1)),
-                    ..default()
-                },
-                BackgroundColor(PANEL),
-                BorderColor::all(BORDER),
-                Text::new("Match starting…"),
-                TextFont {
-                    font_size: 16.0,
-                    ..default()
-                },
-                TextColor(TITLE),
-            ));
+            if debug_hud {
+                root.spawn((
+                    MatchHud,
+                    Node {
+                        position_type: PositionType::Absolute,
+                        top: px(16),
+                        left: px(16),
+                        width: px(620),
+                        padding: UiRect::all(px(12)),
+                        border: UiRect::all(px(1)),
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::FlexStart,
+                        row_gap: px(4),
+                        ..default()
+                    },
+                    BackgroundColor(PANEL),
+                    BorderColor::all(BORDER),
+                    Text::new("Match starting…"),
+                    TextFont {
+                        font_size: 1.0,
+                        ..default()
+                    },
+                    TextColor(Color::NONE),
+                ))
+                .with_children(|hud| {
+                    hud.spawn((
+                        MatchHudReadout::Objective,
+                        text("EXIT --", 17.0, style::marker(MarkerRole::Exit).base_color),
+                    ));
+                    hud.spawn((
+                        MatchHudReadout::Keystone,
+                        text("KEYSTONES -- / --", 15.0, Color::srgb(1.0, 0.82, 0.3)),
+                    ));
+                    hud.spawn((
+                        MatchHudReadout::Collapse,
+                        text(
+                            "COLLAPSE --",
+                            15.0,
+                            style::marker(MarkerRole::Collapse).base_color,
+                        ),
+                    ));
+                    hud.spawn((
+                        MatchHudReadout::Standing,
+                        text("LEADER --", 15.0, TITLE),
+                    ));
+                    hud.spawn((
+                        MatchHudReadout::Controls,
+                        text("controls loading...", 12.0, DIM),
+                    ));
+                    hud.spawn((MatchHudReadout::Debug, text("", 10.0, DIM)));
+                });
+            }
             root.spawn((
                 TeleportOverlay,
                 Visibility::Hidden,
@@ -738,25 +937,27 @@ pub(crate) fn spawn_match_hud(commands: &mut Commands, high_contrast: bool) {
                     TextColor(TITLE),
                 )],
             ));
-            root.spawn((
-                Node {
-                    position_type: PositionType::Absolute,
-                    bottom: px(16),
-                    left: px(16),
-                    padding: UiRect::all(px(12)),
-                    border: UiRect::all(px(legend_border)),
-                    flex_direction: FlexDirection::Column,
-                    row_gap: px(3),
-                    ..default()
-                },
-                BackgroundColor(PANEL),
-                BorderColor::all(BORDER),
-            ))
-            .with_children(|legend| {
-                legend.spawn(text("LEGEND", legend_font + 2.0, TITLE));
-                for (label, color) in legend_rows {
-                    legend.spawn(text(label, legend_font, color));
-                }
-            });
+            if debug_hud {
+                root.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        bottom: px(16),
+                        left: px(16),
+                        padding: UiRect::all(px(12)),
+                        border: UiRect::all(px(legend_border)),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: px(3),
+                        ..default()
+                    },
+                    BackgroundColor(PANEL),
+                    BorderColor::all(BORDER),
+                ))
+                .with_children(|legend| {
+                    legend.spawn(text("LEGEND", legend_font + 2.0, TITLE));
+                    for (label, color) in legend_rows {
+                        legend.spawn(text(label, legend_font, color));
+                    }
+                });
+            }
         });
 }

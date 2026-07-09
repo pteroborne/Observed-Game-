@@ -75,6 +75,11 @@ pub(crate) struct RivalAvatar {
     pub team: usize,
 }
 
+/// A 2.5D sprite rendered in the 3D match scene. Presentation-only: the yaw-facing
+/// system rotates these quads toward the camera without changing simulation state.
+#[derive(Component)]
+pub(crate) struct BillboardSprite;
+
 /// A place light driven by the flicker system. `base` is its steady-state intensity.
 /// `idle` (0 = none) is the amplitude of a constant "failing fixture" flicker —
 /// occasional brief dropouts — and `phase` decorrelates each fixture so they stutter
@@ -134,6 +139,7 @@ pub struct MatchAudioState {
     pub(crate) stride_distance: f32,
     pub(crate) last_place: Place,
     pub(crate) escaped_count: usize,
+    pub(crate) collapse_sting_place: Option<Place>,
 }
 
 /// Tracks which rival team/room pairing the sound-bleed system last cued, so a rival
@@ -163,6 +169,27 @@ pub(crate) struct TacMapElement;
 #[derive(Component)]
 pub(crate) struct MatchHud;
 
+/// Whether the match spawns the debug status HUD (top-left readouts) and the legend.
+/// Off by default (Phase 50 immersion ruling): normal play communicates diegetically
+/// and through the tac-map. Initialized once at app build from
+/// `evidence::debug_hud_enabled()` (`OBSERVED2_DEBUG_HUD`, or implied by a
+/// visual-audit/freecam session); held as a resource so tests can flip it without
+/// touching process env.
+#[derive(Resource, Default)]
+pub(crate) struct DebugHud(pub bool);
+
+/// Individual compact HUD readouts, spawned only under [`DebugHud`]. Tests query these
+/// semantic markers instead of scraping one debug-heavy text block.
+#[derive(Clone, Copy, Component, Debug, Eq, PartialEq)]
+pub(crate) enum MatchHudReadout {
+    Objective,
+    Keystone,
+    Collapse,
+    Standing,
+    Controls,
+    Debug,
+}
+
 /// The full-screen pause overlay.
 #[derive(Component)]
 pub(crate) struct PausePanel;
@@ -185,11 +212,12 @@ pub(crate) struct UiAssets {
     pub(crate) hover: Option<Handle<AudioSource>>,
 }
 
-/// Camera shake and elevation juice resource
+/// Smooth first-person camera easing for movement and teleport feedback. This is
+/// presentation-only and deliberately avoids shake/flash effects that would mask
+/// gameplay signals.
 #[derive(Resource, Default, Debug)]
 pub(crate) struct CameraJuice {
     pub(crate) land_timer: f32,
     pub(crate) jump_timer: f32,
-    pub(crate) teleport_shake: f32,
-    pub(crate) collapse_sting_played: bool,
+    pub(crate) teleport_ease_timer: f32,
 }

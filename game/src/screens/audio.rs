@@ -18,6 +18,8 @@ use crate::view::components::{MatchAudioCue, MatchAudioState, RivalBleedState};
 use observed_match::facility::CollapseState;
 
 const FOOTSTEP_STRIDE: f32 = 1.8;
+const DISTRICT_AMBIENCE_VOLUME: f32 = 0.24;
+const DISTRICT_AMBIENCE_BLEND_RATE: f32 = 1.5;
 /// Sound-bleed volume clamp (Design ruling): attenuated by distance to the threshold's
 /// gap centre, but never silent (a rival is always at least faintly audible through the
 /// wall) nor as loud as a footstep in the same room.
@@ -26,13 +28,23 @@ const BLEED_VOLUME_MAX: f32 = 0.45;
 /// Distance (world units) at which attenuation bottoms out at [`BLEED_VOLUME_MIN`].
 const BLEED_ATTENUATION_RANGE: f32 = 12.0;
 
+fn audible(volume: f32) -> Option<f32> {
+    volume
+        .is_finite()
+        .then_some(volume.clamp(0.0, 1.0))
+        .filter(|v| *v > 0.0)
+}
+
 pub(crate) fn play_one_shot(
     commands: &mut Commands,
     sound: &Option<Handle<AudioSource>>,
     cue: MatchAudioCue,
     name: &'static str,
     volume: f32,
-) {
+) -> bool {
+    let Some(volume) = audible(volume) else {
+        return false;
+    };
     if let Some(sound) = sound {
         commands.spawn((
             cue,
@@ -41,6 +53,9 @@ pub(crate) fn play_one_shot(
             PlaybackSettings::DESPAWN.with_volume(Volume::Linear(volume)),
             Name::new(name),
         ));
+        true
+    } else {
+        false
     }
 }
 
@@ -192,7 +207,7 @@ pub(crate) fn bleed_rival_sound(
             let t = (distance / BLEED_ATTENUATION_RANGE).clamp(0.0, 1.0);
             let volume = (BLEED_VOLUME_MAX - t * (BLEED_VOLUME_MAX - BLEED_VOLUME_MIN))
                 * settings.effective_sfx_volume();
-            if let Some(sound) = &assets.footstep {
+            if let (Some(volume), Some(sound)) = (audible(volume), &assets.footstep) {
                 commands.spawn((
                     MatchAudioCue::RivalBleed,
                     DespawnOnExit(GameState::Match),
@@ -217,25 +232,34 @@ pub(crate) fn sync_match_stings(
     assets: Res<MatchAssets>,
     settings: Res<Settings>,
     tp: Res<TeleportState>,
-    mut juice: ResMut<crate::view::components::CameraJuice>,
-    klaxons: Query<Entity, With<KlaxonSound>>,
+    mut audio_state: ResMut<MatchAudioState>,
+    mut klaxons: Query<(Entity, Option<&mut AudioSink>), With<KlaxonSound>>,
 ) {
     let klaxon_active = crate::screens::match_runtime::ambience::countdown_klaxon_active(&runtime);
-    if klaxon_active && klaxons.is_empty() {
+    let sfx_volume = settings.effective_sfx_volume();
+    let klaxon_volume = audible(0.35 * sfx_volume);
+    let mut has_klaxon = false;
+    for (entity, sink) in &mut klaxons {
+        has_klaxon = true;
+        if !klaxon_active || klaxon_volume.is_none() {
+            commands.entity(entity).despawn();
+        } else if let (Some(mut sink), Some(volume)) = (sink, klaxon_volume) {
+            sink.set_volume(Volume::Linear(volume));
+        }
+    }
+    if klaxon_active && !has_klaxon {
+        let Some(volume) = klaxon_volume else {
+            return;
+        };
         if let Some(klaxon_sound) = &assets.klaxon {
             commands.spawn((
                 KlaxonSound,
                 MatchAudioCue::Klaxon,
                 DespawnOnExit(GameState::Match),
                 AudioPlayer(klaxon_sound.clone()),
-                PlaybackSettings::LOOP
-                    .with_volume(Volume::Linear(0.35 * settings.effective_sfx_volume())),
+                PlaybackSettings::LOOP.with_volume(Volume::Linear(volume)),
                 Name::new("Klaxon alarm"),
             ));
-        }
-    } else if !klaxon_active && !klaxons.is_empty() {
-        for entity in &klaxons {
-            commands.entity(entity).despawn();
         }
     }
 
@@ -243,18 +267,19 @@ pub(crate) fn sync_match_stings(
     let collapse_state =
         crate::screens::match_runtime::ambience::collapse_state_for_place(game, tp.place);
     if collapse_state == CollapseState::Dying {
-        if !juice.collapse_sting_played {
-            play_one_shot(
+        if audio_state.collapse_sting_place != Some(tp.place)
+            && play_one_shot(
                 &mut commands,
                 &assets.collapse_sting,
                 MatchAudioCue::CollapseSting,
                 "Collapse warning sting",
-                settings.effective_sfx_volume() * 0.8,
-            );
-            juice.collapse_sting_played = true;
+                sfx_volume * 0.8,
+            )
+        {
+            audio_state.collapse_sting_place = Some(tp.place);
         }
     } else if collapse_state == CollapseState::Intact {
-        juice.collapse_sting_played = false;
+        audio_state.collapse_sting_place = None;
     }
 }
 
@@ -263,13 +288,19 @@ pub(crate) fn play_ui_sound(
     sound: &Option<Handle<AudioSource>>,
     volume: f32,
     cue: MatchAudioCue,
-) {
+) -> bool {
+    let Some(volume) = audible(volume) else {
+        return false;
+    };
     if let Some(sound) = sound {
         commands.spawn((
             cue,
             AudioPlayer(sound.clone()),
             PlaybackSettings::DESPAWN.with_volume(Volume::Linear(volume)),
         ));
+        true
+    } else {
+        false
     }
 }
 
@@ -286,16 +317,18 @@ pub(crate) fn fade_district_ambience(
         crate::screens::match_runtime::ambience::district_for_place(seed_val, tp.place);
     let music_volume = settings.effective_music_volume();
 
-    let dt = time.delta_secs() * 1.5;
+    let dt = (time.delta_secs() * DISTRICT_AMBIENCE_BLEND_RATE).clamp(0.0, 1.0);
 
     for (ambience, mut sink) in &mut query {
         let target = if ambience.0 == active_district {
-            0.24 * music_volume
+            DISTRICT_AMBIENCE_VOLUME * music_volume
         } else {
             0.0
         };
         let current = sink.volume().to_linear();
         let next = current + (target - current) * dt;
-        sink.set_volume(bevy::audio::Volume::Linear(next));
+        if (next - current).abs() > 1e-5 {
+            sink.set_volume(Volume::Linear(next.clamp(0.0, 1.0)));
+        }
     }
 }

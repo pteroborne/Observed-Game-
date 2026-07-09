@@ -140,7 +140,7 @@ pub(crate) fn item_actions(
             changed = true;
             last_pad.last_used_pos = Some((target_place, target_pos));
             anim.trigger(2.0, Color::srgba(0.0, 0.8, 1.0, 1.0));
-            juice.teleport_shake = 0.45;
+            juice.teleport_ease_timer = 0.45;
             if let Place::Room(room) = target_place {
                 log.add(format!("Teleported via pad to Room {}!", room.0));
             }

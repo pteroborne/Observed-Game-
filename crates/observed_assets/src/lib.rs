@@ -179,6 +179,54 @@ pub const AMBIENCE: AssetSlot = AssetSlot {
     path: "sounds/ambience.ogg",
     hint: "looping industrial facility hum",
 };
+pub const AMBIENCE_ARCHIVE: AssetSlot = AssetSlot {
+    name: "ambience_archive",
+    kind: AssetKind::Sound,
+    path: "sounds/ambience_archive.ogg",
+    hint: "looping cold archival district bed",
+};
+pub const AMBIENCE_REACTOR: AssetSlot = AssetSlot {
+    name: "ambience_reactor",
+    kind: AssetKind::Sound,
+    path: "sounds/ambience_reactor.ogg",
+    hint: "looping warm reactor district bed",
+};
+pub const AMBIENCE_ATRIUM: AssetSlot = AssetSlot {
+    name: "ambience_atrium",
+    kind: AssetKind::Sound,
+    path: "sounds/ambience_atrium.ogg",
+    hint: "looping overgrown atrium district bed",
+};
+pub const AMBIENCE_FOUNDRY: AssetSlot = AssetSlot {
+    name: "ambience_foundry",
+    kind: AssetKind::Sound,
+    path: "sounds/ambience_foundry.ogg",
+    hint: "looping industrial foundry district bed",
+};
+pub const AMBIENCE_HOLLOW: AssetSlot = AssetSlot {
+    name: "ambience_hollow",
+    kind: AssetKind::Sound,
+    path: "sounds/ambience_hollow.ogg",
+    hint: "looping unfinished hollow district bed",
+};
+pub const AMBIENCE_SPILLWAY: AssetSlot = AssetSlot {
+    name: "ambience_spillway",
+    kind: AssetKind::Sound,
+    path: "sounds/ambience_spillway.ogg",
+    hint: "looping flooded spillway district bed",
+};
+/// District ambience slots in the same semantic order used by
+/// `observed_style::District::ALL`: archive, reactor, atrium, foundry, hollow,
+/// spillway. `observed_assets` stays style-free; consumers that know districts can
+/// assert the counts match.
+pub const DISTRICT_AMBIENCE: [AssetSlot; 6] = [
+    AMBIENCE_ARCHIVE,
+    AMBIENCE_REACTOR,
+    AMBIENCE_ATRIUM,
+    AMBIENCE_FOUNDRY,
+    AMBIENCE_HOLLOW,
+    AMBIENCE_SPILLWAY,
+];
 /// Optional (not in the game's required asset plan): a door open/close thunk on
 /// entering or leaving a place. Silent until a file is dropped here.
 pub const DOOR: AssetSlot = AssetSlot {
@@ -202,13 +250,13 @@ pub const COLLAPSE_STING: AssetSlot = AssetSlot {
 pub const UI_CLICK: AssetSlot = AssetSlot {
     name: "click",
     kind: AssetKind::Sound,
-    path: "sounds/click.ogg",
+    path: "sounds/ui_click.ogg",
     hint: "UI button click sound",
 };
 pub const UI_HOVER: AssetSlot = AssetSlot {
     name: "hover",
     kind: AssetKind::Sound,
-    path: "sounds/hover.ogg",
+    path: "sounds/ui_hover.ogg",
     hint: "UI button hover/highlight sound",
 };
 pub const JUMP: AssetSlot = AssetSlot {
@@ -222,6 +270,54 @@ pub const LAND: AssetSlot = AssetSlot {
     kind: AssetKind::Sound,
     path: "sounds/land.ogg",
     hint: "mechanical/gantry land/impact cue",
+};
+pub const RUNNER_STAND: AssetSlot = AssetSlot {
+    name: "runner_stand",
+    kind: AssetKind::Texture,
+    path: "sprites/runner_stand.png",
+    hint: "upright CC0 2.5D runner sprite",
+};
+pub const RUNNER_WALK1: AssetSlot = AssetSlot {
+    name: "runner_walk1",
+    kind: AssetKind::Texture,
+    path: "sprites/runner_walk1.png",
+    hint: "upright CC0 2.5D runner walk frame",
+};
+pub const RUNNER_WALK2: AssetSlot = AssetSlot {
+    name: "runner_walk2",
+    kind: AssetKind::Texture,
+    path: "sprites/runner_walk2.png",
+    hint: "upright CC0 2.5D runner walk frame",
+};
+pub const RIVAL_STAND: AssetSlot = AssetSlot {
+    name: "rival_stand",
+    kind: AssetKind::Texture,
+    path: "sprites/rival_stand.png",
+    hint: "upright CC0 2.5D rival sprite",
+};
+pub const RIVAL_WALK1: AssetSlot = AssetSlot {
+    name: "rival_walk1",
+    kind: AssetKind::Texture,
+    path: "sprites/rival_walk1.png",
+    hint: "upright CC0 2.5D rival walk frame",
+};
+pub const RIVAL_WALK2: AssetSlot = AssetSlot {
+    name: "rival_walk2",
+    kind: AssetKind::Texture,
+    path: "sprites/rival_walk2.png",
+    hint: "upright CC0 2.5D rival walk frame",
+};
+pub const GUARDIAN_STAND: AssetSlot = AssetSlot {
+    name: "guardian_stand",
+    kind: AssetKind::Texture,
+    path: "sprites/guardian_stand.png",
+    hint: "upright CC0 2.5D guardian sprite",
+};
+pub const CONTROL_DEVICE: AssetSlot = AssetSlot {
+    name: "control_device",
+    kind: AssetKind::Texture,
+    path: "sprites/control_device.png",
+    hint: "CC0 2.5D control or deployable device sprite",
 };
 
 /// Every authored slot, in showcase order. Add a row (and a named const above) to
@@ -247,6 +343,12 @@ pub const SLOTS: &[AssetSlot] = &[
     REROUTE,
     ESCAPE,
     AMBIENCE,
+    AMBIENCE_ARCHIVE,
+    AMBIENCE_REACTOR,
+    AMBIENCE_ATRIUM,
+    AMBIENCE_FOUNDRY,
+    AMBIENCE_HOLLOW,
+    AMBIENCE_SPILLWAY,
     DOOR,
     KLAXON,
     COLLAPSE_STING,
@@ -254,6 +356,14 @@ pub const SLOTS: &[AssetSlot] = &[
     UI_HOVER,
     JUMP,
     LAND,
+    RUNNER_STAND,
+    RUNNER_WALK1,
+    RUNNER_WALK2,
+    RIVAL_STAND,
+    RIVAL_WALK1,
+    RIVAL_WALK2,
+    GUARDIAN_STAND,
+    CONTROL_DEVICE,
 ];
 
 /// The authored slots a showcase wires up, as an owned vector (back-compat with the
@@ -344,9 +454,20 @@ mod tests {
         assert_eq!(slot("ceiling").path, CEILING.path);
         assert_eq!(slot("player").path, PLAYER.path);
         assert_eq!(slot("door").path, DOOR.path);
+        assert_eq!(slot("ambience_archive").path, AMBIENCE_ARCHIVE.path);
+        assert_eq!(slot("runner_stand").path, RUNNER_STAND.path);
+        assert_eq!(slot("control_device").path, CONTROL_DEVICE.path);
         // Every named const is reachable by its own name through the manifest.
         for s in SLOTS {
             assert_eq!(slot(s.name).path, s.path);
+        }
+    }
+
+    #[test]
+    fn district_ambience_slots_are_manifest_entries() {
+        assert_eq!(DISTRICT_AMBIENCE.len(), 6);
+        for district_slot in DISTRICT_AMBIENCE {
+            assert_eq!(slot(district_slot.name).path, district_slot.path);
         }
     }
 }
