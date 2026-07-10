@@ -155,9 +155,10 @@ pub(crate) fn settings_navigate(
     if cursor.0 != old_val {
         crate::screens::audio::play_ui_sound(
             &mut commands,
+            None,
             &ui_assets.hover,
-            settings.effective_sfx_volume(),
             crate::view::components::MatchAudioCue::UiHover,
+            &settings,
         );
     }
 }
@@ -245,9 +246,10 @@ pub(crate) fn settings_adjust(
     }
     crate::screens::audio::play_ui_sound(
         &mut commands,
+        None,
         &ui_assets.click,
-        settings.effective_sfx_volume(),
         crate::view::components::MatchAudioCue::UiClick,
+        &settings,
     );
     save_settings(&settings);
 }
@@ -282,9 +284,10 @@ pub(crate) fn settings_activate(
     };
     crate::screens::audio::play_ui_sound(
         &mut commands,
+        None,
         &ui_assets.click,
-        settings.effective_sfx_volume(),
         crate::view::components::MatchAudioCue::UiClick,
+        &settings,
     );
     match row {
         SettingsRow::Binding(slot) => rebind.0 = Some(slot),

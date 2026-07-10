@@ -63,7 +63,7 @@ members = [
     "labs/lab_observability_lab",
     "labs/navigation_probe_lab",
     "labs/wfc_proc_gen_lab",
-    "labs/sprite3d_placeholder_lab",
+    "labs/oga_25d_lab",
     "labs/guardian_ai_lab",
     "labs/topology_lab",
     "game",

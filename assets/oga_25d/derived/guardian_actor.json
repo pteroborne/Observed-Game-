@@ -1,0 +1,68 @@
+{
+  "clips": {
+    "alert": [
+      4
+    ],
+    "disrupted": [
+      5
+    ],
+    "idle": [
+      0
+    ],
+    "operate": [
+      3
+    ],
+    "walk": [
+      0,
+      1,
+      2
+    ]
+  },
+  "default_material_role": "Director",
+  "directional_count": "billboard",
+  "frames": [
+    {
+      "h": 64,
+      "w": 64,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "h": 64,
+      "w": 64,
+      "x": 64,
+      "y": 0
+    },
+    {
+      "h": 64,
+      "w": 64,
+      "x": 128,
+      "y": 0
+    },
+    {
+      "h": 64,
+      "w": 64,
+      "x": 192,
+      "y": 0
+    },
+    {
+      "h": 64,
+      "w": 64,
+      "x": 256,
+      "y": 0
+    },
+    {
+      "h": 64,
+      "w": 64,
+      "x": 320,
+      "y": 0
+    }
+  ],
+  "image_path": "guardian_actor.png",
+  "name": "guardian_actor",
+  "pivot": [
+    0.5,
+    0.0
+  ],
+  "pixels_per_metre": 64.0
+}

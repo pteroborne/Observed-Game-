@@ -734,7 +734,7 @@ pub(crate) fn update_tether_monitors(
 
 pub(crate) fn update_guardian_monitors(
     time: Res<Time>,
-    guardian: Res<crate::guardian::Guardian>,
+    guardian: Option<Res<crate::guardian::Guardian>>,
     monitors: Query<(
         &GuardianObservationMonitor,
         &MeshMaterial3d<StandardMaterial>,
@@ -745,6 +745,9 @@ pub(crate) fn update_guardian_monitors(
     )>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    let Some(guardian) = guardian else {
+        return;
+    };
     let t = time.elapsed_secs();
     for (monitor, mat_handle) in &monitors {
         let is_guardian_here = guardian.room == monitor.room;
@@ -779,11 +782,17 @@ pub(crate) fn interact_guardian_console(
     gamepads: Query<&bevy::input::gamepad::Gamepad>,
     tp: Res<TeleportState>,
     runtime: Res<crate::sim::director::MatchDirector>,
-    mut guardian: ResMut<crate::guardian::Guardian>,
-    mut log: ResMut<crate::guardian::ActionLog>,
+    guardian: Option<ResMut<crate::guardian::Guardian>>,
+    log: Option<ResMut<crate::guardian::ActionLog>>,
     consoles: Query<&MeshMaterial3d<StandardMaterial>, With<GuardianConsole>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    let Some(mut guardian) = guardian else {
+        return;
+    };
+    let Some(mut log) = log else {
+        return;
+    };
     let console_room = runtime
         .live
         .host_match()

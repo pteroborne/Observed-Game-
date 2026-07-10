@@ -10,7 +10,44 @@ use crate::GameState;
 use crate::sim::state::LobbyRuntime;
 use crate::view::theme::{DIM, TITLE, panel, screen_root, text};
 
-pub(crate) fn setup_lobby(mut commands: Commands, mut cursor: ResMut<MenuCursor>) {
+#[derive(Component)]
+pub(crate) struct LobbyButtonText(pub(crate) MenuAction);
+
+fn rival_teams_label(on: bool) -> String {
+    format!("Rival teams: {}", if on { "ON" } else { "OFF" })
+}
+fn ai_teammates_label(on: bool) -> String {
+    format!("AI teammates: {}", if on { "ON" } else { "OFF" })
+}
+fn guardian_label(on: bool) -> String {
+    format!("Guardian: {}", if on { "ON" } else { "OFF" })
+}
+
+pub(crate) fn lobby_update_labels(
+    career: Res<crate::flow::Career>,
+    mut query: Query<(&LobbyButtonText, &mut Text)>,
+) {
+    for (btn, mut text) in &mut query {
+        match btn.0 {
+            MenuAction::ToggleRivalTeams => {
+                **text = rival_teams_label(career.bot_rival_teams);
+            }
+            MenuAction::ToggleAiTeammates => {
+                **text = ai_teammates_label(career.bot_ai_teammates);
+            }
+            MenuAction::ToggleGuardian => {
+                **text = guardian_label(career.bot_guardian);
+            }
+            _ => {}
+        }
+    }
+}
+
+pub(crate) fn setup_lobby(
+    mut commands: Commands,
+    mut cursor: ResMut<MenuCursor>,
+    career: Res<crate::flow::Career>,
+) {
     cursor.0 = 0;
     // Form a session via the proven matchmaker, then ready it up.
     let mut world = SessionLabWorld::authored();
@@ -55,8 +92,32 @@ pub(crate) fn setup_lobby(mut commands: Commands, mut cursor: ResMut<MenuCursor>
             });
             root.spawn(panel()).with_children(|p| {
                 p.spawn(menu_button(0, MenuAction::Launch, "Launch match"));
+                p.spawn((
+                    LobbyButtonText(MenuAction::ToggleRivalTeams),
+                    menu_button(
+                        1,
+                        MenuAction::ToggleRivalTeams,
+                        rival_teams_label(career.bot_rival_teams),
+                    ),
+                ));
+                p.spawn((
+                    LobbyButtonText(MenuAction::ToggleAiTeammates),
+                    menu_button(
+                        2,
+                        MenuAction::ToggleAiTeammates,
+                        ai_teammates_label(career.bot_ai_teammates),
+                    ),
+                ));
+                p.spawn((
+                    LobbyButtonText(MenuAction::ToggleGuardian),
+                    menu_button(
+                        3,
+                        MenuAction::ToggleGuardian,
+                        guardian_label(career.bot_guardian),
+                    ),
+                ));
                 p.spawn(menu_button(
-                    1,
+                    4,
                     MenuAction::Goto(GameState::MainMenu),
                     "Back",
                 ));

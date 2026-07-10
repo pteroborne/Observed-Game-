@@ -36,7 +36,7 @@ pub(crate) mod replay;
 pub(crate) mod settings;
 
 // --- menu domain -------------------------------------------------------------
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MenuAction {
     Goto(GameState),
     StartRun,
@@ -44,6 +44,9 @@ pub(crate) enum MenuAction {
     Launch,
     Equip(u16),
     QuitApp,
+    ToggleRivalTeams,
+    ToggleAiTeammates,
+    ToggleGuardian,
 }
 
 #[derive(Component)]
@@ -105,6 +108,7 @@ impl Plugin for ScreensPlugin {
                     menu::splash_advance.run_if(in_state(GameState::Splash)),
                     menu::main_menu_banner.run_if(in_state(GameState::MainMenu)),
                     loadout::loadout_header.run_if(in_state(GameState::Loadout)),
+                    lobby::lobby_update_labels.run_if(in_state(GameState::Lobby)),
                     replay::replay_controls.run_if(in_state(GameState::Replay)),
                     replay::update_replay_info.run_if(in_state(GameState::Replay)),
                     replay::draw_replay_map.run_if(in_state(GameState::Replay)),
@@ -205,6 +209,7 @@ impl Plugin for MatchPlugin {
             .add_systems(
                 Update,
                 (
+                    audio::update_audio_director,
                     match_runtime::ambience::apply_place_atmosphere,
                     match_runtime::ambience::sync_decohere_fx,
                     match_runtime::ambience::flicker_lights,
@@ -212,7 +217,7 @@ impl Plugin for MatchPlugin {
                     place::sync_rival_avatars,
                     audio::sync_match_audio,
                     audio::bleed_rival_sound,
-                    audio::fade_district_ambience,
+                    audio::fade_ambience_beds,
                     audio::sync_match_stings,
                     place::animate_doors,
                     hud::update_teleport_animation,
@@ -220,6 +225,7 @@ impl Plugin for MatchPlugin {
                     place::present_match_camera,
                     crate::view::sprites::face_billboard_sprites,
                     hud::match_draw,
+                    hud::update_interaction_reticle,
                     hud::draw_tac_map,
                     crate::sim::replay::record_match_replay_sample,
                 )

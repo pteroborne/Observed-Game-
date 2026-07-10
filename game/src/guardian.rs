@@ -208,20 +208,28 @@ impl Default for GuardianMoveTimer {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn update_guardian_in_match(
     time: Res<Time>,
-    mut guardian: ResMut<Guardian>,
+    guardian: Option<ResMut<Guardian>>,
     mut tp: ResMut<TeleportState>,
     items: Res<ItemsState>,
-    mut log: ResMut<ActionLog>,
+    log: Option<ResMut<ActionLog>>,
     mut rng: Local<SimpleRng>,
     runtime: Res<MatchDirector>,
     paused: Res<MatchPaused>,
     mut move_timer: Local<GuardianMoveTimer>,
-    mut guardian_q: Query<&mut Transform, With<GuardianModel>>,
+    mut guardian_q: Query<(Entity, &mut Transform, Option<&mut Sprite>), With<GuardianModel>>,
+    assets: Option<Res<crate::view::assets::MatchAssets>>,
+    images: Option<Res<Assets<Image>>>,
     mut commands: Commands,
     mut screenshot_count: Local<usize>,
     mut pending_screenshots: Local<Vec<(String, u32)>>,
     mut anim: ResMut<crate::view::components::TeleportAnimation>,
 ) {
+    let Some(mut guardian) = guardian else {
+        return;
+    };
+    let Some(mut log) = log else {
+        return;
+    };
     if paused.0 || runtime.done {
         return;
     }
@@ -281,7 +289,7 @@ pub(crate) fn update_guardian_in_match(
         || std::env::var("OBSERVED2_CAPTURE_CEILING").is_ok();
     if is_static_capture {
         guardian.state = GuardianState::FrozenByPlayer;
-        for mut transform in &mut guardian_q {
+        for (_, mut transform, _) in &mut guardian_q {
             transform.translation = guardian.pos;
         }
         return;
@@ -342,6 +350,7 @@ pub(crate) fn update_guardian_in_match(
     }
 
     // 5. State resolution
+    // FrozenByPlayer beats FrozenByAnchor so player gaze overrides anchor light freeze
     guardian.state = if seen_by_player || seen_by_rival {
         GuardianState::FrozenByPlayer
     } else if seen_by_anchor {
@@ -429,8 +438,46 @@ pub(crate) fn update_guardian_in_match(
         }
     }
 
-    // 8. Synchronize Bevy 3D entity transform
-    for mut transform in &mut guardian_q {
-        transform.translation = guardian.pos;
+    // 8. Synchronize Bevy 3D entity transform & animation frame
+    let has_sheet = if let (Some(assets), Some(images)) = (&assets, &images) {
+        if let (Some(sheet), Some(_layout), Some(_meta)) = (
+            &assets.guardian_actor_sheet,
+            &assets.guardian_actor_layout,
+            &assets.guardian_actor_meta,
+        ) {
+            images.contains(sheet)
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    if has_sheet {
+        let assets = assets.as_ref().unwrap();
+        let meta = assets.guardian_actor_meta.as_ref().unwrap();
+
+        let clip_name = match guardian.state {
+            GuardianState::Active => "walk",
+            GuardianState::FrozenByPlayer => "idle",
+            GuardianState::FrozenByAnchor => "disrupted",
+        };
+
+        let elapsed = time.elapsed_secs();
+        let animation_step = (elapsed * 4.0).floor() as usize;
+
+        for (_, mut transform, maybe_sprite) in &mut guardian_q {
+            transform.translation = guardian.pos;
+            if let Some(mut sprite) = maybe_sprite {
+                let frame_idx = crate::view::sprites::actor_frame(meta, clip_name, 0.0, animation_step);
+                if let Some(ref mut atlas) = sprite.texture_atlas {
+                    atlas.index = frame_idx;
+                }
+            }
+        }
+    } else {
+        for (_, mut transform, _) in &mut guardian_q {
+            transform.translation = guardian.pos;
+        }
     }
 }

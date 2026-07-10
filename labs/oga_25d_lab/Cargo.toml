@@ -1,0 +1,26 @@
+[package]
+name = "oga_25d_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "oga_25d_lab"
+path = "src/main.rs"
+
+[[bin]]
+name = "derive_sprites"
+path = "src/bin/derive_sprites.rs"
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = [
+    "3d",
+    "png",
+] }
+# Bevy 0.18-compatible line. The latest bevy_sprite3d 9.x targets Bevy 0.19.
+bevy_sprite3d = { version = "=8.0.0", default-features = false }
+observed_assets = { path = "../../crates/observed_assets" }
+observed_style = { path = "../../crates/observed_style" }
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

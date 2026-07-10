@@ -99,8 +99,22 @@ pub fn resolve_series(series: &EliminationSeries) -> MatchResult {
 /// and an on-screen match of the same seed resolve identically (pinned by the
 /// `headless_and_interactive_matches_agree_on_the_result` characterization test).
 pub fn play_match() -> MatchResult {
-    let mut director =
-        MatchDirector::new(MATCH_SEED, crate::map_catalog::active_map_spec(MATCH_SEED));
+    let career = load_career();
+    let profile_config = crate::sim::director::BotPopulations {
+        rival_teams: career.bot_rival_teams,
+        ai_teammates: career.bot_ai_teammates,
+        guardian: career.bot_guardian,
+    };
+    let config = if let Some(env_config) = crate::sim::director::BotPopulations::from_env() {
+        env_config
+    } else {
+        profile_config
+    };
+    let mut director = MatchDirector::new(
+        MATCH_SEED,
+        crate::map_catalog::active_map_spec(MATCH_SEED),
+        config,
+    );
     director.run_to_completion()
 }
 
@@ -123,6 +137,9 @@ pub struct Career {
     pub last_result: Option<MatchResult>,
     pub last_unlocks: Vec<u16>,
     awarded: bool,
+    pub bot_rival_teams: bool,
+    pub bot_ai_teammates: bool,
+    pub bot_guardian: bool,
 }
 
 impl Default for Career {
@@ -133,6 +150,9 @@ impl Default for Career {
             last_result: None,
             last_unlocks: Vec::new(),
             awarded: false,
+            bot_rival_teams: true,
+            bot_ai_teammates: true,
+            bot_guardian: true,
         }
     }
 }
@@ -175,24 +195,60 @@ impl Career {
 /// malformed save falls back to `Profile::new()` exactly like a first launch, never
 /// panicking on a bad file.
 pub fn load_career() -> Career {
-    let profile = std::fs::read_to_string(crate::settings::profile_save_path())
-        .ok()
-        .and_then(|text| Profile::parse(&text))
-        .unwrap_or_default();
+    let save_text =
+        std::fs::read_to_string(crate::settings::profile_save_path()).unwrap_or_default();
+    let first_line = save_text.lines().next().unwrap_or("");
+    let profile = Profile::parse(first_line).unwrap_or_default();
+
+    let mut bot_rival_teams = true;
+    let mut bot_ai_teammates = true;
+    let mut bot_guardian = true;
+
+    for line in save_text.lines().skip(1) {
+        if let Some((key, value)) = line.split_once('=') {
+            match key {
+                "bot_rival_teams" => {
+                    if let Ok(b) = value.parse::<bool>() {
+                        bot_rival_teams = b;
+                    }
+                }
+                "bot_ai_teammates" => {
+                    if let Ok(b) = value.parse::<bool>() {
+                        bot_ai_teammates = b;
+                    }
+                }
+                "bot_guardian" => {
+                    if let Ok(b) = value.parse::<bool>() {
+                        bot_guardian = b;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
     Career {
         profile,
+        bot_rival_teams,
+        bot_ai_teammates,
+        bot_guardian,
         ..Career::default()
     }
 }
 
 /// Persist the career's profile to disk (best-effort — a write failure is silently
 /// ignored, matching `settings::save_settings`'s convention).
-pub fn save_profile(profile: &Profile) {
+pub fn save_profile(career: &Career) {
     let path = crate::settings::profile_save_path();
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let _ = std::fs::write(path, profile.serialize());
+    let base_serialized = career.profile.serialize();
+    let full_serialized = format!(
+        "{}\nbot_rival_teams={}\nbot_ai_teammates={}\nbot_guardian={}",
+        base_serialized, career.bot_rival_teams, career.bot_ai_teammates, career.bot_guardian
+    );
+    let _ = std::fs::write(path, full_serialized);
 }
 
 #[cfg(test)]

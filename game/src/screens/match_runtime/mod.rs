@@ -14,7 +14,8 @@ use crate::layout::WALL_HEIGHT;
 use crate::sim::director::MatchDirector;
 use crate::sim::nav::nav_for_place;
 use crate::sim::state::{ItemIntent, LastTeleportPad, MatchPaused, SpectatorBot, TeleportState};
-use crate::view::components::{KeystoneItem, TeleportAnimation};
+use crate::view::assets::MatchAssets;
+use crate::view::components::{KeystoneItem, MatchAudioCue, TeleportAnimation};
 
 use crate::GameState;
 use crate::flow::{Career, MATCH_SEED};
@@ -70,9 +71,13 @@ pub(crate) fn item_actions(
     paused: Res<MatchPaused>,
     mut anim: ResMut<TeleportAnimation>,
     mut last_pad: ResMut<LastTeleportPad>,
-    mut log: ResMut<crate::guardian::ActionLog>,
+    mut log: Option<ResMut<crate::guardian::ActionLog>>,
     seed: Option<Res<crate::flow::ActiveMatchSeed>>,
     mut juice: ResMut<crate::view::components::CameraJuice>,
+    assets: Res<MatchAssets>,
+    settings: Res<crate::settings::Settings>,
+    mut audio_director: ResMut<crate::screens::audio::AudioDirector>,
+    mut commands: Commands,
 ) {
     let intent = std::mem::take(&mut *item_intent);
     if paused.0 || director.done {
@@ -87,7 +92,7 @@ pub(crate) fn item_actions(
     let mut changed = false;
 
     if intent.torch_action {
-        changed |= if items.pickup(ItemKind::AnchorTorch, place, pos, ITEM_INTERACT_RADIUS) {
+        let acted = if items.pickup(ItemKind::AnchorTorch, place, pos, ITEM_INTERACT_RADIUS) {
             true
         } else {
             let mut connections = match place {
@@ -98,9 +103,31 @@ pub(crate) fn item_actions(
             connections.dedup();
             items.drop_anchor_torch(place, pos, version, &connections)
         };
+        if acted {
+            audio_director.request(
+                &mut commands,
+                &assets.tool_interact,
+                MatchAudioCue::ToolInteract,
+                "Tool interaction",
+                None,
+                &settings,
+            );
+        }
+        changed |= acted;
     }
     if intent.pad_action {
-        changed |= pickup_or_drop_item(&mut items, ItemKind::TeleportPad, place, pos, version);
+        let acted = pickup_or_drop_item(&mut items, ItemKind::TeleportPad, place, pos, version);
+        if acted {
+            audio_director.request(
+                &mut commands,
+                &assets.tool_interact,
+                MatchAudioCue::ToolInteract,
+                "Tool interaction",
+                None,
+                &settings,
+            );
+        }
+        changed |= acted;
     }
 
     let on_pad_link = items.pad_link_target(place, pos, PAD_ACTIVATE_RADIUS);
@@ -141,7 +168,15 @@ pub(crate) fn item_actions(
             last_pad.last_used_pos = Some((target_place, target_pos));
             anim.trigger(2.0, Color::srgba(0.0, 0.8, 1.0, 1.0));
             juice.teleport_ease_timer = 0.45;
-            if let Place::Room(room) = target_place {
+            audio_director.request(
+                &mut commands,
+                &assets.tool_interact,
+                MatchAudioCue::ToolInteract,
+                "Teleport pad link",
+                None,
+                &settings,
+            );
+            if let (Place::Room(room), Some(log)) = (target_place, log.as_mut()) {
                 log.add(format!("Teleported via pad to Room {}!", room.0));
             }
         }
@@ -226,19 +261,42 @@ pub(crate) fn match_pump(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn keystone_pickup(
     tp: Res<TeleportState>,
     mut keys: ResMut<KeystoneState>,
     mut director: ResMut<MatchDirector>,
     items: Query<(Entity, &KeystoneItem, &GlobalTransform)>,
+    assets: Res<MatchAssets>,
+    settings: Res<crate::settings::Settings>,
+    mut audio_director: ResMut<crate::screens::audio::AudioDirector>,
     mut commands: Commands,
 ) {
     const PICKUP_RADIUS: f32 = 2.2;
     let body = Vec2::new(tp.body.position.x, tp.body.position.z);
     for (entity, item, transform) in &items {
         let here = Vec2::new(transform.translation().x, transform.translation().z);
+        let was_open = keys.gate_open();
         if body.distance(here) <= PICKUP_RADIUS && keys.collect(item.0) {
             director.record_local_keystone(item.0);
+            audio_director.request(
+                &mut commands,
+                &assets.keystone,
+                MatchAudioCue::Keystone,
+                "Keystone pickup",
+                None,
+                &settings,
+            );
+            if !was_open && keys.gate_open() {
+                audio_director.request(
+                    &mut commands,
+                    &assets.exit_unlock,
+                    MatchAudioCue::ExitUnlock,
+                    "Exit unlock",
+                    None,
+                    &settings,
+                );
+            }
             commands.entity(entity).despawn();
         }
     }

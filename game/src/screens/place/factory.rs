@@ -4,6 +4,7 @@
 //! helpers it uses to give each room a distinct hue.
 
 use bevy::prelude::*;
+use bevy_sprite3d::prelude::Sprite3d;
 use observed_core::{RoomId, SplitMix};
 use observed_facility::map_spec::RoomRole;
 
@@ -102,7 +103,7 @@ pub(crate) fn rebuild_place(
     tp: ResMut<TeleportState>,
     keys: Res<KeystoneState>,
     items: Res<ItemsState>,
-    guardian: Res<crate::guardian::Guardian>,
+    guardian: Option<Res<crate::guardian::Guardian>>,
     runtime: Res<MatchDirector>,
     mut sightings: ResMut<RivalSightings>,
     existing: Query<Entity, With<PlaceGeometry>>,
@@ -186,12 +187,29 @@ pub(crate) fn rebuild_place(
     match tp.place {
         Place::Room(room) => {
             let floor_material = room_floor_material(room, &assets.floor_material, &mut materials);
+
+            // Build the wall material for this specific room, which might have the lab texture!
+            let wall_material = if let Some(spec) = &game.competitive.map_spec
+                && let Some(r_spec) = spec.room(room)
+                && (r_spec.role == RoomRole::Monitor || r_spec.role == RoomRole::GuardianControl)
+                && let Some(ref lab_tex) = assets.wall_albedo_lab
+            {
+                let custom_wall = crate::view::assets::textured_neon_material(
+                    &observed_style::surface(observed_style::SurfaceRole::Wall),
+                    Some(lab_tex.clone()),
+                );
+                materials.add(custom_wall)
+            } else {
+                assets.wall_material.clone()
+            };
+
             shell::spawn_room_shell(
                 &mut commands,
                 &assets,
                 &mut meshes,
                 &geom,
                 floor_material,
+                wall_material,
                 y_offset,
             );
         }
@@ -287,6 +305,7 @@ pub(crate) fn rebuild_place(
                 shell::ThresholdStyle::locked_exit(&assets, tethered),
                 y_offset,
             );
+            spawn_exit_unlock_iconography(&mut commands, &assets, &images, &keys, gap, y_offset);
         } else if gap.kind == GapKind::Collapsed {
             shell::spawn_threshold_gateway(
                 &mut commands,
@@ -379,7 +398,7 @@ pub(crate) fn rebuild_place(
     if let Place::Room(room) = tp.place
         && keys.has_uncollected(room)
     {
-        item_visuals::spawn_keystone_item(&mut commands, &assets, room, y_offset);
+        item_visuals::spawn_keystone_item(&mut commands, &assets, &images, room, y_offset);
     }
 
     // Spawn dropped items
@@ -422,18 +441,98 @@ pub(crate) fn rebuild_place(
 
     // Spawn guardian
     if let Place::Room(room) = tp.place
+        && let Some(guardian) = guardian.as_ref()
         && room == guardian.room
     {
         spawn_guardian_model(&mut commands, &assets, &images, guardian.pos);
     }
+
+    // Spawn dressing props
+    match tp.place {
+        Place::Room(room) => {
+            if let Some(spec) = &game.competitive.map_spec
+                && let Some(r_spec) = spec.room(room)
+            {
+                spawn_room_dressing(
+                    &mut commands,
+                    &assets,
+                    &images,
+                    room,
+                    r_spec.role,
+                    &geom,
+                    y_offset,
+                    seed_val,
+                );
+            }
+        }
+        Place::Hallway { .. } => {
+            spawn_hallway_dressing(
+                &mut commands,
+                &assets,
+                &images,
+                &geom,
+                y_offset,
+                seed_val,
+            );
+        }
+    }
 }
 
+#[allow(clippy::collapsible_if)]
 pub(crate) fn spawn_guardian_model(
     commands: &mut Commands,
     assets: &MatchAssets,
     images: &Assets<Image>,
     pos: Vec3,
 ) {
+    if let (Some(sheet), Some(layout), Some(meta)) = (
+        &assets.guardian_actor_sheet,
+        &assets.guardian_actor_layout,
+        &assets.guardian_actor_meta,
+    ) {
+        if images.contains(sheet) {
+            commands
+                .spawn((
+                    crate::guardian::GuardianModel,
+                    PlaceGeometry,
+                    DespawnOnExit(GameState::Match),
+                    Sprite {
+                        image: sheet.clone(),
+                        texture_atlas: Some(TextureAtlas {
+                            layout: layout.clone(),
+                            index: 0,
+                        }),
+                        ..default()
+                    },
+                    Sprite3d {
+                        pixels_per_metre: meta.pixels_per_metre,
+                        alpha_mode: AlphaMode::Blend,
+                        unlit: true,
+                        emissive: observed_style::marker(observed_style::MarkerRole::Director).emissive,
+                        pivot: Some(Vec2::new(meta.pivot.0, meta.pivot.1)),
+                        double_sided: true,
+                        ..default()
+                    },
+                    crate::view::components::BillboardSprite,
+                    Transform::from_xyz(pos.x, (pos.y - 0.76).max(0.0) + 0.02, pos.z),
+                    Name::new("Guardian sheet sprite"),
+                ))
+                .with_children(|g| {
+                    g.spawn((
+                        PointLight {
+                            color: Color::srgb(1.0, 0.05, 0.05),
+                            intensity: 3000.0,
+                            range: 9.0,
+                            shadows_enabled: false,
+                            ..default()
+                        },
+                        Transform::from_xyz(0.0, 0.9, 0.0),
+                    ));
+                });
+            return;
+        }
+    }
+
     if let Some(image) = assets.guardian_sprite(images) {
         commands
             .spawn((
@@ -485,4 +584,268 @@ pub(crate) fn spawn_guardian_model(
                 Transform::from_xyz(0.0, 0.8, 0.0),
             ));
         });
+}
+
+fn spawn_exit_unlock_iconography(
+    commands: &mut Commands,
+    assets: &MatchAssets,
+    images: &Assets<Image>,
+    keys: &KeystoneState,
+    gap: &teleport::DoorGap,
+    y_offset: f32,
+) {
+    let card_image = assets.keystone_card_sprite(images);
+    let core_image = assets.keystone_core_sprite(images);
+    let exit_card_image = assets.exit_access_card_sprite(images);
+
+    let (Some(card_img), Some(core_img)) = (card_image, core_image) else {
+        return;
+    };
+
+    let along = Vec2::new(-gap.normal.y, gap.normal.x);
+
+    let required = keys.required as usize;
+    let held = keys.held as usize;
+
+    let spacing = 0.35;
+    let start_offset = -((required - 1) as f32) * spacing * 0.5;
+
+    for i in 0..required {
+        let is_collected = i < held;
+
+        let (img, name) = if i % 3 == 0 {
+            (card_img.clone(), "Required card icon")
+        } else if i % 3 == 1 {
+            (core_img.clone(), "Required core icon")
+        } else if let Some(ref exit_img) = exit_card_image {
+            (exit_img.clone(), "Required exit card icon")
+        } else {
+            (card_img.clone(), "Required card icon")
+        };
+
+        let treatment = if is_collected {
+            observed_style::marker(observed_style::MarkerRole::You)
+        } else {
+            observed_style::marker(observed_style::MarkerRole::Rival)
+        };
+
+        let offset_2d = along * (start_offset + (i as f32) * spacing) + gap.normal * 0.12;
+        let pos = gap.center + offset_2d;
+
+        commands.spawn((
+            PlaceGeometry,
+            DespawnOnExit(GameState::Match),
+            crate::view::sprites::sprite3d_components_with_pivot(
+                img,
+                &treatment,
+                crate::view::sprites::DEVICE_PIXELS_PER_METRE,
+                Vec2::new(0.5, 0.5),
+            ),
+            Transform::from_xyz(pos.x, y_offset + gap.floor_y + 1.2, pos.y),
+            Name::new(name),
+        ));
+    }
+}
+
+fn is_safe_placement(p: Vec2, geom: &teleport::PlaceGeom, placed: &[Vec2], is_room: bool) -> bool {
+    // 1. Wall clearance: must be inside the room's polygon (if it is a room) and not too close to the boundary.
+    if is_room {
+        let clamped = teleport::contain(geom, p, 0.8); // 0.8 units clear of walls
+        if (clamped - p).length() > 0.01 {
+            return false;
+        }
+    } else {
+        // Hallway: check bounding box half-extents
+        let margin = 0.8;
+        if p.x.abs() >= geom.half.x - margin || p.y.abs() >= geom.half.y - margin {
+            return false;
+        }
+    }
+
+    // 2. Center clearance (for keystones/consoles/teleport pads at center)
+    if is_room && p.length() < 1.8 {
+        return false;
+    }
+
+    // 3. Threshold clearance
+    for gap in &geom.gaps {
+        let along = Vec2::new(-gap.normal.y, gap.normal.x);
+        let to_p = p - gap.center;
+        let dist_along = to_p.dot(along).abs();
+        let dist_normal = to_p.dot(gap.normal);
+
+        // Clearance box: width of gap + 0.5 margin, and extending 2.5 units into the room, 1.0 units out
+        if dist_along < (gap.width * 0.5 + 0.5) && dist_normal > -2.5 && dist_normal < 1.0 {
+            return false;
+        }
+    }
+
+    // 4. Distance to other placed props
+    for other in placed {
+        if p.distance(*other) < 1.5 {
+            return false;
+        }
+    }
+
+    true
+}
+
+#[allow(clippy::too_many_arguments)]
+fn spawn_room_dressing(
+    commands: &mut Commands,
+    assets: &MatchAssets,
+    images: &Assets<Image>,
+    room: RoomId,
+    role: RoomRole,
+    geom: &teleport::PlaceGeom,
+    y_offset: f32,
+    seed_val: u64,
+) {
+    // 1. Initialize deterministic RNG
+    let mut rng = SplitMix(seed_val ^ (room.0 as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+
+    // 2. Select props by room role
+    let props = match role {
+        RoomRole::Monitor => vec![
+            assets.decor_lab_table.clone(),
+            assets.decor_column.clone(),
+            assets.decor_lab_crate.clone(),
+        ],
+        RoomRole::GuardianControl => vec![
+            assets.decor_lab_table.clone(),
+            assets.decor_column.clone(),
+            assets.decor_torch.clone(),
+        ],
+        RoomRole::Keystone => vec![
+            assets.decor_lab_crate.clone(),
+            assets.decor_column.clone(),
+        ],
+        RoomRole::Start | RoomRole::Exit => vec![
+            assets.decor_column.clone(),
+            assets.decor_torch.clone(),
+        ],
+        _ => vec![
+            assets.decor_column.clone(),
+            assets.decor_lab_crate.clone(),
+        ],
+    };
+
+    // Filter out None handles
+    let props: Vec<Handle<Image>> = props.into_iter().flatten().collect();
+    if props.is_empty() {
+        return;
+    }
+
+    // 3. Determine number of props to place (e.g. 2 to 4)
+    let count = 2 + (rng.next_u64() % 3) as usize; // 2, 3, or 4 props
+    let mut placed = Vec::new();
+
+    // 4. Sample and place props
+    for _ in 0..count {
+        let mut best_pos = None;
+        // Try up to 50 times to find a safe position
+        for _ in 0..50 {
+            // Sample a point within the half-extents
+            let rx = ((rng.next_u64() % 2000) as f32 / 1000.0 - 1.0) * geom.half.x;
+            let ry = ((rng.next_u64() % 2000) as f32 / 1000.0 - 1.0) * geom.half.y;
+            let p = Vec2::new(rx, ry);
+
+            if is_safe_placement(p, geom, &placed, true) {
+                best_pos = Some(p);
+                break;
+            }
+        }
+
+        if let Some(pos) = best_pos {
+            placed.push(pos);
+            // Select prop handle deterministically
+            let prop_idx = (rng.next_u64() as usize) % props.len();
+            let image = props[prop_idx].clone();
+
+            if images.contains(&image) {
+                commands.spawn((
+                    PlaceGeometry,
+                    DespawnOnExit(GameState::Match),
+                    Sprite {
+                        image,
+                        ..default()
+                    },
+                    Sprite3d {
+                        pixels_per_metre: 64.0,
+                        alpha_mode: AlphaMode::Blend,
+                        unlit: true,
+                        // Dim emission so it is dimmer than interactables and doesn't steal signal colors
+                        emissive: LinearRgba::rgb(0.015, 0.015, 0.015),
+                        pivot: Some(Vec2::new(0.5, 0.0)),
+                        double_sided: true,
+                        ..default()
+                    },
+                    crate::view::components::BillboardSprite,
+                    Transform::from_xyz(pos.x, y_offset + 0.02, pos.y),
+                    Name::new("Room dressing prop"),
+                ));
+            }
+        }
+    }
+}
+
+fn spawn_hallway_dressing(
+    commands: &mut Commands,
+    assets: &MatchAssets,
+    images: &Assets<Image>,
+    geom: &teleport::PlaceGeom,
+    y_offset: f32,
+    seed_val: u64,
+) {
+    let mut rng = SplitMix(seed_val ^ 0x1234_5678_ABCD_EF01);
+    let props = vec![
+        assets.decor_column.clone(),
+        assets.decor_lab_crate.clone(),
+    ];
+    let props: Vec<Handle<Image>> = props.into_iter().flatten().collect();
+    if props.is_empty() {
+        return;
+    }
+
+    // Spawn at most 1 prop in hallways to keep it minimal and clear
+    let placed = Vec::new();
+    let mut best_pos = None;
+    for _ in 0..50 {
+        let rx = ((rng.next_u64() % 2000) as f32 / 1000.0 - 1.0) * geom.half.x;
+        let ry = ((rng.next_u64() % 2000) as f32 / 1000.0 - 1.0) * geom.half.y;
+        let p = Vec2::new(rx, ry);
+
+        if is_safe_placement(p, geom, &placed, false) {
+            best_pos = Some(p);
+            break;
+        }
+    }
+
+    if let Some(pos) = best_pos {
+        let prop_idx = (rng.next_u64() as usize) % props.len();
+        let image = props[prop_idx].clone();
+
+        if images.contains(&image) {
+            commands.spawn((
+                PlaceGeometry,
+                DespawnOnExit(GameState::Match),
+                Sprite {
+                    image,
+                    ..default()
+                },
+                Sprite3d {
+                    pixels_per_metre: 64.0,
+                    alpha_mode: AlphaMode::Blend,
+                    unlit: true,
+                    emissive: LinearRgba::rgb(0.015, 0.015, 0.015),
+                    pivot: Some(Vec2::new(0.5, 0.0)),
+                    double_sided: true,
+                    ..default()
+                },
+                crate::view::components::BillboardSprite,
+                Transform::from_xyz(pos.x, y_offset + 0.02, pos.y),
+                Name::new("Hallway dressing prop"),
+            ));
+        }
+    }
 }

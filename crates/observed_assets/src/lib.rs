@@ -227,6 +227,21 @@ pub const DISTRICT_AMBIENCE: [AssetSlot; 6] = [
     AMBIENCE_HOLLOW,
     AMBIENCE_SPILLWAY,
 ];
+/// Hallway-flavour ambience beds. Rooms take their district's bed; a hallway takes
+/// one of these instead: the generic corridor bed, or the gantry bed when the hall
+/// has raised decks. Optional drop-ins like the district beds.
+pub const AMBIENCE_CORRIDOR: AssetSlot = AssetSlot {
+    name: "ambience_corridor",
+    kind: AssetKind::Sound,
+    path: "sounds/ambience_corridor.ogg",
+    hint: "looping generic hallway/corridor bed",
+};
+pub const AMBIENCE_GANTRY: AssetSlot = AssetSlot {
+    name: "ambience_gantry",
+    kind: AssetKind::Sound,
+    path: "sounds/ambience_gantry.ogg",
+    hint: "looping open-air gantry jump-hall bed",
+};
 /// Optional (not in the game's required asset plan): a door open/close thunk on
 /// entering or leaving a place. Silent until a file is dropped here.
 pub const DOOR: AssetSlot = AssetSlot {
@@ -270,6 +285,30 @@ pub const LAND: AssetSlot = AssetSlot {
     kind: AssetKind::Sound,
     path: "sounds/land.ogg",
     hint: "mechanical/gantry land/impact cue",
+};
+pub const TOOL_INTERACT: AssetSlot = AssetSlot {
+    name: "tool_interact",
+    kind: AssetKind::Sound,
+    path: "sounds/tool_interact.ogg",
+    hint: "short CC0 tool pickup/drop acknowledgement",
+};
+pub const KEYSTONE: AssetSlot = AssetSlot {
+    name: "keystone",
+    kind: AssetKind::Sound,
+    path: "sounds/keystone.ogg",
+    hint: "short CC0 keystone pickup signal",
+};
+pub const EXIT_UNLOCK: AssetSlot = AssetSlot {
+    name: "exit_unlock",
+    kind: AssetKind::Sound,
+    path: "sounds/exit_unlock.ogg",
+    hint: "short CC0 exit unlock confirmation",
+};
+pub const GUARDIAN_DREAD: AssetSlot = AssetSlot {
+    name: "guardian_dread",
+    kind: AssetKind::Sound,
+    path: "sounds/guardian_dread.ogg",
+    hint: "subtle CC0 guardian proximity dread cue",
 };
 pub const RUNNER_STAND: AssetSlot = AssetSlot {
     name: "runner_stand",
@@ -319,6 +358,96 @@ pub const CONTROL_DEVICE: AssetSlot = AssetSlot {
     path: "sprites/control_device.png",
     hint: "CC0 2.5D control or deployable device sprite",
 };
+pub const KEYSTONE_CARD: AssetSlot = AssetSlot {
+    name: "keystone_card",
+    kind: AssetKind::Texture,
+    path: "sprites/keystone_card.png",
+    hint: "CC0 2.5D keystone access card sprite",
+};
+pub const KEYSTONE_CORE: AssetSlot = AssetSlot {
+    name: "keystone_core",
+    kind: AssetKind::Texture,
+    path: "sprites/keystone_core.png",
+    hint: "CC0 2.5D keystone power core sprite",
+};
+pub const EXIT_ACCESS_CARD: AssetSlot = AssetSlot {
+    name: "exit_access_card",
+    kind: AssetKind::Texture,
+    path: "sprites/exit_access_card.png",
+    hint: "CC0 2.5D exit authorization card sprite",
+};
+pub const ANCHOR_TORCH: AssetSlot = AssetSlot {
+    name: "anchor_torch",
+    kind: AssetKind::Texture,
+    path: "sprites/anchor_torch.png",
+    hint: "CC0 2.5D anchor torch body sprite",
+};
+pub const ROUTE_CELL: AssetSlot = AssetSlot {
+    name: "route_cell",
+    kind: AssetKind::Texture,
+    path: "sprites/route_cell.png",
+    hint: "CC0 2.5D route/mesh power cell sprite",
+};
+pub const RELAY_DEVICE: AssetSlot = AssetSlot {
+    name: "relay_device",
+    kind: AssetKind::Texture,
+    path: "sprites/relay_device.png",
+    hint: "CC0 2.5D portable relay node sprite",
+};
+pub const BATTERY_CHARGE: AssetSlot = AssetSlot {
+    name: "battery_charge",
+    kind: AssetKind::Texture,
+    path: "sprites/battery_charge.png",
+    hint: "CC0 2.5D battery unit charge sprite",
+};
+pub const REPAIR_TOKEN: AssetSlot = AssetSlot {
+    name: "repair_token",
+    kind: AssetKind::Texture,
+    path: "sprites/repair_token.png",
+    hint: "CC0 2.5D subsystem repair token sprite",
+};
+pub const RIVAL_ACTOR: AssetSlot = AssetSlot {
+    name: "rival_actor",
+    kind: AssetKind::Texture,
+    path: "sprites/rival_actor.png",
+    hint: "CC0 2.5D directional rival sheet",
+};
+pub const GUARDIAN_ACTOR: AssetSlot = AssetSlot {
+    name: "guardian_actor",
+    kind: AssetKind::Texture,
+    path: "sprites/guardian_actor.png",
+    hint: "CC0 2.5D directional guardian sheet",
+};
+pub const DECOR_COLUMN: AssetSlot = AssetSlot {
+    name: "decor_column",
+    kind: AssetKind::Texture,
+    path: "sprites/decor_column.png",
+    hint: "CC0 2.5D column decoration sprite",
+};
+pub const DECOR_TORCH: AssetSlot = AssetSlot {
+    name: "decor_torch",
+    kind: AssetKind::Texture,
+    path: "sprites/decor_torch.png",
+    hint: "CC0 2.5D wall torch decoration sprite",
+};
+pub const DECOR_LAB_CRATE: AssetSlot = AssetSlot {
+    name: "decor_lab_crate",
+    kind: AssetKind::Texture,
+    path: "sprites/decor_lab_crate.png",
+    hint: "CC0 2.5D lab crate decoration sprite",
+};
+pub const DECOR_LAB_TABLE: AssetSlot = AssetSlot {
+    name: "decor_lab_table",
+    kind: AssetKind::Texture,
+    path: "sprites/decor_lab_table.png",
+    hint: "CC0 2.5D lab table decoration sprite",
+};
+pub const WALL_ALBEDO_LAB: AssetSlot = AssetSlot {
+    name: "wall_albedo_lab",
+    kind: AssetKind::Texture,
+    path: "textures/wall_albedo_lab.png",
+    hint: "CC0 PBR wall albedo variant for lab-like rooms",
+};
 
 /// Every authored slot, in showcase order. Add a row (and a named const above) to
 /// add a drop-in point.
@@ -349,6 +478,8 @@ pub const SLOTS: &[AssetSlot] = &[
     AMBIENCE_FOUNDRY,
     AMBIENCE_HOLLOW,
     AMBIENCE_SPILLWAY,
+    AMBIENCE_CORRIDOR,
+    AMBIENCE_GANTRY,
     DOOR,
     KLAXON,
     COLLAPSE_STING,
@@ -356,6 +487,10 @@ pub const SLOTS: &[AssetSlot] = &[
     UI_HOVER,
     JUMP,
     LAND,
+    TOOL_INTERACT,
+    KEYSTONE,
+    EXIT_UNLOCK,
+    GUARDIAN_DREAD,
     RUNNER_STAND,
     RUNNER_WALK1,
     RUNNER_WALK2,
@@ -364,6 +499,21 @@ pub const SLOTS: &[AssetSlot] = &[
     RIVAL_WALK2,
     GUARDIAN_STAND,
     CONTROL_DEVICE,
+    KEYSTONE_CARD,
+    KEYSTONE_CORE,
+    EXIT_ACCESS_CARD,
+    ANCHOR_TORCH,
+    ROUTE_CELL,
+    RELAY_DEVICE,
+    BATTERY_CHARGE,
+    REPAIR_TOKEN,
+    RIVAL_ACTOR,
+    GUARDIAN_ACTOR,
+    DECOR_COLUMN,
+    DECOR_TORCH,
+    DECOR_LAB_CRATE,
+    DECOR_LAB_TABLE,
+    WALL_ALBEDO_LAB,
 ];
 
 /// The authored slots a showcase wires up, as an owned vector (back-compat with the
@@ -457,6 +607,22 @@ mod tests {
         assert_eq!(slot("ambience_archive").path, AMBIENCE_ARCHIVE.path);
         assert_eq!(slot("runner_stand").path, RUNNER_STAND.path);
         assert_eq!(slot("control_device").path, CONTROL_DEVICE.path);
+        assert_eq!(slot("keystone_card").path, KEYSTONE_CARD.path);
+        assert_eq!(slot("keystone_core").path, KEYSTONE_CORE.path);
+        assert_eq!(slot("exit_access_card").path, EXIT_ACCESS_CARD.path);
+        assert_eq!(slot("anchor_torch").path, ANCHOR_TORCH.path);
+        assert_eq!(slot("route_cell").path, ROUTE_CELL.path);
+        assert_eq!(slot("relay_device").path, RELAY_DEVICE.path);
+        assert_eq!(slot("battery_charge").path, BATTERY_CHARGE.path);
+        assert_eq!(slot("repair_token").path, REPAIR_TOKEN.path);
+        assert_eq!(slot("guardian_dread").path, GUARDIAN_DREAD.path);
+        assert_eq!(slot("rival_actor").path, RIVAL_ACTOR.path);
+        assert_eq!(slot("guardian_actor").path, GUARDIAN_ACTOR.path);
+        assert_eq!(slot("decor_column").path, DECOR_COLUMN.path);
+        assert_eq!(slot("decor_torch").path, DECOR_TORCH.path);
+        assert_eq!(slot("decor_lab_crate").path, DECOR_LAB_CRATE.path);
+        assert_eq!(slot("decor_lab_table").path, DECOR_LAB_TABLE.path);
+        assert_eq!(slot("wall_albedo_lab").path, WALL_ALBEDO_LAB.path);
         // Every named const is reachable by its own name through the manifest.
         for s in SLOTS {
             assert_eq!(slot(s.name).path, s.path);
@@ -468,6 +634,13 @@ mod tests {
         assert_eq!(DISTRICT_AMBIENCE.len(), 6);
         for district_slot in DISTRICT_AMBIENCE {
             assert_eq!(slot(district_slot.name).path, district_slot.path);
+        }
+    }
+
+    #[test]
+    fn hallway_ambience_slots_are_manifest_entries() {
+        for hall_slot in [AMBIENCE_CORRIDOR, AMBIENCE_GANTRY] {
+            assert_eq!(slot(hall_slot.name).path, hall_slot.path);
         }
     }
 }

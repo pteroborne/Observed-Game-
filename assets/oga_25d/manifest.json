@@ -130,26 +130,6 @@
       ],
       "intended_roles": ["first_person_tool_reference"],
       "notes": "Non-combat use only: scanner, grapple, route-cable, relay placer, or observation tool."
-    },
-    {
-      "id": "sci_fi_sound_library",
-      "title": "Sci-Fi Sound Effects Library",
-      "source_url": "https://opengameart.org/content/sci-fi-sound-effects-library",
-      "author": "Little Robot Sound Factory",
-      "license": "CC-BY 3.0",
-      "files": ["raw/sci_fi_sound_library/Sci-Fi_Sound_Library.zip"],
-      "intended_roles": ["reference_audio"],
-      "notes": "Reference-only until attribution support is planned or a CC0 replacement is selected."
-    },
-    {
-      "id": "ui_sound_library",
-      "title": "UI Sound Effects Library",
-      "source_url": "https://opengameart.org/content/ui-sound-effects-library",
-      "author": "Little Robot Sound Factory",
-      "license": "CC-BY 3.0",
-      "files": ["raw/ui_sound_library/UI_Sound_Library.zip"],
-      "intended_roles": ["reference_audio"],
-      "notes": "Reference-only until attribution support is planned or a CC0 replacement is selected."
     }
   ]
 }

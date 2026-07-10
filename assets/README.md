@@ -45,9 +45,9 @@ slots fall back to the existing procedural meshes.
 
 ## Licensing
 
-Prefer **CC0** (public domain — no attribution, commercial-OK). If you use CC-BY
-assets, keep an `ATTRIBUTION.md` here listing the source and author. Don't commit
-assets you don't have the rights to redistribute.
+Prefer **CC0** (public domain — no attribution, commercial-OK). If you use an
+asset that requires attribution, keep an `ATTRIBUTION.md` here listing the source
+and author. Don't commit assets you don't have the rights to redistribute.
 
 ## Format notes
 

@@ -5290,6 +5290,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "oga_25d_lab"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_sprite3d",
+ "image",
+ "observed_assets",
+ "observed_style",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ogg"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6344,16 +6357,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eda41003dc44290527a59b13432d4a0379379fa074b70174882adfbdfd917844"
 dependencies = [
  "bitflags 2.13.0",
-]
-
-[[package]]
-name = "sprite3d_placeholder_lab"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "bevy_sprite3d",
- "observed_assets",
- "observed_style",
 ]
 
 [[package]]

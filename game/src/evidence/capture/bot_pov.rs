@@ -157,14 +157,18 @@ pub(crate) fn drive_bot_pov_capture(
     items: Res<items::ItemsState>,
     mut intent: ResMut<MatchIntent>,
     mut item_intent: ResMut<ItemIntent>,
-    guardian: Res<crate::guardian::Guardian>,
+    guardian: Option<Res<crate::guardian::Guardian>>,
     seed: Option<Res<crate::flow::ActiveMatchSeed>>,
 ) {
     if request.phase < 2 || request.finished {
         return;
     }
 
-    let in_same_room = matches!(tp.place, teleport::Place::Room(room) if room == guardian.room);
+    let in_same_room = if let Some(ref g) = guardian {
+        matches!(tp.place, teleport::Place::Room(room) if room == g.room)
+    } else {
+        false
+    };
     if in_same_room && items.carried(crate::items::ItemKind::AnchorTorch) > 0 {
         item_intent.torch_action = true;
         info!("BOT_NAV: Bot dropped anchor torch to freeze guardian!");

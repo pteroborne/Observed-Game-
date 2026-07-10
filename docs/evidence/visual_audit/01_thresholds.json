@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "run_id": "observed-vis-audit-1783614927621",
+  "run_id": "observed-vis-audit-1783641665096",
   "scenario": "thresholds",
   "frame_index": 1,
   "place": {
@@ -125,72 +125,6 @@
   ],
   "lights": [
     {
-      "subject": "Place light",
-      "intensity": 2800.0,
-      "range": 48.93251,
-      "color_rgb": [
-        1.0,
-        0.78,
-        0.52
-      ],
-      "expected_min_intensity": 1.0
-    },
-    {
-      "subject": "Place light",
-      "intensity": 1540.0,
-      "range": 11.0,
-      "color_rgb": [
-        1.0,
-        0.78,
-        0.52
-      ],
-      "expected_min_intensity": 1.0
-    },
-    {
-      "subject": "Place light",
-      "intensity": 1540.0,
-      "range": 11.0,
-      "color_rgb": [
-        1.0,
-        0.78,
-        0.52
-      ],
-      "expected_min_intensity": 1.0
-    },
-    {
-      "subject": "Carried torch light",
-      "intensity": 2200.0,
-      "range": 8.0,
-      "color_rgb": [
-        0.6,
-        0.3,
-        1.0
-      ],
-      "expected_min_intensity": 1.0
-    },
-    {
-      "subject": "Place light",
-      "intensity": 2800.0,
-      "range": 30.88,
-      "color_rgb": [
-        1.0,
-        0.78,
-        0.52
-      ],
-      "expected_min_intensity": 1.0
-    },
-    {
-      "subject": "Place light",
-      "intensity": 1540.0,
-      "range": 11.0,
-      "color_rgb": [
-        1.0,
-        0.78,
-        0.52
-      ],
-      "expected_min_intensity": 1.0
-    },
-    {
       "subject": "threshold R0:S0 -> H0-6:0:S0",
       "intensity": 1400.0,
       "range": 5.0,
@@ -231,6 +165,72 @@
         0.45,
         0.62,
         0.78
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "Carried torch light",
+      "intensity": 2200.0,
+      "range": 8.0,
+      "color_rgb": [
+        0.6,
+        0.3,
+        1.0
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "Place light",
+      "intensity": 2800.0,
+      "range": 48.93251,
+      "color_rgb": [
+        1.0,
+        0.78,
+        0.52
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "Place light",
+      "intensity": 1540.0,
+      "range": 11.0,
+      "color_rgb": [
+        1.0,
+        0.78,
+        0.52
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "Place light",
+      "intensity": 1540.0,
+      "range": 11.0,
+      "color_rgb": [
+        1.0,
+        0.78,
+        0.52
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "Place light",
+      "intensity": 2800.0,
+      "range": 30.88,
+      "color_rgb": [
+        1.0,
+        0.78,
+        0.52
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "Place light",
+      "intensity": 1540.0,
+      "range": 11.0,
+      "color_rgb": [
+        1.0,
+        0.78,
+        0.52
       ],
       "expected_min_intensity": 1.0
     }
@@ -1789,12 +1789,12 @@
       "min_luminance": 2.0
     },
     {
-      "subject": "Rival team 1",
+      "subject": "Rival team 1 sprite",
       "signal": true,
       "base_rgb": [
-        1.0,
-        0.5,
-        0.15
+        0.99999994,
+        0.99999994,
+        0.99999994
       ],
       "emissive_rgb": [
         8.0,
@@ -1805,12 +1805,12 @@
       "min_luminance": 2.0
     },
     {
-      "subject": "Rival team 2",
+      "subject": "Rival team 2 sprite",
       "signal": true,
       "base_rgb": [
-        1.0,
-        0.5,
-        0.15
+        0.99999994,
+        0.99999994,
+        0.99999994
       ],
       "emissive_rgb": [
         8.0,
@@ -1821,12 +1821,12 @@
       "min_luminance": 2.0
     },
     {
-      "subject": "Rival team 3",
+      "subject": "Rival team 3 sprite",
       "signal": true,
       "base_rgb": [
-        1.0,
-        0.5,
-        0.15
+        0.99999994,
+        0.99999994,
+        0.99999994
       ],
       "emissive_rgb": [
         8.0,

@@ -4,6 +4,7 @@
 //! Direction rule (Arc G): `view` may read `crate::sim` and the pure domain crates; it
 //! never writes simulation state, and `sim` never imports `view`.
 
+pub(crate) mod actor_metadata;
 pub(crate) mod assets;
 pub(crate) mod components;
 pub(crate) mod sprites;

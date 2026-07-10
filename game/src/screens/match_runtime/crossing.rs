@@ -307,6 +307,7 @@ pub(crate) fn teleport_sim(
     assets: Res<crate::view::assets::MatchAssets>,
     settings: Res<crate::settings::Settings>,
     mut juice: ResMut<CameraJuice>,
+    mut audio_director: ResMut<crate::screens::audio::AudioDirector>,
 ) {
     if paused.0 || runtime.done {
         return;
@@ -326,24 +327,25 @@ pub(crate) fn teleport_sim(
     tp.prev_grounded = tp.body.grounded;
 
     // Detect jump/land stings
-    let sfx_volume = settings.effective_sfx_volume();
     if prev_grounded && !tp.body.grounded && tp.body.velocity.y > 0.0 {
         juice.jump_timer = 0.20;
-        crate::screens::audio::play_one_shot(
+        audio_director.request(
             &mut commands,
             &assets.jump,
             MatchAudioCue::Jump,
             "Jump sting",
-            sfx_volume * 0.7,
+            None,
+            &settings,
         );
     } else if !prev_grounded && tp.body.grounded {
         juice.land_timer = 0.25;
-        crate::screens::audio::play_one_shot(
+        audio_director.request(
             &mut commands,
             &assets.land,
             MatchAudioCue::Land,
             "Land sting",
-            sfx_volume * 0.9,
+            None,
+            &settings,
         );
     }
 

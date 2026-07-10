@@ -22,6 +22,7 @@ pub(crate) fn spawn_room_shell(
     meshes: &mut Assets<Mesh>,
     geom: &PlaceGeom,
     floor_material: Handle<StandardMaterial>,
+    wall_material: Handle<StandardMaterial>,
     y_offset: f32,
 ) {
     if let Some(poly) = geom.poly.as_ref() {
@@ -35,9 +36,16 @@ pub(crate) fn spawn_room_shell(
             root_xform,
             false,
         );
-        mesh::spawn_polygon_walls(commands, assets, poly, &geom.gaps, root_xform, false, |g| {
-            g.kind.is_passage()
-        });
+        mesh::spawn_polygon_walls(
+            commands,
+            assets,
+            poly,
+            &geom.gaps,
+            wall_material,
+            root_xform,
+            false,
+            |g| g.kind.is_passage(),
+        );
     }
 }
 

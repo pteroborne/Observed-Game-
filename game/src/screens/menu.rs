@@ -108,7 +108,7 @@ pub(crate) fn setup_results(
 ) {
     cursor.0 = 0;
     if career.award() {
-        crate::flow::save_profile(&career.profile);
+        crate::flow::save_profile(&career);
     }
 
     let result = career.last_result.clone();
@@ -295,9 +295,10 @@ pub(crate) fn menu_navigate(
     if cursor.0 != old_val {
         crate::screens::audio::play_ui_sound(
             &mut commands,
+            None,
             &ui_assets.hover,
-            settings.effective_sfx_volume(),
             crate::view::components::MatchAudioCue::UiHover,
+            &settings,
         );
     }
 }
@@ -339,9 +340,10 @@ pub(crate) fn menu_activate(
     };
     crate::screens::audio::play_ui_sound(
         &mut commands,
+        None,
         &ui_assets.click,
-        settings.effective_sfx_volume(),
         crate::view::components::MatchAudioCue::UiClick,
+        &settings,
     );
     match button.action {
         MenuAction::Goto(state) => next.set(state),
@@ -365,8 +367,20 @@ pub(crate) fn menu_activate(
         }
         MenuAction::Equip(id) => {
             if career.profile.equip(id) {
-                crate::flow::save_profile(&career.profile);
+                crate::flow::save_profile(&career);
             }
+        }
+        MenuAction::ToggleRivalTeams => {
+            career.bot_rival_teams = !career.bot_rival_teams;
+            crate::flow::save_profile(&career);
+        }
+        MenuAction::ToggleAiTeammates => {
+            career.bot_ai_teammates = !career.bot_ai_teammates;
+            crate::flow::save_profile(&career);
+        }
+        MenuAction::ToggleGuardian => {
+            career.bot_guardian = !career.bot_guardian;
+            crate::flow::save_profile(&career);
         }
         MenuAction::QuitApp => {
             exit.write(bevy::app::AppExit::Success);

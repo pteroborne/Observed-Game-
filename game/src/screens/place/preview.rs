@@ -377,7 +377,7 @@ pub(crate) fn spawn_room_miniature(
     let light_color = palette.light_color;
 
     spawn_polygon_shell(commands, assets, meshes, poly, floor_material, parent, true);
-    spawn_polygon_walls(commands, assets, poly, &dest.gaps, parent, true, |g| {
+    spawn_polygon_walls(commands, assets, poly, &dest.gaps, assets.wall_material.clone(), parent, true, |g| {
         overlays.open_edge_target == Some(g.target) || g.kind.is_passage()
     });
     spawn_place_lighting(commands, assets, dest, light_color, parent, true);

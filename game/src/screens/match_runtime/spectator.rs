@@ -27,7 +27,7 @@ pub(crate) fn drive_spectator_bot(
     mut tp: ResMut<TeleportState>,
     keys: Res<KeystoneState>,
     items: Res<ItemsState>,
-    guardian: Res<crate::guardian::Guardian>,
+    guardian: Option<Res<crate::guardian::Guardian>>,
     seed: Option<Res<crate::flow::ActiveMatchSeed>>,
     mut intent: ResMut<MatchIntent>,
     mut item_intent: ResMut<ItemIntent>,
@@ -50,7 +50,9 @@ pub(crate) fn drive_spectator_bot(
     let seed_val = seed.map(|seed| seed.0).unwrap_or(crate::flow::MATCH_SEED);
     let local_feet_y =
         crate::bot::local_feet_y(tp.body.position.y - tp.config.half_height, tp.place);
-    let in_same_room = matches!(tp.place, Place::Room(room) if room == guardian.room);
+    let in_same_room = guardian
+        .as_ref()
+        .is_some_and(|g| matches!(tp.place, Place::Room(room) if room == g.room));
     if in_same_room && items.carried(ItemKind::AnchorTorch) > 0 {
         item_intent.torch_action = true;
     }

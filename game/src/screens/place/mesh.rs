@@ -95,11 +95,13 @@ pub(crate) fn spawn_polygon_shell(
 /// One angled wall panel per polygon edge, split around any doorway `open` returns true
 /// for (so the body can walk through it / you can see in), placed under `xform`. Edges
 /// with no open doorway are a solid wall.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_polygon_walls(
     commands: &mut Commands,
     assets: &MatchAssets,
     poly: &[Vec2],
     gaps: &[teleport::DoorGap],
+    wall_material: Handle<StandardMaterial>,
     xform: Transform,
     preview: bool,
     open: impl Fn(&teleport::DoorGap) -> bool,
@@ -118,6 +120,7 @@ pub(crate) fn spawn_polygon_walls(
                     assets,
                     a,
                     g.center - dir * (g.width * 0.5),
+                    wall_material.clone(),
                     xform,
                     preview,
                 );
@@ -126,11 +129,12 @@ pub(crate) fn spawn_polygon_walls(
                     assets,
                     g.center + dir * (g.width * 0.5),
                     b,
+                    wall_material.clone(),
                     xform,
                     preview,
                 );
             }
-            _ => spawn_wall_segment(commands, assets, a, b, xform, preview),
+            _ => spawn_wall_segment(commands, assets, a, b, wall_material.clone(), xform, preview),
         }
     }
 }
@@ -142,6 +146,7 @@ pub(crate) fn spawn_wall_segment(
     assets: &MatchAssets,
     p1: Vec2,
     p2: Vec2,
+    wall_material: Handle<StandardMaterial>,
     xform: Transform,
     preview: bool,
 ) {
@@ -159,7 +164,7 @@ pub(crate) fn spawn_wall_segment(
     spawn_geo(
         commands,
         assets.placeholder_mesh.clone(),
-        assets.wall_material.clone(),
+        wall_material,
         xform.mul_transform(local),
         preview,
         "Room wall",

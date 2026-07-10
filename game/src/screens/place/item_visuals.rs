@@ -8,12 +8,56 @@ use observed_style::{self as style, MarkerRole};
 use std::f32::consts::PI;
 
 /// A glowing gold keystone pickup at the centre of a room, tagged for proximity pickup.
+#[allow(clippy::manual_is_multiple_of)]
 pub(crate) fn spawn_keystone_item(
     commands: &mut Commands,
     assets: &MatchAssets,
+    images: &Assets<Image>,
     room: RoomId,
     y_offset: f32,
 ) {
+    let sprite_image = if room.0 % 2 == 0 {
+        assets.keystone_card_sprite(images)
+    } else {
+        assets.keystone_core_sprite(images)
+    };
+
+    if let Some(image) = sprite_image {
+        commands
+            .spawn((
+                KeystoneItem(room),
+                PlaceGeometry,
+                DespawnOnExit(GameState::Match),
+                crate::view::sprites::sprite3d_components_with_pivot(
+                    image,
+                    &style::marker(MarkerRole::NextRoom),
+                    crate::view::sprites::DEVICE_PIXELS_PER_METRE,
+                    Vec2::new(0.5, 0.5),
+                ),
+                Transform::from_xyz(0.0, y_offset + 1.1, 0.0),
+                Name::new("Keystone sprite"),
+            ))
+            .with_children(|item| {
+                item.spawn((
+                    Mesh3d(assets.halo_mesh.clone()),
+                    MeshMaterial3d(assets.objective_material.clone()),
+                    Transform::from_xyz(0.0, -1.1, 0.0).with_scale(Vec3::new(1.3, 1.0, 1.3)),
+                    Name::new("Keystone floor halo"),
+                ));
+                item.spawn((
+                    PointLight {
+                        color: Color::srgb(1.0, 0.82, 0.3),
+                        intensity: 2_400.0,
+                        range: 7.0,
+                        shadows_enabled: false,
+                        ..default()
+                    },
+                    Transform::default(),
+                ));
+            });
+        return;
+    }
+
     commands
         .spawn((
             KeystoneItem(room),
@@ -49,7 +93,7 @@ pub(crate) fn spawn_dropped_item(
 ) {
     match item.kind {
         ItemKind::AnchorTorch => spawn_anchor_torch(commands, assets, images, item.pos, y_offset),
-        ItemKind::TeleportPad => spawn_teleport_pad(commands, assets, item.pos, y_offset),
+        ItemKind::TeleportPad => spawn_teleport_pad(commands, assets, images, item.pos, y_offset),
     }
 }
 
@@ -60,7 +104,11 @@ pub(crate) fn spawn_anchor_torch(
     pos: Vec2,
     y_offset: f32,
 ) {
-    if let Some(image) = assets.control_device_sprite(images) {
+    let sprite_image = assets
+        .anchor_torch_sprite(images)
+        .or_else(|| assets.control_device_sprite(images));
+
+    if let Some(image) = sprite_image {
         commands
             .spawn((
                 DroppedItemVisual,
@@ -129,9 +177,65 @@ pub(crate) fn spawn_anchor_torch(
 pub(crate) fn spawn_teleport_pad(
     commands: &mut Commands,
     assets: &MatchAssets,
+    images: &Assets<Image>,
     pos: Vec2,
     y_offset: f32,
 ) {
+    let sprite_image = assets
+        .relay_device_sprite(images)
+        .or_else(|| assets.route_cell_sprite(images))
+        .or_else(|| assets.control_device_sprite(images));
+
+    if let Some(image) = sprite_image {
+        commands
+            .spawn((
+                DroppedItemVisual,
+                PlaceGeometry,
+                DespawnOnExit(GameState::Match),
+                crate::view::sprites::sprite3d_components_with_pivot(
+                    image,
+                    &style::marker(MarkerRole::You),
+                    crate::view::sprites::DEVICE_PIXELS_PER_METRE,
+                    Vec2::new(0.5, 0.5),
+                ),
+                Transform::from_xyz(pos.x, y_offset + 0.45, pos.y),
+                Name::new("Teleport pad sprite"),
+            ))
+            .with_children(|pad| {
+                pad.spawn((
+                    Mesh3d(assets.halo_mesh.clone()),
+                    MeshMaterial3d(assets.teleport_pad_material.clone()),
+                    Transform::from_xyz(0.0, -0.4, 0.0).with_scale(Vec3::new(1.75, 1.0, 1.75)),
+                    Name::new("Teleport pad halo"),
+                ));
+                pad.spawn((
+                    Mesh3d(assets.placeholder_mesh.clone()),
+                    MeshMaterial3d(assets.wall_material.clone()),
+                    Transform::from_xyz(0.0, -0.44, 0.0).with_scale(Vec3::new(1.0, 0.04, 1.0)),
+                    Name::new("Teleport pad dark base"),
+                ));
+                pad.spawn((
+                    PointLight {
+                        color: style::marker(MarkerRole::You).base_color,
+                        intensity: 1_700.0,
+                        range: 6.0,
+                        shadows_enabled: false,
+                        ..default()
+                    },
+                    Transform::from_xyz(0.0, -0.1, 0.0),
+                ));
+                pad.spawn((
+                    TeleportPadGlow,
+                    Mesh3d(assets.objective_beam_mesh.clone()),
+                    MeshMaterial3d(assets.teleport_pad_material.clone()),
+                    Transform::from_xyz(0.0, 0.33 * 0.5 - 0.4, 0.0)
+                        .with_scale(Vec3::new(5.0, 0.33, 5.0)),
+                    Name::new("Teleport pad stargate glow"),
+                ));
+            });
+        return;
+    }
+
     commands
         .spawn((
             DroppedItemVisual,

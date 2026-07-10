@@ -52,6 +52,75 @@ const HEADLESS_PUMP_BUDGET: u32 = 100_000;
 /// round.
 const SCRIPTED_ROUND_PUMP_BUDGET: usize = 400;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BotPopulations {
+    pub rival_teams: bool,
+    pub ai_teammates: bool,
+    pub guardian: bool,
+}
+
+impl Default for BotPopulations {
+    fn default() -> Self {
+        Self {
+            rival_teams: true,
+            ai_teammates: true,
+            guardian: true,
+        }
+    }
+}
+
+impl BotPopulations {
+    pub fn from_env() -> Option<Self> {
+        let value = std::env::var("OBSERVED2_BOTS").ok()?;
+        Self::from_str(&value)
+    }
+
+    pub fn from_str(value: &str) -> Option<Self> {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        let mut config = Self::default(); // default: all true
+
+        // Split on common separators: '|', ',', '+', ';', or whitespace
+        let parts: Vec<&str> = trimmed
+            .split(['|', ',', '+', ';', ' '])
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        for part in parts {
+            match part.to_lowercase().as_str() {
+                "all" | "default" => {
+                    config.rival_teams = true;
+                    config.ai_teammates = true;
+                    config.guardian = true;
+                }
+                "none" => {
+                    config.rival_teams = false;
+                    config.ai_teammates = false;
+                    config.guardian = false;
+                }
+                "no_guardian" | "no-guardian" | "noguardian" => {
+                    config.guardian = false;
+                }
+                "no_rivals" | "no-rivals" | "norivals" => {
+                    config.rival_teams = false;
+                }
+                "no_teammates" | "no-teammates" | "noteammates" => {
+                    config.ai_teammates = false;
+                }
+                _ => {
+                    panic!(
+                        "unknown OBSERVED2_BOTS value `{part}`; valid flags: all, none, no_guardian, no_rivals, no_teammates"
+                    );
+                }
+            }
+        }
+        Some(config)
+    }
+}
+
 #[derive(Resource)]
 pub struct MatchDirector {
     /// The live, host-authoritative networked first-person match: the host is the
@@ -59,6 +128,7 @@ pub struct MatchDirector {
     pub live: LiveNetMatch,
     /// The elimination-series outcome model the HUD reports and the career records.
     pub series: EliminationSeries,
+    pub config: BotPopulations,
     autoplay_timer: Timer,
     wait_timer: Timer,
     /// Latched once the completion rule has fired (the result has been yielded).
@@ -66,13 +136,156 @@ pub struct MatchDirector {
 }
 
 impl MatchDirector {
-    pub fn new(seed: u64, map_spec: MapSpec) -> Self {
-        Self {
+    pub fn new(seed: u64, map_spec: MapSpec, config: BotPopulations) -> Self {
+        let mut director = Self {
             live: LiveNetMatch::new_for_map_spec(seed, NetworkProfile::Hostile, map_spec),
             series: EliminationSeries::new(seed),
+            config,
             autoplay_timer: Timer::from_seconds(SERIES_AUTOPLAY_SECS, TimerMode::Repeating),
             wait_timer: Timer::from_seconds(WAIT_ROUND_SECS, TimerMode::Repeating),
             done: false,
+        };
+        director.apply_population_config(config);
+        director
+    }
+
+    fn apply_population_config(&mut self, config: BotPopulations) {
+        let start_room = self
+            .live
+            .host
+            .match_state
+            .competitive
+            .structure
+            .graph
+            .players[0];
+
+        // 1. Configure Host Team & Players list
+        let t0_members = if config.ai_teammates { 2 } else { 1 };
+        let mut host_teams = Vec::new();
+        let mut host_players = Vec::new();
+
+        host_teams.push(observed_match::facility::TeamRun {
+            id: observed_core::TeamId(0),
+            member_base: 0,
+            members: t0_members,
+            speed: self.live.host.match_state.competitive.teams[0].speed,
+            pace: 0.0,
+            role: observed_match::director::Role::Runner,
+            placement: None,
+            objective_index: 0,
+        });
+        for _ in 0..t0_members {
+            host_players.push(start_room);
+        }
+
+        for i in 1..4 {
+            let members = if config.rival_teams { 2 } else { 0 };
+            let member_base = if config.rival_teams {
+                host_players.len()
+            } else {
+                0
+            };
+
+            host_teams.push(observed_match::facility::TeamRun {
+                id: observed_core::TeamId(i as u8),
+                member_base,
+                members,
+                speed: self.live.host.match_state.competitive.teams[i].speed,
+                pace: 0.0,
+                role: observed_match::director::Role::Runner,
+                placement: None,
+                objective_index: 0,
+            });
+
+            if config.rival_teams {
+                for _ in 0..2 {
+                    host_players.push(start_room);
+                }
+            }
+        }
+
+        self.live.host.match_state.competitive.teams = host_teams;
+        self.live
+            .host
+            .match_state
+            .competitive
+            .structure
+            .graph
+            .players = host_players;
+        self.live
+            .host
+            .match_state
+            .competitive
+            .structure
+            .recompute_connectivity();
+
+        // 2. Configure Remote Team & Players list
+        let mut remote_teams = Vec::new();
+        let mut remote_players = Vec::new();
+
+        remote_teams.push(observed_match::facility::TeamRun {
+            id: observed_core::TeamId(0),
+            member_base: 0,
+            members: t0_members,
+            speed: self.live.remote.match_state.competitive.teams[0].speed,
+            pace: 0.0,
+            role: observed_match::director::Role::Runner,
+            placement: None,
+            objective_index: 0,
+        });
+        for _ in 0..t0_members {
+            remote_players.push(start_room);
+        }
+
+        for i in 1..4 {
+            let members = if config.rival_teams { 2 } else { 0 };
+            let member_base = if config.rival_teams {
+                remote_players.len()
+            } else {
+                0
+            };
+
+            remote_teams.push(observed_match::facility::TeamRun {
+                id: observed_core::TeamId(i as u8),
+                member_base,
+                members,
+                speed: self.live.remote.match_state.competitive.teams[i].speed,
+                pace: 0.0,
+                role: observed_match::director::Role::Runner,
+                placement: None,
+                objective_index: 0,
+            });
+
+            if config.rival_teams {
+                for _ in 0..2 {
+                    remote_players.push(start_room);
+                }
+            }
+        }
+
+        self.live.remote.match_state.competitive.teams = remote_teams;
+        self.live
+            .remote
+            .match_state
+            .competitive
+            .structure
+            .graph
+            .players = remote_players;
+        self.live
+            .remote
+            .match_state
+            .competitive
+            .structure
+            .recompute_connectivity();
+
+        // 3. Configure Series
+        if !config.rival_teams {
+            self.series.alive_teams = vec![observed_core::TeamId(0)];
+            self.series.current = observed_match::elimination::SeriesRound::new(
+                1,
+                vec![observed_core::TeamId(0)],
+                self.series.keystone_rooms.clone(),
+            );
         }
     }
 

@@ -12,6 +12,7 @@ use observed_style::{self as style, MarkerRole, SurfaceRole};
 
 use crate::layout::{HALL_WIDTH, PLACE_TILE, WALL_HEIGHT};
 use crate::view::theme::TEAM_COLORS;
+use super::actor_metadata::SpriteMetadata;
 
 pub(crate) const DISTRICT_COUNT: usize = observed_style::District::ALL.len();
 
@@ -38,7 +39,22 @@ const RIVAL_STAND_SPRITE: &str = observed_assets::RIVAL_STAND.path;
 const RIVAL_WALK1_SPRITE: &str = observed_assets::RIVAL_WALK1.path;
 const RIVAL_WALK2_SPRITE: &str = observed_assets::RIVAL_WALK2.path;
 const GUARDIAN_STAND_SPRITE: &str = observed_assets::GUARDIAN_STAND.path;
+const RIVAL_ACTOR_SPRITE: &str = observed_assets::RIVAL_ACTOR.path;
+const GUARDIAN_ACTOR_SPRITE: &str = observed_assets::GUARDIAN_ACTOR.path;
+const DECOR_COLUMN_SPRITE: &str = observed_assets::DECOR_COLUMN.path;
+const DECOR_TORCH_SPRITE: &str = observed_assets::DECOR_TORCH.path;
+const DECOR_LAB_CRATE_SPRITE: &str = observed_assets::DECOR_LAB_CRATE.path;
+const DECOR_LAB_TABLE_SPRITE: &str = observed_assets::DECOR_LAB_TABLE.path;
+const WALL_ALBEDO_LAB_TEX: &str = observed_assets::WALL_ALBEDO_LAB.path;
 const CONTROL_DEVICE_SPRITE: &str = observed_assets::CONTROL_DEVICE.path;
+const KEYSTONE_CARD_SPRITE: &str = observed_assets::KEYSTONE_CARD.path;
+const KEYSTONE_CORE_SPRITE: &str = observed_assets::KEYSTONE_CORE.path;
+const EXIT_ACCESS_CARD_SPRITE: &str = observed_assets::EXIT_ACCESS_CARD.path;
+const ANCHOR_TORCH_SPRITE: &str = observed_assets::ANCHOR_TORCH.path;
+const ROUTE_CELL_SPRITE: &str = observed_assets::ROUTE_CELL.path;
+const RELAY_DEVICE_SPRITE: &str = observed_assets::RELAY_DEVICE.path;
+const BATTERY_CHARGE_SPRITE: &str = observed_assets::BATTERY_CHARGE.path;
+const REPAIR_TOKEN_SPRITE: &str = observed_assets::REPAIR_TOKEN.path;
 const FOOTSTEP_SOUND: &str = observed_assets::FOOTSTEP.path;
 const REROUTE_SOUND: &str = observed_assets::REROUTE.path;
 const ESCAPE_SOUND: &str = observed_assets::ESCAPE.path;
@@ -52,6 +68,12 @@ const UI_CLICK_SOUND: &str = observed_assets::UI_CLICK.path;
 const UI_HOVER_SOUND: &str = observed_assets::UI_HOVER.path;
 const JUMP_SOUND: &str = observed_assets::JUMP.path;
 const LAND_SOUND: &str = observed_assets::LAND.path;
+const TOOL_INTERACT_SOUND: &str = observed_assets::TOOL_INTERACT.path;
+const KEYSTONE_SOUND: &str = observed_assets::KEYSTONE.path;
+const EXIT_UNLOCK_SOUND: &str = observed_assets::EXIT_UNLOCK.path;
+const GUARDIAN_DREAD_SOUND: &str = observed_assets::GUARDIAN_DREAD.path;
+const AMBIENCE_CORRIDOR_SOUND: &str = observed_assets::AMBIENCE_CORRIDOR.path;
+const AMBIENCE_GANTRY_SOUND: &str = observed_assets::AMBIENCE_GANTRY.path;
 
 // Procedural neon doorways (code-as-art; no GLB). A closed leaf hides the corridor
 // beyond (mystery) and slides up into the lintel as the player approaches. The frame
@@ -184,6 +206,14 @@ pub struct MatchAssets {
     pub(crate) rival_walk2: Option<Handle<Image>>,
     pub(crate) guardian_stand: Option<Handle<Image>>,
     pub(crate) control_device: Option<Handle<Image>>,
+    pub(crate) keystone_card: Option<Handle<Image>>,
+    pub(crate) keystone_core: Option<Handle<Image>>,
+    pub(crate) exit_access_card: Option<Handle<Image>>,
+    pub(crate) anchor_torch: Option<Handle<Image>>,
+    pub(crate) route_cell: Option<Handle<Image>>,
+    pub(crate) relay_device: Option<Handle<Image>>,
+    pub(crate) battery_charge: Option<Handle<Image>>,
+    pub(crate) repair_token: Option<Handle<Image>>,
     pub(crate) footstep: Option<Handle<AudioSource>>,
     pub(crate) reroute: Option<Handle<AudioSource>>,
     pub(crate) escape: Option<Handle<AudioSource>>,
@@ -195,7 +225,41 @@ pub struct MatchAssets {
     pub(crate) hover_sound: Option<Handle<AudioSource>>,
     pub(crate) jump: Option<Handle<AudioSource>>,
     pub(crate) land: Option<Handle<AudioSource>>,
+    pub(crate) tool_interact: Option<Handle<AudioSource>>,
+    pub(crate) keystone: Option<Handle<AudioSource>>,
+    pub(crate) exit_unlock: Option<Handle<AudioSource>>,
+    pub(crate) guardian_dread: Option<Handle<AudioSource>>,
     pub(crate) district_ambience: [Option<Handle<AudioSource>>; DISTRICT_COUNT],
+    pub(crate) ambience_corridor: Option<Handle<AudioSource>>,
+    pub(crate) ambience_gantry: Option<Handle<AudioSource>>,
+    pub(crate) rival_actor_sheet: Option<Handle<Image>>,
+    pub(crate) rival_actor_layout: Option<Handle<TextureAtlasLayout>>,
+    pub(crate) rival_actor_meta: Option<SpriteMetadata>,
+    pub(crate) guardian_actor_sheet: Option<Handle<Image>>,
+    pub(crate) guardian_actor_layout: Option<Handle<TextureAtlasLayout>>,
+    pub(crate) guardian_actor_meta: Option<SpriteMetadata>,
+    pub(crate) decor_column: Option<Handle<Image>>,
+    pub(crate) decor_torch: Option<Handle<Image>>,
+    pub(crate) decor_lab_crate: Option<Handle<Image>>,
+    pub(crate) decor_lab_table: Option<Handle<Image>>,
+    pub(crate) wall_albedo_lab: Option<Handle<Image>>,
+}
+
+fn png_dimensions<P: AsRef<std::path::Path>>(path: P) -> Option<(u32, u32)> {
+    use std::fs::File;
+    use std::io::Read;
+    let mut file = File::open(path).ok()?;
+    let mut header = [0u8; 24];
+    file.read_exact(&mut header).ok()?;
+    if header[0..8] != [137, 80, 78, 71, 13, 10, 26, 10] {
+        return None;
+    }
+    if header[12..16] != [73, 72, 68, 82] {
+        return None;
+    }
+    let w = u32::from_be_bytes([header[16], header[17], header[18], header[19]]);
+    let h = u32::from_be_bytes([header[20], header[21], header[22], header[23]]);
+    Some((w, h))
 }
 
 impl MatchAssets {
@@ -204,6 +268,7 @@ impl MatchAssets {
     /// present (absent slots stay `None` and fall back procedurally).
     pub(crate) fn load(
         asset_server: &AssetServer,
+        texture_atlases: &mut Assets<TextureAtlasLayout>,
         meshes: &mut Assets<Mesh>,
         materials: &mut Assets<StandardMaterial>,
     ) -> Self {
@@ -372,6 +437,31 @@ impl MatchAssets {
         let load_sound = |path: &'static str| {
             asset_present(path).then(|| asset_server.load::<AudioSource>(path))
         };
+
+        let mut load_actor_sheet = |path_png: &'static str| -> (Option<Handle<Image>>, Option<Handle<TextureAtlasLayout>>, Option<SpriteMetadata>) {
+            if !asset_present(path_png) {
+                return (None, None, None);
+            }
+            let img_handle = asset_server.load::<Image>(path_png);
+            let path_json = path_png.replace(".png", ".json");
+            let json_full = assets_dir().join(&path_json);
+            if let Ok(meta) = SpriteMetadata::load_from_path(json_full) {
+                let img_full = assets_dir().join(path_png);
+                if let Some((w, h)) = png_dimensions(&img_full) {
+                    let mut layout = TextureAtlasLayout::new_empty(UVec2::new(w, h));
+                    for f in &meta.frames {
+                        layout.add_texture(URect::new(f.x, f.y, f.x + f.w, f.y + f.h));
+                    }
+                    let layout_handle = texture_atlases.add(layout);
+                    return (Some(img_handle), Some(layout_handle), Some(meta));
+                }
+            }
+            (Some(img_handle), None, None)
+        };
+
+        let (rival_actor_sheet, rival_actor_layout, rival_actor_meta) = load_actor_sheet(RIVAL_ACTOR_SPRITE);
+        let (guardian_actor_sheet, guardian_actor_layout, guardian_actor_meta) = load_actor_sheet(GUARDIAN_ACTOR_SPRITE);
+
         debug_assert_eq!(
             observed_assets::DISTRICT_AMBIENCE.len(),
             observed_style::District::ALL.len(),
@@ -432,6 +522,14 @@ impl MatchAssets {
             rival_walk2: load_texture(RIVAL_WALK2_SPRITE),
             guardian_stand: load_texture(GUARDIAN_STAND_SPRITE),
             control_device: load_texture(CONTROL_DEVICE_SPRITE),
+            keystone_card: load_texture(KEYSTONE_CARD_SPRITE),
+            keystone_core: load_texture(KEYSTONE_CORE_SPRITE),
+            exit_access_card: load_texture(EXIT_ACCESS_CARD_SPRITE),
+            anchor_torch: load_texture(ANCHOR_TORCH_SPRITE),
+            route_cell: load_texture(ROUTE_CELL_SPRITE),
+            relay_device: load_texture(RELAY_DEVICE_SPRITE),
+            battery_charge: load_texture(BATTERY_CHARGE_SPRITE),
+            repair_token: load_texture(REPAIR_TOKEN_SPRITE),
             footstep: load_sound(FOOTSTEP_SOUND),
             reroute: load_sound(REROUTE_SOUND),
             escape: load_sound(ESCAPE_SOUND),
@@ -443,9 +541,26 @@ impl MatchAssets {
             hover_sound: load_sound(UI_HOVER_SOUND),
             jump: load_sound(JUMP_SOUND),
             land: load_sound(LAND_SOUND),
+            tool_interact: load_sound(TOOL_INTERACT_SOUND),
+            keystone: load_sound(KEYSTONE_SOUND),
+            exit_unlock: load_sound(EXIT_UNLOCK_SOUND),
+            guardian_dread: load_sound(GUARDIAN_DREAD_SOUND),
             district_ambience: std::array::from_fn(|i| {
                 load_sound(observed_assets::DISTRICT_AMBIENCE[i].path)
             }),
+            ambience_corridor: load_sound(AMBIENCE_CORRIDOR_SOUND),
+            ambience_gantry: load_sound(AMBIENCE_GANTRY_SOUND),
+            rival_actor_sheet,
+            rival_actor_layout,
+            rival_actor_meta,
+            guardian_actor_sheet,
+            guardian_actor_layout,
+            guardian_actor_meta,
+            decor_column: load_texture(DECOR_COLUMN_SPRITE),
+            decor_torch: load_texture(DECOR_TORCH_SPRITE),
+            decor_lab_crate: load_texture(DECOR_LAB_CRATE_SPRITE),
+            decor_lab_table: load_texture(DECOR_LAB_TABLE_SPRITE),
+            wall_albedo_lab: load_texture(WALL_ALBEDO_LAB_TEX),
         }
     }
 
@@ -468,5 +583,39 @@ impl MatchAssets {
 
     pub(crate) fn control_device_sprite(&self, images: &Assets<Image>) -> Option<Handle<Image>> {
         crate::view::sprites::ready_image(images, &self.control_device)
+    }
+
+    pub(crate) fn keystone_card_sprite(&self, images: &Assets<Image>) -> Option<Handle<Image>> {
+        crate::view::sprites::ready_image(images, &self.keystone_card)
+    }
+
+    pub(crate) fn keystone_core_sprite(&self, images: &Assets<Image>) -> Option<Handle<Image>> {
+        crate::view::sprites::ready_image(images, &self.keystone_core)
+    }
+
+    pub(crate) fn exit_access_card_sprite(&self, images: &Assets<Image>) -> Option<Handle<Image>> {
+        crate::view::sprites::ready_image(images, &self.exit_access_card)
+    }
+
+    pub(crate) fn anchor_torch_sprite(&self, images: &Assets<Image>) -> Option<Handle<Image>> {
+        crate::view::sprites::ready_image(images, &self.anchor_torch)
+    }
+
+    pub(crate) fn route_cell_sprite(&self, images: &Assets<Image>) -> Option<Handle<Image>> {
+        crate::view::sprites::ready_image(images, &self.route_cell)
+    }
+
+    pub(crate) fn relay_device_sprite(&self, images: &Assets<Image>) -> Option<Handle<Image>> {
+        crate::view::sprites::ready_image(images, &self.relay_device)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn battery_charge_sprite(&self, images: &Assets<Image>) -> Option<Handle<Image>> {
+        crate::view::sprites::ready_image(images, &self.battery_charge)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn repair_token_sprite(&self, images: &Assets<Image>) -> Option<Handle<Image>> {
+        crate::view::sprites::ready_image(images, &self.repair_token)
     }
 }

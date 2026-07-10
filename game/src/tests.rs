@@ -176,6 +176,59 @@ fn the_keystone_gate_starts_locked_opens_on_pickup_and_is_cleaned_up() {
 }
 
 #[test]
+fn keystone_pickup_and_exit_unlock_have_semantic_audio_cues() {
+    use crate::teleport::Place;
+    use crate::view::components::MatchAudioCue;
+    use keystones::KeystoneState;
+
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    app.update();
+
+    let keystone_room = {
+        let mut keys = app.world_mut().resource_mut::<KeystoneState>();
+        keys.required = 1;
+        *keys
+            .rooms
+            .first()
+            .expect("the active map has at least one keystone room")
+    };
+    app.world_mut()
+        .resource_scope(|world, mut tp: Mut<crate::sim::state::TeleportState>| {
+            let runtime = world.resource::<crate::sim::director::MatchDirector>();
+            let keys = world.resource::<keystones::KeystoneState>();
+            let items = world.resource::<items::ItemsState>();
+            let from = runtime.live.host_match().local_room();
+            crate::screens::match_runtime::debug_place_into(
+                &mut tp,
+                runtime,
+                Place::Room(keystone_room),
+                from,
+                keys,
+                items,
+            );
+        });
+
+    app.update();
+    app.update();
+
+    assert_eq!(
+        count_audio_cue(&mut app, MatchAudioCue::Keystone),
+        1,
+        "collecting a keystone plays exactly one pickup cue"
+    );
+    assert_eq!(
+        count_audio_cue(&mut app, MatchAudioCue::ExitUnlock),
+        1,
+        "the final required keystone plays the exit-unlock cue"
+    );
+    assert!(
+        app.world().resource::<KeystoneState>().gate_open(),
+        "the test should have exercised the real gate-open edge"
+    );
+}
+
+#[test]
 fn droppable_items_start_in_inventory_and_are_cleaned_up() {
     let mut app = test_app();
     go(&mut app, GameState::Match);
@@ -230,6 +283,14 @@ fn anchor_torch_can_be_dropped_pins_edges_and_can_be_picked_back_up() {
         1,
         "dropping the torch renders a visible tool"
     );
+    assert_eq!(
+        count_audio_cue(
+            &mut app,
+            crate::view::components::MatchAudioCue::ToolInteract
+        ),
+        1,
+        "a successful anchor action plays the semantic tool interaction cue"
+    );
 
     tap_update(&mut app, KeyCode::KeyF);
 
@@ -242,6 +303,14 @@ fn anchor_torch_can_be_dropped_pins_edges_and_can_be_picked_back_up() {
         count::<crate::view::components::DroppedItemVisual>(&mut app),
         0,
         "picking the torch back up removes its place visual"
+    );
+    assert_eq!(
+        count_audio_cue(
+            &mut app,
+            crate::view::components::MatchAudioCue::ToolInteract
+        ),
+        2,
+        "picking the anchor back up plays the same semantic tool cue"
     );
 }
 
@@ -1428,8 +1497,9 @@ fn the_match_renders_the_current_place_and_starts_on_the_spine() {
     );
     assert_eq!(
         count_audio_cue(&mut app, crate::view::components::MatchAudioCue::Ambience),
-        6,
-        "the facility ambience starts with the Match"
+        observed_style::District::ALL.len() + 2,
+        "the facility ambience starts with the Match: one bed per district plus the \
+         corridor and gantry hallway beds"
     );
 
     // The player begins in the local team's spine room.
@@ -1553,7 +1623,11 @@ fn headless_and_interactive_matches_agree_on_the_result() {
 fn generated_maps_run_complete_matches_across_a_seed_corpus() {
     for seed in 0..12u64 {
         let map_spec = crate::map_catalog::default_map_spec(seed);
-        let mut director = crate::sim::director::MatchDirector::new(seed, map_spec);
+        let mut director = crate::sim::director::MatchDirector::new(
+            seed,
+            map_spec,
+            crate::sim::director::BotPopulations::default(),
+        );
         let result = director.run_to_completion();
         assert!(
             result.placement.is_some(),
@@ -1800,7 +1874,11 @@ fn collapse_state_drains_place_palette_and_countdown_triggers_klaxon() {
         "a dying district should drain before it closes"
     );
 
-    let mut director = crate::sim::director::MatchDirector::new(MATCH_SEED, sector_relay_v1());
+    let mut director = crate::sim::director::MatchDirector::new(
+        MATCH_SEED,
+        sector_relay_v1(),
+        crate::sim::director::BotPopulations::default(),
+    );
     let normal = crate::screens::match_runtime::palette_for_match(
         MATCH_SEED,
         teleport::Place::Room(RoomId(0)),
@@ -2233,6 +2311,139 @@ fn monitor_panels_stay_within_the_per_panel_entity_budget() {
     );
 }
 
+/// Phase 60: Dressing props are deterministic across identical runs and never overlap
+/// with any gap's threshold clearance zones (which extend 2.5m into the room).
+#[test]
+fn dressing_props_are_deterministic_and_respect_clearance() {
+    use crate::sim::state::TeleportState;
+    use crate::view::assets::MatchAssets;
+    let spec = crate::map_catalog::active_map_spec(MATCH_SEED);
+
+    for room in &spec.rooms {
+        let room_id = room.id;
+
+        let mut app1 = test_app();
+        go(&mut app1, GameState::Match);
+        app1.update();
+        {
+            let (decor_column, decor_torch, decor_lab_crate, decor_lab_table) = {
+                let assets = app1.world().resource::<MatchAssets>();
+                (
+                    assets.decor_column.clone(),
+                    assets.decor_torch.clone(),
+                    assets.decor_lab_crate.clone(),
+                    assets.decor_lab_table.clone(),
+                )
+            };
+            let mut images = app1.world_mut().resource_mut::<Assets<Image>>();
+            let dummy = Image::default();
+            if let Some(h) = &decor_column {
+                let _ = images.insert(h.id(), dummy.clone());
+            }
+            if let Some(h) = &decor_torch {
+                let _ = images.insert(h.id(), dummy.clone());
+            }
+            if let Some(h) = &decor_lab_crate {
+                let _ = images.insert(h.id(), dummy.clone());
+            }
+            if let Some(h) = &decor_lab_table {
+                let _ = images.insert(h.id(), dummy.clone());
+            }
+        }
+        teleport_into_room(&mut app1, room_id);
+        
+        let mut app2 = test_app();
+        go(&mut app2, GameState::Match);
+        app2.update();
+        {
+            let (decor_column, decor_torch, decor_lab_crate, decor_lab_table) = {
+                let assets = app2.world().resource::<MatchAssets>();
+                (
+                    assets.decor_column.clone(),
+                    assets.decor_torch.clone(),
+                    assets.decor_lab_crate.clone(),
+                    assets.decor_lab_table.clone(),
+                )
+            };
+            let mut images = app2.world_mut().resource_mut::<Assets<Image>>();
+            let dummy = Image::default();
+            if let Some(h) = &decor_column {
+                let _ = images.insert(h.id(), dummy.clone());
+            }
+            if let Some(h) = &decor_torch {
+                let _ = images.insert(h.id(), dummy.clone());
+            }
+            if let Some(h) = &decor_lab_crate {
+                let _ = images.insert(h.id(), dummy.clone());
+            }
+            if let Some(h) = &decor_lab_table {
+                let _ = images.insert(h.id(), dummy.clone());
+            }
+        }
+        teleport_into_room(&mut app2, room_id);
+
+        let geom = app1.world().resource::<TeleportState>().geom.clone();
+
+        // Extract spawned prop positions
+        let extract_prop_positions = |app: &mut App| -> Vec<Vec3> {
+            let world = app.world_mut();
+            let mut query = world.query_filtered::<(&Transform, &Name), With<crate::view::components::PlaceGeometry>>();
+            let mut positions: Vec<Vec3> = query
+                .iter(world)
+                .filter(|(_, name)| name.as_str() == "Room dressing prop")
+                .map(|(t, _)| t.translation)
+                .collect();
+            // Sort to ensure order is stable for comparison
+            positions.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal));
+            positions
+        };
+
+        let pos1 = extract_prop_positions(&mut app1);
+        let pos2 = extract_prop_positions(&mut app2);
+
+        // 1. Assert determinism: identical match seed + room ID -> identical placement
+        assert_eq!(pos1, pos2, "Room {:?} dressing must be deterministic", room_id);
+
+        // 2. Assert clearance: check every spawned prop against threshold clearance boxes
+        for p_pos in &pos1 {
+            let p = Vec2::new(p_pos.x, p_pos.z);
+            
+            // Check wall distance (clamping to geom with radius 0.8 must be same)
+            let clamped = crate::teleport::contain(&geom, p, 0.8);
+            assert!(
+                (clamped - p).length() <= 0.05,
+                "Room {:?} prop at {:?} violates wall clearance",
+                room_id, p
+            );
+
+            // Check center distance
+            assert!(
+                p.length() >= 1.79,
+                "Room {:?} prop at {:?} violates center clearance",
+                room_id, p
+            );
+
+            // Check gap clearance
+            for gap in &geom.gaps {
+                let along = Vec2::new(-gap.normal.y, gap.normal.x);
+                let to_p = p - gap.center;
+                let dist_along = to_p.dot(along).abs();
+                let dist_normal = to_p.dot(gap.normal);
+
+                let inside_clearance = dist_along < (gap.width * 0.5 + 0.49)
+                    && dist_normal > -2.49
+                    && dist_normal < 0.99;
+                assert!(
+                    !inside_clearance,
+                    "Room {:?} prop at {:?} overlaps threshold clearance for gap toward {:?}",
+                    room_id, p, gap.target
+                );
+            }
+        }
+    }
+}
+
+
 // --- Phase 48: onboarding & settings ----------------------------------------
 
 /// `Settings` is inserted once at startup (app-lifetime, like `Career`) — never as
@@ -2514,11 +2725,63 @@ fn district_ambience_and_ui_audio_slots_are_manifest_driven() {
         crate::view::assets::asset_present(observed_assets::UI_HOVER.path),
         "the UI hover slot should point at the checked-in drop-in file"
     );
+    for slot in [
+        observed_assets::TOOL_INTERACT,
+        observed_assets::KEYSTONE,
+        observed_assets::EXIT_UNLOCK,
+        observed_assets::GUARDIAN_DREAD,
+    ] {
+        assert!(
+            crate::view::assets::asset_present(slot.path),
+            "{} should point at a checked-in Phase 56 cue",
+            slot.name
+        );
+    }
 
     let app = test_app();
     let ui = app.world().resource::<crate::view::components::UiAssets>();
     assert!(ui.click.is_some(), "UI click sound handle should load");
     assert!(ui.hover.is_some(), "UI hover sound handle should load");
+}
+
+#[test]
+fn ambience_beds_select_by_place_kind_and_hallway_flavor() {
+    use crate::screens::audio::{AmbienceBedKind, active_ambience_bed};
+
+    // A room takes its district's bed — the same district the palette uses.
+    let room = teleport::Place::Room(observed_core::RoomId(3));
+    assert_eq!(
+        active_ambience_bed(MATCH_SEED, room, false),
+        AmbienceBedKind::District(crate::screens::match_runtime::ambience::district_for_place(
+            MATCH_SEED, room
+        )),
+    );
+
+    // A hallway takes a hallway-flavour bed, never a district bed: the gantry bed
+    // when the hall has raised decks, the corridor bed otherwise.
+    let hall = teleport::Place::Hallway {
+        from: observed_core::RoomId(1),
+        to: observed_core::RoomId(2),
+        variation: 0,
+    };
+    assert_eq!(
+        active_ambience_bed(MATCH_SEED, hall, false),
+        AmbienceBedKind::Corridor
+    );
+    assert_eq!(
+        active_ambience_bed(MATCH_SEED, hall, true),
+        AmbienceBedKind::Gantry
+    );
+
+    // The hallway beds are checked-in drop-ins wired through the manifest.
+    assert!(
+        crate::view::assets::asset_present(observed_assets::AMBIENCE_CORRIDOR.path),
+        "the corridor ambience slot should point at the checked-in drop-in file"
+    );
+    assert!(
+        crate::view::assets::asset_present(observed_assets::AMBIENCE_GANTRY.path),
+        "the gantry ambience slot should point at the checked-in drop-in file"
+    );
 }
 
 #[test]
@@ -2677,8 +2940,9 @@ fn idle_match_does_not_spawn_repeating_audio_cues() {
     go(&mut app, GameState::Match);
     let ambience_count = count_audio_cue(&mut app, MatchAudioCue::Ambience);
     assert!(
-        ambience_count <= observed_style::District::ALL.len() + 1,
-        "ambience beds should be a bounded match setup cost, not per-frame spawns"
+        ambience_count <= observed_style::District::ALL.len() + 2,
+        "ambience beds should be a bounded match setup cost (districts + corridor + \
+         gantry), not per-frame spawns"
     );
 
     for _ in 0..180 {
@@ -2690,18 +2954,13 @@ fn idle_match_does_not_spawn_repeating_audio_cues() {
         ambience_count,
         "idle updates must not spawn additional ambience loop entities"
     );
-    for cue in [
-        MatchAudioCue::Footstep,
-        MatchAudioCue::Door,
-        MatchAudioCue::Escape,
-        MatchAudioCue::Reroute,
-        MatchAudioCue::RivalBleed,
-        MatchAudioCue::UiClick,
-        MatchAudioCue::UiHover,
-        MatchAudioCue::Jump,
-        MatchAudioCue::Klaxon,
-        MatchAudioCue::CollapseSting,
-    ] {
+    for cue in MatchAudioCue::ALL {
+        if matches!(
+            cue,
+            MatchAudioCue::Ambience | MatchAudioCue::Land | MatchAudioCue::GuardianDread
+        ) {
+            continue;
+        }
         assert_eq!(
             count_audio_cue(&mut app, cue),
             0,
@@ -2712,4 +2971,451 @@ fn idle_match_does_not_spawn_repeating_audio_cues() {
         count_audio_cue(&mut app, MatchAudioCue::Land) <= 1,
         "the first grounded fixed-step may produce one landing cue, never a stream"
     );
+    assert!(
+        count_audio_cue(&mut app, MatchAudioCue::GuardianDread) <= 1,
+        "a nearby starting guardian may produce one dread cue, never a repeated stream"
+    );
+}
+
+#[test]
+fn test_cue_table_sanity() {
+    use crate::screens::audio::AudioDirector;
+    use crate::view::components::MatchAudioCue;
+
+    let director = AudioDirector::default();
+    for cue in MatchAudioCue::ALL {
+        let config = director.get_config(cue);
+        assert!(
+            config.is_some(),
+            "cue {cue:?} should have a config class mapping"
+        );
+    }
+}
+
+#[test]
+fn audio_coverage_doc_mentions_every_match_audio_cue() {
+    use crate::view::components::MatchAudioCue;
+
+    let doc = include_str!("../../docs/arc_f/audio_coverage.md");
+    assert!(
+        !doc.contains("TBD"),
+        "audio coverage audit must not carry unresolved placeholders"
+    );
+    for cue in MatchAudioCue::ALL {
+        let token = format!("`MatchAudioCue::{cue:?}`");
+        assert!(
+            doc.contains(&token),
+            "audio coverage doc must mention {token}"
+        );
+    }
+}
+
+#[test]
+fn audio_spatial_classes_distinguish_distance_and_occlusion() {
+    use crate::screens::audio::{AudioDirector, AudioSourceRelation};
+    use crate::view::components::MatchAudioCue;
+
+    let director = AudioDirector::default();
+    let same = director
+        .spatial_gain_for(
+            MatchAudioCue::RivalBleed,
+            AudioSourceRelation::SamePlace,
+            0.0,
+        )
+        .expect("rival cue has a spatial class");
+    let threshold = director
+        .spatial_gain_for(
+            MatchAudioCue::RivalBleed,
+            AudioSourceRelation::ThroughThreshold,
+            0.0,
+        )
+        .expect("rival cue has a spatial class");
+    let wall = director
+        .spatial_gain_for(
+            MatchAudioCue::RivalBleed,
+            AudioSourceRelation::ThroughWall,
+            0.0,
+        )
+        .expect("rival cue has a spatial class");
+    let far_threshold = director
+        .spatial_gain_for(
+            MatchAudioCue::RivalBleed,
+            AudioSourceRelation::ThroughThreshold,
+            60.0,
+        )
+        .expect("rival cue has a spatial class");
+    let guardian_wall = director
+        .spatial_gain_for(
+            MatchAudioCue::GuardianDread,
+            AudioSourceRelation::ThroughWall,
+            60.0,
+        )
+        .expect("guardian cue has a spatial class");
+
+    assert!(
+        same > threshold,
+        "same-place should be louder than through-threshold"
+    );
+    assert!(
+        threshold > wall,
+        "threshold bleed should beat through-wall bleed"
+    );
+    assert!(
+        threshold > far_threshold,
+        "distance rolloff should reduce threshold bleed"
+    );
+    assert!(
+        far_threshold >= 0.34,
+        "rival bleed keeps a floor so adjacent rivals remain legible"
+    );
+    assert_eq!(
+        guardian_wall, 0.12,
+        "guardian dread keeps only its configured floor behind distant walls"
+    );
+}
+
+#[test]
+fn asset_source_ledger_has_no_cc_by_and_covers_game_ready_audio() {
+    let sources = include_str!("../../assets/SOURCES.md");
+    assert!(
+        !sources.contains("CC-BY"),
+        "Phase 56 removes CC-BY assets and caveats from the checked-in ledger"
+    );
+    for slot in observed_assets::SLOTS
+        .iter()
+        .filter(|slot| slot.kind == observed_assets::AssetKind::Sound)
+    {
+        if slot.name == observed_assets::CHIME.name {
+            continue;
+        }
+        assert!(
+            sources.contains(&format!("`{}`", slot.path)),
+            "{} ({}) should have a source row",
+            slot.name,
+            slot.path
+        );
+    }
+}
+
+#[test]
+fn test_ducking_math() {
+    use crate::screens::audio::{ActiveDuck, AudioBus, DuckConfig, DuckState};
+
+    let config = DuckConfig {
+        bus: AudioBus::Music,
+        target_factor: 0.3,
+        ease_in: 1.0,
+        duration: 2.0,
+        ease_out: 1.0,
+    };
+
+    let mut duck = ActiveDuck {
+        bus: config.bus,
+        target_factor: config.target_factor,
+        ease_in: config.ease_in,
+        duration: config.duration,
+        ease_out: config.ease_out,
+        elapsed: 0.0,
+        state: DuckState::Active,
+        source_entity: None,
+    };
+
+    // Ease in start
+    assert!((duck.current_factor() - 1.0).abs() < 1e-5);
+
+    // Mid ease in
+    duck.elapsed = 0.5;
+    assert!((duck.current_factor() - 0.65).abs() < 1e-5); // 1.0 + (0.3 - 1.0) * 0.5
+
+    // Ease in complete / Hold
+    duck.elapsed = 1.0;
+    assert!((duck.current_factor() - 0.3).abs() < 1e-5);
+
+    duck.elapsed = 2.0;
+    assert!((duck.current_factor() - 0.3).abs() < 1e-5);
+
+    // Easing out transition
+    duck.state = DuckState::EasingOut { start_factor: 0.3 };
+    duck.elapsed = 0.0;
+    assert!((duck.current_factor() - 0.3).abs() < 1e-5);
+
+    duck.elapsed = 0.5;
+    assert!((duck.current_factor() - 0.65).abs() < 1e-5); // 0.3 + (1.0 - 0.3) * 0.5
+
+    duck.elapsed = 1.0;
+    assert!((duck.current_factor() - 1.0).abs() < 1e-5);
+}
+
+#[test]
+fn test_audio_director_cooldown_and_caps() {
+    use crate::screens::audio::AudioDirector;
+    use crate::settings::Settings;
+    use crate::view::components::MatchAudioCue;
+
+    let mut app = test_app();
+    let mut director = AudioDirector::default();
+    let settings = Settings::default();
+    let sound = Some(
+        app.world_mut()
+            .resource::<AssetServer>()
+            .load("sounds/footstep.ogg"),
+    );
+
+    // Spawn 5 footsteps in same tick, cap is 3
+    let mut count = 0;
+    for _ in 0..5 {
+        let spawned = director.request(
+            &mut app.world_mut().commands(),
+            &sound,
+            MatchAudioCue::Footstep,
+            "Footstep test",
+            None,
+            &settings,
+        );
+        if spawned {
+            count += 1;
+        }
+    }
+    assert_eq!(
+        count, 1,
+        "cooldown should prevent refiring in same tick (cooldown > 0)"
+    );
+
+    // Let's test caps without cooldown by resetting cooldown tracker and active instances
+    director.last_fire.clear();
+    director.active_instances.clear();
+    let mut count2 = 0;
+    for _ in 0..5 {
+        director.last_fire.remove(&MatchAudioCue::Footstep);
+        let spawned = director.request(
+            &mut app.world_mut().commands(),
+            &sound,
+            MatchAudioCue::Footstep,
+            "Footstep test",
+            None,
+            &settings,
+        );
+        if spawned {
+            count2 += 1;
+        }
+    }
+    assert_eq!(
+        count2, 3,
+        "instance cap should restrict total concurrent instances to 3"
+    );
+}
+
+#[test]
+fn test_audio_director_ducking() {
+    use crate::screens::audio::{AudioBus, AudioDirector};
+    use crate::settings::Settings;
+    use crate::view::components::MatchAudioCue;
+
+    let mut app = test_app();
+    let mut director = AudioDirector::default();
+    let settings = Settings::default();
+    let sound = Some(
+        app.world_mut()
+            .resource::<AssetServer>()
+            .load("sounds/escape.ogg"),
+    );
+
+    // Music duck factor is normally 1.0
+    assert!((director.bus_duck_factor(AudioBus::Music) - 1.0).abs() < 1e-5);
+
+    // Request escape sting
+    director.request(
+        &mut app.world_mut().commands(),
+        &sound,
+        MatchAudioCue::Escape,
+        "Escape test",
+        None,
+        &settings,
+    );
+
+    // Escape config: target_factor = 0.3, ease_in = 0.1
+    // At elapsed_secs = 0.0, factor is 1.0 (start of ease)
+    assert!((director.bus_duck_factor(AudioBus::Music) - 1.0).abs() < 1e-5);
+}
+
+#[test]
+fn test_muted_suppression() {
+    use crate::screens::audio::AudioDirector;
+    use crate::settings::Settings;
+    use crate::view::components::MatchAudioCue;
+
+    let mut app = test_app();
+    let mut director = AudioDirector::default();
+    let settings = Settings {
+        sfx_volume: 0.0,
+        ..Default::default()
+    };
+    let sound = Some(
+        app.world_mut()
+            .resource::<AssetServer>()
+            .load("sounds/footstep.ogg"),
+    );
+
+    let spawned = director.request(
+        &mut app.world_mut().commands(),
+        &sound,
+        MatchAudioCue::Footstep,
+        "Footstep test",
+        None,
+        &settings,
+    );
+    assert!(
+        !spawned,
+        "muted volume settings should suppress cue spawning"
+    );
+}
+
+#[test]
+fn all_eight_toggle_combinations_run_headless_to_valid_outcome() {
+    use crate::sim::director::{BotPopulations, MatchDirector};
+    let map_spec = crate::map_catalog::default_map_spec(MATCH_SEED);
+
+    for &rival_teams in &[true, false] {
+        for &ai_teammates in &[true, false] {
+            for &guardian in &[true, false] {
+                let config = BotPopulations {
+                    rival_teams,
+                    ai_teammates,
+                    guardian,
+                };
+                let mut director = MatchDirector::new(MATCH_SEED, map_spec.clone(), config);
+                let result = director.run_to_completion();
+
+                assert!(director.done);
+                assert!(result.placement.is_some());
+
+                if !rival_teams {
+                    assert_eq!(result.placement, Some(1));
+                    assert_eq!(result.winner, Some(observed_core::TeamId(0)));
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn guardian_off_spawns_no_guardian_resources() {
+    let mut app = test_app();
+
+    // Disable guardian in the career configuration for this test's app
+    app.world_mut().resource_mut::<Career>().bot_guardian = false;
+
+    go(&mut app, GameState::Match);
+
+    // Verify that Guardian and ActionLog resources are not registered in the ECS.
+    assert!(
+        app.world()
+            .get_resource::<crate::guardian::Guardian>()
+            .is_none()
+    );
+    assert!(
+        app.world()
+            .get_resource::<crate::guardian::ActionLog>()
+            .is_none()
+    );
+}
+
+#[test]
+fn bot_populations_env_parsing_and_persistence_round_trips() {
+    use crate::sim::director::BotPopulations;
+
+    // 1. Env parsing test (using thread-safe from_str)
+    let config = BotPopulations::from_str("no_rivals|no_guardian").unwrap();
+    assert!(!config.rival_teams);
+    assert!(config.ai_teammates);
+    assert!(!config.guardian);
+
+    let config = BotPopulations::from_str("none").unwrap();
+    assert!(!config.rival_teams);
+    assert!(!config.ai_teammates);
+    assert!(!config.guardian);
+
+    let config = BotPopulations::from_str("no_teammates").unwrap();
+    assert!(config.rival_teams);
+    assert!(!config.ai_teammates);
+    assert!(config.guardian);
+
+    // 2. Profile persistence test
+    let test_dir = std::path::PathBuf::from("saves_test");
+    let _ = std::fs::create_dir_all(&test_dir);
+    let test_path = test_dir.join("profile_test.save");
+
+    crate::settings::TEST_PROFILE_PATH.with(|p| {
+        *p.borrow_mut() = Some(test_path.clone());
+    });
+
+    let mut career = Career::default();
+    career.bot_rival_teams = false;
+    career.bot_ai_teammates = false;
+    career.bot_guardian = false;
+
+    crate::flow::save_profile(&career);
+
+    let loaded = crate::flow::load_career();
+    assert!(!loaded.bot_rival_teams);
+    assert!(!loaded.bot_ai_teammates);
+    assert!(!loaded.bot_guardian);
+
+    // Clean up test file and reset thread-local
+    let _ = std::fs::remove_file(&test_path);
+    crate::settings::TEST_PROFILE_PATH.with(|p| {
+        *p.borrow_mut() = None;
+    });
+}
+
+#[test]
+fn test_gameplay_object_sprites_slots_and_fallbacks() {
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+
+    assert!(
+        app.world()
+            .contains_resource::<crate::view::assets::MatchAssets>()
+    );
+
+    let assets = app.world().resource::<crate::view::assets::MatchAssets>();
+
+    let _ = assets.keystone_card;
+    let _ = assets.keystone_core;
+    let _ = assets.exit_access_card;
+    let _ = assets.anchor_torch;
+    let _ = assets.route_cell;
+    let _ = assets.relay_device;
+    let _ = assets.battery_charge;
+    let _ = assets.repair_token;
+
+    let images = app.world().resource::<Assets<Image>>();
+    let _ = assets.keystone_card_sprite(images);
+    let _ = assets.keystone_core_sprite(images);
+    let _ = assets.exit_access_card_sprite(images);
+    let _ = assets.anchor_torch_sprite(images);
+    let _ = assets.route_cell_sprite(images);
+    let _ = assets.relay_device_sprite(images);
+    let _ = assets.battery_charge_sprite(images);
+    let _ = assets.repair_token_sprite(images);
+}
+
+#[test]
+fn test_directional_actors_sheets_and_fallbacks() {
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+
+    assert!(
+        app.world()
+            .contains_resource::<crate::view::assets::MatchAssets>()
+    );
+
+    let assets = app.world().resource::<crate::view::assets::MatchAssets>();
+
+    let _ = assets.rival_actor_sheet;
+    let _ = assets.rival_actor_layout;
+    let _ = assets.rival_actor_meta;
+    let _ = assets.guardian_actor_sheet;
+    let _ = assets.guardian_actor_layout;
+    let _ = assets.guardian_actor_meta;
 }

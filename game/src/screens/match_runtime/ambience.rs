@@ -7,7 +7,7 @@ use observed_match::hybrid::HybridMatch;
 use observed_style as style;
 
 use crate::flow::MATCH_SEED;
-use crate::screens::audio::play_one_shot;
+use crate::screens::audio::AudioDirector;
 use crate::sim::director::MatchDirector;
 use crate::sim::state::{MatchPaused, TeleportState};
 use crate::teleport::Place;
@@ -194,6 +194,7 @@ pub(crate) fn sync_decohere_fx(
     mut fx: ResMut<DecohereFx>,
     mut leaves: Query<(&DoorLeaf, &mut Transform)>,
     mut commands: Commands,
+    mut audio_director: ResMut<AudioDirector>,
 ) {
     if paused.0 {
         return;
@@ -204,12 +205,13 @@ pub(crate) fn sync_decohere_fx(
         fx.flash = ROUTE_SHIFT_FLASH_SECS;
         fx.last_commits = commits;
         if was_idle {
-            play_one_shot(
+            audio_director.request(
                 &mut commands,
                 &assets.reroute,
                 MatchAudioCue::Reroute,
                 "Route shift",
-                settings.effective_sfx_volume(),
+                None,
+                &settings,
             );
         }
         for (leaf, mut transform) in &mut leaves {

@@ -10,10 +10,13 @@ This production crate contains the runtime asset-slot manifests for Observed 2. 
 
 - General match cues live in named sound slots such as `FOOTSTEP`, `REROUTE`,
   `ESCAPE`, `DOOR`, `KLAXON`, `COLLAPSE_STING`, `UI_CLICK`, `UI_HOVER`, `JUMP`,
-  and `LAND`.
+  `LAND`, `TOOL_INTERACT`, `KEYSTONE`, `EXIT_UNLOCK`, and `GUARDIAN_DREAD`.
 - Per-district ambience is exposed as `DISTRICT_AMBIENCE` in district order
   (archive, reactor, atrium, foundry, hollow, spillway), so game presentation code
   does not hard-code file paths.
+- Hallway-flavour ambience beds live in `AMBIENCE_CORRIDOR` (generic halls) and
+  `AMBIENCE_GANTRY` (the two-level jump hall); hallways take one of these instead
+  of a district bed.
 
 ## Sprite Slots
 

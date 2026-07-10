@@ -4,6 +4,7 @@
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
+use bevy_sprite3d::prelude::Sprite3d;
 use observed_style::{self as style, MarkerRole};
 
 use crate::GameState;
@@ -63,13 +64,18 @@ pub(crate) fn sync_rival_avatars(
     time: Res<Time>,
     runtime: Res<MatchDirector>,
     tp: Res<TeleportState>,
+    camera: Query<&GlobalTransform, With<GameCam>>,
     mut visuals: RivalAvatarVisuals,
     mut commands: Commands,
 ) {
     let game = runtime.live.host_match();
-    let present: Vec<usize> = match tp.place {
-        Place::Room(room) => rivals::rivals_in_room(&game.competitive, room),
-        Place::Hallway { .. } => Vec::new(),
+    let present: Vec<usize> = if runtime.config.rival_teams {
+        match tp.place {
+            Place::Room(room) => rivals::rivals_in_room(&game.competitive, room),
+            Place::Hallway { .. } => Vec::new(),
+        }
+    } else {
+        Vec::new()
     };
 
     let (a, b) = rivals::pace_segment(&tp.geom);
@@ -77,13 +83,27 @@ pub(crate) fn sync_rival_avatars(
     let tangent = Vec2::new(-along.y, along.x).normalize_or_zero();
     let n = present.len();
 
+    let camera_pos = camera.iter().next().map(|c| c.translation()).unwrap_or(Vec3::ZERO);
+    let has_sheet = if let (Some(sheet), Some(_layout), Some(_meta)) = (
+        &visuals.assets.rival_actor_sheet,
+        &visuals.assets.rival_actor_layout,
+        &visuals.assets.rival_actor_meta,
+    ) {
+        visuals.images.contains(sheet)
+    } else {
+        false
+    };
+
     let mut have: Vec<usize> = Vec::new();
     for (entity, avatar, mut transform, maybe_sprite) in &mut visuals.avatars {
         let Some(slot) = present.iter().position(|&t| t == avatar.team) else {
             commands.entity(entity).despawn();
             continue;
         };
-        if maybe_sprite.is_none() && visuals.assets.rival_sprite(&visuals.images, 0).is_some() {
+        // Re-spawn if representation mismatch (sheet vs single-frame/capsule)
+        let is_sheet_entity = maybe_sprite.as_ref().map(|s| s.texture_atlas.is_some()).unwrap_or(false);
+        let has_any_sprite = has_sheet || visuals.assets.rival_sprite(&visuals.images, 0).is_some();
+        if (maybe_sprite.is_none() && has_any_sprite) || (maybe_sprite.is_some() && (has_sheet != is_sheet_entity)) {
             commands.entity(entity).despawn();
             continue;
         }
@@ -103,20 +123,83 @@ pub(crate) fn sync_rival_avatars(
             Vec3::new(foot.x, 0.82 + bob, foot.y)
         };
         if let Some(mut sprite) = maybe_sprite {
-            let frame = 1 + ((theta * 4.0).floor() as usize % 2);
-            if let Some(image) = visuals
-                .assets
-                .rival_sprite(&visuals.images, frame)
-                .or_else(|| visuals.assets.rival_sprite(&visuals.images, 0))
-            {
-                sprite.image = image;
+            let animation_step = (theta * 4.0).floor() as usize;
+            if has_sheet {
+                let meta = visuals.assets.rival_actor_meta.as_ref().unwrap();
+                let clip_name = if visuals.paused.0 { "idle" } else { "walk" };
+
+                // Pacing segment direction
+                let dir = along.normalize_or_zero();
+                let speed_dir = theta.cos();
+                let yaw = if speed_dir >= 0.0 {
+                    dir.x.atan2(dir.y)
+                } else {
+                    (-dir.x).atan2(-dir.y)
+                };
+                transform.rotation = Quat::from_rotation_y(yaw);
+
+                let to_camera = Vec2::new(camera_pos.x - transform.translation.x, camera_pos.z - transform.translation.z);
+                let rel_angle = if to_camera.length_squared() > 0.0001 {
+                    let camera_angle = to_camera.x.atan2(to_camera.y);
+                    let mut diff = camera_angle - yaw;
+                    while diff > std::f32::consts::PI {
+                        diff -= 2.0 * std::f32::consts::PI;
+                    }
+                    while diff < -std::f32::consts::PI {
+                        diff += 2.0 * std::f32::consts::PI;
+                    }
+                    diff
+                } else {
+                    0.0
+                };
+
+                let frame_idx = crate::view::sprites::actor_frame(meta, clip_name, rel_angle, animation_step);
+                if let Some(ref mut atlas) = sprite.texture_atlas {
+                    atlas.index = frame_idx;
+                }
+            } else {
+                let frame = 1 + (animation_step % 2);
+                if let Some(image) = visuals
+                    .assets
+                    .rival_sprite(&visuals.images, frame)
+                    .or_else(|| visuals.assets.rival_sprite(&visuals.images, 0))
+                {
+                    sprite.image = image;
+                }
             }
         }
     }
 
     for &team in &present {
         if !have.contains(&team) {
-            if let Some(image) = visuals.assets.rival_sprite(&visuals.images, 0) {
+            if has_sheet {
+                let sheet = visuals.assets.rival_actor_sheet.clone().unwrap();
+                let layout = visuals.assets.rival_actor_layout.clone().unwrap();
+                let meta = visuals.assets.rival_actor_meta.as_ref().unwrap();
+                commands.spawn((
+                    RivalAvatar { team },
+                    DespawnOnExit(GameState::Match),
+                    Sprite {
+                        image: sheet,
+                        texture_atlas: Some(TextureAtlas {
+                            layout,
+                            index: 0,
+                        }),
+                        ..default()
+                    },
+                    Sprite3d {
+                        pixels_per_metre: meta.pixels_per_metre,
+                        alpha_mode: AlphaMode::Blend,
+                        unlit: true,
+                        emissive: style::marker(MarkerRole::Rival).emissive,
+                        pivot: Some(Vec2::new(meta.pivot.0, meta.pivot.1)),
+                        double_sided: true,
+                        ..default()
+                    },
+                    Transform::from_xyz(a.x, 0.02, a.y),
+                    Name::new(format!("Rival team {team} sheet sprite")),
+                ));
+            } else if let Some(image) = visuals.assets.rival_sprite(&visuals.images, 0) {
                 commands.spawn((
                     RivalAvatar { team },
                     DespawnOnExit(GameState::Match),

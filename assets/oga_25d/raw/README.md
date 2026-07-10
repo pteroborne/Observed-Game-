@@ -12,14 +12,11 @@ has first been promoted into an explicit `observed_assets` slot or derived atlas
 - Add derived/cropped/atlas outputs under `assets/oga_25d/derived/` or the normal
   game-ready asset folders only after metadata exists.
 - Verify each source license individually. The collection title is not enough.
-- CC-BY files in this folder are reference-only until attribution support is
-  intentionally added.
+- The checked-in raw intake is CC0 after the Phase 56 audio cleanup.
 
 ## License Notes
 
 - The selected sprite, texture, cursor, crosshair, keycard, and overlay sources are
   CC0.
-- `sci_fi_sound_library/Sci-Fi_Sound_Library.zip` is CC-BY 3.0.
-- `ui_sound_library/UI_Sound_Library.zip` is CC-BY 3.0.
 
 See `assets/SOURCES.md` for the source URLs and author/license table.

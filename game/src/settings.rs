@@ -210,9 +210,20 @@ pub fn settings_path() -> std::path::PathBuf {
     std::path::PathBuf::from("saves").join("settings.json")
 }
 
+#[cfg(test)]
+thread_local! {
+    pub static TEST_PROFILE_PATH: std::cell::RefCell<Option<std::path::PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
 /// Where the persisted `Profile` save string lives — see
 /// [`crate::flow::save_profile`]/[`crate::flow::load_profile`].
 pub fn profile_save_path() -> std::path::PathBuf {
+    #[cfg(test)]
+    {
+        if let Some(path) = TEST_PROFILE_PATH.with(|p| p.borrow().clone()) {
+            return path;
+        }
+    }
     std::path::PathBuf::from("saves").join("profile.save")
 }
 

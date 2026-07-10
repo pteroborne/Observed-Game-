@@ -108,7 +108,7 @@ The 52 prototype labs in `labs/` are independent Bevy applications designed to i
 - `network_lab` & `net_match_lab`: Simulated packet drop/jitter repair, lockstep synchronizers, live multiplayer match sessions.
 
 ### Presentation & Asset Integration
-- `sprite3d_placeholder_lab`: Bevy `bevy_sprite3d` proof for CC0 2.5D dev sprites in the 3D match scene, including image-readiness fallback, yaw-facing billboards, and reset-safe projected entities.
+- `oga_25d_lab`: Proof surface for the 2.5D OpenGameArt intake metadata pipeline, showcasing directional actors, gameplay objects, animated decorations, and LAB texture samples with a debug metadata overlay and billboard vs directional toggle.
 
 ---
 

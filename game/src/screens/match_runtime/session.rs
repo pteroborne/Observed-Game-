@@ -34,6 +34,7 @@ pub(crate) fn setup_match(
     mut commands: Commands,
     mut career: ResMut<Career>,
     asset_server: Res<AssetServer>,
+    mut texture_atlases: ResMut<Assets<TextureAtlasLayout>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     seed: Option<Res<crate::flow::ActiveMatchSeed>>,
@@ -53,11 +54,26 @@ pub(crate) fn setup_match(
         *spectator = SpectatorBot::for_seed(seed_val);
     }
     let map_spec = crate::map_catalog::active_map_spec(seed_val);
+    let career_config = crate::sim::director::BotPopulations {
+        rival_teams: career.bot_rival_teams,
+        ai_teammates: career.bot_ai_teammates,
+        guardian: career.bot_guardian,
+    };
+    let config = if let Some(env_config) = crate::sim::director::BotPopulations::from_env() {
+        env_config
+    } else {
+        career_config
+    };
     info!(
-        "MATCH_START seed={} map={} spectator={}",
-        seed_val, map_spec.name, has_spectator
+        "MATCH_START seed={} map={} spectator={} rivals={} teammates={} guardian={}",
+        seed_val,
+        map_spec.name,
+        has_spectator,
+        config.rival_teams,
+        config.ai_teammates,
+        config.guardian
     );
-    let director = MatchDirector::new(seed_val, map_spec.clone());
+    let director = MatchDirector::new(seed_val, map_spec.clone(), config);
     let game = director.live.host_match();
     let initial_escaped = game.competitive.escaped_count();
     let initial_commits = game.reroute_commits;
@@ -88,6 +104,7 @@ pub(crate) fn setup_match(
         escaped_count: initial_escaped,
         collapse_sting_place: None,
     });
+    commands.insert_resource(crate::screens::audio::AudioDirector::default());
     commands.insert_resource(RivalBleedState::default());
     commands.insert_resource(TeleportState {
         place: start_place,
@@ -107,26 +124,30 @@ pub(crate) fn setup_match(
     commands.insert_resource(items);
     commands.insert_resource(RivalSightings::default());
     commands.insert_resource(MapKnowledge::default());
-    let guardian_room = map_spec
-        .role_room(RoomRole::GuardianControl)
-        .unwrap_or_else(|| {
-            panic!(
-                "active map spec `{}` is missing a required GuardianControl room; \
-             every catalog map must satisfy MapSpec::validate()",
-                map_spec.name
-            )
+
+    if config.guardian {
+        let guardian_room = map_spec
+            .role_room(RoomRole::GuardianControl)
+            .unwrap_or_else(|| {
+                panic!(
+                    "active map spec `{}` is missing a required GuardianControl room; \
+                 every catalog map must satisfy MapSpec::validate()",
+                    map_spec.name
+                )
+            });
+        commands.insert_resource(crate::guardian::Guardian {
+            room: guardian_room,
+            ..default()
         });
-    commands.insert_resource(crate::guardian::Guardian {
-        room: guardian_room,
-        ..default()
-    });
-    commands.insert_resource(crate::guardian::ActionLog::default());
+        commands.insert_resource(crate::guardian::ActionLog::default());
+    }
     commands.insert_resource(TeleportAnimation::default());
     commands.insert_resource(LastTeleportPad::default());
     commands.insert_resource(CameraJuice::default());
 
     commands.insert_resource(MatchAssets::load(
         &asset_server,
+        &mut texture_atlases,
         &mut meshes,
         &mut materials,
     ));
@@ -150,6 +171,7 @@ macro_rules! for_each_match_resource {
         $apply!(crate::view::assets::MatchAssets);
         $apply!(crate::view::components::TacMapState);
         $apply!(crate::view::components::MatchAudioState);
+        $apply!(crate::screens::audio::AudioDirector);
         $apply!(crate::view::components::RivalBleedState);
         $apply!(crate::view::components::DecohereFx);
         $apply!(crate::view::components::TeleportAnimation);

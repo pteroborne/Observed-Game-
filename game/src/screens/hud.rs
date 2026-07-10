@@ -24,11 +24,12 @@ use crate::sim::state::{
     MapKnowledge, MatchPaused, RivalSightings, SightingKind, SpectatorBot, TeleportState,
 };
 use crate::view::components::{
-    DebugHud, MatchHud, MatchHudReadout, PausePanel, PauseSettingsPanel, TacMapElement,
-    TacMapPanel, TacMapState, TeleportAnimation, TeleportOverlay,
+    DebugHud, InteractionReticle, MatchHud, MatchHudReadout, PauseConfigReadout, PausePanel, PauseSettingsPanel,
+    TacMapElement, TacMapPanel, TacMapState, TeleportAnimation, TeleportOverlay,
 };
 use crate::view::theme::{BORDER, DIM, PANEL, TAC_MAP_SIZE, TITLE, screen_root, text};
 use crate::{GameState, settings::key_name, tacmap};
+use crate::teleport::Place;
 
 // Tac-map overlay layout (pixels). The 3×3 grid of rooms sits below a title strip.
 const TAC_TITLE_H: f32 = 26.0;
@@ -435,19 +436,20 @@ pub(crate) fn draw_tac_map(
     });
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub(crate) fn match_draw(
     director: Res<MatchDirector>,
     spectator_bot: Option<Res<SpectatorBot>>,
     paused: Res<MatchPaused>,
     keys: Res<KeystoneState>,
     items: Res<ItemsState>,
-    log: Res<crate::guardian::ActionLog>,
+    log: Option<Res<crate::guardian::ActionLog>>,
     tp: Res<TeleportState>,
     seed: Option<Res<crate::flow::ActiveMatchSeed>>,
     settings: Res<crate::settings::Settings>,
     mut hud: Query<(&MatchHudReadout, &mut Text)>,
     mut pause_panel: Query<&mut Visibility, With<PausePanel>>,
+    mut pause_config: Query<&mut Text, (With<PauseConfigReadout>, Without<MatchHudReadout>)>,
 ) {
     if let Ok(mut visibility) = pause_panel.single_mut() {
         *visibility = if paused.0 {
@@ -455,6 +457,26 @@ pub(crate) fn match_draw(
         } else {
             Visibility::Hidden
         };
+    }
+    if let (true, Ok(mut readout)) = (paused.0, pause_config.single_mut()) {
+        **readout = format!(
+            "Active config:  Rivals {}  |  Teammates {}  |  Guardian {}",
+            if director.config.rival_teams {
+                "ON"
+            } else {
+                "OFF"
+            },
+            if director.config.ai_teammates {
+                "ON"
+            } else {
+                "OFF"
+            },
+            if director.config.guardian {
+                "ON"
+            } else {
+                "OFF"
+            }
+        );
     }
     // Without the debug HUD (normal, immersive play) there are no readout entities to
     // fill — skip assembling the status text entirely.
@@ -534,8 +556,10 @@ pub(crate) fn match_draw(
         .count();
 
     let mut log_lines = String::new();
-    for entry in &log.entries {
-        log_lines.push_str(&format!("  - {}\n", entry));
+    if let Some(log) = log.as_ref() {
+        for entry in &log.entries {
+            log_lines.push_str(&format!("  - {}\n", entry));
+        }
     }
     let threshold_debug = if crate::evidence::visual_audit_enabled() {
         let mut lines = String::new();
@@ -775,6 +799,10 @@ pub(crate) fn spawn_match_hud(commands: &mut Commands, high_contrast: bool, debu
             style::marker(MarkerRole::Collapse).base_color,
         ),
         (
+            "reticle (active close to items)",
+            style::marker(MarkerRole::You).base_color,
+        ),
+        (
             "rubble threshold",
             style::surface(SurfaceRole::Rubble).base_color,
         ),
@@ -797,10 +825,41 @@ pub(crate) fn spawn_match_hud(commands: &mut Commands, high_contrast: bool, debu
             "gantry edge — jump line",
             style::surface(SurfaceRole::GantryEdge).base_color,
         ),
+        (
+            "audio: rival bleed = nearby rival",
+            style::marker(MarkerRole::Rival).base_color,
+        ),
+        (
+            "audio: low guardian dread = guardian near",
+            style::marker(MarkerRole::Collapse).base_color,
+        ),
+        (
+            "audio: chime = keystone/tool/exit state",
+            Color::srgb(1.0, 0.82, 0.3),
+        ),
     ];
     commands
         .spawn(screen_root(GameState::Match))
         .with_children(|root| {
+            // Spawn center interaction reticle dot (invisible initially)
+            root.spawn((
+                InteractionReticle,
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: percent(50.0),
+                    top: percent(50.0),
+                    margin: UiRect {
+                        left: px(-2.0),
+                        top: px(-2.0),
+                        ..default()
+                    },
+                    width: px(4.0),
+                    height: px(4.0),
+                    ..default()
+                },
+                BackgroundColor(Color::NONE),
+            ));
+
             if debug_hud {
                 root.spawn((
                     MatchHud,
@@ -892,6 +951,19 @@ pub(crate) fn spawn_match_hud(commands: &mut Commands, high_contrast: bool, debu
                         TextColor(TITLE),
                     ),
                     (
+                        PauseConfigReadout,
+                        Text::new(""),
+                        TextFont {
+                            font_size: 14.0,
+                            ..default()
+                        },
+                        TextColor(DIM),
+                        Node {
+                            margin: UiRect::top(px(14)),
+                            ..default()
+                        },
+                    ),
+                    (
                         PauseSettingsPanel,
                         Visibility::Hidden,
                         Node {
@@ -960,4 +1032,55 @@ pub(crate) fn spawn_match_hud(commands: &mut Commands, high_contrast: bool, debu
                 });
             }
         });
+}
+
+const ITEM_INTERACT_RADIUS: f32 = 1.8;
+
+pub(crate) fn update_interaction_reticle(
+    tp: Res<TeleportState>,
+    items: Res<ItemsState>,
+    keys: Res<KeystoneState>,
+    runtime: Res<MatchDirector>,
+    mut reticle: Query<&mut BackgroundColor, With<InteractionReticle>>,
+) {
+    let mut interactable_near = false;
+    let pos = Vec2::new(tp.body.position.x, tp.body.position.z);
+    let place = tp.place;
+
+    // Check items in current place (anchor torches, teleport pads, battery charge, etc.)
+    for item in items.placed_in(place) {
+        if pos.distance(item.pos) <= ITEM_INTERACT_RADIUS {
+            interactable_near = true;
+            break;
+        }
+    }
+
+    // Check uncollected keystone in the current room
+    if !interactable_near
+        && let Place::Room(room) = place
+        && keys.has_uncollected(room)
+        && pos.length() <= ITEM_INTERACT_RADIUS
+    {
+        interactable_near = true;
+    }
+
+    // Check guardian console in the Guardian Control room
+    if !interactable_near
+        && let Place::Room(room) = place
+        && let Some(spec) = &runtime.live.host_match().competitive.map_spec
+        && spec.role_room(RoomRole::GuardianControl) == Some(room)
+        && pos.length() <= 2.0
+    {
+        interactable_near = true;
+    }
+
+    for mut bg_color in &mut reticle {
+        if interactable_near {
+            // Bright cyan color when close to interactables
+            bg_color.0 = Color::srgb(0.0, 0.9, 1.0);
+        } else {
+            // Completely transparent under normal traversal
+            bg_color.0 = Color::NONE;
+        }
+    }
 }

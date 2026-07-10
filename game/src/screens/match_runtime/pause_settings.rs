@@ -118,6 +118,7 @@ pub(crate) fn pause_settings_navigate(
     mut cursor: ResMut<PauseSettingsCursor>,
     ui_assets: Res<crate::view::components::UiAssets>,
     settings: Res<Settings>,
+    mut audio_director: ResMut<crate::screens::audio::AudioDirector>,
 ) {
     if !paused.0 || !open.0 || rebind.0.is_some() {
         return;
@@ -141,9 +142,10 @@ pub(crate) fn pause_settings_navigate(
     if cursor.0 != old_val {
         crate::screens::audio::play_ui_sound(
             &mut commands,
+            Some(&mut *audio_director),
             &ui_assets.hover,
-            settings.effective_sfx_volume(),
             crate::view::components::MatchAudioCue::UiHover,
+            &settings,
         );
     }
 }
@@ -162,6 +164,7 @@ pub(crate) fn pause_settings_adjust(
     cursor: Res<PauseSettingsCursor>,
     mut settings: ResMut<Settings>,
     ui_assets: Res<crate::view::components::UiAssets>,
+    mut audio_director: ResMut<crate::screens::audio::AudioDirector>,
 ) {
     if !paused.0 || !open.0 || rebind.0.is_some() {
         return;
@@ -189,9 +192,10 @@ pub(crate) fn pause_settings_adjust(
     }
     crate::screens::audio::play_ui_sound(
         &mut commands,
+        Some(&mut *audio_director),
         &ui_assets.click,
-        settings.effective_sfx_volume(),
         crate::view::components::MatchAudioCue::UiClick,
+        &settings,
     );
     save_settings(&settings);
 }
@@ -206,6 +210,7 @@ pub(crate) fn pause_settings_activate(
     mut rebind: ResMut<PauseSettingsRebind>,
     mut settings: ResMut<Settings>,
     ui_assets: Res<crate::view::components::UiAssets>,
+    mut audio_director: ResMut<crate::screens::audio::AudioDirector>,
 ) {
     if !paused.0 || !open.0 || rebind.0.is_some() || !keyboard.just_pressed(KeyCode::Enter) {
         return;
@@ -216,9 +221,10 @@ pub(crate) fn pause_settings_activate(
     };
     crate::screens::audio::play_ui_sound(
         &mut commands,
+        Some(&mut *audio_director),
         &ui_assets.click,
-        settings.effective_sfx_volume(),
         crate::view::components::MatchAudioCue::UiClick,
+        &settings,
     );
     match row {
         SettingsRow::Binding(slot) => rebind.0 = Some(slot),

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "run_id": "observed-vis-audit-1783614927621",
+  "run_id": "observed-vis-audit-1783641665096",
   "scenario": "tether_camera_room",
   "frame_index": 4,
   "place": {
@@ -125,6 +125,50 @@
   ],
   "lights": [
     {
+      "subject": "threshold R11:S0 -> H11-17:11:S0",
+      "intensity": 1400.0,
+      "range": 5.0,
+      "color_rgb": [
+        0.45,
+        0.62,
+        0.78
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "threshold R11:S1 -> H11-12:11:S0",
+      "intensity": 1400.0,
+      "range": 5.0,
+      "color_rgb": [
+        0.45,
+        0.62,
+        0.78
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "threshold R11:S2 -> H5-11:11:S0",
+      "intensity": 1400.0,
+      "range": 5.0,
+      "color_rgb": [
+        0.45,
+        0.62,
+        0.78
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "threshold R11:S3 -> H10-11:11:S0",
+      "intensity": 1400.0,
+      "range": 5.0,
+      "color_rgb": [
+        0.45,
+        0.62,
+        0.78
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
       "subject": "Place light",
       "intensity": 2800.0,
       "range": 60.26894,
@@ -148,7 +192,7 @@
     },
     {
       "subject": "Place light",
-      "intensity": 1540.0,
+      "intensity": 1162.8384,
       "range": 11.0,
       "color_rgb": [
         1.0,
@@ -181,7 +225,7 @@
     },
     {
       "subject": "Place light",
-      "intensity": 1540.0,
+      "intensity": 1162.8384,
       "range": 11.0,
       "color_rgb": [
         1.0,
@@ -225,7 +269,7 @@
     },
     {
       "subject": "Place light",
-      "intensity": 1540.0,
+      "intensity": 1162.8384,
       "range": 11.0,
       "color_rgb": [
         1.0,
@@ -258,7 +302,7 @@
     },
     {
       "subject": "Place light",
-      "intensity": 1540.0,
+      "intensity": 1162.8384,
       "range": 11.0,
       "color_rgb": [
         0.66,
@@ -291,7 +335,7 @@
     },
     {
       "subject": "Place light",
-      "intensity": 1540.0,
+      "intensity": 1162.8384,
       "range": 11.0,
       "color_rgb": [
         1.0,
@@ -324,7 +368,7 @@
     },
     {
       "subject": "Place light",
-      "intensity": 1540.0,
+      "intensity": 1162.8384,
       "range": 11.0,
       "color_rgb": [
         1.0,
@@ -357,7 +401,7 @@
     },
     {
       "subject": "Place light",
-      "intensity": 1540.0,
+      "intensity": 1162.8384,
       "range": 11.0,
       "color_rgb": [
         0.5,
@@ -390,7 +434,7 @@
     },
     {
       "subject": "Place light",
-      "intensity": 1540.0,
+      "intensity": 1162.8384,
       "range": 11.0,
       "color_rgb": [
         0.72,
@@ -423,7 +467,7 @@
     },
     {
       "subject": "Place light",
-      "intensity": 1540.0,
+      "intensity": 1162.8384,
       "range": 11.0,
       "color_rgb": [
         0.66,
@@ -456,7 +500,7 @@
     },
     {
       "subject": "Place light",
-      "intensity": 1540.0,
+      "intensity": 1162.8384,
       "range": 11.0,
       "color_rgb": [
         1.0,
@@ -489,56 +533,12 @@
     },
     {
       "subject": "Place light",
-      "intensity": 1540.0,
+      "intensity": 1162.8384,
       "range": 11.0,
       "color_rgb": [
         1.0,
         0.68,
         0.42
-      ],
-      "expected_min_intensity": 1.0
-    },
-    {
-      "subject": "threshold R11:S0 -> H11-17:11:S0",
-      "intensity": 1400.0,
-      "range": 5.0,
-      "color_rgb": [
-        0.45,
-        0.62,
-        0.78
-      ],
-      "expected_min_intensity": 1.0
-    },
-    {
-      "subject": "threshold R11:S1 -> H11-12:11:S0",
-      "intensity": 1400.0,
-      "range": 5.0,
-      "color_rgb": [
-        0.45,
-        0.62,
-        0.78
-      ],
-      "expected_min_intensity": 1.0
-    },
-    {
-      "subject": "threshold R11:S2 -> H5-11:11:S0",
-      "intensity": 1400.0,
-      "range": 5.0,
-      "color_rgb": [
-        0.45,
-        0.62,
-        0.78
-      ],
-      "expected_min_intensity": 1.0
-    },
-    {
-      "subject": "threshold R11:S3 -> H10-11:11:S0",
-      "intensity": 1400.0,
-      "range": 5.0,
-      "color_rgb": [
-        0.45,
-        0.62,
-        0.78
       ],
       "expected_min_intensity": 1.0
     }

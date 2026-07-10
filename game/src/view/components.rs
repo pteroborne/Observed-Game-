@@ -97,7 +97,7 @@ pub(crate) struct FlickerLight {
 #[derive(Component)]
 pub(crate) struct PassagePreview;
 
-#[derive(Clone, Copy, Component, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Component, Debug, Eq, PartialEq, Hash)]
 pub(crate) enum MatchAudioCue {
     Ambience,
     Footstep,
@@ -116,6 +116,32 @@ pub(crate) enum MatchAudioCue {
     Land,
     Klaxon,
     CollapseSting,
+    ToolInteract,
+    Keystone,
+    ExitUnlock,
+    GuardianDread,
+}
+
+#[cfg(test)]
+impl MatchAudioCue {
+    pub(crate) const ALL: [Self; 16] = [
+        Self::Ambience,
+        Self::Footstep,
+        Self::Door,
+        Self::Escape,
+        Self::Reroute,
+        Self::RivalBleed,
+        Self::UiClick,
+        Self::UiHover,
+        Self::Jump,
+        Self::Land,
+        Self::Klaxon,
+        Self::CollapseSting,
+        Self::ToolInteract,
+        Self::Keystone,
+        Self::ExitUnlock,
+        Self::GuardianDread,
+    ];
 }
 
 /// First-person feedback for graph **decoherence** (a committed reroute): when the
@@ -165,6 +191,10 @@ pub(crate) struct TacMapPanel;
 #[derive(Component)]
 pub(crate) struct TacMapElement;
 
+/// The minimal interaction reticle dot.
+#[derive(Component)]
+pub(crate) struct InteractionReticle;
+
 /// The in-match HUD status panel (top-left).
 #[derive(Component)]
 pub(crate) struct MatchHud;
@@ -204,6 +234,10 @@ pub(crate) struct PauseSettingsPanel;
 /// convention as [`TacMapElement`]).
 #[derive(Component)]
 pub(crate) struct PauseSettingsElement;
+
+/// Read-only display of the active bot configuration on the pause overlay.
+#[derive(Component)]
+pub(crate) struct PauseConfigReadout;
 
 /// Global UI sounds (available outside GameState::Match)
 #[derive(Resource)]

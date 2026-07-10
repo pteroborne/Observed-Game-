@@ -1,0 +1,24 @@
+{
+  "clips": {
+    "idle": [
+      0
+    ]
+  },
+  "default_material_role": "Plain",
+  "directional_count": "billboard",
+  "frames": [
+    {
+      "h": 48,
+      "w": 48,
+      "x": 0,
+      "y": 0
+    }
+  ],
+  "image_path": "lab_crate.png",
+  "name": "lab_crate",
+  "pivot": [
+    0.5,
+    0.0
+  ],
+  "pixels_per_metre": 64.0
+}
