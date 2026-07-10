@@ -26,28 +26,59 @@ Shared Actions (`LocalAction::PlaceAnchor`), Real Transport (loopback → LAN), 
 
 ---
 
-**Arc F — Sight & Sound** (plan: [docs/sight_and_sound_arc_plan.md](docs/sight_and_sound_arc_plan.md); per-phase sub-agent hand-offs: [docs/arc_f/](docs/arc_f/README.md)). The MVP-closing arc: a True-Singleplayer foundation phase, then the two remaining presentation systems — audio and the 2.5D sprite layer — in two file-disjoint tracks built for concurrent sub-agents (dispatch waves: [54∥57] → [55∥58] → [56∥59] → [60]). Track A perfects audio architecture-first (one director, buses, ducking, structural cooldowns; then spatial classes, coverage, CC0-only inventory). Track B executes the rewritten [sprite_roadmap.md](sprite_roadmap.md) (pipeline+lab → objects → directional actors → dressing/textures). The Legibility Contract, the HUD-free immersion ruling, drop-in fallbacks, and determinism hygiene bind every phase.
+**Arc F — Sight & Sound** `[all phases complete 2026-07-10 — landing debt absorbed into Arc H]` (plan: [docs/sight_and_sound_arc_plan.md](docs/sight_and_sound_arc_plan.md); hand-offs: [docs/arc_f/](docs/arc_f/README.md)). All seven phases landed: True-Singleplayer toggles, the AudioDirector + fully procedural audio palette (`tools/generate_audio.py` — composed liminal ambience beds, distinct per-signal cue families), and the sprite layer (pipeline+lab → objects → directional actors → dressing). The 2026-07-10 review confirmed the code claims (189 green suites, clippy clean) but found the imported textures visually overpowering the neon-noir style layer, two evidence captures missing/empty, five phase docs without as-landed notes, and the entire arc uncommitted — all scheduled as Arc H's opening work.
 
-### Phase 54 — True Singleplayer (bot & guardian toggles) `[ ]`
+### Phase 54 — True Singleplayer (bot & guardian toggles) `[x]`
 Menu/settings toggles that disable rival teams, own AI teammates, and the guardian separately — for a "True Singleplayer" facility used both for gameplay and clean testing. Implemented as deterministic match configuration (disabled populations never spawn in the sim; headless == interactive), following the `OBSERVED2_MAP` precedent with an `OBSERVED2_BOTS` override, persisted with the career profile; all-on default pinned byte-identical, solo matches end and report sanely. ([docs/arc_f/phase_54_true_singleplayer.md](docs/arc_f/phase_54_true_singleplayer.md))
 
-### Phase 55 — Audio Architecture (the mixer) `[ ]`
+### Phase 55 — Audio Architecture (the mixer) `[x]`
 One `AudioDirector` owns every cue decision through a single data-driven cue table: bus model (master/music/sfx/ui over the Phase-48 settings channels), sting-ducks-ambience easing (volume-only, never stream restarts), and structural per-class cooldowns/instance caps so the next event-spam bug is inaudible by construction. Every spawn site migrates to director requests; no audible identity changes. ([docs/arc_f/phase_55_audio_architecture.md](docs/arc_f/phase_55_audio_architecture.md))
 
-### Phase 56 — Audio Content & Spatial Depth `[ ]`
+### Phase 56 — Audio Content & Spatial Depth `[x]`
 An audited cue set on top of the director: a test-enforced coverage table mapping every gameplay-critical signal to a cue (or an explicit silence ruling), distance-rolloff and through-wall occlusion classes, richer district beds, and the CC-BY reference libraries replaced with CC0 and removed — closing the license caveat for good. ([docs/arc_f/phase_56_audio_content_spatial.md](docs/arc_f/phase_56_audio_content_spatial.md))
 
-### Phase 57 — Sprite Metadata Pipeline & the OGA Lab `[ ]`
+### Phase 57 — Sprite Metadata Pipeline & the OGA Lab `[x]`
 The raw OpenGameArt intake becomes a metadata-driven pipeline: checked-in frame metadata (rects, pivots, ppm, directional counts, semantic clips), a deterministic derive script into `assets/oga_25d/derived/`, `TextureAtlasLayout` support, and an `oga_25d_lab` (grown from `sprite3d_placeholder_lab`) proving actors, objects, decorations, and direction/clip debugging — game untouched. ([docs/arc_f/phase_57_sprite_pipeline_lab.md](docs/arc_f/phase_57_sprite_pipeline_lab.md))
 
-### Phase 58 — Gameplay Object Sprites `[ ]`
+### Phase 58 — Gameplay Object Sprites `[x]`
 OGA objects enter the played game first: eight semantic object slots (keystone card/core, exit access card, anchor torch, route cell, relay device, battery, repair token) driven by existing match state, with `observed_style` halos layered over the art, clean despawn on reset/exit, and procedural fallbacks intact. ([docs/arc_f/phase_58_gameplay_object_sprites.md](docs/arc_f/phase_58_gameplay_object_sprites.md))
 
-### Phase 59 — Directional Actors `[ ]`
+### Phase 59 — Directional Actors `[x]`
 Rivals and the guardian move to directional sheets: direction from camera-relative angle, clip from existing presentation state (combat frames remapped to operate/alert/disrupted/exit or dropped), frame selection a tested pure function, guardian light/halo signals independent of the art, and all three fallback rungs (sheet → single-frame → capsule) working. ([docs/arc_f/phase_59_directional_actors.md](docs/arc_f/phase_59_directional_actors.md))
 
-### Phase 60 — Room Dressing, Textures & Interaction Read `[ ]`
+### Phase 60 — Room Dressing, Textures & Interaction Read `[x]`
 The atmosphere payoff: seeded, role-driven props under three hard rules (never cover a threshold, never steal a signal color, always dimmer than interactables), optional LAB albedo variants under style tint, and a documented ruling on the interaction read (diegetic cue preferred over any crosshair — normal play stays HUD-free). Full visual-audit and evidence refresh closes the arc. ([docs/arc_f/phase_60_dressing_textures_reticle.md](docs/arc_f/phase_60_dressing_textures_reticle.md))
+
+---
+
+**Arc H — Ground Truth** (plan: [docs/ground_truth_arc_plan.md](docs/ground_truth_arc_plan.md); per-phase sub-agent hand-offs: [docs/arc_h/](docs/arc_h/README.md)). The harden-and-ship arc: make the game match its claims — visually, mechanically, and in the ledger — then declare the MVP shipped. No new features; the bug backlog and Arc F's landing debt are the scope. New standing rule born from the Arc F review: **every phase ends with evidence a human can falsify** — agents view their own captures, the parent session rejects phases whose evidence doesn't visibly show the claim. Waves: [61] → [62 ∥ 63 ∥ 64] → [65 ∥ 66].
+
+### Phase 61 — Land Arc F (commits, ledger, honest evidence) `[ ]`
+Stage the entire uncommitted Arc F working tree into reviewed commits; tick the ledger (ROADMAP milestones, the five missing as-landed notes incl. the Phase-60 reticle ruling, memory, Catalogue); re-capture the evidence that is missing or shows nothing (rivals with rivals actually in frame, dressing before/after). Bookkeeping only — no behavior changes. ([docs/arc_h/phase_61_land_arc_f.md](docs/arc_h/phase_61_land_arc_f.md))
+
+### Phase 62 — Style Reconciliation `[ ]`
+Textures back under the Contract: district palette tint modulates every albedo (two districts unmistakable in a capture; drained/klaxon still read), world-unit UVs end the smearing, the triangulated ceiling-tile geometry is removed, and the visual audit gains a style-presence check proven to fail against the old broken state. Closes bug backlog #2. ([docs/arc_h/phase_62_style_reconciliation.md](docs/arc_h/phase_62_style_reconciliation.md))
+
+### Phase 63 — Control Rebind, For Real `[ ]`
+Replace the custom rebind capture with the proven `control_lab` overlay machinery (user ruling); the capture arms on the activation key's release so binding-the-activation-key is structurally impossible; conflicts surface visibly; round-trip and gamepad-regression tests. Closes bug backlog #1. ([docs/arc_h/phase_63_control_rebind.md](docs/arc_h/phase_63_control_rebind.md))
+
+### Phase 64 — Threshold Geometry Integrity `[ ]`
+Write the audit check first (no threshold may intersect an interior wall or another threshold, corpus-wide, DFS and WFC, all decoherence versions), use its failures as the reproduction set, fix the generator/projection disagreement at the source, and keep the check as a permanent map-validation gate. Closes bug backlog #3. ([docs/arc_h/phase_64_threshold_integrity.md](docs/arc_h/phase_64_threshold_integrity.md))
+
+### Phase 65 — Observation Rooms Made Real `[ ]`
+The 3×3 observation panels become legible schematic room feeds rendered from simulation data (footprint, doorways, occupant dots; anchors cyan, guardian red — the existing state signals layered on top), diegetic-only (panels never write into the player's fog-of-war `MapKnowledge`), with the jutting geometry fixed. Closes bug backlog #4. ([docs/arc_h/phase_65_observation_rooms.md](docs/arc_h/phase_65_observation_rooms.md))
+
+### Phase 66 — Post-Match Summary & the Ship Gate `[ ]`
+The results screen tells the run's story (placement, escapes in order, what the collapse took, the player's own path) for every outcome shape including solo, with a one-keypress path back into the loop — closing Arc E Phase 50 — plus the backlog hygiene items (`OBSERVED2_BOTS` panic→warning, the all-on digest characterization test). The arc ends with a scripted evidence set and a human playtest checklist; the MVP ships when the checklist passes, not when the tests do. ([docs/arc_h/phase_66_summary_ship_gate.md](docs/arc_h/phase_66_summary_ship_gate.md))
+
+---
+
+## Bug Backlog
+
+Playtest defects tracked in [docs/bug_backlog.md](docs/bug_backlog.md). All four open
+defects are now scheduled: #1 rebind → Phase 63, #2 textures/ceiling → Phase 62,
+#3 thresholds → Phase 64, #4 observation rooms → Phase 65; the hygiene items →
+Phase 66. New findings land in the backlog first, then get scheduled.
 
 ---
 
@@ -62,6 +93,30 @@ Recorded so the horizon is explicit; none of this is being built yet.
 ---
 
 ## Recent Milestones (Completed)
+
+### Arc F — Sight & Sound (Phases 54–60) `[x]`
+Landed 2026-07-09/10 across seven sub-agent phases; committed and ledgered 2026-07-10 (Arc H Phase 61):
+- **True Singleplayer (54):** `BotPopulations` toggles (rival teams / AI teammates / guardian) as deterministic match config through `MatchDirector::new`; `OBSERVED2_BOTS` override; lobby toggles persisted with the career profile; disabled populations never spawn in the sim.
+- **Audio architecture (55):** a Match-scoped `AudioDirector` with a data-driven cue table — buses over the settings channels, sting-ducks-ambience easing, structural per-class cooldowns/instance caps; every spawn site migrated.
+- **Audio content (56):** test-enforced signal→cue coverage table (`docs/arc_f/audio_coverage.md`), spatial rolloff/occlusion classes, four new cues, CC-BY libraries deleted. Post-landing review fixed the ambience-bed double-write and wired corridor/gantry hallway beds; playtest iteration replaced the whole palette with the deterministic in-repo synthesizer `tools/generate_audio.py` (composed 32 s liminal beds — chord progressions, sparse echoing melodies, tape-wobble pads — and one timbre family per cue family; klaxon now a 1.4 s loop).
+- **Sprite layer (57–60):** metadata-driven pipeline over the OpenGameArt CC0 intake (`assets/oga_25d/derived/` + `oga_25d_lab`), eight gameplay-object sprite slots with style halos, directional rival/guardian sheets with a pure tested `actor_frame`, seeded role-driven room dressing under three hard rules, `WALL_ALBEDO_LAB`, and a minimal near-interactable reticle dot.
+- **Verification:** 189 workspace test suites green, clippy clean. **Review caveats absorbed into Arc H:** imported albedos visually overpowered the district palettes (Phase 62), the rivals evidence capture shipped empty (re-captured, and the origin of Arc H's falsifiable-evidence rule), threshold/rebind/observation-room playtest bugs scheduled as Phases 63–65.
+
+### Phase 57 — Sprite Metadata Pipeline & the OGA Lab `[x]`
+Turned the raw OpenGameArt intake into a metadata-driven sprite pipeline:
+- **Derived Assets & Metadata**: Created `assets/oga_25d/derived/` with cropped transparent PNGs and JSON metadata skeletons (rects, pivots, ppm, directional counts, semantic clips) for actors (guard), objects (keystones, cards, batteries, tools), decorations (columns, torches), and textures (tiles).
+- **Derive Script**: Implemented a deterministic, rerunnable Rust utility `derive_sprites` that handles extraction and image processing to ensure byte-identical rebuilds.
+- **OGA Lab**: Created `oga_25d_lab` demonstrating pacing guard actors with angle-driven 8-way directional clips, objects and decorations at game-plausible scales, texture tile sampling, a debug metadata overlay, and interactive billboard-vs-directional/auto-orbit controls.
+- **Verification**: Added metadata loader unit tests verifying coordinate bounds, normalized pivots, clips consistency, and multiple-of-direction constraints. All workspace clippy and test suites run warning-free and pass.
+
+
+### Phase 56 - Audio Content & Spatial Depth `[x]`
+Closed Arc F's audio content pass on top of the mixer:
+- **Coverage audit:** added `docs/arc_f/audio_coverage.md`, with tests enforcing that every `MatchAudioCue` variant is represented and no unresolved placeholder remains.
+- **Spatial classes:** the director now applies cue-table rolloff and occlusion classes; rival bleed uses threshold/wall attenuation instead of local volume math, and guardian proximity has a low dread cue.
+- **Critical cue gaps:** tool interactions, keystone pickup, exit unlock, and guardian dread are semantic optional slots with short in-repo synthesized OGG files.
+- **License cleanup:** removed the attribution-required raw OGA sound archives and scrubbed their manifest/source references; game-ready sound slots are covered by the source ledger.
+- **Verification:** `cargo fmt --all`, `cargo test -p observed_assets`, and `cargo test -p observed_game` pass.
 
 ### Sprite3D Dev Placeholder Pass `[x]`
 Added a Bevy `0.18`-compatible 2.5D sprite placeholder path for dev-visible actors

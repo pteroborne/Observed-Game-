@@ -16,7 +16,7 @@
     "sprint": "ShiftLeft",
     "sprint_alt": "ShiftRight",
     "interact": "KeyE",
-    "torch": "KeyF",
+    "torch": "Enter",
     "pad": "KeyC",
     "activate_pad": "KeyE",
     "tac_map": "Tab",
