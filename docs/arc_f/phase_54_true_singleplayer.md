@@ -92,3 +92,21 @@ match-end rule.
 - No presentation-side "hide the bot" code anywhere in the diff; disabled
   populations simply never exist in the sim.
 - Full verification recipe green (fmt, clippy zero warnings, workspace tests).
+
+## As landed (2026-07-09; note written 2026-07-10 during Arc H Phase 61)
+
+- `BotPopulations { rival_teams, ai_teammates, guardian }` lives in
+  `game/src/sim/director.rs` with `from_env()`/`from_str()` parsing `OBSERVED2_BOTS`
+  (`all|none|no_guardian|no_rivals|no_teammates`, combinable). Config threads
+  through `MatchDirector::new(seed, map_spec, config)`; lobby toggles persist via
+  the career profile; the env override wins; `MATCH_START` logs the configuration.
+- Guardian off = the `Guardian` resource is never inserted; guardian systems take
+  `Option<ResMut<Guardian>>` and bail. No presentation-side hiding anywhere.
+- Deviations: (1) `apply_population_config` rebuilds host/remote team lists after
+  construction rather than skipping at spawn — behavior-preserving for the all-on
+  default per the seed-corpus/career tests, but the doc's literal "all-on digest
+  pinned unchanged" characterization test was not added (scheduled: Phase 66).
+  (2) `from_str` panics on an unknown token instead of warning (scheduled: 66).
+- Tests: all 8 toggle combinations headless to valid outcomes, guardian-off spawns
+  no guardian resources, env parsing + persistence round-trips. Evidence:
+  `docs/evidence/empty_facility.png` (OBSERVED2_BOTS=none).

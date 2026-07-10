@@ -81,3 +81,42 @@ gameplay rules.
 - Every new slot is optional: deleting `assets/sounds/` still boots and plays
   silently without errors or panics.
 - Full verification recipe green; visual audit reports zero findings.
+
+## As landed (2026-07-09)
+
+- Added `docs/arc_f/audio_coverage.md` and tests that require every
+  `MatchAudioCue` variant to appear in the coverage table.
+- Replaced the Phase-55 attenuation placeholder with cue-table spatial classes:
+  near/room/far rolloff plus same-place, threshold, and wall occlusion.
+- Moved rival bleed onto the shared spatial path and added a low, cooldown-limited
+  guardian dread cue based on same-room or adjacent topology.
+- Added optional CC0/in-repo synthesized slots for tool interaction, keystone
+  pickup, exit unlock, and guardian dread; all are loaded through
+  `observed_assets` and can be absent without changing gameplay.
+- Removed the two attribution-required raw OGA sound-library archives and scrubbed
+  their asset metadata/source rows.
+
+## Review fixes (2026-07-09, post-landing)
+
+A playtest reported location-specific ambience misbehaving; review found two defects:
+
+- **Bed volume double-write:** `update_audio_director`'s blanket sink pass also wrote
+  every ambience bed to full bed volume (no fade factor) each frame before
+  `fade_ambience_beds` overwrote it — exposing an all-beds-audible state to the audio
+  thread between the writes. Beds are now excluded from the director's sink pass
+  (`Without<AmbienceBed>`); the fade system is their only volume writer.
+- **Dead location beds:** `ambience_corridor/gantry/junction/monument/void.ogg` were
+  checked in but never loaded, and hallways played the from-room's district bed.
+  Added `AMBIENCE_CORRIDOR`/`AMBIENCE_GANTRY` slots and an `AmbienceBedKind`
+  (district / corridor / gantry) selected by the pure `active_ambience_bed`
+  (hallway + raised decks → gantry); junction/monument/void files were deleted with
+  their `SOURCES.md` rows. New tests cover bed selection and the checked-in slots.
+- **Audio palette regenerated (playtest: beds were "just bass", klaxon too long,
+  cues were undifferentiated beeps):** every `sounds/*.ogg` is now produced by the
+  deterministic in-repo synthesizer `tools/generate_audio.py` (numpy + ffmpeg).
+  One timbre family per semantic family — UI glass ticks, movement noise-thumps,
+  pneumatic/metallic structure, rising bell progress cues, low restrained threat —
+  so each indicator is unique by ear. Beds are 32 s loop-perfect **compositions**
+  (user direction: liminal/backrooms — slow chord progressions with tape-wobble
+  pads, sparse echoing melodies, noise only as a whisper of texture); the klaxon
+  is a 1.4 s two-tone loop. `SOURCES.md` rows now point at the script.

@@ -73,3 +73,16 @@ behavior, or `observed_style` semantics.
 - All three fallback rungs verified (sheet → single-frame → capsule) by tests
   or a documented manual check.
 - Full verification recipe green.
+
+## As landed (2026-07-10; note written during Arc H Phase 61)
+
+- `actor_frame` in `game/src/view/sprites.rs` is the pure selection function
+  (camera-relative direction quantization + semantic clip from presentation
+  state), unit-tested (`actor_frame_quantization_and_clips`); `RIVAL_ACTOR` /
+  `GUARDIAN_ACTOR` sheet slots with checked-in metadata under `assets/sprites/`.
+- All three fallback rungs (sheet → single-frame → capsule) covered by
+  `test_directional_actors_sheets_and_fallbacks`.
+- Deviation: the original `docs/evidence/oga_25d_rivals.png` shipped showing an
+  empty floor — the "played capture shows directional rivals" criterion was not
+  actually evidenced. Re-captured honestly in Arc H Phase 61; this failure is the
+  origin of Arc H's falsifiable-evidence rule.

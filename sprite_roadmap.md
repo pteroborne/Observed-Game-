@@ -18,13 +18,13 @@ phase docs for *who edits which files and when*.
 | --- | --- | --- |
 | 1 — Raw intake & provenance | **DONE** (2026-07-09) | `assets/oga_25d/raw/` + rows in `assets/SOURCES.md`; CC-BY sound libraries flagged reference-only |
 | — Dev placeholder pass | **DONE** (2026-07-09) | Kenney sprite slots (`RUNNER_*`, `RIVAL_*`, `GUARDIAN_STAND`, `CONTROL_DEVICE`) in `observed_assets`, consumed by `game/src/view/sprites.rs` + `place/item_visuals.rs`, proven in `sprite3d_placeholder_lab` |
-| 2 — Metadata & atlas pipeline | pending | [Arc F Phase 57](docs/arc_f/phase_57_sprite_pipeline_lab.md) |
-| 3 — Expanded lab | pending | [Arc F Phase 57](docs/arc_f/phase_57_sprite_pipeline_lab.md) |
-| 4 — Gameplay objects | pending | [Arc F Phase 58](docs/arc_f/phase_58_gameplay_object_sprites.md) |
-| 5 — Directional actors | pending | [Arc F Phase 59](docs/arc_f/phase_59_directional_actors.md) |
-| 6 — Room dressing | pending | [Arc F Phase 60](docs/arc_f/phase_60_dressing_textures_reticle.md) |
-| 7 — Textures / HUD / reticle / audio | **re-scoped** | Textures + reticle → Phase 60. HUD iconography cut (see below). Audio moved entirely to the audio track ([Phase 56](docs/arc_f/phase_56_audio_content_spatial.md)) |
-| 8 — Evidence, tests, docs | dissolved | folded into every phase's success criteria |
+| 2 — Metadata & atlas pipeline | **DONE** | [Arc F Phase 57](docs/arc_f/phase_57_sprite_pipeline_lab.md) |
+| 3 — Expanded lab | **DONE** | [Arc F Phase 57](docs/arc_f/phase_57_sprite_pipeline_lab.md) |
+| 4 — Gameplay objects | **DONE** | [Arc F Phase 58](docs/arc_f/phase_58_gameplay_object_sprites.md) |
+| 5 — Directional actors | **DONE** | [Arc F Phase 59](docs/arc_f/phase_59_directional_actors.md) |
+| 6 — Room dressing | **DONE** (2026-07-10) | [Arc F Phase 60](docs/arc_f/phase_60_dressing_textures_reticle.md) |
+| 7 — Textures / HUD / reticle / audio | **DONE** (2026-07-10) | Textures + reticle landed in Phase 60; HUD iconography cut; Audio moved to Phase 56 |
+| 8 — Evidence, tests, docs | **DONE** | Folded into each phase's criteria |
 
 ## Core constraints (binding)
 

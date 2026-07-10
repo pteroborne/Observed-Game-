@@ -71,3 +71,15 @@ append-only; Track A may be editing this file in a parallel worktree),
   style treatment visibly layered over sprite bodies in evidence.
 - Object visuals despawn on place reset and `OnExit(Match)`; no-leak test green.
 - Full verification recipe green.
+
+## As landed (2026-07-10; note written during Arc H Phase 61)
+
+- All eight object slots (`KEYSTONE_CARD`, `KEYSTONE_CORE`, `EXIT_ACCESS_CARD`,
+  `ANCHOR_TORCH`, `ROUTE_CELL`, `RELAY_DEVICE`, `BATTERY_CHARGE`, `REPAIR_TOKEN`)
+  in `observed_assets` + game-ready PNGs under `assets/sprites/`, mapped in
+  `place/item_visuals.rs` from existing match state, style halos layered on top.
+- Tests: `test_gameplay_object_sprites_slots_and_fallbacks` covers resolve +
+  procedural fallback; despawn on reset/exit under the no-leak discipline.
+- Deviation: the in-game capture (`docs/evidence/oga_25d_objects.png`) exposed the
+  texture/style regression (bright albedo, palette absent) — tracked as Arc H
+  Phase 62; the object sprites themselves render as designed.

@@ -71,3 +71,17 @@ Do NOT edit `game/src/**` or `crates/observed_assets` this phase.
 - Evidence PNGs land under `docs/evidence/` (`oga_25d_lab*.png`).
 - `Catalogue.md` documents the lab; `cargo test -p oga_25d_lab` (or the renamed
   crate) passes; full verification recipe green.
+
+## As Landed
+
+Landed Phase 57:
+- Created the `derive_sprites` Rust binary to deterministically unpack, crop, and convert raw OpenGameArt sprite sheets and cards into `assets/oga_25d/derived/` with transparent backgrounds, writing their metadata JSON skeletons.
+- Created `oga_25d_lab` (by renaming and growing `sprite3d_placeholder_lab`), which implements:
+  - Pacing guard actor animating standard clips (walk, idle, operate, alert, disrupted) with camera-relative 8-way directional selection.
+  - Plausible-scale object lineups (keystone card, exit access card, battery, route cell, repair token, relay device, anchor torch).
+  - Billboard decoration lineups (column, wall torch, table, crate) and a vertical wall quad texture sampler.
+  - Toggle keys for auto-orbit (`O`), billboard-vs-directional (`B`), and clip changes (`1` to `5`), along with a detailed debug overlay text.
+- Added comprehensive metadata schema tests to validate coordinates bounds, normalized pivots, clips consistency, and multiple-of-direction constraints.
+- Generated visual evidence captures `oga_25d_lab_directional.png` and `oga_25d_lab_billboard.png` in `docs/evidence/`.
+- Verified clippy and workspace tests are clean.
+

@@ -78,3 +78,18 @@ Phase 56 adds content on top of it. Read [README.md](README.md) first.
   sting audibly ducks the beds in a capture run without any stream churn.
 - Idle-match audio stability test from Phase 49 still passes unchanged.
 - Full verification recipe green (fmt, clippy zero warnings, workspace tests).
+
+## As landed (2026-07-09; note written 2026-07-10 during Arc H Phase 61)
+
+- `AudioDirector` (Match-scoped, in `for_each_match_resource!`) owns the
+  data-driven cue table (`get_config`: bus, base volume, cooldown, max instances,
+  duck spec, attenuation class), `request`/`request_spatial`, bus ducking with
+  eased in/out, and per-class cooldowns/instance caps. All spawn sites migrated;
+  `play_one_shot` has no call sites outside the audio module.
+- Tests: cue-table sanity, cooldown/instance-cap enforcement, duck math and
+  director ducking, muted-channel suppression.
+- Post-landing review fix (2026-07-09): `update_audio_director`'s blanket sink
+  write also drove the district ambience beds to full volume every frame, fighting
+  the fade system between writes — beds are now excluded
+  (`Without<AmbienceBed>`); the fade system is their only volume writer. See
+  Phase 56's "Review fixes".

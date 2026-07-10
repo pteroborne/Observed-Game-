@@ -76,3 +76,20 @@ is strictly non-blocking visuals placed clear of walk paths.
 - Reticle/interaction ruling documented in the "As landed" note.
 - `sprite_roadmap.md` status ledger fully ticked; full verification recipe
   green; Arc F evidence set complete under `docs/evidence/`.
+
+## As landed (2026-07-10; note written during Arc H Phase 61)
+
+- Seeded role-driven dressing with the three hard rules enforced by
+  `dressing_props_are_deterministic_and_respect_clearance`; `WALL_ALBEDO_LAB`
+  texture slot; decoration sprites from the Phase-57 derived set.
+- **Reticle ruling taken:** a minimal screen-space center dot
+  (`InteractionReticle` in `hud.rs`, `update_interaction_reticle`) visible only
+  when close to an interactable — the doc's permitted minimal option; the
+  diegetic-glow alternative was not pursued.
+- Deviations: (1) the ceiling gained triangulated tile geometry that the playtest
+  rejected, and the albedo treatment overpowers the district palette — both
+  reverted/reconciled in Arc H Phase 62; (2) the dressing before/after evidence
+  captures were never produced — and Phase 61 found they cannot be honestly
+  captured in the current visual state (the audit's own room captures show
+  washed albedo and no palette); the obligation transfers to Phase 62's
+  post-reconciliation capture set.
