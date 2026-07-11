@@ -4,9 +4,9 @@
 //! image readiness before spawning. Missing or not-yet-loaded images keep the
 //! procedural fallback path alive.
 
+use super::actor_metadata::SpriteMetadata;
 use bevy::prelude::*;
 use bevy_sprite3d::prelude::Sprite3d;
-use super::actor_metadata::SpriteMetadata;
 
 use crate::view::components::{BillboardSprite, GameCam};
 
@@ -93,7 +93,8 @@ pub(crate) fn actor_frame(
             angle += 2.0 * std::f32::consts::PI;
         }
 
-        let sector = (angle + std::f32::consts::PI / dir_count as f32) / (2.0 * std::f32::consts::PI);
+        let sector =
+            (angle + std::f32::consts::PI / dir_count as f32) / (2.0 * std::f32::consts::PI);
         let mut idx = (sector * dir_count as f32).floor() as i32;
         if idx < 0 {
             idx += dir_count as i32;
@@ -119,9 +120,9 @@ pub(crate) fn actor_frame(
 
 #[cfg(test)]
 mod tests {
+    use super::super::actor_metadata::DirectionalCount;
     use super::*;
     use std::collections::HashMap;
-    use super::super::actor_metadata::DirectionalCount;
 
     #[test]
     fn yaw_faces_camera_on_xz_plane() {

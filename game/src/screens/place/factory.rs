@@ -466,14 +466,7 @@ pub(crate) fn rebuild_place(
             }
         }
         Place::Hallway { .. } => {
-            spawn_hallway_dressing(
-                &mut commands,
-                &assets,
-                &images,
-                &geom,
-                y_offset,
-                seed_val,
-            );
+            spawn_hallway_dressing(&mut commands, &assets, &images, &geom, y_offset, seed_val);
         }
     }
 }
@@ -508,7 +501,8 @@ pub(crate) fn spawn_guardian_model(
                         pixels_per_metre: meta.pixels_per_metre,
                         alpha_mode: AlphaMode::Blend,
                         unlit: true,
-                        emissive: observed_style::marker(observed_style::MarkerRole::Director).emissive,
+                        emissive: observed_style::marker(observed_style::MarkerRole::Director)
+                            .emissive,
                         pivot: Some(Vec2::new(meta.pivot.0, meta.pivot.1)),
                         double_sided: true,
                         ..default()
@@ -716,18 +710,11 @@ fn spawn_room_dressing(
             assets.decor_column.clone(),
             assets.decor_torch.clone(),
         ],
-        RoomRole::Keystone => vec![
-            assets.decor_lab_crate.clone(),
-            assets.decor_column.clone(),
-        ],
-        RoomRole::Start | RoomRole::Exit => vec![
-            assets.decor_column.clone(),
-            assets.decor_torch.clone(),
-        ],
-        _ => vec![
-            assets.decor_column.clone(),
-            assets.decor_lab_crate.clone(),
-        ],
+        RoomRole::Keystone => vec![assets.decor_lab_crate.clone(), assets.decor_column.clone()],
+        RoomRole::Start | RoomRole::Exit => {
+            vec![assets.decor_column.clone(), assets.decor_torch.clone()]
+        }
+        _ => vec![assets.decor_column.clone(), assets.decor_lab_crate.clone()],
     };
 
     // Filter out None handles
@@ -766,10 +753,7 @@ fn spawn_room_dressing(
                 commands.spawn((
                     PlaceGeometry,
                     DespawnOnExit(GameState::Match),
-                    Sprite {
-                        image,
-                        ..default()
-                    },
+                    Sprite { image, ..default() },
                     Sprite3d {
                         pixels_per_metre: 64.0,
                         alpha_mode: AlphaMode::Blend,
@@ -798,10 +782,7 @@ fn spawn_hallway_dressing(
     seed_val: u64,
 ) {
     let mut rng = SplitMix(seed_val ^ 0x1234_5678_ABCD_EF01);
-    let props = vec![
-        assets.decor_column.clone(),
-        assets.decor_lab_crate.clone(),
-    ];
+    let props = vec![assets.decor_column.clone(), assets.decor_lab_crate.clone()];
     let props: Vec<Handle<Image>> = props.into_iter().flatten().collect();
     if props.is_empty() {
         return;
@@ -829,10 +810,7 @@ fn spawn_hallway_dressing(
             commands.spawn((
                 PlaceGeometry,
                 DespawnOnExit(GameState::Match),
-                Sprite {
-                    image,
-                    ..default()
-                },
+                Sprite { image, ..default() },
                 Sprite3d {
                     pixels_per_metre: 64.0,
                     alpha_mode: AlphaMode::Blend,

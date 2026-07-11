@@ -469,7 +469,8 @@ pub(crate) fn update_guardian_in_match(
         for (_, mut transform, maybe_sprite) in &mut guardian_q {
             transform.translation = guardian.pos;
             if let Some(mut sprite) = maybe_sprite {
-                let frame_idx = crate::view::sprites::actor_frame(meta, clip_name, 0.0, animation_step);
+                let frame_idx =
+                    crate::view::sprites::actor_frame(meta, clip_name, 0.0, animation_step);
                 if let Some(ref mut atlas) = sprite.texture_atlas {
                     atlas.index = frame_idx;
                 }

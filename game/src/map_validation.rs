@@ -15,7 +15,8 @@ use crate::bot;
 use crate::flow::MATCH_SEED;
 use crate::hallway;
 use crate::teleport::{
-    self, GapKind, HallwayGeomEndpoints, Nav, Place, PlaceGeom, RoomConnectionSlot, ThresholdSlotId,
+    self, DoorGap, GapKind, HallwayGeomEndpoints, Nav, Place, PlaceGeom, RoomConnectionSlot,
+    ThresholdSlotId, WallSeg,
 };
 
 pub const DEFAULT_ITERATION_COUNT: usize = 24;
@@ -25,6 +26,10 @@ pub const DEFAULT_DECOHERE_VERSIONS: u32 = 4;
 /// this audit as a runaway-geometry guard, but size it for the liminal renderer frame
 /// rather than the old dev-scale frame.
 const MAX_EXPECTED_PLACE_HALF: f32 = 64.0;
+const THRESHOLD_RECT_DEPTH: f32 = 0.35;
+const THRESHOLD_APPROACH_DEPTH: f32 = teleport::MAZE_CELL * 0.5;
+const THRESHOLD_OVERLAP_DEPTH: f32 = teleport::ENTRY_INSET;
+const THRESHOLD_CLEARANCE_EPS: f32 = 0.02;
 pub const MAP_AUDIT_CAPTURE_ROLES: [RoomRole; 6] = [
     RoomRole::Start,
     RoomRole::Keystone,
@@ -408,6 +413,7 @@ fn audit_hallway_geom(
     config: &FpsConfig,
 ) {
     audit_common(issues, report.clone(), geom);
+    audit_hallway_threshold_integrity(issues, report.clone(), geom);
     if geom.poly.is_some() {
         push_issue(
             issues,
@@ -451,6 +457,69 @@ fn audit_hallway_geom(
             report,
             "bot cannot route from hallway entry to exit",
         );
+    }
+}
+
+fn audit_hallway_threshold_integrity(
+    issues: &mut Vec<MapValidationIssue>,
+    report: MapPlaceReport,
+    geom: &PlaceGeom,
+) {
+    for gap in &geom.gaps {
+        let threshold = threshold_rect(gap, THRESHOLD_RECT_DEPTH);
+        for wall in &geom.interior {
+            if rect_intersects_wall(&threshold, wall) {
+                push_issue(
+                    issues,
+                    report.clone(),
+                    format!(
+                        "threshold {} intersects interior wall at ({:.2},{:.2}) half=({:.2},{:.2})",
+                        threshold_name(gap),
+                        wall.center.x,
+                        wall.center.y,
+                        wall.half.x,
+                        wall.half.y
+                    ),
+                );
+            }
+        }
+
+        for (label, approach) in threshold_approach_rects(gap) {
+            for wall in &geom.interior {
+                if rect_intersects_wall(&approach, wall) {
+                    push_issue(
+                        issues,
+                        report.clone(),
+                        format!(
+                            "threshold {} {label} approach is blocked by interior wall at ({:.2},{:.2}) half=({:.2},{:.2})",
+                            threshold_name(gap),
+                            wall.center.x,
+                            wall.center.y,
+                            wall.half.x,
+                            wall.half.y
+                        ),
+                    );
+                }
+            }
+        }
+    }
+
+    for i in 0..geom.gaps.len() {
+        for j in (i + 1)..geom.gaps.len() {
+            let a = threshold_rect(&geom.gaps[i], THRESHOLD_OVERLAP_DEPTH);
+            let b = threshold_rect(&geom.gaps[j], THRESHOLD_OVERLAP_DEPTH);
+            if rects_intersect(&a, &b) {
+                push_issue(
+                    issues,
+                    report.clone(),
+                    format!(
+                        "threshold {} overlaps threshold {}",
+                        threshold_name(&geom.gaps[i]),
+                        threshold_name(&geom.gaps[j])
+                    ),
+                );
+            }
+        }
     }
 }
 
@@ -544,9 +613,111 @@ fn matching_edge(poly: &[Vec2], center: Vec2) -> Option<(Vec2, Vec2)> {
     None
 }
 
+#[derive(Clone, Copy)]
+struct OrientedRect {
+    center: Vec2,
+    tangent: Vec2,
+    normal: Vec2,
+    half_tangent: f32,
+    half_normal: f32,
+}
+
+fn threshold_rect(gap: &DoorGap, depth: f32) -> OrientedRect {
+    let normal = gap.normal.normalize_or_zero();
+    OrientedRect {
+        center: gap.center,
+        tangent: Vec2::new(-normal.y, normal.x),
+        normal,
+        half_tangent: gap.width * 0.5,
+        half_normal: depth,
+    }
+}
+
+fn threshold_approach_rects(gap: &DoorGap) -> [(&'static str, OrientedRect); 2] {
+    let normal = gap.normal.normalize_or_zero();
+    let tangent = Vec2::new(-normal.y, normal.x);
+    let half_normal = THRESHOLD_APPROACH_DEPTH * 0.5;
+    [
+        (
+            "interior",
+            OrientedRect {
+                center: gap.center - normal * half_normal,
+                tangent,
+                normal,
+                half_tangent: gap.width * 0.5,
+                half_normal,
+            },
+        ),
+        (
+            "exterior",
+            OrientedRect {
+                center: gap.center + normal * half_normal,
+                tangent,
+                normal,
+                half_tangent: gap.width * 0.5,
+                half_normal,
+            },
+        ),
+    ]
+}
+
+fn rect_intersects_wall(rect: &OrientedRect, wall: &WallSeg) -> bool {
+    let wall_rect = OrientedRect {
+        center: wall.center,
+        tangent: Vec2::X,
+        normal: Vec2::Y,
+        half_tangent: wall.half.x,
+        half_normal: wall.half.y,
+    };
+    rects_intersect(rect, &wall_rect)
+}
+
+fn rects_intersect(a: &OrientedRect, b: &OrientedRect) -> bool {
+    for axis in [a.tangent, a.normal, b.tangent, b.normal] {
+        if separates(*a, *b, axis) {
+            return false;
+        }
+    }
+    true
+}
+
+fn separates(a: OrientedRect, b: OrientedRect, axis: Vec2) -> bool {
+    let axis = axis.normalize_or_zero();
+    if axis.length_squared() < f32::EPSILON {
+        return false;
+    }
+    let (a_min, a_max) = project_rect(a, axis);
+    let (b_min, b_max) = project_rect(b, axis);
+    a_max <= b_min + THRESHOLD_CLEARANCE_EPS || b_max <= a_min + THRESHOLD_CLEARANCE_EPS
+}
+
+fn project_rect(rect: OrientedRect, axis: Vec2) -> (f32, f32) {
+    let center = rect.center.dot(axis);
+    let radius = rect.half_tangent * rect.tangent.dot(axis).abs()
+        + rect.half_normal * rect.normal.dot(axis).abs();
+    (center - radius, center + radius)
+}
+
+fn threshold_name(gap: &DoorGap) -> String {
+    format!(
+        "R{}:S{} -> H{}-{}:{}:S{}",
+        gap.threshold.room.room.0,
+        gap.threshold.room.slot.0,
+        gap.threshold.hall.hall.a.0,
+        gap.threshold.hall.hall.b.0,
+        gap.threshold.hall.side.0,
+        gap.threshold.hall.slot.0
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use observed_facility::map_spec::CorridorRole;
+    use observed_match::mutable::EXIT_ROOM;
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::io;
+    use std::path::Path;
 
     #[test]
     fn sector_relay_semantic_capture_sequence_has_representative_rooms() {
@@ -587,5 +758,288 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("\n")
         );
+    }
+
+    #[test]
+    fn hallway_threshold_integrity_holds_for_template_seed_corpus() {
+        let mut issues = Vec::new();
+        let config = FpsConfig::default();
+        let from = RoomId(0);
+        let to = RoomId(1);
+
+        for (variation, template) in hallway::TEMPLATES.iter().enumerate() {
+            let roles: &[Option<CorridorRole>] = if template.grid.is_some() {
+                &[None, Some(CorridorRole::Mystery)]
+            } else {
+                &[None]
+            };
+            for &role in roles {
+                for seed in 0..64_u64 {
+                    let geom = teleport::hallway_geom_with_slots_and_role(
+                        HallwayGeomEndpoints {
+                            from,
+                            to,
+                            from_room_slot: ThresholdSlotId(0),
+                            to_room_slot: ThresholdSlotId(0),
+                            exit_room: RoomId(EXIT_ROOM),
+                        },
+                        template,
+                        seed,
+                        false,
+                        role,
+                    );
+                    let report = MapPlaceReport {
+                        map_name: "template_threshold_corpus",
+                        seed,
+                        version: u32::from(role == Some(CorridorRole::Mystery)),
+                        place: Place::Hallway {
+                            from,
+                            to,
+                            variation,
+                        },
+                        room: None,
+                        role: None,
+                        connections: vec![from, to],
+                        bounds: geom.half,
+                        gap_count: geom.gaps.len(),
+                        spawn: teleport::entry_spawn(&geom, from),
+                        screenshot_path: None,
+                    };
+                    audit_hallway_geom(&mut issues, report, &geom, from, to, &config);
+                }
+            }
+        }
+
+        assert!(
+            issues.is_empty(),
+            "hallway threshold integrity failed:\n{}",
+            summarize_threshold_issues(&issues)
+        );
+    }
+
+    #[test]
+    fn capture_threshold_integrity_wfc_hallways_when_requested() {
+        let Ok(dir) = std::env::var("OBSERVED2_CAPTURE_THRESHOLD_INTEGRITY") else {
+            return;
+        };
+        std::fs::create_dir_all(&dir).expect("capture dir can be created");
+        let from = RoomId(0);
+        let to = RoomId(1);
+        for (variation, seed) in [(8usize, 0u64), (12, 0)] {
+            let template = hallway::template(variation);
+            let geom = teleport::hallway_geom_with_slots_and_role(
+                HallwayGeomEndpoints {
+                    from,
+                    to,
+                    from_room_slot: ThresholdSlotId(0),
+                    to_room_slot: ThresholdSlotId(0),
+                    exit_room: RoomId(EXIT_ROOM),
+                },
+                template,
+                seed,
+                false,
+                Some(CorridorRole::Mystery),
+            );
+            let path = Path::new(&dir).join(format!(
+                "phase64_threshold_integrity_v{variation}_seed{seed}.bmp"
+            ));
+            render_hallway_integrity_bmp(&geom, &path).expect("threshold BMP capture writes");
+        }
+    }
+
+    fn summarize_threshold_issues(issues: &[MapValidationIssue]) -> String {
+        let mut by_place: BTreeMap<(usize, u32), BTreeSet<u64>> = BTreeMap::new();
+        for issue in issues {
+            if let Place::Hallway { variation, .. } = issue.report.place {
+                by_place
+                    .entry((variation, issue.report.version))
+                    .or_default()
+                    .insert(issue.report.seed);
+            }
+        }
+        let mut lines: Vec<String> = by_place
+            .into_iter()
+            .map(|((variation, version), seeds)| {
+                let seeds = seeds
+                    .into_iter()
+                    .map(|seed| seed.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                format!("variation={variation} version={version} seeds={seeds}")
+            })
+            .collect();
+        lines.push("sample issues:".to_string());
+        lines.extend(issues.iter().take(24).map(ToString::to_string));
+        if issues.len() > 24 {
+            lines.push(format!("... {} more issue(s)", issues.len() - 24));
+        }
+        lines.join("\n")
+    }
+
+    #[derive(Clone, Copy)]
+    struct Rgb(u8, u8, u8);
+
+    fn render_hallway_integrity_bmp(geom: &PlaceGeom, path: &Path) -> io::Result<()> {
+        const WIDTH: usize = 960;
+        const HEIGHT: usize = 720;
+        const PAD: f32 = 42.0;
+        let mut pixels = vec![Rgb(10, 12, 16); WIDTH * HEIGHT];
+        let scale_x = (WIDTH as f32 - PAD * 2.0) / (geom.half.x * 2.0 + 2.0);
+        let scale_y = (HEIGHT as f32 - PAD * 2.0) / (geom.half.y * 2.0 + 2.0);
+        let scale = scale_x.min(scale_y);
+
+        let to_pixel = |p: Vec2| -> Vec2 {
+            Vec2::new(
+                WIDTH as f32 * 0.5 + p.x * scale,
+                HEIGHT as f32 * 0.5 - p.y * scale,
+            )
+        };
+        let to_world = |x: usize, y: usize| -> Vec2 {
+            Vec2::new(
+                (x as f32 + 0.5 - WIDTH as f32 * 0.5) / scale,
+                -(y as f32 + 0.5 - HEIGHT as f32 * 0.5) / scale,
+            )
+        };
+
+        fill_axis_rect(
+            &mut pixels,
+            WIDTH,
+            HEIGHT,
+            to_pixel,
+            -geom.half,
+            geom.half,
+            Rgb(24, 30, 38),
+        );
+        for gap in &geom.gaps {
+            for (_, approach) in threshold_approach_rects(gap) {
+                fill_oriented_rect(
+                    &mut pixels,
+                    WIDTH,
+                    HEIGHT,
+                    to_pixel,
+                    to_world,
+                    approach,
+                    Rgb(32, 86, 63),
+                );
+            }
+        }
+        for wall in &geom.interior {
+            fill_axis_rect(
+                &mut pixels,
+                WIDTH,
+                HEIGHT,
+                to_pixel,
+                wall.center - wall.half,
+                wall.center + wall.half,
+                Rgb(180, 190, 205),
+            );
+        }
+        for gap in &geom.gaps {
+            fill_oriented_rect(
+                &mut pixels,
+                WIDTH,
+                HEIGHT,
+                to_pixel,
+                to_world,
+                threshold_rect(gap, THRESHOLD_RECT_DEPTH),
+                Rgb(33, 220, 160),
+            );
+        }
+
+        write_bmp(path, WIDTH, HEIGHT, &pixels)
+    }
+
+    fn fill_axis_rect(
+        pixels: &mut [Rgb],
+        width: usize,
+        height: usize,
+        to_pixel: impl Fn(Vec2) -> Vec2,
+        min: Vec2,
+        max: Vec2,
+        color: Rgb,
+    ) {
+        let a = to_pixel(min);
+        let b = to_pixel(max);
+        let min_x = a.x.min(b.x).floor().max(0.0) as usize;
+        let max_x = a.x.max(b.x).ceil().min(width as f32) as usize;
+        let min_y = a.y.min(b.y).floor().max(0.0) as usize;
+        let max_y = a.y.max(b.y).ceil().min(height as f32) as usize;
+        for y in min_y..max_y {
+            for x in min_x..max_x {
+                pixels[y * width + x] = color;
+            }
+        }
+    }
+
+    fn fill_oriented_rect(
+        pixels: &mut [Rgb],
+        width: usize,
+        height: usize,
+        to_pixel: impl Fn(Vec2) -> Vec2,
+        to_world: impl Fn(usize, usize) -> Vec2,
+        rect: OrientedRect,
+        color: Rgb,
+    ) {
+        let corners = [
+            rect.center + rect.tangent * rect.half_tangent + rect.normal * rect.half_normal,
+            rect.center + rect.tangent * rect.half_tangent - rect.normal * rect.half_normal,
+            rect.center - rect.tangent * rect.half_tangent + rect.normal * rect.half_normal,
+            rect.center - rect.tangent * rect.half_tangent - rect.normal * rect.half_normal,
+        ];
+        let mut min = Vec2::splat(f32::INFINITY);
+        let mut max = Vec2::splat(f32::NEG_INFINITY);
+        for corner in corners {
+            let p = to_pixel(corner);
+            min = min.min(p);
+            max = max.max(p);
+        }
+        let min_x = min.x.floor().max(0.0) as usize;
+        let max_x = max.x.ceil().min(width as f32) as usize;
+        let min_y = min.y.floor().max(0.0) as usize;
+        let max_y = max.y.ceil().min(height as f32) as usize;
+        for y in min_y..max_y {
+            for x in min_x..max_x {
+                let p = to_world(x, y);
+                let d = p - rect.center;
+                if d.dot(rect.tangent).abs() <= rect.half_tangent
+                    && d.dot(rect.normal).abs() <= rect.half_normal
+                {
+                    pixels[y * width + x] = color;
+                }
+            }
+        }
+    }
+
+    fn write_bmp(path: &Path, width: usize, height: usize, pixels: &[Rgb]) -> io::Result<()> {
+        let row_stride = (width * 3).div_ceil(4) * 4;
+        let pixel_bytes = row_stride * height;
+        let file_size = 14 + 40 + pixel_bytes;
+        let mut out = Vec::with_capacity(file_size);
+        out.extend_from_slice(b"BM");
+        out.extend_from_slice(&(file_size as u32).to_le_bytes());
+        out.extend_from_slice(&[0, 0, 0, 0]);
+        out.extend_from_slice(&(54u32).to_le_bytes());
+        out.extend_from_slice(&(40u32).to_le_bytes());
+        out.extend_from_slice(&(width as i32).to_le_bytes());
+        out.extend_from_slice(&(height as i32).to_le_bytes());
+        out.extend_from_slice(&(1u16).to_le_bytes());
+        out.extend_from_slice(&(24u16).to_le_bytes());
+        out.extend_from_slice(&(0u32).to_le_bytes());
+        out.extend_from_slice(&(pixel_bytes as u32).to_le_bytes());
+        out.extend_from_slice(&(2835i32).to_le_bytes());
+        out.extend_from_slice(&(2835i32).to_le_bytes());
+        out.extend_from_slice(&(0u32).to_le_bytes());
+        out.extend_from_slice(&(0u32).to_le_bytes());
+        for y in (0..height).rev() {
+            let row_start = out.len();
+            for x in 0..width {
+                let Rgb(r, g, b) = pixels[y * width + x];
+                out.extend_from_slice(&[b, g, r]);
+            }
+            while out.len() - row_start < row_stride {
+                out.push(0);
+            }
+        }
+        std::fs::write(path, out)
     }
 }

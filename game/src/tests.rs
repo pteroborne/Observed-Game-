@@ -2351,7 +2351,7 @@ fn dressing_props_are_deterministic_and_respect_clearance() {
             }
         }
         teleport_into_room(&mut app1, room_id);
-        
+
         let mut app2 = test_app();
         go(&mut app2, GameState::Match);
         app2.update();
@@ -2402,25 +2402,31 @@ fn dressing_props_are_deterministic_and_respect_clearance() {
         let pos2 = extract_prop_positions(&mut app2);
 
         // 1. Assert determinism: identical match seed + room ID -> identical placement
-        assert_eq!(pos1, pos2, "Room {:?} dressing must be deterministic", room_id);
+        assert_eq!(
+            pos1, pos2,
+            "Room {:?} dressing must be deterministic",
+            room_id
+        );
 
         // 2. Assert clearance: check every spawned prop against threshold clearance boxes
         for p_pos in &pos1 {
             let p = Vec2::new(p_pos.x, p_pos.z);
-            
+
             // Check wall distance (clamping to geom with radius 0.8 must be same)
             let clamped = crate::teleport::contain(&geom, p, 0.8);
             assert!(
                 (clamped - p).length() <= 0.05,
                 "Room {:?} prop at {:?} violates wall clearance",
-                room_id, p
+                room_id,
+                p
             );
 
             // Check center distance
             assert!(
                 p.length() >= 1.79,
                 "Room {:?} prop at {:?} violates center clearance",
-                room_id, p
+                room_id,
+                p
             );
 
             // Check gap clearance
@@ -2442,7 +2448,6 @@ fn dressing_props_are_deterministic_and_respect_clearance() {
         }
     }
 }
-
 
 // --- Phase 48: onboarding & settings ----------------------------------------
 

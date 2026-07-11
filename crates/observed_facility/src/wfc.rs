@@ -1065,8 +1065,8 @@ pub fn generate_interior_walls(
                     continue;
                 }
 
-                let px = -footprint_x + (vx as f32 - 0.5) * cell;
-                let py = -footprint_y + (vy as f32 - 0.5) * cell;
+                let px = -footprint_x + vx as f32 * cell;
+                let py = -footprint_y + vy as f32 * cell;
 
                 walls.push(InteriorSeg {
                     center: Vec2::new(px, py),
@@ -1120,6 +1120,52 @@ mod interior_tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn corner_pillars_are_emitted_on_grid_vertices() {
+        let cases: [(usize, usize, &[usize], &[usize]); 4] = [
+            (7, 5, &[1], &[5]),
+            (5, 6, &[1, 3], &[0, 4]),
+            (6, 7, &[2], &[1, 4]),
+            (4, 4, &[0], &[3]),
+        ];
+        let cell = 2.2;
+        let wall_t = 0.12;
+        let eps = 1e-3;
+        let mut pillar_count = 0usize;
+        for (cols, rows, entry_cols, exit_cols) in cases {
+            let footprint = Vec2::new(cols as f32 * cell * 0.5, rows as f32 * cell * 0.5);
+            for seed in [0u64, 1, 7, 42, 9999] {
+                let walls =
+                    generate_interior_walls(cols, rows, entry_cols, exit_cols, seed, cell, wall_t)
+                        .unwrap_or_else(|e| {
+                            panic!(
+                                "{cols}x{rows} seed {seed} should converge within the retry budget, got {e:?}"
+                            )
+                        });
+                for wall in walls {
+                    if (wall.half.x - wall_t).abs() > eps || (wall.half.y - wall_t).abs() > eps {
+                        continue;
+                    }
+                    pillar_count += 1;
+                    let grid = (wall.center + footprint) / cell;
+                    assert!(
+                        (grid.x - grid.x.round()).abs() < eps
+                            && (grid.y - grid.y.round()).abs() < eps,
+                        "corner pillar in {cols}x{rows} seed {seed} must sit on a grid vertex, got center=({:.3},{:.3}) grid=({:.3},{:.3})",
+                        wall.center.x,
+                        wall.center.y,
+                        grid.x,
+                        grid.y
+                    );
+                }
+            }
+        }
+        assert!(
+            pillar_count > 0,
+            "the corpus should exercise corner pillars"
+        );
     }
 
     /// An impossible configuration (a single-row grid, where the bottom-boundary and
