@@ -9,6 +9,7 @@ pub(crate) mod factory;
 pub(crate) mod item_visuals;
 pub(crate) mod lighting;
 pub(crate) mod mesh;
+pub(crate) mod modules;
 pub(crate) mod monitors;
 pub(crate) mod preview;
 pub(crate) mod shell;

@@ -267,6 +267,29 @@ pub(crate) fn spawn_hallway_preview(
         ));
     }
     spawn_place_lighting(commands, assets, &dest, &palette, parent, true);
+    // Module parity: the hallway you see through the doorway carries the same
+    // WFC-composed light modules you will teleport into (same pure inputs).
+    if let Place::Hallway { from, to, .. } = next {
+        let district = district_for_place(nav.seed, next);
+        let placements = super::modules::solve_hallway_modules(
+            super::modules::hall_module_seed(nav.seed, from.0, to.0),
+            &dest,
+            teleport::MAZE_CELL,
+            district,
+        );
+        super::modules::spawn_hallway_modules(
+            commands,
+            assets,
+            materials,
+            super::modules::ModuleSpawn {
+                palette: &palette,
+                placements: &placements,
+                cell: teleport::MAZE_CELL,
+                xform: parent,
+                preview: true,
+            },
+        );
+    }
     let accent =
         assets.district_accent_materials[district_for_place(nav.seed, next).index()].clone();
     spawn_surface_detail(commands, assets, &dest, accent, parent, true);

@@ -67,6 +67,38 @@ merging it with the register elements. Read [README.md](README.md) first.
 treatments), `labs/lighting_lab` (shoji simplification; monolith + forerunner
 rework), `game/src/tests.rs`. Do NOT touch `sim/`, threshold placement, or nav.
 
+## As landed — 2026-07-11 (module layer; lab rework still open)
+
+- **The module layer shipped:** `game/src/screens/place/modules.rs` — a pure
+  WFC-style collapse over the hallway grid (seeded scanline collapse with
+  neighbor constraints; `Bare` is legal everywhere so the solve cannot
+  contradict — solvability by construction, mirroring the facility's own rule).
+  Slat/shelf run minimums and caps, panel region growth with no singletons,
+  practical pool separation, seams only at wall junctions, ≤1 void edge on
+  boundary walls, threshold cells forced clear, and `Bare` probability growing
+  with distance from the entry (the thinning register, diegetic). Twelve unit
+  tests pin determinism, every adjacency invariant, the gradient, and the
+  weight-order correspondence with `observed_style::hallway_module_weights`
+  (register identity as district data). Wired into the live hallway build and
+  the doorway preview with identical pure inputs (module light parity).
+- **Evidence (viewed):** `docs/evidence/phase_71_hallway_topdown.png` — the 6×7
+  labyrinth with warm practical pools spaced along wall lines, separation
+  visibly respected, cyan threshold signals clear; the composition reads.
+  Eye-level module density needs tuning (near-entry frames are correctly bare;
+  encounters sit deeper than the bot's route showed).
+- **Sim regression found and fixed while verifying:** commit `e171b8f`
+  ("Phase 67: off-camera deferred reroutes") made Advance force-commit pending
+  reroutes, bypassing BOTH deferral guards; the digest corpus panicked on "an
+  atomic reroute must remain navigable". Fixed in `round_step.rs`: the
+  navigability invariant is now enforced by **never committing** — a commit
+  that would leave the maze non-navigable rolls back and defers (targets are
+  recomputed every round, so it heals). The rendered maze is now navigable by
+  construction on every path, and **the all-on digest pin `0x539C35C626B9B30F`
+  passes unchanged** — no re-pin needed.
+- Still open in this phase: the lab reference-scene rework (monolith shaft,
+  forerunner volumetrics, shoji simplification), eye-level density/intensity
+  tuning, and the three-district capture set.
+
 ## Success criteria
 
 - Adjacency invariants unit-tested (slat contiguity, panel completeness,

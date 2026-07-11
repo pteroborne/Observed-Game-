@@ -23,7 +23,7 @@ use crate::view::components::PlaceGeometry;
 use super::monitors::{
     GuardianConsole, ObservationBankSpec, monitor_page_for, spawn_observation_monitors,
 };
-use super::{item_visuals, lighting, preview, shell};
+use super::{item_visuals, lighting, modules, preview, shell};
 
 pub(crate) fn place_surface_material(
     role: SurfaceRole,
@@ -248,6 +248,30 @@ pub(crate) fn rebuild_place(
                 &tp.arena.solids,
                 y_offset,
             );
+            // The WFC-composed light-module layer (Arc I Phase 71): decoration
+            // and light only, solved from the finished geometry — walls, gaps,
+            // and thresholds are already final by the time this runs.
+            if let Place::Hallway { from, to, .. } = tp.place {
+                let district = match_runtime::district_for_place(seed_val, tp.place);
+                let placements = modules::solve_hallway_modules(
+                    modules::hall_module_seed(seed_val, from.0, to.0),
+                    &geom,
+                    teleport::MAZE_CELL,
+                    district,
+                );
+                modules::spawn_hallway_modules(
+                    &mut commands,
+                    &assets,
+                    &mut materials,
+                    modules::ModuleSpawn {
+                        palette: &palette,
+                        placements: &placements,
+                        cell: teleport::MAZE_CELL,
+                        xform: Transform::from_xyz(0.0, y_offset, 0.0),
+                        preview: false,
+                    },
+                );
+            }
         }
     }
 

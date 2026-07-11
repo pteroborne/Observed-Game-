@@ -1024,6 +1024,33 @@ pub fn drained(palette: &DistrictPalette) -> DistrictPalette {
     }
 }
 
+/// How many hallway light-module kinds exist (Arc I Phase 71). Order everywhere:
+/// `[slat, seam, panel, practical, shelf, void, bare]` — the game's
+/// `screens::place::modules::ModuleKind` indexes into these weights and pins the
+/// correspondence with a test.
+pub const HALLWAY_MODULE_COUNT: usize = 7;
+
+/// Per-district hallway light-module weights: the register identity that biases
+/// the WFC-style module collapse. A weight of 0 removes the module from that
+/// district entirely; `bare` (the last entry) must stay non-zero everywhere —
+/// it is the universal fallback tile that makes the collapse solvable by
+/// construction, and the substrate the thinning gradient grows on.
+///
+/// Provisional register mapping (Phase 70 confirms with the user):
+/// Reactor→shoji slats, Hollow→overlit panel grid, Foundry→wellshaft
+/// practicals, Archive→forerunner seams, Atrium→babel shelves, Spillway→cool
+/// mixed with megastructure void edges.
+pub fn hallway_module_weights(d: District) -> [u32; HALLWAY_MODULE_COUNT] {
+    match d {
+        District::Archive => [1, 6, 1, 2, 3, 1, 6],
+        District::Reactor => [7, 1, 0, 2, 1, 1, 5],
+        District::Atrium => [2, 1, 1, 2, 6, 0, 5],
+        District::Foundry => [1, 1, 0, 6, 1, 1, 6],
+        District::Hollow => [0, 0, 9, 0, 1, 0, 3],
+        District::Spillway => [1, 3, 3, 1, 1, 2, 5],
+    }
+}
+
 /// Deterministic district for a region key (e.g. a room index), stable per facility
 /// `seed`, so a neighbourhood keeps its identity across a match.
 pub fn district_for(seed: u64, key: u32) -> District {

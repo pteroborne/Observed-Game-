@@ -259,28 +259,48 @@ impl HybridMatch {
         }
         let player = Vec2::new(self.body.position.x, self.body.position.z);
         let clearance = TILE_SIZE * 0.5 + self.config.radius;
-        let blocked = !force
-            && affected.iter().any(|&(x, y)| {
-                let centre = tile_world(x, y);
-                visible.contains(&(x, y))
-                    || (centre.x - player.x).abs() <= clearance
-                        && (centre.y - player.y).abs() <= clearance
-            });
+        // `force` (an Advance/teleport just resolved) waives only the
+        // *visibility* deferral: the player cannot be watching mid-teleport.
+        // The collision-footprint guard is a physical invariant, never waived —
+        // swapping a wall onto the player's tile strands them inside geometry
+        // and fails the navigability assert below.
+        let blocked = affected.iter().any(|&(x, y)| {
+            let centre = tile_world(x, y);
+            let in_view = !force && visible.contains(&(x, y));
+            let in_footprint = (centre.x - player.x).abs() <= clearance
+                && (centre.y - player.y).abs() <= clearance;
+            in_view || in_footprint
+        });
         if blocked {
             self.reroute_deferrals += 1;
             return false;
         }
 
+        let previous = self.rendered.clone();
         self.rendered = self.target.clone();
         self.maze_tiles = rebuild(&self.base, &self.rendered);
         self.spine_tiles = collect_spine_tiles(&self.rendered);
         self.safe_tiles = collect_safe_tiles(&self.rendered);
         self.trap_tiles = collect_trap_tiles(&self.rendered);
+        if !self.navigable() {
+            // The atomic swap must leave the maze navigable — enforced by
+            // never committing, not by asserting after the fact. A target can
+            // be transiently non-navigable (`route_all` drops a corridor that
+            // fails to route this round; the player may have teleported since
+            // it was planned); it is recomputed every round, so deferring
+            // heals it. The rendered maze therefore stays navigable always.
+            self.rendered = previous;
+            self.maze_tiles = rebuild(&self.base, &self.rendered);
+            self.spine_tiles = collect_spine_tiles(&self.rendered);
+            self.safe_tiles = collect_safe_tiles(&self.rendered);
+            self.trap_tiles = collect_trap_tiles(&self.rendered);
+            self.reroute_deferrals += 1;
+            return false;
+        }
         self.reroute_commits += 1;
         self.reroute_feedback_ticks = REROUTE_FEEDBACK_TICKS;
         self.last_event
             .push_str(" Passages rerouted off-camera in one atomic swap.");
-        assert!(self.navigable(), "an atomic reroute must remain navigable");
         true
     }
 
