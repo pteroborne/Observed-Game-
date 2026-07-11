@@ -1,0 +1,7269 @@
+{
+  "schema_version": 1,
+  "run_id": "observed-vis-audit-1783779234949",
+  "scenario": "guardian_camera_room",
+  "frame_index": 1,
+  "place": {
+    "label": "room 11",
+    "player_position": [
+      0.0,
+      0.9,
+      0.0
+    ],
+    "player_yaw": 0.0,
+    "player_pitch": 0.0
+  },
+  "geometry": {
+    "footprints": [
+      {
+        "subject": "current room 11",
+        "center": [
+          0.0,
+          0.0
+        ],
+        "half": [
+          33.06809,
+          32.977245
+        ],
+        "allow_overlap": true
+      },
+      {
+        "subject": "preview hallway 11 -> 5 v6",
+        "center": [
+          -51.875175,
+          -24.780342
+        ],
+        "half": [
+          28.281672,
+          22.31977
+        ],
+        "allow_overlap": false
+      }
+    ]
+  },
+  "thresholds": [
+    {
+      "subject": "R11:S0 -> H11-17:11:S0",
+      "label": "R11:S0 -> H11-17:11:S0",
+      "status": "sealed",
+      "target_room": 17,
+      "center": [
+        24.835197,
+        0.0,
+        20.385038
+      ],
+      "width": 4.5,
+      "passage": false,
+      "locked": false,
+      "tethered": false,
+      "frame_count": 3,
+      "leaf_count": 1,
+      "frame_light_count": 1,
+      "matching_status_light_count": 1,
+      "label_count": 1
+    },
+    {
+      "subject": "R11:S1 -> H11-12:11:S0",
+      "label": "R11:S1 -> H11-12:11:S0",
+      "status": "sealed",
+      "target_room": 12,
+      "center": [
+        -17.242857,
+        0.0,
+        27.111265
+      ],
+      "width": 4.5,
+      "passage": false,
+      "locked": false,
+      "tethered": false,
+      "frame_count": 3,
+      "leaf_count": 1,
+      "frame_light_count": 1,
+      "matching_status_light_count": 1,
+      "label_count": 1
+    },
+    {
+      "subject": "R11:S2 -> H5-11:11:S0",
+      "label": "R11:S2 -> H5-11:11:S0",
+      "status": "passage",
+      "target_room": 5,
+      "center": [
+        -28.991987,
+        0.0,
+        -13.849236
+      ],
+      "width": 4.5,
+      "passage": true,
+      "locked": false,
+      "tethered": false,
+      "frame_count": 3,
+      "leaf_count": 0,
+      "frame_light_count": 1,
+      "matching_status_light_count": 1,
+      "label_count": 1
+    },
+    {
+      "subject": "R11:S3 -> H10-11:11:S0",
+      "label": "R11:S3 -> H10-11:11:S0",
+      "status": "sealed",
+      "target_room": 10,
+      "center": [
+        10.253664,
+        0.0,
+        -30.449944
+      ],
+      "width": 4.5,
+      "passage": false,
+      "locked": false,
+      "tethered": false,
+      "frame_count": 3,
+      "leaf_count": 1,
+      "frame_light_count": 1,
+      "matching_status_light_count": 1,
+      "label_count": 1
+    }
+  ],
+  "lights": [
+    {
+      "subject": "threshold R11:S0 -> H11-17:11:S0",
+      "intensity": 1400.0,
+      "range": 5.0,
+      "color_rgb": [
+        0.45,
+        0.62,
+        0.78
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "threshold R11:S1 -> H11-12:11:S0",
+      "intensity": 1400.0,
+      "range": 5.0,
+      "color_rgb": [
+        0.45,
+        0.62,
+        0.78
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "threshold R11:S2 -> H5-11:11:S0",
+      "intensity": 1400.0,
+      "range": 5.0,
+      "color_rgb": [
+        0.45,
+        0.62,
+        0.78
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "threshold R11:S3 -> H10-11:11:S0",
+      "intensity": 1400.0,
+      "range": 5.0,
+      "color_rgb": [
+        0.45,
+        0.62,
+        0.78
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "Place light",
+      "intensity": 2800.0,
+      "range": 60.26894,
+      "color_rgb": [
+        1.0,
+        0.78,
+        0.52
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "Place light",
+      "intensity": 1540.0,
+      "range": 11.0,
+      "color_rgb": [
+        1.0,
+        0.78,
+        0.52
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "Place light",
+      "intensity": 1540.0,
+      "range": 11.0,
+      "color_rgb": [
+        1.0,
+        0.78,
+        0.52
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "Place light",
+      "intensity": 2800.0,
+      "range": 47.84,
+      "color_rgb": [
+        1.0,
+        0.78,
+        0.52
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "Place light",
+      "intensity": 1540.0,
+      "range": 11.0,
+      "color_rgb": [
+        1.0,
+        0.78,
+        0.52
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "Place light",
+      "intensity": 1540.0,
+      "range": 11.0,
+      "color_rgb": [
+        1.0,
+        0.78,
+        0.52
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "Place light",
+      "intensity": 1540.0,
+      "range": 11.0,
+      "color_rgb": [
+        1.0,
+        0.78,
+        0.52
+      ],
+      "expected_min_intensity": 1.0
+    }
+  ],
+  "materials": [
+    {
+      "subject": "Preview floor",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.1,
+        0.14,
+        0.22
+      ],
+      "emissive_luminance": 0.137272,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview ceiling",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.08,
+        0.1,
+        0.16
+      ],
+      "emissive_luminance": 0.10008,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling fixture",
+      "signal": false,
+      "base_rgb": [
+        0.9,
+        0.85,
+        0.72
+      ],
+      "emissive_rgb": [
+        3.2,
+        2.7,
+        1.8
+      ],
+      "emissive_luminance": 2.7413201,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling fixture",
+      "signal": false,
+      "base_rgb": [
+        0.9,
+        0.85,
+        0.72
+      ],
+      "emissive_rgb": [
+        3.2,
+        2.7,
+        1.8
+      ],
+      "emissive_luminance": 2.7413201,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling fixture",
+      "signal": false,
+      "base_rgb": [
+        0.9,
+        0.85,
+        0.72
+      ],
+      "emissive_rgb": [
+        3.2,
+        2.7,
+        1.8
+      ],
+      "emissive_luminance": 2.7413201,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Closed door",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.06,
+        0.1
+      ],
+      "emissive_rgb": [
+        0.1,
+        0.32,
+        0.5
+      ],
+      "emissive_luminance": 0.286224,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Closed door",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.06,
+        0.1
+      ],
+      "emissive_rgb": [
+        0.1,
+        0.32,
+        0.5
+      ],
+      "emissive_luminance": 0.286224,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Closed door",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.06,
+        0.1
+      ],
+      "emissive_rgb": [
+        0.1,
+        0.32,
+        0.5
+      ],
+      "emissive_luminance": 0.286224,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Doorframe post",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.07,
+        0.11
+      ],
+      "emissive_rgb": [
+        0.35,
+        1.9,
+        2.5
+      ],
+      "emissive_luminance": 1.61379,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Doorframe post",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.07,
+        0.11
+      ],
+      "emissive_rgb": [
+        0.35,
+        1.9,
+        2.5
+      ],
+      "emissive_luminance": 1.61379,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Doorframe lintel",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.07,
+        0.11
+      ],
+      "emissive_rgb": [
+        0.35,
+        1.9,
+        2.5
+      ],
+      "emissive_luminance": 1.61379,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Doorframe post",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.07,
+        0.11
+      ],
+      "emissive_rgb": [
+        0.35,
+        1.9,
+        2.5
+      ],
+      "emissive_luminance": 1.61379,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Doorframe post",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.07,
+        0.11
+      ],
+      "emissive_rgb": [
+        0.35,
+        1.9,
+        2.5
+      ],
+      "emissive_luminance": 1.61379,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Doorframe lintel",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.07,
+        0.11
+      ],
+      "emissive_rgb": [
+        0.35,
+        1.9,
+        2.5
+      ],
+      "emissive_luminance": 1.61379,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Doorframe post",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.07,
+        0.11
+      ],
+      "emissive_rgb": [
+        0.35,
+        1.9,
+        2.5
+      ],
+      "emissive_luminance": 1.61379,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Doorframe post",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.07,
+        0.11
+      ],
+      "emissive_rgb": [
+        0.35,
+        1.9,
+        2.5
+      ],
+      "emissive_luminance": 1.61379,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Doorframe lintel",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.07,
+        0.11
+      ],
+      "emissive_rgb": [
+        0.35,
+        1.9,
+        2.5
+      ],
+      "emissive_luminance": 1.61379,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Doorframe post",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.07,
+        0.11
+      ],
+      "emissive_rgb": [
+        0.35,
+        1.9,
+        2.5
+      ],
+      "emissive_luminance": 1.61379,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Doorframe post",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.07,
+        0.11
+      ],
+      "emissive_rgb": [
+        0.35,
+        1.9,
+        2.5
+      ],
+      "emissive_luminance": 1.61379,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Doorframe lintel",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.07,
+        0.11
+      ],
+      "emissive_rgb": [
+        0.35,
+        1.9,
+        2.5
+      ],
+      "emissive_luminance": 1.61379,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Place floor",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.29282004,
+        0.12896074,
+        0.24304597
+      ],
+      "emissive_luminance": 0.17203419,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Place ceiling",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.08,
+        0.1,
+        0.16
+      ],
+      "emissive_luminance": 0.10008,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Room wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Room wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Room wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Room wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Room wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Room wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Room wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Room wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Room wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Room wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Room wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Room wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Room wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Room wall",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.12,
+        0.18,
+        0.28
+      ],
+      "emissive_luminance": 0.174464,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel bezel",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling fixture",
+      "signal": false,
+      "base_rgb": [
+        0.9,
+        0.85,
+        0.72
+      ],
+      "emissive_rgb": [
+        3.2,
+        2.7,
+        1.8
+      ],
+      "emissive_luminance": 2.7413201,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling fixture",
+      "signal": false,
+      "base_rgb": [
+        0.9,
+        0.85,
+        0.72
+      ],
+      "emissive_rgb": [
+        3.2,
+        2.7,
+        1.8
+      ],
+      "emissive_luminance": 2.7413201,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.0,
+        0.8,
+        1.0
+      ],
+      "emissive_rgb": [
+        0.0,
+        4.0,
+        5.0
+      ],
+      "emissive_luminance": 3.2218,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.0,
+        0.8,
+        1.0
+      ],
+      "emissive_rgb": [
+        0.0,
+        4.0,
+        5.0
+      ],
+      "emissive_luminance": 3.2218,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.0,
+        0.8,
+        1.0
+      ],
+      "emissive_rgb": [
+        0.0,
+        4.0,
+        5.0
+      ],
+      "emissive_luminance": 3.2218,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.0,
+        0.8,
+        1.0
+      ],
+      "emissive_rgb": [
+        0.0,
+        4.0,
+        5.0
+      ],
+      "emissive_luminance": 3.2218,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.0,
+        0.8,
+        1.0
+      ],
+      "emissive_rgb": [
+        0.0,
+        4.0,
+        5.0
+      ],
+      "emissive_luminance": 3.2218,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.0,
+        0.8,
+        1.0
+      ],
+      "emissive_rgb": [
+        0.0,
+        4.0,
+        5.0
+      ],
+      "emissive_luminance": 3.2218,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.0,
+        0.8,
+        1.0
+      ],
+      "emissive_rgb": [
+        0.0,
+        4.0,
+        5.0
+      ],
+      "emissive_luminance": 3.2218,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.0,
+        0.8,
+        1.0
+      ],
+      "emissive_rgb": [
+        0.0,
+        4.0,
+        5.0
+      ],
+      "emissive_luminance": 3.2218,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.0,
+        0.8,
+        1.0
+      ],
+      "emissive_rgb": [
+        0.0,
+        4.0,
+        5.0
+      ],
+      "emissive_luminance": 3.2218,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.0,
+        0.8,
+        1.0
+      ],
+      "emissive_rgb": [
+        0.0,
+        4.0,
+        5.0
+      ],
+      "emissive_luminance": 3.2218,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation monitor room-id segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation anchor status rail",
+      "signal": false,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation anchor status rail",
+      "signal": false,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation anchor status rail",
+      "signal": false,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation anchor status rail",
+      "signal": false,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation anchor status rail",
+      "signal": false,
+      "base_rgb": [
+        0.0,
+        0.8,
+        1.0
+      ],
+      "emissive_rgb": [
+        0.0,
+        4.0,
+        5.0
+      ],
+      "emissive_luminance": 3.2218,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation anchor status rail",
+      "signal": false,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation anchor status rail",
+      "signal": false,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation anchor status rail",
+      "signal": false,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation anchor status rail",
+      "signal": false,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Room dressing prop",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.015,
+        0.015,
+        0.015
+      ],
+      "emissive_luminance": 0.014999999,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Room dressing prop",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.015,
+        0.015,
+        0.015
+      ],
+      "emissive_luminance": 0.014999999,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Room dressing prop",
+      "signal": false,
+      "base_rgb": [
+        0.99999994,
+        0.99999994,
+        0.99999994
+      ],
+      "emissive_rgb": [
+        0.015,
+        0.015,
+        0.015
+      ],
+      "emissive_luminance": 0.014999999,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel R0",
+      "signal": false,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel R1",
+      "signal": false,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel R2",
+      "signal": false,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel R3",
+      "signal": false,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel R4",
+      "signal": false,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel R5",
+      "signal": false,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel R6",
+      "signal": false,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel R7",
+      "signal": false,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation panel R8",
+      "signal": false,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation guardian status rail",
+      "signal": false,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation guardian status rail",
+      "signal": false,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation guardian status rail",
+      "signal": false,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation guardian status rail",
+      "signal": false,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation guardian status rail",
+      "signal": false,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation guardian status rail",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.2,
+        0.15
+      ],
+      "emissive_rgb": [
+        10.175048,
+        0.9044487,
+        0.33916828
+      ],
+      "emissive_luminance": 2.834565,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation guardian status rail",
+      "signal": false,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation guardian status rail",
+      "signal": false,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation guardian status rail",
+      "signal": false,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation rival dot",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.5,
+        0.15
+      ],
+      "emissive_rgb": [
+        8.0,
+        2.6,
+        0.4
+      ],
+      "emissive_luminance": 3.5892,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation rival dot",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.5,
+        0.15
+      ],
+      "emissive_rgb": [
+        8.0,
+        2.6,
+        0.4
+      ],
+      "emissive_luminance": 3.5892,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation rival dot",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.5,
+        0.15
+      ],
+      "emissive_rgb": [
+        8.0,
+        2.6,
+        0.4
+      ],
+      "emissive_luminance": 3.5892,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation anchor halo",
+      "signal": false,
+      "base_rgb": [
+        0.0,
+        0.8,
+        1.0
+      ],
+      "emissive_rgb": [
+        0.0,
+        4.0,
+        5.0
+      ],
+      "emissive_luminance": 3.2218,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation anchor halo",
+      "signal": false,
+      "base_rgb": [
+        0.0,
+        0.8,
+        1.0
+      ],
+      "emissive_rgb": [
+        0.0,
+        4.0,
+        5.0
+      ],
+      "emissive_luminance": 3.2218,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation anchor halo",
+      "signal": false,
+      "base_rgb": [
+        0.0,
+        0.8,
+        1.0
+      ],
+      "emissive_rgb": [
+        0.0,
+        4.0,
+        5.0
+      ],
+      "emissive_luminance": 3.2218,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation anchor halo",
+      "signal": false,
+      "base_rgb": [
+        0.0,
+        0.8,
+        1.0
+      ],
+      "emissive_rgb": [
+        0.0,
+        4.0,
+        5.0
+      ],
+      "emissive_luminance": 3.2218,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation anchor halo",
+      "signal": false,
+      "base_rgb": [
+        0.0,
+        0.8,
+        1.0
+      ],
+      "emissive_rgb": [
+        0.0,
+        4.0,
+        5.0
+      ],
+      "emissive_luminance": 3.2218,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation anchor halo",
+      "signal": false,
+      "base_rgb": [
+        0.0,
+        0.8,
+        1.0
+      ],
+      "emissive_rgb": [
+        0.0,
+        4.0,
+        5.0
+      ],
+      "emissive_luminance": 3.2218,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation anchor halo",
+      "signal": false,
+      "base_rgb": [
+        0.0,
+        0.8,
+        1.0
+      ],
+      "emissive_rgb": [
+        0.0,
+        4.0,
+        5.0
+      ],
+      "emissive_luminance": 3.2218,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation anchor halo",
+      "signal": false,
+      "base_rgb": [
+        0.0,
+        0.8,
+        1.0
+      ],
+      "emissive_rgb": [
+        0.0,
+        4.0,
+        5.0
+      ],
+      "emissive_luminance": 3.2218,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation guardian dot",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.2,
+        0.15
+      ],
+      "emissive_rgb": [
+        9.0,
+        0.8,
+        0.3
+      ],
+      "emissive_luminance": 2.50722,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation footprint segment",
+      "signal": false,
+      "base_rgb": [
+        0.46,
+        0.9,
+        1.0
+      ],
+      "emissive_rgb": [
+        1.8,
+        5.6,
+        6.8
+      ],
+      "emissive_luminance": 4.87876,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Observation doorway stub",
+      "signal": false,
+      "base_rgb": [
+        1.0,
+        0.84,
+        0.3
+      ],
+      "emissive_rgb": [
+        6.0,
+        4.2,
+        1.0
+      ],
+      "emissive_luminance": 4.3516397,
+      "min_luminance": 2.0
+    }
+  ],
+  "tac_map": {
+    "visible": false,
+    "expected_elements": 24,
+    "rendered_elements": 0,
+    "expected_rooms": 10,
+    "rendered_rooms": 0,
+    "expected_routes": 9,
+    "rendered_routes": 0,
+    "expected_keystones": 0,
+    "rendered_keystones": 0,
+    "expected_rivals": 3,
+    "rendered_rivals": 0,
+    "player_marker_count": 0,
+    "player_model": "room 11"
+  },
+  "monitors": [
+    {
+      "subject": "tether monitor room 0",
+      "room": 0,
+      "active": false,
+      "visible": true,
+      "label": "R0\nNO ANCHOR",
+      "label_segment_count": 13,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "tether monitor room 1",
+      "room": 1,
+      "active": false,
+      "visible": true,
+      "label": "R1\nNO ANCHOR",
+      "label_segment_count": 9,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "tether monitor room 2",
+      "room": 2,
+      "active": false,
+      "visible": true,
+      "label": "R2\nNO ANCHOR",
+      "label_segment_count": 12,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "tether monitor room 3",
+      "room": 3,
+      "active": false,
+      "visible": true,
+      "label": "R3\nNO ANCHOR",
+      "label_segment_count": 12,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "tether monitor room 4",
+      "room": 4,
+      "active": true,
+      "visible": true,
+      "label": "R4\nANCHOR LOCKED",
+      "label_segment_count": 11,
+      "base_rgb": [
+        0.0,
+        0.8,
+        1.0
+      ],
+      "emissive_rgb": [
+        0.0,
+        4.0,
+        5.0
+      ],
+      "emissive_luminance": 3.2218,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "tether monitor room 5",
+      "room": 5,
+      "active": false,
+      "visible": true,
+      "label": "R5\nNO ANCHOR",
+      "label_segment_count": 12,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "tether monitor room 6",
+      "room": 6,
+      "active": false,
+      "visible": true,
+      "label": "R6\nNO ANCHOR",
+      "label_segment_count": 13,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "tether monitor room 7",
+      "room": 7,
+      "active": false,
+      "visible": true,
+      "label": "R7\nNO ANCHOR",
+      "label_segment_count": 10,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "tether monitor room 8",
+      "room": 8,
+      "active": false,
+      "visible": true,
+      "label": "R8\nNO ANCHOR",
+      "label_segment_count": 14,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "guardian monitor room 0",
+      "room": 0,
+      "active": false,
+      "visible": true,
+      "label": "R0\nCLEAR",
+      "label_segment_count": 1,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "guardian monitor room 1",
+      "room": 1,
+      "active": false,
+      "visible": true,
+      "label": "R1\nCLEAR",
+      "label_segment_count": 1,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "guardian monitor room 2",
+      "room": 2,
+      "active": false,
+      "visible": true,
+      "label": "R2\nCLEAR",
+      "label_segment_count": 1,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "guardian monitor room 3",
+      "room": 3,
+      "active": false,
+      "visible": true,
+      "label": "R3\nCLEAR",
+      "label_segment_count": 1,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "guardian monitor room 4",
+      "room": 4,
+      "active": false,
+      "visible": true,
+      "label": "R4\nCLEAR",
+      "label_segment_count": 1,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "guardian monitor room 5",
+      "room": 5,
+      "active": true,
+      "visible": true,
+      "label": "R5\nGUARDIAN",
+      "label_segment_count": 1,
+      "base_rgb": [
+        1.0,
+        0.2,
+        0.15
+      ],
+      "emissive_rgb": [
+        10.175048,
+        0.9044487,
+        0.33916828
+      ],
+      "emissive_luminance": 2.834565,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "guardian monitor room 6",
+      "room": 6,
+      "active": false,
+      "visible": true,
+      "label": "R6\nCLEAR",
+      "label_segment_count": 1,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "guardian monitor room 7",
+      "room": 7,
+      "active": false,
+      "visible": true,
+      "label": "R7\nCLEAR",
+      "label_segment_count": 1,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "guardian monitor room 8",
+      "room": 8,
+      "active": false,
+      "visible": true,
+      "label": "R8\nCLEAR",
+      "label_segment_count": 1,
+      "base_rgb": [
+        0.012,
+        0.025,
+        0.032
+      ],
+      "emissive_rgb": [
+        0.018,
+        0.055,
+        0.07
+      ],
+      "emissive_luminance": 0.0482168,
+      "min_luminance": 2.0
+    }
+  ],
+  "findings": []
+}

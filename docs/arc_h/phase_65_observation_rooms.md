@@ -60,3 +60,28 @@ knowledge rules — the panels *read* existing simulation data only.
   given a match state, panel N shows room X's occupants); tac-map `MapKnowledge`
   is asserted unchanged by standing in an observation room.
 - Full verification recipe green.
+
+## As landed — 2026-07-11
+
+- Both observation-room roles now use one literal 3×3 bank of flush schematic
+  panels. A pure presentation model derives each feed from live match data:
+  room footprint, current doorway stubs, rival occupants, active anchor, and
+  guardian room.
+- The established signals remain layered over the feed through
+  `observed_style`: an anchored room uses a cyan halo/status rail and the
+  guardian's room uses a red dot/status rail. Multi-digit room labels no longer
+  clamp to `R9`.
+- Feed synchronization rebuilds only content whose pure model changed, so a
+  guardian room transition moves the red marker on the next update. Tests also
+  pin that rendering remote camera facts leaves `MapKnowledge` unchanged.
+- The old deep monitor geometry was replaced by line/circle primitives between
+  the panel face and bezel. Geometry tests pin the bank spacing and depth, and
+  the visual audit reported zero intersections/findings.
+- Human-viewed evidence:
+  [tether camera room](../evidence/phase_65_observation/00_tether_camera_room.png)
+  shows the cyan `R4` anchor and an `R2` rival; [guardian camera
+  room](../evidence/phase_65_observation/01_guardian_camera_room.png) adds the
+  red guardian marker on `R5`. The two captures are distinct and their audit
+  metadata reports zero findings.
+- Verification passed: `cargo fmt --all -- --check`, `cargo test --workspace`,
+  and `cargo clippy --workspace --all-targets`.

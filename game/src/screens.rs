@@ -40,6 +40,7 @@ pub(crate) mod settings;
 pub(crate) enum MenuAction {
     Goto(GameState),
     StartRun,
+    Rematch,
     SpectateAi,
     Launch,
     Equip(u16),
@@ -190,6 +191,7 @@ impl Plugin for MatchPlugin {
                     place::rebuild_place,
                     place::update_tether_monitors,
                     place::update_guardian_monitors,
+                    place::sync_observation_monitors,
                     place::interact_guardian_console,
                 )
                     .chain()

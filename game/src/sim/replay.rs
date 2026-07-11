@@ -13,6 +13,7 @@ use observed_match::facility::{TEAM_COUNT, TeamRun};
 use observed_match::teamplay::{TeamMemberState, TeamTask};
 
 use crate::flow::{ActiveMatchSeed, LOCAL_TEAM, MatchResult};
+use crate::items::{ItemKind, ItemsState};
 use crate::keystones::KeystoneState;
 use crate::sim::director::MatchDirector;
 use crate::sim::state::{SpectatorBot, TeleportState};
@@ -82,8 +83,17 @@ pub struct ReplayTape {
     pub samples: Vec<ReplaySample>,
     pub markers: Vec<ReplayMarker>,
     pub result: Option<MatchResult>,
+    /// Presentation-side story facts retained after Match-scoped resources are
+    /// cleaned up. These are sampled from existing state and never drive gameplay.
+    pub visited_rooms: Vec<RoomId>,
+    pub collapsed_rooms: Vec<RoomId>,
+    pub escape_order: Vec<TeamId>,
+    pub keystones_collected: u32,
+    pub keystones_required: u32,
+    pub anchor_uses: usize,
     seen_actors: BTreeSet<ReplayActorId>,
     seen_markers: BTreeSet<String>,
+    anchor_was_placed: bool,
 }
 
 impl ReplayTape {
@@ -104,8 +114,15 @@ impl ReplayTape {
             samples: Vec::new(),
             markers: Vec::new(),
             result: None,
+            visited_rooms: Vec::new(),
+            collapsed_rooms: Vec::new(),
+            escape_order: Vec::new(),
+            keystones_collected: 0,
+            keystones_required: 0,
+            anchor_uses: 0,
             seen_actors: BTreeSet::new(),
             seen_markers: BTreeSet::new(),
+            anchor_was_placed: false,
         };
         tape.ensure_actor(ReplayActorId::LocalPlayer);
         for team in 0..TEAM_COUNT as u8 {
@@ -183,6 +200,46 @@ impl ReplayTape {
             .position(|actor| actor.id == focus)
             .unwrap_or(0)
     }
+
+    fn record_story_snapshot(
+        &mut self,
+        game: &observed_match::hybrid::HybridMatch,
+        place: Place,
+        keys: &KeystoneState,
+        items: &ItemsState,
+    ) {
+        if let Place::Room(room) = place
+            && !self.visited_rooms.contains(&room)
+        {
+            self.visited_rooms.push(room);
+        }
+
+        self.collapsed_rooms = game.competitive.collapse_rooms();
+        self.keystones_collected = self.keystones_collected.max(keys.held);
+        self.keystones_required = keys.required;
+
+        let anchor_is_placed = items
+            .placed
+            .iter()
+            .any(|item| item.kind == ItemKind::AnchorTorch && item.team == LOCAL_TEAM);
+        if anchor_is_placed && !self.anchor_was_placed {
+            self.anchor_uses += 1;
+        }
+        self.anchor_was_placed = anchor_is_placed;
+
+        let mut placed: Vec<(u8, TeamId)> = game
+            .competitive
+            .teams
+            .iter()
+            .filter_map(|team| team.placement.map(|placement| (placement, team.id)))
+            .collect();
+        placed.sort_by_key(|(placement, team)| (*placement, team.0));
+        for (_, team) in placed {
+            if !self.escape_order.contains(&team) {
+                self.escape_order.push(team);
+            }
+        }
+    }
 }
 
 pub(crate) fn record_match_replay_sample(
@@ -190,6 +247,7 @@ pub(crate) fn record_match_replay_sample(
     director: Res<MatchDirector>,
     tp: Res<TeleportState>,
     keys: Res<KeystoneState>,
+    items: Res<ItemsState>,
     spectator: Option<Res<SpectatorBot>>,
     seed: Option<Res<ActiveMatchSeed>>,
 ) {
@@ -200,6 +258,7 @@ pub(crate) fn record_match_replay_sample(
     }
 
     let game = director.live.host_match();
+    tape.record_story_snapshot(game, tp.place, &keys, &items);
     let live_round = game.competitive.round;
     let series_round = director.series.current.index;
     let mut actors = Vec::new();

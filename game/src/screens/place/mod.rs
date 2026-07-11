@@ -26,13 +26,17 @@ pub(crate) use factory::{LastRenderedSignature, rebuild_place};
 pub(crate) use monitors::{
     GuardianConsole, GuardianObservationMonitor, ObservationMonitorKind,
     ObservationMonitorLabelSegment, TetherCameraMonitor, interact_guardian_console, monitor_label,
-    update_guardian_monitors, update_tether_monitors,
+    monitor_page_for, observation_bank_view, sync_observation_monitors, update_guardian_monitors,
+    update_tether_monitors,
 };
 // Test-only: `game::tests` reaches these through `crate::screens::place::...` rather than
 // `crate::screens::place::monitors::...` to match the rest of that module's style; nothing
 // in the production build needs them re-exported at this level.
 #[cfg(test)]
-pub(crate) use monitors::{MONITOR_PANEL_ENTITY_BUDGET, MonitorMiniature, monitor_page_for};
+pub(crate) use monitors::{
+    MONITOR_PANEL_ENTITY_BUDGET, ObservationFeedElement, ObservationFeedPrimitive,
+    ObservationPanel, observation_page_contents, observation_panel_content,
+};
 
 use crate::sim::director::MatchDirector;
 

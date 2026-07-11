@@ -15,14 +15,13 @@ use crate::keystones::KeystoneState;
 use crate::layout::WALL_HEIGHT;
 use crate::screens::match_runtime;
 use crate::sim::director::MatchDirector;
-use crate::sim::state::{RivalSightings, TeleportState};
+use crate::sim::state::TeleportState;
 use crate::teleport::{self, GapKind, Place};
 use crate::view::assets::MatchAssets;
 use crate::view::components::PlaceGeometry;
 
 use super::monitors::{
-    GuardianConsole, monitor_page_for, spawn_guardian_observation_monitors,
-    spawn_tether_camera_monitors,
+    GuardianConsole, ObservationBankSpec, monitor_page_for, spawn_observation_monitors,
 };
 use super::{item_visuals, lighting, preview, shell};
 
@@ -93,7 +92,6 @@ pub(crate) fn rebuild_place(
     items: Res<ItemsState>,
     guardian: Option<Res<crate::guardian::Guardian>>,
     runtime: Res<MatchDirector>,
-    mut sightings: ResMut<RivalSightings>,
     existing: Query<Entity, With<PlaceGeometry>>,
     last_sig: Option<ResMut<LastRenderedSignature>>,
     mut commands: Commands,
@@ -365,42 +363,19 @@ pub(crate) fn rebuild_place(
         if spec.room(room).is_some_and(|r| r.role == RoomRole::Monitor)
             && let Some(page) = monitor_page_for(spec, room)
         {
-            // The Monitor room's panel page splits across two co-located banks (the
-            // tether-camera wall + the guardian-observation wall) on disjoint wall
-            // mounts, so both legacy camera "systems" keep working under a map with a
-            // single semantic Monitor room instead of the old two-room split.
-            let klaxon_active = match_runtime::countdown_klaxon_active(&runtime);
-            let split = page.len().div_ceil(2);
-            let (tether_page, guardian_page) = page.split_at(split);
-            spawn_tether_camera_monitors(
+            // One unified 3x3 camera bank: every target room can show both anchor and
+            // guardian overlays, rather than the old arbitrary tether/guardian half-page.
+            spawn_observation_monitors(
                 &mut commands,
                 &assets,
-                &mut meshes,
                 &mut materials,
-                &geom,
-                y_offset,
-                seed_val,
-                room,
-                0,
-                tether_page,
-                game,
-                klaxon_active,
-                &mut sightings,
-            );
-            spawn_guardian_observation_monitors(
-                &mut commands,
-                &assets,
-                &mut meshes,
-                &mut materials,
-                &geom,
-                y_offset,
-                seed_val,
-                room,
-                tether_page.len(),
-                guardian_page,
-                game,
-                klaxon_active,
-                &mut sightings,
+                ObservationBankSpec {
+                    geom: &geom,
+                    y_offset,
+                    seed: seed_val,
+                    room,
+                    page: &page,
+                },
             );
         } else if spec
             .room(room)

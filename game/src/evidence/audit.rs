@@ -669,14 +669,43 @@ fn prepare_scenario(scenario: AuditScenario, prep: ScenarioPrep) {
         }
         AuditScenario::TetherCameraRoom => {
             let monitor_room = current_role_room(runtime, RoomRole::Monitor);
-            if !items
-                .placed
-                .iter()
-                .any(|item| item.kind == ItemKind::AnchorTorch)
-            {
+            let (anchor_room, rival_room, version) = {
+                let game = runtime.live.host_match();
+                let page = game
+                    .competitive
+                    .map_spec
+                    .as_ref()
+                    .and_then(|spec| crate::screens::place::monitor_page_for(spec, monitor_room))
+                    .unwrap_or_default();
+                (
+                    page.get(4).copied().unwrap_or(monitor_room),
+                    page.get(2).copied().unwrap_or(monitor_room),
+                    game.reroute_commits,
+                )
+            };
+            if !items.placed.iter().any(|item| {
+                item.kind == ItemKind::AnchorTorch && item.place == Place::Room(anchor_room)
+            }) {
                 items.torches = items.torches.max(1);
-                let version = runtime.live.host_match().reroute_commits;
-                let _ = items.drop_anchor_torch(Place::Room(RoomId(0)), Vec2::ZERO, version, &[]);
+                let _ = items.drop_anchor_torch(
+                    Place::Room(anchor_room),
+                    Vec2::new(4.0, 0.0),
+                    version,
+                    &[],
+                );
+            }
+            // Use separate unobscured panels so both the cyan halo and orange rival dot
+            // are independently falsifiable in the same frame.
+            if let Some(team) = runtime.live.host.match_state.competitive.teams.get(1) {
+                let base = team.member_base;
+                runtime
+                    .live
+                    .host
+                    .match_state
+                    .competitive
+                    .structure
+                    .graph
+                    .players[base] = rival_room;
             }
             crate::screens::match_runtime::debug_place_into(
                 tp,
@@ -690,9 +719,12 @@ fn prepare_scenario(scenario: AuditScenario, prep: ScenarioPrep) {
         AuditScenario::GuardianCameraRoom => {
             let monitor_room = current_role_room(runtime, RoomRole::Monitor);
             let game = runtime.live.host_match();
-            let spec = game.competitive.map_spec.as_ref();
-            guardian.room = spec
-                .and_then(|spec| spec.neighbors(monitor_room).into_iter().min_by_key(|r| r.0))
+            guardian.room = game
+                .competitive
+                .map_spec
+                .as_ref()
+                .and_then(|spec| crate::screens::place::monitor_page_for(spec, monitor_room))
+                .and_then(|page| page.get(5).copied().or_else(|| page.last().copied()))
                 .unwrap_or(monitor_room);
             guardian.pos = Vec3::new(0.0, 0.76, 0.0);
             crate::screens::match_runtime::debug_place_into(
@@ -737,8 +769,9 @@ fn frame_camera(
             camera::player_view(&tp.body, &tp.config).apply_to(&mut transform);
         }
         AuditScenario::TetherCameraRoom | AuditScenario::GuardianCameraRoom => {
-            *transform = Transform::from_xyz(0.0, y + 2.2, 2.7)
-                .looking_at(Vec3::new(0.0, y + 1.75, -5.0), Vec3::Y);
+            if let Some(view) = crate::screens::place::observation_bank_view(&tp.geom, y) {
+                *transform = view;
+            }
         }
         AuditScenario::FootprintAtlas => {
             *transform = Transform::from_xyz(0.0, ATLAS_Y + 145.0, 0.1)

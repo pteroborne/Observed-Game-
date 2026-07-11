@@ -8,6 +8,7 @@ use crate::GameState;
 use crate::flow::{self, Career};
 use crate::map_validation;
 use crate::sim::director::MatchDirector;
+use crate::sim::replay::ReplayTape;
 use crate::sim::state::{MatchPaused, TeleportState};
 use crate::teleport::{self, Place};
 use crate::view::components::{DoorLeaf, GameCam, PlaceGeometry};
@@ -424,6 +425,169 @@ pub(super) fn capture_rebind_progress(
 }
 
 // --- Menu Banner (CaptureRequest) ---
+
+#[derive(Resource)]
+pub(super) struct ResultsCaptureRequest {
+    dir: PathBuf,
+    index: usize,
+    end_index: usize,
+    phase: u8,
+    next_at: f32,
+}
+
+impl ResultsCaptureRequest {
+    pub(super) fn new(dir: String) -> Self {
+        let selected = std::env::var("OBSERVED2_RESULTS_SHAPE")
+            .ok()
+            .and_then(|shape| match shape.trim().to_ascii_lowercase().as_str() {
+                "victory" | "win" | "0" => Some(0),
+                "placed" | "place" | "1" => Some(1),
+                "absorbed" | "loss" | "2" => Some(2),
+                "solo" | "3" => Some(3),
+                _ => None,
+            });
+        let index = selected.unwrap_or(0);
+        Self {
+            dir: PathBuf::from(dir),
+            index,
+            end_index: selected.map_or(RESULTS_CAPTURE_CASES, |index| index + 1),
+            phase: 0,
+            next_at: 0.0,
+        }
+    }
+}
+
+pub(super) fn capture_results_progress(
+    time: Res<Time>,
+    state: Res<State<GameState>>,
+    mut request: ResMut<ResultsCaptureRequest>,
+    mut career: ResMut<Career>,
+    mut next: ResMut<NextState<GameState>>,
+    mut commands: Commands,
+    mut exit: MessageWriter<AppExit>,
+) {
+    let elapsed = time.elapsed_secs();
+    match request.phase {
+        0 => {
+            let (name, result, solo, tape) = staged_results_case(request.index);
+            *career = Career::default();
+            career.bot_rival_teams = !solo;
+            career.record(result);
+            let _ = career.award();
+            career.last_unlocks.clear();
+            commands.insert_resource(tape);
+            next.set(GameState::Results);
+            request.next_at = elapsed + 1.5;
+            request.phase = 1;
+            info!("RESULTS_CAPTURE staged={name}");
+        }
+        1 if *state.get() == GameState::Results && elapsed >= request.next_at => {
+            let (name, _, _, _) = staged_results_case(request.index);
+            let path = request.dir.join(format!("{name}.png"));
+            crate::evidence::driver::screenshot_to(
+                &mut commands,
+                path.to_string_lossy().into_owned(),
+            );
+            request.next_at = elapsed + 1.0;
+            request.phase = 2;
+        }
+        2 if elapsed >= request.next_at => {
+            request.index += 1;
+            if request.index >= request.end_index {
+                if std::env::var("OBSERVED2_RESULTS_HOLD").is_ok() {
+                    request.phase = 4;
+                } else {
+                    exit.write(AppExit::Success);
+                }
+            } else {
+                next.set(GameState::MainMenu);
+                request.next_at = elapsed + 0.8;
+                request.phase = 3;
+            }
+        }
+        3 if *state.get() == GameState::MainMenu && elapsed >= request.next_at => {
+            request.phase = 0;
+        }
+        _ => {}
+    }
+}
+
+const RESULTS_CAPTURE_CASES: usize = 4;
+
+fn staged_results_case(index: usize) -> (&'static str, flow::MatchResult, bool, ReplayTape) {
+    use observed_core::TeamId;
+
+    let cases = [
+        (
+            "00_victory",
+            flow::MatchResult {
+                placement: Some(1),
+                escaped: 2,
+                absorbed: 2,
+                winner: Some(TeamId(0)),
+                local_won: true,
+            },
+            false,
+        ),
+        (
+            "01_placed",
+            flow::MatchResult {
+                placement: Some(2),
+                escaped: 2,
+                absorbed: 2,
+                winner: Some(TeamId(1)),
+                local_won: false,
+            },
+            false,
+        ),
+        (
+            "02_absorbed",
+            flow::MatchResult {
+                placement: None,
+                escaped: 1,
+                absorbed: 3,
+                winner: Some(TeamId(3)),
+                local_won: false,
+            },
+            false,
+        ),
+        (
+            "03_solo",
+            flow::MatchResult {
+                placement: Some(1),
+                escaped: 1,
+                absorbed: 0,
+                winner: Some(TeamId(0)),
+                local_won: true,
+            },
+            true,
+        ),
+    ];
+    let (name, result, solo) = cases[index].clone();
+    let spec = crate::map_catalog::default_map_spec(6_600 + index as u64);
+    let mut tape = ReplayTape::new(6_600 + index as u64, &spec);
+    for round in 0..6 {
+        tape.push_sample(round, 1, Vec::new());
+    }
+    tape.visited_rooms = vec![RoomId(0), RoomId(3), RoomId(7), RoomId(11), RoomId(18)];
+    tape.collapsed_rooms = if solo {
+        Vec::new()
+    } else {
+        vec![RoomId(0), RoomId(3), RoomId(7)]
+    };
+    tape.escape_order = if solo {
+        vec![TeamId(0)]
+    } else if result.local_won {
+        vec![TeamId(0), TeamId(1)]
+    } else {
+        vec![result.winner.unwrap_or(TeamId(1)), TeamId(0)]
+    };
+    tape.keystones_collected = 3;
+    tape.keystones_required = 3;
+    tape.anchor_uses = if solo { 2 } else { 1 };
+    tape.result = Some(result.clone());
+    (name, result, solo, tape)
+}
 
 #[derive(Resource)]
 pub(super) struct CaptureRequest {

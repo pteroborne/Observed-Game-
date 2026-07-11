@@ -19,7 +19,7 @@ Close the biggest QoL gap for a real player: first-run teaching of the core loop
 Deepen the audio (spatial/attenuated cues, per-district ambient beds, collapse/klaxon/escape stings, UI sounds — all drop-in) and add movement/camera juice (teleport transitions, crossing feedback, gantry jump/land feel, restrained collapse camera). Every effect verified against the Legibility Contract — atmosphere never hides a signal — with refreshed evidence GIFs.
 
 ### Phase 50 — HUD & Results Clarity `[ ]`
-Immersion-first presentation (redirected 2026-07-09, see [docs/arc_e/phase_50_hud_results_clarity.md](docs/arc_e/phase_50_hud_results_clarity.md)): normal play is HUD-free — the status readouts and legend are debug-only (`OBSERVED2_DEBUG_HUD`) — and the Tab tac-map is a fog-of-war survivor's sketch that draws only rooms/connections the player has personally witnessed (`MapKnowledge` ledger): glimpsed rooms as hollow outlines, the exit unmarked until found, witnessed edges silently dropping off when a reroute removes them. Remaining: the post-match summary that reads the outcome and the run's story (placement, escapes, what the collapse took) and a cleaner path back into the loop.
+Immersion-first presentation (redirected 2026-07-09, see [docs/arc_e/phase_50_hud_results_clarity.md](docs/arc_e/phase_50_hud_results_clarity.md)): normal play is HUD-free — the status readouts and legend are debug-only (`OBSERVED2_DEBUG_HUD`) — and the Tab tac-map is a fog-of-war survivor's sketch that draws only rooms/connections the player has personally witnessed (`MapKnowledge` ledger): glimpsed rooms as hollow outlines, the exit unmarked until found, witnessed edges silently dropping off when a reroute removes them. The Phase-66 implementation now supplies the post-match story and direct rematch path; this remains open only with Phase 66's human ship gate.
 
 ### Phases 51–53 — LAN Multiplayer `[deferred to Post-MVP]`
 Shared Actions (`LocalAction::PlaceAnchor`), Real Transport (loopback → LAN), and the LAN Lobby were planned as Arc E's back half and are deferred whole to the Post-MVP Backlog (2026-07-09 ruling). The designs stay valid — first-person actions entering the lockstep stream, a socket adapter behind `observed_net`, lobby/discovery over `observed_progression` — and live in [docs/arc_e/phase_51_shared_actions.md](docs/arc_e/phase_51_shared_actions.md), [phase_52_real_transport.md](docs/arc_e/phase_52_real_transport.md), and [phase_53_lan_lobby.md](docs/arc_e/phase_53_lan_lobby.md).
@@ -65,20 +65,20 @@ Replace the custom rebind capture with the proven `control_lab` overlay machiner
 ### Phase 64 — Threshold Geometry Integrity `[ ]`
 Write the audit check first (no threshold may intersect an interior wall or another threshold, corpus-wide, DFS and WFC, all decoherence versions), use its failures as the reproduction set, fix the generator/projection disagreement at the source, and keep the check as a permanent map-validation gate. Closes bug backlog #3. ([docs/arc_h/phase_64_threshold_integrity.md](docs/arc_h/phase_64_threshold_integrity.md))
 
-### Phase 65 — Observation Rooms Made Real `[ ]`
+### Phase 65 — Observation Rooms Made Real `[x]`
 The 3×3 observation panels become legible schematic room feeds rendered from simulation data (footprint, doorways, occupant dots; anchors cyan, guardian red — the existing state signals layered on top), diegetic-only (panels never write into the player's fog-of-war `MapKnowledge`), with the jutting geometry fixed. Closes bug backlog #4. ([docs/arc_h/phase_65_observation_rooms.md](docs/arc_h/phase_65_observation_rooms.md))
 
 ### Phase 66 — Post-Match Summary & the Ship Gate `[ ]`
-The results screen tells the run's story (placement, escapes in order, what the collapse took, the player's own path) for every outcome shape including solo, with a one-keypress path back into the loop — closing Arc E Phase 50 — plus the backlog hygiene items (`OBSERVED2_BOTS` panic→warning, the all-on digest characterization test). The arc ends with a scripted evidence set and a human playtest checklist; the MVP ships when the checklist passes, not when the tests do. ([docs/arc_h/phase_66_summary_ship_gate.md](docs/arc_h/phase_66_summary_ship_gate.md))
+The results screen tells the run's story (placement, escapes in order, what the collapse took, the player's own path) for every outcome shape including solo, with a one-keypress path back into the loop — closing Arc E Phase 50 — plus the backlog hygiene items (`OBSERVED2_BOTS` panic→warning, the all-on digest characterization test). **Implementation and four-outcome results evidence are complete as of 2026-07-11; the checkbox stays open for the scripted cross-phase evidence refresh and user-run playtest.** The MVP ships when the checklist passes, not when the tests do. ([docs/arc_h/phase_66_summary_ship_gate.md](docs/arc_h/phase_66_summary_ship_gate.md))
 
 ---
 
 ## Bug Backlog
 
-Playtest defects tracked in [docs/bug_backlog.md](docs/bug_backlog.md). All four open
-defects are now scheduled: #1 rebind → Phase 63, #2 textures/ceiling → Phase 62,
-#3 thresholds → Phase 64, #4 observation rooms → Phase 65; the hygiene items →
-Phase 66. New findings land in the backlog first, then get scheduled.
+Playtest defects tracked in [docs/bug_backlog.md](docs/bug_backlog.md). Three open
+defects remain scheduled: #1 rebind → Phase 63, #2 textures/ceiling → Phase 62,
+and #3 thresholds → Phase 64. Observation rooms (#4) and the Phase-66 hygiene
+items are fixed. New findings land in the backlog first, then get scheduled.
 
 ---
 
@@ -93,6 +93,14 @@ Recorded so the horizon is explicit; none of this is being built yet.
 ---
 
 ## Recent Milestones (Completed)
+
+### Phase 65 — Observation Rooms Made Real `[x]`
+Completed 2026-07-11:
+- Replaced the protruding monitor dioramas with a literal 3×3 bank of flush schematic feeds built from live simulation data: room footprints, doorway stubs, rival occupants, cyan anchor halos, and the guardian's red room marker.
+- Kept facility-camera knowledge diegetic: panel rendering is read-only and regression-tested not to change `MapKnowledge`.
+- Added pure content-model tests, live guardian relocation coverage, multi-digit room labels, panel entity-budget/geometry checks, and style-owned observation signal treatments.
+- Viewed the tether and guardian observation-room captures in `docs/evidence/phase_65_observation/`; both show the claimed panel states and the visual audit reports zero findings.
+- Verification: `cargo fmt --all -- --check`, `cargo test --workspace`, and `cargo clippy --workspace --all-targets` pass.
 
 ### Arc F — Sight & Sound (Phases 54–60) `[x]`
 Landed 2026-07-09/10 across seven sub-agent phases; committed and ledgered 2026-07-10 (Arc H Phase 61):

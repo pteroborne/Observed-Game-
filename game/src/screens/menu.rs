@@ -11,7 +11,7 @@ use crate::GameState;
 use crate::flow::Career;
 use crate::sim::replay::ReplayTape;
 use crate::sim::state::SpectatorBot;
-use crate::view::theme::{ACCENT, DIM, TITLE, panel, screen_root, text};
+use crate::view::theme::{ACCENT, DIM, TITLE, panel, screen_root, summary_panel, text};
 
 use crate::view::components::UiAssets;
 
@@ -22,6 +22,12 @@ pub(crate) struct GamepadMenuAxis {
 
 #[derive(Component)]
 pub(crate) struct ResultsSummaryText;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ResultsStory {
+    pub(crate) headline: String,
+    pub(crate) lines: Vec<String>,
+}
 
 // --- splash ----------------------------------------------------------------
 pub(crate) fn setup_splash(mut commands: Commands) {
@@ -108,6 +114,7 @@ pub(crate) fn setup_results(
 ) {
     cursor.0 = 0;
     if career.award() {
+        #[cfg(not(test))]
         crate::flow::save_profile(&career);
     }
 
@@ -119,53 +126,17 @@ pub(crate) fn setup_results(
         .filter_map(|id| cosmetic(*id))
         .map(|c| c.name.to_string())
         .collect();
-    let headline = result_headline(result.as_ref());
+    let story = build_results_story(result.as_ref(), tape, !career.bot_rival_teams);
 
     commands
         .spawn(screen_root(GameState::Results))
         .with_children(|root| {
-            root.spawn(text(headline, 48.0, TITLE));
-            root.spawn(panel()).with_children(|p| {
-                if let Some(r) = &result {
-                    p.spawn((
-                        ResultsSummaryText,
-                        text(
-                            format!(
-                                "placement {} | {}",
-                                placement_label(r.placement),
-                                if r.local_won {
-                                    "series won"
-                                } else {
-                                    "series lost"
-                                }
-                            ),
-                            20.0,
-                            TITLE,
-                        ),
-                    ));
-                    p.spawn((
-                        ResultsSummaryText,
-                        text(
-                            format!(
-                                "winner {} | {} escaped | {} absorbed",
-                                r.winner
-                                    .map(|team| team.label())
-                                    .unwrap_or_else(|| "none".to_string()),
-                                r.escaped,
-                                r.absorbed
-                            ),
-                            18.0,
-                            DIM,
-                        ),
-                    ));
-                }
+            root.spawn(text(story.headline, 48.0, TITLE));
+            root.spawn(summary_panel()).with_children(|p| {
                 p.spawn((
                     ResultsSummaryText,
-                    text(replay_summary_line(tape), 18.0, DIM),
+                    text(story.lines.join("\n"), 17.0, TITLE),
                 ));
-                for line in replay_story_lines(tape) {
-                    p.spawn((ResultsSummaryText, text(line, 15.0, DIM)));
-                }
                 p.spawn((
                     ResultsSummaryText,
                     text(
@@ -189,7 +160,7 @@ pub(crate) fn setup_results(
                 }
             });
             root.spawn(panel()).with_children(|p| {
-                p.spawn(menu_button(0, MenuAction::StartRun, "Play again"));
+                p.spawn(menu_button(0, MenuAction::Rematch, "Rematch | new seed"));
                 p.spawn(menu_button(
                     1,
                     MenuAction::Goto(GameState::Replay),
@@ -202,6 +173,132 @@ pub(crate) fn setup_results(
                 ));
             });
         });
+}
+
+pub(crate) fn build_results_story(
+    result: Option<&crate::flow::MatchResult>,
+    tape: Option<&ReplayTape>,
+    solo: bool,
+) -> ResultsStory {
+    let headline = result_headline(result).to_string();
+    let outcome = match result {
+        Some(result) if solo && result.local_won => "Solo traversal complete.".to_string(),
+        Some(_) if solo => "The solo traversal ended in the facility.".to_string(),
+        Some(result) if result.local_won => {
+            format!(
+                "You finished {}; your team won the series.",
+                placement_label(result.placement)
+            )
+        }
+        Some(result) if result.placement.is_some() => format!(
+            "You finished {}; {} won the series.",
+            placement_label(result.placement),
+            winner_label(result.winner)
+        ),
+        Some(result) => format!(
+            "The facility absorbed your team; {} survived.",
+            winner_label(result.winner)
+        ),
+        None => "No completed run was recorded.".to_string(),
+    };
+
+    let escape_line = if solo {
+        "One explorer entered; no rival teams joined the run.".to_string()
+    } else {
+        let order = tape
+            .map(|tape| {
+                tape.escape_order
+                    .iter()
+                    .map(|team| team_story_label(*team))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        if order.is_empty() {
+            result
+                .and_then(|result| result.winner)
+                .map(|winner| format!("Escape order: {} crossed first.", team_story_label(winner)))
+                .unwrap_or_else(|| "Escape order: no team escaped.".to_string())
+        } else {
+            format!("Escape order: {}.", order.join(" -> "))
+        }
+    };
+
+    let collapsed = tape
+        .map(|tape| tape.collapsed_rooms.as_slice())
+        .unwrap_or_default();
+    let absorbed = result.map_or(0, |result| result.absorbed);
+    let collapse_line = if collapsed.is_empty() {
+        format!(
+            "The collapse sealed no recorded rooms; {}.",
+            team_count_phrase(absorbed, "team was absorbed", "teams were absorbed")
+        )
+    } else {
+        format!(
+            "The collapse sealed {}: {}; {}.",
+            room_count_phrase(collapsed.len()),
+            room_list(collapsed),
+            team_count_phrase(absorbed, "team was absorbed", "teams were absorbed")
+        )
+    };
+
+    let visited = tape
+        .map(|tape| tape.visited_rooms.as_slice())
+        .unwrap_or_default();
+    let path_line = if visited.is_empty() {
+        "Your path left no room trace.".to_string()
+    } else {
+        format!(
+            "Your path crossed {}: {}.",
+            room_count_phrase(visited.len()),
+            room_list(visited)
+        )
+    };
+
+    let (held, required, anchor_uses) = tape
+        .map(|tape| {
+            (
+                tape.keystones_collected,
+                tape.keystones_required,
+                tape.anchor_uses,
+            )
+        })
+        .unwrap_or((0, 0, 0));
+    let key_line = if required > 0 && held >= required {
+        format!("You recovered {held}/{required} keystones and opened the exit.")
+    } else {
+        format!("You recovered {held}/{required} keystones before the run ended.")
+    };
+    let anchor_line = format!(
+        "You deployed the anchor {}.",
+        match anchor_uses {
+            0 => "zero times".to_string(),
+            1 => "once".to_string(),
+            uses => format!("{uses} times"),
+        }
+    );
+    let run_line = tape
+        .map(|tape| {
+            format!(
+                "Run {} | {} | {} replay moments.",
+                tape.seed,
+                tape.map_name,
+                tape.samples.len()
+            )
+        })
+        .unwrap_or_else(|| "No replay tape is available for this run.".to_string());
+
+    ResultsStory {
+        headline,
+        lines: vec![
+            outcome,
+            escape_line,
+            collapse_line,
+            path_line,
+            key_line,
+            anchor_line,
+            run_line,
+        ],
+    }
 }
 
 fn result_headline(result: Option<&crate::flow::MatchResult>) -> &'static str {
@@ -221,42 +318,49 @@ fn placement_label(placement: Option<u8>) -> String {
     match placement {
         Some(1) => "1st".to_string(),
         Some(2) => "2nd".to_string(),
+        Some(3) => "3rd".to_string(),
         Some(n) => format!("{n}th"),
-        None => "—".to_string(),
+        None => "--".to_string(),
     }
 }
 
-fn replay_summary_line(tape: Option<&ReplayTape>) -> String {
-    tape.map(|tape| {
-        format!(
-            "seed {} | {} | {} replay samples",
-            tape.seed,
-            tape.map_name,
-            tape.samples.len()
-        )
-    })
-    .unwrap_or_else(|| "no replay tape available".to_string())
+fn winner_label(winner: Option<observed_core::TeamId>) -> String {
+    winner
+        .map(team_story_label)
+        .unwrap_or_else(|| "no team".to_string())
 }
 
-fn replay_story_lines(tape: Option<&ReplayTape>) -> Vec<String> {
-    let Some(tape) = tape else {
-        return vec!["story: no replay events recorded".to_string()];
-    };
-    let mut lines: Vec<String> = tape
-        .markers
-        .iter()
-        .rev()
-        .take(4)
-        .map(|marker| format!("r{} {}", marker.live_round, marker.label))
-        .collect();
-    lines.reverse();
-    if lines.is_empty() {
-        vec!["story: no replay events recorded".to_string()]
+fn team_story_label(team: observed_core::TeamId) -> String {
+    if team == crate::flow::LOCAL_TEAM {
+        "You".to_string()
     } else {
-        let mut out = vec!["story:".to_string()];
-        out.extend(lines);
-        out
+        team.label()
     }
+}
+
+fn room_count_phrase(count: usize) -> String {
+    if count == 1 {
+        "1 room".to_string()
+    } else {
+        format!("{count} rooms")
+    }
+}
+
+fn room_list(rooms: &[observed_core::RoomId]) -> String {
+    const SHOWN: usize = 6;
+    let mut labels: Vec<String> = rooms
+        .iter()
+        .take(SHOWN)
+        .map(|room| format!("R{}", room.0))
+        .collect();
+    if rooms.len() > SHOWN {
+        labels.push(format!("+{} more", rooms.len() - SHOWN));
+    }
+    labels.join(" -> ")
+}
+
+fn team_count_phrase(count: usize, singular: &str, plural: &str) -> String {
+    format!("{count} {}", if count == 1 { singular } else { plural })
 }
 
 // --- shared menu systems ---------------------------------------------------
@@ -328,6 +432,7 @@ pub(crate) fn menu_activate(
     mut exit: MessageWriter<bevy::app::AppExit>,
     ui_assets: Res<UiAssets>,
     settings: Res<crate::settings::Settings>,
+    active_seed: Option<Res<crate::flow::ActiveMatchSeed>>,
 ) {
     if !keyboard.just_pressed(KeyCode::Enter)
         && !keyboard.just_pressed(KeyCode::Space)
@@ -350,6 +455,16 @@ pub(crate) fn menu_activate(
         MenuAction::StartRun => {
             commands.remove_resource::<SpectatorBot>();
             next.set(GameState::Lobby);
+        }
+        MenuAction::Rematch => {
+            let previous = active_seed
+                .as_deref()
+                .map_or(crate::flow::MATCH_SEED, |seed| seed.0);
+            let seed = crate::flow::rematch_seed(previous);
+            info!("MATCH_START mode=rematch seed={seed}");
+            commands.insert_resource(crate::flow::ActiveMatchSeed(seed));
+            commands.remove_resource::<SpectatorBot>();
+            next.set(GameState::Match);
         }
         MenuAction::SpectateAi => {
             let seed = crate::flow::launch_seed();

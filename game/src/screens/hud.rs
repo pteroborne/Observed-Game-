@@ -791,6 +791,18 @@ pub(crate) fn spawn_match_hud(commands: &mut Commands, high_contrast: bool, debu
             style::marker(MarkerRole::Control).base_color,
         ),
         (
+            "observation feed: cyan halo = anchored room",
+            style::observation_panel(style::ObservationPanelRole::Anchor).base_color,
+        ),
+        (
+            "observation feed: red dot = guardian present",
+            style::observation_panel(style::ObservationPanelRole::Guardian).base_color,
+        ),
+        (
+            "observation feed: rival dot = rival present",
+            style::marker(MarkerRole::Rival).base_color,
+        ),
+        (
             "teleport pad - C drop/pick, E link",
             style::marker(MarkerRole::You).base_color,
         ),

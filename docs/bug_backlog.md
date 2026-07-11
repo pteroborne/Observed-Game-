@@ -1,9 +1,9 @@
 # Bug Backlog
 
-Known defects from playtesting, recorded 2026-07-09. As of 2026-07-10 every open
-entry is scheduled into an Arc H phase (see per-entry pointers). New findings land
-here first, then get scheduled. Keep entries self-contained enough to hand to an
-agent cold.
+Known defects from playtesting, recorded 2026-07-09. Every remaining open entry
+is scheduled into an Arc H phase (see per-entry pointers). New findings land here
+first, then get scheduled. Keep entries self-contained enough to hand to an agent
+cold.
 
 ## Open
 
@@ -39,31 +39,25 @@ The map-audit evidence pipeline (`OBSERVED2_CAPTURE_MAP_AUDIT`) should be able t
 catch this class of defect once the geometry check knows thresholds must not
 intersect interior walls.
 
-### 4. Observation rooms don't show camera views
-**Scheduled: Arc H Phase 65** ([arc_h/phase_65_observation_rooms.md](arc_h/phase_65_observation_rooms.md)) — ruling: schematic feeds from sim data, not render-to-texture; panels never write into MapKnowledge.
-The tether/guardian observation rooms are supposed to show a "camera view" of each
-room in the map (the Arc D "living monitors" promise); currently each panel shows a
-room number, an object jutting through the panel, and a blue screen. Look at:
-`game/src/screens/place/monitors.rs` (panel build + what feeds the screens),
-Phase 31/45 monitor work in ROADMAP for the intended behavior. Decide whether the
-panels should be real render-to-texture views or a legible schematic "feed"
-(fog-of-war rules apply either way — a camera room revealing the whole map must
-stay consistent with `MapKnowledge`).
-
 ## Minor / hygiene
 
-**Scheduled: Arc H Phases 61 (as-landed notes) and 66 (env-var panic, digest test).**
+**Scheduled: Arc H Phase 61 (as-landed notes).**
 
-- `BotPopulations::from_str` panics on an unknown `OBSERVED2_BOTS` token; prefer a
-  logged warning + default (a typo'd env var should not kill the boot).
-- Phase 54's "all-on default digest pinned unchanged" characterization test was
-  never literally added; coverage is indirect via the seed-corpus and career-loop
-  tests. Add the digest pin (`game/src/sim/director.rs`,
-  `apply_population_config`).
 - Phase 54/55 docs never got "As landed" notes (56 has one; 56 also has a
   "Review fixes" section).
 
 ## Fixed
+
+- ~~Unknown `OBSERVED2_BOTS` tokens panic and the all-on digest is unpinned~~ —
+  fixed 2026-07-11 in the Phase-66 implementation. Unknown tokens warn and use
+  the all-on default; the default director corpus digest is pinned at
+  `0x539C35C626B9B30F`.
+
+- ~~Observation rooms don't show camera views~~ — fixed 2026-07-11 by Arc H
+  Phase 65. Both rooms now show live 3×3 schematic feeds from simulation data;
+  anchor/guardian signals remain cyan/red, panel geometry is flush, and the
+  feeds never mutate `MapKnowledge`. See
+  [phase_65_observation_rooms.md](arc_h/phase_65_observation_rooms.md).
 
 - ~~District ambience wash / location beds never playing~~ — fixed 2026-07-09
   (see `docs/arc_f/phase_56_audio_content_spatial.md` "Review fixes": bed sinks

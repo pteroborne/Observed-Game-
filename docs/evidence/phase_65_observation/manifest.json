@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "run_id": "observed-vis-audit-1783779234949",
+  "scenarios": [
+    "tether_camera_room",
+    "guardian_camera_room"
+  ],
+  "snapshots": [
+    {
+      "scenario": "tether_camera_room",
+      "image_path": "docs/evidence/phase_65_observation/00_tether_camera_room.png",
+      "json_path": "docs/evidence/phase_65_observation/00_tether_camera_room.json",
+      "finding_count": 0
+    },
+    {
+      "scenario": "guardian_camera_room",
+      "image_path": "docs/evidence/phase_65_observation/01_guardian_camera_room.png",
+      "json_path": "docs/evidence/phase_65_observation/01_guardian_camera_room.json",
+      "finding_count": 0
+    }
+  ],
+  "findings": []
+}

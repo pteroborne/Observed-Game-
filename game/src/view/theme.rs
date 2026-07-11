@@ -82,6 +82,24 @@ pub(crate) fn panel() -> impl Bundle {
     )
 }
 
+/// Wide, left-aligned results chrome: seven short story lines stay readable at a
+/// glance without turning the summary into a dense statistics table.
+pub(crate) fn summary_panel() -> impl Bundle {
+    (
+        Node {
+            width: px(760),
+            padding: UiRect::axes(px(32), px(24)),
+            border: UiRect::all(px(1)),
+            flex_direction: FlexDirection::Column,
+            align_items: AlignItems::FlexStart,
+            row_gap: px(9),
+            ..default()
+        },
+        BackgroundColor(PANEL),
+        BorderColor::all(BORDER),
+    )
+}
+
 pub(crate) fn text(s: impl Into<String>, size: f32, color: Color) -> impl Bundle {
     (
         Text::new(s.into()),

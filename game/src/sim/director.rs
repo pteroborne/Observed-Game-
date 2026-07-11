@@ -111,9 +111,11 @@ impl BotPopulations {
                     config.ai_teammates = false;
                 }
                 _ => {
-                    panic!(
-                        "unknown OBSERVED2_BOTS value `{part}`; valid flags: all, none, no_guardian, no_rivals, no_teammates"
+                    warn!(
+                        "unknown OBSERVED2_BOTS value `{part}`; using all-on default. \
+                         valid flags: all, none, no_guardian, no_rivals, no_teammates"
                     );
+                    return Some(Self::default());
                 }
             }
         }

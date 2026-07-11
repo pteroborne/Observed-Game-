@@ -62,6 +62,17 @@ pub fn launch_seed() -> u64 {
         .unwrap_or(MATCH_SEED)
 }
 
+/// Choose a fresh launch seed for the one-key results-screen rematch. Even a
+/// same-tick clock collision cannot replay the previous facility accidentally.
+pub fn rematch_seed(previous: u64) -> u64 {
+    let candidate = launch_seed();
+    if candidate == previous {
+        previous.wrapping_add(1)
+    } else {
+        candidate
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MatchResult {
     pub placement: Option<u8>,
@@ -195,6 +206,11 @@ impl Career {
 /// malformed save falls back to `Profile::new()` exactly like a first launch, never
 /// panicking on a bad file.
 pub fn load_career() -> Career {
+    #[cfg(test)]
+    if crate::settings::TEST_PROFILE_PATH.with(|path| path.borrow().is_none()) {
+        return Career::default();
+    }
+
     let save_text =
         std::fs::read_to_string(crate::settings::profile_save_path()).unwrap_or_default();
     let first_line = save_text.lines().next().unwrap_or("");
@@ -239,6 +255,11 @@ pub fn load_career() -> Career {
 /// Persist the career's profile to disk (best-effort — a write failure is silently
 /// ignored, matching `settings::save_settings`'s convention).
 pub fn save_profile(career: &Career) {
+    #[cfg(test)]
+    if crate::settings::TEST_PROFILE_PATH.with(|path| path.borrow().is_none()) {
+        return;
+    }
+
     let path = crate::settings::profile_save_path();
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -260,11 +281,20 @@ mod tests {
     fn play_match_is_deterministic_and_the_local_team_wins() {
         let a = play_match();
         let b = play_match();
+        let career = load_career();
+        let config = crate::sim::director::BotPopulations::from_env().unwrap_or(
+            crate::sim::director::BotPopulations {
+                rival_teams: career.bot_rival_teams,
+                ai_teammates: career.bot_ai_teammates,
+                guardian: career.bot_guardian,
+            },
+        );
+        let configured_team_count = if config.rival_teams { 4 } else { 1 };
         assert_eq!(a, b);
         assert_eq!(a.placement, Some(1));
         assert!(a.local_won);
         assert_eq!(a.escaped, 1);
-        assert_eq!(a.escaped + a.absorbed, 4);
+        assert_eq!(a.escaped + a.absorbed, configured_team_count);
     }
 
     #[test]

@@ -242,6 +242,47 @@ pub enum MarkerRole {
     Director,
 }
 
+/// A semantic layer in a diegetic observation-panel feed.
+///
+/// Panel presentation uses these roles instead of inventing local colours: the dark
+/// [`Screen`](Self::Screen) is the non-signal canvas, while the schematic room
+/// footprint and doorway stubs remain signal-tier so the feed reads at wall-panel
+/// scale. Anchor cyan preserves the observation room's established tether read, while
+/// guardian red reuses the collapse/threat treatment.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ObservationPanelRole {
+    /// The dark glass/background behind a room feed.
+    Screen,
+    /// The schematic outline of the observed room's footprint.
+    Footprint,
+    /// A doorway stub on the observed room's footprint.
+    Doorway,
+    /// An anchor halo; preserves the observation room's established cyan tether signal.
+    Anchor,
+    /// The guardian warning/dot; identical to [`MarkerRole::Collapse`].
+    Guardian,
+}
+
+impl ObservationPanelRole {
+    pub const ALL: [ObservationPanelRole; 5] = [
+        ObservationPanelRole::Screen,
+        ObservationPanelRole::Footprint,
+        ObservationPanelRole::Doorway,
+        ObservationPanelRole::Anchor,
+        ObservationPanelRole::Guardian,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            ObservationPanelRole::Screen => "observation panel: screen",
+            ObservationPanelRole::Footprint => "observation panel: room footprint",
+            ObservationPanelRole::Doorway => "observation panel: doorway",
+            ObservationPanelRole::Anchor => "observation panel: anchor halo",
+            ObservationPanelRole::Guardian => "observation panel: guardian",
+        }
+    }
+}
+
 /// A semantic read shown on a doorframe before committing to the room beyond it.
 /// These are signal-tier because they are decision cues, and every glyph is backed
 /// by a treatment here rather than by lab-local colour choices.
@@ -512,6 +553,43 @@ pub fn marker(role: MarkerRole) -> Treatment {
         emissive,
         signal: true,
         edge: Some(base),
+    }
+}
+
+/// The neon-noir treatment for one layer of a diegetic room-camera schematic.
+///
+/// The footprint and doorway are bright enough to remain readable against the dark
+/// screen at small panel sizes. Anchor cyan and guardian red preserve their established
+/// observation-room semantics: infrastructure reports those facts without inventing a
+/// new local colour language.
+pub fn observation_panel(role: ObservationPanelRole) -> Treatment {
+    match role {
+        ObservationPanelRole::Screen => Treatment {
+            base_color: Color::srgb(0.012, 0.025, 0.032),
+            emissive: LinearRgba::rgb(0.018, 0.055, 0.070),
+            signal: false,
+            edge: None,
+        },
+        ObservationPanelRole::Footprint => Treatment {
+            base_color: Color::srgb(0.46, 0.90, 1.0),
+            emissive: LinearRgba::rgb(1.8, 5.6, 6.8),
+            signal: true,
+            edge: Some(Color::srgb(0.46, 0.90, 1.0)),
+        },
+        ObservationPanelRole::Doorway => Treatment {
+            base_color: Color::srgb(1.0, 0.84, 0.30),
+            emissive: LinearRgba::rgb(6.0, 4.2, 1.0),
+            signal: true,
+            edge: Some(Color::srgb(1.0, 0.84, 0.30)),
+        },
+        ObservationPanelRole::Anchor => Treatment {
+            // Phase 31/65 invariant: cyan means this room is held by an anchor.
+            base_color: Color::srgb(0.0, 0.8, 1.0),
+            emissive: LinearRgba::rgb(0.0, 4.0, 5.0),
+            signal: true,
+            edge: Some(Color::srgb(0.0, 0.8, 1.0)),
+        },
+        ObservationPanelRole::Guardian => marker(MarkerRole::Collapse),
     }
 }
 
@@ -888,13 +966,19 @@ pub fn district_for(seed: u64, key: u32) -> District {
 /// on-screen legend. A consumer renders this so no coloured marker is unexplained.
 pub fn legend() -> Vec<(&'static str, Treatment)> {
     let mut out = Vec::with_capacity(
-        SurfaceRole::ALL.len() + MarkerRole::ALL.len() + DoorIdentityRole::ALL.len(),
+        SurfaceRole::ALL.len()
+            + MarkerRole::ALL.len()
+            + ObservationPanelRole::ALL.len()
+            + DoorIdentityRole::ALL.len(),
     );
     for role in SurfaceRole::ALL {
         out.push((role.label(), surface(role)));
     }
     for role in MarkerRole::ALL {
         out.push((role.label(), marker(role)));
+    }
+    for role in ObservationPanelRole::ALL {
+        out.push((role.label(), observation_panel(role)));
     }
     for role in DoorIdentityRole::ALL {
         out.push((role.label(), door_identity(role)));
@@ -1012,6 +1096,47 @@ mod tests {
     }
 
     #[test]
+    fn observation_panel_preserves_anchor_cyan_and_guardian_red() {
+        let anchor = observation_panel(ObservationPanelRole::Anchor);
+        assert_eq!(anchor.base_color, Color::srgb(0.0, 0.8, 1.0));
+        assert!(anchor.signal, "the anchor halo is gameplay-critical");
+        assert_eq!(
+            observation_panel(ObservationPanelRole::Guardian),
+            marker(MarkerRole::Collapse),
+            "the guardian keeps the established red threat treatment on camera feeds",
+        );
+    }
+
+    #[test]
+    fn observation_panel_screen_is_dark_and_feed_lines_are_legible() {
+        let screen = observation_panel(ObservationPanelRole::Screen);
+        assert!(!screen.signal, "panel glass is atmosphere, not a signal");
+        assert!(
+            luminance(screen.base_color.to_linear()) < ATMOSPHERE_MAX_LUMINANCE,
+            "panel glass must stay dark behind the schematic",
+        );
+
+        for role in [
+            ObservationPanelRole::Footprint,
+            ObservationPanelRole::Doorway,
+        ] {
+            let treatment = observation_panel(role);
+            assert!(treatment.signal, "{} must be signal-tier", role.label());
+            assert!(
+                luminance(treatment.emissive) >= SIGNAL_MIN_LUMINANCE,
+                "{} must remain legible on the panel: {treatment:?}",
+                role.label(),
+            );
+            assert_ne!(
+                treatment.base_color,
+                screen.base_color,
+                "{} must contrast with the panel glass",
+                role.label(),
+            );
+        }
+    }
+
+    #[test]
     fn signals_punch_through_the_atmosphere() {
         // Every signal-tier treatment — markers, signal surfaces, and any observed
         // form that becomes a signal — must clear the legibility floor.
@@ -1021,6 +1146,12 @@ mod tests {
         }
         for role in DoorIdentityRole::ALL {
             signals.push(door_identity(role));
+        }
+        for role in ObservationPanelRole::ALL {
+            let treatment = observation_panel(role);
+            if treatment.signal {
+                signals.push(treatment);
+            }
         }
         for role in SurfaceRole::ALL {
             let base = surface(role);
@@ -1187,7 +1318,10 @@ mod tests {
         let legend = legend();
         assert_eq!(
             legend.len(),
-            SurfaceRole::ALL.len() + MarkerRole::ALL.len() + DoorIdentityRole::ALL.len(),
+            SurfaceRole::ALL.len()
+                + MarkerRole::ALL.len()
+                + ObservationPanelRole::ALL.len()
+                + DoorIdentityRole::ALL.len(),
         );
         let mut labels: Vec<&str> = legend.iter().map(|(name, _)| *name).collect();
         labels.sort_unstable();

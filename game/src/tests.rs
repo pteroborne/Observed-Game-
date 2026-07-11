@@ -29,6 +29,9 @@ fn test_app() -> App {
     .insert_resource(ClearColor(Color::BLACK))
     .add_plugins(ObservedGamePlugin);
     app.update();
+    // Integration tests always start from the shipped all-on population, never
+    // from whichever personal profile happens to be present in the workspace.
+    app.insert_resource(crate::flow::Career::default());
     app
 }
 
@@ -1114,7 +1117,7 @@ fn completed_match_records_a_replay_and_results_can_open_it() {
 
 #[test]
 fn results_screen_renders_every_outcome_shape() {
-    use observed_core::TeamId;
+    use observed_core::{RoomId, TeamId};
 
     let cases = [
         (
@@ -1125,8 +1128,9 @@ fn results_screen_renders_every_outcome_shape() {
                 winner: Some(TeamId(0)),
                 local_won: true,
             },
+            false,
             "VICTORY",
-            "placement 1st",
+            "finished 1st",
         ),
         (
             flow::MatchResult {
@@ -1136,8 +1140,9 @@ fn results_screen_renders_every_outcome_shape() {
                 winner: Some(TeamId(1)),
                 local_won: false,
             },
+            false,
             "PLACED",
-            "placement 2nd",
+            "finished 2nd",
         ),
         (
             flow::MatchResult {
@@ -1147,8 +1152,9 @@ fn results_screen_renders_every_outcome_shape() {
                 winner: Some(TeamId(2)),
                 local_won: false,
             },
+            false,
             "ABSORBED",
-            "placement",
+            "absorbed your team",
         ),
         (
             flow::MatchResult {
@@ -1158,21 +1164,59 @@ fn results_screen_renders_every_outcome_shape() {
                 winner: Some(TeamId(3)),
                 local_won: false,
             },
+            false,
             "ABSORBED",
-            "placement 4th",
+            "finished 4th",
+        ),
+        (
+            flow::MatchResult {
+                placement: Some(1),
+                escaped: 1,
+                absorbed: 0,
+                winner: Some(TeamId(0)),
+                local_won: true,
+            },
+            true,
+            "VICTORY",
+            "Solo traversal complete",
         ),
     ];
 
-    for (result, headline, placement_text) in cases {
-        let mut app = test_app();
-        app.world_mut()
-            .resource_mut::<Career>()
-            .record(result.clone());
+    for (result, solo, headline, outcome_text) in cases {
         let spec = crate::map_catalog::default_map_spec(MATCH_SEED);
         let mut tape = crate::sim::replay::ReplayTape::new(MATCH_SEED, &spec);
         tape.push_sample(0, 1, Vec::new());
-        tape.push_marker(0, 1, "series: test outcome");
-        tape.result = Some(result);
+        tape.visited_rooms = vec![RoomId(0), RoomId(4), RoomId(7)];
+        tape.collapsed_rooms = if solo {
+            Vec::new()
+        } else {
+            vec![RoomId(0), RoomId(4)]
+        };
+        tape.escape_order = if solo {
+            vec![TeamId(0)]
+        } else {
+            vec![result.winner.unwrap_or(TeamId(1)), TeamId(0)]
+        };
+        tape.keystones_collected = 3;
+        tape.keystones_required = 3;
+        tape.anchor_uses = 1;
+        tape.result = Some(result.clone());
+
+        let story = crate::screens::menu::build_results_story(Some(&result), Some(&tape), solo);
+        assert_eq!(story.headline, headline);
+        assert_eq!(story.lines.len(), 7, "the summary stays glanceable");
+        assert!(story.lines.join("\n").contains(outcome_text));
+        assert!(story.lines.join("\n").contains("Escape order") ^ solo);
+        assert!(story.lines.join("\n").contains("collapse"));
+        assert!(story.lines.join("\n").contains("3 rooms"));
+        assert!(story.lines.join("\n").contains("3/3 keystones"));
+        assert!(story.lines.join("\n").contains("anchor once"));
+
+        let mut app = test_app();
+        app.world_mut().resource_mut::<Career>().bot_rival_teams = !solo;
+        app.world_mut()
+            .resource_mut::<Career>()
+            .record(result.clone());
         app.insert_resource(tape);
 
         go(&mut app, GameState::Results);
@@ -1184,14 +1228,59 @@ fn results_screen_renders_every_outcome_shape() {
         );
         let summary = result_summary_texts(&mut app).join("\n");
         assert!(
-            summary.contains(placement_text),
-            "summary should include {placement_text}; rendered:\n{summary}"
+            summary.contains(outcome_text),
+            "summary should include {outcome_text}; rendered:\n{summary}"
         );
-        assert!(summary.contains("escaped"));
-        assert!(summary.contains("absorbed"));
-        assert!(summary.contains("seed"));
-        assert!(summary.contains("series: test outcome"));
+        assert!(summary.contains("collapse"));
+        assert!(summary.contains("Your path"));
+        assert!(summary.contains("keystones"));
+        assert!(summary.contains("anchor"));
+        assert!(summary.contains("Run 1"));
+        if solo {
+            assert!(!summary.contains("Team 2"), "solo has no rival lines");
+        }
     }
+}
+
+#[test]
+fn results_rematch_launches_same_config_directly_with_a_new_seed() {
+    let mut app = test_app();
+    let previous = 99_u64;
+    app.insert_resource(flow::ActiveMatchSeed(previous));
+    {
+        let mut career = app.world_mut().resource_mut::<Career>();
+        career.bot_rival_teams = false;
+        career.bot_ai_teammates = false;
+        career.bot_guardian = true;
+        career.record(flow::MatchResult {
+            placement: Some(1),
+            escaped: 1,
+            absorbed: 0,
+            winner: Some(observed_core::TeamId(0)),
+            local_won: true,
+        });
+    }
+    go(&mut app, GameState::Results);
+
+    app.world_mut()
+        .resource_mut::<ButtonInput<KeyCode>>()
+        .press(KeyCode::Enter);
+    app.world_mut().run_schedule(Update);
+    app.update();
+
+    assert_eq!(
+        *app.world().resource::<State<GameState>>().get(),
+        GameState::Match
+    );
+    assert_ne!(
+        app.world().resource::<flow::ActiveMatchSeed>().0,
+        previous,
+        "rematch never silently reuses the previous facility seed"
+    );
+    let career = app.world().resource::<Career>();
+    assert!(!career.bot_rival_teams);
+    assert!(!career.bot_ai_teammates);
+    assert!(career.bot_guardian);
 }
 
 #[test]
@@ -2205,6 +2294,58 @@ fn teleport_into_room(app: &mut App, room: observed_core::RoomId) {
     app.update();
 }
 
+fn freeze_observation_test_match(app: &mut App) {
+    app.world_mut()
+        .resource_mut::<crate::sim::director::MatchDirector>()
+        .done = true;
+}
+
+fn place_rival_in_room(
+    app: &mut App,
+    team_index: usize,
+    room: observed_core::RoomId,
+) -> observed_core::TeamId {
+    let mut runtime = app
+        .world_mut()
+        .resource_mut::<crate::sim::director::MatchDirector>();
+    let team = runtime.live.host.match_state.competitive.teams[team_index].id;
+    let base = runtime.live.host.match_state.competitive.teams[team_index].member_base;
+    runtime
+        .live
+        .host
+        .match_state
+        .competitive
+        .structure
+        .graph
+        .players[base] = room;
+    team
+}
+
+fn drop_test_anchor(
+    app: &mut App,
+    room: observed_core::RoomId,
+    position: Vec2,
+) -> observed_core::TeamId {
+    let (version, connections) = {
+        let runtime = app
+            .world()
+            .resource::<crate::sim::director::MatchDirector>();
+        let items = app.world().resource::<items::ItemsState>();
+        let game = runtime.live.host_match();
+        (
+            game.reroute_commits,
+            crate::sim::nav::connections_for_nav(game, items, room),
+        )
+    };
+    let mut items = app.world_mut().resource_mut::<items::ItemsState>();
+    let team = items.team;
+    assert!(
+        items.drop_anchor_torch(teleport::Place::Room(room), position, version, &connections,),
+        "the observation test starts with a carried anchor torch"
+    );
+    team
+}
+
 /// Arc D stage D1 fix: the wall-monitor rooms and the guardian console must spawn from
 /// the active map spec's [`observed_facility::map_spec::RoomRole::Monitor`] /
 /// `GuardianControl` rooms, never a hardcoded room id — the bug the user reported ("the
@@ -2213,7 +2354,7 @@ fn teleport_into_room(app: &mut App, room: observed_core::RoomId) {
 /// moved on. This is spec-driven (queries the app's own active map, whatever it is)
 /// rather than pinning any one catalog map's room ids.
 #[test]
-fn monitor_room_renders_miniatures_for_its_page_and_guardian_console_spawns_in_its_role_room() {
+fn monitor_room_renders_panels_for_its_page_and_guardian_console_spawns_in_its_role_room() {
     use observed_core::RoomId;
     use observed_facility::map_spec::RoomRole;
 
@@ -2230,26 +2371,18 @@ fn monitor_room_renders_miniatures_for_its_page_and_guardian_console_spawns_in_i
     app.update();
 
     teleport_into_room(&mut app, monitor_room);
-    let miniature_rooms: Vec<RoomId> = {
+    let mut panel_rooms: Vec<RoomId> = {
         let world = app.world_mut();
-        let mut query = world.query::<&crate::screens::place::MonitorMiniature>();
-        query.iter(world).map(|m| m.room).collect()
+        let mut query = world.query::<&crate::screens::place::ObservationPanel>();
+        query.iter(world).map(|panel| panel.room).collect()
     };
-    assert!(
-        !miniature_rooms.is_empty(),
-        "the Monitor room must render at least one panel miniature"
-    );
-    let expected_page = crate::screens::place::monitor_page_for(&spec, monitor_room)
+    let mut expected_page = crate::screens::place::monitor_page_for(&spec, monitor_room)
         .expect("the Monitor room has a panel page");
-    for room in &miniature_rooms {
-        assert!(
-            expected_page.contains(room),
-            "panel miniature for {room:?} must be part of the room's own monitor page"
-        );
-    }
-    assert!(
-        count::<crate::screens::place::MonitorMiniature>(&mut app) <= expected_page.len() * 2,
-        "at most one miniature per panel per bank (tether + guardian banks share the page)"
+    panel_rooms.sort_unstable_by_key(|room| room.0);
+    expected_page.sort_unstable_by_key(|room| room.0);
+    assert_eq!(
+        panel_rooms, expected_page,
+        "the Monitor room renders exactly one unified panel for every room on its page"
     );
 
     // The Guardian starts in the GuardianControl-role room (session.rs's role-driven
@@ -2273,14 +2406,11 @@ fn monitor_room_renders_miniatures_for_its_page_and_guardian_console_spawns_in_i
     );
 }
 
-/// A monitor panel is an observation like any other: a rival visible on it must be
-/// recorded in the same one-writer sighting ledger threshold previews and audio bleed
-/// use (Phase 39 Sensor payoff meeting the Phase 42 ledger).
+/// Phase 65's feed is a pure projection of live game state. It carries the target room's
+/// footprint, current doorway targets, rivals, local anchor, and guardian without needing
+/// a rendered entity or mutating either observation ledger.
 #[test]
-fn a_rival_visible_on_a_monitor_panel_records_a_seen_sighting() {
-    use crate::sim::director::MatchDirector;
-    use crate::sim::state::{RivalSightings, SightingKind};
-    use observed_core::TeamId;
+fn observation_page_content_projects_structure_and_live_occupants() {
     use observed_facility::map_spec::RoomRole;
 
     let spec = crate::map_catalog::active_map_spec(MATCH_SEED);
@@ -2296,24 +2426,451 @@ fn a_rival_visible_on_a_monitor_panel_records_a_seen_sighting() {
     let mut app = test_app();
     go(&mut app, GameState::Match);
     app.update();
+    freeze_observation_test_match(&mut app);
 
-    {
-        let mut rt = app.world_mut().resource_mut::<MatchDirector>();
-        let base = rt.live.host.match_state.competitive.teams[1].member_base;
-        rt.live.host.match_state.competitive.structure.graph.players[base] = shown_room;
+    let rival_team = place_rival_in_room(&mut app, 1, shown_room);
+    let anchor_position = Vec2::new(0.75, -0.5);
+    let anchor_team = drop_test_anchor(&mut app, shown_room, anchor_position);
+    let staged_guardian = crate::guardian::Guardian {
+        room: shown_room,
+        pos: Vec3::new(-0.6, 0.76, 0.9),
+        ..default()
+    };
+
+    let (contents, expected_connections) = {
+        let runtime = app
+            .world()
+            .resource::<crate::sim::director::MatchDirector>();
+        let items = app.world().resource::<items::ItemsState>();
+        let game = runtime.live.host_match();
+        (
+            crate::screens::place::observation_page_contents(
+                MATCH_SEED,
+                &page,
+                game,
+                items,
+                Some(&staged_guardian),
+            ),
+            crate::sim::nav::connections_for_nav(game, items, shown_room),
+        )
+    };
+
+    assert_eq!(
+        contents
+            .iter()
+            .map(|content| content.room)
+            .collect::<Vec<_>>(),
+        page,
+        "pure page content preserves the stable panel-to-room mapping"
+    );
+    assert_eq!(
+        contents,
+        {
+            let runtime = app
+                .world()
+                .resource::<crate::sim::director::MatchDirector>();
+            let items = app.world().resource::<items::ItemsState>();
+            crate::screens::place::observation_page_contents(
+                MATCH_SEED,
+                &page,
+                runtime.live.host_match(),
+                items,
+                Some(&staged_guardian),
+            )
+        },
+        "the feed projection is deterministic for identical live state"
+    );
+
+    let shown = contents
+        .iter()
+        .find(|content| content.room == shown_room)
+        .expect("the staged room has a panel");
+    let direct = {
+        let runtime = app
+            .world()
+            .resource::<crate::sim::director::MatchDirector>();
+        let items = app.world().resource::<items::ItemsState>();
+        crate::screens::place::observation_panel_content(
+            MATCH_SEED,
+            shown_room,
+            runtime.live.host_match(),
+            items,
+            Some(&staged_guardian),
+        )
+    };
+    assert_eq!(
+        shown, &direct,
+        "page projection delegates to the pure panel model"
+    );
+    assert!(
+        shown.footprint.len() >= 4,
+        "the feed carries a legible closed room footprint"
+    );
+    let mut actual_targets: Vec<_> = shown
+        .doorways
+        .iter()
+        .map(|doorway| doorway.target)
+        .collect();
+    let mut expected_targets = expected_connections;
+    actual_targets.sort_unstable_by_key(|room| room.0);
+    expected_targets.sort_unstable_by_key(|room| room.0);
+    assert_eq!(
+        actual_targets, expected_targets,
+        "doorway stubs use the room's live navigation targets"
+    );
+    assert!(
+        shown.occupants.contains(&rival_team),
+        "the staged rival appears in the room's occupant list"
+    );
+    assert!(
+        shown
+            .occupants
+            .windows(2)
+            .all(|teams| teams[0].0 <= teams[1].0),
+        "occupants are stable and sorted by TeamId"
+    );
+    assert!(
+        shown.anchors.iter().any(|anchor| {
+            anchor.team == anchor_team && anchor.position == Some(anchor_position)
+        }),
+        "the local placed anchor appears with its live room position"
+    );
+    assert_eq!(
+        shown.guardian,
+        Some(Vec2::ZERO),
+        "the guardian's room-level warning dot is centred on the occupied panel"
+    );
+    for other in contents.iter().filter(|content| content.room != shown_room) {
+        assert_ne!(
+            other.guardian,
+            Some(Vec2::ZERO),
+            "guardian state never bleeds onto another panel"
+        );
+        assert!(
+            !other.anchors.iter().any(|anchor| {
+                anchor.team == anchor_team && anchor.position == Some(anchor_position)
+            }),
+            "local anchor state never bleeds onto another panel"
+        );
     }
+}
+
+/// The Bevy presentation consumes the pure feed model exactly: every footprint edge and
+/// doorway becomes a line, every rival and guardian becomes one dot, and every anchor
+/// becomes a visible halo rather than a status-only screen tint.
+#[test]
+fn rendered_observation_feed_counts_match_the_pure_model() {
+    use observed_facility::map_spec::RoomRole;
+
+    let spec = crate::map_catalog::active_map_spec(MATCH_SEED);
+    let monitor_room = spec
+        .role_room(RoomRole::Monitor)
+        .expect("the active map has a Monitor room");
+    let page = crate::screens::place::monitor_page_for(&spec, monitor_room)
+        .expect("the Monitor room has a panel page");
+    let shown_room = page[0];
+
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    app.update();
+    freeze_observation_test_match(&mut app);
+    let rival_team = place_rival_in_room(&mut app, 1, shown_room);
+    let anchor_team = drop_test_anchor(&mut app, shown_room, Vec2::new(0.4, 0.3));
+    {
+        let mut guardian = app.world_mut().resource_mut::<crate::guardian::Guardian>();
+        guardian.room = shown_room;
+        guardian.pos = Vec3::new(0.2, 0.76, -0.7);
+    }
+
+    let contents = {
+        let runtime = app
+            .world()
+            .resource::<crate::sim::director::MatchDirector>();
+        let items = app.world().resource::<items::ItemsState>();
+        let guardian = app.world().resource::<crate::guardian::Guardian>();
+        crate::screens::place::observation_page_contents(
+            MATCH_SEED,
+            &page,
+            runtime.live.host_match(),
+            items,
+            Some(guardian),
+        )
+    };
     teleport_into_room(&mut app, monitor_room);
 
-    let sightings = app.world().resource::<RivalSightings>();
-    let sighting = sightings.get(TeamId(1), shown_room);
+    let primitives: Vec<_> = {
+        let world = app.world_mut();
+        let mut query = world.query::<(
+            &crate::screens::place::ObservationFeedElement,
+            &crate::screens::place::ObservationFeedPrimitive,
+        )>();
+        query
+            .iter(world)
+            .map(|(element, primitive)| (element.room, *primitive))
+            .collect()
+    };
+
+    for content in &contents {
+        let for_room: Vec<_> = primitives
+            .iter()
+            .filter_map(|(room, primitive)| (*room == content.room).then_some(*primitive))
+            .collect();
+        assert_eq!(
+            for_room
+                .iter()
+                .filter(|primitive| {
+                    matches!(
+                        primitive,
+                        crate::screens::place::ObservationFeedPrimitive::Footprint
+                    )
+                })
+                .count(),
+            content.footprint.len(),
+            "R{} renders one segment per footprint edge",
+            content.room.0
+        );
+
+        let mut rendered_doorways: Vec<_> = for_room
+            .iter()
+            .filter_map(|primitive| match primitive {
+                crate::screens::place::ObservationFeedPrimitive::Doorway(slot) => Some(*slot),
+                _ => None,
+            })
+            .collect();
+        let mut expected_doorways: Vec<_> = content
+            .doorways
+            .iter()
+            .map(|doorway| doorway.slot)
+            .collect();
+        rendered_doorways.sort_unstable();
+        expected_doorways.sort_unstable();
+        assert_eq!(
+            rendered_doorways, expected_doorways,
+            "R{} renders exactly its live doorway stubs",
+            content.room.0
+        );
+
+        let mut rendered_occupants: Vec<_> = for_room
+            .iter()
+            .filter_map(|primitive| match primitive {
+                crate::screens::place::ObservationFeedPrimitive::Occupant(team) => Some(*team),
+                _ => None,
+            })
+            .collect();
+        rendered_occupants.sort_unstable_by_key(|team| team.0);
+        assert_eq!(
+            rendered_occupants, content.occupants,
+            "R{} renders one dot per rival occupant",
+            content.room.0
+        );
+        assert_eq!(
+            for_room
+                .iter()
+                .filter(|primitive| {
+                    matches!(
+                        primitive,
+                        crate::screens::place::ObservationFeedPrimitive::Guardian
+                    )
+                })
+                .count(),
+            usize::from(content.guardian.is_some()),
+            "R{} renders exactly one guardian dot when occupied",
+            content.room.0
+        );
+    }
+
     assert!(
-        sighting.is_some_and(|s| s.kind == SightingKind::Seen),
-        "a rival shown on a monitor panel must be recorded as Seen in the ledger"
+        primitives.iter().any(|&(room, primitive)| {
+            room == shown_room
+                && primitive
+                    == crate::screens::place::ObservationFeedPrimitive::Occupant(rival_team)
+        }),
+        "the staged rival has a rendered dot"
+    );
+    assert_eq!(
+        primitives
+            .iter()
+            .filter(|&&(room, primitive)| {
+                room == shown_room
+                    && primitive
+                        == crate::screens::place::ObservationFeedPrimitive::Anchor(anchor_team)
+            })
+            .count(),
+        8,
+        "the staged anchor renders as an eight-segment halo"
     );
 }
 
-/// Per-panel entity budget (Arc D stage D1): a monitor panel's miniature must stay cheap
-/// — shell + door states + a couple of overlay markers, not a full room's worth of detail.
+#[test]
+fn guardian_dot_moves_between_shown_panels_after_one_update() {
+    use observed_core::RoomId;
+    use observed_facility::map_spec::RoomRole;
+
+    let spec = crate::map_catalog::active_map_spec(MATCH_SEED);
+    let monitor_room = spec
+        .role_room(RoomRole::Monitor)
+        .expect("the active map has a Monitor room");
+    let page = crate::screens::place::monitor_page_for(&spec, monitor_room)
+        .expect("the Monitor room has a panel page");
+    let shown: Vec<RoomId> = page
+        .iter()
+        .copied()
+        .filter(|&room| room != monitor_room)
+        .take(2)
+        .collect();
+    assert_eq!(shown.len(), 2, "the page exposes two guardian test panels");
+
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    app.update();
+    freeze_observation_test_match(&mut app);
+    {
+        let mut guardian = app.world_mut().resource_mut::<crate::guardian::Guardian>();
+        guardian.room = shown[0];
+        guardian.pos = Vec3::new(-0.4, 0.76, 0.2);
+    }
+    teleport_into_room(&mut app, monitor_room);
+
+    let guardian_rooms = |app: &mut App| -> Vec<RoomId> {
+        let world = app.world_mut();
+        let mut query = world.query::<(
+            &crate::screens::place::ObservationFeedElement,
+            &crate::screens::place::ObservationFeedPrimitive,
+        )>();
+        query
+            .iter(world)
+            .filter_map(|(element, primitive)| {
+                (*primitive == crate::screens::place::ObservationFeedPrimitive::Guardian)
+                    .then_some(element.room)
+            })
+            .collect()
+    };
+    assert_eq!(guardian_rooms(&mut app), vec![shown[0]]);
+
+    {
+        let mut guardian = app.world_mut().resource_mut::<crate::guardian::Guardian>();
+        guardian.room = shown[1];
+        guardian.pos = Vec3::new(0.5, 0.76, -0.3);
+    }
+    app.update();
+    assert_eq!(
+        guardian_rooms(&mut app),
+        vec![shown[1]],
+        "one Update clears the old panel and moves the live guardian dot to the new room"
+    );
+}
+
+/// Entering the Monitor room legitimately records that room and the doorways visible
+/// from it. Once that personal observation has settled, remote facts visible only on the
+/// panels must never expand the tac-map's witnessed-room/edge ledger.
+#[test]
+fn remote_observation_panel_facts_do_not_expand_map_knowledge() {
+    use observed_facility::map_spec::RoomRole;
+
+    let spec = crate::map_catalog::active_map_spec(MATCH_SEED);
+    let monitor_room = spec
+        .role_room(RoomRole::Monitor)
+        .expect("the active map has a Monitor room");
+    let page = crate::screens::place::monitor_page_for(&spec, monitor_room)
+        .expect("the Monitor room has a panel page");
+
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    app.update();
+    freeze_observation_test_match(&mut app);
+    teleport_into_room(&mut app, monitor_room);
+    app.update(); // record the rebuilt Monitor room's real doorway set
+
+    let remote_room = {
+        let knowledge = app.world().resource::<crate::sim::state::MapKnowledge>();
+        page.iter()
+            .copied()
+            .find(|&room| !knowledge.knows_room(room))
+            .expect("the monitor page includes a room outside personal doorway knowledge")
+    };
+    let before = {
+        let knowledge = app.world().resource::<crate::sim::state::MapKnowledge>();
+        (
+            knowledge.visited.clone(),
+            knowledge.glimpsed.clone(),
+            knowledge.edges.clone(),
+        )
+    };
+
+    place_rival_in_room(&mut app, 1, remote_room);
+    drop_test_anchor(&mut app, remote_room, Vec2::new(0.3, -0.2));
+    {
+        let mut guardian = app.world_mut().resource_mut::<crate::guardian::Guardian>();
+        guardian.room = remote_room;
+        guardian.pos = Vec3::new(0.1, 0.76, 0.4);
+    }
+    app.update();
+
+    let knowledge = app.world().resource::<crate::sim::state::MapKnowledge>();
+    assert_eq!(
+        (
+            knowledge.visited.clone(),
+            knowledge.glimpsed.clone(),
+            knowledge.edges.clone(),
+        ),
+        before,
+        "remote rival/anchor/guardian panel facts never write to MapKnowledge"
+    );
+    assert!(
+        !knowledge.knows_room(remote_room),
+        "the tac-map still does not know the remotely monitored room"
+    );
+}
+
+/// Generated maps use room ids above nine. The physical segmented label must render
+/// every decimal digit rather than clamping all multi-digit rooms to `R9`.
+#[test]
+fn observation_panel_physically_renders_multi_digit_room_ids() {
+    use observed_core::RoomId;
+    use observed_facility::map_spec::RoomRole;
+
+    let spec = crate::map_catalog::active_map_spec(MATCH_SEED);
+    let target = RoomId(10);
+    assert!(
+        spec.room(target).is_some(),
+        "the generated map contains R10"
+    );
+    let monitor_room = spec
+        .rooms_with_role(RoomRole::Monitor)
+        .into_iter()
+        .find(|&room| {
+            crate::screens::place::monitor_page_for(&spec, room)
+                .is_some_and(|page| page.contains(&target))
+        })
+        .expect("one Monitor room pages R10");
+
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    app.update();
+    freeze_observation_test_match(&mut app);
+    teleport_into_room(&mut app, monitor_room);
+
+    let segment_count = {
+        let world = app.world_mut();
+        let mut query = world.query::<(
+            &crate::screens::place::ObservationMonitorLabelSegment,
+            &Name,
+        )>();
+        query
+            .iter(world)
+            .filter(|(segment, name)| {
+                segment.room == target && name.as_str() == "Observation monitor room-id segment"
+            })
+            .count()
+    };
+    assert_eq!(
+        segment_count, 14,
+        "R10 uses six R segments, two `1` segments, and six `0` segments"
+    );
+}
+
+/// Count each panel's own screen, four bezel pieces, label/status segments, and feed
+/// elements. This is a true per-panel cap rather than the old whole-room average.
 #[test]
 fn monitor_panels_stay_within_the_per_panel_entity_budget() {
     use observed_facility::map_spec::RoomRole;
@@ -2328,19 +2885,33 @@ fn monitor_panels_stay_within_the_per_panel_entity_budget() {
     let mut app = test_app();
     go(&mut app, GameState::Match);
     app.update();
-    let before = count::<crate::view::components::PlaceGeometry>(&mut app);
+    freeze_observation_test_match(&mut app);
     teleport_into_room(&mut app, monitor_room);
-    let after = count::<crate::view::components::PlaceGeometry>(&mut app);
 
-    let panel_count = count::<crate::screens::place::MonitorMiniature>(&mut app).max(1);
-    let per_panel_avg = (after.saturating_sub(before)) / panel_count;
-    assert!(
-        per_panel_avg <= crate::screens::place::MONITOR_PANEL_ENTITY_BUDGET,
-        "average entities per panel ({per_panel_avg}) exceeds the per-panel budget \
-         ({} panels, {} total place-geometry entities in the Monitor room)",
+    assert_eq!(
+        count::<crate::screens::place::ObservationPanel>(&mut app),
         page.len(),
-        after
+        "one panel root is spawned per page room"
     );
+    let (feed_rooms, label_rooms) = {
+        let world = app.world_mut();
+        let mut feeds = world.query::<&crate::screens::place::ObservationFeedElement>();
+        let feed_rooms: Vec<_> = feeds.iter(world).map(|element| element.room).collect();
+        let mut labels = world.query::<&crate::screens::place::ObservationMonitorLabelSegment>();
+        let label_rooms: Vec<_> = labels.iter(world).map(|segment| segment.room).collect();
+        (feed_rooms, label_rooms)
+    };
+    for room in page {
+        let feed_count = feed_rooms.iter().filter(|&&shown| shown == room).count();
+        let label_count = label_rooms.iter().filter(|&&shown| shown == room).count();
+        let panel_entity_count = 1 + 4 + label_count + feed_count;
+        assert!(
+            panel_entity_count <= crate::screens::place::MONITOR_PANEL_ENTITY_BUDGET,
+            "R{} panel uses {panel_entity_count} entities, exceeding the {} entity budget",
+            room.0,
+            crate::screens::place::MONITOR_PANEL_ENTITY_BUDGET,
+        );
+    }
 }
 
 /// Phase 60: Dressing props are deterministic across identical runs and never overlap
@@ -3543,6 +4114,13 @@ fn bot_populations_env_parsing_and_persistence_round_trips() {
     assert!(!config.ai_teammates);
     assert!(config.guardian);
 
+    let config = BotPopulations::from_str("no_rivals|typo").unwrap();
+    assert_eq!(
+        config,
+        BotPopulations::default(),
+        "an unknown token warns and falls back to the all-on default"
+    );
+
     // 2. Profile persistence test
     let test_dir = std::path::PathBuf::from("saves_test");
     let _ = std::fs::create_dir_all(&test_dir);
@@ -3569,6 +4147,60 @@ fn bot_populations_env_parsing_and_persistence_round_trips() {
     crate::settings::TEST_PROFILE_PATH.with(|p| {
         *p.borrow_mut() = None;
     });
+}
+
+#[test]
+fn all_on_default_match_director_digest_is_pinned() {
+    use crate::sim::director::{BotPopulations, MatchDirector};
+
+    fn mix(digest: &mut u64, value: u64) {
+        *digest ^= value;
+        *digest = digest.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+
+    let mut digest = 0xcbf2_9ce4_8422_2325_u64;
+    for seed in [0_u64, 1, 2, 7, 42, 0xA11C_0DE] {
+        let mut director = MatchDirector::new(
+            seed,
+            crate::map_catalog::default_map_spec(seed),
+            BotPopulations::default(),
+        );
+        mix(&mut digest, seed);
+        mix(&mut digest, u64::from(director.config.rival_teams));
+        mix(&mut digest, u64::from(director.config.ai_teammates));
+        mix(&mut digest, u64::from(director.config.guardian));
+        for team in &director.live.host_match().competitive.teams {
+            mix(&mut digest, u64::from(team.id.0));
+            mix(&mut digest, u64::from(team.members));
+        }
+        for room in &director
+            .live
+            .host_match()
+            .competitive
+            .structure
+            .graph
+            .players
+        {
+            mix(&mut digest, u64::from(room.0));
+        }
+        for team in &director.series.alive_teams {
+            mix(&mut digest, u64::from(team.0));
+        }
+        let result = director.run_to_completion();
+        mix(&mut digest, u64::from(result.placement.unwrap_or(u8::MAX)));
+        mix(&mut digest, result.escaped as u64);
+        mix(&mut digest, result.absorbed as u64);
+        mix(
+            &mut digest,
+            u64::from(result.winner.map_or(u8::MAX, |team| team.0)),
+        );
+        mix(&mut digest, u64::from(result.local_won));
+    }
+
+    assert_eq!(
+        digest, 0x539C_35C6_26B9_B30F,
+        "update only for an intentional all-on behavior change"
+    );
 }
 
 #[test]
