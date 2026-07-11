@@ -10,6 +10,7 @@ use crate::model::{
     MAX_RECORDING_FRAMES, PlayerId, PlayerIntent, RebindCapture, RecordingBank, ResetRequested,
     ScriptPattern, playback_frame, scripted_intent,
 };
+use player_input::RebindCaptureEvent;
 
 #[derive(Clone, Copy, Debug)]
 pub struct GamepadDevice {
@@ -43,7 +44,7 @@ pub enum LabCommand {
     CycleDevice,
     ToggleRecording,
     PlayRecording,
-    BeginJumpRebind,
+    BeginJumpRebind { activation_key: Option<KeyCode> },
     AssignGamepad(GamepadId),
     Reset,
 }
@@ -170,35 +171,37 @@ pub(crate) fn capture_rebind(
     mut bindings: ResMut<KeyboardBindings>,
     mut notice: ResMut<LabNotice>,
 ) {
-    let Some(player) = capture.player else {
-        return;
-    };
+    match capture.update(&keyboard, KeyCode::Escape) {
+        Some(RebindCaptureEvent::Armed { target }) => {
+            notice.0 = format!(
+                "Press a new Jump key for {} (Escape cancels).",
+                target.label()
+            );
+        }
+        Some(RebindCaptureEvent::Cancelled { .. }) => {
+            notice.0 = "Jump rebind cancelled.".to_string();
+        }
+        Some(RebindCaptureEvent::Captured {
+            target: player,
+            key,
+        }) => {
+            let slot = players
+                .iter()
+                .find(|(candidate, _)| **candidate == player)
+                .and_then(|(_, source)| match source {
+                    ControlSource::Human(HumanDevice::Keyboard(slot)) => Some(*slot),
+                    _ => None,
+                });
 
-    if keyboard.just_pressed(KeyCode::Escape) {
-        capture.player = None;
-        notice.0 = "Jump rebind cancelled.".to_string();
-        return;
+            if let Some(slot) = slot {
+                bindings.get_mut(slot).jump = key;
+                notice.0 = format!("{} Jump rebound to {key:?}.", player.label());
+            } else {
+                notice.0 = "Rebinding requires a human keyboard source.".to_string();
+            }
+        }
+        None => {}
     }
-
-    let Some(key) = keyboard.get_just_pressed().next().copied() else {
-        return;
-    };
-
-    let slot = players
-        .iter()
-        .find(|(candidate, _)| **candidate == player)
-        .and_then(|(_, source)| match source {
-            ControlSource::Human(HumanDevice::Keyboard(slot)) => Some(*slot),
-            _ => None,
-        });
-
-    if let Some(slot) = slot {
-        bindings.get_mut(slot).jump = key;
-        notice.0 = format!("{} Jump rebound to {key:?}.", player.label());
-    } else {
-        notice.0 = "Rebinding requires a human keyboard source.".to_string();
-    }
-    capture.player = None;
 }
 
 pub(crate) fn keyboard_shortcuts(
@@ -206,7 +209,7 @@ pub(crate) fn keyboard_shortcuts(
     capture: Res<RebindCapture>,
     mut commands: MessageWriter<LabCommand>,
 ) {
-    if capture.player.is_some() {
+    if capture.is_active() {
         return;
     }
 
@@ -226,7 +229,12 @@ pub(crate) fn keyboard_shortcuts(
         (KeyCode::KeyC, LabCommand::CycleDevice),
         (KeyCode::F5, LabCommand::ToggleRecording),
         (KeyCode::F6, LabCommand::PlayRecording),
-        (KeyCode::F7, LabCommand::BeginJumpRebind),
+        (
+            KeyCode::F7,
+            LabCommand::BeginJumpRebind {
+                activation_key: Some(KeyCode::F7),
+            },
+        ),
         (KeyCode::F8, LabCommand::Reset),
     ] {
         if keyboard.just_pressed(key) {
@@ -306,15 +314,23 @@ pub(crate) fn process_commands(
                     context.notice.0 = format!("{} started looping playback.", target.label());
                 }
             }
-            LabCommand::BeginJumpRebind => {
+            LabCommand::BeginJumpRebind { activation_key } => {
                 let target = context.runtime.selected_player;
                 let source = source_for(&mut context.players, target);
                 if matches!(source, Some(ControlSource::Human(HumanDevice::Keyboard(_)))) {
-                    context.rebind.player = Some(target);
-                    context.notice.0 = format!(
-                        "Press a new Jump key for {} (Escape cancels).",
-                        target.label()
-                    );
+                    if let Some(key) = activation_key {
+                        context.rebind.begin_waiting_for_release(target, key);
+                        context.notice.0 = format!(
+                            "Release {key:?}, then press a new Jump key for {}.",
+                            target.label()
+                        );
+                    } else {
+                        context.rebind.begin_armed(target);
+                        context.notice.0 = format!(
+                            "Press a new Jump key for {} (Escape cancels).",
+                            target.label()
+                        );
+                    }
                 } else {
                     context.notice.0 =
                         "Select a human keyboard player before rebinding.".to_string();

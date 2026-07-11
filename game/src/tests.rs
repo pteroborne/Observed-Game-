@@ -2618,6 +2618,172 @@ fn settings_screen_is_state_scoped_and_navigable() {
     assert_eq!(count::<crate::view::theme::ScreenRoot>(&mut app), 1);
 }
 
+#[test]
+fn interactive_rebind_flow_works_correctly() {
+    use crate::screens::settings::{SettingsCursor, SettingsRebind};
+    use crate::settings::Settings;
+
+    let tap_update_clean = |app: &mut App, key: KeyCode| {
+        {
+            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keys.reset_all();
+            keys.press(key);
+        }
+        app.world_mut().run_schedule(Update);
+    };
+    let release_update_clean = |app: &mut App, key: KeyCode| {
+        {
+            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keys.reset_all();
+            keys.release(key);
+        }
+        app.world_mut().run_schedule(Update);
+    };
+
+    // Scenario 1: Arm with Enter, then press K, assert binding is K.
+    {
+        let mut app = test_app();
+        app.insert_resource(Settings::default());
+        go(&mut app, GameState::MainMenu);
+        go(&mut app, GameState::Settings);
+
+        // BindingSlot::MoveLeft is at row index 5
+        app.world_mut().resource_mut::<SettingsCursor>().0 = 5;
+
+        // Press Enter to start rebind capture (enters WaitingForActivationRelease)
+        tap_update_clean(&mut app, KeyCode::Enter);
+        assert!(app.world().resource::<SettingsRebind>().0.is_active());
+        assert!(!app.world().resource::<SettingsRebind>().0.is_armed());
+
+        // Release Enter to arm the capture
+        release_update_clean(&mut app, KeyCode::Enter);
+        assert!(app.world().resource::<SettingsRebind>().0.is_active());
+        assert!(app.world().resource::<SettingsRebind>().0.is_armed());
+
+        // Press KeyK to capture the binding
+        tap_update_clean(&mut app, KeyCode::KeyK);
+        assert!(!app.world().resource::<SettingsRebind>().0.is_active());
+
+        // Verify the setting is now KeyK
+        let settings = app.world().resource::<Settings>();
+        assert_eq!(settings.bindings.move_left, KeyCode::KeyK);
+    }
+
+    // Scenario 2: Arm and press Enter again, assert it is bound.
+    {
+        let mut app = test_app();
+        app.insert_resource(Settings::default());
+        go(&mut app, GameState::MainMenu);
+        go(&mut app, GameState::Settings);
+
+        // BindingSlot::MoveLeft is at row index 5
+        app.world_mut().resource_mut::<SettingsCursor>().0 = 5;
+
+        // Press Enter to start rebind capture
+        tap_update_clean(&mut app, KeyCode::Enter);
+
+        // Release Enter to arm the capture
+        release_update_clean(&mut app, KeyCode::Enter);
+
+        // Press Enter again to bind it deliberately
+        tap_update_clean(&mut app, KeyCode::Enter);
+        assert!(!app.world().resource::<SettingsRebind>().0.is_active());
+
+        // Verify the setting is now Enter
+        let settings = app.world().resource::<Settings>();
+        assert_eq!(settings.bindings.move_left, KeyCode::Enter);
+    }
+
+    // Scenario 3: Cancel works (Escape cancels rebinding and doesn't exit).
+    {
+        let mut app = test_app();
+        app.insert_resource(Settings::default());
+        go(&mut app, GameState::MainMenu);
+        go(&mut app, GameState::Settings);
+
+        // BindingSlot::MoveLeft is at row index 5
+        app.world_mut().resource_mut::<SettingsCursor>().0 = 5;
+
+        // Press Enter to start rebind capture
+        tap_update_clean(&mut app, KeyCode::Enter);
+
+        // Release Enter to arm the capture
+        release_update_clean(&mut app, KeyCode::Enter);
+
+        // Press Escape to cancel the capture
+        tap_update_clean(&mut app, KeyCode::Escape);
+        assert!(!app.world().resource::<SettingsRebind>().0.is_active());
+
+        // Verify GameState is still Settings (didn't back out)
+        assert_eq!(
+            *app.world().resource::<State<GameState>>().get(),
+            GameState::Settings
+        );
+
+        // Verify the setting is unchanged (remains KeyA)
+        let settings = app.world().resource::<Settings>();
+        assert_eq!(settings.bindings.move_left, KeyCode::KeyA);
+    }
+}
+
+#[test]
+fn pause_settings_rebind_flow_works_correctly() {
+    use crate::screens::match_runtime::pause_settings::{
+        PauseSettingsCursor, PauseSettingsOpen, PauseSettingsRebind,
+    };
+    use crate::settings::Settings;
+    use crate::sim::state::MatchPaused;
+
+    // Scenario 1: Arm with Enter, then press K, assert binding is K.
+    {
+        let mut app = test_app();
+        app.insert_resource(Settings::default());
+        go(&mut app, GameState::Match);
+
+        // Pause the match and open the settings panel
+        app.world_mut().resource_mut::<MatchPaused>().0 = true;
+        app.world_mut().resource_mut::<PauseSettingsOpen>().0 = true;
+
+        // BindingSlot::MoveLeft is at row index 5
+        app.world_mut().resource_mut::<PauseSettingsCursor>().0 = 5;
+
+        let tap_update_clean = |app: &mut App, key: KeyCode| {
+            {
+                let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+                keys.reset_all();
+                keys.press(key);
+            }
+            app.world_mut().run_schedule(Update);
+        };
+        let release_update_clean = |app: &mut App, key: KeyCode| {
+            {
+                let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+                keys.reset_all();
+                keys.release(key);
+            }
+            app.world_mut().run_schedule(Update);
+        };
+
+        // Press Enter to start rebind capture
+        tap_update_clean(&mut app, KeyCode::Enter);
+        assert!(app.world().resource::<PauseSettingsRebind>().0.is_active());
+        assert!(!app.world().resource::<PauseSettingsRebind>().0.is_armed());
+
+        // Release Enter to arm the capture
+        release_update_clean(&mut app, KeyCode::Enter);
+        assert!(app.world().resource::<PauseSettingsRebind>().0.is_active());
+        assert!(app.world().resource::<PauseSettingsRebind>().0.is_armed());
+
+        // Press KeyK to capture the binding
+        tap_update_clean(&mut app, KeyCode::KeyK);
+        assert!(!app.world().resource::<PauseSettingsRebind>().0.is_active());
+
+        // Verify the setting is now KeyK
+        let settings = app.world().resource::<Settings>();
+        assert_eq!(settings.bindings.move_left, KeyCode::KeyK);
+    }
+}
+
 /// `Settings::default()` reproduces the exact hardcoded bindings/sensitivity that
 /// shipped before Phase 48 — the game plays identically until the player edits a
 /// setting. Cross-checked here (not just in `settings::tests`) against the actual

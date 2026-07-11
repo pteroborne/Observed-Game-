@@ -10,7 +10,7 @@ use bevy::{
 pub use controls::{GamepadRegistry, LabCommand, apply_deadzone};
 pub use model::{
     ControlSource, GamepadId, HumanDevice, KeyboardBindingSet, KeyboardBindings, KeyboardSlot,
-    LabRuntime, PlayerId, PlayerIntent, ProbeState, RecordingBank, ScriptPattern,
+    LabRuntime, PlayerId, PlayerIntent, ProbeState, RebindCapture, RecordingBank, ScriptPattern,
 };
 
 #[derive(SystemSet, Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -317,11 +317,13 @@ mod tests {
         let mut app = test_app();
         app.world_mut()
             .resource_mut::<Messages<LabCommand>>()
-            .write(LabCommand::BeginJumpRebind);
+            .write(LabCommand::BeginJumpRebind {
+                activation_key: None,
+            });
         app.update();
 
         assert_eq!(
-            app.world().resource::<model::RebindCapture>().player,
+            app.world().resource::<model::RebindCapture>().target(),
             Some(PlayerId(0))
         );
 
@@ -337,7 +339,10 @@ mod tests {
                 .jump,
             KeyCode::KeyZ
         );
-        assert_eq!(app.world().resource::<model::RebindCapture>().player, None);
+        assert_eq!(
+            app.world().resource::<model::RebindCapture>().target(),
+            None
+        );
     }
 
     #[test]

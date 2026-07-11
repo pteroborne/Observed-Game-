@@ -122,9 +122,12 @@ impl Plugin for ScreensPlugin {
                     settings::settings_highlight,
                     settings::settings_adjust,
                     settings::settings_activate,
+                    // Escape runs before the capture so the press that cancels an
+                    // in-flight rebind (capture still active here) never also backs
+                    // out of the screen.
+                    settings::settings_escape,
                     settings::settings_capture_rebind,
                     settings::settings_refresh_labels,
-                    settings::settings_escape,
                 )
                     .chain()
                     .run_if(in_state(GameState::Settings)),
@@ -203,6 +206,10 @@ impl Plugin for MatchPlugin {
                     match_runtime::pause_settings::draw_pause_settings,
                 )
                     .chain()
+                    // After match_pump: on the frame Escape cancels an in-flight
+                    // rebind, match_pump must still see the capture active so the
+                    // same press cannot also unpause (or quit via Q).
+                    .after(match_runtime::match_pump)
                     .run_if(in_match()),
             )
             .add_systems(Update, onboarding::drive_onboarding.run_if(in_match()))

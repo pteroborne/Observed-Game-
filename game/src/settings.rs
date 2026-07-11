@@ -153,6 +153,46 @@ impl BindingSlot {
     }
 }
 
+pub fn binding_conflicts(bindings: &KeyBindings, slot: BindingSlot) -> Vec<BindingSlot> {
+    let key = slot.get(bindings);
+    BindingSlot::ALL
+        .into_iter()
+        .filter(|candidate| *candidate != slot && candidate.get(bindings) == key)
+        .collect()
+}
+
+pub fn binding_conflict_labels(bindings: &KeyBindings, slot: BindingSlot) -> Vec<&'static str> {
+    binding_conflicts(bindings, slot)
+        .into_iter()
+        .map(BindingSlot::label)
+        .collect()
+}
+
+/// A one-line, player-facing summary of every key shared by two or more binding
+/// slots (`None` when the table is conflict-free). Built on [`binding_conflicts`] so
+/// the warning the Settings/pause UI shows can never disagree with the per-slot
+/// helpers. The default table has no visible conflicts (the interact/activate-pad and
+/// sprint/sprint-alt pairs are internal aliases, not [`BindingSlot`]s).
+pub fn binding_conflict_summary(bindings: &KeyBindings) -> Option<String> {
+    let mut reported: Vec<KeyCode> = Vec::new();
+    let mut parts: Vec<String> = Vec::new();
+    for slot in BindingSlot::ALL {
+        let key = slot.get(bindings);
+        if reported.contains(&key) {
+            continue;
+        }
+        let others = binding_conflict_labels(bindings, slot);
+        if others.is_empty() {
+            continue;
+        }
+        reported.push(key);
+        let mut names = vec![slot.label()];
+        names.extend(others);
+        parts.push(format!("{} share {}", names.join(" / "), key_name(key)));
+    }
+    (!parts.is_empty()).then(|| format!("Binding conflict: {}", parts.join("; ")))
+}
+
 /// The player-editable settings: audio, mouse sensitivity, bindings, an accessibility
 /// toggle, and the first-run onboarding flag. App-lifetime (inserted at startup, saved
 /// on change) — not part of the Match resource lifecycle.
@@ -350,6 +390,57 @@ mod tests {
             slot.set(&mut bindings, KeyCode::F13);
             assert_eq!(slot.get(&bindings), KeyCode::F13);
         }
+    }
+
+    #[test]
+    fn binding_conflicts_are_reported_for_visible_slots() {
+        let mut bindings = KeyBindings::default();
+        let key = bindings.move_left;
+        BindingSlot::Jump.set(&mut bindings, key);
+
+        assert_eq!(
+            binding_conflict_labels(&bindings, BindingSlot::Jump),
+            vec!["Move left"]
+        );
+        assert_eq!(
+            binding_conflict_labels(&bindings, BindingSlot::MoveLeft),
+            vec!["Jump"]
+        );
+    }
+
+    #[test]
+    fn binding_conflict_summary_is_none_by_default_and_names_every_shared_key() {
+        let bindings = KeyBindings::default();
+        assert_eq!(
+            binding_conflict_summary(&bindings),
+            None,
+            "the shipped default table has no visible conflicts"
+        );
+
+        let mut bindings = KeyBindings::default();
+        let key = bindings.move_left;
+        BindingSlot::Jump.set(&mut bindings, key);
+        let summary = binding_conflict_summary(&bindings).expect("conflict is reported");
+        assert!(summary.contains("Jump"), "summary names Jump: {summary}");
+        assert!(
+            summary.contains("Move left"),
+            "summary names Move left: {summary}"
+        );
+        assert!(summary.contains('A'), "summary names the shared key A");
+    }
+
+    #[test]
+    fn rebound_bindings_round_trip_through_settings_persistence_json() {
+        let mut settings = Settings::default();
+        BindingSlot::Jump.set(&mut settings.bindings, KeyCode::KeyK);
+        BindingSlot::Pause.set(&mut settings.bindings, KeyCode::F10);
+
+        let json = serde_json::to_string_pretty(&settings).expect("settings serialize");
+        let loaded = serde_json::from_str::<Settings>(&json).expect("settings deserialize");
+
+        assert_eq!(loaded.bindings.jump, KeyCode::KeyK);
+        assert_eq!(loaded.bindings.pause, KeyCode::F10);
+        assert_eq!(loaded, settings);
     }
 
     #[test]

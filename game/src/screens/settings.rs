@@ -6,17 +6,19 @@
 //! high-contrast accessibility toggle, then one row per rebindable action
 //! ([`crate::settings::BindingSlot`]). Left/Right (or the gamepad stick/D-pad)
 //! adjusts a slider/toggle in place; Enter/A on a binding row begins a rebind capture
-//! (the `control_lab` `RebindCapture` pattern: the next key pressed becomes the
-//! binding, Escape cancels) — so one row list serves both mouse/keyboard and gamepad
-//! navigation without a separate widget system.
+//! through [`player_input::RebindCapture`] — the *same* state machine `control_lab`
+//! proved, not a copy: it arms only once the activation press is released, then the
+//! next key pressed becomes the binding (Escape cancels) — so one row list serves
+//! both mouse/keyboard and gamepad navigation without a separate widget system.
 
 use bevy::input::gamepad::Gamepad;
 use bevy::prelude::*;
+use player_input::{RebindCapture, RebindCaptureEvent};
 
 use super::input::{gamepad_back_pressed, gamepad_confirm_pressed, gamepad_menu_axis};
 use crate::GameState;
-use crate::settings::{BindingSlot, Settings, save_settings};
-use crate::view::theme::{ACCENT, DIM, TITLE, panel, screen_root, text};
+use crate::settings::{BindingSlot, Settings, binding_conflict_summary, save_settings};
+use crate::view::theme::{ACCENT, DIM, TITLE, WARNING, panel, screen_root, text};
 
 const VOLUME_STEP: f32 = 0.1;
 const SENSITIVITY_STEP: f32 = 0.02;
@@ -66,9 +68,11 @@ impl SettingsRow {
                 "High-contrast legend: {}",
                 if settings.high_contrast { "ON" } else { "off" }
             ),
-            SettingsRow::Binding(slot) => {
-                format!("{}: {:?}", slot.label(), slot.get(&settings.bindings))
-            }
+            SettingsRow::Binding(slot) => format!(
+                "{}: {}",
+                slot.label(),
+                crate::settings::key_name(slot.get(&settings.bindings))
+            ),
             SettingsRow::Back => "Back".to_string(),
         }
     }
@@ -80,13 +84,22 @@ pub(crate) struct SettingsRowText(pub(crate) SettingsRow);
 #[derive(Resource, Default)]
 pub(crate) struct SettingsCursor(pub(crate) usize);
 
-/// While `Some`, the next keyboard key pressed rebinds that slot (Escape cancels).
-/// Mirrors `control_lab`'s `RebindCapture`.
+/// While active, the shared [`player_input::RebindCapture`] state machine (the exact
+/// implementation `control_lab` proved) owns the keyboard: the capture arms only once
+/// the activation key (Enter/Space) is *released*, so the press that started the
+/// rebind can never be captured; the next key pressed after arming becomes the
+/// binding (Escape cancels; pressing the activation key again after arming binds it
+/// deliberately).
 #[derive(Resource, Default)]
-pub(crate) struct SettingsRebind(pub(crate) Option<BindingSlot>);
+pub(crate) struct SettingsRebind(pub(crate) RebindCapture<BindingSlot>);
 
 #[derive(Component)]
 pub(crate) struct SettingsHint;
+
+/// The one-line binding-conflict warning under the row list (empty text while the
+/// binding table is conflict-free).
+#[derive(Component)]
+pub(crate) struct SettingsConflictWarning;
 
 pub(crate) fn setup_settings(
     mut commands: Commands,
@@ -95,7 +108,7 @@ pub(crate) fn setup_settings(
     mut rebind: ResMut<SettingsRebind>,
 ) {
     cursor.0 = 0;
-    rebind.0 = None;
+    rebind.0.cancel();
     commands
         .spawn(screen_root(GameState::Settings))
         .with_children(|root| {
@@ -105,6 +118,14 @@ pub(crate) fn setup_settings(
                     p.spawn((SettingsRowText(row), text(row.label(&settings), 18.0, DIM)));
                 }
             });
+            root.spawn((
+                SettingsConflictWarning,
+                text(
+                    binding_conflict_summary(&settings.bindings).unwrap_or_default(),
+                    14.0,
+                    WARNING,
+                ),
+            ));
             root.spawn((
                 SettingsHint,
                 text(
@@ -131,7 +152,7 @@ pub(crate) fn settings_navigate(
     ui_assets: Res<crate::view::components::UiAssets>,
     settings: Res<crate::settings::Settings>,
 ) {
-    if rebind.0.is_some() {
+    if rebind.0.is_active() {
         return;
     }
     let count = rows.iter().count();
@@ -186,12 +207,16 @@ pub(crate) fn settings_highlight(
 pub(crate) fn settings_refresh_labels(
     settings: Res<Settings>,
     mut rows: Query<(&SettingsRowText, &mut Text)>,
+    mut warning: Query<&mut Text, (With<SettingsConflictWarning>, Without<SettingsRowText>)>,
 ) {
     if !settings.is_changed() {
         return;
     }
     for (row, mut text) in &mut rows {
         **text = row.0.label(&settings);
+    }
+    if let Ok(mut text) = warning.single_mut() {
+        **text = binding_conflict_summary(&settings.bindings).unwrap_or_default();
     }
 }
 
@@ -213,7 +238,7 @@ pub(crate) fn settings_adjust(
     mut settings: ResMut<Settings>,
     ui_assets: Res<crate::view::components::UiAssets>,
 ) {
-    if rebind.0.is_some() {
+    if rebind.0.is_active() {
         return;
     }
     let left = keyboard.just_pressed(KeyCode::ArrowLeft) || keyboard.just_pressed(KeyCode::KeyA);
@@ -258,6 +283,10 @@ pub(crate) fn settings_adjust(
 /// toggle row flips (mirrors `settings_adjust`'s toggle path, since a toggle has no
 /// natural "left vs right" distinction worth requiring); every other row is inert
 /// (sliders are adjusted with Left/Right, not activated).
+///
+/// A keyboard activation (Enter/Space) starts the capture *waiting for that key's
+/// release*, so the press that opened the prompt structurally cannot become the
+/// binding. A gamepad confirm has no keyboard key to swallow, so it arms immediately.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn settings_activate(
     mut commands: Commands,
@@ -269,13 +298,13 @@ pub(crate) fn settings_activate(
     mut settings: ResMut<Settings>,
     ui_assets: Res<crate::view::components::UiAssets>,
 ) {
-    if rebind.0.is_some() {
+    if rebind.0.is_active() {
         return;
     }
-    if !keyboard.just_pressed(KeyCode::Enter)
-        && !keyboard.just_pressed(KeyCode::Space)
-        && !gamepad_confirm_pressed(&gamepads)
-    {
+    let activation_key = [KeyCode::Enter, KeyCode::Space]
+        .into_iter()
+        .find(|key| keyboard.just_pressed(*key));
+    if activation_key.is_none() && !gamepad_confirm_pressed(&gamepads) {
         return;
     }
     let ordered: Vec<SettingsRow> = order.iter().map(|r| r.0).collect();
@@ -290,7 +319,10 @@ pub(crate) fn settings_activate(
         &settings,
     );
     match row {
-        SettingsRow::Binding(slot) => rebind.0 = Some(slot),
+        SettingsRow::Binding(slot) => match activation_key {
+            Some(key) => rebind.0.begin_waiting_for_release(slot, key),
+            None => rebind.0.begin_armed(slot),
+        },
         SettingsRow::HighContrast => {
             settings.high_contrast = !settings.high_contrast;
             save_settings(&settings);
@@ -299,8 +331,8 @@ pub(crate) fn settings_activate(
     }
 }
 
-/// While a rebind is in progress, the next keyboard key pressed (that is not the
-/// capture's own cancel key) becomes the slot's new binding; Escape cancels without
+/// Drive the shared [`RebindCapture`]: once armed (activation key released), the next
+/// keyboard key pressed becomes the slot's new binding; Escape cancels without
 /// changing anything. Gamepad input is untouched by rebinding (README ruling), so this
 /// only reads the keyboard.
 pub(crate) fn settings_capture_rebind(
@@ -308,31 +340,25 @@ pub(crate) fn settings_capture_rebind(
     mut rebind: ResMut<SettingsRebind>,
     mut settings: ResMut<Settings>,
 ) {
-    let Some(slot) = rebind.0 else {
-        return;
-    };
-    if keyboard.just_pressed(KeyCode::Escape) {
-        rebind.0 = None;
-        return;
+    if let Some(RebindCaptureEvent::Captured { target: slot, key }) =
+        rebind.0.update(&keyboard, KeyCode::Escape)
+    {
+        slot.set(&mut settings.bindings, key);
+        save_settings(&settings);
     }
-    let Some(key) = keyboard.get_just_pressed().next().copied() else {
-        return;
-    };
-    slot.set(&mut settings.bindings, key);
-    save_settings(&settings);
-    rebind.0 = None;
 }
 
-/// Escape leaves the Settings screen back to the Main Menu (only when no rebind
-/// capture is in flight — that Escape is consumed by `settings_capture_rebind` as a
-/// cancel instead, one frame ahead in the `.chain()`).
+/// Escape leaves the Settings screen back to the Main Menu — only when no rebind
+/// capture is in flight. This runs *before* `settings_capture_rebind` in the
+/// `.chain()`, so on the frame Escape cancels a capture the capture is still active
+/// here and the screen stays put (the cancel and the back-out never share one press).
 pub(crate) fn settings_escape(
     keyboard: Res<ButtonInput<KeyCode>>,
     gamepads: Query<&Gamepad>,
     rebind: Res<SettingsRebind>,
     mut next: ResMut<NextState<GameState>>,
 ) {
-    if rebind.0.is_some() {
+    if rebind.0.is_active() {
         return;
     }
     if keyboard.just_pressed(KeyCode::Escape) || gamepad_back_pressed(&gamepads) {
