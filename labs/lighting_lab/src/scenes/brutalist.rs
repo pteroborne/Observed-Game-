@@ -40,7 +40,11 @@ pub fn spawn(ctx: &mut SceneCtx) {
     let ap = (3.2_f32, 2.2_f32);
     let (ap_y, ap_z) = (5.6_f32, -2.0_f32);
     ctx.slab(
-        Vec3::new(-hw - 0.4, h * 0.5, -hw * 0.5 + (ap_z - ap.0 * 0.5 - (-hw)) * 0.5 - hw * 0.25),
+        Vec3::new(
+            -hw - 0.4,
+            h * 0.5,
+            -hw * 0.5 + (ap_z - ap.0 * 0.5 - (-hw)) * 0.5 - hw * 0.25,
+        ),
         Vec3::new(0.8, h, (ap_z - ap.0 * 0.5) - (-hw) + 3.0),
         concrete.clone(),
         "Left wall A",

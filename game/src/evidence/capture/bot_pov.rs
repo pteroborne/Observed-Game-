@@ -126,9 +126,7 @@ pub(super) fn capture_bot_pov_progress(
                     request.shot += 1;
                     request.next_shot_at = elapsed + BOT_CAPTURE_INTERVAL;
                 } else {
-                    info!(
-                        "BOT_CAPTURE_SHOT: TeleportState is missing, finishing capture."
-                    );
+                    info!("BOT_CAPTURE_SHOT: TeleportState is missing, finishing capture.");
                     request.finished = true;
                 }
             }
@@ -231,8 +229,15 @@ pub(crate) fn drive_bot_pov_capture(
                 tp.place,
                 hm.local_room(),
                 hm.local_target(),
-                tp.geom.gaps.iter().map(|g| (g.target, g.kind)).collect::<Vec<_>>(),
-                hm.rendered.iter().map(|r| (r.rooms.0, r.rooms.1)).collect::<Vec<_>>()
+                tp.geom
+                    .gaps
+                    .iter()
+                    .map(|g| (g.target, g.kind))
+                    .collect::<Vec<_>>(),
+                hm.rendered
+                    .iter()
+                    .map(|r| (r.rooms.0, r.rooms.1))
+                    .collect::<Vec<_>>()
             );
             request.finished = runtime.live.host_match().local_target().is_none();
             intent.0 = PlayerIntent::default();

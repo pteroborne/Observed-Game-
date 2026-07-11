@@ -50,6 +50,37 @@ mount points only), `game/src/screens/match_runtime/ambience.rs`,
 (luminance check), `game/src/tests.rs`. Do NOT touch `sim/`, geometry/nav, or
 match rules.
 
+## Status — 2026-07-11 (landed rough in `12cfb53`; completion pass owed)
+
+Commit `12cfb53` ("up to phase 68") already carries most of this phase: the
+per-district `key_*` spotlight data and `pools_rhythm` flag in `observed_style`,
+the key `SpotLight` + dimmed fill in `spawn_place_lighting`, and the luminance
+corridor in `game/src/evidence/audit.rs`. It landed without review; the
+completion pass owes:
+
+1. ~~**Key-light occlusion defect**~~ — fixed 2026-07-11 (second pass): the key
+   spot spawned at `WALL_HEIGHT + 2.5`, above the shadow-casting ceiling slab,
+   so its light never entered the room; and a box-corner position lands inside
+   the cut corner wall of polygon rooms. It now spawns below the ceiling,
+   polygon-aware (0.3× toward a vertex — interior to any convex footprint and
+   inside the Colonnade pillar ring). Verified in
+   `docs/evidence/phase_69_keylight_match.png` (warm directional pool raking
+   the floor — the first directional-light frame the game has produced) and
+   `phase_69_keystone_room.png` (legible keystone room, signals reading);
+   both viewed.
+2. **Root cause of the black diagnostics found (major):** the bird's-eye
+   `OBSERVED2_CAPTURE_ROOM` camera sits at y=42 while district `fog_end` is
+   22–28 m — those captures photographed **nothing but distance fog**, in every
+   version ever committed (the Phase-62 "drained room" evidence included). The
+   capture driver now relaxes fog like the audit's footprint atlas does;
+   `phase_69_room_topdown.png` (viewed) shows a fully readable room with the
+   key pool visible. Backlog #6 therefore had two stacked causes: fog-bound
+   diagnostics + zero directional light — both now addressed.
+3. Still owed: re-capture the Phase-62 set eye-level, drained/klaxon captures,
+   the corridor gate verified live against them, and keeping the audit corridor
+   constants in lockstep with `labs/lighting_lab/src/luminance.rs` (same
+   numbers today; add a pinning test).
+
 ## Success criteria
 
 - Captures: the Phase-62 evidence set re-captured (match, long hallway, hallway

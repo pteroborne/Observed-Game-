@@ -13,11 +13,12 @@ use bevy::ecs::system::SystemParam;
 use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::prelude::*;
+use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured, save_to_disk};
 use observed_core::RoomId;
 use observed_diagnostics::{
-    DiagnosticFinding, DiagnosticRun, DiagnosticSnapshot, DiagnosticSnapshotSummary, FindingSeverity, MaterialSnapshot,
+    DiagnosticFinding, DiagnosticRun, DiagnosticSnapshot, DiagnosticSnapshotSummary,
+    FindingSeverity, MaterialSnapshot,
 };
-use bevy::render::view::screenshot::{Screenshot, save_to_disk, ScreenshotCaptured};
 use observed_facility::map_spec::RoomRole;
 
 use super::snapshot::{
@@ -548,7 +549,11 @@ fn visual_audit_progress(
                 let image_path = audit.image_path(scenario);
                 write_snapshot(&json_path, &snapshot);
                 let json_path_clone = json_path.clone();
-                let image_name = image_path.file_name().unwrap().to_string_lossy().to_string();
+                let image_name = image_path
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string();
                 commands
                     .spawn(Screenshot::primary_window())
                     .observe(save_to_disk(path_string(&image_path)))
@@ -587,12 +592,13 @@ fn visual_audit_progress(
                                     messages.join(", "),
                                 );
                                 audit_res.run.findings.push(finding.clone());
-                                if let Ok(content) = fs::read_to_string(&json_path_clone) {
-                                    if let Ok(mut snap) = serde_json::from_str::<DiagnosticSnapshot>(&content) {
-                                        snap.findings.push(finding);
-                                        if let Ok(serialized) = serde_json::to_string_pretty(&snap) {
-                                            let _ = fs::write(&json_path_clone, serialized);
-                                        }
+                                if let Ok(content) = fs::read_to_string(&json_path_clone)
+                                    && let Ok(mut snap) =
+                                        serde_json::from_str::<DiagnosticSnapshot>(&content)
+                                {
+                                    snap.findings.push(finding);
+                                    if let Ok(serialized) = serde_json::to_string_pretty(&snap) {
+                                        let _ = fs::write(&json_path_clone, serialized);
                                     }
                                 }
                                 write_manifest(&audit_res.dir, &audit_res.run);
@@ -1147,7 +1153,10 @@ mod tests {
     #[test]
     fn all_white_frame_fails_ceiling_check() {
         let verdict = corridor_check(&solid_pixels(255, 255, 255, 4096), 1);
-        assert!(!verdict.ceiling_pass, "blown-out white must fail: {verdict:?}");
+        assert!(
+            !verdict.ceiling_pass,
+            "blown-out white must fail: {verdict:?}"
+        );
         assert!(verdict.floor_pass);
     }
 
@@ -1157,6 +1166,9 @@ mod tests {
         buf.extend(solid_pixels(70, 74, 82, 1800));
         buf.extend(solid_pixels(190, 185, 170, 900));
         let verdict = corridor_check(&buf, 1);
-        assert!(verdict.pass(), "a readable frame passes the corridor: {verdict:?}");
+        assert!(
+            verdict.pass(),
+            "a readable frame passes the corridor: {verdict:?}"
+        );
     }
 }

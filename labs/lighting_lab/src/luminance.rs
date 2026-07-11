@@ -104,13 +104,19 @@ mod tests {
             !verdict.floor_pass,
             "the near-black shipped capture must fail the floor: {verdict:?}"
         );
-        assert!(verdict.ceiling_pass, "dark frames don't violate the ceiling");
+        assert!(
+            verdict.ceiling_pass,
+            "dark frames don't violate the ceiling"
+        );
     }
 
     #[test]
     fn an_all_white_frame_fails_the_ceiling() {
         let verdict = corridor(&solid(255, 255, 255, 4096), 1);
-        assert!(!verdict.ceiling_pass, "blown-out white must fail: {verdict:?}");
+        assert!(
+            !verdict.ceiling_pass,
+            "blown-out white must fail: {verdict:?}"
+        );
         assert!(verdict.floor_pass);
     }
 
@@ -121,7 +127,10 @@ mod tests {
         buf.extend(solid(70, 74, 82, 1800));
         buf.extend(solid(190, 185, 170, 900));
         let verdict = corridor(&buf, 1);
-        assert!(verdict.pass(), "a readable frame passes the corridor: {verdict:?}");
+        assert!(
+            verdict.pass(),
+            "a readable frame passes the corridor: {verdict:?}"
+        );
     }
 
     #[test]

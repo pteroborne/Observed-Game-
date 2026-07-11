@@ -1,4 +1,5 @@
 use bevy::app::AppExit;
+use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::prelude::*;
 use observed_core::RoomId;
 use observed_facility::map_spec::MapSpec;
@@ -869,6 +870,7 @@ pub(super) fn capture_maze_progress(
     keys: Option<Res<keystones::KeystoneState>>,
     item_state: Option<Res<items::ItemsState>>,
     mut cam: Query<&mut Transform, With<GameCam>>,
+    mut fog: Query<&mut DistanceFog, (With<GameCam>, Without<PlaceGeometry>)>,
     geometry: Query<(Entity, &Name), With<PlaceGeometry>>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
@@ -967,9 +969,18 @@ pub(super) fn capture_maze_progress(
             }
         }
     }
-    if request.phase >= 2
-        && let Ok(mut transform) = cam.single_mut()
-    {
-        *transform = Transform::from_xyz(0.0, 42.0, 0.1).looking_at(Vec3::ZERO, Vec3::NEG_Z);
+    if request.phase >= 2 {
+        if let Ok(mut transform) = cam.single_mut() {
+            *transform = Transform::from_xyz(0.0, 42.0, 0.1).looking_at(Vec3::ZERO, Vec3::NEG_Z);
+        }
+        // The bird's-eye vantage sits far beyond every district's fog_end; without
+        // relaxing the fog this diagnostic photographs nothing but fog (the black
+        // "drained room" evidence that shipped with Phase 62 was exactly this).
+        if let Ok(mut fog) = fog.single_mut() {
+            fog.falloff = FogFalloff::Linear {
+                start: 300.0,
+                end: 360.0,
+            };
+        }
     }
 }

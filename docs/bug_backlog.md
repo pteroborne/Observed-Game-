@@ -21,6 +21,15 @@ be waiting on a door/decoherence that never happens while the capture holds
 
 ### 6. World-space evidence captures render nearly black
 **Scheduled: Arc I Phase 69** ([arc_i/phase_69_light_staging_gate.md](arc_i/phase_69_light_staging_gate.md)).
+**Root cause found 2026-07-11 (Phase 69 completion pass): two stacked causes.**
+(a) The bird's-eye diagnostics (`OBSERVED2_CAPTURE_ROOM`, camera y=42) sit far
+beyond every district's `fog_end` (22–28 m) — those captures photographed pure
+distance fog in every version ever committed. Fixed: the driver now relaxes fog
+like the audit's footprint atlas. (b) Eye-level frames had zero directional
+light (no shadow-casting sources existed, and the first key-light attempt spawned
+above the shadow-casting ceiling). Fixed: polygon-aware key placement below the
+ceiling. Remaining: re-capture the Phase-62 set and verify the corridor gate
+live, then close.
 **Found 2026-07-11 during the Phase 66 ship-gate evidence refresh.** The
 `phase_62_*` capture set (match, long hallway, hallway doorway, drained room) and
 the visual audit's geometry/lighting scenarios render as near-black voids — the

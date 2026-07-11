@@ -259,12 +259,13 @@ impl HybridMatch {
         }
         let player = Vec2::new(self.body.position.x, self.body.position.z);
         let clearance = TILE_SIZE * 0.5 + self.config.radius;
-        let blocked = !force && affected.iter().any(|&(x, y)| {
-            let centre = tile_world(x, y);
-            visible.contains(&(x, y))
-                || (centre.x - player.x).abs() <= clearance
-                    && (centre.y - player.y).abs() <= clearance
-        });
+        let blocked = !force
+            && affected.iter().any(|&(x, y)| {
+                let centre = tile_world(x, y);
+                visible.contains(&(x, y))
+                    || (centre.x - player.x).abs() <= clearance
+                        && (centre.y - player.y).abs() <= clearance
+            });
         if blocked {
             self.reroute_deferrals += 1;
             return false;

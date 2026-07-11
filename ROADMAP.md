@@ -87,8 +87,8 @@ One shadow-casting key light per place, per-district key/fill temperature pairs 
 ### Phase 70 — District Light Identities `[ ]`
 Each district takes a register coordinate — exactly one district is the **overlit** register (user-endorsed) — two districts unmistakable in captures by light alone, drained/klaxon reading under every identity, all identity parameters as `observed_style` data. ([docs/arc_i/phase_70_district_light_identities.md](docs/arc_i/phase_70_district_light_identities.md))
 
-### Phase 71 — District Geometry Language `[ ]`
-The Forerunner idea shipped as grammar, not layouts: obtuse-angle wall facets, slat/screen occluders, verticality accents per district — within the prop rules and the Phase-64 threshold gate, deterministic from seed, sim/nav untouched. ([docs/arc_i/phase_71_district_geometry_language.md](docs/arc_i/phase_71_district_geometry_language.md))
+### Phase 71 — WFC Register Composition `[ ]`
+**Fast-track ruling 2026-07-11 (user):** all nine registers enter the game with WFC as the composition mechanism — geometry grammar and light staging merge into one module layer (slat screens, seam strips, panel grids, practicals, shelf runs, bare decay, void edges) the hallway WFC solves with adjacency rules, weighted by district identity; includes the lab reference-scene rework (monolith shaft, forerunner volumetrics, shoji simplification). Within the prop rules and the Phase-64 threshold gate, deterministic from seed, sim/nav untouched. ([docs/arc_i/phase_71_district_geometry_language.md](docs/arc_i/phase_71_district_geometry_language.md))
 
 ### Phase 72 — Arc Gate: Evidence Refresh & Playtest `[ ]`
 The Arc H ship-gate pattern rerun: full evidence refresh from one build (all viewed, luminance corridor green), then the user playtest — liminal feel per district, overlit-as-intent, signal legibility in darkest/brightest, the mix verdict, comfort check. The arc closes when the checklist passes. ([docs/arc_i/phase_72_arc_gate.md](docs/arc_i/phase_72_arc_gate.md))

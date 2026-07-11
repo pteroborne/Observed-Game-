@@ -1,59 +1,82 @@
-# Phase 71 — District Geometry Language
+# Phase 71 — WFC Register Composition (geometry + light as one language)
 
-**Objective:** the "Forerunner" idea, scoped and shipped: districts get a
-geometric grammar — obtuse-angle wall breaks, slat/screen occluders, verticality
-accents — applied to room shells and hallway dressing, so architecture reads as
-belonging to a district the way Halo CE's architecture reads as belonging to a
-civilization: by committing to a constraint. Read [README.md](README.md) first.
+**Fast-track ruling 2026-07-11 (user):** implement all nine lab registers in the
+game, with **WFC as the composition mechanism** — the geometry grammar and the
+light staging are one system, delivered as a module layer the hallway WFC
+solves. This supersedes the original "geometry grammar per district" scope by
+merging it with the register elements. Read [README.md](README.md) first.
 
 ## Read first
 
-- `docs/light_and_line_arc_plan.md` — reference table; the geometry-relevant
-  registers (Halo obtuse angles, Japanese slats, Brutalist mass/reveals, Silo
-  verticality) and Phase 68's diorama captures of each.
-- `game/src/screens/place/shell.rs` + `game/src/teleport/geom.rs` — how room
-  shells and hallway interiors are built today; where the polygon room support
-  and gap/threshold machinery live.
-- `docs/arc_h/phase_64_threshold_integrity.md` — the corpus-wide threshold gate
-  that MUST stay green; geometry grammar is decoration and wall articulation,
-  never threshold movement.
-- `game/src/map_validation.rs` — the permanent gates.
-- Phase 70's as-landed note — which district has which light register, so
-  geometry and light reinforce the same identity.
+- `docs/light_and_line_arc_plan.md` — the nine registers and the 2026-07-11 lab
+  verdicts (user review): backrooms, lumon, megastructure, wellshaft, babel,
+  thinning **nailed the vibe**; shoji works but is over-busy (thin the slats,
+  blades on the floor — not every surface); monolith and forerunner **need
+  rework** (monolith's shaft never lands in frame; forerunner's volumetric fog
+  provably did not render — the vol-on/vol-off matrix captures are
+  byte-identical). Rework the reference scenes as part of this phase; the lab
+  stays the source of the rig parameters.
+- `crates/observed_facility` WFC (the hallway interior solver, Phase 47
+  convergence discipline) and `game/src/wfc_interior.rs` +
+  `game/src/teleport/geom.rs` — where a solved grid becomes hallway geometry.
+- `docs/arc_h/phase_64_threshold_integrity.md` — the corpus-wide gate that MUST
+  stay green: modules are decorative and never move walls, gaps, or thresholds.
+- `game/src/screens/place/lighting.rs` as landed by `12cfb53` — the key-light
+  machinery modules feed (its ceiling-occlusion defect is fixed by Phase 69's
+  completion pass).
 
-## Design rulings (already decided)
+## Design (the module layer)
 
-- **Grammar, not layouts.** The sim's graph, room footprints, thresholds, and
-  nav are untouched. The grammar articulates *within* the existing shell: wall
-  faces may break into obtuse-angle facets, slat/screen occluders may stand
-  proud of walls (clear of thresholds and walkable approaches, same rule as
-  props), ceilings may step or coffer, vertical accent shafts may recess.
-- **Occluders follow the prop rules** (Arc F Phase 60): never cover a threshold,
-  never steal a signal color, always dimmer than interactables — plus the new
-  one: never block the key light from reaching the floor entirely (the luminance
-  corridor enforces this automatically).
-- **Deterministic from seed + district + geometry**, like every spawner.
-- **One grammar per district this arc** (matched to its light register); the
-  system is data-extensible but the arc ships committed examples, not an editor.
-- **Bot routing and threshold integrity stay green corpus-wide** — the Phase-64
-  gate and routing tests are the hard constraint; if a grammar element cannot
-  satisfy them it is cut, not special-cased.
+- **Module vocabulary** — one WFC tile attribute per register element, solved
+  alongside the existing interior-wall layer:
+  `SlatScreen` (shoji — a wall slat run + one low warm spot raking the floor),
+  `SeamStrip` (forerunner — vertical emissive junction line at wall breaks),
+  `PanelGrid` (backrooms/lumon — emissive ceiling tiles + even unshadowed fill),
+  `Practical` (wellshaft — caged warm lamp, tight range, a pool),
+  `ShelfRun` (babel — horizontal rib bands),
+  `Bare` (thinning — nothing; the decay register),
+  `VoidEdge` (megastructure — a dark opening onto implied depth with one faint
+  distant light).
+- **Adjacency rules make it architecture, not confetti:** slat runs are
+  contiguous (3–6 cells) and never abut a threshold cell; panel grids fill
+  contiguous ceiling regions completely (no lone panels); practicals keep a
+  minimum separation (pools, not strips); seams sit only at wall-angle breaks;
+  `Bare` probability grows with distance from the hallway entry (the thinning
+  gradient, diegetic); threshold cells always solve clear.
+- **District weighting:** each district's register identity (Phase 70 data)
+  biases module weights — Reactor leans slats, Hollow leans panel-grid overlit,
+  Foundry leans practicals — while WFC composes a coherent mix inside one
+  corridor. That mix is the point of the ruling: elements meet without hand
+  authoring.
+- **Geometry grammar rides the same modules:** obtuse wall facets host
+  `SeamStrip`; slat screens ARE the occluder grammar; verticality accents come
+  as `VoidEdge` cells. No separate grammar system.
+- **Determinism:** the module layer is a pure function of seed + hallway
+  identity; pinned-seed WFC tests extend to modules.
+- **Light budget:** at most one shadow-casting light per hallway (the dominant
+  module's); everything else emissive or unshadowed fill.
+- **Prop rules apply** (Arc F Phase 60): modules never cover a threshold, never
+  steal a signal color, never fully block the light path to the floor — the
+  luminance corridor enforces the last automatically.
 
 ## Files you may edit
 
-`game/src/screens/place/shell.rs`, `game/src/screens/place/` (new grammar
-module), `crates/observed_style` (grammar data per district),
-`game/src/tests.rs`. Do NOT touch `game/src/teleport/geom.rs` gap/threshold
-placement, `sim/`, or map generation in `crates/observed_facility`.
+`crates/observed_facility` (WFC module layer), `game/src/wfc_interior.rs`,
+`game/src/teleport/geom.rs` (module → spawn data only, no wall/gap changes),
+`game/src/screens/place/` (module spawners), `crates/observed_style` (module
+treatments), `labs/lighting_lab` (shoji simplification; monolith + forerunner
+rework), `game/src/tests.rs`. Do NOT touch `sim/`, threshold placement, or nav.
 
 ## Success criteria
 
-- Captures: the same room archetype in each district showing geometry + light
-  identity together (this arc's money shot), **viewed**; the as-landed note
-  names each district's grammar in one sentence.
-- The full map-validation suite (incl. Phase-64 threshold integrity, all
-  decoherence versions) passes corpus-wide; bot routing tests green.
-- Luminance corridor green for all new captures.
-- A leak/teardown check covers the new grammar entities (state-scoped like all
-  place geometry).
+- Adjacency invariants unit-tested (slat contiguity, panel completeness,
+  practical separation, threshold clearance, Bare gradient monotonicity);
+  pinned-seed module solutions stable; threshold integrity + routing green
+  corpus-wide.
+- Reworked lab scenes: monolith's shaft visibly lands as a sharp quad, the
+  forerunner matrix captures are provably different vol-on vs vol-off, shoji
+  reads as architecture (blades on the floor, walls mostly calm) — all viewed.
+- Captures of three hallways in three districts, **viewed**: composed modules
+  visibly read (a slat run casting blades, a panel region overlit, practicals
+  pooling), every capture inside the luminance corridor.
 - Full verification recipe green.

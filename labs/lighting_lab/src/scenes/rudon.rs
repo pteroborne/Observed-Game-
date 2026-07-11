@@ -37,7 +37,12 @@ pub fn spawn(ctx: &mut SceneCtx) {
         );
         let floor = ctx.matte(floor_color, 0.85);
 
-        ctx.slab(Vec3::new(0.0, -0.1, zc), Vec3::new(w, 0.2, seg + 0.05), floor, "Floor seg");
+        ctx.slab(
+            Vec3::new(0.0, -0.1, zc),
+            Vec3::new(w, 0.2, seg + 0.05),
+            floor,
+            "Floor seg",
+        );
         ctx.slab(
             Vec3::new(0.0, h + 0.1, zc),
             Vec3::new(w, 0.2, seg + 0.05),
@@ -57,7 +62,11 @@ pub fn spawn(ctx: &mut SceneCtx) {
         let trim_every = 1 + (t * 5.0) as usize;
         if i % trim_every == 0 && sat > 0.08 {
             let trim = ctx.matte(
-                Color::srgb(0.5 * sat + 0.18 * t, 0.35 * sat + 0.18 * t, 0.22 * sat + 0.18 * t),
+                Color::srgb(
+                    0.5 * sat + 0.18 * t,
+                    0.35 * sat + 0.18 * t,
+                    0.22 * sat + 0.18 * t,
+                ),
                 0.7,
             );
             for sx in [-1.0_f32, 1.0] {
@@ -83,7 +92,11 @@ pub fn spawn(ctx: &mut SceneCtx) {
                 warm.blue * sat + 0.5 * t,
             );
             let lamp = ctx.glow(
-                LinearRgba::rgb(1.0 * strength + 0.2, 0.7 * strength + 0.2, 0.4 * strength + 0.2),
+                LinearRgba::rgb(
+                    1.0 * strength + 0.2,
+                    0.7 * strength + 0.2,
+                    0.4 * strength + 0.2,
+                ),
                 4.0 * strength + 0.4,
             );
             ctx.slab(

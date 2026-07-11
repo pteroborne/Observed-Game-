@@ -1,10 +1,10 @@
 use crate::GameState;
 use crate::layout::WALL_HEIGHT;
 use crate::teleport;
-use observed_style as style;
 use crate::view::assets::MatchAssets;
 use crate::view::components::{FlickerLight, PassagePreview, PlaceGeometry};
 use bevy::prelude::*;
+use observed_style as style;
 use std::f32::consts::PI;
 
 pub(crate) const FIXTURE_LIGHT_INTENSITY: f32 = 2_800.0;
@@ -99,11 +99,26 @@ pub(crate) fn spawn_place_lighting(
     let (hx, hz) = (geom.half.x, geom.half.y);
     let place_in = |local: Transform| xform.mul_transform(local);
 
-    // 1. Shadow-casting key SpotLight (lab-tuned diagonal rake)
-    let offset_x = (hx * 0.75).max(2.0);
-    let offset_z = (hz * 0.75).max(2.0);
-    let key_pos = Vec3::new(offset_x, WALL_HEIGHT + 2.5, offset_z);
-    let key_target = Vec3::new(-offset_x * 0.2, 0.2, -offset_z * 0.2);
+    // 1. Shadow-casting key SpotLight: high in the room volume, raking
+    // diagonally across the floor (the lab rigs' geometry). Two placement
+    // constraints, both load-bearing: it must sit BELOW the ceiling slab (the
+    // shell's ceiling casts shadows — a key above it lights nothing), and for
+    // polygon rooms it must sit INSIDE the polygon, not the bounding box (a
+    // box-corner position lands inside the cut corner's wall and shadows
+    // itself to black). Halfway toward a vertex is interior for any convex
+    // footprint.
+    let key_xz = if let Some(poly) = geom.poly.as_ref() {
+        // 0.3× the first vertex: inside any convex footprint AND inside the
+        // Colonnade pillar ring (pillars stand near mid-radius).
+        poly.first().copied().unwrap_or(Vec2::new(hx, hz)) * 0.3
+    } else {
+        Vec2::new(
+            (hx * 0.75).max(2.0).min(hx - 0.3),
+            (hz * 0.75).max(2.0).min(hz - 0.3),
+        )
+    };
+    let key_pos = Vec3::new(key_xz.x, WALL_HEIGHT - 0.45, key_xz.y);
+    let key_target = Vec3::new(-key_xz.x * 0.4, 0.0, -key_xz.y * 0.4);
     let local_key_xform = Transform::from_translation(key_pos).looking_at(key_target, Vec3::Y);
 
     let mut key_light = commands.spawn((
@@ -142,7 +157,10 @@ pub(crate) fn spawn_place_lighting(
     );
 
     // 3. Flickering ceiling fixtures: failing office point lights spaced down the corridor/room.
-    for (i, pos) in fixture_positions(geom, palette.pools_rhythm).into_iter().enumerate() {
+    for (i, pos) in fixture_positions(geom, palette.pools_rhythm)
+        .into_iter()
+        .enumerate()
+    {
         let phase = i as f32 * 1.7 + 0.4;
         let mut lamp = commands.spawn((
             PlaceGeometry,

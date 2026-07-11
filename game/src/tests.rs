@@ -4159,7 +4159,7 @@ fn all_on_default_match_director_digest_is_pinned() {
     }
 
     let mut digest = 0xcbf2_9ce4_8422_2325_u64;
-    for seed in [0_u64, 1, 2, 7, 42, 0xA11C_0DE] {
+    for seed in [0_u64, 1, 2, 7, 42, 0x0A11_C0DE] {
         let mut director = MatchDirector::new(
             seed,
             crate::map_catalog::default_map_spec(seed),

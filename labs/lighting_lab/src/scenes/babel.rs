@@ -73,15 +73,16 @@ fn gallery(ctx: &mut SceneCtx, center: Vec3, depth: usize) {
                 );
             }
             ctx.slab_at(
-                Transform::from_translation(wall_center + Vec3::Y * (2.8 - h * 0.5 + (h - 2.8) * 0.5)),
+                Transform::from_translation(
+                    wall_center + Vec3::Y * (2.8 - h * 0.5 + (h - 2.8) * 0.5),
+                ),
                 Vec3::new(1.6, h - 2.8, 0.35),
                 wall.clone(),
                 "Door lintel",
             );
         } else {
             ctx.slab_at(
-                Transform::from_translation(wall_center)
-                    .with_rotation(Quat::from_rotation_y(yaw)),
+                Transform::from_translation(wall_center).with_rotation(Quat::from_rotation_y(yaw)),
                 Vec3::new(side_len + 0.4, h, 0.35),
                 wall.clone(),
                 "Gallery wall",
@@ -91,7 +92,12 @@ fn gallery(ctx: &mut SceneCtx, center: Vec3, depth: usize) {
                 let y = 0.5 + row as f32 * 0.75;
                 ctx.slab_at(
                     Transform::from_translation(
-                        center + Vec3::new(normal.x * (apothem - 0.25), y, normal.y * (apothem - 0.25)),
+                        center
+                            + Vec3::new(
+                                normal.x * (apothem - 0.25),
+                                y,
+                                normal.y * (apothem - 0.25),
+                            ),
                     )
                     .with_rotation(Quat::from_rotation_y(yaw)),
                     Vec3::new(side_len - 0.6, 0.07, 0.3),

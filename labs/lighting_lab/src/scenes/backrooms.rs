@@ -25,9 +25,15 @@ pub fn spawn(ctx: &mut SceneCtx) {
         "Ceiling",
     );
     for (pos, size) in [
-        (Vec3::new(0.0, h * 0.5, -half), Vec3::new(2.0 * half, h, 0.3)),
+        (
+            Vec3::new(0.0, h * 0.5, -half),
+            Vec3::new(2.0 * half, h, 0.3),
+        ),
         (Vec3::new(0.0, h * 0.5, half), Vec3::new(2.0 * half, h, 0.3)),
-        (Vec3::new(-half, h * 0.5, 0.0), Vec3::new(0.3, h, 2.0 * half)),
+        (
+            Vec3::new(-half, h * 0.5, 0.0),
+            Vec3::new(0.3, h, 2.0 * half),
+        ),
         (Vec3::new(half, h * 0.5, 0.0), Vec3::new(0.3, h, 2.0 * half)),
     ] {
         ctx.slab(pos, size, wallpaper.clone(), "Wall");
@@ -86,8 +92,7 @@ pub fn spawn(ctx: &mut SceneCtx) {
     // Camera 4° off the grid axis — almost aligned, not quite. No fog: nothing
     // recedes, it just continues.
     ctx.camera(
-        Transform::from_xyz(7.5, 1.5, 9.0)
-            .looking_at(Vec3::new(-4.0, 1.25, -8.0), Vec3::Y),
+        Transform::from_xyz(7.5, 1.5, 9.0).looking_at(Vec3::new(-4.0, 1.25, -8.0), Vec3::Y),
         None,
     );
 }

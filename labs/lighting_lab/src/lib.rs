@@ -218,7 +218,11 @@ fn update_overlay(
         spawned.iter().count(),
         cams.iter().count(),
         if toggles.volumetrics { "on" } else { "off" },
-        if scene.volumetric() { "" } else { " [n/a here]" },
+        if scene.volumetric() {
+            ""
+        } else {
+            " [n/a here]"
+        },
         if toggles.bloom { "on" } else { "off" },
     );
 }
