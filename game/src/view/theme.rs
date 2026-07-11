@@ -14,6 +14,10 @@ pub(crate) const ACCENT: Color = Color::srgb(0.40, 0.92, 1.0);
 pub(crate) const DIM: Color = Color::srgb(0.58, 0.64, 0.74);
 pub(crate) const PANEL: Color = Color::srgba(0.04, 0.06, 0.10, 0.92);
 pub(crate) const BORDER: Color = Color::srgba(0.40, 0.92, 1.0, 0.5);
+/// Menu-chrome amber for advisory text (e.g. the binding-conflict line in
+/// Settings/pause-settings). Distinct from every team colour so it never reads as a
+/// team signal.
+pub(crate) const WARNING: Color = Color::srgb(1.0, 0.76, 0.30);
 
 /// A team's base colour, sourced from `observed_style::team` (Phase 42: team colours
 /// became a style-owned semantic signal — they've been a gameplay signal since rival

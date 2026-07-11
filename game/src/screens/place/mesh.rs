@@ -134,7 +134,15 @@ pub(crate) fn spawn_polygon_walls(
                     preview,
                 );
             }
-            _ => spawn_wall_segment(commands, assets, a, b, wall_material.clone(), xform, preview),
+            _ => spawn_wall_segment(
+                commands,
+                assets,
+                a,
+                b,
+                wall_material.clone(),
+                xform,
+                preview,
+            ),
         }
     }
 }

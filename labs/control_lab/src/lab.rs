@@ -314,7 +314,12 @@ fn spawn_ui(commands: &mut Commands) {
                             ("Cycle device", LabCommand::CycleDevice),
                             ("Record", LabCommand::ToggleRecording),
                             ("Playback", LabCommand::PlayRecording),
-                            ("Rebind Jump", LabCommand::BeginJumpRebind),
+                            (
+                                "Rebind Jump",
+                                LabCommand::BeginJumpRebind {
+                                    activation_key: None,
+                                },
+                            ),
                             ("Reset", LabCommand::Reset),
                         ] {
                             spawn_command_button(buttons, label, command);

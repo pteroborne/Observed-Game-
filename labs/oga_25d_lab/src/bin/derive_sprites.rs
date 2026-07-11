@@ -140,7 +140,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         clips.insert("operate".to_string(), vec![4]);
         clips.insert("alert".to_string(), vec![5]);
         clips.insert("disrupted".to_string(), vec![6]);
-        save_derived("rival_actor", &img, (0.5, 0.0), 64.0, "8-way", clips, "Rival")?;
+        save_derived(
+            "rival_actor",
+            &img,
+            (0.5, 0.0),
+            64.0,
+            "8-way",
+            clips,
+            "Rival",
+        )?;
     } else {
         println!("Warning: guard spritesheet not found!");
     }
@@ -269,7 +277,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ml_sprites_dir = extract_zip("lab_sprite.zip", Path::new("mutantleg_lab_sprites"))?;
     // mutantleg_lab_textures/lab_texture.zip
     let ml_textures_dir = extract_zip("lab_texture.zip", Path::new("mutantleg_lab_textures"))?;
- 
+
     // Guardian Actor Sheet (Stitched horizontal sheet of robot sprites: 6 frames of 64x64)
     let robot_frames = [
         "robot0.png",
@@ -379,7 +387,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let dest = sprites_dir.join(format!("{}.{}", name, ext));
             if src.exists() {
                 fs::copy(&src, &dest)?;
-                println!("Copied derived actor file to assets/sprites/: {}.{}", name, ext);
+                println!(
+                    "Copied derived actor file to assets/sprites/: {}.{}",
+                    name, ext
+                );
             }
         }
     }
@@ -396,7 +407,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let dest = sprites_dir.join(dest_name);
         if src.exists() {
             fs::copy(&src, &dest)?;
-            println!("Copied derived decoration file to assets/sprites/: {}", dest_name);
+            println!(
+                "Copied derived decoration file to assets/sprites/: {}",
+                dest_name
+            );
         }
     }
 

@@ -90,6 +90,9 @@ pub(super) fn configure_captures(app: &mut App) {
                 bot_pov::capture_bot_pov_progress
                     .after(crate::screens::place::present_match_camera),
             );
+    } else if let Ok(path) = std::env::var("OBSERVED2_CAPTURE_REBIND") {
+        app.insert_resource(scenarios::RebindCaptureRequest::new(path))
+            .add_systems(Update, scenarios::capture_rebind_progress);
     } else if let Ok(path) = std::env::var("OBSERVED2_CAPTURE") {
         app.insert_resource(scenarios::CaptureRequest::new(path))
             .add_systems(Update, scenarios::capture_progress);

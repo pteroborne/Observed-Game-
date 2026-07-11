@@ -9,10 +9,16 @@
 //! as `bevy::math::Vec2`, a `PlayerIntent` built either way is the same type — so a
 //! consumer that does not need ECS integration depends on `player_input` with
 //! `default-features = false` and inherits no Bevy. Keyboard/controller *sampling* and
-//! resource wiring are themselves Bevy adapters and live in the consuming labs/game,
-//! not here.
+//! gameplay resource wiring are themselves Bevy adapters and live in the consuming
+//! labs/game, not here.
 
 use glam::Vec2;
+
+#[cfg(feature = "bevy")]
+mod rebind;
+
+#[cfg(feature = "bevy")]
+pub use rebind::{RebindCapture, RebindCaptureEvent, RebindCaptureStatus};
 
 #[cfg_attr(feature = "bevy", derive(bevy::prelude::Component))]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

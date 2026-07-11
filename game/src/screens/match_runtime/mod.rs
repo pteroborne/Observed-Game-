@@ -218,6 +218,7 @@ pub(crate) fn match_pump(
     time: Res<Time>,
     input: MatchPumpInput,
     settings: Res<crate::settings::Settings>,
+    rebind: Res<pause_settings::PauseSettingsRebind>,
     mut director: ResMut<MatchDirector>,
     spectator_bot: Option<Res<SpectatorBot>>,
     mut paused: ResMut<MatchPaused>,
@@ -225,14 +226,23 @@ pub(crate) fn match_pump(
     mut next: ResMut<NextState<GameState>>,
     mut cursors: Query<&mut CursorOptions, With<PrimaryWindow>>,
 ) {
-    if input.keyboard.just_pressed(settings.bindings.pause)
-        || gamepad_pause_pressed(&input.gamepads)
+    // While a pause-settings rebind capture is in flight, the keyboard belongs to the
+    // capture: Escape is its cancel (not an unpause) and any other key — including the
+    // pause binding or `Q` — is a candidate binding, not a menu action. This system is
+    // ordered before the pause-settings chain so it observes the capture *before* the
+    // same press resolves it.
+    let rebind_capturing = rebind.0.is_active();
+    if !rebind_capturing
+        && (input.keyboard.just_pressed(settings.bindings.pause)
+            || gamepad_pause_pressed(&input.gamepads))
     {
         paused.0 = !paused.0;
         input::set_cursor_grab(&mut cursors, !paused.0);
     }
     if paused.0 {
-        if input.keyboard.just_pressed(KeyCode::KeyQ) || gamepad_quit_pressed(&input.gamepads) {
+        if !rebind_capturing
+            && (input.keyboard.just_pressed(KeyCode::KeyQ) || gamepad_quit_pressed(&input.gamepads))
+        {
             next.set(GameState::MainMenu);
         }
         return;

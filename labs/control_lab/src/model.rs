@@ -2,6 +2,7 @@ use std::fmt;
 
 use bevy::prelude::*;
 pub use player_input::{PlayerId, PlayerIntent};
+pub type RebindCapture = player_input::RebindCapture<PlayerId>;
 
 pub const PLAYER_COUNT: usize = 4;
 pub const PLAYERS: [PlayerId; PLAYER_COUNT] = [PlayerId(0), PlayerId(1), PlayerId(2), PlayerId(3)];
@@ -271,11 +272,6 @@ pub struct LabNotice(pub String);
 
 #[derive(Resource, Debug, Default)]
 pub struct ResetRequested(pub bool);
-
-#[derive(Resource, Clone, Copy, Debug, Default)]
-pub struct RebindCapture {
-    pub player: Option<PlayerId>,
-}
 
 pub fn scripted_intent(pattern: ScriptPattern, elapsed: f32) -> PlayerIntent {
     let cycle = elapsed % 4.0;

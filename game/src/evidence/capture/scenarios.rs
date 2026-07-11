@@ -8,7 +8,7 @@ use crate::GameState;
 use crate::flow::{self, Career};
 use crate::map_validation;
 use crate::sim::director::MatchDirector;
-use crate::sim::state::TeleportState;
+use crate::sim::state::{MatchPaused, TeleportState};
 use crate::teleport::{self, Place};
 use crate::view::components::{DoorLeaf, GameCam, PlaceGeometry};
 use crate::{camera, hallway, items, keystones};
@@ -330,6 +330,96 @@ pub(super) fn capture_rivals_progress(
     {
         *transform =
             Transform::from_xyz(0.0, 9.0, 9.0).looking_at(Vec3::new(0.0, 0.5, 0.0), Vec3::Y);
+    }
+}
+
+// --- Pause-settings rebind overlay (Phase 63) ---
+
+#[derive(Resource)]
+pub(super) struct RebindCaptureRequest {
+    pub(super) path: String,
+    pub(super) phase: u8,
+    pub(super) next_at: f32,
+}
+
+impl RebindCaptureRequest {
+    pub(super) fn new(path: String) -> Self {
+        Self {
+            path,
+            phase: 0,
+            next_at: 0.0,
+        }
+    }
+}
+
+/// Drive the game into a paused Match with the pause-settings overlay open and a
+/// rebind capture armed on the Jump row, then screenshot it — the falsifiable
+/// evidence for Phase 63 (the "press a key" prompt and the binding-conflict warning
+/// must be visible in the image, not just asserted by tests). The deliberate
+/// jump/move-left conflict is in-memory only (never saved), so the run leaves the
+/// player's settings file untouched.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn capture_rebind_progress(
+    time: Res<Time>,
+    mut request: ResMut<RebindCaptureRequest>,
+    mut next: ResMut<NextState<GameState>>,
+    runtime: Option<ResMut<MatchDirector>>,
+    paused: Option<ResMut<MatchPaused>>,
+    open: Option<ResMut<crate::screens::match_runtime::pause_settings::PauseSettingsOpen>>,
+    cursor: Option<ResMut<crate::screens::match_runtime::pause_settings::PauseSettingsCursor>>,
+    rebind: Option<ResMut<crate::screens::match_runtime::pause_settings::PauseSettingsRebind>>,
+    mut settings: ResMut<crate::settings::Settings>,
+    mut panel: Query<&mut Visibility, With<crate::view::components::PauseSettingsPanel>>,
+    mut commands: Commands,
+    mut exit: MessageWriter<AppExit>,
+) {
+    use crate::screens::settings::SettingsRow;
+    use crate::settings::BindingSlot;
+
+    let elapsed = time.elapsed_secs();
+    match request.phase {
+        0 => {
+            next.set(GameState::Match);
+            request.phase = 1;
+        }
+        1 => {
+            if let (
+                Some(mut rt),
+                Some(mut paused),
+                Some(mut open),
+                Some(mut cursor),
+                Some(mut rebind),
+            ) = (runtime, paused, open, cursor, rebind)
+            {
+                rt.done = true;
+                rt.suppress_reroute_feedback();
+                paused.0 = true;
+                open.0 = true;
+                if let Ok(mut visibility) = panel.single_mut() {
+                    *visibility = Visibility::Visible;
+                }
+                // Show the conflict warning alongside the capture prompt: bind Jump
+                // onto Move-left's key for this run only (never persisted).
+                let clash = BindingSlot::MoveLeft.get(&settings.bindings);
+                BindingSlot::Jump.set(&mut settings.bindings, clash);
+                cursor.0 = SettingsRow::all()
+                    .iter()
+                    .position(|row| matches!(row, SettingsRow::Binding(BindingSlot::Jump)))
+                    .unwrap_or(0);
+                rebind.0.begin_armed(BindingSlot::Jump);
+                request.phase = 2;
+                request.next_at = elapsed + 0.8;
+            }
+        }
+        2 if elapsed >= request.next_at => {
+            crate::evidence::driver::screenshot_to(&mut commands, request.path.clone());
+            request.phase = 3;
+            request.next_at = elapsed + 1.0;
+        }
+        3 if elapsed >= request.next_at => {
+            exit.write(AppExit::Success);
+        }
+        _ => {}
     }
 }
 

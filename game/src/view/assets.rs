@@ -10,9 +10,9 @@ use bevy::prelude::*;
 use observed_match::facility::TEAM_COUNT;
 use observed_style::{self as style, MarkerRole, SurfaceRole};
 
+use super::actor_metadata::SpriteMetadata;
 use crate::layout::{HALL_WIDTH, PLACE_TILE, WALL_HEIGHT};
 use crate::view::theme::TEAM_COLORS;
-use super::actor_metadata::SpriteMetadata;
 
 pub(crate) const DISTRICT_COUNT: usize = observed_style::District::ALL.len();
 
@@ -438,7 +438,11 @@ impl MatchAssets {
             asset_present(path).then(|| asset_server.load::<AudioSource>(path))
         };
 
-        let mut load_actor_sheet = |path_png: &'static str| -> (Option<Handle<Image>>, Option<Handle<TextureAtlasLayout>>, Option<SpriteMetadata>) {
+        let mut load_actor_sheet = |path_png: &'static str| -> (
+            Option<Handle<Image>>,
+            Option<Handle<TextureAtlasLayout>>,
+            Option<SpriteMetadata>,
+        ) {
             if !asset_present(path_png) {
                 return (None, None, None);
             }
@@ -459,8 +463,10 @@ impl MatchAssets {
             (Some(img_handle), None, None)
         };
 
-        let (rival_actor_sheet, rival_actor_layout, rival_actor_meta) = load_actor_sheet(RIVAL_ACTOR_SPRITE);
-        let (guardian_actor_sheet, guardian_actor_layout, guardian_actor_meta) = load_actor_sheet(GUARDIAN_ACTOR_SPRITE);
+        let (rival_actor_sheet, rival_actor_layout, rival_actor_meta) =
+            load_actor_sheet(RIVAL_ACTOR_SPRITE);
+        let (guardian_actor_sheet, guardian_actor_layout, guardian_actor_meta) =
+            load_actor_sheet(GUARDIAN_ACTOR_SPRITE);
 
         debug_assert_eq!(
             observed_assets::DISTRICT_AMBIENCE.len(),

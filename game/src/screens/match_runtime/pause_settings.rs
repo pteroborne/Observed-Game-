@@ -8,12 +8,13 @@
 
 use bevy::input::gamepad::{Gamepad, GamepadButton};
 use bevy::prelude::*;
+use player_input::{RebindCapture, RebindCaptureEvent, RebindCaptureStatus};
 
 use super::super::settings::SettingsRow;
-use crate::settings::{Settings, save_settings};
+use crate::settings::{Settings, binding_conflict_summary, key_name, save_settings};
 use crate::sim::state::MatchPaused;
 use crate::view::components::{PauseSettingsElement, PauseSettingsPanel};
-use crate::view::theme::{ACCENT, DIM, text};
+use crate::view::theme::{ACCENT, DIM, WARNING, text};
 
 const VOLUME_STEP: f32 = 0.1;
 const SENSITIVITY_STEP: f32 = 0.02;
@@ -31,10 +32,21 @@ pub(crate) struct PauseSettingsOpen(pub(crate) bool);
 #[derive(Resource, Default)]
 pub(crate) struct PauseSettingsCursor(pub(crate) usize);
 
+/// The in-flight rebind capture for the pause overlay: the shared
+/// [`player_input::RebindCapture`] state machine (the exact implementation
+/// `control_lab` proved). Starting a rebind with Enter begins in the
+/// waiting-for-release stage, so the activation press structurally cannot become the
+/// binding; once armed, the next key pressed is captured (Escape cancels; pressing
+/// Enter *again* after arming binds Enter deliberately). Same lifecycle rationale as
+/// [`PauseSettingsOpen`]: not in `for_each_match_resource!` because it holds no
+/// observable cross-match data — it is inert unless the match is paused, and
+/// `pause_settings_capture_rebind` cancels it the moment the match unpauses.
 #[derive(Resource, Default)]
-pub(crate) struct PauseSettingsRebind(pub(crate) Option<crate::settings::BindingSlot>);
+pub(crate) struct PauseSettingsRebind(pub(crate) RebindCapture<crate::settings::BindingSlot>);
 
 /// `O` toggles the panel while paused; closing it also cancels any in-flight rebind.
+/// Suspended while a rebind capture is active so `O` can itself be captured as a
+/// binding instead of closing the panel mid-capture.
 pub(crate) fn toggle_pause_settings(
     keyboard: Res<ButtonInput<KeyCode>>,
     paused: Res<MatchPaused>,
@@ -42,12 +54,12 @@ pub(crate) fn toggle_pause_settings(
     mut rebind: ResMut<PauseSettingsRebind>,
     mut panel: Query<&mut Visibility, With<PauseSettingsPanel>>,
 ) {
-    if !paused.0 || !keyboard.just_pressed(KeyCode::KeyO) {
+    if !paused.0 || rebind.0.is_active() || !keyboard.just_pressed(KeyCode::KeyO) {
         return;
     }
     open.0 = !open.0;
     if !open.0 {
-        rebind.0 = None;
+        rebind.0.cancel();
     }
     if let Ok(mut visibility) = panel.single_mut() {
         *visibility = if open.0 {
@@ -84,17 +96,31 @@ pub(crate) fn draw_pause_settings(
     commands.entity(panel).with_children(|p| {
         for (index, row) in rows.iter().enumerate() {
             let selected = index == cursor.0;
-            let is_capturing_this_row =
-                selected && matches!(row, SettingsRow::Binding(slot) if rebind.0 == Some(*slot));
-            let label = if is_capturing_this_row {
-                format!("{} — press a key (Esc cancels)", row.label(&settings))
-            } else {
-                row.label(&settings)
+            let capture_prompt = match rebind.0.status() {
+                Some(RebindCaptureStatus::WaitingForActivationRelease {
+                    target,
+                    activation_key,
+                }) if matches!(row, SettingsRow::Binding(slot) if *slot == target) => Some(
+                    format!("release {}, then press a key", key_name(activation_key)),
+                ),
+                Some(RebindCaptureStatus::Armed { target })
+                    if matches!(row, SettingsRow::Binding(slot) if *slot == target) =>
+                {
+                    Some("press a key (Esc cancels)".to_string())
+                }
+                _ => None,
+            };
+            let label = match capture_prompt {
+                Some(prompt) => format!("{} — {prompt}", row.label(&settings)),
+                None => row.label(&settings),
             };
             p.spawn((
                 PauseSettingsElement,
                 text(label, 15.0, if selected { ACCENT } else { DIM }),
             ));
+        }
+        if let Some(warning) = binding_conflict_summary(&settings.bindings) {
+            p.spawn((PauseSettingsElement, text(warning, 12.0, WARNING)));
         }
         p.spawn((
             PauseSettingsElement,
@@ -120,7 +146,7 @@ pub(crate) fn pause_settings_navigate(
     settings: Res<Settings>,
     mut audio_director: ResMut<crate::screens::audio::AudioDirector>,
 ) {
-    if !paused.0 || !open.0 || rebind.0.is_some() {
+    if !paused.0 || !open.0 || rebind.0.is_active() {
         return;
     }
     let count = SettingsRow::all().len();
@@ -166,7 +192,7 @@ pub(crate) fn pause_settings_adjust(
     ui_assets: Res<crate::view::components::UiAssets>,
     mut audio_director: ResMut<crate::screens::audio::AudioDirector>,
 ) {
-    if !paused.0 || !open.0 || rebind.0.is_some() {
+    if !paused.0 || !open.0 || rebind.0.is_active() {
         return;
     }
     let left = keyboard.just_pressed(KeyCode::ArrowLeft);
@@ -200,6 +226,10 @@ pub(crate) fn pause_settings_adjust(
     save_settings(&settings);
 }
 
+/// Enter on a binding row begins a rebind capture *waiting for Enter's release* —
+/// the press that opened the prompt structurally cannot become the binding (bug
+/// backlog #1). Pressing Enter again once the capture is armed binds Enter
+/// deliberately.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn pause_settings_activate(
     mut commands: Commands,
@@ -212,7 +242,7 @@ pub(crate) fn pause_settings_activate(
     ui_assets: Res<crate::view::components::UiAssets>,
     mut audio_director: ResMut<crate::screens::audio::AudioDirector>,
 ) {
-    if !paused.0 || !open.0 || rebind.0.is_some() || !keyboard.just_pressed(KeyCode::Enter) {
+    if !paused.0 || !open.0 || rebind.0.is_active() || !keyboard.just_pressed(KeyCode::Enter) {
         return;
     }
     let rows = SettingsRow::all();
@@ -227,7 +257,7 @@ pub(crate) fn pause_settings_activate(
         &settings,
     );
     match row {
-        SettingsRow::Binding(slot) => rebind.0 = Some(slot),
+        SettingsRow::Binding(slot) => rebind.0.begin_waiting_for_release(slot, KeyCode::Enter),
         SettingsRow::HighContrast => {
             settings.high_contrast = !settings.high_contrast;
             save_settings(&settings);
@@ -236,6 +266,10 @@ pub(crate) fn pause_settings_activate(
     }
 }
 
+/// Drive the shared [`RebindCapture`] while paused: once armed, the next keyboard key
+/// pressed becomes the slot's new binding (persisted immediately); Escape cancels.
+/// Unpausing mid-capture cancels the capture so no stale armed state survives into
+/// live play or a later pause.
 pub(crate) fn pause_settings_capture_rebind(
     keyboard: Res<ButtonInput<KeyCode>>,
     paused: Res<MatchPaused>,
@@ -243,19 +277,13 @@ pub(crate) fn pause_settings_capture_rebind(
     mut settings: ResMut<Settings>,
 ) {
     if !paused.0 {
+        rebind.0.cancel();
         return;
     }
-    let Some(slot) = rebind.0 else {
-        return;
-    };
-    if keyboard.just_pressed(KeyCode::Escape) {
-        rebind.0 = None;
-        return;
+    if let Some(RebindCaptureEvent::Captured { target: slot, key }) =
+        rebind.0.update(&keyboard, KeyCode::Escape)
+    {
+        slot.set(&mut settings.bindings, key);
+        save_settings(&settings);
     }
-    let Some(key) = keyboard.get_just_pressed().next().copied() else {
-        return;
-    };
-    slot.set(&mut settings.bindings, key);
-    save_settings(&settings);
-    rebind.0 = None;
 }
