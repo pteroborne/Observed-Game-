@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use observed_style::{self as style, MarkerRole};
 
 use crate::GameState;
-use crate::layout::{PLACE_TILE, WALL_HEIGHT};
+use crate::layout::WALL_HEIGHT;
 use crate::view::assets::{DOOR_LEAF_D, DOOR_LINTEL_H, MatchAssets};
 use crate::view::components::{DoorLeaf, PlaceGeometry};
 use crate::view::theme::team_color;
@@ -16,6 +16,7 @@ use crate::teleport::{DeckSeg, DoorGap, PlaceGeom};
 
 /// A polygon room's shell: the extruded floor/ceiling shell plus per-edge walls with
 /// passage openings left open.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_room_shell(
     commands: &mut Commands,
     assets: &MatchAssets,
@@ -23,6 +24,7 @@ pub(crate) fn spawn_room_shell(
     geom: &PlaceGeom,
     floor_material: Handle<StandardMaterial>,
     wall_material: Handle<StandardMaterial>,
+    ceiling_material: Handle<StandardMaterial>,
     y_offset: f32,
 ) {
     if let Some(poly) = geom.poly.as_ref() {
@@ -33,12 +35,14 @@ pub(crate) fn spawn_room_shell(
             meshes,
             poly,
             floor_material,
+            ceiling_material,
             root_xform,
             false,
         );
         mesh::spawn_polygon_walls(
             commands,
             assets,
+            meshes,
             poly,
             &geom.gaps,
             wall_material,
@@ -71,33 +75,34 @@ fn solid_is_deck(solid: &observed_traversal::Aabb3, deck: &DeckSeg, floor_y: f32
 /// interior maze walls rendered as solid blocks. `decks` (the gantry's platforms +
 /// mount stair, empty everywhere else) are rendered separately by
 /// [`spawn_gantry_decks`] and excluded here so they never double up as generic walls.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_hallway_shell(
     commands: &mut Commands,
     assets: &MatchAssets,
+    meshes: &mut Assets<Mesh>,
     geom: &PlaceGeom,
     floor_material: Handle<StandardMaterial>,
+    wall_material: Handle<StandardMaterial>,
+    ceiling_material: Handle<StandardMaterial>,
     solids: &[observed_traversal::Aabb3],
     y_offset: f32,
 ) {
     let (hx, hz) = (geom.half.x, geom.half.y);
     let shell_height = crate::teleport::structural_height(geom, WALL_HEIGHT);
-    let plane_scale = Vec3::new(hx * 2.0 / PLACE_TILE, 1.0, hz * 2.0 / PLACE_TILE);
     commands.spawn((
         PlaceGeometry,
         DespawnOnExit(GameState::Match),
-        Mesh3d(assets.floor_mesh.clone()),
+        Mesh3d(meshes.add(mesh::rect_mesh(Vec2::new(hx, hz), 0.0, true))),
         MeshMaterial3d(floor_material),
-        Transform::from_xyz(0.0, y_offset, 0.0).with_scale(plane_scale),
+        Transform::from_xyz(0.0, y_offset, 0.0),
         Name::new("Place floor"),
     ));
     commands.spawn((
         PlaceGeometry,
         DespawnOnExit(GameState::Match),
-        Mesh3d(assets.ceiling_mesh.clone()),
-        MeshMaterial3d(assets.ceiling_material.clone()),
-        Transform::from_xyz(0.0, y_offset + shell_height, 0.0)
-            .with_rotation(Quat::from_rotation_x(std::f32::consts::PI))
-            .with_scale(plane_scale),
+        Mesh3d(meshes.add(mesh::rect_mesh(Vec2::new(hx, hz), 0.0, false))),
+        MeshMaterial3d(ceiling_material),
+        Transform::from_xyz(0.0, y_offset + shell_height, 0.0),
         Name::new("Place ceiling"),
     ));
     for solid in solids {
@@ -113,9 +118,9 @@ pub(crate) fn spawn_hallway_shell(
         commands.spawn((
             PlaceGeometry,
             DespawnOnExit(GameState::Match),
-            Mesh3d(assets.placeholder_mesh.clone()),
-            MeshMaterial3d(assets.wall_material.clone()),
-            Transform::from_translation(center).with_scale(size),
+            Mesh3d(meshes.add(mesh::cuboid_mesh(size))),
+            MeshMaterial3d(wall_material.clone()),
+            Transform::from_translation(center),
             Name::new("Place wall"),
         ));
     }

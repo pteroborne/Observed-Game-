@@ -1,10 +1,9 @@
-use crate::layout::PLACE_TILE;
 use bevy::prelude::*;
 use observed_core::RoomId;
 use observed_match::hybrid::HybridMatch;
-use std::f32::consts::PI;
+use observed_style::SurfaceRole;
 
-use super::factory::room_floor_material;
+use super::factory::place_surface_material;
 use super::lighting::{spawn_place_lighting, spawn_surface_detail};
 use super::mesh::{spawn_polygon_shell, spawn_polygon_walls};
 use super::shell;
@@ -148,6 +147,8 @@ pub(crate) fn spawn_passage_preview(
         Place::Hallway { .. } => spawn_hallway_preview(
             commands,
             assets,
+            meshes,
+            materials,
             gap,
             dest.place,
             nav,
@@ -174,9 +175,12 @@ pub(crate) fn spawn_passage_preview(
 }
 
 /// The hallway preview (a box place): align its entry to the doorway and extend it away.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_hallway_preview(
     commands: &mut Commands,
     assets: &MatchAssets,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
     gap: &DoorGap,
     next: Place,
     nav: &teleport::Nav,
@@ -207,34 +211,43 @@ pub(crate) fn spawn_hallway_preview(
     parent.translation.y = y_offset + gap.floor_y - preview_floor_y;
     let place_in = |local: Transform| parent.mul_transform(local);
 
-    let floor_material = if hallway::template(variation).flavor == HallwayFlavor::PressureGate {
-        assets.trap_idle_material.clone()
-    } else {
-        assets.floor_material.clone()
-    };
+    let (floor_role, floor_base) =
+        if hallway::template(variation).flavor == HallwayFlavor::PressureGate {
+            (SurfaceRole::TrapIdle, &assets.trap_idle_material)
+        } else {
+            (SurfaceRole::Plain, &assets.floor_material)
+        };
+    let floor_material = place_surface_material(floor_role, &palette, floor_base, materials);
+    let wall_material = place_surface_material(
+        SurfaceRole::Wall,
+        &palette,
+        &assets.wall_material,
+        materials,
+    );
+    let ceiling_material = place_surface_material(
+        SurfaceRole::Ceiling,
+        &palette,
+        &assets.ceiling_material,
+        materials,
+    );
 
-    let plane_scale = Vec3::new(hx * 2.0 / PLACE_TILE, 1.0, hz * 2.0 / PLACE_TILE);
     let shell_height = teleport::structural_height(&dest, WALL_HEIGHT);
     commands.spawn((
         PlaceGeometry,
         PassagePreview,
         DespawnOnExit(GameState::Match),
-        Mesh3d(assets.floor_mesh.clone()),
+        Mesh3d(meshes.add(super::mesh::rect_mesh(Vec2::new(hx, hz), 0.0, true))),
         MeshMaterial3d(floor_material),
-        place_in(Transform::from_scale(plane_scale)),
+        place_in(Transform::default()),
         Name::new("Preview floor"),
     ));
     commands.spawn((
         PlaceGeometry,
         PassagePreview,
         DespawnOnExit(GameState::Match),
-        Mesh3d(assets.ceiling_mesh.clone()),
-        MeshMaterial3d(assets.ceiling_material.clone()),
-        place_in(
-            Transform::from_xyz(0.0, shell_height, 0.0)
-                .with_rotation(Quat::from_rotation_x(PI))
-                .with_scale(plane_scale),
-        ),
+        Mesh3d(meshes.add(super::mesh::rect_mesh(Vec2::new(hx, hz), 0.0, false))),
+        MeshMaterial3d(ceiling_material),
+        place_in(Transform::from_xyz(0.0, shell_height, 0.0)),
         Name::new("Preview ceiling"),
     ));
     let arena = teleport::place_arena(&dest, 0.0, WALL_HEIGHT);
@@ -248,9 +261,9 @@ pub(crate) fn spawn_hallway_preview(
             PlaceGeometry,
             PassagePreview,
             DespawnOnExit(GameState::Match),
-            Mesh3d(assets.placeholder_mesh.clone()),
-            MeshMaterial3d(assets.wall_material.clone()),
-            place_in(Transform::from_translation(c).with_scale(size)),
+            Mesh3d(meshes.add(super::mesh::cuboid_mesh(size))),
+            MeshMaterial3d(wall_material.clone()),
+            place_in(Transform::from_translation(c)),
             Name::new("Preview wall"),
         ));
     }
@@ -372,14 +385,48 @@ pub(crate) fn spawn_room_miniature(
     klaxon_active: bool,
     overlays: RoomMiniatureOverlays,
 ) {
-    let floor_material = room_floor_material(dest_room, &assets.floor_material, materials);
     let palette = palette_for_game(seed, Place::Room(dest_room), game, klaxon_active);
+    let floor_material = place_surface_material(
+        SurfaceRole::Plain,
+        &palette,
+        &assets.floor_material,
+        materials,
+    );
+    let wall_material = place_surface_material(
+        SurfaceRole::Wall,
+        &palette,
+        &assets.wall_material,
+        materials,
+    );
+    let ceiling_material = place_surface_material(
+        SurfaceRole::Ceiling,
+        &palette,
+        &assets.ceiling_material,
+        materials,
+    );
     let light_color = palette.light_color;
 
-    spawn_polygon_shell(commands, assets, meshes, poly, floor_material, parent, true);
-    spawn_polygon_walls(commands, assets, poly, &dest.gaps, assets.wall_material.clone(), parent, true, |g| {
-        overlays.open_edge_target == Some(g.target) || g.kind.is_passage()
-    });
+    spawn_polygon_shell(
+        commands,
+        assets,
+        meshes,
+        poly,
+        floor_material,
+        ceiling_material,
+        parent,
+        true,
+    );
+    spawn_polygon_walls(
+        commands,
+        assets,
+        meshes,
+        poly,
+        &dest.gaps,
+        wall_material,
+        parent,
+        true,
+        |g| overlays.open_edge_target == Some(g.target) || g.kind.is_passage(),
+    );
     spawn_place_lighting(commands, assets, dest, light_color, parent, true);
     let accent = materials.add(StandardMaterial {
         base_color: Color::srgb(0.02, 0.03, 0.05),

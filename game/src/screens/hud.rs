@@ -23,13 +23,14 @@ use crate::sim::director::MatchDirector;
 use crate::sim::state::{
     MapKnowledge, MatchPaused, RivalSightings, SightingKind, SpectatorBot, TeleportState,
 };
+use crate::teleport::Place;
 use crate::view::components::{
-    DebugHud, InteractionReticle, MatchHud, MatchHudReadout, PauseConfigReadout, PausePanel, PauseSettingsPanel,
-    TacMapElement, TacMapPanel, TacMapState, TeleportAnimation, TeleportOverlay,
+    DebugHud, InteractionReticle, MatchHud, MatchHudReadout, PauseConfigReadout, PausePanel,
+    PauseSettingsPanel, TacMapElement, TacMapPanel, TacMapState, TeleportAnimation,
+    TeleportOverlay,
 };
 use crate::view::theme::{BORDER, DIM, PANEL, TAC_MAP_SIZE, TITLE, screen_root, text};
 use crate::{GameState, settings::key_name, tacmap};
-use crate::teleport::Place;
 
 // Tac-map overlay layout (pixels). The 3×3 grid of rooms sits below a title strip.
 const TAC_TITLE_H: f32 = 26.0;

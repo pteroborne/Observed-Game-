@@ -14,7 +14,9 @@ use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::prelude::*;
 use observed_core::RoomId;
-use observed_diagnostics::{DiagnosticRun, DiagnosticSnapshotSummary};
+use observed_diagnostics::{
+    DiagnosticFinding, DiagnosticRun, DiagnosticSnapshotSummary, FindingSeverity, MaterialSnapshot,
+};
 use observed_facility::map_spec::RoomRole;
 
 use super::snapshot::{
@@ -205,6 +207,7 @@ struct VisualAuditParams<'w, 's> {
     monitor_label_segments: Query<'w, 's, MonitorLabelSegmentDiagnosticQueryData>,
     tac_visuals: Query<'w, 's, &'static DiagnosticTacMapVisual, With<TacMapElement>>,
     materials: Res<'w, Assets<StandardMaterial>>,
+    seed: Option<Res<'w, crate::flow::ActiveMatchSeed>>,
 }
 
 struct ScenarioPrep<'a, 'w, 's> {
@@ -217,11 +220,12 @@ struct ScenarioPrep<'a, 'w, 's> {
     tac_panel: &'a mut Query<'w, 's, &'static mut Visibility, With<TacMapPanel>>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Resource)]
+#[derive(Clone, Debug, PartialEq, Resource)]
 struct DebugMatchCoercion {
     tether_rooms: Vec<RoomId>,
     guardian_room: Option<RoomId>,
     player_room: Option<RoomId>,
+    purge_line: Option<f32>,
     applied: bool,
 }
 
@@ -231,6 +235,7 @@ impl DebugMatchCoercion {
             std::env::var("OBSERVED2_DEBUG_TETHERS").ok().as_deref(),
             std::env::var("OBSERVED2_DEBUG_GUARDIAN").ok().as_deref(),
             std::env::var("OBSERVED2_DEBUG_ROOM").ok().as_deref(),
+            std::env::var("OBSERVED2_DEBUG_PURGE_LINE").ok().as_deref(),
         )
     }
 
@@ -238,18 +243,25 @@ impl DebugMatchCoercion {
         tethers: Option<&str>,
         guardian: Option<&str>,
         player_room: Option<&str>,
+        purge_line: Option<&str>,
     ) -> Option<Self> {
         let tether_rooms = tethers.map(parse_debug_room_list).unwrap_or_default();
         let guardian_room = guardian.and_then(parse_debug_room);
         let player_room = player_room.and_then(parse_debug_room);
-        (!tether_rooms.is_empty() || guardian_room.is_some() || player_room.is_some()).then_some(
-            Self {
-                tether_rooms,
-                guardian_room,
-                player_room,
-                applied: false,
-            },
-        )
+        let purge_line = purge_line
+            .and_then(|value| value.trim().parse::<f32>().ok())
+            .map(|value| value.clamp(0.0, 1.0));
+        (!tether_rooms.is_empty()
+            || guardian_room.is_some()
+            || player_room.is_some()
+            || purge_line.is_some())
+        .then_some(Self {
+            tether_rooms,
+            guardian_room,
+            player_room,
+            purge_line,
+            applied: false,
+        })
     }
 }
 
@@ -405,6 +417,10 @@ fn apply_debug_match_coercion(
         }
     }
 
+    if let Some(purge_line) = coercion.purge_line {
+        runtime.live.host.match_state.competitive.purge_line = purge_line;
+    }
+
     let target_place = coercion.player_room.map(Place::Room).unwrap_or(tp.place);
     let from = match target_place {
         Place::Room(room) => room,
@@ -514,6 +530,17 @@ fn visual_audit_progress(
                     &params.materials,
                 );
                 snapshot.run_default_checks();
+                let seed_val = params
+                    .seed
+                    .as_ref()
+                    .map(|seed| seed.0)
+                    .unwrap_or(crate::flow::MATCH_SEED);
+                let expected_palette =
+                    crate::screens::match_runtime::palette_for_match(seed_val, tp.place, runtime);
+                snapshot.findings.extend(style_presence_findings(
+                    &snapshot.materials,
+                    &expected_palette,
+                ));
                 let json_path = audit.json_path(scenario);
                 let image_path = audit.image_path(scenario);
                 write_snapshot(&json_path, &snapshot);
@@ -543,6 +570,50 @@ fn visual_audit_progress(
         }
         _ => {}
     }
+}
+
+fn structural_surface_role(subject: &str) -> Option<observed_style::SurfaceRole> {
+    match subject {
+        "Place floor" => Some(observed_style::SurfaceRole::Plain),
+        "Room wall" | "Place wall" => Some(observed_style::SurfaceRole::Wall),
+        "Place ceiling" => Some(observed_style::SurfaceRole::Ceiling),
+        _ => None,
+    }
+}
+
+fn rgb_distance(a: [f32; 3], b: [f32; 3]) -> f32 {
+    ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+}
+
+fn style_presence_findings(
+    materials: &[MaterialSnapshot],
+    palette: &observed_style::DistrictPalette,
+) -> Vec<DiagnosticFinding> {
+    const MAX_SURFACE_TINT_DISTANCE: f32 = 0.18;
+    materials
+        .iter()
+        .filter_map(|material| {
+            let role = structural_surface_role(&material.subject)?;
+            let expected = crate::view::assets::palette_tint_for_surface(
+                &observed_style::surface(role),
+                palette,
+            )
+            .to_srgba();
+            let expected_rgb = [expected.red, expected.green, expected.blue];
+            let distance = rgb_distance(material.base_rgb, expected_rgb);
+            (distance > MAX_SURFACE_TINT_DISTANCE).then(|| {
+                DiagnosticFinding::new(
+                    FindingSeverity::Error,
+                    "style.surface_palette_missing",
+                    &material.subject,
+                    format!(
+                        "surface base tint {:?} is {:.2} from expected district tint {:?}",
+                        material.base_rgb, distance, expected_rgb
+                    ),
+                )
+            })
+        })
+        .collect()
 }
 
 fn prepare_scenario(scenario: AuditScenario, prep: ScenarioPrep) {
@@ -835,11 +906,13 @@ mod tests {
             Some(&format!("{sample_list}, nope")),
             Some("guardian_control"),
             Some("monitor"),
+            Some("0.42"),
         )
         .expect("coercion should be enabled");
         assert_eq!(coercion.tether_rooms, sample_rooms);
         assert_eq!(coercion.guardian_room, Some(guardian_room));
         assert_eq!(coercion.player_room, Some(monitor_room));
+        assert_eq!(coercion.purge_line, Some(0.42));
         assert!(!coercion.applied);
 
         let all = parse_debug_room_list("all");
@@ -848,6 +921,55 @@ mod tests {
         assert_eq!(
             all, expected_all,
             "\"all\" spans every room in the active spec"
+        );
+    }
+
+    #[test]
+    fn style_presence_check_flags_white_textured_surfaces() {
+        let palette = observed_style::district(observed_style::District::Archive);
+        let findings = style_presence_findings(
+            &[MaterialSnapshot {
+                subject: "Place floor".to_string(),
+                signal: false,
+                base_rgb: [1.0, 1.0, 1.0],
+                emissive_rgb: [0.10, 0.14, 0.22],
+                emissive_luminance: 0.15,
+                min_luminance: observed_diagnostics::DEFAULT_SIGNAL_MIN_LUMINANCE,
+            }],
+            &palette,
+        );
+
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.code == "style.surface_palette_missing"),
+            "white albedo passthrough should fail the style-presence audit"
+        );
+    }
+
+    #[test]
+    fn style_presence_check_accepts_palette_tinted_surfaces() {
+        let palette = observed_style::district(observed_style::District::Reactor);
+        let tint = crate::view::assets::palette_tint_for_surface(
+            &observed_style::surface(observed_style::SurfaceRole::Wall),
+            &palette,
+        )
+        .to_srgba();
+        let findings = style_presence_findings(
+            &[MaterialSnapshot {
+                subject: "Room wall".to_string(),
+                signal: false,
+                base_rgb: [tint.red, tint.green, tint.blue],
+                emissive_rgb: [0.9, 0.5, 0.25],
+                emissive_luminance: 0.57,
+                min_luminance: observed_diagnostics::DEFAULT_SIGNAL_MIN_LUMINANCE,
+            }],
+            &palette,
+        );
+
+        assert!(
+            findings.is_empty(),
+            "a material carrying the district tint should pass: {findings:?}"
         );
     }
 }

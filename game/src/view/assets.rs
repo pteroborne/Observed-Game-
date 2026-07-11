@@ -10,9 +10,9 @@ use bevy::prelude::*;
 use observed_match::facility::TEAM_COUNT;
 use observed_style::{self as style, MarkerRole, SurfaceRole};
 
+use super::actor_metadata::SpriteMetadata;
 use crate::layout::{HALL_WIDTH, PLACE_TILE, WALL_HEIGHT};
 use crate::view::theme::TEAM_COLORS;
-use super::actor_metadata::SpriteMetadata;
 
 pub(crate) const DISTRICT_COUNT: usize = observed_style::District::ALL.len();
 
@@ -115,9 +115,87 @@ pub(crate) fn textured_neon_material(
     let mut material = neon_material(t);
     material.base_color_texture = texture;
     if has_texture {
-        material.base_color = Color::WHITE;
-        material.unlit = true;
+        material.base_color = t.base_color;
+        material.unlit = t.signal;
     }
+    material
+}
+
+/// The sampler for structural surface albedo: world-unit UVs tile the texture, so it
+/// must repeat in both axes instead of clamping (Bevy's default) to the border texel.
+fn repeating_sampler() -> bevy::image::ImageSamplerDescriptor {
+    bevy::image::ImageSamplerDescriptor {
+        address_mode_u: bevy::image::ImageAddressMode::Repeat,
+        address_mode_v: bevy::image::ImageAddressMode::Repeat,
+        ..default()
+    }
+}
+
+fn srgb_rgb(color: Color) -> [f32; 3] {
+    let c = color.to_srgba();
+    [c.red, c.green, c.blue]
+}
+
+/// The district tint applied to a structural surface before any albedo texture is
+/// sampled. Bevy multiplies `base_color` by `base_color_texture`, so this keeps
+/// imported albedo under the style palette instead of letting it replace the palette.
+pub(crate) fn palette_tint_for_surface(
+    t: &style::Treatment,
+    palette: &style::DistrictPalette,
+) -> Color {
+    if t.signal {
+        return t.base_color;
+    }
+
+    let role = srgb_rgb(t.base_color);
+    let light = srgb_rgb(palette.light_color);
+    let ambient = srgb_rgb(palette.ambient_color);
+    let brightness = (palette.ambient_brightness / 75.0).clamp(0.45, 1.1);
+    let mut rgb = [0.0; 3];
+    for i in 0..3 {
+        let palette_channel = light[i] * 0.68 + ambient[i] * 0.32;
+        rgb[i] = (role[i] * 0.28 + palette_channel * 0.72) * 0.55 * brightness;
+    }
+    Color::srgb(rgb[0], rgb[1], rgb[2])
+}
+
+fn palette_emissive_for_surface(
+    t: &style::Treatment,
+    palette: &style::DistrictPalette,
+) -> LinearRgba {
+    if t.signal {
+        return t.emissive;
+    }
+
+    // Keep the district cast well below the base treatment's glow (luminance ~0.07).
+    // Structural surfaces are *lit* — by the district-tinted fixtures — never light
+    // sources themselves: any stronger flat emissive swamps the lit, tinted albedo,
+    // which is exactly the wash that hid the textures and the palette in the first
+    // Phase 62 captures.
+    LinearRgba::rgb(
+        t.emissive.red * 0.25 + palette.accent.red * 0.06,
+        t.emissive.green * 0.25 + palette.accent.green * 0.06,
+        t.emissive.blue * 0.25 + palette.accent.blue * 0.06,
+    )
+}
+
+pub(crate) fn apply_surface_palette(
+    material: &mut StandardMaterial,
+    t: &style::Treatment,
+    palette: &style::DistrictPalette,
+) {
+    material.base_color = palette_tint_for_surface(t, palette);
+    material.emissive = palette_emissive_for_surface(t, palette);
+    material.unlit = t.signal;
+}
+
+pub(crate) fn palette_tinted_neon_material(
+    t: &style::Treatment,
+    palette: &style::DistrictPalette,
+    texture: Option<Handle<Image>>,
+) -> StandardMaterial {
+    let mut material = textured_neon_material(t, texture);
+    apply_surface_palette(&mut material, t, palette);
     material
 }
 
@@ -274,9 +352,23 @@ impl MatchAssets {
     ) -> Self {
         let load_texture =
             |path: &'static str| asset_present(path).then(|| asset_server.load::<Image>(path));
-        let wall_texture = load_texture(WALL_TEX);
-        let floor_texture = load_texture(FLOOR_TEX);
-        let ceiling_texture = load_texture(CEILING_TEX);
+        // Structural surfaces (walls/floors) get world-unit UVs that run well past 1.0,
+        // so their albedo must sample with a repeating address mode. Bevy's default
+        // sampler clamps to the edge, which smears the border texel across the whole
+        // surface — the flat, texture-less look bug backlog #2 captured.
+        let load_repeating_texture = |path: &'static str| {
+            asset_present(path).then(|| {
+                asset_server.load_with_settings(
+                    path,
+                    |settings: &mut bevy::image::ImageLoaderSettings| {
+                        settings.sampler =
+                            bevy::image::ImageSampler::Descriptor(repeating_sampler());
+                    },
+                )
+            })
+        };
+        let wall_texture = load_repeating_texture(WALL_TEX);
+        let floor_texture = load_repeating_texture(FLOOR_TEX);
 
         let floor_material = materials.add(textured_neon_material(
             &style::surface(SurfaceRole::Plain),
@@ -333,7 +425,7 @@ impl MatchAssets {
         let ceiling_material = materials.add(StandardMaterial {
             cull_mode: None,
             double_sided: true,
-            ..textured_neon_material(&style::surface(SurfaceRole::Ceiling), ceiling_texture)
+            ..textured_neon_material(&style::surface(SurfaceRole::Ceiling), None)
         });
         let exit_panel_material = materials.add(StandardMaterial {
             base_color: Color::WHITE,
@@ -438,7 +530,11 @@ impl MatchAssets {
             asset_present(path).then(|| asset_server.load::<AudioSource>(path))
         };
 
-        let mut load_actor_sheet = |path_png: &'static str| -> (Option<Handle<Image>>, Option<Handle<TextureAtlasLayout>>, Option<SpriteMetadata>) {
+        let mut load_actor_sheet = |path_png: &'static str| -> (
+            Option<Handle<Image>>,
+            Option<Handle<TextureAtlasLayout>>,
+            Option<SpriteMetadata>,
+        ) {
             if !asset_present(path_png) {
                 return (None, None, None);
             }
@@ -459,8 +555,10 @@ impl MatchAssets {
             (Some(img_handle), None, None)
         };
 
-        let (rival_actor_sheet, rival_actor_layout, rival_actor_meta) = load_actor_sheet(RIVAL_ACTOR_SPRITE);
-        let (guardian_actor_sheet, guardian_actor_layout, guardian_actor_meta) = load_actor_sheet(GUARDIAN_ACTOR_SPRITE);
+        let (rival_actor_sheet, rival_actor_layout, rival_actor_meta) =
+            load_actor_sheet(RIVAL_ACTOR_SPRITE);
+        let (guardian_actor_sheet, guardian_actor_layout, guardian_actor_meta) =
+            load_actor_sheet(GUARDIAN_ACTOR_SPRITE);
 
         debug_assert_eq!(
             observed_assets::DISTRICT_AMBIENCE.len(),
@@ -560,7 +658,7 @@ impl MatchAssets {
             decor_torch: load_texture(DECOR_TORCH_SPRITE),
             decor_lab_crate: load_texture(DECOR_LAB_CRATE_SPRITE),
             decor_lab_table: load_texture(DECOR_LAB_TABLE_SPRITE),
-            wall_albedo_lab: load_texture(WALL_ALBEDO_LAB_TEX),
+            wall_albedo_lab: load_repeating_texture(WALL_ALBEDO_LAB_TEX),
         }
     }
 

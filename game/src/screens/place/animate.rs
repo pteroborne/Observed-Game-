@@ -83,7 +83,11 @@ pub(crate) fn sync_rival_avatars(
     let tangent = Vec2::new(-along.y, along.x).normalize_or_zero();
     let n = present.len();
 
-    let camera_pos = camera.iter().next().map(|c| c.translation()).unwrap_or(Vec3::ZERO);
+    let camera_pos = camera
+        .iter()
+        .next()
+        .map(|c| c.translation())
+        .unwrap_or(Vec3::ZERO);
     let has_sheet = if let (Some(sheet), Some(_layout), Some(_meta)) = (
         &visuals.assets.rival_actor_sheet,
         &visuals.assets.rival_actor_layout,
@@ -101,9 +105,14 @@ pub(crate) fn sync_rival_avatars(
             continue;
         };
         // Re-spawn if representation mismatch (sheet vs single-frame/capsule)
-        let is_sheet_entity = maybe_sprite.as_ref().map(|s| s.texture_atlas.is_some()).unwrap_or(false);
+        let is_sheet_entity = maybe_sprite
+            .as_ref()
+            .map(|s| s.texture_atlas.is_some())
+            .unwrap_or(false);
         let has_any_sprite = has_sheet || visuals.assets.rival_sprite(&visuals.images, 0).is_some();
-        if (maybe_sprite.is_none() && has_any_sprite) || (maybe_sprite.is_some() && (has_sheet != is_sheet_entity)) {
+        if (maybe_sprite.is_none() && has_any_sprite)
+            || (maybe_sprite.is_some() && (has_sheet != is_sheet_entity))
+        {
             commands.entity(entity).despawn();
             continue;
         }
@@ -138,7 +147,10 @@ pub(crate) fn sync_rival_avatars(
                 };
                 transform.rotation = Quat::from_rotation_y(yaw);
 
-                let to_camera = Vec2::new(camera_pos.x - transform.translation.x, camera_pos.z - transform.translation.z);
+                let to_camera = Vec2::new(
+                    camera_pos.x - transform.translation.x,
+                    camera_pos.z - transform.translation.z,
+                );
                 let rel_angle = if to_camera.length_squared() > 0.0001 {
                     let camera_angle = to_camera.x.atan2(to_camera.y);
                     let mut diff = camera_angle - yaw;
@@ -153,7 +165,8 @@ pub(crate) fn sync_rival_avatars(
                     0.0
                 };
 
-                let frame_idx = crate::view::sprites::actor_frame(meta, clip_name, rel_angle, animation_step);
+                let frame_idx =
+                    crate::view::sprites::actor_frame(meta, clip_name, rel_angle, animation_step);
                 if let Some(ref mut atlas) = sprite.texture_atlas {
                     atlas.index = frame_idx;
                 }
@@ -181,10 +194,7 @@ pub(crate) fn sync_rival_avatars(
                     DespawnOnExit(GameState::Match),
                     Sprite {
                         image: sheet,
-                        texture_atlas: Some(TextureAtlas {
-                            layout,
-                            index: 0,
-                        }),
+                        texture_atlas: Some(TextureAtlas { layout, index: 0 }),
                         ..default()
                     },
                     Sprite3d {

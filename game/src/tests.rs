@@ -85,6 +85,28 @@ fn material_named_has_texture(app: &mut App, expected_name: &str) -> bool {
     })
 }
 
+fn material_named_has_base_color(app: &mut App, expected_name: &str, expected: Color) -> bool {
+    let handles: Vec<Handle<StandardMaterial>> = {
+        let world = app.world_mut();
+        let mut query = world.query::<(&Name, &MeshMaterial3d<StandardMaterial>)>();
+        query
+            .iter(world)
+            .filter(|(name, _)| name.as_str() == expected_name)
+            .map(|(_, handle)| handle.0.clone())
+            .collect()
+    };
+    let expected = expected.to_srgba();
+    let materials = app.world().resource::<Assets<StandardMaterial>>();
+    handles.iter().any(|handle| {
+        materials.get(handle).is_some_and(|material| {
+            let actual = material.base_color.to_srgba();
+            (actual.red - expected.red).abs() <= 0.001
+                && (actual.green - expected.green).abs() <= 0.001
+                && (actual.blue - expected.blue).abs() <= 0.001
+        })
+    })
+}
+
 fn single_visibility<T: Component>(app: &mut App) -> Visibility {
     let world = app.world_mut();
     let mut query = world.query_filtered::<&Visibility, With<T>>();
@@ -1491,9 +1513,20 @@ fn the_match_renders_the_current_place_and_starts_on_the_spine() {
         material_named_has_texture(&mut app, "Room wall"),
         "rendered wall material should use the wall texture slot"
     );
+    let expected_ceiling_color = {
+        let world = app.world();
+        let runtime = world.resource::<crate::sim::director::MatchDirector>();
+        let tp = world.resource::<crate::sim::state::TeleportState>();
+        let palette =
+            crate::screens::match_runtime::palette_for_match(MATCH_SEED, tp.place, runtime);
+        crate::view::assets::palette_tint_for_surface(
+            &observed_style::surface(observed_style::SurfaceRole::Ceiling),
+            &palette,
+        )
+    };
     assert!(
-        material_named_has_texture(&mut app, "Place ceiling"),
-        "rendered ceiling material should use the ceiling texture slot"
+        material_named_has_base_color(&mut app, "Place ceiling", expected_ceiling_color),
+        "rendered ceiling material should use the treated district palette tint"
     );
     assert_eq!(
         count_audio_cue(&mut app, crate::view::components::MatchAudioCue::Ambience),
@@ -2055,9 +2088,8 @@ fn a_gantry_hallway_renders_readable_decks_and_no_deck_leaks_into_the_wall_path(
 /// ad-hoc colour choice — the Legibility Contract requires every rendered surface trace
 /// back to a shared `observed_style` role. Since the floor texture drop-in slot is
 /// present in this workspace, the built material — like the other textured surfaces —
-/// reads `base_color: WHITE` with the texture bound and `unlit: true` (mirroring
-/// `material_named_has_texture`'s existing textured-surface assertions); the
-/// entity is also named "Gantry deck" so it is queryable like every other place mesh.
+/// keeps the style tint over the bound texture and remains lit so district lighting
+/// can modulate it.
 #[test]
 fn gantry_deck_material_is_built_from_the_style_treatment() {
     let mut app = test_app();
@@ -2076,12 +2108,12 @@ fn gantry_deck_material_is_built_from_the_style_treatment() {
     );
     assert_eq!(
         mat.base_color,
-        Color::WHITE,
-        "a textured neon material reads WHITE base_color with the texture carrying colour"
+        observed_style::surface(observed_style::SurfaceRole::GantryDeck).base_color,
+        "a textured neon material keeps the style tint over the texture"
     );
     assert!(
-        mat.unlit,
-        "a textured neon material goes unlit once a texture is bound"
+        !mat.unlit,
+        "non-signal textured materials stay lit so district lighting can modulate them"
     );
 }
 
@@ -2351,7 +2383,7 @@ fn dressing_props_are_deterministic_and_respect_clearance() {
             }
         }
         teleport_into_room(&mut app1, room_id);
-        
+
         let mut app2 = test_app();
         go(&mut app2, GameState::Match);
         app2.update();
@@ -2402,25 +2434,31 @@ fn dressing_props_are_deterministic_and_respect_clearance() {
         let pos2 = extract_prop_positions(&mut app2);
 
         // 1. Assert determinism: identical match seed + room ID -> identical placement
-        assert_eq!(pos1, pos2, "Room {:?} dressing must be deterministic", room_id);
+        assert_eq!(
+            pos1, pos2,
+            "Room {:?} dressing must be deterministic",
+            room_id
+        );
 
         // 2. Assert clearance: check every spawned prop against threshold clearance boxes
         for p_pos in &pos1 {
             let p = Vec2::new(p_pos.x, p_pos.z);
-            
+
             // Check wall distance (clamping to geom with radius 0.8 must be same)
             let clamped = crate::teleport::contain(&geom, p, 0.8);
             assert!(
                 (clamped - p).length() <= 0.05,
                 "Room {:?} prop at {:?} violates wall clearance",
-                room_id, p
+                room_id,
+                p
             );
 
             // Check center distance
             assert!(
                 p.length() >= 1.79,
                 "Room {:?} prop at {:?} violates center clearance",
-                room_id, p
+                room_id,
+                p
             );
 
             // Check gap clearance
@@ -2442,7 +2480,6 @@ fn dressing_props_are_deterministic_and_respect_clearance() {
         }
     }
 }
-
 
 // --- Phase 48: onboarding & settings ----------------------------------------
 

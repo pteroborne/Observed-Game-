@@ -7,6 +7,7 @@ use bevy::prelude::*;
 use bevy_sprite3d::prelude::Sprite3d;
 use observed_core::{RoomId, SplitMix};
 use observed_facility::map_spec::RoomRole;
+use observed_style::{self as style, SurfaceRole};
 
 use crate::GameState;
 use crate::items::ItemsState;
@@ -25,27 +26,14 @@ use super::monitors::{
 };
 use super::{item_visuals, lighting, preview, shell};
 
-pub(crate) fn room_color(room_id: RoomId) -> Color {
-    let r = (((room_id.0 * 17 + 5) % 255) as f32) / 255.0;
-    let g = (((room_id.0 * 31 + 13) % 255) as f32) / 255.0;
-    let b = (((room_id.0 * 59 + 29) % 255) as f32) / 255.0;
-    Color::srgb(0.3 + r * 0.7, 0.3 + g * 0.7, 0.3 + b * 0.7)
-}
-
-pub(crate) fn room_floor_material(
-    room_id: RoomId,
+pub(crate) fn place_surface_material(
+    role: SurfaceRole,
+    palette: &style::DistrictPalette,
     base_handle: &Handle<StandardMaterial>,
     materials: &mut Assets<StandardMaterial>,
 ) -> Handle<StandardMaterial> {
     let mut mat = (*materials.get(base_handle).unwrap()).clone();
-    let col = room_color(room_id);
-    if mat.base_color_texture.is_some() {
-        mat.base_color = Color::WHITE;
-        mat.emissive = LinearRgba::from(col) * 0.45;
-    } else {
-        mat.base_color = col;
-        mat.emissive = LinearRgba::from(col) * 3.0;
-    }
+    crate::view::assets::apply_surface_palette(&mut mat, &style::surface(role), palette);
     materials.add(mat)
 }
 
@@ -183,24 +171,42 @@ pub(crate) fn rebuild_place(
     tp.gap_dests = match_runtime::compute_gap_dests(seed_val, tp.place, &geom, game, &keys, &items);
     tp.geom = geom.clone();
 
+    let palette = match_runtime::palette_for_match(seed_val, tp.place, &runtime);
+
     // The place's structural shell (floor/ceiling/walls), by place shape.
     match tp.place {
         Place::Room(room) => {
-            let floor_material = room_floor_material(room, &assets.floor_material, &mut materials);
+            let floor_material = place_surface_material(
+                SurfaceRole::Plain,
+                &palette,
+                &assets.floor_material,
+                &mut materials,
+            );
+            let ceiling_material = place_surface_material(
+                SurfaceRole::Ceiling,
+                &palette,
+                &assets.ceiling_material,
+                &mut materials,
+            );
 
-            // Build the wall material for this specific room, which might have the lab texture!
             let wall_material = if let Some(spec) = &game.competitive.map_spec
                 && let Some(r_spec) = spec.room(room)
                 && (r_spec.role == RoomRole::Monitor || r_spec.role == RoomRole::GuardianControl)
                 && let Some(ref lab_tex) = assets.wall_albedo_lab
             {
-                let custom_wall = crate::view::assets::textured_neon_material(
-                    &observed_style::surface(observed_style::SurfaceRole::Wall),
+                let custom_wall = crate::view::assets::palette_tinted_neon_material(
+                    &style::surface(SurfaceRole::Wall),
+                    &palette,
                     Some(lab_tex.clone()),
                 );
                 materials.add(custom_wall)
             } else {
-                assets.wall_material.clone()
+                place_surface_material(
+                    SurfaceRole::Wall,
+                    &palette,
+                    &assets.wall_material,
+                    &mut materials,
+                )
             };
 
             shell::spawn_room_shell(
@@ -210,17 +216,41 @@ pub(crate) fn rebuild_place(
                 &geom,
                 floor_material,
                 wall_material,
+                ceiling_material,
                 y_offset,
             );
         }
-        Place::Hallway { .. } => shell::spawn_hallway_shell(
-            &mut commands,
-            &assets,
-            &geom,
-            assets.floor_material.clone(),
-            &tp.arena.solids,
-            y_offset,
-        ),
+        Place::Hallway { .. } => {
+            let floor_material = place_surface_material(
+                SurfaceRole::Plain,
+                &palette,
+                &assets.floor_material,
+                &mut materials,
+            );
+            let wall_material = place_surface_material(
+                SurfaceRole::Wall,
+                &palette,
+                &assets.wall_material,
+                &mut materials,
+            );
+            let ceiling_material = place_surface_material(
+                SurfaceRole::Ceiling,
+                &palette,
+                &assets.ceiling_material,
+                &mut materials,
+            );
+            shell::spawn_hallway_shell(
+                &mut commands,
+                &assets,
+                &mut meshes,
+                &geom,
+                floor_material,
+                wall_material,
+                ceiling_material,
+                &tp.arena.solids,
+                y_offset,
+            );
+        }
     }
 
     // The threshold gateways cut into that shell.
@@ -407,7 +437,6 @@ pub(crate) fn rebuild_place(
     }
 
     // Lighting and surface details
-    let palette = match_runtime::palette_for_match(seed_val, tp.place, &runtime);
     let light_color = palette.light_color;
 
     let place_transform = Transform::from_xyz(0.0, y_offset, 0.0);
@@ -466,14 +495,7 @@ pub(crate) fn rebuild_place(
             }
         }
         Place::Hallway { .. } => {
-            spawn_hallway_dressing(
-                &mut commands,
-                &assets,
-                &images,
-                &geom,
-                y_offset,
-                seed_val,
-            );
+            spawn_hallway_dressing(&mut commands, &assets, &images, &geom, y_offset, seed_val);
         }
     }
 }
@@ -508,7 +530,8 @@ pub(crate) fn spawn_guardian_model(
                         pixels_per_metre: meta.pixels_per_metre,
                         alpha_mode: AlphaMode::Blend,
                         unlit: true,
-                        emissive: observed_style::marker(observed_style::MarkerRole::Director).emissive,
+                        emissive: observed_style::marker(observed_style::MarkerRole::Director)
+                            .emissive,
                         pivot: Some(Vec2::new(meta.pivot.0, meta.pivot.1)),
                         double_sided: true,
                         ..default()
@@ -716,18 +739,11 @@ fn spawn_room_dressing(
             assets.decor_column.clone(),
             assets.decor_torch.clone(),
         ],
-        RoomRole::Keystone => vec![
-            assets.decor_lab_crate.clone(),
-            assets.decor_column.clone(),
-        ],
-        RoomRole::Start | RoomRole::Exit => vec![
-            assets.decor_column.clone(),
-            assets.decor_torch.clone(),
-        ],
-        _ => vec![
-            assets.decor_column.clone(),
-            assets.decor_lab_crate.clone(),
-        ],
+        RoomRole::Keystone => vec![assets.decor_lab_crate.clone(), assets.decor_column.clone()],
+        RoomRole::Start | RoomRole::Exit => {
+            vec![assets.decor_column.clone(), assets.decor_torch.clone()]
+        }
+        _ => vec![assets.decor_column.clone(), assets.decor_lab_crate.clone()],
     };
 
     // Filter out None handles
@@ -766,10 +782,7 @@ fn spawn_room_dressing(
                 commands.spawn((
                     PlaceGeometry,
                     DespawnOnExit(GameState::Match),
-                    Sprite {
-                        image,
-                        ..default()
-                    },
+                    Sprite { image, ..default() },
                     Sprite3d {
                         pixels_per_metre: 64.0,
                         alpha_mode: AlphaMode::Blend,
@@ -798,10 +811,7 @@ fn spawn_hallway_dressing(
     seed_val: u64,
 ) {
     let mut rng = SplitMix(seed_val ^ 0x1234_5678_ABCD_EF01);
-    let props = vec![
-        assets.decor_column.clone(),
-        assets.decor_lab_crate.clone(),
-    ];
+    let props = vec![assets.decor_column.clone(), assets.decor_lab_crate.clone()];
     let props: Vec<Handle<Image>> = props.into_iter().flatten().collect();
     if props.is_empty() {
         return;
@@ -829,10 +839,7 @@ fn spawn_hallway_dressing(
             commands.spawn((
                 PlaceGeometry,
                 DespawnOnExit(GameState::Match),
-                Sprite {
-                    image,
-                    ..default()
-                },
+                Sprite { image, ..default() },
                 Sprite3d {
                     pixels_per_metre: 64.0,
                     alpha_mode: AlphaMode::Blend,
