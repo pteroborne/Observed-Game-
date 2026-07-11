@@ -73,14 +73,36 @@ The results screen tells the run's story (placement, escapes in order, what the 
 
 ---
 
+**Arc I — Light & Line** (plan: [docs/light_and_line_arc_plan.md](docs/light_and_line_arc_plan.md); hand-offs: [docs/arc_i/](docs/arc_i/README.md)). The atmosphere-and-legibility arc, planned 2026-07-11 with the user, same day the MVP shipped. Thesis: **atmosphere and legibility are the same problem** — the game currently renders zero shadows, and one shadow-casting light per place buys both mood and readability at once (cheap under the teleport model: light budget is per-place). Nine user-chosen media references (Japanese architecture, Brutalism, Backrooms, Severance, Halo CE, BLAME!, Silo, Library of Babel, Rudon's Plane) each isolate one liminal element and become one lab diorama; districts then take identities as coordinates on the resulting axes (brightness, scale, repetition, directionality). All Arc H standing rules carry over. Waves: [67 ∥ 68] → [69] → [70 ∥ 71] → [72].
+
+### Phase 67 — Hygiene Opener: Audio Mix & Bot-POV Stall `[ ]`
+Rebalance the gain staging (effects down, ambience beds up — backlog #7, user listen-through finding) with a pinned mix-relationship test, and fix the bot-POV walkthrough freezing in Room 11 (backlog #5) so the evidence GIF reaches the exit. ([docs/arc_i/phase_67_audio_mix_bot_stall.md](docs/arc_i/phase_67_audio_mix_bot_stall.md))
+
+### Phase 68 — lighting_lab: Nine Liminal Dioramas `[ ]`
+A new lab staging the nine reference registers as static dioramas with freestanding geometry (user ruling), keys 1–9, one viewed capture per scene, the signal kit staged in every scene, the volumetrics × bloom matrix, slat shadow tuning, per-scene frame times, and the luminance-corridor check prototyped (fails on the archived near-black Phase-62 capture and on an all-white fixture). ([docs/arc_i/phase_68_lighting_lab.md](docs/arc_i/phase_68_lighting_lab.md))
+
+### Phase 69 — Light Staging in the Game + the Luminance Gate `[ ]`
+One shadow-casting key light per place, per-district key/fill temperature pairs as style data, pools-rhythm fixture spacing, and the luminance corridor joining the visual audit as a permanent gate; the Phase-62 evidence set re-captured legibly. Closes backlog #6. ([docs/arc_i/phase_69_light_staging_gate.md](docs/arc_i/phase_69_light_staging_gate.md))
+
+### Phase 70 — District Light Identities `[ ]`
+Each district takes a register coordinate — exactly one district is the **overlit** register (user-endorsed) — two districts unmistakable in captures by light alone, drained/klaxon reading under every identity, all identity parameters as `observed_style` data. ([docs/arc_i/phase_70_district_light_identities.md](docs/arc_i/phase_70_district_light_identities.md))
+
+### Phase 71 — District Geometry Language `[ ]`
+The Forerunner idea shipped as grammar, not layouts: obtuse-angle wall facets, slat/screen occluders, verticality accents per district — within the prop rules and the Phase-64 threshold gate, deterministic from seed, sim/nav untouched. ([docs/arc_i/phase_71_district_geometry_language.md](docs/arc_i/phase_71_district_geometry_language.md))
+
+### Phase 72 — Arc Gate: Evidence Refresh & Playtest `[ ]`
+The Arc H ship-gate pattern rerun: full evidence refresh from one build (all viewed, luminance corridor green), then the user playtest — liminal feel per district, overlit-as-intent, signal legibility in darkest/brightest, the mix verdict, comfort check. The arc closes when the checklist passes. ([docs/arc_i/phase_72_arc_gate.md](docs/arc_i/phase_72_arc_gate.md))
+
+---
+
 ## Bug Backlog
 
 Playtest defects tracked in [docs/bug_backlog.md](docs/bug_backlog.md). The four
 original defects (#1 rebind, #2 textures/ceiling, #3 thresholds, #4 observation
 rooms) are fixed and were hand-audited in the 2026-07-11 ship-gate playtest.
-Open post-ship findings: #5 bot-POV walkthrough stall, #6 near-black world
-captures, #7 audio mix balance — unscheduled. New findings land in the backlog
-first, then get scheduled.
+Open post-ship findings are all scheduled into Arc I: #5 bot-POV stall and
+#7 audio mix → Phase 67, #6 near-black world captures → Phase 69. New findings
+land in the backlog first, then get scheduled.
 
 ---
 
@@ -91,8 +113,8 @@ Recorded so the horizon is explicit; none of this is being built yet.
 1. **True LAN multiplayer with dedicated servers.** The deferred Arc E designs (Phases 51–53: shared lockstep actions, socket transport behind `observed_net`, LAN lobby/discovery) plus a dedicated-server deployment model — a headless deterministic host that peers connect to, replacing pure peer-to-peer session ownership. Full online play (NAT traversal / relay / matchmaking) remains beyond even that.
 2. **World interaction.** Players act on the facility graph itself: explorers "hacking" a room console to connect it to a specified room ID (player-driven rerouting, subject to the solvability invariant and decoherence rules), and fallen/absorbed teams connecting nodes from a top-down view — extending "eliminated teams join the adversary" into an active graph-editing role that keeps every player playing to the end.
 3. **Carried follow-ups from Arcs C/D:** a third hall endpoint so the gantry's understory exit reaches a genuinely different neighbour; the decoherence counter-tool (Phase 38's criterion (d) never triggered it).
-4. **District architectural language (user idea, 2026-07-11).** Amp up the design language of halls and rooms with district-specific geometry and verticality — the reference is Halo CE's Forerunner architecture, which reads as one civilization because it commits to a constraint (mostly obtuse angles). Give certain districts their own geometric grammar (angle vocabulary, ceiling heights, vertical shafts) on top of the existing palette identity, within the Legibility Contract.
-5. **Directional light-and-shadow staging (user idea, 2026-07-11).** Explore what the lighting engine can do with long rays of light and shadow in the spirit of Japanese architecture (low sun through slats/screens). Bevy 0.18 has the pieces: shadow-casting directional/spot lights give crisp long shadow blades through slatted geometry, and `VolumetricFog` + `FogVolume` make the shafts themselves visible in air (directional, spot, and point lights all participate). Needs an evaluation lab first — volumetrics interact with the existing bloom/HDR setup and the Legibility Contract. **User endorsed the lab plan 2026-07-11: a `lighting_lab` staging one slatted corridor with a low light is the first step when this is picked up** (dovetails with backlog #6 — deliberate light staging attacks the too-dark-to-read problem and the atmosphere goal in one pass).
+4. ~~District architectural language (user idea, 2026-07-11).~~ **Scheduled into Arc I Phase 71** (geometry grammar per district).
+5. ~~Directional light-and-shadow staging (user idea, 2026-07-11).~~ **Scheduled into Arc I Phases 68–70** (lighting_lab → game staging → district identities).
 
 ---
 

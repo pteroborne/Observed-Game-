@@ -8,6 +8,7 @@ get scheduled. Keep entries self-contained enough to hand to an agent cold.
 ## Open
 
 ### 5. Bot-POV walkthrough stalls in the observation room
+**Scheduled: Arc I Phase 67** ([arc_i/phase_67_audio_mix_bot_stall.md](arc_i/phase_67_audio_mix_bot_stall.md)).
 **Found 2026-07-11 during the Phase 66 ship-gate evidence refresh.** The
 `OBSERVED2_CAPTURE_BOT` walkthrough (all bots on, seed 1) reaches Room 11 — the
 tether observation room — around shot 55 of 120 and never moves again; the last
@@ -19,6 +20,7 @@ be waiting on a door/decoherence that never happens while the capture holds
 `runtime.done = false`.
 
 ### 6. World-space evidence captures render nearly black
+**Scheduled: Arc I Phase 69** ([arc_i/phase_69_light_staging_gate.md](arc_i/phase_69_light_staging_gate.md)).
 **Found 2026-07-11 during the Phase 66 ship-gate evidence refresh.** The
 `phase_62_*` capture set (match, long hallway, hallway doorway, drained room) and
 the visual audit's geometry/lighting scenarios render as near-black voids — the
@@ -34,6 +36,7 @@ playtest adjudicates which. Look at: `game/src/evidence/capture/scenarios.rs`
 luminance), Bevy screenshot tonemapping.
 
 ### 7. Audio mix balance: effects too loud, ambience too quiet
+**Scheduled: Arc I Phase 67** ([arc_i/phase_67_audio_mix_bot_stall.md](arc_i/phase_67_audio_mix_bot_stall.md)).
 **Found 2026-07-11 during the Phase 66 user playtest listen-through.** The
 relative mix is off: one-shot effects (cues, UI, stings) overpower the ambient
 beds, and the district/location beds sit too quiet to register as atmosphere.
