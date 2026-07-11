@@ -15,8 +15,9 @@ use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::prelude::*;
 use observed_core::RoomId;
 use observed_diagnostics::{
-    DiagnosticFinding, DiagnosticRun, DiagnosticSnapshotSummary, FindingSeverity, MaterialSnapshot,
+    DiagnosticFinding, DiagnosticRun, DiagnosticSnapshot, DiagnosticSnapshotSummary, FindingSeverity, MaterialSnapshot,
 };
+use bevy::render::view::screenshot::{Screenshot, save_to_disk, ScreenshotCaptured};
 use observed_facility::map_spec::RoomRole;
 
 use super::snapshot::{
@@ -546,7 +547,58 @@ fn visual_audit_progress(
                 let json_path = audit.json_path(scenario);
                 let image_path = audit.image_path(scenario);
                 write_snapshot(&json_path, &snapshot);
-                super::driver::screenshot_to(&mut commands, path_string(&image_path));
+                let json_path_clone = json_path.clone();
+                let image_name = image_path.file_name().unwrap().to_string_lossy().to_string();
+                commands
+                    .spawn(Screenshot::primary_window())
+                    .observe(save_to_disk(path_string(&image_path)))
+                    .observe(
+                        move |shot: On<ScreenshotCaptured>,
+                              mut audit_res: ResMut<VisualAudit>| {
+                            let verdict = match shot.image.clone().try_into_dynamic() {
+                                Ok(dynamic) => {
+                                    let rgba = dynamic.to_rgba8();
+                                    corridor_check(rgba.as_raw(), 4)
+                                }
+                                Err(_) => corridor_check(&[], 1),
+                            };
+                            info!(
+                                "AUDIT_LUMINANCE path={} p05={:.4} p50={:.4} p95={:.4} pass={}",
+                                image_name, verdict.p05, verdict.p50, verdict.p95, verdict.pass()
+                            );
+                            if !verdict.pass() {
+                                let mut messages = Vec::new();
+                                if !verdict.floor_pass {
+                                    messages.push(format!(
+                                        "fails floor check (p50={:.4} < {:.4} or p95={:.4} < {:.4})",
+                                        verdict.p50, FLOOR_P50_MIN, verdict.p95, FLOOR_P95_MIN
+                                    ));
+                                }
+                                if !verdict.ceiling_pass {
+                                    messages.push(format!(
+                                        "fails ceiling check (p50={:.4} > {:.4} or p05={:.4} > {:.4})",
+                                        verdict.p50, CEILING_P50_MAX, verdict.p05, CEILING_P05_MAX
+                                    ));
+                                }
+                                let finding = DiagnosticFinding::new(
+                                    FindingSeverity::Error,
+                                    "style.luminance_corridor_violation",
+                                    &image_name,
+                                    messages.join(", "),
+                                );
+                                audit_res.run.findings.push(finding.clone());
+                                if let Ok(content) = fs::read_to_string(&json_path_clone) {
+                                    if let Ok(mut snap) = serde_json::from_str::<DiagnosticSnapshot>(&content) {
+                                        snap.findings.push(finding);
+                                        if let Ok(serialized) = serde_json::to_string_pretty(&snap) {
+                                            let _ = fs::write(&json_path_clone, serialized);
+                                        }
+                                    }
+                                }
+                                write_manifest(&audit_res.dir, &audit_res.run);
+                            }
+                        }
+                    );
                 audit.run.findings.extend(snapshot.findings.clone());
                 audit.run.snapshots.push(DiagnosticSnapshotSummary {
                     scenario: scenario.label().to_string(),
@@ -870,6 +922,69 @@ fn freecam_direction(yaw: f32, pitch: f32) -> Vec3 {
     Vec3::new(sy * cp, sp, -cy * cp).normalize_or(Vec3::NEG_Z)
 }
 
+// --- Luminance Corridor check ---
+
+pub const FLOOR_P95_MIN: f32 = 0.02;
+pub const FLOOR_P50_MIN: f32 = 0.002;
+pub const CEILING_P50_MAX: f32 = 0.75;
+pub const CEILING_P05_MAX: f32 = 0.40;
+
+#[derive(Clone, Copy, Debug, serde::Serialize)]
+pub struct CorridorVerdict {
+    pub p05: f32,
+    pub p50: f32,
+    pub p95: f32,
+    pub floor_pass: bool,
+    pub ceiling_pass: bool,
+}
+
+impl CorridorVerdict {
+    pub fn pass(&self) -> bool {
+        self.floor_pass && self.ceiling_pass
+    }
+}
+
+fn srgb_to_linear(byte: u8) -> f32 {
+    let c = byte as f32 / 255.0;
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+fn pixel_luminance(r: u8, g: u8, b: u8) -> f32 {
+    0.2126 * srgb_to_linear(r) + 0.7152 * srgb_to_linear(g) + 0.0722 * srgb_to_linear(b)
+}
+
+pub fn corridor_check(rgba: &[u8], stride: usize) -> CorridorVerdict {
+    let stride = stride.max(1);
+    let mut lums: Vec<f32> = rgba
+        .chunks_exact(4)
+        .step_by(stride)
+        .map(|px| pixel_luminance(px[0], px[1], px[2]))
+        .collect();
+    if lums.is_empty() {
+        return CorridorVerdict {
+            p05: 0.0,
+            p50: 0.0,
+            p95: 0.0,
+            floor_pass: false,
+            ceiling_pass: true,
+        };
+    }
+    lums.sort_by(|a, b| a.total_cmp(b));
+    let pct = |p: f32| lums[((lums.len() - 1) as f32 * p) as usize];
+    let (p05, p50, p95) = (pct(0.05), pct(0.50), pct(0.95));
+    CorridorVerdict {
+        p05,
+        p50,
+        p95,
+        floor_pass: p95 >= FLOOR_P95_MIN && p50 >= FLOOR_P50_MIN,
+        ceiling_pass: p50 <= CEILING_P50_MAX && p05 <= CEILING_P05_MAX,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1006,5 +1121,42 @@ mod tests {
             findings.is_empty(),
             "a material carrying the district tint should pass: {findings:?}"
         );
+    }
+
+    fn solid_pixels(r: u8, g: u8, b: u8, n: usize) -> Vec<u8> {
+        [r, g, b, 255].repeat(n)
+    }
+
+    #[test]
+    fn archived_dark_capture_fails_luminance_check() {
+        let png_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../labs/lighting_lab/fixtures/phase62_long_hallway_dark.png"
+        );
+        let png = image::open(png_path)
+            .expect("pinned fixture decodes")
+            .to_rgba8();
+        let verdict = corridor_check(png.as_raw(), 4);
+        assert!(
+            !verdict.floor_pass,
+            "the near-black shipped capture must fail the floor: {verdict:?}"
+        );
+        assert!(verdict.ceiling_pass);
+    }
+
+    #[test]
+    fn all_white_frame_fails_ceiling_check() {
+        let verdict = corridor_check(&solid_pixels(255, 255, 255, 4096), 1);
+        assert!(!verdict.ceiling_pass, "blown-out white must fail: {verdict:?}");
+        assert!(verdict.floor_pass);
+    }
+
+    #[test]
+    fn readable_mid_range_frame_passes_both() {
+        let mut buf = solid_pixels(8, 8, 12, 1400);
+        buf.extend(solid_pixels(70, 74, 82, 1800));
+        buf.extend(solid_pixels(190, 185, 170, 900));
+        let verdict = corridor_check(&buf, 1);
+        assert!(verdict.pass(), "a readable frame passes the corridor: {verdict:?}");
     }
 }

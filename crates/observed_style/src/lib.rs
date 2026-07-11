@@ -836,6 +836,22 @@ pub struct DistrictPalette {
     /// A non-signal structural accent emission for the neighbourhood (kept below the
     /// signal floor so it never competes with a real gameplay cue).
     pub accent: LinearRgba,
+    /// Tint for the key spotlight.
+    pub key_color: Color,
+    /// Intensity of the key spotlight in lumens.
+    pub key_intensity: f32,
+    /// Range of the key spotlight.
+    pub key_range: f32,
+    /// Radius of the key spotlight source.
+    pub key_radius: f32,
+    /// Outer angle of the key spotlight cone.
+    pub key_outer_angle: f32,
+    /// Inner angle of the key spotlight cone.
+    pub key_inner_angle: f32,
+    /// Enable shadows for the key spotlight.
+    pub key_shadows_enabled: bool,
+    /// Spacing mode: pools rhythm (creates dark gaps).
+    pub pools_rhythm: bool,
 }
 
 /// The atmosphere palette for a district.
@@ -849,6 +865,14 @@ pub fn district(d: District) -> DistrictPalette {
             fog_end: 28.0,
             light_color: Color::srgb(0.72, 0.86, 1.0),
             accent: LinearRgba::rgb(0.10, 0.30, 0.55),
+            key_color: Color::srgb(1.0, 0.62, 0.32),
+            key_intensity: 60_000_000.0,
+            key_range: 45.0,
+            key_radius: 0.05,
+            key_inner_angle: 0.5,
+            key_outer_angle: 0.9,
+            key_shadows_enabled: true,
+            pools_rhythm: false,
         },
         District::Reactor => DistrictPalette {
             ambient_color: Color::srgb(0.52, 0.38, 0.28),
@@ -858,6 +882,14 @@ pub fn district(d: District) -> DistrictPalette {
             fog_end: 24.0,
             light_color: Color::srgb(1.0, 0.78, 0.52),
             accent: LinearRgba::rgb(0.95, 0.45, 0.12),
+            key_color: Color::srgb(1.0, 0.78, 0.52),
+            key_intensity: 80_000_000.0,
+            key_range: 50.0,
+            key_radius: 0.1,
+            key_inner_angle: 0.4,
+            key_outer_angle: 0.7,
+            key_shadows_enabled: true,
+            pools_rhythm: false,
         },
         District::Atrium => DistrictPalette {
             ambient_color: Color::srgb(0.30, 0.46, 0.34),
@@ -867,6 +899,14 @@ pub fn district(d: District) -> DistrictPalette {
             fog_end: 32.0,
             light_color: Color::srgb(0.66, 0.96, 0.72),
             accent: LinearRgba::rgb(0.18, 0.70, 0.30),
+            key_color: Color::srgb(0.66, 0.96, 0.72),
+            key_intensity: 40_000_000.0,
+            key_range: 40.0,
+            key_radius: 0.2,
+            key_inner_angle: 0.3,
+            key_outer_angle: 0.6,
+            key_shadows_enabled: true,
+            pools_rhythm: false,
         },
         District::Foundry => DistrictPalette {
             ambient_color: Color::srgb(0.50, 0.36, 0.26),
@@ -876,6 +916,14 @@ pub fn district(d: District) -> DistrictPalette {
             fog_end: 22.0,
             light_color: Color::srgb(1.0, 0.68, 0.42),
             accent: LinearRgba::rgb(1.0, 0.52, 0.10),
+            key_color: Color::srgb(1.0, 0.68, 0.42),
+            key_intensity: 90_000_000.0,
+            key_range: 55.0,
+            key_radius: 0.15,
+            key_inner_angle: 0.3,
+            key_outer_angle: 0.6,
+            key_shadows_enabled: true,
+            pools_rhythm: false,
         },
         District::Hollow => DistrictPalette {
             ambient_color: Color::srgb(0.42, 0.45, 0.50),
@@ -885,6 +933,14 @@ pub fn district(d: District) -> DistrictPalette {
             fog_end: 36.0,
             light_color: Color::srgb(0.82, 0.86, 0.92),
             accent: LinearRgba::rgb(0.35, 0.40, 0.48),
+            key_color: Color::srgb(0.82, 0.86, 0.92),
+            key_intensity: 70_000_000.0,
+            key_range: 48.0,
+            key_radius: 0.1,
+            key_inner_angle: 0.4,
+            key_outer_angle: 0.8,
+            key_shadows_enabled: true,
+            pools_rhythm: false,
         },
         District::Spillway => DistrictPalette {
             ambient_color: Color::srgb(0.26, 0.46, 0.50),
@@ -894,6 +950,14 @@ pub fn district(d: District) -> DistrictPalette {
             fog_end: 26.0,
             light_color: Color::srgb(0.50, 0.95, 0.98),
             accent: LinearRgba::rgb(0.12, 0.60, 0.62),
+            key_color: Color::srgb(0.50, 0.95, 0.98),
+            key_intensity: 15_000_000.0,
+            key_range: 30.0,
+            key_radius: 0.05,
+            key_inner_angle: 0.2,
+            key_outer_angle: 0.5,
+            key_shadows_enabled: true,
+            pools_rhythm: true,
         },
     }
 }
@@ -949,6 +1013,14 @@ pub fn drained(palette: &DistrictPalette) -> DistrictPalette {
         fog_end: palette.fog_end,
         light_color: desaturate(palette.light_color),
         accent: scale(palette.accent, 0.55),
+        key_color: desaturate(palette.key_color),
+        key_intensity: palette.key_intensity * 0.55,
+        key_range: palette.key_range,
+        key_radius: palette.key_radius,
+        key_outer_angle: palette.key_outer_angle,
+        key_inner_angle: palette.key_inner_angle,
+        key_shadows_enabled: palette.key_shadows_enabled,
+        pools_rhythm: palette.pools_rhythm,
     }
 }
 

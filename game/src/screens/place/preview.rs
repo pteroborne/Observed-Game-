@@ -192,7 +192,6 @@ pub(crate) fn spawn_hallway_preview(
     };
     let dest = teleport::geom_for(next, nav);
     let (hx, hz) = (dest.half.x, dest.half.y);
-    let light_color = palette.light_color;
     let Some(align) = teleport::hallway_alignment(gap, &dest) else {
         spawn_passage_stub(commands, assets, gap, y_offset);
         return;
@@ -267,7 +266,7 @@ pub(crate) fn spawn_hallway_preview(
             Name::new("Preview wall"),
         ));
     }
-    spawn_place_lighting(commands, assets, &dest, light_color, parent, true);
+    spawn_place_lighting(commands, assets, &dest, &palette, parent, true);
     let accent =
         assets.district_accent_materials[district_for_place(nav.seed, next).index()].clone();
     spawn_surface_detail(commands, assets, &dest, accent, parent, true);
@@ -404,8 +403,6 @@ pub(crate) fn spawn_room_miniature(
         &assets.ceiling_material,
         materials,
     );
-    let light_color = palette.light_color;
-
     spawn_polygon_shell(
         commands,
         assets,
@@ -427,7 +424,7 @@ pub(crate) fn spawn_room_miniature(
         true,
         |g| overlays.open_edge_target == Some(g.target) || g.kind.is_passage(),
     );
-    spawn_place_lighting(commands, assets, dest, light_color, parent, true);
+    spawn_place_lighting(commands, assets, dest, &palette, parent, true);
     let accent = materials.add(StandardMaterial {
         base_color: Color::srgb(0.02, 0.03, 0.05),
         emissive: LinearRgba::rgb(

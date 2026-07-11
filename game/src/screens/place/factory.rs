@@ -412,14 +412,12 @@ pub(crate) fn rebuild_place(
     }
 
     // Lighting and surface details
-    let light_color = palette.light_color;
-
     let place_transform = Transform::from_xyz(0.0, y_offset, 0.0);
     lighting::spawn_place_lighting(
         &mut commands,
         &assets,
         &geom,
-        light_color,
+        &palette,
         place_transform,
         false,
     );

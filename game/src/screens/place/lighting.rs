@@ -1,6 +1,7 @@
 use crate::GameState;
 use crate::layout::WALL_HEIGHT;
 use crate::teleport;
+use observed_style as style;
 use crate::view::assets::MatchAssets;
 use crate::view::components::{FlickerLight, PassagePreview, PlaceGeometry};
 use bevy::prelude::*;
@@ -53,54 +54,95 @@ pub(crate) fn spawn_place_light(
 /// Local XZ positions for a place's ceiling fixtures: a couple of wall sconces in a polygon
 /// room, or overhead lights spaced down a hallway. Deterministic from the geometry so a
 /// place and its doorway preview place their fixtures identically.
-pub(crate) fn fixture_positions(geom: &teleport::PlaceGeom) -> Vec<Vec2> {
+pub(crate) fn fixture_positions(geom: &teleport::PlaceGeom, pools_rhythm: bool) -> Vec<Vec2> {
     if let Some(poly) = geom.poly.as_ref() {
         let n = poly.len();
         if n < 3 {
             return Vec::new();
         }
-        [0usize, n / 2]
-            .into_iter()
-            .map(|i| (poly[i] + poly[(i + 1) % n]) * 0.5 * 0.78)
-            .collect()
+        if pools_rhythm {
+            vec![(poly[0] + poly[n / 2]) * 0.5 * 0.4]
+        } else {
+            [0usize, n / 2]
+                .into_iter()
+                .map(|i| (poly[i] + poly[(i + 1) % n]) * 0.5 * 0.78)
+                .collect()
+        }
     } else {
         let hz = geom.half.y;
-        let count = ((hz / 6.0).floor() as usize).clamp(1, 3);
-        (0..count)
-            .map(|k| Vec2::new(0.0, -hz + (k as f32 + 0.5) * (2.0 * hz / count as f32)))
-            .collect()
+        if pools_rhythm {
+            let count = ((hz / 9.5).floor() as usize).clamp(1, 2);
+            (0..count)
+                .map(|k| Vec2::new(0.0, -hz + (k as f32 + 0.5) * (2.0 * hz / count as f32)))
+                .collect()
+        } else {
+            let count = ((hz / 6.0).floor() as usize).clamp(1, 3);
+            (0..count)
+                .map(|k| Vec2::new(0.0, -hz + (k as f32 + 0.5) * (2.0 * hz / count as f32)))
+                .collect()
+        }
     }
 }
 
-/// Spawn a place's full lighting — an overhead fill plus a few flickering ceiling fixtures
-/// — under `xform` (identity for the live place, the doorway-alignment transform for a
-/// preview, so a preview is lit identically to the place you cross into). `light_color` is
-/// the place's district temperature; the warm lamp bodies stay neutral.
+/// Spawn a place's full lighting — a shadow-casting key spotlight, an overhead fill, and a few
+/// flickering ceiling fixtures — under `xform` (identity for the live place, the doorway-alignment
+/// transform for a preview, so a preview is lit identically to the place you cross into).
+/// The light colors and key settings come from the district `palette`.
 pub(crate) fn spawn_place_lighting(
     commands: &mut Commands,
     assets: &MatchAssets,
     geom: &teleport::PlaceGeom,
-    light_color: Color,
+    palette: &style::DistrictPalette,
     xform: Transform,
     preview: bool,
 ) {
     let (hx, hz) = (geom.half.x, geom.half.y);
     let place_in = |local: Transform| xform.mul_transform(local);
-    // Overhead fill (steady; only the decoherence flash stutters it).
+
+    // 1. Shadow-casting key SpotLight (lab-tuned diagonal rake)
+    let offset_x = (hx * 0.75).max(2.0);
+    let offset_z = (hz * 0.75).max(2.0);
+    let key_pos = Vec3::new(offset_x, WALL_HEIGHT + 2.5, offset_z);
+    let key_target = Vec3::new(-offset_x * 0.2, 0.2, -offset_z * 0.2);
+    let local_key_xform = Transform::from_translation(key_pos).looking_at(key_target, Vec3::Y);
+
+    let mut key_light = commands.spawn((
+        PlaceGeometry,
+        DespawnOnExit(GameState::Match),
+        SpotLight {
+            color: palette.key_color,
+            intensity: palette.key_intensity,
+            range: palette.key_range,
+            radius: palette.key_radius,
+            shadows_enabled: palette.key_shadows_enabled,
+            inner_angle: palette.key_inner_angle,
+            outer_angle: palette.key_outer_angle,
+            ..default()
+        },
+        place_in(local_key_xform),
+        Name::new("Key SpotLight"),
+    ));
+    if preview {
+        key_light.insert(PassagePreview);
+    }
+
+    // 2. Overhead fill (steady supporting role)
+    let fill_intensity = FIXTURE_LIGHT_INTENSITY * 0.25;
     spawn_place_light(
         commands,
         place_in(Transform::from_xyz(0.0, WALL_HEIGHT - 0.4, 0.0)),
-        light_color,
+        palette.light_color,
         (hx.max(hz) + WALL_HEIGHT) * 1.6,
         FlickerLight {
-            base: FIXTURE_LIGHT_INTENSITY,
+            base: fill_intensity,
             idle: 0.0,
             phase: 0.0,
         },
         preview,
     );
-    // Flickering ceiling fixtures: the "failing office light" look + per-place interest.
-    for (i, pos) in fixture_positions(geom).into_iter().enumerate() {
+
+    // 3. Flickering ceiling fixtures: failing office point lights spaced down the corridor/room.
+    for (i, pos) in fixture_positions(geom, palette.pools_rhythm).into_iter().enumerate() {
         let phase = i as f32 * 1.7 + 0.4;
         let mut lamp = commands.spawn((
             PlaceGeometry,
@@ -116,13 +158,20 @@ pub(crate) fn spawn_place_lighting(
         if preview {
             lamp.insert(PassagePreview);
         }
+
+        let (fixture_range, fixture_intensity) = if palette.pools_rhythm {
+            (7.0, FIXTURE_LIGHT_INTENSITY * 0.25)
+        } else {
+            (11.0, FIXTURE_LIGHT_INTENSITY * 0.35)
+        };
+
         spawn_place_light(
             commands,
             place_in(Transform::from_xyz(pos.x, WALL_HEIGHT - 0.6, pos.y)),
-            light_color,
-            11.0,
+            palette.light_color,
+            fixture_range,
             FlickerLight {
-                base: FIXTURE_LIGHT_INTENSITY * 0.55,
+                base: fixture_intensity,
                 idle: 0.7,
                 phase,
             },

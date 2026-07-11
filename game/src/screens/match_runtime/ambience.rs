@@ -144,6 +144,7 @@ fn klaxon_palette(mut palette: style::DistrictPalette) -> style::DistrictPalette
     );
     palette.fog_color = lerp_color(palette.fog_color, alarm.base_color, 0.35);
     palette.light_color = alarm.edge.unwrap_or(alarm.base_color);
+    palette.key_color = alarm.edge.unwrap_or(alarm.base_color);
     palette
 }
 
@@ -226,7 +227,8 @@ pub(crate) fn sync_decohere_fx(
 pub(crate) fn flicker_lights(
     time: Res<Time>,
     fx: Res<DecohereFx>,
-    mut lights: Query<(&FlickerLight, &mut PointLight)>,
+    mut point_lights: Query<(&FlickerLight, &mut PointLight)>,
+    mut spot_lights: Query<(&FlickerLight, &mut SpotLight)>,
 ) {
     let t = time.elapsed_secs();
     let k = (fx.flash / ROUTE_SHIFT_FLASH_SECS).clamp(0.0, 1.0);
@@ -236,7 +238,7 @@ pub(crate) fn flicker_lights(
     } else {
         1.0
     };
-    for (flicker, mut light) in &mut lights {
+    let update_intensity = |flicker: &FlickerLight| -> f32 {
         let idle = if flicker.idle > 0.0 {
             let slow =
                 (t * 6.3 + flicker.phase).sin() + 0.6 * (t * 11.0 + flicker.phase * 1.7).sin();
@@ -249,6 +251,12 @@ pub(crate) fn flicker_lights(
         } else {
             1.0
         };
-        light.intensity = flicker.base * reroute * idle;
+        flicker.base * reroute * idle
+    };
+    for (flicker, mut light) in &mut point_lights {
+        light.intensity = update_intensity(flicker);
+    }
+    for (flicker, mut light) in &mut spot_lights {
+        light.intensity = update_intensity(flicker);
     }
 }
