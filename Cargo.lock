@@ -4377,6 +4377,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lighting_lab"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "image",
+ "observed_style",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "linebender_resource_handle"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

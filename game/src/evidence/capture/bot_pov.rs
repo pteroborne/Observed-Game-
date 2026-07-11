@@ -122,15 +122,15 @@ pub(super) fn capture_bot_pov_progress(
                         "BOT_CAPTURE_SHOT: Taking shot {} at place {:?} position {:?}",
                         request.shot, t.place, t.body.position
                     );
+                    crate::evidence::driver::screenshot_to(&mut commands, request.image_path());
+                    request.shot += 1;
+                    request.next_shot_at = elapsed + BOT_CAPTURE_INTERVAL;
                 } else {
                     info!(
-                        "BOT_CAPTURE_SHOT: Taking shot {} but TeleportState is missing",
-                        request.shot
+                        "BOT_CAPTURE_SHOT: TeleportState is missing, finishing capture."
                     );
+                    request.finished = true;
                 }
-                crate::evidence::driver::screenshot_to(&mut commands, request.image_path());
-                request.shot += 1;
-                request.next_shot_at = elapsed + BOT_CAPTURE_INTERVAL;
             }
             if request.finished || request.shot >= BOT_CAPTURE_MAX_SHOTS {
                 request.phase = 3;
@@ -225,7 +225,15 @@ pub(crate) fn drive_bot_pov_capture(
         || fell_off_deck
     {
         let Some(gap) = bot::target_gap_for_place(tp.place, &tp.geom, here, local_feet_y) else {
-            info!("BOT_NAV: No target gap available in place {:?}", tp.place);
+            let hm = runtime.live.host_match();
+            info!(
+                "BOT_NAV: No target gap available in place {:?}. local_room={:?}, local_target={:?}, gaps={:?}, rendered_routes={:?}",
+                tp.place,
+                hm.local_room(),
+                hm.local_target(),
+                tp.geom.gaps.iter().map(|g| (g.target, g.kind)).collect::<Vec<_>>(),
+                hm.rendered.iter().map(|r| (r.rooms.0, r.rooms.1)).collect::<Vec<_>>()
+            );
             request.finished = runtime.live.host_match().local_target().is_none();
             intent.0 = PlayerIntent::default();
             return;

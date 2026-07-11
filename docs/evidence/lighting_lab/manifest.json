@@ -1,0 +1,110 @@
+[
+  {
+    "file": "scene_01_shoji.png",
+    "p05": 0.000303527,
+    "p50": 0.0013638681,
+    "p95": 0.09096079,
+    "floor_pass": false,
+    "ceiling_pass": true,
+    "avg_frame_ms": 18.91514
+  },
+  {
+    "file": "scene_02_monolith.png",
+    "p05": 0.00023899715,
+    "p50": 0.0016279366,
+    "p95": 0.74916756,
+    "floor_pass": false,
+    "ceiling_pass": true,
+    "avg_frame_ms": 16.66298
+  },
+  {
+    "file": "scene_03_backrooms.png",
+    "p05": 0.059440028,
+    "p50": 0.07523454,
+    "p95": 0.14081743,
+    "floor_pass": true,
+    "ceiling_pass": true,
+    "avg_frame_ms": 16.673183
+  },
+  {
+    "file": "scene_04_lumon.png",
+    "p05": 0.034434125,
+    "p50": 0.24120605,
+    "p95": 0.44331422,
+    "floor_pass": true,
+    "ceiling_pass": true,
+    "avg_frame_ms": 16.662039
+  },
+  {
+    "file": "scene_05_forerunner.png",
+    "p05": 0.0008034359,
+    "p50": 0.0022473116,
+    "p95": 0.04949445,
+    "floor_pass": true,
+    "ceiling_pass": true,
+    "avg_frame_ms": 16.668764
+  },
+  {
+    "file": "scene_06_megastructure.png",
+    "p05": 0.0009544103,
+    "p50": 0.002870708,
+    "p95": 0.23832083,
+    "floor_pass": true,
+    "ceiling_pass": true,
+    "avg_frame_ms": 16.66784
+  },
+  {
+    "file": "scene_07_wellshaft.png",
+    "p05": 0.00008644449,
+    "p50": 0.000303527,
+    "p95": 0.012707541,
+    "floor_pass": false,
+    "ceiling_pass": true,
+    "avg_frame_ms": 16.667
+  },
+  {
+    "file": "scene_08_babel.png",
+    "p05": 0.0007154131,
+    "p50": 0.0030598543,
+    "p95": 0.05269892,
+    "floor_pass": true,
+    "ceiling_pass": true,
+    "avg_frame_ms": 16.66698
+  },
+  {
+    "file": "scene_09_thinning.png",
+    "p05": 0.012348498,
+    "p50": 0.023222292,
+    "p95": 0.071953766,
+    "floor_pass": true,
+    "ceiling_pass": true,
+    "avg_frame_ms": 16.665293
+  },
+  {
+    "file": "scene_05_forerunner_vol-off_bloom-on.png",
+    "p05": 0.0008034359,
+    "p50": 0.0022473116,
+    "p95": 0.04949445,
+    "floor_pass": true,
+    "ceiling_pass": true,
+    "avg_frame_ms": 16.666939
+  },
+  {
+    "file": "scene_05_forerunner_vol-on_bloom-off.png",
+    "p05": 0.00008644449,
+    "p50": 0.000303527,
+    "p95": 0.0031558326,
+    "floor_pass": false,
+    "ceiling_pass": true,
+    "avg_frame_ms": 16.657957
+  },
+  {
+    "file": "scene_05_forerunner_vol-off_bloom-off.png",
+    "p05": 0.00008644449,
+    "p50": 0.000303527,
+    "p95": 0.0031558326,
+    "floor_pass": false,
+    "ceiling_pass": true,
+    "avg_frame_ms": 16.66287
+  }
+]

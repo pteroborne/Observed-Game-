@@ -100,10 +100,10 @@ mod tests {
         let affected = session.affected_tiles();
         assert!(!affected.is_empty());
         let before = session.maze_tiles.clone();
-        assert!(!session.try_commit_reroute(&affected));
+        assert!(!session.try_commit_reroute(&affected, false));
         assert_eq!(session.maze_tiles, before);
         session.place_body_in_room(session.local_room());
-        assert!(session.try_commit_reroute(&HashSet::new()));
+        assert!(session.try_commit_reroute(&HashSet::new(), false));
         assert!(session.in_sync());
         assert!(session.navigable());
     }
@@ -118,7 +118,7 @@ mod tests {
         let point = tile_world(x, y);
         session.body.position.x = point.x;
         session.body.position.z = point.y;
-        assert!(!session.try_commit_reroute(&HashSet::new()));
+        assert!(!session.try_commit_reroute(&HashSet::new(), false));
         assert!(!session.in_sync());
     }
 
@@ -251,7 +251,7 @@ mod tests {
         session.competitive.advance_round(&[]);
         session.target = route_all(&session.competitive, &session.base, &session.rooms);
         session.place_body_in_room(session.local_room());
-        assert!(session.try_commit_reroute(&HashSet::new()));
+        assert!(session.try_commit_reroute(&HashSet::new(), false));
         assert_eq!(
             session.reroute_feedback_ticks,
             super::super::REROUTE_FEEDBACK_TICKS

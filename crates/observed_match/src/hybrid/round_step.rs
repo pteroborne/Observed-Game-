@@ -73,7 +73,7 @@ impl HybridMatch {
             .is_some_and(|target| self.player_room() == Some(target))
         {
             self.resolve_round(LocalAction::Advance);
-            self.reconcile_current_view(top_down);
+            self.reconcile_current_view_ext(top_down, true);
             return Some(LocalAction::Advance);
         }
         self.reconcile_current_view(top_down);
@@ -98,7 +98,8 @@ impl HybridMatch {
         }
         self.resolve_round(action);
         self.turn_away_from_pending();
-        self.reconcile_current_view(false);
+        let force = matches!(action, LocalAction::Advance);
+        self.reconcile_current_view_ext(false, force);
         true
     }
 
@@ -251,14 +252,14 @@ impl HybridMatch {
 
     /// Commit the target maze as one atomic swap only if every changed tile is
     /// outside the supplied view and clear of the player's collision footprint.
-    pub fn try_commit_reroute(&mut self, visible: &HashSet<(usize, usize)>) -> bool {
+    pub fn try_commit_reroute(&mut self, visible: &HashSet<(usize, usize)>, force: bool) -> bool {
         let affected = self.affected_tiles();
         if affected.is_empty() {
             return false;
         }
         let player = Vec2::new(self.body.position.x, self.body.position.z);
         let clearance = TILE_SIZE * 0.5 + self.config.radius;
-        let blocked = affected.iter().any(|&(x, y)| {
+        let blocked = !force && affected.iter().any(|&(x, y)| {
             let centre = tile_world(x, y);
             visible.contains(&(x, y))
                 || (centre.x - player.x).abs() <= clearance
@@ -283,8 +284,12 @@ impl HybridMatch {
     }
 
     pub fn reconcile_current_view(&mut self, top_down: bool) -> bool {
+        self.reconcile_current_view_ext(top_down, false)
+    }
+
+    pub fn reconcile_current_view_ext(&mut self, top_down: bool, force: bool) -> bool {
         let visible = self.visible_tiles(top_down);
-        self.try_commit_reroute(&visible)
+        self.try_commit_reroute(&visible, force)
     }
 
     fn turn_away_from_pending(&mut self) {

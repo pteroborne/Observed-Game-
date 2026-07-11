@@ -1,4 +1,5 @@
-use bevy::prelude::{ButtonInput, KeyCode};
+use bevy::input::keyboard::KeyCode;
+use bevy::prelude::ButtonInput;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RebindStage {

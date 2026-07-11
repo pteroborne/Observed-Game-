@@ -1,0 +1,25 @@
+[package]
+name = "lighting_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+# Signal colors, district palettes, and the luminance helpers come from the
+# production style crate — the lab proves lighting registers AGAINST the real
+# visual language, it does not invent a parallel one.
+observed_style = { path = "../../crates/observed_style" }
+# `bevy_post_process` provides Bloom; volumetric fog (light shafts) ships with
+# the `3d` (bevy_pbr) feature set.
+bevy = { version = "0.18.1", default-features = false, features = [
+    "3d",
+    "png",
+    "bevy_post_process",
+] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[dev-dependencies]
+# Decodes the pinned PNG fixtures for the luminance-corridor tests. Already in
+# the workspace dependency graph via bevy_image.
+image = { version = "0.25", default-features = false, features = ["png"] }

@@ -109,6 +109,7 @@ The 52 prototype labs in `labs/` are independent Bevy applications designed to i
 
 ### Presentation & Asset Integration
 - `oga_25d_lab`: Proof surface for the 2.5D OpenGameArt intake metadata pipeline, showcasing directional actors, gameplay objects, animated decorations, and LAB texture samples with a debug metadata overlay and billboard vs directional toggle.
+- `lighting_lab`: Nine static procedural dioramas isolating liminal registers (directionality, brightness, scale, repetition, fog, bloom, shadow quality) for lighting design validation and relative-luminance corridor audits.
 
 ---
 
