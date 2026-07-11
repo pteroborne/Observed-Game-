@@ -55,8 +55,11 @@ pub(super) fn capture_tour_progress(
     let elapsed = time.elapsed_secs();
     match tour.phase {
         0 => {
-            next.set(GameState::Match);
-            tour.phase = 1;
+            if runtime.is_some() {
+                tour.phase = 1;
+            } else {
+                next.set(GameState::Match);
+            }
         }
         1 => {
             if let Some(rt) = runtime.as_mut() {

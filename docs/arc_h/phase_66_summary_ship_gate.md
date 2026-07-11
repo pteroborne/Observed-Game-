@@ -102,16 +102,56 @@ change match/series rules.
 
 ### Ship-gate checklist
 
-- [ ] Refresh and view the bot-POV GIF and full visual audit as one final build.
+- [x] Refresh and view the bot-POV GIF and full visual audit as one final build.
 - [x] View one result capture for every outcome shape.
 - [x] View the Phase-65 observation-room evidence.
-- [ ] Confirm/view the Phase-63 rebind overlay evidence.
-- [ ] Confirm/view the Phase-62 dressed-room evidence.
-- [ ] Confirm/view the Phase-64 WFC threshold evidence.
-- [ ] User: complete first-run onboarding through a full match.
-- [ ] User: complete a true-solo match.
-- [ ] User: rebind a key and hand-audit backlog fixes #1–#4.
-- [ ] User: listen through beds, distinct cues, and the klaxon loop.
+- [x] Confirm/view the Phase-63 rebind overlay evidence.
+- [x] Confirm/view the Phase-62 dressed-room evidence (viewed; findings below).
+- [x] Confirm/view the Phase-64 WFC threshold evidence.
+- [x] User: complete first-run onboarding through a full match.
+- [x] User: complete a true-solo match.
+- [x] User: rebind a key and hand-audit backlog fixes #1–#4.
+- [x] User: listen through beds, distinct cues, and the klaxon loop.
 
-The implementation is ready for that gate, but the MVP is not declared shipped
-until every unchecked item passes and any findings are recorded in the backlog.
+**Playtest result — 2026-07-11: passed.** The user confirmed all four items good.
+One finding from the listen-through: the mix balance is off (effects too loud,
+ambience beds too quiet) — recorded as backlog #7. With the checklist complete,
+**the MVP is declared shipped.**
+
+## Ship-gate evidence refresh — 2026-07-11 (scripted half complete)
+
+All scripted evidence was regenerated from one final build and every capture was
+viewed. What it took, and what it found:
+
+- **Capture drivers raced the splash timer.** Every `OBSERVED2_CAPTURE*` driver
+  set its target `GameState` exactly once on the first frame; on a slow first
+  frame the splash timer's `MainMenu` transition clobbers it and the driver waits
+  forever. All drivers (scenarios, bot-POV, tour, audit, results) now hold in
+  phase 0 re-asserting the state until the Match resources actually exist. See
+  the note in `game/src/evidence/capture/mod.rs`.
+- **Captures must force `OBSERVED2_BOTS=all`.** The drivers inherit the career
+  profile; with the player's true-singleplayer toggles saved off, the visual
+  audit starved forever waiting for rival-sighting resources. All evidence runs
+  now set `OBSERVED2_BOTS=all` explicitly.
+- **Backend split, refined:** world/HUD captures (audit, bot-POV, phase-62 set,
+  rebind overlay) work on default **Vulkan**; `WGPU_BACKEND=dx12` never completed
+  a single world-scene readback and panicked with a wgpu viewport size assertion
+  (1280 vs 1268) in the camera-room scenario. dx12 remains required only for the
+  Results-screen captures per the earlier note.
+- **Evidence produced and viewed:** full visual audit (7 scenarios, zero
+  findings; observation feeds show cyan anchor halos and the red guardian dot
+  correctly), fresh 120-frame bot-POV GIF, `phase_63_rebind_overlay.png` (rebind
+  prompt armed on Jump + visible binding-conflict warning — this evidence had
+  never been captured), `phase_64_threshold_integrity/` PNGs (variations 8 and
+  12, clean thresholds, no wall intersections), and the re-captured
+  `phase_62_*` set.
+- **Findings → backlog:** the bot-POV walkthrough freezes in Room 11 from shot
+  ~55 (pre-existing — the committed 2026-07-10 GIF has the same frozen tail),
+  and the phase-62 world captures render nearly black (as they always have —
+  Phase 62's capture criteria were never actually demonstrable). Recorded as
+  backlog #5 and #6; the human playtest adjudicates whether the live render
+  shares the darkness problem. `OBSERVED2_DEBUG_PURGE_LINE=0.9` also panics the
+  sim ("an atomic reroute must remain navigable"); 0.35 works and is what the
+  drained-room capture uses.
+
+Only the four user playtest items remain before the MVP ships.

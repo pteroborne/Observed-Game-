@@ -483,6 +483,8 @@ fn visual_audit_progress(
                 );
                 audit.next_at = elapsed + 0.45;
                 audit.phase = 2;
+            } else {
+                next.set(GameState::Match);
             }
         }
         2 if elapsed >= audit.next_at => {

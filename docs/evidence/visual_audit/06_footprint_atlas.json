@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "run_id": "observed-vis-audit-1783736348992",
+  "run_id": "observed-vis-audit-1783792995364",
   "scenario": "footprint_atlas",
   "frame_index": 6,
   "place": {
@@ -1121,8 +1121,133 @@
       }
     ]
   },
-  "thresholds": [],
+  "thresholds": [
+    {
+      "subject": "R0:S0 -> H0-6:0:S0",
+      "label": "R0:S0 -> H0-6:0:S0",
+      "status": "sealed",
+      "target_room": 6,
+      "center": [
+        0.0,
+        0.0,
+        -25.982819
+      ],
+      "width": 4.5,
+      "passage": false,
+      "locked": false,
+      "tethered": false,
+      "frame_count": 3,
+      "leaf_count": 1,
+      "frame_light_count": 1,
+      "matching_status_light_count": 1,
+      "label_count": 1
+    },
+    {
+      "subject": "R0:S1 -> H0-1:0:S0",
+      "label": "R0:S1 -> H0-1:0:S0",
+      "status": "sealed",
+      "target_room": 1,
+      "center": [
+        17.86233,
+        0.0,
+        0.0
+      ],
+      "width": 4.5,
+      "passage": false,
+      "locked": false,
+      "tethered": false,
+      "frame_count": 3,
+      "leaf_count": 1,
+      "frame_light_count": 1,
+      "matching_status_light_count": 1,
+      "label_count": 1
+    },
+    {
+      "subject": "R0:S2 -> H0-13:0:S0",
+      "label": "R0:S2 -> H0-13:0:S0",
+      "status": "passage",
+      "target_room": 13,
+      "center": [
+        0.0,
+        0.0,
+        25.982819
+      ],
+      "width": 4.5,
+      "passage": true,
+      "locked": false,
+      "tethered": false,
+      "frame_count": 3,
+      "leaf_count": 0,
+      "frame_light_count": 1,
+      "matching_status_light_count": 1,
+      "label_count": 1
+    },
+    {
+      "subject": "R0:S3 -> H0-19:0:S0",
+      "label": "R0:S3 -> H0-19:0:S0",
+      "status": "sealed",
+      "target_room": 19,
+      "center": [
+        -17.86233,
+        0.0,
+        0.0
+      ],
+      "width": 4.5,
+      "passage": false,
+      "locked": false,
+      "tethered": false,
+      "frame_count": 3,
+      "leaf_count": 1,
+      "frame_light_count": 1,
+      "matching_status_light_count": 1,
+      "label_count": 1
+    }
+  ],
   "lights": [
+    {
+      "subject": "threshold R0:S0 -> H0-6:0:S0",
+      "intensity": 1400.0,
+      "range": 5.0,
+      "color_rgb": [
+        0.45,
+        0.62,
+        0.78
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "threshold R0:S1 -> H0-1:0:S0",
+      "intensity": 1400.0,
+      "range": 5.0,
+      "color_rgb": [
+        0.45,
+        0.62,
+        0.78
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "threshold R0:S2 -> H0-13:0:S0",
+      "intensity": 1400.0,
+      "range": 5.0,
+      "color_rgb": [
+        0.45,
+        0.62,
+        0.78
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "threshold R0:S3 -> H0-19:0:S0",
+      "intensity": 1400.0,
+      "range": 5.0,
+      "color_rgb": [
+        0.45,
+        0.62,
+        0.78
+      ],
+      "expected_min_intensity": 1.0
+    },
     {
       "subject": "Place light",
       "intensity": 2800.0,
@@ -1157,18 +1282,1245 @@
       "expected_min_intensity": 1.0
     },
     {
-      "subject": "unnamed light",
-      "intensity": 1900.0,
-      "range": 6.5,
+      "subject": "Place light",
+      "intensity": 2800.0,
+      "range": 30.88,
       "color_rgb": [
-        0.6,
-        0.3,
-        1.0
+        1.0,
+        0.78,
+        0.52
+      ],
+      "expected_min_intensity": 1.0
+    },
+    {
+      "subject": "Place light",
+      "intensity": 1540.0,
+      "range": 11.0,
+      "color_rgb": [
+        1.0,
+        0.78,
+        0.52
       ],
       "expected_min_intensity": 1.0
     }
   ],
   "materials": [
+    {
+      "subject": "Preview floor",
+      "signal": false,
+      "base_rgb": [
+        0.31714147,
+        0.24672852,
+        0.17386806
+      ],
+      "emissive_rgb": [
+        0.081999995,
+        0.062,
+        0.0622
+      ],
+      "emissive_luminance": 0.06626643,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview ceiling",
+      "signal": false,
+      "base_rgb": [
+        0.3157041,
+        0.24385388,
+        0.1688374
+      ],
+      "emissive_rgb": [
+        0.07699999,
+        0.052,
+        0.047199998
+      ],
+      "emissive_luminance": 0.05696844,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Preview wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling fixture",
+      "signal": false,
+      "base_rgb": [
+        0.9,
+        0.85,
+        0.72
+      ],
+      "emissive_rgb": [
+        3.2,
+        2.7,
+        1.8
+      ],
+      "emissive_luminance": 2.7413201,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Ceiling rib",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Closed door",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.06,
+        0.1
+      ],
+      "emissive_rgb": [
+        0.1,
+        0.32,
+        0.5
+      ],
+      "emissive_luminance": 0.286224,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Closed door",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.06,
+        0.1
+      ],
+      "emissive_rgb": [
+        0.1,
+        0.32,
+        0.5
+      ],
+      "emissive_luminance": 0.286224,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Closed door",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.06,
+        0.1
+      ],
+      "emissive_rgb": [
+        0.1,
+        0.32,
+        0.5
+      ],
+      "emissive_luminance": 0.286224,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Doorframe post",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.07,
+        0.11
+      ],
+      "emissive_rgb": [
+        0.35,
+        1.9,
+        2.5
+      ],
+      "emissive_luminance": 1.61379,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Doorframe post",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.07,
+        0.11
+      ],
+      "emissive_rgb": [
+        0.35,
+        1.9,
+        2.5
+      ],
+      "emissive_luminance": 1.61379,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Doorframe lintel",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.07,
+        0.11
+      ],
+      "emissive_rgb": [
+        0.35,
+        1.9,
+        2.5
+      ],
+      "emissive_luminance": 1.61379,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Doorframe post",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.07,
+        0.11
+      ],
+      "emissive_rgb": [
+        0.35,
+        1.9,
+        2.5
+      ],
+      "emissive_luminance": 1.61379,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Doorframe post",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.07,
+        0.11
+      ],
+      "emissive_rgb": [
+        0.35,
+        1.9,
+        2.5
+      ],
+      "emissive_luminance": 1.61379,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Doorframe lintel",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.07,
+        0.11
+      ],
+      "emissive_rgb": [
+        0.35,
+        1.9,
+        2.5
+      ],
+      "emissive_luminance": 1.61379,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Doorframe post",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.07,
+        0.11
+      ],
+      "emissive_rgb": [
+        0.35,
+        1.9,
+        2.5
+      ],
+      "emissive_luminance": 1.61379,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Doorframe post",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.07,
+        0.11
+      ],
+      "emissive_rgb": [
+        0.35,
+        1.9,
+        2.5
+      ],
+      "emissive_luminance": 1.61379,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Doorframe lintel",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.07,
+        0.11
+      ],
+      "emissive_rgb": [
+        0.35,
+        1.9,
+        2.5
+      ],
+      "emissive_luminance": 1.61379,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Doorframe post",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.07,
+        0.11
+      ],
+      "emissive_rgb": [
+        0.35,
+        1.9,
+        2.5
+      ],
+      "emissive_luminance": 1.61379,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Doorframe post",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.07,
+        0.11
+      ],
+      "emissive_rgb": [
+        0.35,
+        1.9,
+        2.5
+      ],
+      "emissive_luminance": 1.61379,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Doorframe lintel",
+      "signal": false,
+      "base_rgb": [
+        0.05,
+        0.07,
+        0.11
+      ],
+      "emissive_rgb": [
+        0.35,
+        1.9,
+        2.5
+      ],
+      "emissive_luminance": 1.61379,
+      "min_luminance": 2.0
+    },
     {
       "subject": "Place floor",
       "signal": false,
@@ -1266,6 +2618,22 @@
       "min_luminance": 2.0
     },
     {
+      "subject": "Room wall",
+      "signal": false,
+      "base_rgb": [
+        0.3185788,
+        0.24816586,
+        0.1753054
+      ],
+      "emissive_rgb": [
+        0.087,
+        0.072,
+        0.0772
+      ],
+      "emissive_luminance": 0.07556444,
+      "min_luminance": 2.0
+    },
+    {
       "subject": "Ceiling fixture",
       "signal": false,
       "base_rgb": [
@@ -1410,6 +2778,38 @@
       "min_luminance": 2.0
     },
     {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
+      "subject": "Wall trim",
+      "signal": false,
+      "base_rgb": [
+        0.02,
+        0.03,
+        0.05
+      ],
+      "emissive_rgb": [
+        9.5,
+        4.5,
+        1.1999999
+      ],
+      "emissive_luminance": 5.32474,
+      "min_luminance": 2.0
+    },
+    {
       "subject": "Ceiling rib",
       "signal": false,
       "base_rgb": [
@@ -1455,22 +2855,6 @@
         1.1999999
       ],
       "emissive_luminance": 5.32474,
-      "min_luminance": 2.0
-    },
-    {
-      "subject": "Rival team 1 sheet sprite",
-      "signal": true,
-      "base_rgb": [
-        0.99999994,
-        0.99999994,
-        0.99999994
-      ],
-      "emissive_rgb": [
-        8.0,
-        2.6,
-        0.4
-      ],
-      "emissive_luminance": 3.5892,
       "min_luminance": 2.0
     },
     {
@@ -1567,38 +2951,6 @@
         0.015
       ],
       "emissive_luminance": 0.014999999,
-      "min_luminance": 2.0
-    },
-    {
-      "subject": "Anchor torch floor halo",
-      "signal": false,
-      "base_rgb": [
-        0.6,
-        0.3,
-        1.0
-      ],
-      "emissive_rgb": [
-        4.5,
-        1.2,
-        9.0
-      ],
-      "emissive_luminance": 2.46474,
-      "min_luminance": 2.0
-    },
-    {
-      "subject": "Anchor torch sprite",
-      "signal": true,
-      "base_rgb": [
-        0.99999994,
-        0.99999994,
-        0.99999994
-      ],
-      "emissive_rgb": [
-        4.5,
-        1.2,
-        9.0
-      ],
-      "emissive_luminance": 2.46474,
       "min_luminance": 2.0
     }
   ],

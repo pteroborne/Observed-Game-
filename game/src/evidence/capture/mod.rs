@@ -2,6 +2,12 @@
 //! the docs evidence. Each is opt-in via an environment variable (see [`configure`]),
 //! drives the game into the Match, frames a deterministic shot, saves it, and exits.
 //! None of this runs in normal play.
+//!
+//! Drivers must not assume their first `NextState` write survives boot: on a slow
+//! first frame (dx12 shader compilation) the splash timer fires in the same frame
+//! and clobbers the transition. Each driver therefore keeps asserting its target
+//! state until the Match resources actually exist — and stops once they do, so an
+//! identity transition never re-runs the Match `OnEnter` teardown/setup.
 
 pub(crate) mod bot_pov;
 pub(crate) mod scenarios;

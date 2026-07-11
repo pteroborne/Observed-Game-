@@ -1,43 +1,47 @@
 # Bug Backlog
 
-Known defects from playtesting, recorded 2026-07-09. Every remaining open entry
-is scheduled into an Arc H phase (see per-entry pointers). New findings land here
-first, then get scheduled. Keep entries self-contained enough to hand to an agent
-cold.
+Known defects from playtesting, recorded 2026-07-09 (the original four were
+fixed in Arc H and hand-audited in the 2026-07-11 ship-gate playtest). Open
+entries are post-ship findings, unscheduled. New findings land here first, then
+get scheduled. Keep entries self-contained enough to hand to an agent cold.
 
 ## Open
 
-### 1. Control rebind captures its own activation key
-**Scheduled: Arc H Phase 63** ([arc_h/phase_63_control_rebind.md](arc_h/phase_63_control_rebind.md)).
-"Press Enter to remap" then immediately binds the control to Enter — the capture
-starts listening while the activation press is still live. **Ruling: replace the
-custom capture flow with the proven `control_lab` rebind overlay machinery instead
-of maintaining our own.** Whatever the implementation, the capture must ignore the
-key event that activated it (start on key-release, or swallow the first press).
-Look at: `game/src/screens/match_runtime/pause_settings.rs` (rebind capture),
-`game/src/screens/settings.rs`, `labs/control_lab` (the proven overlays).
+### 5. Bot-POV walkthrough stalls in the observation room
+**Found 2026-07-11 during the Phase 66 ship-gate evidence refresh.** The
+`OBSERVED2_CAPTURE_BOT` walkthrough (all bots on, seed 1) reaches Room 11 — the
+tether observation room — around shot 55 of 120 and never moves again; the last
+half of the GIF is a frozen frame. The committed 2026-07-10 GIF shows the same
+tail-freeze trait (frames 40–48 identical), so this is pre-existing, not an Arc H
+regression. Look at: `game/src/evidence/capture/bot_pov.rs` (route driving) and
+whatever nav target the bot chases after keystones are force-collected — it may
+be waiting on a door/decoherence that never happens while the capture holds
+`runtime.done = false`.
 
-### 2. Stretched textures and bad "ceiling tile" geometry
-**Scheduled: Arc H Phase 62** ([arc_h/phase_62_style_reconciliation.md](arc_h/phase_62_style_reconciliation.md)) — widened by the 2026-07-10 Arc F review: the district palette is visually absent under the imported albedos, so this is a style-layer reconciliation, not just a UV fix.
-Wall/floor/ceiling albedo textures stretch oddly (UVs likely not scaled to world
-units per face, so long walls smear the texture). Separately, "ceiling tiles" were
-added at some point as actual geometry and don't visually work — evaluate removing
-them or replacing with a flat textured ceiling. Look at: the place renderer's shell
-build (`game/src/screens/place/` — wall/floor/ceiling mesh + UV generation),
-`game/src/view/assets.rs` texture material setup.
+### 6. World-space evidence captures render nearly black
+**Found 2026-07-11 during the Phase 66 ship-gate evidence refresh.** The
+`phase_62_*` capture set (match, long hallway, hallway doorway, drained room) and
+the visual audit's geometry/lighting scenarios render as near-black voids — the
+committed Phase 62 evidence has looked like this since it landed, so Phase 62's
+own success criteria ("two districts unmistakable in a capture", "no smeared
+textures on long walls") have never actually been demonstrated by its captures.
+Rooms lit by emissives (observation monitors, torch glow) read fine, and the
+style-presence material check passes, so this is either (a) capture vantages
+pointing at unlit space, (b) the screenshot path losing HDR/bloom that the live
+render has, or (c) the world genuinely being too dark to read — the human
+playtest adjudicates which. Look at: `game/src/evidence/capture/scenarios.rs`
+(camera staging), `game/src/screens/match_runtime/ambience.rs` (palette
+luminance), Bevy screenshot tonemapping.
 
-### 3. Hallway thresholds overlap or land in corners
-**Scheduled: Arc H Phase 64** ([arc_h/phase_64_threshold_integrity.md](arc_h/phase_64_threshold_integrity.md)).
-Some doorway thresholds in hallway interiors render overlapped with walls or
-smashed into random corners. This should be impossible by construction (door
-columns are chosen by the maze/WFC generators and projected into `DoorGap`s), so
-something in the projection or interior-wall placement disagrees with the gap
-positions. Reproduce across seeds, then look at: `game/src/teleport/geom.rs`
-(hallway interior projection + gap placement), `game/src/wfc_interior.rs` /
-`observed_facility::wfc` door-column choice, and the DFS maze door columns.
-The map-audit evidence pipeline (`OBSERVED2_CAPTURE_MAP_AUDIT`) should be able to
-catch this class of defect once the geometry check knows thresholds must not
-intersect interior walls.
+### 7. Audio mix balance: effects too loud, ambience too quiet
+**Found 2026-07-11 during the Phase 66 user playtest listen-through.** The
+relative mix is off: one-shot effects (cues, UI, stings) overpower the ambient
+beds, and the district/location beds sit too quiet to register as atmosphere.
+Rebalance the default gain staging between effect cues and beds — this is a mix
+change, not a regeneration; the palette itself is fine. Look at:
+`game/src/screens/audio.rs` / the `AudioDirector` gain constants
+(bed sink levels vs. cue playback volumes), and confirm the settings sliders
+(master/SFX/music) still scale sensibly around the new defaults.
 
 ## Minor / hygiene
 
@@ -47,6 +51,24 @@ intersect interior walls.
   "Review fixes" section).
 
 ## Fixed
+
+- ~~Control rebind captures its own activation key~~ — fixed by Arc H Phase 63
+  (`control_lab` overlay machinery adopted; capture arms on the activation key's
+  release, conflicts surface visibly). Overlay evidence captured and viewed
+  2026-07-11 (`docs/evidence/phase_63_rebind_overlay.png`); hand-audited in the
+  ship-gate playtest.
+
+- ~~Stretched textures and bad "ceiling tile" geometry~~ — fixed by Arc H
+  Phase 62 (palette-over-albedo, world-unit UVs, triangulated ceiling geometry
+  removed, style-presence audit check added). Hand-audited in the ship-gate
+  playtest 2026-07-11. Note: the phase's own captures render nearly black
+  (see open #6), so the in-game look is the verified artifact, not the PNGs.
+
+- ~~Hallway thresholds overlap or land in corners~~ — fixed by Arc H Phase 64
+  (audit-first reproduction, generator/projection agreement fixed at the source,
+  permanent map-validation gate). Threshold renders captured and viewed
+  2026-07-11 (`docs/evidence/phase_64_threshold_integrity/`); hand-audited in
+  the ship-gate playtest.
 
 - ~~Unknown `OBSERVED2_BOTS` tokens panic and the all-on digest is unpinned~~ —
   fixed 2026-07-11 in the Phase-66 implementation. Unknown tokens warn and use

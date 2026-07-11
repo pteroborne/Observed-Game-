@@ -53,32 +53,34 @@ The atmosphere payoff: seeded, role-driven props under three hard rules (never c
 
 **Arc H — Ground Truth** (plan: [docs/ground_truth_arc_plan.md](docs/ground_truth_arc_plan.md); per-phase sub-agent hand-offs: [docs/arc_h/](docs/arc_h/README.md)). The harden-and-ship arc: make the game match its claims — visually, mechanically, and in the ledger — then declare the MVP shipped. No new features; the bug backlog and Arc F's landing debt are the scope. New standing rule born from the Arc F review: **every phase ends with evidence a human can falsify** — agents view their own captures, the parent session rejects phases whose evidence doesn't visibly show the claim. Waves: [61] → [62 ∥ 63 ∥ 64] → [65 ∥ 66].
 
-### Phase 61 — Land Arc F (commits, ledger, honest evidence) `[ ]`
+### Phase 61 — Land Arc F (commits, ledger, honest evidence) `[x]`
 Stage the entire uncommitted Arc F working tree into reviewed commits; tick the ledger (ROADMAP milestones, the five missing as-landed notes incl. the Phase-60 reticle ruling, memory, Catalogue); re-capture the evidence that is missing or shows nothing (rivals with rivals actually in frame, dressing before/after). Bookkeeping only — no behavior changes. ([docs/arc_h/phase_61_land_arc_f.md](docs/arc_h/phase_61_land_arc_f.md))
 
-### Phase 62 — Style Reconciliation `[ ]`
+### Phase 62 — Style Reconciliation `[x]`
 Textures back under the Contract: district palette tint modulates every albedo (two districts unmistakable in a capture; drained/klaxon still read), world-unit UVs end the smearing, the triangulated ceiling-tile geometry is removed, and the visual audit gains a style-presence check proven to fail against the old broken state. Closes bug backlog #2. ([docs/arc_h/phase_62_style_reconciliation.md](docs/arc_h/phase_62_style_reconciliation.md))
 
-### Phase 63 — Control Rebind, For Real `[ ]`
+### Phase 63 — Control Rebind, For Real `[x]`
 Replace the custom rebind capture with the proven `control_lab` overlay machinery (user ruling); the capture arms on the activation key's release so binding-the-activation-key is structurally impossible; conflicts surface visibly; round-trip and gamepad-regression tests. Closes bug backlog #1. ([docs/arc_h/phase_63_control_rebind.md](docs/arc_h/phase_63_control_rebind.md))
 
-### Phase 64 — Threshold Geometry Integrity `[ ]`
+### Phase 64 — Threshold Geometry Integrity `[x]`
 Write the audit check first (no threshold may intersect an interior wall or another threshold, corpus-wide, DFS and WFC, all decoherence versions), use its failures as the reproduction set, fix the generator/projection disagreement at the source, and keep the check as a permanent map-validation gate. Closes bug backlog #3. ([docs/arc_h/phase_64_threshold_integrity.md](docs/arc_h/phase_64_threshold_integrity.md))
 
 ### Phase 65 — Observation Rooms Made Real `[x]`
 The 3×3 observation panels become legible schematic room feeds rendered from simulation data (footprint, doorways, occupant dots; anchors cyan, guardian red — the existing state signals layered on top), diegetic-only (panels never write into the player's fog-of-war `MapKnowledge`), with the jutting geometry fixed. Closes bug backlog #4. ([docs/arc_h/phase_65_observation_rooms.md](docs/arc_h/phase_65_observation_rooms.md))
 
-### Phase 66 — Post-Match Summary & the Ship Gate `[ ]`
-The results screen tells the run's story (placement, escapes in order, what the collapse took, the player's own path) for every outcome shape including solo, with a one-keypress path back into the loop — closing Arc E Phase 50 — plus the backlog hygiene items (`OBSERVED2_BOTS` panic→warning, the all-on digest characterization test). **Implementation and four-outcome results evidence are complete as of 2026-07-11; the checkbox stays open for the scripted cross-phase evidence refresh and user-run playtest.** The MVP ships when the checklist passes, not when the tests do. ([docs/arc_h/phase_66_summary_ship_gate.md](docs/arc_h/phase_66_summary_ship_gate.md))
+### Phase 66 — Post-Match Summary & the Ship Gate `[x]`
+The results screen tells the run's story (placement, escapes in order, what the collapse took, the player's own path) for every outcome shape including solo, with a one-keypress path back into the loop — closing Arc E Phase 50 — plus the backlog hygiene items (`OBSERVED2_BOTS` panic→warning, the all-on digest characterization test). **Complete 2026-07-11: implementation, four-outcome results evidence, the scripted cross-phase evidence refresh (all captures viewed), and the user playtest all passed — the MVP is shipped.** Playtest findings recorded as backlog #5–#7 (bot-POV stall, dark world captures, audio mix balance). ([docs/arc_h/phase_66_summary_ship_gate.md](docs/arc_h/phase_66_summary_ship_gate.md))
 
 ---
 
 ## Bug Backlog
 
-Playtest defects tracked in [docs/bug_backlog.md](docs/bug_backlog.md). Three open
-defects remain scheduled: #1 rebind → Phase 63, #2 textures/ceiling → Phase 62,
-and #3 thresholds → Phase 64. Observation rooms (#4) and the Phase-66 hygiene
-items are fixed. New findings land in the backlog first, then get scheduled.
+Playtest defects tracked in [docs/bug_backlog.md](docs/bug_backlog.md). The four
+original defects (#1 rebind, #2 textures/ceiling, #3 thresholds, #4 observation
+rooms) are fixed and were hand-audited in the 2026-07-11 ship-gate playtest.
+Open post-ship findings: #5 bot-POV walkthrough stall, #6 near-black world
+captures, #7 audio mix balance — unscheduled. New findings land in the backlog
+first, then get scheduled.
 
 ---
 
@@ -89,10 +91,20 @@ Recorded so the horizon is explicit; none of this is being built yet.
 1. **True LAN multiplayer with dedicated servers.** The deferred Arc E designs (Phases 51–53: shared lockstep actions, socket transport behind `observed_net`, LAN lobby/discovery) plus a dedicated-server deployment model — a headless deterministic host that peers connect to, replacing pure peer-to-peer session ownership. Full online play (NAT traversal / relay / matchmaking) remains beyond even that.
 2. **World interaction.** Players act on the facility graph itself: explorers "hacking" a room console to connect it to a specified room ID (player-driven rerouting, subject to the solvability invariant and decoherence rules), and fallen/absorbed teams connecting nodes from a top-down view — extending "eliminated teams join the adversary" into an active graph-editing role that keeps every player playing to the end.
 3. **Carried follow-ups from Arcs C/D:** a third hall endpoint so the gantry's understory exit reaches a genuinely different neighbour; the decoherence counter-tool (Phase 38's criterion (d) never triggered it).
+4. **District architectural language (user idea, 2026-07-11).** Amp up the design language of halls and rooms with district-specific geometry and verticality — the reference is Halo CE's Forerunner architecture, which reads as one civilization because it commits to a constraint (mostly obtuse angles). Give certain districts their own geometric grammar (angle vocabulary, ceiling heights, vertical shafts) on top of the existing palette identity, within the Legibility Contract.
+5. **Directional light-and-shadow staging (user idea, 2026-07-11).** Explore what the lighting engine can do with long rays of light and shadow in the spirit of Japanese architecture (low sun through slats/screens). Bevy 0.18 has the pieces: shadow-casting directional/spot lights give crisp long shadow blades through slatted geometry, and `VolumetricFog` + `FogVolume` make the shafts themselves visible in air (directional, spot, and point lights all participate). Needs an evaluation lab first — volumetrics interact with the existing bloom/HDR setup and the Legibility Contract. **User endorsed the lab plan 2026-07-11: a `lighting_lab` staging one slatted corridor with a low light is the first step when this is picked up** (dovetails with backlog #6 — deliberate light staging attacks the too-dark-to-read problem and the atmosphere goal in one pass).
 
 ---
 
 ## Recent Milestones (Completed)
+
+### Phase 66 — Post-Match Summary & the Ship Gate `[x]` — **MVP SHIPPED**
+Completed 2026-07-11:
+- Results screen builds a pure seven-line `ResultsStory` (standing, escape order, collapse losses, own path, keystones, anchors, replay identity) for all four outcome shapes including true solo; Enter/A rematches directly with a new seed.
+- Hygiene: `OBSERVED2_BOTS` unknown tokens warn and fall back to all-on; director corpus digest pinned.
+- Scripted ship-gate evidence regenerated from one build and viewed: full visual audit (zero findings), bot-POV GIF, first-ever Phase-63 rebind-overlay capture, Phase-64 threshold renders, Phase-62 set. Fixed the capture drivers' splash-timer race and documented the capture env requirements (`OBSERVED2_BOTS=all`; Vulkan for world scenes, dx12 for Results).
+- User playtest passed all four checklist items (onboarding match, solo match, rebind + hand-audit of backlog #1–#4, audio listen-through).
+- Findings recorded as backlog #5 (bot-POV stall), #6 (near-black world captures), #7 (audio mix balance).
 
 ### Phase 65 — Observation Rooms Made Real `[x]`
 Completed 2026-07-11:

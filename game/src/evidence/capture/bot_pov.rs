@@ -87,8 +87,11 @@ pub(super) fn capture_bot_pov_progress(
     let elapsed = time.elapsed_secs();
     match request.phase {
         0 => {
-            next.set(GameState::Match);
-            request.phase = 1;
+            if runtime.is_some() {
+                request.phase = 1;
+            } else {
+                next.set(GameState::Match);
+            }
         }
         1 => {
             if let (Some(mut runtime), Some(mut keys)) = (runtime, keys) {

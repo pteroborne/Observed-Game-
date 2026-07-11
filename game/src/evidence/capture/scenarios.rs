@@ -41,8 +41,11 @@ pub(super) fn capture_ceiling_progress(
     let elapsed = time.elapsed_secs();
     match request.phase {
         0 => {
-            next.set(GameState::Match);
-            request.phase = 1;
+            if runtime.is_some() {
+                request.phase = 1;
+            } else {
+                next.set(GameState::Match);
+            }
         }
         1 => {
             if let (Some(mut rt), Some(mut tp)) = (runtime, tp) {
@@ -105,8 +108,11 @@ pub(super) fn capture_doorway_progress(
     let elapsed = time.elapsed_secs();
     match request.phase {
         0 => {
-            next.set(GameState::Match);
-            request.phase = 1;
+            if runtime.is_some() {
+                request.phase = 1;
+            } else {
+                next.set(GameState::Match);
+            }
         }
         1 => {
             if let (Some(mut rt), Some(mut tp), Some(keys), Some(item_state)) =
@@ -225,8 +231,11 @@ pub(super) fn capture_keystone_progress(
     let elapsed = time.elapsed_secs();
     match request.phase {
         0 => {
-            next.set(GameState::Match);
-            request.phase = 1;
+            if runtime.is_some() {
+                request.phase = 1;
+            } else {
+                next.set(GameState::Match);
+            }
         }
         1 => {
             if let (Some(mut rt), Some(mut tp), Some(keys), Some(item_state)) =
@@ -297,8 +306,11 @@ pub(super) fn capture_rivals_progress(
     let elapsed = time.elapsed_secs();
     match request.phase {
         0 => {
-            next.set(GameState::Match);
-            request.phase = 1;
+            if runtime.is_some() {
+                request.phase = 1;
+            } else {
+                next.set(GameState::Match);
+            }
         }
         1 => {
             if let Some(rt) = runtime.as_mut() {
@@ -380,8 +392,11 @@ pub(super) fn capture_rebind_progress(
     let elapsed = time.elapsed_secs();
     match request.phase {
         0 => {
-            next.set(GameState::Match);
-            request.phase = 1;
+            if runtime.is_some() {
+                request.phase = 1;
+            } else {
+                next.set(GameState::Match);
+            }
         }
         1 => {
             if let (
@@ -490,6 +505,9 @@ pub(super) fn capture_results_progress(
             );
             request.next_at = elapsed + 1.0;
             request.phase = 2;
+        }
+        1 if *state.get() != GameState::Results => {
+            next.set(GameState::Results);
         }
         2 if elapsed >= request.next_at => {
             request.index += 1;
@@ -649,8 +667,11 @@ pub(super) fn capture_match_progress(
 ) {
     let elapsed = time.elapsed_secs();
     if request.phase == 0 {
-        next.set(GameState::Match);
-        request.phase = 1;
+        if runtime.is_some() {
+            request.phase = 1;
+        } else {
+            next.set(GameState::Match);
+        }
     } else if request.phase == 1 {
         if let Some(runtime) = runtime.as_mut() {
             runtime.force_scripted_rounds(5);
@@ -730,8 +751,11 @@ pub(super) fn capture_map_audit_progress(
     let elapsed = time.elapsed_secs();
     match request.phase {
         0 => {
-            next.set(GameState::Match);
-            request.phase = 1;
+            if runtime.is_some() {
+                request.phase = 1;
+            } else {
+                next.set(GameState::Match);
+            }
         }
         1 => {
             if let (Some(rt), Some(tp), Some(keys), Some(item_state)) = (
@@ -852,8 +876,11 @@ pub(super) fn capture_maze_progress(
     let elapsed = time.elapsed_secs();
     match request.phase {
         0 => {
-            next.set(GameState::Match);
-            request.phase = 1;
+            if runtime.is_some() {
+                request.phase = 1;
+            } else {
+                next.set(GameState::Match);
+            }
         }
         1 => {
             if let (Some(mut rt), Some(mut tp), Some(keys), Some(item_state)) =
