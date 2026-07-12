@@ -5935,6 +5935,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rapier_authoring_lab"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_trenchbroom",
+ "observed_core",
+ "observed_style",
+ "player_input",
+ "quake-map",
+ "rapier3d",
+]
+
+[[package]]
 name = "rapier_determinism_lab"
 version = "0.1.0"
 dependencies = [

@@ -83,7 +83,7 @@ The following duplication patterns have been identified in the codebase. These s
 
 ## Feasibility Labs (`labs/`)
 
-The 53 prototype labs in `labs/` are independent Bevy applications designed to isolate and test specific technical questions. They follow a strict sandbox model, allowing full reset (`R` key) without restarting. They are grouped here by testing domain:
+The 54 prototype labs in `labs/` are independent Bevy applications designed to isolate and test specific technical questions. They follow a strict sandbox model, allowing full reset (`R` key) without restarting. They are grouped here by testing domain:
 
 ### Foundation & Controls
 - `menu_lab` & `control_lab`: Boot states, pause systems, rebind overlays, intent playback, controller assignment.
@@ -94,6 +94,7 @@ The 53 prototype labs in `labs/` are independent Bevy applications designed to i
 - `fps_controller_lab`, `fps_elevation_lab` & `gantry_lab`: 3D transition, dynamic AABB collision, elevation changes, and two-level jump-map hallway timing.
 - `wellshaft_lab`: Production-controller prototype for a multi-threshold vertical silo, proving a hexagonal center pillar, six radial landing bridges, visible/collidable spiral stair treads, reset stability, and staged top/bottom/plan evidence.
 - `rapier_determinism_lab`: Isolated feasibility spike (the "only if the custom controller proves insufficient" escape hatch) answering whether **rapier3d 0.34** can step convex + smooth (ball/capsule/convex-hull) colliders in fixed-dt lockstep with `enhanced-determinism` and stay bit-for-bit reproducible. Raw rapier (not `bevy_rapier`) owns the step loop; two identical worlds run side by side with a live hash-divergence monitor plus an offline bitwise-replay unit test. Verdict: bit-identical, no promotion into the game.
+- `rapier_authoring_lab`: Combined TrenchBroom/Rapier vertical slice. A typed, editable Quake `.map` projects into stable room/port/door semantics and one static Rapier convex hull per brush; a fixed-step kinematic capsule traverses the exact sloped ramp, reacts to model-owned door collider mutation, resets cleanly, and replays scripted intents bit-for-bit. This remains lab-local pending playtest and production-boundary review.
 
 ### Observation & Procedural Geometry
 - `observation_lab` & `door_lab`: 2D graph transitions, unobserved doorway rewiring, door leaf slam animations.
