@@ -5935,6 +5935,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rapier_aesthetic_lab"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "observed_style",
+ "player_input",
+ "rapier3d",
+ "rapier_portal_lab",
+]
+
+[[package]]
 name = "rapier_authoring_lab"
 version = "0.1.0"
 dependencies = [

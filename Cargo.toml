@@ -71,6 +71,7 @@ members = [
     "labs/rapier_determinism_lab",
     "labs/rapier_authoring_lab",
     "labs/rapier_portal_lab",
+    "labs/rapier_aesthetic_lab",
     "game",
 ]
 resolver = "3"
