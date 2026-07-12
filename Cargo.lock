@@ -5956,6 +5956,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rapier_portal_lab"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_trenchbroom",
+ "observed_style",
+ "player_input",
+ "quake-map",
+ "rapier3d",
+]
+
+[[package]]
 name = "raw-window-handle"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
