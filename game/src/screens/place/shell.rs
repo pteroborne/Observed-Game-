@@ -38,6 +38,7 @@ pub(crate) fn spawn_room_shell(
             ceiling_material,
             root_xform,
             false,
+            WALL_HEIGHT,
         );
         mesh::spawn_polygon_walls(
             commands,
@@ -89,6 +90,37 @@ pub(crate) fn spawn_hallway_shell(
 ) {
     let (hx, hz) = (geom.half.x, geom.half.y);
     let shell_height = crate::teleport::structural_height(geom, WALL_HEIGHT);
+    if let Some(poly) = geom.poly.as_ref() {
+        let root = Transform::from_xyz(0.0, y_offset, 0.0);
+        // The shaft floor is the same grey concrete as its ledges and ramps, not
+        // the district floor tint — otherwise the bottom of the well reads as a
+        // bright slab under the pools instead of dark stone catching them.
+        mesh::spawn_polygon_shell(
+            commands,
+            assets,
+            meshes,
+            poly,
+            assets.wellshaft_ramp_material.clone(),
+            ceiling_material,
+            root,
+            false,
+            shell_height,
+        );
+        // Dark concrete walls too: the Silo register is a stone shaft lit only by
+        // its practicals, so the district identity rides the warm pool tint and fog
+        // rather than a bright wall albedo close enough to the lamps to wash out.
+        spawn_wellshaft_hex_walls(
+            commands,
+            assets,
+            poly,
+            &geom.gaps,
+            assets.wellshaft_ramp_material.clone(),
+            y_offset,
+            shell_height,
+        );
+        spawn_wellshaft_ramps(commands, assets, &geom.decks, y_offset);
+        return;
+    }
     commands.spawn((
         PlaceGeometry,
         DespawnOnExit(GameState::Match),
@@ -126,6 +158,123 @@ pub(crate) fn spawn_hallway_shell(
     }
     if !geom.decks.is_empty() {
         spawn_gantry_decks(commands, assets, &geom.decks, y_offset);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn spawn_wellshaft_hex_walls(
+    commands: &mut Commands,
+    assets: &MatchAssets,
+    poly: &[Vec2],
+    gaps: &[DoorGap],
+    material: Handle<StandardMaterial>,
+    y_offset: f32,
+    total_height: f32,
+) {
+    let spawn_panel = |commands: &mut Commands,
+                       a: Vec2,
+                       b: Vec2,
+                       y_min: f32,
+                       y_max: f32,
+                       material: Handle<StandardMaterial>| {
+        let d = b - a;
+        let len = d.length();
+        let height = y_max - y_min;
+        if len < 0.05 || height < 0.05 {
+            return;
+        }
+        let mid = (a + b) * 0.5;
+        let yaw = (-d.y).atan2(d.x);
+        commands.spawn((
+            PlaceGeometry,
+            DespawnOnExit(GameState::Match),
+            Mesh3d(assets.placeholder_mesh.clone()),
+            MeshMaterial3d(material),
+            Transform::from_xyz(mid.x, y_offset + y_min + height * 0.5, mid.y)
+                .with_rotation(Quat::from_rotation_y(yaw))
+                .with_scale(Vec3::new(len + 0.4, height, 0.4)),
+            Name::new("Wellshaft hex wall"),
+        ));
+    };
+
+    for i in 0..poly.len() {
+        let a = poly[i];
+        let b = poly[(i + 1) % poly.len()];
+        let mid = (a + b) * 0.5;
+        if let Some(gap) = gaps
+            .iter()
+            .find(|gap| gap.kind.is_passage() && gap.center.distance(mid) < 0.05)
+        {
+            let dir = (b - a).normalize_or_zero();
+            let lo = gap.center - dir * gap.width * 0.5;
+            let hi = gap.center + dir * gap.width * 0.5;
+            spawn_panel(commands, a, lo, 0.0, total_height, material.clone());
+            spawn_panel(commands, hi, b, 0.0, total_height, material.clone());
+            spawn_panel(commands, lo, hi, 0.0, gap.floor_y, material.clone());
+            spawn_panel(
+                commands,
+                lo,
+                hi,
+                gap.floor_y + WALL_HEIGHT,
+                total_height,
+                material.clone(),
+            );
+        } else {
+            spawn_panel(commands, a, b, 0.0, total_height, material.clone());
+        }
+    }
+}
+
+/// Render the collision staircase as four continuous orange ramp faces. Only the thin
+/// raised ring slabs are drawn individually; the 120 shallow AABB steps remain an
+/// invisible deterministic collision approximation.
+fn spawn_wellshaft_ramps(
+    commands: &mut Commands,
+    assets: &MatchAssets,
+    decks: &[DeckSeg],
+    y_offset: f32,
+) {
+    for deck in decks.iter().filter(|deck| deck.bottom_y > 0.01) {
+        let height = deck.top_y - deck.bottom_y;
+        commands.spawn((
+            PlaceGeometry,
+            DespawnOnExit(GameState::Match),
+            Mesh3d(assets.placeholder_mesh.clone()),
+            MeshMaterial3d(assets.wellshaft_ramp_material.clone()),
+            Transform::from_xyz(
+                deck.center.x,
+                y_offset + deck.bottom_y + height * 0.5,
+                deck.center.y,
+            )
+            .with_scale(Vec3::new(deck.half.x * 2.0, height, deck.half.y * 2.0)),
+            Name::new("Wellshaft ring"),
+        ));
+    }
+
+    for level in 0..crate::hallway::WELL_SHAFT_LEVELS - 1 {
+        let (low, high) = crate::hallway::wellshaft_ramp_endpoints(level);
+        let low = Vec2::new(low.0, low.1);
+        let high = Vec2::new(high.0, high.1);
+        let d = high - low;
+        let run = d.length();
+        let rise = crate::hallway::WELL_SHAFT_LEVEL_HEIGHT;
+        let yaw = (-d.y).atan2(d.x);
+        let pitch = rise.atan2(run);
+        let center = (low + high) * 0.5;
+        commands.spawn((
+            PlaceGeometry,
+            DespawnOnExit(GameState::Match),
+            Mesh3d(assets.placeholder_mesh.clone()),
+            MeshMaterial3d(assets.wellshaft_ramp_material.clone()),
+            Transform::from_xyz(
+                center.x,
+                y_offset + level as f32 * rise + rise * 0.5,
+                center.y,
+            )
+            .with_rotation(Quat::from_rotation_y(yaw) * Quat::from_rotation_z(pitch))
+            .with_scale(Vec3::new(run + 0.18, 0.18, 1.0)),
+            Name::new("Wellshaft ramp"),
+        ));
     }
 }
 

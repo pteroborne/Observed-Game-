@@ -507,9 +507,21 @@ pub fn hallway_geom_with_slots_and_role(
         to_room_slot,
         exit_room,
     } = endpoints;
+    let edge_exit_locked = exit_locked && to == exit_room;
+    // The abstract WFC role becomes a concrete traversal piece only here, at the
+    // simulation-to-geometry projection boundary. A locked objective edge and an edge
+    // whose deterministic variation is already the Gantry retain their original piece.
+    let template = if corridor_role == Some(CorridorRole::Vertical)
+        && !edge_exit_locked
+        && template.flavor != hallway::HallwayFlavor::Gantry
+    {
+        hallway::wellshaft_template()
+    } else {
+        template
+    };
     // A hallway heading into the facility exit shows a solid locked door while the
     // keystone gate is shut; otherwise its onward doorway is a normal passage.
-    let exit_kind = if exit_locked && to == exit_room {
+    let exit_kind = if edge_exit_locked {
         GapKind::LockedExit
     } else {
         GapKind::Exit
@@ -571,6 +583,112 @@ pub fn hallway_geom_with_slots_and_role(
     // connectors read as visibly different runs while always staying a real journey.
     let (base_len, w) = hallway::scaled_dims(template);
     let len = (base_len * hallway::length_scale(layout_seed)).max(hallway::MIN_HALL_LENGTH);
+    if template.flavor == hallway::HallwayFlavor::Wellshaft {
+        const HALF_X: f32 = 5.0;
+        const HALF_Z: f32 = 4.33;
+        const LEDGE: f32 = 1.8;
+        const DECK_THICKNESS: f32 = 0.24;
+
+        let mut decks = Vec::new();
+        // Four ledges make a complete regrouping ring at every raised level. The base
+        // floor is the bottom ring; keeping it as the arena floor gives the failed-drop
+        // recovery route a deterministic, walkable terminus.
+        for level in 1..hallway::WELL_SHAFT_LEVELS {
+            let top_y = level as f32 * hallway::WELL_SHAFT_LEVEL_HEIGHT;
+            for (center, half) in [
+                (Vec2::new(0.0, -3.80), Vec2::new(2.45, 0.53)),
+                (Vec2::new(0.0, 3.80), Vec2::new(2.45, 0.53)),
+                (Vec2::new(-4.05, 0.0), Vec2::new(LEDGE * 0.5, 2.5)),
+                (Vec2::new(4.05, 0.0), Vec2::new(LEDGE * 0.5, 2.5)),
+            ] {
+                decks.push(super::DeckSeg {
+                    center,
+                    half,
+                    bottom_y: top_y - DECK_THICKNESS,
+                    top_y,
+                });
+            }
+            if level + 1 == hallway::WELL_SHAFT_LEVELS {
+                decks.push(super::DeckSeg {
+                    center: Vec2::new(0.0, -3.05),
+                    half: Vec2::new(1.5, 0.40),
+                    bottom_y: top_y - DECK_THICKNESS,
+                    top_y,
+                });
+            }
+        }
+
+        // Thirty shallow collision steps support each visually continuous ramp. At
+        // 0.1 m per step they read and feel as a slope while staying inside the proven
+        // deterministic AABB traversal model.
+        for level in 0..hallway::WELL_SHAFT_LEVELS - 1 {
+            let low_y = level as f32 * hallway::WELL_SHAFT_LEVEL_HEIGHT;
+            let (low, high) = hallway::wellshaft_ramp_endpoints(level);
+            let (low, high) = (Vec2::new(low.0, low.1), Vec2::new(high.0, high.1));
+            for step in 1..=hallway::WELL_SHAFT_RAMP_STEPS {
+                let t = step as f32 / hallway::WELL_SHAFT_RAMP_STEPS as f32;
+                let center = low.lerp(high, t);
+                let top_y = low_y + hallway::WELL_SHAFT_LEVEL_HEIGHT * t;
+                let along_x = (high.x - low.x).abs() > (high.y - low.y).abs();
+                decks.push(super::DeckSeg {
+                    center,
+                    half: if along_x {
+                        Vec2::new(0.14, 0.5)
+                    } else {
+                        Vec2::new(0.5, 0.14)
+                    },
+                    bottom_y: 0.0,
+                    top_y,
+                });
+            }
+        }
+
+        return PlaceGeom {
+            half: Vec2::new(HALF_X, HALF_Z),
+            gaps: vec![
+                DoorGap {
+                    center: Vec2::new(0.0, -HALF_Z),
+                    normal: -Vec2::Y,
+                    width: 3.0,
+                    target: from,
+                    kind: GapKind::Entry,
+                    threshold: hallway_gap_threshold(
+                        from,
+                        to,
+                        from,
+                        from_room_slot,
+                        ThresholdSlotId(0),
+                    ),
+                    floor_y: hallway::WELL_SHAFT_HEIGHT,
+                },
+                DoorGap {
+                    center: Vec2::new(0.0, HALF_Z),
+                    normal: Vec2::Y,
+                    width: 3.0,
+                    target: to,
+                    kind: exit_kind,
+                    threshold: hallway_gap_threshold(
+                        from,
+                        to,
+                        to,
+                        to_room_slot,
+                        ThresholdSlotId(0),
+                    ),
+                    floor_y: 0.0,
+                },
+            ],
+            interior: Vec::new(),
+            poly: Some(vec![
+                Vec2::new(-2.5, -HALF_Z),
+                Vec2::new(2.5, -HALF_Z),
+                Vec2::new(HALF_X, 0.0),
+                Vec2::new(2.5, HALF_Z),
+                Vec2::new(-2.5, HALF_Z),
+                Vec2::new(-HALF_X, 0.0),
+            ]),
+            decks,
+        };
+    }
     if template.flavor == hallway::HallwayFlavor::Chicane {
         // An S-bend: a box with two staggered baffles, each sealing one side and leaving
         // a corridor `c` on the other, so the path slaloms from the +X entry up through

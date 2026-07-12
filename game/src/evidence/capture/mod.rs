@@ -82,6 +82,14 @@ pub(super) fn configure_captures(app: &mut App) {
                 scenarios::capture_ceiling_progress
                     .after(crate::screens::place::present_match_camera),
             );
+    } else if let Ok(dir) = std::env::var("OBSERVED2_CAPTURE_WELLSHAFT") {
+        let _ = std::fs::create_dir_all(&dir);
+        app.insert_resource(scenarios::WellshaftCaptureRequest::new(dir))
+            .add_systems(
+                Update,
+                scenarios::capture_wellshaft_progress
+                    .after(crate::screens::place::present_match_camera),
+            );
     } else if let Ok(dir) = std::env::var("OBSERVED2_CAPTURE_RESULTS") {
         let _ = std::fs::create_dir_all(&dir);
         app.insert_resource(scenarios::ResultsCaptureRequest::new(dir))

@@ -860,6 +860,170 @@ impl MazeCaptureRequest {
     }
 }
 
+// --- Wellshaft ---------------------------------------------------------------
+
+#[derive(Resource)]
+pub(super) struct WellshaftCaptureRequest {
+    dir: PathBuf,
+    phase: u8,
+    next_at: f32,
+}
+
+impl WellshaftCaptureRequest {
+    pub(super) fn new(dir: String) -> Self {
+        Self {
+            dir: PathBuf::from(dir),
+            phase: 0,
+            next_at: 0.0,
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn capture_wellshaft_progress(
+    time: Res<Time>,
+    mut request: ResMut<WellshaftCaptureRequest>,
+    mut next: ResMut<NextState<GameState>>,
+    runtime: Option<ResMut<MatchDirector>>,
+    tp: Option<ResMut<TeleportState>>,
+    keys: Option<Res<keystones::KeystoneState>>,
+    item_state: Option<Res<items::ItemsState>>,
+    mut cam: Query<&mut Transform, With<GameCam>>,
+    mut fog: Query<&mut DistanceFog, (With<GameCam>, Without<PlaceGeometry>)>,
+    geometry: Query<(Entity, &Name), With<PlaceGeometry>>,
+    mut commands: Commands,
+    mut exit: MessageWriter<AppExit>,
+) {
+    let elapsed = time.elapsed_secs();
+    let framing_phase = request.phase;
+    match request.phase {
+        0 => {
+            if runtime.is_some() {
+                request.phase = 1;
+            } else {
+                next.set(GameState::Match);
+            }
+        }
+        1 => {
+            if let (Some(mut rt), Some(mut tp), Some(keys), Some(item_state)) =
+                (runtime, tp, keys, item_state)
+            {
+                rt.done = true;
+                let (from, to) = {
+                    let game = rt.live.host_match();
+                    let from = game.local_room();
+                    (from, game.local_target().unwrap_or(RoomId(from.0 + 1)))
+                };
+                let variation = hallway::TEMPLATES
+                    .iter()
+                    .position(|template| template.flavor == hallway::HallwayFlavor::Wellshaft)
+                    .expect("wellshaft capture template");
+                crate::screens::match_runtime::debug_place_into(
+                    &mut tp,
+                    &rt,
+                    Place::Hallway {
+                        from,
+                        to,
+                        variation,
+                    },
+                    from,
+                    &keys,
+                    &item_state,
+                );
+                request.phase = 2;
+                // The wellshaft snaps the global ambient down toward near-black
+                // (apply_place_atmosphere eases at DISTRICT_BLEND_RATE); wait for
+                // it to settle so the capture shows the register at rest, not the
+                // half-lit transient the previous place's ambient bleeds into.
+                request.next_at = elapsed + 3.0;
+            }
+        }
+        2 if elapsed >= request.next_at => {
+            crate::evidence::driver::screenshot_to(
+                &mut commands,
+                request
+                    .dir
+                    .join("wellshaft_top.png")
+                    .to_string_lossy()
+                    .to_string(),
+            );
+            request.phase = 3;
+            request.next_at = elapsed + 1.2;
+        }
+        3 if elapsed >= request.next_at => {
+            for (entity, name) in &geometry {
+                if name.as_str() == "Place ceiling" {
+                    commands.entity(entity).despawn();
+                }
+            }
+            request.phase = 4;
+            request.next_at = elapsed + 0.5;
+        }
+        4 if elapsed >= request.next_at => {
+            crate::evidence::driver::screenshot_to(
+                &mut commands,
+                request
+                    .dir
+                    .join("wellshaft_bottom.png")
+                    .to_string_lossy()
+                    .to_string(),
+            );
+            request.phase = 5;
+            request.next_at = elapsed + 1.2;
+        }
+        5 if elapsed >= request.next_at => {
+            crate::evidence::driver::screenshot_to(
+                &mut commands,
+                request
+                    .dir
+                    .join("wellshaft_birdseye.png")
+                    .to_string_lossy()
+                    .to_string(),
+            );
+            request.phase = 6;
+            request.next_at = elapsed + 1.2;
+        }
+        6 if elapsed >= request.next_at => {
+            exit.write(AppExit::Success);
+        }
+        _ => {}
+    }
+
+    if framing_phase >= 2
+        && let Ok(mut transform) = cam.single_mut()
+    {
+        let y = teleport::place_y_offset(Place::Hallway {
+            from: RoomId(0),
+            to: RoomId(1),
+            variation: 0,
+        });
+        let top = y + hallway::WELL_SHAFT_HEIGHT;
+        *transform = match framing_phase {
+            // Descent: stand at the entry lip over the central void, look steeply
+            // down the shaft so the warm pools recede on the ledges below.
+            2 => Transform::from_xyz(0.0, top + 1.2, -2.3)
+                .looking_at(Vec3::new(0.2, y + 2.5, 1.4), Vec3::Y),
+            // From the shaft floor, look up and across at a warm-lit landing so a
+            // pool anchors the frame while the ringed ledges climb into the dark.
+            4 => Transform::from_xyz(-2.4, y + 1.7, 2.8)
+                .looking_at(Vec3::new(3.0, y + 4.6, -3.0), Vec3::Y),
+            // Plan view straight down the well.
+            _ => Transform::from_xyz(0.1, top + 12.0, 0.1).looking_at(
+                Vec3::new(0.0, y + hallway::WELL_SHAFT_HEIGHT * 0.45, 0.0),
+                Vec3::NEG_Z,
+            ),
+        };
+    }
+    if framing_phase >= 5
+        && let Ok(mut fog) = fog.single_mut()
+    {
+        fog.falloff = FogFalloff::Linear {
+            start: 100.0,
+            end: 140.0,
+        };
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn capture_maze_progress(
     time: Res<Time>,

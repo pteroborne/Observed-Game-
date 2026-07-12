@@ -245,8 +245,34 @@ pub fn structural_height(geom: &PlaceGeom, wall_height: f32) -> f32 {
 pub fn place_arena(geom: &PlaceGeom, floor_y: f32, wall_height: f32) -> FpsArena {
     const T: f32 = 0.4; // wall half-thickness
     let half = geom.half;
-    let solids: Vec<Aabb3> = Vec::new();
+    let mut solids: Vec<Aabb3> = Vec::new();
     if geom.poly.is_some() {
+        // Polygon containment owns the angled perimeter. Raised apertures still need a
+        // physical lower panel because containment is intentionally 2D and otherwise
+        // cannot distinguish a body beneath an elevated doorway.
+        for gap in geom
+            .gaps
+            .iter()
+            .filter(|gap| gap.kind.is_passage() && gap.floor_y > 0.01)
+        {
+            solids.push(Aabb3::from_center_half(
+                Vec3::new(gap.center.x, floor_y + gap.floor_y * 0.5, gap.center.y),
+                Vec3::new(gap.width * 0.5, gap.floor_y * 0.5, T),
+            ));
+        }
+        for deck in &geom.decks {
+            let height = deck.top_y - deck.bottom_y;
+            if height > 0.01 {
+                solids.push(Aabb3::from_center_half(
+                    Vec3::new(
+                        deck.center.x,
+                        floor_y + deck.bottom_y + height * 0.5,
+                        deck.center.y,
+                    ),
+                    Vec3::new(deck.half.x, height * 0.5, deck.half.y),
+                ));
+            }
+        }
         return FpsArena {
             solids,
             floor_y,
@@ -255,7 +281,6 @@ pub fn place_arena(geom: &PlaceGeom, floor_y: f32, wall_height: f32) -> FpsArena
     }
 
     let total_height = structural_height(geom, wall_height);
-    let mut solids = solids;
     let mut segment = |cx: f32, cz: f32, hx: f32, hz: f32, y_min: f32, y_max: f32| {
         let height = y_max - y_min;
         if hx > 0.01 && hz > 0.01 && height > 0.01 {

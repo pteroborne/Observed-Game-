@@ -96,6 +96,10 @@ pub(crate) fn spawn_place_lighting(
     xform: Transform,
     preview: bool,
 ) {
+    if geom.is_wellshaft() {
+        spawn_wellshaft_lighting(commands, assets, palette, xform, preview);
+        return;
+    }
     let (hx, hz) = (geom.half.x, geom.half.y);
     let place_in = |local: Transform| xform.mul_transform(local);
 
@@ -195,6 +199,95 @@ pub(crate) fn spawn_place_lighting(
             },
             preview,
         );
+    }
+}
+
+/// The lighting-lab wellshaft register in playable form: a tight warm pool on every
+/// landing, quarter-turn staggered so the eye reads the route down. Only the top lamp
+/// spends shadow budget; the remaining pools are deliberately isolated unshadowed fills.
+fn spawn_wellshaft_lighting(
+    commands: &mut Commands,
+    assets: &MatchAssets,
+    palette: &style::DistrictPalette,
+    xform: Transform,
+    preview: bool,
+) {
+    let place_in = |local: Transform| xform.mul_transform(local);
+    let corners = [
+        Vec2::new(-3.05, -3.05),
+        Vec2::new(3.05, -3.05),
+        Vec2::new(3.05, 3.05),
+        Vec2::new(-3.05, 3.05),
+    ];
+    let tint = palette.key_color.to_srgba();
+    let practical_color = Color::srgb(
+        0.82 + tint.red * 0.18,
+        0.34 + tint.green * 0.24,
+        0.07 + tint.blue * 0.12,
+    );
+    for level in 0..crate::hallway::WELL_SHAFT_LEVELS {
+        let y = level as f32 * crate::hallway::WELL_SHAFT_LEVEL_HEIGHT + 1.35;
+        let corner = corners[level % corners.len()];
+        let lamp_pos = Vec3::new(corner.x, y, corner.y);
+        let mut practical = commands.spawn((
+            PlaceGeometry,
+            DespawnOnExit(GameState::Match),
+            Mesh3d(assets.placeholder_mesh.clone()),
+            MeshMaterial3d(assets.lamp_material.clone()),
+            place_in(Transform::from_translation(lamp_pos).with_scale(Vec3::new(0.22, 0.3, 0.22))),
+            Name::new("Wellshaft practical"),
+        ));
+        if preview {
+            practical.insert(PassagePreview);
+        }
+        for offset in [
+            Vec3::new(-0.18, 0.0, 0.0),
+            Vec3::new(0.18, 0.0, 0.0),
+            Vec3::new(0.0, 0.0, -0.18),
+            Vec3::new(0.0, 0.0, 0.18),
+        ] {
+            let mut cage = commands.spawn((
+                PlaceGeometry,
+                DespawnOnExit(GameState::Match),
+                Mesh3d(assets.placeholder_mesh.clone()),
+                MeshMaterial3d(assets.gantry_deck_material.clone()),
+                place_in(
+                    Transform::from_translation(lamp_pos + offset)
+                        .with_scale(Vec3::new(0.035, 0.46, 0.035)),
+                ),
+                Name::new("Wellshaft lamp cage"),
+            ));
+            if preview {
+                cage.insert(PassagePreview);
+            }
+        }
+
+        // Tight range keeps each lamp a warm island: the concrete between
+        // landings must fall to buried dark or the register reads as a flat
+        // grey shaft rather than "pools in the dark". Tuned so the darkest
+        // framings still clear the luminance floor on the warm ledge glints.
+        let intensity = 165_000.0;
+        let mut light = commands.spawn((
+            PlaceGeometry,
+            DespawnOnExit(GameState::Match),
+            FlickerLight {
+                base: intensity,
+                idle: 0.08,
+                phase: level as f32 * 1.7,
+            },
+            PointLight {
+                color: practical_color,
+                intensity,
+                range: 5.5,
+                shadows_enabled: level + 1 == crate::hallway::WELL_SHAFT_LEVELS,
+                ..default()
+            },
+            place_in(Transform::from_translation(lamp_pos)),
+            Name::new("Wellshaft practical light"),
+        ));
+        if preview {
+            light.insert(PassagePreview);
+        }
     }
 }
 

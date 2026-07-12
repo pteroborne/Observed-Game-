@@ -45,6 +45,9 @@ pub enum HallwayFlavor {
     /// `observed_traversal::gantry`; the assembled teleport model projects its lower
     /// safe-bypass footprint until hallway-side third thresholds are supported.
     Gantry,
+    /// A deep vertical connector: the player arrives on a high ring and follows a
+    /// bidirectional perimeter stair down through isolated pools of practical light.
+    Wellshaft,
 }
 
 impl HallwayFlavor {
@@ -58,6 +61,7 @@ impl HallwayFlavor {
             HallwayFlavor::Colonnade => "colonnade",
             HallwayFlavor::Maze => "labyrinth",
             HallwayFlavor::Gantry => "gantry",
+            HallwayFlavor::Wellshaft => "wellshaft",
         }
     }
 
@@ -91,7 +95,7 @@ pub struct HallwayTemplate {
 /// The authored library. An index into this is a "variation". A *significant portion*
 /// of the pieces are generated labyrinths (`Maze`), the rest are quick connectors and
 /// set-pieces, so the facility's edges feel varied — some a single stride, some a maze.
-pub const TEMPLATES: [HallwayTemplate; 13] = [
+pub const TEMPLATES: [HallwayTemplate; 14] = [
     HallwayTemplate {
         name: "short connector",
         flavor: HallwayFlavor::Straight,
@@ -204,7 +208,43 @@ pub const TEMPLATES: [HallwayTemplate; 13] = [
         rise: 0.0,
         grid: Some((4, 8)),
     },
+    HallwayTemplate {
+        name: "wellshaft",
+        flavor: HallwayFlavor::Wellshaft,
+        // The geometry branch owns the authored square footprint and vertical span;
+        // these dimensions document that footprint and intentionally skip scaling.
+        length: 10.0,
+        width: 10.0,
+        rise: WELL_SHAFT_HEIGHT,
+        grid: None,
+    },
 ];
+
+pub const WELL_SHAFT_LEVEL_HEIGHT: f32 = 3.0;
+pub const WELL_SHAFT_LEVELS: usize = 5;
+pub const WELL_SHAFT_HEIGHT: f32 = WELL_SHAFT_LEVEL_HEIGHT * (WELL_SHAFT_LEVELS - 1) as f32;
+pub const WELL_SHAFT_RAMP_STEPS: usize = 30;
+pub const WELL_SHAFT_RAMP_HALF_RUN: f32 = 3.1;
+pub const WELL_SHAFT_RAMP_INNER_EDGE: f32 = 2.65;
+
+/// Horizontal endpoints for one quarter-turn wellshaft ramp, ordered low to high.
+pub fn wellshaft_ramp_endpoints(level: usize) -> ((f32, f32), (f32, f32)) {
+    let r = WELL_SHAFT_RAMP_HALF_RUN;
+    let i = WELL_SHAFT_RAMP_INNER_EDGE;
+    match level % 4 {
+        0 => ((-r, -i), (r, -i)),
+        1 => ((i, -r), (i, r)),
+        2 => ((r, i), (-r, i)),
+        _ => ((-i, r), (-i, -r)),
+    }
+}
+
+pub fn wellshaft_template() -> &'static HallwayTemplate {
+    TEMPLATES
+        .iter()
+        .find(|template| template.flavor == HallwayFlavor::Wellshaft)
+        .expect("the authored hallway library contains the wellshaft")
+}
 
 pub fn template(index: usize) -> &'static HallwayTemplate {
     &TEMPLATES[index % TEMPLATES.len()]
@@ -220,7 +260,11 @@ pub fn template(index: usize) -> &'static HallwayTemplate {
 /// more cells, which reshuffles its interior generation, so it is left alone here and the
 /// grid dimensions stay the tuning lever for maze size instead).
 pub fn scaled_dims(template: &HallwayTemplate) -> (f32, f32) {
-    if template.flavor == HallwayFlavor::Gantry || template.grid.is_some() {
+    if matches!(
+        template.flavor,
+        HallwayFlavor::Gantry | HallwayFlavor::Wellshaft
+    ) || template.grid.is_some()
+    {
         return (template.length, template.width);
     }
     (template.length * HALL_STRETCH, template.width * HALL_WIDEN)
@@ -246,7 +290,10 @@ fn edge_hash(a: RoomId, b: RoomId, seed: u64, mix: u64) -> u64 {
 /// edge can present a different piece next time — the "changed when you looked away"
 /// loop. Edge-symmetric: `(a, b)` and `(b, a)` choose the same piece.
 pub fn variation_for(a: RoomId, b: RoomId, seed: u64, version: u32) -> usize {
-    (edge_hash(a, b, seed, version as u64) as usize) % TEMPLATES.len()
+    // The final Wellshaft template is role-selected by the facility WFC rather than
+    // entering the ordinary reroll pool. This keeps it sparse and prevents a locked
+    // objective edge from acquiring vertical geometry through an unrelated variation.
+    (edge_hash(a, b, seed, version as u64) as usize) % (TEMPLATES.len() - 1)
 }
 
 /// The seed for a maze hallway's interior layout. Keyed by the edge and the chosen
@@ -306,6 +353,18 @@ mod tests {
         let first = variation_for(a, b, 7, 0);
         assert_eq!(first, variation_for(a, b, 7, 0), "same inputs → same piece");
         assert!(first < TEMPLATES.len());
+    }
+
+    #[test]
+    fn ordinary_variation_rolls_never_select_the_role_owned_wellshaft() {
+        for a in 0..16 {
+            for b in a + 1..16 {
+                for version in 0..8 {
+                    let picked = template(variation_for(RoomId(a), RoomId(b), 91, version));
+                    assert_ne!(picked.flavor, HallwayFlavor::Wellshaft);
+                }
+            }
+        }
     }
 
     #[test]

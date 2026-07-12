@@ -248,11 +248,31 @@ pub(crate) fn drive_bot_pov_capture(
         // exit; if the body fell to the understory, recover down the clear bypass lane;
         // otherwise take the ordinary 2D route to whatever onward exit the feet-height
         // gate selected.
-        let deck_pilot = bot::at_deck_height(local_feet_y)
+        let wellshaft_path = tp
+            .geom
+            .is_wellshaft()
+            .then(|| bot::wellshaft_route(&tp.geom, &tp.config, local_feet_y, &gap))
+            .flatten();
+        let deck_pilot = (!tp.geom.is_wellshaft() && bot::at_deck_height(local_feet_y))
             .then(|| bot::gantry_deck_route(&tp.geom, start, &gap))
             .flatten();
-        let in_gantry_understory = !tp.geom.decks.is_empty() && !bot::at_deck_height(local_feet_y);
-        if let Some(pilot) = deck_pilot {
+        let in_gantry_understory = !tp.geom.is_wellshaft()
+            && !tp.geom.decks.is_empty()
+            && !bot::at_deck_height(local_feet_y);
+        if let Some(path) = wellshaft_path {
+            info!(
+                "BOT_NAV: Stair-piloting {:?} from {:?} through the wellshaft. Waypoints: {}",
+                tp.place,
+                start,
+                path.waypoints.len()
+            );
+            request.route_place = Some(tp.place);
+            request.route_jumps = vec![false; path.waypoints.len()];
+            request.route = path.waypoints;
+            request.route_deck = false;
+            request.waypoint = 0;
+            request.blocked_ticks = 0;
+        } else if let Some(pilot) = deck_pilot {
             info!(
                 "BOT_NAV: Deck-piloting {:?} from {:?} toward upper exit (center: {:?}). Waypoints: {}",
                 tp.place,

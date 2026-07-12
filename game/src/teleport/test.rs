@@ -790,7 +790,7 @@ mod tests {
         }
     }
 
-    /// Every other corridor role (including `None`, the authored/dev-map fallback with
+    /// Every non-vertical, non-mystery corridor role (including `None`, the authored/dev-map fallback with
     /// no `MapSpec`) keeps the DFS+braid maze — byte-identical to
     /// `hallway_geom`/`hallway_geom_with_slots` (which always pass `None`).
     #[test]
@@ -802,7 +802,6 @@ mod tests {
             None,
             Some(CorridorRole::Connector),
             Some(CorridorRole::LongRoute),
-            Some(CorridorRole::Vertical),
             Some(CorridorRole::Bypass),
         ] {
             let geom = hallway_geom_with_slots_and_role(
@@ -1416,5 +1415,140 @@ mod tests {
         // The lock only applies to the exit room â€” other destinations stay open.
         let elsewhere = hallway_geom(RoomId(1), RoomId(4), template, 0, true);
         assert!(elsewhere.gaps.iter().any(|g| g.kind == GapKind::Exit));
+    }
+
+    #[test]
+    fn a_vertical_wfc_edge_projects_the_bidirectional_wellshaft() {
+        let endpoints = HallwayGeomEndpoints {
+            from: RoomId(2),
+            to: RoomId(3),
+            from_room_slot: ThresholdSlotId(1),
+            to_room_slot: ThresholdSlotId(2),
+            exit_room: RoomId(EXIT_ROOM),
+        };
+        let geom = hallway_geom_with_slots_and_role(
+            endpoints,
+            hallway::template(0),
+            77,
+            false,
+            Some(CorridorRole::Vertical),
+        );
+        assert!(geom.is_wellshaft());
+        assert_eq!(geom.half, Vec2::new(5.0, 4.33));
+        assert_eq!(geom.poly.as_ref().map(Vec::len), Some(6), "hexagonal shell");
+        assert_eq!(geom.gaps.len(), 2);
+        assert!(geom.gaps.iter().any(|gap| {
+            gap.kind == GapKind::Entry && (gap.floor_y - hallway::WELL_SHAFT_HEIGHT).abs() < 0.01
+        }));
+        assert!(
+            geom.gaps
+                .iter()
+                .any(|gap| gap.kind == GapKind::Exit && gap.floor_y.abs() < 0.01)
+        );
+        let spawn = entry_spawn(&geom, RoomId(2));
+        assert!(
+            geom.decks.iter().any(|deck| {
+                (deck.top_y - hallway::WELL_SHAFT_HEIGHT).abs() < 0.01
+                    && (spawn.x - deck.center.x).abs() <= deck.half.x
+                    && (spawn.y - deck.center.y).abs() <= deck.half.y
+            }),
+            "the elevated entry spawn is supported by the orange top landing"
+        );
+
+        let mut stair_heights: Vec<f32> = geom
+            .decks
+            .iter()
+            .filter(|deck| deck.bottom_y.abs() < 0.01)
+            .map(|deck| deck.top_y)
+            .collect();
+        stair_heights.sort_by(f32::total_cmp);
+        assert_eq!(stair_heights.len(), 120, "four thirty-step ramp colliders");
+        for pair in stair_heights.windows(2) {
+            assert!(
+                (pair[1] - pair[0] - 0.1).abs() < 0.001,
+                "the ramp collision approximation rises in shallow increments: {pair:?}"
+            );
+        }
+
+        let again = hallway_geom_with_slots_and_role(
+            endpoints,
+            hallway::template(0),
+            77,
+            false,
+            Some(CorridorRole::Vertical),
+        );
+        let signature = |geom: &PlaceGeom| {
+            geom.decks
+                .iter()
+                .map(|deck| (deck.center, deck.half, deck.bottom_y, deck.top_y))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            signature(&geom),
+            signature(&again),
+            "same edge inputs, same shaft"
+        );
+
+        // Raised rings cannot roof lower stair treads. The sole permitted XZ overlap is
+        // the receiving tread flush with that ring's own top surface.
+        for stair in geom.decks.iter().filter(|deck| deck.bottom_y.abs() < 0.01) {
+            for ring in geom.decks.iter().filter(|deck| deck.bottom_y > 0.01) {
+                let overlaps_xz = (stair.center.x - ring.center.x).abs()
+                    < stair.half.x + ring.half.x
+                    && (stair.center.y - ring.center.y).abs() < stair.half.y + ring.half.y;
+                let full_body_height = observed_traversal::FpsConfig::default().half_height * 2.0;
+                let has_headroom = ring.bottom_y - stair.top_y >= full_body_height + 0.05;
+                assert!(
+                    !overlaps_xz || ring.top_y <= stair.top_y + 0.01 || has_headroom,
+                    "ring at {} roofs stair at {}",
+                    ring.top_y,
+                    stair.top_y
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn vertical_role_never_replaces_a_gantry_or_locked_objective_edge() {
+        let gantry = hallway::TEMPLATES
+            .iter()
+            .find(|template| template.flavor == hallway::HallwayFlavor::Gantry)
+            .expect("gantry template");
+        let endpoints = HallwayGeomEndpoints {
+            from: RoomId(1),
+            to: RoomId(2),
+            from_room_slot: ThresholdSlotId(0),
+            to_room_slot: ThresholdSlotId(0),
+            exit_room: RoomId(EXIT_ROOM),
+        };
+        let kept_gantry = hallway_geom_with_slots_and_role(
+            endpoints,
+            gantry,
+            5,
+            false,
+            Some(CorridorRole::Vertical),
+        );
+        assert!(!kept_gantry.is_wellshaft());
+
+        let locked = hallway_geom_with_slots_and_role(
+            HallwayGeomEndpoints {
+                from: RoomId(7),
+                to: RoomId(EXIT_ROOM),
+                from_room_slot: ThresholdSlotId(0),
+                to_room_slot: ThresholdSlotId(0),
+                exit_room: RoomId(EXIT_ROOM),
+            },
+            hallway::template(0),
+            5,
+            true,
+            Some(CorridorRole::Vertical),
+        );
+        assert!(!locked.is_wellshaft());
+        assert!(
+            locked
+                .gaps
+                .iter()
+                .any(|gap| gap.kind == GapKind::LockedExit)
+        );
     }
 }

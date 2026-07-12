@@ -172,7 +172,19 @@ pub(crate) fn apply_place_atmosphere(
     seed: Option<Res<crate::flow::ActiveMatchSeed>>,
 ) {
     let seed_val = seed.map(|s| s.0).unwrap_or(MATCH_SEED);
-    let pal = palette_for_match(seed_val, tp.place, &runtime);
+    let mut pal = palette_for_match(seed_val, tp.place, &runtime);
+    // The wellshaft register is "warm pools in buried dark": the practical lamps
+    // are the only real light, so the district's global ambient fill (which lights
+    // every other place) must fall to near-black here or the pools cannot read as
+    // islands. Fog collapses toward the shaft floor so the descent reads as depth,
+    // not haze. Matches lighting_lab scene 7's ambient (~3).
+    if tp.geom.is_wellshaft() {
+        pal.ambient_color = Color::srgb(0.30, 0.34, 0.42);
+        pal.ambient_brightness = 4.0;
+        pal.fog_color = Color::srgb(0.006, 0.006, 0.008);
+        pal.fog_start = 14.0;
+        pal.fog_end = 40.0;
+    }
     let t = (time.delta_secs() * DISTRICT_BLEND_RATE).clamp(0.0, 1.0);
     ambient.color = lerp_color(ambient.color, pal.ambient_color, t);
     ambient.brightness = lerp_f(ambient.brightness, pal.ambient_brightness, t);

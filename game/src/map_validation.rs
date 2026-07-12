@@ -414,11 +414,13 @@ fn audit_hallway_geom(
 ) {
     audit_common(issues, report.clone(), geom);
     audit_hallway_threshold_integrity(issues, report.clone(), geom);
-    if geom.poly.is_some() {
+    if geom.poly.is_some()
+        && !(geom.is_wellshaft() && geom.poly.as_ref().is_some_and(|poly| poly.len() == 6))
+    {
         push_issue(
             issues,
             report.clone(),
-            "hallway rendered as polygon room geometry",
+            "non-wellshaft hallway rendered as polygon room geometry",
         );
     }
     if !geom

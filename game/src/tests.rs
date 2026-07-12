@@ -2172,6 +2172,87 @@ fn a_gantry_hallway_renders_readable_decks_and_no_deck_leaks_into_the_wall_path(
     );
 }
 
+#[test]
+fn a_wellshaft_renders_hex_ramps_without_dark_borders_and_five_practical_pools() {
+    use crate::hallway::{HallwayFlavor, TEMPLATES};
+    use crate::teleport::Place;
+    use observed_core::RoomId;
+
+    let variation = TEMPLATES
+        .iter()
+        .position(|template| template.flavor == HallwayFlavor::Wellshaft)
+        .expect("wellshaft template");
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    app.update();
+    app.world_mut()
+        .resource_scope(|world, mut tp: Mut<crate::sim::state::TeleportState>| {
+            let runtime = world.resource::<crate::sim::director::MatchDirector>();
+            let keys = world.resource::<keystones::KeystoneState>();
+            let items = world.resource::<items::ItemsState>();
+            let game = runtime.live.host_match();
+            let from = game.local_room();
+            let to = game.local_target().unwrap_or(RoomId(from.0 + 1));
+            crate::screens::match_runtime::debug_place_into(
+                &mut tp,
+                runtime,
+                Place::Hallway {
+                    from,
+                    to,
+                    variation,
+                },
+                from,
+                keys,
+                items,
+            );
+        });
+    app.update();
+
+    let (rings, ramps, edges, practicals, module_count, shadowed) = {
+        let world = app.world_mut();
+        let mut names = world.query::<&Name>();
+        let all_names: Vec<String> = names.iter(world).map(|name| name.to_string()).collect();
+        let mut lights = world.query::<(&PointLight, &Name)>();
+        let practical_lights: Vec<bool> = lights
+            .iter(world)
+            .filter(|(_, name)| name.as_str() == "Wellshaft practical light")
+            .map(|(light, _)| light.shadows_enabled)
+            .collect();
+        (
+            all_names
+                .iter()
+                .filter(|name| *name == "Wellshaft ring")
+                .count(),
+            all_names
+                .iter()
+                .filter(|name| *name == "Wellshaft ramp")
+                .count(),
+            all_names
+                .iter()
+                .filter(|name| *name == "Wellshaft deck edge")
+                .count(),
+            practical_lights.len(),
+            all_names
+                .iter()
+                .filter(|name| name.starts_with("Module "))
+                .count(),
+            practical_lights
+                .into_iter()
+                .filter(|shadow| *shadow)
+                .count(),
+        )
+    };
+    assert_eq!(rings, 17, "sixteen ring slabs plus the top entry landing");
+    assert_eq!(ramps, 4, "one continuous visible ramp per level change");
+    assert_eq!(edges, 0, "the old dark perimeter border is removed");
+    assert_eq!(practicals, crate::hallway::WELL_SHAFT_LEVELS);
+    assert_eq!(shadowed, 1, "only the top practical spends shadow budget");
+    assert_eq!(
+        module_count, 0,
+        "wellshafts keep their dedicated visual language"
+    );
+}
+
 /// The gantry deck material is built from the `GantryDeck` treatment (through the same
 /// `textured_neon_material` helper every other floor-like surface uses) rather than an
 /// ad-hoc colour choice — the Legibility Contract requires every rendered surface trace

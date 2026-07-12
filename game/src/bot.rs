@@ -167,6 +167,49 @@ pub(crate) fn gantry_ground_recovery_route(
     BotPath { waypoints }
 }
 
+/// Height-ordered stair route through a wellshaft. The stair treads are the deck
+/// segments whose columns begin at the base floor; ring ledges are thin raised slabs.
+/// Sorting those treads by top height reconstructs the authored spiral in either
+/// direction without teaching bot code the shaft's dimensions.
+pub(crate) fn wellshaft_route(
+    geom: &PlaceGeom,
+    config: &FpsConfig,
+    local_feet_y: f32,
+    gap: &DoorGap,
+) -> Option<BotPath> {
+    if !geom.is_wellshaft() {
+        return None;
+    }
+    let ascending = gap.floor_y > local_feet_y;
+    let mut stairs: Vec<&DeckSeg> = geom
+        .decks
+        .iter()
+        .filter(|deck| deck.bottom_y.abs() < 0.01 && deck.top_y > 0.01)
+        .filter(|deck| {
+            if ascending {
+                deck.top_y > local_feet_y + 0.05 && deck.top_y <= gap.floor_y + 0.05
+            } else {
+                deck.top_y <= local_feet_y + 0.05 && deck.top_y >= gap.floor_y - 0.05
+            }
+        })
+        .collect();
+    stairs.sort_by(|a, b| {
+        a.top_y
+            .partial_cmp(&b.top_y)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    if !ascending {
+        stairs.reverse();
+    }
+
+    let mut waypoints: Vec<Vec2> = stairs.into_iter().map(|deck| deck.center).collect();
+    let inside = gap.center - gap.normal * (config.radius + 0.45);
+    let outside = gap.center + gap.normal * (config.radius + 0.85);
+    waypoints.push(inside);
+    waypoints.push(outside);
+    Some(BotPath { waypoints })
+}
+
 /// Route from `start` to just inside `gap`, then append an outside crossing point so the
 /// normal doorway-crossing code takes over. Returns `None` if the current place has no
 /// valid local walk to that threshold.
@@ -732,5 +775,52 @@ mod tests {
             .expect("exit is locked");
 
         assert!(route_to_gap(&geom, &arena, &config, start, locked).is_none());
+    }
+
+    #[test]
+    fn wellshaft_bot_route_follows_every_tread_down_to_the_exit() {
+        use observed_facility::map_spec::CorridorRole;
+        let geom = teleport::hallway_geom_with_slots_and_role(
+            teleport::HallwayGeomEndpoints {
+                from: RoomId(0),
+                to: RoomId(1),
+                from_room_slot: teleport::ThresholdSlotId(0),
+                to_room_slot: teleport::ThresholdSlotId(0),
+                exit_room: RoomId(observed_match::mutable::EXIT_ROOM),
+            },
+            hallway::template(0),
+            9,
+            false,
+            Some(CorridorRole::Vertical),
+        );
+        let exit = geom
+            .gaps
+            .iter()
+            .find(|gap| gap.kind == GapKind::Exit)
+            .copied()
+            .expect("bottom exit");
+        let path = wellshaft_route(&geom, &config(), hallway::WELL_SHAFT_HEIGHT, &exit)
+            .expect("wellshaft route");
+        assert_eq!(
+            path.waypoints.len(),
+            122,
+            "120 shallow ramp steps plus inside/outside exit"
+        );
+
+        let tread_centers: Vec<Vec2> = geom
+            .decks
+            .iter()
+            .filter(|deck| deck.bottom_y.abs() < 0.01)
+            .map(|deck| deck.center)
+            .collect();
+        assert!(
+            path.waypoints[..120]
+                .iter()
+                .all(|point| tread_centers.contains(point))
+        );
+        assert!(
+            (path.waypoints[121] - exit.center).dot(exit.normal) > 0.0,
+            "route finishes through the threshold"
+        );
     }
 }

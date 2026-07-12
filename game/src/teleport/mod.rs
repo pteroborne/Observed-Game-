@@ -202,6 +202,16 @@ impl PlaceGeom {
     pub fn forward_gap(&self) -> Option<&DoorGap> {
         self.gaps.iter().find(|g| g.kind == GapKind::Forward)
     }
+
+    /// Structural discriminator for the authored vertical connector. Kept derived from
+    /// geometry so persistent simulation state does not acquire a presentation flavor.
+    pub fn is_wellshaft(&self) -> bool {
+        self.decks.len() > 20
+            && self
+                .gaps
+                .iter()
+                .any(|gap| (gap.floor_y - crate::hallway::WELL_SHAFT_HEIGHT).abs() < 0.01)
+    }
 }
 
 pub mod geom;

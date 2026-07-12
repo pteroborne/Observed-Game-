@@ -435,6 +435,7 @@ pub(crate) fn spawn_room_miniature(
         ceiling_material,
         parent,
         true,
+        WALL_HEIGHT,
     );
     spawn_polygon_walls(
         commands,

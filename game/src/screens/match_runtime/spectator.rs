@@ -102,12 +102,25 @@ pub(crate) fn drive_spectator_bot(
         //   its clear lane (the 2D navmesh can't, since platform footprints look like
         //   walls to it);
         // - anywhere else: the ordinary 2D route to the selected exit.
-        let deck_pilot = crate::bot::at_deck_height(local_feet_y)
+        let wellshaft_path = tp
+            .geom
+            .is_wellshaft()
+            .then(|| crate::bot::wellshaft_route(&tp.geom, &tp.config, local_feet_y, &gap))
+            .flatten();
+        let deck_pilot = (!tp.geom.is_wellshaft() && crate::bot::at_deck_height(local_feet_y))
             .then(|| crate::bot::gantry_deck_route(&tp.geom, here, &gap))
             .flatten();
-        let in_gantry_understory =
-            !tp.geom.decks.is_empty() && !crate::bot::at_deck_height(local_feet_y);
-        if let Some(pilot) = deck_pilot {
+        let in_gantry_understory = !tp.geom.is_wellshaft()
+            && !tp.geom.decks.is_empty()
+            && !crate::bot::at_deck_height(local_feet_y);
+        if let Some(path) = wellshaft_path {
+            spectator.route_place = Some(tp.place);
+            spectator.route_jumps = vec![false; path.waypoints.len()];
+            spectator.route = path.waypoints;
+            spectator.route_deck = false;
+            spectator.waypoint = 0;
+            spectator.blocked_ticks = 0;
+        } else if let Some(pilot) = deck_pilot {
             spectator.route_place = Some(tp.place);
             let (waypoints, jumps): (Vec<_>, Vec<_>) = pilot.waypoints.into_iter().unzip();
             spectator.route = waypoints;

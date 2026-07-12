@@ -238,9 +238,10 @@ pub(crate) fn spawn_polygon_shell(
     ceiling_material: Handle<StandardMaterial>,
     xform: Transform,
     preview: bool,
+    height: f32,
 ) {
     let floor = meshes.add(polygon_mesh(poly, 0.0, true));
-    let ceiling = meshes.add(polygon_mesh(poly, WALL_HEIGHT, false));
+    let ceiling = meshes.add(polygon_mesh(poly, height, false));
     let floor_name = if preview {
         "Preview floor"
     } else {
