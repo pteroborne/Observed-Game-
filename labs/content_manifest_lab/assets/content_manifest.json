@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "seed": 2779096485,
+  "districts": [
+    {
+      "id": "archive_blame",
+      "label": "Archive / BLAME Gantry",
+      "style_district": "archive",
+      "architecture_module": "gantry_v1",
+      "fog_end_scale": 0.9,
+      "practical_intensity_scale": 0.75,
+      "asset_slots": ["kenney_cables"]
+    },
+    {
+      "id": "reactor_silo",
+      "label": "Reactor / Silo Colonnade",
+      "style_district": "reactor",
+      "architecture_module": "colonnade_v1",
+      "fog_end_scale": 1.1,
+      "practical_intensity_scale": 1.15,
+      "asset_slots": ["kenney_gate"]
+    }
+  ],
+  "architecture_modules": [
+    {
+      "id": "gantry_v1",
+      "architecture_kind": "gantry",
+      "source_path": "labs/rapier_portal_lab/assets/maps/portal_modules.map",
+      "ports": ["ground_in", "ground_out"],
+      "allowed_rotations_degrees": [0, 180],
+      "wfc_weight": 4
+    },
+    {
+      "id": "colonnade_v1",
+      "architecture_kind": "colonnade",
+      "source_path": "labs/rapier_portal_lab/assets/maps/portal_modules.map",
+      "ports": ["ground_in", "ground_out"],
+      "allowed_rotations_degrees": [0, 180],
+      "wfc_weight": 3
+    }
+  ],
+  "asset_packs": [
+    {
+      "id": "kenney_cables",
+      "path": "content_manifest_lab/kenney_modular_space/cables.glb",
+      "author": "Kenney",
+      "source_url": "https://opengameart.org/content/modular-space-kit",
+      "license": "CC0-1.0",
+      "content_fingerprint": "9ad5a6b0877b2a78",
+      "scale": 1.8,
+      "fallback": "cable_bundle",
+      "allowed_districts": ["archive_blame"]
+    },
+    {
+      "id": "kenney_gate",
+      "path": "content_manifest_lab/kenney_modular_space/gate.glb",
+      "author": "Kenney",
+      "source_url": "https://opengameart.org/content/modular-space-kit",
+      "license": "CC0-1.0",
+      "content_fingerprint": "c1ce295f6fb9ecba",
+      "scale": 1.35,
+      "fallback": "portal_frame",
+      "allowed_districts": ["reactor_silo"]
+    }
+  ]
+}

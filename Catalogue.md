@@ -83,7 +83,7 @@ The following duplication patterns have been identified in the codebase. These s
 
 ## Feasibility Labs (`labs/`)
 
-The 56 prototype labs in `labs/` are independent Bevy applications designed to isolate and test specific technical questions. They follow a strict sandbox model, allowing full reset (`R` key) without restarting. They are grouped here by testing domain:
+The prototype labs in `labs/` are independent Bevy applications designed to isolate and test specific technical questions. They follow a strict sandbox model, allowing full reset (`R` key) without restarting. They are grouped here by testing domain:
 
 ### Foundation & Controls
 - `menu_lab` & `control_lab`: Boot states, pause systems, rebind overlays, intent playback, controller assignment.
@@ -97,6 +97,7 @@ The 56 prototype labs in `labs/` are independent Bevy applications designed to i
 - `rapier_authoring_lab`: Combined TrenchBroom/Rapier vertical slice. A typed, editable Quake `.map` projects into stable room/port/door semantics and one static Rapier convex hull per brush; a fixed-step kinematic capsule traverses the exact sloped ramp, reacts to model-owned door collider mutation, resets cleanly, and replays scripted intents bit-for-bit. This remains lab-local pending playtest and production-boundary review.
 - `rapier_portal_lab`: Authored-module/teleport vertical slice recreating Gantry and Colonnade brush kits, composing them through a deterministic two-cell WFC strip, rendering the remote isolated hallway through an always-open threshold, and swapping Rapier collision worlds on crossing. It ratchets the lock contract: player observation and anchors both freeze BLAME, while only anchors illuminate the frame indicator.
 - `rapier_aesthetic_lab`: Visual successor to the authored portal slice, proving the shared neon-noir language survives imported convex geometry: an Archive/BLAME Gantry uses cool structural mass and amber commitment edges; a Reactor/Silo Colonnade uses separated warm practical pools. Both retain HDR bloom, district fog, semantic-only materials, and the same anchor-purple frame signal across WFC recomposition.
+- `content_manifest_lab`: Data-driven content boundary proof. A deny-unknown-fields JSON schema selects two district treatments, their authored Gantry/Colonnade modules, typed ports/WFC weights, and curated CC0 OpenGameArt dressing. Validation canonicalizes a deterministic manifest hash, checks provenance/fingerprints and Legibility Contract bounds, and requires every selected brush to remain a Rapier convex collider. Imported GLB materials are presentation-only and normalized through `observed_style`; `M` proves named procedural fallbacks without changing architecture or collision.
 
 ### Observation & Procedural Geometry
 - `observation_lab` & `door_lab`: 2D graph transitions, unobserved doorway rewiring, door leaf slam animations.

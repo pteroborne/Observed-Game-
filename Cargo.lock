@@ -2399,6 +2399,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "content_manifest_lab"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "observed_style",
+ "rapier3d",
+ "rapier_aesthetic_lab",
+ "rapier_portal_lab",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "contention_lab"
 version = "0.1.0"
 dependencies = [
