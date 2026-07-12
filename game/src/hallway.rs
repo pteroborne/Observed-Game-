@@ -14,6 +14,7 @@
 
 use observed_core::RoomId;
 use observed_traversal::gantry::{GANTRY_LENGTH, GANTRY_WIDTH, UPPER_DECK_Y};
+use std::f32::consts::TAU;
 
 use crate::layout::{HALL_STRETCH, HALL_WIDEN};
 
@@ -211,32 +212,97 @@ pub const TEMPLATES: [HallwayTemplate; 14] = [
     HallwayTemplate {
         name: "wellshaft",
         flavor: HallwayFlavor::Wellshaft,
-        // The geometry branch owns the authored square footprint and vertical span;
-        // these dimensions document that footprint and intentionally skip scaling.
-        length: 10.0,
-        width: 10.0,
+        // Six radial landing bridges around the hex pillar. The geometry branch owns
+        // the exact regular-hex footprint and intentionally skips hallway scaling.
+        length: WELL_SHAFT_OUTER_RADIUS * 2.0,
+        width: WELL_SHAFT_OUTER_APOTHEM * 2.0,
         rise: WELL_SHAFT_HEIGHT,
         grid: None,
     },
 ];
 
 pub const WELL_SHAFT_LEVEL_HEIGHT: f32 = 3.0;
-pub const WELL_SHAFT_LEVELS: usize = 5;
+pub const WELL_SHAFT_LEVELS: usize = 6;
 pub const WELL_SHAFT_HEIGHT: f32 = WELL_SHAFT_LEVEL_HEIGHT * (WELL_SHAFT_LEVELS - 1) as f32;
-pub const WELL_SHAFT_RAMP_STEPS: usize = 30;
-pub const WELL_SHAFT_RAMP_HALF_RUN: f32 = 3.1;
-pub const WELL_SHAFT_RAMP_INNER_EDGE: f32 = 2.65;
+/// Visual hex-prism circumradius of the central pillar.
+pub const WELL_SHAFT_PILLAR_RADIUS: f32 = 6.0;
+/// Conservative square collision core for the pillar. Its corners stay inboard of
+/// every tread's inner edge, so the controller resolves against the treads and is
+/// never shoved off by a core lip poking up through them.
+pub const WELL_SHAFT_PILLAR_COLLISION_HALF: f32 = 3.3;
+pub const WELL_SHAFT_LANDING_RADIUS: f32 = 9.6;
+pub const WELL_SHAFT_LANDING_HALF: f32 = 1.6;
+pub const WELL_SHAFT_BRIDGE_END_RADIUS: f32 = 14.5;
+pub const WELL_SHAFT_BRIDGE_WIDTH: f32 = 1.8;
+pub const WELL_SHAFT_OUTER_APOTHEM: f32 = WELL_SHAFT_BRIDGE_END_RADIUS;
+pub const WELL_SHAFT_OUTER_RADIUS: f32 = WELL_SHAFT_OUTER_APOTHEM / 0.866_025_4;
 
-/// Horizontal endpoints for one quarter-turn wellshaft ramp, ordered low to high.
-pub fn wellshaft_ramp_endpoints(level: usize) -> ((f32, f32), (f32, f32)) {
-    let r = WELL_SHAFT_RAMP_HALF_RUN;
-    let i = WELL_SHAFT_RAMP_INNER_EDGE;
-    match level % 4 {
-        0 => ((-r, -i), (r, -i)),
-        1 => ((i, -r), (i, r)),
-        2 => ((r, i), (-r, i)),
-        _ => ((-i, r), (-i, -r)),
-    }
+/// The spiral's treads are cantilevered from the pillar: each occupies this radial
+/// band, whose inner edge overlaps the pillar (springs from the core) and whose
+/// outer edge overlaps the landing platforms (shared, continuous floor).
+pub const WELL_SHAFT_TREAD_INNER_RADIUS: f32 = 4.8;
+pub const WELL_SHAFT_TREAD_OUTER_RADIUS: f32 = 9.2;
+pub const WELL_SHAFT_TREAD_MID_RADIUS: f32 =
+    (WELL_SHAFT_TREAD_INNER_RADIUS + WELL_SHAFT_TREAD_OUTER_RADIUS) * 0.5;
+pub const WELL_SHAFT_TREAD_RADIAL_HALF: f32 =
+    (WELL_SHAFT_TREAD_OUTER_RADIUS - WELL_SHAFT_TREAD_INNER_RADIUS) * 0.5;
+/// Tangential half-width, chosen so adjacent treads overlap across the whole band
+/// (contiguous, no gaps) while the exposed run stays a legal footing.
+pub const WELL_SHAFT_TREAD_TANGENTIAL_HALF: f32 = 0.7;
+/// Eight treads create seven legal-height risers; the first meets its lower landing
+/// and the last meets the upper landing.
+pub const WELL_SHAFT_STEPS_PER_FLIGHT: usize = 8;
+pub const WELL_SHAFT_STEP_RISE: f32 =
+    WELL_SHAFT_LEVEL_HEIGHT / (WELL_SHAFT_STEPS_PER_FLIGHT - 1) as f32;
+/// Vertical closure of a tread: one riser plus a small lip, so each tread's front
+/// face closes onto the tread below (no open risers) with minimal overhang.
+pub const WELL_SHAFT_TREAD_CLOSURE: f32 = WELL_SHAFT_STEP_RISE + 0.12;
+/// A short parapet on the mid-flight treads' outward edge, so the descent cannot be
+/// walked off by accident. End treads abut landings and stay open to the bridges.
+pub const WELL_SHAFT_GUARD_HEIGHT: f32 = 1.0;
+pub const WELL_SHAFT_GUARD_THICKNESS: f32 = 0.24;
+pub const WELL_SHAFT_DECK_THICKNESS: f32 = 0.24;
+
+/// Unit radial direction for a landing. Level zero points to the live bottom exit;
+/// level five points to the live elevated entry; levels 1–4 are sealed service bays.
+pub fn wellshaft_level_direction(level: usize) -> (f32, f32) {
+    let angle = level as f32 * TAU / WELL_SHAFT_LEVELS as f32;
+    (angle.cos(), angle.sin())
+}
+
+pub fn wellshaft_landing_center(level: usize) -> (f32, f32) {
+    let (x, z) = wellshaft_level_direction(level);
+    (x * WELL_SHAFT_LANDING_RADIUS, z * WELL_SHAFT_LANDING_RADIUS)
+}
+
+pub fn wellshaft_landing_rest(level: usize) -> (f32, f32) {
+    let center = wellshaft_landing_center(level);
+    let direction = wellshaft_level_direction(level);
+    (center.0 + direction.0 * 0.55, center.1 + direction.1 * 0.55)
+}
+
+/// Angle of the `step`-th tread of the flight rising from `lower_level`, evenly
+/// spaced across the 60° the spiral turns between adjacent landings.
+pub fn wellshaft_tread_angle(lower_level: usize, step: usize) -> f32 {
+    let a0 = lower_level as f32 * TAU / WELL_SHAFT_LEVELS as f32;
+    let a1 = (lower_level + 1) as f32 * TAU / WELL_SHAFT_LEVELS as f32;
+    a0 + (a1 - a0) * (step as f32 + 0.5) / WELL_SHAFT_STEPS_PER_FLIGHT as f32
+}
+
+/// World-space XZ centre of a tread's footprint (at the mid-band radius). The tread
+/// is a radial slab cantilevered from the pillar out to the landing band.
+pub fn wellshaft_stair_center(lower_level: usize, step: usize) -> (f32, f32) {
+    let angle = wellshaft_tread_angle(lower_level, step);
+    (
+        angle.cos() * WELL_SHAFT_TREAD_MID_RADIUS,
+        angle.sin() * WELL_SHAFT_TREAD_MID_RADIUS,
+    )
+}
+
+/// Whether the `step`-th tread of a flight carries an outward guard rail. End treads
+/// abut the landings and stay open so the flight connects to the threshold bridges.
+pub fn wellshaft_tread_has_guard(step: usize) -> bool {
+    step > 0 && step + 1 < WELL_SHAFT_STEPS_PER_FLIGHT
 }
 
 pub fn wellshaft_template() -> &'static HallwayTemplate {

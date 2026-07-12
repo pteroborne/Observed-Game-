@@ -94,9 +94,18 @@ pub(super) fn configure_captures(app: &mut App) {
         let _ = std::fs::create_dir_all(&dir);
         app.insert_resource(scenarios::ResultsCaptureRequest::new(dir))
             .add_systems(Update, scenarios::capture_results_progress);
-    } else if let Ok(dir) = std::env::var("OBSERVED2_CAPTURE_BOT") {
+    } else if let Ok(dir) = std::env::var("OBSERVED2_CAPTURE_BOT")
+        .map(|d| (d, false))
+        .or_else(|_| std::env::var("OBSERVED2_CAPTURE_WELLSHAFT_POV").map(|d| (d, true)))
+    {
+        let (dir, force_wellshaft) = dir;
         let _ = std::fs::create_dir_all(&dir);
-        app.insert_resource(bot_pov::BotPovCaptureRequest::new(dir))
+        let request = if force_wellshaft {
+            bot_pov::BotPovCaptureRequest::new_wellshaft(dir)
+        } else {
+            bot_pov::BotPovCaptureRequest::new(dir)
+        };
+        app.insert_resource(request)
             .add_systems(
                 FixedUpdate,
                 bot_pov::drive_bot_pov_capture

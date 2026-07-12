@@ -2173,7 +2173,7 @@ fn a_gantry_hallway_renders_readable_decks_and_no_deck_leaks_into_the_wall_path(
 }
 
 #[test]
-fn a_wellshaft_renders_hex_ramps_without_dark_borders_and_five_practical_pools() {
+fn a_wellshaft_renders_the_hex_pillar_spiral_bridges_and_sealed_service_bays() {
     use crate::hallway::{HallwayFlavor, TEMPLATES};
     use crate::teleport::Place;
     use observed_core::RoomId;
@@ -2208,7 +2208,17 @@ fn a_wellshaft_renders_hex_ramps_without_dark_borders_and_five_practical_pools()
         });
     app.update();
 
-    let (rings, ramps, edges, practicals, module_count, shadowed) = {
+    let (
+        pillars,
+        landings,
+        bridges,
+        treads,
+        sealed_bays,
+        braces,
+        practicals,
+        module_count,
+        shadowed,
+    ) = {
         let world = app.world_mut();
         let mut names = world.query::<&Name>();
         let all_names: Vec<String> = names.iter(world).map(|name| name.to_string()).collect();
@@ -2221,15 +2231,27 @@ fn a_wellshaft_renders_hex_ramps_without_dark_borders_and_five_practical_pools()
         (
             all_names
                 .iter()
-                .filter(|name| *name == "Wellshaft ring")
+                .filter(|name| *name == "Wellshaft hex pillar")
                 .count(),
             all_names
                 .iter()
-                .filter(|name| *name == "Wellshaft ramp")
+                .filter(|name| *name == "Wellshaft landing")
                 .count(),
             all_names
                 .iter()
-                .filter(|name| *name == "Wellshaft deck edge")
+                .filter(|name| *name == "Wellshaft bridge")
+                .count(),
+            all_names
+                .iter()
+                .filter(|name| *name == "Wellshaft stair tread")
+                .count(),
+            all_names
+                .iter()
+                .filter(|name| *name == "Wellshaft sealed service bay")
+                .count(),
+            all_names
+                .iter()
+                .filter(|name| *name == "Wellshaft sealed bay brace")
                 .count(),
             practical_lights.len(),
             all_names
@@ -2242,9 +2264,18 @@ fn a_wellshaft_renders_hex_ramps_without_dark_borders_and_five_practical_pools()
                 .count(),
         )
     };
-    assert_eq!(rings, 17, "sixteen ring slabs plus the top entry landing");
-    assert_eq!(ramps, 4, "one continuous visible ramp per level change");
-    assert_eq!(edges, 0, "the old dark perimeter border is removed");
+    assert_eq!(pillars, 1);
+    assert_eq!(landings, crate::hallway::WELL_SHAFT_LEVELS);
+    assert_eq!(bridges, crate::hallway::WELL_SHAFT_LEVELS);
+    assert_eq!(
+        treads,
+        (crate::hallway::WELL_SHAFT_LEVELS - 1) * crate::hallway::WELL_SHAFT_STEPS_PER_FLIGHT
+    );
+    assert_eq!(
+        sealed_bays, 4,
+        "only the four non-graph bridge heads are sealed"
+    );
+    assert_eq!(braces, 8, "each sealed service bay has an explicit X brace");
     assert_eq!(practicals, crate::hallway::WELL_SHAFT_LEVELS);
     assert_eq!(shadowed, 1, "only the top practical spends shadow budget");
     assert_eq!(

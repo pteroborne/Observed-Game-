@@ -155,6 +155,7 @@ fn validate_builder_contract(key: &str, spec: &MapSpec) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use observed_facility::map_spec::CorridorRole;
 
     #[test]
     fn default_selection_returns_a_valid_generated_map() {
@@ -207,5 +208,38 @@ mod tests {
         let a = default_map_spec(42);
         let b = default_map_spec(42);
         assert_eq!(a, b, "memoized builds must return byte-identical specs");
+    }
+
+    #[test]
+    fn generated_wfc_vertical_roles_project_the_hex_pillar_wellshaft() {
+        let (edge, seed) = (0..16_u64)
+            .find_map(|seed| {
+                let spec = default_map_spec(seed);
+                spec.edges
+                    .into_iter()
+                    .find(|edge| edge.role == CorridorRole::Vertical)
+                    .map(|edge| (edge, seed))
+            })
+            .expect("the WFC seed corpus emits a vertical edge");
+        let geom = crate::teleport::hallway_geom_with_slots_and_role(
+            crate::teleport::HallwayGeomEndpoints {
+                from: edge.a.room,
+                to: edge.b.room,
+                from_room_slot: crate::teleport::ThresholdSlotId(0),
+                to_room_slot: crate::teleport::ThresholdSlotId(0),
+                exit_room: observed_core::RoomId(observed_match::mutable::EXIT_ROOM),
+            },
+            crate::hallway::template(0),
+            seed,
+            false,
+            Some(edge.role),
+        );
+        assert!(geom.is_wellshaft());
+        assert_eq!(geom.poly.as_ref().map(Vec::len), Some(6));
+        assert_eq!(
+            geom.gaps.len(),
+            2,
+            "only top and bottom are live graph exits"
+        );
     }
 }

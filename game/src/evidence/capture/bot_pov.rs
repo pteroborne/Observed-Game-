@@ -35,6 +35,9 @@ pub(crate) struct BotPovCaptureRequest {
     pub(super) waypoint: usize,
     pub(super) finished: bool,
     pub(super) blocked_ticks: u32,
+    /// Force the first place into a wellshaft so the descent is guaranteed on camera
+    /// (the ordinary walkthrough only hits one if the generated spine happens to).
+    pub(super) force_wellshaft: bool,
 }
 
 impl BotPovCaptureRequest {
@@ -51,6 +54,16 @@ impl BotPovCaptureRequest {
             waypoint: 0,
             finished: false,
             blocked_ticks: 0,
+            force_wellshaft: false,
+        }
+    }
+
+    /// A bot-POV run staged to begin inside a wellshaft, so the descent is captured
+    /// even on seeds whose spine has no vertical edge.
+    pub(super) fn new_wellshaft(dir: String) -> Self {
+        Self {
+            force_wellshaft: true,
+            ..Self::new(dir)
         }
     }
 
@@ -77,7 +90,8 @@ pub(super) fn capture_bot_pov_progress(
     mut next: ResMut<NextState<GameState>>,
     runtime: Option<ResMut<MatchDirector>>,
     keys: Option<ResMut<keystones::KeystoneState>>,
-    tp: Option<Res<TeleportState>>,
+    mut tp: Option<ResMut<TeleportState>>,
+    item_state: Option<Res<items::ItemsState>>,
     mut cam: Query<&mut Transform, With<GameCam>>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
@@ -113,6 +127,52 @@ pub(super) fn capture_bot_pov_progress(
 
                 request.phase = 2;
                 request.next_shot_at = elapsed + 1.0;
+
+                // Optionally drop the bot straight into a wellshaft so the descent is
+                // guaranteed on camera. The body enters at the top (its entry gap
+                // targets `from`); the ordinary descent piloting handles the rest.
+                if request.force_wellshaft
+                    && let (Some(to), Some(tp), Some(items)) = (
+                        runtime.live.host_match().local_target(),
+                        tp.as_deref_mut(),
+                        item_state.as_deref(),
+                    )
+                {
+                    let from = runtime.live.host_match().local_room();
+                    let variation = crate::hallway::TEMPLATES
+                        .iter()
+                        .position(|t| t.flavor == crate::hallway::HallwayFlavor::Wellshaft)
+                        .expect("wellshaft template");
+                    let place = teleport::Place::Hallway {
+                        from,
+                        to,
+                        variation,
+                    };
+                    crate::screens::match_runtime::debug_place_into(
+                        tp, &runtime, place, from, &keys, items,
+                    );
+                    // `debug_place_into` drops the body at the base floor, but the
+                    // wellshaft's entry is elevated — start it on the top landing
+                    // facing down the first flight so the descent plays from the rim.
+                    let top = crate::hallway::wellshaft_landing_rest(
+                        crate::hallway::WELL_SHAFT_LEVELS - 1,
+                    );
+                    let next = crate::hallway::wellshaft_landing_rest(
+                        crate::hallway::WELL_SHAFT_LEVELS - 2,
+                    );
+                    let y_off = crate::teleport::place_y_offset(place);
+                    let half_h = tp.config.half_height;
+                    tp.body.position = Vec3::new(
+                        top.0,
+                        y_off + crate::hallway::WELL_SHAFT_HEIGHT + half_h,
+                        top.1,
+                    );
+                    let facing = Vec2::new(next.0 - top.0, next.1 - top.1).normalize_or_zero();
+                    tp.body.yaw = facing.x.atan2(-facing.y);
+                    tp.body.grounded = true;
+                    // Let the buried-dark register settle before the first frame.
+                    request.next_shot_at = elapsed + 1.0;
+                }
             }
         }
         2 => {

@@ -177,11 +177,12 @@ pub(crate) fn apply_place_atmosphere(
     // are the only real light, so the district's global ambient fill (which lights
     // every other place) must fall to near-black here or the pools cannot read as
     // islands. Fog collapses toward the shaft floor so the descent reads as depth,
-    // not haze. Matches lighting_lab scene 7's ambient (~3).
+    // not haze. We keep the district's ambient + fog *hue* and crush them toward
+    // black, so a Foundry shaft's dark reads warmer than a Reactor shaft's while
+    // neither leaves the buried-dark register (matches lighting_lab scene 7, ~3).
     if tp.geom.is_wellshaft() {
-        pal.ambient_color = Color::srgb(0.30, 0.34, 0.42);
         pal.ambient_brightness = 4.0;
-        pal.fog_color = Color::srgb(0.006, 0.006, 0.008);
+        pal.fog_color = lerp_color(pal.fog_color, Color::BLACK, 0.94);
         pal.fog_start = 14.0;
         pal.fog_end = 40.0;
     }

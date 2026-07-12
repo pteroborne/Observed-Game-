@@ -246,8 +246,8 @@ pub struct MatchAssets {
     pub(crate) trap_idle_material: Handle<StandardMaterial>,
     /// The gantry's raised jump-map deck surface (upper route).
     pub(crate) gantry_deck_material: Handle<StandardMaterial>,
-    /// Orange wellshaft landings and continuous ramp faces.
-    pub(crate) wellshaft_ramp_material: Handle<StandardMaterial>,
+    /// Grey concrete for the wellshaft pillar, ledges, treads and guard rails.
+    pub(crate) wellshaft_stone_material: Handle<StandardMaterial>,
     /// The gantry deck's lit rim — the readable jump/fall commitment line.
     pub(crate) gantry_edge_material: Handle<StandardMaterial>,
     /// The gantry's lower understory landing — "where a fall puts you".
@@ -396,8 +396,8 @@ impl MatchAssets {
             &style::surface(SurfaceRole::GantryDeck),
             floor_texture,
         ));
-        let wellshaft_ramp_material =
-            materials.add(neon_material(&style::surface(SurfaceRole::WellshaftRamp)));
+        let wellshaft_stone_material =
+            materials.add(neon_material(&style::surface(SurfaceRole::WellshaftStone)));
         // The commitment line and the understory landing are both `signal: true`
         // treatments (Legibility Contract: gameplay-critical reads stay unlit/emissive
         // like the district accents, not modulated by scene lighting).
@@ -592,7 +592,7 @@ impl MatchAssets {
             trap_active_material,
             trap_idle_material,
             gantry_deck_material,
-            wellshaft_ramp_material,
+            wellshaft_stone_material,
             gantry_edge_material,
             understory_material,
             rubble_material,

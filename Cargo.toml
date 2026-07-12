@@ -67,6 +67,8 @@ members = [
     "labs/guardian_ai_lab",
     "labs/topology_lab",
     "labs/lighting_lab",
+    "labs/wellshaft_lab",
+    "labs/rapier_determinism_lab",
     "game",
 ]
 resolver = "3"

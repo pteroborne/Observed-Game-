@@ -772,6 +772,8 @@ mod tests {
         for (variation, template) in hallway::TEMPLATES.iter().enumerate() {
             let roles: &[Option<CorridorRole>] = if template.grid.is_some() {
                 &[None, Some(CorridorRole::Mystery)]
+            } else if template.flavor == hallway::HallwayFlavor::Straight {
+                &[None, Some(CorridorRole::Vertical)]
             } else {
                 &[None]
             };

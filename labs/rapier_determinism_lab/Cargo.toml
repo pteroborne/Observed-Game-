@@ -1,0 +1,19 @@
+[package]
+name = "rapier_determinism_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+# Raw rapier3d (NOT bevy_rapier): we want to own the step() loop so the physics
+# advances in explicit fixed-dt lockstep, independent of Bevy's scheduler. The
+# `enhanced-determinism` feature is the whole point of the spike — it forces the
+# cross-platform-deterministic solver path (libm math, SIMD disabled) so a hash
+# of the world state is reproducible bit-for-bit. It is mutually exclusive with
+# `simd-*`/`parallel`, so we take the default (scalar) build and add only this.
+rapier3d = { version = "0.34", features = ["enhanced-determinism"] }
+# Bevy is presentation only here — it renders world A and draws the verdict HUD.
+bevy = { version = "0.18.1", default-features = false, features = [
+    "3d",
+    "png",
+] }

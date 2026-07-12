@@ -173,8 +173,8 @@ pub enum SurfaceRole {
     SafeBypass,
     /// A raised gantry deck: the fast traversal route across a vertical hallway.
     GantryDeck,
-    /// The continuous orange ramp and landing surfaces inside a wellshaft.
-    WellshaftRamp,
+    /// The grey concrete pillar, ledge, tread and guard surfaces inside a wellshaft.
+    WellshaftStone,
     /// A lit gantry platform edge: the readable jump/fall commitment line.
     GantryEdge,
     /// A visible lower landing under a gantry jump map.
@@ -197,7 +197,7 @@ impl SurfaceRole {
         SurfaceRole::Spine,
         SurfaceRole::SafeBypass,
         SurfaceRole::GantryDeck,
-        SurfaceRole::WellshaftRamp,
+        SurfaceRole::WellshaftStone,
         SurfaceRole::GantryEdge,
         SurfaceRole::Understory,
         SurfaceRole::TrapArmed,
@@ -213,7 +213,7 @@ impl SurfaceRole {
             SurfaceRole::Spine => "spine route",
             SurfaceRole::SafeBypass => "safe bypass",
             SurfaceRole::GantryDeck => "gantry upper route",
-            SurfaceRole::WellshaftRamp => "wellshaft orange ramp",
+            SurfaceRole::WellshaftStone => "wellshaft stone",
             SurfaceRole::GantryEdge => "gantry jump edge",
             SurfaceRole::Understory => "gantry understory landing",
             SurfaceRole::TrapArmed => "trap armed",
@@ -495,12 +495,12 @@ pub fn surface(role: SurfaceRole) -> Treatment {
             signal: false,
             edge: Some(Color::srgb(0.42, 0.92, 1.0)),
         },
-        // The wellshaft's ledges and ramps are grey concrete, NOT an orange
-        // surface: the register's warmth comes from the practical lamps pooling
-        // on the stone, never from self-lit geometry. A faint warm edge marks the
-        // walkable lip so a drop stays readable (the gantry's "lit commitment
-        // line" rule) without competing with the pools.
-        SurfaceRole::WellshaftRamp => Treatment {
+        // The wellshaft's pillar, ledges, treads and guard rails are grey concrete:
+        // the register's warmth comes from the practical lamps pooling on the stone,
+        // never from self-lit geometry. A faint warm edge marks the walkable lip so a
+        // drop stays readable (the gantry's "lit commitment line" rule) without
+        // competing with the pools.
+        SurfaceRole::WellshaftStone => Treatment {
             base_color: Color::srgb(0.15, 0.145, 0.14),
             emissive: LinearRgba::rgb(0.015, 0.012, 0.008),
             signal: false,

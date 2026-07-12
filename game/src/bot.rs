@@ -167,10 +167,10 @@ pub(crate) fn gantry_ground_recovery_route(
     BotPath { waypoints }
 }
 
-/// Height-ordered stair route through a wellshaft. The stair treads are the deck
-/// segments whose columns begin at the base floor; ring ledges are thin raised slabs.
-/// Sorting those treads by top height reconstructs the authored spiral in either
-/// direction without teaching bot code the shaft's dimensions.
+/// Authored route through the WFC-owned hex-pillar wellshaft. Duplicate tread heights
+/// occur where one flight meets the next landing, so height-only deck sorting can jump
+/// to the wrong 60-degree branch; use the same pure geometry functions that project the
+/// collision treads instead.
 pub(crate) fn wellshaft_route(
     geom: &PlaceGeom,
     config: &FpsConfig,
@@ -181,28 +181,40 @@ pub(crate) fn wellshaft_route(
         return None;
     }
     let ascending = gap.floor_y > local_feet_y;
-    let mut stairs: Vec<&DeckSeg> = geom
-        .decks
-        .iter()
-        .filter(|deck| deck.bottom_y.abs() < 0.01 && deck.top_y > 0.01)
-        .filter(|deck| {
-            if ascending {
-                deck.top_y > local_feet_y + 0.05 && deck.top_y <= gap.floor_y + 0.05
-            } else {
-                deck.top_y <= local_feet_y + 0.05 && deck.top_y >= gap.floor_y - 0.05
+    let mut waypoints = Vec::new();
+    if ascending {
+        for lower_level in 0..crate::hallway::WELL_SHAFT_LEVELS - 1 {
+            for step in 0..crate::hallway::WELL_SHAFT_STEPS_PER_FLIGHT {
+                let top = lower_level as f32 * crate::hallway::WELL_SHAFT_LEVEL_HEIGHT
+                    + step as f32 * crate::hallway::WELL_SHAFT_STEP_RISE;
+                if top > local_feet_y + 0.05 && top <= gap.floor_y + 0.05 {
+                    let point = crate::hallway::wellshaft_stair_center(lower_level, step);
+                    waypoints.push(Vec2::new(point.0, point.1));
+                }
             }
-        })
-        .collect();
-    stairs.sort_by(|a, b| {
-        a.top_y
-            .partial_cmp(&b.top_y)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    if !ascending {
-        stairs.reverse();
+            let landing_y = (lower_level + 1) as f32 * crate::hallway::WELL_SHAFT_LEVEL_HEIGHT;
+            if landing_y > local_feet_y + 0.05 && landing_y <= gap.floor_y + 0.05 {
+                let point = crate::hallway::wellshaft_landing_rest(lower_level + 1);
+                waypoints.push(Vec2::new(point.0, point.1));
+            }
+        }
+    } else {
+        for lower_level in (0..crate::hallway::WELL_SHAFT_LEVELS - 1).rev() {
+            for step in (0..crate::hallway::WELL_SHAFT_STEPS_PER_FLIGHT).rev() {
+                let top = lower_level as f32 * crate::hallway::WELL_SHAFT_LEVEL_HEIGHT
+                    + step as f32 * crate::hallway::WELL_SHAFT_STEP_RISE;
+                if top < local_feet_y - 0.05 && top >= gap.floor_y - 0.05 {
+                    let point = crate::hallway::wellshaft_stair_center(lower_level, step);
+                    waypoints.push(Vec2::new(point.0, point.1));
+                }
+            }
+            let landing_y = lower_level as f32 * crate::hallway::WELL_SHAFT_LEVEL_HEIGHT;
+            if landing_y < local_feet_y - 0.05 && landing_y >= gap.floor_y - 0.05 {
+                let point = crate::hallway::wellshaft_landing_rest(lower_level);
+                waypoints.push(Vec2::new(point.0, point.1));
+            }
+        }
     }
-
-    let mut waypoints: Vec<Vec2> = stairs.into_iter().map(|deck| deck.center).collect();
     let inside = gap.center - gap.normal * (config.radius + 0.45);
     let outside = gap.center + gap.normal * (config.radius + 0.85);
     waypoints.push(inside);
@@ -778,7 +790,7 @@ mod tests {
     }
 
     #[test]
-    fn wellshaft_bot_route_follows_every_tread_down_to_the_exit() {
+    fn wellshaft_bot_route_follows_the_authored_spiral_in_both_directions() {
         use observed_facility::map_spec::CorridorRole;
         let geom = teleport::hallway_geom_with_slots_and_role(
             teleport::HallwayGeomEndpoints {
@@ -803,24 +815,33 @@ mod tests {
             .expect("wellshaft route");
         assert_eq!(
             path.waypoints.len(),
-            122,
-            "120 shallow ramp steps plus inside/outside exit"
-        );
-
-        let tread_centers: Vec<Vec2> = geom
-            .decks
-            .iter()
-            .filter(|deck| deck.bottom_y.abs() < 0.01)
-            .map(|deck| deck.center)
-            .collect();
-        assert!(
-            path.waypoints[..120]
-                .iter()
-                .all(|point| tread_centers.contains(point))
+            46,
+            "44 spiral points plus threshold crossing"
         );
         assert!(
-            (path.waypoints[121] - exit.center).dot(exit.normal) > 0.0,
+            (path.waypoints[45] - exit.center).dot(exit.normal) > 0.0,
             "route finishes through the threshold"
         );
+
+        let entry = geom
+            .gaps
+            .iter()
+            .find(|gap| gap.kind == GapKind::Entry)
+            .copied()
+            .expect("top entry");
+        let ascent = wellshaft_route(&geom, &config(), 0.0, &entry).expect("ascent route");
+        assert_eq!(ascent.waypoints.len(), 46);
+        assert!(
+            (ascent.waypoints[45] - entry.center).dot(entry.normal) > 0.0,
+            "ascent finishes through the elevated threshold"
+        );
+
+        let first_down = hallway::wellshaft_stair_center(
+            hallway::WELL_SHAFT_LEVELS - 2,
+            hallway::WELL_SHAFT_STEPS_PER_FLIGHT - 2,
+        );
+        assert_eq!(path.waypoints[0], Vec2::new(first_down.0, first_down.1));
+        let first_up = hallway::wellshaft_stair_center(0, 1);
+        assert_eq!(ascent.waypoints[0], Vec2::new(first_up.0, first_up.1));
     }
 }

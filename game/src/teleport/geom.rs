@@ -584,71 +584,119 @@ pub fn hallway_geom_with_slots_and_role(
     let (base_len, w) = hallway::scaled_dims(template);
     let len = (base_len * hallway::length_scale(layout_seed)).max(hallway::MIN_HALL_LENGTH);
     if template.flavor == hallway::HallwayFlavor::Wellshaft {
-        const HALF_X: f32 = 5.0;
-        const HALF_Z: f32 = 4.33;
-        const LEDGE: f32 = 1.8;
-        const DECK_THICKNESS: f32 = 0.24;
-
         let mut decks = Vec::new();
-        // Four ledges make a complete regrouping ring at every raised level. The base
-        // floor is the bottom ring; keeping it as the arena floor gives the failed-drop
-        // recovery route a deterministic, walkable terminus.
-        for level in 1..hallway::WELL_SHAFT_LEVELS {
+        let rotated_half = |direction: Vec2, local: Vec2| {
+            Vec2::new(
+                direction.x.abs() * local.x + direction.y.abs() * local.y,
+                direction.y.abs() * local.x + direction.x.abs() * local.y,
+            )
+        };
+
+        // The pillar is a true hexagonal prism in presentation and a conservative
+        // square AABB in the production controller. Its collision core stays inboard
+        // of every tread's inner edge, so the walkable band never touches it.
+        decks.push(super::DeckSeg {
+            center: Vec2::ZERO,
+            half: Vec2::splat(hallway::WELL_SHAFT_PILLAR_COLLISION_HALF),
+            bottom_y: 0.0,
+            top_y: hallway::WELL_SHAFT_HEIGHT + crate::layout::WALL_HEIGHT,
+        });
+
+        // Every level owns a regrouping landing and a radial bridge. Only level zero
+        // and the top level meet graph gaps; the four middle bridge heads remain solid
+        // service-bay walls and are presented as explicitly sealed leaves.
+        for level in 0..hallway::WELL_SHAFT_LEVELS {
             let top_y = level as f32 * hallway::WELL_SHAFT_LEVEL_HEIGHT;
-            for (center, half) in [
-                (Vec2::new(0.0, -3.80), Vec2::new(2.45, 0.53)),
-                (Vec2::new(0.0, 3.80), Vec2::new(2.45, 0.53)),
-                (Vec2::new(-4.05, 0.0), Vec2::new(LEDGE * 0.5, 2.5)),
-                (Vec2::new(4.05, 0.0), Vec2::new(LEDGE * 0.5, 2.5)),
-            ] {
-                decks.push(super::DeckSeg {
-                    center,
-                    half,
-                    bottom_y: top_y - DECK_THICKNESS,
-                    top_y,
-                });
-            }
-            if level + 1 == hallway::WELL_SHAFT_LEVELS {
-                decks.push(super::DeckSeg {
-                    center: Vec2::new(0.0, -3.05),
-                    half: Vec2::new(1.5, 0.40),
-                    bottom_y: top_y - DECK_THICKNESS,
-                    top_y,
-                });
-            }
+            let direction = hallway::wellshaft_level_direction(level);
+            let direction = Vec2::new(direction.0, direction.1);
+            let landing = hallway::wellshaft_landing_center(level);
+            decks.push(super::DeckSeg {
+                center: Vec2::new(landing.0, landing.1),
+                half: Vec2::splat(hallway::WELL_SHAFT_LANDING_HALF),
+                bottom_y: top_y - hallway::WELL_SHAFT_DECK_THICKNESS,
+                top_y,
+            });
+
+            let bridge_start =
+                hallway::WELL_SHAFT_LANDING_RADIUS + hallway::WELL_SHAFT_LANDING_HALF * 0.65;
+            let bridge_length = hallway::WELL_SHAFT_BRIDGE_END_RADIUS - bridge_start;
+            let bridge_center = direction * (bridge_start + bridge_length * 0.5);
+            decks.push(super::DeckSeg {
+                center: bridge_center,
+                half: rotated_half(
+                    direction,
+                    Vec2::new(bridge_length * 0.5, hallway::WELL_SHAFT_BRIDGE_WIDTH * 0.5),
+                ),
+                bottom_y: top_y - hallway::WELL_SHAFT_DECK_THICKNESS,
+                top_y,
+            });
         }
 
-        // Thirty shallow collision steps support each visually continuous ramp. At
-        // 0.1 m per step they read and feel as a slope while staying inside the proven
-        // deterministic AABB traversal model.
+        // Treads cantilevered from the pillar: one radial slab per step, spread
+        // contiguously across the 60° each flight turns and closing onto the tread
+        // below. Collision uses the conservative axis-aligned AABB of each rotated
+        // slab. Mid-flight treads carry an outward guard rail; the end treads stay
+        // open so the flight connects to its landing and threshold bridge.
         for level in 0..hallway::WELL_SHAFT_LEVELS - 1 {
             let low_y = level as f32 * hallway::WELL_SHAFT_LEVEL_HEIGHT;
-            let (low, high) = hallway::wellshaft_ramp_endpoints(level);
-            let (low, high) = (Vec2::new(low.0, low.1), Vec2::new(high.0, high.1));
-            for step in 1..=hallway::WELL_SHAFT_RAMP_STEPS {
-                let t = step as f32 / hallway::WELL_SHAFT_RAMP_STEPS as f32;
-                let center = low.lerp(high, t);
-                let top_y = low_y + hallway::WELL_SHAFT_LEVEL_HEIGHT * t;
-                let along_x = (high.x - low.x).abs() > (high.y - low.y).abs();
+            for step in 0..hallway::WELL_SHAFT_STEPS_PER_FLIGHT {
+                let angle = hallway::wellshaft_tread_angle(level, step);
+                let u = Vec2::new(angle.cos(), angle.sin());
+                let step_top = low_y + step as f32 * hallway::WELL_SHAFT_STEP_RISE;
                 decks.push(super::DeckSeg {
-                    center,
-                    half: if along_x {
-                        Vec2::new(0.14, 0.5)
-                    } else {
-                        Vec2::new(0.5, 0.14)
-                    },
-                    bottom_y: 0.0,
-                    top_y,
+                    center: u * hallway::WELL_SHAFT_TREAD_MID_RADIUS,
+                    half: rotated_half(
+                        u,
+                        Vec2::new(
+                            hallway::WELL_SHAFT_TREAD_RADIAL_HALF,
+                            hallway::WELL_SHAFT_TREAD_TANGENTIAL_HALF,
+                        ),
+                    ),
+                    bottom_y: step_top - hallway::WELL_SHAFT_TREAD_CLOSURE,
+                    top_y: step_top,
                 });
+                if hallway::wellshaft_tread_has_guard(step) {
+                    let guard_center = u
+                        * (hallway::WELL_SHAFT_TREAD_OUTER_RADIUS
+                            + hallway::WELL_SHAFT_GUARD_THICKNESS * 0.5);
+                    decks.push(super::DeckSeg {
+                        center: guard_center,
+                        half: rotated_half(
+                            u,
+                            Vec2::new(
+                                hallway::WELL_SHAFT_GUARD_THICKNESS * 0.5,
+                                hallway::WELL_SHAFT_TREAD_TANGENTIAL_HALF,
+                            ),
+                        ),
+                        bottom_y: step_top,
+                        top_y: step_top + hallway::WELL_SHAFT_GUARD_HEIGHT,
+                    });
+                }
             }
         }
 
+        let bottom_direction = hallway::wellshaft_level_direction(0);
+        let top_direction = hallway::wellshaft_level_direction(hallway::WELL_SHAFT_LEVELS - 1);
+        let bottom_normal = Vec2::new(bottom_direction.0, bottom_direction.1);
+        let top_normal = Vec2::new(top_direction.0, top_direction.1);
+        let bottom_center = bottom_normal * hallway::WELL_SHAFT_OUTER_APOTHEM;
+        let top_center = top_normal * hallway::WELL_SHAFT_OUTER_APOTHEM;
+        let poly = (0..6)
+            .map(|index| {
+                let angle = -PI / 6.0 + index as f32 * PI / 3.0;
+                Vec2::new(angle.cos(), angle.sin()) * hallway::WELL_SHAFT_OUTER_RADIUS
+            })
+            .collect();
+
         return PlaceGeom {
-            half: Vec2::new(HALF_X, HALF_Z),
+            half: Vec2::new(
+                hallway::WELL_SHAFT_OUTER_APOTHEM,
+                hallway::WELL_SHAFT_OUTER_RADIUS,
+            ),
             gaps: vec![
                 DoorGap {
-                    center: Vec2::new(0.0, -HALF_Z),
-                    normal: -Vec2::Y,
+                    center: top_center,
+                    normal: top_normal,
                     width: 3.0,
                     target: from,
                     kind: GapKind::Entry,
@@ -662,8 +710,8 @@ pub fn hallway_geom_with_slots_and_role(
                     floor_y: hallway::WELL_SHAFT_HEIGHT,
                 },
                 DoorGap {
-                    center: Vec2::new(0.0, HALF_Z),
-                    normal: Vec2::Y,
+                    center: bottom_center,
+                    normal: bottom_normal,
                     width: 3.0,
                     target: to,
                     kind: exit_kind,
@@ -678,14 +726,7 @@ pub fn hallway_geom_with_slots_and_role(
                 },
             ],
             interior: Vec::new(),
-            poly: Some(vec![
-                Vec2::new(-2.5, -HALF_Z),
-                Vec2::new(2.5, -HALF_Z),
-                Vec2::new(HALF_X, 0.0),
-                Vec2::new(2.5, HALF_Z),
-                Vec2::new(-2.5, HALF_Z),
-                Vec2::new(-HALF_X, 0.0),
-            ]),
+            poly: Some(poly),
             decks,
         };
     }

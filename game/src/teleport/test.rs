@@ -9,7 +9,8 @@ mod tests {
     use observed_core::RoomId;
     use observed_facility::map_spec::{CorridorRole, RoomRole};
     use observed_match::mutable::EXIT_ROOM;
-    use observed_traversal::FpsArena;
+    use observed_traversal::{FIXED_DT, FpsArena, FpsBody, FpsConfig, step_body};
+    use player_input::PlayerIntent;
     use std::f32::consts::PI;
 
     fn nav(connections: &[u32], target: Option<u32>) -> Nav {
@@ -50,6 +51,40 @@ mod tests {
             },
             local_side: ThresholdLocalSide::Room,
         }
+    }
+
+    fn drive_wellshaft_body_to(
+        body: &mut FpsBody,
+        target: Vec2,
+        target_feet: f32,
+        ascending: bool,
+        arena: &FpsArena,
+        config: &FpsConfig,
+    ) {
+        for _ in 0..480 {
+            let here = Vec2::new(body.position.x, body.position.z);
+            let delta = target - here;
+            let feet = body.position.y - config.half_height;
+            if delta.length() < 0.72 && (!ascending || feet >= target_feet - 0.05) {
+                return;
+            }
+            let direction = delta.normalize_or_zero();
+            body.yaw = direction.x.atan2(-direction.y);
+            step_body(
+                body,
+                PlayerIntent {
+                    movement: Vec2::Y,
+                    ..Default::default()
+                },
+                arena,
+                config,
+                FIXED_DT,
+            );
+        }
+        panic!(
+            "wellshaft body missed {target:?} at {target_feet} ascending={ascending}; stopped {:?}",
+            body.position
+        );
     }
 
     #[test]
@@ -1354,6 +1389,14 @@ mod tests {
         use player_input::PlayerIntent;
         let config = FpsConfig::default();
         for (i, template) in hallway::TEMPLATES.iter().enumerate() {
+            // The wellshaft is a deliberately climbable spiral stair, so walking it
+            // raises the feet by design; the flat-roof invariant (meant to catch a
+            // body climbing a box hallway's perimeter/baffle walls onto the roof)
+            // does not apply. Its controlled vertical traversal is proven by
+            // `production_controller_traverses_the_projected_wfc_wellshaft_both_ways`.
+            if template.flavor == hallway::HallwayFlavor::Wellshaft {
+                continue;
+            }
             for seed in 0..8u64 {
                 let geom = hallway_geom(RoomId(0), RoomId(1), template, seed, false);
                 let arena = place_arena(&geom, 0.0, 3.4);
@@ -1434,7 +1477,13 @@ mod tests {
             Some(CorridorRole::Vertical),
         );
         assert!(geom.is_wellshaft());
-        assert_eq!(geom.half, Vec2::new(5.0, 4.33));
+        assert_eq!(
+            geom.half,
+            Vec2::new(
+                hallway::WELL_SHAFT_OUTER_APOTHEM,
+                hallway::WELL_SHAFT_OUTER_RADIUS
+            )
+        );
         assert_eq!(geom.poly.as_ref().map(Vec::len), Some(6), "hexagonal shell");
         assert_eq!(geom.gaps.len(), 2);
         assert!(geom.gaps.iter().any(|gap| {
@@ -1452,23 +1501,62 @@ mod tests {
                     && (spawn.x - deck.center.x).abs() <= deck.half.x
                     && (spawn.y - deck.center.y).abs() <= deck.half.y
             }),
-            "the elevated entry spawn is supported by the orange top landing"
+            "the elevated entry spawn is supported by the top landing"
         );
 
-        let mut stair_heights: Vec<f32> = geom
+        // Treads are the radial slabs whose vertical extent is one riser's closure.
+        let treads: Vec<&DeckSeg> = geom
             .decks
             .iter()
-            .filter(|deck| deck.bottom_y.abs() < 0.01)
-            .map(|deck| deck.top_y)
+            .filter(|deck| {
+                (deck.top_y - deck.bottom_y - hallway::WELL_SHAFT_TREAD_CLOSURE).abs() < 0.01
+            })
             .collect();
-        stair_heights.sort_by(f32::total_cmp);
-        assert_eq!(stair_heights.len(), 120, "four thirty-step ramp colliders");
-        for pair in stair_heights.windows(2) {
-            assert!(
-                (pair[1] - pair[0] - 0.1).abs() < 0.001,
-                "the ramp collision approximation rises in shallow increments: {pair:?}"
-            );
+        assert_eq!(
+            treads.len(),
+            (hallway::WELL_SHAFT_LEVELS - 1) * hallway::WELL_SHAFT_STEPS_PER_FLIGHT,
+            "five eight-tread flights"
+        );
+        for level in 0..hallway::WELL_SHAFT_LEVELS - 1 {
+            for step in 0..hallway::WELL_SHAFT_STEPS_PER_FLIGHT {
+                let center = hallway::wellshaft_stair_center(level, step);
+                let top = level as f32 * hallway::WELL_SHAFT_LEVEL_HEIGHT
+                    + step as f32 * hallway::WELL_SHAFT_STEP_RISE;
+                assert!(treads.iter().any(|deck| {
+                    deck.center.distance(Vec2::new(center.0, center.1)) < 0.01
+                        && (deck.top_y - top).abs() < 0.01
+                }));
+            }
         }
+
+        // One guard rail per mid-flight tread (end treads abut landings, stay open).
+        assert_eq!(
+            geom.decks
+                .iter()
+                .filter(|deck| {
+                    (deck.top_y - deck.bottom_y - hallway::WELL_SHAFT_GUARD_HEIGHT).abs() < 0.01
+                })
+                .count(),
+            (hallway::WELL_SHAFT_LEVELS - 1) * (hallway::WELL_SHAFT_STEPS_PER_FLIGHT - 2),
+        );
+
+        // The ground landing and bridge (level zero) dip a deck's thickness below the
+        // base floor so they meet it cleanly.
+        assert_eq!(
+            geom.decks
+                .iter()
+                .filter(|deck| {
+                    (deck.bottom_y + hallway::WELL_SHAFT_DECK_THICKNESS).abs() < 0.01
+                })
+                .count(),
+            2,
+            "the ground landing and bridge meet the base floor"
+        );
+        assert!(geom.decks.iter().any(|deck| {
+            deck.center == Vec2::ZERO
+                && deck.half == Vec2::splat(hallway::WELL_SHAFT_PILLAR_COLLISION_HALF)
+                && deck.top_y > hallway::WELL_SHAFT_HEIGHT
+        }));
 
         let again = hallway_geom_with_slots_and_role(
             endpoints,
@@ -1489,23 +1577,120 @@ mod tests {
             "same edge inputs, same shaft"
         );
 
-        // Raised rings cannot roof lower stair treads. The sole permitted XZ overlap is
-        // the receiving tread flush with that ring's own top surface.
-        for stair in geom.decks.iter().filter(|deck| deck.bottom_y.abs() < 0.01) {
-            for ring in geom.decks.iter().filter(|deck| deck.bottom_y > 0.01) {
-                let overlaps_xz = (stair.center.x - ring.center.x).abs()
-                    < stair.half.x + ring.half.x
-                    && (stair.center.y - ring.center.y).abs() < stair.half.y + ring.half.y;
-                let full_body_height = observed_traversal::FpsConfig::default().half_height * 2.0;
-                let has_headroom = ring.bottom_y - stair.top_y >= full_body_height + 0.05;
-                assert!(
-                    !overlaps_xz || ring.top_y <= stair.top_y + 0.01 || has_headroom,
-                    "ring at {} roofs stair at {}",
-                    ring.top_y,
-                    stair.top_y
+        let bottom = geom.gaps.iter().find(|gap| gap.floor_y == 0.0).unwrap();
+        let top = geom
+            .gaps
+            .iter()
+            .find(|gap| gap.floor_y == hallway::WELL_SHAFT_HEIGHT)
+            .unwrap();
+        let expected_bottom = hallway::wellshaft_level_direction(0);
+        let expected_top = hallway::wellshaft_level_direction(hallway::WELL_SHAFT_LEVELS - 1);
+        assert!(
+            bottom
+                .normal
+                .distance(Vec2::new(expected_bottom.0, expected_bottom.1))
+                < 0.01
+        );
+        assert!(
+            top.normal
+                .distance(Vec2::new(expected_top.0, expected_top.1))
+                < 0.01
+        );
+    }
+
+    #[test]
+    fn production_controller_traverses_the_projected_wfc_wellshaft_both_ways() {
+        let geom = hallway_geom_with_slots_and_role(
+            HallwayGeomEndpoints {
+                from: RoomId(2),
+                to: RoomId(3),
+                from_room_slot: ThresholdSlotId(1),
+                to_room_slot: ThresholdSlotId(2),
+                exit_room: RoomId(EXIT_ROOM),
+            },
+            hallway::template(0),
+            77,
+            false,
+            Some(CorridorRole::Vertical),
+        );
+        let config = FpsConfig::default();
+        let arena = place_arena(&geom, 0.0, crate::layout::WALL_HEIGHT);
+        let spawn = entry_spawn(&geom, RoomId(2));
+        let mut body = FpsBody::spawned(
+            Vec3::new(
+                spawn.x,
+                hallway::WELL_SHAFT_HEIGHT + config.half_height,
+                spawn.y,
+            ),
+            0.0,
+        );
+
+        for upper_level in (1..hallway::WELL_SHAFT_LEVELS).rev() {
+            let lower_level = upper_level - 1;
+            for step in (0..hallway::WELL_SHAFT_STEPS_PER_FLIGHT).rev() {
+                let point = hallway::wellshaft_stair_center(lower_level, step);
+                drive_wellshaft_body_to(
+                    &mut body,
+                    Vec2::new(point.0, point.1),
+                    lower_level as f32 * hallway::WELL_SHAFT_LEVEL_HEIGHT
+                        + step as f32 * hallway::WELL_SHAFT_STEP_RISE,
+                    false,
+                    &arena,
+                    &config,
                 );
             }
+            let rest = hallway::wellshaft_landing_rest(lower_level);
+            drive_wellshaft_body_to(
+                &mut body,
+                Vec2::new(rest.0, rest.1),
+                lower_level as f32 * hallway::WELL_SHAFT_LEVEL_HEIGHT,
+                false,
+                &arena,
+                &config,
+            );
+            for _ in 0..30 {
+                step_body(
+                    &mut body,
+                    PlayerIntent::default(),
+                    &arena,
+                    &config,
+                    FIXED_DT,
+                );
+            }
+            let feet = body.position.y - config.half_height;
+            let expected = lower_level as f32 * hallway::WELL_SHAFT_LEVEL_HEIGHT;
+            assert!(
+                (feet - expected).abs() < 0.08,
+                "level {lower_level}: {feet}"
+            );
         }
+
+        for lower_level in 0..hallway::WELL_SHAFT_LEVELS - 1 {
+            for step in 0..hallway::WELL_SHAFT_STEPS_PER_FLIGHT {
+                let point = hallway::wellshaft_stair_center(lower_level, step);
+                drive_wellshaft_body_to(
+                    &mut body,
+                    Vec2::new(point.0, point.1),
+                    lower_level as f32 * hallway::WELL_SHAFT_LEVEL_HEIGHT
+                        + step as f32 * hallway::WELL_SHAFT_STEP_RISE,
+                    true,
+                    &arena,
+                    &config,
+                );
+            }
+            let upper_level = lower_level + 1;
+            let rest = hallway::wellshaft_landing_rest(upper_level);
+            drive_wellshaft_body_to(
+                &mut body,
+                Vec2::new(rest.0, rest.1),
+                upper_level as f32 * hallway::WELL_SHAFT_LEVEL_HEIGHT,
+                true,
+                &arena,
+                &config,
+            );
+        }
+        let feet = body.position.y - config.half_height;
+        assert!((feet - hallway::WELL_SHAFT_HEIGHT).abs() < 0.08);
     }
 
     #[test]

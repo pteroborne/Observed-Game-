@@ -998,17 +998,32 @@ pub(super) fn capture_wellshaft_progress(
             variation: 0,
         });
         let top = y + hallway::WELL_SHAFT_HEIGHT;
+        let first_upper = hallway::wellshaft_landing_center(1);
+        let top_landing = hallway::wellshaft_landing_center(hallway::WELL_SHAFT_LEVELS - 1);
+        let next_landing = hallway::wellshaft_landing_center(hallway::WELL_SHAFT_LEVELS - 2);
         *transform = match framing_phase {
-            // Descent: stand at the entry lip over the central void, look steeply
-            // down the shaft so the warm pools recede on the ledges below.
-            2 => Transform::from_xyz(0.0, top + 1.2, -2.3)
-                .looking_at(Vec3::new(0.2, y + 2.5, 1.4), Vec3::Y),
-            // From the shaft floor, look up and across at a warm-lit landing so a
-            // pool anchors the frame while the ringed ledges climb into the dark.
-            4 => Transform::from_xyz(-2.4, y + 1.7, 2.8)
-                .looking_at(Vec3::new(3.0, y + 4.6, -3.0), Vec3::Y),
+            // Eye-level descent from inside the elevated entry: the live bridge,
+            // pillar face, first flight, and receiving landing share the frame.
+            2 => Transform::from_xyz(top_landing.0, top + 1.65, top_landing.1).looking_at(
+                Vec3::new(
+                    next_landing.0,
+                    top - hallway::WELL_SHAFT_LEVEL_HEIGHT + 0.45,
+                    next_landing.1,
+                ),
+                Vec3::Y,
+            ),
+            // Ground bridge looking directly up the first flight toward level one.
+            4 => Transform::from_xyz(hallway::WELL_SHAFT_BRIDGE_END_RADIUS - 0.8, y + 1.7, 0.0)
+                .looking_at(
+                    Vec3::new(
+                        first_upper.0,
+                        y + hallway::WELL_SHAFT_LEVEL_HEIGHT + 1.2,
+                        first_upper.1,
+                    ),
+                    Vec3::Y,
+                ),
             // Plan view straight down the well.
-            _ => Transform::from_xyz(0.1, top + 12.0, 0.1).looking_at(
+            _ => Transform::from_xyz(0.1, top + 36.0, 0.1).looking_at(
                 Vec3::new(0.0, y + hallway::WELL_SHAFT_HEIGHT * 0.45, 0.0),
                 Vec3::NEG_Z,
             ),

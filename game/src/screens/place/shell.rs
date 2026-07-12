@@ -92,7 +92,7 @@ pub(crate) fn spawn_hallway_shell(
     let shell_height = crate::teleport::structural_height(geom, WALL_HEIGHT);
     if let Some(poly) = geom.poly.as_ref() {
         let root = Transform::from_xyz(0.0, y_offset, 0.0);
-        // The shaft floor is the same grey concrete as its ledges and ramps, not
+        // The shaft floor is the same grey concrete as its ledges and treads, not
         // the district floor tint — otherwise the bottom of the well reads as a
         // bright slab under the pools instead of dark stone catching them.
         mesh::spawn_polygon_shell(
@@ -100,7 +100,7 @@ pub(crate) fn spawn_hallway_shell(
             assets,
             meshes,
             poly,
-            assets.wellshaft_ramp_material.clone(),
+            assets.wellshaft_stone_material.clone(),
             ceiling_material,
             root,
             false,
@@ -114,11 +114,11 @@ pub(crate) fn spawn_hallway_shell(
             assets,
             poly,
             &geom.gaps,
-            assets.wellshaft_ramp_material.clone(),
+            assets.wellshaft_stone_material.clone(),
             y_offset,
             shell_height,
         );
-        spawn_wellshaft_ramps(commands, assets, &geom.decks, y_offset);
+        spawn_wellshaft_structure(commands, assets, meshes, y_offset, shell_height);
         return;
     }
     commands.spawn((
@@ -225,56 +225,169 @@ fn spawn_wellshaft_hex_walls(
     }
 }
 
-/// Render the collision staircase as four continuous orange ramp faces. Only the thin
-/// raised ring slabs are drawn individually; the 120 shallow AABB steps remain an
-/// invisible deterministic collision approximation.
-fn spawn_wellshaft_ramps(
+/// Render the WFC vertical edge's authored hex-pillar structure. The controller uses
+/// conservative AABBs projected from these rotated treads and bridges; presentation
+/// draws the intended local orientation from the same pure hallway constants.
+fn spawn_wellshaft_structure(
     commands: &mut Commands,
     assets: &MatchAssets,
-    decks: &[DeckSeg],
+    meshes: &mut Assets<Mesh>,
     y_offset: f32,
+    shell_height: f32,
 ) {
-    for deck in decks.iter().filter(|deck| deck.bottom_y > 0.01) {
-        let height = deck.top_y - deck.bottom_y;
+    let yaw_for = |direction: Vec2| (-direction.y).atan2(direction.x);
+    let spawn_box = |commands: &mut Commands,
+                     center: Vec3,
+                     scale: Vec3,
+                     yaw: f32,
+                     material: Handle<StandardMaterial>,
+                     name: &'static str| {
         commands.spawn((
             PlaceGeometry,
             DespawnOnExit(GameState::Match),
             Mesh3d(assets.placeholder_mesh.clone()),
-            MeshMaterial3d(assets.wellshaft_ramp_material.clone()),
-            Transform::from_xyz(
-                deck.center.x,
-                y_offset + deck.bottom_y + height * 0.5,
-                deck.center.y,
-            )
-            .with_scale(Vec3::new(deck.half.x * 2.0, height, deck.half.y * 2.0)),
-            Name::new("Wellshaft ring"),
+            MeshMaterial3d(material),
+            Transform::from_translation(center)
+                .with_rotation(Quat::from_rotation_y(yaw))
+                .with_scale(scale),
+            Name::new(name),
         ));
+    };
+
+    commands.spawn((
+        PlaceGeometry,
+        DespawnOnExit(GameState::Match),
+        Mesh3d(
+            meshes.add(
+                Cylinder::new(crate::hallway::WELL_SHAFT_PILLAR_RADIUS, shell_height)
+                    .mesh()
+                    .resolution(6),
+            ),
+        ),
+        MeshMaterial3d(assets.wellshaft_stone_material.clone()),
+        Transform::from_xyz(0.0, y_offset + shell_height * 0.5, 0.0),
+        Name::new("Wellshaft hex pillar"),
+    ));
+
+    for level in 0..crate::hallway::WELL_SHAFT_LEVELS {
+        let top_y = level as f32 * crate::hallway::WELL_SHAFT_LEVEL_HEIGHT;
+        let direction = crate::hallway::wellshaft_level_direction(level);
+        let direction = Vec2::new(direction.0, direction.1);
+        let landing = crate::hallway::wellshaft_landing_center(level);
+        let yaw = yaw_for(direction);
+        spawn_box(
+            commands,
+            Vec3::new(
+                landing.0,
+                y_offset + top_y - crate::hallway::WELL_SHAFT_DECK_THICKNESS * 0.5,
+                landing.1,
+            ),
+            Vec3::new(
+                crate::hallway::WELL_SHAFT_LANDING_HALF * 2.0,
+                crate::hallway::WELL_SHAFT_DECK_THICKNESS,
+                crate::hallway::WELL_SHAFT_LANDING_HALF * 2.0,
+            ),
+            yaw,
+            assets.wellshaft_stone_material.clone(),
+            "Wellshaft landing",
+        );
+
+        let bridge_start = crate::hallway::WELL_SHAFT_LANDING_RADIUS
+            + crate::hallway::WELL_SHAFT_LANDING_HALF * 0.65;
+        let bridge_length = crate::hallway::WELL_SHAFT_BRIDGE_END_RADIUS - bridge_start;
+        let bridge_center = direction * (bridge_start + bridge_length * 0.5);
+        spawn_box(
+            commands,
+            Vec3::new(
+                bridge_center.x,
+                y_offset + top_y - crate::hallway::WELL_SHAFT_DECK_THICKNESS * 0.5,
+                bridge_center.y,
+            ),
+            Vec3::new(
+                bridge_length,
+                crate::hallway::WELL_SHAFT_DECK_THICKNESS,
+                crate::hallway::WELL_SHAFT_BRIDGE_WIDTH,
+            ),
+            yaw,
+            assets.wellshaft_stone_material.clone(),
+            "Wellshaft bridge",
+        );
+
+        // Levels 1–4 end at physical wall, so their bay leaves and X braces use
+        // subdued structural materials rather than the live threshold's cyan signal.
+        if level > 0 && level + 1 < crate::hallway::WELL_SHAFT_LEVELS {
+            let bay_center = direction * (crate::hallway::WELL_SHAFT_OUTER_APOTHEM - 0.22);
+            let tangent = Vec2::new(-direction.y, direction.x);
+            let bay_yaw = yaw_for(tangent);
+            spawn_box(
+                commands,
+                Vec3::new(bay_center.x, y_offset + top_y + 1.3, bay_center.y),
+                Vec3::new(3.0, 2.6, 0.28),
+                bay_yaw,
+                assets.rubble_material.clone(),
+                "Wellshaft sealed service bay",
+            );
+            for roll in [-0.72, 0.72] {
+                commands.spawn((
+                    PlaceGeometry,
+                    DespawnOnExit(GameState::Match),
+                    Mesh3d(assets.placeholder_mesh.clone()),
+                    MeshMaterial3d(assets.wellshaft_stone_material.clone()),
+                    Transform::from_xyz(bay_center.x, y_offset + top_y + 1.3, bay_center.y)
+                        .with_rotation(Quat::from_rotation_y(bay_yaw) * Quat::from_rotation_z(roll))
+                        .with_scale(Vec3::new(3.35, 0.13, 0.12)),
+                    Name::new("Wellshaft sealed bay brace"),
+                ));
+            }
+        }
     }
 
     for level in 0..crate::hallway::WELL_SHAFT_LEVELS - 1 {
-        let (low, high) = crate::hallway::wellshaft_ramp_endpoints(level);
-        let low = Vec2::new(low.0, low.1);
-        let high = Vec2::new(high.0, high.1);
-        let d = high - low;
-        let run = d.length();
-        let rise = crate::hallway::WELL_SHAFT_LEVEL_HEIGHT;
-        let yaw = (-d.y).atan2(d.x);
-        let pitch = rise.atan2(run);
-        let center = (low + high) * 0.5;
-        commands.spawn((
-            PlaceGeometry,
-            DespawnOnExit(GameState::Match),
-            Mesh3d(assets.placeholder_mesh.clone()),
-            MeshMaterial3d(assets.wellshaft_ramp_material.clone()),
-            Transform::from_xyz(
-                center.x,
-                y_offset + level as f32 * rise + rise * 0.5,
-                center.y,
-            )
-            .with_rotation(Quat::from_rotation_y(yaw) * Quat::from_rotation_z(pitch))
-            .with_scale(Vec3::new(run + 0.18, 0.18, 1.0)),
-            Name::new("Wellshaft ramp"),
-        ));
+        let low_y = level as f32 * crate::hallway::WELL_SHAFT_LEVEL_HEIGHT;
+        for step in 0..crate::hallway::WELL_SHAFT_STEPS_PER_FLIGHT {
+            let angle = crate::hallway::wellshaft_tread_angle(level, step);
+            let u = Vec2::new(angle.cos(), angle.sin());
+            let step_top = low_y + step as f32 * crate::hallway::WELL_SHAFT_STEP_RISE;
+            let yaw = yaw_for(u);
+            let center = u * crate::hallway::WELL_SHAFT_TREAD_MID_RADIUS;
+            spawn_box(
+                commands,
+                Vec3::new(
+                    center.x,
+                    y_offset + step_top - crate::hallway::WELL_SHAFT_TREAD_CLOSURE * 0.5,
+                    center.y,
+                ),
+                Vec3::new(
+                    crate::hallway::WELL_SHAFT_TREAD_RADIAL_HALF * 2.0,
+                    crate::hallway::WELL_SHAFT_TREAD_CLOSURE,
+                    crate::hallway::WELL_SHAFT_TREAD_TANGENTIAL_HALF * 2.0,
+                ),
+                yaw,
+                assets.wellshaft_stone_material.clone(),
+                "Wellshaft stair tread",
+            );
+            if crate::hallway::wellshaft_tread_has_guard(step) {
+                let guard_center = u
+                    * (crate::hallway::WELL_SHAFT_TREAD_OUTER_RADIUS
+                        + crate::hallway::WELL_SHAFT_GUARD_THICKNESS * 0.5);
+                spawn_box(
+                    commands,
+                    Vec3::new(
+                        guard_center.x,
+                        y_offset + step_top + crate::hallway::WELL_SHAFT_GUARD_HEIGHT * 0.5,
+                        guard_center.y,
+                    ),
+                    Vec3::new(
+                        crate::hallway::WELL_SHAFT_GUARD_THICKNESS,
+                        crate::hallway::WELL_SHAFT_GUARD_HEIGHT,
+                        crate::hallway::WELL_SHAFT_TREAD_TANGENTIAL_HALF * 2.0,
+                    ),
+                    yaw,
+                    assets.wellshaft_stone_material.clone(),
+                    "Wellshaft guard rail",
+                );
+            }
+        }
     }
 }
 

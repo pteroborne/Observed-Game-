@@ -5,7 +5,6 @@ use crate::view::assets::MatchAssets;
 use crate::view::components::{FlickerLight, PassagePreview, PlaceGeometry};
 use bevy::prelude::*;
 use observed_style as style;
-use std::f32::consts::PI;
 
 pub(crate) const FIXTURE_LIGHT_INTENSITY: f32 = 2_800.0;
 
@@ -202,9 +201,9 @@ pub(crate) fn spawn_place_lighting(
     }
 }
 
-/// The lighting-lab wellshaft register in playable form: a tight warm pool on every
-/// landing, quarter-turn staggered so the eye reads the route down. Only the top lamp
-/// spends shadow budget; the remaining pools are deliberately isolated unshadowed fills.
+/// The lighting-lab wellshaft register in playable form: one tight warm pool on every
+/// radial landing around the hex pillar. Only the top lamp spends shadow budget; the
+/// remaining pools are deliberately isolated unshadowed fills.
 fn spawn_wellshaft_lighting(
     commands: &mut Commands,
     assets: &MatchAssets,
@@ -213,12 +212,6 @@ fn spawn_wellshaft_lighting(
     preview: bool,
 ) {
     let place_in = |local: Transform| xform.mul_transform(local);
-    let corners = [
-        Vec2::new(-3.05, -3.05),
-        Vec2::new(3.05, -3.05),
-        Vec2::new(3.05, 3.05),
-        Vec2::new(-3.05, 3.05),
-    ];
     let tint = palette.key_color.to_srgba();
     let practical_color = Color::srgb(
         0.82 + tint.red * 0.18,
@@ -227,8 +220,14 @@ fn spawn_wellshaft_lighting(
     );
     for level in 0..crate::hallway::WELL_SHAFT_LEVELS {
         let y = level as f32 * crate::hallway::WELL_SHAFT_LEVEL_HEIGHT + 1.35;
-        let corner = corners[level % corners.len()];
-        let lamp_pos = Vec3::new(corner.x, y, corner.y);
+        let landing = crate::hallway::wellshaft_landing_center(level);
+        let direction = crate::hallway::wellshaft_level_direction(level);
+        let tangent = Vec2::new(-direction.1, direction.0);
+        let lamp_pos = Vec3::new(
+            landing.0 + tangent.x * 0.85,
+            y,
+            landing.1 + tangent.y * 0.85,
+        );
         let mut practical = commands.spawn((
             PlaceGeometry,
             DespawnOnExit(GameState::Match),
@@ -300,9 +299,14 @@ fn inward_normal(a: Vec2, b: Vec2) -> Vec2 {
 }
 
 /// Draw the structural neon linework that gives a place's shell surface interest without
-/// any textures (code-as-art): a baseboard seam, a cornice seam, and thin ceiling ribs in
-/// the district's accent. Built under `xform` and tagged for the same teardown/preview
-/// path as the rest of the place, so previews match what you walk into.
+/// any textures (code-as-art): a single baseboard seam in the district's accent. Built
+/// under `xform` and tagged for the same teardown/preview path as the rest of the place,
+/// so previews match what you walk into.
+///
+/// The cornice seam and ceiling ribs were removed (2026-07-11, user playtest): both were
+/// pinned to `WALL_HEIGHT`, so in tall places (wellshaft, gantry) they floated mid-shaft,
+/// and in ordinary rooms the near-ceiling border never lined up cleanly with the wall/
+/// ceiling junction.
 pub(crate) fn spawn_surface_detail(
     commands: &mut Commands,
     assets: &MatchAssets,
@@ -311,8 +315,6 @@ pub(crate) fn spawn_surface_detail(
     xform: Transform,
     preview: bool,
 ) {
-    let high = WALL_HEIGHT - 0.18;
-    let ceiling_y = WALL_HEIGHT - 0.035;
     let mut strip = |center: Vec3, scale: Vec3, yaw: f32, name: &'static str| {
         let local = Transform::from_translation(center)
             .with_rotation(Quat::from_rotation_y(yaw))
@@ -351,97 +353,61 @@ pub(crate) fn spawn_surface_detail(
             if !preview || passage_gaps.is_empty() {
                 for (offset, span_len) in trim_spans(len * 0.5, passage_gaps) {
                     let p = mid + dir * offset + inward * TRIM_WALL_INSET;
-                    for y in [TRIM_LOW_Y, high] {
-                        strip(
-                            Vec3::new(p.x, y, p.y),
-                            Vec3::new(span_len, TRIM_HEIGHT, TRIM_DEPTH),
-                            yaw,
-                            "Wall trim",
-                        );
-                    }
-                }
-            }
-            if i % 2 == 0 {
-                let rib = b * 0.46;
-                let rib_len = rib.length();
-                if rib_len > 0.4 {
                     strip(
-                        Vec3::new(rib.x * 0.5, ceiling_y, rib.y * 0.5),
-                        Vec3::new(rib_len, 0.035, 0.045),
-                        (-rib.y).atan2(rib.x),
-                        "Ceiling rib",
+                        Vec3::new(p.x, TRIM_LOW_Y, p.y),
+                        Vec3::new(span_len, TRIM_HEIGHT, TRIM_DEPTH),
+                        yaw,
+                        "Wall trim",
                     );
                 }
             }
         }
     } else {
         let (hx, hz) = (geom.half.x, geom.half.y);
-        for y in [TRIM_LOW_Y, high] {
-            for sign in [-1.0_f32, 1.0] {
-                // North/South walls run along X, split around open thresholds.
-                let gaps = geom
-                    .gaps
-                    .iter()
-                    .filter(|gap| {
-                        gap.kind.is_passage()
-                            && (gap.normal.y - sign).abs() < 0.5
-                            && gap.normal.x.abs() < 0.5
-                    })
-                    .map(|gap| (gap.center.x, gap.width * 0.5))
-                    .collect::<Vec<_>>();
-                if !preview || gaps.is_empty() {
-                    for (cx, len) in trim_spans(hx, gaps) {
-                        strip(
-                            Vec3::new(cx, y, sign * (hz - TRIM_WALL_INSET)),
-                            Vec3::new(len, TRIM_HEIGHT, TRIM_DEPTH),
-                            0.0,
-                            "Wall trim",
-                        );
-                    }
-                }
-
-                // West/East walls run along Z, split around any side thresholds.
-                let gaps = geom
-                    .gaps
-                    .iter()
-                    .filter(|gap| {
-                        gap.kind.is_passage()
-                            && (gap.normal.x - sign).abs() < 0.5
-                            && gap.normal.y.abs() < 0.5
-                    })
-                    .map(|gap| (gap.center.y, gap.width * 0.5))
-                    .collect::<Vec<_>>();
-                if !preview || gaps.is_empty() {
-                    for (cz, len) in trim_spans(hz, gaps) {
-                        strip(
-                            Vec3::new(sign * (hx - TRIM_WALL_INSET), y, cz),
-                            Vec3::new(TRIM_DEPTH, TRIM_HEIGHT, len),
-                            0.0,
-                            "Wall trim",
-                        );
-                    }
+        for sign in [-1.0_f32, 1.0] {
+            // North/South walls run along X, split around open thresholds.
+            let gaps = geom
+                .gaps
+                .iter()
+                .filter(|gap| {
+                    gap.kind.is_passage()
+                        && (gap.normal.y - sign).abs() < 0.5
+                        && gap.normal.x.abs() < 0.5
+                })
+                .map(|gap| (gap.center.x, gap.width * 0.5))
+                .collect::<Vec<_>>();
+            if !preview || gaps.is_empty() {
+                for (cx, len) in trim_spans(hx, gaps) {
+                    strip(
+                        Vec3::new(cx, TRIM_LOW_Y, sign * (hz - TRIM_WALL_INSET)),
+                        Vec3::new(len, TRIM_HEIGHT, TRIM_DEPTH),
+                        0.0,
+                        "Wall trim",
+                    );
                 }
             }
-        }
-        let x_divisions = ((hx * 2.0) / 4.0).floor().max(1.0) as i32;
-        let z_divisions = ((hz * 2.0) / 4.0).floor().max(1.0) as i32;
-        for ix in -x_divisions..=x_divisions {
-            let x = ix as f32 * hx / (x_divisions as f32 + 0.5);
-            strip(
-                Vec3::new(x, ceiling_y, 0.0),
-                Vec3::new(2.0 * hz, 0.035, 0.045),
-                PI * 0.5,
-                "Ceiling rib",
-            );
-        }
-        for iz in -z_divisions..=z_divisions {
-            let z = iz as f32 * hz / (z_divisions as f32 + 0.5);
-            strip(
-                Vec3::new(0.0, ceiling_y, z),
-                Vec3::new(2.0 * hx, 0.035, 0.045),
-                0.0,
-                "Ceiling rib",
-            );
+
+            // West/East walls run along Z, split around any side thresholds.
+            let gaps = geom
+                .gaps
+                .iter()
+                .filter(|gap| {
+                    gap.kind.is_passage()
+                        && (gap.normal.x - sign).abs() < 0.5
+                        && gap.normal.y.abs() < 0.5
+                })
+                .map(|gap| (gap.center.y, gap.width * 0.5))
+                .collect::<Vec<_>>();
+            if !preview || gaps.is_empty() {
+                for (cz, len) in trim_spans(hz, gaps) {
+                    strip(
+                        Vec3::new(sign * (hx - TRIM_WALL_INSET), TRIM_LOW_Y, cz),
+                        Vec3::new(TRIM_DEPTH, TRIM_HEIGHT, len),
+                        0.0,
+                        "Wall trim",
+                    );
+                }
+            }
         }
     }
 }

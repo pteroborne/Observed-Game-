@@ -1,0 +1,18 @@
+[package]
+name = "wellshaft_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+# The production AABB traversal controller — the prototype walks on the same
+# step_body the game uses, so a good feel here transfers 1:1.
+observed_traversal = { path = "../../crates/observed_traversal", features = [
+    "bevy",
+] }
+player_input = { path = "../../crates/player_input" }
+bevy = { version = "0.18.1", default-features = false, features = [
+    "3d",
+    "png",
+    "bevy_post_process",
+] }
