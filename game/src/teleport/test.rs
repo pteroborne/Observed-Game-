@@ -9,6 +9,7 @@ mod tests {
     use observed_core::RoomId;
     use observed_facility::map_spec::{CorridorRole, RoomRole};
     use observed_match::mutable::EXIT_ROOM;
+    use observed_traversal::rapier_controller::step_character;
     use observed_traversal::{FIXED_DT, FpsArena, FpsBody, FpsConfig, step_body};
     use player_input::PlayerIntent;
     use std::f32::consts::PI;
@@ -647,6 +648,74 @@ mod tests {
         assert!(
             (after - at_door).length() < 0.01,
             "the doorway stays open so the body can cross"
+        );
+    }
+
+    #[test]
+    fn rapier_blocks_an_angled_room_wall_and_preserves_its_doorway() {
+        let geom = room_geom(RoomId(0), &[RoomId(1)], Some(RoomId(1)), 4);
+        let gap = *geom.forward_gap().unwrap();
+        let config = FpsConfig::default();
+        let scene = place_rapier_scene(&geom, 0.0, 3.4);
+        let poly = geom.poly.as_ref().unwrap();
+        let (wall_a, wall_b) = (0..poly.len())
+            .map(|i| (poly[i], poly[(i + 1) % poly.len()]))
+            .find(|(a, b)| {
+                let mid = (*a + *b) * 0.5;
+                !geom.gaps.iter().any(|candidate| {
+                    candidate.kind.is_passage() && (candidate.center - mid).length() < 0.05
+                })
+            })
+            .expect("one edge without the only passage");
+        let wall_normal = outward_normal(wall_a, wall_b);
+        let wall_plane = wall_a.dot(wall_normal);
+        let mut body = FpsBody::spawned(
+            Vec3::new(0.0, config.half_height, 0.0),
+            wall_normal.x.atan2(-wall_normal.y),
+        );
+        for _ in 0..360 {
+            step_character(
+                &scene,
+                &mut body,
+                PlayerIntent {
+                    movement: Vec2::Y,
+                    ..Default::default()
+                },
+                &config,
+                FIXED_DT,
+            );
+        }
+        let body_xz = Vec2::new(body.position.x, body.position.z);
+        assert!(
+            body_xz.dot(wall_normal) < wall_plane,
+            "Rapier must stop the capsule at the angled wall: body={body_xz:?}, plane={wall_plane}"
+        );
+
+        let mut through_door = FpsBody::spawned(
+            Vec3::new(
+                gap.center.x - gap.normal.x * 2.0,
+                config.half_height,
+                gap.center.y - gap.normal.y * 2.0,
+            ),
+            gap.normal.x.atan2(-gap.normal.y),
+        );
+        for _ in 0..120 {
+            step_character(
+                &scene,
+                &mut through_door,
+                PlayerIntent {
+                    movement: Vec2::Y,
+                    ..Default::default()
+                },
+                &config,
+                FIXED_DT,
+            );
+        }
+        let door_plane = gap.center.dot(gap.normal);
+        let door_xz = Vec2::new(through_door.position.x, through_door.position.z);
+        assert!(
+            door_xz.dot(gap.normal) > door_plane + config.radius,
+            "the physical doorway must remain crossable: body={door_xz:?}, plane={door_plane}"
         );
     }
 
@@ -1422,6 +1491,60 @@ mod tests {
                     assert!(
                         feet < 0.5,
                         "template {i} ({}) seed {seed} tick {tick}: roofed at feet y={feet}",
+                        template.name
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn rapier_projects_every_room_and_hallway_structure() {
+        use observed_facility::map_spec::RoomRole;
+
+        // Every procedural room shape, including the 13-sided monitor footprint,
+        // produces a finite Rapier scene. Polygon containment remains a known bridge
+        // until its angled perimeter is promoted to oriented primitives, but all
+        // authored structural solids already share the Rapier scene path.
+        for role in [
+            None,
+            Some(RoomRole::Start),
+            Some(RoomRole::Decision),
+            Some(RoomRole::Monitor),
+        ] {
+            for seed in 0..8 {
+                let room = room_geom_with_slots_and_seals_for_role(
+                    RoomId(0),
+                    &[RoomId(1), RoomId(2), RoomId(3)],
+                    &[],
+                    &[],
+                    Some(RoomId(1)),
+                    role,
+                    seed,
+                );
+                let primitives = place_structural_primitives(&room, 0.0, 3.4);
+                let scene = place_rapier_scene(&room, 0.0, 3.4);
+                assert_eq!(scene.collider_count(), primitives.len() + 1);
+            }
+        }
+
+        for template in hallway::TEMPLATES {
+            for seed in 0..4 {
+                let geom = hallway_geom(RoomId(0), RoomId(1), &template, seed, false);
+                let arena = place_arena(&geom, 0.0, 3.4);
+                let primitives = place_structural_primitives(&geom, 0.0, 3.4);
+                let scene = place_rapier_scene(&geom, 0.0, 3.4);
+                assert_eq!(
+                    scene.collider_count(),
+                    primitives.len() + 1,
+                    "{} seed {seed}",
+                    template.name
+                );
+                if geom.poly.is_none() {
+                    assert_eq!(
+                        primitives.len(),
+                        arena.solids.len(),
+                        "{} seed {seed}",
                         template.name
                     );
                 }

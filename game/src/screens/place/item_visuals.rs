@@ -7,6 +7,8 @@ use observed_core::RoomId;
 use observed_style::{self as style, MarkerRole};
 use std::f32::consts::PI;
 
+use crate::items::ANCHOR_RADIUS;
+
 /// A glowing gold keystone pickup at the centre of a room, tagged for proximity pickup.
 #[allow(clippy::manual_is_multiple_of)]
 pub(crate) fn spawn_keystone_item(
@@ -124,19 +126,20 @@ pub(crate) fn spawn_anchor_torch(
             ))
             .with_children(|torch| {
                 torch.spawn((
-                    Mesh3d(assets.halo_mesh.clone()),
+                    Mesh3d(assets.radius_ring_mesh.clone()),
                     MeshMaterial3d(assets.anchor_torch_material.clone()),
-                    Transform::from_xyz(0.0, -0.02, 0.0).with_scale(Vec3::new(1.3, 1.0, 1.3)),
-                    Name::new("Anchor torch floor halo"),
+                    Transform::from_xyz(0.0, -0.02, 0.0).with_scale(Vec3::splat(ANCHOR_RADIUS)),
+                    Name::new("Anchor torch influence radius"),
                 ));
                 torch.spawn((
                     PointLight {
                         color: style::marker(MarkerRole::Control).base_color,
                         intensity: 1_900.0,
-                        range: 6.5,
+                        range: ANCHOR_RADIUS,
                         shadows_enabled: false,
                         ..default()
                     },
+                    Name::new("Anchor torch light"),
                     Transform::from_xyz(0.0, 0.45, 0.0),
                 ));
             });
@@ -156,19 +159,20 @@ pub(crate) fn spawn_anchor_torch(
         ))
         .with_children(|torch| {
             torch.spawn((
-                Mesh3d(assets.halo_mesh.clone()),
+                Mesh3d(assets.radius_ring_mesh.clone()),
                 MeshMaterial3d(assets.anchor_torch_material.clone()),
-                Transform::from_xyz(0.0, -0.52, 0.0).with_scale(Vec3::new(1.3, 1.0, 1.3)),
-                Name::new("Anchor torch floor halo"),
+                Transform::from_xyz(0.0, -0.52, 0.0).with_scale(Vec3::splat(ANCHOR_RADIUS)),
+                Name::new("Anchor torch influence radius"),
             ));
             torch.spawn((
                 PointLight {
                     color: style::marker(MarkerRole::Control).base_color,
                     intensity: 1_900.0,
-                    range: 6.5,
+                    range: ANCHOR_RADIUS,
                     shadows_enabled: false,
                     ..default()
                 },
+                Name::new("Anchor torch light"),
                 Transform::from_xyz(0.0, 0.45, 0.0),
             ));
         });

@@ -25,6 +25,41 @@ pub use direction::Direction;
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RoomId(pub u32);
 
+/// Stable identifier for a logical corridor instance. A corridor may expose any
+/// number of authored threshold sockets; unlike the legacy room-pair hallway key,
+/// its identity does not change when those sockets are rewired.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CorridorId(pub u32);
+
+/// Stable identifier for a discrete playable place.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PlaceId {
+    Room(RoomId),
+    Corridor(CorridorId),
+}
+
+/// Stable identifier for an authored threshold socket. Slots are unique within
+/// their owning place; a live attachment pairs two sockets without changing
+/// either socket's identity.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ThresholdId {
+    pub place: PlaceId,
+    pub slot: ThresholdSlotId,
+}
+
+impl ThresholdId {
+    pub const fn new(place: PlaceId, slot: u16) -> Self {
+        Self {
+            place,
+            slot: ThresholdSlotId(slot),
+        }
+    }
+}
+
+/// Place-local stable slot for a threshold aperture.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ThresholdSlotId(pub u16);
+
 /// Stable identifier for an authored connection point on a room (a port or
 /// socket). Unique within the room that owns it.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -66,6 +101,11 @@ mod tests {
         );
         assert_ne!(PortId(0), PortId(1));
         assert_eq!(EquipmentId(7).0, 7);
+        assert_ne!(CorridorId(0), CorridorId(1));
+        assert_ne!(
+            ThresholdId::new(PlaceId::Room(RoomId(1)), 0),
+            ThresholdId::new(PlaceId::Corridor(CorridorId(1)), 0)
+        );
     }
 
     #[test]

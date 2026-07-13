@@ -283,6 +283,19 @@ fn anchor_torch_can_be_dropped_pins_edges_and_can_be_picked_back_up() {
     let mut app = test_app();
     go(&mut app, GameState::Match);
 
+    // Anchor beside a real aperture: the 12-unit local radius is intentionally
+    // tactical and a torch at the centre of a liminal-scale hub need not pin it all.
+    {
+        let mut tp = app
+            .world_mut()
+            .resource_mut::<crate::sim::state::TeleportState>();
+        let gap = tp.geom.gaps[0];
+        let pos = gap.center - gap.normal * 2.0;
+        tp.body.position.x = pos.x;
+        tp.body.position.z = pos.y;
+        tp.prev_xz = pos;
+    }
+
     tap_update(&mut app, KeyCode::KeyF);
 
     {
@@ -301,7 +314,7 @@ fn anchor_torch_can_be_dropped_pins_edges_and_can_be_picked_back_up() {
     };
     assert!(
         !pins.is_empty(),
-        "a dropped anchor torch pins the current room's incident edges"
+        "a dropped anchor torch pins thresholds inside its local influence radius"
     );
     assert_eq!(
         count::<crate::view::components::DroppedItemVisual>(&mut app),
@@ -347,23 +360,46 @@ fn anchor_torch_tethers_current_thresholds_immediately() {
     go(&mut app, GameState::Match);
     app.update(); // build the initial room.
 
-    let (room, target, visible_targets) = {
-        let runtime = app
-            .world()
-            .resource::<crate::sim::director::MatchDirector>();
-        let tp = app.world().resource::<crate::sim::state::TeleportState>();
-        let game = runtime.live.host_match();
-        let mut visible_targets: Vec<_> = tp.geom.gaps.iter().map(|gap| gap.target).collect();
-        visible_targets.sort_by_key(|room| room.0);
-        visible_targets.dedup();
-        (
-            game.local_room(),
-            game.local_target().expect("spine target"),
-            visible_targets,
-        )
+    let (room, target, expected_targets) = {
+        let (room, target) = {
+            let runtime = app
+                .world()
+                .resource::<crate::sim::director::MatchDirector>();
+            let game = runtime.live.host_match();
+            (
+                game.local_room(),
+                game.local_target().expect("spine target"),
+            )
+        };
+        let mut tp = app
+            .world_mut()
+            .resource_mut::<crate::sim::state::TeleportState>();
+        let nearest = *tp
+            .geom
+            .gaps
+            .iter()
+            .find(|gap| gap.target == target)
+            .expect("the start room exposes the forward threshold");
+        let pos = nearest.center - nearest.normal * 2.0;
+        tp.body.position.x = pos.x;
+        tp.body.position.z = pos.y;
+        tp.prev_xz = pos;
+        let mut expected_targets: Vec<_> = tp
+            .geom
+            .gaps
+            .iter()
+            .filter(|gap| gap.center.distance(pos) <= items::ANCHOR_RADIUS)
+            .map(|gap| gap.target)
+            .collect();
+        expected_targets.sort_by_key(|room| room.0);
+        expected_targets.dedup();
+        (room, target, expected_targets)
     };
 
     tap_update(&mut app, KeyCode::KeyF);
+    app.world_mut()
+        .resource_mut::<crate::sim::state::TeleportState>()
+        .rendered = None;
     app.update(); // rebuild place geometry/lights after the anchor changes nav.
 
     {
@@ -382,20 +418,20 @@ fn anchor_torch_tethers_current_thresholds_immediately() {
         pinned_targets.sort_by_key(|room| room.0);
         pinned_targets.dedup();
         assert_eq!(
-            pinned_targets, visible_targets,
-            "dropping the anchor freezes every threshold visible in the room"
+            pinned_targets, expected_targets,
+            "dropping the anchor freezes exactly the local-radius threshold set"
         );
         assert_eq!(
-            nav.connections, visible_targets,
-            "a tethered room reads its frozen visible threshold table exactly"
+            nav.connections, expected_targets,
+            "a tethered room reads its frozen local-radius threshold table exactly"
         );
         assert!(
-            nav.is_tethered(room, target),
-            "dropping the anchor tethers the room's visible threshold relation"
+            nav.is_tethered(room, target) || !expected_targets.contains(&target),
+            "the forward relation is tethered when it falls inside the local radius"
         );
         assert!(
-            nav.connections.contains(&target),
-            "the tethered target remains present in the room nav"
+            nav.connections.contains(&target) || !expected_targets.contains(&target),
+            "a tethered target remains present in the room nav"
         );
     }
 
@@ -414,6 +450,18 @@ fn anchor_torch_tethers_current_thresholds_immediately() {
     assert!(
         has_control_light,
         "a tethered threshold gets the anchor/control-coloured frame light"
+    );
+    let has_radius_light = {
+        let world = app.world_mut();
+        let mut q = world.query::<(&PointLight, &Name)>();
+        q.iter(world).any(|(light, name)| {
+            name.as_str() == "Anchor torch light"
+                && (light.range - items::ANCHOR_RADIUS).abs() < 0.01
+        })
+    };
+    assert!(
+        has_radius_light,
+        "the torch renders its 12-unit influence radius"
     );
 }
 

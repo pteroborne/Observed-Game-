@@ -95,13 +95,13 @@ pub(crate) fn item_actions(
         let acted = if items.pickup(ItemKind::AnchorTorch, place, pos, ITEM_INTERACT_RADIUS) {
             true
         } else {
-            let mut connections = match place {
-                Place::Room(_) => tp.geom.gaps.iter().map(|gap| gap.target).collect(),
-                Place::Hallway { .. } => Vec::new(),
-            };
-            connections.sort_by_key(|room| room.0);
-            connections.dedup();
-            items.drop_anchor_torch(place, pos, version, &connections)
+            let thresholds = tp
+                .geom
+                .gaps
+                .iter()
+                .map(|gap| (gap.target, gap.center))
+                .collect::<Vec<_>>();
+            items.drop_anchor_torch_in_radius(place, pos, version, &thresholds)
         };
         if acted {
             audio_director.request(
@@ -195,6 +195,7 @@ pub(crate) fn item_actions(
             crate::teleport::open_entry(&mut geom, tp.arrived_from);
         }
         tp.arena = crate::teleport::place_arena(&geom, 0.0, WALL_HEIGHT);
+        tp.rapier = crate::teleport::place_rapier_scene(&geom, 0.0, WALL_HEIGHT);
         if geom.poly.is_some() {
             let clamped = crate::teleport::contain(&geom, body_xz(&tp), tp.config.radius);
             tp.body.position.x = clamped.x;

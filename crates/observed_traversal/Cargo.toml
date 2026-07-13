@@ -18,3 +18,4 @@ bevy = ["dep:bevy"]
 player_input = { path = "../player_input", default-features = false }
 glam = "0.30"
 bevy = { version = "0.18.1", default-features = false, optional = true }
+rapier3d = { version = "0.34", features = ["enhanced-determinism"] }

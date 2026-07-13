@@ -106,11 +106,13 @@ pub(crate) fn setup_match(
     });
     commands.insert_resource(crate::screens::audio::AudioDirector::default());
     commands.insert_resource(RivalBleedState::default());
+    let rapier = crate::teleport::place_rapier_scene(&start_geom, 0.0, WALL_HEIGHT);
     commands.insert_resource(TeleportState {
         place: start_place,
         body: FpsBody::spawned(spawn, 0.0),
         config: tp_config,
         arena: start_arena,
+        rapier,
         geom: start_geom,
         prev_xz: Vec2::ZERO,
         crossed_exit: false,

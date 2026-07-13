@@ -234,6 +234,8 @@ pub struct MatchAssets {
     pub(crate) panel_mesh: Handle<Mesh>,
     pub(crate) placeholder_mesh: Handle<Mesh>,
     pub(crate) halo_mesh: Handle<Mesh>,
+    /// Unit-radius torus used for exact gameplay-radius rings (for example anchors).
+    pub(crate) radius_ring_mesh: Handle<Mesh>,
     pub(crate) door_post_mesh: Handle<Mesh>,
     pub(crate) door_lintel_mesh: Handle<Mesh>,
     pub(crate) door_leaf_mesh: Handle<Mesh>,
@@ -577,6 +579,7 @@ impl MatchAssets {
             panel_mesh: meshes.add(Rectangle::new(4.4, 2.2)),
             placeholder_mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
             halo_mesh: meshes.add(Cylinder::new(0.46, 0.025)),
+            radius_ring_mesh: meshes.add(Torus::new(0.98, 1.0)),
             door_post_mesh: meshes.add(Cuboid::new(DOOR_POST_W, WALL_HEIGHT, DOOR_POST_D)),
             door_lintel_mesh: meshes.add(Cuboid::new(HALL_WIDTH, DOOR_LINTEL_H, DOOR_POST_D)),
             door_leaf_mesh: meshes.add(Cuboid::new(

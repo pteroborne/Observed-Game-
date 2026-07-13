@@ -11,6 +11,7 @@ use observed_core::{RoomId, TeamId};
 use observed_facility::map_spec::{CorridorRole, RoomRole};
 use observed_match::teamplay::TeamplayMatch;
 use observed_progression::session::SessionLabWorld;
+use observed_traversal::rapier_controller::RapierTraversalScene;
 use observed_traversal::{FpsArena, FpsBody, FpsConfig};
 use player_input::PlayerIntent;
 
@@ -109,6 +110,8 @@ pub struct TeleportState {
     pub body: FpsBody,
     pub config: FpsConfig,
     pub arena: FpsArena,
+    /// Raw-Rapier scene projected from the current place's structural geometry.
+    pub rapier: RapierTraversalScene,
     /// The current place's footprint + doorway gaps + interior (maze) walls. Cached so
     /// a labyrinth is generated once per teleport, not every fixed step.
     pub geom: teleport::PlaceGeom,

@@ -4,6 +4,7 @@ use super::{DoorGap, ENTRY_INSET, Nav, Place, PlaceGeom, ThresholdLocalSide};
 use crate::hallway;
 use bevy::math::{Quat, Vec2, Vec3};
 use observed_core::RoomId;
+use observed_traversal::rapier_controller::{RapierTraversalScene, StructuralCollider};
 use observed_traversal::{Aabb3, FpsArena};
 
 /// Did the body's movement segment cross `gap` outward (from inside to outside),
@@ -390,4 +391,188 @@ pub fn place_arena(geom: &PlaceGeom, floor_y: f32, wall_height: f32) -> FpsArena
         floor_y,
         floor_half: half.x.max(half.y) + 5.0,
     }
+}
+
+const WALL_HALF_THICKNESS: f32 = 0.4;
+
+/// Append one yawed structural wall cuboid spanning `start..end` on the XZ plane.
+/// The local +X axis follows the wall, matching the renderer's `spawn_wall_segment`
+/// convention. A small extension seals a whole polygon edge at its corners, but never
+/// intrudes into a doorway opening.
+fn push_polygon_wall(
+    primitives: &mut Vec<StructuralCollider>,
+    start: Vec2,
+    end: Vec2,
+    y_min: f32,
+    y_max: f32,
+    floor_y: f32,
+    seal_corners: bool,
+) {
+    let delta = end - start;
+    let length = delta.length();
+    let height = y_max - y_min;
+    if length <= 0.01 || height <= 0.01 {
+        return;
+    }
+    let extension = if seal_corners {
+        WALL_HALF_THICKNESS * 2.0
+    } else {
+        0.0
+    };
+    let center = (start + end) * 0.5;
+    primitives.push(StructuralCollider {
+        center: Vec3::new(center.x, floor_y + y_min + height * 0.5, center.y),
+        half: Vec3::new(
+            (length + extension) * 0.5,
+            height * 0.5,
+            WALL_HALF_THICKNESS,
+        ),
+        // After a Y rotation, local +X is `(cos(yaw), -sin(yaw))` in XZ.
+        yaw: (-delta.y).atan2(delta.x),
+    });
+}
+
+/// Project a place's authored structural geometry into collision primitives. The
+/// projection keeps every physical rule in data: perimeter walls, all doorway cuts,
+/// maze walls, and raised decks. It intentionally includes no decorative meshes.
+///
+/// Box halls retain their tested AABB projection. Convex rooms are promoted to yawed
+/// edge panels, so their visible angled walls and their Rapier collision boundary agree
+/// without a post-movement 2D containment correction.
+pub fn place_structural_primitives(
+    geom: &PlaceGeom,
+    floor_y: f32,
+    wall_height: f32,
+) -> Vec<StructuralCollider> {
+    let Some(poly) = geom.poly.as_ref() else {
+        return place_arena(geom, floor_y, wall_height)
+            .solids
+            .iter()
+            .map(|solid| {
+                StructuralCollider::axis_aligned(
+                    (solid.min + solid.max) * 0.5,
+                    (solid.max - solid.min) * 0.5,
+                )
+            })
+            .collect();
+    };
+
+    let total_height = structural_height(geom, wall_height);
+    let mut primitives = Vec::new();
+    for index in 0..poly.len() {
+        let start = poly[index];
+        let end = poly[(index + 1) % poly.len()];
+        let edge = end - start;
+        let edge_length = edge.length();
+        if edge_length <= 0.01 {
+            continue;
+        }
+        let tangent = edge / edge_length;
+        // A doorway belongs to this edge when its centre projects onto it and lies on
+        // the edge line. Sorting makes multiple attachments on one edge deterministic.
+        let mut openings: Vec<(f32, f32, &DoorGap)> = geom
+            .gaps
+            .iter()
+            .filter(|gap| gap.kind.is_passage())
+            .filter_map(|gap| {
+                let relative = gap.center - start;
+                let along = relative.dot(tangent);
+                let off_edge = (relative - tangent * along).length();
+                (off_edge <= 0.05 && along >= -0.05 && along <= edge_length + 0.05).then_some((
+                    (along - gap.width * 0.5).clamp(0.0, edge_length),
+                    (along + gap.width * 0.5).clamp(0.0, edge_length),
+                    gap,
+                ))
+            })
+            .collect();
+        openings.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let has_openings = !openings.is_empty();
+
+        let mut cursor = 0.0;
+        for (lo, hi, gap) in openings {
+            if lo > cursor {
+                push_polygon_wall(
+                    &mut primitives,
+                    start + tangent * cursor,
+                    start + tangent * lo,
+                    0.0,
+                    total_height,
+                    floor_y,
+                    false,
+                );
+            }
+            if hi <= cursor {
+                continue;
+            }
+            let opening_start = start + tangent * lo.max(cursor);
+            let opening_end = start + tangent * hi;
+            push_polygon_wall(
+                &mut primitives,
+                opening_start,
+                opening_end,
+                0.0,
+                gap.floor_y,
+                floor_y,
+                false,
+            );
+            push_polygon_wall(
+                &mut primitives,
+                opening_start,
+                opening_end,
+                gap.floor_y + wall_height,
+                total_height,
+                floor_y,
+                false,
+            );
+            cursor = hi;
+        }
+        if cursor < edge_length {
+            push_polygon_wall(
+                &mut primitives,
+                start + tangent * cursor,
+                end,
+                0.0,
+                total_height,
+                floor_y,
+                !has_openings,
+            );
+        }
+    }
+
+    for segment in &geom.interior {
+        primitives.push(StructuralCollider::axis_aligned(
+            Vec3::new(
+                segment.center.x,
+                floor_y + wall_height * 0.5,
+                segment.center.y,
+            ),
+            Vec3::new(segment.half.x, wall_height * 0.5, segment.half.y),
+        ));
+    }
+    for deck in &geom.decks {
+        let height = deck.top_y - deck.bottom_y;
+        if height > 0.01 {
+            primitives.push(StructuralCollider::axis_aligned(
+                Vec3::new(
+                    deck.center.x,
+                    floor_y + deck.bottom_y + height * 0.5,
+                    deck.center.y,
+                ),
+                Vec3::new(deck.half.x, height * 0.5, deck.half.y),
+            ));
+        }
+    }
+    primitives
+}
+
+/// Build the production Rapier collision scene for one discrete place. Unlike the
+/// legacy [`place_arena`] bridge, this scene contains yawed convex-room perimeter walls
+/// and therefore owns every player collision constraint.
+pub fn place_rapier_scene(
+    geom: &PlaceGeom,
+    floor_y: f32,
+    wall_height: f32,
+) -> RapierTraversalScene {
+    let primitives = place_structural_primitives(geom, floor_y, wall_height);
+    RapierTraversalScene::from_primitives(floor_y, geom.half.x.max(geom.half.y) + 5.0, &primitives)
 }

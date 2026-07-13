@@ -1,7 +1,8 @@
 use bevy::prelude::*;
 use observed_core::RoomId;
 use observed_match::hybrid::{HybridMatch, LocalAction};
-use observed_traversal::{FIXED_DT, FpsBody, step_body};
+use observed_traversal::rapier_controller::step_character;
+use observed_traversal::{FIXED_DT, FpsBody};
 
 use crate::flow::MATCH_SEED;
 use crate::items::ItemsState;
@@ -193,6 +194,7 @@ pub(super) fn place_body(
             (spawn, yaw, 0.0)
         });
     tp.arena = arena;
+    tp.rapier = teleport::place_rapier_scene(&tp.geom, y_offset, WALL_HEIGHT);
     tp.geom = geom;
     tp.body = FpsBody::spawned(
         Vec3::new(
@@ -219,6 +221,7 @@ pub(crate) fn place_body_at(tp: &mut TeleportState, place: Place, pos: Vec2, nav
     let pitch = tp.body.pitch;
     let y_offset = teleport::place_y_offset(place);
     tp.arena = teleport::place_arena(&geom, y_offset, WALL_HEIGHT);
+    tp.rapier = teleport::place_rapier_scene(&tp.geom, y_offset, WALL_HEIGHT);
     tp.geom = geom;
     tp.body = FpsBody::spawned(
         Vec3::new(pos.x, y_offset + tp.config.half_height, pos.y),
@@ -317,11 +320,12 @@ pub(crate) fn teleport_sim(
     let nav = nav_for_place(seed_val, runtime.live.host_match(), &keys, &items, tp.place);
     let prev = body_xz(tp);
     let config = tp.config;
-    let arena = tp.arena.clone();
-
     let prev_grounded = tp.prev_grounded;
 
-    step_body(&mut tp.body, intent.0, &arena, &config, FIXED_DT);
+    {
+        let TeleportState { body, rapier, .. } = tp;
+        step_character(rapier, body, intent.0, &config, FIXED_DT);
+    }
     intent.0.interact_pressed = false;
 
     tp.prev_grounded = tp.body.grounded;
@@ -349,12 +353,6 @@ pub(crate) fn teleport_sim(
         );
     }
 
-    if tp.geom.poly.is_some() {
-        let here = body_xz(tp);
-        let clamped = teleport::contain(&tp.geom, here, config.radius);
-        tp.body.position.x = clamped.x;
-        tp.body.position.z = clamped.y;
-    }
     let next = body_xz(tp);
     tp.prev_xz = next;
 

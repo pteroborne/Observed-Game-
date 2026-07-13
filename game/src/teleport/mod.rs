@@ -186,8 +186,8 @@ pub struct DeckSeg {
 /// `half` is always the bounding half-extent (used for floor/light/bounds sizing). A
 /// hallway is an axis-aligned box (`poly: None`) whose walls come from `interior` +
 /// `place_arena`'s perimeter. A room is a convex **polygon** (`poly: Some(vertices)`,
-/// CCW, centred at 0); its walls are the polygon edges, collision is the convex
-/// `contain` clamp, and it has no `interior` or AABB perimeter.
+/// CCW, centred at 0); its walls are the polygon edges projected as yawed Rapier
+/// colliders, and it has no `interior` or AABB perimeter.
 #[derive(Clone, Debug)]
 pub struct PlaceGeom {
     pub half: Vec2,
@@ -230,5 +230,6 @@ pub use nav::{Nav, PinnedEdge};
 pub use transition::{
     Align2d, Crossing, GAP_FLOOR_TOLERANCE, PREVIEW_OUTSET, apply_crossing, arrival_gap, crossed,
     crossing_alignment, entry_spawn, feet_at_gap_floor, hallway_alignment, hallway_gap_alignment,
-    place_arena, room_alignment, structural_height,
+    place_arena, place_rapier_scene, place_structural_primitives, room_alignment,
+    structural_height,
 };

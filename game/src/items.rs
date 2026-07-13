@@ -20,6 +20,11 @@ use observed_core::{RoomId, TeamId};
 use crate::flow::LOCAL_TEAM;
 use crate::teleport::{PinnedEdge, Place};
 
+/// Gameplay radius of an anchor torch inside its current discrete place.
+/// Membership is a pure local-distance check; paired remote endpoints are frozen
+/// atomically by the stored relation.
+pub const ANCHOR_RADIUS: f32 = 12.0;
+
 /// The two droppable item kinds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ItemKind {
@@ -161,6 +166,41 @@ impl ItemsState {
             Place::Room(room) => room_connections.iter().map(|&to| (room, to)).collect(),
             Place::Hallway { from, to, .. } => vec![(from, to)],
         };
+        self.drop_with_edges(ItemKind::AnchorTorch, place, pos, version, pin_edges)
+    }
+
+    /// Drop an anchor torch and freeze only threshold relations whose local aperture
+    /// centres fall within [`ANCHOR_RADIUS`] of the torch. The caller supplies the
+    /// current place geometry as `(destination room, local centre)` pairs so this pure
+    /// inventory model never queries Bevy entities or presentation state.
+    pub fn drop_anchor_torch_in_radius(
+        &mut self,
+        place: Place,
+        pos: Vec2,
+        version: u32,
+        thresholds: &[(RoomId, Vec2)],
+    ) -> bool {
+        let mut pin_edges = thresholds
+            .iter()
+            .filter(|(_, center)| center.distance(pos) <= ANCHOR_RADIUS)
+            .map(|&(target, _)| match place {
+                Place::Room(room) => (room, target),
+                Place::Hallway { from, to, .. } => {
+                    if target == from || target == to {
+                        (from, to)
+                    } else {
+                        (from, target)
+                    }
+                }
+            })
+            .collect::<Vec<_>>();
+        for edge in &mut pin_edges {
+            if edge.0.0 > edge.1.0 {
+                *edge = (edge.1, edge.0);
+            }
+        }
+        pin_edges.sort_unstable_by_key(|(a, b)| (a.0, b.0));
+        pin_edges.dedup();
         self.drop_with_edges(ItemKind::AnchorTorch, place, pos, version, pin_edges)
     }
 
@@ -444,6 +484,23 @@ mod tests {
             (pins[0].a, pins[0].b, pins[0].version),
             (RoomId(1), RoomId(4), 3)
         );
+    }
+
+    #[test]
+    fn anchor_radius_selects_local_thresholds_and_freezes_their_pairs() {
+        let mut state = ItemsState::single_player();
+        assert!(state.drop_anchor_torch_in_radius(
+            room(2),
+            Vec2::ZERO,
+            9,
+            &[
+                (RoomId(1), Vec2::new(ANCHOR_RADIUS, 0.0)),
+                (RoomId(3), Vec2::new(ANCHOR_RADIUS + 0.01, 0.0)),
+            ],
+        ));
+        assert_eq!(state.pinned_connections(RoomId(2)), vec![RoomId(1)]);
+        assert_eq!(state.pinned_connections(RoomId(1)), vec![RoomId(2)]);
+        assert!(state.pinned_connections(RoomId(3)).is_empty());
     }
 
     #[test]

@@ -5388,6 +5388,7 @@ dependencies = [
  "bevy",
  "glam 0.30.10",
  "player_input",
+ "rapier3d",
 ]
 
 [[package]]
@@ -5932,6 +5933,15 @@ dependencies = [
  "static_assertions",
  "thiserror 2.0.18",
  "wide",
+]
+
+[[package]]
+name = "rapier_controller_lab"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "observed_traversal",
+ "player_input",
 ]
 
 [[package]]

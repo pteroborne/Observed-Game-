@@ -157,6 +157,7 @@ pub(crate) fn rebuild_place(
         teleport::open_entry(&mut geom, tp.arrived_from);
     }
     tp.arena = teleport::place_arena(&geom, y_offset, WALL_HEIGHT);
+    tp.rapier = teleport::place_rapier_scene(&geom, y_offset, WALL_HEIGHT);
     if geom.poly.is_some() {
         let clamped = teleport::contain(
             &geom,
@@ -309,38 +310,22 @@ pub(crate) fn rebuild_place(
                 .cloned()
                 .unwrap_or_else(|| preview::fallback_dest(tp.place, gap, &nav, game));
 
-            // A maze hallway can expose multiple apertures to the same room-side
-            // threshold. Keep one full preview for the canonical aperture and use short
-            // stubs for secondary apertures instead of drawing overlapping room copies.
-            let multi_aperture_room_preview = matches!(tp.place, Place::Hallway { .. })
-                && matches!(dest.place, Place::Room(_))
-                && gap.threshold.hall.slot.0 != 0
-                && geom
-                    .gaps
-                    .iter()
-                    .filter(|other| {
-                        other.kind.is_passage()
-                            && other.target == gap.target
-                            && other.normal.dot(gap.normal) > 0.99
-                    })
-                    .count()
-                    > 1;
-            if multi_aperture_room_preview {
-                preview::spawn_passage_stub(&mut commands, &assets, gap, y_offset);
-            } else {
-                preview::spawn_passage_preview(
-                    &mut commands,
-                    &assets,
-                    &mut meshes,
-                    &mut materials,
-                    gap,
-                    tp.place,
-                    &dest,
-                    &nav,
-                    game,
-                    match_runtime::countdown_klaxon_active(&runtime),
-                );
-            }
+            // Every live aperture owns an honest reciprocal preview. The former
+            // canonical-aperture/secondary-stub split made a traversable opening look
+            // like a wall and hid the fact that several hallway sockets shared one
+            // room-side identity.
+            preview::spawn_passage_preview(
+                &mut commands,
+                &assets,
+                &mut meshes,
+                &mut materials,
+                gap,
+                tp.place,
+                &dest,
+                &nav,
+                game,
+                match_runtime::countdown_klaxon_active(&runtime),
+            );
 
             shell::spawn_threshold_gateway(
                 &mut commands,

@@ -8,7 +8,9 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use glam::Vec2;
-use observed_core::{Direction, RoomId};
+use observed_core::{CorridorId, Direction, PlaceId, RoomId, ThresholdId, ThresholdSlotId};
+
+use crate::junction::{CorridorSpec, JunctionTopology, ThresholdAttachment};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RoomRole {
@@ -113,11 +115,26 @@ pub struct MapEdge {
     pub mutable: bool,
 }
 
+/// An authored multi-exit corridor. Every endpoint owns one room-side socket;
+/// the corresponding corridor sockets are assigned in declaration order. The
+/// legacy [`MapEdge`] list remains supported while existing maps migrate.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MapCorridor {
+    pub id: CorridorId,
+    pub endpoints: Vec<MapEndpoint>,
+    pub role: CorridorRole,
+    pub mutable: bool,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct MapSpec {
     pub name: &'static str,
     pub rooms: Vec<MapRoom>,
+    /// Legacy two-ended corridors. Empty for a fully junction-authored map.
     pub edges: Vec<MapEdge>,
+    /// First-class multi-endpoint corridors. When empty, [`Self::corridors`] derives
+    /// one stable two-socket corridor per legacy edge.
+    pub corridors: Vec<MapCorridor>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -135,6 +152,9 @@ pub enum MapValidationError {
     KeystoneAtTerminal(RoomId),
     MissingUsefulAnchorCheckpoint,
     MissingUsefulTeleportRelayPair,
+    DuplicateCorridor(CorridorId),
+    CorridorHasTooFewEndpoints(CorridorId),
+    DuplicateCorridorEndpoint(CorridorId, RoomId, Direction),
 }
 
 impl MapSpec {
@@ -175,11 +195,18 @@ impl MapSpec {
 
     pub fn neighbors(&self, room: RoomId) -> Vec<RoomId> {
         let mut out = Vec::new();
-        for edge in &self.edges {
-            if edge.a.room == room {
-                out.push(edge.b.room);
-            } else if edge.b.room == room {
-                out.push(edge.a.room);
+        for corridor in self.corridors() {
+            if corridor
+                .endpoints
+                .iter()
+                .any(|endpoint| endpoint.room == room)
+            {
+                out.extend(
+                    corridor
+                        .endpoints
+                        .iter()
+                        .filter_map(|endpoint| (endpoint.room != room).then_some(endpoint.room)),
+                );
             }
         }
         out.sort_unstable();
@@ -194,12 +221,86 @@ impl MapSpec {
     /// The [`CorridorRole`] of the edge between `a` and `b`, if one exists (edge
     /// endpoints are unordered — `(a, b)` and `(b, a)` return the same role).
     pub fn corridor_role_between(&self, a: RoomId, b: RoomId) -> Option<CorridorRole> {
+        self.corridors()
+            .iter()
+            .find(|corridor| {
+                corridor.endpoints.iter().any(|endpoint| endpoint.room == a)
+                    && corridor.endpoints.iter().any(|endpoint| endpoint.room == b)
+            })
+            .map(|corridor| corridor.role)
+    }
+
+    /// Corridors in the active topology. Existing two-ended maps are lifted into
+    /// stable corridor IDs by their authored edge order, preserving current output
+    /// while opening an incremental path to junction-authored maps.
+    pub fn corridors(&self) -> Vec<MapCorridor> {
+        if !self.corridors.is_empty() {
+            return self.corridors.clone();
+        }
         self.edges
             .iter()
-            .find(|edge| {
-                (edge.a.room == a && edge.b.room == b) || (edge.a.room == b && edge.b.room == a)
+            .enumerate()
+            .map(|(index, edge)| MapCorridor {
+                id: CorridorId(index as u32),
+                endpoints: vec![edge.a, edge.b],
+                role: edge.role,
+                mutable: edge.mutable,
             })
-            .map(|edge| edge.role)
+            .collect()
+    }
+
+    /// The reciprocal room/corridor socket graph used by threshold, anchor, and
+    /// future crossing code. This accepts data-driven corridor endpoint counts.
+    pub fn junction_topology(&self) -> Result<JunctionTopology, Vec<MapValidationError>> {
+        let corridors = self.corridors();
+        let mut errors = Vec::new();
+        let mut specs = Vec::new();
+        let mut attachments = Vec::new();
+        let mut ids = BTreeSet::new();
+        for corridor in corridors {
+            if !ids.insert(corridor.id) {
+                errors.push(MapValidationError::DuplicateCorridor(corridor.id));
+                continue;
+            }
+            if corridor.endpoints.len() < 2 {
+                errors.push(MapValidationError::CorridorHasTooFewEndpoints(corridor.id));
+                continue;
+            }
+            let mut seen = BTreeSet::new();
+            for (slot, endpoint) in corridor.endpoints.iter().copied().enumerate() {
+                if !seen.insert((endpoint.room, endpoint.side)) {
+                    errors.push(MapValidationError::DuplicateCorridorEndpoint(
+                        corridor.id,
+                        endpoint.room,
+                        endpoint.side,
+                    ));
+                }
+                let room = ThresholdId {
+                    place: PlaceId::Room(endpoint.room),
+                    slot: ThresholdSlotId(endpoint.side.index() as u16),
+                };
+                let hall = ThresholdId {
+                    place: PlaceId::Corridor(corridor.id),
+                    slot: ThresholdSlotId(slot as u16),
+                };
+                if let Ok(attachment) = ThresholdAttachment::new(room, hall) {
+                    attachments.push(attachment);
+                }
+            }
+            specs.push(CorridorSpec::with_slot_count(
+                corridor.id,
+                corridor.endpoints.len(),
+            ));
+        }
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+        JunctionTopology::new(specs, attachments).map_err(|errors| {
+            errors
+                .into_iter()
+                .map(|_| MapValidationError::Empty)
+                .collect()
+        })
     }
 
     pub fn next_step_toward(&self, start: RoomId, goal: RoomId) -> Option<RoomId> {
@@ -218,6 +319,9 @@ impl MapSpec {
         self.validate_unique_endpoints(&mut errors);
         self.validate_required_roles(&mut errors);
         self.validate_endpoints_exist(&mut errors);
+        if let Err(junction_errors) = self.junction_topology() {
+            errors.extend(junction_errors);
+        }
 
         if let (Some(start), Some(exit)) = (self.start_room(), self.exit_room()) {
             self.validate_connectivity(start, &mut errors);
@@ -244,9 +348,17 @@ impl MapSpec {
     }
 
     fn edge_pairs(&self) -> Vec<(RoomId, RoomId)> {
-        self.edges
-            .iter()
-            .map(|edge| (edge.a.room, edge.b.room))
+        self.corridors()
+            .into_iter()
+            .flat_map(|corridor| {
+                let mut pairs = Vec::new();
+                for (index, a) in corridor.endpoints.iter().enumerate() {
+                    for b in corridor.endpoints.iter().skip(index + 1) {
+                        pairs.push((a.room, b.room));
+                    }
+                }
+                pairs
+            })
             .collect()
     }
 
@@ -261,8 +373,8 @@ impl MapSpec {
 
     fn validate_unique_endpoints(&self, errors: &mut Vec<MapValidationError>) {
         let mut seen = BTreeSet::new();
-        for edge in &self.edges {
-            for endpoint in [edge.a, edge.b] {
+        for corridor in self.corridors() {
+            for endpoint in corridor.endpoints {
                 if !seen.insert((endpoint.room, endpoint.side)) {
                     errors.push(MapValidationError::DuplicateEndpoint(
                         endpoint.room,
@@ -302,12 +414,11 @@ impl MapSpec {
 
     fn validate_endpoints_exist(&self, errors: &mut Vec<MapValidationError>) {
         let rooms: BTreeSet<_> = self.rooms.iter().map(|room| room.id).collect();
-        for edge in &self.edges {
-            if !rooms.contains(&edge.a.room) {
-                errors.push(MapValidationError::InvalidEndpoint(edge.a.room));
-            }
-            if !rooms.contains(&edge.b.room) {
-                errors.push(MapValidationError::InvalidEndpoint(edge.b.room));
+        for corridor in self.corridors() {
+            for endpoint in corridor.endpoints {
+                if !rooms.contains(&endpoint.room) {
+                    errors.push(MapValidationError::InvalidEndpoint(endpoint.room));
+                }
             }
         }
     }
@@ -575,6 +686,7 @@ pub fn sector_relay_v1() -> MapSpec {
             edge(9, East, 11, West, C::Connector),
             edge(9, South, 13, West, C::Bypass),
         ],
+        corridors: Vec::new(),
     }
 }
 
@@ -611,6 +723,34 @@ mod tests {
             map.corridor_role_between(RoomId(0), RoomId(11)),
             None,
             "unconnected rooms have no corridor role"
+        );
+    }
+
+    #[test]
+    fn explicit_junction_corridor_has_reciprocal_data_driven_sockets() {
+        let mut spec = sector_relay_v1();
+        spec.edges.clear();
+        spec.corridors = vec![MapCorridor {
+            id: CorridorId(77),
+            endpoints: vec![
+                MapEndpoint::new(0, Direction::East),
+                MapEndpoint::new(1, Direction::West),
+                MapEndpoint::new(10, Direction::North),
+            ],
+            role: CorridorRole::Mystery,
+            mutable: true,
+        }];
+        let topology = spec.junction_topology().expect("junction is well formed");
+        assert_eq!(topology.corridor_rooms(CorridorId(77)).len(), 3);
+        assert_eq!(
+            topology.partner(ThresholdId {
+                place: PlaceId::Room(RoomId(10)),
+                slot: ThresholdSlotId(Direction::North.index() as u16),
+            }),
+            Some(ThresholdId {
+                place: PlaceId::Corridor(CorridorId(77)),
+                slot: ThresholdSlotId(2),
+            })
         );
     }
 

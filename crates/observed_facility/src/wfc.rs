@@ -416,6 +416,7 @@ fn assign_roles_and_build(
         name: "WFC Liminal Map",
         rooms,
         edges: map_edges,
+        corridors: Vec::new(),
     };
 
     // The repair passes above can add a shortcut edge that collapses the very
