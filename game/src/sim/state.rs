@@ -4,14 +4,17 @@
 //! controller, and match-pump systems write them. Nothing here references rendering,
 //! UI, audio, or asset types.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use bevy::prelude::*;
 use observed_core::{RoomId, TeamId};
 use observed_facility::map_spec::{CorridorRole, RoomRole};
 use observed_match::teamplay::TeamplayMatch;
 use observed_progression::session::SessionLabWorld;
-use observed_traversal::{FpsArena, FpsBody, FpsConfig};
+use observed_traversal::{ArenaSpec, FpsArena, FpsBody, FpsConfig, PhysicsBackend, TraversalWorld};
 use player_input::PlayerIntent;
 
 use crate::teleport::{self, Place};
@@ -109,6 +112,15 @@ pub struct TeleportState {
     pub body: FpsBody,
     pub config: FpsConfig,
     pub arena: FpsArena,
+    /// Backend runtime state for `arena`. Persistent simulation stores the pure arena
+    /// and rebuilds this cache whenever an isolated Place changes.
+    pub world: TraversalWorld,
+    pub physics_backend: PhysicsBackend,
+    pub geometry_backend: GeometryBackend,
+    pub collision_catalog: Arc<crate::content::ContentCollisionCatalog>,
+    pub simulation_content_hash: [u8; 32],
+    pub using_legacy_geometry_adapter: bool,
+    pub layout: Option<observed_content::PlaceLayoutSnapshot>,
     /// The current place's footprint + doorway gaps + interior (maze) walls. Cached so
     /// a labyrinth is generated once per teleport, not every fixed step.
     pub geom: teleport::PlaceGeom,
@@ -133,6 +145,43 @@ pub struct TeleportState {
     pub prev_grounded: bool,
 }
 
+impl TeleportState {
+    pub fn set_arena_for_place(
+        &mut self,
+        arena: FpsArena,
+        place: teleport::Place,
+        geom: &teleport::PlaceGeom,
+        y_offset: f32,
+        frozen_layout: Option<&observed_content::PlaceLayoutSnapshot>,
+    ) {
+        self.layout = if self.geometry_backend == GeometryBackend::Authored {
+            frozen_layout
+                .cloned()
+                .or_else(|| self.collision_catalog.layout_for_place(place, geom))
+        } else {
+            None
+        };
+        let authored = (self.physics_backend == PhysicsBackend::Rapier)
+            .then(|| {
+                self.layout.as_ref().and_then(|layout| {
+                    self.collision_catalog
+                        .arena_for_layout(layout, geom, y_offset)
+                })
+            })
+            .flatten();
+        self.using_legacy_geometry_adapter = authored.is_none();
+        let spec = authored.unwrap_or_else(|| ArenaSpec::from_legacy(&arena));
+        self.world = TraversalWorld::from_spec(spec, self.physics_backend, &self.config);
+        self.arena = arena;
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GeometryBackend {
+    Legacy,
+    Authored,
+}
+
 /// A doorway's frozen destination: the resolved next [`teleport::Place`] (a hallway carries
 /// its variation; a room carries the `conns`/`target` that shape it), snapshotted at
 /// place-entry so the preview and the crossing can't diverge.
@@ -143,6 +192,8 @@ pub struct FrozenDest {
     /// Explicit threshold identity used to match preview/crossing/arrival.
     pub threshold: teleport::ThresholdLink,
     pub place: teleport::Place,
+    pub layout: Option<observed_content::PlaceLayoutSnapshot>,
+    pub simulation_content_hash: [u8; 32],
     /// For a room destination, its frozen connection set (shape); empty for a hallway.
     pub conns: Vec<RoomId>,
     /// For a room destination, its frozen room-side threshold slots.

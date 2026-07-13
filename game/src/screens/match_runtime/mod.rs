@@ -155,6 +155,8 @@ pub(crate) fn item_actions(
                 target_place,
             );
             place_body_at(&mut tp, target_place, target_pos, &nav);
+            let collision_catalog = tp.collision_catalog.clone();
+            let simulation_content_hash = tp.simulation_content_hash;
             let dests = compute_gap_dests(
                 seed_val,
                 tp.place,
@@ -162,6 +164,8 @@ pub(crate) fn item_actions(
                 director.live.host_match(),
                 &keys,
                 &items,
+                &collision_catalog,
+                simulation_content_hash,
             );
             tp.gap_dests = dests;
             changed = true;
@@ -194,13 +198,23 @@ pub(crate) fn item_actions(
         if matches!(tp.place, Place::Room(_)) {
             crate::teleport::open_entry(&mut geom, tp.arrived_from);
         }
-        tp.arena = crate::teleport::place_arena(&geom, 0.0, WALL_HEIGHT);
+        let current_place = tp.place;
+        let current_layout = tp.layout.clone();
+        tp.set_arena_for_place(
+            crate::teleport::place_arena(&geom, 0.0, WALL_HEIGHT),
+            current_place,
+            &geom,
+            0.0,
+            current_layout.as_ref(),
+        );
         if geom.poly.is_some() {
             let clamped = crate::teleport::contain(&geom, body_xz(&tp), tp.config.radius);
             tp.body.position.x = clamped.x;
             tp.body.position.z = clamped.y;
         }
         tp.geom = geom;
+        let collision_catalog = tp.collision_catalog.clone();
+        let simulation_content_hash = tp.simulation_content_hash;
         tp.gap_dests = compute_gap_dests(
             seed_val,
             tp.place,
@@ -208,6 +222,8 @@ pub(crate) fn item_actions(
             director.live.host_match(),
             &keys,
             &items,
+            &collision_catalog,
+            simulation_content_hash,
         );
         tp.rendered = None;
     }

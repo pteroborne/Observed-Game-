@@ -17,7 +17,7 @@ use crate::maze::{
 };
 use glam::{Vec2, Vec3};
 use observed_core::{RoomId, TeamId};
-use observed_traversal::{FIXED_DT, FpsArena, FpsBody, step_body};
+use observed_traversal::{ArenaSpec, FIXED_DT, FpsArena, FpsBody, TraversalWorld};
 use player_input::PlayerIntent;
 use std::collections::{HashSet, VecDeque};
 use std::f32::consts::TAU;
@@ -38,19 +38,13 @@ impl HybridMatch {
             return Some(LocalAction::Seize);
         }
 
-        let arena = self.arena();
         let mut movement_intent = intent;
         if self.trap_cooldown_ticks > 0 {
             movement_intent.movement = Vec2::ZERO;
             movement_intent.jump_pressed = false;
         }
-        step_body(
-            &mut self.body,
-            movement_intent,
-            &arena,
-            &self.config,
-            FIXED_DT,
-        );
+        self.traversal_world
+            .step_body(&mut self.body, movement_intent, &self.config, FIXED_DT);
         if self.trap_cooldown_ticks == 0
             && self.trap_active()
             && self
@@ -207,6 +201,15 @@ impl HybridMatch {
         build_elevated_arena(&self.maze_tiles, &self.elevation_steps, WALL_HEIGHT)
     }
 
+    fn rebuild_traversal_world(&mut self) {
+        let arena = self.arena();
+        self.traversal_world = TraversalWorld::from_spec(
+            ArenaSpec::from_legacy(&arena),
+            self.physics_backend,
+            &self.config,
+        );
+    }
+
     pub fn affected_tiles(&self) -> HashSet<(usize, usize)> {
         let target_tiles = rebuild(&self.base, &self.target);
         let mut affected = HashSet::new();
@@ -298,6 +301,7 @@ impl HybridMatch {
             return false;
         }
         self.reroute_commits += 1;
+        self.rebuild_traversal_world();
         self.reroute_feedback_ticks = REROUTE_FEEDBACK_TICKS;
         self.last_event
             .push_str(" Passages rerouted off-camera in one atomic swap.");

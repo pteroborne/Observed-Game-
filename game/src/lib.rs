@@ -2,6 +2,7 @@
 mod arch_check;
 mod bot;
 mod camera;
+mod content;
 mod evidence;
 pub mod flow;
 pub mod guardian;
@@ -54,6 +55,7 @@ impl Plugin for ObservedGamePlugin {
         // shared camera, and the two screen/match plugins. Each plugin owns the systems
         // for its responsibility (see `screens`); evidence capture is wired in `run`.
         app.init_state::<GameState>()
+            .insert_resource(crate::content::GameContent::committed())
             .init_resource::<crate::flow::ActiveMatchSeed>()
             .insert_resource(crate::flow::load_career())
             .insert_resource(crate::settings::load_settings())

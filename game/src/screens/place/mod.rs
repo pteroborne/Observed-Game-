@@ -5,6 +5,7 @@
 //! avatars. Rebuilds only when the player teleports.
 
 pub(crate) mod animate;
+mod authored;
 pub(crate) mod factory;
 pub(crate) mod item_visuals;
 pub(crate) mod lighting;

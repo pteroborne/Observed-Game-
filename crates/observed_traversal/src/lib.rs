@@ -21,6 +21,12 @@ use glam::Vec3;
 use player_input::PlayerIntent;
 
 pub mod gantry;
+mod world;
+
+pub use world::{
+    ArenaSpec, ArenaSpecError, ColliderShape, ColliderSpec, PhysicsBackend, StableColliderId,
+    TraversalWorld,
+};
 
 /// Fixed simulation timestep. The controller is only ever stepped at this dt.
 pub const FIXED_DT: f32 = 1.0 / 60.0;
@@ -88,7 +94,7 @@ impl FpsArena {
 }
 
 #[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FpsConfig {
     pub walk_speed: f32,
     pub run_speed: f32,
@@ -107,6 +113,11 @@ pub struct FpsConfig {
     pub substep: f32,
     /// Maximum vertical rise that horizontal movement can step onto.
     pub step_height: f32,
+    /// Rapier character skin separating the capsule from contacted surfaces.
+    pub controller_offset: f32,
+    pub minimum_step_width: f32,
+    pub maximum_slope_degrees: f32,
+    pub ground_snap: f32,
 }
 
 impl Default for FpsConfig {
@@ -128,6 +139,28 @@ impl Default for FpsConfig {
             pitch_limit: 1.4,
             substep: 0.25,
             step_height: 0.45,
+            controller_offset: 0.025,
+            minimum_step_width: 0.25,
+            maximum_slope_degrees: 36.0,
+            ground_snap: 0.24,
+        }
+    }
+}
+
+impl FpsConfig {
+    /// The deliberate traversal profile proven by the authored Rapier labs. It keeps
+    /// the production acceleration/look model while making route commitment, elevation,
+    /// and carrying easier to read than the original high-speed controller.
+    pub fn deliberate_rapier() -> Self {
+        Self {
+            walk_speed: 4.6,
+            run_speed: 7.0,
+            gravity: 19.0,
+            jump_speed: 6.2,
+            radius: 0.38,
+            half_height: 0.90,
+            step_height: 0.42,
+            ..Self::default()
         }
     }
 }

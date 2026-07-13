@@ -156,7 +156,15 @@ pub(crate) fn rebuild_place(
     if matches!(tp.place, Place::Room(_)) {
         teleport::open_entry(&mut geom, tp.arrived_from);
     }
-    tp.arena = teleport::place_arena(&geom, y_offset, WALL_HEIGHT);
+    let current_place = tp.place;
+    let current_layout = tp.layout.clone();
+    tp.set_arena_for_place(
+        teleport::place_arena(&geom, y_offset, WALL_HEIGHT),
+        current_place,
+        &geom,
+        y_offset,
+        current_layout.as_ref(),
+    );
     if geom.poly.is_some() {
         let clamped = teleport::contain(
             &geom,
@@ -166,7 +174,18 @@ pub(crate) fn rebuild_place(
         tp.body.position.x = clamped.x;
         tp.body.position.z = clamped.y;
     }
-    tp.gap_dests = match_runtime::compute_gap_dests(seed_val, tp.place, &geom, game, &keys, &items);
+    let collision_catalog = tp.collision_catalog.clone();
+    let simulation_content_hash = tp.simulation_content_hash;
+    tp.gap_dests = match_runtime::compute_gap_dests(
+        seed_val,
+        tp.place,
+        &geom,
+        game,
+        &keys,
+        &items,
+        &collision_catalog,
+        simulation_content_hash,
+    );
     tp.geom = geom.clone();
 
     let palette = match_runtime::palette_for_match(seed_val, tp.place, &runtime);
@@ -237,17 +256,29 @@ pub(crate) fn rebuild_place(
                 &assets.ceiling_material,
                 &mut materials,
             );
-            shell::spawn_hallway_shell(
-                &mut commands,
-                &assets,
-                &mut meshes,
-                &geom,
-                floor_material,
-                wall_material,
-                ceiling_material,
-                &tp.arena.solids,
-                y_offset,
-            );
+            if tp.using_legacy_geometry_adapter {
+                shell::spawn_hallway_shell(
+                    &mut commands,
+                    &assets,
+                    &mut meshes,
+                    &geom,
+                    floor_material,
+                    wall_material,
+                    ceiling_material,
+                    &tp.arena.solids,
+                    y_offset,
+                );
+            } else {
+                super::authored::spawn_collision_shell(
+                    &mut commands,
+                    &mut meshes,
+                    &mut materials,
+                    &tp.world.arena_spec(),
+                    &palette,
+                    &assets.floor_material,
+                    &assets.wall_material,
+                );
+            }
             // The WFC-composed light-module layer (Arc I Phase 71): decoration
             // and light only, solved from the finished geometry — walls, gaps,
             // and thresholds are already final by the time this runs.
@@ -339,6 +370,7 @@ pub(crate) fn rebuild_place(
                     &nav,
                     game,
                     match_runtime::countdown_klaxon_active(&runtime),
+                    &tp.collision_catalog,
                 );
             }
 

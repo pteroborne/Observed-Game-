@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "content_version": "rapier-authored-v1",
+  "traversal": {
+    "walk_speed": 4.6,
+    "run_speed": 7.0,
+    "ground_accel": 60.0,
+    "ground_decel": 90.0,
+    "air_accel": 18.0,
+    "gravity": 19.0,
+    "max_fall": 45.0,
+    "jump_speed": 6.2,
+    "jump_cooldown": 0.25,
+    "radius": 0.38,
+    "half_height": 0.9,
+    "eye_height": 1.6,
+    "look_step": 0.035,
+    "pitch_limit": 1.4,
+    "step_height": 0.42,
+    "controller_offset": 0.025,
+    "minimum_step_width": 0.25,
+    "maximum_slope_degrees": 36.0,
+    "ground_snap": 0.24
+  },
+  "districts": [
+    {
+      "id": "archive",
+      "label": "Archive / BLAME",
+      "style_district": "archive",
+      "fog_end_scale": 0.9,
+      "practical_intensity_scale": 0.75,
+      "allowed_architecture_tags": ["gantry", "colonnade", "megastructure"],
+      "dressing_slots": ["kenney_cables"]
+    },
+    {
+      "id": "reactor",
+      "label": "Reactor / Silo",
+      "style_district": "reactor",
+      "fog_end_scale": 1.1,
+      "practical_intensity_scale": 1.15,
+      "allowed_architecture_tags": ["colonnade", "gantry", "industrial"],
+      "dressing_slots": []
+    },
+    {
+      "id": "atrium",
+      "label": "Atrium",
+      "style_district": "atrium",
+      "fog_end_scale": 1.0,
+      "practical_intensity_scale": 0.85,
+      "allowed_architecture_tags": ["colonnade", "megastructure"],
+      "dressing_slots": []
+    },
+    {
+      "id": "foundry",
+      "label": "Foundry",
+      "style_district": "foundry",
+      "fog_end_scale": 1.0,
+      "practical_intensity_scale": 1.2,
+      "allowed_architecture_tags": ["gantry", "industrial"],
+      "dressing_slots": []
+    },
+    {
+      "id": "hollow",
+      "label": "Hollow",
+      "style_district": "hollow",
+      "fog_end_scale": 0.85,
+      "practical_intensity_scale": 0.65,
+      "allowed_architecture_tags": ["gantry", "colonnade", "megastructure"],
+      "dressing_slots": []
+    },
+    {
+      "id": "spillway",
+      "label": "Spillway",
+      "style_district": "spillway",
+      "fog_end_scale": 1.15,
+      "practical_intensity_scale": 0.9,
+      "allowed_architecture_tags": ["colonnade", "industrial"],
+      "dressing_slots": []
+    }
+  ],
+  "modules": [
+    {
+      "id": "corridor.colonnade.01",
+      "space_kind": "corridor",
+      "architecture_kind": "colonnade",
+      "role_tags": ["connector", "long_route", "megastructure"],
+      "district_tags": ["archive", "reactor", "atrium", "hollow", "spillway"],
+      "source_map": "labs/rapier_portal_lab/assets/maps/portal_modules.map",
+      "source_sha256": "2672f206b1d3885fc4c85f7612359113c45ea29e27f15e5057576bfeb269db0c",
+      "baked_path": "content/modules/colonnade.json",
+      "baked_sha256": "6a629ca6162c773a2d86832144756920088d70b8fea1c611313a6660d413ab99",
+      "allowed_rotations_degrees": [0, 180],
+      "wfc_weight": 3,
+      "bounds": { "min": [-8.128, -0.4064, -20.32], "max": [8.128, 5.08, 0.0] },
+      "ports": [
+        { "id": "ground_in", "kind": "passage", "translation": [0.0, 0.0, 0.0], "yaw_degrees": 0, "clearance": [4.5, 3.0, 1.0], "floor_height": 0.0 },
+        { "id": "ground_out", "kind": "passage", "translation": [0.0, 0.0, -20.32], "yaw_degrees": 180, "clearance": [4.5, 3.0, 1.0], "floor_height": 0.0 }
+      ],
+      "sockets": [
+        { "id": "dressing_gate", "kind": "dressing", "translation": [0.0, 0.0, -6.0], "yaw_degrees": 0 },
+        { "id": "nav_entry", "kind": "navigation", "translation": [0.0, 0.0, -1.0], "yaw_degrees": 0 },
+        { "id": "nav_exit", "kind": "navigation", "translation": [0.0, 0.0, -19.32], "yaw_degrees": 180 }
+      ],
+      "navigation": {
+        "surfaces": [
+          { "id": "ground", "floor_height": 0.0, "polygon": [[-3.0, -20.0], [3.0, -20.0], [3.0, -0.3], [-3.0, -0.3]] }
+        ],
+        "links": []
+      },
+      "visual_scene": null,
+      "dressing_slots": ["kenney_gate"]
+    },
+    {
+      "id": "corridor.gantry.01",
+      "space_kind": "corridor",
+      "architecture_kind": "gantry",
+      "role_tags": ["vertical", "bypass", "gantry", "industrial"],
+      "district_tags": ["archive", "reactor", "foundry", "hollow"],
+      "source_map": "labs/rapier_portal_lab/assets/maps/portal_modules.map",
+      "source_sha256": "2672f206b1d3885fc4c85f7612359113c45ea29e27f15e5057576bfeb269db0c",
+      "baked_path": "content/modules/gantry.json",
+      "baked_sha256": "eb7c61d80364bee251794cd2221058eeff9fbe8acc631721d82c6b529e95f959",
+      "allowed_rotations_degrees": [0, 180],
+      "wfc_weight": 4,
+      "bounds": { "min": [-5.588, -0.4064, -20.32], "max": [5.588, 4.572, 0.0] },
+      "ports": [
+        { "id": "ground_in", "kind": "passage", "translation": [0.0, 0.0, 0.0], "yaw_degrees": 0, "clearance": [4.5, 3.0, 1.0], "floor_height": 0.0 },
+        { "id": "ground_out", "kind": "passage", "translation": [0.0, 0.0, -20.32], "yaw_degrees": 180, "clearance": [4.5, 3.0, 1.0], "floor_height": 0.0 }
+      ],
+      "sockets": [
+        { "id": "dressing_cables", "kind": "dressing", "translation": [2.5, 0.1, -8.0], "yaw_degrees": 0 },
+        { "id": "nav_entry", "kind": "navigation", "translation": [0.0, 0.0, -1.0], "yaw_degrees": 0 },
+        { "id": "nav_exit", "kind": "navigation", "translation": [0.0, 0.0, -19.32], "yaw_degrees": 180 }
+      ],
+      "navigation": {
+        "surfaces": [
+          { "id": "safe_bypass", "floor_height": 0.0, "polygon": [[-2.0, -20.0], [3.0, -20.0], [3.0, -0.3], [-2.0, -0.3]] },
+          { "id": "raised_route", "floor_height": 2.4384, "polygon": [[-4.8, -19.8], [-1.0, -19.8], [-1.0, -5.5], [-4.8, -5.5]] }
+        ],
+        "links": [
+          { "id": "ramp_up", "kind": "walk", "from": [-3.0, 0.0, -1.5], "to": [-3.0, 2.4384, -6.0], "bidirectional": true }
+        ]
+      },
+      "visual_scene": null,
+      "dressing_slots": []
+    }
+  ],
+  "assets": [
+    {
+      "id": "kenney_cables",
+      "path": "content_manifest_lab/kenney_modular_space/cables.glb",
+      "sha256": "f689e942aad71167bde86c559061aea03537bfb07f2851aeac9fb538fec72526",
+      "author": "Kenney",
+      "source_url": "https://opengameart.org/content/modular-space-kit",
+      "license": "CC0-1.0",
+      "scale": 1.8,
+      "fallback": "cable_bundle",
+      "allowed_districts": ["archive"]
+    },
+    {
+      "id": "kenney_gate",
+      "path": "content_manifest_lab/kenney_modular_space/gate.glb",
+      "sha256": "389440050ca22abb309ebbf9f3b3872d434132614b29430b66ea27b5b8f762fc",
+      "author": "Kenney",
+      "source_url": "https://opengameart.org/content/modular-space-kit",
+      "license": "CC0-1.0",
+      "scale": 1.35,
+      "fallback": "portal_frame",
+      "allowed_districts": ["reactor"]
+    }
+  ]
+}
