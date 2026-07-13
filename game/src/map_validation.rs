@@ -270,7 +270,7 @@ fn nav_for_spec_room(spec: &MapSpec, seed: u64, version: u32, room: RoomId) -> N
         .map(|(fallback, &target)| RoomConnectionSlot {
             target,
             slot: slot_for_connection(spec, room, target)
-                .unwrap_or(ThresholdSlotId(fallback as u8)),
+                .unwrap_or(ThresholdSlotId(fallback as u16)),
         })
         .collect();
     let corridor_roles = connections
@@ -328,7 +328,7 @@ fn edge_slot(edge: &MapEdge, room: RoomId) -> Option<ThresholdSlotId> {
 }
 
 fn slot_for_direction(direction: Direction) -> ThresholdSlotId {
-    ThresholdSlotId(direction.index() as u8)
+    ThresholdSlotId(direction.index() as u16)
 }
 
 fn audit_room_geom(

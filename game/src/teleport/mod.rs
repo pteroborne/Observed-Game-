@@ -12,7 +12,8 @@
 //! controller- and render-agnostic so it can be unit-tested.
 
 use bevy::math::Vec2;
-use observed_core::RoomId;
+pub use observed_core::ThresholdSlotId;
+use observed_core::{CorridorId, PlaceId, RoomId};
 
 /// Half-extent of a room's square footprint (world units). Generous so rooms read as
 /// breathable volumes, not cells, and so the wider doorway gaps still fit on a polygon edge.
@@ -30,6 +31,13 @@ pub const MAZE_CELL: f32 = 4.2;
 pub const MAZE_WALL_T: f32 = 0.3;
 
 /// Where the player currently is.
+///
+/// A hallway's **identity** is its [`CorridorId`] (see [`Place::place_id`]), not the
+/// `(from, to)` room pair: both traversal directions of a two-socket corridor share one
+/// corridor id, and a corridor's id never changes when its threshold sockets rewire. The
+/// retained `from`/`to` are directional/orientation data (which socket you entered, which
+/// way the piece faces) that deferred Phase-75 consumers still read; `variation` is
+/// presentation state (the rolled hallway flavour).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Place {
     Room(RoomId),
@@ -39,6 +47,54 @@ pub enum Place {
         variation: usize,
     },
 }
+
+impl Place {
+    /// The canonical stable identity of this place: a room maps to its `RoomId`, a
+    /// hallway to its `CorridorId` (derived from the unordered endpoint pair via
+    /// [`corridor_id_for`]). This is the identity the junction topology, crossing
+    /// resolver, and future multi-exit corridors key on — never the `(from, to)` pair.
+    pub fn place_id(self) -> PlaceId {
+        match self {
+            Place::Room(room) => PlaceId::Room(room),
+            Place::Hallway { from, to, .. } => PlaceId::Corridor(corridor_id_for(from, to)),
+        }
+    }
+
+    /// The corridor identity of a hallway place (`None` for a room).
+    pub fn corridor_id(self) -> Option<CorridorId> {
+        match self {
+            Place::Room(_) => None,
+            Place::Hallway { from, to, .. } => Some(corridor_id_for(from, to)),
+        }
+    }
+}
+
+/// The stable [`CorridorId`] of the derived single-exit corridor spanning the unordered
+/// room pair `(a, b)`. Deterministic and direction-independent (`corridor_id_for(a, b)`
+/// == `corridor_id_for(b, a)`), so both traversal directions and every consumer resolve
+/// the same corridor. The runtime graph carries at most one corridor per unordered room
+/// pair, so packing the sorted pair is a collision-free identity.
+///
+/// Seam note: `MapSpec::corridors()` assigns corridor ids by *authored edge index*; the
+/// live runtime graph decoheres, so runtime corridor identity is derived from the current
+/// room pair instead. The two id spaces are intentionally not unified in Phase 74.
+pub fn corridor_id_for(a: RoomId, b: RoomId) -> CorridorId {
+    let (lo, hi) = if a.0 <= b.0 { (a.0, b.0) } else { (b.0, a.0) };
+    debug_assert!(
+        lo < (1 << 16) && hi < (1 << 16),
+        "room ids fit in 16 bits for corridor packing"
+    );
+    CorridorId((lo << 16) | (hi & 0xFFFF))
+}
+
+/// The corridor-side threshold slot that `room` occupies on the derived two-socket
+/// corridor spanning `(a, b)`: socket `0` for the lower-numbered endpoint, `1` for the
+/// higher. Direction-independent so the room-side and hallway-side topologies agree.
+pub fn corridor_socket_for(a: RoomId, b: RoomId, room: RoomId) -> ThresholdSlotId {
+    let lo = a.0.min(b.0);
+    ThresholdSlotId(if room.0 == lo { 0 } else { 1 })
+}
+
 pub fn place_y_offset(place: Place) -> f32 {
     match place {
         Place::Room(_) => 0.0,
@@ -80,11 +136,10 @@ impl GapKind {
     }
 }
 
-/// Stable ordinal of a threshold on one side of a room or hallway. Room slots mirror the
-/// authored observation sides (N/E/S/W as 0/1/2/3 when that data is available); hallway
-/// slots distinguish multiple apertures on the same end of a generated corridor.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ThresholdSlotId(pub u8);
+// `ThresholdSlotId` is the canonical `observed_core::ThresholdSlotId(u16)`, re-exported
+// above. Room slots mirror the authored observation sides (N/E/S/W as 0/1/2/3 when that
+// data is available); hallway slots distinguish multiple apertures on the same end of a
+// generated corridor.
 
 /// A room-side threshold endpoint.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -230,6 +285,6 @@ pub use nav::{Nav, PinnedEdge};
 pub use transition::{
     Align2d, Crossing, GAP_FLOOR_TOLERANCE, PREVIEW_OUTSET, apply_crossing, arrival_gap, crossed,
     crossing_alignment, entry_spawn, feet_at_gap_floor, hallway_alignment, hallway_gap_alignment,
-    place_arena, place_rapier_scene, place_structural_primitives, room_alignment,
+    place_arena, place_junction, place_rapier_scene, place_structural_primitives, room_alignment,
     structural_height,
 };

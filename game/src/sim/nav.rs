@@ -138,7 +138,7 @@ pub(crate) fn sealed_slots_for_room(
                 .structure
                 .graph
                 .is_sealed(door)
-                .then_some(crate::teleport::ThresholdSlotId(slot as u8))
+                .then_some(crate::teleport::ThresholdSlotId(slot as u16))
         })
         .collect()
 }
@@ -158,7 +158,7 @@ fn rendered_slot_for(
             [route.key.0, route.key.1]
                 .into_iter()
                 .find(|door| (door.0 as u32 / 4) == room.0)
-                .map(|door| crate::teleport::ThresholdSlotId((door.0 % 4) as u8))
+                .map(|door| crate::teleport::ThresholdSlotId(door.0 % 4))
         })
 }
 
@@ -172,7 +172,7 @@ pub(crate) fn slot_for_connection(
         connections_for_nav(game, items, room)
             .into_iter()
             .position(|candidate| candidate == target)
-            .map(|slot| crate::teleport::ThresholdSlotId(slot as u8))
+            .map(|slot| crate::teleport::ThresholdSlotId(slot as u16))
     })
 }
 
@@ -188,7 +188,7 @@ pub(crate) fn room_connection_slots(
         .map(|(fallback, &target)| crate::teleport::RoomConnectionSlot {
             target,
             slot: slot_for_connection(game, items, room, target)
-                .unwrap_or(crate::teleport::ThresholdSlotId(fallback as u8)),
+                .unwrap_or(crate::teleport::ThresholdSlotId(fallback as u16)),
         })
         .collect()
 }

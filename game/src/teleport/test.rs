@@ -22,7 +22,7 @@ mod tests {
                 .enumerate()
                 .map(|(slot, &target)| RoomConnectionSlot {
                     target: RoomId(target),
-                    slot: ThresholdSlotId(slot as u8),
+                    slot: ThresholdSlotId(slot as u16),
                 })
                 .collect(),
             sealed_slots: Vec::new(),
@@ -419,6 +419,7 @@ mod tests {
         assert_eq!(
             crossing,
             Crossing::EnteredHallway {
+                corridor: corridor_id_for(RoomId(0), RoomId(1)),
                 from: RoomId(0),
                 to: RoomId(1)
             }
@@ -1857,6 +1858,210 @@ mod tests {
                 .gaps
                 .iter()
                 .any(|gap| gap.kind == GapKind::LockedExit)
+        );
+    }
+
+    // --- Phase 74 regression fixtures: the four "render / physics / graph cannot
+    // disagree" invariants, asserted directly against the junction topology. ---
+
+    use observed_core::{PlaceId as CorePlaceId, ThresholdId as CoreThresholdId};
+
+    fn room_socket(room: RoomId, slot: u16) -> CoreThresholdId {
+        CoreThresholdId::new(CorePlaceId::Room(room), slot)
+    }
+
+    /// Traversable ⇒ never walled: every active room-side attachment is a passage that
+    /// leaves a real opening (a body steps out through it, not clamped back), and the
+    /// corridor it partners into presents a matching passage back to the room.
+    #[test]
+    fn phase74_traversable_sockets_are_never_walled() {
+        let nav = nav(&[1, 3], Some(1));
+        let room = Place::Room(RoomId(0));
+        let geom = geom_for(room, &nav);
+        let topology = place_junction(room, &nav);
+        let passages: Vec<_> = geom
+            .gaps
+            .iter()
+            .filter(|gap| gap.kind.is_passage())
+            .cloned()
+            .collect();
+        assert!(!passages.is_empty(), "the room has a crossable doorway");
+        let radius = 0.4;
+        for gap in &passages {
+            // (1) The room socket is attached — its partner is a corridor socket.
+            let socket = room_socket(RoomId(0), gap.threshold.room.slot.0);
+            let partner = topology
+                .partner(socket)
+                .expect("a traversable socket has a topology partner");
+            assert!(
+                matches!(partner.place, CorePlaceId::Corridor(_)),
+                "a room socket partners into a corridor"
+            );
+
+            // (2) The aperture is a real opening: stepping out through it is not clamped.
+            let at_door = gap.center + gap.normal * 0.3;
+            let after = contain(&geom, at_door, radius);
+            assert!(
+                (after - at_door).length() < 0.01,
+                "no solid spans the traversable aperture"
+            );
+
+            // (3) The corridor it opens into presents the matching passage back.
+            let (hall, _) = apply_crossing(room, gap, &nav);
+            assert_eq!(
+                hall.place_id(),
+                CorePlaceId::Corridor(partner_corridor(partner))
+            );
+            let hgeom = geom_for(hall, &nav);
+            assert!(
+                hgeom
+                    .gaps
+                    .iter()
+                    .any(|g| g.kind.is_passage() && g.target == RoomId(0)),
+                "the corridor's entry socket is a passage back to the room"
+            );
+        }
+    }
+
+    fn partner_corridor(threshold: CoreThresholdId) -> observed_core::CorridorId {
+        match threshold.place {
+            CorePlaceId::Corridor(id) => id,
+            CorePlaceId::Room(_) => panic!("expected a corridor partner"),
+        }
+    }
+
+    /// Sealed ⇒ never crossable: a socket the collapse sealed produces no `partner` and no
+    /// passable gap — even when the sealed side is the forward objective doorway. This is
+    /// the aperture-sourcing invariant (step 4): revert `enforce_active_sockets` and the
+    /// sealed forward doorway stays a `Forward` passage, failing the final assertion.
+    #[test]
+    fn phase74_sealed_sockets_are_never_crossable() {
+        let mut nav = nav(&[1, 3], Some(1));
+        // In `nav()`, connection 1 (the objective) is slot 0; connection 3 is slot 1.
+        // Seal the forward/objective socket while keeping a second live socket so the
+        // topology is non-degenerate.
+        nav.sealed_slots = vec![ThresholdSlotId(0)];
+        let room = Place::Room(RoomId(0));
+        let topology = place_junction(room, &nav);
+
+        // The sealed socket has no partner — un-crossable by construction.
+        assert!(
+            topology.partner(room_socket(RoomId(0), 0)).is_none(),
+            "a sealed socket has no topology partner"
+        );
+        // The still-open side keeps its partner.
+        assert!(
+            topology.partner(room_socket(RoomId(0), 1)).is_some(),
+            "the unsealed connection stays crossable"
+        );
+
+        // ...and the sealed forward doorway is not a passage in the rendered / physical
+        // geometry. (Reverting step 4 leaves it a `Forward` passage → this fails.)
+        let geom = geom_for(room, &nav);
+        let forward_to_1 = geom
+            .gaps
+            .iter()
+            .find(|gap| gap.target == RoomId(1))
+            .expect("the sealed relation still owns a doorway slot");
+        assert!(
+            !forward_to_1.kind.is_passage(),
+            "a sealed socket renders as a wall, never a passage"
+        );
+    }
+
+    /// Reciprocity: crossing a room socket into the corridor and crossing back through the
+    /// corridor's mirrored socket returns to the origin room, and the corridor identity is
+    /// direction-independent.
+    #[test]
+    fn phase74_crossing_round_trips_through_the_same_corridor() {
+        let nav = nav(&[1, 3], Some(1));
+        let room = Place::Room(RoomId(0));
+        let forward = *geom_for(room, &nav).forward_gap().unwrap();
+
+        let (hall, entered) = apply_crossing(room, &forward, &nav);
+        let cid = corridor_id_for(RoomId(0), RoomId(1));
+        assert_eq!(hall.corridor_id(), Some(cid));
+        assert_eq!(hall.place_id(), CorePlaceId::Corridor(cid));
+        assert!(matches!(
+            entered,
+            Crossing::EnteredHallway { corridor, .. } if corridor == cid
+        ));
+        // Direction independence: the reverse pairing names the same corridor.
+        assert_eq!(corridor_id_for(RoomId(1), RoomId(0)), cid);
+
+        // Cross back through the corridor's entry socket → arrive in the origin room.
+        let hgeom = geom_for(hall, &nav);
+        let entry = *hgeom
+            .gaps
+            .iter()
+            .find(|gap| gap.kind == GapKind::Entry && gap.target == RoomId(0))
+            .expect("the corridor has an entry socket back to the origin");
+        let (back, arrived) = apply_crossing(hall, &entry, &nav);
+        assert_eq!(back, Place::Room(RoomId(0)));
+        assert_eq!(arrived, Crossing::ArrivedRoom(RoomId(0)));
+    }
+
+    /// Atomic reroute: a reroute rebuilds the socket topology so that no socket is ever
+    /// attached to two corridors and no attachment is one-sided — the reciprocal partner
+    /// always round-trips, before and after the rewire, and the crate rejects a
+    /// half-rewire outright.
+    #[test]
+    fn phase74_reroute_keeps_attachments_atomic_and_reciprocal() {
+        let assert_reciprocal = |place: Place, nav: &Nav| {
+            let topology = place_junction(place, nav);
+            assert!(topology.threshold_count() > 0, "a live place has sockets");
+            for connection in &nav.connections {
+                let slot = nav.slot_for(*connection).unwrap();
+                let socket = room_socket(RoomId(0), slot.0);
+                let partner = topology
+                    .partner(socket)
+                    .expect("every live connection is attached");
+                // Reciprocal: the corridor socket partners straight back to the room.
+                assert_eq!(topology.partner(partner), Some(socket));
+                // Single-valued: a socket never partners two corridors (map invariant).
+                assert!(matches!(partner.place, CorePlaceId::Corridor(_)));
+            }
+        };
+
+        // Before the reroute: room 0 connects to 1 and 3.
+        let before = nav(&[1, 3], Some(1));
+        assert_reciprocal(Place::Room(RoomId(0)), &before);
+
+        // After a reroute the connection 0↔3 is rewired to 0↔4 as one operation.
+        let after = nav(&[1, 4], Some(1));
+        assert_reciprocal(Place::Room(RoomId(0)), &after);
+
+        // The corridor that 3 used to reach is gone from the active set; the new one is
+        // present — the rewire moved both sides together, never one.
+        let before_topo = place_junction(Place::Room(RoomId(0)), &before);
+        let after_topo = place_junction(Place::Room(RoomId(0)), &after);
+        let cid_3 = corridor_id_for(RoomId(0), RoomId(3));
+        let cid_4 = corridor_id_for(RoomId(0), RoomId(4));
+        assert!(!before_topo.corridor_rooms(cid_4).contains(&RoomId(0)));
+        assert!(before_topo.corridor_rooms(cid_3).contains(&RoomId(0)));
+        assert!(after_topo.corridor_rooms(cid_4).contains(&RoomId(0)));
+        assert!(!after_topo.corridor_rooms(cid_3).contains(&RoomId(0)));
+
+        // The crate itself refuses a half-rewire: attaching a second room to an
+        // already-attached corridor socket is rejected, so an attachment can never be
+        // left one-sided.
+        use observed_facility::junction::{CorridorSpec, JunctionTopology, ThresholdAttachment};
+        let cid = observed_core::CorridorId(9);
+        let first = ThresholdAttachment::new(
+            room_socket(RoomId(0), 0),
+            CoreThresholdId::new(CorePlaceId::Corridor(cid), 0),
+        )
+        .unwrap();
+        let mut topo =
+            JunctionTopology::new([CorridorSpec::with_slot_count(cid, 2)], [first]).unwrap();
+        let half_rewire = ThresholdAttachment::new(
+            room_socket(RoomId(7), 0),
+            CoreThresholdId::new(CorePlaceId::Corridor(cid), 0),
+        )
+        .unwrap();
+        assert!(
+            topo.attach(half_rewire).is_err(),
+            "a socket cannot be attached to two rooms — no one-sided rewire"
         );
     }
 }

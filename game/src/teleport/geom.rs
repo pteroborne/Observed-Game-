@@ -174,7 +174,7 @@ pub fn room_geom_with_slots_and_seals_for_role(
                 .iter()
                 .find(|candidate| candidate.target == target)
                 .map(|candidate| candidate.slot)
-                .unwrap_or(ThresholdSlotId(fallback as u8));
+                .unwrap_or(ThresholdSlotId(fallback as u16));
             (target, slot)
         })
         .collect();
@@ -546,7 +546,7 @@ pub fn hallway_geom_with_slots_and_role(
         let mut gaps = Vec::new();
         for (slot, &ec) in entry_cols.iter().enumerate() {
             let x = cell_center(ec, 0).x;
-            let hall_slot = ThresholdSlotId(slot as u8);
+            let hall_slot = ThresholdSlotId(slot as u16);
             gaps.push(DoorGap {
                 center: Vec2::new(x, -footprint.y),
                 normal: Vec2::new(0.0, -1.0),
@@ -559,7 +559,7 @@ pub fn hallway_geom_with_slots_and_role(
         }
         for (slot, &xc) in exit_cols.iter().enumerate() {
             let x = cell_center(xc, rows_usize - 1).x;
-            let hall_slot = ThresholdSlotId(slot as u8);
+            let hall_slot = ThresholdSlotId(slot as u16);
             gaps.push(DoorGap {
                 center: Vec2::new(x, footprint.y),
                 normal: Vec2::new(0.0, 1.0),
@@ -1085,7 +1085,7 @@ pub fn room_preview_geom(
 
 /// The footprint geometry for any place, given the current navigation snapshot.
 pub fn geom_for(place: Place, nav: &Nav) -> PlaceGeom {
-    match place {
+    let mut geom = match place {
         // The room shape is seeded by the room id + facility seed (not the decohere
         // version), so a room keeps a stable shape while its connections rewire.
         Place::Room(room) => room_geom_with_slots_and_seals_for_role(
@@ -1117,5 +1117,45 @@ pub fn geom_for(place: Place, nav: &Nav) -> PlaceGeom {
             nav.exit_locked,
             nav.corridor_role_for(to),
         ),
+    };
+    enforce_active_sockets(&mut geom, place, nav);
+    geom
+}
+
+/// Make the rendered/physical passage set agree with the active junction topology: a
+/// room-side socket that is **not** attached in [`super::place_junction`] (sealed, or a
+/// connection whose socket collides with a sealed side) has no partner, so its doorway is
+/// demoted from a crossable passage to a solid closed door. Because
+/// `place_structural_primitives` and `place_rapier_scene` both derive collision from
+/// `PlaceGeom.gaps`, render + Rapier apertures then follow the socket set for free — the
+/// invariant Phase 74 exists to guarantee ("a socket crossable in the topology never
+/// renders/collides as a solid wall, and vice-versa").
+///
+/// This is a no-op on real navigation data, where connection slots and sealed slots are
+/// disjoint and every connection is attached: the demotion only fires for a socket the
+/// topology genuinely refuses. A hallway's two endpoint sockets are always attached while
+/// it is the current place, so only rooms are adjusted.
+fn enforce_active_sockets(geom: &mut PlaceGeom, place: Place, nav: &Nav) {
+    let Place::Room(_) = place else {
+        return;
+    };
+    let topology = crate::teleport::place_junction(place, nav);
+    if topology.threshold_count() == 0 {
+        // Degenerate/fallback nav (no resolvable sockets): leave the authored gaps intact
+        // so single-exit authored/dev maps are byte-identical.
+        return;
+    }
+    for gap in geom.gaps.iter_mut() {
+        if !gap.kind.is_passage() {
+            continue;
+        }
+        let room = gap.threshold.room.room;
+        let socket = observed_core::ThresholdId::new(
+            observed_core::PlaceId::Room(room),
+            gap.threshold.room.slot.0,
+        );
+        if topology.partner(socket).is_none() {
+            gap.kind = GapKind::Side;
+        }
     }
 }

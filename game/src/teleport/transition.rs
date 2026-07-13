@@ -1,9 +1,13 @@
 //! Transition mechanics, alignment calculations, and arena building.
 
-use super::{DoorGap, ENTRY_INSET, Nav, Place, PlaceGeom, ThresholdLocalSide};
+use super::{
+    DoorGap, ENTRY_INSET, Nav, Place, PlaceGeom, ThresholdLocalSide, corridor_id_for,
+    corridor_socket_for,
+};
 use crate::hallway;
 use bevy::math::{Quat, Vec2, Vec3};
-use observed_core::RoomId;
+use observed_core::{CorridorId, PlaceId, RoomId, ThresholdId};
+use observed_facility::junction::{CorridorSpec, JunctionTopology, ThresholdAttachment};
 use observed_traversal::rapier_controller::{RapierTraversalScene, StructuralCollider};
 use observed_traversal::{Aabb3, FpsArena};
 
@@ -45,18 +49,100 @@ pub fn feet_at_gap_floor(world_feet_y: f32, place_floor_y: f32, gap: &DoorGap) -
 /// The result of crossing a doorway.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Crossing {
-    /// Entered an edge's hallway piece heading toward `to`.
-    EnteredHallway { from: RoomId, to: RoomId },
-    /// Arrived in a room (from a hallway exit, or back through its entry).
+    /// Entered a corridor through one of its threshold sockets. `corridor` is the stable
+    /// identity resolved by the junction topology; `from`/`to` are the thin pair-shaped
+    /// accessor deferred consumers still read (the room you left / the corridor's other
+    /// endpoint).
+    EnteredHallway {
+        corridor: CorridorId,
+        from: RoomId,
+        to: RoomId,
+    },
+    /// Arrived in a room (from a corridor exit socket, or back through its entry socket).
     ArrivedRoom(RoomId),
 }
 
-/// Apply a doorway crossing: returns the new place and what happened. From a room you
-/// enter the crossed edge's hallway (rolling its variation); from a hallway you arrive
-/// in the gap's target room.
-pub fn apply_crossing(place: Place, gap: &DoorGap, nav: &Nav) -> (Place, Crossing) {
+/// Build the active room/corridor **socket topology** for the current place from the nav
+/// projection (the simulation-owned connectivity). This is the single reciprocal
+/// structure both the crossing resolver ([`apply_crossing`]) and the geometry passage set
+/// consult, so a rendered aperture, a physical aperture, and a graph connection cannot
+/// disagree: an unattached or sealed socket has no `partner`, so it is un-crossable *and*
+/// renders as a wall by the same fact.
+///
+/// A room place exposes one attachment per live (non-sealed) connection: the room-side
+/// socket ↔ its derived corridor's room-side socket. A hallway place exposes both of its
+/// endpoints' attachments, so crossing either the entry or the exit resolves back to a
+/// room through the same reciprocal lookup.
+pub fn place_junction(place: Place, nav: &Nav) -> JunctionTopology {
+    let mut specs: Vec<CorridorSpec> = Vec::new();
+    let mut attachments: Vec<ThresholdAttachment> = Vec::new();
+    let mut attach = |from_room: RoomId, target: RoomId, room_slot: super::ThresholdSlotId| {
+        let cid = corridor_id_for(from_room, target);
+        if !specs.iter().any(|spec| spec.id == cid) {
+            specs.push(CorridorSpec::with_slot_count(cid, 2));
+        }
+        let room_tid = ThresholdId::new(PlaceId::Room(from_room), room_slot.0);
+        let corridor_slot = corridor_socket_for(from_room, target, from_room);
+        let corridor_tid = ThresholdId::new(PlaceId::Corridor(cid), corridor_slot.0);
+        if let Ok(attachment) = ThresholdAttachment::new(room_tid, corridor_tid) {
+            attachments.push(attachment);
+        }
+    };
     match place {
         Place::Room(room) => {
+            for connection in &nav.connections {
+                let slot = nav
+                    .slot_for(*connection)
+                    .unwrap_or_else(|| default_room_slot(nav, *connection));
+                if nav.sealed_slots.contains(&slot) {
+                    continue;
+                }
+                attach(room, *connection, slot);
+            }
+        }
+        Place::Hallway { from, to, .. } => {
+            let from_slot = nav
+                .hallway_entry_room_slot
+                .unwrap_or(super::ThresholdSlotId(0));
+            let to_slot = nav
+                .hallway_exit_room_slot
+                .unwrap_or(super::ThresholdSlotId(0));
+            attach(from, to, from_slot);
+            attach(to, from, to_slot);
+        }
+    }
+    JunctionTopology::new(specs, attachments).unwrap_or_default()
+}
+
+/// Fallback room-side slot for a connection with no explicit `connection_slots` entry:
+/// its position in the sorted connection list, mirroring `room_geom`'s fallback so the
+/// topology and the rendered doorway pick the same slot.
+fn default_room_slot(nav: &Nav, connection: RoomId) -> super::ThresholdSlotId {
+    let mut sorted: Vec<RoomId> = nav.connections.clone();
+    sorted.sort_unstable_by_key(|r| r.0);
+    sorted.dedup();
+    let index = sorted.iter().position(|r| *r == connection).unwrap_or(0);
+    super::ThresholdSlotId(index as u16)
+}
+
+/// Apply a doorway crossing: returns the new place and what happened. Both directions
+/// resolve through [`JunctionTopology::partner`] on the active socket set — never by
+/// reconstructing a room pair to decide connectivity. From a room, the crossed room
+/// socket partners into a corridor socket, so you enter that corridor (rolling its
+/// presentation variation); from a corridor, the crossed corridor socket partners back to
+/// a room socket, so you arrive in that room. A socket with no partner (sealed/collapsed)
+/// is simply un-crossable and this returns the place unchanged.
+pub fn apply_crossing(place: Place, gap: &DoorGap, nav: &Nav) -> (Place, Crossing) {
+    let topology = place_junction(place, nav);
+    match place {
+        Place::Room(room) => {
+            let room_tid = ThresholdId::new(PlaceId::Room(room), gap.threshold.room.slot.0);
+            let corridor = match topology.partner(room_tid).map(|partner| partner.place) {
+                Some(PlaceId::Corridor(cid)) => cid,
+                // No topology partner (authored/dev nav without slots): fall back to the
+                // gap's own derived corridor so single-exit play is unchanged.
+                _ => corridor_id_for(room, gap.target),
+            };
             let to = gap.target;
             // A pinned (anchored) edge keeps its frozen variation; others use the live
             // decohere version, so they re-roll when unobserved.
@@ -68,10 +154,24 @@ pub fn apply_crossing(place: Place, gap: &DoorGap, nav: &Nav) -> (Place, Crossin
                     to,
                     variation,
                 },
-                Crossing::EnteredHallway { from: room, to },
+                Crossing::EnteredHallway {
+                    corridor,
+                    from: room,
+                    to,
+                },
             )
         }
-        Place::Hallway { .. } => (Place::Room(gap.target), Crossing::ArrivedRoom(gap.target)),
+        Place::Hallway { from, to, .. } => {
+            let cid = corridor_id_for(from, to);
+            let corridor_slot = corridor_socket_for(from, to, gap.target);
+            let corridor_tid = ThresholdId::new(PlaceId::Corridor(cid), corridor_slot.0);
+            let arrived = match topology.partner(corridor_tid).map(|partner| partner.place) {
+                Some(PlaceId::Room(room)) => room,
+                // No topology partner: fall back to the gap's annotated destination room.
+                _ => gap.target,
+            };
+            (Place::Room(arrived), Crossing::ArrivedRoom(arrived))
+        }
     }
 }
 
