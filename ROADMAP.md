@@ -95,6 +95,22 @@ The Arc H ship-gate pattern rerun: full evidence refresh from one build (all vie
 
 ---
 
+**Arc J — Solid Connections (Rapier3D Integration).** The traversal-ground-truth arc: finish moving the played game's room and corridor collision onto deterministic raw `rapier3d`, then make thresholds explicit enough that rendered apertures, physical apertures, and graph connections cannot disagree. A corridor is a stable place with authored threshold sockets, not an implicit `(from, to)` room pair; every live connection is one reciprocal room-socket↔corridor-socket attachment. This is the rule that prevents a threshold from looking walled-off while remaining traversable, and it unlocks real multi-exit Gantry and Wellshaft routes without overlapping room/corridor geometry. Presentation continues to read simulation-owned topology, persistent identity uses domain IDs rather than Bevy `Entity`, and rendered structure and Rapier structure are derived from the same place geometry. Waves: [73] → [74] → [75] → [76].
+
+### Phase 73 — Deterministic Rapier Foundation `[x]`
+Prove `rapier3d 0.34` fixed-step lockstep with `enhanced-determinism`, promote the raw-Rapier kinematic capsule into `observed_traversal`, and integrate the controller with the played game's generated room and hallway structural geometry. Keep the resettable determinism/controller labs as focused baselines; expose the exact structural collider list for debugging; establish stable `CorridorId`, `PlaceId`, and `ThresholdId`, reciprocal `JunctionTopology`, and data-driven `MapCorridor` groundwork. **Complete 2026-07-12:** determinism and replay proofs, room/hall traversal, crossing integration, threshold-preview correction, and the stable junction model landed in `8cd5f63`.
+
+### Phase 74 — First-Class Corridor & Threshold Runtime `[ ]`
+Replace the live pair-shaped `Place::Hallway { from, to, ... }` contract with stable corridor identity plus threshold-socket crossing. Resolve every transition through `JunctionTopology::partner`; validate that each socket has at most one reciprocal attachment; support corridors with two or more exits; and make reroutes update attachments atomically, never one side of a connection. Door/threshold render gaps, occlusion, crossing volumes, and Rapier apertures must consume that same active socket set, with regression fixtures for the formerly visible-but-traversable “wall in front of a threshold” failure.
+
+### Phase 75 — Room/Hall Variation Parity & Consumer Migration `[ ]`
+Run the production Rapier path across the complete procedural corpus: every room role and seeded footprint, plus Chicane, Colonnade, Maze (DFS and WFC interiors), Gantry, and Wellshaft corridors at every supported elevation and entrance. Migrate all remaining pair-assuming consumers—bots, nav, guardian targeting, items/anchors, ambience, observation knowledge, tac-map, previews, diagnostics/evidence, replay, and map validation—to stable place/threshold identities. Add corpus tests proving rendered and collidable structural segments agree, every active aperture can be crossed in both directions, sealed sockets cannot be crossed, reroutes remain solvable, and reset/exit leaves no Rapier bodies or colliders behind.
+
+### Phase 76 — Multi-Exit Junction Gate `[ ]`
+Ship a playable fixture in which the Gantry understory side exit reaches a genuinely different room and a multi-threshold Wellshaft exposes distinct destinations. Exercise observation freeze/decohere reroutes, multiple thresholds between the same room and corridor where authored, and multiple corridors attached to one room without geometry overlap or ambiguous arrival. Close the arc with deterministic replay hashes, the full Rapier variation corpus, collider/debug evidence, a viewed first-person traversal capture through every branch, and a user playtest. At the gate, production movement has one collision authority—Rapier; any retained custom traversal code is an isolated reference/test utility rather than a second live controller.
+
+---
+
 ## Bug Backlog
 
 Playtest defects tracked in [docs/bug_backlog.md](docs/bug_backlog.md). The four
@@ -112,7 +128,7 @@ Recorded so the horizon is explicit; none of this is being built yet.
 
 1. **True LAN multiplayer with dedicated servers.** The deferred Arc E designs (Phases 51–53: shared lockstep actions, socket transport behind `observed_net`, LAN lobby/discovery) plus a dedicated-server deployment model — a headless deterministic host that peers connect to, replacing pure peer-to-peer session ownership. Full online play (NAT traversal / relay / matchmaking) remains beyond even that.
 2. **World interaction.** Players act on the facility graph itself: explorers "hacking" a room console to connect it to a specified room ID (player-driven rerouting, subject to the solvability invariant and decoherence rules), and fallen/absorbed teams connecting nodes from a top-down view — extending "eliminated teams join the adversary" into an active graph-editing role that keeps every player playing to the end.
-3. **Carried follow-ups from Arcs C/D:** a third hall endpoint so the gantry's understory exit reaches a genuinely different neighbour; the decoherence counter-tool (Phase 38's criterion (d) never triggered it).
+3. **Carried follow-ups from Arcs C/D:** ~~a third hall endpoint so the gantry's understory exit reaches a genuinely different neighbour~~ **scheduled into Arc J Phases 74–76**; the decoherence counter-tool (Phase 38's criterion (d) never triggered it) remains unscheduled.
 4. ~~District architectural language (user idea, 2026-07-11).~~ **Scheduled into Arc I Phase 71** (geometry grammar per district).
 5. ~~Directional light-and-shadow staging (user idea, 2026-07-11).~~ **Scheduled into Arc I Phases 68–70** (lighting_lab → game staging → district identities).
 
