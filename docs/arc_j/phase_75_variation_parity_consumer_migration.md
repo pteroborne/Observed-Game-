@@ -152,3 +152,17 @@ Shipping a *playable* multi-exit fixture (Gantry side exit to a different room,
 multi-threshold Wellshaft), the viewed first-person traversal capture through
 every branch, and the user playtest. Phase 75 must make the corpus **provably
 correct**; Phase 76 makes a multi-exit map **playable** and closes the arc.
+
+### ⚠️ Phase 76 prerequisite discovered in 75a (must land before the gate)
+
+`Place::Hallway { from, to, variation }` still structurally holds exactly **two**
+rooms, and `place_junction` attaches exactly the `(from, to)` pair for a hallway.
+The identity/topology layer (`CorridorId`, `JunctionTopology`) supports N sockets,
+but the **runtime `Place` enum cannot represent a 3+-exit corridor**. Phase 74's
+"support corridors with two or more exits" is met at the contract level only.
+Before Phase 76 can ship a genuine multi-exit fixture, `Place::Hallway` must be
+generalized to carry `{ corridor: CorridorId, entered_socket }` (with `from`/`to`
+derived for the deferred pair-shaped accessors, or those accessors retired). This
+is a **contract change**, so it lands as Phase 76's opening step (or a 75c spine
+addendum) — never mixed into a parallel consumer cluster. The entire current
+corpus is 2-exit, so 75b's parity work is unaffected.
