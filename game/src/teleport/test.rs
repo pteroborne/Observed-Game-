@@ -35,7 +35,7 @@ mod tests {
             version: 0,
             exit_locked: false,
             exit_room: RoomId(EXIT_ROOM),
-            pins: Vec::new(),
+            pinned_corridors: Vec::new(),
         }
     }
 
@@ -450,10 +450,10 @@ mod tests {
         n.version = 5; // the live structure has rerolled five times
         // Without a pin, edge (0,1) follows the live decohere version.
         assert_eq!(n.effective_version(RoomId(0), RoomId(1)), 5);
-        // Pin edge (0,1) at version 2 (when the torch was dropped).
-        n.pins.push(PinnedEdge {
-            a: RoomId(0),
-            b: RoomId(1),
+        // Pin corridor (0,1) at version 2 (when the torch was dropped) — expressed as the
+        // derived corridor identity, not the `(a, b)` room pair.
+        n.pinned_corridors.push(PinnedCorridor {
+            corridor: corridor_id_for(RoomId(0), RoomId(1)),
             version: 2,
         });
         assert_eq!(n.effective_version(RoomId(0), RoomId(1)), 2);

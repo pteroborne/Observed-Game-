@@ -1,16 +1,31 @@
 //! Navigation and connection tracking.
 
-use super::{RoomConnectionSlot, ThresholdSlotId};
-use observed_core::RoomId;
+use super::{RoomConnectionSlot, ThresholdSlotId, corridor_id_for};
+use observed_core::{CorridorId, RoomId};
 use observed_facility::map_spec::{CorridorRole, RoomRole};
 
 /// An edge `(a, b)` whose hallway variation is frozen at `version` â€” an **anchor torch**
 /// pins the structure so the corridor there stops re-rolling, even as the rest of the
-/// maze decoheres. Edge-unordered (`(a, b)` == `(b, a)`).
+/// maze decoheres. Edge-unordered (`(a, b)` == `(b, a)`). This is the *item-level* pin
+/// record ([`crate::items::ItemsState::pins`]); the nav projection carries the
+/// socket-keyed [`PinnedCorridor`] derived from it.
 #[derive(Clone, Copy, Debug)]
 pub struct PinnedEdge {
     pub a: RoomId,
     pub b: RoomId,
+    pub version: u32,
+}
+
+/// A pin expressed as **corridor (place) identity** rather than an `(a, b)` room pair:
+/// the derived corridor `corridor_id_for(a, b)` whose hallway variation is frozen at
+/// `version`. This is the socket/attachment-keyed pin state the connectivity authority
+/// reads — the crossing resolver freezes a corridor's variation by looking the corridor
+/// up in the active junction topology (its stable id), never by reconstructing the room
+/// pair. Anchor pins live persistently in [`crate::items::ItemsState`]; the nav producer
+/// projects them into this corridor-keyed form each frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PinnedCorridor {
+    pub corridor: CorridorId,
     pub version: u32,
 }
 
@@ -52,8 +67,11 @@ pub struct Nav {
     pub exit_locked: bool,
     /// The active map's exit room.
     pub exit_room: RoomId,
-    /// Edges pinned by a dropped anchor torch (their variation is frozen).
-    pub pins: Vec<PinnedEdge>,
+    /// Corridors pinned by a dropped anchor torch: each names the derived corridor whose
+    /// hallway variation is frozen (see [`PinnedCorridor`]). Expressed as corridor/socket
+    /// identity, not `(a, b)` room pairs, so the crossing resolver freezes a variation by
+    /// the corridor the junction topology resolved it into.
+    pub pinned_corridors: Vec<PinnedCorridor>,
 }
 
 impl Nav {
@@ -73,24 +91,38 @@ impl Nav {
             .map(|(_, role)| *role)
     }
 
-    /// The decohere version to use for the edge `(x, y)`: the pinned version if an anchor
-    /// torch froze it, otherwise the live `version`.
-    pub fn effective_version(&self, x: RoomId, y: RoomId) -> u32 {
-        let key = |a: RoomId, b: RoomId| if a.0 <= b.0 { (a.0, b.0) } else { (b.0, a.0) };
-        let want = key(x, y);
-        self.pins
+    /// The decohere version to use for `corridor`: the pinned version if an anchor torch
+    /// froze that corridor's variation, otherwise the live `version`. This is the stable
+    /// **corridor-identity** form the crossing resolver uses — it already resolved the
+    /// corridor through the junction topology, so it never reconstructs the room pair.
+    pub fn effective_version_for_corridor(&self, corridor: CorridorId) -> u32 {
+        self.pinned_corridors
             .iter()
-            .find(|p| key(p.a, p.b) == want)
+            .find(|p| p.corridor == corridor)
             .map(|p| p.version)
             .unwrap_or(self.version)
     }
 
-    /// Whether the edge `(x, y)` is **tethered** â€” frozen by a dropped anchor torch (its
-    /// variation pinned). A doorway's frame light reads this so a glance shows which edges
-    /// are anchored. Edge-unordered.
+    /// Whether `corridor` is **tethered** — frozen by a dropped anchor torch. The stable
+    /// corridor-identity form.
+    pub fn is_tethered_corridor(&self, corridor: CorridorId) -> bool {
+        self.pinned_corridors.iter().any(|p| p.corridor == corridor)
+    }
+
+    /// The decohere version for the edge `(x, y)`, keyed by the derived corridor. Thin
+    /// pair-shaped wrapper over [`Self::effective_version_for_corridor`]; retained only
+    /// for the pinned-variation regression test (`teleport::test`) — no deferred consumer
+    /// reads it, so it needs no 75b migration.
+    pub fn effective_version(&self, x: RoomId, y: RoomId) -> u32 {
+        self.effective_version_for_corridor(corridor_id_for(x, y))
+    }
+
+    /// Whether the edge `(x, y)` is **tethered**. Thin pair-shaped wrapper over
+    /// [`Self::is_tethered_corridor`]. **Kept for deferred 75b consumers** — the
+    /// Presentation cluster (`screens/place/factory.rs`) and the Evidence cluster
+    /// (`evidence/snapshot.rs`) still read tether state by room pair; each should move to
+    /// `is_tethered_corridor` and this wrapper removed then.
     pub fn is_tethered(&self, x: RoomId, y: RoomId) -> bool {
-        let key = |a: RoomId, b: RoomId| if a.0 <= b.0 { (a.0, b.0) } else { (b.0, a.0) };
-        let want = key(x, y);
-        self.pins.iter().any(|p| key(p.a, p.b) == want)
+        self.is_tethered_corridor(corridor_id_for(x, y))
     }
 }

@@ -293,7 +293,7 @@ fn nav_for_spec_room(spec: &MapSpec, seed: u64, version: u32, room: RoomId) -> N
         version,
         exit_locked: true,
         exit_room: spec.exit_room().unwrap_or(RoomId(0)),
-        pins: Vec::new(),
+        pinned_corridors: Vec::new(),
     }
 }
 

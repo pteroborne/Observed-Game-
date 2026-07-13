@@ -18,7 +18,7 @@ use bevy::prelude::Resource;
 use observed_core::{RoomId, TeamId};
 
 use crate::flow::LOCAL_TEAM;
-use crate::teleport::{PinnedEdge, Place};
+use crate::teleport::{PinnedCorridor, PinnedEdge, Place, corridor_id_for};
 
 /// Gameplay radius of an anchor torch inside its current discrete place.
 /// Membership is a pure local-distance check; paired remote endpoints are frozen
@@ -250,6 +250,23 @@ impl ItemsState {
             }
         }
         out
+    }
+
+    /// Anchor-torch pins expressed as **corridor identities** — the socket/attachment
+    /// view the connectivity authority reads. Each frozen edge `(a, b)` names the derived
+    /// corridor `corridor_id_for(a, b)` whose hallway variation is frozen at its drop-time
+    /// version, so the crossing resolver freezes a variation by the corridor the junction
+    /// topology resolved (a stable place id), never by the `(a, b)` room pair. Order
+    /// follows [`Self::pins`], so the first pin on a corridor wins a lookup exactly as the
+    /// old edge-keyed scan did.
+    pub fn pinned_corridors(&self) -> Vec<PinnedCorridor> {
+        self.pins()
+            .into_iter()
+            .map(|pin| PinnedCorridor {
+                corridor: corridor_id_for(pin.a, pin.b),
+                version: pin.version,
+            })
+            .collect()
     }
 
     /// Rooms that remain connected to `room` because an anchor froze that relation.

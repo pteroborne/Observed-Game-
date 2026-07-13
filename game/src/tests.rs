@@ -310,7 +310,8 @@ fn anchor_torch_can_be_dropped_pins_edges_and_can_be_picked_back_up() {
             .resource::<crate::sim::director::MatchDirector>();
         let keys = app.world().resource::<keystones::KeystoneState>();
         let items = app.world().resource::<items::ItemsState>();
-        crate::sim::nav::nav_from_brain(MATCH_SEED, runtime.live.host_match(), keys, items).pins
+        crate::sim::nav::nav_from_brain(MATCH_SEED, runtime.live.host_match(), keys, items)
+            .pinned_corridors
     };
     assert!(
         !pins.is_empty(),

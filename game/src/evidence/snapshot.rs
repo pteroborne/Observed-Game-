@@ -160,7 +160,7 @@ fn collect_geometry(
             version: 0,
             exit_locked: !keys.gate_open(),
             exit_room: keys.exit_room,
-            pins: Vec::new(),
+            pinned_corridors: Vec::new(),
         };
         let geom = teleport::geom_for(dest.place, &nav);
         let Some((center, half)) = preview_aabb(tp.place, gap, dest.place, &geom) else {

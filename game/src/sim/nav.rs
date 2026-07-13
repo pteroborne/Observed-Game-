@@ -251,7 +251,7 @@ pub(crate) fn nav_for_room(
         version: game.reroute_commits,
         exit_locked: !keys.gate_open(),
         exit_room: keys.exit_room,
-        pins: items.pins(),
+        pinned_corridors: items.pinned_corridors(),
     }
 }
 
