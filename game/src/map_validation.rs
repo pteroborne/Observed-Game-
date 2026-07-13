@@ -261,7 +261,7 @@ fn audit_edge_direction(
     audit_hallway_geom(issues, report, &geom, from, to, &FpsConfig::default());
 }
 
-fn nav_for_spec_room(spec: &MapSpec, seed: u64, version: u32, room: RoomId) -> Nav {
+pub(crate) fn nav_for_spec_room(spec: &MapSpec, seed: u64, version: u32, room: RoomId) -> Nav {
     let connections = spec.neighbors(room);
     let target_room = target_for_room(spec, room, &connections);
     let connection_slots = connections

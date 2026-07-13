@@ -2064,4 +2064,444 @@ mod tests {
             "a socket cannot be attached to two rooms — no one-sided rewire"
         );
     }
+
+    fn count_rendered_walls(poly: &[Vec2], gaps: &[DoorGap]) -> usize {
+        let n = poly.len();
+        let mut count = 0;
+        for i in 0..n {
+            let a = poly[i];
+            let b = poly[(i + 1) % n];
+            let mid = (a + b) * 0.5;
+            let gap = gaps.iter().find(|g| (g.center - mid).length() < 0.05);
+            match gap {
+                Some(g) if g.kind.is_passage() => {
+                    count += 2;
+                }
+                _ => {
+                    count += 1;
+                }
+            }
+        }
+        count
+    }
+
+    fn count_wellshaft_hex_walls(poly: &[Vec2], gaps: &[DoorGap], total_height: f32) -> usize {
+        let n = poly.len();
+        let mut count = 0;
+        for i in 0..n {
+            let a = poly[i];
+            let b = poly[(i + 1) % poly.len()];
+            let mid = (a + b) * 0.5;
+            if let Some(gap) = gaps
+                .iter()
+                .find(|g| g.kind.is_passage() && (g.center - mid).length() < 0.05)
+            {
+                // full height segment before
+                count += 1;
+                // full height segment after
+                count += 1;
+                // below gap
+                if gap.floor_y >= 0.05 {
+                    count += 1;
+                }
+                // above gap
+                if total_height - (gap.floor_y + 3.4) >= 0.05 {
+                    count += 1;
+                }
+            } else {
+                count += 1;
+            }
+        }
+        count
+    }
+
+    fn count_deck_primitives(decks: &[DeckSeg]) -> usize {
+        decks
+            .iter()
+            .filter(|d| (d.top_y - d.bottom_y) > 0.01)
+            .count()
+    }
+
+    fn count_perimeter_walls(
+        primitives: &[observed_traversal::rapier_controller::StructuralCollider],
+        floor_y: f32,
+        total_height: f32,
+    ) -> usize {
+        primitives
+            .iter()
+            .filter(|c| {
+                // A perimeter wall is full-height (y_min ~ 0, height ~ total_height)
+                // and has a wall half-thickness (0.4)
+                let y_min = c.center.y - c.half.y - floor_y;
+                let height = c.half.y * 2.0;
+                let is_full_height = y_min.abs() < 0.05 && (height - total_height).abs() < 0.05;
+                let is_wall_thickness =
+                    (c.half.z - 0.4).abs() < 0.01 || (c.half.x - 0.4).abs() < 0.01;
+                is_full_height && is_wall_thickness
+            })
+            .count()
+    }
+
+    #[test]
+    fn phase75_corpus_parity_structural_agreement() {
+        use crate::hallway;
+        use observed_facility::map_spec::RoomRole;
+
+        // (1) Rooms: check structural wall counts agree across every room role and seed
+        for role in [
+            None,
+            Some(RoomRole::Start),
+            Some(RoomRole::Exit),
+            Some(RoomRole::Decision),
+            Some(RoomRole::DecoherenceFork),
+            Some(RoomRole::AnchorCheckpoint),
+            Some(RoomRole::TeleportRelay),
+            Some(RoomRole::Keystone),
+            Some(RoomRole::DualStation),
+            Some(RoomRole::GuardianControl),
+            Some(RoomRole::Monitor),
+            Some(RoomRole::Recovery),
+        ] {
+            for seed in 0..16 {
+                let room = room_geom_with_slots_and_seals_for_role(
+                    RoomId(0),
+                    &[RoomId(1), RoomId(2)],
+                    &[],
+                    &[],
+                    Some(RoomId(1)),
+                    role,
+                    seed,
+                );
+                let primitives = place_structural_primitives(&room, 0.0, 3.4);
+                let scene = place_rapier_scene(&room, 0.0, 3.4);
+
+                // Agree with Rapier scene size
+                assert_eq!(scene.collider_count(), primitives.len() + 1);
+
+                // Rendered walls count must match full-height primitives count
+                let rendered_count = count_rendered_walls(room.poly.as_ref().unwrap(), &room.gaps);
+                let prim_wall_count = count_perimeter_walls(&primitives, 0.0, 3.4);
+                assert_eq!(
+                    rendered_count, prim_wall_count,
+                    "Room role {role:?} seed {seed}"
+                );
+            }
+        }
+
+        // (2) Hallways: check across all templates
+        for template in hallway::TEMPLATES {
+            let roles: &[Option<CorridorRole>] = if template.grid.is_some() {
+                &[None, Some(CorridorRole::Mystery)]
+            } else if template.flavor == hallway::HallwayFlavor::Straight {
+                &[None, Some(CorridorRole::Vertical)]
+            } else {
+                &[None]
+            };
+            for &role in roles {
+                for seed in 0..8 {
+                    let geom = hallway_geom_with_slots_and_role(
+                        HallwayGeomEndpoints {
+                            from: RoomId(0),
+                            to: RoomId(1),
+                            from_room_slot: ThresholdSlotId(0),
+                            to_room_slot: ThresholdSlotId(0),
+                            exit_room: RoomId(EXIT_ROOM),
+                        },
+                        &template,
+                        seed,
+                        false,
+                        role,
+                    );
+                    let primitives = place_structural_primitives(&geom, 0.0, 3.4);
+                    let scene = place_rapier_scene(&geom, 0.0, 3.4);
+
+                    // Agree with Rapier scene size
+                    assert_eq!(scene.collider_count(), primitives.len() + 1);
+
+                    if let Some(poly) = &geom.poly {
+                        if geom.is_wellshaft() {
+                            let total_height = structural_height(&geom, 3.4);
+                            let rendered_hex_walls =
+                                count_wellshaft_hex_walls(poly, &geom.gaps, total_height);
+                            let prim_hex_walls =
+                                primitives.len() - count_deck_primitives(&geom.decks);
+                            assert_eq!(rendered_hex_walls, prim_hex_walls, "Wellshaft seed {seed}");
+                        }
+                    } else {
+                        let arena = place_arena(&geom, 0.0, 3.4);
+                        assert_eq!(primitives.len(), arena.solids.len());
+                    }
+                }
+            }
+        }
+    }
+
+    fn verify_bidirectional_crossing(
+        from: RoomId,
+        to: RoomId,
+        from_room_slot: ThresholdSlotId,
+        to_room_slot: ThresholdSlotId,
+        template: &hallway::HallwayTemplate,
+        seed: u64,
+        role: Option<CorridorRole>,
+    ) {
+        let nav = Nav {
+            connections: vec![from, to],
+            connection_slots: vec![
+                RoomConnectionSlot {
+                    target: to,
+                    slot: from_room_slot,
+                },
+                RoomConnectionSlot {
+                    target: from,
+                    slot: to_room_slot,
+                },
+            ],
+            sealed_slots: Vec::new(),
+            hallway_entry_room_slot: Some(from_room_slot),
+            hallway_exit_room_slot: Some(to_room_slot),
+            target_room: Some(to),
+            room_role: None,
+            corridor_roles: role.map(|r| vec![(to, r)]).unwrap_or_default(),
+            seed,
+            version: 0,
+            exit_locked: false,
+            exit_room: RoomId(EXIT_ROOM),
+            pinned_corridors: Vec::new(),
+        };
+
+        // (1) Cross from "from" room to Hallway
+        let room_from_geom = room_geom_with_slots_and_seals_for_role(
+            from,
+            &[to],
+            &[RoomConnectionSlot {
+                target: to,
+                slot: from_room_slot,
+            }],
+            &[],
+            Some(to),
+            None,
+            seed,
+        );
+        let from_gap = room_from_geom
+            .gaps
+            .iter()
+            .find(|g| g.target == to)
+            .expect("from gap");
+        let (hall_place, entered) = apply_crossing(Place::Room(from), from_gap, &nav);
+
+        let cid = corridor_id_for(from, to);
+        assert_eq!(hall_place.corridor_id(), Some(cid));
+        assert!(matches!(
+            entered,
+            Crossing::EnteredHallway { corridor, .. } if corridor == cid
+        ));
+
+        // (2) In the Hallway, check that all active/passage gaps are crossable back
+        let hall_geom = hallway_geom_with_slots_and_role(
+            HallwayGeomEndpoints {
+                from,
+                to,
+                from_room_slot,
+                to_room_slot,
+                exit_room: RoomId(EXIT_ROOM),
+            },
+            template,
+            seed,
+            false,
+            role,
+        );
+
+        let mut checked_gaps = 0;
+        for gap in &hall_geom.gaps {
+            if gap.kind.is_passage() {
+                checked_gaps += 1;
+                let (dest_place, arrived) = apply_crossing(hall_place, gap, &nav);
+                assert_eq!(dest_place, Place::Room(gap.target));
+                assert_eq!(arrived, Crossing::ArrivedRoom(gap.target));
+            }
+        }
+        assert!(
+            checked_gaps > 0,
+            "hallway must have at least one passage gap"
+        );
+    }
+
+    #[test]
+    fn phase75_corpus_parity_bidirectional_apertures() {
+        use crate::hallway;
+        let from = RoomId(0);
+        let to = RoomId(1);
+        let from_room_slot = ThresholdSlotId(0);
+        let to_room_slot = ThresholdSlotId(1);
+
+        for template in hallway::TEMPLATES {
+            let roles: &[Option<CorridorRole>] = if template.grid.is_some() {
+                &[None, Some(CorridorRole::Mystery)]
+            } else if template.flavor == hallway::HallwayFlavor::Straight {
+                &[None, Some(CorridorRole::Vertical)]
+            } else {
+                &[None]
+            };
+            for &role in roles {
+                for seed in 0..4 {
+                    verify_bidirectional_crossing(
+                        from,
+                        to,
+                        from_room_slot,
+                        to_room_slot,
+                        &template,
+                        seed,
+                        role,
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn phase75_corpus_parity_sealed_sockets() {
+        use observed_facility::map_spec::RoomRole;
+
+        for role in [
+            None,
+            Some(RoomRole::Start),
+            Some(RoomRole::Exit),
+            Some(RoomRole::Decision),
+            Some(RoomRole::DecoherenceFork),
+            Some(RoomRole::AnchorCheckpoint),
+            Some(RoomRole::TeleportRelay),
+            Some(RoomRole::Keystone),
+            Some(RoomRole::DualStation),
+            Some(RoomRole::GuardianControl),
+            Some(RoomRole::Monitor),
+            Some(RoomRole::Recovery),
+        ] {
+            for seed in 0..8 {
+                let from = RoomId(0);
+                let to = RoomId(1);
+                let other = RoomId(2);
+                let from_room_slot = ThresholdSlotId(0);
+                let other_room_slot = ThresholdSlotId(1);
+
+                let nav = Nav {
+                    connections: vec![to, other],
+                    connection_slots: vec![
+                        RoomConnectionSlot {
+                            target: to,
+                            slot: from_room_slot,
+                        },
+                        RoomConnectionSlot {
+                            target: other,
+                            slot: other_room_slot,
+                        },
+                    ],
+                    sealed_slots: vec![from_room_slot], // SEALED!
+                    hallway_entry_room_slot: Some(from_room_slot),
+                    hallway_exit_room_slot: None,
+                    target_room: Some(to),
+                    room_role: role,
+                    corridor_roles: Vec::new(),
+                    seed,
+                    version: 0,
+                    exit_locked: false,
+                    exit_room: RoomId(EXIT_ROOM),
+                    pinned_corridors: Vec::new(),
+                };
+
+                let room_place = Place::Room(from);
+                let topology = place_junction(room_place, &nav);
+                assert_eq!(topology.threshold_count(), 2);
+
+                let socket = observed_core::ThresholdId::new(
+                    observed_core::PlaceId::Room(from),
+                    from_room_slot.0,
+                );
+                assert!(
+                    topology.partner(socket).is_none(),
+                    "sealed socket must have no topology partner"
+                );
+
+                let geom = geom_for(room_place, &nav);
+                let gap = geom
+                    .gaps
+                    .iter()
+                    .find(|g| g.target == to)
+                    .expect("gap to target");
+                assert!(
+                    !gap.kind.is_passage(),
+                    "sealed gap kind must be non-passage"
+                );
+
+                let (dest_place, arrived) = apply_crossing(room_place, gap, &nav);
+                assert_eq!(dest_place, room_place, "sealed gap must not be crossable");
+                assert_eq!(arrived, Crossing::ArrivedRoom(from));
+            }
+        }
+    }
+
+    fn is_graph_solvable(
+        connections_map: &std::collections::HashMap<RoomId, Vec<RoomId>>,
+        start: RoomId,
+        exit: RoomId,
+    ) -> bool {
+        let mut queue = std::collections::VecDeque::new();
+        let mut visited = std::collections::BTreeSet::new();
+        queue.push_back(start);
+        visited.insert(start);
+        while let Some(room) = queue.pop_front() {
+            if room == exit {
+                return true;
+            }
+            if let Some(neighbors) = connections_map.get(&room) {
+                for &next_room in neighbors {
+                    if visited.insert(next_room) {
+                        queue.push_back(next_room);
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    #[test]
+    fn phase75_corpus_parity_reroute_solvability() {
+        use crate::map_validation::nav_for_spec_room;
+        use observed_facility::map_spec::sector_relay_v1;
+
+        let spec = sector_relay_v1();
+        let start = spec.start_room().expect("start room");
+        let exit = spec.exit_room().expect("exit room");
+
+        for seed in 0..8 {
+            for version in 0..4 {
+                let mut adjacency: std::collections::HashMap<RoomId, Vec<RoomId>> =
+                    std::collections::HashMap::new();
+
+                for room in &spec.rooms {
+                    let nav_a = nav_for_spec_room(&spec, seed, version, room.id);
+
+                    for &connection in &nav_a.connections {
+                        let nav_b = nav_for_spec_room(&spec, seed, version, connection);
+
+                        let slot_a = nav_a.slot_for(connection).unwrap();
+                        let slot_b = nav_b.slot_for(room.id).unwrap();
+
+                        let is_sealed_a = nav_a.sealed_slots.contains(&slot_a);
+                        let is_sealed_b = nav_b.sealed_slots.contains(&slot_b);
+
+                        if !is_sealed_a && !is_sealed_b {
+                            adjacency.entry(room.id).or_default().push(connection);
+                        }
+                    }
+                }
+
+                let is_reachable = is_graph_solvable(&adjacency, start, exit);
+                assert!(
+                    is_reachable,
+                    "Graph unsolvable via active slots: seed {seed} version {version}"
+                );
+            }
+        }
+    }
 }

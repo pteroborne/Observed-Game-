@@ -4416,3 +4416,42 @@ fn test_directional_actors_sheets_and_fallbacks() {
     let _ = assets.guardian_actor_layout;
     let _ = assets.guardian_actor_meta;
 }
+
+#[test]
+fn phase75_corpus_parity_lifecycle() {
+    use crate::sim::state::TeleportState;
+    use observed_core::RoomId;
+
+    // (1) Verify standard RAII drop behavior for RapierTraversalScene
+    let room = crate::teleport::geom::room_geom_with_slots_and_seals_for_role(
+        RoomId(0),
+        &[RoomId(1)],
+        &[],
+        &[],
+        Some(RoomId(1)),
+        None,
+        0,
+    );
+    let scene = crate::teleport::place_rapier_scene(&room, 0.0, 3.4);
+    assert!(scene.collider_count() > 0);
+    // Once dropped, Rust automatically deallocates the Sets.
+    drop(scene);
+
+    // (2) Verify that TeleportState (which wraps RapierTraversalScene) is cleaned up by the match teardown
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    assert!(app.world().contains_resource::<TeleportState>());
+
+    let state = app.world().resource::<TeleportState>();
+    assert!(
+        state.rapier.collider_count() > 0,
+        "Rapier scene must be populated during Match"
+    );
+
+    // Tear down the match
+    finish_match(&mut app);
+    assert!(
+        !app.world().contains_resource::<TeleportState>(),
+        "TeleportState must be despawned on Match exit"
+    );
+}

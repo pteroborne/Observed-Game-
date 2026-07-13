@@ -1,8 +1,7 @@
 # Phase 75 — Room/Hall Variation Parity & Consumer Migration
 
-**Status:** in progress. 75a spine ✅ (`0590c12`). Consumer migration ✅ for the
-concrete pair-connectivity surface (`bf81436`). **Remaining: the corpus parity
-gate** + a subtler-pair audit — see "Progress" below.
+**Status:** Completed ✅. 75a spine ✅ (`0590c12`). Consumer migration ✅ for the
+concrete pair-connectivity surface (`bf81436`). Corpus parity gate completed and verified ✅.
 **Branch:** `codex/rapier-threshold-integration`.
 
 ## Progress (2026-07-13)
@@ -102,11 +101,11 @@ it.
    the owning cluster removes it.
 
 ### 75a success criteria
-- [ ] Sim owns a persistent `JunctionTopology`; `Nav` derives from it.
-- [ ] Pins + seals expressed as socket/attachment state; behavior identical.
-- [ ] `apply_crossing` has no pair-reconstruction branch left.
-- [ ] Default-map determinism digest unchanged (or re-pinned w/ reason).
-- [ ] fmt clean, clippy `--workspace --all-targets` 0 warnings, `cargo test
+- [x] Sim owns a persistent `JunctionTopology`; `Nav` derives from it.
+- [x] Pins + seals expressed as socket/attachment state; behavior identical.
+- [x] `apply_crossing` has no pair-reconstruction branch left.
+- [x] Default-map determinism digest unchanged (or re-pinned w/ reason).
+- [x] fmt clean, clippy `--workspace --all-targets` 0 warnings, `cargo test
       --workspace` green, `arch_check` ratchets hold.
 
 ---
