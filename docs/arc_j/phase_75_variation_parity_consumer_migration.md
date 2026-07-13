@@ -22,9 +22,16 @@ gate** + a subtler-pair audit — see "Progress" below.
      agreement, both-way crossability, sealed-uncrossable, reroute-solvable, and
      clean lifecycle across every room role + Chicane/Colonnade/Maze/Gantry/
      Wellshaft. This is the falsifiable evidence that closes Phase 75.
-  2. **A subtler-pair audit** of `sim/{knowledge,replay}.rs` and `tacmap.rs`:
-     confirm witnessed-edge / map-knowledge tracking keys on stable identity
-     (or that pair-as-key is harmless given the spine). Likely small.
+  2. ~~**A subtler-pair audit** of `sim/{knowledge,replay}.rs` and `tacmap.rs`.~~
+     **Done 2026-07-13 — clean, zero changes.** `knowledge.rs` (`MapKnowledge.edges`
+     as a sorted `(RoomId,RoomId)` witnessed-edge key), `replay.rs` (`Place` stored
+     as an inert pose token, only `Room` read back), and `tacmap.rs` (`routes` drawn
+     straight from sim-owned `spec.edges`, filtered by `knows_edge`) all use the pair
+     only as a directional read or an undirected dictionary key — never to decide a
+     crossing (that authority is `JunctionTopology::partner`). The key is bijective
+     with `CorridorId` (one corridor per unordered pair) and reroute-safe (removed
+     spec edges self-drop). No migration needed; any `CorridorId` swap here would be
+     isomorphic churn.
 - `effective_version(x,y)` pair wrapper retained (still used by the teleport
   pinned-variation test only).
 **Nature:** a serial **spine** (75a) followed by a parallel **consumer fan-out**
