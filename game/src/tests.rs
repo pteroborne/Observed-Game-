@@ -427,7 +427,8 @@ fn anchor_torch_tethers_current_thresholds_immediately() {
             "a tethered room reads its frozen local-radius threshold table exactly"
         );
         assert!(
-            nav.is_tethered(room, target) || !expected_targets.contains(&target),
+            nav.is_tethered_corridor(crate::teleport::corridor_id_for(room, target))
+                || !expected_targets.contains(&target),
             "the forward relation is tethered when it falls inside the local radius"
         );
         assert!(
@@ -496,7 +497,7 @@ fn nav_keeps_a_tethered_relation_even_if_the_live_graph_drops_it() {
         "a tethered relation is added back to room nav even when absent from the live graph"
     );
     assert!(
-        nav.is_tethered(room, absent),
+        nav.is_tethered_corridor(crate::teleport::corridor_id_for(room, absent)),
         "the added relation is marked tethered for frame lights and hallway variation"
     );
 }

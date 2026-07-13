@@ -115,7 +115,7 @@ pub(crate) fn rebuild_place(
     let signature = {
         let mut tethers_hash = 0u64;
         for &conn in &nav.connections {
-            if nav.is_tethered(game.local_room(), conn) {
+            if nav.is_tethered_corridor(crate::teleport::corridor_id_for(game.local_room(), conn)) {
                 tethers_hash += 1;
             }
         }
@@ -285,7 +285,7 @@ pub(crate) fn rebuild_place(
             Place::Room(room) => (room, gap.target),
             Place::Hallway { from, to, .. } => (from, to),
         };
-        let tethered = nav.is_tethered(ea, eb);
+        let tethered = nav.is_tethered_corridor(crate::teleport::corridor_id_for(ea, eb));
         // Phase 38 contested observation: a rival team standing in the room beyond
         // this threshold pins it for everyone; Phase 42 also attributes a rival's
         // *anchor* there (`rival_signals` is the one reconciliation point between

@@ -116,13 +116,4 @@ impl Nav {
     pub fn effective_version(&self, x: RoomId, y: RoomId) -> u32 {
         self.effective_version_for_corridor(corridor_id_for(x, y))
     }
-
-    /// Whether the edge `(x, y)` is **tethered**. Thin pair-shaped wrapper over
-    /// [`Self::is_tethered_corridor`]. **Kept for deferred 75b consumers** — the
-    /// Presentation cluster (`screens/place/factory.rs`) and the Evidence cluster
-    /// (`evidence/snapshot.rs`) still read tether state by room pair; each should move to
-    /// `is_tethered_corridor` and this wrapper removed then.
-    pub fn is_tethered(&self, x: RoomId, y: RoomId) -> bool {
-        self.is_tethered_corridor(corridor_id_for(x, y))
-    }
 }

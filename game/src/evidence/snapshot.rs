@@ -470,7 +470,7 @@ fn collect_thresholds(
                 Place::Room(room) => (room, gap.target),
                 Place::Hallway { from, to, .. } => (from, to),
             };
-            let tethered = nav.is_tethered(a, b);
+            let tethered = nav.is_tethered_corridor(crate::teleport::corridor_id_for(a, b));
             let status = threshold_status(gap, tethered);
             let mut frame_count = 0;
             let mut leaf_count = 0;
