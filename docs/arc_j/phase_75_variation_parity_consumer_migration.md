@@ -1,7 +1,32 @@
 # Phase 75 — Room/Hall Variation Parity & Consumer Migration
 
-**Status:** `[ ]` — next after Phase 74 (`013af3a`).
+**Status:** in progress. 75a spine ✅ (`0590c12`). Consumer migration ✅ for the
+concrete pair-connectivity surface (`bf81436`). **Remaining: the corpus parity
+gate** + a subtler-pair audit — see "Progress" below.
 **Branch:** `codex/rapier-threshold-integration`.
+
+## Progress (2026-07-13)
+
+- **75a spine landed** (`0590c12`): pins corridor-keyed, pair-reconstruction
+  fallback removed, topology always populated. Determinism digest unchanged.
+- **Consumer migration was largely a phantom.** Auditing the real surface: the
+  only production code that reasoned about connectivity *by room pair* was three
+  `Nav::is_tethered(a, b)` call sites (`factory.rs` ×2, `snapshot.rs` ×1) — because
+  the spine kept `from`/`to` as directional data, every other `Place::Hallway`
+  use is legitimate construction or directional reads (Clusters A/B/C had almost
+  nothing). Migrated those three (+2 test sites) to `is_tethered_corridor` and
+  removed the now-dead `Nav::is_tethered(x,y)` wrapper (`bf81436`). The four-way
+  fan-out is therefore unnecessary.
+- **Remaining Phase 75 work (the real value):**
+  1. **The corpus parity gate** (Cluster D part 2) — render↔Rapier segment
+     agreement, both-way crossability, sealed-uncrossable, reroute-solvable, and
+     clean lifecycle across every room role + Chicane/Colonnade/Maze/Gantry/
+     Wellshaft. This is the falsifiable evidence that closes Phase 75.
+  2. **A subtler-pair audit** of `sim/{knowledge,replay}.rs` and `tacmap.rs`:
+     confirm witnessed-edge / map-knowledge tracking keys on stable identity
+     (or that pair-as-key is harmless given the spine). Likely small.
+- `effective_version(x,y)` pair wrapper retained (still used by the teleport
+  pinned-variation test only).
 **Nature:** a serial **spine** (75a) followed by a parallel **consumer fan-out**
 (75b). The spine redefines how connectivity is stored; the fan-out migrates the
 readers. Do **not** run fan-out clusters before the spine has landed and
