@@ -97,6 +97,26 @@ pub(crate) struct FlickerLight {
 #[derive(Component)]
 pub(crate) struct PassagePreview;
 
+/// The visible doorway surface that displays one isolated render target.
+#[derive(Component)]
+pub(crate) struct PortalSurface {
+    pub snapshot_id: Option<crate::sim::state::PlaceSnapshotId>,
+}
+
+/// A render-to-texture camera paired with one threshold transaction. The remote scene
+/// is the source-aligned destination translated by `scene_offset`. Its projection is
+/// fitted to the physical aperture every frame, so the texture contains the rays through
+/// the opening rather than an arbitrary crop of the player's full-screen camera.
+#[derive(Component)]
+pub(crate) struct PortalPreviewCamera {
+    pub scene_offset: Vec3,
+    pub source_center: Vec3,
+    pub source_normal: Vec3,
+    pub aperture_size: Vec2,
+    pub warm_frames: u8,
+    pub snapshot_id: crate::sim::state::PlaceSnapshotId,
+}
+
 #[derive(Clone, Copy, Component, Debug, Eq, PartialEq, Hash)]
 pub(crate) enum MatchAudioCue {
     Ambience,

@@ -5,9 +5,9 @@
 //! data and owns all backend runtime state. The legacy arm exists only for migration;
 //! new authored convex geometry is accepted by the Rapier arm only.
 
+use crate::FpsArena;
 use glam::Vec3;
 use rapier3d::prelude::*;
-use crate::FpsArena;
 
 /// Stable identity of one collider inside a baked/current-place arena.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -46,7 +46,10 @@ impl ColliderSpec {
 pub struct ArenaSpec {
     pub colliders: Vec<ColliderSpec>,
     pub floor_y: f32,
-    pub floor_half: f32,
+    /// Conservative kill/recovery volume for this isolated collision world. This is
+    /// diagnostic state only: unlike the old `floor_half`, it never creates geometry.
+    pub safety_center: Vec3,
+    pub safety_half: Vec3,
 }
 
 impl ArenaSpec {
@@ -69,7 +72,8 @@ impl ArenaSpec {
         Self {
             colliders,
             floor_y: arena.floor_y,
-            floor_half: arena.floor_half,
+            safety_center: Vec3::new(0.0, arena.floor_y, 0.0),
+            safety_half: Vec3::new(arena.floor_half, 12.0, arena.floor_half),
         }
     }
 
@@ -104,7 +108,11 @@ impl ArenaSpec {
                 }
             }
         }
-        if !self.floor_y.is_finite() || !self.floor_half.is_finite() || self.floor_half <= 0.0 {
+        if !self.floor_y.is_finite()
+            || !self.safety_center.is_finite()
+            || !self.safety_half.is_finite()
+            || self.safety_half.min_element() <= 0.0
+        {
             return Err(ArenaSpecError::InvalidBounds);
         }
         Ok(())

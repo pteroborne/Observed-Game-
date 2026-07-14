@@ -186,6 +186,7 @@ impl Plugin for MatchPlugin {
                     match_runtime::match_pump,
                     match_runtime::item_actions,
                     crate::guardian::update_guardian_in_match,
+                    match_runtime::sync_threshold_closures,
                     crate::sim::sightings::record_rival_sightings,
                     crate::sim::knowledge::record_map_knowledge,
                     place::rebuild_place,
@@ -196,6 +197,13 @@ impl Plugin for MatchPlugin {
                     place::interact_guardian_console,
                 )
                     .chain()
+                    .run_if(in_match()),
+            )
+            .add_systems(
+                Update,
+                place::preview::isolate_passage_previews
+                    .after(place::rebuild_place)
+                    .before(place::normalize_imported_threshold_materials)
                     .run_if(in_match()),
             )
             .add_systems(
@@ -233,6 +241,7 @@ impl Plugin for MatchPlugin {
                     hud::update_teleport_animation,
                     place::animate_teleport_pad_glow,
                     place::present_match_camera,
+                    place::preview::sync_portal_cameras,
                     crate::view::sprites::face_billboard_sprites,
                     hud::match_draw,
                     hud::update_interaction_reticle,

@@ -8,11 +8,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use bevy::prelude::*;
 use observed_core::{RoomId, TeamId};
-use observed_facility::map_spec::{CorridorRole, RoomRole};
 use observed_match::teamplay::TeamplayMatch;
 use observed_progression::session::SessionLabWorld;
 use observed_traversal::rapier_controller::RapierTraversalScene;
-use observed_traversal::{FpsBody, FpsConfig};
+use observed_traversal::{ArenaSpec, FpsBody, FpsConfig};
 use player_input::PlayerIntent;
 
 use crate::teleport::{self, Place};
@@ -111,6 +110,10 @@ pub struct TeleportState {
     pub config: FpsConfig,
     /// Raw-Rapier scene projected from the current place's structural geometry.
     pub rapier: RapierTraversalScene,
+    /// Atomic collision/geometry transaction currently installed in the controller.
+    /// A live closure change replaces all of its fields together; frozen destination
+    /// transactions already displayed by other thresholds are never mutated.
+    pub current_snapshot: PlaceSnapshot,
     pub collision_catalog: std::sync::Arc<crate::content::ContentCollisionCatalog>,
     pub simulation_content_hash: [u8; 32],
     pub layout: Option<observed_content::PlaceLayoutSnapshot>,
@@ -118,11 +121,6 @@ pub struct TeleportState {
     /// a labyrinth is generated once per teleport, not every fixed step.
     pub geom: teleport::PlaceGeom,
     pub prev_xz: Vec2,
-    /// Latched once the body crosses a hallway's exit, until the round commits.
-    pub crossed_exit: bool,
-    /// The specific exit doorway crossed (held while `crossed_exit` is latched) so the
-    /// seamless crossing remap can align the next room to the doorway actually used.
-    pub pending_exit: Option<teleport::DoorGap>,
     /// For a room, the room it was entered *from* — its doorway stays an open `Entry`
     /// passage (not a sealed wall) so the way you came in matches the preview and you can
     /// step back out. `None` in a hallway or the start room.
@@ -132,66 +130,59 @@ pub struct TeleportState {
     /// crossing). This realises "observed → frozen": while you can see a neighbour through an
     /// open threshold, what you see is exactly what you walk into, even if the brain rerolls
     /// that edge under you (it only "changes" once you look away and re-enter).
-    pub gap_dests: Vec<FrozenDest>,
+    pub transits: Vec<ThresholdTransit>,
     /// The place the geometry currently reflects.
     pub rendered: Option<teleport::Place>,
     pub prev_grounded: bool,
+    /// Last controller state proven to be inside the current footprint. A missed or
+    /// invalid threshold can only recover here; it can never continue into the void.
+    pub last_safe_body: FpsBody,
+    pub boundary_recoveries: u32,
 }
 
-impl TeleportState {
-    pub fn set_arena_for_place(
-        &mut self,
-        place: teleport::Place,
-        geom: &teleport::PlaceGeom,
-        y_offset: f32,
-        frozen_layout: Option<&observed_content::PlaceLayoutSnapshot>,
-    ) {
-        self.layout = frozen_layout
-            .cloned()
-            .or_else(|| self.collision_catalog.layout_for_place(place, geom));
-        let authored = self.layout.as_ref().and_then(|layout| {
-            self.collision_catalog
-                .arena_for_layout(layout, geom, y_offset)
-        });
-        if let Some(spec) = authored {
-            self.rapier = RapierTraversalScene::from_arena_spec(&spec);
-        } else {
-            self.rapier = teleport::place_rapier_scene(geom, y_offset, crate::layout::WALL_HEIGHT);
-        }
-    }
-}
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PlaceSnapshotId(pub u64);
 
-/// A doorway's frozen destination: the resolved next [`teleport::Place`] (a hallway carries
-/// its variation; a room carries the `conns`/`target` that shape it), snapshotted at
-/// place-entry so the preview and the crossing can't diverge.
+/// Exact immutable state of one isolated place. Geometry, authored layout and complete
+/// collision input travel together; no consumer is allowed to rebuild one from the
+/// others after a threshold becomes observable.
 #[derive(Clone)]
-pub struct FrozenDest {
-    /// The gap centre (current place's local frame) used to match the crossed doorway.
-    pub gap_center: Vec2,
-    /// Explicit threshold identity used to match preview/crossing/arrival.
-    pub threshold: teleport::ThresholdLink,
+pub struct PlaceSnapshot {
+    pub id: PlaceSnapshotId,
     pub place: teleport::Place,
+    pub geom: teleport::PlaceGeom,
     pub layout: Option<observed_content::PlaceLayoutSnapshot>,
+    pub arena: ArenaSpec,
     pub simulation_content_hash: [u8; 32],
-    /// For a room destination, its frozen connection set (shape); empty for a hallway.
-    pub conns: Vec<RoomId>,
-    /// For a room destination, its frozen room-side threshold slots.
-    pub connection_slots: Vec<teleport::RoomConnectionSlot>,
-    /// For a room destination, its frozen collapse-sealed room-side threshold slots.
-    pub sealed_slots: Vec<teleport::ThresholdSlotId>,
-    /// For a hallway destination, the room slot at the entry side.
-    pub hallway_entry_room_slot: Option<teleport::ThresholdSlotId>,
-    /// For a hallway destination, the room slot at the exit side.
-    pub hallway_exit_room_slot: Option<teleport::ThresholdSlotId>,
-    /// For a room destination, its frozen spine target (which doorway stays forward).
-    pub target: Option<RoomId>,
-    /// For a room destination, the active map role that shapes its presentation.
-    pub room_role: Option<RoomRole>,
-    /// For a hallway destination, the active map's [`CorridorRole`] for that edge
-    /// (`None` for a room, or when the current map has no spec / no role for this
-    /// edge). Geometry uses this to pick the hallway's interior generator (WFC vs.
-    /// DFS+braid maze); frozen here so the preview and the actual crossing agree.
-    pub corridor_role: Option<CorridorRole>,
+    /// Exact reciprocal aperture through which the actor arrived, if any.
+    pub entry_gap: Option<teleport::DoorGap>,
+    pub arrived_from: Option<RoomId>,
+}
+
+/// Full 3D portal transform. `alignment` maps destination XZ into source XZ; the floor
+/// values complete the vertical mapping without reconstructing either place.
+#[derive(Clone, Copy, Debug)]
+pub struct ThresholdTransform {
+    pub alignment: teleport::Align2d,
+    pub source_floor_y: f32,
+    pub destination_floor_y: f32,
+}
+
+/// One authoritative doorway transaction. A topology or reciprocal-socket error is
+/// represented explicitly and therefore fails closed; there is no live/fallback resolve.
+#[derive(Clone)]
+pub struct ThresholdTransit {
+    pub source_gap: teleport::DoorGap,
+    pub destination_gap: Option<teleport::DoorGap>,
+    pub destination: Option<PlaceSnapshot>,
+    pub transform: Option<ThresholdTransform>,
+    pub fault: Option<String>,
+}
+
+impl ThresholdTransit {
+    pub fn is_valid(&self) -> bool {
+        self.destination.is_some() && self.destination_gap.is_some() && self.transform.is_some()
+    }
 }
 
 #[derive(Resource)]

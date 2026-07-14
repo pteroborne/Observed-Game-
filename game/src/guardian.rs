@@ -2,6 +2,7 @@ use crate::items::{ItemKind, ItemsState};
 use crate::sim::director::MatchDirector;
 use crate::sim::state::{MatchPaused, TeleportState};
 use crate::teleport::Place;
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use observed_core::{RoomId, SplitMix};
 use observed_observation::{ObservationWorld, Side};
@@ -205,6 +206,13 @@ impl Default for GuardianMoveTimer {
     }
 }
 
+#[derive(SystemParam)]
+pub(crate) struct GuardianMatchContext<'w> {
+    runtime: Res<'w, MatchDirector>,
+    keys: Res<'w, crate::keystones::KeystoneState>,
+    seed: Option<Res<'w, crate::flow::ActiveMatchSeed>>,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn update_guardian_in_match(
     time: Res<Time>,
@@ -213,7 +221,7 @@ pub(crate) fn update_guardian_in_match(
     items: Res<ItemsState>,
     log: Option<ResMut<ActionLog>>,
     mut rng: Local<SimpleRng>,
-    runtime: Res<MatchDirector>,
+    match_context: GuardianMatchContext,
     paused: Res<MatchPaused>,
     mut move_timer: Local<GuardianMoveTimer>,
     mut guardian_q: Query<(Entity, &mut Transform, Option<&mut Sprite>), With<GuardianModel>>,
@@ -230,7 +238,7 @@ pub(crate) fn update_guardian_in_match(
     let Some(mut log) = log else {
         return;
     };
-    if paused.0 || runtime.done {
+    if paused.0 || match_context.runtime.done {
         return;
     }
 
@@ -295,7 +303,7 @@ pub(crate) fn update_guardian_in_match(
         return;
     }
 
-    let game = runtime.live.host_match();
+    let game = match_context.runtime.live.host_match();
     let facility = &game.competitive;
     let world = &facility.structure.graph;
 
@@ -411,9 +419,30 @@ pub(crate) fn update_guardian_in_match(
             if (target - guardian.pos).length() < 1.1 {
                 // CAUGHT! Teleport player to a random room
                 let next = rng.next_room(player_room, world.room_count);
-                tp.place = Place::Room(next);
-                tp.body.position = Vec3::new(0.0, tp.config.half_height, 0.0);
-                tp.rendered = None; // force reconstruct place scene
+                let seed = match_context
+                    .seed
+                    .as_ref()
+                    .map(|seed| seed.0)
+                    .unwrap_or(crate::flow::MATCH_SEED);
+                crate::screens::match_runtime::place_body_at(
+                    seed,
+                    &mut tp,
+                    Place::Room(next),
+                    Vec2::ZERO,
+                    game,
+                    &match_context.keys,
+                    &items,
+                );
+                tp.transits = crate::screens::match_runtime::compute_threshold_transits(
+                    seed,
+                    &tp.current_snapshot,
+                    game,
+                    &match_context.keys,
+                    &items,
+                    &tp.config,
+                    &tp.collision_catalog,
+                    tp.simulation_content_hash,
+                );
                 log.add(format!("CAUGHT! Teleported to Room {}!", next.0));
 
                 // Trigger 2s neon red flash overlay animation

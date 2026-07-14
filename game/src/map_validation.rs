@@ -505,6 +505,16 @@ fn audit_hallway_threshold_integrity(
 
     for i in 0..geom.gaps.len() {
         for j in (i + 1)..geom.gaps.len() {
+            if geom.gaps[i].threshold == geom.gaps[j].threshold {
+                push_issue(
+                    issues,
+                    report.clone(),
+                    format!(
+                        "threshold {} reuses the same stable socket at two apertures",
+                        threshold_name(&geom.gaps[i])
+                    ),
+                );
+            }
             let a = threshold_rect(&geom.gaps[i], THRESHOLD_OVERLAP_DEPTH);
             let b = threshold_rect(&geom.gaps[j], THRESHOLD_OVERLAP_DEPTH);
             if rects_intersect(&a, &b) {

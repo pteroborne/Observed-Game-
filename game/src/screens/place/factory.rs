@@ -85,7 +85,7 @@ fn rival_signature_hash(signals: &[crate::sim::nav::RivalSignal]) -> u64 {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn rebuild_place(
     assets: Res<MatchAssets>,
-    images: Res<Assets<Image>>,
+    mut images: ResMut<Assets<Image>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     tp: ResMut<TeleportState>,
@@ -153,35 +153,9 @@ pub(crate) fn rebuild_place(
     }
 
     let y_offset = teleport::place_y_offset(tp.place);
-    let mut geom = teleport::geom_for(tp.place, &nav);
-    if matches!(tp.place, Place::Room(_)) {
-        teleport::open_entry(&mut geom, tp.arrived_from);
-    }
-    let current_place = tp.place;
-    let current_layout = tp.layout.clone();
-    tp.set_arena_for_place(current_place, &geom, y_offset, current_layout.as_ref());
-    if geom.poly.is_some() {
-        let clamped = teleport::contain(
-            &geom,
-            Vec2::new(tp.body.position.x, tp.body.position.z),
-            tp.config.radius,
-        );
-        tp.body.position.x = clamped.x;
-        tp.body.position.z = clamped.y;
-    }
-    let collision_catalog = tp.collision_catalog.clone();
-    let simulation_content_hash = tp.simulation_content_hash;
-    tp.gap_dests = match_runtime::compute_gap_dests(
-        seed_val,
-        tp.place,
-        &geom,
-        game,
-        &keys,
-        &items,
-        &collision_catalog,
-        simulation_content_hash,
-    );
-    tp.geom = geom.clone();
+    // Rendering consumes the exact transaction installed by crossing. Presentation-only
+    // changes may rebuild this scene, but may never regenerate geometry or collision.
+    let geom = tp.geom.clone();
 
     let palette = match_runtime::palette_for_match(seed_val, tp.place, &runtime);
 
@@ -325,6 +299,7 @@ pub(crate) fn rebuild_place(
     }
 
     // The threshold gateways cut into that shell.
+    let mut portal_index = 0;
     for gap in &geom.gaps {
         if gap.kind == teleport::GapKind::OneWayEntry {
             continue;
@@ -345,51 +320,26 @@ pub(crate) fn rebuild_place(
         let rival_anchor = rival_signal.and_then(|s| s.anchor).map(|t| t.0 as usize);
 
         if gap.kind.is_passage() {
-            let dest = tp
-                .gap_dests
+            let transit = tp
+                .transits
                 .iter()
-                .find(|d| d.threshold == gap.threshold)
-                .or_else(|| {
-                    tp.gap_dests
-                        .iter()
-                        .find(|d| (d.gap_center - gap.center).length() < 0.05)
-                })
-                .cloned()
-                .unwrap_or_else(|| preview::fallback_dest(tp.place, gap, &nav, game));
-
-            // A maze hallway can expose multiple apertures to the same room-side
-            // threshold. Keep one full preview for the canonical aperture and use short
-            // stubs for secondary apertures instead of drawing overlapping room copies.
-            let multi_aperture_room_preview = matches!(tp.place, Place::Hallway { .. })
-                && matches!(dest.place, Place::Room(_))
-                && gap.threshold.hall.slot.0 != 0
-                && geom
-                    .gaps
-                    .iter()
-                    .filter(|other| {
-                        other.kind.is_passage()
-                            && other.target == gap.target
-                            && other.normal.dot(gap.normal) > 0.99
-                    })
-                    .count()
-                    > 1;
-            if multi_aperture_room_preview {
-                preview::spawn_passage_stub(&mut commands, &assets, gap, y_offset);
-            } else {
-                preview::spawn_passage_preview(
-                    &mut commands,
-                    &assets,
-                    &mut meshes,
-                    &mut materials,
-                    gap,
-                    tp.place,
-                    &dest,
-                    &nav,
-                    game,
-                    match_runtime::countdown_klaxon_active(&runtime),
-                    &tp.collision_catalog,
-                );
-            }
+                .find(|transit| transit.source_gap.threshold == gap.threshold)
+                .cloned();
+            preview::spawn_passage_preview(
+                &mut commands,
+                &assets,
+                &mut meshes,
+                &mut materials,
+                &mut images,
+                gap,
+                tp.place,
+                transit.as_ref(),
+                portal_index,
+                seed_val,
+                game,
+                match_runtime::countdown_klaxon_active(&runtime),
+            );
+            portal_index += 1;
 
             shell::spawn_threshold_gateway(
                 &mut commands,

@@ -8,15 +8,12 @@ use bevy::prelude::*;
 use player_input::PlayerIntent;
 
 use super::body_xz;
-use super::crossing::debug_cross_gap_for_capture;
 use crate::items::{ItemKind, ItemsState};
-use crate::keystones::KeystoneState;
 use crate::sim::director::MatchDirector;
 use crate::sim::state::{ItemIntent, MatchIntent, MatchPaused, SpectatorBot, TeleportState};
 use crate::teleport::Place;
 
 const SPECTATOR_BOT_WAYPOINT_RADIUS: f32 = 0.9;
-const SPECTATOR_BOT_CROSS_RADIUS: f32 = 1.2;
 pub(crate) const SPECTATOR_TEAMPLAY_STEP_FRAMES: u8 = 30;
 
 #[allow(clippy::too_many_arguments)]
@@ -25,10 +22,8 @@ pub(crate) fn drive_spectator_bot(
     mut spectator: ResMut<SpectatorBot>,
     mut director: ResMut<MatchDirector>,
     mut tp: ResMut<TeleportState>,
-    keys: Res<KeystoneState>,
     items: Res<ItemsState>,
     guardian: Option<Res<crate::guardian::Guardian>>,
-    seed: Option<Res<crate::flow::ActiveMatchSeed>>,
     mut intent: ResMut<MatchIntent>,
     mut item_intent: ResMut<ItemIntent>,
 ) {
@@ -47,7 +42,6 @@ pub(crate) fn drive_spectator_bot(
     }
 
     let here = body_xz(&tp);
-    let seed_val = seed.map(|seed| seed.0).unwrap_or(crate::flow::MATCH_SEED);
     let local_feet_y =
         crate::bot::local_feet_y(tp.body.position.y - tp.config.half_height, tp.place);
     let y_offset = crate::teleport::place_y_offset(tp.place);
@@ -69,19 +63,6 @@ pub(crate) fn drive_spectator_bot(
         spectator.clear_route();
         intent.0 = PlayerIntent::default();
         return;
-    }
-
-    if let Some(gap) = crate::bot::target_gap_for_place(tp.place, &tp.geom, here, local_feet_y) {
-        let rel = here - gap.center;
-        let tangent = Vec2::new(-gap.normal.y, gap.normal.x);
-        let at_aperture =
-            rel.dot(gap.normal) > -0.45 && rel.dot(tangent).abs() <= gap.width * 0.5 + 0.35;
-        if here.distance(gap.center) <= SPECTATOR_BOT_CROSS_RADIUS || at_aperture {
-            debug_cross_gap_for_capture(seed_val, &mut tp, &mut director, gap, &keys, &items);
-            spectator.clear_route();
-            intent.0 = PlayerIntent::default();
-            return;
-        }
     }
 
     // A deck route's waypoints are platform centres reachable only at deck height; if the

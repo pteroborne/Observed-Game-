@@ -304,13 +304,14 @@ pub use aperture::{
 };
 pub use geom::{
     HallwayGeomEndpoints, contain, geom_for, hallway_geom, hallway_geom_with_slots,
-    hallway_geom_with_slots_and_role, open_entry, room_geom, room_geom_with_slots,
-    room_preview_geom,
+    hallway_geom_with_slots_and_role, open_entry, open_entry_threshold, room_geom,
+    room_geom_with_slots, room_preview_geom,
 };
 pub use nav::{Nav, PinnedCorridor, PinnedEdge};
 pub use transition::{
-    Align2d, Crossing, GAP_FLOOR_TOLERANCE, PREVIEW_OUTSET, apply_crossing, arrival_gap, crossed,
-    crossing_alignment, entry_spawn, feet_at_gap_floor, hallway_alignment, hallway_gap_alignment,
-    place_arena, place_boundary_primitives, place_junction, place_rapier_scene,
-    place_structural_primitives, room_alignment, structural_height,
+    Align2d, Crossing, GAP_FLOOR_TOLERANCE, PREVIEW_OUTSET, apply_crossing, arrival_gap,
+    capsule_crossing_fraction, crossed, crossing_alignment, entry_spawn, feet_at_gap_floor,
+    hallway_alignment, hallway_gap_alignment, inside_footprint, place_arena, place_arena_spec,
+    place_boundary_primitives, place_junction, place_rapier_scene, place_structural_primitives,
+    resolve_crossing, room_alignment, structural_height,
 };

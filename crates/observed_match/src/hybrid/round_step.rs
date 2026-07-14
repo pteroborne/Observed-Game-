@@ -90,9 +90,15 @@ impl HybridMatch {
                 let Some(target) = self.local_target() else {
                     return false;
                 };
-                if !self.script_walk_to_room(target) {
-                    return false;
-                }
+                // Playback and network replication receive an Advance only after the
+                // live controller has already proved the physical threshold crossing.
+                // Keep the surrogate grid walk as useful deterministic evidence when
+                // that rendered route exists, but never let a stale/missing surrogate
+                // corridor veto the authoritative socket transaction. Production
+                // rooms and halls live in isolated local spaces and are not the hybrid
+                // grid's collision world.
+                self.last_traversal.clear();
+                let _ = self.script_walk_to_room(target);
             }
             LocalAction::Seize | LocalAction::Wait => {}
         }
@@ -209,7 +215,8 @@ impl HybridMatch {
 
     fn rebuild_traversal_world(&mut self) {
         let arena = self.arena();
-        self.rapier = observed_traversal::rapier_controller::RapierTraversalScene::from_arena(&arena);
+        self.rapier =
+            observed_traversal::rapier_controller::RapierTraversalScene::from_arena(&arena);
     }
 
     pub fn affected_tiles(&self) -> HashSet<(usize, usize)> {

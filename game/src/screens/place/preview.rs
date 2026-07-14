@@ -1,7 +1,10 @@
 use bevy::prelude::*;
+use bevy::{
+    camera::RenderTarget, camera::visibility::RenderLayers, render::render_resource::TextureFormat,
+};
 use observed_core::RoomId;
 use observed_match::hybrid::HybridMatch;
-use observed_style::SurfaceRole;
+use observed_style::{ObservationPanelRole, SurfaceRole};
 
 use super::factory::place_surface_material;
 use super::lighting::{spawn_place_lighting, spawn_surface_detail};
@@ -13,152 +16,285 @@ use crate::hallway::{self, HallwayFlavor};
 use crate::layout::WALL_HEIGHT;
 use crate::rivals;
 use crate::screens::match_runtime::{district_for_place, palette_for_game};
-use crate::sim::nav::{connections_for, room_target};
-use crate::sim::state::FrozenDest;
+use crate::sim::state::ThresholdTransit;
 use crate::teleport::{self, DoorGap, Place};
 use crate::view::assets::MatchAssets;
-use crate::view::components::{PassagePreview, PlaceGeometry};
+use crate::view::components::{
+    GameCam, PassagePreview, PlaceGeometry, PortalPreviewCamera, PortalSurface,
+};
+
+const PORTAL_RENDER_LAYER: usize = 1;
+const MAX_PORTAL_PREVIEWS: usize = 8;
+const PORTAL_TARGET_LONG_EDGE: u32 = 512;
+const PORTAL_SCENE_STRIDE: f32 = 1024.0;
+/// Portal-only fill in lumens. It is deliberately below the district key lights but
+/// strong enough that a long dark hall retains readable wall/floor normals in the feed.
+const PORTAL_SCANNER_INTENSITY: f32 = 1_500_000.0;
+
+/// Move every remote preview entity off the main camera's layer as soon as it spawns.
+/// The doorway surface itself is not a `PassagePreview`, so it remains in the playable
+/// scene while destination geometry can only be seen by portal cameras.
+pub(crate) fn isolate_passage_previews(
+    mut commands: Commands,
+    previews: Query<Entity, Added<PassagePreview>>,
+    surfaces: Query<&PortalSurface, Added<PortalSurface>>,
+) {
+    for entity in &previews {
+        commands
+            .entity(entity)
+            .insert(RenderLayers::layer(PORTAL_RENDER_LAYER));
+    }
+    for surface in &surfaces {
+        if let Some(snapshot_id) = surface.snapshot_id {
+            trace!("portal surface displays snapshot {:016X}", snapshot_id.0);
+        } else {
+            warn!("portal surface displays a LINK FAULT schematic");
+        }
+    }
+}
+
+fn portal_target_size(aperture: Vec2) -> UVec2 {
+    let aspect = (aperture.x / aperture.y).clamp(0.25, 4.0);
+    if aspect >= 1.0 {
+        UVec2::new(
+            PORTAL_TARGET_LONG_EDGE,
+            (PORTAL_TARGET_LONG_EDGE as f32 / aspect).round() as u32,
+        )
+    } else {
+        UVec2::new(
+            (PORTAL_TARGET_LONG_EDGE as f32 * aspect).round() as u32,
+            PORTAL_TARGET_LONG_EDGE,
+        )
+    }
+}
+
+fn portal_vertical_fov(aperture: Vec2, distance: f32) -> f32 {
+    // Fit the physical opening, not the main window. The previous full-screen FOV was
+    // much too narrow at arm's length, reducing valid previews to flat floor/ceiling
+    // bands. A small guard band retains the frame edge under raster precision.
+    let half_height = aperture.y * 0.5 * 1.025;
+    (2.0 * half_height.atan2(distance.max(0.08))).clamp(0.18, 2.88)
+}
+
+/// Camera-relative spatial windows: every active portal camera occupies the same point
+/// as the player in the isolated scene, but aims at and fits the physical aperture. This
+/// is a position-dependent window (parallax comes from player position), not a copy of
+/// the unrelated full-screen crop. Cameras warm for two frames, then render only while
+/// their source threshold is plausibly visible; disabling one retains its last valid
+/// target image.
+#[allow(clippy::type_complexity)]
+pub(crate) fn sync_portal_cameras(
+    main: Query<&Transform, (With<GameCam>, Without<PortalPreviewCamera>)>,
+    mut portals: Query<(
+        &mut Transform,
+        &mut Projection,
+        &mut Camera,
+        &mut PortalPreviewCamera,
+    )>,
+) {
+    let Ok(main_transform) = main.single() else {
+        return;
+    };
+    let forward = main_transform.rotation * Vec3::NEG_Z;
+    for (mut transform, mut projection, mut camera, mut portal) in &mut portals {
+        debug_assert_ne!(portal.snapshot_id.0, 0);
+        let toward = portal.source_center - main_transform.translation;
+        let distance = toward.length();
+        let direction = toward.normalize_or_zero();
+        transform.translation = main_transform.translation + portal.scene_offset;
+        transform.look_to(direction, Vec3::Y);
+        let perspective = PerspectiveProjection {
+            aspect_ratio: portal.aperture_size.x / portal.aperture_size.y,
+            fov: portal_vertical_fov(portal.aperture_size, distance),
+            near: 0.03,
+            far: 256.0,
+            ..default()
+        };
+        *projection = Projection::Perspective(perspective);
+        let on_source_side = toward.dot(portal.source_normal) > -0.1;
+        let visible = distance < 48.0 && forward.dot(direction) > -0.12 && on_source_side;
+        camera.is_active = portal.warm_frames > 0 || visible;
+        portal.warm_frames = portal.warm_frames.saturating_sub(1);
+    }
+}
 
 fn gap_yaw(normal: Vec2) -> f32 {
-    (-normal.y).atan2(normal.x)
+    let tangent = Vec2::new(-normal.y, normal.x);
+    (-tangent.y).atan2(tangent.x)
 }
 
-/// A short lit corridor stub behind a real passage doorway (floor, ceiling, two side
-/// walls) so looking through the frame shows the passage continuing, not void. Crossing
-/// the threshold teleports before the body reaches the stub's open end.
-pub(crate) fn spawn_passage_stub(
-    commands: &mut Commands,
-    assets: &MatchAssets,
-    gap: &DoorGap,
-    y_offset: f32,
-) {
-    const DEPTH: f32 = 3.0;
-    let along = Vec2::new(-gap.normal.y, gap.normal.x);
-    let centre = gap.center + gap.normal * (DEPTH * 0.5);
-    let rot = Quat::from_rotation_y(gap_yaw(gap.normal)); // local X = tangent, Z = normal
-    let foot = |c: Vec2| Vec3::new(c.x, 0.0, c.y);
-    let floor_material = assets.floor_material.clone();
-    let base_y = y_offset + gap.floor_y;
-    commands.spawn((
-        PlaceGeometry,
-        PassagePreview,
-        DespawnOnExit(GameState::Match),
-        Mesh3d(assets.placeholder_mesh.clone()),
-        MeshMaterial3d(floor_material),
-        Transform::from_translation(foot(centre) + Vec3::Y * (base_y + 0.02))
-            .with_rotation(rot)
-            .with_scale(Vec3::new(gap.width.max(0.1), 0.04, DEPTH)),
-        Name::new("Passage stub floor"),
-    ));
-    commands.spawn((
-        PlaceGeometry,
-        PassagePreview,
-        DespawnOnExit(GameState::Match),
-        Mesh3d(assets.placeholder_mesh.clone()),
-        MeshMaterial3d(assets.ceiling_material.clone()),
-        Transform::from_translation(foot(centre) + Vec3::Y * (base_y + WALL_HEIGHT))
-            .with_rotation(rot)
-            .with_scale(Vec3::new(gap.width.max(0.1), 0.04, DEPTH)),
-        Name::new("Passage stub ceiling"),
-    ));
-    for side in [gap.width * 0.5, -gap.width * 0.5] {
-        let wc = centre + along * side;
-        commands.spawn((
-            PlaceGeometry,
-            PassagePreview,
-            DespawnOnExit(GameState::Match),
-            Mesh3d(assets.placeholder_mesh.clone()),
-            MeshMaterial3d(assets.wall_material.clone()),
-            Transform::from_translation(foot(wc) + Vec3::Y * (base_y + WALL_HEIGHT * 0.5))
-                .with_rotation(rot)
-                .with_scale(Vec3::new(0.2, WALL_HEIGHT, DEPTH)),
-            Name::new("Passage stub wall"),
-        ));
-    }
-}
-
-/// Resolve a doorway's destination live (used only when no frozen snapshot exists yet —
-/// e.g. the first render frame). Mirrors `compute_gap_dests` for one gap.
-pub(crate) fn fallback_dest(
-    place: Place,
-    gap: &DoorGap,
-    nav: &teleport::Nav,
-    game: &HybridMatch,
-) -> FrozenDest {
-    let (dest, _) = teleport::apply_crossing(place, gap, nav);
-    let (conns, target) = match dest {
-        Place::Room(r) => {
-            let c = connections_for(game, r);
-            let t = room_target(game, r, &c);
-            (c, t)
-        }
-        Place::Hallway { .. } => (Vec::new(), None),
-    };
-    FrozenDest {
-        gap_center: gap.center,
-        threshold: gap.threshold,
-        place: dest,
-        layout: None,
-        simulation_content_hash: [0; 32],
-        conns,
-        connection_slots: Vec::new(),
-        sealed_slots: match dest {
-            Place::Room(r) => crate::sim::nav::sealed_slots_for_room(game, r),
-            Place::Hallway { .. } => Vec::new(),
-        },
-        hallway_entry_room_slot: match dest {
-            Place::Hallway { .. } => Some(gap.threshold.room.slot),
-            _ => None,
-        },
-        hallway_exit_room_slot: None,
-        target,
-        room_role: match dest {
-            Place::Room(room) => game
-                .competitive
-                .map_spec
-                .as_ref()
-                .and_then(|spec| spec.room(room).map(|room| room.role)),
-            Place::Hallway { .. } => None,
-        },
-        corridor_role: match dest {
-            Place::Room(_) => None,
-            Place::Hallway { from, to, .. } => game
-                .competitive
-                .map_spec
-                .as_ref()
-                .and_then(|spec| spec.corridor_role_between(from, to)),
-        },
-    }
-}
-
+/// Spawn one always-present portal surface backed by an honest initialized target. A
+/// valid transit adds an isolated camera and the exact destination snapshot scene;
+/// invalid links retain the labeled high-contrast fault schematic.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_passage_preview(
     commands: &mut Commands,
     assets: &MatchAssets,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
+    images: &mut Assets<Image>,
     gap: &DoorGap,
     place: Place,
-    dest: &FrozenDest,
-    nav: &teleport::Nav,
+    transit: Option<&ThresholdTransit>,
+    portal_index: usize,
+    seed: u64,
     game: &HybridMatch,
     klaxon_active: bool,
-    collision_catalog: &crate::content::ContentCollisionCatalog,
 ) {
+    assert!(
+        portal_index < MAX_PORTAL_PREVIEWS,
+        "a production place exceeded the eight-camera portal budget"
+    );
     let y_offset = teleport::place_y_offset(place);
-    match dest.place {
+    let valid = transit.filter(|transit| transit.is_valid());
+    let snapshot_id = valid.and_then(|transit| transit.destination.as_ref().map(|dest| dest.id));
+    let fault = transit
+        .and_then(|transit| transit.fault.as_deref())
+        .unwrap_or("LINK FAULT: threshold transaction missing");
+    let label = valid
+        .and_then(|transit| transit.destination.as_ref())
+        .map(|destination| {
+            format!(
+                "{}  SNAP {:016X}",
+                match destination.place {
+                    Place::Room(room) => format!("ROOM {}", room.0),
+                    Place::Hallway {
+                        corridor,
+                        variation,
+                        ..
+                    } => {
+                        format!("HALL {} / TEMPLATE {}", corridor.0, variation)
+                    }
+                },
+                destination.id.0
+            )
+        })
+        .unwrap_or_else(|| fault.to_string());
+    let aperture_size = Vec2::new((gap.width - 0.18).max(0.1), WALL_HEIGHT - 0.18);
+    let target_size = portal_target_size(aperture_size);
+    let mut target = Image::new_target_texture(
+        target_size.x,
+        target_size.y,
+        TextureFormat::Rgba8Unorm,
+        Some(TextureFormat::Rgba8UnormSrgb),
+    );
+    let mut pixels = vec![0_u8; (target_size.x * target_size.y * 4) as usize];
+    for y in 0..target_size.y {
+        for x in 0..target_size.x {
+            let border = x < 12 || y < 12 || x >= target_size.x - 12 || y >= target_size.y - 12;
+            let stripe = ((x + y) / 28).is_multiple_of(2);
+            let color = if border {
+                [255, 154, 45, 255]
+            } else if stripe {
+                [8, 42, 54, 255]
+            } else {
+                [4, 16, 24, 255]
+            };
+            let index = ((y * target_size.x + x) * 4) as usize;
+            pixels[index..index + 4].copy_from_slice(&color);
+        }
+    }
+    target.data = Some(pixels);
+    let target = images.add(target);
+    let material = materials.add(StandardMaterial {
+        base_color: Color::WHITE,
+        base_color_texture: Some(target.clone()),
+        unlit: true,
+        cull_mode: None,
+        ..default()
+    });
+    let rot = Quat::from_rotation_y(gap_yaw(gap.normal));
+    let base_y = y_offset + gap.floor_y;
+    commands.spawn((
+        PlaceGeometry,
+        PortalSurface { snapshot_id },
+        DespawnOnExit(GameState::Match),
+        Mesh3d(meshes.add(super::mesh::portal_quad_mesh(Vec2::new(
+            (gap.width - 0.18).max(0.1),
+            WALL_HEIGHT - 0.18,
+        )))),
+        MeshMaterial3d(material),
+        Transform::from_xyz(
+            gap.center.x + gap.normal.x * 0.055,
+            base_y + WALL_HEIGHT * 0.5,
+            gap.center.y + gap.normal.y * 0.055,
+        )
+        .with_rotation(rot),
+        Name::new(format!("Portal surface {label}")),
+    ));
+    commands.spawn((
+        PlaceGeometry,
+        DespawnOnExit(GameState::Match),
+        Text2d::new(label),
+        TextFont {
+            font_size: 15.0,
+            ..default()
+        },
+        TextColor(Color::srgb(0.95, 0.75, 0.35)),
+        Transform::from_xyz(
+            gap.center.x - gap.normal.x * 0.02,
+            base_y + 0.24,
+            gap.center.y - gap.normal.y * 0.02,
+        )
+        .with_rotation(rot)
+        .with_scale(Vec3::splat(0.022)),
+        Name::new("Portal destination label"),
+    ));
+
+    let Some(transit) = valid else {
+        return;
+    };
+    let destination = transit.destination.as_ref().unwrap();
+    let transform = transit.transform.unwrap();
+    let scene_offset = Vec3::X * (PORTAL_SCENE_STRIDE * (portal_index as f32 + 1.0));
+    commands.spawn((
+        PlaceGeometry,
+        PortalPreviewCamera {
+            scene_offset,
+            source_center: Vec3::new(gap.center.x, base_y + WALL_HEIGHT * 0.5, gap.center.y),
+            source_normal: Vec3::new(gap.normal.x, 0.0, gap.normal.y),
+            aperture_size,
+            warm_frames: 2,
+            snapshot_id: destination.id,
+        },
+        DespawnOnExit(GameState::Match),
+        Camera3d::default(),
+        Camera {
+            order: -1 - portal_index as isize,
+            clear_color: Color::srgb(0.015, 0.025, 0.04).into(),
+            ..default()
+        },
+        // A neutral diegetic scanner fill travels with the portal eye. Destination
+        // structure remains the exact snapshot, but its wall/floor normals cannot fall
+        // into an unreadable flat silhouette when that destination's noir practicals
+        // happen to face away from the aperture. This light communicates no lock state;
+        // the frame indicator remains anchor-only.
+        PointLight {
+            color: observed_style::observation_panel(ObservationPanelRole::Footprint).base_color,
+            intensity: PORTAL_SCANNER_INTENSITY,
+            range: 48.0,
+            shadows_enabled: false,
+            ..default()
+        },
+        RenderTarget::Image(target.into()),
+        Transform::default(),
+        RenderLayers::layer(PORTAL_RENDER_LAYER),
+        Name::new(format!("Portal camera {:016X}", destination.id.0)),
+    ));
+
+    match destination.place {
         Place::Hallway { .. } => spawn_hallway_preview(
             commands,
             assets,
             meshes,
             materials,
-            gap,
-            dest.place,
-            nav,
-            palette_for_game(nav.seed, dest.place, game, klaxon_active),
-            y_offset,
-            dest.layout.as_ref(),
-            collision_catalog,
+            destination.place,
+            &destination.geom,
+            transform,
+            scene_offset,
+            seed,
+            palette_for_game(seed, destination.place, game, klaxon_active),
+            &destination.arena,
         ),
         Place::Room(dest_room) => spawn_room_preview(
             commands,
@@ -168,11 +304,11 @@ pub(crate) fn spawn_passage_preview(
             gap,
             place,
             dest_room,
-            &dest.conns,
-            &dest.connection_slots,
-            &dest.sealed_slots,
-            dest.target,
-            nav,
+            &destination.geom,
+            transit.destination_gap.as_ref().unwrap(),
+            transform,
+            scene_offset,
+            seed,
             game,
             klaxon_active,
         ),
@@ -186,102 +322,30 @@ pub(crate) fn spawn_hallway_preview(
     assets: &MatchAssets,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
-    gap: &DoorGap,
     next: Place,
-    nav: &teleport::Nav,
+    dest: &teleport::PlaceGeom,
+    threshold_transform: crate::sim::state::ThresholdTransform,
+    scene_offset: Vec3,
+    seed: u64,
     palette: observed_style::DistrictPalette,
-    y_offset: f32,
-    layout: Option<&observed_content::PlaceLayoutSnapshot>,
-    collision_catalog: &crate::content::ContentCollisionCatalog,
+    arena: &observed_traversal::ArenaSpec,
 ) {
     let Place::Hallway { variation, .. } = next else {
         return;
     };
-    let dest = teleport::geom_for(next, nav);
     let (hx, hz) = (dest.half.x, dest.half.y);
-    let Some(align) = teleport::hallway_alignment(gap, &dest) else {
-        spawn_passage_stub(commands, assets, gap, y_offset);
-        return;
-    };
-    let preview_floor_y = dest
-        .gaps
-        .iter()
-        .find(|candidate| {
-            candidate.threshold.hall == gap.threshold.hall
-                && candidate.target == gap.threshold.room.room
-                && candidate.threshold.local_side == teleport::ThresholdLocalSide::Hall
-        })
-        .map(|candidate| candidate.floor_y)
-        .unwrap_or(0.0);
-    let mut parent = camera::alignment_transform(align);
-    parent.translation.y = y_offset + gap.floor_y - preview_floor_y;
-    let place_in = |local: Transform| parent.mul_transform(local);
+    // Arena coordinates already include the destination Place's absolute Y island.
+    // Map that exact frozen arena to the source threshold without rebuilding a second
+    // collider description. Purely local decorations use `local_parent`, which restores
+    // the destination island offset expected by their zero-based geometry.
+    let mut arena_parent = camera::alignment_transform(threshold_transform.alignment);
+    arena_parent.translation.y =
+        threshold_transform.source_floor_y - threshold_transform.destination_floor_y;
+    arena_parent.translation += scene_offset;
+    let mut local_parent = arena_parent;
+    local_parent.translation.y += teleport::place_y_offset(next);
+    let place_in = |local: Transform| local_parent.mul_transform(local);
 
-    if let Some(arena) =
-        layout.and_then(|layout| collision_catalog.arena_for_layout(layout, &dest, 0.0))
-    {
-        let floor_material = place_surface_material(
-            SurfaceRole::Plain,
-            &palette,
-            &assets.floor_material,
-            materials,
-        );
-        let ceiling_material = place_surface_material(
-            SurfaceRole::Ceiling,
-            &palette,
-            &assets.ceiling_material,
-            materials,
-        );
-        let shell_height = teleport::structural_height(&dest, WALL_HEIGHT);
-        commands.spawn((
-            PlaceGeometry,
-            PassagePreview,
-            DespawnOnExit(GameState::Match),
-            Mesh3d(meshes.add(super::mesh::rect_mesh(Vec2::new(hx, hz), 0.0, true))),
-            MeshMaterial3d(floor_material),
-            place_in(Transform::default()),
-            Name::new("Hybrid authored preview floor"),
-        ));
-        commands.spawn((
-            PlaceGeometry,
-            PassagePreview,
-            DespawnOnExit(GameState::Match),
-            Mesh3d(meshes.add(super::mesh::rect_mesh(Vec2::new(hx, hz), 0.0, false))),
-            MeshMaterial3d(ceiling_material),
-            place_in(Transform::from_xyz(0.0, shell_height, 0.0)),
-            Name::new("Hybrid authored preview ceiling"),
-        ));
-        super::authored::spawn_preview_collision_shell(
-            commands,
-            meshes,
-            materials,
-            &arena,
-            parent,
-            &palette,
-            super::authored::ShellMaterials {
-                floor: &assets.floor_material,
-                wall: &assets.wall_material,
-                interior: (hallway::template(variation).flavor == HallwayFlavor::Gantry)
-                    .then_some((SurfaceRole::GantryDeck, &assets.gantry_deck_material)),
-            },
-        );
-        spawn_place_lighting(commands, assets, &dest, &palette, parent, true);
-        return;
-    }
-
-    let (floor_role, floor_base) =
-        if hallway::template(variation).flavor == HallwayFlavor::PressureGate {
-            (SurfaceRole::TrapIdle, &assets.trap_idle_material)
-        } else {
-            (SurfaceRole::Plain, &assets.floor_material)
-        };
-    let floor_material = place_surface_material(floor_role, &palette, floor_base, materials);
-    let wall_material = place_surface_material(
-        SurfaceRole::Wall,
-        &palette,
-        &assets.wall_material,
-        materials,
-    );
     let ceiling_material = place_surface_material(
         SurfaceRole::Ceiling,
         &palette,
@@ -289,16 +353,7 @@ pub(crate) fn spawn_hallway_preview(
         materials,
     );
 
-    let shell_height = teleport::structural_height(&dest, WALL_HEIGHT);
-    commands.spawn((
-        PlaceGeometry,
-        PassagePreview,
-        DespawnOnExit(GameState::Match),
-        Mesh3d(meshes.add(super::mesh::rect_mesh(Vec2::new(hx, hz), 0.0, true))),
-        MeshMaterial3d(floor_material),
-        place_in(Transform::default()),
-        Name::new("Preview floor"),
-    ));
+    let shell_height = teleport::structural_height(dest, WALL_HEIGHT);
     commands.spawn((
         PlaceGeometry,
         PassagePreview,
@@ -308,33 +363,32 @@ pub(crate) fn spawn_hallway_preview(
         place_in(Transform::from_xyz(0.0, shell_height, 0.0)),
         Name::new("Preview ceiling"),
     ));
-    let primitives = teleport::place_structural_primitives(&dest, 0.0, WALL_HEIGHT);
-    for solid in &primitives {
-        if solid.center.z < -hz + 0.5 {
-            continue;
-        }
-        let size = solid.half * 2.0;
-        commands.spawn((
-            PlaceGeometry,
-            PassagePreview,
-            DespawnOnExit(GameState::Match),
-            Mesh3d(meshes.add(super::mesh::cuboid_mesh(size))),
-            MeshMaterial3d(wall_material.clone()),
-            place_in(
-                Transform::from_translation(solid.center)
-                    .with_rotation(Quat::from_rotation_y(solid.yaw)),
-            ),
-            Name::new("Preview wall"),
-        ));
-    }
-    spawn_place_lighting(commands, assets, &dest, &palette, parent, true);
+    super::authored::spawn_preview_collision_shell(
+        commands,
+        meshes,
+        materials,
+        arena,
+        arena_parent,
+        &palette,
+        super::authored::ShellMaterials {
+            floor: if hallway::template(variation).flavor == HallwayFlavor::PressureGate {
+                &assets.trap_idle_material
+            } else {
+                &assets.floor_material
+            },
+            wall: &assets.wall_material,
+            interior: (hallway::template(variation).flavor == HallwayFlavor::Gantry)
+                .then_some((SurfaceRole::GantryDeck, &assets.gantry_deck_material)),
+        },
+    );
+    spawn_place_lighting(commands, assets, dest, &palette, local_parent, true);
     // Module parity: the hallway you see through the doorway carries the same
     // WFC-composed light modules you will teleport into (same pure inputs).
     if let Place::Hallway { from, to, .. } = next {
-        let district = district_for_place(nav.seed, next);
+        let district = district_for_place(seed, next);
         let placements = super::modules::solve_hallway_modules(
-            super::modules::hall_module_seed(nav.seed, from.0, to.0),
-            &dest,
+            super::modules::hall_module_seed(seed, from.0, to.0),
+            dest,
             teleport::MAZE_CELL,
             district,
         );
@@ -346,14 +400,13 @@ pub(crate) fn spawn_hallway_preview(
                 palette: &palette,
                 placements: &placements,
                 cell: teleport::MAZE_CELL,
-                xform: parent,
+                xform: local_parent,
                 preview: true,
             },
         );
     }
-    let accent =
-        assets.district_accent_materials[district_for_place(nav.seed, next).index()].clone();
-    spawn_surface_detail(commands, assets, &dest, accent, parent, true);
+    let accent = assets.district_accent_materials[district_for_place(seed, next).index()].clone();
+    spawn_surface_detail(commands, assets, dest, accent, local_parent, true);
 }
 
 /// The room preview (a polygon place): build the destination room's footprint, align the
@@ -369,64 +422,37 @@ pub(crate) fn spawn_room_preview(
     gap: &DoorGap,
     place: Place,
     dest_room: RoomId,
-    conns: &[RoomId],
-    connection_slots: &[teleport::RoomConnectionSlot],
-    sealed_slots: &[teleport::ThresholdSlotId],
-    target: Option<RoomId>,
-    nav: &teleport::Nav,
+    dest: &teleport::PlaceGeom,
+    destination_gap: &DoorGap,
+    threshold_transform: crate::sim::state::ThresholdTransform,
+    scene_offset: Vec3,
+    seed: u64,
     game: &HybridMatch,
     klaxon_active: bool,
 ) {
-    let back = match place {
-        Place::Hallway { from, to, .. } => {
-            if dest_room == to {
-                from
-            } else {
-                to
-            }
-        }
-        Place::Room(src_room) => src_room,
-    };
-    let mut dest = teleport::room_preview_geom(
-        dest_room,
-        conns,
-        connection_slots,
-        sealed_slots,
-        target,
-        game.competitive
-            .map_spec
-            .as_ref()
-            .and_then(|spec| spec.room(dest_room).map(|room| room.role)),
-        nav.seed,
-    );
-    teleport::open_entry(&mut dest, Some(back));
     let Some(poly) = dest.poly.clone() else {
         return;
     };
     let y_offset = teleport::place_y_offset(place);
-    let Some(src) = dest.gaps.iter().find(|g| g.target == back).copied() else {
-        spawn_passage_stub(commands, assets, gap, y_offset);
-        return;
-    };
-
-    let mut parent = camera::alignment_transform(teleport::room_alignment(gap, &src));
-    parent.translation.y = y_offset + gap.floor_y - src.floor_y;
+    let mut parent = camera::alignment_transform(threshold_transform.alignment);
+    parent.translation.y = y_offset + gap.floor_y - destination_gap.floor_y;
+    parent.translation += scene_offset;
 
     spawn_room_miniature(
         commands,
         assets,
         meshes,
         materials,
-        &dest,
+        dest,
         &poly,
         dest_room,
         parent,
-        nav.seed,
+        seed,
         game,
         klaxon_active,
         RoomMiniatureOverlays {
             rival_lane_origin: Vec3::new(0.0, 0.82, 0.0),
-            anchor_torch_root: Vec3::new(src.width * 0.5 + 0.3, 0.55, 0.6),
+            anchor_torch_root: Vec3::new(destination_gap.width * 0.5 + 0.3, 0.55, 0.6),
         },
     );
 }
@@ -557,5 +583,30 @@ pub(crate) fn spawn_room_miniature(
         let torch =
             shell::spawn_rival_anchor_torch_at(commands, assets, root, anchor_team.0 as usize);
         commands.entity(torch).insert(PassagePreview);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn portal_target_preserves_the_physical_aperture_aspect() {
+        for aperture in [Vec2::new(4.2, 4.8), Vec2::new(8.0, 4.0)] {
+            let target = portal_target_size(aperture);
+            let target_aspect = target.x as f32 / target.y as f32;
+            assert!((target_aspect - aperture.x / aperture.y).abs() < 0.01);
+            assert_eq!(target.x.max(target.y), PORTAL_TARGET_LONG_EDGE);
+        }
+    }
+
+    #[test]
+    fn portal_projection_expands_when_the_viewer_approaches() {
+        let aperture = Vec2::new(4.2, 4.8);
+        let far = portal_vertical_fov(aperture, 10.0);
+        let near = portal_vertical_fov(aperture, 1.6);
+
+        assert!(near > far * 2.0);
+        assert!(near > 1.8, "an arm's-length doorway needs a wide view");
     }
 }

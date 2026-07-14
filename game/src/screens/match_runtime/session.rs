@@ -9,13 +9,11 @@ use bevy::prelude::*;
 use observed_facility::map_spec::RoomRole;
 use observed_traversal::FpsBody;
 
-use super::crossing::compute_gap_dests;
+use super::crossing::{build_place_snapshot, compute_threshold_transits};
 use crate::flow::{Career, MATCH_SEED};
 use crate::items::ItemsState;
 use crate::keystones::KeystoneState;
-use crate::layout::WALL_HEIGHT;
 use crate::sim::director::MatchDirector;
-use crate::sim::nav::nav_from_brain;
 use crate::sim::replay::ReplayTape;
 use crate::sim::state::{
     ItemIntent, LastTeleportPad, MapKnowledge, MatchIntent, MatchPaused, RivalSightings,
@@ -82,15 +80,24 @@ pub(crate) fn setup_match(
     let items = ItemsState::single_player();
     let tp_config = content.traversal_config();
     let start_place = Place::Room(game.local_room());
-    let start_geom =
-        crate::teleport::geom_for(start_place, &nav_from_brain(seed_val, game, &keys, &items));
-    let start_gap_dests = compute_gap_dests(
+    let start_snapshot = build_place_snapshot(
         seed_val,
         start_place,
-        &start_geom,
+        None,
+        None,
         game,
         &keys,
         &items,
+        &content.collision_catalog,
+        content.simulation_hash.0,
+    );
+    let start_transits = compute_threshold_transits(
+        seed_val,
+        &start_snapshot,
+        game,
+        &keys,
+        &items,
+        &tp_config,
         &content.collision_catalog,
         content.simulation_hash.0,
     );
@@ -119,23 +126,27 @@ pub(crate) fn setup_match(
     });
     commands.insert_resource(crate::screens::audio::AudioDirector::default());
     commands.insert_resource(RivalBleedState::default());
-    let rapier = crate::teleport::place_rapier_scene(&start_geom, 0.0, WALL_HEIGHT);
+    let rapier = observed_traversal::rapier_controller::RapierTraversalScene::from_arena_spec(
+        &start_snapshot.arena,
+    );
+    let last_safe_body = FpsBody::spawned(spawn, 0.0);
     commands.insert_resource(TeleportState {
         place: start_place,
-        body: FpsBody::spawned(spawn, 0.0),
+        body: last_safe_body,
         config: tp_config,
         rapier,
+        current_snapshot: start_snapshot.clone(),
         collision_catalog: content.collision_catalog.clone(),
         simulation_content_hash: content.simulation_hash.0,
-        layout: None,
-        geom: start_geom,
+        layout: start_snapshot.layout.clone(),
+        geom: start_snapshot.geom.clone(),
         prev_xz: Vec2::ZERO,
-        crossed_exit: false,
-        pending_exit: None,
         arrived_from: None,
-        gap_dests: start_gap_dests,
+        transits: start_transits,
         rendered: None,
         prev_grounded: false,
+        last_safe_body,
+        boundary_recoveries: 0,
     });
     commands.insert_resource(keys);
     commands.insert_resource(items);

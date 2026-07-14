@@ -244,7 +244,14 @@ pub(crate) fn room_geom_with_slots_and_seals_for_role_and_spec(
             let mut corridor_slot = corridor_socket_for(room, t, room);
             if let Some(spec) = map_spec {
                 let mut found = false;
-                for spec_corridor in spec.corridors() {
+                for spec_corridor in &spec.corridors {
+                    if !spec_corridor
+                        .endpoints
+                        .iter()
+                        .any(|endpoint| endpoint.room == t)
+                    {
+                        continue;
+                    }
                     for (slot_idx, endpoint) in spec_corridor.endpoints.iter().enumerate() {
                         if endpoint.room == room && endpoint.side.index() as u16 == slot.0 {
                             corridor = spec_corridor.id;
@@ -289,7 +296,7 @@ pub(crate) fn room_geom_with_slots_and_seals_for_role_and_spec(
         let mut corridor_slot = slot;
         if let Some(spec) = map_spec {
             let mut found = false;
-            for spec_corridor in spec.corridors() {
+            for spec_corridor in &spec.corridors {
                 for (slot_idx, endpoint) in spec_corridor.endpoints.iter().enumerate() {
                     if endpoint.room == room && endpoint.side.index() as u16 == slot.0 {
                         corridor = spec_corridor.id;
@@ -355,6 +362,33 @@ pub fn open_entry(geom: &mut PlaceGeom, entry_from: Option<RoomId>) {
     }
 }
 
+/// Re-open the stable room socket selected by a threshold transaction. The room-side
+/// socket is the persistent identity; its hallway partner may have refactored or been
+/// collapse-sealed after the actor committed to the corridor. In that case the arrival
+/// snapshot restores the exact partner that was crossed at that same physical socket.
+pub fn open_entry_threshold(
+    geom: &mut PlaceGeom,
+    crossed: Option<super::ThresholdLink>,
+    entry_from: Option<RoomId>,
+) {
+    let (Some(mut crossed), Some(entry_from)) = (crossed, entry_from) else {
+        return;
+    };
+    if geom.poly.is_none() {
+        return;
+    }
+    crossed.local_side = ThresholdLocalSide::Room;
+    if let Some(gap) = geom
+        .gaps
+        .iter_mut()
+        .find(|gap| gap.threshold.room == crossed.room)
+    {
+        gap.target = entry_from;
+        gap.threshold = crossed;
+        gap.kind = GapKind::Entry;
+    }
+}
+
 fn hallway_threshold(
     from: RoomId,
     to: RoomId,
@@ -375,7 +409,7 @@ pub fn resolved_corridor_slot(
     map_spec: Option<&observed_facility::map_spec::MapSpec>,
 ) -> ThresholdSlotId {
     if let Some(spec) = map_spec {
-        for corridor in spec.corridors() {
+        for corridor in &spec.corridors {
             let has_from = corridor.endpoints.iter().any(|e| e.room == from);
             let has_to = corridor.endpoints.iter().any(|e| e.room == to);
             if has_from && has_to {
@@ -649,10 +683,13 @@ pub(crate) fn hallway_geom_with_slots_and_role_and_spec(
             )
         };
         let rows_usize = rows as usize;
-        // Multiple entrances (âˆ’Z, back to `from`) and exits (+Z, on to `to`); each at a
-        // door column, all reachable from one another through the maze.
+        // The generators expose candidate boundary columns, but a graph socket owns
+        // exactly one physical aperture. Reusing one ThresholdId for every candidate
+        // made lookup position-dependent and left several ways to walk into the void.
+        // Pick one deterministic candidate per endpoint; unused candidates remain
+        // ordinary solid perimeter wall.
         let mut gaps = Vec::new();
-        for &ec in entry_cols.iter() {
+        if let Some(&ec) = entry_cols.get(layout_seed as usize % entry_cols.len().max(1)) {
             let x = cell_center(ec, 0).x;
             let hall_slot = resolved_corridor_slot(from, to, from, from_room_slot, map_spec);
             gaps.push(DoorGap {
@@ -665,7 +702,9 @@ pub(crate) fn hallway_geom_with_slots_and_role_and_spec(
                 floor_y: 0.0,
             });
         }
-        for &xc in exit_cols.iter() {
+        if let Some(&xc) =
+            exit_cols.get(layout_seed.rotate_left(29) as usize % exit_cols.len().max(1))
+        {
             let x = cell_center(xc, rows_usize - 1).x;
             let hall_slot = resolved_corridor_slot(from, to, to, to_room_slot, map_spec);
             gaps.push(DoorGap {
@@ -974,19 +1013,10 @@ pub(crate) fn hallway_geom_with_slots_and_role_and_spec(
         // the way it came) + upper exit (deck-only, floor_y = UPPER_DECK_Y) + the
         // safe-bypass exit (ground, slow lane) + the understory side exit (ground,
         // fall-recovery shortcut back to `from`). The ground return and the side exit both
-        // target `from` like the entry, but are typed `Exit` rather than a second `Entry`:
-        // `teleport_sim`'s `!crossed_exit` branch in `crossing.rs` treats every
-        // `Entry`-kind gap as "walked back out before ever reaching the hallway's exit"
-        // and, once one is crossed, never re-checks the other passages that tick — a
-        // second `Entry` gap sitting on a different wall would silently race the real
-        // entry doorway for that one match. `Exit` has no such special-cased
-        // single-purpose branch (the exit-side code keys off
-        // `tp.crossed_exit`/`pending_exit`, not "which specific gap"), so a
-        // `from`-targeting `Exit` is a normal crossable passage (`is_passage` covers
-        // `Exit`) that reaches `cross_into_room(.., from, to, ..)` through the same path
-        // as the safe-bypass and upper exits, just aimed back at `from` instead of `to`.
-        // (`open_entry`, the other `Entry`-specific consumer, is a no-op for hallways —
-        // it only reopens a room's arrival doorway — so it is not a factor either way.)
+        // target `from` like the entry, but are typed `Exit` rather than a second `Entry`.
+        // `Entry` identifies the exact reciprocal socket used to enter this place; the
+        // other return routes are independent passage transactions aimed at `from`, so
+        // `Exit` keeps that semantic distinction without crossing-system branches.
         // The ground return sits in the bypass lane (x = SAFE_BYPASS_X) rather than under
         // the deck entry: `place_arena`'s wall-cutting solidifies/apertures a `-Z` wall
         // span per gap by `(center.x, width)`, so a ground gap sharing the deck entry's XZ
@@ -1294,6 +1324,15 @@ pub fn geom_for(place: Place, nav: &Nav) -> PlaceGeom {
             nav.map_spec.as_ref(),
         ),
     };
+    // Hallway generators are directional shape functions and historically stamped a
+    // pair-derived corridor id into their gaps. The `Place` already carries the socket
+    // topology's authoritative corridor identity (including authored/multi-endpoint map
+    // ids), so every hallway aperture must use that identity before any reciprocal check.
+    if let Place::Hallway { corridor, .. } = place {
+        for gap in &mut geom.gaps {
+            gap.threshold.hall.corridor = corridor;
+        }
+    }
     enforce_active_sockets(&mut geom, place, nav);
     geom
 }

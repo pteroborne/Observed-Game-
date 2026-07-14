@@ -132,39 +132,21 @@ fn collect_geometry(
     }];
 
     for gap in tp.geom.gaps.iter().filter(|gap| gap.kind.is_passage()) {
-        let Some(dest) = tp
-            .gap_dests
+        let Some(transit) = tp
+            .transits
             .iter()
-            .find(|dest| dest.threshold == gap.threshold)
+            .find(|transit| transit.source_gap.threshold == gap.threshold)
         else {
             continue;
         };
+        let Some(dest) = transit.destination.as_ref() else {
+            continue;
+        };
         // `geom_for`'s Hallway arm looks up `Nav::corridor_role_for(to)`, so the
-        // already-resolved frozen edge role (see `crossing::compute_gap_dests`) only
+        // already-resolved frozen threshold transaction only
         // needs keying by the hallway's own `to` — the only neighbour a hallway
         // `Place` is ever queried about.
-        let corridor_roles = match (dest.place, dest.corridor_role) {
-            (Place::Hallway { to, .. }, Some(role)) => vec![(to, role)],
-            _ => Vec::new(),
-        };
-        let nav = teleport::Nav {
-            connections: dest.conns.clone(),
-            connection_slots: dest.connection_slots.clone(),
-            sealed_slots: dest.sealed_slots.clone(),
-            hallway_entry_room_slot: dest.hallway_entry_room_slot,
-            hallway_exit_room_slot: dest.hallway_exit_room_slot,
-            target_room: dest.target,
-            room_role: dest.room_role,
-            corridor_roles,
-            seed: 0,
-            version: 0,
-            exit_locked: !keys.gate_open(),
-            exit_room: keys.exit_room,
-            pinned_corridors: Vec::new(),
-            map_spec: runtime.live.map_spec.clone(),
-        };
-        let geom = teleport::geom_for(dest.place, &nav);
-        let Some((center, half)) = preview_aabb(tp.place, gap, dest.place, &geom) else {
+        let Some((center, half)) = preview_aabb(tp.place, gap, dest.place, &dest.geom) else {
             continue;
         };
         footprints.push(FootprintSnapshot {

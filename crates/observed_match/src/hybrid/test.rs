@@ -6,7 +6,7 @@ mod tests {
     use super::super::round_step::route_all;
     use super::super::{CONTROL_ROOM, HybridMatch, HybridTape, LOCAL_TEAM, LocalAction};
     use crate::facility::{EXIT_CAPACITY, START_ROOM, TEAM_COUNT};
-    use crate::maze::{GRID_H, GRID_W};
+    use crate::maze::{GRID_H, GRID_W, Tile};
     use bevy::math::Vec3;
     use observed_core::RoomId;
     use observed_traversal::FpsConfig;
@@ -72,6 +72,20 @@ mod tests {
                 1
             );
         }
+    }
+
+    #[test]
+    fn committed_advance_is_not_vetoed_by_a_stale_surrogate_maze() {
+        let mut session = HybridMatch::authored(4);
+        let target = session.local_target().expect("spine continues");
+        session.maze_tiles.fill(Tile::Wall);
+
+        assert!(session.apply_action(LocalAction::Advance));
+        assert_eq!(session.local_room(), target);
+        assert!(
+            session.last_traversal.is_empty(),
+            "the diagnostic walk honestly reports that no surrogate path was available"
+        );
     }
 
     #[test]

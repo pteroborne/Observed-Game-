@@ -296,6 +296,31 @@ pub(crate) fn spawn_polygon_walls(
     }
 }
 
+/// A vertical, single-span portal surface. Unlike structural cuboids, its UVs cover the
+/// render target exactly once so a camera image can never repeat or crop at the aperture.
+pub(crate) fn portal_quad_mesh(size: Vec2) -> Mesh {
+    let half = size * 0.5;
+    Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
+    )
+    .with_inserted_attribute(
+        Mesh::ATTRIBUTE_POSITION,
+        vec![
+            [-half.x, -half.y, 0.0],
+            [half.x, -half.y, 0.0],
+            [half.x, half.y, 0.0],
+            [-half.x, half.y, 0.0],
+        ],
+    )
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0, 0.0, 1.0]; 4])
+    .with_inserted_attribute(
+        Mesh::ATTRIBUTE_UV_0,
+        vec![[0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]],
+    )
+    .with_inserted_indices(Indices::U32(vec![0, 1, 2, 0, 2, 3]))
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_wall_panel(
     commands: &mut Commands,

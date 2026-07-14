@@ -2,8 +2,11 @@ use std::path::PathBuf;
 
 use bevy::{
     asset::RenderAssetUsages,
+    camera::RenderTarget,
+    camera::visibility::RenderLayers,
     mesh::{Indices, PrimitiveTopology},
     prelude::*,
+    render::render_resource::TextureFormat,
     window::{PresentMode, WindowResolution},
 };
 use observed_style::{MarkerRole, SurfaceRole, Treatment, marker, surface};
@@ -23,7 +26,16 @@ struct LabGeometry;
 struct PreviewGeometry;
 
 #[derive(Component)]
+struct PortalSurface;
+
+#[derive(Component)]
+struct PortalCamera;
+
+#[derive(Component)]
 struct PlayerCamera;
+
+const PORTAL_LAYER: usize = 1;
+const REMOTE_SCENE_OFFSET: Vec3 = Vec3::new(1024.0, 0.0, 0.0);
 
 #[derive(Component)]
 struct Monitor;
@@ -104,6 +116,7 @@ fn setup(
             ..default()
         },
         Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.8, -0.7, 0.0)),
+        RenderLayers::layer(0).with(PORTAL_LAYER),
     ));
     commands.spawn((
         Node {
@@ -215,17 +228,66 @@ fn spawn_composition(
         };
         let material = materials.add(standard_material(treatment));
         for hull in &module.hulls {
+            let mut translation = Vec3::new(0.0, 0.0, preview_offset + placement.z_offset);
+            if preview {
+                translation += REMOTE_SCENE_OFFSET;
+            }
             let mut entity = commands.spawn((
                 LabGeometry,
                 Mesh3d(meshes.add(hull_mesh(hull))),
                 MeshMaterial3d(material.clone()),
-                Transform::from_xyz(0.0, 0.0, preview_offset + placement.z_offset),
+                Transform::from_translation(translation),
             ));
             if preview {
-                entity.insert(PreviewGeometry);
+                entity.insert((PreviewGeometry, RenderLayers::layer(PORTAL_LAYER)));
             }
         }
     }
+}
+
+fn spawn_portal_preview(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    images: &mut Assets<Image>,
+) {
+    let mut image = Image::new_target_texture(
+        512,
+        512,
+        TextureFormat::Rgba8Unorm,
+        Some(TextureFormat::Rgba8UnormSrgb),
+    );
+    image.data = Some([8_u8, 38, 52, 255].repeat(512 * 512));
+    let image = images.add(image);
+    let material = materials.add(StandardMaterial {
+        base_color: Color::WHITE,
+        base_color_texture: Some(image.clone()),
+        unlit: true,
+        cull_mode: None,
+        ..default()
+    });
+    commands.spawn((
+        LabGeometry,
+        PortalSurface,
+        Mesh3d(meshes.add(Rectangle::new(4.45, 4.65))),
+        MeshMaterial3d(material),
+        Transform::from_xyz(0.0, 2.45, SOURCE_THRESHOLD_Z - 0.04),
+        Name::new("Isolated portal render target"),
+    ));
+    commands.spawn((
+        LabGeometry,
+        PortalCamera,
+        Camera3d::default(),
+        Camera {
+            order: -1,
+            clear_color: Color::srgb(0.008, 0.015, 0.03).into(),
+            ..default()
+        },
+        RenderTarget::Image(image.into()),
+        RenderLayers::layer(PORTAL_LAYER),
+        Transform::default(),
+        Name::new("Remote-place portal camera"),
+    ));
 }
 
 fn spawn_threshold(
@@ -276,6 +338,7 @@ fn rebuild_geometry(
     existing: Query<Entity, With<LabGeometry>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
 ) {
     if !lab.geometry_dirty {
         return;
@@ -293,7 +356,9 @@ fn rebuild_geometry(
                 &mut materials,
                 lab.sim.model.anchor_indicator_lit(),
             );
-            // This is a transformed rendering of the remote hall, not source-room collision.
+            // The exact transformed hall is rendered on an isolated layer and remote
+            // coordinate island. It cannot contribute source-room collision or appear
+            // directly in the playable camera.
             spawn_composition(
                 &mut commands,
                 &mut meshes,
@@ -302,11 +367,24 @@ fn rebuild_geometry(
                 SOURCE_THRESHOLD_Z,
                 true,
             );
+            spawn_portal_preview(&mut commands, &mut meshes, &mut materials, &mut images);
         }
         Place::Hallway => {
             spawn_composition(&mut commands, &mut meshes, &mut materials, &lab, 0.0, false)
         }
         Place::DestinationRoom => spawn_room(&mut commands, &mut meshes, &mut materials, false),
+    }
+}
+
+fn sync_portal_camera(
+    player: Single<&Transform, (With<PlayerCamera>, Without<PortalCamera>)>,
+    mut portal: Query<(&mut Transform, &mut Camera), With<PortalCamera>>,
+    lab: Res<Lab>,
+) {
+    for (mut transform, mut camera) in &mut portal {
+        *transform = **player;
+        transform.translation += REMOTE_SCENE_OFFSET;
+        camera.is_active = lab.sim.model.place == Place::SourceRoom;
     }
 }
 
@@ -466,6 +544,7 @@ pub fn run() {
                 toggles,
                 rebuild_geometry,
                 present,
+                sync_portal_camera,
                 debug_draw,
                 update_monitor,
             )
@@ -486,6 +565,7 @@ mod tests {
         app.add_plugins((MinimalPlugins, AssetPlugin::default()))
             .init_asset::<Mesh>()
             .init_asset::<StandardMaterial>()
+            .init_asset::<Image>()
             .insert_resource(Lab {
                 sim: PortalSimulation::new(3, modules),
                 geometry_dirty: true,
@@ -501,6 +581,20 @@ mod tests {
             .iter(app.world())
             .count();
         assert!(preview_count > 10);
+        assert_eq!(
+            app.world_mut()
+                .query_filtered::<Entity, With<PortalCamera>>()
+                .iter(app.world())
+                .count(),
+            1
+        );
+        assert_eq!(
+            app.world_mut()
+                .query_filtered::<Entity, With<PortalSurface>>()
+                .iter(app.world())
+                .count(),
+            1
+        );
         fn geometry_count(app: &mut App) -> usize {
             app.world_mut()
                 .query_filtered::<Entity, With<LabGeometry>>()

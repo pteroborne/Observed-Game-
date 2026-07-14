@@ -256,6 +256,7 @@ pub(crate) fn nav_for_room(
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn nav_from_brain(
     seed: u64,
     game: &HybridMatch,

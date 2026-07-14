@@ -1,5 +1,6 @@
 use super::*;
 use crate::flow::MATCH_SEED;
+use crate::sim::state::TeleportState;
 use crate::view::theme::ScreenRoot;
 use bevy::{asset::AssetPlugin, gizmos::GizmoPlugin, input::InputPlugin, state::app::StatesPlugin};
 use observed_match::hybrid::LocalAction;
@@ -646,21 +647,368 @@ fn doorway_destinations_are_frozen_at_place_entry() {
     app.update();
     let tp = app.world().resource::<crate::sim::state::TeleportState>();
     assert!(
-        !tp.gap_dests.is_empty(),
+        !tp.transits.is_empty(),
         "the start room freezes its doorway destinations on entry"
     );
     // The forward doorway's frozen destination is the hallway you'll teleport into, so
     // the preview and the crossing read the identical snapshot.
     let forward = tp.geom.forward_gap().expect("a forward doorway");
     let frozen = tp
-        .gap_dests
+        .transits
         .iter()
-        .find(|d| (d.gap_center - forward.center).length() < 0.05)
+        .find(|transit| transit.source_gap.threshold == forward.threshold)
         .expect("the forward doorway has a frozen destination");
     assert!(
-        matches!(frozen.place, crate::teleport::Place::Hallway { .. }),
-        "the forward doorway leads into a hallway"
+        matches!(
+            frozen.destination.as_ref().map(|snapshot| snapshot.place),
+            Some(crate::teleport::Place::Hallway { .. })
+        ),
+        "the forward doorway leads into a hallway; fault={:?}",
+        frozen.fault
     );
+}
+
+#[test]
+fn portal_previews_have_one_isolated_camera_and_target_per_valid_threshold() {
+    use bevy::camera::RenderTarget;
+    use bevy::camera::visibility::RenderLayers;
+
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    app.update();
+
+    let expected = {
+        let tp = app.world().resource::<crate::sim::state::TeleportState>();
+        tp.geom
+            .gaps
+            .iter()
+            .filter(|gap| gap.kind.is_passage())
+            .filter(|gap| {
+                tp.transits.iter().any(|transit| {
+                    transit.source_gap.threshold == gap.threshold && transit.is_valid()
+                })
+            })
+            .count()
+    };
+    let (surface_ids, camera_ids, target_ids, isolated_count) = {
+        let world = app.world_mut();
+        let mut surfaces = world.query::<(&crate::view::components::PortalSurface, &Transform)>();
+        let surface_ids = surfaces
+            .iter(world)
+            .filter_map(|(surface, _)| surface.snapshot_id)
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut cameras =
+            world.query::<(&crate::view::components::PortalPreviewCamera, &RenderTarget)>();
+        let mut camera_ids = std::collections::BTreeSet::new();
+        let mut target_ids = std::collections::BTreeSet::new();
+        for (camera, target) in cameras.iter(world) {
+            camera_ids.insert(camera.snapshot_id);
+            let (_, surface_transform) = surfaces
+                .iter(world)
+                .find(|(surface, _)| surface.snapshot_id == Some(camera.snapshot_id))
+                .expect("every portal camera has a matching aperture surface");
+            let local_width = surface_transform.rotation * Vec3::X;
+            let tangent = Vec3::new(-camera.source_normal.z, 0.0, camera.source_normal.x);
+            assert!(
+                local_width.normalize().dot(tangent.normalize()).abs() > 0.999,
+                "portal width must align with its threshold tangent"
+            );
+            let RenderTarget::Image(image) = target else {
+                panic!("portal cameras must render to images");
+            };
+            target_ids.insert(image.handle.id());
+        }
+        let mut previews =
+            world.query_filtered::<&RenderLayers, With<crate::view::components::PassagePreview>>();
+        let isolated_count = previews
+            .iter(world)
+            .filter(|layers| **layers == RenderLayers::layer(1))
+            .count();
+        (surface_ids, camera_ids, target_ids, isolated_count)
+    };
+
+    assert_eq!(surface_ids.len(), expected);
+    assert_eq!(camera_ids, surface_ids);
+    assert_eq!(target_ids.len(), expected);
+    assert!(
+        isolated_count > 0,
+        "remote geometry lives off the main layer"
+    );
+}
+
+#[test]
+fn live_gate_closure_refreshes_current_snapshot_and_transits_atomically() {
+    use observed_core::RoomId;
+
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    app.update();
+
+    let (from, exit) = {
+        let runtime = app
+            .world()
+            .resource::<crate::sim::director::MatchDirector>();
+        let game = runtime.live.host_match();
+        let exit = game.competitive.exit_room().expect("the map has an exit");
+        let from = (0..64)
+            .map(RoomId)
+            .find(|room| crate::sim::nav::connections_for(game, *room).contains(&exit))
+            .expect("one live room connects to the exit");
+        (from, exit)
+    };
+    app.world_mut()
+        .resource_scope(|world, mut tp: Mut<crate::sim::state::TeleportState>| {
+            let runtime = world.resource::<crate::sim::director::MatchDirector>();
+            let keys = world.resource::<crate::keystones::KeystoneState>();
+            let items = world.resource::<crate::items::ItemsState>();
+            crate::screens::match_runtime::crossing::debug_place_into(
+                &mut tp,
+                runtime,
+                teleport::Place::legacy_hallway(from, exit, 0),
+                from,
+                keys,
+                items,
+            );
+        });
+    let before_id =
+        {
+            let tp = app.world().resource::<crate::sim::state::TeleportState>();
+            assert!(tp.geom.gaps.iter().any(|gap| {
+                gap.target == exit && gap.kind == crate::teleport::GapKind::LockedExit
+            }));
+            tp.current_snapshot.id
+        };
+
+    {
+        let mut keys = app
+            .world_mut()
+            .resource_mut::<crate::keystones::KeystoneState>();
+        let rooms = keys.rooms.clone();
+        for room in rooms {
+            keys.collect(room);
+        }
+    }
+    app.update();
+
+    let tp = app.world().resource::<crate::sim::state::TeleportState>();
+    let live_exit = tp
+        .geom
+        .gaps
+        .iter()
+        .find(|gap| gap.target == exit && gap.kind == crate::teleport::GapKind::Exit)
+        .expect("the live exit opens");
+    assert_ne!(tp.current_snapshot.id, before_id);
+    assert!(tp.current_snapshot.geom.gaps.iter().any(|gap| {
+        gap.threshold == live_exit.threshold && gap.kind == crate::teleport::GapKind::Exit
+    }));
+    assert!(
+        tp.transits.iter().any(|transit| {
+            transit.source_gap.threshold == live_exit.threshold && transit.is_valid()
+        }),
+        "opened exit must have a valid reciprocal transit: {:?}",
+        tp.transits
+            .iter()
+            .map(|transit| (transit.source_gap, transit.fault.as_deref()))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        tp.rapier.collider_count(),
+        tp.current_snapshot.arena.colliders.len()
+    );
+}
+
+#[test]
+fn crossing_installs_the_exact_snapshot_shown_by_the_portal() {
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    app.update();
+
+    app.world_mut()
+        .resource_scope(|_world, mut tp: Mut<crate::sim::state::TeleportState>| {
+            let transit = tp
+                .transits
+                .iter()
+                .find(|transit| transit.is_valid())
+                .cloned()
+                .expect("a valid threshold transaction");
+            let shown = transit.destination.as_ref().unwrap().id;
+            let expected_collider_count =
+                transit.destination.as_ref().unwrap().arena.colliders.len();
+
+            assert!(crate::screens::match_runtime::crossing::cross_transit(
+                &mut tp, &transit
+            ));
+
+            assert_eq!(tp.current_snapshot.id, shown);
+            assert_eq!(tp.rapier.collider_count(), expected_collider_count);
+            assert_eq!(tp.geom.gaps.len(), tp.current_snapshot.geom.gaps.len());
+            let position = Vec2::new(tp.body.position.x, tp.body.position.z);
+            assert!(
+                crate::teleport::inside_footprint(&tp.geom, position, tp.config.radius),
+                "a leading-edge crossing installs the body inside its destination"
+            );
+        });
+}
+
+#[test]
+fn committed_corridor_keeps_an_open_valid_exit_after_the_graph_advances() {
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    app.update();
+
+    let transit = app
+        .world()
+        .resource::<crate::sim::state::TeleportState>()
+        .transits
+        .iter()
+        .find(|transit| transit.source_gap.kind == crate::teleport::GapKind::Forward)
+        .cloned()
+        .expect("start room has a valid forward transaction");
+    let (from, to) = match transit.destination.as_ref().map(|snapshot| snapshot.place) {
+        Some(crate::teleport::Place::Hallway { from, to, .. }) => (from, to),
+        other => panic!("forward doorway must lead to a hallway, got {other:?}"),
+    };
+    {
+        let runtime = app
+            .world_mut()
+            .resource_mut::<crate::sim::director::MatchDirector>();
+        assert_eq!(runtime.live.host_match().local_room(), from);
+        assert_eq!(runtime.live.host_match().local_target(), Some(to));
+    }
+    assert!(
+        app.world_mut()
+            .resource_mut::<crate::sim::director::MatchDirector>()
+            .live
+            .force_round(LocalAction::Advance)
+    );
+
+    app.world_mut()
+        .resource_scope(|world, mut tp: Mut<crate::sim::state::TeleportState>| {
+            assert!(crate::screens::match_runtime::crossing::cross_transit(
+                &mut tp, &transit
+            ));
+            tp.transits = crate::screens::match_runtime::crossing::compute_threshold_transits(
+                MATCH_SEED,
+                &tp.current_snapshot,
+                world
+                    .resource::<crate::sim::director::MatchDirector>()
+                    .live
+                    .host_match(),
+                world.resource::<crate::keystones::KeystoneState>(),
+                world.resource::<crate::items::ItemsState>(),
+                &tp.config,
+                &tp.collision_catalog,
+                tp.simulation_content_hash,
+            );
+        });
+    app.update();
+
+    let tp = app.world().resource::<crate::sim::state::TeleportState>();
+    let exit = tp
+        .geom
+        .gaps
+        .iter()
+        .find(|gap| gap.target == to && gap.kind == crate::teleport::GapKind::Exit)
+        .expect("the committed corridor's onward endpoint remains physically open");
+    assert!(
+        tp.transits.iter().any(|candidate| {
+            candidate.source_gap.threshold == exit.threshold && candidate.is_valid()
+        }),
+        "the open exit must retain an exact reciprocal destination-room snapshot"
+    );
+}
+
+#[test]
+fn presentation_and_anchor_rebuilds_do_not_mutate_frozen_transactions() {
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    app.update();
+    let before = {
+        let tp = app.world().resource::<crate::sim::state::TeleportState>();
+        tp.transits
+            .iter()
+            .filter_map(|transit| transit.destination.as_ref().map(|dest| dest.id))
+            .collect::<Vec<_>>()
+    };
+    let (place, position, version, thresholds) = {
+        let tp = app.world().resource::<crate::sim::state::TeleportState>();
+        let position = tp.geom.forward_gap().unwrap().center;
+        (
+            tp.place,
+            position,
+            app.world()
+                .resource::<crate::sim::director::MatchDirector>()
+                .live
+                .host_match()
+                .reroute_commits,
+            tp.geom
+                .gaps
+                .iter()
+                .map(|gap| (gap.target, gap.center))
+                .collect::<Vec<_>>(),
+        )
+    };
+    app.world_mut()
+        .resource_mut::<crate::items::ItemsState>()
+        .drop_anchor_torch_in_radius(place, position, version, &thresholds);
+    app.world_mut()
+        .resource_mut::<crate::sim::state::TeleportState>()
+        .rendered = None;
+    app.update();
+    let after = app
+        .world()
+        .resource::<crate::sim::state::TeleportState>()
+        .transits
+        .iter()
+        .filter_map(|transit| transit.destination.as_ref().map(|dest| dest.id))
+        .collect::<Vec<_>>();
+    assert_eq!(before, after);
+}
+
+#[test]
+fn mismatched_reciprocal_identity_fails_closed() {
+    use observed_core::CorridorId;
+
+    let mut app = test_app();
+    go(&mut app, GameState::Match);
+    app.update();
+    let (mut source, config, catalog, hash) = {
+        let tp = app.world().resource::<crate::sim::state::TeleportState>();
+        (
+            tp.current_snapshot.clone(),
+            tp.config,
+            tp.collision_catalog.clone(),
+            tp.simulation_content_hash,
+        )
+    };
+    source
+        .geom
+        .gaps
+        .iter_mut()
+        .find(|gap| gap.kind.is_passage())
+        .unwrap()
+        .threshold
+        .hall
+        .corridor = CorridorId(u32::MAX);
+    let transits = crate::screens::match_runtime::compute_threshold_transits(
+        crate::flow::MATCH_SEED,
+        &source,
+        app.world()
+            .resource::<crate::sim::director::MatchDirector>()
+            .live
+            .host_match(),
+        app.world().resource::<keystones::KeystoneState>(),
+        app.world().resource::<items::ItemsState>(),
+        &config,
+        &catalog,
+        hash,
+    );
+    let fault = transits
+        .iter()
+        .find(|transit| transit.source_gap.threshold.hall.corridor == CorridorId(u32::MAX))
+        .expect("corrupt threshold retained as diagnostic fault");
+    assert!(!fault.is_valid());
+    assert!(fault.fault.as_deref().unwrap().starts_with("LINK FAULT"));
 }
 
 #[test]
@@ -1859,7 +2207,6 @@ fn placing_a_rival_in_a_neighbour_and_rebuilding_records_a_seen_sighting() {
 #[test]
 fn rival_observation_does_not_change_the_anchor_indicator_light() {
     use crate::sim::director::MatchDirector;
-    use crate::sim::state::TeleportState;
     use crate::view::theme::TEAM_COLORS;
 
     let mut app = test_app();
@@ -2446,17 +2793,27 @@ fn rival_movement_without_a_place_change_keeps_the_indicator_neutral() {
     );
 }
 
-/// Teleport the local player straight into `room` (as a debug/test placement, not a
-/// physical crossing) and force a full place rebuild, mirroring the pattern the other
-/// `tp.place = ...; tp.rendered = None;` tests in this module use.
+fn place_into_room_state(app: &mut App, room: observed_core::RoomId) {
+    app.world_mut()
+        .resource_scope(|world, mut tp: Mut<crate::sim::state::TeleportState>| {
+            let runtime = world.resource::<crate::sim::director::MatchDirector>();
+            let keys = world.resource::<crate::keystones::KeystoneState>();
+            let items = world.resource::<crate::items::ItemsState>();
+            crate::screens::match_runtime::crossing::debug_place_into(
+                &mut tp,
+                runtime,
+                teleport::Place::Room(room),
+                room,
+                keys,
+                items,
+            );
+        });
+}
+
+/// Teleport the local player straight into `room` as an exact snapshot transaction and
+/// force a full place rebuild. This is a debug/test placement, not a physical crossing.
 fn teleport_into_room(app: &mut App, room: observed_core::RoomId) {
-    {
-        let mut tp = app
-            .world_mut()
-            .resource_mut::<crate::sim::state::TeleportState>();
-        tp.place = teleport::Place::Room(room);
-        tp.rendered = None;
-    }
+    place_into_room_state(app, room);
     app.update();
 }
 
@@ -3787,7 +4144,6 @@ fn muted_sfx_suppresses_rival_bleed_cue_without_blocking_detection() {
 #[test]
 fn collapse_and_klaxon_stings_are_gated_by_volume_and_fire_once() {
     use crate::sim::director::MatchDirector;
-    use crate::sim::state::TeleportState;
     use crate::view::components::MatchAudioCue;
     use observed_core::TeamId;
     use observed_match::elimination::EscapeCountdown;
@@ -3810,11 +4166,7 @@ fn collapse_and_klaxon_stings_are_gated_by_volume_and_fire_once() {
             .dying_room()
             .expect("a room ahead of the collapse is dying")
     };
-    {
-        let mut tp = app.world_mut().resource_mut::<TeleportState>();
-        tp.place = teleport::Place::Room(dying_room);
-        tp.rendered = None;
-    }
+    place_into_room_state(&mut app, dying_room);
     {
         let mut rt = app.world_mut().resource_mut::<MatchDirector>();
         rt.series.current.countdown = Some(EscapeCountdown {

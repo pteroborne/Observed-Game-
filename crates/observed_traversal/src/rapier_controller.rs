@@ -43,14 +43,16 @@ pub struct RapierTraversalScene {
     broad_phase: BroadPhaseBvh,
     narrow_phase: NarrowPhase,
     floor_y: f32,
-    floor_half: f32,
+    safety_center: Vec3,
+    safety_half: Vec3,
 }
 
 impl std::fmt::Debug for RapierTraversalScene {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RapierTraversalScene")
             .field("floor_y", &self.floor_y)
-            .field("floor_half", &self.floor_half)
+            .field("safety_center", &self.safety_center)
+            .field("safety_half", &self.safety_half)
             .field("collider_count", &self.colliders.len())
             .finish()
     }
@@ -138,23 +140,15 @@ impl RapierTraversalScene {
             broad_phase,
             narrow_phase,
             floor_y,
-            floor_half,
+            safety_center: Vec3::new(0.0, floor_y, 0.0),
+            safety_half: Vec3::new(floor_half, 12.0, floor_half),
         }
     }
 
     pub fn from_arena_spec(spec: &super::ArenaSpec) -> Self {
         let bodies = RigidBodySet::new();
         let mut colliders = ColliderSet::new();
-        let mut handles = Vec::with_capacity(spec.colliders.len() + 1);
-
-        handles.push(
-            colliders.insert(
-                ColliderBuilder::cuboid(spec.floor_half, 0.1, spec.floor_half)
-                    .translation(Vector::new(0.0, spec.floor_y - 0.1, 0.0))
-                    .friction(0.9)
-                    .build(),
-            ),
-        );
+        let mut handles = Vec::with_capacity(spec.colliders.len());
 
         for collider in &spec.colliders {
             let [x, y, z, w] = collider.rotation;
@@ -164,10 +158,8 @@ impl RapierTraversalScene {
                     ColliderBuilder::cuboid(half.x, half.y, half.z)
                 }
                 super::ColliderShape::ConvexHull { points } => {
-                    let pts: Vec<Vector> = points
-                        .iter()
-                        .map(|p| Vector::new(p.x, p.y, p.z))
-                        .collect();
+                    let pts: Vec<Vector> =
+                        points.iter().map(|p| Vector::new(p.x, p.y, p.z)).collect();
                     ColliderBuilder::convex_hull(&pts).expect("validated convex hull")
                 }
             };
@@ -203,8 +195,29 @@ impl RapierTraversalScene {
             broad_phase,
             narrow_phase,
             floor_y: spec.floor_y,
-            floor_half: spec.floor_half,
+            safety_center: spec.safety_center,
+            safety_half: spec.safety_half,
         }
+    }
+
+    /// Whether a grounded player capsule can occupy `center` without intersecting any
+    /// structural collider other than the canonical support floor (`StableColliderId(0)`).
+    /// Threshold transactions use this before advertising a destination: a reciprocal
+    /// socket is not crossable merely because its topology exists; its landing volume
+    /// must also be physically clear in the exact frozen arena.
+    pub fn capsule_is_clear(&self, center: Vec3, radius: f32, half_height: f32) -> bool {
+        let segment_half = (half_height - radius).max(0.01);
+        let capsule = Capsule::new_y(segment_half, radius);
+        let query = self.broad_phase.as_query_pipeline(
+            self.narrow_phase.query_dispatcher(),
+            &self.bodies,
+            &self.colliders,
+            QueryFilter::default(),
+        );
+        let pose = Pose::translation(center.x, center.y, center.z);
+        !query
+            .intersect_shape(pose, &capsule)
+            .any(|(_, collider)| collider.user_data != 0)
     }
 
     pub fn collider_count(&self) -> usize {
@@ -216,7 +229,7 @@ impl RapierTraversalScene {
     }
 
     pub fn floor_half(&self) -> f32 {
-        self.floor_half
+        self.safety_half.x.max(self.safety_half.z)
     }
 }
 
@@ -313,9 +326,10 @@ pub fn step_character(
         body.velocity.y = 0.0;
     }
 
-    if body.position.y < scene.floor_y - 10.0
-        || body.position.x.abs() > scene.floor_half + 5.0
-        || body.position.z.abs() > scene.floor_half + 5.0
+    let safety_delta = body.position - scene.safety_center;
+    if safety_delta.x.abs() > scene.safety_half.x
+        || safety_delta.y.abs() > scene.safety_half.y
+        || safety_delta.z.abs() > scene.safety_half.z
     {
         let (spawn, yaw) = (body.spawn, body.spawn_yaw);
         *body = FpsBody::spawned(spawn, yaw);
@@ -374,9 +388,42 @@ mod tests {
     }
 
     #[test]
+    fn threshold_clearance_ignores_support_but_rejects_a_wall() {
+        let spec = super::super::ArenaSpec {
+            colliders: vec![
+                super::super::ColliderSpec::cuboid(
+                    super::super::StableColliderId(0),
+                    Vec3::new(0.0, -0.1, 0.0),
+                    Vec3::new(4.0, 0.1, 4.0),
+                ),
+                super::super::ColliderSpec::cuboid(
+                    super::super::StableColliderId(1),
+                    Vec3::new(1.5, 1.0, 0.0),
+                    Vec3::new(0.2, 1.0, 1.0),
+                ),
+            ],
+            floor_y: 0.0,
+            safety_center: Vec3::new(0.0, 2.0, 0.0),
+            safety_half: Vec3::splat(5.0),
+        };
+        let scene = RapierTraversalScene::from_arena_spec(&spec);
+
+        assert!(scene.capsule_is_clear(Vec3::new(0.0, 0.9, 0.0), 0.35, 0.9));
+        assert!(!scene.capsule_is_clear(Vec3::new(1.5, 0.9, 0.0), 0.35, 0.9));
+    }
+
+    #[test]
     fn collider_scene_contains_floor_and_every_structural_solid() {
         let arena = FpsArena::authored();
         let scene = RapierTraversalScene::from_arena(&arena);
         assert_eq!(scene.collider_count(), arena.solids.len() + 1);
+    }
+
+    #[test]
+    fn arena_spec_is_complete_and_rapier_adds_no_implicit_floor() {
+        let arena = FpsArena::authored();
+        let spec = super::super::ArenaSpec::from_legacy(&arena);
+        let scene = RapierTraversalScene::from_arena_spec(&spec);
+        assert_eq!(scene.collider_count(), spec.colliders.len());
     }
 }

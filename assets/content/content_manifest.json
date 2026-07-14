@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "content_version": "rapier-authored-v1",
+  "content_version": "threshold-transit-v2",
   "traversal": {
     "walk_speed": 4.6,
     "run_speed": 7.0,

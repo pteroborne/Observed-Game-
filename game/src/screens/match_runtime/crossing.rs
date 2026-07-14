@@ -8,11 +8,11 @@ use crate::flow::MATCH_SEED;
 use crate::items::ItemsState;
 use crate::keystones::KeystoneState;
 use crate::sim::director::MatchDirector;
-use crate::sim::nav::{
-    connections_for_nav, nav_for_place, nav_for_room, room_connection_slots, room_target,
-    sealed_slots_for_room, slot_for_connection,
+use crate::sim::nav::nav_for_place;
+use crate::sim::state::{
+    MatchIntent, MatchPaused, PlaceSnapshot, PlaceSnapshotId, TeleportState, ThresholdTransform,
+    ThresholdTransit,
 };
-use crate::sim::state::{FrozenDest, MatchIntent, MatchPaused, TeleportState};
 use crate::teleport::{self, GapKind, Place};
 use crate::view::components::{CameraJuice, MatchAudioCue};
 
@@ -20,300 +20,540 @@ fn body_xz(tp: &TeleportState) -> Vec2 {
     Vec2::new(tp.body.position.x, tp.body.position.z)
 }
 
-/// Resolve and **freeze** the destination of every passage doorway of `place` *now* — the
-/// hallway each room doorway opens into (with its rolled variation locked in the `Place`),
-/// and the frozen connection set + spine target of the room each hallway doorway opens
-/// into. Captured once at place-entry so the doorway preview and the actual crossing read
-/// the identical snapshot ("observed → frozen"); see [`TeleportState::gap_dests`].
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn compute_gap_dests(
-    seed: u64,
+/// Mix one stable word into a complete place-snapshot identity. Destinations are captured
+/// once on place entry so preview and crossing consume the same immutable transaction.
+fn mix_snapshot_word(hash: &mut u64, word: u64) {
+    *hash ^= word;
+    *hash = hash.wrapping_mul(0x100_0000_01B3);
+}
+
+fn mix_snapshot_bytes(hash: &mut u64, bytes: &[u8]) {
+    mix_snapshot_word(hash, bytes.len() as u64);
+    for byte in bytes {
+        mix_snapshot_word(hash, u64::from(*byte));
+    }
+}
+
+fn snapshot_id(
     place: Place,
     geom: &teleport::PlaceGeom,
+    layout: Option<&observed_content::PlaceLayoutSnapshot>,
+    arena: &observed_traversal::ArenaSpec,
+    simulation_content_hash: [u8; 32],
+) -> PlaceSnapshotId {
+    let mut hash = 0xCBF2_9CE4_8422_2325_u64;
+    for chunk in simulation_content_hash.chunks_exact(8) {
+        mix_snapshot_word(&mut hash, u64::from_le_bytes(chunk.try_into().unwrap()));
+    }
+    match place {
+        Place::Room(room) => mix_snapshot_word(&mut hash, u64::from(room.0)),
+        Place::Hallway {
+            corridor,
+            entered_socket,
+            variation,
+            from,
+            to,
+        } => {
+            for word in [
+                u64::from(corridor.0),
+                u64::from(entered_socket.0),
+                variation as u64,
+                u64::from(from.0),
+                u64::from(to.0),
+            ] {
+                mix_snapshot_word(&mut hash, word);
+            }
+        }
+    }
+    for value in [geom.half.x, geom.half.y] {
+        mix_snapshot_word(&mut hash, u64::from(value.to_bits()));
+    }
+    for wall in &geom.interior {
+        for value in [wall.center.x, wall.center.y, wall.half.x, wall.half.y] {
+            mix_snapshot_word(&mut hash, u64::from(value.to_bits()));
+        }
+    }
+    if let Some(poly) = &geom.poly {
+        mix_snapshot_word(&mut hash, poly.len() as u64);
+        for point in poly {
+            for value in [point.x, point.y] {
+                mix_snapshot_word(&mut hash, u64::from(value.to_bits()));
+            }
+        }
+    }
+    for deck in &geom.decks {
+        for value in [
+            deck.center.x,
+            deck.center.y,
+            deck.half.x,
+            deck.half.y,
+            deck.bottom_y,
+            deck.top_y,
+        ] {
+            mix_snapshot_word(&mut hash, u64::from(value.to_bits()));
+        }
+    }
+    for gap in &geom.gaps {
+        for word in [
+            u64::from(gap.center.x.to_bits()),
+            u64::from(gap.center.y.to_bits()),
+            u64::from(gap.normal.x.to_bits()),
+            u64::from(gap.normal.y.to_bits()),
+            u64::from(gap.width.to_bits()),
+            u64::from(gap.floor_y.to_bits()),
+            u64::from(gap.threshold.room.room.0),
+            u64::from(gap.threshold.room.slot.0),
+            u64::from(gap.threshold.hall.corridor.0),
+            u64::from(gap.threshold.hall.slot.0),
+            gap.kind as u64,
+        ] {
+            mix_snapshot_word(&mut hash, word);
+        }
+    }
+    for collider in &arena.colliders {
+        mix_snapshot_word(&mut hash, u64::from(collider.id.0));
+        for value in collider.center.to_array() {
+            mix_snapshot_word(&mut hash, u64::from(value.to_bits()));
+        }
+        for value in collider.rotation {
+            mix_snapshot_word(&mut hash, u64::from(value.to_bits()));
+        }
+        mix_snapshot_word(&mut hash, u64::from(collider.friction.to_bits()));
+        match &collider.shape {
+            observed_traversal::ColliderShape::Cuboid { half } => {
+                mix_snapshot_word(&mut hash, 0);
+                for value in half.to_array() {
+                    mix_snapshot_word(&mut hash, u64::from(value.to_bits()));
+                }
+            }
+            observed_traversal::ColliderShape::ConvexHull { points } => {
+                mix_snapshot_word(&mut hash, 1);
+                mix_snapshot_word(&mut hash, points.len() as u64);
+                for point in points {
+                    for value in point.to_array() {
+                        mix_snapshot_word(&mut hash, u64::from(value.to_bits()));
+                    }
+                }
+            }
+        }
+    }
+    for value in [arena.floor_y]
+        .into_iter()
+        .chain(arena.safety_center.to_array())
+        .chain(arena.safety_half.to_array())
+    {
+        mix_snapshot_word(&mut hash, u64::from(value.to_bits()));
+    }
+    if let Some(layout) = layout {
+        mix_snapshot_word(&mut hash, u64::from(layout.generation));
+        for placement in &layout.placements {
+            mix_snapshot_bytes(&mut hash, placement.module_id.as_bytes());
+            for value in placement.translation.into_iter().chain(placement.scale) {
+                mix_snapshot_word(&mut hash, u64::from(value.to_bits()));
+            }
+            mix_snapshot_word(&mut hash, placement.yaw_degrees as u64);
+            mix_snapshot_bytes(&mut hash, placement.entry_port.as_bytes());
+            mix_snapshot_bytes(&mut hash, placement.exit_port.as_bytes());
+        }
+    }
+    PlaceSnapshotId(hash)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_place_snapshot(
+    seed: u64,
+    place: Place,
+    arrived_from: Option<RoomId>,
+    crossed_threshold: Option<teleport::ThresholdLink>,
     game: &HybridMatch,
     keys: &KeystoneState,
     items: &ItemsState,
     collision_catalog: &crate::content::ContentCollisionCatalog,
     simulation_content_hash: [u8; 32],
-) -> Vec<FrozenDest> {
+) -> PlaceSnapshot {
     let nav = nav_for_place(seed, game, keys, items, place);
-    geom.gaps
+    let mut geom = teleport::geom_for(place, &nav);
+    teleport::open_entry_threshold(&mut geom, crossed_threshold, arrived_from);
+    let layout = collision_catalog.layout_for_place(place, &geom);
+    let y_offset = teleport::place_y_offset(place);
+    let arena = layout
+        .as_ref()
+        .and_then(|layout| collision_catalog.arena_for_layout(layout, &geom, y_offset))
+        .unwrap_or_else(|| teleport::place_arena_spec(&geom, y_offset, crate::layout::WALL_HEIGHT));
+    let entry_gap = crossed_threshold.and_then(|threshold| {
+        geom.gaps
+            .iter()
+            .find(|gap| {
+                gap.threshold.room == threshold.room
+                    && gap.threshold.hall == threshold.hall
+                    && gap.kind.is_passage()
+            })
+            .copied()
+    });
+    PlaceSnapshot {
+        id: snapshot_id(
+            place,
+            &geom,
+            layout.as_ref(),
+            &arena,
+            simulation_content_hash,
+        ),
+        place,
+        geom,
+        layout,
+        arena,
+        simulation_content_hash,
+        entry_gap,
+        arrived_from,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn compute_threshold_transits(
+    seed: u64,
+    source: &PlaceSnapshot,
+    game: &HybridMatch,
+    keys: &KeystoneState,
+    items: &ItemsState,
+    config: &observed_traversal::FpsConfig,
+    collision_catalog: &crate::content::ContentCollisionCatalog,
+    simulation_content_hash: [u8; 32],
+) -> Vec<ThresholdTransit> {
+    let nav = nav_for_place(seed, game, keys, items, source.place);
+    source
+        .geom
+        .gaps
         .iter()
-        .filter(|g| g.kind.is_passage())
-        .map(|gap| {
-            let (dest, _) = teleport::apply_crossing(place, gap, &nav);
-            let (
-                conns,
-                connection_slots,
-                sealed_slots,
-                hallway_entry_room_slot,
-                hallway_exit_room_slot,
-                target,
-            ) = match dest {
-                Place::Room(r) => {
-                    let c = connections_for_nav(game, items, r);
-                    let slots = room_connection_slots(game, items, r, &c);
-                    let sealed = sealed_slots_for_room(game, r);
-                    let t = room_target(game, r, &c);
-                    (c, slots, sealed, None, None, t)
+        .filter(|gap| gap.kind.is_passage() || gap.kind == GapKind::LockedExit)
+        .map(|source_gap| {
+            // A room chooses a corridor through the live reciprocal topology. Once that
+            // corridor is installed, however, its endpoint identities are immutable even
+            // if the round commit refactors or collapse-seals the graph behind the actor.
+            // Hallway gaps already carry the stable room socket and target, so resolve
+            // them directly and let the exact reciprocal-snapshot check below validate it.
+            let destination_place = match source.place {
+                Place::Hallway { .. } => Place::Room(source_gap.target),
+                Place::Room(_) => {
+                    let Some((destination, _)) =
+                        teleport::resolve_crossing(source.place, source_gap, &nav)
+                    else {
+                        return ThresholdTransit {
+                            source_gap: *source_gap,
+                            destination_gap: None,
+                            destination: None,
+                            transform: None,
+                            fault: Some(
+                                "LINK FAULT: source socket has no reciprocal partner".into(),
+                            ),
+                        };
+                    };
+                    destination
                 }
-                Place::Hallway { from, to, .. } => (
-                    Vec::new(),
-                    Vec::new(),
-                    Vec::new(),
-                    Some(gap.threshold.room.slot),
-                    slot_for_connection(game, items, to, from),
-                    None,
-                ),
             };
-            let mut frozen = FrozenDest {
-                gap_center: gap.center,
-                threshold: gap.threshold,
-                place: dest,
-                layout: None,
+            let arrived_from = match (source.place, destination_place) {
+                (Place::Hallway { from, to, .. }, Place::Room(room)) => {
+                    Some(if room == to { from } else { to })
+                }
+                _ => None,
+            };
+            let destination = build_place_snapshot(
+                seed,
+                destination_place,
+                arrived_from,
+                Some(source_gap.threshold),
+                game,
+                keys,
+                items,
+                collision_catalog,
                 simulation_content_hash,
-                conns,
-                connection_slots,
-                sealed_slots,
-                hallway_entry_room_slot,
-                hallway_exit_room_slot,
-                target,
-                room_role: match dest {
-                    Place::Room(room) => game
-                        .competitive
-                        .map_spec
-                        .as_ref()
-                        .and_then(|spec| spec.room(room).map(|room| room.role)),
-                    Place::Hallway { .. } => None,
-                },
-                corridor_role: match dest {
-                    Place::Room(_) => None,
-                    Place::Hallway { from, to, .. } => game
-                        .competitive
-                        .map_spec
-                        .as_ref()
-                        .and_then(|spec| spec.corridor_role_between(from, to)),
-                },
+            );
+            let Some(destination_gap) = destination.entry_gap else {
+                return ThresholdTransit {
+                    source_gap: *source_gap,
+                    destination_gap: None,
+                    destination: None,
+                    transform: None,
+                    fault: Some("LINK FAULT: destination lacks exact reciprocal socket".into()),
+                };
             };
-            let dest_nav = frozen_nav(seed, &frozen, keys);
-            let dest_geom = teleport::geom_for(dest, &dest_nav);
-            frozen.layout = collision_catalog.layout_for_place(dest, &dest_geom);
-            frozen
+            let required_inside = config.radius + teleport::PREVIEW_OUTSET + 0.02;
+            let landing_xz = destination_gap.center - destination_gap.normal * required_inside;
+            let landing = Vec3::new(
+                landing_xz.x,
+                teleport::place_y_offset(destination.place)
+                    + destination_gap.floor_y
+                    + config.half_height,
+                landing_xz.y,
+            );
+            let destination_scene =
+                observed_traversal::rapier_controller::RapierTraversalScene::from_arena_spec(
+                    &destination.arena,
+                );
+            if !destination_scene.capsule_is_clear(landing, config.radius, config.half_height) {
+                return ThresholdTransit {
+                    source_gap: *source_gap,
+                    destination_gap: None,
+                    destination: None,
+                    transform: None,
+                    fault: Some(
+                        "LINK FAULT: reciprocal socket landing volume is obstructed".into(),
+                    ),
+                };
+            }
+            let alignment = match destination.place {
+                Place::Hallway { .. } => {
+                    teleport::hallway_gap_alignment(source_gap, &destination_gap)
+                }
+                Place::Room(_) => teleport::room_alignment(source_gap, &destination_gap),
+            };
+            ThresholdTransit {
+                source_gap: *source_gap,
+                destination_gap: Some(destination_gap),
+                transform: Some(ThresholdTransform {
+                    alignment,
+                    source_floor_y: teleport::place_y_offset(source.place) + source_gap.floor_y,
+                    destination_floor_y: teleport::place_y_offset(destination.place)
+                        + destination_gap.floor_y,
+                }),
+                destination: Some(destination),
+                fault: None,
+            }
         })
         .collect()
 }
 
-/// The nav that rebuilds a [`FrozenDest`]'s geometry exactly as it was snapshotted: a
-/// hallway uses its frozen `Place` variation + the live exit lock; a room uses its frozen
-/// connections + target. (`geom_for` only reads these fields, so version/pins are inert.)
-pub(super) fn frozen_nav(seed: u64, dest: &FrozenDest, keys: &KeystoneState) -> teleport::Nav {
-    // `geom_for`'s Hallway arm looks up `Nav::corridor_role_for(to)`, so the frozen
-    // edge role needs to be keyed by the hallway's own `to` — the only neighbour a
-    // hallway `Place` is ever queried about.
-    let corridor_roles = match (dest.place, dest.corridor_role) {
-        (Place::Hallway { to, .. }, Some(role)) => vec![(to, role)],
-        _ => Vec::new(),
-    };
-    teleport::Nav {
-        connections: dest.conns.clone(),
-        connection_slots: dest.connection_slots.clone(),
-        sealed_slots: dest.sealed_slots.clone(),
-        hallway_entry_room_slot: dest.hallway_entry_room_slot,
-        hallway_exit_room_slot: dest.hallway_exit_room_slot,
-        target_room: dest.target,
-        room_role: dest.room_role,
-        corridor_roles,
-        seed,
-        version: 0,
-        exit_locked: !keys.gate_open(),
-        exit_room: keys.exit_room,
-        pinned_corridors: Vec::new(),
-        map_spec: None,
-    }
+/// Build the exact return transaction for a successful crossing. The destination graph
+/// may change while the actor is in transit, so resolving the doorway behind them again
+/// would be both visually dishonest and unsafe. Reversing the already-validated transform
+/// makes the return preview and return crossing point at the precise place just left.
+fn reverse_transit(source: &PlaceSnapshot, forward: &ThresholdTransit) -> Option<ThresholdTransit> {
+    let destination_gap = forward.destination_gap?;
+    let transform = forward.transform?;
+    Some(ThresholdTransit {
+        source_gap: destination_gap,
+        destination_gap: Some(forward.source_gap),
+        destination: Some(source.clone()),
+        transform: Some(ThresholdTransform {
+            alignment: transform.alignment.inverse(),
+            source_floor_y: transform.destination_floor_y,
+            destination_floor_y: transform.source_floor_y,
+        }),
+        fault: None,
+    })
 }
 
-/// The frozen destination snapshot for the doorway whose gap is `gap` (matched by
-/// threshold identity, with a centre fallback for old/debug snapshots).
-pub(super) fn frozen_dest_for<'a>(
-    tp: &'a TeleportState,
-    gap: &teleport::DoorGap,
-) -> Option<&'a FrozenDest> {
-    tp.gap_dests
-        .iter()
-        .find(|d| d.threshold == gap.threshold)
-        .or_else(|| {
-            tp.gap_dests
-                .iter()
-                .find(|d| (d.gap_center - gap.center).length() < 0.05)
-        })
-}
-
-/// Move the body into `place`, having arrived from room `from`. When `crossed` (the
-/// doorway just stepped through, in the *old* place's frame) yields an alignment, the
-/// body's pre-swap pose is carried continuously into the new place so walking through a
-/// door has **no snap and no view reset** — the camera flows on. Otherwise (or for a
-/// non-crossing placement, `crossed = None`) the body snaps just inside the arrival
-/// doorway facing in, as before.
-pub(super) fn place_body(
-    tp: &mut TeleportState,
-    place: Place,
-    from: RoomId,
-    crossed: Option<teleport::DoorGap>,
-    nav: &teleport::Nav,
-    frozen_layout: Option<&observed_content::PlaceLayoutSnapshot>,
+fn install_reverse_transit(
+    transits: &mut Vec<ThresholdTransit>,
+    reverse: Option<ThresholdTransit>,
 ) {
-    let mut geom = teleport::geom_for(place, nav);
-    // Arriving in a room *through* a doorway: keep that doorway an open passage (matching
-    // the preview you crossed) so the entry doesn't pop into a wall. The start room and
-    // pad/debug placements pass `crossed = None`, so they keep the default sealed doors.
-    let arrived_from = match place {
-        Place::Room(_) if crossed.is_some() => Some(from),
-        _ => None,
+    let Some(reverse) = reverse else {
+        return;
     };
-    teleport::open_entry(&mut geom, arrived_from);
-    let y_offset = teleport::place_y_offset(place);
-    // The arrival gap's local floor_y (0 for every ground-level doorway; a gantry hall's
-    // deck entry sits at UPPER_DECK_Y), so a deck-level arrival stands ON the landing
-    // instead of sinking to the place's ground floor.
-    let arrival_floor_y = crossed
-        .as_ref()
-        .and_then(|gap| teleport::arrival_gap(&geom, place, gap, from))
-        .map(|gap| gap.floor_y)
-        .unwrap_or(0.0);
-    let (pos, yaw, pitch) = crossed
-        .and_then(|gap| teleport::crossing_alignment(&geom, place, &gap, from))
-        .map(|align| {
-            // Continuous carry: the body's current XZ/heading mapped into the new frame.
-            let old = Vec2::new(tp.body.position.x, tp.body.position.z);
-            (
-                align.inverse_apply(old),
-                tp.body.yaw + align.yaw,
-                tp.body.pitch,
-            )
-        })
-        .unwrap_or_else(|| {
-            // Snap: just inside the arrival doorway, facing in (level pitch).
-            let spawn = teleport::entry_spawn(&geom, from);
-            let yaw = geom
-                .gaps
-                .iter()
-                .find(|g| g.target == from)
-                .map(|g| (-g.normal.x).atan2(g.normal.y))
-                .unwrap_or(0.0);
-            (spawn, yaw, 0.0)
-        });
-    tp.set_arena_for_place(place, &geom, y_offset, frozen_layout);
-    tp.geom = geom;
-    tp.body = FpsBody::spawned(
-        Vec3::new(
-            pos.x,
-            y_offset + arrival_floor_y + tp.config.half_height,
-            pos.y,
-        ),
-        yaw,
-    );
-    tp.body.pitch = pitch;
-    tp.place = place;
-    tp.prev_xz = pos;
-    tp.crossed_exit = false;
-    tp.pending_exit = None;
-    tp.arrived_from = arrived_from;
+    transits.retain(|transit| transit.source_gap.threshold != reverse.source_gap.threshold);
+    transits.push(reverse);
 }
 
-/// Move the body directly to a point in `place` without committing a match round.
-/// Teleport pads use this: they are local traversal tools, not deterministic match
-/// actions replicated through the lockstep brain.
-pub(crate) fn place_body_at(tp: &mut TeleportState, place: Place, pos: Vec2, nav: &teleport::Nav) {
-    let geom = teleport::geom_for(place, nav);
-    let yaw = tp.body.yaw;
-    let pitch = tp.body.pitch;
-    let y_offset = teleport::place_y_offset(place);
-    tp.set_arena_for_place(place, &geom, y_offset, None);
-    tp.geom = geom;
-    tp.body = FpsBody::spawned(
-        Vec3::new(pos.x, y_offset + tp.config.half_height, pos.y),
-        yaw,
+pub(super) fn install_snapshot(tp: &mut TeleportState, snapshot: PlaceSnapshot, body: FpsBody) {
+    tp.rapier = observed_traversal::rapier_controller::RapierTraversalScene::from_arena_spec(
+        &snapshot.arena,
     );
-    tp.body.pitch = pitch;
-    tp.place = place;
-    tp.prev_xz = pos;
-    tp.crossed_exit = false;
-    tp.pending_exit = None;
-    tp.arrived_from = None;
+    tp.place = snapshot.place;
+    tp.layout = snapshot.layout.clone();
+    tp.geom = snapshot.geom.clone();
+    tp.arrived_from = snapshot.arrived_from;
+    tp.current_snapshot = snapshot;
+    tp.body = body;
+    tp.prev_xz = body_xz(tp);
+    tp.last_safe_body = body;
     tp.rendered = None;
 }
 
-/// Cross `gap` into its frozen destination (a hallway from a room, etc.): use the snapshot
-/// taken at place-entry so the arrival matches the preview; fall back to a live resolve if
-/// the snapshot is missing. `cur` is the place being left, `from` the room you came from.
-pub(super) fn cross_into(
-    seed: u64,
-    tp: &mut TeleportState,
-    gap: &teleport::DoorGap,
-    cur: Place,
-    from: RoomId,
-    nav: &teleport::Nav,
-    keys: &KeystoneState,
+fn sync_dynamic_closures(tp: &mut TeleportState, nav: &teleport::Nav) -> bool {
+    let mut changed = false;
+    let protected_entry = tp.current_snapshot.entry_gap.map(|gap| gap.threshold);
+    for gap in &mut tp.geom.gaps {
+        // A hallway is an already-committed traversal transaction, not a projection of
+        // either endpoint room's newly-refactored slot table. Likewise, the room socket
+        // just used to arrive remains open while its exact reverse transaction is present.
+        // Applying bare room-local slot numbers to a hallway used to seal both ends when
+        // only the room behind the player had collapsed.
+        let may_apply_room_seal = matches!(tp.place, Place::Room(_))
+            && protected_entry != Some(gap.threshold)
+            && nav.sealed_slots.contains(&gap.threshold.room.slot);
+        let next_kind = if may_apply_room_seal {
+            GapKind::Collapsed
+        } else if gap.target == nav.exit_room
+            && matches!(gap.kind, GapKind::Exit | GapKind::LockedExit)
+        {
+            if nav.exit_locked {
+                GapKind::LockedExit
+            } else {
+                GapKind::Exit
+            }
+        } else {
+            gap.kind
+        };
+        changed |= next_kind != gap.kind;
+        gap.kind = next_kind;
+    }
+    if !changed {
+        return false;
+    }
+    let y_offset = teleport::place_y_offset(tp.place);
+    let arena = tp
+        .layout
+        .as_ref()
+        .and_then(|layout| {
+            tp.collision_catalog
+                .arena_for_layout(layout, &tp.geom, y_offset)
+        })
+        .unwrap_or_else(|| {
+            teleport::place_arena_spec(&tp.geom, y_offset, crate::layout::WALL_HEIGHT)
+        });
+    tp.rapier =
+        observed_traversal::rapier_controller::RapierTraversalScene::from_arena_spec(&arena);
+    let entry_threshold = tp.current_snapshot.entry_gap.map(|gap| gap.threshold);
+    tp.current_snapshot.geom = tp.geom.clone();
+    tp.current_snapshot.arena = arena;
+    tp.current_snapshot.entry_gap = entry_threshold.and_then(|threshold| {
+        tp.current_snapshot
+            .geom
+            .gaps
+            .iter()
+            .find(|gap| gap.threshold == threshold)
+            .copied()
+    });
+    tp.current_snapshot.id = snapshot_id(
+        tp.place,
+        &tp.current_snapshot.geom,
+        tp.current_snapshot.layout.as_ref(),
+        &tp.current_snapshot.arena,
+        tp.simulation_content_hash,
+    );
+    tp.rendered = None;
+    true
+}
+
+pub(crate) fn sync_threshold_closures(
+    runtime: Res<MatchDirector>,
+    mut tp: ResMut<TeleportState>,
+    keys: Res<KeystoneState>,
+    items: Res<ItemsState>,
+    seed: Option<Res<crate::flow::ActiveMatchSeed>>,
 ) {
-    if let Some(dest) = frozen_dest_for(tp, gap).cloned() {
-        assert_eq!(
-            dest.simulation_content_hash, tp.simulation_content_hash,
-            "frozen threshold layout was produced by different simulation content"
+    let seed = seed.map(|seed| seed.0).unwrap_or(MATCH_SEED);
+    let nav = nav_for_place(seed, runtime.live.host_match(), &keys, &items, tp.place);
+    if sync_dynamic_closures(&mut tp, &nav) {
+        tp.transits = compute_threshold_transits(
+            seed,
+            &tp.current_snapshot,
+            runtime.live.host_match(),
+            &keys,
+            &items,
+            &tp.config,
+            &tp.collision_catalog,
+            tp.simulation_content_hash,
         );
-        place_body(
-            tp,
-            dest.place,
-            from,
-            Some(*gap),
-            &frozen_nav(seed, &dest, keys),
-            dest.layout.as_ref(),
-        );
-    } else {
-        let (place, _) = teleport::apply_crossing(cur, gap, nav);
-        place_body(tp, place, from, Some(*gap), nav, None);
     }
 }
 
-/// Cross `gap` into room `arrived` (from a hallway): prefer the frozen snapshot for that
-/// doorway (frozen shape), else rebuild from the live brain. `from` is the room the hallway
-/// came from (its arrival doorway stays open).
+/// Install the exact snapshot already displayed by a threshold. Position, view and
+/// velocity are mapped through the same frozen transform; there is no live fallback.
+pub(crate) fn cross_transit(tp: &mut TeleportState, transit: &ThresholdTransit) -> bool {
+    let (Some(destination), Some(destination_gap), Some(transform)) = (
+        transit.destination.clone(),
+        transit.destination_gap,
+        transit.transform,
+    ) else {
+        return false;
+    };
+    assert_eq!(
+        destination.simulation_content_hash, tp.simulation_content_hash,
+        "threshold snapshot was produced by different simulation content"
+    );
+    let mut body = tp.body;
+    let mut xz = transform
+        .alignment
+        .inverse_apply(Vec2::new(body.position.x, body.position.z));
+    // A swept capsule fires when its leading edge reaches the source plane, while a
+    // rigid portal transform maps that still-source-side centre to the exterior side of
+    // the destination plane. Move only along the exact reciprocal normal until the full
+    // capsule is safely supported inside the installed destination footprint; lateral
+    // offset, view, velocity, and floor height remain transform-derived.
+    let signed_depth = (xz - destination_gap.center).dot(destination_gap.normal);
+    let required_inside = tp.config.radius + teleport::PREVIEW_OUTSET + 0.02;
+    if signed_depth > -required_inside {
+        xz -= destination_gap.normal * (signed_depth + required_inside);
+    }
+    body.position.x = xz.x;
+    body.position.z = xz.y;
+    body.position.y += transform.destination_floor_y - transform.source_floor_y;
+    body.yaw = (body.yaw - transform.alignment.yaw).rem_euclid(std::f32::consts::TAU);
+    let velocity_origin = transform.alignment.inverse_apply(Vec2::ZERO);
+    let velocity_xz = transform
+        .alignment
+        .inverse_apply(Vec2::new(body.velocity.x, body.velocity.z))
+        - velocity_origin;
+    body.velocity.x = velocity_xz.x;
+    body.velocity.z = velocity_xz.y;
+    body.spawn = body.position;
+    body.spawn_yaw = body.yaw;
+    install_snapshot(tp, destination, body);
+    true
+}
+
 #[allow(clippy::too_many_arguments)]
-pub(super) fn cross_into_room(
+pub(crate) fn place_body_at(
     seed: u64,
     tp: &mut TeleportState,
-    gap: &teleport::DoorGap,
-    arrived: RoomId,
-    from: RoomId,
+    place: Place,
+    pos: Vec2,
     game: &HybridMatch,
     keys: &KeystoneState,
     items: &ItemsState,
 ) {
-    match frozen_dest_for(tp, gap).cloned() {
-        Some(dest) if dest.place == Place::Room(arrived) => {
-            assert_eq!(
-                dest.simulation_content_hash, tp.simulation_content_hash,
-                "frozen threshold layout was produced by different simulation content"
-            );
-            place_body(
-                tp,
-                dest.place,
-                from,
-                Some(*gap),
-                &frozen_nav(seed, &dest, keys),
-                dest.layout.as_ref(),
-            );
+    let snapshot = build_place_snapshot(
+        seed,
+        place,
+        None,
+        None,
+        game,
+        keys,
+        items,
+        &tp.collision_catalog,
+        tp.simulation_content_hash,
+    );
+    let mut body = FpsBody::spawned(
+        Vec3::new(
+            pos.x,
+            teleport::place_y_offset(place) + tp.config.half_height,
+            pos.y,
+        ),
+        tp.body.yaw,
+    );
+    body.pitch = tp.body.pitch;
+    install_snapshot(tp, snapshot, body);
+}
+
+fn room_threshold_commit_target(
+    place: Place,
+    source_gap: &teleport::DoorGap,
+    destination: Option<Place>,
+) -> Option<(RoomId, RoomId)> {
+    match (place, source_gap.kind, destination) {
+        (Place::Room(room), GapKind::Forward, Some(Place::Hallway { from, to, .. }))
+            if room == from =>
+        {
+            Some((from, to))
         }
-        _ => {
-            let nav = nav_for_room(seed, game, keys, items, arrived);
-            place_body(tp, Place::Room(arrived), from, Some(*gap), &nav, None);
-        }
+        _ => None,
     }
 }
 
-/// Fixed-step teleport controller: walk the body inside the current place; crossing
-/// the forward doorway teleports into the edge's hallway, and reaching the hallway's
-/// exit commits the spine `Advance` to the match brain and teleports into the next
-/// room. The brain (rounds / networking / replay) is untouched.
+/// Fixed-step teleport controller. Crossing a room's selected forward threshold commits
+/// the route, then installs the exact hallway snapshot already shown in that doorway.
+/// The hallway remains a frozen traversal transaction; its far threshold installs a
+/// post-commit destination-room snapshot with an exact reversible arrival socket.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn teleport_sim(
     mut commands: Commands,
@@ -335,7 +575,22 @@ pub(crate) fn teleport_sim(
     let seed_val = seed.map(|s| s.0).unwrap_or(MATCH_SEED);
     let tp = tp.into_inner();
     let nav = nav_for_place(seed_val, runtime.live.host_match(), &keys, &items, tp.place);
+    if sync_dynamic_closures(tp, &nav) {
+        tp.transits = compute_threshold_transits(
+            seed_val,
+            &tp.current_snapshot,
+            runtime.live.host_match(),
+            &keys,
+            &items,
+            &tp.config,
+            &tp.collision_catalog,
+            tp.simulation_content_hash,
+        );
+    }
     let prev = body_xz(tp);
+    if teleport::inside_footprint(&tp.geom, prev, tp.config.radius) {
+        tp.last_safe_body = tp.body;
+    }
     let config = tp.config;
     let prev_grounded = tp.prev_grounded;
 
@@ -373,115 +628,115 @@ pub(crate) fn teleport_sim(
     let next = body_xz(tp);
     tp.prev_xz = next;
 
-    // A body may only actually cross a gap while its feet sit at the local floor height
-    // that gap requires (the gantry hall's upper exit sits on the deck at UPPER_DECK_Y,
-    // so a ground-level body walking under its XZ span must not also "cross" it). Ground
-    // gaps (`floor_y == 0.0`) keep today's behaviour: any grounded body still crosses.
     let place_floor_y = teleport::place_y_offset(tp.place);
     let world_feet_y = tp.body.position.y - config.half_height;
-    let at_gap_floor =
-        |g: &&teleport::DoorGap| teleport::feet_at_gap_floor(world_feet_y, place_floor_y, g);
-
     let place_before = tp.place;
-    match tp.place {
-        Place::Room(room) => {
-            if let Some(gap) = tp
-                .geom
-                .gaps
-                .iter()
-                .filter(|g| g.kind.is_passage())
-                .filter(at_gap_floor)
-                .find(|g| teleport::crossed(prev, next, g))
-                .copied()
-            {
-                cross_into(seed_val, tp, &gap, Place::Room(room), room, &nav, &keys);
+    let crossed_transit = tp
+        .transits
+        .iter()
+        .filter(|transit| transit.is_valid())
+        .filter_map(|transit| {
+            let live_gap = tp.geom.gaps.iter().find(|gap| {
+                gap.threshold == transit.source_gap.threshold && gap.kind.is_passage()
+            })?;
+            teleport::capsule_crossing_fraction(
+                prev,
+                next,
+                live_gap,
+                config.radius,
+                world_feet_y,
+                config.half_height,
+                place_floor_y,
+                crate::layout::WALL_HEIGHT,
+            )
+            .map(|fraction| {
+                let mut transit = transit.clone();
+                transit.source_gap = *live_gap;
+                (fraction, transit)
+            })
+        })
+        .min_by(|(a, _), (b, _)| a.total_cmp(b))
+        .map(|(_, transit)| transit);
+
+    let mut crossed_reverse = None;
+    if let Some(transit) = crossed_transit {
+        // The route choice commits at the room threshold, before the player enters the
+        // corridor. The hallway is therefore a committed traversal beat and its frozen
+        // destination-room snapshot is built from the post-commit graph. Committing at
+        // the far end used to install a pre-commit room whose former side door remained
+        // sealed even though the brain's new target had moved there.
+        let commit_target = room_threshold_commit_target(
+            tp.place,
+            &transit.source_gap,
+            transit.destination.as_ref().map(|snapshot| snapshot.place),
+        );
+        let may_cross = if let Some((from, to)) = commit_target {
+            let should_commit = {
+                let game = runtime.live.host_match();
+                game.local_room() == from && game.local_target() == Some(to)
+            };
+            !should_commit || runtime.live.force_round(LocalAction::Advance)
+        } else {
+            true
+        };
+        if may_cross {
+            let reverse = reverse_transit(&tp.current_snapshot, &transit);
+            if cross_transit(tp, &transit) {
+                crossed_reverse = reverse;
             }
-        }
-        Place::Hallway { from, to, .. } => {
-            if !tp.crossed_exit
-                && let Some(exit) = tp
-                    .geom
-                    .gaps
-                    .iter()
-                    .filter(|g| g.kind == GapKind::Exit)
-                    .filter(at_gap_floor)
-                    .find(|g| teleport::crossed(prev, next, g))
-                    .copied()
-            {
-                tp.crossed_exit = true;
-                tp.pending_exit = Some(exit);
-            }
-            if tp.crossed_exit {
-                let exit_gap = tp.pending_exit;
-                let should_commit = {
-                    let game = runtime.live.host_match();
-                    game.local_room() == from && game.local_target() == Some(to)
-                };
-                if should_commit && runtime.live.force_round(LocalAction::Advance) {
-                    let arrived = runtime.live.host_match().local_room();
-                    if let Some(g) = exit_gap {
-                        cross_into_room(
-                            seed_val,
-                            tp,
-                            &g,
-                            arrived,
-                            from,
-                            runtime.live.host_match(),
-                            &keys,
-                            &items,
-                        );
-                    }
-                } else if !should_commit && let Some(g) = exit_gap {
-                    cross_into_room(
-                        seed_val,
-                        tp,
-                        &g,
-                        to,
-                        from,
-                        runtime.live.host_match(),
-                        &keys,
-                        &items,
-                    );
-                }
-            } else {
-                if let Some(entry) = tp
-                    .geom
-                    .gaps
-                    .iter()
-                    .filter(|g| g.kind == GapKind::Entry)
-                    .filter(at_gap_floor)
-                    .find(|g| teleport::crossed(prev, next, g))
-                    .copied()
-                {
-                    cross_into_room(
-                        seed_val,
-                        tp,
-                        &entry,
-                        from,
-                        to,
-                        runtime.live.host_match(),
-                        &keys,
-                        &items,
-                    );
-                }
-            }
+        } else if tp.boundary_recoveries < 3 {
+            let game = runtime.live.host_match();
+            warn!(
+                "THRESHOLD_COMMIT_REJECTED place={:?} destination={:?} local_room={:?} local_target={:?} live_finished={}",
+                tp.place,
+                transit.destination.as_ref().map(|snapshot| snapshot.place),
+                game.local_room(),
+                game.local_target(),
+                runtime.live.finished(),
+            );
         }
     }
 
     if tp.place != place_before {
-        let collision_catalog = tp.collision_catalog.clone();
-        let simulation_content_hash = tp.simulation_content_hash;
-        let dests = compute_gap_dests(
+        let mut transits = compute_threshold_transits(
             seed_val,
-            tp.place,
-            &tp.geom,
+            &tp.current_snapshot,
             runtime.live.host_match(),
             &keys,
             &items,
-            &collision_catalog,
-            simulation_content_hash,
+            &tp.config,
+            &tp.collision_catalog,
+            tp.simulation_content_hash,
         );
-        tp.gap_dests = dests;
+        install_reverse_transit(&mut transits, crossed_reverse);
+        tp.transits = transits;
+    } else if !teleport::inside_footprint(&tp.geom, next, config.radius) {
+        tp.body = tp.last_safe_body;
+        tp.prev_xz = body_xz(tp);
+        tp.boundary_recoveries = tp.boundary_recoveries.saturating_add(1);
+        if tp.boundary_recoveries <= 3 || tp.boundary_recoveries.is_multiple_of(120) {
+            warn!(
+                "THRESHOLD_BOUNDARY_RECOVERY place={:?} count={} prev={:?} next={:?} feet_y={:.3} passage_planes={:?}",
+                tp.place,
+                tp.boundary_recoveries,
+                prev,
+                next,
+                world_feet_y,
+                tp.geom
+                    .gaps
+                    .iter()
+                    .filter(|gap| gap.kind.is_passage())
+                    .map(|gap| (
+                        gap.kind,
+                        gap.target,
+                        (prev - gap.center).dot(gap.normal) + config.radius,
+                        (next - gap.center).dot(gap.normal) + config.radius,
+                        (next - gap.center).dot(Vec2::new(-gap.normal.y, gap.normal.x)),
+                        gap.floor_y,
+                    ))
+                    .collect::<Vec<_>>(),
+            );
+        }
     }
 }
 
@@ -496,100 +751,131 @@ pub(crate) fn debug_place_into(
     keys: &KeystoneState,
     items: &ItemsState,
 ) {
-    let nav = nav_for_place(MATCH_SEED, runtime.live.host_match(), keys, items, place);
-    place_body(tp, place, from, None, &nav, None);
-    let collision_catalog = tp.collision_catalog.clone();
-    let simulation_content_hash = tp.simulation_content_hash;
-    tp.gap_dests = compute_gap_dests(
-        MATCH_SEED,
-        tp.place,
-        &tp.geom,
-        runtime.live.host_match(),
-        keys,
-        items,
-        &collision_catalog,
-        simulation_content_hash,
-    );
-}
-
-/// Capture/diagnostic helper: complete a threshold crossing once a derived bot has
-/// physically routed to the doorway. This deliberately reuses the same frozen-destination
-/// crossing helpers as [`teleport_sim`]; it only bypasses the final sub-step crossing
-/// detection so evidence bots do not stall at a polygon or maze threshold.
-pub(crate) fn debug_cross_gap_for_capture(
-    seed: u64,
-    tp: &mut TeleportState,
-    runtime: &mut MatchDirector,
-    gap: teleport::DoorGap,
-    keys: &KeystoneState,
-    items: &ItemsState,
-) {
-    let place_before = tp.place;
-    match tp.place {
-        Place::Room(room) => {
-            let nav = nav_for_place(seed, runtime.live.host_match(), keys, items, tp.place);
-            cross_into(seed, tp, &gap, Place::Room(room), room, &nav, keys);
-        }
-        // A gantry hall's understory side exit is Exit-kind but targets `from`;
-        // only a genuine onward crossing (toward `to`) may commit a round.
-        Place::Hallway { from, to, .. } if gap.kind == GapKind::Exit => {
-            let should_commit = {
-                let game = runtime.live.host_match();
-                gap.target == to && game.local_room() == from && game.local_target() == Some(to)
-            };
-            if should_commit {
-                runtime.live.force_round(LocalAction::Advance);
-                let arrived = runtime.live.host_match().local_room();
-                cross_into_room(
-                    seed,
-                    tp,
-                    &gap,
-                    arrived,
-                    from,
-                    runtime.live.host_match(),
-                    keys,
-                    items,
-                );
-            } else {
-                cross_into_room(
-                    seed,
-                    tp,
-                    &gap,
-                    gap.target,
-                    from,
-                    runtime.live.host_match(),
-                    keys,
-                    items,
-                );
-            }
-        }
-        Place::Hallway { from, to, .. } if gap.kind == GapKind::Entry => {
-            cross_into_room(
-                seed,
-                tp,
-                &gap,
-                from,
-                to,
+    let place = match place {
+        Place::Hallway {
+            from,
+            to,
+            variation,
+            ..
+        } => {
+            let source_nav = nav_for_place(
+                MATCH_SEED,
                 runtime.live.host_match(),
                 keys,
                 items,
+                Place::Room(from),
             );
+            let source_geom = teleport::geom_for(Place::Room(from), &source_nav);
+            source_geom
+                .gaps
+                .iter()
+                .find(|gap| gap.target == to && gap.kind.is_passage())
+                .and_then(|gap| {
+                    teleport::resolve_crossing(Place::Room(from), gap, &source_nav).and_then(
+                        |(resolved, _)| match resolved {
+                            Place::Hallway {
+                                corridor,
+                                entered_socket,
+                                ..
+                            } => Some(Place::Hallway {
+                                corridor,
+                                entered_socket,
+                                variation,
+                                from,
+                                to,
+                            }),
+                            Place::Room(_) => None,
+                        },
+                    )
+                })
+                .unwrap_or(place)
         }
-        _ => {}
+        Place::Room(_) => place,
+    };
+    let snapshot = build_place_snapshot(
+        MATCH_SEED,
+        place,
+        Some(from),
+        None,
+        runtime.live.host_match(),
+        keys,
+        items,
+        &tp.collision_catalog,
+        tp.simulation_content_hash,
+    );
+    let mut body = FpsBody::spawned(
+        Vec3::new(
+            0.0,
+            teleport::place_y_offset(place) + tp.config.half_height,
+            0.0,
+        ),
+        tp.body.yaw,
+    );
+    body.pitch = tp.body.pitch;
+    install_snapshot(tp, snapshot, body);
+    tp.transits = compute_threshold_transits(
+        MATCH_SEED,
+        &tp.current_snapshot,
+        runtime.live.host_match(),
+        keys,
+        items,
+        &tp.config,
+        &tp.collision_catalog,
+        tp.simulation_content_hash,
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use observed_core::{CorridorId, ThresholdSlotId};
+
+    fn gap(kind: GapKind) -> teleport::DoorGap {
+        teleport::DoorGap {
+            center: Vec2::ZERO,
+            normal: Vec2::Y,
+            width: teleport::THRESHOLD_WIDTH,
+            target: RoomId(2),
+            kind,
+            threshold: teleport::ThresholdLink {
+                room: teleport::RoomThreshold {
+                    room: RoomId(1),
+                    slot: ThresholdSlotId(3),
+                },
+                hall: teleport::HallThreshold {
+                    corridor: CorridorId(12),
+                    slot: ThresholdSlotId(0),
+                },
+                local_side: teleport::ThresholdLocalSide::Room,
+            },
+            floor_y: 0.0,
+        }
     }
-    if tp.place != place_before {
-        let collision_catalog = tp.collision_catalog.clone();
-        let simulation_content_hash = tp.simulation_content_hash;
-        tp.gap_dests = compute_gap_dests(
-            seed,
-            tp.place,
-            &tp.geom,
-            runtime.live.host_match(),
-            keys,
-            items,
-            &collision_catalog,
-            simulation_content_hash,
+
+    #[test]
+    fn only_a_room_forward_threshold_commits_the_round() {
+        let hall = Place::Hallway {
+            corridor: CorridorId(12),
+            entered_socket: ThresholdSlotId(0),
+            variation: 4,
+            from: RoomId(1),
+            to: RoomId(2),
+        };
+        assert_eq!(
+            room_threshold_commit_target(
+                Place::Room(RoomId(1)),
+                &gap(GapKind::Forward),
+                Some(hall)
+            ),
+            Some((RoomId(1), RoomId(2)))
         );
-        tp.rendered = None;
+        assert_eq!(
+            room_threshold_commit_target(Place::Room(RoomId(1)), &gap(GapKind::Entry), Some(hall)),
+            None
+        );
+        assert_eq!(
+            room_threshold_commit_target(hall, &gap(GapKind::Exit), Some(Place::Room(RoomId(2)))),
+            None
+        );
     }
 }

@@ -9,7 +9,9 @@ use bevy::math::{Quat, Vec2, Vec3};
 use observed_core::{CorridorId, PlaceId, RoomId, ThresholdId};
 use observed_facility::junction::{CorridorSpec, JunctionTopology, ThresholdAttachment};
 use observed_traversal::rapier_controller::{RapierTraversalScene, StructuralCollider};
-use observed_traversal::{Aabb3, FpsArena};
+use observed_traversal::{
+    Aabb3, ArenaSpec, ColliderShape, ColliderSpec, FpsArena, StableColliderId,
+};
 
 /// Did the body's movement segment cross `gap` outward (from inside to outside),
 /// within the gap's width? Used by the controller bridge each fixed step.
@@ -29,11 +31,70 @@ pub fn crossed(prev: Vec2, next: Vec2, gap: &DoorGap) -> bool {
     (point - gap.center).dot(tangent).abs() <= gap.width * 0.5
 }
 
+/// Earliest outward threshold-plane intersection for a moving capsule. The capsule's
+/// leading edge triggers while its centre is still supported inside the source floor;
+/// lateral and vertical clearance are reduced by the physical capsule dimensions.
+#[allow(clippy::too_many_arguments)]
+pub fn capsule_crossing_fraction(
+    prev: Vec2,
+    next: Vec2,
+    gap: &DoorGap,
+    radius: f32,
+    world_feet_y: f32,
+    half_height: f32,
+    place_floor_y: f32,
+    aperture_height: f32,
+) -> Option<f32> {
+    const LEADING_EDGE_GRACE: f32 = 0.05;
+    let dp = (prev - gap.center).dot(gap.normal) + radius;
+    let dn = (next - gap.center).dot(gap.normal) + radius;
+    // Rapier's skin/contact resolution can leave the leading edge a few millimetres
+    // beyond the mathematical plane between fixed ticks. Treat that tiny, still-
+    // source-side state as an immediate crossing instead of missing the transaction
+    // forever and letting the footprint guard repeatedly recover the body.
+    if dp > LEADING_EDGE_GRACE || dn <= 0.0 {
+        return None;
+    }
+    let denominator = dn - dp;
+    if dp <= 0.0 && denominator.abs() <= f32::EPSILON {
+        return None;
+    }
+    let fraction = if dp > 0.0 {
+        0.0
+    } else {
+        (-dp / denominator).clamp(0.0, 1.0)
+    };
+    let center = prev.lerp(next, fraction);
+    let tangent = Vec2::new(-gap.normal.y, gap.normal.x);
+    let clear_half_width = gap.width * 0.5 - radius;
+    if clear_half_width <= 0.0 || (center - gap.center).dot(tangent).abs() > clear_half_width + 0.01
+    {
+        return None;
+    }
+    let required_floor = place_floor_y + gap.floor_y;
+    let floor_error = (world_feet_y - required_floor).abs();
+    let head_y = world_feet_y + half_height * 2.0;
+    if floor_error > 0.18 || head_y > required_floor + aperture_height - 0.02 {
+        return None;
+    }
+    Some(fraction)
+}
+
+/// Whether a capsule centre is still supported by the current place footprint. This is
+/// the post-step safety invariant used when no valid threshold transaction fired.
+pub fn inside_footprint(geom: &PlaceGeom, point: Vec2, radius: f32) -> bool {
+    if geom.poly.is_some() {
+        (super::geom::contain(geom, point, radius) - point).length_squared() <= 0.0004
+    } else {
+        point.x.abs() <= geom.half.x - radius + 0.02 && point.y.abs() <= geom.half.y - radius + 0.02
+    }
+}
+
 /// How far a body's feet (`world_feet_y`, in world space) may sit from a gap's local
 /// `floor_y` and still be considered "at" that floor for the purposes of using the gap. A
 /// generous tolerance: it just needs to be tighter than the gap between two distinct
 /// floors the gantry hall uses (0 vs `UPPER_DECK_Y` = 2.1), never zero-crossing rounding.
-pub const GAP_FLOOR_TOLERANCE: f32 = 1.2;
+pub const GAP_FLOOR_TOLERANCE: f32 = 0.18;
 
 /// Are a body's feet at the local floor height `gap.floor_y` requires, within tolerance?
 /// `world_feet_y` is the body's feet in world space (`position.y - half_height`);
@@ -88,7 +149,14 @@ pub fn place_junction(place: Place, nav: &Nav) -> JunctionTopology {
     let mut attach = |from_room: RoomId, target: RoomId, room_slot: super::ThresholdSlotId| {
         if let Some(spec) = &nav.map_spec {
             let mut found = false;
-            for corridor in spec.corridors() {
+            for corridor in &spec.corridors {
+                if !corridor
+                    .endpoints
+                    .iter()
+                    .any(|endpoint| endpoint.room == target)
+                {
+                    continue;
+                }
                 for (slot_idx, endpoint) in corridor.endpoints.iter().enumerate() {
                     if endpoint.room == from_room && endpoint.side.index() as u16 == room_slot.0 {
                         let cid = corridor.id;
@@ -143,7 +211,7 @@ pub fn place_junction(place: Place, nav: &Nav) -> JunctionTopology {
             corridor, from, to, ..
         } => {
             if let Some(spec) = &nav.map_spec
-                && let Some(corridor_def) = spec.corridors().iter().find(|c| c.id == corridor)
+                && let Some(corridor_def) = spec.corridors.iter().find(|c| c.id == corridor)
             {
                 if !specs.iter().any(|s| s.id == corridor) {
                     specs.push(CorridorSpec::with_slot_count(
@@ -211,22 +279,20 @@ fn default_room_slot(nav: &Nav, connection: RoomId) -> super::ThresholdSlotId {
 /// always populated for every live connection ([`place_junction`] attaches best-effort),
 /// and `enforce_active_sockets` demotes any unattached socket to a solid door, so a
 /// passage gap always has a partner. `partner()` is the sole connectivity path.
-pub fn apply_crossing(place: Place, gap: &DoorGap, nav: &Nav) -> (Place, Crossing) {
+pub fn resolve_crossing(place: Place, gap: &DoorGap, nav: &Nav) -> Option<(Place, Crossing)> {
     let topology = place_junction(place, nav);
     match place {
         Place::Room(room) => {
             let room_tid = ThresholdId::new(PlaceId::Room(room), gap.threshold.room.slot.0);
-            let Some(partner_tid) = topology.partner(room_tid) else {
-                return (place, Crossing::ArrivedRoom(room));
-            };
+            let partner_tid = topology.partner(room_tid)?;
             let PlaceId::Corridor(corridor) = partner_tid.place else {
-                return (place, Crossing::ArrivedRoom(room));
+                return None;
             };
             let entered_socket = partner_tid.slot;
             let to = gap.target;
             let version = nav.effective_version_for_corridor(corridor);
             let variation = hallway::variation_for(room, to, nav.seed, version);
-            (
+            Some((
                 Place::Hallway {
                     corridor,
                     entered_socket,
@@ -239,21 +305,31 @@ pub fn apply_crossing(place: Place, gap: &DoorGap, nav: &Nav) -> (Place, Crossin
                     from: room,
                     to,
                 },
-            )
+            ))
         }
         Place::Hallway { corridor, .. } => {
             let corridor_slot = gap.threshold.hall.slot;
             let corridor_tid = ThresholdId::new(PlaceId::Corridor(corridor), corridor_slot.0);
-            let Some(ThresholdId {
+            let ThresholdId {
                 place: PlaceId::Room(arrived),
                 ..
-            }) = topology.partner(corridor_tid)
+            } = topology.partner(corridor_tid)?
             else {
-                return (Place::Room(gap.target), Crossing::ArrivedRoom(gap.target));
+                return None;
             };
-            (Place::Room(arrived), Crossing::ArrivedRoom(arrived))
+            Some((Place::Room(arrived), Crossing::ArrivedRoom(arrived)))
         }
     }
+}
+
+/// Compatibility wrapper for pure callers that still expect a total transition. The
+/// production threshold transaction uses [`resolve_crossing`] and records a fault when
+/// identity is missing; it never interprets this unchanged-place result as a crossing.
+pub fn apply_crossing(place: Place, gap: &DoorGap, nav: &Nav) -> (Place, Crossing) {
+    resolve_crossing(place, gap, nav).unwrap_or(match place {
+        Place::Room(room) => (place, Crossing::ArrivedRoom(room)),
+        Place::Hallway { from, .. } => (place, Crossing::ArrivedRoom(from)),
+    })
 }
 
 /// How far the place beyond a doorway is pushed outward so its entry wall tucks behind
@@ -296,6 +372,16 @@ impl Align2d {
     /// pose that keeps the camera continuous.
     pub fn inverse_apply(self, p: Vec2) -> Vec2 {
         rot_y(-self.yaw, p - self.offset)
+    }
+
+    /// Return the rigid transform that maps the current frame back into the child
+    /// frame. Threshold transactions use this to keep the doorway just crossed as an
+    /// exact reverse transaction instead of resolving it again from a changed graph.
+    pub fn inverse(self) -> Self {
+        Self {
+            yaw: -self.yaw,
+            offset: rot_y(-self.yaw, -self.offset),
+        }
     }
 }
 
@@ -717,6 +803,60 @@ pub fn place_rapier_scene(
     floor_y: f32,
     wall_height: f32,
 ) -> RapierTraversalScene {
-    let primitives = place_structural_primitives(geom, floor_y, wall_height);
-    RapierTraversalScene::from_primitives(floor_y, geom.half.x.max(geom.half.y) + 5.0, &primitives)
+    RapierTraversalScene::from_arena_spec(&place_arena_spec(geom, floor_y, wall_height))
+}
+
+/// Complete canonical collision description for one generated place. The support floor
+/// is explicit and has the exact footprint (a thin convex prism for polygon rooms), so
+/// an aperture is never backed by invisible walkable floor outside the perimeter.
+pub fn place_arena_spec(geom: &PlaceGeom, floor_y: f32, wall_height: f32) -> ArenaSpec {
+    let floor_shape = match &geom.poly {
+        Some(poly) => {
+            let mut points = Vec::with_capacity(poly.len() * 2);
+            for y in [floor_y - 0.2, floor_y] {
+                points.extend(poly.iter().map(|p| Vec3::new(p.x, y, p.y)));
+            }
+            ColliderShape::ConvexHull { points }
+        }
+        None => ColliderShape::Cuboid {
+            half: Vec3::new(geom.half.x, 0.1, geom.half.y),
+        },
+    };
+    let floor_center = if geom.poly.is_some() {
+        Vec3::ZERO
+    } else {
+        Vec3::new(0.0, floor_y - 0.1, 0.0)
+    };
+    let mut colliders = vec![ColliderSpec {
+        id: StableColliderId(0),
+        center: floor_center,
+        rotation: [0.0, 0.0, 0.0, 1.0],
+        shape: floor_shape,
+        friction: 0.9,
+    }];
+    colliders.extend(
+        place_structural_primitives(geom, floor_y, wall_height)
+            .into_iter()
+            .enumerate()
+            .map(|(index, primitive)| {
+                let half_yaw = primitive.yaw * 0.5;
+                ColliderSpec {
+                    id: StableColliderId(index as u32 + 1),
+                    center: primitive.center,
+                    rotation: [0.0, half_yaw.sin(), 0.0, half_yaw.cos()],
+                    shape: ColliderShape::Cuboid {
+                        half: primitive.half,
+                    },
+                    friction: 0.8,
+                }
+            }),
+    );
+    let spec = ArenaSpec {
+        colliders,
+        floor_y,
+        safety_center: Vec3::new(0.0, floor_y + wall_height * 0.5, 0.0),
+        safety_half: Vec3::new(geom.half.x + 1.0, wall_height + 12.0, geom.half.y + 1.0),
+    };
+    debug_assert!(spec.validate().is_ok());
+    spec
 }

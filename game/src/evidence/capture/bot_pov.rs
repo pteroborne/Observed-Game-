@@ -16,7 +16,6 @@ use crate::view::components::GameCam;
 const BOT_CAPTURE_INTERVAL: f32 = 1.0;
 const BOT_CAPTURE_MAX_SHOTS: usize = 120;
 const BOT_WAYPOINT_RADIUS: f32 = 0.9;
-const BOT_CROSS_RADIUS: f32 = 1.2;
 
 #[derive(Resource)]
 pub(crate) struct BotPovCaptureRequest {
@@ -72,14 +71,6 @@ impl BotPovCaptureRequest {
             .join(format!("bot_pov_{:03}.png", self.shot))
             .to_string_lossy()
             .into_owned()
-    }
-
-    pub(super) fn clear_route(&mut self) {
-        self.route_place = None;
-        self.route.clear();
-        self.route_jumps.clear();
-        self.route_deck = false;
-        self.waypoint = 0;
     }
 }
 
@@ -208,14 +199,12 @@ pub(super) fn capture_bot_pov_progress(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn drive_bot_pov_capture(
     mut request: ResMut<BotPovCaptureRequest>,
-    mut runtime: ResMut<MatchDirector>,
+    runtime: Res<MatchDirector>,
     mut tp: ResMut<TeleportState>,
-    keys: Res<keystones::KeystoneState>,
     items: Res<items::ItemsState>,
     mut intent: ResMut<MatchIntent>,
     mut item_intent: ResMut<ItemIntent>,
     guardian: Option<Res<crate::guardian::Guardian>>,
-    seed: Option<Res<crate::flow::ActiveMatchSeed>>,
 ) {
     if request.phase < 2 || request.finished {
         return;
@@ -240,7 +229,6 @@ pub(crate) fn drive_bot_pov_capture(
     }
 
     let here = Vec2::new(tp.body.position.x, tp.body.position.z);
-    let seed_val = seed.map(|seed| seed.0).unwrap_or(crate::flow::MATCH_SEED);
     let local_feet_y = bot::local_feet_y(tp.body.position.y - tp.config.half_height, tp.place);
     let y_offset = crate::teleport::place_y_offset(tp.place);
     let primitives = crate::teleport::place_structural_primitives(
@@ -248,35 +236,6 @@ pub(crate) fn drive_bot_pov_capture(
         y_offset,
         crate::layout::WALL_HEIGHT,
     );
-    if let Some(gap) = bot::target_gap_for_place(tp.place, &tp.geom, here, local_feet_y) {
-        let rel = here - gap.center;
-        let tangent = Vec2::new(-gap.normal.y, gap.normal.x);
-        let at_aperture =
-            rel.dot(gap.normal) > -0.45 && rel.dot(tangent).abs() <= gap.width * 0.5 + 0.35;
-        if here.distance(gap.center) <= BOT_CROSS_RADIUS || at_aperture {
-            info!(
-                "BOT_NAV: Crossing gap in {:?} (gap center: {:?}, normal: {:?}). Distance: {}, at_aperture: {}",
-                tp.place,
-                gap.center,
-                gap.normal,
-                here.distance(gap.center),
-                at_aperture
-            );
-            crate::screens::match_runtime::debug_cross_gap_for_capture(
-                seed_val,
-                &mut tp,
-                &mut runtime,
-                gap,
-                &keys,
-                &items,
-            );
-            info!("BOT_NAV: Crossed into new place: {:?}", tp.place);
-            request.clear_route();
-            intent.0 = PlayerIntent::default();
-            return;
-        }
-    }
-
     let fell_off_deck =
         request.route_deck && !bot::at_deck_height(local_feet_y) && tp.body.grounded;
     if request.route_place != Some(tp.place)
@@ -472,8 +431,9 @@ pub(crate) fn drive_bot_pov_capture(
     intent.0.sprint_held = !is_sharp_turn; // Sprint only on straightaways or gentle turns to reduce inertia drift
     intent.0.jump_pressed = jump_pressed;
 
-    // Coordinate logging to track progress
-    info!(
+    // Per-tick coordinates are available at trace level; route/waypoint transitions stay
+    // at info so long evidence runs remain reviewable and do not bury threshold faults.
+    trace!(
         "BOT_NAV: pos=({:.3}, {:.3}), yaw={:.3}, wp={}/{}, target={:?}, blocked={}",
         here.x,
         here.y,

@@ -11,7 +11,6 @@ use bevy::window::{CursorOptions, PrimaryWindow};
 
 use super::input::{gamepad_pause_pressed, gamepad_quit_pressed};
 use crate::sim::director::MatchDirector;
-use crate::sim::nav::nav_for_place;
 use crate::sim::state::{ItemIntent, LastTeleportPad, MatchPaused, SpectatorBot, TeleportState};
 use crate::view::assets::MatchAssets;
 use crate::view::components::{KeystoneItem, MatchAudioCue, TeleportAnimation};
@@ -28,7 +27,8 @@ pub(crate) use ambience::{
     palette_for_match,
 };
 pub(crate) use crossing::{
-    compute_gap_dests, debug_cross_gap_for_capture, debug_place_into, place_body_at, teleport_sim,
+    compute_threshold_transits, debug_place_into, place_body_at, sync_threshold_closures,
+    teleport_sim,
 };
 pub(crate) use session::{cleanup_match_resources, setup_match};
 pub(crate) use spectator::drive_spectator_bot;
@@ -146,27 +146,25 @@ pub(crate) fn item_actions(
         }
 
         if let Some((target_place, target_pos)) = on_pad_link {
-            let nav = nav_for_place(
+            place_body_at(
                 seed_val,
-                director.live.host_match(),
-                &keys,
-                &items,
+                &mut tp,
                 target_place,
-            );
-            place_body_at(&mut tp, target_place, target_pos, &nav);
-            let collision_catalog = tp.collision_catalog.clone();
-            let simulation_content_hash = tp.simulation_content_hash;
-            let dests = compute_gap_dests(
-                seed_val,
-                tp.place,
-                &tp.geom,
+                target_pos,
                 director.live.host_match(),
                 &keys,
                 &items,
-                &collision_catalog,
-                simulation_content_hash,
             );
-            tp.gap_dests = dests;
+            tp.transits = compute_threshold_transits(
+                seed_val,
+                &tp.current_snapshot,
+                director.live.host_match(),
+                &keys,
+                &items,
+                &tp.config,
+                &tp.collision_catalog,
+                tp.simulation_content_hash,
+            );
             changed = true;
             last_pad.last_used_pos = Some((target_place, target_pos));
             anim.trigger(2.0, Color::srgba(0.0, 0.8, 1.0, 1.0));
@@ -186,43 +184,8 @@ pub(crate) fn item_actions(
     }
 
     if changed {
-        let nav = nav_for_place(
-            seed_val,
-            director.live.host_match(),
-            &keys,
-            &items,
-            tp.place,
-        );
-        let mut geom = crate::teleport::geom_for(tp.place, &nav);
-        if matches!(tp.place, Place::Room(_)) {
-            crate::teleport::open_entry(&mut geom, tp.arrived_from);
-        }
-        let current_place = tp.place;
-        let current_layout = tp.layout.clone();
-        tp.set_arena_for_place(
-            current_place,
-            &geom,
-            0.0,
-            current_layout.as_ref(),
-        );
-        if geom.poly.is_some() {
-            let clamped = crate::teleport::contain(&geom, body_xz(&tp), tp.config.radius);
-            tp.body.position.x = clamped.x;
-            tp.body.position.z = clamped.y;
-        }
-        tp.geom = geom;
-        let collision_catalog = tp.collision_catalog.clone();
-        let simulation_content_hash = tp.simulation_content_hash;
-        tp.gap_dests = compute_gap_dests(
-            seed_val,
-            tp.place,
-            &tp.geom,
-            director.live.host_match(),
-            &keys,
-            &items,
-            &collision_catalog,
-            simulation_content_hash,
-        );
+        // Presentation changes (anchors, carried tools, pad props) may rebuild visuals,
+        // but they cannot mutate an observed threshold transaction or its collision.
         tp.rendered = None;
     }
 }

@@ -320,29 +320,26 @@ mod tests {
             .into_iter()
             .find(|template| template.grid.is_some())
             .expect("at least one maze hallway template");
-        let hall = (0..64_u64)
-            .map(|seed| {
-                hallway_geom_with_slots(
-                    HallwayGeomEndpoints {
-                        from: RoomId(0),
-                        to: RoomId(1),
-                        from_room_slot: ThresholdSlotId(2),
-                        to_room_slot: ThresholdSlotId(1),
-                        exit_room: RoomId(EXIT_ROOM),
-                    },
-                    template,
-                    seed,
-                    false,
-                )
-            })
-            .find(|geom| {
-                geom.gaps
-                    .iter()
-                    .filter(|g| g.kind == GapKind::Entry)
-                    .count()
-                    > 1
-            })
-            .expect("maze template exposes multiple entry apertures");
+        let hall = hallway_geom_with_slots(
+            HallwayGeomEndpoints {
+                from: RoomId(0),
+                to: RoomId(1),
+                from_room_slot: ThresholdSlotId(2),
+                to_room_slot: ThresholdSlotId(1),
+                exit_room: RoomId(EXIT_ROOM),
+            },
+            template,
+            17,
+            false,
+        );
+        assert_eq!(
+            hall.gaps
+                .iter()
+                .filter(|gap| gap.kind == GapKind::Entry)
+                .count(),
+            1,
+            "one graph socket owns one physical entry aperture"
+        );
         let room = room_geom_with_slots(
             RoomId(0),
             &[RoomId(1)],
@@ -404,6 +401,76 @@ mod tests {
             Vec2::new(THRESHOLD_WIDTH, -ROOM_HALF - 0.5),
             &gap
         ));
+    }
+
+    #[test]
+    fn swept_capsule_crossing_enforces_width_height_and_floor() {
+        let gap = DoorGap {
+            center: Vec2::new(0.0, -ROOM_HALF),
+            normal: Vec2::new(0.0, -1.0),
+            width: THRESHOLD_WIDTH,
+            target: RoomId(2),
+            kind: GapKind::Forward,
+            threshold: test_threshold(RoomId(0), RoomId(2)),
+            floor_y: 0.0,
+        };
+        let prev = Vec2::new(0.0, -ROOM_HALF + 0.8);
+        let next = Vec2::new(0.0, -ROOM_HALF + 0.2);
+        assert!(
+            capsule_crossing_fraction(prev, next, &gap, 0.38, 0.0, 0.9, 0.0, 3.4).is_some(),
+            "the leading edge crosses before floor support ends"
+        );
+        let lateral = Vec2::X * (gap.width * 0.5 - 0.1);
+        assert!(
+            capsule_crossing_fraction(
+                prev + lateral,
+                next + lateral,
+                &gap,
+                0.38,
+                0.0,
+                0.9,
+                0.0,
+                3.4,
+            )
+            .is_none(),
+            "the capsule radius must fit laterally"
+        );
+        assert!(
+            capsule_crossing_fraction(prev, next, &gap, 0.38, 0.5, 0.9, 0.0, 3.4).is_none(),
+            "a body between authored floors cannot use the threshold"
+        );
+        assert!(
+            capsule_crossing_fraction(prev, next, &gap, 0.38, 0.0, 1.8, 0.0, 3.4).is_none(),
+            "a capsule taller than the aperture cannot cross"
+        );
+    }
+
+    #[test]
+    fn swept_capsule_recovers_a_small_already_past_leading_edge() {
+        let gap = DoorGap {
+            center: Vec2::new(0.0, 10.5),
+            normal: Vec2::Y,
+            width: 4.2,
+            target: RoomId(1),
+            kind: GapKind::Exit,
+            threshold: test_threshold(RoomId(0), RoomId(1)),
+            floor_y: 0.0,
+        };
+
+        assert_eq!(
+            capsule_crossing_fraction(
+                Vec2::new(0.0, 10.128),
+                Vec2::new(0.0, 10.244),
+                &gap,
+                0.38,
+                0.0,
+                0.9,
+                0.0,
+                4.8,
+            ),
+            Some(0.0),
+            "a one-centimetre Rapier skin overshoot still commits the transaction"
+        );
     }
 
     #[test]
@@ -498,6 +565,9 @@ mod tests {
         for p in [Vec2::new(1.0, 2.0), Vec2::new(-5.0, 0.3), Vec2::ZERO] {
             let back = a.inverse_apply(a.apply(p));
             assert!((back - p).length() < 1e-4, "round trip {p:?} -> {back:?}");
+            let inverse = a.inverse();
+            assert!((inverse.apply(a.apply(p)) - p).length() < 1e-4);
+            assert!((a.apply(inverse.apply(p)) - p).length() < 1e-4);
         }
     }
 
@@ -548,6 +618,44 @@ mod tests {
         let mut start = room_geom(RoomId(1), &[RoomId(0), RoomId(2)], Some(RoomId(2)), 5);
         open_entry(&mut start, None);
         assert!(start.gaps.iter().all(|g| g.kind != GapKind::Entry));
+    }
+
+    #[test]
+    fn exact_arrival_restores_a_refactored_room_socket() {
+        let room = RoomId(1);
+        let old_room = RoomId(8);
+        let new_target = RoomId(2);
+        let slot = ThresholdSlotId(3);
+        let mut geom = room_geom_with_slots(
+            room,
+            &[new_target],
+            &[RoomConnectionSlot {
+                target: new_target,
+                slot,
+            }],
+            Some(new_target),
+            5,
+        );
+        let crossed = ThresholdLink {
+            room: RoomThreshold { room, slot },
+            hall: HallThreshold {
+                corridor: observed_core::CorridorId(91),
+                slot: ThresholdSlotId(1),
+            },
+            local_side: ThresholdLocalSide::Hall,
+        };
+
+        open_entry_threshold(&mut geom, Some(crossed), Some(old_room));
+
+        let entry = geom
+            .gaps
+            .iter()
+            .find(|gap| gap.threshold.room == crossed.room)
+            .expect("stable room socket remains present");
+        assert_eq!(entry.kind, GapKind::Entry);
+        assert_eq!(entry.target, old_room);
+        assert_eq!(entry.threshold.hall, crossed.hall);
+        assert_eq!(entry.threshold.local_side, ThresholdLocalSide::Room);
     }
 
     #[test]
@@ -755,8 +863,8 @@ mod tests {
                     .iter()
                     .filter(|g| g.kind == GapKind::Exit)
                     .collect();
-                assert!(!entries.is_empty(), "{} has an entrance", template.name);
-                assert!(!exits.is_empty(), "{} has an exit", template.name);
+                assert_eq!(entries.len(), 1, "{} has one entrance", template.name);
+                assert_eq!(exits.len(), 1, "{} has one exit", template.name);
                 assert!(
                     entries.iter().all(|g| g.target == RoomId(2)),
                     "every entrance leads back to `from`"
@@ -2202,7 +2310,7 @@ mod tests {
         to: RoomId,
         from_room_slot: ThresholdSlotId,
         to_room_slot: ThresholdSlotId,
-        template: &hallway::HallwayTemplate,
+        _template: &hallway::HallwayTemplate,
         seed: u64,
         role: Option<CorridorRole>,
     ) {
@@ -2260,19 +2368,7 @@ mod tests {
         ));
 
         // (2) In the Hallway, check that all active/passage gaps are crossable back
-        let hall_geom = hallway_geom_with_slots_and_role(
-            HallwayGeomEndpoints {
-                from,
-                to,
-                from_room_slot,
-                to_room_slot,
-                exit_room: RoomId(EXIT_ROOM),
-            },
-            template,
-            seed,
-            false,
-            role,
-        );
+        let hall_geom = geom_for(hall_place, &nav);
 
         let mut checked_gaps = 0;
         for gap in &hall_geom.gaps {

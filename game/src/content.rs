@@ -120,7 +120,15 @@ impl ContentCollisionCatalog {
         geom: &PlaceGeom,
         y_offset: f32,
     ) -> Option<ArenaSpec> {
-        let mut colliders =
+        // `ArenaSpec` is a complete collision world. Its floor is explicit and ends at
+        // the authored footprint; the controller must never receive the old oversized
+        // implicit square that extended through open thresholds and beyond the map.
+        let mut colliders = vec![ColliderSpec::cuboid(
+            StableColliderId(0),
+            bevy::math::Vec3::new(0.0, y_offset - 0.1, 0.0),
+            bevy::math::Vec3::new(geom.half.x, 0.1, geom.half.y),
+        )];
+        colliders.extend(
             crate::teleport::place_boundary_primitives(geom, y_offset, crate::layout::WALL_HEIGHT)
                 .into_iter()
                 .enumerate()
@@ -135,8 +143,8 @@ impl ContentCollisionCatalog {
                         },
                         friction: 0.8,
                     }
-                })
-                .collect::<Vec<_>>();
+                }),
+        );
         for placement in &layout.placements {
             let (_, baked) = self.modules.get(&placement.module_id)?;
             let yaw = (placement.yaw_degrees as f32).to_radians();
@@ -177,7 +185,12 @@ impl ContentCollisionCatalog {
         let spec = ArenaSpec {
             colliders,
             floor_y: y_offset,
-            floor_half: geom.half.max_element() + 2.0,
+            safety_center: bevy::math::Vec3::new(0.0, y_offset + 2.0, 0.0),
+            safety_half: bevy::math::Vec3::new(
+                geom.half.x + 1.0,
+                crate::layout::WALL_HEIGHT + 12.0,
+                geom.half.y + 1.0,
+            ),
         };
         spec.validate().ok()?;
         Some(spec)
@@ -252,9 +265,12 @@ mod tests {
                 .collision_catalog
                 .arena_for_layout(&layout, &geom, -8.0)
                 .unwrap();
-            let generated_boundary =
-                crate::teleport::place_boundary_primitives(&geom, -8.0, crate::layout::WALL_HEIGHT)
-                    .len();
+            let generated_boundary = 1 + crate::teleport::place_boundary_primitives(
+                &geom,
+                -8.0,
+                crate::layout::WALL_HEIGHT,
+            )
+            .len();
             assert_eq!(
                 arena.colliders.len(),
                 generated_boundary + expected_authored_interiors
@@ -263,7 +279,8 @@ mod tests {
                 arena
                     .colliders
                     .iter()
-                    .take(generated_boundary)
+                    .skip(1)
+                    .take(generated_boundary - 1)
                     .all(|collider| matches!(collider.shape, ColliderShape::Cuboid { .. }))
             );
             assert!(
