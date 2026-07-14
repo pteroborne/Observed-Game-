@@ -113,6 +113,14 @@ Run the production Rapier path across the complete procedural corpus: every room
 - Added comprehensive integration test suite `phase76_multi_exit_crossing_integration_test` verifying bidirectional crossing, side-exit routing, and topological validity.
 - 0 clippy warnings and all workspace tests passing.
 
+### Phase 77 — Threshold & Architecture Refresh `[x]`
+**Complete 2026-07-13:**
+- Added one pure aperture planner for off-centre, multiple, and elevated thresholds; visible walls, Rapier perimeter collision, trim, previews, and map validation now consume it, while sealed/locked/collapsed states are explicit closure geometry.
+- Corrected the Gantry understory side threshold to live on its actual boundary and made frame indicators report durable anchors only, never transient observation.
+- Added a weighted semantic room-template catalog to `MapSpec`; WFC and authored maps store their deterministic architectural kit and production room footprints consume the selected profile.
+- Promoted the manifest-governed Kenney CC0 gate and cable bundle into threshold presentation with procedural semantic accents, style-normalized imported materials, and procedural fallbacks.
+- Made Rapier the assembled game's sole controller path and composed authored Gantry/Colonnade interiors with generated aperture-safe boundaries; removed the runtime physics and geometry selectors.
+
 ---
 
 ## Bug Backlog

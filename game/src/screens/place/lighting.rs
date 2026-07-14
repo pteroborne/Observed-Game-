@@ -331,82 +331,63 @@ pub(crate) fn spawn_surface_detail(
             e.insert(PassagePreview);
         }
     };
-    if let Some(poly) = geom.poly.as_ref() {
-        let n = poly.len();
-        for i in 0..n {
-            let (a, b) = (poly[i], poly[(i + 1) % n]);
-            let d = b - a;
-            let len = d.length();
-            if len < 0.05 {
-                continue;
-            }
-            let mid = (a + b) * 0.5;
-            let inward = inward_normal(a, b);
-            let yaw = (-d.y).atan2(d.x);
-            let dir = d.normalize_or_zero();
-            let passage_gaps = geom
-                .gaps
-                .iter()
-                .filter(|gap| gap.kind.is_passage() && (gap.center - mid).length() < 0.05)
-                .map(|gap| ((gap.center - mid).dot(dir), gap.width * 0.5))
-                .collect::<Vec<_>>();
-            if !preview || passage_gaps.is_empty() {
-                for (offset, span_len) in trim_spans(len * 0.5, passage_gaps) {
-                    let p = mid + dir * offset + inward * TRIM_WALL_INSET;
-                    strip(
-                        Vec3::new(p.x, TRIM_LOW_Y, p.y),
-                        Vec3::new(span_len, TRIM_HEIGHT, TRIM_DEPTH),
-                        yaw,
-                        "Wall trim",
-                    );
-                }
-            }
-        }
+    let boundary_storage;
+    let boundary = if let Some(poly) = geom.poly.as_ref() {
+        poly.as_slice()
     } else {
         let (hx, hz) = (geom.half.x, geom.half.y);
-        for sign in [-1.0_f32, 1.0] {
-            // North/South walls run along X, split around open thresholds.
-            let gaps = geom
-                .gaps
-                .iter()
-                .filter(|gap| {
-                    gap.kind.is_passage()
-                        && (gap.normal.y - sign).abs() < 0.5
-                        && gap.normal.x.abs() < 0.5
-                })
-                .map(|gap| (gap.center.x, gap.width * 0.5))
-                .collect::<Vec<_>>();
-            if !preview || gaps.is_empty() {
-                for (cx, len) in trim_spans(hx, gaps) {
-                    strip(
-                        Vec3::new(cx, TRIM_LOW_Y, sign * (hz - TRIM_WALL_INSET)),
-                        Vec3::new(len, TRIM_HEIGHT, TRIM_DEPTH),
-                        0.0,
-                        "Wall trim",
-                    );
-                }
-            }
-
-            // West/East walls run along Z, split around any side thresholds.
-            let gaps = geom
-                .gaps
-                .iter()
-                .filter(|gap| {
-                    gap.kind.is_passage()
-                        && (gap.normal.x - sign).abs() < 0.5
-                        && gap.normal.y.abs() < 0.5
-                })
-                .map(|gap| (gap.center.y, gap.width * 0.5))
-                .collect::<Vec<_>>();
-            if !preview || gaps.is_empty() {
-                for (cz, len) in trim_spans(hz, gaps) {
-                    strip(
-                        Vec3::new(sign * (hx - TRIM_WALL_INSET), TRIM_LOW_Y, cz),
-                        Vec3::new(TRIM_DEPTH, TRIM_HEIGHT, len),
-                        0.0,
-                        "Wall trim",
-                    );
-                }
+        boundary_storage = [
+            Vec2::new(-hx, -hz),
+            Vec2::new(hx, -hz),
+            Vec2::new(hx, hz),
+            Vec2::new(-hx, hz),
+        ];
+        boundary_storage.as_slice()
+    };
+    let plan = teleport::plan_boundary(
+        boundary,
+        &geom.gaps,
+        teleport::structural_height(geom, WALL_HEIGHT),
+        WALL_HEIGHT,
+    )
+    .expect("surface detail must share a valid threshold aperture plan");
+    for edge_index in 0..boundary.len() {
+        let a = boundary[edge_index];
+        let b = boundary[(edge_index + 1) % boundary.len()];
+        let d = b - a;
+        let len = d.length();
+        if len < 0.05 {
+            continue;
+        }
+        let mid = (a + b) * 0.5;
+        let inward = inward_normal(a, b);
+        let yaw = (-d.y).atan2(d.x);
+        let dir = d.normalize_or_zero();
+        let threshold_spans = plan
+            .apertures
+            .iter()
+            .filter(|aperture| {
+                aperture.edge_index == edge_index
+                    && aperture.y_min < TRIM_LOW_Y + TRIM_HEIGHT * 0.5
+                    && aperture.y_max > TRIM_LOW_Y - TRIM_HEIGHT * 0.5
+            })
+            .map(|aperture| {
+                let center = (aperture.start + aperture.end) * 0.5;
+                (
+                    (center - mid).dot(dir),
+                    aperture.start.distance(aperture.end) * 0.5,
+                )
+            })
+            .collect::<Vec<_>>();
+        if !preview || threshold_spans.is_empty() {
+            for (offset, span_len) in trim_spans(len * 0.5, threshold_spans) {
+                let p = mid + dir * offset + inward * TRIM_WALL_INSET;
+                strip(
+                    Vec3::new(p.x, TRIM_LOW_Y, p.y),
+                    Vec3::new(span_len, TRIM_HEIGHT, TRIM_DEPTH),
+                    yaw,
+                    "Wall trim",
+                );
             }
         }
     }

@@ -7,7 +7,7 @@
 
 use bevy::prelude::*;
 use observed_facility::map_spec::RoomRole;
-use observed_traversal::{FpsBody, FpsConfig, PhysicsBackend};
+use observed_traversal::FpsBody;
 
 use super::crossing::compute_gap_dests;
 use crate::flow::{Career, MATCH_SEED};
@@ -18,8 +18,8 @@ use crate::sim::director::MatchDirector;
 use crate::sim::nav::nav_from_brain;
 use crate::sim::replay::ReplayTape;
 use crate::sim::state::{
-    GeometryBackend, ItemIntent, LastTeleportPad, MapKnowledge, MatchIntent, MatchPaused,
-    RivalSightings, SpectatorBot, TeleportState,
+    ItemIntent, LastTeleportPad, MapKnowledge, MatchIntent, MatchPaused, RivalSightings,
+    SpectatorBot, TeleportState,
 };
 use crate::teleport::Place;
 use crate::view::assets::{MatchAssets, all_planned_assets_present};
@@ -80,12 +80,7 @@ pub(crate) fn setup_match(
     let initial_commits = game.reroute_commits;
     let keys = KeystoneState::for_map(seed_val, &map_spec);
     let items = ItemsState::single_player();
-    let physics_backend = selected_physics_backend();
-    let geometry_backend = selected_geometry_backend();
-    let tp_config = match physics_backend {
-        PhysicsBackend::LegacyAabb => FpsConfig::default(),
-        PhysicsBackend::Rapier => content.traversal_config(),
-    };
+    let tp_config = content.traversal_config();
     let start_place = Place::Room(game.local_room());
     let start_geom =
         crate::teleport::geom_for(start_place, &nav_from_brain(seed_val, game, &keys, &items));
@@ -130,10 +125,8 @@ pub(crate) fn setup_match(
         body: FpsBody::spawned(spawn, 0.0),
         config: tp_config,
         rapier,
-        geometry_backend,
         collision_catalog: content.collision_catalog.clone(),
         simulation_content_hash: content.simulation_hash.0,
-        using_legacy_geometry_adapter: true,
         layout: None,
         geom: start_geom,
         prev_xz: Vec2::ZERO,
@@ -171,38 +164,13 @@ pub(crate) fn setup_match(
 
     commands.insert_resource(MatchAssets::load(
         &asset_server,
+        &content.manifest,
         &mut texture_atlases,
         &mut meshes,
         &mut materials,
     ));
 
     super::super::hud::spawn_match_hud(&mut commands, settings.high_contrast, debug_hud.0);
-}
-
-fn selected_physics_backend() -> PhysicsBackend {
-    match std::env::var("OBSERVED2_PHYSICS") {
-        Ok(value) if value.trim().eq_ignore_ascii_case("rapier") => PhysicsBackend::Rapier,
-        Ok(value) if value.trim().is_empty() || value.trim().eq_ignore_ascii_case("legacy") => {
-            PhysicsBackend::LegacyAabb
-        }
-        Ok(value) => {
-            panic!("unknown OBSERVED2_PHYSICS value `{value}`; expected `legacy` or `rapier`")
-        }
-        Err(_) => PhysicsBackend::LegacyAabb,
-    }
-}
-
-fn selected_geometry_backend() -> GeometryBackend {
-    match std::env::var("OBSERVED2_GEOMETRY") {
-        Ok(value) if value.trim().eq_ignore_ascii_case("authored") => GeometryBackend::Authored,
-        Ok(value) if value.trim().is_empty() || value.trim().eq_ignore_ascii_case("legacy") => {
-            GeometryBackend::Legacy
-        }
-        Ok(value) => {
-            panic!("unknown OBSERVED2_GEOMETRY value `{value}`; expected `legacy` or `authored`")
-        }
-        Err(_) => GeometryBackend::Legacy,
-    }
 }
 
 /// Every resource the Match session owns, enumerated once. `setup_match` inserts

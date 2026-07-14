@@ -14,18 +14,9 @@ Run it:
 cargo run -p observed_game     # binary is named "observed"
 ```
 
-Rapier/authored-geometry migration build:
-
-```powershell
-$env:OBSERVED2_PHYSICS = "rapier"
-$env:OBSERVED2_GEOMETRY = "authored"
-cargo run -p observed_game
-```
-
-These selectors are temporary and currently promote the proven Gantry and Colonnade
-TrenchBroom modules. Other places use the explicit legacy-geometry adapter while the
-authored catalogue is expanded; gameplay state, place isolation, threshold freezing,
-and `PlayerIntent` remain shared across both paths.
+The game always uses deterministic raw Rapier. Gantry and Colonnade compose their
+authored TrenchBroom interior hulls with the generated threshold-aware perimeter;
+other places project their procedural structural data into the same Rapier scene.
 
 Bot POV capture:
 

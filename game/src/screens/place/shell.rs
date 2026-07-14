@@ -12,7 +12,54 @@ use crate::view::components::{DoorLeaf, PlaceGeometry};
 use crate::view::theme::team_color;
 
 use super::mesh;
-use crate::teleport::{DeckSeg, DoorGap, PlaceGeom};
+use crate::teleport::{DeckSeg, DoorGap, PlaceGeom, THRESHOLD_WIDTH};
+
+#[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ImportedThresholdDressing {
+    Gate,
+    Cables,
+}
+
+#[derive(Component)]
+pub(crate) struct ImportedMaterialNormalized;
+
+/// glTF materials are presentation input, not semantic authority. Once Bevy expands a
+/// manifest-selected scene, replace each descendant mesh material with the shared style
+/// treatment for its semantic slot.
+pub(crate) fn normalize_imported_threshold_materials(
+    mut commands: Commands,
+    assets: Res<MatchAssets>,
+    roots: Query<&ImportedThresholdDressing>,
+    parents: Query<&ChildOf>,
+    imported: Query<Entity, (Added<Mesh3d>, Without<ImportedMaterialNormalized>)>,
+) {
+    for entity in &imported {
+        let mut ancestor = entity;
+        let mut dressing = None;
+        for _ in 0..16 {
+            if let Ok(root) = roots.get(ancestor) {
+                dressing = Some(*root);
+                break;
+            }
+            let Ok(parent) = parents.get(ancestor) else {
+                break;
+            };
+            ancestor = parent.parent();
+        }
+        let Some(dressing) = dressing else {
+            continue;
+        };
+        let material = match dressing {
+            ImportedThresholdDressing::Gate => assets.doorframe_material.clone(),
+            ImportedThresholdDressing::Cables => assets.wall_material.clone(),
+        };
+        commands.entity(entity).insert((
+            ImportedMaterialNormalized,
+            MeshMaterial3d(material),
+            Name::new("CC0 threshold mesh normalized through observed_style"),
+        ));
+    }
+}
 
 /// A polygon room's shell: the extruded floor/ceiling shell plus per-edge walls with
 /// passage openings left open.
@@ -49,7 +96,6 @@ pub(crate) fn spawn_room_shell(
             wall_material,
             root_xform,
             false,
-            |g| g.kind.is_passage(),
         );
     }
 }
@@ -90,7 +136,6 @@ pub(crate) fn spawn_hallway_shell(
     solids: &[observed_traversal::rapier_controller::StructuralCollider],
     y_offset: f32,
 ) {
-    let (hx, hz) = (geom.half.x, geom.half.y);
     let shell_height = crate::teleport::structural_height(geom, WALL_HEIGHT);
     if let Some(poly) = geom.poly.as_ref() {
         let root = Transform::from_xyz(0.0, y_offset, 0.0);
@@ -123,22 +168,14 @@ pub(crate) fn spawn_hallway_shell(
         spawn_wellshaft_structure(commands, assets, meshes, y_offset, shell_height);
         return;
     }
-    commands.spawn((
-        PlaceGeometry,
-        DespawnOnExit(GameState::Match),
-        Mesh3d(meshes.add(mesh::rect_mesh(Vec2::new(hx, hz), 0.0, true))),
-        MeshMaterial3d(floor_material),
-        Transform::from_xyz(0.0, y_offset, 0.0),
-        Name::new("Place floor"),
-    ));
-    commands.spawn((
-        PlaceGeometry,
-        DespawnOnExit(GameState::Match),
-        Mesh3d(meshes.add(mesh::rect_mesh(Vec2::new(hx, hz), 0.0, false))),
-        MeshMaterial3d(ceiling_material),
-        Transform::from_xyz(0.0, y_offset + shell_height, 0.0),
-        Name::new("Place ceiling"),
-    ));
+    spawn_hallway_floor_ceiling(
+        commands,
+        meshes,
+        geom,
+        floor_material,
+        ceiling_material,
+        y_offset,
+    );
     for solid in solids {
         if geom
             .decks
@@ -199,32 +236,46 @@ fn spawn_wellshaft_hex_walls(
         ));
     };
 
-    for i in 0..poly.len() {
-        let a = poly[i];
-        let b = poly[(i + 1) % poly.len()];
-        let mid = (a + b) * 0.5;
-        if let Some(gap) = gaps
-            .iter()
-            .find(|gap| gap.kind.is_passage() && gap.center.distance(mid) < 0.05)
-        {
-            let dir = (b - a).normalize_or_zero();
-            let lo = gap.center - dir * gap.width * 0.5;
-            let hi = gap.center + dir * gap.width * 0.5;
-            spawn_panel(commands, a, lo, 0.0, total_height, material.clone());
-            spawn_panel(commands, hi, b, 0.0, total_height, material.clone());
-            spawn_panel(commands, lo, hi, 0.0, gap.floor_y, material.clone());
-            spawn_panel(
-                commands,
-                lo,
-                hi,
-                gap.floor_y + WALL_HEIGHT,
-                total_height,
-                material.clone(),
-            );
-        } else {
-            spawn_panel(commands, a, b, 0.0, total_height, material.clone());
-        }
+    let plan = crate::teleport::plan_boundary(poly, gaps, total_height, WALL_HEIGHT)
+        .expect("wellshaft geometry must produce a valid threshold aperture plan");
+    for panel in plan.wall_panels {
+        spawn_panel(
+            commands,
+            panel.start,
+            panel.end,
+            panel.y_min,
+            panel.y_max,
+            material.clone(),
+        );
     }
+}
+
+pub(crate) fn spawn_hallway_floor_ceiling(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    geom: &PlaceGeom,
+    floor_material: Handle<StandardMaterial>,
+    ceiling_material: Handle<StandardMaterial>,
+    y_offset: f32,
+) {
+    let (hx, hz) = (geom.half.x, geom.half.y);
+    let shell_height = crate::teleport::structural_height(geom, WALL_HEIGHT);
+    commands.spawn((
+        PlaceGeometry,
+        DespawnOnExit(GameState::Match),
+        Mesh3d(meshes.add(mesh::rect_mesh(Vec2::new(hx, hz), 0.0, true))),
+        MeshMaterial3d(floor_material),
+        Transform::from_xyz(0.0, y_offset, 0.0),
+        Name::new("Place floor"),
+    ));
+    commands.spawn((
+        PlaceGeometry,
+        DespawnOnExit(GameState::Match),
+        Mesh3d(meshes.add(mesh::rect_mesh(Vec2::new(hx, hz), 0.0, false))),
+        MeshMaterial3d(ceiling_material),
+        Transform::from_xyz(0.0, y_offset + shell_height, 0.0),
+        Name::new("Place ceiling"),
+    ));
 }
 
 /// Render the WFC vertical edge's authored hex-pillar structure. The controller uses
@@ -501,29 +552,20 @@ pub(crate) struct ThresholdStyle {
     /// A rival team index whose presence beyond this threshold pins it (Phase 38
     /// contested observation): the frame light takes that team's colour so the
     /// player reads "a rival is holding this door open".
-    rival_presence: Option<usize>,
     /// A rival team index that has an anchor on the room beyond this threshold
-    /// (Phase 42): rendered as a torch prop plus a brighter frame light than mere
-    /// presence, since an anchor is a durable claim rather than a passer-through.
+    /// (Phase 42): rendered as a torch prop plus a durable-lock frame signal.
     rival_anchor: Option<usize>,
 }
 
 impl ThresholdStyle {
-    /// An always-open passage: frame only, no hiding leaf. `rival_presence` tints the
-    /// frame light when a rival team's presence pins the connection beyond it;
-    /// `rival_anchor` additionally spawns a torch prop and takes priority over mere
-    /// presence when both are set (an anchor can outlast the team that placed it).
-    pub(crate) fn passage(
-        tethered: bool,
-        rival_presence: Option<usize>,
-        rival_anchor: Option<usize>,
-    ) -> Self {
+    /// An always-open passage: frame only, no hiding leaf. Observation never changes
+    /// the indicator; an anchor adds the durable-lock signal and physical torch prop.
+    pub(crate) fn passage(tethered: bool, rival_anchor: Option<usize>) -> Self {
         Self {
             leaf_material: None,
             leaf_name: "Door leaf",
             openable: false,
             tethered,
-            rival_presence,
             rival_anchor,
         }
     }
@@ -535,7 +577,6 @@ impl ThresholdStyle {
             leaf_name: "Locked exit",
             openable: false,
             tethered,
-            rival_presence: None,
             rival_anchor: None,
         }
     }
@@ -547,7 +588,6 @@ impl ThresholdStyle {
             leaf_name: "Collapsed rubble",
             openable: false,
             tethered: false,
-            rival_presence: None,
             rival_anchor: None,
         }
     }
@@ -559,7 +599,6 @@ impl ThresholdStyle {
             leaf_name: "Closed door",
             openable: false,
             tethered: false,
-            rival_presence: None,
             rival_anchor: None,
         }
     }
@@ -579,7 +618,6 @@ pub(crate) fn spawn_threshold_gateway(
         assets,
         gap,
         threshold_style.tethered,
-        threshold_style.rival_presence,
         threshold_style.rival_anchor,
         y_offset,
     );
@@ -676,7 +714,6 @@ fn spawn_place_frame(
     assets: &MatchAssets,
     gap: &DoorGap,
     tethered: bool,
-    rival_presence: Option<usize>,
     rival_anchor: Option<usize>,
     y_offset: f32,
 ) {
@@ -686,8 +723,44 @@ fn spawn_place_frame(
     let half = gap.width * 0.5;
     let base_y = y_offset + gap.floor_y;
     let status = crate::evidence::threshold_status(gap, tethered);
-    for offset in [half, -half] {
-        let p = gap.center + along * offset;
+    if let Some(gate) = &assets.threshold_gate {
+        let scale = kenney_gate_scale(gap.width, gate.scale);
+        commands.spawn((
+            PlaceGeometry,
+            DespawnOnExit(GameState::Match),
+            ImportedThresholdDressing::Gate,
+            crate::evidence::DiagnosticThresholdVisual {
+                threshold: gap.threshold,
+                kind: crate::evidence::DiagnosticThresholdVisualKind::Frame,
+                status,
+            },
+            SceneRoot(gate.scene.clone()),
+            Transform::from_xyz(gap.center.x, base_y, gap.center.y)
+                .with_rotation(rot)
+                .with_scale(scale),
+            Name::new("Kenney CC0 threshold gate"),
+        ));
+    } else {
+        for offset in [half, -half] {
+            let p = gap.center + along * offset;
+            commands.spawn((
+                PlaceGeometry,
+                DespawnOnExit(GameState::Match),
+                crate::evidence::DiagnosticThresholdVisual {
+                    threshold: gap.threshold,
+                    kind: crate::evidence::DiagnosticThresholdVisualKind::Frame,
+                    status,
+                },
+                Mesh3d(assets.placeholder_mesh.clone()),
+                MeshMaterial3d(material.clone()),
+                Transform::from_xyz(p.x, base_y + WALL_HEIGHT * 0.5, p.y).with_scale(Vec3::new(
+                    0.24,
+                    WALL_HEIGHT,
+                    0.24,
+                )),
+                Name::new("Procedural threshold post fallback"),
+            ));
+        }
         commands.spawn((
             PlaceGeometry,
             DespawnOnExit(GameState::Match),
@@ -698,51 +771,61 @@ fn spawn_place_frame(
             },
             Mesh3d(assets.placeholder_mesh.clone()),
             MeshMaterial3d(material.clone()),
-            Transform::from_xyz(p.x, base_y + WALL_HEIGHT * 0.5, p.y).with_scale(Vec3::new(
-                0.24,
-                WALL_HEIGHT,
-                0.24,
-            )),
-            Name::new("Doorframe post"),
+            Transform::from_xyz(gap.center.x, base_y + WALL_HEIGHT - 0.2, gap.center.y)
+                .with_rotation(rot)
+                .with_scale(Vec3::new(gap.width.max(0.3), 0.34, 0.24)),
+            Name::new("Procedural threshold lintel fallback"),
         ));
     }
-    commands.spawn((
-        PlaceGeometry,
-        DespawnOnExit(GameState::Match),
-        crate::evidence::DiagnosticThresholdVisual {
-            threshold: gap.threshold,
-            kind: crate::evidence::DiagnosticThresholdVisualKind::Frame,
-            status,
-        },
-        Mesh3d(assets.placeholder_mesh.clone()),
-        MeshMaterial3d(material),
-        Transform::from_xyz(gap.center.x, base_y + WALL_HEIGHT - 0.2, gap.center.y)
-            .with_rotation(rot)
-            .with_scale(Vec3::new(gap.width.max(0.3), 0.34, 0.24)),
-        Name::new("Doorframe lintel"),
-    ));
 
-    // Light priority (Phase 41 collapse override, Phase 42 rival attribution): your
-    // own tether (control colour) outranks a rival's anchor, which outranks a rival's
-    // mere presence, which outranks the neutral idle frame. Collapse overrides all of
-    // it — it's the one force even an anchor cannot hold back. An anchor is a durable
-    // claim, so it burns brighter than a passer-through's presence.
-    const PRESENCE_INTENSITY: f32 = 1_400.0;
+    // Procedural semantic edge accents remain legible regardless of the imported mesh's
+    // silhouette and materials.
+    for offset in [half, -half] {
+        let p = gap.center + along * offset;
+        commands.spawn((
+            PlaceGeometry,
+            DespawnOnExit(GameState::Match),
+            Mesh3d(assets.placeholder_mesh.clone()),
+            MeshMaterial3d(material.clone()),
+            Transform::from_xyz(p.x, base_y + WALL_HEIGHT * 0.5, p.y).with_scale(Vec3::new(
+                0.07,
+                WALL_HEIGHT,
+                0.08,
+            )),
+            Name::new("Semantic threshold edge accent"),
+        ));
+    }
+    if let Some(cables) = &assets.cable_bundle {
+        let p = gap.center + along * (half + 0.55) - gap.normal * 0.18;
+        commands.spawn((
+            PlaceGeometry,
+            DespawnOnExit(GameState::Match),
+            ImportedThresholdDressing::Cables,
+            SceneRoot(cables.scene.clone()),
+            Transform::from_xyz(p.x, base_y + 0.04, p.y)
+                .with_rotation(rot)
+                .with_scale(Vec3::splat(cables.scale.min(0.55))),
+            Name::new("Kenney CC0 threshold cable bundle"),
+        ));
+    }
+
+    // Indicator contract: only a durable anchor changes the neutral frame signal.
+    // Observation freezes connectivity but deliberately has no light state.
+    const NEUTRAL_INTENSITY: f32 = 1_400.0;
     const ANCHOR_INTENSITY: f32 = 2_200.0;
     let (tether_color, intensity) = match status {
         crate::evidence::DiagnosticThresholdStatus::Collapsed => (
             style::surface(style::SurfaceRole::Rubble)
                 .edge
                 .unwrap_or(style::marker(MarkerRole::Collapse).base_color),
-            PRESENCE_INTENSITY,
+            NEUTRAL_INTENSITY,
         ),
         _ if tethered => (
             style::marker(MarkerRole::Control).base_color,
-            PRESENCE_INTENSITY,
+            NEUTRAL_INTENSITY,
         ),
         _ if let Some(team) = rival_anchor => (team_color(team), ANCHOR_INTENSITY),
-        _ if let Some(team) = rival_presence => (team_color(team), PRESENCE_INTENSITY),
-        _ => (Color::srgb(0.45, 0.62, 0.78), PRESENCE_INTENSITY),
+        _ => (Color::srgb(0.45, 0.62, 0.78), NEUTRAL_INTENSITY),
     };
     commands.spawn((
         PlaceGeometry,
@@ -794,6 +877,22 @@ fn spawn_place_frame(
     }
 }
 
+/// The Kenney gate is 4.2 × 4.62071 × 1.4 model units. Treat the manifest scale as
+/// an authored maximum, then fit each axis inside the gameplay aperture. In particular,
+/// its depth must not engulf the close threshold-preview camera.
+fn kenney_gate_scale(gap_width: f32, authored_scale: f32) -> Vec3 {
+    const NATIVE_WIDTH: f32 = 4.2;
+    const NATIVE_HEIGHT: f32 = 4.620_71;
+    const NATIVE_DEPTH: f32 = 1.4;
+    const MAX_DEPTH: f32 = 0.5;
+    let authored_scale = authored_scale * gap_width / THRESHOLD_WIDTH;
+    Vec3::new(
+        authored_scale.min(gap_width / NATIVE_WIDTH),
+        authored_scale.min((WALL_HEIGHT - 0.08) / NATIVE_HEIGHT),
+        authored_scale.min(MAX_DEPTH / NATIVE_DEPTH),
+    )
+}
+
 /// A door leaf filling a sealed doorway gap, flush with the wall.
 fn spawn_leaf(
     commands: &mut Commands,
@@ -830,4 +929,17 @@ fn spawn_leaf(
             .with_scale(Vec3::new(gap.width.max(0.1), leaf_h, DOOR_LEAF_D)),
         Name::new(if openable { "Door leaf" } else { name }),
     ));
+}
+
+#[cfg(test)]
+mod threshold_asset_tests {
+    use super::*;
+
+    #[test]
+    fn imported_gate_is_fitted_inside_the_threshold_envelope() {
+        let scale = kenney_gate_scale(THRESHOLD_WIDTH, 1.35);
+        assert!(4.2 * scale.x <= THRESHOLD_WIDTH + f32::EPSILON);
+        assert!(4.620_71 * scale.y <= WALL_HEIGHT - 0.08 + f32::EPSILON);
+        assert!(1.4 * scale.z <= 0.5 + f32::EPSILON);
+    }
 }

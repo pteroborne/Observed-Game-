@@ -1854,11 +1854,10 @@ fn placing_a_rival_in_a_neighbour_and_rebuilding_records_a_seen_sighting() {
     );
 }
 
-/// Phase 38 (contested observation): a rival team standing in the room beyond a
-/// threshold pins that connection for everyone — and the doorframe light takes the
-/// rival team's colour so the player can read whose grip holds the door.
+/// Observation can temporarily freeze a threshold, but it must not masquerade as a
+/// durable anchor lock on the frame's indicator light.
 #[test]
-fn a_rival_in_the_neighbouring_room_tints_the_threshold_light_with_its_colour() {
+fn rival_observation_does_not_change_the_anchor_indicator_light() {
     use crate::sim::director::MatchDirector;
     use crate::sim::state::TeleportState;
     use crate::view::theme::TEAM_COLORS;
@@ -1888,20 +1887,36 @@ fn a_rival_in_the_neighbouring_room_tints_the_threshold_light_with_its_colour() 
     app.update();
 
     let rival = TEAM_COLORS[1].to_srgba();
-    let found = {
+    let neutral = Color::srgb(0.45, 0.62, 0.78).to_srgba();
+    let (found_neutral, found_rival) = {
         let world = app.world_mut();
         let mut lights = world.query::<(&PointLight, &Name)>();
-        lights.iter(world).any(|(light, name)| {
-            let c = light.color.to_srgba();
-            name.as_str() == "Doorframe tether light"
-                && (c.red - rival.red).abs() < 0.01
-                && (c.green - rival.green).abs() < 0.01
-                && (c.blue - rival.blue).abs() < 0.01
-        })
+        lights.iter(world).fold(
+            (false, false),
+            |(found_neutral, found_rival), (light, name)| {
+                if name.as_str() != "Doorframe tether light" {
+                    return (found_neutral, found_rival);
+                }
+                let c = light.color.to_srgba();
+                let matches = |expected: bevy::color::Srgba| {
+                    (c.red - expected.red).abs() < 0.01
+                        && (c.green - expected.green).abs() < 0.01
+                        && (c.blue - expected.blue).abs() < 0.01
+                };
+                (
+                    found_neutral || matches(neutral),
+                    found_rival || matches(rival),
+                )
+            },
+        )
     };
     assert!(
-        found,
-        "a threshold into a rival-occupied room carries that team's frame light"
+        found_neutral,
+        "an observed but unanchored threshold keeps the neutral indicator"
+    );
+    assert!(
+        !found_rival,
+        "rival observation must not be reported as a durable anchor lock"
     );
 }
 
@@ -2172,26 +2187,21 @@ fn a_gantry_hallway_renders_readable_decks_and_no_deck_leaks_into_the_wall_path(
         query.iter(world).map(|n| n.as_str().to_string()).collect()
     };
 
-    let deck_count = names.iter().filter(|n| n.as_str() == "Gantry deck").count();
-    let edge_count = names
+    let traversal_hull_count = names
         .iter()
-        .filter(|n| n.as_str() == "Gantry deck edge")
+        .filter(|name| name.starts_with("Authored traversal hull"))
         .count();
-    let understory_count = names
+    let aperture_wall_count = names
         .iter()
-        .filter(|n| n.as_str() == "Understory landing")
+        .filter(|name| name.starts_with("Generated aperture wall"))
         .count();
-    assert!(
-        deck_count >= 8,
-        "expected >= 8 Gantry deck entities (6 platforms + upper + entry landings), got {deck_count}"
+    assert_eq!(
+        traversal_hull_count, 4,
+        "the canonical Gantry bake contributes four styled interior traversal hulls"
     );
     assert!(
-        edge_count >= 4,
-        "expected >= 4 Gantry deck edge entities (one platform's worth of rim strips), got {edge_count}"
-    );
-    assert!(
-        understory_count >= 1,
-        "expected >= 1 Understory landing marker, got {understory_count}"
+        aperture_wall_count >= 4,
+        "generated aperture-safe perimeter walls must remain visible"
     );
 
     // No deck solid should have leaked into the generic "Place wall" render path.
@@ -2374,15 +2384,10 @@ fn theme_team_colors_match_style_team_colors() {
     }
 }
 
-/// Phase 42 (fix the stale-frame-light defect): before this fix, `LastRenderedSignature`
-/// did not track rival presence/anchor state, so a rival moving into a neighbouring room
-/// with everything else unchanged (sealed slots, item count, collapse state, klaxon)
-/// left the cached signature untouched and the place never rebuilt — the frame light
-/// stayed stale. This mirrors `a_rival_in_the_neighbouring_room_tints_the_threshold_light_with_its_colour`
-/// but deliberately does NOT clear `tp.rendered`, so only the signature hash — not the
-/// "place changed" shortcut — can trigger the rebuild.
+/// Rival movement may refresh preview/presence presentation, but the threshold
+/// indicator remains neutral because observation is not an anchor.
 #[test]
-fn a_rival_moving_into_a_neighbour_refreshes_the_frame_light_without_a_place_change() {
+fn rival_movement_without_a_place_change_keeps_the_indicator_neutral() {
     use crate::sim::director::MatchDirector;
     use crate::view::theme::TEAM_COLORS;
 
@@ -2408,21 +2413,36 @@ fn a_rival_moving_into_a_neighbour_refreshes_the_frame_light_without_a_place_cha
     app.update();
 
     let rival = TEAM_COLORS[1].to_srgba();
-    let found = {
+    let neutral = Color::srgb(0.45, 0.62, 0.78).to_srgba();
+    let (found_neutral, found_rival) = {
         let world = app.world_mut();
         let mut lights = world.query::<(&PointLight, &Name)>();
-        lights.iter(world).any(|(light, name)| {
-            let c = light.color.to_srgba();
-            name.as_str() == "Doorframe tether light"
-                && (c.red - rival.red).abs() < 0.01
-                && (c.green - rival.green).abs() < 0.01
-                && (c.blue - rival.blue).abs() < 0.01
-        })
+        lights.iter(world).fold(
+            (false, false),
+            |(found_neutral, found_rival), (light, name)| {
+                if name.as_str() != "Doorframe tether light" {
+                    return (found_neutral, found_rival);
+                }
+                let c = light.color.to_srgba();
+                let matches = |expected: bevy::color::Srgba| {
+                    (c.red - expected.red).abs() < 0.01
+                        && (c.green - expected.green).abs() < 0.01
+                        && (c.blue - expected.blue).abs() < 0.01
+                };
+                (
+                    found_neutral || matches(neutral),
+                    found_rival || matches(rival),
+                )
+            },
+        )
     };
     assert!(
-        found,
-        "moving a rival into a neighbour must rebuild the place and refresh the frame \
-         light even without a place/teleport change"
+        found_neutral,
+        "rival movement must leave the unanchored threshold indicator neutral"
+    );
+    assert!(
+        !found_rival,
+        "rival movement must not look like a durable anchor lock"
     );
 }
 

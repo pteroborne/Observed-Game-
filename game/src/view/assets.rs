@@ -84,6 +84,12 @@ pub(crate) const DOOR_POST_D: f32 = 0.5;
 pub(crate) const DOOR_LINTEL_H: f32 = 0.34;
 pub(crate) const DOOR_LEAF_D: f32 = 0.14;
 
+#[derive(Clone)]
+pub(crate) struct ContentScene {
+    pub scene: Handle<Scene>,
+    pub scale: f32,
+}
+
 /// The workspace `assets/` directory (where `cargo run` resolves Bevy's asset root).
 pub(crate) fn assets_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -280,6 +286,9 @@ pub struct MatchAssets {
     pub(crate) bot: Option<Handle<Scene>>,
     pub(crate) equipment: Option<Handle<Scene>>,
     pub(crate) hazard: Option<Handle<Scene>>,
+    /// Canonical CC0 Modular Space dressing selected by the committed manifest.
+    pub(crate) threshold_gate: Option<ContentScene>,
+    pub(crate) cable_bundle: Option<ContentScene>,
     pub(crate) runner_stand: Option<Handle<Image>>,
     pub(crate) runner_walk1: Option<Handle<Image>>,
     pub(crate) runner_walk2: Option<Handle<Image>>,
@@ -350,6 +359,7 @@ impl MatchAssets {
     /// present (absent slots stay `None` and fall back procedurally).
     pub(crate) fn load(
         asset_server: &AssetServer,
+        content_manifest: &observed_content::ContentManifest,
         texture_atlases: &mut Assets<TextureAtlasLayout>,
         meshes: &mut Assets<Mesh>,
         materials: &mut Assets<StandardMaterial>,
@@ -532,6 +542,18 @@ impl MatchAssets {
             asset_present(path)
                 .then(|| asset_server.load(GltfAssetLabel::Scene(0).from_asset(path)))
         };
+        let load_content_scene = |id: &str| {
+            content_manifest
+                .assets
+                .iter()
+                .find(|asset| asset.id == id)
+                .filter(|asset| asset_present(&asset.path))
+                .map(|asset| ContentScene {
+                    scene: asset_server
+                        .load(GltfAssetLabel::Scene(0).from_asset(asset.path.clone())),
+                    scale: asset.scale,
+                })
+        };
         let load_sound = |path: &'static str| {
             asset_present(path).then(|| asset_server.load::<AudioSource>(path))
         };
@@ -620,6 +642,8 @@ impl MatchAssets {
             bot: load_scene(BOT_MODEL),
             equipment: load_scene(EQUIPMENT_MODEL),
             hazard: load_scene(HAZARD_MODEL),
+            threshold_gate: load_content_scene("kenney_gate"),
+            cable_bundle: load_content_scene("kenney_cables"),
             runner_stand: load_texture(RUNNER_STAND_SPRITE),
             runner_walk1: load_texture(RUNNER_WALK1_SPRITE),
             runner_walk2: load_texture(RUNNER_WALK2_SPRITE),

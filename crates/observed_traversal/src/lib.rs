@@ -26,6 +26,8 @@ mod world;
 
 pub use world::{ArenaSpec, ArenaSpecError, ColliderShape, ColliderSpec, StableColliderId};
 
+/// Serialized compatibility tag retained for replay/network fixtures. The assembled
+/// first-person game has promoted Rapier to its sole runtime controller path.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum PhysicsBackend {
     LegacyAabb,

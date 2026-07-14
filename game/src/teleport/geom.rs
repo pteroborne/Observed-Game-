@@ -3,7 +3,7 @@
 use super::{
     DoorGap, GapKind, HallThreshold, MAZE_CELL, MAZE_WALL_T, Nav, Place, PlaceGeom, ROOM_HALF,
     RoomConnectionSlot, RoomThreshold, THRESHOLD_WIDTH, ThresholdLink, ThresholdLocalSide,
-    ThresholdSlotId, WallSeg, corridor_id_for, corridor_socket_for,
+    ThresholdSlotId, WallSeg, corridor_id_for, corridor_socket_for, is_point_on_segment,
 };
 use crate::hallway;
 use crate::layout::{ROOM_SCALE_HUB, ROOM_SCALE_MONITOR, ROOM_SCALE_STANDARD};
@@ -11,6 +11,7 @@ use crate::maze;
 use bevy::math::Vec2;
 use observed_core::RoomId;
 use observed_facility::map_spec::{CorridorRole, RoomRole};
+use observed_facility::room_def::RoomTemplate;
 use observed_match::mutable::EXIT_ROOM;
 use observed_traversal::gantry;
 use std::f32::consts::PI;
@@ -64,18 +65,25 @@ fn room_scale_for_role(role: Option<RoomRole>) -> f32 {
 /// enough edges to host every doorway. Scaled by `room_scale_for_role` (the Phase 46b
 /// liminal-scale dials in `layout.rs`) so hub/monitor/standard rooms breathe at
 /// role-appropriate volumes on top of the seeded per-room variety.
-fn room_polygon(seed: u64, role: Option<RoomRole>) -> Vec<Vec2> {
+fn room_polygon(seed: u64, role: Option<RoomRole>, template: Option<RoomTemplate>) -> Vec<Vec2> {
     let observation_room = uses_observation_room_footprint(role);
     let scale = room_scale_for_role(role);
-    let n = if observation_room {
-        OBSERVATION_ROOM_SIDES
-    } else {
-        4 + (mix(seed, 1) % 5) as usize
-    };
+    let profile = template.map(RoomTemplate::shell_profile);
+    let n = profile
+        .map(|profile| usize::from(profile.sides))
+        .unwrap_or_else(|| {
+            if observation_room {
+                OBSERVATION_ROOM_SIDES
+            } else {
+                4 + (mix(seed, 1) % 5) as usize
+            }
+        });
+    let x_scale = profile.map(|profile| profile.x_scale).unwrap_or(1.0);
+    let z_scale = profile.map(|profile| profile.z_scale).unwrap_or(1.0);
     if n == 4 {
         // A varied rectangle for visual distinction from the polygons.
-        let hx = ROOM_HALF * scale * (0.85 + unit(seed, 2) * 0.7);
-        let hz = ROOM_HALF * scale * (0.85 + unit(seed, 3) * 0.7);
+        let hx = ROOM_HALF * scale * x_scale * (0.92 + unit(seed, 2) * 0.24);
+        let hz = ROOM_HALF * scale * z_scale * (0.92 + unit(seed, 3) * 0.24);
         return vec![
             Vec2::new(-hx, -hz),
             Vec2::new(hx, -hz),
@@ -96,7 +104,10 @@ fn room_polygon(seed: u64, role: Option<RoomRole>) -> Vec<Vec2> {
     (0..n)
         .map(|i| {
             let a = rot + i as f32 * 2.0 * PI / n as f32;
-            Vec2::new(circumradius * a.cos(), circumradius * a.sin())
+            Vec2::new(
+                circumradius * a.cos() * x_scale,
+                circumradius * a.sin() * z_scale,
+            )
         })
         .collect()
 }
@@ -203,7 +214,8 @@ pub(crate) fn room_geom_with_slots_and_seals_for_role_and_spec(
         .collect();
     assigned.sort_by_key(|(_, slot)| *slot);
     assigned.dedup_by_key(|(_, slot)| *slot);
-    let verts = room_polygon(seed, role);
+    let template = map_spec.and_then(|spec| spec.room(room).map(|room| room.template));
+    let verts = room_polygon(seed, role, template);
     let n = verts.len();
     let mut assigned_slots: Vec<ThresholdSlotId> = assigned.iter().map(|(_, slot)| *slot).collect();
     assigned_slots.sort_unstable();
@@ -424,10 +436,9 @@ pub fn contain(geom: &PlaceGeom, pos: Vec2, radius: f32) -> Vec2 {
                 continue;
             }
             // Let the body slip out through an open doorway on this edge.
-            let mid = (a + b) * 0.5;
             let through_gap = geom.gaps.iter().any(|g| {
                 g.kind.is_passage()
-                    && (g.center - mid).length() < 0.05
+                    && is_point_on_segment(g.center, a, b, 0.05)
                     && (p - g.center).dot(dir).abs() <= g.width * 0.5
             });
             if through_gap {

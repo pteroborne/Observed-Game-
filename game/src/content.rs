@@ -120,12 +120,35 @@ impl ContentCollisionCatalog {
         geom: &PlaceGeom,
         y_offset: f32,
     ) -> Option<ArenaSpec> {
-        let mut colliders = Vec::new();
+        let mut colliders =
+            crate::teleport::place_boundary_primitives(geom, y_offset, crate::layout::WALL_HEIGHT)
+                .into_iter()
+                .enumerate()
+                .map(|(index, primitive)| {
+                    let half_yaw = primitive.yaw * 0.5;
+                    ColliderSpec {
+                        id: StableColliderId(index as u32 + 1),
+                        center: primitive.center,
+                        rotation: [0.0, half_yaw.sin(), 0.0, half_yaw.cos()],
+                        shape: ColliderShape::Cuboid {
+                            half: primitive.half,
+                        },
+                        friction: 0.8,
+                    }
+                })
+                .collect::<Vec<_>>();
         for placement in &layout.placements {
             let (_, baked) = self.modules.get(&placement.module_id)?;
             let yaw = (placement.yaw_degrees as f32).to_radians();
             let (sin, cos) = yaw.sin_cos();
             for hull in &baked.hulls {
+                // The committed TrenchBroom kits reserve 0 for their floor slab and
+                // 1/2 for left/right envelope walls. The canonical hybrid projection
+                // supplies floor support through Rapier and boundary walls through the
+                // aperture plan, retaining only authored interior/traversal hulls here.
+                if hull.id <= 2 {
+                    continue;
+                }
                 colliders.push(ColliderSpec {
                     id: StableColliderId(colliders.len() as u32 + 1),
                     center: bevy::math::Vec3::ZERO,
@@ -210,9 +233,9 @@ mod tests {
         use observed_core::RoomId;
 
         let content = GameContent::committed();
-        for (flavor, expected) in [
-            (HallwayFlavor::Gantry, 7usize),
-            (HallwayFlavor::Colonnade, 11usize),
+        for (flavor, expected_authored_interiors) in [
+            (HallwayFlavor::Gantry, 4usize),
+            (HallwayFlavor::Colonnade, 8usize),
         ] {
             let variation = crate::hallway::TEMPLATES
                 .iter()
@@ -229,13 +252,46 @@ mod tests {
                 .collision_catalog
                 .arena_for_layout(&layout, &geom, -8.0)
                 .unwrap();
-            assert_eq!(arena.colliders.len(), expected);
+            let generated_boundary =
+                crate::teleport::place_boundary_primitives(&geom, -8.0, crate::layout::WALL_HEIGHT)
+                    .len();
+            assert_eq!(
+                arena.colliders.len(),
+                generated_boundary + expected_authored_interiors
+            );
             assert!(
                 arena
                     .colliders
                     .iter()
+                    .take(generated_boundary)
+                    .all(|collider| matches!(collider.shape, ColliderShape::Cuboid { .. }))
+            );
+            assert!(
+                arena
+                    .colliders
+                    .iter()
+                    .skip(generated_boundary)
                     .all(|collider| matches!(collider.shape, ColliderShape::ConvexHull { .. }))
             );
         }
+    }
+
+    #[test]
+    fn committed_cc0_refresh_uses_only_gate_and_cables() {
+        let content = GameContent::committed();
+        let ids = content
+            .manifest
+            .assets
+            .iter()
+            .map(|asset| asset.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, ["kenney_cables", "kenney_gate"]);
+        assert!(
+            content
+                .manifest
+                .assets
+                .iter()
+                .all(|asset| { asset.author == "Kenney" && asset.license == "CC0-1.0" })
+        );
     }
 }

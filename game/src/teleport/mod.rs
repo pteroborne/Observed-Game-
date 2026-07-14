@@ -226,6 +226,17 @@ pub struct DoorGap {
     pub floor_y: f32,
 }
 
+pub(crate) fn is_point_on_segment(p: Vec2, a: Vec2, b: Vec2, tolerance: f32) -> bool {
+    let ab = b - a;
+    let len_sq = ab.length_squared();
+    if len_sq < 1e-6 {
+        return (p - a).length() < tolerance;
+    }
+    let t = ((p - a).dot(ab) / len_sq).clamp(0.0, 1.0);
+    let projection = a + ab * t;
+    (p - projection).length() < tolerance
+}
+
 /// An interior wall segment inside a place's footprint (local frame, centred at 0).
 /// Used to carve a labyrinth inside a hallway; rooms and simple halls have none.
 #[derive(Clone, Copy, Debug)]
@@ -280,6 +291,7 @@ impl PlaceGeom {
     }
 }
 
+pub mod aperture;
 pub mod geom;
 pub mod nav;
 pub mod transition;
@@ -287,6 +299,9 @@ pub mod transition;
 #[cfg(test)]
 pub mod test;
 
+pub use aperture::{
+    AperturePlan, AperturePlanError, PlannedAperture, ThresholdClosure, WallPanel, plan_boundary,
+};
 pub use geom::{
     HallwayGeomEndpoints, contain, geom_for, hallway_geom, hallway_geom_with_slots,
     hallway_geom_with_slots_and_role, open_entry, room_geom, room_geom_with_slots,
@@ -296,6 +311,6 @@ pub use nav::{Nav, PinnedCorridor, PinnedEdge};
 pub use transition::{
     Align2d, Crossing, GAP_FLOOR_TOLERANCE, PREVIEW_OUTSET, apply_crossing, arrival_gap, crossed,
     crossing_alignment, entry_spawn, feet_at_gap_floor, hallway_alignment, hallway_gap_alignment,
-    place_arena, place_junction, place_rapier_scene, place_structural_primitives, room_alignment,
-    structural_height,
+    place_arena, place_boundary_primitives, place_junction, place_rapier_scene,
+    place_structural_primitives, room_alignment, structural_height,
 };

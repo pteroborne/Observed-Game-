@@ -189,6 +189,7 @@ impl Plugin for MatchPlugin {
                     crate::sim::sightings::record_rival_sightings,
                     crate::sim::knowledge::record_map_knowledge,
                     place::rebuild_place,
+                    place::normalize_imported_threshold_materials,
                     place::update_tether_monitors,
                     place::update_guardian_monitors,
                     place::sync_observation_monitors,

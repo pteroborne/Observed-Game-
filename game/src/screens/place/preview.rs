@@ -220,6 +220,37 @@ pub(crate) fn spawn_hallway_preview(
     if let Some(arena) =
         layout.and_then(|layout| collision_catalog.arena_for_layout(layout, &dest, 0.0))
     {
+        let floor_material = place_surface_material(
+            SurfaceRole::Plain,
+            &palette,
+            &assets.floor_material,
+            materials,
+        );
+        let ceiling_material = place_surface_material(
+            SurfaceRole::Ceiling,
+            &palette,
+            &assets.ceiling_material,
+            materials,
+        );
+        let shell_height = teleport::structural_height(&dest, WALL_HEIGHT);
+        commands.spawn((
+            PlaceGeometry,
+            PassagePreview,
+            DespawnOnExit(GameState::Match),
+            Mesh3d(meshes.add(super::mesh::rect_mesh(Vec2::new(hx, hz), 0.0, true))),
+            MeshMaterial3d(floor_material),
+            place_in(Transform::default()),
+            Name::new("Hybrid authored preview floor"),
+        ));
+        commands.spawn((
+            PlaceGeometry,
+            PassagePreview,
+            DespawnOnExit(GameState::Match),
+            Mesh3d(meshes.add(super::mesh::rect_mesh(Vec2::new(hx, hz), 0.0, false))),
+            MeshMaterial3d(ceiling_material),
+            place_in(Transform::from_xyz(0.0, shell_height, 0.0)),
+            Name::new("Hybrid authored preview ceiling"),
+        ));
         super::authored::spawn_preview_collision_shell(
             commands,
             meshes,
@@ -227,8 +258,12 @@ pub(crate) fn spawn_hallway_preview(
             &arena,
             parent,
             &palette,
-            &assets.floor_material,
-            &assets.wall_material,
+            super::authored::ShellMaterials {
+                floor: &assets.floor_material,
+                wall: &assets.wall_material,
+                interior: (hallway::template(variation).flavor == HallwayFlavor::Gantry)
+                    .then_some((SurfaceRole::GantryDeck, &assets.gantry_deck_material)),
+            },
         );
         spawn_place_lighting(commands, assets, &dest, &palette, parent, true);
         return;
@@ -390,7 +425,6 @@ pub(crate) fn spawn_room_preview(
         game,
         klaxon_active,
         RoomMiniatureOverlays {
-            open_edge_target: Some(back),
             rival_lane_origin: Vec3::new(0.0, 0.82, 0.0),
             anchor_torch_root: Vec3::new(src.width * 0.5 + 0.3, 0.55, 0.6),
         },
@@ -401,10 +435,6 @@ pub(crate) fn spawn_room_preview(
 /// full-scale threshold preview and a wall-mounted monitor panel can each place the same
 /// overlays sensibly in their own local frame.
 pub(crate) struct RoomMiniatureOverlays {
-    /// A gap whose wall should stay split open (the doorway you're looking back through).
-    /// `None` for a monitor panel, which has no "back" doorway — its shell renders fully
-    /// closed except for the room's own passable thresholds.
-    pub(crate) open_edge_target: Option<RoomId>,
     /// Local-frame origin a present rival's walking lane is centred on.
     pub(crate) rival_lane_origin: Vec3,
     /// Local-frame root for a rival anchor torch prop, if the room carries one.
@@ -472,7 +502,6 @@ pub(crate) fn spawn_room_miniature(
         wall_material,
         parent,
         true,
-        |g| overlays.open_edge_target == Some(g.target) || g.kind.is_passage(),
     );
     spawn_place_lighting(commands, assets, dest, &palette, parent, true);
     let accent = materials.add(StandardMaterial {

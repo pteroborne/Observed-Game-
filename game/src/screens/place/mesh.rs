@@ -263,9 +263,10 @@ pub(crate) fn spawn_polygon_shell(
     );
 }
 
-/// One angled wall panel per polygon edge, split around any doorway `open` returns true
-/// for (so the body can walk through it / you can see in), placed under `xform`. Edges
-/// with no open doorway are a solid wall.
+/// Render the shared threshold-aware boundary plan under `xform`.
+///
+/// Every threshold cuts the architectural shell. A sealed threshold gets its blocking
+/// leaf from the gateway renderer, rather than silently becoming an unbroken wall.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_polygon_walls(
     commands: &mut Commands,
@@ -276,78 +277,52 @@ pub(crate) fn spawn_polygon_walls(
     wall_material: Handle<StandardMaterial>,
     xform: Transform,
     preview: bool,
-    open: impl Fn(&teleport::DoorGap) -> bool,
 ) {
-    let n = poly.len();
-    for i in 0..n {
-        let a = poly[i];
-        let b = poly[(i + 1) % n];
-        let mid = (a + b) * 0.5;
-        let gap = gaps.iter().find(|g| (g.center - mid).length() < 0.05);
-        match gap {
-            Some(g) if open(g) => {
-                let dir = (b - a).normalize_or_zero();
-                spawn_wall_segment(
-                    commands,
-                    assets,
-                    meshes,
-                    a,
-                    g.center - dir * (g.width * 0.5),
-                    wall_material.clone(),
-                    xform,
-                    preview,
-                );
-                spawn_wall_segment(
-                    commands,
-                    assets,
-                    meshes,
-                    g.center + dir * (g.width * 0.5),
-                    b,
-                    wall_material.clone(),
-                    xform,
-                    preview,
-                );
-            }
-            _ => spawn_wall_segment(
-                commands,
-                assets,
-                meshes,
-                a,
-                b,
-                wall_material.clone(),
-                xform,
-                preview,
-            ),
-        }
+    let plan = teleport::plan_boundary(poly, gaps, WALL_HEIGHT, WALL_HEIGHT)
+        .expect("visible room geometry must produce a valid threshold aperture plan");
+    for panel in plan.wall_panels {
+        spawn_wall_panel(
+            commands,
+            assets,
+            meshes,
+            panel.start,
+            panel.end,
+            panel.y_min,
+            panel.y_max,
+            wall_material.clone(),
+            xform,
+            preview,
+        );
     }
 }
 
-/// A single rotated wall panel spanning `p1`→`p2` (extended slightly so corners seal),
-/// placed under `xform`.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn spawn_wall_segment(
+pub(crate) fn spawn_wall_panel(
     commands: &mut Commands,
     _assets: &MatchAssets,
     meshes: &mut Assets<Mesh>,
     p1: Vec2,
     p2: Vec2,
+    y_min: f32,
+    y_max: f32,
     wall_material: Handle<StandardMaterial>,
     xform: Transform,
     preview: bool,
 ) {
-    const T: f32 = 0.4; // full thickness
+    const T: f32 = 0.4;
     let d = p2 - p1;
     let len = d.length();
-    if len < 0.05 {
+    let height = y_max - y_min;
+    if len < 0.05 || height < 0.05 {
         return;
     }
     let mid = (p1 + p2) * 0.5;
-    let yaw = (-d.y).atan2(d.x); // align local +X with the edge direction
-    let local = Transform::from_xyz(mid.x, WALL_HEIGHT * 0.5, mid.y)
+    let yaw = (-d.y).atan2(d.x);
+    let local = Transform::from_xyz(mid.x, y_min + height * 0.5, mid.y)
         .with_rotation(Quat::from_rotation_y(yaw));
     spawn_geo(
         commands,
-        meshes.add(cuboid_mesh(Vec3::new(len + T, WALL_HEIGHT, T))),
+        meshes.add(cuboid_mesh(Vec3::new(len + T, height, T))),
         wall_material,
         xform.mul_transform(local),
         preview,

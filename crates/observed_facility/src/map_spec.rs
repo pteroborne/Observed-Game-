@@ -11,6 +11,7 @@ use glam::Vec2;
 use observed_core::{CorridorId, Direction, PlaceId, RoomId, ThresholdId, ThresholdSlotId};
 
 use crate::junction::{CorridorSpec, JunctionTopology, ThresholdAttachment};
+use crate::room_def::RoomTemplate;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RoomRole {
@@ -104,8 +105,162 @@ impl MapEndpoint {
 pub struct MapRoom {
     pub id: RoomId,
     pub role: RoomRole,
+    /// Authored architectural kit selected from [`ROOM_TEMPLATE_CATALOG`].
+    pub template: RoomTemplate,
     /// Schematic coordinate for TAC-MAP/debug views. This is not world geometry.
     pub schematic: Vec2,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RoomTemplateChoice {
+    pub template: RoomTemplate,
+    pub weight: u8,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RoomTemplateRule {
+    pub role: RoomRole,
+    pub choices: &'static [RoomTemplateChoice],
+}
+
+const HUB_TEMPLATES: &[RoomTemplateChoice] = &[
+    RoomTemplateChoice {
+        template: RoomTemplate::Junction,
+        weight: 3,
+    },
+    RoomTemplateChoice {
+        template: RoomTemplate::ControlRoom,
+        weight: 1,
+    },
+];
+const FORK_TEMPLATES: &[RoomTemplateChoice] = &[
+    RoomTemplateChoice {
+        template: RoomTemplate::Junction,
+        weight: 2,
+    },
+    RoomTemplateChoice {
+        template: RoomTemplate::Corner,
+        weight: 1,
+    },
+];
+const CONTROL_TEMPLATES: &[RoomTemplateChoice] = &[
+    RoomTemplateChoice {
+        template: RoomTemplate::ControlRoom,
+        weight: 3,
+    },
+    RoomTemplateChoice {
+        template: RoomTemplate::PlatformRoom,
+        weight: 1,
+    },
+];
+const OBJECTIVE_TEMPLATES: &[RoomTemplateChoice] = &[
+    RoomTemplateChoice {
+        template: RoomTemplate::FreightRoom,
+        weight: 2,
+    },
+    RoomTemplateChoice {
+        template: RoomTemplate::MachineChamber,
+        weight: 1,
+    },
+];
+const COOP_TEMPLATES: &[RoomTemplateChoice] = &[
+    RoomTemplateChoice {
+        template: RoomTemplate::MachineChamber,
+        weight: 3,
+    },
+    RoomTemplateChoice {
+        template: RoomTemplate::ControlRoom,
+        weight: 1,
+    },
+];
+const RECOVERY_TEMPLATES: &[RoomTemplateChoice] = &[
+    RoomTemplateChoice {
+        template: RoomTemplate::StraightCorridor,
+        weight: 2,
+    },
+    RoomTemplateChoice {
+        template: RoomTemplate::Corner,
+        weight: 1,
+    },
+    RoomTemplateChoice {
+        template: RoomTemplate::FreightRoom,
+        weight: 1,
+    },
+];
+const MONITOR_TEMPLATES: &[RoomTemplateChoice] = &[RoomTemplateChoice {
+    template: RoomTemplate::ControlRoom,
+    weight: 1,
+}];
+
+/// Semantic room role -> compatible architectural kits. This is deliberately data,
+/// rather than a renderer match statement, so WFC and authored fixtures make the same
+/// deterministic selection and the game merely consumes the result.
+pub const ROOM_TEMPLATE_CATALOG: &[RoomTemplateRule] = &[
+    RoomTemplateRule {
+        role: RoomRole::Start,
+        choices: HUB_TEMPLATES,
+    },
+    RoomTemplateRule {
+        role: RoomRole::Exit,
+        choices: HUB_TEMPLATES,
+    },
+    RoomTemplateRule {
+        role: RoomRole::Decision,
+        choices: HUB_TEMPLATES,
+    },
+    RoomTemplateRule {
+        role: RoomRole::DecoherenceFork,
+        choices: FORK_TEMPLATES,
+    },
+    RoomTemplateRule {
+        role: RoomRole::AnchorCheckpoint,
+        choices: CONTROL_TEMPLATES,
+    },
+    RoomTemplateRule {
+        role: RoomRole::TeleportRelay,
+        choices: CONTROL_TEMPLATES,
+    },
+    RoomTemplateRule {
+        role: RoomRole::Keystone,
+        choices: OBJECTIVE_TEMPLATES,
+    },
+    RoomTemplateRule {
+        role: RoomRole::DualStation,
+        choices: COOP_TEMPLATES,
+    },
+    RoomTemplateRule {
+        role: RoomRole::GuardianControl,
+        choices: CONTROL_TEMPLATES,
+    },
+    RoomTemplateRule {
+        role: RoomRole::Monitor,
+        choices: MONITOR_TEMPLATES,
+    },
+    RoomTemplateRule {
+        role: RoomRole::Recovery,
+        choices: RECOVERY_TEMPLATES,
+    },
+];
+
+pub fn room_template_for_role(role: RoomRole, salt: u64) -> RoomTemplate {
+    let choices = ROOM_TEMPLATE_CATALOG
+        .iter()
+        .find(|rule| rule.role == role)
+        .map(|rule| rule.choices)
+        .unwrap_or(HUB_TEMPLATES);
+    let total: u64 = choices.iter().map(|choice| u64::from(choice.weight)).sum();
+    let mut value = salt
+        .wrapping_add(0x9E37_79B9_7F4A_7C15)
+        .wrapping_mul(0xBF58_476D_1CE4_E5B9)
+        % total.max(1);
+    for choice in choices {
+        let weight = u64::from(choice.weight);
+        if value < weight {
+            return choice.template;
+        }
+        value -= weight;
+    }
+    choices[0].template
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -639,6 +794,7 @@ pub fn sector_relay_v1() -> MapSpec {
     let room = |id, role, x, y| MapRoom {
         id: RoomId(id),
         role,
+        template: room_template_for_role(role, u64::from(id)),
         schematic: Vec2::new(x, y),
     };
     let edge = |a, a_side, b, b_side, role| MapEdge {
@@ -701,6 +857,7 @@ pub fn multi_exit_fixture() -> MapSpec {
     let room = |id, role, x, y| MapRoom {
         id: RoomId(id),
         role,
+        template: room_template_for_role(role, u64::from(id)),
         schematic: Vec2::new(x, y),
     };
     let mc = |id, a, a_side, b, b_side, role| MapCorridor {
@@ -789,6 +946,36 @@ mod tests {
             map.keystone_rooms(),
             vec![RoomId(2), RoomId(12), RoomId(13)]
         );
+    }
+
+    #[test]
+    fn room_template_catalog_covers_every_semantic_role() {
+        let roles = [
+            RoomRole::Start,
+            RoomRole::Exit,
+            RoomRole::Decision,
+            RoomRole::DecoherenceFork,
+            RoomRole::AnchorCheckpoint,
+            RoomRole::TeleportRelay,
+            RoomRole::Keystone,
+            RoomRole::DualStation,
+            RoomRole::GuardianControl,
+            RoomRole::Monitor,
+            RoomRole::Recovery,
+        ];
+        for role in roles {
+            let rule = ROOM_TEMPLATE_CATALOG
+                .iter()
+                .find(|rule| rule.role == role)
+                .expect("every room role has an architectural rule");
+            assert!(!rule.choices.is_empty());
+            assert!(rule.choices.iter().all(|choice| choice.weight > 0));
+            assert!(
+                rule.choices
+                    .iter()
+                    .any(|choice| choice.template == room_template_for_role(role, 17))
+            );
+        }
     }
 
     #[test]

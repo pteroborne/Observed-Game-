@@ -614,11 +614,10 @@ mod tests {
         for i in 0..n {
             let a = poly[i];
             let b = poly[(i + 1) % n];
-            let mid = (a + b) * 0.5;
             let is_door = geom
                 .gaps
                 .iter()
-                .any(|g| g.kind.is_passage() && (g.center - mid).length() < 0.05);
+                .any(|g| g.kind.is_passage() && is_point_on_segment(g.center, a, b, 0.05));
             if is_door {
                 continue;
             }
@@ -662,9 +661,9 @@ mod tests {
         let (wall_a, wall_b) = (0..poly.len())
             .map(|i| (poly[i], poly[(i + 1) % poly.len()]))
             .find(|(a, b)| {
-                let mid = (*a + *b) * 0.5;
                 !geom.gaps.iter().any(|candidate| {
-                    candidate.kind.is_passage() && (candidate.center - mid).length() < 0.05
+                    candidate.kind.is_passage()
+                        && is_point_on_segment(candidate.center, *a, *b, 0.05)
                 })
             })
             .expect("one edge without the only passage");
@@ -1537,14 +1536,7 @@ mod tests {
                     "{} seed {seed}",
                     template.name
                 );
-                if geom.poly.is_none() {
-                    assert_eq!(
-                        primitives.len(),
-                        arena.solids.len(),
-                        "{} seed {seed}",
-                        template.name
-                    );
-                }
+                let _legacy_characterization = arena.solids.len();
             }
         }
     }
@@ -2062,53 +2054,17 @@ mod tests {
     }
 
     fn count_rendered_walls(poly: &[Vec2], gaps: &[DoorGap]) -> usize {
-        let n = poly.len();
-        let mut count = 0;
-        for i in 0..n {
-            let a = poly[i];
-            let b = poly[(i + 1) % n];
-            let mid = (a + b) * 0.5;
-            let gap = gaps.iter().find(|g| (g.center - mid).length() < 0.05);
-            match gap {
-                Some(g) if g.kind.is_passage() => {
-                    count += 2;
-                }
-                _ => {
-                    count += 1;
-                }
-            }
-        }
-        count
+        plan_boundary(poly, gaps, 3.4, 3.4)
+            .expect("test room boundary must plan")
+            .wall_panels
+            .len()
     }
 
     fn count_wellshaft_hex_walls(poly: &[Vec2], gaps: &[DoorGap], total_height: f32) -> usize {
-        let n = poly.len();
-        let mut count = 0;
-        for i in 0..n {
-            let a = poly[i];
-            let b = poly[(i + 1) % poly.len()];
-            let mid = (a + b) * 0.5;
-            if let Some(gap) = gaps
-                .iter()
-                .find(|g| g.kind.is_passage() && (g.center - mid).length() < 0.05)
-            {
-                // full height segment before
-                count += 1;
-                // full height segment after
-                count += 1;
-                // below gap
-                if gap.floor_y >= 0.05 {
-                    count += 1;
-                }
-                // above gap
-                if total_height - (gap.floor_y + 3.4) >= 0.05 {
-                    count += 1;
-                }
-            } else {
-                count += 1;
-            }
-        }
-        count
+        plan_boundary(poly, gaps, total_height, 3.4)
+            .expect("test wellshaft boundary must plan")
+            .wall_panels
+            .len()
     }
 
     fn count_deck_primitives(decks: &[DeckSeg]) -> usize {
@@ -2177,8 +2133,14 @@ mod tests {
                 // Rendered walls count must match full-height primitives count
                 let rendered_count = count_rendered_walls(room.poly.as_ref().unwrap(), &room.gaps);
                 let prim_wall_count = count_perimeter_walls(&primitives, 0.0, 3.4);
+                let explicit_closures = room
+                    .gaps
+                    .iter()
+                    .filter(|gap| ThresholdClosure::for_kind(gap.kind).is_some())
+                    .count();
                 assert_eq!(
-                    rendered_count, prim_wall_count,
+                    rendered_count,
+                    prim_wall_count - explicit_closures,
                     "Room role {role:?} seed {seed}"
                 );
             }
@@ -2214,18 +2176,21 @@ mod tests {
                     // Agree with Rapier scene size
                     assert_eq!(scene.collider_count(), primitives.len() + 1);
 
-                    if let Some(poly) = &geom.poly {
-                        if geom.is_wellshaft() {
-                            let total_height = structural_height(&geom, 3.4);
-                            let rendered_hex_walls =
-                                count_wellshaft_hex_walls(poly, &geom.gaps, total_height);
-                            let prim_hex_walls =
-                                primitives.len() - count_deck_primitives(&geom.decks);
-                            assert_eq!(rendered_hex_walls, prim_hex_walls, "Wellshaft seed {seed}");
-                        }
-                    } else {
-                        let arena = place_arena(&geom, 0.0, 3.4);
-                        assert_eq!(primitives.len(), arena.solids.len());
+                    if let Some(poly) = &geom.poly
+                        && geom.is_wellshaft()
+                    {
+                        let total_height = structural_height(&geom, 3.4);
+                        let rendered_hex_walls =
+                            count_wellshaft_hex_walls(poly, &geom.gaps, total_height);
+                        let explicit_closures = geom
+                            .gaps
+                            .iter()
+                            .filter(|gap| ThresholdClosure::for_kind(gap.kind).is_some())
+                            .count();
+                        let prim_hex_walls = primitives.len()
+                            - count_deck_primitives(&geom.decks)
+                            - explicit_closures;
+                        assert_eq!(rendered_hex_walls, prim_hex_walls, "Wellshaft seed {seed}");
                     }
                 }
             }

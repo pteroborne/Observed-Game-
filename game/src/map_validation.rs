@@ -551,6 +551,31 @@ fn audit_common(issues: &mut Vec<MapValidationIssue>, report: MapPlaceReport, ge
             );
         }
     }
+    let boundary_storage;
+    let boundary = if let Some(poly) = geom.poly.as_ref() {
+        poly.as_slice()
+    } else {
+        let (hx, hz) = (geom.half.x, geom.half.y);
+        boundary_storage = [
+            Vec2::new(-hx, -hz),
+            Vec2::new(hx, -hz),
+            Vec2::new(hx, hz),
+            Vec2::new(-hx, hz),
+        ];
+        boundary_storage.as_slice()
+    };
+    if let Err(error) = teleport::plan_boundary(
+        boundary,
+        &geom.gaps,
+        teleport::structural_height(geom, 4.6),
+        4.6,
+    ) {
+        push_issue(
+            issues,
+            report.clone(),
+            format!("threshold aperture plan is invalid: {error:?}"),
+        );
+    }
     for wall in &geom.interior {
         if !finite_vec2(wall.center)
             || !finite_vec2(wall.half)
@@ -605,7 +630,7 @@ fn matching_edge(poly: &[Vec2], center: Vec2) -> Option<(Vec2, Vec2)> {
     for i in 0..poly.len() {
         let a = poly[i];
         let b = poly[(i + 1) % poly.len()];
-        if ((a + b) * 0.5 - center).length() < 0.06 {
+        if teleport::is_point_on_segment(center, a, b, 0.08) {
             return Some((a, b));
         }
     }
@@ -723,6 +748,21 @@ mod tests {
         assert_eq!(rooms.len(), MAP_AUDIT_CAPTURE_ROLES.len());
         assert_eq!(rooms.first(), spec.start_room().as_ref());
         assert_eq!(rooms.last(), spec.exit_room().as_ref());
+    }
+
+    #[test]
+    fn production_room_geometry_consumes_the_map_template_catalog() {
+        let spec = sector_relay_v1();
+        for room in &spec.rooms {
+            let nav = nav_for_spec_room(&spec, MATCH_SEED, 0, room.id);
+            let geom = teleport::geom_for(Place::Room(room.id), &nav);
+            assert_eq!(
+                geom.poly.as_ref().unwrap().len(),
+                usize::from(room.template.shell_profile().sides),
+                "room {:?} must use its stored architectural template",
+                room.id
+            );
+        }
     }
 
     #[test]

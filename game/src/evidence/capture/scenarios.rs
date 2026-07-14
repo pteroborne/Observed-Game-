@@ -183,7 +183,10 @@ pub(super) fn capture_doorway_progress(
                     transform.translation.y = leaf.open_y;
                 }
                 request.phase = 2;
-                request.next_at = elapsed + 0.4;
+                // The manifest-selected glTF gate expands asynchronously after the place
+                // rebuild. Give it time to become visible so this evidence captures the
+                // canonical threshold, not only its procedural semantic accents.
+                request.next_at = elapsed + 1.2;
             }
         }
         2 if elapsed >= request.next_at => {

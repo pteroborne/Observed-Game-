@@ -172,7 +172,10 @@ impl GantryCourse {
                 },
                 GantryThreshold {
                     exit: GantryExit::UnderstorySideExit,
-                    center: Vec2::new(GANTRY_WIDTH * 0.5 - 0.65, UNDERSTORY_SIDE_EXIT_Z),
+                    // Threshold centers are architectural boundary coordinates. Keeping
+                    // this inset used to make crossing, frame, visible opening, and
+                    // collision each project the doorway differently.
+                    center: Vec2::new(GANTRY_WIDTH * 0.5, UNDERSTORY_SIDE_EXIT_Z),
                     normal: Vec2::new(1.0, 0.0),
                     width: 3.0,
                     floor_y: 0.0,

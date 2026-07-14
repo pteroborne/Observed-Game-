@@ -31,6 +31,7 @@ pub(crate) use monitors::{
     monitor_page_for, observation_bank_view, sync_observation_monitors, update_guardian_monitors,
     update_tether_monitors,
 };
+pub(crate) use shell::normalize_imported_threshold_materials;
 // Test-only: `game::tests` reaches these through `crate::screens::place::...` rather than
 // `crate::screens::place::monitors::...` to match the rest of that module's style; nothing
 // in the production build needs them re-exported at this level.

@@ -396,6 +396,10 @@ fn assign_roles_and_build(
             MapRoom {
                 id: room,
                 role: role_of[&room],
+                template: crate::map_spec::room_template_for_role(
+                    role_of[&room],
+                    u64::from(room.0),
+                ),
                 schematic: Vec2::new(x as f32, y as f32),
             }
         })

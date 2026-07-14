@@ -54,6 +54,24 @@ impl RoomTemplate {
         Self::ALL[(index + 1) % Self::ALL.len()]
     }
 
+    /// Production-facing architectural profile for this authored template. Gameplay
+    /// connections remain typed ports; this profile only selects the generated shell
+    /// proportions used when a room is instantiated in the first-person game.
+    pub const fn shell_profile(self) -> RoomShellProfile {
+        match self {
+            Self::StraightCorridor => RoomShellProfile::new(4, 1.30, 0.82),
+            Self::Corner => RoomShellProfile::new(5, 1.05, 1.00),
+            Self::Junction => RoomShellProfile::new(8, 1.16, 1.16),
+            // Thirteen faces leave nine information-panel walls after four cardinal
+            // thresholds; Monitor rooms select this kit deterministically.
+            Self::ControlRoom => RoomShellProfile::new(13, 1.18, 0.96),
+            Self::MachineChamber => RoomShellProfile::new(7, 1.22, 1.08),
+            Self::FreightRoom => RoomShellProfile::new(4, 1.26, 1.05),
+            Self::Shaft => RoomShellProfile::new(8, 0.92, 0.92),
+            Self::PlatformRoom => RoomShellProfile::new(6, 1.12, 1.20),
+        }
+    }
+
     #[cfg(feature = "bevy")]
     pub fn color(self) -> Color {
         match self {
@@ -65,6 +83,23 @@ impl RoomTemplate {
             Self::FreightRoom => Color::srgb(0.55, 0.47, 0.26),
             Self::Shaft => Color::srgb(0.42, 0.34, 0.62),
             Self::PlatformRoom => Color::srgb(0.20, 0.62, 0.72),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RoomShellProfile {
+    pub sides: u8,
+    pub x_scale: f32,
+    pub z_scale: f32,
+}
+
+impl RoomShellProfile {
+    pub const fn new(sides: u8, x_scale: f32, z_scale: f32) -> Self {
+        Self {
+            sides,
+            x_scale,
+            z_scale,
         }
     }
 }

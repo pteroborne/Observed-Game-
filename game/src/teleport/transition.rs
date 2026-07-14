@@ -2,7 +2,7 @@
 
 use super::{
     DoorGap, ENTRY_INSET, Nav, Place, PlaceGeom, ThresholdLocalSide, corridor_id_for,
-    corridor_socket_for,
+    corridor_socket_for, plan_boundary,
 };
 use crate::hallway;
 use bevy::math::{Quat, Vec2, Vec3};
@@ -575,7 +575,7 @@ pub fn place_arena(geom: &PlaceGeom, floor_y: f32, wall_height: f32) -> FpsArena
 const WALL_HALF_THICKNESS: f32 = 0.4;
 
 /// Append one yawed structural wall cuboid spanning `start..end` on the XZ plane.
-/// The local +X axis follows the wall, matching the renderer's `spawn_wall_segment`
+/// The local +X axis follows the wall, matching the renderer's wall-panel
 /// convention. A small extension seals a whole polygon edge at its corners, but never
 /// intrudes into a doorway opening.
 fn push_polygon_wall(
@@ -623,109 +623,7 @@ pub fn place_structural_primitives(
     floor_y: f32,
     wall_height: f32,
 ) -> Vec<StructuralCollider> {
-    let poly_storage;
-    let poly = match geom.poly.as_ref() {
-        Some(p) => p,
-        None => {
-            let (hx, hz) = (geom.half.x, geom.half.y);
-            poly_storage = vec![
-                Vec2::new(-hx, -hz),
-                Vec2::new(hx, -hz),
-                Vec2::new(hx, hz),
-                Vec2::new(-hx, hz),
-            ];
-            &poly_storage
-        }
-    };
-
-    let total_height = structural_height(geom, wall_height);
-    let mut primitives = Vec::new();
-    for index in 0..poly.len() {
-        let start = poly[index];
-        let end = poly[(index + 1) % poly.len()];
-        let edge = end - start;
-        let edge_length = edge.length();
-        if edge_length <= 0.01 {
-            continue;
-        }
-        let tangent = edge / edge_length;
-        let outward_normal = Vec2::new(tangent.y, -tangent.x);
-        // A doorway belongs to this edge when its normal aligns with the edge's outward
-        // normal and its centre projects onto the edge segment.
-        let mut openings: Vec<(f32, f32, &DoorGap)> = geom
-            .gaps
-            .iter()
-            .filter(|gap| gap.kind.is_passage())
-            .filter_map(|gap| {
-                let relative = gap.center - start;
-                let along = relative.dot(tangent);
-                let off_edge = (relative - tangent * along).length();
-                let normal_align = gap.normal.dot(outward_normal);
-                (normal_align > 0.7
-                    && off_edge <= 0.8
-                    && along >= -0.5
-                    && along <= edge_length + 0.5)
-                    .then_some((
-                        (along - gap.width * 0.5).clamp(0.0, edge_length),
-                        (along + gap.width * 0.5).clamp(0.0, edge_length),
-                        gap,
-                    ))
-            })
-            .collect();
-        openings.sort_by(|a, b| a.0.total_cmp(&b.0));
-        let has_openings = !openings.is_empty();
-
-        let mut cursor = 0.0;
-        for (lo, hi, gap) in openings {
-            if lo > cursor {
-                push_polygon_wall(
-                    &mut primitives,
-                    start + tangent * cursor,
-                    start + tangent * lo,
-                    0.0,
-                    total_height,
-                    floor_y,
-                    false,
-                );
-            }
-            if hi <= cursor {
-                continue;
-            }
-            let opening_start = start + tangent * lo.max(cursor);
-            let opening_end = start + tangent * hi;
-            push_polygon_wall(
-                &mut primitives,
-                opening_start,
-                opening_end,
-                0.0,
-                gap.floor_y,
-                floor_y,
-                false,
-            );
-            push_polygon_wall(
-                &mut primitives,
-                opening_start,
-                opening_end,
-                gap.floor_y + wall_height,
-                total_height,
-                floor_y,
-                false,
-            );
-            cursor = hi;
-        }
-        if cursor < edge_length {
-            push_polygon_wall(
-                &mut primitives,
-                start + tangent * cursor,
-                end,
-                0.0,
-                total_height,
-                floor_y,
-                !has_openings,
-            );
-        }
-    }
-
+    let mut primitives = place_boundary_primitives(geom, floor_y, wall_height);
     for segment in &geom.interior {
         primitives.push(StructuralCollider::axis_aligned(
             Vec3::new(
@@ -749,6 +647,65 @@ pub fn place_structural_primitives(
             ));
         }
     }
+    primitives
+}
+
+/// Generated perimeter only. Authored modules compose this aperture-safe boundary with
+/// their imported interior/traversal hulls; procedural places extend it with their
+/// `interior` and `decks` data in [`place_structural_primitives`].
+pub fn place_boundary_primitives(
+    geom: &PlaceGeom,
+    floor_y: f32,
+    wall_height: f32,
+) -> Vec<StructuralCollider> {
+    let poly_storage;
+    let poly = match geom.poly.as_ref() {
+        Some(p) => p,
+        None => {
+            let (hx, hz) = (geom.half.x, geom.half.y);
+            poly_storage = vec![
+                Vec2::new(-hx, -hz),
+                Vec2::new(hx, -hz),
+                Vec2::new(hx, hz),
+                Vec2::new(-hx, hz),
+            ];
+            &poly_storage
+        }
+    };
+
+    let total_height = structural_height(geom, wall_height);
+    let aperture_plan = plan_boundary(poly, &geom.gaps, total_height, wall_height)
+        .expect("place geometry must produce a valid threshold aperture plan");
+    let mut primitives = Vec::new();
+    for panel in aperture_plan.wall_panels {
+        push_polygon_wall(
+            &mut primitives,
+            panel.start,
+            panel.end,
+            panel.y_min,
+            panel.y_max,
+            floor_y,
+            false,
+        );
+    }
+    // Sealed states never masquerade as perimeter wall. They occupy an already-cut
+    // aperture explicitly, so opening/locking/collapsing one cannot change the shell.
+    for aperture in aperture_plan
+        .apertures
+        .into_iter()
+        .filter(|aperture| aperture.closure.is_some())
+    {
+        push_polygon_wall(
+            &mut primitives,
+            aperture.start,
+            aperture.end,
+            aperture.y_min,
+            aperture.y_max,
+            floor_y,
+            false,
+        );
+    }
+
     primitives
 }
 

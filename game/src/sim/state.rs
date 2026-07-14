@@ -111,10 +111,8 @@ pub struct TeleportState {
     pub config: FpsConfig,
     /// Raw-Rapier scene projected from the current place's structural geometry.
     pub rapier: RapierTraversalScene,
-    pub geometry_backend: GeometryBackend,
     pub collision_catalog: std::sync::Arc<crate::content::ContentCollisionCatalog>,
     pub simulation_content_hash: [u8; 32],
-    pub using_legacy_geometry_adapter: bool,
     pub layout: Option<observed_content::PlaceLayoutSnapshot>,
     /// The current place's footprint + doorway gaps + interior (maze) walls. Cached so
     /// a labyrinth is generated once per teleport, not every fixed step.
@@ -148,30 +146,19 @@ impl TeleportState {
         y_offset: f32,
         frozen_layout: Option<&observed_content::PlaceLayoutSnapshot>,
     ) {
-        self.layout = if self.geometry_backend == GeometryBackend::Authored {
-            frozen_layout
-                .cloned()
-                .or_else(|| self.collision_catalog.layout_for_place(place, geom))
-        } else {
-            None
-        };
+        self.layout = frozen_layout
+            .cloned()
+            .or_else(|| self.collision_catalog.layout_for_place(place, geom));
         let authored = self.layout.as_ref().and_then(|layout| {
             self.collision_catalog
                 .arena_for_layout(layout, geom, y_offset)
         });
-        self.using_legacy_geometry_adapter = authored.is_none();
         if let Some(spec) = authored {
             self.rapier = RapierTraversalScene::from_arena_spec(&spec);
         } else {
             self.rapier = teleport::place_rapier_scene(geom, y_offset, crate::layout::WALL_HEIGHT);
         }
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum GeometryBackend {
-    Legacy,
-    Authored,
 }
 
 /// A doorway's frozen destination: the resolved next [`teleport::Place`] (a hallway carries

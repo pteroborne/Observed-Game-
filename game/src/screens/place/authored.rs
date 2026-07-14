@@ -14,23 +14,42 @@ use crate::{GameState, view::components::PassagePreview};
 
 use super::factory::place_surface_material;
 
+pub(super) struct ShellMaterials<'a> {
+    pub floor: &'a Handle<StandardMaterial>,
+    pub wall: &'a Handle<StandardMaterial>,
+    pub interior: Option<(SurfaceRole, &'a Handle<StandardMaterial>)>,
+}
+
 pub(super) fn spawn_collision_shell(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     arena: &ArenaSpec,
     palette: &DistrictPalette,
-    floor_base: &Handle<StandardMaterial>,
-    wall_base: &Handle<StandardMaterial>,
+    shell_materials: ShellMaterials<'_>,
 ) {
-    let floor_material = place_surface_material(SurfaceRole::Plain, palette, floor_base, materials);
-    let wall_material = place_surface_material(SurfaceRole::Wall, palette, wall_base, materials);
+    let floor_material = place_surface_material(
+        SurfaceRole::Plain,
+        palette,
+        shell_materials.floor,
+        materials,
+    );
+    let wall_material =
+        place_surface_material(SurfaceRole::Wall, palette, shell_materials.wall, materials);
+    let interior_material = shell_materials
+        .interior
+        .map(|(role, base)| place_surface_material(role, palette, base, materials));
     for collider in &arena.colliders {
         let (mesh, floor_like) = collider_mesh(collider, arena.floor_y);
+        let authored_interior = matches!(collider.shape, ColliderShape::ConvexHull { .. });
         commands.spawn((
             PlaceGeometry,
             Mesh3d(meshes.add(mesh)),
-            MeshMaterial3d(if floor_like {
+            MeshMaterial3d(if authored_interior {
+                interior_material
+                    .clone()
+                    .unwrap_or_else(|| wall_material.clone())
+            } else if floor_like {
                 floor_material.clone()
             } else {
                 wall_material.clone()
@@ -41,12 +60,19 @@ pub(super) fn spawn_collision_shell(
                 collider.rotation[2],
                 collider.rotation[3],
             )),
-            Name::new(format!("Authored convex collider {}", collider.id.0)),
+            Name::new(format!(
+                "{} {}",
+                if authored_interior {
+                    "Authored traversal hull"
+                } else {
+                    "Generated aperture wall"
+                },
+                collider.id.0
+            )),
         ));
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn spawn_preview_collision_shell(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -54,13 +80,22 @@ pub(super) fn spawn_preview_collision_shell(
     arena: &ArenaSpec,
     parent: Transform,
     palette: &DistrictPalette,
-    floor_base: &Handle<StandardMaterial>,
-    wall_base: &Handle<StandardMaterial>,
+    shell_materials: ShellMaterials<'_>,
 ) {
-    let floor_material = place_surface_material(SurfaceRole::Plain, palette, floor_base, materials);
-    let wall_material = place_surface_material(SurfaceRole::Wall, palette, wall_base, materials);
+    let floor_material = place_surface_material(
+        SurfaceRole::Plain,
+        palette,
+        shell_materials.floor,
+        materials,
+    );
+    let wall_material =
+        place_surface_material(SurfaceRole::Wall, palette, shell_materials.wall, materials);
+    let interior_material = shell_materials
+        .interior
+        .map(|(role, base)| place_surface_material(role, palette, base, materials));
     for collider in &arena.colliders {
         let (mesh, floor_like) = collider_mesh(collider, arena.floor_y);
+        let authored_interior = matches!(collider.shape, ColliderShape::ConvexHull { .. });
         let local = Transform::from_translation(collider.center).with_rotation(Quat::from_xyzw(
             collider.rotation[0],
             collider.rotation[1],
@@ -72,14 +107,23 @@ pub(super) fn spawn_preview_collision_shell(
             PassagePreview,
             DespawnOnExit(GameState::Match),
             Mesh3d(meshes.add(mesh)),
-            MeshMaterial3d(if floor_like {
+            MeshMaterial3d(if authored_interior {
+                interior_material
+                    .clone()
+                    .unwrap_or_else(|| wall_material.clone())
+            } else if floor_like {
                 floor_material.clone()
             } else {
                 wall_material.clone()
             }),
             parent.mul_transform(local),
             Name::new(format!(
-                "Frozen authored preview collider {}",
+                "Frozen {} {}",
+                if authored_interior {
+                    "authored traversal hull"
+                } else {
+                    "generated aperture wall"
+                },
                 collider.id.0
             )),
         ));

@@ -10,6 +10,7 @@ use observed_facility::map_spec::RoomRole;
 use observed_style::{self as style, SurfaceRole};
 
 use crate::GameState;
+use crate::hallway;
 use crate::items::ItemsState;
 use crate::keystones::KeystoneState;
 use crate::layout::WALL_HEIGHT;
@@ -158,12 +159,7 @@ pub(crate) fn rebuild_place(
     }
     let current_place = tp.place;
     let current_layout = tp.layout.clone();
-    tp.set_arena_for_place(
-        current_place,
-        &geom,
-        y_offset,
-        current_layout.as_ref(),
-    );
+    tp.set_arena_for_place(current_place, &geom, y_offset, current_layout.as_ref());
     if geom.poly.is_some() {
         let clamped = teleport::contain(
             &geom,
@@ -236,7 +232,7 @@ pub(crate) fn rebuild_place(
                 y_offset,
             );
         }
-        Place::Hallway { .. } => {
+        Place::Hallway { variation, .. } => {
             let floor_material = place_surface_material(
                 SurfaceRole::Plain,
                 &palette,
@@ -255,8 +251,9 @@ pub(crate) fn rebuild_place(
                 &assets.ceiling_material,
                 &mut materials,
             );
-            if tp.using_legacy_geometry_adapter {
-                let primitives = teleport::place_structural_primitives(&geom, y_offset, WALL_HEIGHT);
+            if tp.layout.is_none() {
+                let primitives =
+                    teleport::place_structural_primitives(&geom, y_offset, WALL_HEIGHT);
                 shell::spawn_hallway_shell(
                     &mut commands,
                     &assets,
@@ -269,18 +266,35 @@ pub(crate) fn rebuild_place(
                     y_offset,
                 );
             } else {
-                let spec = tp.layout.as_ref().and_then(|layout| {
-                    tp.collision_catalog
-                        .arena_for_layout(layout, &geom, y_offset)
-                }).expect("authored layout has valid arena spec");
+                shell::spawn_hallway_floor_ceiling(
+                    &mut commands,
+                    &mut meshes,
+                    &geom,
+                    floor_material,
+                    ceiling_material,
+                    y_offset,
+                );
+                let spec = tp
+                    .layout
+                    .as_ref()
+                    .and_then(|layout| {
+                        tp.collision_catalog
+                            .arena_for_layout(layout, &geom, y_offset)
+                    })
+                    .expect("authored layout has valid arena spec");
                 super::authored::spawn_collision_shell(
                     &mut commands,
                     &mut meshes,
                     &mut materials,
                     &spec,
                     &palette,
-                    &assets.floor_material,
-                    &assets.wall_material,
+                    super::authored::ShellMaterials {
+                        floor: &assets.floor_material,
+                        wall: &assets.wall_material,
+                        interior: (hallway::template(variation).flavor
+                            == hallway::HallwayFlavor::Gantry)
+                            .then_some((SurfaceRole::GantryDeck, &assets.gantry_deck_material)),
+                    },
                 );
             }
             // The WFC-composed light-module layer (Arc I Phase 71): decoration
@@ -328,7 +342,6 @@ pub(crate) fn rebuild_place(
             .iter()
             .find(|signal| signal.neighbor == gap.target)
             .copied();
-        let rival_presence = rival_signal.and_then(|s| s.presence).map(|t| t.0 as usize);
         let rival_anchor = rival_signal.and_then(|s| s.anchor).map(|t| t.0 as usize);
 
         if gap.kind.is_passage() {
@@ -382,7 +395,7 @@ pub(crate) fn rebuild_place(
                 &mut commands,
                 &assets,
                 gap,
-                shell::ThresholdStyle::passage(tethered, rival_presence, rival_anchor),
+                shell::ThresholdStyle::passage(tethered, rival_anchor),
                 y_offset,
             );
         } else if gap.kind == GapKind::LockedExit {
