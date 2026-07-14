@@ -1,0 +1,15 @@
+[package]
+name = "rapier_authoring_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = ["3d"] }
+bevy_trenchbroom = { version = "0.13", default-features = false, features = ["client"] }
+quake-map = "0.6"
+rapier3d = { version = "0.34", features = ["enhanced-determinism"] }
+observed_core = { path = "../../crates/observed_core" }
+observed_style = { path = "../../crates/observed_style" }
+player_input = { path = "../../crates/player_input" }
+

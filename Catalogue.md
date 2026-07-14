@@ -45,19 +45,21 @@ These crates represent the stable core of the game's simulation layer. They cont
      - `teamplay`: seeded two-member bot teamplay, co-op room beats, tool usage, guardian setbacks, and round outcomes for spectator-driven series play.
      - `maze`: seeded spatial labyrinth generator translating graphs into walkable corridor geometry.
      - `hybrid`: deterministic orchestration of the first-person hybrid round-stepping and matching.
-7. **`observed_net`** — [README](crates/observed_net/README.md)
-   - *Purpose:* Hostile transport repair, wire protocol checksum verification, and deterministic lockstep simulation state serialization.
-8. **`observed_observation`** — [README](crates/observed_observation/README.md)
+7. **`observed_content`** — [README](crates/observed_content/README.md)
+   - *Purpose:* Engine-independent, deny-unknown-fields schemas for immutable district, traversal, authored-module, port/socket, navigation, asset-provenance, convex-bake, and frozen place-layout data. Canonical SHA-256 simulation and presentation hashes keep collision/gameplay compatibility separate from optional dressing.
+8. **`observed_net`** — [README](crates/observed_net/README.md)
+   - *Purpose:* Hostile transport repair, wire protocol checksum verification, and deterministic lockstep simulation state serialization. Lockstep peers exchange the simulation-content hash and reject incompatible movement/collision content before committing a frame.
+9. **`observed_observation`** — [README](crates/observed_observation/README.md)
    - *Purpose:* The underlying graph database tracking visibility state. Pinned observed rooms are frozen, while unobserved paths decohere and rewire.
-9. **`observed_progression`** — [README](crates/observed_progression/README.md)
+10. **`observed_progression`** — [README](crates/observed_progression/README.md)
    - *Purpose:* Cosmetic profile unlocks, matchmaking queue status, lobby formation, reconnect logic, and session lifecycles.
-10. **`observed_style`** — [README](crates/observed_style/README.md)
+11. **`observed_style`** — [README](crates/observed_style/README.md)
     - *Purpose:* The semantic visual design system (neon-noir district palettes, emissive intensities, signaling tiers, Outline overlay rules, and accessibility legend mappings).
-11. **`observed_traversal`** — [README](crates/observed_traversal/README.md)
-    - *Purpose:* Fixed-timestep physics simulation containing AABB collisions, climb/ladder states, slope mechanics, and stairs.
-12. **`observed_assets`** — [README](crates/observed_assets/README.md)
+12. **`observed_traversal`** — [README](crates/observed_traversal/README.md)
+    - *Purpose:* Fixed-timestep traversal behind a pure `ArenaSpec`/`TraversalWorld` boundary. The temporary migration selector supports the characterized legacy AABB controller and raw deterministic Rapier KCC; authored convex hulls are accepted only by the Rapier arm.
+13. **`observed_assets`** — [README](crates/observed_assets/README.md)
     - *Purpose:* Local directory asset-slot index maps, avoiding hardcoded string paths in simulation presentation.
-13. **`observed_diagnostics`** — [README](crates/observed_diagnostics/README.md)
+14. **`observed_diagnostics`** — [README](crates/observed_diagnostics/README.md)
     - *Purpose:* Pure visual-audit schemas and checks for converting rendered-game state into agent-readable validation evidence.
 
 ---
@@ -83,7 +85,7 @@ The following duplication patterns have been identified in the codebase. These s
 
 ## Feasibility Labs (`labs/`)
 
-The 54 prototype labs in `labs/` are independent Bevy applications designed to isolate and test specific technical questions. They follow a strict sandbox model, allowing full reset (`R` key) without restarting. They are grouped here by testing domain:
+The prototype labs in `labs/` are independent Bevy applications designed to isolate and test specific technical questions. They follow a strict sandbox model, allowing full reset (`R` key) without restarting. They are grouped here by testing domain:
 
 ### Foundation & Controls
 - `menu_lab` & `control_lab`: Boot states, pause systems, rebind overlays, intent playback, controller assignment.
@@ -95,6 +97,10 @@ The 54 prototype labs in `labs/` are independent Bevy applications designed to i
 - `wellshaft_lab`: Production-controller prototype for a multi-threshold vertical silo, proving a hexagonal center pillar, six radial landing bridges, visible/collidable spiral stair treads, reset stability, and staged top/bottom/plan evidence.
 - `rapier_determinism_lab`: Isolated feasibility spike (the "only if the custom controller proves insufficient" escape hatch) answering whether **rapier3d 0.34** can step convex + smooth (ball/capsule/convex-hull) colliders in fixed-dt lockstep with `enhanced-determinism` and stay bit-for-bit reproducible. Raw rapier (not `bevy_rapier`) owns the step loop; two identical worlds run side by side with a live hash-divergence monitor plus an offline bitwise-replay unit test. Verdict: bit-identical; its controller path is now promoted into the game while the spike remains the determinism baseline.
 - `rapier_controller_lab`: Resettable raw-Rapier kinematic-capsule proof scene. It renders the exact oriented structural collider list the controller consumes, with an angled wall and autostep platform, while input remains a `PlayerIntent` boundary. The determinism spike promoted this controller path into the game; the lab keeps its focused manual and replay proof.
+- `rapier_authoring_lab`: Combined TrenchBroom/Rapier vertical slice. A typed, editable Quake `.map` projects into stable room/port/door semantics and one static Rapier convex hull per brush; a fixed-step kinematic capsule traverses the exact sloped ramp, reacts to model-owned door collider mutation, resets cleanly, and replays scripted intents bit-for-bit. This remains lab-local pending playtest and production-boundary review.
+- `rapier_portal_lab`: Authored-module/teleport vertical slice recreating Gantry and Colonnade brush kits, composing them through a deterministic two-cell WFC strip, rendering the remote isolated hallway through an always-open threshold, and swapping Rapier collision worlds on crossing. It ratchets the lock contract: player observation and anchors both freeze BLAME, while only anchors illuminate the frame indicator.
+- `rapier_aesthetic_lab`: Visual successor to the authored portal slice, proving the shared neon-noir language survives imported convex geometry: an Archive/BLAME Gantry uses cool structural mass and amber commitment edges; a Reactor/Silo Colonnade uses separated warm practical pools. Both retain HDR bloom, district fog, semantic-only materials, and the same anchor-purple frame signal across WFC recomposition.
+- `content_manifest_lab`: Data-driven content boundary proof. A deny-unknown-fields JSON schema selects two district treatments, their authored Gantry/Colonnade modules, typed ports/WFC weights, and curated CC0 OpenGameArt dressing. Validation canonicalizes a deterministic manifest hash, checks provenance/fingerprints and Legibility Contract bounds, and requires every selected brush to remain a Rapier convex collider. Imported GLB materials are presentation-only and normalized through `observed_style`; `M` proves named procedural fallbacks without changing architecture or collision.
 
 ### Observation & Procedural Geometry
 - `observation_lab` & `door_lab`: 2D graph transitions, unobserved doorway rewiring, door leaf slam animations.
@@ -124,12 +130,19 @@ The `game` package builds the final playable binary. It acts as an integration l
 - **`game/src/sim/`:** Simulation-side Bevy resources — no rendering, UI, or asset types. `director.rs` holds `MatchDirector`, the single owner of the live networked match plus the elimination series (`tick`, `run_to_completion`, `outcome`, spectator pumping, and forcing/suppressing scripted rounds for evidence capture). `state.rs` holds the teleport/body/intent/spectator/lobby resources (`TeleportState`, `SpectatorBot`, `MatchIntent`, `ItemIntent`, `MatchPaused`, `LobbyRuntime`, etc.). `nav.rs` is the pure brain→`Nav` projection used for bot pathing.
 - **`game/src/view/`:** Presentation building blocks that read `sim` but never write it. `theme.rs` holds the menu/HUD colour palette and UI bundle helpers. `assets.rs` is the drop-in asset slot registry plus `MatchAssets::load`. `components.rs` holds presentation markers and feedback-state resources (camera/sun tags, teleport animation state, etc.).
 - **`game/src/layout.rs`:** Game-owned spatial constants for the teleport place model — `PLACE_TILE`, `HALL_WIDTH`, `WALL_HEIGHT` — now sourced independently of the abandoned `observed_match::maze` tile grid.
+- **`game/src/content.rs`:** Production loader/projection for the committed `assets/content/content_manifest.json` plus canonical TrenchBroom convex bakes. It turns frozen `PlaceLayoutSnapshot`s into the exact `ArenaSpec` used by Rapier and the threshold/live-place renderer; `OBSERVED2_PHYSICS=legacy|rapier` and `OBSERVED2_GEOMETRY=legacy|authored` remain temporary migration selectors while the authored catalogue expands beyond the proven Gantry and Colonnade modules.
 - **`game/src/screens/`:** The state machine and screens. `screens.rs` is the menu domain (button/action types) plus the two composition plugins (`ScreensPlugin` for menu-like screens, `MatchPlugin` for the first-person match). Submodules: `menu.rs`, `loadout.rs`, `lobby.rs`, `hud.rs`, `audio.rs`, `input.rs`, and `match_runtime/` (the match's own lifecycle: `session.rs` enumerates the match-resource set once for setup/teardown and the no-leak test, `crossing.rs` is the fixed-step teleport/crossing driver, `ambience.rs` handles atmosphere/decohere feedback, `spectator.rs` drives the spectator bot, `input.rs` is match input), and `place/` (the renderer: `factory.rs`/`shell.rs`/`monitors.rs`/`animate.rs`/`lighting.rs`/`mesh.rs`/`preview.rs`/`item_visuals.rs`, recomposed by a thin `mod.rs`).
 - **`game/src/evidence/`:** Every opt-in `OBSERVED2_*` pipeline, consolidated under one tree. `capture/` holds the showcase/tour/bot-POV screenshot and GIF drivers. `audit.rs` + `snapshot.rs` + `tags.rs` are the visual audit (staged inspection scenarios, world → `observed_diagnostics` collectors, and the presentation-facing marker components the audit identifies visuals by). `driver.rs` holds helpers shared by every scripted driver. All of it is a no-op in normal play.
 - **`game/src/teleport/`:** Discrete room/hallway footprint building (`geom.rs`), navigation/connection tracking (`nav.rs`), crossing/transition math and spawning (`transition.rs`), and doorway gap geometry. The hallway library includes the two-level Gantry jump-map hall (height-gated thresholds, walkable `DeckSeg` decks, understory rerouting) and the WFC-selected six-level Wellshaft (hex pillar, radial bridges, bidirectional spiral treads, two live graph thresholds, four sealed service bays).
 - **`game/src/map_catalog.rs` & `map_validation.rs`:** Active map selection (`OBSERVED2_MAP`, defaulting to the procedurally generated `liminal_wfc_v1`; `dev`/`sector_relay_v1` selects the authored nine-room fixture) with validated `MapSpec` builder plumbing, an in-process per-`(map, seed)` build cache (generation is expensive; the test suite enters the Match ~150 times), plus pure semantic-map geometry audits.
 - **`game/src/camera.rs` & `bot.rs`:** Shared viewport math (first-person, spectator, preview) and dynamic navmesh/grid-fallback bot automation for walkthrough screenshots and the `Spectate AI` body.
 - **`game/src/navmesh.rs`, `guardian.rs`, `items.rs`, `keystones.rs`, `flow.rs`, `rivals.rs`, `tacmap.rs`, `maze.rs`, `hallway.rs`:** dynamic navmesh generation from the current place geometry; the "weeping-angel" guardian AI in-match; presentation-layer droppable items (anchor torch, etc.); the keystone-gated exit inventory check; the pure career/flow model tying match → progression; presentation-only rival avatars shown when sharing a room; the toggleable tac-map overlay; the per-hallway interior maze generator (randomized-DFS + braid); and the authored teleport-hallway pieces themselves.
+
+---
+
+## Content Tools (`tools/`)
+
+- **`content_baker`:** Deterministic command-line TrenchBroom/Quake `.map` baker. It selects a typed `observed_module`, converts every brush into a stable convex hull, validates the result through `observed_content`, and writes canonical JSON suitable for fingerprinting and immutable production inclusion.
 
 ---
 

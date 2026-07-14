@@ -9,10 +9,10 @@ use player_input::PlayerIntent;
 
 pub const PEER_COUNT: usize = 2;
 const MAGIC: [u8; 4] = *b"O2LK";
-const VERSION: u8 = 1;
+const VERSION: u8 = 2;
 const HAS_INPUT: u8 = 1;
 const NONE_FRAME: u32 = u32::MAX;
-const PAYLOAD_LEN: usize = 37;
+const PAYLOAD_LEN: usize = 70;
 pub const PACKET_LEN: usize = PAYLOAD_LEN + 4;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -108,6 +108,11 @@ pub struct StatusPacket {
     /// State after this many committed lockstep frames.
     pub state_frame: u32,
     pub state_hash: u64,
+    /// Hash of every traversal-affecting content input (movement profile, ports,
+    /// collision bakes, and authored layout data). Presentation assets are excluded.
+    pub simulation_content_hash: [u8; 32],
+    /// Stable traversal implementation identifier (`0` legacy AABB, `1` Rapier).
+    pub simulation_backend: u8,
 }
 
 impl StatusPacket {
@@ -131,6 +136,8 @@ impl StatusPacket {
         bytes[21..25].copy_from_slice(&self.ack_through.unwrap_or(NONE_FRAME).to_le_bytes());
         bytes[25..29].copy_from_slice(&self.state_frame.to_le_bytes());
         bytes[29..37].copy_from_slice(&self.state_hash.to_le_bytes());
+        bytes[37..69].copy_from_slice(&self.simulation_content_hash);
+        bytes[69] = self.simulation_backend;
         let checksum = checksum32(&bytes[..PAYLOAD_LEN]);
         bytes[PAYLOAD_LEN..PACKET_LEN].copy_from_slice(&checksum.to_le_bytes());
         bytes
@@ -150,6 +157,9 @@ impl StatusPacket {
             return Err(PacketError::InvalidPeer);
         }
         if bytes[6] & !HAS_INPUT != 0 {
+            return Err(PacketError::InvalidFlags);
+        }
+        if bytes[69] > 1 {
             return Err(PacketError::InvalidFlags);
         }
         let expected = u32::from_le_bytes(bytes[PAYLOAD_LEN..PACKET_LEN].try_into().unwrap());
@@ -176,6 +186,8 @@ impl StatusPacket {
             ack_through: (ack != NONE_FRAME).then_some(ack),
             state_frame: u32::from_le_bytes(bytes[25..29].try_into().unwrap()),
             state_hash: u64::from_le_bytes(bytes[29..37].try_into().unwrap()),
+            simulation_content_hash: bytes[37..69].try_into().unwrap(),
+            simulation_backend: bytes[69],
         })
     }
 }
@@ -213,6 +225,8 @@ mod tests {
             ack_through: Some(39),
             state_frame: 40,
             state_hash: 0x1234_5678_9abc_def0,
+            simulation_content_hash: [0x5a; 32],
+            simulation_backend: 1,
         }
     }
 

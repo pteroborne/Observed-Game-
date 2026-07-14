@@ -98,6 +98,8 @@ pub(crate) fn fallback_dest(
         gap_center: gap.center,
         threshold: gap.threshold,
         place: dest,
+        layout: None,
+        simulation_content_hash: [0; 32],
         conns,
         connection_slots: Vec::new(),
         sealed_slots: match dest {
@@ -141,6 +143,7 @@ pub(crate) fn spawn_passage_preview(
     nav: &teleport::Nav,
     game: &HybridMatch,
     klaxon_active: bool,
+    collision_catalog: &crate::content::ContentCollisionCatalog,
 ) {
     let y_offset = teleport::place_y_offset(place);
     match dest.place {
@@ -154,6 +157,8 @@ pub(crate) fn spawn_passage_preview(
             nav,
             palette_for_game(nav.seed, dest.place, game, klaxon_active),
             y_offset,
+            dest.layout.as_ref(),
+            collision_catalog,
         ),
         Place::Room(dest_room) => spawn_room_preview(
             commands,
@@ -186,6 +191,8 @@ pub(crate) fn spawn_hallway_preview(
     nav: &teleport::Nav,
     palette: observed_style::DistrictPalette,
     y_offset: f32,
+    layout: Option<&observed_content::PlaceLayoutSnapshot>,
+    collision_catalog: &crate::content::ContentCollisionCatalog,
 ) {
     let Place::Hallway { variation, .. } = next else {
         return;
@@ -209,6 +216,23 @@ pub(crate) fn spawn_hallway_preview(
     let mut parent = camera::alignment_transform(align);
     parent.translation.y = y_offset + gap.floor_y - preview_floor_y;
     let place_in = |local: Transform| parent.mul_transform(local);
+
+    if let Some(arena) =
+        layout.and_then(|layout| collision_catalog.arena_for_layout(layout, &dest, 0.0))
+    {
+        super::authored::spawn_preview_collision_shell(
+            commands,
+            meshes,
+            materials,
+            &arena,
+            parent,
+            &palette,
+            &assets.floor_material,
+            &assets.wall_material,
+        );
+        spawn_place_lighting(commands, assets, &dest, &palette, parent, true);
+        return;
+    }
 
     let (floor_role, floor_base) =
         if hallway::template(variation).flavor == HallwayFlavor::PressureGate {

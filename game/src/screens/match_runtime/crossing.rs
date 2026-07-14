@@ -7,7 +7,6 @@ use observed_traversal::{FIXED_DT, FpsBody};
 use crate::flow::MATCH_SEED;
 use crate::items::ItemsState;
 use crate::keystones::KeystoneState;
-use crate::layout::WALL_HEIGHT;
 use crate::sim::director::MatchDirector;
 use crate::sim::nav::{
     connections_for_nav, nav_for_place, nav_for_room, room_connection_slots, room_target,
@@ -26,6 +25,7 @@ fn body_xz(tp: &TeleportState) -> Vec2 {
 /// and the frozen connection set + spine target of the room each hallway doorway opens
 /// into. Captured once at place-entry so the doorway preview and the actual crossing read
 /// the identical snapshot ("observed → frozen"); see [`TeleportState::gap_dests`].
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn compute_gap_dests(
     seed: u64,
     place: Place,
@@ -33,6 +33,8 @@ pub(crate) fn compute_gap_dests(
     game: &HybridMatch,
     keys: &KeystoneState,
     items: &ItemsState,
+    collision_catalog: &crate::content::ContentCollisionCatalog,
+    simulation_content_hash: [u8; 32],
 ) -> Vec<FrozenDest> {
     let nav = nav_for_place(seed, game, keys, items, place);
     geom.gaps
@@ -64,10 +66,12 @@ pub(crate) fn compute_gap_dests(
                     None,
                 ),
             };
-            FrozenDest {
+            let mut frozen = FrozenDest {
                 gap_center: gap.center,
                 threshold: gap.threshold,
                 place: dest,
+                layout: None,
+                simulation_content_hash,
                 conns,
                 connection_slots,
                 sealed_slots,
@@ -90,7 +94,11 @@ pub(crate) fn compute_gap_dests(
                         .as_ref()
                         .and_then(|spec| spec.corridor_role_between(from, to)),
                 },
-            }
+            };
+            let dest_nav = frozen_nav(seed, &frozen, keys);
+            let dest_geom = teleport::geom_for(dest, &dest_nav);
+            frozen.layout = collision_catalog.layout_for_place(dest, &dest_geom);
+            frozen
         })
         .collect()
 }
@@ -152,6 +160,7 @@ pub(super) fn place_body(
     from: RoomId,
     crossed: Option<teleport::DoorGap>,
     nav: &teleport::Nav,
+    frozen_layout: Option<&observed_content::PlaceLayoutSnapshot>,
 ) {
     let mut geom = teleport::geom_for(place, nav);
     // Arriving in a room *through* a doorway: keep that doorway an open passage (matching
@@ -193,7 +202,7 @@ pub(super) fn place_body(
                 .unwrap_or(0.0);
             (spawn, yaw, 0.0)
         });
-    tp.rapier = teleport::place_rapier_scene(&geom, y_offset, WALL_HEIGHT);
+    tp.set_arena_for_place(place, &geom, y_offset, frozen_layout);
     tp.geom = geom;
     tp.body = FpsBody::spawned(
         Vec3::new(
@@ -219,7 +228,7 @@ pub(crate) fn place_body_at(tp: &mut TeleportState, place: Place, pos: Vec2, nav
     let yaw = tp.body.yaw;
     let pitch = tp.body.pitch;
     let y_offset = teleport::place_y_offset(place);
-    tp.rapier = teleport::place_rapier_scene(&geom, y_offset, WALL_HEIGHT);
+    tp.set_arena_for_place(place, &geom, y_offset, None);
     tp.geom = geom;
     tp.body = FpsBody::spawned(
         Vec3::new(pos.x, y_offset + tp.config.half_height, pos.y),
@@ -247,16 +256,21 @@ pub(super) fn cross_into(
     keys: &KeystoneState,
 ) {
     if let Some(dest) = frozen_dest_for(tp, gap).cloned() {
+        assert_eq!(
+            dest.simulation_content_hash, tp.simulation_content_hash,
+            "frozen threshold layout was produced by different simulation content"
+        );
         place_body(
             tp,
             dest.place,
             from,
             Some(*gap),
             &frozen_nav(seed, &dest, keys),
+            dest.layout.as_ref(),
         );
     } else {
         let (place, _) = teleport::apply_crossing(cur, gap, nav);
-        place_body(tp, place, from, Some(*gap), nav);
+        place_body(tp, place, from, Some(*gap), nav, None);
     }
 }
 
@@ -276,17 +290,22 @@ pub(super) fn cross_into_room(
 ) {
     match frozen_dest_for(tp, gap).cloned() {
         Some(dest) if dest.place == Place::Room(arrived) => {
+            assert_eq!(
+                dest.simulation_content_hash, tp.simulation_content_hash,
+                "frozen threshold layout was produced by different simulation content"
+            );
             place_body(
                 tp,
                 dest.place,
                 from,
                 Some(*gap),
                 &frozen_nav(seed, &dest, keys),
+                dest.layout.as_ref(),
             );
         }
         _ => {
             let nav = nav_for_room(seed, game, keys, items, arrived);
-            place_body(tp, Place::Room(arrived), from, Some(*gap), &nav);
+            place_body(tp, Place::Room(arrived), from, Some(*gap), &nav, None);
         }
     }
 }
@@ -450,6 +469,8 @@ pub(crate) fn teleport_sim(
     }
 
     if tp.place != place_before {
+        let collision_catalog = tp.collision_catalog.clone();
+        let simulation_content_hash = tp.simulation_content_hash;
         let dests = compute_gap_dests(
             seed_val,
             tp.place,
@@ -457,6 +478,8 @@ pub(crate) fn teleport_sim(
             runtime.live.host_match(),
             &keys,
             &items,
+            &collision_catalog,
+            simulation_content_hash,
         );
         tp.gap_dests = dests;
     }
@@ -474,7 +497,9 @@ pub(crate) fn debug_place_into(
     items: &ItemsState,
 ) {
     let nav = nav_for_place(MATCH_SEED, runtime.live.host_match(), keys, items, place);
-    place_body(tp, place, from, None, &nav);
+    place_body(tp, place, from, None, &nav, None);
+    let collision_catalog = tp.collision_catalog.clone();
+    let simulation_content_hash = tp.simulation_content_hash;
     tp.gap_dests = compute_gap_dests(
         MATCH_SEED,
         tp.place,
@@ -482,6 +507,8 @@ pub(crate) fn debug_place_into(
         runtime.live.host_match(),
         keys,
         items,
+        &collision_catalog,
+        simulation_content_hash,
     );
 }
 
@@ -551,6 +578,8 @@ pub(crate) fn debug_cross_gap_for_capture(
         _ => {}
     }
     if tp.place != place_before {
+        let collision_catalog = tp.collision_catalog.clone();
+        let simulation_content_hash = tp.simulation_content_hash;
         tp.gap_dests = compute_gap_dests(
             seed,
             tp.place,
@@ -558,6 +587,8 @@ pub(crate) fn debug_cross_gap_for_capture(
             runtime.live.host_match(),
             keys,
             items,
+            &collision_catalog,
+            simulation_content_hash,
         );
         tp.rendered = None;
     }

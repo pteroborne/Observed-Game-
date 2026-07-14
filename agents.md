@@ -28,12 +28,12 @@ The competitive frame is teams racing; the cooperative frame is coordinating *wi
 
 Rooms (graph nodes) and corridors (graph edges) have **distinct, non-overlapping jobs**, so play has a tension↔release rhythm instead of uniform mush:
 
-* **Rooms = decide / observe / co-operate.** Where you choose which way to commit, observe (open doors to freeze a connection), operate a mechanism (seize, route cable, the two-operator hazard), and regroup. The comparatively safe "decision" beat.
-* **Corridors = traverse / risk / mystery.** Where you move (elevation, the risky shortcut vs the safe bypass), face time-pressure danger (pressure gates, the encroaching collapse, a door slamming), and meet the unknown (closed doors, dead-ends). The committed, tense beat.
+* **Rooms = decide / observe / co-operate.** Where you choose which threshold to commit to, hold a connection through player observation or anchor it durably, operate a mechanism (seize, route cable, the two-operator hazard), and regroup. The comparatively safe "decision" beat.
+* **Corridors = traverse / risk / mystery.** Where you move (elevation, the risky shortcut vs the safe bypass), face time-pressure danger (pressure gates, the encroaching collapse, a route refactoring), and meet the unknown (fluid threshold previews, dead-ends). The committed, tense beat.
 
 Keep them separated: **puzzles live in rooms, twitch-dangers live in corridors** (the one hybrid that belongs in a room is the co-op coordination hazard).
 
-**Doors are the threshold between the two, and the diegetic face of observe/decohere:** a closed door hides the layout (mystery), opening one *observes and freezes* that connection, and a door slamming shut means the connection went fluid (it may reroute). A closed door is also a clean, deterministic occluder, which makes "rewire only when unobserved" a *readable rule* rather than fragile occlusion math.
+**Always-open threshold frames are the diegetic face of observe/decohere.** Rooms and halls exist in isolated local coordinate spaces; the frame renders a transformed preview of the remotely located destination, and crossing teleports the actor into that Place. A player's observation of the threshold temporarily freezes its connection, but does **not** change the frame's indicator light. A placed anchor freezes the connection durably, and the frame light reports that anchor lock. Only a connection that is neither player-observed nor anchored may refactor. The preview and crossing must use the same frozen destination snapshot so what the player sees is what they enter.
 
 ### Goal 2 — Develop effectively *with agents*
 

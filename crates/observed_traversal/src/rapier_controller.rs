@@ -36,6 +36,7 @@ impl StructuralCollider {
 }
 
 /// A collision scene for one discrete room or corridor.
+#[derive(Clone)]
 pub struct RapierTraversalScene {
     bodies: RigidBodySet,
     colliders: ColliderSet,
@@ -43,6 +44,16 @@ pub struct RapierTraversalScene {
     narrow_phase: NarrowPhase,
     floor_y: f32,
     floor_half: f32,
+}
+
+impl std::fmt::Debug for RapierTraversalScene {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RapierTraversalScene")
+            .field("floor_y", &self.floor_y)
+            .field("floor_half", &self.floor_half)
+            .field("collider_count", &self.colliders.len())
+            .finish()
+    }
 }
 
 impl RapierTraversalScene {
@@ -128,6 +139,71 @@ impl RapierTraversalScene {
             narrow_phase,
             floor_y,
             floor_half,
+        }
+    }
+
+    pub fn from_arena_spec(spec: &super::ArenaSpec) -> Self {
+        let bodies = RigidBodySet::new();
+        let mut colliders = ColliderSet::new();
+        let mut handles = Vec::with_capacity(spec.colliders.len() + 1);
+
+        handles.push(
+            colliders.insert(
+                ColliderBuilder::cuboid(spec.floor_half, 0.1, spec.floor_half)
+                    .translation(Vector::new(0.0, spec.floor_y - 0.1, 0.0))
+                    .friction(0.9)
+                    .build(),
+            ),
+        );
+
+        for collider in &spec.colliders {
+            let [x, y, z, w] = collider.rotation;
+            let rotation = Rotation::from_xyzw(x, y, z, w).normalize();
+            let builder = match &collider.shape {
+                super::ColliderShape::Cuboid { half } => {
+                    ColliderBuilder::cuboid(half.x, half.y, half.z)
+                }
+                super::ColliderShape::ConvexHull { points } => {
+                    let pts: Vec<Vector> = points
+                        .iter()
+                        .map(|p| Vector::new(p.x, p.y, p.z))
+                        .collect();
+                    ColliderBuilder::convex_hull(&pts).expect("validated convex hull")
+                }
+            };
+            handles.push(
+                colliders.insert(
+                    builder
+                        .position(Pose::from_parts(
+                            Vector::new(collider.center.x, collider.center.y, collider.center.z),
+                            rotation,
+                        ))
+                        .friction(collider.friction)
+                        .user_data(u128::from(collider.id.0))
+                        .build(),
+                ),
+            );
+        }
+
+        let mut broad_phase = BroadPhaseBvh::new();
+        let narrow_phase = NarrowPhase::new();
+        let mut events = Vec::new();
+        broad_phase.update(
+            &IntegrationParameters::default(),
+            &colliders,
+            &bodies,
+            &handles,
+            &[],
+            &mut events,
+        );
+
+        Self {
+            bodies,
+            colliders,
+            broad_phase,
+            narrow_phase,
+            floor_y: spec.floor_y,
+            floor_half: spec.floor_half,
         }
     }
 

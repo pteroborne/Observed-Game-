@@ -1,0 +1,13 @@
+[package]
+name = "rapier_aesthetic_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = ["3d", "png"] }
+observed_style = { path = "../../crates/observed_style" }
+player_input = { path = "../../crates/player_input" }
+rapier3d = { version = "0.34", features = ["enhanced-determinism"] }
+rapier_portal_lab = { path = "../rapier_portal_lab" }
+

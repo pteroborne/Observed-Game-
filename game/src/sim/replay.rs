@@ -78,6 +78,8 @@ pub struct ReplayMarker {
 pub struct ReplayTape {
     pub seed: u64,
     pub map_name: String,
+    pub simulation_content_hash: [u8; 32],
+    pub presentation_content_hash: [u8; 32],
     pub rooms: Vec<ReplayRoom>,
     pub actors: Vec<ReplayActor>,
     pub samples: Vec<ReplaySample>,
@@ -98,9 +100,20 @@ pub struct ReplayTape {
 
 impl ReplayTape {
     pub fn new(seed: u64, map_spec: &MapSpec) -> Self {
+        Self::new_with_content(seed, map_spec, [0; 32], [0; 32])
+    }
+
+    pub fn new_with_content(
+        seed: u64,
+        map_spec: &MapSpec,
+        simulation_content_hash: [u8; 32],
+        presentation_content_hash: [u8; 32],
+    ) -> Self {
         let mut tape = Self {
             seed,
             map_name: map_spec.name.to_string(),
+            simulation_content_hash,
+            presentation_content_hash,
             rooms: map_spec
                 .rooms
                 .iter()

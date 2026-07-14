@@ -7,7 +7,7 @@
 
 use bevy::prelude::*;
 use observed_facility::map_spec::RoomRole;
-use observed_traversal::{FpsBody, FpsConfig};
+use observed_traversal::{FpsBody, FpsConfig, PhysicsBackend};
 
 use super::crossing::compute_gap_dests;
 use crate::flow::{Career, MATCH_SEED};
@@ -18,8 +18,8 @@ use crate::sim::director::MatchDirector;
 use crate::sim::nav::nav_from_brain;
 use crate::sim::replay::ReplayTape;
 use crate::sim::state::{
-    ItemIntent, LastTeleportPad, MapKnowledge, MatchIntent, MatchPaused, RivalSightings,
-    SpectatorBot, TeleportState,
+    GeometryBackend, ItemIntent, LastTeleportPad, MapKnowledge, MatchIntent, MatchPaused,
+    RivalSightings, SpectatorBot, TeleportState,
 };
 use crate::teleport::Place;
 use crate::view::assets::{MatchAssets, all_planned_assets_present};
@@ -41,6 +41,7 @@ pub(crate) fn setup_match(
     spectator_bot: Option<ResMut<SpectatorBot>>,
     settings: Res<crate::settings::Settings>,
     debug_hud: Res<DebugHud>,
+    content: Res<crate::content::GameContent>,
 ) {
     career.begin_match();
     if !all_planned_assets_present() {
@@ -79,16 +80,33 @@ pub(crate) fn setup_match(
     let initial_commits = game.reroute_commits;
     let keys = KeystoneState::for_map(seed_val, &map_spec);
     let items = ItemsState::single_player();
-    let tp_config = FpsConfig::default();
+    let physics_backend = selected_physics_backend();
+    let geometry_backend = selected_geometry_backend();
+    let tp_config = match physics_backend {
+        PhysicsBackend::LegacyAabb => FpsConfig::default(),
+        PhysicsBackend::Rapier => content.traversal_config(),
+    };
     let start_place = Place::Room(game.local_room());
     let start_geom =
         crate::teleport::geom_for(start_place, &nav_from_brain(seed_val, game, &keys, &items));
-
-    let start_gap_dests =
-        compute_gap_dests(seed_val, start_place, &start_geom, game, &keys, &items);
+    let start_gap_dests = compute_gap_dests(
+        seed_val,
+        start_place,
+        &start_geom,
+        game,
+        &keys,
+        &items,
+        &content.collision_catalog,
+        content.simulation_hash.0,
+    );
     let spawn = Vec3::new(0.0, tp_config.half_height, 0.0);
     commands.insert_resource(director);
-    commands.insert_resource(ReplayTape::new(seed_val, &map_spec));
+    commands.insert_resource(ReplayTape::new_with_content(
+        seed_val,
+        &map_spec,
+        content.simulation_hash.0,
+        content.presentation_hash.0,
+    ));
     commands.insert_resource(MatchPaused(false));
     commands.insert_resource(TacMapState(false));
     commands.insert_resource(MatchIntent::default());
@@ -112,6 +130,11 @@ pub(crate) fn setup_match(
         body: FpsBody::spawned(spawn, 0.0),
         config: tp_config,
         rapier,
+        geometry_backend,
+        collision_catalog: content.collision_catalog.clone(),
+        simulation_content_hash: content.simulation_hash.0,
+        using_legacy_geometry_adapter: true,
+        layout: None,
         geom: start_geom,
         prev_xz: Vec2::ZERO,
         crossed_exit: false,
@@ -154,6 +177,32 @@ pub(crate) fn setup_match(
     ));
 
     super::super::hud::spawn_match_hud(&mut commands, settings.high_contrast, debug_hud.0);
+}
+
+fn selected_physics_backend() -> PhysicsBackend {
+    match std::env::var("OBSERVED2_PHYSICS") {
+        Ok(value) if value.trim().eq_ignore_ascii_case("rapier") => PhysicsBackend::Rapier,
+        Ok(value) if value.trim().is_empty() || value.trim().eq_ignore_ascii_case("legacy") => {
+            PhysicsBackend::LegacyAabb
+        }
+        Ok(value) => {
+            panic!("unknown OBSERVED2_PHYSICS value `{value}`; expected `legacy` or `rapier`")
+        }
+        Err(_) => PhysicsBackend::LegacyAabb,
+    }
+}
+
+fn selected_geometry_backend() -> GeometryBackend {
+    match std::env::var("OBSERVED2_GEOMETRY") {
+        Ok(value) if value.trim().eq_ignore_ascii_case("authored") => GeometryBackend::Authored,
+        Ok(value) if value.trim().is_empty() || value.trim().eq_ignore_ascii_case("legacy") => {
+            GeometryBackend::Legacy
+        }
+        Ok(value) => {
+            panic!("unknown OBSERVED2_GEOMETRY value `{value}`; expected `legacy` or `authored`")
+        }
+        Err(_) => GeometryBackend::Legacy,
+    }
 }
 
 /// Every resource the Match session owns, enumerated once. `setup_match` inserts

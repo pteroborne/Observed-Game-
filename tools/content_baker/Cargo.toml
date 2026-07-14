@@ -1,0 +1,10 @@
+[package]
+name = "content_baker"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy_trenchbroom = { version = "0.13", default-features = false, features = ["client"] }
+observed_content = { path = "../../crates/observed_content" }
+quake-map = "0.6"

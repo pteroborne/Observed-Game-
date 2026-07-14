@@ -30,6 +30,7 @@ bevy = { version = "0.18.1", default-features = false, features = [
     "serialize",
 ] }
 observed_core = { path = "../crates/observed_core" }
+observed_content = { path = "../crates/observed_content" }
 observed_diagnostics = { path = "../crates/observed_diagnostics" }
 observed_style = { path = "../crates/observed_style" }
 observed_assets = { path = "../crates/observed_assets" }
@@ -46,5 +47,6 @@ bevy_sprite3d = { version = "=8.0.0", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 image = { version = "0.25", default-features = false, features = ["png"] }
+rapier3d = { version = "0.34", features = ["enhanced-determinism"] }
 
 

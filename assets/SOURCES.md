@@ -22,6 +22,10 @@ The OpenGameArt 2.5D FPS raw intake was downloaded on July 9, 2026 into
 attribution-required raw sound-library archives from that intake; the remaining
 checked-in raw intake listed below is CC0.
 
+The content-manifest feasibility lab downloaded Kenney's Modular Space Kit from
+OpenGameArt on July 12, 2026. Only two GLBs and the original license file are checked
+in. Both files are CC0 and remain presentation-only dressing with procedural fallbacks.
+
 License references: [Kenney support](https://kenney.nl/support),
 [ambientCG license](https://docs.ambientcg.com/license/), and
 [Poly Haven license](https://polyhaven.com/license).
@@ -46,6 +50,10 @@ ceiling fixture uses a top-center pivot.
 | `models/decor_crate.glb` | `container.glb` | [Kenney Space Station Kit](https://kenney.nl/assets/space-station-kit) |
 | `models/decor_console.glb` | `computer-wide.glb` | [Kenney Space Station Kit](https://kenney.nl/assets/space-station-kit) |
 | `models/hazard.glb` | `warning-orange.glb` | [Kenney Factory Kit](https://kenney.nl/assets/factory-kit) |
+| `content_manifest_lab/kenney_modular_space/cables.glb` | `Models/GLB format/cables.glb` | [Kenney Modular Space Kit on OpenGameArt](https://opengameart.org/content/modular-space-kit), CC0 |
+| `content_manifest_lab/kenney_modular_space/gate.glb` | `Models/GLB format/gate.glb` | [Kenney Modular Space Kit on OpenGameArt](https://opengameart.org/content/modular-space-kit), CC0 |
+| `content_manifest_lab/kenney_modular_space/Textures/colormap.png` | Shared GLB `Textures/colormap.png` | [Kenney Modular Space Kit on OpenGameArt](https://opengameart.org/content/modular-space-kit), CC0 |
+| `content_manifest_lab/kenney_modular_space/LICENSE.txt` | Original pack license | [Kenney Modular Space Kit on OpenGameArt](https://opengameart.org/content/modular-space-kit), CC0 |
 | `sounds/footstep.ogg` | soft contact thump (movement family) | In-repo synthesis (`tools/generate_audio.py`) |
 | `sounds/reroute.ogg` | detuned reality-shift shimmer (structure family) | In-repo synthesis (`tools/generate_audio.py`) |
 | `sounds/escape.ogg` | rising bell ladder and bloom (progress family) | In-repo synthesis (`tools/generate_audio.py`) |

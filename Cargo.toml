@@ -3,6 +3,7 @@ members = [
     "crates/player_input",
     "crates/observed_core",
     "crates/observed_diagnostics",
+    "crates/observed_content",
     "crates/observed_style",
     "crates/observed_assets",
     "crates/observed_observation",
@@ -70,6 +71,11 @@ members = [
     "labs/wellshaft_lab",
     "labs/rapier_determinism_lab",
     "labs/rapier_controller_lab",
+    "labs/rapier_authoring_lab",
+    "labs/rapier_portal_lab",
+    "labs/rapier_aesthetic_lab",
+    "labs/content_manifest_lab",
+    "tools/content_baker",
     "game",
 ]
 resolver = "3"

@@ -14,7 +14,8 @@ use crate::mutable::spine_next;
 use glam::{Vec2, Vec3};
 use observed_core::RoomId;
 use observed_facility::map_spec::MapSpec;
-use observed_traversal::{FpsBody, FpsConfig};
+use observed_traversal::rapier_controller::RapierTraversalScene;
+use observed_traversal::{FpsBody, FpsConfig, PhysicsBackend};
 use std::collections::HashSet;
 
 #[derive(Clone, Debug)]
@@ -32,6 +33,8 @@ pub struct HybridMatch {
     pub trap_tiles: HashSet<(usize, usize)>,
     pub body: FpsBody,
     pub config: FpsConfig,
+    pub physics_backend: PhysicsBackend,
+    pub rapier: RapierTraversalScene,
     pub reroute_commits: u32,
     pub reroute_deferrals: u32,
     pub hazard_tick: u64,
@@ -44,6 +47,10 @@ pub struct HybridMatch {
 
 impl HybridMatch {
     pub fn authored(seed: u64) -> Self {
+        Self::authored_with_backend(seed, PhysicsBackend::LegacyAabb)
+    }
+
+    pub fn authored_with_backend(seed: u64, physics_backend: PhysicsBackend) -> Self {
         let competitive = CompetitiveFacility::authored();
         let (base, rooms) = place_rooms(seed);
         let elevation_steps = generated_elevation_steps();
@@ -52,7 +59,13 @@ impl HybridMatch {
         let spine_tiles = collect_spine_tiles(&rendered);
         let safe_tiles = collect_safe_tiles(&rendered);
         let trap_tiles = collect_trap_tiles(&rendered);
-        let config = FpsConfig::default();
+        let config = match physics_backend {
+            PhysicsBackend::LegacyAabb => FpsConfig::default(),
+            PhysicsBackend::Rapier => FpsConfig::deliberate_rapier(),
+        };
+        let arena =
+            crate::maze::build_elevated_arena(&maze_tiles, &elevation_steps, super::WALL_HEIGHT);
+        let rapier = RapierTraversalScene::from_arena(&arena);
         let start = room_world(RoomId(crate::facility::START_ROOM), &rooms);
         let mut body = FpsBody::spawned(
             Vec3::new(
@@ -86,6 +99,8 @@ impl HybridMatch {
             trap_tiles,
             body,
             config,
+            physics_backend,
+            rapier,
             reroute_commits: 0,
             reroute_deferrals: 0,
             hazard_tick: 0,
@@ -98,6 +113,14 @@ impl HybridMatch {
     }
 
     pub fn for_map_spec(seed: u64, spec: MapSpec) -> Self {
+        Self::for_map_spec_with_backend(seed, spec, PhysicsBackend::LegacyAabb)
+    }
+
+    pub fn for_map_spec_with_backend(
+        seed: u64,
+        spec: MapSpec,
+        physics_backend: PhysicsBackend,
+    ) -> Self {
         let competitive = CompetitiveFacility::for_map_spec(spec.clone());
         let (base, rooms) = place_map_rooms(&spec);
         let elevation_steps = generated_elevation_steps();
@@ -106,7 +129,13 @@ impl HybridMatch {
         let spine_tiles = collect_spine_tiles(&rendered);
         let safe_tiles = collect_safe_tiles(&rendered);
         let trap_tiles = collect_trap_tiles(&rendered);
-        let config = FpsConfig::default();
+        let config = match physics_backend {
+            PhysicsBackend::LegacyAabb => FpsConfig::default(),
+            PhysicsBackend::Rapier => FpsConfig::deliberate_rapier(),
+        };
+        let arena =
+            crate::maze::build_elevated_arena(&maze_tiles, &elevation_steps, super::WALL_HEIGHT);
+        let rapier = RapierTraversalScene::from_arena(&arena);
         let start_room = spec.start_room().expect("validated start");
         let start = room_world(start_room, &rooms);
         let mut body = FpsBody::spawned(
@@ -132,6 +161,8 @@ impl HybridMatch {
             trap_tiles,
             body,
             config,
+            physics_backend,
+            rapier,
             reroute_commits: 0,
             reroute_deferrals: 0,
             hazard_tick: 0,
