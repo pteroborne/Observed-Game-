@@ -72,6 +72,8 @@ pub struct Nav {
     /// identity, not `(a, b)` room pairs, so the crossing resolver freezes a variation by
     /// the corridor the junction topology resolved it into.
     pub pinned_corridors: Vec<PinnedCorridor>,
+    /// The active map specification, when available.
+    pub map_spec: Option<observed_facility::map_spec::MapSpec>,
 }
 
 impl Nav {

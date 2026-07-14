@@ -137,11 +137,7 @@ pub(super) fn capture_doorway_progress(
                     crate::screens::match_runtime::debug_place_into(
                         &mut tp,
                         &rt,
-                        Place::Hallway {
-                            from,
-                            to,
-                            variation,
-                        },
+                        Place::legacy_hallway(from, to, variation),
                         from,
                         &keys,
                         &item_state,
@@ -921,11 +917,7 @@ pub(super) fn capture_wellshaft_progress(
                 crate::screens::match_runtime::debug_place_into(
                     &mut tp,
                     &rt,
-                    Place::Hallway {
-                        from,
-                        to,
-                        variation,
-                    },
+                    Place::legacy_hallway(from, to, variation),
                     from,
                     &keys,
                     &item_state,
@@ -992,11 +984,7 @@ pub(super) fn capture_wellshaft_progress(
     if framing_phase >= 2
         && let Ok(mut transform) = cam.single_mut()
     {
-        let y = teleport::place_y_offset(Place::Hallway {
-            from: RoomId(0),
-            to: RoomId(1),
-            variation: 0,
-        });
+        let y = teleport::place_y_offset(Place::legacy_hallway(RoomId(0), RoomId(1), 0));
         let top = y + hallway::WELL_SHAFT_HEIGHT;
         let first_upper = hallway::wellshaft_landing_center(1);
         let top_landing = hallway::wellshaft_landing_center(hallway::WELL_SHAFT_LEVELS - 1);
@@ -1082,11 +1070,7 @@ pub(super) fn capture_maze_progress(
                     crate::screens::match_runtime::debug_place_into(
                         &mut tp,
                         &rt,
-                        Place::Hallway {
-                            from,
-                            to,
-                            variation,
-                        },
+                        Place::legacy_hallway(from, to, variation),
                         from,
                         &keys,
                         &item_state,

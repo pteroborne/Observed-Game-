@@ -11,12 +11,13 @@
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
-use observed_facility::map_spec::{MapSpec, sector_relay_v1};
+use observed_facility::map_spec::{MapSpec, multi_exit_fixture, sector_relay_v1};
 use observed_facility::wfc::{WfcMapConfig, generate_liminal_map};
 
 pub const MAP_ENV_VAR: &str = "OBSERVED2_MAP";
 pub const SECTOR_RELAY_V1: &str = "sector_relay_v1";
 pub const LIMINAL_WFC_V1: &str = "liminal_wfc_v1";
+pub const MULTI_EXIT_FIXTURE: &str = "multi_exit_fixture";
 pub const DEFAULT_MAP: &str = LIMINAL_WFC_V1;
 
 pub type MapSpecBuilder = fn(u64) -> MapSpec;
@@ -39,7 +40,7 @@ impl MapSpecEntry {
     }
 }
 
-const CATALOG: [MapSpecEntry; 2] = [
+const CATALOG: [MapSpecEntry; 3] = [
     MapSpecEntry {
         key: SECTOR_RELAY_V1,
         builder: build_sector_relay_v1,
@@ -47,6 +48,10 @@ const CATALOG: [MapSpecEntry; 2] = [
     MapSpecEntry {
         key: LIMINAL_WFC_V1,
         builder: build_liminal_wfc_v1,
+    },
+    MapSpecEntry {
+        key: MULTI_EXIT_FIXTURE,
+        builder: build_multi_exit_fixture,
     },
 ];
 
@@ -58,6 +63,10 @@ fn build_liminal_wfc_v1(seed: u64) -> MapSpec {
     generate_liminal_map(seed, &WfcMapConfig::default()).unwrap_or_else(|error| {
         panic!("liminal_wfc_v1 failed to generate for seed {seed}: {error:?}")
     })
+}
+
+fn build_multi_exit_fixture(_seed: u64) -> MapSpec {
+    multi_exit_fixture()
 }
 
 /// In-process memoization of built (and validated) [`MapSpec`]s by `(catalog key,
@@ -128,6 +137,7 @@ pub fn catalog_entry(name: &str) -> Option<MapSpecEntry> {
     match normalize_map_name(name).as_str() {
         LIMINAL_WFC_V1 | "default" | "liminal" => Some(CATALOG[1]),
         SECTOR_RELAY_V1 | "dev" => Some(CATALOG[0]),
+        MULTI_EXIT_FIXTURE | "multi" | "multi_exit" => Some(CATALOG[2]),
         _ => None,
     }
 }

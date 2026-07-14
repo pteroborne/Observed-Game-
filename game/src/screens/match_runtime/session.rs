@@ -83,7 +83,7 @@ pub(crate) fn setup_match(
     let start_place = Place::Room(game.local_room());
     let start_geom =
         crate::teleport::geom_for(start_place, &nav_from_brain(seed_val, game, &keys, &items));
-    let start_arena = crate::teleport::place_arena(&start_geom, 0.0, WALL_HEIGHT);
+
     let start_gap_dests =
         compute_gap_dests(seed_val, start_place, &start_geom, game, &keys, &items);
     let spawn = Vec3::new(0.0, tp_config.half_height, 0.0);
@@ -111,7 +111,6 @@ pub(crate) fn setup_match(
         place: start_place,
         body: FpsBody::spawned(spawn, 0.0),
         config: tp_config,
-        arena: start_arena,
         rapier,
         geom: start_geom,
         prev_xz: Vec2::ZERO,

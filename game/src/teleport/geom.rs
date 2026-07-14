@@ -1,9 +1,9 @@
 //! Geometry models and footprint generators for rooms and hallways.
 
 use super::{
-    DoorGap, GapKind, HallId, HallThreshold, MAZE_CELL, MAZE_WALL_T, Nav, Place, PlaceGeom,
-    ROOM_HALF, RoomConnectionSlot, RoomThreshold, THRESHOLD_WIDTH, ThresholdLink,
-    ThresholdLocalSide, ThresholdSlotId, WallSeg,
+    DoorGap, GapKind, HallThreshold, MAZE_CELL, MAZE_WALL_T, Nav, Place, PlaceGeom, ROOM_HALF,
+    RoomConnectionSlot, RoomThreshold, THRESHOLD_WIDTH, ThresholdLink, ThresholdLocalSide,
+    ThresholdSlotId, WallSeg, corridor_id_for, corridor_socket_for,
 };
 use crate::hallway;
 use crate::layout::{ROOM_SCALE_HUB, ROOM_SCALE_MONITOR, ROOM_SCALE_STANDARD};
@@ -163,6 +163,29 @@ pub fn room_geom_with_slots_and_seals_for_role(
     role: Option<RoomRole>,
     seed: u64,
 ) -> PlaceGeom {
+    room_geom_with_slots_and_seals_for_role_and_spec(
+        room,
+        connections,
+        connection_slots,
+        sealed_slots,
+        target,
+        role,
+        seed,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn room_geom_with_slots_and_seals_for_role_and_spec(
+    room: RoomId,
+    connections: &[RoomId],
+    connection_slots: &[RoomConnectionSlot],
+    sealed_slots: &[ThresholdSlotId],
+    target: Option<RoomId>,
+    role: Option<RoomRole>,
+    seed: u64,
+    map_spec: Option<&observed_facility::map_spec::MapSpec>,
+) -> PlaceGeom {
     let mut conns: Vec<RoomId> = connections.to_vec();
     conns.sort_unstable_by_key(|r| r.0);
     conns.dedup();
@@ -205,6 +228,24 @@ pub fn room_geom_with_slots_and_seals_for_role(
         .into_iter()
         .map(|(t, slot)| {
             let (mid, normal, width) = gap_for_slot(slot);
+            let mut corridor = corridor_id_for(room, t);
+            let mut corridor_slot = corridor_socket_for(room, t, room);
+            if let Some(spec) = map_spec {
+                let mut found = false;
+                for spec_corridor in spec.corridors() {
+                    for (slot_idx, endpoint) in spec_corridor.endpoints.iter().enumerate() {
+                        if endpoint.room == room && endpoint.side.index() as u16 == slot.0 {
+                            corridor = spec_corridor.id;
+                            corridor_slot = ThresholdSlotId(slot_idx as u16);
+                            found = true;
+                            break;
+                        }
+                    }
+                    if found {
+                        break;
+                    }
+                }
+            }
             DoorGap {
                 center: mid,
                 normal,
@@ -218,9 +259,8 @@ pub fn room_geom_with_slots_and_seals_for_role(
                 threshold: ThresholdLink {
                     room: RoomThreshold { room, slot },
                     hall: HallThreshold {
-                        hall: HallId::new(room, t),
-                        side: room,
-                        slot: ThresholdSlotId(0),
+                        corridor,
+                        slot: corridor_slot,
                     },
                     local_side: ThresholdLocalSide::Room,
                 },
@@ -233,6 +273,24 @@ pub fn room_geom_with_slots_and_seals_for_role(
             continue;
         }
         let (center, normal, width) = gap_for_slot(slot);
+        let mut corridor = corridor_id_for(room, room);
+        let mut corridor_slot = slot;
+        if let Some(spec) = map_spec {
+            let mut found = false;
+            for spec_corridor in spec.corridors() {
+                for (slot_idx, endpoint) in spec_corridor.endpoints.iter().enumerate() {
+                    if endpoint.room == room && endpoint.side.index() as u16 == slot.0 {
+                        corridor = spec_corridor.id;
+                        corridor_slot = ThresholdSlotId(slot_idx as u16);
+                        found = true;
+                        break;
+                    }
+                }
+                if found {
+                    break;
+                }
+            }
+        }
         gaps.push(DoorGap {
             center,
             normal,
@@ -242,9 +300,8 @@ pub fn room_geom_with_slots_and_seals_for_role(
             threshold: ThresholdLink {
                 room: RoomThreshold { room, slot },
                 hall: HallThreshold {
-                    hall: HallId::new(room, room),
-                    side: room,
-                    slot,
+                    corridor,
+                    slot: corridor_slot,
                 },
                 local_side: ThresholdLocalSide::Room,
             },
@@ -289,14 +346,36 @@ pub fn open_entry(geom: &mut PlaceGeom, entry_from: Option<RoomId>) {
 fn hallway_threshold(
     from: RoomId,
     to: RoomId,
-    side: RoomId,
+    _side: RoomId,
     slot: ThresholdSlotId,
 ) -> HallThreshold {
     HallThreshold {
-        hall: HallId::new(from, to),
-        side,
+        corridor: corridor_id_for(from, to),
         slot,
     }
+}
+
+pub fn resolved_corridor_slot(
+    from: RoomId,
+    to: RoomId,
+    side: RoomId,
+    room_slot: ThresholdSlotId,
+    map_spec: Option<&observed_facility::map_spec::MapSpec>,
+) -> ThresholdSlotId {
+    if let Some(spec) = map_spec {
+        for corridor in spec.corridors() {
+            let has_from = corridor.endpoints.iter().any(|e| e.room == from);
+            let has_to = corridor.endpoints.iter().any(|e| e.room == to);
+            if has_from && has_to {
+                for (idx, endpoint) in corridor.endpoints.iter().enumerate() {
+                    if endpoint.room == side && endpoint.side.index() as u16 == room_slot.0 {
+                        return ThresholdSlotId(idx as u16);
+                    }
+                }
+            }
+        }
+    }
+    corridor_socket_for(from, to, side)
 }
 
 fn hallway_gap_threshold(
@@ -500,6 +579,24 @@ pub fn hallway_geom_with_slots_and_role(
     exit_locked: bool,
     corridor_role: Option<CorridorRole>,
 ) -> PlaceGeom {
+    hallway_geom_with_slots_and_role_and_spec(
+        endpoints,
+        template,
+        layout_seed,
+        exit_locked,
+        corridor_role,
+        None,
+    )
+}
+
+pub(crate) fn hallway_geom_with_slots_and_role_and_spec(
+    endpoints: HallwayGeomEndpoints,
+    template: &hallway::HallwayTemplate,
+    layout_seed: u64,
+    exit_locked: bool,
+    corridor_role: Option<CorridorRole>,
+    map_spec: Option<&observed_facility::map_spec::MapSpec>,
+) -> PlaceGeom {
     let HallwayGeomEndpoints {
         from,
         to,
@@ -544,9 +641,9 @@ pub fn hallway_geom_with_slots_and_role(
         // Multiple entrances (âˆ’Z, back to `from`) and exits (+Z, on to `to`); each at a
         // door column, all reachable from one another through the maze.
         let mut gaps = Vec::new();
-        for (slot, &ec) in entry_cols.iter().enumerate() {
+        for &ec in entry_cols.iter() {
             let x = cell_center(ec, 0).x;
-            let hall_slot = ThresholdSlotId(slot as u16);
+            let hall_slot = resolved_corridor_slot(from, to, from, from_room_slot, map_spec);
             gaps.push(DoorGap {
                 center: Vec2::new(x, -footprint.y),
                 normal: Vec2::new(0.0, -1.0),
@@ -557,9 +654,9 @@ pub fn hallway_geom_with_slots_and_role(
                 floor_y: 0.0,
             });
         }
-        for (slot, &xc) in exit_cols.iter().enumerate() {
+        for &xc in exit_cols.iter() {
             let x = cell_center(xc, rows_usize - 1).x;
-            let hall_slot = ThresholdSlotId(slot as u16);
+            let hall_slot = resolved_corridor_slot(from, to, to, to_room_slot, map_spec);
             gaps.push(DoorGap {
                 center: Vec2::new(x, footprint.y),
                 normal: Vec2::new(0.0, 1.0),
@@ -688,43 +785,74 @@ pub fn hallway_geom_with_slots_and_role(
             })
             .collect();
 
+        let mut gaps = vec![
+            DoorGap {
+                center: top_center,
+                normal: top_normal,
+                width: 3.0,
+                target: from,
+                kind: GapKind::Entry,
+                threshold: hallway_gap_threshold(
+                    from,
+                    to,
+                    from,
+                    from_room_slot,
+                    resolved_corridor_slot(from, to, from, from_room_slot, map_spec),
+                ),
+                floor_y: hallway::WELL_SHAFT_HEIGHT,
+            },
+            DoorGap {
+                center: bottom_center,
+                normal: bottom_normal,
+                width: 3.0,
+                target: to,
+                kind: exit_kind,
+                threshold: hallway_gap_threshold(
+                    from,
+                    to,
+                    to,
+                    to_room_slot,
+                    resolved_corridor_slot(from, to, to, to_room_slot, map_spec),
+                ),
+                floor_y: 0.0,
+            },
+        ];
+
+        if let Some(spec) = map_spec
+            && let Some(corridor) = spec.corridors().into_iter().find(|c| {
+                c.endpoints.iter().any(|e| e.room == from)
+                    && c.endpoints.iter().any(|e| e.room == to)
+            })
+        {
+            for idx in 2..corridor.endpoints.len() {
+                let endpoint = corridor.endpoints[idx];
+                let level = idx - 1;
+                if level < hallway::WELL_SHAFT_LEVELS {
+                    let top_y = level as f32 * hallway::WELL_SHAFT_LEVEL_HEIGHT;
+                    let direction = hallway::wellshaft_level_direction(level);
+                    let normal = Vec2::new(direction.0, direction.1);
+                    let center = normal * hallway::WELL_SHAFT_OUTER_APOTHEM;
+                    let slot = super::ThresholdSlotId(endpoint.side.index() as u16);
+                    let cslot = super::ThresholdSlotId(idx as u16);
+                    gaps.push(DoorGap {
+                        center,
+                        normal,
+                        width: 3.0,
+                        target: endpoint.room,
+                        kind: GapKind::Exit,
+                        threshold: hallway_gap_threshold(from, to, endpoint.room, slot, cslot),
+                        floor_y: top_y,
+                    });
+                }
+            }
+        }
+
         return PlaceGeom {
             half: Vec2::new(
                 hallway::WELL_SHAFT_OUTER_APOTHEM,
                 hallway::WELL_SHAFT_OUTER_RADIUS,
             ),
-            gaps: vec![
-                DoorGap {
-                    center: top_center,
-                    normal: top_normal,
-                    width: 3.0,
-                    target: from,
-                    kind: GapKind::Entry,
-                    threshold: hallway_gap_threshold(
-                        from,
-                        to,
-                        from,
-                        from_room_slot,
-                        ThresholdSlotId(0),
-                    ),
-                    floor_y: hallway::WELL_SHAFT_HEIGHT,
-                },
-                DoorGap {
-                    center: bottom_center,
-                    normal: bottom_normal,
-                    width: 3.0,
-                    target: to,
-                    kind: exit_kind,
-                    threshold: hallway_gap_threshold(
-                        from,
-                        to,
-                        to,
-                        to_room_slot,
-                        ThresholdSlotId(0),
-                    ),
-                    floor_y: 0.0,
-                },
-            ],
+            gaps,
             interior: Vec::new(),
             poly: Some(poly),
             decks,
@@ -767,7 +895,7 @@ pub fn hallway_geom_with_slots_and_role(
                         to,
                         from,
                         from_room_slot,
-                        ThresholdSlotId(0),
+                        resolved_corridor_slot(from, to, from, from_room_slot, map_spec),
                     ),
                     floor_y: 0.0,
                 },
@@ -782,7 +910,7 @@ pub fn hallway_geom_with_slots_and_role(
                         to,
                         to,
                         to_room_slot,
-                        ThresholdSlotId(0),
+                        resolved_corridor_slot(from, to, to, to_room_slot, map_spec),
                     ),
                     floor_y: 0.0,
                 },
@@ -858,6 +986,52 @@ pub fn hallway_geom_with_slots_and_role(
         let upper_threshold = course.threshold(gantry::GantryExit::UpperExit);
         let bypass_threshold = course.threshold(gantry::GantryExit::SafeBypassExit);
         let side_threshold = course.threshold(gantry::GantryExit::UnderstorySideExit);
+        let find_corridor = |spec: &observed_facility::map_spec::MapSpec| {
+            spec.corridors().into_iter().find(|c| {
+                c.endpoints.iter().any(|e| e.room == from)
+                    && c.endpoints.iter().any(|e| e.room == to)
+            })
+        };
+
+        let (ep0_room, ep0_slot, ep0_cslot) = if let Some(spec) = map_spec
+            && let Some(corridor) = find_corridor(spec)
+            && !corridor.endpoints.is_empty()
+        {
+            (
+                corridor.endpoints[0].room,
+                super::ThresholdSlotId(corridor.endpoints[0].side.index() as u16),
+                super::ThresholdSlotId(0),
+            )
+        } else {
+            (from, from_room_slot, super::ThresholdSlotId(0))
+        };
+
+        let (ep1_room, ep1_slot, ep1_cslot) = if let Some(spec) = map_spec
+            && let Some(corridor) = find_corridor(spec)
+            && corridor.endpoints.len() > 1
+        {
+            (
+                corridor.endpoints[1].room,
+                super::ThresholdSlotId(corridor.endpoints[1].side.index() as u16),
+                super::ThresholdSlotId(1),
+            )
+        } else {
+            (to, to_room_slot, super::ThresholdSlotId(1))
+        };
+
+        let (ep2_room, ep2_slot, ep2_cslot) = if let Some(spec) = map_spec
+            && let Some(corridor) = find_corridor(spec)
+            && corridor.endpoints.len() > 2
+        {
+            (
+                corridor.endpoints[2].room,
+                super::ThresholdSlotId(corridor.endpoints[2].side.index() as u16),
+                super::ThresholdSlotId(2),
+            )
+        } else {
+            (from, from_room_slot, super::ThresholdSlotId(2))
+        };
+
         let ground_return_center = Vec2::new(gantry::SAFE_BYPASS_X, entry_threshold.center.y);
         return PlaceGeom {
             half: Vec2::new(hx, hz),
@@ -866,29 +1040,23 @@ pub fn hallway_geom_with_slots_and_role(
                     center: entry_threshold.center,
                     normal: entry_threshold.normal,
                     width: entry_threshold.width,
-                    target: from,
+                    target: ep0_room,
                     kind: GapKind::Entry,
-                    threshold: hallway_gap_threshold(
-                        from,
-                        to,
-                        from,
-                        from_room_slot,
-                        ThresholdSlotId(0),
-                    ),
+                    threshold: hallway_gap_threshold(from, to, ep0_room, ep0_slot, ep0_cslot),
                     floor_y: gantry::UPPER_DECK_Y,
                 },
                 DoorGap {
                     center: ground_return_center,
                     normal: entry_threshold.normal,
                     width: entry_threshold.width,
-                    target: from,
+                    target: ep0_room,
                     kind: GapKind::Exit,
                     threshold: hallway_gap_threshold(
                         from,
                         to,
-                        from,
-                        from_room_slot,
-                        ThresholdSlotId(2),
+                        ep0_room,
+                        ep0_slot,
+                        ThresholdSlotId(4),
                     ),
                     floor_y: entry_threshold.floor_y,
                 },
@@ -896,29 +1064,23 @@ pub fn hallway_geom_with_slots_and_role(
                     center: upper_threshold.center,
                     normal: upper_threshold.normal,
                     width: upper_threshold.width,
-                    target: to,
+                    target: ep1_room,
                     kind: exit_kind,
-                    threshold: hallway_gap_threshold(
-                        from,
-                        to,
-                        to,
-                        to_room_slot,
-                        ThresholdSlotId(0),
-                    ),
+                    threshold: hallway_gap_threshold(from, to, ep1_room, ep1_slot, ep1_cslot),
                     floor_y: upper_threshold.floor_y,
                 },
                 DoorGap {
                     center: bypass_threshold.center,
                     normal: bypass_threshold.normal,
                     width: bypass_threshold.width,
-                    target: to,
+                    target: ep1_room,
                     kind: exit_kind,
                     threshold: hallway_gap_threshold(
                         from,
                         to,
-                        to,
-                        to_room_slot,
-                        ThresholdSlotId(1),
+                        ep1_room,
+                        ep1_slot,
+                        ThresholdSlotId(3),
                     ),
                     floor_y: bypass_threshold.floor_y,
                 },
@@ -926,15 +1088,9 @@ pub fn hallway_geom_with_slots_and_role(
                     center: side_threshold.center,
                     normal: side_threshold.normal,
                     width: side_threshold.width,
-                    target: from,
+                    target: ep2_room,
                     kind: GapKind::Exit,
-                    threshold: hallway_gap_threshold(
-                        from,
-                        to,
-                        from,
-                        from_room_slot,
-                        ThresholdSlotId(1),
-                    ),
+                    threshold: hallway_gap_threshold(from, to, ep2_room, ep2_slot, ep2_cslot),
                     floor_y: side_threshold.floor_y,
                 },
             ],
@@ -976,7 +1132,7 @@ pub fn hallway_geom_with_slots_and_role(
                         to,
                         from,
                         from_room_slot,
-                        ThresholdSlotId(0),
+                        resolved_corridor_slot(from, to, from, from_room_slot, map_spec),
                     ),
                     floor_y: 0.0,
                 },
@@ -991,7 +1147,7 @@ pub fn hallway_geom_with_slots_and_role(
                         to,
                         to,
                         to_room_slot,
-                        ThresholdSlotId(0),
+                        resolved_corridor_slot(from, to, to, to_room_slot, map_spec),
                     ),
                     floor_y: 0.0,
                 },
@@ -1019,7 +1175,7 @@ pub fn hallway_geom_with_slots_and_role(
                     to,
                     from,
                     from_room_slot,
-                    ThresholdSlotId(0),
+                    resolved_corridor_slot(from, to, from, from_room_slot, map_spec),
                 ),
                 floor_y: 0.0,
             },
@@ -1029,7 +1185,13 @@ pub fn hallway_geom_with_slots_and_role(
                 width: door,
                 target: to,
                 kind: exit_kind,
-                threshold: hallway_gap_threshold(from, to, to, to_room_slot, ThresholdSlotId(0)),
+                threshold: hallway_gap_threshold(
+                    from,
+                    to,
+                    to,
+                    to_room_slot,
+                    resolved_corridor_slot(from, to, to, to_room_slot, map_spec),
+                ),
                 floor_y: 0.0,
             },
         ],
@@ -1088,7 +1250,7 @@ pub fn geom_for(place: Place, nav: &Nav) -> PlaceGeom {
     let mut geom = match place {
         // The room shape is seeded by the room id + facility seed (not the decohere
         // version), so a room keeps a stable shape while its connections rewire.
-        Place::Room(room) => room_geom_with_slots_and_seals_for_role(
+        Place::Room(room) => room_geom_with_slots_and_seals_for_role_and_spec(
             room,
             &nav.connections,
             &nav.connection_slots,
@@ -1096,12 +1258,14 @@ pub fn geom_for(place: Place, nav: &Nav) -> PlaceGeom {
             nav.target_room,
             nav.room_role,
             mix(nav.seed, room.0 as u64),
+            nav.map_spec.as_ref(),
         ),
         Place::Hallway {
             from,
             to,
             variation,
-        } => hallway_geom_with_slots_and_role(
+            ..
+        } => hallway_geom_with_slots_and_role_and_spec(
             HallwayGeomEndpoints {
                 from,
                 to,
@@ -1116,6 +1280,7 @@ pub fn geom_for(place: Place, nav: &Nav) -> PlaceGeom {
             hallway::layout_seed(from, to, variation),
             nav.exit_locked,
             nav.corridor_role_for(to),
+            nav.map_spec.as_ref(),
         ),
     };
     enforce_active_sockets(&mut geom, place, nav);

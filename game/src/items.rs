@@ -140,14 +140,7 @@ impl ItemsState {
     /// dropped inside a hallway, because the hallway already names its edge.
     pub fn drop(&mut self, kind: ItemKind, place: Place, pos: Vec2, version: u32) -> bool {
         let pin_edges = match (kind, place) {
-            (
-                ItemKind::AnchorTorch,
-                Place::Hallway {
-                    from,
-                    to,
-                    variation: _,
-                },
-            ) => vec![(from, to)],
+            (ItemKind::AnchorTorch, Place::Hallway { from, to, .. }) => vec![(from, to)],
             _ => Vec::new(),
         };
         self.drop_with_edges(kind, place, pos, version, pin_edges)
@@ -405,18 +398,10 @@ mod tests {
     #[test]
     fn a_hallway_item_ignores_the_re_rolled_variation() {
         let mut s = ItemsState::single_player();
-        let dropped = Place::Hallway {
-            from: RoomId(1),
-            to: RoomId(4),
-            variation: 2,
-        };
+        let dropped = Place::legacy_hallway(RoomId(1), RoomId(4), 2);
         s.drop(ItemKind::TeleportPad, dropped, Vec2::ZERO, 0);
         // The same edge with a different (re-rolled) variation still holds the item.
-        let rerolled = Place::Hallway {
-            from: RoomId(1),
-            to: RoomId(4),
-            variation: 7,
-        };
+        let rerolled = Place::legacy_hallway(RoomId(1), RoomId(4), 7);
         assert_eq!(s.placed_in(rerolled).len(), 1);
     }
 
@@ -457,11 +442,7 @@ mod tests {
         let mut s = ItemsState::single_player();
         s.drop(
             ItemKind::AnchorTorch,
-            Place::Hallway {
-                from: RoomId(1),
-                to: RoomId(4),
-                variation: 0,
-            },
+            Place::legacy_hallway(RoomId(1), RoomId(4), 0),
             Vec2::ZERO,
             3,
         );
@@ -487,11 +468,7 @@ mod tests {
         let mut s = ItemsState::single_player();
         s.drop(
             ItemKind::AnchorTorch,
-            Place::Hallway {
-                from: RoomId(1),
-                to: RoomId(4),
-                variation: 0,
-            },
+            Place::legacy_hallway(RoomId(1), RoomId(4), 0),
             Vec2::ZERO,
             3,
         );

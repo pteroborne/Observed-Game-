@@ -312,6 +312,13 @@ pub fn wellshaft_template() -> &'static HallwayTemplate {
         .expect("the authored hallway library contains the wellshaft")
 }
 
+pub fn gantry_template() -> &'static HallwayTemplate {
+    TEMPLATES
+        .iter()
+        .find(|template| template.flavor == HallwayFlavor::Gantry)
+        .expect("the authored hallway library contains the gantry")
+}
+
 pub fn template(index: usize) -> &'static HallwayTemplate {
     &TEMPLATES[index % TEMPLATES.len()]
 }

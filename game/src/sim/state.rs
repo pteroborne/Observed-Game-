@@ -12,7 +12,7 @@ use observed_facility::map_spec::{CorridorRole, RoomRole};
 use observed_match::teamplay::TeamplayMatch;
 use observed_progression::session::SessionLabWorld;
 use observed_traversal::rapier_controller::RapierTraversalScene;
-use observed_traversal::{FpsArena, FpsBody, FpsConfig};
+use observed_traversal::{FpsBody, FpsConfig};
 use player_input::PlayerIntent;
 
 use crate::teleport::{self, Place};
@@ -109,7 +109,7 @@ pub struct TeleportState {
     pub place: teleport::Place,
     pub body: FpsBody,
     pub config: FpsConfig,
-    pub arena: FpsArena,
+
     /// Raw-Rapier scene projected from the current place's structural geometry.
     pub rapier: RapierTraversalScene,
     /// The current place's footprint + doorway gaps + interior (maze) walls. Cached so

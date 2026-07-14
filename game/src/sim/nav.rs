@@ -252,6 +252,7 @@ pub(crate) fn nav_for_room(
         exit_locked: !keys.gate_open(),
         exit_room: keys.exit_room,
         pinned_corridors: items.pinned_corridors(),
+        map_spec: game.competitive.map_spec.clone(),
     }
 }
 

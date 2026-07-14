@@ -702,11 +702,7 @@ fn a_hallway_doorway_previews_the_room_beyond() {
             crate::screens::match_runtime::debug_place_into(
                 &mut tp,
                 runtime,
-                Place::Hallway {
-                    from,
-                    to,
-                    variation,
-                },
+                Place::legacy_hallway(from, to, variation),
                 from,
                 keys,
                 items,
@@ -771,11 +767,7 @@ fn hallway_room_threshold_does_not_draw_wall_trim_across_opening() {
             crate::screens::match_runtime::debug_place_into(
                 &mut tp,
                 runtime,
-                Place::Hallway {
-                    from,
-                    to,
-                    variation,
-                },
+                Place::legacy_hallway(from, to, variation),
                 from,
                 keys,
                 items,
@@ -2166,11 +2158,7 @@ fn a_gantry_hallway_renders_readable_decks_and_no_deck_leaks_into_the_wall_path(
             crate::screens::match_runtime::debug_place_into(
                 &mut tp,
                 runtime,
-                Place::Hallway {
-                    from,
-                    to,
-                    variation: gantry_variation,
-                },
+                Place::legacy_hallway(from, to, gantry_variation),
                 from,
                 keys,
                 items,
@@ -2246,11 +2234,7 @@ fn a_wellshaft_renders_the_hex_pillar_spiral_bridges_and_sealed_service_bays() {
             crate::screens::match_runtime::debug_place_into(
                 &mut tp,
                 runtime,
-                Place::Hallway {
-                    from,
-                    to,
-                    variation,
-                },
+                Place::legacy_hallway(from, to, variation),
                 from,
                 keys,
                 items,
@@ -3695,11 +3679,8 @@ fn ambience_beds_select_by_place_kind_and_hallway_flavor() {
 
     // A hallway takes a hallway-flavour bed, never a district bed: the gantry bed
     // when the hall has raised decks, the corridor bed otherwise.
-    let hall = teleport::Place::Hallway {
-        from: observed_core::RoomId(1),
-        to: observed_core::RoomId(2),
-        variation: 0,
-    };
+    let hall =
+        teleport::Place::legacy_hallway(observed_core::RoomId(1), observed_core::RoomId(2), 0);
     assert_eq!(
         active_ambience_bed(MATCH_SEED, hall, false),
         AmbienceBedKind::Corridor

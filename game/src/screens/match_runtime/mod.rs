@@ -194,7 +194,6 @@ pub(crate) fn item_actions(
         if matches!(tp.place, Place::Room(_)) {
             crate::teleport::open_entry(&mut geom, tp.arrived_from);
         }
-        tp.arena = crate::teleport::place_arena(&geom, 0.0, WALL_HEIGHT);
         tp.rapier = crate::teleport::place_rapier_scene(&geom, 0.0, WALL_HEIGHT);
         if geom.poly.is_some() {
             let clamped = crate::teleport::contain(&geom, body_xz(&tp), tp.config.radius);

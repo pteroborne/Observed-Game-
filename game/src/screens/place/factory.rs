@@ -156,7 +156,6 @@ pub(crate) fn rebuild_place(
     if matches!(tp.place, Place::Room(_)) {
         teleport::open_entry(&mut geom, tp.arrived_from);
     }
-    tp.arena = teleport::place_arena(&geom, y_offset, WALL_HEIGHT);
     tp.rapier = teleport::place_rapier_scene(&geom, y_offset, WALL_HEIGHT);
     if geom.poly.is_some() {
         let clamped = teleport::contain(
@@ -238,6 +237,7 @@ pub(crate) fn rebuild_place(
                 &assets.ceiling_material,
                 &mut materials,
             );
+            let primitives = teleport::place_structural_primitives(&geom, y_offset, WALL_HEIGHT);
             shell::spawn_hallway_shell(
                 &mut commands,
                 &assets,
@@ -246,7 +246,7 @@ pub(crate) fn rebuild_place(
                 floor_material,
                 wall_material,
                 ceiling_material,
-                &tp.arena.solids,
+                &primitives,
                 y_offset,
             );
             // The WFC-composed light-module layer (Arc I Phase 71): decoration

@@ -201,7 +201,7 @@ pub(crate) fn spawn_hallway_preview(
         .iter()
         .find(|candidate| {
             candidate.threshold.hall == gap.threshold.hall
-                && candidate.threshold.hall.side == gap.threshold.room.room
+                && candidate.target == gap.threshold.room.room
                 && candidate.threshold.local_side == teleport::ThresholdLocalSide::Hall
         })
         .map(|candidate| candidate.floor_y)
@@ -249,20 +249,22 @@ pub(crate) fn spawn_hallway_preview(
         place_in(Transform::from_xyz(0.0, shell_height, 0.0)),
         Name::new("Preview ceiling"),
     ));
-    let arena = teleport::place_arena(&dest, 0.0, WALL_HEIGHT);
-    for solid in &arena.solids {
-        let c = (solid.min + solid.max) * 0.5;
-        if c.z < -hz + 0.5 {
+    let primitives = teleport::place_structural_primitives(&dest, 0.0, WALL_HEIGHT);
+    for solid in &primitives {
+        if solid.center.z < -hz + 0.5 {
             continue;
         }
-        let size = solid.max - solid.min;
+        let size = solid.half * 2.0;
         commands.spawn((
             PlaceGeometry,
             PassagePreview,
             DespawnOnExit(GameState::Match),
             Mesh3d(meshes.add(super::mesh::cuboid_mesh(size))),
             MeshMaterial3d(wall_material.clone()),
-            place_in(Transform::from_translation(c)),
+            place_in(
+                Transform::from_translation(solid.center)
+                    .with_rotation(Quat::from_rotation_y(solid.yaw)),
+            ),
             Name::new("Preview wall"),
         ));
     }

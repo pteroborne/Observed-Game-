@@ -42,13 +42,25 @@ pub const MAZE_WALL_T: f32 = 0.3;
 pub enum Place {
     Room(RoomId),
     Hallway {
+        corridor: CorridorId,
+        entered_socket: ThresholdSlotId,
+        variation: usize,
         from: RoomId,
         to: RoomId,
-        variation: usize,
     },
 }
 
 impl Place {
+    pub fn legacy_hallway(from: RoomId, to: RoomId, variation: usize) -> Self {
+        Self::Hallway {
+            corridor: corridor_id_for(from, to),
+            entered_socket: ThresholdSlotId(0),
+            variation,
+            from,
+            to,
+        }
+    }
+
     /// The canonical stable identity of this place: a room maps to its `RoomId`, a
     /// hallway to its `CorridorId` (derived from the unordered endpoint pair via
     /// [`corridor_id_for`]). This is the identity the junction topology, crossing
@@ -56,7 +68,7 @@ impl Place {
     pub fn place_id(self) -> PlaceId {
         match self {
             Place::Room(room) => PlaceId::Room(room),
-            Place::Hallway { from, to, .. } => PlaceId::Corridor(corridor_id_for(from, to)),
+            Place::Hallway { corridor, .. } => PlaceId::Corridor(corridor),
         }
     }
 
@@ -64,7 +76,7 @@ impl Place {
     pub fn corridor_id(self) -> Option<CorridorId> {
         match self {
             Place::Room(_) => None,
-            Place::Hallway { from, to, .. } => Some(corridor_id_for(from, to)),
+            Place::Hallway { corridor, .. } => Some(corridor),
         }
     }
 }
@@ -166,11 +178,10 @@ impl HallId {
     }
 }
 
-/// A hallway-side threshold endpoint. `side` is the room this hallway aperture faces.
+/// A hallway-side threshold endpoint.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct HallThreshold {
-    pub hall: HallId,
-    pub side: RoomId,
+    pub corridor: CorridorId,
     pub slot: ThresholdSlotId,
 }
 

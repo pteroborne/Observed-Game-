@@ -50,6 +50,12 @@ pub(crate) fn drive_spectator_bot(
     let seed_val = seed.map(|seed| seed.0).unwrap_or(crate::flow::MATCH_SEED);
     let local_feet_y =
         crate::bot::local_feet_y(tp.body.position.y - tp.config.half_height, tp.place);
+    let y_offset = crate::teleport::place_y_offset(tp.place);
+    let primitives = crate::teleport::place_structural_primitives(
+        &tp.geom,
+        y_offset,
+        crate::layout::WALL_HEIGHT,
+    );
     let in_same_room = guardian
         .as_ref()
         .is_some_and(|g| matches!(tp.place, Place::Room(room) if room == g.room));
@@ -137,7 +143,7 @@ pub(crate) fn drive_spectator_bot(
             spectator.waypoint = 0;
             spectator.blocked_ticks = 0;
         } else if let Some(path) =
-            crate::bot::route_to_gap(&tp.geom, &tp.arena, &tp.config, here, &gap)
+            crate::bot::route_to_gap(&tp.geom, &primitives, &tp.config, here, &gap)
         {
             spectator.route_place = Some(tp.place);
             spectator.route = path.waypoints;
@@ -193,10 +199,18 @@ pub(crate) fn drive_spectator_bot(
     let safety_dist = tp.config.radius + 0.05;
     let cy = tp.body.position.y;
     let hy = tp.config.half_height;
-    for solid in &tp.arena.solids {
-        if cy - hy < solid.max.y && cy + hy > solid.min.y {
-            let closest_x = here.x.clamp(solid.min.x, solid.max.x);
-            let closest_z = here.y.clamp(solid.min.z, solid.max.z);
+    for prim in &primitives {
+        if cy - hy < prim.center.y + prim.half.y && cy + hy > prim.center.y - prim.half.y {
+            let local_x = (here.x - prim.center.x) * prim.yaw.cos()
+                + (here.y - prim.center.z) * prim.yaw.sin();
+            let local_z = -(here.x - prim.center.x) * prim.yaw.sin()
+                + (here.y - prim.center.z) * prim.yaw.cos();
+            let closest_local_x = local_x.clamp(-prim.half.x, prim.half.x);
+            let closest_local_z = local_z.clamp(-prim.half.z, prim.half.z);
+            let closest_x =
+                prim.center.x + closest_local_x * prim.yaw.cos() - closest_local_z * prim.yaw.sin();
+            let closest_z =
+                prim.center.z + closest_local_x * prim.yaw.sin() + closest_local_z * prim.yaw.cos();
             let closest = Vec2::new(closest_x, closest_z);
             let diff = here - closest;
             let dist = diff.length();

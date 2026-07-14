@@ -161,6 +161,7 @@ fn collect_geometry(
             exit_locked: !keys.gate_open(),
             exit_room: keys.exit_room,
             pinned_corridors: Vec::new(),
+            map_spec: runtime.live.map_spec.clone(),
         };
         let geom = teleport::geom_for(dest.place, &nav);
         let Some((center, half)) = preview_aabb(tp.place, gap, dest.place, &geom) else {
@@ -277,11 +278,7 @@ fn atlas_layout(
         let (from, to) = route.rooms;
         let variation =
             crate::hallway::variation_for(from, to, crate::flow::MATCH_SEED, game.reroute_commits);
-        let place = Place::Hallway {
-            from,
-            to,
-            variation,
-        };
+        let place = Place::legacy_hallway(from, to, variation);
         let nav = crate::sim::nav::nav_for_place(crate::flow::MATCH_SEED, game, keys, items, place);
         let geom = teleport::geom_for(place, &nav);
         hallways.push(AtlasEntry {
@@ -722,6 +719,7 @@ pub(super) fn place_label(place: Place) -> String {
             from,
             to,
             variation,
+            ..
         } => format!("hallway {} -> {} v{}", from.0, to.0, variation),
     }
 }

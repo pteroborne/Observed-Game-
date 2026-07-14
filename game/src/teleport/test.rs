@@ -36,6 +36,7 @@ mod tests {
             exit_locked: false,
             exit_room: RoomId(EXIT_ROOM),
             pinned_corridors: Vec::new(),
+            map_spec: None,
         }
     }
 
@@ -46,8 +47,7 @@ mod tests {
                 slot: ThresholdSlotId(0),
             },
             hall: HallThreshold {
-                hall: HallId::new(room, target),
-                side: room,
+                corridor: corridor_id_for(room, target),
                 slot: ThresholdSlotId(0),
             },
             local_side: ThresholdLocalSide::Room,
@@ -426,11 +426,11 @@ mod tests {
         );
         assert_eq!(
             place,
-            Place::Hallway {
-                from: RoomId(0),
-                to: RoomId(1),
-                variation: hallway::variation_for(RoomId(0), RoomId(1), nav.seed, nav.version),
-            }
+            Place::legacy_hallway(
+                RoomId(0),
+                RoomId(1),
+                hallway::variation_for(RoomId(0), RoomId(1), nav.seed, nav.version),
+            )
         );
 
         // Walk to the hallway's exit and cross â†’ arrive in room 1.
@@ -554,11 +554,11 @@ mod tests {
     fn crossing_a_hallway_exit_carries_the_body_into_the_room_continuously() {
         // Hallway 0â†’1 exit into room 1 (which connects back to 0 and on to 2).
         let nav1 = nav(&[0, 2], Some(2));
-        let hall = Place::Hallway {
-            from: RoomId(0),
-            to: RoomId(1),
-            variation: hallway::variation_for(RoomId(0), RoomId(1), nav1.seed, nav1.version),
-        };
+        let hall = Place::legacy_hallway(
+            RoomId(0),
+            RoomId(1),
+            hallway::variation_for(RoomId(0), RoomId(1), nav1.seed, nav1.version),
+        );
         let hgeom = geom_for(hall, &nav1);
         let exit = *hgeom.gaps.iter().find(|g| g.kind == GapKind::Exit).unwrap();
         let mut rgeom = geom_for(Place::Room(RoomId(1)), &nav1);
@@ -1379,11 +1379,7 @@ mod tests {
             .expect("room has a forward gap toward the gantry hallway");
         // `arrival_gap`'s `Place::Hallway` branch only matches on the `Place` variant, not
         // the `variation`/`to` fields, so any Gantry-flavoured hallway place works here.
-        let hall = Place::Hallway {
-            from,
-            to,
-            variation: 0,
-        };
+        let hall = Place::legacy_hallway(from, to, 0);
         let hgeom = hallway_geom(from, to, template, 0, false);
 
         let arrived = arrival_gap(&hgeom, hall, &room_gap, from).expect("entry gap resolves");
@@ -1413,11 +1409,11 @@ mod tests {
     #[test]
     fn arrival_gap_stays_ground_level_for_an_ordinary_room_arrival() {
         let nav1 = nav(&[0, 2], Some(2));
-        let hall = Place::Hallway {
-            from: RoomId(0),
-            to: RoomId(1),
-            variation: hallway::variation_for(RoomId(0), RoomId(1), nav1.seed, nav1.version),
-        };
+        let hall = Place::legacy_hallway(
+            RoomId(0),
+            RoomId(1),
+            hallway::variation_for(RoomId(0), RoomId(1), nav1.seed, nav1.version),
+        );
         let hgeom = geom_for(hall, &nav1);
         let exit = *hgeom.gaps.iter().find(|g| g.kind == GapKind::Exit).unwrap();
         let mut rgeom = geom_for(Place::Room(RoomId(1)), &nav1);
@@ -2268,6 +2264,7 @@ mod tests {
             exit_locked: false,
             exit_room: RoomId(EXIT_ROOM),
             pinned_corridors: Vec::new(),
+            map_spec: None,
         };
 
         // (1) Cross from "from" room to Hallway
@@ -2407,6 +2404,7 @@ mod tests {
                     exit_locked: false,
                     exit_room: RoomId(EXIT_ROOM),
                     pinned_corridors: Vec::new(),
+                    map_spec: None,
                 };
 
                 let room_place = Place::Room(from);
@@ -2503,5 +2501,196 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn phase76_multi_exit_crossing_integration_test() {
+        use crate::hallway;
+        use crate::map_validation::nav_for_spec_room;
+        use crate::teleport::geom::{
+            HallwayGeomEndpoints, hallway_geom_with_slots_and_role_and_spec,
+            room_geom_with_slots_and_seals_for_role,
+        };
+        use crate::teleport::transition::apply_crossing;
+        use crate::teleport::{Crossing, Place};
+        use observed_core::Direction;
+        use observed_facility::map_spec::multi_exit_fixture;
+
+        let spec = multi_exit_fixture();
+        let seed = 0;
+        let version = 0;
+
+        // (1) Cross from Room 1 (Decision) to Corridor 80 (Gantry)
+        let room1 = RoomId(1);
+        let nav1 = nav_for_spec_room(&spec, seed, version, room1);
+        let room1_geom = room_geom_with_slots_and_seals_for_role(
+            room1,
+            &nav1.connections,
+            &nav1.connection_slots,
+            &nav1.sealed_slots,
+            nav1.target_room,
+            nav1.room_role,
+            nav1.seed,
+        );
+
+        let gap_to_2 = room1_geom
+            .gaps
+            .iter()
+            .find(|g| g.target == RoomId(2))
+            .expect("gap to Room 2");
+
+        let (hall_place, entered) = apply_crossing(Place::Room(room1), gap_to_2, &nav1);
+
+        assert_eq!(hall_place.corridor_id(), Some(CorridorId(80)));
+        if let Place::Hallway {
+            corridor,
+            entered_socket,
+            from,
+            to,
+            ..
+        } = hall_place
+        {
+            assert_eq!(corridor, CorridorId(80));
+            assert_eq!(entered_socket, ThresholdSlotId(0));
+            assert_eq!(from, room1);
+            assert_eq!(to, RoomId(2));
+        } else {
+            panic!("Expected Place::Hallway");
+        }
+
+        assert!(matches!(
+            entered,
+            Crossing::EnteredHallway { corridor, .. } if corridor == CorridorId(80)
+        ));
+
+        // (2) Get the Gantry 80 geometry and cross back from hallway to the other exits
+        let hall_geom_80 = hallway_geom_with_slots_and_role_and_spec(
+            HallwayGeomEndpoints {
+                from: RoomId(1),
+                to: RoomId(2),
+                from_room_slot: ThresholdSlotId(Direction::East.index() as u16),
+                to_room_slot: ThresholdSlotId(Direction::West.index() as u16),
+                exit_room: RoomId(EXIT_ROOM),
+            },
+            hallway::gantry_template(),
+            seed,
+            false,
+            Some(CorridorRole::Gantry),
+            Some(&spec),
+        );
+
+        // Find passage gaps in the hallway geometry
+        let gap_back_to_1 = hall_geom_80
+            .gaps
+            .iter()
+            .find(|g| g.target == RoomId(1))
+            .expect("gap back to Room 1");
+        let gap_to_2_hall = hall_geom_80
+            .gaps
+            .iter()
+            .find(|g| g.target == RoomId(2))
+            .expect("gap to Room 2");
+        let gap_to_3_hall = hall_geom_80
+            .gaps
+            .iter()
+            .find(|g| g.target == RoomId(3))
+            .expect("gap to Room 3 (side exit)");
+
+        // Let's verify crossing from hallway back to Room 1:
+        let (dest1, arrived1) = apply_crossing(hall_place, gap_back_to_1, &nav1);
+        assert_eq!(dest1, Place::Room(RoomId(1)));
+        assert_eq!(arrived1, Crossing::ArrivedRoom(RoomId(1)));
+
+        // Let's verify crossing from hallway to Room 2:
+        let (dest2, arrived2) = apply_crossing(hall_place, gap_to_2_hall, &nav1);
+        assert_eq!(dest2, Place::Room(RoomId(2)));
+        assert_eq!(arrived2, Crossing::ArrivedRoom(RoomId(2)));
+
+        // Let's verify crossing from hallway to Room 3:
+        let (dest3, arrived3) = apply_crossing(hall_place, gap_to_3_hall, &nav1);
+        assert_eq!(dest3, Place::Room(RoomId(3)));
+        assert_eq!(arrived3, Crossing::ArrivedRoom(RoomId(3)));
+
+        // --- PART 2: TEST WELLSHAFT 81 (3-EXIT) ---
+        // Let's get the Nav for Room 2 (Keystone).
+        let room2 = RoomId(2);
+        let nav2 = nav_for_spec_room(&spec, seed, version, room2);
+        let room2_geom = room_geom_with_slots_and_seals_for_role(
+            room2,
+            &nav2.connections,
+            &nav2.connection_slots,
+            &nav2.sealed_slots,
+            nav2.target_room,
+            nav2.room_role,
+            nav2.seed,
+        );
+
+        let gap_to_4 = room2_geom
+            .gaps
+            .iter()
+            .find(|g| g.target == RoomId(4))
+            .expect("gap to Room 4");
+
+        let (hall_place2, _entered2) = apply_crossing(Place::Room(room2), gap_to_4, &nav2);
+
+        assert_eq!(hall_place2.corridor_id(), Some(CorridorId(81)));
+        if let Place::Hallway {
+            corridor,
+            entered_socket,
+            from,
+            to,
+            ..
+        } = hall_place2
+        {
+            assert_eq!(corridor, CorridorId(81));
+            assert_eq!(entered_socket, ThresholdSlotId(0));
+            assert_eq!(from, room2);
+            assert_eq!(to, RoomId(4));
+        } else {
+            panic!("Expected Place::Hallway");
+        }
+
+        let hall_geom_81 = hallway_geom_with_slots_and_role_and_spec(
+            HallwayGeomEndpoints {
+                from: RoomId(2),
+                to: RoomId(4),
+                from_room_slot: ThresholdSlotId(Direction::South.index() as u16),
+                to_room_slot: ThresholdSlotId(Direction::North.index() as u16),
+                exit_room: RoomId(EXIT_ROOM),
+            },
+            hallway::wellshaft_template(),
+            seed,
+            false,
+            Some(CorridorRole::Vertical),
+            Some(&spec),
+        );
+
+        let gap_back_to_2 = hall_geom_81
+            .gaps
+            .iter()
+            .find(|g| g.target == RoomId(2))
+            .expect("gap back to Room 2");
+        let gap_to_4_hall = hall_geom_81
+            .gaps
+            .iter()
+            .find(|g| g.target == RoomId(4))
+            .expect("gap to Room 4");
+        let gap_to_12_hall = hall_geom_81
+            .gaps
+            .iter()
+            .find(|g| g.target == RoomId(12))
+            .expect("gap to Room 12");
+
+        let (dest2_back, arrived2_back) = apply_crossing(hall_place2, gap_back_to_2, &nav2);
+        assert_eq!(dest2_back, Place::Room(RoomId(2)));
+        assert_eq!(arrived2_back, Crossing::ArrivedRoom(RoomId(2)));
+
+        let (dest4, arrived4) = apply_crossing(hall_place2, gap_to_4_hall, &nav2);
+        assert_eq!(dest4, Place::Room(RoomId(4)));
+        assert_eq!(arrived4, Crossing::ArrivedRoom(RoomId(4)));
+
+        let (dest12, arrived12) = apply_crossing(hall_place2, gap_to_12_hall, &nav2);
+        assert_eq!(dest12, Place::Room(RoomId(12)));
+        assert_eq!(arrived12, Crossing::ArrivedRoom(RoomId(12)));
     }
 }

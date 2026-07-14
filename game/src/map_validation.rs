@@ -226,11 +226,7 @@ fn audit_edge_direction(
         return;
     };
     let variation = hallway::variation_for(from, to, context.seed, context.version);
-    let place = Place::Hallway {
-        from,
-        to,
-        variation,
-    };
+    let place = Place::legacy_hallway(from, to, variation);
     let geom = teleport::hallway_geom_with_slots_and_role(
         HallwayGeomEndpoints {
             from,
@@ -294,6 +290,7 @@ pub(crate) fn nav_for_spec_room(spec: &MapSpec, seed: u64, version: u32, room: R
         exit_locked: true,
         exit_room: spec.exit_room().unwrap_or(RoomId(0)),
         pinned_corridors: Vec::new(),
+        map_spec: Some(spec.clone()),
     }
 }
 
@@ -393,8 +390,8 @@ fn audit_room_geom(
         }
     }
     if let Some(forward) = geom.forward_gap() {
-        let arena = teleport::place_arena(geom, 0.0, 4.6);
-        if bot::route_to_gap(geom, &arena, config, Vec2::ZERO, forward).is_none() {
+        let primitives = teleport::place_structural_primitives(geom, 0.0, 4.6);
+        if bot::route_to_gap(geom, &primitives, config, Vec2::ZERO, forward).is_none() {
             push_issue(
                 issues,
                 report,
@@ -451,9 +448,9 @@ fn audit_hallway_geom(
         );
         return;
     };
-    let arena = teleport::place_arena(geom, 0.0, 4.6);
+    let primitives = teleport::place_structural_primitives(geom, 0.0, 4.6);
     let spawn = teleport::entry_spawn(geom, from);
-    if bot::route_to_gap(geom, &arena, config, spawn, exit).is_none() {
+    if bot::route_to_gap(geom, &primitives, config, spawn, exit).is_none() {
         push_issue(
             issues,
             report,
@@ -702,12 +699,10 @@ fn project_rect(rect: OrientedRect, axis: Vec2) -> (f32, f32) {
 
 fn threshold_name(gap: &DoorGap) -> String {
     format!(
-        "R{}:S{} -> H{}-{}:{}:S{}",
+        "R{}:S{} -> H{}:S{}",
         gap.threshold.room.room.0,
         gap.threshold.room.slot.0,
-        gap.threshold.hall.hall.a.0,
-        gap.threshold.hall.hall.b.0,
-        gap.threshold.hall.side.0,
+        gap.threshold.hall.corridor.0,
         gap.threshold.hall.slot.0
     )
 }
@@ -796,11 +791,7 @@ mod tests {
                         map_name: "template_threshold_corpus",
                         seed,
                         version: u32::from(role == Some(CorridorRole::Mystery)),
-                        place: Place::Hallway {
-                            from,
-                            to,
-                            variation,
-                        },
+                        place: Place::legacy_hallway(from, to, variation),
                         room: None,
                         role: None,
                         connections: vec![from, to],

@@ -143,11 +143,7 @@ pub(super) fn capture_bot_pov_progress(
                         .iter()
                         .position(|t| t.flavor == crate::hallway::HallwayFlavor::Wellshaft)
                         .expect("wellshaft template");
-                    let place = teleport::Place::Hallway {
-                        from,
-                        to,
-                        variation,
-                    };
+                    let place = teleport::Place::legacy_hallway(from, to, variation);
                     crate::screens::match_runtime::debug_place_into(
                         tp, &runtime, place, from, &keys, items,
                     );
@@ -246,6 +242,12 @@ pub(crate) fn drive_bot_pov_capture(
     let here = Vec2::new(tp.body.position.x, tp.body.position.z);
     let seed_val = seed.map(|seed| seed.0).unwrap_or(crate::flow::MATCH_SEED);
     let local_feet_y = bot::local_feet_y(tp.body.position.y - tp.config.half_height, tp.place);
+    let y_offset = crate::teleport::place_y_offset(tp.place);
+    let primitives = crate::teleport::place_structural_primitives(
+        &tp.geom,
+        y_offset,
+        crate::layout::WALL_HEIGHT,
+    );
     if let Some(gap) = bot::target_gap_for_place(tp.place, &tp.geom, here, local_feet_y) {
         let rel = here - gap.center;
         let tangent = Vec2::new(-gap.normal.y, gap.normal.x);
@@ -356,7 +358,8 @@ pub(crate) fn drive_bot_pov_capture(
             request.route_deck = false;
             request.waypoint = 0;
             request.blocked_ticks = 0;
-        } else if let Some(path) = bot::route_to_gap(&tp.geom, &tp.arena, &tp.config, start, &gap) {
+        } else if let Some(path) = bot::route_to_gap(&tp.geom, &primitives, &tp.config, start, &gap)
+        {
             info!(
                 "BOT_NAV: Computed new route in {:?} from {:?} to gap (center: {:?}, normal: {:?}). Waypoints count: {}. Path: {:?}",
                 tp.place,
@@ -428,11 +431,19 @@ pub(crate) fn drive_bot_pov_capture(
     let cy = tp.body.position.y;
     let hy = tp.config.half_height;
 
-    for solid in &tp.arena.solids {
+    for prim in &primitives {
         // Only avoid solids overlapping the bot's vertical height range
-        if cy - hy < solid.max.y && cy + hy > solid.min.y {
-            let closest_x = here.x.clamp(solid.min.x, solid.max.x);
-            let closest_z = here.y.clamp(solid.min.z, solid.max.z); // here.y is body.position.z
+        if cy - hy < prim.center.y + prim.half.y && cy + hy > prim.center.y - prim.half.y {
+            let local_x = (here.x - prim.center.x) * prim.yaw.cos()
+                + (here.y - prim.center.z) * prim.yaw.sin();
+            let local_z = -(here.x - prim.center.x) * prim.yaw.sin()
+                + (here.y - prim.center.z) * prim.yaw.cos();
+            let closest_local_x = local_x.clamp(-prim.half.x, prim.half.x);
+            let closest_local_z = local_z.clamp(-prim.half.z, prim.half.z);
+            let closest_x =
+                prim.center.x + closest_local_x * prim.yaw.cos() - closest_local_z * prim.yaw.sin();
+            let closest_z =
+                prim.center.z + closest_local_x * prim.yaw.sin() + closest_local_z * prim.yaw.cos();
             let closest = Vec2::new(closest_x, closest_z);
             let diff = here - closest;
             let dist = diff.length();

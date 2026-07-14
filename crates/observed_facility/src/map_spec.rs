@@ -68,6 +68,8 @@ pub enum CorridorRole {
     Vertical,
     /// A non-obvious alternate route around a contested or unstable area.
     Bypass,
+    /// Gantry elevated 3D pathway.
+    Gantry,
 }
 
 impl CorridorRole {
@@ -78,6 +80,7 @@ impl CorridorRole {
             Self::Mystery => "mystery",
             Self::Vertical => "vertical",
             Self::Bypass => "bypass",
+            Self::Gantry => "gantry",
         }
     }
 }
@@ -690,6 +693,86 @@ pub fn sector_relay_v1() -> MapSpec {
     }
 }
 
+pub fn multi_exit_fixture() -> MapSpec {
+    use CorridorRole as C;
+    use Direction::{East, North, South, West};
+    use RoomRole as R;
+
+    let room = |id, role, x, y| MapRoom {
+        id: RoomId(id),
+        role,
+        schematic: Vec2::new(x, y),
+    };
+    let mc = |id, a, a_side, b, b_side, role| MapCorridor {
+        id: CorridorId(id),
+        endpoints: vec![MapEndpoint::new(a, a_side), MapEndpoint::new(b, b_side)],
+        role,
+        mutable: true,
+    };
+
+    MapSpec {
+        name: "Multi-Exit Fixture",
+        rooms: vec![
+            room(0, R::Start, 0.0, 1.5),
+            room(1, R::Decision, 1.0, 1.5),
+            room(2, R::Keystone, 2.0, 0.5),
+            room(3, R::DualStation, 2.0, 2.5),
+            room(4, R::AnchorCheckpoint, 3.0, 1.5),
+            room(5, R::TeleportRelay, 4.0, 1.5),
+            room(6, R::DecoherenceFork, 5.0, 1.5),
+            room(7, R::GuardianControl, 6.0, 0.5),
+            room(8, R::Monitor, 2.0, 3.5),
+            room(9, R::TeleportRelay, 5.0, 2.5),
+            room(10, R::Recovery, 4.0, 3.5),
+            room(11, R::Exit, 7.0, 1.5),
+            room(12, R::Keystone, 3.0, 0.5),
+            room(13, R::Keystone, 6.0, 2.5),
+        ],
+        edges: Vec::new(),
+        corridors: vec![
+            mc(0, 0, East, 1, West, C::Connector),
+            mc(1, 0, South, 10, North, C::LongRoute),
+            mc(2, 1, South, 3, North, C::Connector),
+            mc(3, 1, North, 8, South, C::Connector),
+            mc(4, 2, North, 9, North, C::LongRoute),
+            mc(5, 3, East, 4, West, C::Connector),
+            mc(6, 3, West, 10, East, C::Bypass),
+            mc(7, 4, East, 5, West, C::Mystery),
+            mc(8, 5, East, 6, West, C::Connector),
+            mc(9, 5, North, 8, East, C::Bypass),
+            mc(10, 6, East, 7, West, C::Mystery),
+            mc(11, 6, South, 10, West, C::Bypass),
+            mc(12, 6, North, 12, South, C::LongRoute),
+            mc(13, 7, South, 11, North, C::Vertical),
+            mc(14, 7, East, 13, North, C::Mystery),
+            mc(15, 8, West, 10, South, C::LongRoute),
+            mc(16, 9, East, 11, West, C::Connector),
+            mc(17, 9, South, 13, West, C::Bypass),
+            // The two 3-endpoint corridors:
+            MapCorridor {
+                id: CorridorId(80),
+                endpoints: vec![
+                    MapEndpoint::new(1, East),
+                    MapEndpoint::new(2, West),
+                    MapEndpoint::new(3, South),
+                ],
+                role: CorridorRole::Gantry,
+                mutable: true,
+            },
+            MapCorridor {
+                id: CorridorId(81),
+                endpoints: vec![
+                    MapEndpoint::new(2, South),
+                    MapEndpoint::new(4, North),
+                    MapEndpoint::new(12, West),
+                ],
+                role: CorridorRole::Vertical,
+                mutable: true,
+            },
+        ],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -706,6 +789,16 @@ mod tests {
             map.keystone_rooms(),
             vec![RoomId(2), RoomId(12), RoomId(13)]
         );
+    }
+
+    #[test]
+    fn multi_exit_fixture_is_a_valid_tool_solved_graph() {
+        let map = multi_exit_fixture();
+        println!("EDGE PAIRS: {:?}", map.edge_pairs());
+        map.validate().expect("multi-exit fixture is graph-valid");
+        assert_eq!(map.room_count(), 14);
+        assert_eq!(map.start_room(), Some(RoomId(0)));
+        assert_eq!(map.exit_room(), Some(RoomId(11)));
     }
 
     #[test]

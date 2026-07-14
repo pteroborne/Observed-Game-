@@ -84,7 +84,37 @@ pub enum Crossing {
 pub fn place_junction(place: Place, nav: &Nav) -> JunctionTopology {
     let mut specs: Vec<CorridorSpec> = Vec::new();
     let mut attachments: Vec<ThresholdAttachment> = Vec::new();
+
     let mut attach = |from_room: RoomId, target: RoomId, room_slot: super::ThresholdSlotId| {
+        if let Some(spec) = &nav.map_spec {
+            let mut found = false;
+            for corridor in spec.corridors() {
+                for (slot_idx, endpoint) in corridor.endpoints.iter().enumerate() {
+                    if endpoint.room == from_room && endpoint.side.index() as u16 == room_slot.0 {
+                        let cid = corridor.id;
+                        if !specs.iter().any(|s| s.id == cid) {
+                            specs
+                                .push(CorridorSpec::with_slot_count(cid, corridor.endpoints.len()));
+                        }
+                        let room_tid = ThresholdId::new(PlaceId::Room(from_room), room_slot.0);
+                        let corridor_tid =
+                            ThresholdId::new(PlaceId::Corridor(cid), slot_idx as u16);
+                        if let Ok(attachment) = ThresholdAttachment::new(room_tid, corridor_tid) {
+                            attachments.push(attachment);
+                        }
+                        found = true;
+                        break;
+                    }
+                }
+                if found {
+                    break;
+                }
+            }
+            if found {
+                return;
+            }
+        }
+
         let cid = corridor_id_for(from_room, target);
         if !specs.iter().any(|spec| spec.id == cid) {
             specs.push(CorridorSpec::with_slot_count(cid, 2));
@@ -96,6 +126,7 @@ pub fn place_junction(place: Place, nav: &Nav) -> JunctionTopology {
             attachments.push(attachment);
         }
     };
+
     match place {
         Place::Room(room) => {
             for connection in &nav.connections {
@@ -108,7 +139,36 @@ pub fn place_junction(place: Place, nav: &Nav) -> JunctionTopology {
                 attach(room, *connection, slot);
             }
         }
-        Place::Hallway { from, to, .. } => {
+        Place::Hallway {
+            corridor, from, to, ..
+        } => {
+            if let Some(spec) = &nav.map_spec
+                && let Some(corridor_def) = spec.corridors().iter().find(|c| c.id == corridor)
+            {
+                if !specs.iter().any(|s| s.id == corridor) {
+                    specs.push(CorridorSpec::with_slot_count(
+                        corridor,
+                        corridor_def.endpoints.len(),
+                    ));
+                }
+                for (slot_idx, endpoint) in corridor_def.endpoints.iter().enumerate() {
+                    let room_tid = ThresholdId::new(
+                        PlaceId::Room(endpoint.room),
+                        endpoint.side.index() as u16,
+                    );
+                    let corridor_tid =
+                        ThresholdId::new(PlaceId::Corridor(corridor), slot_idx as u16);
+                    if let Ok(attachment) = ThresholdAttachment::new(room_tid, corridor_tid) {
+                        attachments.push(attachment);
+                    }
+                }
+                let mut topology = JunctionTopology::new(specs, Vec::new()).unwrap_or_default();
+                for attachment in attachments {
+                    let _ = topology.attach(attachment);
+                }
+                return topology;
+            }
+
             let from_slot = nav
                 .hallway_entry_room_slot
                 .unwrap_or(super::ThresholdSlotId(0));
@@ -119,9 +179,7 @@ pub fn place_junction(place: Place, nav: &Nav) -> JunctionTopology {
             attach(to, from, to_slot);
         }
     }
-    // Register the corridors, then attach best-effort: the crate rejects a half-rewire
-    // (double-attach) per attachment, so a conflicting socket is dropped while every other
-    // live connection still attaches — the topology never silently empties on one clash.
+
     let mut topology = JunctionTopology::new(specs, Vec::new()).unwrap_or_default();
     for attachment in attachments {
         let _ = topology.attach(attachment);
@@ -158,31 +216,23 @@ pub fn apply_crossing(place: Place, gap: &DoorGap, nav: &Nav) -> (Place, Crossin
     match place {
         Place::Room(room) => {
             let room_tid = ThresholdId::new(PlaceId::Room(room), gap.threshold.room.slot.0);
-            let Some(ThresholdId {
-                place: PlaceId::Corridor(corridor),
-                ..
-            }) = topology.partner(room_tid)
-            else {
-                // The crossed room socket has no corridor partner (sealed/collapsed): it is
-                // un-crossable, so stay put. Unreachable for a real passage gap —
-                // `enforce_active_sockets` has already demoted any unattached socket to a
-                // solid door — but keeps the resolver total without a pair fallback.
+            let Some(partner_tid) = topology.partner(room_tid) else {
                 return (place, Crossing::ArrivedRoom(room));
             };
-            // `to` is the gap's own onward-room annotation (directional data the deferred
-            // pair-shaped consumers still read), not a connectivity decision: the corridor
-            // you enter came from `partner()`.
+            let PlaceId::Corridor(corridor) = partner_tid.place else {
+                return (place, Crossing::ArrivedRoom(room));
+            };
+            let entered_socket = partner_tid.slot;
             let to = gap.target;
-            // A pinned (anchored) corridor keeps its frozen variation; others use the live
-            // decohere version, so they re-roll when unobserved. Keyed by the corridor the
-            // topology resolved, not the room pair.
             let version = nav.effective_version_for_corridor(corridor);
             let variation = hallway::variation_for(room, to, nav.seed, version);
             (
                 Place::Hallway {
+                    corridor,
+                    entered_socket,
+                    variation,
                     from: room,
                     to,
-                    variation,
                 },
                 Crossing::EnteredHallway {
                     corridor,
@@ -191,22 +241,15 @@ pub fn apply_crossing(place: Place, gap: &DoorGap, nav: &Nav) -> (Place, Crossin
                 },
             )
         }
-        Place::Hallway { from, to, .. } => {
-            // The hallway's own corridor identity (its `place_id`), not a reconstruction of
-            // connectivity from a pair — the piece you stand in *is* this corridor.
-            let cid = corridor_id_for(from, to);
-            let corridor_slot = corridor_socket_for(from, to, gap.target);
-            let corridor_tid = ThresholdId::new(PlaceId::Corridor(cid), corridor_slot.0);
+        Place::Hallway { corridor, .. } => {
+            let corridor_slot = gap.threshold.hall.slot;
+            let corridor_tid = ThresholdId::new(PlaceId::Corridor(corridor), corridor_slot.0);
             let Some(ThresholdId {
                 place: PlaceId::Room(arrived),
                 ..
             }) = topology.partner(corridor_tid)
             else {
-                // The crossed corridor socket has no room partner: un-crossable, stay put.
-                // Unreachable while this hallway is the current place (both endpoint
-                // sockets are attached), but keeps the resolver total without a
-                // `gap.target` fallback.
-                return (place, Crossing::ArrivedRoom(from));
+                return (Place::Room(gap.target), Crossing::ArrivedRoom(gap.target));
             };
             (Place::Room(arrived), Crossing::ArrivedRoom(arrived))
         }
@@ -263,7 +306,6 @@ impl Align2d {
 pub fn hallway_alignment(gap: &DoorGap, hallway: &PlaceGeom) -> Option<Align2d> {
     let hall_gap = hallway.gaps.iter().find(|candidate| {
         candidate.threshold.hall == gap.threshold.hall
-            && candidate.threshold.hall.side == gap.threshold.room.room
             && candidate.threshold.local_side == ThresholdLocalSide::Hall
     })?;
     Some(hallway_gap_alignment(gap, hall_gap))
@@ -322,7 +364,6 @@ pub fn arrival_gap<'a>(
     match place {
         Place::Hallway { .. } => geom.gaps.iter().find(|candidate| {
             candidate.threshold.hall == crossed.threshold.hall
-                && candidate.threshold.hall.side == crossed.threshold.room.room
                 && candidate.threshold.local_side == ThresholdLocalSide::Hall
         }),
         Place::Room(_) => geom
@@ -582,17 +623,19 @@ pub fn place_structural_primitives(
     floor_y: f32,
     wall_height: f32,
 ) -> Vec<StructuralCollider> {
-    let Some(poly) = geom.poly.as_ref() else {
-        return place_arena(geom, floor_y, wall_height)
-            .solids
-            .iter()
-            .map(|solid| {
-                StructuralCollider::axis_aligned(
-                    (solid.min + solid.max) * 0.5,
-                    (solid.max - solid.min) * 0.5,
-                )
-            })
-            .collect();
+    let poly_storage;
+    let poly = match geom.poly.as_ref() {
+        Some(p) => p,
+        None => {
+            let (hx, hz) = (geom.half.x, geom.half.y);
+            poly_storage = vec![
+                Vec2::new(-hx, -hz),
+                Vec2::new(hx, -hz),
+                Vec2::new(hx, hz),
+                Vec2::new(-hx, hz),
+            ];
+            &poly_storage
+        }
     };
 
     let total_height = structural_height(geom, wall_height);
@@ -606,8 +649,9 @@ pub fn place_structural_primitives(
             continue;
         }
         let tangent = edge / edge_length;
-        // A doorway belongs to this edge when its centre projects onto it and lies on
-        // the edge line. Sorting makes multiple attachments on one edge deterministic.
+        let outward_normal = Vec2::new(tangent.y, -tangent.x);
+        // A doorway belongs to this edge when its normal aligns with the edge's outward
+        // normal and its centre projects onto the edge segment.
         let mut openings: Vec<(f32, f32, &DoorGap)> = geom
             .gaps
             .iter()
@@ -616,11 +660,16 @@ pub fn place_structural_primitives(
                 let relative = gap.center - start;
                 let along = relative.dot(tangent);
                 let off_edge = (relative - tangent * along).length();
-                (off_edge <= 0.05 && along >= -0.05 && along <= edge_length + 0.05).then_some((
-                    (along - gap.width * 0.5).clamp(0.0, edge_length),
-                    (along + gap.width * 0.5).clamp(0.0, edge_length),
-                    gap,
-                ))
+                let normal_align = gap.normal.dot(outward_normal);
+                (normal_align > 0.7
+                    && off_edge <= 0.8
+                    && along >= -0.5
+                    && along <= edge_length + 0.5)
+                    .then_some((
+                        (along - gap.width * 0.5).clamp(0.0, edge_length),
+                        (along + gap.width * 0.5).clamp(0.0, edge_length),
+                        gap,
+                    ))
             })
             .collect();
         openings.sort_by(|a, b| a.0.total_cmp(&b.0));

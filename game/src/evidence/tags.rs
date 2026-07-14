@@ -107,12 +107,10 @@ pub(crate) fn debug_hud_enabled() -> bool {
 
 pub(crate) fn threshold_label(threshold: &ThresholdLink) -> String {
     format!(
-        "R{}:S{} -> H{}-{}:{}:S{}",
+        "R{}:S{} -> H{}:S{}",
         threshold.room.room.0,
         threshold.room.slot.0,
-        threshold.hall.hall.a.0,
-        threshold.hall.hall.b.0,
-        threshold.hall.side.0,
+        threshold.hall.corridor.0,
         threshold.hall.slot.0
     )
 }
@@ -144,12 +142,11 @@ mod tests {
                 slot: teleport::ThresholdSlotId(1),
             },
             hall: teleport::HallThreshold {
-                hall: teleport::HallId::new(RoomId(3), RoomId(4)),
-                side: RoomId(3),
+                corridor: observed_core::CorridorId(5),
                 slot: teleport::ThresholdSlotId(0),
             },
             local_side: teleport::ThresholdLocalSide::Room,
         };
-        assert_eq!(threshold_label(&link), "R3:S1 -> H3-4:3:S0");
+        assert_eq!(threshold_label(&link), "R3:S1 -> H5:S0");
     }
 }

@@ -4,13 +4,17 @@
 //! navmesh for pathfinding.
 
 use bevy::math::Vec2;
-use observed_traversal::{FpsArena, FpsConfig};
+use observed_traversal::{FpsConfig, rapier_controller::StructuralCollider};
 use vleue_navigator::NavMesh;
 
 use crate::teleport::PlaceGeom;
 
 /// Builds a 2D navmesh of the walkable area inside a room or hallway.
-pub fn build_navmesh(geom: &PlaceGeom, _arena: &FpsArena, config: &FpsConfig) -> NavMesh {
+pub fn build_navmesh(
+    geom: &PlaceGeom,
+    _primitives: &[StructuralCollider],
+    config: &FpsConfig,
+) -> NavMesh {
     let half = geom.half;
     // Use a tiny epsilon margin to ensure start/goal points near outer walls
     // lie safely inside the walkable area of the navmesh.

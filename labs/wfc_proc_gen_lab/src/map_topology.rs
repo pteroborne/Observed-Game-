@@ -136,6 +136,7 @@ fn corridor_role_color(role: CorridorRole) -> Color {
         CorridorRole::Mystery => Color::srgb(0.65, 0.25, 0.85),
         CorridorRole::Vertical => Color::srgb(0.2, 0.75, 1.0),
         CorridorRole::Bypass => Color::srgb(0.9, 0.55, 0.15),
+        CorridorRole::Gantry => Color::srgb(1.0, 0.42, 0.85),
     }
 }
 

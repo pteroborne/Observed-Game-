@@ -60,16 +60,18 @@ pub(crate) fn spawn_room_shell(
 /// Matched by footprint + top height rather than object identity, since the arena
 /// only stores `Aabb3`s — this is the explicit, named discrimination that keeps deck
 /// solids out of the generic "Place wall" render path.
-fn solid_is_deck(solid: &observed_traversal::Aabb3, deck: &DeckSeg, floor_y: f32) -> bool {
+fn solid_is_deck(
+    solid: &observed_traversal::rapier_controller::StructuralCollider,
+    deck: &DeckSeg,
+    floor_y: f32,
+) -> bool {
     const EPS: f32 = 0.02;
-    let center = (solid.min + solid.max) * 0.5;
-    let half = (solid.max - solid.min) * 0.5;
-    (center.x - deck.center.x).abs() < EPS
-        && (center.z - deck.center.y).abs() < EPS
-        && (half.x - deck.half.x).abs() < EPS
-        && (half.z - deck.half.y).abs() < EPS
-        && (solid.min.y - (floor_y + deck.bottom_y)).abs() < EPS
-        && (solid.max.y - (floor_y + deck.top_y)).abs() < EPS
+    (solid.center.x - deck.center.x).abs() < EPS
+        && (solid.center.z - deck.center.y).abs() < EPS
+        && (solid.half.x - deck.half.x).abs() < EPS
+        && (solid.half.z - deck.half.y).abs() < EPS
+        && (solid.center.y - solid.half.y - (floor_y + deck.bottom_y)).abs() < EPS
+        && (solid.center.y + solid.half.y - (floor_y + deck.top_y)).abs() < EPS
 }
 
 /// A box hallway's shell: scaled floor/ceiling planes plus the collision arena's
@@ -85,7 +87,7 @@ pub(crate) fn spawn_hallway_shell(
     floor_material: Handle<StandardMaterial>,
     wall_material: Handle<StandardMaterial>,
     ceiling_material: Handle<StandardMaterial>,
-    solids: &[observed_traversal::Aabb3],
+    solids: &[observed_traversal::rapier_controller::StructuralCollider],
     y_offset: f32,
 ) {
     let (hx, hz) = (geom.half.x, geom.half.y);
@@ -145,14 +147,14 @@ pub(crate) fn spawn_hallway_shell(
         {
             continue;
         }
-        let center = (solid.min + solid.max) * 0.5;
-        let size = solid.max - solid.min;
+        let size = solid.half * 2.0;
         commands.spawn((
             PlaceGeometry,
             DespawnOnExit(GameState::Match),
             Mesh3d(meshes.add(mesh::cuboid_mesh(size))),
             MeshMaterial3d(wall_material.clone()),
-            Transform::from_translation(center),
+            Transform::from_translation(solid.center)
+                .with_rotation(Quat::from_rotation_y(solid.yaw)),
             Name::new("Place wall"),
         ));
     }

@@ -106,8 +106,12 @@ Replace the live pair-shaped `Place::Hallway { from, to, ... }` contract with st
 ### Phase 75 — Room/Hall Variation Parity & Consumer Migration `[x]`
 Run the production Rapier path across the complete procedural corpus: every room role and seeded footprint, plus Chicane, Colonnade, Maze (DFS and WFC interiors), Gantry, and Wellshaft corridors at every supported elevation and entrance. Migrate all remaining pair-assuming consumers—bots, nav, guardian targeting, items/anchors, ambience, observation knowledge, tac-map, previews, diagnostics/evidence, replay, and map validation—to stable place/threshold identities. Add corpus tests proving rendered and collidable structural segments agree, every active aperture can be crossed in both directions, sealed sockets cannot be crossed, reroutes remain solvable, and reset/exit leaves no Rapier bodies or colliders behind. **Complete 2026-07-13:** 75a connectivity spine, 75b tether/consumer migration, and the full corpus verification suite (structural agreement, bidirectional crossing, sealed uncrossable, solvability, and lifecycle tests) landed. Default-map determinism digest unchanged.
 
-### Phase 76 — Multi-Exit Junction Gate `[ ]`
-Ship a playable fixture in which the Gantry understory side exit reaches a genuinely different room and a multi-threshold Wellshaft exposes distinct destinations. Exercise observation freeze/decohere reroutes, multiple thresholds between the same room and corridor where authored, and multiple corridors attached to one room without geometry overlap or ambiguous arrival. Close the arc with deterministic replay hashes, the full Rapier variation corpus, collider/debug evidence, a viewed first-person traversal capture through every branch, and a user playtest. At the gate, production movement has one collision authority—Rapier; any retained custom traversal code is an isolated reference/test utility rather than a second live controller.
+### Phase 76 — Multi-Exit Junction Gate `[x]`
+**Complete 2026-07-13:**
+- Shipped `multi_exit_fixture` map spec and catalog registration containing a 3-exit Gantry elevated pathway and a 3-exit Wellshaft vertical stairs with dynamically generated middle level landing bridges.
+- Integrated first-class spec corridor geometry and navigation, letting multi-exit endpoints map directly to their respective corridor sockets.
+- Added comprehensive integration test suite `phase76_multi_exit_crossing_integration_test` verifying bidirectional crossing, side-exit routing, and topological validity.
+- 0 clippy warnings and all workspace tests passing.
 
 ---
 

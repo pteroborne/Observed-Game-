@@ -124,8 +124,7 @@ mod tests {
                 slot: teleport::ThresholdSlotId(0),
             },
             hall: teleport::HallThreshold {
-                hall: teleport::HallId::new(room, target),
-                side: room,
+                corridor: teleport::corridor_id_for(room, target),
                 slot: teleport::ThresholdSlotId(0),
             },
             local_side: teleport::ThresholdLocalSide::Room,

@@ -6,7 +6,7 @@
 
 use bevy::prelude::*;
 use observed_traversal::gantry;
-use observed_traversal::{FpsArena, FpsConfig};
+use observed_traversal::{FpsConfig, rapier_controller::StructuralCollider};
 use std::collections::VecDeque;
 
 use crate::teleport::{DeckSeg, DoorGap, GapKind, Place, PlaceGeom, contain};
@@ -227,7 +227,7 @@ pub(crate) fn wellshaft_route(
 /// valid local walk to that threshold.
 pub(crate) fn route_to_gap(
     geom: &PlaceGeom,
-    arena: &FpsArena,
+    primitives: &[StructuralCollider],
     config: &FpsConfig,
     start: Vec2,
     gap: &DoorGap,
@@ -237,7 +237,7 @@ pub(crate) fn route_to_gap(
     }
     let inside = gap.center - gap.normal * (config.radius + 0.45);
     let outside = gap.center + gap.normal * (config.radius + 0.85);
-    let mut waypoints = route_between(geom, arena, config, start, inside)?;
+    let mut waypoints = route_between(geom, primitives, config, start, inside)?;
     waypoints.push(outside);
     Some(BotPath { waypoints })
 }
@@ -305,12 +305,12 @@ fn clamp_to_place(p: Vec2, geom: &PlaceGeom) -> Vec2 {
 
 fn route_between(
     geom: &PlaceGeom,
-    arena: &FpsArena,
+    primitives: &[StructuralCollider],
     config: &FpsConfig,
     start: Vec2,
     goal: Vec2,
 ) -> Option<Vec<Vec2>> {
-    let navmesh = crate::navmesh::build_navmesh(geom, arena, config);
+    let navmesh = crate::navmesh::build_navmesh(geom, primitives, config);
 
     let clamped_start = clamp_to_place(start, geom);
     let clamped_goal = clamp_to_place(goal, geom);
@@ -323,7 +323,7 @@ fn route_between(
         return Some(waypoints);
     }
 
-    if let Some(path) = grid_route_between(geom, arena, config, clamped_start, clamped_goal) {
+    if let Some(path) = grid_route_between(geom, primitives, config, clamped_start, clamped_goal) {
         return Some(path);
     }
 
@@ -346,7 +346,7 @@ fn route_between(
 
 fn grid_route_between(
     geom: &PlaceGeom,
-    arena: &FpsArena,
+    primitives: &[StructuralCollider],
     config: &FpsConfig,
     start: Vec2,
     goal: Vec2,
@@ -376,14 +376,23 @@ fn grid_route_between(
         if geom.poly.is_some() && (contain(geom, p, config.radius) - p).length() > 0.08 {
             return true;
         }
-        let cy = arena.floor_y + config.half_height;
-        arena.solids.iter().any(|solid| {
-            p.x - config.radius < solid.max.x
-                && p.x + config.radius > solid.min.x
-                && cy - config.half_height < solid.max.y
-                && cy + config.half_height > solid.min.y
-                && p.y - config.radius < solid.max.z
-                && p.y + config.radius > solid.min.z
+        let floor_y = primitives
+            .iter()
+            .map(|prim| prim.center.y - prim.half.y)
+            .min_by(|a, b| a.total_cmp(b))
+            .unwrap_or(0.0);
+        let cy = floor_y + config.half_height;
+        primitives.iter().any(|prim| {
+            let dy = cy - prim.center.y;
+            if dy.abs() >= prim.half.y + config.half_height {
+                return false;
+            }
+            let local_x =
+                (p.x - prim.center.x) * prim.yaw.cos() + (p.y - prim.center.z) * prim.yaw.sin();
+            let local_z =
+                -(p.x - prim.center.x) * prim.yaw.sin() + (p.y - prim.center.z) * prim.yaw.cos();
+            local_x.abs() - config.radius < prim.half.x
+                && local_z.abs() - config.radius < prim.half.z
         })
     };
     let nearest_open = |want: (usize, usize)| {
@@ -475,14 +484,10 @@ mod tests {
         for (index, template) in hallway::TEMPLATES.iter().enumerate() {
             for seed in 0..8_u64 {
                 let geom = teleport::hallway_geom(RoomId(0), RoomId(1), template, seed, false);
-                let arena = teleport::place_arena(&geom, 0.0, 4.6);
+                let primitives = teleport::place_structural_primitives(&geom, 0.0, 4.6);
                 let start = teleport::entry_spawn(&geom, RoomId(0));
                 let exit = target_gap_for_place(
-                    teleport::Place::Hallway {
-                        from: RoomId(0),
-                        to: RoomId(1),
-                        variation: index,
-                    },
+                    teleport::Place::legacy_hallway(RoomId(0), RoomId(1), index),
                     &geom,
                     start,
                     0.0,
@@ -490,7 +495,7 @@ mod tests {
                 .expect("hallway has an exit");
 
                 let path =
-                    route_to_gap(&geom, &arena, &config, start, &exit).unwrap_or_else(|| {
+                    route_to_gap(&geom, &primitives, &config, start, &exit).unwrap_or_else(|| {
                         panic!(
                             "template {index} ({:?}) seed {seed} must route entry -> exit",
                             template.flavor
@@ -541,14 +546,10 @@ mod tests {
                     false,
                     Some(CorridorRole::Mystery),
                 );
-                let arena = teleport::place_arena(&geom, 0.0, 4.6);
+                let primitives = teleport::place_structural_primitives(&geom, 0.0, 4.6);
                 let start = teleport::entry_spawn(&geom, RoomId(0));
                 let exit = target_gap_for_place(
-                    teleport::Place::Hallway {
-                        from: RoomId(0),
-                        to: RoomId(1),
-                        variation: index,
-                    },
+                    teleport::Place::legacy_hallway(RoomId(0), RoomId(1), index),
                     &geom,
                     start,
                     0.0,
@@ -556,7 +557,7 @@ mod tests {
                 .expect("hallway has an exit");
 
                 let path =
-                    route_to_gap(&geom, &arena, &config, start, &exit).unwrap_or_else(|| {
+                    route_to_gap(&geom, &primitives, &config, start, &exit).unwrap_or_else(|| {
                         panic!(
                             "WFC template {index} ({:?}) seed {seed} must route entry -> exit",
                             template.flavor
@@ -583,11 +584,7 @@ mod tests {
         let geom = teleport::hallway_geom(RoomId(0), RoomId(1), template, 0, false);
         let start = teleport::entry_spawn(&geom, RoomId(0));
         let gap = target_gap_for_place(
-            teleport::Place::Hallway {
-                from: RoomId(0),
-                to: RoomId(1),
-                variation: 0,
-            },
+            teleport::Place::legacy_hallway(RoomId(0), RoomId(1), 0),
             &geom,
             start,
             0.0,
@@ -615,11 +612,7 @@ mod tests {
         // Fallen in the centre platform lane, mid-hall (where the deck route stranded it).
         let here = Vec2::new(0.0, 0.0);
         let gap = target_gap_for_place(
-            teleport::Place::Hallway {
-                from: RoomId(0),
-                to: RoomId(1),
-                variation: 0,
-            },
+            teleport::Place::legacy_hallway(RoomId(0), RoomId(1), 0),
             &geom,
             here,
             0.0,
@@ -661,11 +654,7 @@ mod tests {
         assert!(at_deck_height(local_feet_y), "deck-height gate engages");
 
         let gap = target_gap_for_place(
-            teleport::Place::Hallway {
-                from: RoomId(0),
-                to: RoomId(1),
-                variation: 0,
-            },
+            teleport::Place::legacy_hallway(RoomId(0), RoomId(1), 0),
             &geom,
             start,
             local_feet_y,
@@ -778,7 +767,7 @@ mod tests {
             0,
             true,
         );
-        let arena = teleport::place_arena(&geom, 0.0, 4.6);
+        let primitives = teleport::place_structural_primitives(&geom, 0.0, 4.6);
         let start = teleport::entry_spawn(&geom, RoomId(7));
         let locked = geom
             .gaps
@@ -786,7 +775,7 @@ mod tests {
             .find(|gap| gap.kind == teleport::GapKind::LockedExit)
             .expect("exit is locked");
 
-        assert!(route_to_gap(&geom, &arena, &config, start, locked).is_none());
+        assert!(route_to_gap(&geom, &primitives, &config, start, locked).is_none());
     }
 
     #[test]

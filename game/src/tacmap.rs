@@ -471,11 +471,7 @@ mod tests {
             &sightings,
             &knowledge,
             0,
-            Place::Hallway {
-                from: RoomId(0),
-                to: RoomId(1),
-                variation: 0,
-            },
+            Place::legacy_hallway(RoomId(0), RoomId(1), 0),
         );
         assert_eq!(model.player, PlayerMark::Between(RoomId(0), RoomId(1)));
     }

@@ -120,6 +120,7 @@ pub(super) fn frozen_nav(seed: u64, dest: &FrozenDest, keys: &KeystoneState) -> 
         exit_locked: !keys.gate_open(),
         exit_room: keys.exit_room,
         pinned_corridors: Vec::new(),
+        map_spec: None,
     }
 }
 
@@ -162,7 +163,6 @@ pub(super) fn place_body(
     };
     teleport::open_entry(&mut geom, arrived_from);
     let y_offset = teleport::place_y_offset(place);
-    let arena = teleport::place_arena(&geom, y_offset, WALL_HEIGHT);
     // The arrival gap's local floor_y (0 for every ground-level doorway; a gantry hall's
     // deck entry sits at UPPER_DECK_Y), so a deck-level arrival stands ON the landing
     // instead of sinking to the place's ground floor.
@@ -193,8 +193,7 @@ pub(super) fn place_body(
                 .unwrap_or(0.0);
             (spawn, yaw, 0.0)
         });
-    tp.arena = arena;
-    tp.rapier = teleport::place_rapier_scene(&tp.geom, y_offset, WALL_HEIGHT);
+    tp.rapier = teleport::place_rapier_scene(&geom, y_offset, WALL_HEIGHT);
     tp.geom = geom;
     tp.body = FpsBody::spawned(
         Vec3::new(
@@ -220,8 +219,7 @@ pub(crate) fn place_body_at(tp: &mut TeleportState, place: Place, pos: Vec2, nav
     let yaw = tp.body.yaw;
     let pitch = tp.body.pitch;
     let y_offset = teleport::place_y_offset(place);
-    tp.arena = teleport::place_arena(&geom, y_offset, WALL_HEIGHT);
-    tp.rapier = teleport::place_rapier_scene(&tp.geom, y_offset, WALL_HEIGHT);
+    tp.rapier = teleport::place_rapier_scene(&geom, y_offset, WALL_HEIGHT);
     tp.geom = geom;
     tp.body = FpsBody::spawned(
         Vec3::new(pos.x, y_offset + tp.config.half_height, pos.y),
