@@ -146,22 +146,37 @@ fn push_catalog_features(
     if let Some(room) = world.room_at(cell) {
         let template = world.rooms[&room].template;
         match template {
-            RoomTemplate::StraightCorridor => posts(
-                pieces,
-                next_id,
-                cell,
-                origin,
-                &[(-4.2, 0.0), (4.2, 0.0)],
-                Vec3::new(0.22, 2.1, 0.22),
-            ),
-            RoomTemplate::Corner => posts(
-                pieces,
-                next_id,
-                cell,
-                origin,
-                &[(4.0, 4.0)],
-                Vec3::new(0.7, 1.4, 0.7),
-            ),
+            RoomTemplate::StraightCorridor => {
+                let placement = &world.placements[&cell];
+                let offsets = if placement.is_open(ModuleFace::East) || placement.is_open(ModuleFace::West) {
+                    &[(0.0, -4.2), (0.0, 4.2)]
+                } else {
+                    &[(-4.2, 0.0), (4.2, 0.0)]
+                };
+                posts(pieces, next_id, cell, origin, offsets, Vec3::new(0.22, 2.1, 0.22))
+            }
+            RoomTemplate::Corner => {
+                let placement = &world.placements[&cell];
+                let north_closed = !placement.is_open(ModuleFace::North);
+                let south_closed = !placement.is_open(ModuleFace::South);
+                let east_closed = !placement.is_open(ModuleFace::East);
+                let west_closed = !placement.is_open(ModuleFace::West);
+                let x = if east_closed && !west_closed {
+                    4.0
+                } else if west_closed && !east_closed {
+                    -4.0
+                } else {
+                    4.0
+                };
+                let z = if north_closed && !south_closed {
+                    4.0
+                } else if south_closed && !north_closed {
+                    -4.0
+                } else {
+                    4.0
+                };
+                posts(pieces, next_id, cell, origin, &[(x, z)], Vec3::new(0.7, 1.4, 0.7))
+            }
             RoomTemplate::Junction => posts(
                 pieces,
                 next_id,

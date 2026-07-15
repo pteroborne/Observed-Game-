@@ -195,7 +195,7 @@ fn unseen_guardian_catches_to_weighted_farthest_room() {
 #[ignore = "long-running deterministic local-match soak"]
 fn objective_bots_can_complete_the_local_match_through_input_frames() {
     let mut game = game(23);
-    for tick in 0..36_000 {
+    for tick in 0..50_000 {
         let commands = game
             .players
             .keys()

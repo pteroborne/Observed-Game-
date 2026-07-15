@@ -60,10 +60,19 @@ impl FullWfcMatch {
                 ..Default::default()
             };
         }
+        let center = cell_origin(player.cell);
+        let lateral_aligned = if next.x == player.cell.x {
+            (center.x - player.position.x).abs() <= 1.2
+        } else {
+            (center.z - player.position.z).abs() <= 1.2
+        };
+        if !lateral_aligned {
+            return steer_toward(player.yaw, player.position, center);
+        }
         steer_toward(player.yaw, player.position, cell_origin(next))
     }
 
-    fn bot_objective_cell(&self, id: PlayerId) -> Option<CellCoord> {
+    pub(crate) fn bot_objective_cell(&self, id: PlayerId) -> Option<CellCoord> {
         let player = &self.players[&id];
         let team = &self.teams[&player.team];
         if team.keystones < 2 {
@@ -94,7 +103,7 @@ impl FullWfcMatch {
 fn steer_toward(yaw: f32, position: Vec3, target: Vec3) -> PlayerCommand {
     let direction = target - position;
     let desired_yaw = direction.x.atan2(-direction.z);
-    let look = (wrap_angle(desired_yaw - yaw) / 0.035).clamp(-5.0, 5.0);
+    let look = wrap_angle(desired_yaw - yaw).clamp(-0.25, 0.25);
     PlayerCommand {
         intent: PlayerIntent {
             movement: Vec2::Y,

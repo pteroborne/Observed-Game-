@@ -7,7 +7,7 @@ use player_input::PlayerIntent;
 use super::{
     CLIMB_SPEED, FIXED_DT, FullWfcMatch, GameplayEventKind, INTERACTION_RADIUS, PlayerCommand,
 };
-use crate::full_wfc::{CELL_SIZE, DeployableKind, cell_origin};
+use crate::full_wfc::{CELL_SIZE, DeployableKind, cell_origin, LEVEL_HEIGHT};
 
 impl FullWfcMatch {
     pub(super) fn step_player(&mut self, id: PlayerId, command: PlayerCommand) {
@@ -75,7 +75,17 @@ impl FullWfcMatch {
             let delta = target_y - body.position.y;
             let step = CLIMB_SPEED * FIXED_DT;
             if delta.abs() <= step {
-                body.position.y = target_y;
+                let mut offset = Vec3::ZERO;
+                for face in [ModuleFace::East, ModuleFace::West, ModuleFace::South, ModuleFace::North] {
+                    if self.facility.placements[&target].is_open(face) {
+                        let (dx, dz, _) = face.delta();
+                        offset = Vec3::new(dx as f32 * 2.2, 0.0, dz as f32 * 2.2);
+                        break;
+                    }
+                }
+                let angle = (id.0 as f32) * (std::f32::consts::TAU / 8.0);
+                let perturb = Vec3::new(angle.cos() * 0.5, 0.0, angle.sin() * 0.5);
+                body.position = cell_origin(target) + Vec3::Y * self.traversal_config.half_height + offset + perturb;
                 body.velocity = Vec3::ZERO;
                 let player = self.players.get_mut(&id).expect("player");
                 player.cell = target;
@@ -121,8 +131,8 @@ impl FullWfcMatch {
 
     fn sync_player_from_body(&mut self, id: PlayerId) {
         let body = self.bodies[&id];
-        let current = self.players[&id].cell;
-        let candidate = horizontal_cell(self.facility.config, body.position, current.level);
+        let level = (body.position.y / LEVEL_HEIGHT).round().clamp(0.0, 2.0) as u8;
+        let candidate = horizontal_cell(self.facility.config, body.position, level);
         let player = self.players.get_mut(&id).expect("player");
         if let Some(cell) = candidate
             && self
