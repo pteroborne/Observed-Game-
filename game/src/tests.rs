@@ -1820,6 +1820,28 @@ fn spectate_ai_menu_option_launches_a_bot_driven_match() {
 }
 
 #[test]
+fn full_wfc_menu_option_launches_the_continuous_experiment() {
+    let mut app = test_app();
+    go(&mut app, GameState::MainMenu);
+    app.world_mut().resource_mut::<screens::MenuCursor>().0 = 2;
+    app.world_mut()
+        .resource_mut::<ButtonInput<KeyCode>>()
+        .press(KeyCode::Enter);
+    app.world_mut().run_schedule(Update);
+    app.update();
+
+    assert_eq!(
+        *app.world().resource::<State<GameState>>().get(),
+        GameState::FullWfc
+    );
+    assert!(
+        !app.world()
+            .contains_resource::<crate::sim::state::SpectatorBot>(),
+        "the first full-WFC slice is one local runner, not the spectator teamplay mode"
+    );
+}
+
+#[test]
 fn spectate_mode_holds_the_match_open_until_the_visible_body_finishes() {
     let mut app = test_app();
     app.world_mut()

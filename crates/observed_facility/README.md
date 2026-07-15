@@ -9,6 +9,30 @@ This crate defines the topology and layouts of individual rooms and hallways. It
 - **[`constraints.rs`](src/constraints.rs):** Verifies that active transitions do not break connectivity rules across the mutable graph.
 - **[`map_spec.rs`](src/map_spec.rs):** `MapSpec` — the semantic racecourse graph (rooms, roles, edges) and its validator (`validate()`: unique rooms/endpoints, required roles, connectivity, redundancy, objective recovery, tool-role usefulness). `sector_relay_v1()` is the one hand-authored map.
 - **[`wfc.rs`](src/wfc.rs):** *(feature `wfc`, off by default)* Wave Function Collapse liminal-map generation — produces validated `MapSpec` output at 24-32 rooms — plus (Phase 47) the per-hallway interior generator (`generate_interior_walls`/`InteriorSeg`). See below.
+- **[`full_wfc.rs`](src/full_wfc.rs):** *(feature `wfc`)* Continuous multi-level module-lattice experiment. Rooms, non-branching halls, shafts, and void are collapsed in stable world coordinates; observation pins geometry identity while unseen room faces remain mutable. Weighted A* gates every atomic relayout and drives the candle-proximity scalar.
+
+## Continuous full-WFC experiment
+
+`FullWfcWorld` is a pure deterministic simulation boundary for the experimental game
+branch. The default lattice is 8 x 5 x 3 with 24-32 rooms and a bounded 64-attempt
+collapse budget. Every accepted generation guarantees a spawn-to-exit route and a
+route from each `PlayerId` occupancy. Rooms may change only unobserved threshold
+faces; an observed threshold pins its entire non-branching hall chain and destination
+room, while unrelated thresholds on that room remain eligible for later collapse.
+
+An observed terminal chain claims one exit face. Competing exit faces become reserved
+for both A* and movement until observation releases the claim. The normalized candle
+value is derived from the same weighted A* travel cost (`Room`, `Straight`, `Corner`,
+`Gantry`, `Climb`, and `Shaft` have distinct costs), but does not expose the chosen
+route to presentation.
+
+Focused tests cover determinism, module grammar, observation identity, atomic commit
+safety, candle monotonicity, and exit claims. The ignored release gate performs 100
+seeds x 50 relayout pulses (5,000 complete collapses):
+
+```text
+cargo test -p observed_facility --features wfc extended_default_corpus -- --ignored
+```
 
 ## `wfc` feature (Phase 45 / Arc D)
 

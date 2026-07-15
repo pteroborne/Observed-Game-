@@ -1,0 +1,11 @@
+[package]
+name = "full_wfc_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = ["2d", "png"] }
+observed_facility = { path = "../../crates/observed_facility", features = ["wfc"] }
+observed_style = { path = "../../crates/observed_style" }
+player_input = { path = "../../crates/player_input" }

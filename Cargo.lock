@@ -3480,6 +3480,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "full_wfc_lab"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "observed_facility",
+ "observed_style",
+ "player_input",
+]
+
+[[package]]
 name = "funty"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

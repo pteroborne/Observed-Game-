@@ -5,6 +5,7 @@ mod camera;
 mod content;
 mod evidence;
 pub mod flow;
+mod full_wfc;
 pub mod guardian;
 pub mod hallway;
 pub mod items;
@@ -42,6 +43,7 @@ pub enum GameState {
     Loadout,
     Lobby,
     Match,
+    FullWfc,
     Results,
     Replay,
     Settings,
@@ -63,7 +65,12 @@ impl Plugin for ObservedGamePlugin {
                 crate::evidence::debug_hud_enabled(),
             ))
             .add_systems(Startup, (setup_camera, setup_ui_assets))
-            .add_plugins((Sprite3dPlugin, screens::ScreensPlugin, screens::MatchPlugin));
+            .add_plugins((
+                Sprite3dPlugin,
+                screens::ScreensPlugin,
+                screens::MatchPlugin,
+                full_wfc::FullWfcPlugin,
+            ));
     }
 }
 

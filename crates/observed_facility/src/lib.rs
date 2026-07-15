@@ -18,6 +18,8 @@
 //! - [`constraints`] — the persistent route spine over the observe/decohere graph.
 
 pub mod constraints;
+#[cfg(feature = "wfc")]
+pub mod full_wfc;
 pub mod junction;
 pub mod map_spec;
 pub mod room_def;

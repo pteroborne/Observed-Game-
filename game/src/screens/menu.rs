@@ -73,15 +73,20 @@ pub(crate) fn setup_main_menu(mut commands: Commands, mut cursor: ResMut<MenuCur
                 p.spawn(menu_button(1, MenuAction::SpectateAi, "Spectate AI"));
                 p.spawn(menu_button(
                     2,
+                    MenuAction::StartFullWfc,
+                    "Experiment: Full WFC",
+                ));
+                p.spawn(menu_button(
+                    3,
                     MenuAction::Goto(GameState::Loadout),
                     "Loadout",
                 ));
                 p.spawn(menu_button(
-                    3,
+                    4,
                     MenuAction::Goto(GameState::Settings),
                     "Settings",
                 ));
-                p.spawn(menu_button(4, MenuAction::QuitApp, "Quit"));
+                p.spawn(menu_button(5, MenuAction::QuitApp, "Quit"));
             });
             root.spawn(text(
                 "Up/Down or D-pad select | Enter/A confirm | Esc/B back",
@@ -455,6 +460,13 @@ pub(crate) fn menu_activate(
         MenuAction::StartRun => {
             commands.remove_resource::<SpectatorBot>();
             next.set(GameState::Lobby);
+        }
+        MenuAction::StartFullWfc => {
+            let seed = crate::flow::launch_seed();
+            info!("MATCH_START mode=full_wfc seed={seed}");
+            commands.insert_resource(crate::flow::ActiveMatchSeed(seed));
+            commands.remove_resource::<SpectatorBot>();
+            next.set(GameState::FullWfc);
         }
         MenuAction::Rematch => {
             let previous = active_seed

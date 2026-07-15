@@ -40,6 +40,7 @@ pub(crate) mod settings;
 pub(crate) enum MenuAction {
     Goto(GameState),
     StartRun,
+    StartFullWfc,
     Rematch,
     SpectateAi,
     Launch,
