@@ -105,3 +105,38 @@ fn sim_never_imports_presentation() {
         offenders.join("\n")
     );
 }
+
+/// Arc K keeps agent-owned production modules reviewable. The scope is deliberately
+/// limited to the new canonical full-WFC paths so unrelated legacy fixtures can be
+/// retired independently instead of weakening this ratchet.
+#[test]
+fn full_wfc_production_files_stay_under_six_hundred_lines() {
+    let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("game is a workspace member")
+        .to_path_buf();
+    let roots = [
+        workspace.join("game/src/full_wfc"),
+        workspace.join("crates/observed_facility/src/full_wfc"),
+        workspace.join("crates/observed_match/src/full_wfc"),
+    ];
+    let mut offenders = Vec::new();
+    for root in roots {
+        let mut files = Vec::new();
+        rust_sources(&root, &mut files);
+        for path in files {
+            let lines = fs::read_to_string(&path)
+                .expect("full-WFC source is readable")
+                .lines()
+                .count();
+            if lines > 600 {
+                offenders.push(format!("{}: {lines} lines", path.display()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "split full-WFC files before extending them past 600 lines:\n{}",
+        offenders.join("\n")
+    );
+}

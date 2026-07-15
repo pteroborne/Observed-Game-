@@ -70,23 +70,17 @@ pub(crate) fn setup_main_menu(mut commands: Commands, mut cursor: ResMut<MenuCur
             root.spawn((MenuBanner, text("", 18.0, ACCENT)));
             root.spawn(panel()).with_children(|p| {
                 p.spawn(menu_button(0, MenuAction::StartRun, "Play"));
-                p.spawn(menu_button(1, MenuAction::SpectateAi, "Spectate AI"));
                 p.spawn(menu_button(
-                    2,
-                    MenuAction::StartFullWfc,
-                    "Experiment: Full WFC",
-                ));
-                p.spawn(menu_button(
-                    3,
+                    1,
                     MenuAction::Goto(GameState::Loadout),
                     "Loadout",
                 ));
                 p.spawn(menu_button(
-                    4,
+                    2,
                     MenuAction::Goto(GameState::Settings),
                     "Settings",
                 ));
-                p.spawn(menu_button(5, MenuAction::QuitApp, "Quit"));
+                p.spawn(menu_button(3, MenuAction::QuitApp, "Quit"));
             });
             root.spawn(text(
                 "Up/Down or D-pad select | Enter/A confirm | Esc/B back",
@@ -458,10 +452,6 @@ pub(crate) fn menu_activate(
     match button.action {
         MenuAction::Goto(state) => next.set(state),
         MenuAction::StartRun => {
-            commands.remove_resource::<SpectatorBot>();
-            next.set(GameState::Lobby);
-        }
-        MenuAction::StartFullWfc => {
             let seed = crate::flow::launch_seed();
             info!("MATCH_START mode=full_wfc seed={seed}");
             commands.insert_resource(crate::flow::ActiveMatchSeed(seed));
@@ -476,14 +466,7 @@ pub(crate) fn menu_activate(
             info!("MATCH_START mode=rematch seed={seed}");
             commands.insert_resource(crate::flow::ActiveMatchSeed(seed));
             commands.remove_resource::<SpectatorBot>();
-            next.set(GameState::Match);
-        }
-        MenuAction::SpectateAi => {
-            let seed = crate::flow::launch_seed();
-            info!("MATCH_START mode=spectate seed={seed}");
-            commands.insert_resource(crate::flow::ActiveMatchSeed(seed));
-            commands.insert_resource(SpectatorBot::for_seed(seed));
-            next.set(GameState::Match);
+            next.set(GameState::FullWfc);
         }
         MenuAction::Launch => {
             let seed = crate::flow::launch_seed();

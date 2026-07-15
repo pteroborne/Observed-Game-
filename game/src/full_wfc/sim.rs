@@ -1,88 +1,95 @@
-use std::collections::{BTreeMap, BTreeSet};
+//! Bevy adapter around the pure authoritative full-WFC match.
+
+use std::collections::BTreeSet;
 
 use bevy::prelude::*;
-use observed_facility::full_wfc::{
-    CellCoord, FullWfcConfig, FullWfcWorld, ModuleFace, ModuleSpace, ObservationFrame, ThresholdKey,
+use observed_core::PlayerId;
+use observed_facility::full_wfc::CellCoord;
+use observed_match::full_wfc::{
+    FullWfcMatch, FullWfcMatchConfig, GameplayEventKind, InputFrame, MatchStatus, PlayerCommand,
 };
-use player_input::{PlayerId, PlayerIntent};
 
 use crate::flow::ActiveMatchSeed;
 
-pub(super) const CELL_SIZE: f32 = 12.0;
-pub(super) const LEVEL_HEIGHT: f32 = 5.0;
-pub(super) const EYE_HEIGHT: f32 = 1.72;
-const WALK_SPEED: f32 = 4.8;
-const SPRINT_SPEED: f32 = 7.2;
-const CLIMB_SPEED: f32 = 2.5;
-const LOCAL_PLAYER: PlayerId = PlayerId(0);
+pub(super) const LOCAL_PLAYER: PlayerId = PlayerId(0);
+pub(super) const EYE_OFFSET: f32 = 0.70;
 
 #[derive(Resource, Default)]
-pub(super) struct FullWfcIntent(pub PlayerIntent);
-
-#[derive(Clone, Copy, Debug)]
-pub(super) struct FullWfcPlayer {
-    pub id: PlayerId,
-    pub cell: CellCoord,
-    pub position: Vec3,
-    pub yaw: f32,
-    pub pitch: f32,
-    pub climb_target: Option<CellCoord>,
+pub(super) struct FullWfcIntent {
+    pub command: PlayerCommand,
+    pub toggle_map: bool,
 }
 
 #[derive(Resource)]
 pub(super) struct FullWfcRuntime {
-    pub world: FullWfcWorld,
-    pub player: FullWfcPlayer,
-    pub ticks_until_pulse: u32,
+    pub match_state: FullWfcMatch,
+    pub local_player: PlayerId,
     pub pending_visual_changes: BTreeSet<CellCoord>,
     pub status: String,
-    pub escaped: bool,
+    pub map_open: bool,
+    pub results_delay_frames: u16,
 }
 
-pub(super) fn setup_runtime(mut commands: Commands, seed: Option<Res<ActiveMatchSeed>>) {
+impl FullWfcRuntime {
+    pub fn local(&self) -> &observed_match::full_wfc::PlayerState {
+        &self.match_state.players[&self.local_player]
+    }
+}
+
+pub(super) fn setup_runtime(
+    mut commands: Commands,
+    seed: Option<Res<ActiveMatchSeed>>,
+    mut career: ResMut<crate::flow::Career>,
+) {
+    career.begin_match();
     let requested_seed = seed.as_deref().map_or(0xF011_FAC1_1177, |seed| seed.0);
-    let config = FullWfcConfig::default();
-    let (world, seed_offset) = (0..64u64)
+    let (match_state, seed_offset) = (0..64u64)
         .find_map(|offset| {
-            FullWfcWorld::new(requested_seed.wrapping_add(offset), config)
-                .ok()
-                .map(|world| (world, offset))
+            FullWfcMatch::new(
+                requested_seed.wrapping_add(offset),
+                FullWfcMatchConfig::default(),
+            )
+            .ok()
+            .map(|game| (game, offset))
         })
         .expect("the full-WFC default corpus must contain a solvable nearby seed");
-    let spawn = world.spawn();
-    let pulse_ticks = world.config.pulse_ticks;
+    let pending_visual_changes = match_state.facility.placements.keys().copied().collect();
+    let replay = crate::sim::replay::ReplayTape::new_full_wfc(&match_state);
     commands.insert_resource(FullWfcRuntime {
-        player: FullWfcPlayer {
-            id: LOCAL_PLAYER,
-            cell: spawn,
-            position: world_position(spawn),
-            yaw: initial_yaw(&world, spawn),
-            pitch: 0.0,
-            climb_target: None,
-        },
-        pending_visual_changes: world.placements.keys().copied().collect(),
+        match_state,
+        local_player: LOCAL_PLAYER,
+        pending_visual_changes,
         status: if seed_offset == 0 {
-            "initial WFC solve".to_string()
+            "authoritative local match ready".to_string()
         } else {
-            format!("initial seed advanced by {seed_offset} after contradictions")
+            format!("seed advanced by {seed_offset} after solve contradictions")
         },
-        world,
-        ticks_until_pulse: pulse_ticks,
-        escaped: false,
+        map_open: false,
+        results_delay_frames: 0,
     });
     commands.insert_resource(FullWfcIntent::default());
+    commands.insert_resource(replay);
 }
 
-fn initial_yaw(world: &FullWfcWorld, cell: CellCoord) -> f32 {
-    [
-        (ModuleFace::East, -std::f32::consts::FRAC_PI_2),
-        (ModuleFace::West, std::f32::consts::FRAC_PI_2),
-        (ModuleFace::South, std::f32::consts::PI),
-        (ModuleFace::North, 0.0),
-    ]
-    .into_iter()
-    .find_map(|(face, yaw)| world.placements[&cell].is_open(face).then_some(yaw))
-    .unwrap_or(0.0)
+pub(super) fn finish_runtime(
+    mut runtime: ResMut<FullWfcRuntime>,
+    mut career: ResMut<crate::flow::Career>,
+    mut replay: Option<ResMut<crate::sim::replay::ReplayTape>>,
+    mut next: ResMut<NextState<crate::GameState>>,
+) {
+    if runtime.match_state.status != MatchStatus::Finished {
+        return;
+    }
+    runtime.results_delay_frames = runtime.results_delay_frames.saturating_add(1);
+    if runtime.results_delay_frames < 90 {
+        return;
+    }
+    let result = crate::flow::resolve_full_wfc(&runtime.match_state);
+    if let Some(replay) = replay.as_deref_mut() {
+        replay.result = Some(result.clone());
+    }
+    career.record(result);
+    next.set(crate::GameState::Results);
 }
 
 pub(super) fn cleanup_runtime(mut commands: Commands) {
@@ -91,276 +98,124 @@ pub(super) fn cleanup_runtime(mut commands: Commands) {
 }
 
 pub(super) fn step_runtime(
-    time: Res<Time<Fixed>>,
     mut intent: ResMut<FullWfcIntent>,
     mut runtime: ResMut<FullWfcRuntime>,
+    mut replay: Option<ResMut<crate::sim::replay::ReplayTape>>,
 ) {
-    if runtime.escaped {
-        intent.0.look = Vec2::ZERO;
+    if intent.toggle_map {
+        runtime.map_open = !runtime.map_open;
+        intent.toggle_map = false;
+    }
+    if runtime.match_state.status == MatchStatus::Finished {
+        clear_one_shot_input(&mut intent.command);
         return;
     }
-    runtime.player.yaw -= intent.0.look.x;
-    runtime.player.pitch = (runtime.player.pitch + intent.0.look.y).clamp(-1.25, 1.25);
-    intent.0.look = Vec2::ZERO;
-
-    move_player(&mut runtime, intent.0, time.delta_secs());
-    let observation = observation_frame(&runtime);
-    runtime.world.update_observation(observation.clone());
-
-    runtime.ticks_until_pulse = runtime.ticks_until_pulse.saturating_sub(1);
-    if runtime.ticks_until_pulse == 0 {
-        pulse(&mut runtime, observation);
-    }
-    runtime.escaped = runtime.player.cell == runtime.world.exit();
-    if runtime.escaped {
-        runtime.status = "EXIT REACHED - experiment complete".to_string();
-    }
-}
-
-fn pulse(runtime: &mut FullWfcRuntime, observation: ObservationFrame) {
-    match runtime.world.propose_relayout(&observation) {
-        Ok(candidate) => {
-            let changed = candidate.changed_cells.clone();
-            match runtime.world.commit_relayout(candidate, observation) {
-                Ok(()) => {
-                    runtime.pending_visual_changes.extend(changed);
-                    runtime.status = format!(
-                        "decoherence pulse {} accepted in {} attempt(s)",
-                        runtime.world.accepted_pulses, runtime.world.last_attempts
-                    );
-                }
-                Err(error) => runtime.status = format!("pulse held: {error:?}"),
-            }
-        }
-        Err(error) => runtime.status = format!("WFC contradiction: {error:?}"),
-    }
-    runtime.ticks_until_pulse = runtime.world.config.pulse_ticks;
-}
-
-fn move_player(runtime: &mut FullWfcRuntime, intent: PlayerIntent, dt: f32) {
-    if let Some(target) = runtime.player.climb_target {
-        let target_y = world_position(target).y;
-        let delta = target_y - runtime.player.position.y;
-        let step = CLIMB_SPEED * dt;
-        if delta.abs() <= step {
-            runtime.player.position.y = target_y;
-            runtime.player.cell = target;
-            runtime.player.climb_target = None;
-        } else {
-            runtime.player.position.y += delta.signum() * step;
-        }
-        return;
-    }
-
-    let climb_face = if intent.jump_pressed {
-        Some(ModuleFace::Up)
-    } else if intent.interact_held {
-        Some(ModuleFace::Down)
-    } else {
-        None
+    let mut frame = InputFrame {
+        tick: runtime.match_state.tick + 1,
+        ..Default::default()
     };
-    if let Some(face) = climb_face {
-        let center = world_position(runtime.player.cell);
-        let near_shaft = Vec2::new(
-            runtime.player.position.x - center.x,
-            runtime.player.position.z - center.z,
-        )
-        .length_squared()
-            <= 2.2 * 2.2;
-        let open = runtime
-            .world
-            .placement(runtime.player.cell)
-            .is_some_and(|placement| placement.is_open(face));
-        if near_shaft && open {
-            runtime.player.climb_target = runtime.world.config.neighbor(runtime.player.cell, face);
-            return;
-        }
-    }
-
-    let speed = if intent.sprint_held {
-        SPRINT_SPEED
-    } else {
-        WALK_SPEED
-    };
-    let forward = Vec3::new(-runtime.player.yaw.sin(), 0.0, -runtime.player.yaw.cos());
-    let right = Vec3::new(forward.z, 0.0, -forward.x);
-    let delta = (right * intent.movement.x + forward * intent.movement.y) * speed * dt;
-    try_axis(runtime, delta.x, true);
-    try_axis(runtime, delta.z, false);
-}
-
-fn try_axis(runtime: &mut FullWfcRuntime, delta: f32, x_axis: bool) {
-    if delta == 0.0 {
-        return;
-    }
-    let mut proposed = runtime.player.position;
-    if x_axis {
-        proposed.x += delta;
-    } else {
-        proposed.z += delta;
-    }
-    let Some(next) = horizontal_cell(runtime.world.config, proposed, runtime.player.cell.level)
-    else {
-        return;
-    };
-    if next == runtime.player.cell {
-        runtime.player.position = proposed;
-        return;
-    }
-    let Some(face) = face_between(runtime.player.cell, next) else {
-        return;
-    };
-    let open = runtime
-        .world
-        .placement(runtime.player.cell)
-        .is_some_and(|placement| placement.is_open(face));
-    let active = runtime
-        .world
-        .placement(next)
-        .is_some_and(|placement| placement.space != ModuleSpace::Void);
-    let exit_face_reserved = (next == runtime.world.exit()
-        && runtime.world.reserved_exit_faces.contains(&face.opposite()))
-        || (runtime.player.cell == runtime.world.exit()
-            && runtime.world.reserved_exit_faces.contains(&face));
-    if open && active && !exit_face_reserved {
-        runtime.player.position = proposed;
-        runtime.player.cell = next;
-    }
-}
-
-fn horizontal_cell(config: FullWfcConfig, position: Vec3, level: u8) -> Option<CellCoord> {
-    let x = ((position.x + CELL_SIZE * 0.5) / CELL_SIZE).floor() as i32;
-    let z = ((position.z + CELL_SIZE * 0.5) / CELL_SIZE).floor() as i32;
-    (x >= 0 && z >= 0 && x < i32::from(config.cols) && z < i32::from(config.rows))
-        .then(|| CellCoord::new(x as u16, z as u16, level))
-}
-
-fn face_between(a: CellCoord, b: CellCoord) -> Option<ModuleFace> {
-    match (
-        i32::from(b.x) - i32::from(a.x),
-        i32::from(b.z) - i32::from(a.z),
-    ) {
-        (1, 0) => Some(ModuleFace::East),
-        (-1, 0) => Some(ModuleFace::West),
-        (0, 1) => Some(ModuleFace::South),
-        (0, -1) => Some(ModuleFace::North),
-        _ => None,
-    }
-}
-
-pub(super) fn observation_frame(runtime: &FullWfcRuntime) -> ObservationFrame {
-    let mut visible_cells = BTreeSet::from([runtime.player.cell]);
-    if let Some(target) = runtime.player.climb_target {
-        visible_cells.insert(target);
-    }
-    let mut visible_thresholds = BTreeSet::new();
-    if runtime
-        .world
-        .placement(runtime.player.cell)
-        .is_some_and(|placement| placement.space == ModuleSpace::Room)
+    frame.commands.insert(runtime.local_player, intent.command);
+    for id in runtime
+        .match_state
+        .players
+        .keys()
+        .copied()
+        .collect::<Vec<_>>()
     {
-        visible_thresholds.insert(ThresholdKey {
-            room: runtime.player.cell,
-            face: look_face(runtime.player.yaw, runtime.player.pitch),
-        });
-    }
-    ObservationFrame {
-        visible_cells,
-        visible_thresholds,
-        occupied_cells: BTreeMap::from([(runtime.player.id, runtime.player.cell)]),
-    }
-}
-
-fn look_face(yaw: f32, pitch: f32) -> ModuleFace {
-    if pitch > 0.72 {
-        return ModuleFace::Up;
-    }
-    if pitch < -0.72 {
-        return ModuleFace::Down;
-    }
-    let direction = Vec2::new(-yaw.sin(), -yaw.cos());
-    if direction.x.abs() > direction.y.abs() {
-        if direction.x > 0.0 {
-            ModuleFace::East
-        } else {
-            ModuleFace::West
+        if id != runtime.local_player {
+            frame
+                .commands
+                .insert(id, runtime.match_state.bot_command(id));
         }
-    } else if direction.y > 0.0 {
-        ModuleFace::South
-    } else {
-        ModuleFace::North
     }
+    let previous_generation = runtime.match_state.facility.generation;
+    runtime.match_state.step(&frame);
+    if let Some(replay) = replay.as_deref_mut() {
+        replay.record_full_wfc(&runtime.match_state);
+    }
+    if runtime.match_state.facility.generation != previous_generation {
+        runtime.pending_visual_changes = runtime
+            .match_state
+            .facility
+            .placements
+            .keys()
+            .copied()
+            .collect();
+    }
+    if let Some(event) = runtime.match_state.recent_events.last() {
+        runtime.status = event_label(event.kind).to_string();
+    }
+    clear_one_shot_input(&mut intent.command);
 }
 
-pub(super) fn world_position(coord: CellCoord) -> Vec3 {
-    Vec3::new(
-        f32::from(coord.x) * CELL_SIZE,
-        f32::from(coord.level) * LEVEL_HEIGHT + EYE_HEIGHT,
-        f32::from(coord.z) * CELL_SIZE,
-    )
+fn clear_one_shot_input(command: &mut PlayerCommand) {
+    command.intent.look = Vec2::ZERO;
+    command.intent.jump_pressed = false;
+    command.actions = Default::default();
+}
+
+fn event_label(kind: GameplayEventKind) -> &'static str {
+    match kind {
+        GameplayEventKind::MutationWarning => "the structure is breathing",
+        GameplayEventKind::MutationCommitted => "unseen rooms have mutated",
+        GameplayEventKind::MutationCancelled => "mutation held by observation",
+        GameplayEventKind::AnchorDeployed => "threshold anchor deployed",
+        GameplayEventKind::AnchorRecovered => "threshold anchor recovered",
+        GameplayEventKind::PadDeployed => "teleport pad deployed",
+        GameplayEventKind::PadRecovered => "teleport pad recovered",
+        GameplayEventKind::PadUsed => "teleport link traversed",
+        GameplayEventKind::KeystoneCollected => "keystone secured",
+        GameplayEventKind::DualStationProgress => "dual station synchronizing",
+        GameplayEventKind::DualStationCompleted => "exit authorization complete",
+        GameplayEventKind::MonitorSurveyed => "monitor survey copied to team map",
+        GameplayEventKind::GuardianCatch => "Guardian catch: player displaced",
+        GameplayEventKind::GuardianRedirected => "Guardian redirected",
+        GameplayEventKind::TeamEscaped => "team escaped; collapse countdown started",
+        GameplayEventKind::MatchFinished => "match complete",
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn runtime(seed: u64) -> FullWfcRuntime {
-        let world = FullWfcWorld::new(seed, FullWfcConfig::default()).expect("default solve");
-        let spawn = world.spawn();
-        FullWfcRuntime {
-            player: FullWfcPlayer {
-                id: LOCAL_PLAYER,
-                cell: spawn,
-                position: world_position(spawn),
-                yaw: -std::f32::consts::FRAC_PI_2,
-                pitch: 0.0,
-                climb_target: None,
-            },
-            ticks_until_pulse: world.config.pulse_ticks,
-            pending_visual_changes: BTreeSet::new(),
-            status: String::new(),
-            escaped: false,
-            world,
-        }
+    #[test]
+    fn all_non_local_actors_cross_the_same_command_boundary() {
+        let game = FullWfcMatch::new(44, FullWfcMatchConfig::default()).expect("match");
+        assert_eq!(game.players.len(), 8);
+        assert!(
+            game.players
+                .keys()
+                .filter(|&&id| id != LOCAL_PLAYER)
+                .all(|&id| {
+                    let _command = game.bot_command(id);
+                    true
+                })
+        );
     }
 
     #[test]
-    fn simulation_reports_player_id_and_only_the_faced_threshold() {
-        let runtime = runtime(11);
-        let frame = observation_frame(&runtime);
-        assert_eq!(frame.occupied_cells[&LOCAL_PLAYER], runtime.player.cell);
-        assert_eq!(frame.visible_thresholds.len(), 1);
+    fn full_wfc_replay_records_the_versioned_eight_actor_simulation() {
+        let mut game = FullWfcMatch::new(44, FullWfcMatchConfig::default()).expect("match");
+        let mut replay = crate::sim::replay::ReplayTape::new_full_wfc(&game);
+        let commands = game
+            .players
+            .keys()
+            .copied()
+            .map(|id| (id, game.bot_command(id)))
+            .collect();
+        game.step(&InputFrame {
+            tick: 1,
+            commands,
+            ..Default::default()
+        });
+        replay.record_full_wfc(&game);
         assert_eq!(
-            frame.visible_thresholds.iter().next().unwrap().face,
-            ModuleFace::East
+            replay.input_version,
+            observed_match::full_wfc::FULL_WFC_INPUT_VERSION
         );
-    }
-
-    #[test]
-    fn closed_cell_boundary_blocks_continuous_motion() {
-        let mut runtime = runtime(12);
-        let closed = ModuleFace::ALL
-            .into_iter()
-            .filter(|face| !matches!(face, ModuleFace::Up | ModuleFace::Down))
-            .find(|&face| !runtime.world.placements[&runtime.player.cell].is_open(face))
-            .expect("spawn room has a closed horizontal face");
-        runtime.player.position = match closed {
-            ModuleFace::East => Vec3::new(CELL_SIZE * 0.49, EYE_HEIGHT, 0.0),
-            ModuleFace::West => Vec3::new(-CELL_SIZE * 0.49, EYE_HEIGHT, 0.0),
-            ModuleFace::South => Vec3::new(0.0, EYE_HEIGHT, CELL_SIZE * 0.49),
-            ModuleFace::North => Vec3::new(0.0, EYE_HEIGHT, -CELL_SIZE * 0.49),
-            _ => unreachable!(),
-        };
-        let before = runtime.player.position;
-        try_axis(
-            &mut runtime,
-            if matches!(closed, ModuleFace::East | ModuleFace::South) {
-                1.0
-            } else {
-                -1.0
-            },
-            matches!(closed, ModuleFace::East | ModuleFace::West),
-        );
-        assert_eq!(runtime.player.position, before);
+        assert_eq!(replay.actors.len(), 8);
+        assert_eq!(replay.samples[0].actors.len(), 8);
+        assert!(!replay.rooms.is_empty());
     }
 }

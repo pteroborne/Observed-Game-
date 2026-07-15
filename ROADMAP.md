@@ -10,6 +10,10 @@ This document outlines the current active development goals, completed milestone
 
 ## Active & Upcoming Phases
 
+**Arc K — Full-WFC Gameplay Lock** `[implementation complete; playtest pending]` (plan and gate record: [docs/full_wfc_gameplay_arc_plan.md](docs/full_wfc_gameplay_arc_plan.md)). The continuous full-WFC lattice is now the canonical game and owns the full room/hall catalog, four-team co-op race, physical objectives, anchors, team pads, Guardian, survivor tac-map, audiovisual feedback, bots, replay, and results behind a deterministic multiplayer-ready input/snapshot boundary. The legacy teleport-place match is regression-only. Phases 78–84 are complete; Phase 85 awaits hands-on tuning before the multiplayer arc.
+
+---
+
 **Arc E — Ready to Race** (plan and design rules: [docs/ready_to_race_arc_plan.md](docs/ready_to_race_arc_plan.md)). The polish-and-presence arc: make the proven race a finished game a real person wants to play — onboarding, settings, audio, game-feel, and HUD clarity. **Scope ruling 2026-07-09:** the arc ends when Phase 50 lands; the LAN multiplayer phases (51–53) are deferred to the Post-MVP Backlog below (absorbed into "true LAN multiplayer with dedicated servers" — their design docs in `docs/arc_e/` are retained as design input).
 
 ### Phase 48 — Onboarding & Settings `[x]`

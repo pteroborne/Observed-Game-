@@ -77,6 +77,7 @@ pub struct ReplayMarker {
 #[derive(Resource, Clone, Debug, PartialEq)]
 pub struct ReplayTape {
     pub seed: u64,
+    pub input_version: u16,
     pub map_name: String,
     pub simulation_content_hash: [u8; 32],
     pub presentation_content_hash: [u8; 32],
@@ -111,6 +112,7 @@ impl ReplayTape {
     ) -> Self {
         let mut tape = Self {
             seed,
+            input_version: 0,
             map_name: map_spec.name.to_string(),
             simulation_content_hash,
             presentation_content_hash,
@@ -142,6 +144,136 @@ impl ReplayTape {
             tape.ensure_actor(ReplayActorId::Team(TeamId(team)));
         }
         tape
+    }
+
+    pub fn new_full_wfc(game: &observed_match::full_wfc::FullWfcMatch) -> Self {
+        let mut tape = Self {
+            seed: game.seed,
+            input_version: observed_match::full_wfc::FULL_WFC_INPUT_VERSION,
+            map_name: "full_wfc_v1".to_string(),
+            simulation_content_hash: [0; 32],
+            presentation_content_hash: [0; 32],
+            rooms: Vec::new(),
+            actors: Vec::new(),
+            samples: Vec::new(),
+            markers: Vec::new(),
+            result: None,
+            visited_rooms: Vec::new(),
+            collapsed_rooms: Vec::new(),
+            escape_order: Vec::new(),
+            keystones_collected: 0,
+            keystones_required: 2,
+            anchor_uses: 0,
+            seen_actors: BTreeSet::new(),
+            seen_markers: BTreeSet::new(),
+            anchor_was_placed: false,
+        };
+        tape.ensure_actor(ReplayActorId::LocalPlayer);
+        for player in game.players.values().filter(|player| player.id.0 != 0) {
+            tape.ensure_actor(ReplayActorId::Member {
+                team: player.team,
+                member: (player.id.0 % 2) as u8,
+            });
+        }
+        tape.sync_full_wfc_rooms(game);
+        tape
+    }
+
+    pub fn record_full_wfc(&mut self, game: &observed_match::full_wfc::FullWfcMatch) {
+        if self.seed != game.seed {
+            return;
+        }
+        self.sync_full_wfc_rooms(game);
+        let local = &game.players[&observed_core::PlayerId(0)];
+        if let Some(room) = game.facility.room_at(local.cell)
+            && !self.visited_rooms.contains(&room)
+        {
+            self.visited_rooms.push(room);
+        }
+        let local_team = &game.teams[&local.team];
+        self.keystones_collected = self
+            .keystones_collected
+            .max(u32::from(local_team.keystones));
+        self.escape_order.clone_from(&game.escape_order);
+        let anchor_is_placed = game.equipment.deployed.values().any(|item| {
+            item.team == local.team && item.kind == observed_match::full_wfc::DeployableKind::Anchor
+        });
+        if anchor_is_placed && !self.anchor_was_placed {
+            self.anchor_uses += 1;
+        }
+        self.anchor_was_placed = anchor_is_placed;
+
+        if game.tick.is_multiple_of(6) || self.samples.is_empty() {
+            let actors = game
+                .players
+                .values()
+                .map(|player| {
+                    let team = &game.teams[&player.team];
+                    ReplayActorPose {
+                        actor: if player.id.0 == 0 {
+                            ReplayActorId::LocalPlayer
+                        } else {
+                            ReplayActorId::Member {
+                                team: player.team,
+                                member: (player.id.0 % 2) as u8,
+                            }
+                        },
+                        room: game.facility.room_at(player.cell),
+                        place: None,
+                        status: if player.escaped {
+                            "escaped".to_string()
+                        } else if team.eliminated {
+                            "eliminated".to_string()
+                        } else {
+                            "active".to_string()
+                        },
+                        task: if team.keystones < 2 {
+                            format!("keystones {}/2", team.keystones)
+                        } else if !team.dual_station_complete {
+                            "dual station".to_string()
+                        } else {
+                            "reach exit".to_string()
+                        },
+                    }
+                })
+                .collect();
+            self.push_sample(
+                game.tick.min(u64::from(u32::MAX)) as u32,
+                game.facility.generation,
+                actors,
+            );
+        }
+        for event in &game.recent_events {
+            self.push_marker(
+                game.tick.min(u64::from(u32::MAX)) as u32,
+                game.facility.generation,
+                format!("t{} {:?}", game.tick, event.kind),
+            );
+        }
+    }
+
+    fn sync_full_wfc_rooms(&mut self, game: &observed_match::full_wfc::FullWfcMatch) {
+        let current = game.facility.rooms.keys().copied().collect::<BTreeSet<_>>();
+        self.collapsed_rooms = self
+            .rooms
+            .iter()
+            .filter_map(|room| (!current.contains(&room.id)).then_some(room.id))
+            .collect();
+        for room in game.facility.rooms.values() {
+            if self.rooms.iter().any(|existing| existing.id == room.id) {
+                continue;
+            }
+            self.rooms.push(ReplayRoom {
+                id: room.id,
+                schematic: Vec2::new(
+                    f32::from(room.coord.x)
+                        + f32::from(room.coord.level)
+                            * (f32::from(game.facility.config.cols) + 1.0),
+                    f32::from(room.coord.z),
+                ),
+                role: room.role,
+            });
+        }
     }
 
     pub fn ensure_actor(&mut self, id: ReplayActorId) {

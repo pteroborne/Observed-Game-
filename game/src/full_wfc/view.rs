@@ -5,28 +5,26 @@ use bevy::render::view::Hdr;
 use observed_facility::full_wfc::{
     CellCoord, ModuleFace, ModulePlacement, ModuleSpace, ThresholdKey,
 };
+use observed_match::full_wfc::{
+    CELL_SIZE, LEVEL_HEIGHT, SHAFT_OPENING, StructurePiece, StructureRole, WALL_HEIGHT,
+    WALL_THICKNESS,
+};
 use observed_style::{MarkerRole, ObservedState, SurfaceRole};
 
-use super::sim::{CELL_SIZE, FullWfcRuntime, LEVEL_HEIGHT};
+use super::sim::{EYE_OFFSET, FullWfcRuntime};
 use crate::GameState;
 use crate::view::components::{GameCam, GameSun, MENU_SUN_ILLUMINANCE};
 
-const WALL_HEIGHT: f32 = 4.55;
-const WALL_THICKNESS: f32 = 0.18;
-const FLOOR_THICKNESS: f32 = 0.16;
-const SHAFT_OPENING: f32 = 4.2;
-
 #[derive(Component)]
 pub(super) struct FullWfcCell(CellCoord);
-
-#[derive(Component)]
-pub(super) struct FullWfcHud;
 
 #[derive(Component)]
 pub(super) struct CandleLight;
 
 #[derive(Component)]
 pub(super) struct ThresholdSignal(ThresholdKey);
+
+type CameraLightFilter = (With<GameCam>, Without<CandleLight>);
 
 #[derive(Resource)]
 pub(super) struct FullWfcVisualAssets {
@@ -79,8 +77,14 @@ pub(super) fn setup_view(
         exit: material(&mut materials, observed_style::marker(MarkerRole::Exit)),
     };
 
-    for placement in runtime.world.placements.values() {
-        spawn_cell(&mut commands, &assets, placement, runtime.world.exit());
+    for placement in runtime.match_state.facility.placements.values() {
+        spawn_cell(
+            &mut commands,
+            &assets,
+            placement,
+            runtime.match_state.facility.exit(),
+            &runtime.match_state.geometry.pieces,
+        );
     }
     runtime.pending_visual_changes.clear();
 
@@ -109,6 +113,7 @@ pub(super) fn setup_view(
         brightness: 55.0,
         ..default()
     });
+    commands.insert_resource(ClearColor(Color::srgb(0.002, 0.006, 0.015)));
 
     let candle_color = observed_style::marker(MarkerRole::NextRoom).base_color;
     commands.spawn((
@@ -124,7 +129,6 @@ pub(super) fn setup_view(
         Transform::default(),
         Name::new("A* proximity candle"),
     ));
-    spawn_hud(&mut commands);
     commands.insert_resource(assets);
 }
 
@@ -146,6 +150,7 @@ fn spawn_cell(
     assets: &FullWfcVisualAssets,
     placement: &ModulePlacement,
     exit: CellCoord,
+    pieces: &[StructurePiece],
 ) {
     if placement.space == ModuleSpace::Void {
         return;
@@ -167,38 +172,30 @@ fn spawn_cell(
             )),
         ))
         .with_children(|cell| {
-            let floor_material = if placement.space == ModuleSpace::Room {
-                assets.room.clone()
-            } else {
-                assets.hall.clone()
-            };
-            spawn_deck(
-                cell,
-                assets,
-                floor_material,
-                placement.is_open(ModuleFace::Down),
-                0.0,
-                false,
-            );
-            spawn_deck(
-                cell,
-                assets,
-                assets.ceiling.clone(),
-                placement.is_open(ModuleFace::Up),
-                WALL_HEIGHT,
-                true,
-            );
-
+            for piece in pieces.iter().filter(|piece| piece.cell == placement.coord) {
+                let material = match piece.role {
+                    StructureRole::Floor if placement.space == ModuleSpace::Room => {
+                        assets.room.clone()
+                    }
+                    StructureRole::Floor => assets.hall.clone(),
+                    StructureRole::Ceiling => assets.ceiling.clone(),
+                    StructureRole::Wall | StructureRole::Feature => assets.wall.clone(),
+                };
+                spawn_cube(
+                    cell,
+                    assets,
+                    material,
+                    piece.half * 2.0,
+                    piece.center - center,
+                );
+            }
             for face in [
                 ModuleFace::East,
                 ModuleFace::West,
                 ModuleFace::South,
                 ModuleFace::North,
             ] {
-                if !placement.is_open(face) {
-                    spawn_wall(cell, assets, face);
-                }
-                if placement.space == ModuleSpace::Room {
+                if placement.space == ModuleSpace::Room && placement.is_open(face) {
                     spawn_threshold_frame(
                         cell,
                         assets,
@@ -211,14 +208,16 @@ fn spawn_cell(
             }
             if placement.space == ModuleSpace::Room {
                 for face in [ModuleFace::Up, ModuleFace::Down] {
-                    spawn_vertical_threshold(
-                        cell,
-                        assets,
-                        ThresholdKey {
-                            room: placement.coord,
-                            face,
-                        },
-                    );
+                    if placement.is_open(face) {
+                        spawn_vertical_threshold(
+                            cell,
+                            assets,
+                            ThresholdKey {
+                                room: placement.coord,
+                                face,
+                            },
+                        );
+                    }
                 }
             }
             if placement.coord == exit {
@@ -238,94 +237,6 @@ fn spawn_cell(
                 ));
             }
         });
-}
-
-fn spawn_deck(
-    parent: &mut ChildSpawnerCommands,
-    assets: &FullWfcVisualAssets,
-    material: Handle<StandardMaterial>,
-    has_hole: bool,
-    y: f32,
-    ceiling: bool,
-) {
-    let thickness = FLOOR_THICKNESS;
-    let y = if ceiling {
-        y + thickness * 0.5
-    } else {
-        y - thickness * 0.5
-    };
-    if !has_hole {
-        spawn_cube(
-            parent,
-            assets,
-            material,
-            Vec3::new(
-                CELL_SIZE - WALL_THICKNESS,
-                thickness,
-                CELL_SIZE - WALL_THICKNESS,
-            ),
-            Vec3::new(0.0, y, 0.0),
-        );
-        return;
-    }
-    let side = (CELL_SIZE - SHAFT_OPENING) * 0.5;
-    for x in [-1.0, 1.0] {
-        spawn_cube(
-            parent,
-            assets,
-            material.clone(),
-            Vec3::new(side, thickness, CELL_SIZE),
-            Vec3::new(x * (SHAFT_OPENING + side) * 0.5, y, 0.0),
-        );
-    }
-    for z in [-1.0, 1.0] {
-        spawn_cube(
-            parent,
-            assets,
-            material.clone(),
-            Vec3::new(SHAFT_OPENING, thickness, side),
-            Vec3::new(0.0, y, z * (SHAFT_OPENING + side) * 0.5),
-        );
-    }
-}
-
-fn spawn_wall(parent: &mut ChildSpawnerCommands, assets: &FullWfcVisualAssets, face: ModuleFace) {
-    let (size, position) = match face {
-        ModuleFace::East => (
-            Vec3::new(WALL_THICKNESS, WALL_HEIGHT, CELL_SIZE),
-            Vec3::new(
-                CELL_SIZE * 0.5 - WALL_THICKNESS * 0.5,
-                WALL_HEIGHT * 0.5,
-                0.0,
-            ),
-        ),
-        ModuleFace::West => (
-            Vec3::new(WALL_THICKNESS, WALL_HEIGHT, CELL_SIZE),
-            Vec3::new(
-                -CELL_SIZE * 0.5 + WALL_THICKNESS * 0.5,
-                WALL_HEIGHT * 0.5,
-                0.0,
-            ),
-        ),
-        ModuleFace::South => (
-            Vec3::new(CELL_SIZE, WALL_HEIGHT, WALL_THICKNESS),
-            Vec3::new(
-                0.0,
-                WALL_HEIGHT * 0.5,
-                CELL_SIZE * 0.5 - WALL_THICKNESS * 0.5,
-            ),
-        ),
-        ModuleFace::North => (
-            Vec3::new(CELL_SIZE, WALL_HEIGHT, WALL_THICKNESS),
-            Vec3::new(
-                0.0,
-                WALL_HEIGHT * 0.5,
-                -CELL_SIZE * 0.5 + WALL_THICKNESS * 0.5,
-            ),
-        ),
-        ModuleFace::Up | ModuleFace::Down => return,
-    };
-    spawn_cube(parent, assets, assets.wall.clone(), size, position);
 }
 
 fn spawn_threshold_frame(
@@ -435,74 +346,6 @@ fn spawn_cube(
     ));
 }
 
-fn spawn_hud(commands: &mut Commands) {
-    commands
-        .spawn((
-            DespawnOnExit(GameState::FullWfc),
-            Node {
-                width: percent(100),
-                height: percent(100),
-                padding: UiRect::all(px(18)),
-                justify_content: JustifyContent::SpaceBetween,
-                align_items: AlignItems::FlexStart,
-                ..default()
-            },
-            GlobalZIndex(30),
-            Name::new("Full WFC HUD root"),
-        ))
-        .with_children(|root| {
-            root.spawn((
-                FullWfcHud,
-                Text::new("Full WFC initializing"),
-                TextFont {
-                    font_size: 16.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(0.88, 0.95, 1.0)),
-                Node {
-                    width: px(470),
-                    padding: UiRect::all(px(14)),
-                    border: UiRect::all(px(1)),
-                    ..default()
-                },
-                BackgroundColor(Color::srgba(0.008, 0.018, 0.035, 0.9)),
-                BorderColor::all(Color::srgba(0.35, 0.9, 1.0, 0.6)),
-            ));
-            root.spawn((
-                Text::new(
-                    "FULL WFC EXPERIMENT\nWASD move | Shift sprint\nMouse / arrows look\nSpace climb up | Ctrl climb down\nEsc return to menu\n\nCandle: A* travel-cost proximity\nCyan frames: mutable threshold\nGold frames: observed / frozen\nRed frames: competing exit path sealed",
-                ),
-                TextFont {
-                    font_size: 14.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(0.70, 0.78, 0.9)),
-                Node {
-                    width: px(330),
-                    padding: UiRect::all(px(14)),
-                    border: UiRect::all(px(1)),
-                    ..default()
-                },
-                BackgroundColor(Color::srgba(0.008, 0.018, 0.035, 0.88)),
-                BorderColor::all(Color::srgba(0.35, 0.9, 1.0, 0.45)),
-            ));
-            root.spawn((
-                Text::new("+"),
-                TextFont {
-                    font_size: 22.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(0.9, 0.95, 1.0)),
-                Node {
-                    position_type: PositionType::Absolute,
-                    left: percent(50),
-                    top: percent(48),
-                    ..default()
-                },
-            ));
-        });
-}
-
 pub(super) fn sync_changed_geometry(
     mut commands: Commands,
     mut runtime: ResMut<FullWfcRuntime>,
@@ -519,10 +362,36 @@ pub(super) fn sync_changed_geometry(
         }
     }
     for coord in changed {
-        if let Some(placement) = runtime.world.placement(coord) {
-            spawn_cell(&mut commands, &assets, placement, runtime.world.exit());
+        if let Some(placement) = runtime.match_state.facility.placement(coord) {
+            spawn_cell(
+                &mut commands,
+                &assets,
+                placement,
+                runtime.match_state.facility.exit(),
+                &runtime.match_state.geometry.pieces,
+            );
         }
     }
+}
+
+pub(super) fn sync_streamed_cells(
+    runtime: Res<FullWfcRuntime>,
+    mut cells: Query<(&FullWfcCell, &mut Visibility)>,
+) {
+    let center = runtime.local().cell;
+    for (cell, mut visibility) in &mut cells {
+        *visibility = if cell_is_streamed(center, cell.0) {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
+    }
+}
+
+fn cell_is_streamed(center: CellCoord, candidate: CellCoord) -> bool {
+    center.x.abs_diff(candidate.x) <= 3
+        && center.z.abs_diff(candidate.z) <= 3
+        && center.level.abs_diff(candidate.level) <= 1
 }
 
 pub(super) fn sync_threshold_signals(
@@ -530,12 +399,17 @@ pub(super) fn sync_threshold_signals(
     assets: Res<FullWfcVisualAssets>,
     mut signals: Query<(&ThresholdSignal, &mut MeshMaterial3d<StandardMaterial>)>,
 ) {
-    let observed = &runtime.world.observation.visible_thresholds;
     for (signal, mut material) in &mut signals {
         let sealed = terminal_face_is_reserved(&runtime, signal.0);
+        let anchored = runtime
+            .match_state
+            .equipment
+            .anchors_in(signal.0.room)
+            .next()
+            .is_some();
         material.0 = if sealed {
             assets.threshold_sealed.clone()
-        } else if observed.contains(&signal.0) {
+        } else if anchored {
             assets.threshold_observed.clone()
         } else {
             assets.threshold_unobserved.clone()
@@ -544,17 +418,20 @@ pub(super) fn sync_threshold_signals(
 }
 
 fn terminal_face_is_reserved(runtime: &FullWfcRuntime, threshold: ThresholdKey) -> bool {
-    if threshold.room == runtime.world.exit() {
-        return runtime.world.reserved_exit_faces.contains(&threshold.face);
+    let world = &runtime.match_state.facility;
+    if threshold.room == world.exit() {
+        return world.reserved_exit_faces.contains(&threshold.face);
     }
     runtime
-        .world
+        .match_state
+        .facility
         .config
         .neighbor(threshold.room, threshold.face)
         .is_some_and(|next| {
-            next == runtime.world.exit()
+            next == world.exit()
                 && runtime
-                    .world
+                    .match_state
+                    .facility
                     .reserved_exit_faces
                     .contains(&threshold.face.opposite())
         })
@@ -562,66 +439,47 @@ fn terminal_face_is_reserved(runtime: &FullWfcRuntime, threshold: ThresholdKey) 
 
 pub(super) fn sync_camera_and_candle(
     runtime: Res<FullWfcRuntime>,
-    mut camera: Query<&mut Transform, (With<GameCam>, Without<CandleLight>)>,
+    mut camera: Query<(&mut Transform, &mut DistanceFog), CameraLightFilter>,
     mut candle: Query<(&mut Transform, &mut PointLight), With<CandleLight>>,
 ) {
-    let rotation = Quat::from_euler(EulerRot::YXZ, runtime.player.yaw, runtime.player.pitch, 0.0);
-    if let Ok(mut transform) = camera.single_mut() {
-        transform.translation = runtime.player.position;
+    let player = runtime.local();
+    let rotation = Quat::from_euler(EulerRot::YXZ, player.yaw, player.pitch, 0.0);
+    let pressure = runtime.match_state.guardian_pressure(runtime.local_player);
+    if let Ok((mut transform, mut fog)) = camera.single_mut() {
+        transform.translation = player.position + Vec3::Y * EYE_OFFSET;
         transform.rotation = rotation;
+        fog.falloff = FogFalloff::Linear {
+            start: 16.0 - pressure * 8.0,
+            end: 42.0 - pressure * 25.0,
+        };
     }
-    let proximity = runtime.world.candle_proximity(runtime.player.cell);
+    let proximity = runtime.match_state.facility.candle_proximity(player.cell);
+    let warning = runtime.match_state.mutation_warning_progress();
     if let Ok((mut transform, mut light)) = candle.single_mut() {
         let forward = rotation * Vec3::NEG_Z;
         let right = rotation * Vec3::X;
         transform.translation =
-            runtime.player.position + forward * 0.35 + right * 0.28 - Vec3::Y * 0.28;
-        light.intensity = 180.0 + proximity.powf(1.6) * 2_300.0;
-        light.range = 8.0 + proximity * 11.0;
-    }
-}
-
-pub(super) fn sync_hud(runtime: Res<FullWfcRuntime>, mut hud: Query<&mut Text, With<FullWfcHud>>) {
-    if !runtime.is_changed() {
-        return;
-    }
-    let Ok(mut text) = hud.single_mut() else {
-        return;
-    };
-    let proximity = runtime.world.candle_proximity(runtime.player.cell);
-    let observed = runtime
-        .world
-        .observation
-        .visible_thresholds
-        .iter()
-        .next()
-        .map_or("none".to_string(), |key| format!("{:?}", key.face));
-    let exit_rule = runtime
-        .world
-        .exit_claim
-        .as_ref()
-        .map_or("exit unclaimed".to_string(), |claim| {
-            format!("exit chain claimed by {}", claim.owner.label())
-        });
-    let space = runtime.world.placements[&runtime.player.cell].space;
-    **text = format!(
-        "GENERATION {}  |  pulse in {:.1}s\nlevel {}  |  {:?} ({}, {})  |  candle {:.0}%\nobserved threshold: {}  |  {}\n{}{}",
-        runtime.world.generation,
-        runtime.ticks_until_pulse as f32 / 60.0,
-        runtime.player.cell.level,
-        space,
-        runtime.player.cell.x,
-        runtime.player.cell.z,
-        proximity * 100.0,
-        observed,
-        exit_rule,
-        runtime.status,
-        if runtime.escaped {
-            "\n\nEXIT REACHED - Esc returns to the menu"
+            player.position + Vec3::Y * EYE_OFFSET + forward * 0.35 + right * 0.28 - Vec3::Y * 0.28;
+        let guardian_flicker = if pressure > 0.0 && runtime.match_state.tick % 17 < 3 {
+            0.35
         } else {
-            ""
-        }
-    );
+            1.0
+        };
+        let breathing = 1.0 + (warning * std::f32::consts::TAU * 2.0).sin().abs() * 0.28;
+        let mutation_cut = if runtime.match_state.recent_events.iter().any(|event| {
+            event.kind == observed_match::full_wfc::GameplayEventKind::MutationCommitted
+        }) {
+            0.08
+        } else {
+            1.0
+        };
+        light.intensity = (180.0 + proximity.powf(1.6) * 2_300.0)
+            * (1.0 - pressure * 0.62)
+            * guardian_flicker
+            * breathing
+            * mutation_cut;
+        light.range = (8.0 + proximity * 11.0) * (1.0 - pressure * 0.55);
+    }
 }
 
 pub(super) fn clear_view(
@@ -642,5 +500,6 @@ pub(super) fn clear_view(
         brightness: 900.0,
         ..default()
     });
+    commands.insert_resource(ClearColor(Color::srgb(0.045, 0.05, 0.065)));
     commands.remove_resource::<FullWfcVisualAssets>();
 }

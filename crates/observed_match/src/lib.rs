@@ -26,6 +26,7 @@ pub mod competition;
 pub mod director;
 pub mod elimination;
 pub mod facility;
+pub mod full_wfc;
 pub mod hybrid;
 pub mod maze;
 pub mod mutable;

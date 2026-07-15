@@ -1633,7 +1633,7 @@ fn results_screen_renders_every_outcome_shape() {
 }
 
 #[test]
-fn results_rematch_launches_same_config_directly_with_a_new_seed() {
+fn results_rematch_launches_full_wfc_directly_with_a_new_seed() {
     let mut app = test_app();
     let previous = 99_u64;
     app.insert_resource(flow::ActiveMatchSeed(previous));
@@ -1660,7 +1660,7 @@ fn results_rematch_launches_same_config_directly_with_a_new_seed() {
 
     assert_eq!(
         *app.world().resource::<State<GameState>>().get(),
-        GameState::Match
+        GameState::FullWfc
     );
     assert_ne!(
         app.world().resource::<flow::ActiveMatchSeed>().0,
@@ -1738,92 +1738,10 @@ fn equipping_a_cosmetic_from_the_loadout_persists_in_the_career() {
 }
 
 #[test]
-fn spectate_ai_menu_option_launches_a_bot_driven_match() {
+fn play_launches_the_continuous_full_wfc_match() {
     let mut app = test_app();
     go(&mut app, GameState::MainMenu);
-    app.world_mut().resource_mut::<screens::MenuCursor>().0 = 1;
-    app.world_mut()
-        .resource_mut::<ButtonInput<KeyCode>>()
-        .press(KeyCode::Enter);
-    app.world_mut().run_schedule(Update);
-    app.update();
-
-    assert_eq!(
-        *app.world().resource::<State<GameState>>().get(),
-        GameState::Match
-    );
-    assert!(
-        app.world()
-            .contains_resource::<crate::sim::state::SpectatorBot>()
-    );
-    let active_seed = app.world().resource::<flow::ActiveMatchSeed>().0;
-    {
-        let bot = app.world().resource::<crate::sim::state::SpectatorBot>();
-        assert_eq!(
-            bot.seed, active_seed,
-            "spectator mode and the match use the same launch seed"
-        );
-        assert!(
-            bot.teamplay.plan.solvable(),
-            "spectator mode owns a valid procedural co-op seed plan"
-        );
-        assert_eq!(
-            bot.teamplay
-                .team(flow::LOCAL_TEAM)
-                .expect("local bot team exists")
-                .members
-                .len(),
-            observed_match::facility::MEMBERS_PER_TEAM,
-            "spectator mode drives a two-member team, not a single abstract runner"
-        );
-    }
-
-    let before_teamplay_tick = app
-        .world()
-        .resource::<crate::sim::state::SpectatorBot>()
-        .teamplay
-        .tick;
-    app.world_mut().run_schedule(FixedUpdate);
-    assert_eq!(
-        app.world()
-            .resource::<crate::sim::state::SpectatorBot>()
-            .teamplay
-            .tick,
-        before_teamplay_tick,
-        "the procedural co-op brain should not fast-forward on a single fixed frame"
-    );
-    for _ in 1..crate::screens::match_runtime::spectator::SPECTATOR_TEAMPLAY_STEP_FRAMES {
-        app.world_mut().run_schedule(FixedUpdate);
-    }
-    assert!(
-        app.world()
-            .resource::<crate::sim::state::SpectatorBot>()
-            .teamplay
-            .tick
-            > before_teamplay_tick,
-        "the spectator bot should advance the procedural co-op brain"
-    );
-    assert!(
-        app.world()
-            .resource::<crate::sim::state::MatchIntent>()
-            .0
-            .movement
-            .y
-            > 0.0
-            || app
-                .world()
-                .resource::<crate::sim::state::SpectatorBot>()
-                .route_place
-                .is_some(),
-        "the spectator bot should take over the player body"
-    );
-}
-
-#[test]
-fn full_wfc_menu_option_launches_the_continuous_experiment() {
-    let mut app = test_app();
-    go(&mut app, GameState::MainMenu);
-    app.world_mut().resource_mut::<screens::MenuCursor>().0 = 2;
+    app.world_mut().resource_mut::<screens::MenuCursor>().0 = 0;
     app.world_mut()
         .resource_mut::<ButtonInput<KeyCode>>()
         .press(KeyCode::Enter);
@@ -1837,7 +1755,7 @@ fn full_wfc_menu_option_launches_the_continuous_experiment() {
     assert!(
         !app.world()
             .contains_resource::<crate::sim::state::SpectatorBot>(),
-        "the first full-WFC slice is one local runner, not the spectator teamplay mode"
+        "Full WFC owns its eight-player command simulation, not the legacy spectator resource"
     );
 }
 

@@ -104,6 +104,25 @@ pub fn resolve_series(series: &EliminationSeries) -> MatchResult {
     }
 }
 
+/// Resolve the canonical continuous full-WFC match into the existing career/result
+/// envelope. Networking can later transmit the match snapshot without changing this
+/// presentation-facing outcome.
+pub fn resolve_full_wfc(game: &observed_match::full_wfc::FullWfcMatch) -> MatchResult {
+    let placement = game
+        .escape_order
+        .iter()
+        .position(|team| *team == LOCAL_TEAM)
+        .map(|index| index as u8 + 1);
+    let winner = game.escape_order.first().copied();
+    MatchResult {
+        placement,
+        escaped: game.teams.values().filter(|team| team.escaped).count(),
+        absorbed: game.teams.values().filter(|team| team.eliminated).count(),
+        winner,
+        local_won: winner == Some(LOCAL_TEAM),
+    }
+}
+
 /// Run a whole deterministic match to its end (headless — used by the career loop
 /// and tests). This is the *same* [`MatchDirector`] the interactive Match screen
 /// steps frame by frame, run to completion in one call, so a headless career match
