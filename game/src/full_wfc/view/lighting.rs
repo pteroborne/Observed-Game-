@@ -85,7 +85,12 @@ pub(in crate::full_wfc) fn sync_camera_and_candle(
     mut candle: Query<(&mut Transform, &mut PointLight), With<CandleLight>>,
 ) {
     let player = runtime.local();
-    let rotation = Quat::from_euler(EulerRot::YXZ, player.yaw, player.pitch, 0.0);
+    let f = Vec3::new(player.yaw.sin(), 0.0, -player.yaw.cos());
+    let (sp, cp) = player.pitch.sin_cos();
+    let look_dir = Vec3::new(f.x * cp, sp, f.z * cp);
+    let rotation = Transform::from_translation(Vec3::ZERO)
+        .looking_to(look_dir, Vec3::Y)
+        .rotation;
     let pressure = runtime.match_state.guardian_pressure(runtime.local_player);
     let style_focus = capture
         .as_deref()

@@ -481,7 +481,7 @@ pub(crate) fn menu_activate(
             info!("MATCH_START mode=spectate seed={seed}");
             commands.insert_resource(crate::flow::ActiveMatchSeed(seed));
             commands.insert_resource(SpectatorBot::for_seed(seed));
-            next.set(GameState::Match);
+            next.set(GameState::FullWfc);
         }
         MenuAction::Equip(id) => {
             if career.profile.equip(id) {
