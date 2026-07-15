@@ -246,6 +246,35 @@ pub enum MarkerRole {
     Director,
 }
 
+/// The durable state reported by an always-open full-WFC threshold frame.
+/// Player observation freezes geometry transiently but deliberately does not alter
+/// this indicator; only an anchor or a sealed connection changes the read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ThresholdFrameState {
+    /// The connection may refactor once it is no longer observed or occupied.
+    Mutable,
+    /// An anchor holds the connection durably.
+    Anchored,
+    /// The connection is no longer traversable.
+    Sealed,
+}
+
+impl ThresholdFrameState {
+    pub const ALL: [ThresholdFrameState; 3] = [
+        ThresholdFrameState::Mutable,
+        ThresholdFrameState::Anchored,
+        ThresholdFrameState::Sealed,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            ThresholdFrameState::Mutable => "threshold: mutable",
+            ThresholdFrameState::Anchored => "threshold: anchor-locked",
+            ThresholdFrameState::Sealed => "threshold: sealed",
+        }
+    }
+}
+
 /// A semantic layer in a diegetic observation-panel feed.
 ///
 /// Panel presentation uses these roles instead of inventing local colours: the dark
@@ -571,6 +600,22 @@ pub fn marker(role: MarkerRole) -> Treatment {
     }
 }
 
+/// Signal-tier indicator treatment for an always-open threshold frame. The three
+/// states also retain explicit names in the diegetic legend, so hue is not the only
+/// information channel.
+pub fn threshold_frame(state: ThresholdFrameState) -> Treatment {
+    match state {
+        ThresholdFrameState::Mutable => Treatment {
+            base_color: Color::srgb(0.18, 0.88, 1.0),
+            emissive: LinearRgba::rgb(0.65, 5.5, 7.0),
+            signal: true,
+            edge: Some(Color::srgb(0.18, 0.88, 1.0)),
+        },
+        ThresholdFrameState::Anchored => marker(MarkerRole::Control),
+        ThresholdFrameState::Sealed => marker(MarkerRole::Collapse),
+    }
+}
+
 /// The neon-noir treatment for one layer of a diegetic room-camera schematic.
 ///
 /// The footprint and doorway are bright enough to remain readable against the dark
@@ -843,6 +888,7 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
             palette.ambient_brightness = 115.0;
             palette.fog_start = 18.0;
             palette.fog_end = 48.0;
+            palette.key_shadows_enabled = false;
         }
         Register::Institutional => {
             palette.ambient_color = Color::srgb(0.72, 0.74, 0.70);
@@ -855,14 +901,14 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
         }
         Register::FacetMonument => {
             palette.ambient_brightness = DISTRICT_MIN_AMBIENT_BRIGHTNESS;
-            palette.fog_start = 7.0;
+            palette.fog_start = DISTRICT_MIN_FOG_START;
             palette.fog_end = 34.0;
             palette.key_intensity = 95_000_000.0;
             palette.key_range = 64.0;
         }
         Register::Megastructure => {
             palette.ambient_brightness = DISTRICT_MIN_AMBIENT_BRIGHTNESS;
-            palette.fog_start = 6.0;
+            palette.fog_start = DISTRICT_MIN_FOG_START;
             palette.fog_end = 31.0;
             palette.key_range = 75.0;
             palette.pools_rhythm = true;
@@ -884,6 +930,30 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
             palette.fog_end = 34.0;
         }
     }
+    palette
+}
+
+/// Apply the countdown alarm to an architecture palette without allowing the
+/// atmosphere to escape the shared legibility bounds.
+pub fn klaxon_modulate(mut palette: DistrictPalette) -> DistrictPalette {
+    fn lerp_color(a: Color, b: Color, t: f32) -> Color {
+        let (a, b) = (a.to_srgba(), b.to_srgba());
+        Color::srgb(
+            a.red + (b.red - a.red) * t,
+            a.green + (b.green - a.green) * t,
+            a.blue + (b.blue - a.blue) * t,
+        )
+    }
+
+    let alarm = klaxon();
+    palette.ambient_color = lerp_color(palette.ambient_color, alarm.base_color, 0.72);
+    palette.ambient_brightness = (palette.ambient_brightness * 0.9).clamp(
+        DISTRICT_MIN_AMBIENT_BRIGHTNESS,
+        DISTRICT_MAX_AMBIENT_BRIGHTNESS,
+    );
+    palette.fog_color = lerp_color(palette.fog_color, alarm.base_color, 0.35);
+    palette.light_color = alarm.edge.unwrap_or(alarm.base_color);
+    palette.key_color = alarm.edge.unwrap_or(alarm.base_color);
     palette
 }
 
@@ -1182,6 +1252,7 @@ pub fn legend() -> Vec<(&'static str, Treatment)> {
     let mut out = Vec::with_capacity(
         SurfaceRole::ALL.len()
             + MarkerRole::ALL.len()
+            + ThresholdFrameState::ALL.len()
             + ObservationPanelRole::ALL.len()
             + DoorIdentityRole::ALL.len(),
     );
@@ -1190,6 +1261,9 @@ pub fn legend() -> Vec<(&'static str, Treatment)> {
     }
     for role in MarkerRole::ALL {
         out.push((role.label(), marker(role)));
+    }
+    for state in ThresholdFrameState::ALL {
+        out.push((state.label(), threshold_frame(state)));
     }
     for role in ObservationPanelRole::ALL {
         out.push((role.label(), observation_panel(role)));
@@ -1357,6 +1431,9 @@ mod tests {
         let mut signals: Vec<Treatment> = Vec::new();
         for role in MarkerRole::ALL {
             signals.push(marker(role));
+        }
+        for state in ThresholdFrameState::ALL {
+            signals.push(threshold_frame(state));
         }
         for role in DoorIdentityRole::ALL {
             signals.push(door_identity(role));
@@ -1534,6 +1611,7 @@ mod tests {
             legend.len(),
             SurfaceRole::ALL.len()
                 + MarkerRole::ALL.len()
+                + ThresholdFrameState::ALL.len()
                 + ObservationPanelRole::ALL.len()
                 + DoorIdentityRole::ALL.len(),
         );
@@ -1664,5 +1742,28 @@ mod tests {
         );
         assert!(architecture(ArchitectureRegister::Wellshaft).pools_rhythm);
         assert!(architecture(ArchitectureRegister::Megastructure).fog_end <= 31.0);
+        assert!(!architecture(ArchitectureRegister::OverlitGrid).key_shadows_enabled);
+    }
+
+    #[test]
+    fn threshold_frames_report_durable_state_not_observation() {
+        let treatments: Vec<Treatment> = ThresholdFrameState::ALL
+            .iter()
+            .map(|state| threshold_frame(*state))
+            .collect();
+        for (state, treatment) in ThresholdFrameState::ALL.iter().zip(treatments.iter()) {
+            assert!(treatment.signal, "{} must be signal-tier", state.label());
+            assert!(luminance(treatment.emissive) >= SIGNAL_MIN_LUMINANCE);
+        }
+        assert_eq!(
+            threshold_frame(ThresholdFrameState::Anchored),
+            marker(MarkerRole::Control)
+        );
+        assert_eq!(
+            threshold_frame(ThresholdFrameState::Sealed),
+            marker(MarkerRole::Collapse)
+        );
+        assert_ne!(treatments[0], treatments[1]);
+        assert_ne!(treatments[1], treatments[2]);
     }
 }

@@ -11,6 +11,7 @@ use observed_match::facility::TEAM_COUNT;
 use observed_style::{self as style, MarkerRole, SurfaceRole};
 
 use super::actor_metadata::SpriteMetadata;
+use super::environment::{load_content_scene, load_repeating_texture};
 use crate::layout::{HALL_WIDTH, PLACE_TILE, WALL_HEIGHT};
 use crate::view::theme::TEAM_COLORS;
 
@@ -125,16 +126,6 @@ pub(crate) fn textured_neon_material(
         material.unlit = t.signal;
     }
     material
-}
-
-/// The sampler for structural surface albedo: world-unit UVs tile the texture, so it
-/// must repeat in both axes instead of clamping (Bevy's default) to the border texel.
-fn repeating_sampler() -> bevy::image::ImageSamplerDescriptor {
-    bevy::image::ImageSamplerDescriptor {
-        address_mode_u: bevy::image::ImageAddressMode::Repeat,
-        address_mode_v: bevy::image::ImageAddressMode::Repeat,
-        ..default()
-    }
 }
 
 fn srgb_rgb(color: Color) -> [f32; 3] {
@@ -370,19 +361,8 @@ impl MatchAssets {
         // so their albedo must sample with a repeating address mode. Bevy's default
         // sampler clamps to the edge, which smears the border texel across the whole
         // surface — the flat, texture-less look bug backlog #2 captured.
-        let load_repeating_texture = |path: &'static str| {
-            asset_present(path).then(|| {
-                asset_server.load_with_settings(
-                    path,
-                    |settings: &mut bevy::image::ImageLoaderSettings| {
-                        settings.sampler =
-                            bevy::image::ImageSampler::Descriptor(repeating_sampler());
-                    },
-                )
-            })
-        };
-        let wall_texture = load_repeating_texture(WALL_TEX);
-        let floor_texture = load_repeating_texture(FLOOR_TEX);
+        let wall_texture = load_repeating_texture(asset_server, WALL_TEX);
+        let floor_texture = load_repeating_texture(asset_server, FLOOR_TEX);
 
         let floor_material = materials.add(textured_neon_material(
             &style::surface(SurfaceRole::Plain),
@@ -542,18 +522,6 @@ impl MatchAssets {
             asset_present(path)
                 .then(|| asset_server.load(GltfAssetLabel::Scene(0).from_asset(path)))
         };
-        let load_content_scene = |id: &str| {
-            content_manifest
-                .assets
-                .iter()
-                .find(|asset| asset.id == id)
-                .filter(|asset| asset_present(&asset.path))
-                .map(|asset| ContentScene {
-                    scene: asset_server
-                        .load(GltfAssetLabel::Scene(0).from_asset(asset.path.clone())),
-                    scale: asset.scale,
-                })
-        };
         let load_sound = |path: &'static str| {
             asset_present(path).then(|| asset_server.load::<AudioSource>(path))
         };
@@ -642,8 +610,8 @@ impl MatchAssets {
             bot: load_scene(BOT_MODEL),
             equipment: load_scene(EQUIPMENT_MODEL),
             hazard: load_scene(HAZARD_MODEL),
-            threshold_gate: load_content_scene("kenney_gate"),
-            cable_bundle: load_content_scene("kenney_cables"),
+            threshold_gate: load_content_scene(asset_server, content_manifest, "kenney_gate"),
+            cable_bundle: load_content_scene(asset_server, content_manifest, "kenney_cables"),
             runner_stand: load_texture(RUNNER_STAND_SPRITE),
             runner_walk1: load_texture(RUNNER_WALK1_SPRITE),
             runner_walk2: load_texture(RUNNER_WALK2_SPRITE),
@@ -690,7 +658,7 @@ impl MatchAssets {
             decor_torch: load_texture(DECOR_TORCH_SPRITE),
             decor_lab_crate: load_texture(DECOR_LAB_CRATE_SPRITE),
             decor_lab_table: load_texture(DECOR_LAB_TABLE_SPRITE),
-            wall_albedo_lab: load_repeating_texture(WALL_ALBEDO_LAB_TEX),
+            wall_albedo_lab: load_repeating_texture(asset_server, WALL_ALBEDO_LAB_TEX),
         }
     }
 

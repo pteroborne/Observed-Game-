@@ -17,6 +17,10 @@ pub const WALL_HEIGHT: f32 = 5.0;
 pub const WALL_THICKNESS: f32 = 0.36;
 pub const FLOOR_THICKNESS: f32 = 0.28;
 pub const SHAFT_OPENING: f32 = 3.2;
+/// Clear width of every horizontal room-to-hall threshold.
+pub const THRESHOLD_WIDTH: f32 = 4.5;
+/// Clear height below the structural threshold header.
+pub const THRESHOLD_CLEAR_HEIGHT: f32 = WALL_HEIGHT - 0.34;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StructureRole {
@@ -86,7 +90,9 @@ impl FullWfcGeometrySnapshot {
                 ModuleFace::South,
                 ModuleFace::North,
             ] {
-                if !placement.is_open(face) && owns_boundary(world, placement.coord, face) {
+                if placement.is_open(face) && placement.space == ModuleSpace::Room {
+                    push_aperture_wall(&mut pieces, &mut next_id, placement.coord, face);
+                } else if !placement.is_open(face) && owns_boundary(world, placement.coord, face) {
                     let (offset, half) = wall_shape(face);
                     push_piece(
                         &mut pieces,
@@ -359,6 +365,82 @@ fn wall_shape(face: ModuleFace) -> (Vec3, Vec3) {
     }
 }
 
+fn push_aperture_wall(
+    pieces: &mut Vec<StructurePiece>,
+    next_id: &mut u32,
+    cell: CellCoord,
+    face: ModuleFace,
+) {
+    let base = cell_origin(cell);
+    let horizontal = CELL_SIZE * 0.5 - WALL_THICKNESS * 0.5;
+    let side_width = (CELL_SIZE - THRESHOLD_WIDTH) * 0.5;
+    let side_offset = THRESHOLD_WIDTH * 0.5 + side_width * 0.5;
+    let side_half = side_width * 0.5;
+    let header_height = WALL_HEIGHT - THRESHOLD_CLEAR_HEIGHT;
+
+    match face {
+        ModuleFace::East | ModuleFace::West => {
+            let x = if face == ModuleFace::East {
+                horizontal
+            } else {
+                -horizontal
+            };
+            for z in [-side_offset, side_offset] {
+                push_piece(
+                    pieces,
+                    next_id,
+                    cell,
+                    StructureRole::Wall,
+                    base + Vec3::new(x, THRESHOLD_CLEAR_HEIGHT * 0.5, z),
+                    Vec3::new(
+                        WALL_THICKNESS * 0.5,
+                        THRESHOLD_CLEAR_HEIGHT * 0.5,
+                        side_half,
+                    ),
+                );
+            }
+            push_piece(
+                pieces,
+                next_id,
+                cell,
+                StructureRole::Wall,
+                base + Vec3::new(x, THRESHOLD_CLEAR_HEIGHT + header_height * 0.5, 0.0),
+                Vec3::new(WALL_THICKNESS * 0.5, header_height * 0.5, CELL_SIZE * 0.5),
+            );
+        }
+        ModuleFace::South | ModuleFace::North => {
+            let z = if face == ModuleFace::South {
+                horizontal
+            } else {
+                -horizontal
+            };
+            for x in [-side_offset, side_offset] {
+                push_piece(
+                    pieces,
+                    next_id,
+                    cell,
+                    StructureRole::Wall,
+                    base + Vec3::new(x, THRESHOLD_CLEAR_HEIGHT * 0.5, z),
+                    Vec3::new(
+                        side_half,
+                        THRESHOLD_CLEAR_HEIGHT * 0.5,
+                        WALL_THICKNESS * 0.5,
+                    ),
+                );
+            }
+            push_piece(
+                pieces,
+                next_id,
+                cell,
+                StructureRole::Wall,
+                base + Vec3::new(0.0, THRESHOLD_CLEAR_HEIGHT + header_height * 0.5, z),
+                Vec3::new(CELL_SIZE * 0.5, header_height * 0.5, WALL_THICKNESS * 0.5),
+            );
+        }
+        ModuleFace::Up | ModuleFace::Down => unreachable!("horizontal thresholds only"),
+    }
+}
+
 fn push_aperture_deck(
     pieces: &mut Vec<StructurePiece>,
     next_id: &mut u32,
@@ -410,61 +492,4 @@ fn push_piece(
 }
 
 #[cfg(test)]
-mod tests {
-    use observed_facility::full_wfc::{FullWfcConfig, FullWfcWorld, ModuleFace};
-
-    use super::*;
-
-    #[test]
-    fn canonical_snapshot_is_valid_and_leaves_open_boundaries_unblocked() {
-        let world = FullWfcWorld::new(31, FullWfcConfig::default()).expect("world");
-        let snapshot = FullWfcGeometrySnapshot::project(&world);
-        snapshot.arena.validate().expect("valid arena");
-        assert!(
-            snapshot
-                .pieces
-                .iter()
-                .any(|piece| piece.role == StructureRole::Floor)
-        );
-        for placement in world.placements.values() {
-            if placement.is_open(ModuleFace::East) {
-                let boundary = cell_origin(placement.coord)
-                    + Vec3::new(
-                        CELL_SIZE * 0.5 - WALL_THICKNESS * 0.5,
-                        WALL_HEIGHT * 0.5,
-                        0.0,
-                    );
-                assert!(!snapshot.pieces.iter().any(|piece| {
-                    piece.role == StructureRole::Wall
-                        && piece.cell == placement.coord
-                        && piece.center == boundary
-                }));
-            }
-        }
-    }
-
-    #[test]
-    fn complete_catalog_fixture_uses_one_render_and_rapier_piece_list() {
-        let world = FullWfcWorld::catalog_fixture(0xC011_1DE3).expect("fixture");
-        let snapshot = FullWfcGeometrySnapshot::project(&world);
-        let scene = snapshot.rapier_scene();
-        assert_eq!(scene.collider_count(), snapshot.pieces.len());
-        assert!(
-            snapshot
-                .pieces
-                .iter()
-                .any(|piece| piece.role == StructureRole::Feature)
-        );
-        for room in world.rooms.values() {
-            assert!(snapshot.pieces.iter().any(|piece| piece.cell == room.coord));
-        }
-        for corridor in world.corridors.values() {
-            assert!(
-                corridor
-                    .cells
-                    .iter()
-                    .all(|cell| snapshot.pieces.iter().any(|piece| piece.cell == *cell))
-            );
-        }
-    }
-}
+mod tests;

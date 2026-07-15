@@ -29,7 +29,7 @@ const CALM_MUTATION_TICKS: u64 = 1_800;
 const PRESSURED_MUTATION_TICKS: u64 = 600;
 const FIRST_ESCAPE_COUNTDOWN_TICKS: u64 = 1_800;
 const INTERACTION_RADIUS: f32 = 1.5;
-pub const FULL_WFC_INPUT_VERSION: u16 = 1;
+pub const FULL_WFC_INPUT_VERSION: u16 = 2;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ActionButtons {

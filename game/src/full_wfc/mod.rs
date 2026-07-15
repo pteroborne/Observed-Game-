@@ -14,6 +14,7 @@ mod view;
 
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
+use observed_content::ArchitectureRegister;
 
 use crate::GameState;
 
@@ -48,6 +49,8 @@ impl Plugin for FullWfcPlugin {
                 view::sync_streamed_cells,
                 view::sync_threshold_signals,
                 view::sync_camera_and_candle,
+                view::sync_lighting_and_atmosphere,
+                view::normalize_imported_materials,
                 hud::sync,
                 tacmap::sync,
                 feedback::sync,
@@ -71,20 +74,31 @@ impl Plugin for FullWfcPlugin {
             )
                 .chain(),
         );
-        let capture = std::env::var("OBSERVED2_CAPTURE_FULL_WFC")
-            .map(|path| (path, false))
-            .or_else(|_| std::env::var("OBSERVED2_CAPTURE_FULL_WFC_MAP").map(|path| (path, true)));
-        if let Ok((path, show_map)) = capture {
+        let capture = std::env::var("OBSERVED2_CAPTURE_FULL_WFC_STYLE")
+            .map(|path| (path, FullWfcCaptureMode::Style))
+            .or_else(|_| {
+                std::env::var("OBSERVED2_CAPTURE_FULL_WFC")
+                    .map(|path| (path, FullWfcCaptureMode::Gameplay))
+            })
+            .or_else(|_| {
+                std::env::var("OBSERVED2_CAPTURE_FULL_WFC_MAP")
+                    .map(|path| (path, FullWfcCaptureMode::Map))
+            });
+        if let Ok((path, mode)) = capture {
+            if mode == FullWfcCaptureMode::Style {
+                std::fs::create_dir_all(&path)
+                    .expect("full-WFC style capture directory must be creatable");
+            }
             app.insert_resource(FullWfcCapture {
                 path,
                 frame: 0,
-                show_map,
+                mode,
             })
             .add_systems(Startup, autostart_capture)
             .add_systems(
                 Update,
                 capture_progress
-                    .after(view::sync_camera_and_candle)
+                    .after(view::sync_lighting_and_atmosphere)
                     .run_if(in_state(GameState::FullWfc)),
             );
         }
@@ -92,10 +106,17 @@ impl Plugin for FullWfcPlugin {
 }
 
 #[derive(Resource)]
-struct FullWfcCapture {
+pub(super) struct FullWfcCapture {
     path: String,
     frame: u16,
-    show_map: bool,
+    mode: FullWfcCaptureMode,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum FullWfcCaptureMode {
+    Gameplay,
+    Map,
+    Style,
 }
 
 fn autostart_capture(mut next: ResMut<NextState<GameState>>) {
@@ -110,12 +131,24 @@ fn capture_progress(
 ) {
     request.frame = request.frame.saturating_add(1);
     if request.frame == 30
-        && request.show_map
+        && request.mode == FullWfcCaptureMode::Map
         && let Some(runtime) = runtime.as_deref_mut()
     {
         runtime.map_open = true;
     }
-    if request.frame == 60 {
+    if request.mode == FullWfcCaptureMode::Style {
+        let shot = usize::from(request.frame / 45);
+        if request.frame % 45 == 35 && shot < ArchitectureRegister::ALL.len() {
+            let register = ArchitectureRegister::ALL[shot];
+            let path = std::path::Path::new(&request.path)
+                .join(format!("full_wfc_{}.png", register.slug()));
+            commands
+                .spawn(Screenshot::primary_window())
+                .observe(save_to_disk(path));
+        } else if usize::from(request.frame) >= ArchitectureRegister::ALL.len() * 45 + 20 {
+            exit.write(AppExit::Success);
+        }
+    } else if request.frame == 60 {
         commands
             .spawn(Screenshot::primary_window())
             .observe(save_to_disk(request.path.clone()));

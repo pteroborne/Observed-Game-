@@ -10,7 +10,7 @@ This document outlines the current active development goals, completed milestone
 
 ## Active & Upcoming Phases
 
-**Arc K — Full-WFC Gameplay Lock** `[implementation complete; playtest pending]` (plan and gate record: [docs/full_wfc_gameplay_arc_plan.md](docs/full_wfc_gameplay_arc_plan.md)). The continuous full-WFC lattice is now the canonical game and owns the full room/hall catalog, four-team co-op race, physical objectives, anchors, team pads, Guardian, survivor tac-map, audiovisual feedback, bots, replay, and results behind a deterministic multiplayer-ready input/snapshot boundary. The legacy teleport-place match is regression-only. Phases 78–84 are complete; Phase 85 awaits hands-on tuning before the multiplayer arc.
+**Arc K — Full-WFC Gameplay Lock** `[implementation complete; playtest pending]` (plan and gate record: [docs/full_wfc_gameplay_arc_plan.md](docs/full_wfc_gameplay_arc_plan.md)). The continuous full-WFC lattice is now the canonical game and owns the full room/hall catalog, four-team co-op race, physical objectives, anchors, team pads, Guardian, survivor tac-map, audiovisual feedback, bots, replay, and results behind a deterministic multiplayer-ready input/snapshot boundary. Its visual-parity pass now carries the proven pre-full-WFC language into the continuous shell: canonical apertures with Kenney frames/cables, full textured walls/floors and treated ceilings, all nine register dressings, fog/bloom/high SSAO/FXAA, bounded volumetrics, shadows, and a deterministic local-light budget. The legacy teleport-place match is regression-only. Phases 78–84 are complete; Phase 85 awaits hands-on tuning before the multiplayer arc.
 
 ---
 

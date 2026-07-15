@@ -139,7 +139,7 @@ pub(crate) fn palette_for_game(
         palette = style::drained(&palette);
     }
     if klaxon_active {
-        palette = klaxon_palette(palette);
+        palette = style::klaxon_modulate(palette);
     }
     palette
 }
@@ -155,19 +155,6 @@ pub(crate) fn palette_for_match(
         runtime.live.host_match(),
         countdown_klaxon_active(runtime),
     )
-}
-
-fn klaxon_palette(mut palette: style::DistrictPalette) -> style::DistrictPalette {
-    let alarm = style::klaxon();
-    palette.ambient_color = lerp_color(palette.ambient_color, alarm.base_color, 0.72);
-    palette.ambient_brightness = (palette.ambient_brightness * 0.9).clamp(
-        style::DISTRICT_MIN_AMBIENT_BRIGHTNESS,
-        style::DISTRICT_MAX_AMBIENT_BRIGHTNESS,
-    );
-    palette.fog_color = lerp_color(palette.fog_color, alarm.base_color, 0.35);
-    palette.light_color = alarm.edge.unwrap_or(alarm.base_color);
-    palette.key_color = alarm.edge.unwrap_or(alarm.base_color);
-    palette
 }
 
 const DISTRICT_BLEND_RATE: f32 = 2.5;

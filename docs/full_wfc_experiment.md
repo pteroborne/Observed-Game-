@@ -1,11 +1,10 @@
-# Continuous Full-WFC Experiment
+# Continuous Full-WFC Facility
 
 Branch: `experiment/full-wfc-facility`
 
-This branch keeps the existing teleport match under **Play** and adds a separate
-**Experiment: Full WFC** main-menu entry. The experimental facility exists in one
-continuous 8 x 5 x 3 world-space lattice. It does not create isolated Places or
-teleport a player when a threshold is crossed.
+The full-WFC facility is the canonical **Play** match. It exists in one continuous
+8 x 5 x 3 world-space lattice: crossing a threshold is physical movement, while the
+former isolated-Place/preview match remains a regression fixture.
 
 ## Implemented rules
 
@@ -24,6 +23,20 @@ teleport a player when a threshold is crossed.
   The selected route is never shown in the played mode.
 - Vertical connections are continuous climb shafts: Space climbs up and Ctrl climbs
   down while the player is in the shaft opening. No teleport transaction is involved.
+- Horizontal room thresholds share one 4.5 m x 4.66 m clear aperture projected into
+  both the render shell and Rapier. Hall-to-hall branches remain fully open.
+- Every horizontal room threshold uses the manifest-selected Kenney CC0 gate and
+  cable dressing when present, with style-normalized materials and procedural
+  fallbacks. The indicator reports durable state only: cyan mutable, purple
+  anchor-locked, red sealed. Observation never changes the light.
+- Each cell carries its authored architecture register. Procedural dressing supplies
+  Shadow Screen slats, Monolith masses, Overlit Grid panels, Institutional panels,
+  Facet seams/shaft air, Megastructure recesses/ribs, Wellshaft practicals, Infinite
+  Gallery bands, and Thinning decay without adding collision or another WFC layer.
+- The desktop render tier uses HDR bloom, high SSAO, FXAA, distance fog, a single
+  current-cell shadow key, and at most seven unshadowed current/connected practicals.
+  Facet Monument alone receives bounded volumetric air. Ambient/fog ease between
+  cell registers and the shared klaxon palette carries the escape countdown.
 
 ## Evidence
 
@@ -32,11 +45,15 @@ The resettable lab shows all three levels and the otherwise invisible invariants
 ![Full-WFC simulation lab](evidence/full_wfc/full_wfc_lab.png)
 
 The assembled first-person mode uses the shared semantic style treatments. Cyan
-frames are mutable thresholds, gold is the currently observed/frozen threshold, red
-is a competing exit path sealed by the single-claim rule, and the green beacon is the
-exit:
+frames are mutable thresholds, purple is a durable anchor lock, red is a sealed exit
+chain, and the green beacon is the exit:
 
 ![Full-WFC played mode](evidence/full_wfc/full_wfc_game.png)
+
+The automated style tour captures all nine architecture registers through the same
+played camera and render stack:
+
+![Full-WFC architecture register tour](evidence/full_wfc_style/full_wfc_style.gif)
 
 Reproduce the captures:
 
@@ -46,23 +63,22 @@ cargo run -p full_wfc_lab
 
 $env:OBSERVED2_CAPTURE_FULL_WFC='docs/evidence/full_wfc/full_wfc_game.png'
 cargo run -p observed_game --bin observed
+
+$env:OBSERVED2_CAPTURE_FULL_WFC_STYLE='docs/evidence/full_wfc_style'
+cargo run -p observed_game --bin observed
 ```
 
 ## Verification
 
-- Facility tests: 57 passed; the extended 100-seed x 50-pulse gate passed separately
-  (5,000 constrained collapses in 292 seconds).
-- Full-WFC lab tests: 2 passed.
-- Assembled game tests: 302 passed, including legacy Spectate navigation and the new
-  experiment launch.
-- Clippy passes with warnings denied for `observed_facility`, `full_wfc_lab`, and
-  `observed_game`.
+- `cargo test --workspace` passes across the domain crates, labs, assembled game,
+  replay/architecture ratchets, and doc tests.
+- `cargo clippy --workspace --all-targets -- -D warnings` passes.
+- `OBSERVED2_CAPTURE_FULL_WFC_STYLE` completed through the real Vulkan renderer; all
+  nine stills and the FFmpeg palette-filtered GIF were inspected after capture.
 
-## Deliberate first-slice limits
+## Current scope
 
-This experiment has one local runner, simple authored module primitives, and a
-grid-aware continuous controller. It deliberately excludes rivals, guardian,
-keystones, carried items, progression, collapse pressure, and networking. Those
-systems remain in the legacy match until this fundamental movement/observation loop
-proves fun. The controller is not yet promoted to the production Rapier KCC; that is
-the next integration decision after playtesting the continuous topology.
+The canonical match now includes all eight runners, Guardian, keystones, deployable
+equipment, team pads, dual-station cooperation, survivor map, progression/results,
+bots, versioned replay, and the production Rapier controller. Phase 85 remains a
+hands-on tuning/playtest gate; online transport is still outside this arc.
