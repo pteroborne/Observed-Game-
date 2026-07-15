@@ -70,17 +70,18 @@ pub(crate) fn setup_main_menu(mut commands: Commands, mut cursor: ResMut<MenuCur
             root.spawn((MenuBanner, text("", 18.0, ACCENT)));
             root.spawn(panel()).with_children(|p| {
                 p.spawn(menu_button(0, MenuAction::StartRun, "Play"));
+                p.spawn(menu_button(1, MenuAction::Spectate, "Spectate AI"));
                 p.spawn(menu_button(
-                    1,
+                    2,
                     MenuAction::Goto(GameState::Loadout),
                     "Loadout",
                 ));
                 p.spawn(menu_button(
-                    2,
+                    3,
                     MenuAction::Goto(GameState::Settings),
                     "Settings",
                 ));
-                p.spawn(menu_button(3, MenuAction::QuitApp, "Quit"));
+                p.spawn(menu_button(4, MenuAction::QuitApp, "Quit"));
             });
             root.spawn(text(
                 "Up/Down or D-pad select | Enter/A confirm | Esc/B back",
