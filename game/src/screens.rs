@@ -42,6 +42,7 @@ pub(crate) enum MenuAction {
     StartRun,
     Rematch,
     Launch,
+    Spectate,
     Equip(u16),
     QuitApp,
     ToggleRivalTeams,

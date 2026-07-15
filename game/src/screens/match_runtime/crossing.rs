@@ -545,7 +545,7 @@ pub(crate) fn cross_transit(tp: &mut TeleportState, transit: &ThresholdTransit) 
     body.position.x = xz.x;
     body.position.z = xz.y;
     body.position.y += transform.destination_floor_y - transform.source_floor_y;
-    body.yaw = (body.yaw - transform.alignment.yaw).rem_euclid(std::f32::consts::TAU);
+    body.yaw = (body.yaw + transform.alignment.yaw).rem_euclid(std::f32::consts::TAU);
     let velocity_origin = transform.alignment.inverse_apply(Vec2::ZERO);
     let velocity_xz = transform
         .alignment

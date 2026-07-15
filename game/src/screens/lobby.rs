@@ -92,10 +92,11 @@ pub(crate) fn setup_lobby(
             });
             root.spawn(panel()).with_children(|p| {
                 p.spawn(menu_button(0, MenuAction::Launch, "Launch match"));
+                p.spawn(menu_button(1, MenuAction::Spectate, "Spectate match"));
                 p.spawn((
                     LobbyButtonText(MenuAction::ToggleRivalTeams),
                     menu_button(
-                        1,
+                        2,
                         MenuAction::ToggleRivalTeams,
                         rival_teams_label(career.bot_rival_teams),
                     ),
@@ -103,7 +104,7 @@ pub(crate) fn setup_lobby(
                 p.spawn((
                     LobbyButtonText(MenuAction::ToggleAiTeammates),
                     menu_button(
-                        2,
+                        3,
                         MenuAction::ToggleAiTeammates,
                         ai_teammates_label(career.bot_ai_teammates),
                     ),
@@ -111,13 +112,13 @@ pub(crate) fn setup_lobby(
                 p.spawn((
                     LobbyButtonText(MenuAction::ToggleGuardian),
                     menu_button(
-                        3,
+                        4,
                         MenuAction::ToggleGuardian,
                         guardian_label(career.bot_guardian),
                     ),
                 ));
                 p.spawn(menu_button(
-                    4,
+                    5,
                     MenuAction::Goto(GameState::MainMenu),
                     "Back",
                 ));

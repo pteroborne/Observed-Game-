@@ -475,6 +475,13 @@ pub(crate) fn menu_activate(
             commands.remove_resource::<SpectatorBot>();
             next.set(GameState::Match);
         }
+        MenuAction::Spectate => {
+            let seed = crate::flow::launch_seed();
+            info!("MATCH_START mode=spectate seed={seed}");
+            commands.insert_resource(crate::flow::ActiveMatchSeed(seed));
+            commands.insert_resource(SpectatorBot::for_seed(seed));
+            next.set(GameState::Match);
+        }
         MenuAction::Equip(id) => {
             if career.profile.equip(id) {
                 crate::flow::save_profile(&career);
