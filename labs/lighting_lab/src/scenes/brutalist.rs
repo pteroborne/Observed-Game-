@@ -112,7 +112,10 @@ pub fn spawn(ctx: &mut SceneCtx) {
         Name::new("Hard shaft"),
     ));
 
-    ctx.ambient(Color::srgb(0.5, 0.55, 0.65), 3.0);
+    // A restrained base exposure keeps the concrete mass readable outside the shaft
+    // without creating a second authored light source. The prior value left the median
+    // frame just below the lab's hard legibility floor.
+    ctx.ambient(Color::srgb(0.5, 0.55, 0.65), 40.0);
     ctx.signal_kit(Vec3::new(1.5, 0.0, 8.5), -0.4);
     ctx.camera(
         Transform::from_xyz(7.5, 1.3, 11.5).looking_at(Vec3::new(-2.0, 2.2, -2.0), Vec3::Y),

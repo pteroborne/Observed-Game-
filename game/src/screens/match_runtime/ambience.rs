@@ -1,3 +1,4 @@
+use bevy::light::VolumetricFog;
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
@@ -85,6 +86,25 @@ pub(crate) fn district_for_place(seed: u64, place: Place) -> style::District {
     style::district_for(seed, key)
 }
 
+fn architecture_register_for_place(
+    game: &HybridMatch,
+    place: Place,
+) -> Option<observed_content::ArchitectureRegister> {
+    let spec = game.competitive.map_spec.as_ref()?;
+    match place {
+        Place::Room(room) => spec.room_design(room).map(|design| design.register),
+        Place::Hallway { corridor, .. } => {
+            spec.corridor_design(corridor).map(|design| design.register)
+        }
+    }
+}
+
+pub(crate) fn district_for_game(seed: u64, place: Place, game: &HybridMatch) -> style::District {
+    architecture_register_for_place(game, place)
+        .map(style::district_for_architecture)
+        .unwrap_or_else(|| district_for_place(seed, place))
+}
+
 pub(crate) fn collapse_state_for_place(game: &HybridMatch, place: Place) -> CollapseState {
     match place {
         Place::Room(room) => game.competitive.room_collapse(room),
@@ -112,7 +132,9 @@ pub(crate) fn palette_for_game(
     game: &HybridMatch,
     klaxon_active: bool,
 ) -> style::DistrictPalette {
-    let mut palette = style::district(district_for_place(seed, place));
+    let mut palette = architecture_register_for_place(game, place)
+        .map(style::architecture)
+        .unwrap_or_else(|| style::district(district_for_place(seed, place)));
     if collapse_state_for_place(game, place) != CollapseState::Intact {
         palette = style::drained(&palette);
     }
@@ -168,32 +190,40 @@ pub(crate) fn apply_place_atmosphere(
     tp: Res<TeleportState>,
     runtime: Res<MatchDirector>,
     mut ambient: ResMut<GlobalAmbientLight>,
-    mut fog: Query<&mut DistanceFog, With<GameCam>>,
+    mut fog: Query<(Entity, &mut DistanceFog, Has<VolumetricFog>), With<GameCam>>,
     seed: Option<Res<crate::flow::ActiveMatchSeed>>,
+    mut commands: Commands,
 ) {
     let seed_val = seed.map(|s| s.0).unwrap_or(MATCH_SEED);
     let mut pal = palette_for_match(seed_val, tp.place, &runtime);
-    // The wellshaft register is "warm pools in buried dark": the practical lamps
-    // are the only real light, so the district's global ambient fill (which lights
-    // every other place) must fall to near-black here or the pools cannot read as
-    // islands. Fog collapses toward the shaft floor so the descent reads as depth,
-    // not haze. We keep the district's ambient + fog *hue* and crush them toward
-    // black, so a Foundry shaft's dark reads warmer than a Reactor shaft's while
-    // neither leaves the buried-dark register (matches lighting_lab scene 7, ~3).
+    // Specialized structure treatments remain style-owned. The minimum ambient bound
+    // preserves the Legibility Contract while pool rhythm and fog carry the depth read.
     if tp.geom.is_wellshaft() {
-        pal.ambient_brightness = 4.0;
-        pal.fog_color = lerp_color(pal.fog_color, Color::BLACK, 0.94);
-        pal.fog_start = 14.0;
-        pal.fog_end = 40.0;
+        pal = style::wellshaft(pal);
+    }
+    if tp.geom.structure_kind == crate::teleport::PlaceStructureKind::GantryExpanse {
+        // At the 36 m deck height the ground lies beyond the opaque fog range, while
+        // nearby column silhouettes and the semantic deck-edge treatment stay readable.
+        pal = style::gantry_expanse(pal);
     }
     let t = (time.delta_secs() * DISTRICT_BLEND_RATE).clamp(0.0, 1.0);
     ambient.color = lerp_color(ambient.color, pal.ambient_color, t);
     ambient.brightness = lerp_f(ambient.brightness, pal.ambient_brightness, t);
-    if let Ok(mut f) = fog.single_mut() {
+    if let Ok((camera, mut f, has_volumetric)) = fog.single_mut() {
         f.color = lerp_color(f.color, pal.fog_color, t);
         if let FogFalloff::Linear { start, end } = &mut f.falloff {
             *start = lerp_f(*start, pal.fog_start, t);
             *end = lerp_f(*end, pal.fog_end, t);
+        }
+        let wants_volumetric = tp.geom.architecture_register
+            == Some(observed_content::ArchitectureRegister::FacetMonument);
+        if wants_volumetric && !has_volumetric {
+            commands.entity(camera).insert(VolumetricFog {
+                ambient_intensity: 0.0,
+                ..default()
+            });
+        } else if !wants_volumetric && has_volumetric {
+            commands.entity(camera).remove::<VolumetricFog>();
         }
     }
 }

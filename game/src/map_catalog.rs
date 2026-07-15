@@ -2,8 +2,8 @@
 //!
 //! Phase 44 kept generation out of the game and added the plumbing map builders use:
 //! callers ask for the active [`MapSpec`] by seed, and the catalog enforces that every
-//! registered builder returns a fully validated map. Phase 46 flips the default to the
-//! procedurally generated `liminal_wfc_v1` map (Arc D's liminal-scale facility);
+//! registered builder returns a fully validated map. The default is the catalogue-aware
+//! `liminal_wfc_v2`; the topology-compatible `liminal_wfc_v1` remains selectable;
 //! `sector_relay_v1` remains registered and selectable (via `OBSERVED2_MAP=dev` or
 //! `=sector_relay_v1`) for regression testing and audits that intentionally pin the
 //! authored fixture.
@@ -12,13 +12,14 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 use observed_facility::map_spec::{MapSpec, multi_exit_fixture, sector_relay_v1};
-use observed_facility::wfc::{WfcMapConfig, generate_liminal_map};
+use observed_facility::wfc::{WfcMapConfig, generate_liminal_map, generate_liminal_map_v2};
 
 pub const MAP_ENV_VAR: &str = "OBSERVED2_MAP";
 pub const SECTOR_RELAY_V1: &str = "sector_relay_v1";
 pub const LIMINAL_WFC_V1: &str = "liminal_wfc_v1";
+pub const LIMINAL_WFC_V2: &str = "liminal_wfc_v2";
 pub const MULTI_EXIT_FIXTURE: &str = "multi_exit_fixture";
-pub const DEFAULT_MAP: &str = LIMINAL_WFC_V1;
+pub const DEFAULT_MAP: &str = LIMINAL_WFC_V2;
 
 pub type MapSpecBuilder = fn(u64) -> MapSpec;
 
@@ -40,7 +41,7 @@ impl MapSpecEntry {
     }
 }
 
-const CATALOG: [MapSpecEntry; 3] = [
+const CATALOG: [MapSpecEntry; 4] = [
     MapSpecEntry {
         key: SECTOR_RELAY_V1,
         builder: build_sector_relay_v1,
@@ -48,6 +49,10 @@ const CATALOG: [MapSpecEntry; 3] = [
     MapSpecEntry {
         key: LIMINAL_WFC_V1,
         builder: build_liminal_wfc_v1,
+    },
+    MapSpecEntry {
+        key: LIMINAL_WFC_V2,
+        builder: build_liminal_wfc_v2,
     },
     MapSpecEntry {
         key: MULTI_EXIT_FIXTURE,
@@ -62,6 +67,12 @@ fn build_sector_relay_v1(_seed: u64) -> MapSpec {
 fn build_liminal_wfc_v1(seed: u64) -> MapSpec {
     generate_liminal_map(seed, &WfcMapConfig::default()).unwrap_or_else(|error| {
         panic!("liminal_wfc_v1 failed to generate for seed {seed}: {error:?}")
+    })
+}
+
+fn build_liminal_wfc_v2(seed: u64) -> MapSpec {
+    generate_liminal_map_v2(seed, &WfcMapConfig::default()).unwrap_or_else(|error| {
+        panic!("liminal_wfc_v2 failed to generate for seed {seed}: {error:?}")
     })
 }
 
@@ -100,7 +111,7 @@ fn cache_put(key: &str, seed: u64, spec: &MapSpec) {
 
 /// Return the active map for `seed`, selected by `OBSERVED2_MAP`.
 ///
-/// The default is `liminal_wfc_v1` (the generated liminal-scale facility). Unknown
+/// The default is `liminal_wfc_v2` (the generated catalogue-aware facility). Unknown
 /// names panic at startup/test time instead of silently running a different course
 /// than the operator requested.
 pub fn active_map_spec(seed: u64) -> MapSpec {
@@ -135,9 +146,10 @@ pub fn available_map_names() -> Vec<&'static str> {
 
 pub fn catalog_entry(name: &str) -> Option<MapSpecEntry> {
     match normalize_map_name(name).as_str() {
-        LIMINAL_WFC_V1 | "default" | "liminal" => Some(CATALOG[1]),
+        LIMINAL_WFC_V2 | "default" | "liminal" => Some(CATALOG[2]),
+        LIMINAL_WFC_V1 | "legacy" => Some(CATALOG[1]),
         SECTOR_RELAY_V1 | "dev" => Some(CATALOG[0]),
-        MULTI_EXIT_FIXTURE | "multi" | "multi_exit" => Some(CATALOG[2]),
+        MULTI_EXIT_FIXTURE | "multi" | "multi_exit" => Some(CATALOG[3]),
         _ => None,
     }
 }
@@ -170,7 +182,8 @@ mod tests {
     #[test]
     fn default_selection_returns_a_valid_generated_map() {
         let spec = default_map_spec(1);
-        assert_eq!(spec.name, "WFC Liminal Map");
+        assert_eq!(spec.name, "WFC Liminal Map V2");
+        assert!(spec.designs.is_some(), "default map applies catalogue v2");
         assert!(
             (24..=32).contains(&spec.room_count()),
             "default map should be liminal-scale, got {} rooms",
@@ -187,11 +200,19 @@ mod tests {
             "liminal_wfc_v1",
             "Liminal WFC V1",
             "liminal-wfc-v1",
-            "default",
-            "liminal",
+            "legacy",
         ] {
             let spec = map_spec_for_selection(Some(name), 7);
             assert_eq!(spec.name, "WFC Liminal Map");
+        }
+    }
+
+    #[test]
+    fn liminal_wfc_v2_is_the_default_and_has_stable_aliases() {
+        for name in ["liminal_wfc_v2", "Liminal WFC V2", "default", "liminal"] {
+            let spec = map_spec_for_selection(Some(name), 7);
+            assert_eq!(spec.name, "WFC Liminal Map V2");
+            assert!(spec.designs.is_some());
         }
     }
 

@@ -65,6 +65,24 @@ fn snapshot_id(
             }
         }
     }
+    let structure_tag = match geom.structure_kind {
+        teleport::PlaceStructureKind::Room => 0,
+        teleport::PlaceStructureKind::Corridor => 1,
+        teleport::PlaceStructureKind::CurvedChicane => 2,
+        teleport::PlaceStructureKind::Orthogonal => 3,
+        teleport::PlaceStructureKind::Colonnade => 4,
+        teleport::PlaceStructureKind::PressureGate => 5,
+        teleport::PlaceStructureKind::LegacyGantry => 6,
+        teleport::PlaceStructureKind::GantryExpanse => 7,
+        teleport::PlaceStructureKind::Wellshaft => 8,
+    };
+    mix_snapshot_word(&mut hash, structure_tag);
+    mix_snapshot_word(
+        &mut hash,
+        geom.architecture_register
+            .map_or(u64::MAX, |register| u64::from(register.stable_id())),
+    );
+    mix_snapshot_word(&mut hash, geom.design_key.unwrap_or(u64::MAX));
     for value in [geom.half.x, geom.half.y] {
         mix_snapshot_word(&mut hash, u64::from(value.to_bits()));
     }
@@ -91,6 +109,45 @@ fn snapshot_id(
             deck.top_y,
         ] {
             mix_snapshot_word(&mut hash, u64::from(value.to_bits()));
+        }
+    }
+    mix_snapshot_word(&mut hash, geom.oriented_solids.len() as u64);
+    for solid in &geom.oriented_solids {
+        for value in [
+            solid.center.x,
+            solid.center.y,
+            solid.half.x,
+            solid.half.y,
+            solid.yaw,
+            solid.bottom_y,
+            solid.top_y,
+        ] {
+            mix_snapshot_word(&mut hash, u64::from(value.to_bits()));
+        }
+    }
+    mix_snapshot_word(&mut hash, geom.convex_solids.len() as u64);
+    for solid in &geom.convex_solids {
+        mix_snapshot_word(&mut hash, solid.footprint.len() as u64);
+        for point in &solid.footprint {
+            mix_snapshot_word(&mut hash, u64::from(point.x.to_bits()));
+            mix_snapshot_word(&mut hash, u64::from(point.y.to_bits()));
+        }
+        mix_snapshot_word(&mut hash, u64::from(solid.bottom_y.to_bits()));
+        mix_snapshot_word(&mut hash, u64::from(solid.top_y.to_bits()));
+    }
+    mix_snapshot_word(&mut hash, geom.route_guides.len() as u64);
+    for route in &geom.route_guides {
+        let route_tag = match route.kind {
+            teleport::PlaceRouteKind::JumpLine => 0,
+            teleport::PlaceRouteKind::HighBridge => 1,
+            teleport::PlaceRouteKind::Understory => 2,
+        };
+        mix_snapshot_word(&mut hash, route_tag);
+        mix_snapshot_word(&mut hash, route.nodes.len() as u64);
+        for node in &route.nodes {
+            for value in [node.x, node.y, node.z] {
+                mix_snapshot_word(&mut hash, u64::from(value.to_bits()));
+            }
         }
     }
     for gap in &geom.gaps {

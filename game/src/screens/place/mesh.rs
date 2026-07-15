@@ -45,6 +45,39 @@ pub(crate) fn polygon_mesh(verts: &[Vec2], y: f32, normal_up: bool) -> Mesh {
     .with_inserted_indices(Indices::U32(indices))
 }
 
+pub(crate) fn polygon_ring_mesh(verts: &[Vec2], inner_scale: f32, y: f32, normal_up: bool) -> Mesh {
+    let ny = if normal_up { 1.0 } else { -1.0 };
+    let mut positions = Vec::with_capacity(verts.len() * 4);
+    let mut normals = Vec::with_capacity(verts.len() * 4);
+    let mut uvs = Vec::with_capacity(verts.len() * 4);
+    let mut indices = Vec::with_capacity(verts.len() * 6);
+    for index in 0..verts.len() {
+        let a = verts[index];
+        let b = verts[(index + 1) % verts.len()];
+        let inner_a = a * inner_scale;
+        let inner_b = b * inner_scale;
+        let start = positions.len() as u32;
+        for point in [a, b, inner_b, inner_a] {
+            positions.push([point.x, y, point.y]);
+            normals.push([0.0, ny, 0.0]);
+            uvs.push(uv_xz(point));
+        }
+        if normal_up {
+            indices.extend_from_slice(&[start, start + 2, start + 1, start, start + 3, start + 2]);
+        } else {
+            indices.extend_from_slice(&[start, start + 1, start + 2, start, start + 2, start + 3]);
+        }
+    }
+    Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
+    )
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
+    .with_inserted_indices(Indices::U32(indices))
+}
+
 pub(crate) fn rect_mesh(half: Vec2, y: f32, normal_up: bool) -> Mesh {
     let ny = if normal_up { 1.0 } else { -1.0 };
     let positions = vec![
@@ -263,6 +296,46 @@ pub(crate) fn spawn_polygon_shell(
     );
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn spawn_polygon_shell_with_aperture(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    poly: &[Vec2],
+    floor_material: Handle<StandardMaterial>,
+    ceiling_material: Handle<StandardMaterial>,
+    xform: Transform,
+    preview: bool,
+    height: f32,
+    aperture_scale: f32,
+) {
+    let floor = meshes.add(polygon_mesh(poly, 0.0, true));
+    let ceiling = meshes.add(polygon_ring_mesh(poly, aperture_scale, height, false));
+    spawn_geo(
+        commands,
+        floor,
+        floor_material,
+        xform,
+        preview,
+        if preview {
+            "Preview floor"
+        } else {
+            "Place floor"
+        },
+    );
+    spawn_geo(
+        commands,
+        ceiling,
+        ceiling_material,
+        xform,
+        preview,
+        if preview {
+            "Preview ceiling"
+        } else {
+            "Place ceiling"
+        },
+    );
+}
+
 /// Render the shared threshold-aware boundary plan under `xform`.
 ///
 /// Every threshold cuts the architectural shell. A sealed threshold gets its blocking
@@ -294,6 +367,54 @@ pub(crate) fn spawn_polygon_walls(
             preview,
         );
     }
+}
+
+/// Build a closed convex prism from the same place-local footprint used by collision.
+/// Keeping this mesh projection beside the cuboid projection makes faceted columns and
+/// platforms visually agree with their authored Rapier hulls.
+pub(crate) fn prism_mesh(footprint: &[Vec2], bottom_y: f32, top_y: f32) -> Mesh {
+    let mut positions = Vec::new();
+    let mut normals = Vec::new();
+    let mut uvs = Vec::new();
+    let mut indices = Vec::new();
+    let centre = footprint.iter().copied().sum::<Vec2>() / footprint.len() as f32;
+
+    let mut push_triangle = |a: Vec3, b: Vec3, c: Vec3, normal: Vec3| {
+        let start = positions.len() as u32;
+        for point in [a, b, c] {
+            positions.push(point.to_array());
+            normals.push(normal.to_array());
+            uvs.push(uv_xz(Vec2::new(point.x, point.z)));
+        }
+        indices.extend_from_slice(&[start, start + 1, start + 2]);
+    };
+
+    for index in 0..footprint.len() {
+        let a = footprint[index];
+        let b = footprint[(index + 1) % footprint.len()];
+        let bottom_a = Vec3::new(a.x, bottom_y, a.y);
+        let bottom_b = Vec3::new(b.x, bottom_y, b.y);
+        let top_a = Vec3::new(a.x, top_y, a.y);
+        let top_b = Vec3::new(b.x, top_y, b.y);
+        let edge = b - a;
+        let side_normal = Vec3::new(edge.y, 0.0, -edge.x).normalize_or_zero();
+        push_triangle(bottom_a, bottom_b, top_b, side_normal);
+        push_triangle(bottom_a, top_b, top_a, side_normal);
+
+        let top_centre = Vec3::new(centre.x, top_y, centre.y);
+        let bottom_centre = Vec3::new(centre.x, bottom_y, centre.y);
+        push_triangle(top_centre, top_b, top_a, Vec3::Y);
+        push_triangle(bottom_centre, bottom_a, bottom_b, Vec3::NEG_Y);
+    }
+
+    Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
+    )
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
+    .with_inserted_indices(Indices::U32(indices))
 }
 
 /// A vertical, single-span portal surface. Unlike structural cuboids, its UVs cover the

@@ -12,7 +12,7 @@ use crate::view::components::{DoorLeaf, PlaceGeometry};
 use crate::view::theme::team_color;
 
 use super::mesh;
-use crate::teleport::{DeckSeg, DoorGap, PlaceGeom, THRESHOLD_WIDTH};
+use crate::teleport::{DeckSeg, DoorGap, OrientedBoxSolid, PlaceGeom, THRESHOLD_WIDTH};
 
 #[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ImportedThresholdDressing {
@@ -76,17 +76,32 @@ pub(crate) fn spawn_room_shell(
 ) {
     if let Some(poly) = geom.poly.as_ref() {
         let root_xform = Transform::from_xyz(0.0, y_offset, 0.0);
-        mesh::spawn_polygon_shell(
-            commands,
-            assets,
-            meshes,
-            poly,
-            floor_material,
-            ceiling_material,
-            root_xform,
-            false,
-            WALL_HEIGHT,
-        );
+        if geom.architecture_register == Some(observed_content::ArchitectureRegister::FacetMonument)
+        {
+            mesh::spawn_polygon_shell_with_aperture(
+                commands,
+                meshes,
+                poly,
+                floor_material,
+                ceiling_material,
+                root_xform,
+                false,
+                WALL_HEIGHT,
+                0.34,
+            );
+        } else {
+            mesh::spawn_polygon_shell(
+                commands,
+                assets,
+                meshes,
+                poly,
+                floor_material,
+                ceiling_material,
+                root_xform,
+                false,
+                WALL_HEIGHT,
+            );
+        }
         mesh::spawn_polygon_walls(
             commands,
             assets,
@@ -120,6 +135,64 @@ fn solid_is_deck(
         && (solid.center.y + solid.half.y - (floor_y + deck.top_y)).abs() < EPS
 }
 
+fn solid_is_oriented_box(
+    solid: &observed_traversal::rapier_controller::StructuralCollider,
+    authored: &OrientedBoxSolid,
+    floor_y: f32,
+) -> bool {
+    const EPS: f32 = 0.02;
+    (solid.center.x - authored.center.x).abs() < EPS
+        && (solid.center.z - authored.center.y).abs() < EPS
+        && (solid.half.x - authored.half.x).abs() < EPS
+        && (solid.half.z - authored.half.y).abs() < EPS
+        && (solid.yaw - authored.yaw).abs() < EPS
+        && (solid.center.y - solid.half.y - (floor_y + authored.bottom_y)).abs() < EPS
+        && (solid.center.y + solid.half.y - (floor_y + authored.top_y)).abs() < EPS
+}
+
+fn spawn_gantry_expanse_edges(
+    commands: &mut Commands,
+    assets: &MatchAssets,
+    solids: &[OrientedBoxSolid],
+    y_offset: f32,
+) {
+    for solid in solids {
+        let base = Transform::from_xyz(
+            solid.center.x,
+            y_offset + solid.top_y + DECK_EDGE_PROUD,
+            solid.center.y,
+        )
+        .with_rotation(Quat::from_rotation_y(solid.yaw));
+        for (offset, scale) in [
+            (
+                Vec3::new(-solid.half.x, 0.0, 0.0),
+                Vec3::new(DECK_EDGE_THICKNESS, DECK_EDGE_THICKNESS, solid.half.y * 2.0),
+            ),
+            (
+                Vec3::new(solid.half.x, 0.0, 0.0),
+                Vec3::new(DECK_EDGE_THICKNESS, DECK_EDGE_THICKNESS, solid.half.y * 2.0),
+            ),
+            (
+                Vec3::new(0.0, 0.0, -solid.half.y),
+                Vec3::new(solid.half.x * 2.0, DECK_EDGE_THICKNESS, DECK_EDGE_THICKNESS),
+            ),
+            (
+                Vec3::new(0.0, 0.0, solid.half.y),
+                Vec3::new(solid.half.x * 2.0, DECK_EDGE_THICKNESS, DECK_EDGE_THICKNESS),
+            ),
+        ] {
+            commands.spawn((
+                PlaceGeometry,
+                DespawnOnExit(GameState::Match),
+                Mesh3d(assets.placeholder_mesh.clone()),
+                MeshMaterial3d(assets.gantry_edge_material.clone()),
+                base.mul_transform(Transform::from_translation(offset).with_scale(scale)),
+                Name::new("Gantry platform edge"),
+            ));
+        }
+    }
+}
+
 /// A box hallway's shell: scaled floor/ceiling planes plus the collision arena's
 /// interior maze walls rendered as solid blocks. `decks` (the gantry's platforms +
 /// mount stair, empty everywhere else) are rendered separately by
@@ -138,44 +211,59 @@ pub(crate) fn spawn_hallway_shell(
 ) {
     let shell_height = crate::teleport::structural_height(geom, WALL_HEIGHT);
     if let Some(poly) = geom.poly.as_ref() {
-        let root = Transform::from_xyz(0.0, y_offset, 0.0);
-        // The shaft floor is the same grey concrete as its ledges and treads, not
-        // the district floor tint — otherwise the bottom of the well reads as a
-        // bright slab under the pools instead of dark stone catching them.
-        mesh::spawn_polygon_shell(
+        if geom.structure_kind != crate::teleport::PlaceStructureKind::Wellshaft {
+            mesh::spawn_polygon_shell(
+                commands,
+                assets,
+                meshes,
+                poly,
+                floor_material,
+                ceiling_material,
+                Transform::from_xyz(0.0, y_offset, 0.0),
+                false,
+                shell_height,
+            );
+        } else {
+            let root = Transform::from_xyz(0.0, y_offset, 0.0);
+            // The shaft floor is the same grey concrete as its ledges and treads, not
+            // the district floor tint — otherwise the bottom of the well reads as a
+            // bright slab under the pools instead of dark stone catching them.
+            mesh::spawn_polygon_shell(
+                commands,
+                assets,
+                meshes,
+                poly,
+                assets.wellshaft_stone_material.clone(),
+                ceiling_material,
+                root,
+                false,
+                shell_height,
+            );
+            // Dark concrete walls too: the Wellshaft register is a stone shaft lit only by
+            // its practicals, so the district identity rides the warm pool tint and fog
+            // rather than a bright wall albedo close enough to the lamps to wash out.
+            spawn_wellshaft_hex_walls(
+                commands,
+                assets,
+                poly,
+                &geom.gaps,
+                assets.wellshaft_stone_material.clone(),
+                y_offset,
+                shell_height,
+            );
+            spawn_wellshaft_structure(commands, assets, meshes, y_offset, shell_height);
+            return;
+        }
+    } else {
+        spawn_hallway_floor_ceiling(
             commands,
-            assets,
             meshes,
-            poly,
-            assets.wellshaft_stone_material.clone(),
+            geom,
+            floor_material,
             ceiling_material,
-            root,
-            false,
-            shell_height,
-        );
-        // Dark concrete walls too: the Silo register is a stone shaft lit only by
-        // its practicals, so the district identity rides the warm pool tint and fog
-        // rather than a bright wall albedo close enough to the lamps to wash out.
-        spawn_wellshaft_hex_walls(
-            commands,
-            assets,
-            poly,
-            &geom.gaps,
-            assets.wellshaft_stone_material.clone(),
             y_offset,
-            shell_height,
         );
-        spawn_wellshaft_structure(commands, assets, meshes, y_offset, shell_height);
-        return;
     }
-    spawn_hallway_floor_ceiling(
-        commands,
-        meshes,
-        geom,
-        floor_material,
-        ceiling_material,
-        y_offset,
-    );
     for solid in solids {
         if geom
             .decks
@@ -184,19 +272,53 @@ pub(crate) fn spawn_hallway_shell(
         {
             continue;
         }
+        let gantry_platform = geom.structure_kind
+            == crate::teleport::PlaceStructureKind::GantryExpanse
+            && geom
+                .oriented_solids
+                .iter()
+                .any(|authored| solid_is_oriented_box(solid, authored, y_offset));
         let size = solid.half * 2.0;
         commands.spawn((
             PlaceGeometry,
             DespawnOnExit(GameState::Match),
             Mesh3d(meshes.add(mesh::cuboid_mesh(size))),
-            MeshMaterial3d(wall_material.clone()),
+            MeshMaterial3d(if gantry_platform {
+                assets.gantry_deck_material.clone()
+            } else {
+                wall_material.clone()
+            }),
             Transform::from_translation(solid.center)
                 .with_rotation(Quat::from_rotation_y(solid.yaw)),
-            Name::new("Place wall"),
+            Name::new(if gantry_platform {
+                "Gantry platform"
+            } else {
+                "Place wall"
+            }),
         ));
     }
     if !geom.decks.is_empty() {
         spawn_gantry_decks(commands, assets, &geom.decks, y_offset);
+    }
+    if geom.structure_kind == crate::teleport::PlaceStructureKind::GantryExpanse {
+        spawn_gantry_expanse_edges(commands, assets, &geom.oriented_solids, y_offset);
+    }
+    for solid in &geom.convex_solids {
+        if solid.footprint.len() < 3 || solid.top_y - solid.bottom_y <= 0.01 {
+            continue;
+        }
+        commands.spawn((
+            PlaceGeometry,
+            DespawnOnExit(GameState::Match),
+            Mesh3d(meshes.add(mesh::prism_mesh(
+                &solid.footprint,
+                solid.bottom_y,
+                solid.top_y,
+            ))),
+            MeshMaterial3d(wall_material.clone()),
+            Transform::from_xyz(0.0, y_offset, 0.0),
+            Name::new("Place convex structure"),
+        ));
     }
 }
 

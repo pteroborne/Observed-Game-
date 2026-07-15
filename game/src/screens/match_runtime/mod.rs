@@ -23,8 +23,8 @@ use crate::teleport::Place;
 
 // Re-exports
 pub(crate) use ambience::{
-    collapse_state_for_place, countdown_klaxon_active, district_for_place, palette_for_game,
-    palette_for_match,
+    collapse_state_for_place, countdown_klaxon_active, district_for_game, district_for_place,
+    palette_for_game, palette_for_match,
 };
 pub(crate) use crossing::{
     compute_threshold_transits, debug_place_into, place_body_at, sync_threshold_closures,

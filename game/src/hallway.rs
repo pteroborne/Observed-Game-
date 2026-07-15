@@ -13,6 +13,7 @@
 //! deterministic edge → variation mapping. The controller/presentation consume it.
 
 use observed_core::RoomId;
+use observed_facility::map_spec::TraversalArchetype;
 use observed_traversal::gantry::{GANTRY_LENGTH, GANTRY_WIDTH, UPPER_DECK_Y};
 use std::f32::consts::TAU;
 
@@ -26,10 +27,12 @@ pub enum HallwayFlavor {
     Straight,
     /// A long, exposed run.
     Long,
-    /// An S-bend: two staggered baffles force a slalom between the entry and exit, so
-    /// the way on is hidden twice over (the corridor reads as labyrinthine without a
-    /// full grid). The baffles render + collide through the shared interior-wall path.
+    /// A broad S-bend sampled into gently turning structural walls. The wide lane hides
+    /// its destination through curvature without reading as a cramped obstacle slalom.
     Chicane,
+    /// An institutional corridor with two full-width right-angle turns and a larger
+    /// empty work bay between them.
+    Orthogonal,
     /// A pressure-gate hazard spans the hall (the risky shortcut).
     PressureGate,
     /// A step-up climb toward the next level.
@@ -57,6 +60,7 @@ impl HallwayFlavor {
             HallwayFlavor::Straight => "straight",
             HallwayFlavor::Long => "long",
             HallwayFlavor::Chicane => "chicane",
+            HallwayFlavor::Orthogonal => "orthogonal",
             HallwayFlavor::PressureGate => "pressure gate",
             HallwayFlavor::Climb => "climb",
             HallwayFlavor::Colonnade => "colonnade",
@@ -118,9 +122,9 @@ pub const TEMPLATES: [HallwayTemplate; 14] = [
     HallwayTemplate {
         name: "chicane",
         flavor: HallwayFlavor::Chicane,
-        length: 20.0,
-        // Wider than the corridor so the staggered baffles leave a walkable slalom.
-        width: 10.0,
+        length: 26.0,
+        // This is the clear curved-lane budget, not the overall swept footprint.
+        width: 12.0,
         rise: 0.0,
         grid: None,
     },
@@ -220,6 +224,17 @@ pub const TEMPLATES: [HallwayTemplate; 14] = [
         grid: None,
     },
 ];
+
+/// Catalogue-v2 institutional connector. It stays outside [`TEMPLATES`] so adding the
+/// design cannot perturb `liminal_wfc_v1`'s variation indices or replay stream.
+pub const ORTHOGONAL_TEMPLATE: HallwayTemplate = HallwayTemplate {
+    name: "orthogonal factory hall",
+    flavor: HallwayFlavor::Orthogonal,
+    length: 34.0,
+    width: 14.0,
+    rise: 0.0,
+    grid: None,
+};
 
 pub const WELL_SHAFT_LEVEL_HEIGHT: f32 = 3.0;
 pub const WELL_SHAFT_LEVELS: usize = 6;
@@ -321,6 +336,35 @@ pub fn gantry_template() -> &'static HallwayTemplate {
 
 pub fn template(index: usize) -> &'static HallwayTemplate {
     &TEMPLATES[index % TEMPLATES.len()]
+}
+
+/// Resolve a persisted catalogue-v2 traversal identity without involving the live
+/// decoherence version. The generation key only chooses among same-archetype variants.
+pub fn template_for_traversal(
+    traversal: TraversalArchetype,
+    generation_key: u64,
+) -> &'static HallwayTemplate {
+    let flavor = match traversal {
+        TraversalArchetype::Straight => HallwayFlavor::Straight,
+        TraversalArchetype::Long => HallwayFlavor::Long,
+        TraversalArchetype::Pressure => HallwayFlavor::PressureGate,
+        TraversalArchetype::Climb => HallwayFlavor::Climb,
+        TraversalArchetype::Maze => HallwayFlavor::Maze,
+        TraversalArchetype::Chicane => HallwayFlavor::Chicane,
+        TraversalArchetype::GantryExpanse => HallwayFlavor::Gantry,
+        TraversalArchetype::Wellshaft => HallwayFlavor::Wellshaft,
+        TraversalArchetype::Colonnade => HallwayFlavor::Colonnade,
+        TraversalArchetype::Orthogonal => return &ORTHOGONAL_TEMPLATE,
+    };
+    let count = TEMPLATES
+        .iter()
+        .filter(|template| template.flavor == flavor)
+        .count();
+    TEMPLATES
+        .iter()
+        .filter(|template| template.flavor == flavor)
+        .nth(generation_key as usize % count.max(1))
+        .expect("every persisted traversal archetype has an authored projection")
 }
 
 /// The liminal-scaled (length, width) for `template` (the Phase 46b dials in

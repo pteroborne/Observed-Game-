@@ -20,18 +20,15 @@ pub fn build_navmesh(
     // lie safely inside the walkable area of the navmesh.
     let margin = 0.01;
 
-    if let Some(edges) = &geom.poly {
-        // Rooms are empty convex polygons; no interior obstacles.
-        return NavMesh::from_edge_and_obstacles(edges.clone(), vec![]);
-    }
-
-    // Hallway: shrunken outer boundary rectangle.
-    let edges = vec![
-        Vec2::new(-half.x + margin, -half.y + margin),
-        Vec2::new(half.x - margin, -half.y + margin),
-        Vec2::new(half.x - margin, half.y - margin),
-        Vec2::new(-half.x + margin, half.y - margin),
-    ];
+    let edges = geom.poly.clone().unwrap_or_else(|| {
+        // Hallway: shrunken outer boundary rectangle.
+        vec![
+            Vec2::new(-half.x + margin, -half.y + margin),
+            Vec2::new(half.x - margin, -half.y + margin),
+            Vec2::new(half.x - margin, half.y - margin),
+            Vec2::new(-half.x + margin, half.y - margin),
+        ]
+    });
 
     // Project and inflate only the interior obstacles from the geometry.
     let obs_margin = config.radius + 0.05;
@@ -56,6 +53,50 @@ pub fn build_navmesh(
             ];
             obstacles.push(poly);
         }
+    }
+
+    // New architecture may use yawed walls and platforms. Only solids intersecting
+    // the ground-layer capsule belong in this 2D mesh; raised gantry routes have their
+    // own traversal pilot and must not erase the understory route below them.
+    let body_top = config.half_height * 2.0 + config.step_height;
+    for solid in &geom.oriented_solids {
+        if solid.bottom_y > body_top || solid.top_y <= config.step_height {
+            continue;
+        }
+        let half = solid.half + Vec2::splat(obs_margin);
+        let (sin_yaw, cos_yaw) = solid.yaw.sin_cos();
+        let rotate = |local: Vec2| {
+            solid.center
+                + Vec2::new(
+                    cos_yaw * local.x + sin_yaw * local.y,
+                    -sin_yaw * local.x + cos_yaw * local.y,
+                )
+        };
+        obstacles.push(vec![
+            rotate(Vec2::new(-half.x, -half.y)),
+            rotate(Vec2::new(half.x, -half.y)),
+            rotate(Vec2::new(half.x, half.y)),
+            rotate(Vec2::new(-half.x, half.y)),
+        ]);
+    }
+    for solid in &geom.convex_solids {
+        if solid.footprint.len() < 3
+            || solid.bottom_y > body_top
+            || solid.top_y <= config.step_height
+        {
+            continue;
+        }
+        let centre = solid.footprint.iter().copied().sum::<Vec2>() / solid.footprint.len() as f32;
+        obstacles.push(
+            solid
+                .footprint
+                .iter()
+                .map(|point| {
+                    let radial = (*point - centre).normalize_or_zero();
+                    *point + radial * obs_margin * 1.5
+                })
+                .collect(),
+        );
     }
 
     NavMesh::from_edge_and_obstacles(edges, obstacles)

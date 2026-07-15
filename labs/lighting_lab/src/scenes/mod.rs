@@ -3,15 +3,26 @@
 //! everything down on a scene switch. Geometry is freestanding (user ruling) —
 //! findings transfer to the game as parameters, not code.
 
-pub mod babel;
-pub mod backrooms;
-pub mod blame;
-pub mod brutalist;
-pub mod halo;
-pub mod japanese;
-pub mod rudon;
-pub mod severance;
-pub mod silo;
+// File names retain the references that originally proved each look. Public
+// modules and scene identities use the production architecture catalogue.
+#[path = "halo.rs"]
+pub mod facet_monument;
+#[path = "babel.rs"]
+pub mod infinite_gallery;
+#[path = "severance.rs"]
+pub mod institutional;
+#[path = "blame.rs"]
+pub mod megastructure;
+#[path = "brutalist.rs"]
+pub mod monolith;
+#[path = "backrooms.rs"]
+pub mod overlit_grid;
+#[path = "japanese.rs"]
+pub mod shadow_screen;
+#[path = "rudon.rs"]
+pub mod thinning;
+#[path = "silo.rs"]
+pub mod wellshaft;
 
 use bevy::{
     camera::Exposure,
@@ -33,55 +44,55 @@ pub struct SceneCam;
 /// The nine registers, in key order 1–9.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum Scene {
-    Japanese,
-    Brutalist,
-    Backrooms,
-    Severance,
-    Halo,
-    Blame,
-    Silo,
-    Babel,
-    Rudon,
+    ShadowScreen,
+    Monolith,
+    OverlitGrid,
+    Institutional,
+    FacetMonument,
+    Megastructure,
+    Wellshaft,
+    InfiniteGallery,
+    Thinning,
 }
 
 impl Scene {
     pub const ALL: [Scene; 9] = [
-        Scene::Japanese,
-        Scene::Brutalist,
-        Scene::Backrooms,
-        Scene::Severance,
-        Scene::Halo,
-        Scene::Blame,
-        Scene::Silo,
-        Scene::Babel,
-        Scene::Rudon,
+        Scene::ShadowScreen,
+        Scene::Monolith,
+        Scene::OverlitGrid,
+        Scene::Institutional,
+        Scene::FacetMonument,
+        Scene::Megastructure,
+        Scene::Wellshaft,
+        Scene::InfiniteGallery,
+        Scene::Thinning,
     ];
 
     pub fn slug(self) -> &'static str {
         match self {
-            Scene::Japanese => "shoji",
-            Scene::Brutalist => "monolith",
-            Scene::Backrooms => "backrooms",
-            Scene::Severance => "lumon",
-            Scene::Halo => "forerunner",
-            Scene::Blame => "megastructure",
-            Scene::Silo => "wellshaft",
-            Scene::Babel => "babel",
-            Scene::Rudon => "thinning",
+            Scene::ShadowScreen => "shadow-screen",
+            Scene::Monolith => "monolith",
+            Scene::OverlitGrid => "overlit-grid",
+            Scene::Institutional => "institutional",
+            Scene::FacetMonument => "facet-monument",
+            Scene::Megastructure => "megastructure",
+            Scene::Wellshaft => "wellshaft",
+            Scene::InfiniteGallery => "infinite-gallery",
+            Scene::Thinning => "thinning",
         }
     }
 
     pub fn title(self) -> &'static str {
         match self {
-            Scene::Japanese => "Japanese architecture — shadow as material",
-            Scene::Brutalist => "Brutalism — mass and one hard shaft",
-            Scene::Backrooms => "Backrooms — the overlit nowhere",
-            Scene::Severance => "Severance — the pristine institution",
-            Scene::Halo => "Halo CE — monumental indifference",
-            Scene::Blame => "BLAME! — the megastructure void",
-            Scene::Silo => "Silo — warm pools in buried dark",
-            Scene::Babel => "Library of Babel — infinity by repetition",
-            Scene::Rudon => "Rudon's Plane — decaying variety",
+            Scene::ShadowScreen => "Shadow Screen — shadow as material",
+            Scene::Monolith => "Monolith — mass and one hard shaft",
+            Scene::OverlitGrid => "Overlit Grid — the evenly lit nowhere",
+            Scene::Institutional => "Institutional — pristine orthogonal order",
+            Scene::FacetMonument => "Facet Monument — monumental indifference",
+            Scene::Megastructure => "Megastructure — silhouettes against the void",
+            Scene::Wellshaft => "Wellshaft — warm pools in buried dark",
+            Scene::InfiniteGallery => "Infinite Gallery — infinity by repetition",
+            Scene::Thinning => "Thinning — detail decays toward featurelessness",
         }
     }
 
@@ -92,20 +103,20 @@ impl Scene {
     /// Whether this scene's rig stages volumetric fog (the V toggle and the
     /// capture matrix only apply where a shaft exists to see).
     pub fn volumetric(self) -> bool {
-        matches!(self, Scene::Halo | Scene::Japanese)
+        matches!(self, Scene::FacetMonument)
     }
 
     pub fn spawn(self, ctx: &mut SceneCtx) {
         match self {
-            Scene::Japanese => japanese::spawn(ctx),
-            Scene::Brutalist => brutalist::spawn(ctx),
-            Scene::Backrooms => backrooms::spawn(ctx),
-            Scene::Severance => severance::spawn(ctx),
-            Scene::Halo => halo::spawn(ctx),
-            Scene::Blame => blame::spawn(ctx),
-            Scene::Silo => silo::spawn(ctx),
-            Scene::Babel => babel::spawn(ctx),
-            Scene::Rudon => rudon::spawn(ctx),
+            Scene::ShadowScreen => shadow_screen::spawn(ctx),
+            Scene::Monolith => monolith::spawn(ctx),
+            Scene::OverlitGrid => overlit_grid::spawn(ctx),
+            Scene::Institutional => institutional::spawn(ctx),
+            Scene::FacetMonument => facet_monument::spawn(ctx),
+            Scene::Megastructure => megastructure::spawn(ctx),
+            Scene::Wellshaft => wellshaft::spawn(ctx),
+            Scene::InfiniteGallery => infinite_gallery::spawn(ctx),
+            Scene::Thinning => thinning::spawn(ctx),
         }
     }
 }
@@ -127,7 +138,7 @@ impl SceneCtx<'_, '_, '_> {
         })
     }
 
-    /// Metal surface material (the Forerunner walls).
+    /// Metal surface material (the Facet Monument walls).
     pub fn metal(&mut self, color: Color, roughness: f32) -> Handle<StandardMaterial> {
         self.materials.add(StandardMaterial {
             base_color: color,

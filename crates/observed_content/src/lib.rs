@@ -7,6 +7,89 @@ use sha2::{Digest, Sha256};
 
 pub const SUPPORTED_SCHEMA_VERSION: u32 = 1;
 
+/// Version of the code-owned procedural architecture catalogue.
+///
+/// These values participate in generated-map identity independently of the authored
+/// content-manifest schema. Increment this version when a register's simulation
+/// contract changes incompatibly; presentation-only tuning does not require a bump.
+pub const ARCHITECTURE_CATALOG_VERSION: u32 = 2;
+
+/// Stable, production-safe identities for the procedural architecture registers.
+///
+/// The explicit discriminants are persisted in generated-map/replay metadata. Do not
+/// reorder or reuse them. Media inspirations deliberately do not appear in this API.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[repr(u8)]
+#[serde(rename_all = "snake_case")]
+pub enum ArchitectureRegister {
+    ShadowScreen = 0,
+    Monolith = 1,
+    OverlitGrid = 2,
+    Institutional = 3,
+    FacetMonument = 4,
+    Megastructure = 5,
+    Wellshaft = 6,
+    InfiniteGallery = 7,
+    Thinning = 8,
+}
+
+impl ArchitectureRegister {
+    pub const ALL: [Self; 9] = [
+        Self::ShadowScreen,
+        Self::Monolith,
+        Self::OverlitGrid,
+        Self::Institutional,
+        Self::FacetMonument,
+        Self::Megastructure,
+        Self::Wellshaft,
+        Self::InfiniteGallery,
+        Self::Thinning,
+    ];
+
+    pub const fn stable_id(self) -> u8 {
+        self as u8
+    }
+
+    pub const fn slug(self) -> &'static str {
+        match self {
+            Self::ShadowScreen => "shadow_screen",
+            Self::Monolith => "monolith",
+            Self::OverlitGrid => "overlit_grid",
+            Self::Institutional => "institutional",
+            Self::FacetMonument => "facet_monument",
+            Self::Megastructure => "megastructure",
+            Self::Wellshaft => "wellshaft",
+            Self::InfiniteGallery => "infinite_gallery",
+            Self::Thinning => "thinning",
+        }
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::ShadowScreen => "Shadow Screen",
+            Self::Monolith => "Monolith",
+            Self::OverlitGrid => "Overlit Grid",
+            Self::Institutional => "Institutional",
+            Self::FacetMonument => "Facet Monument",
+            Self::Megastructure => "Megastructure",
+            Self::Wellshaft => "Wellshaft",
+            Self::InfiniteGallery => "Infinite Gallery",
+            Self::Thinning => "Thinning",
+        }
+    }
+}
+
+impl TryFrom<u8> for ArchitectureRegister {
+    type Error = u8;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Self::ALL
+            .into_iter()
+            .find(|register| register.stable_id() == value)
+            .ok_or(value)
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContentManifest {
@@ -655,6 +738,25 @@ fn hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn architecture_register_ids_and_catalogue_order_are_pinned() {
+        let ids: Vec<_> = ArchitectureRegister::ALL
+            .into_iter()
+            .map(ArchitectureRegister::stable_id)
+            .collect();
+        assert_eq!(ids, (0..9).collect::<Vec<_>>());
+        assert_eq!(ARCHITECTURE_CATALOG_VERSION, 2);
+        for register in ArchitectureRegister::ALL {
+            assert_eq!(
+                ArchitectureRegister::try_from(register.stable_id()),
+                Ok(register)
+            );
+            assert!(!register.slug().is_empty());
+            assert!(!register.label().is_empty());
+        }
+        assert_eq!(ArchitectureRegister::try_from(9), Err(9));
+    }
 
     fn fixture() -> ContentManifest {
         ContentManifest {

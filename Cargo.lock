@@ -5374,6 +5374,7 @@ dependencies = [
  "bevy",
  "ghx_proc_gen",
  "glam 0.30.10",
+ "observed_content",
  "observed_core",
  "observed_observation",
 ]
@@ -5460,6 +5461,7 @@ name = "observed_style"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "observed_content",
 ]
 
 [[package]]

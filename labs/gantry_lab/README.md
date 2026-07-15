@@ -1,6 +1,6 @@
 # Gantry Lab
 
-Phase 40 feasibility lab for a two-level jump-map hallway.
+Resettable feasibility lab for the seeded, multidirectional Gantry expanse.
 
 Run:
 
@@ -8,15 +8,19 @@ Run:
 cargo run -p gantry_lab
 ```
 
-The lab renders the pure `observed_traversal::gantry` course: raised platform decks are
-the fast route, a missed commitment drops the runner into a visible lower landing, and
-the safe bypass stays on the lower floor. The deterministic bot can run all three
-routes:
+The lab renders a deterministic 128 x 96 metre course from
+`observed_traversal::gantry`. Its threshold starts on a 36 metre-high platform among a
+field of hexagonal megacolumns. The explicit ordered routes turn repeatedly rather
+than sorting toward one axis:
 
-- `1` clean jump: fast upper-platform route to the intended exit.
-- `2` fall recover: intentional miss, lower-floor landing, side-exit recovery.
-- `3` safe bypass: lower-floor route with no jump risk.
+- `1` jump line (amber): fast twisting high-platform route to the upper exit.
+- `2` high bridge (cyan): longer connected route to the same upper exit.
+- `3` understory (green): longest recovery route through the column bases to a
+  distinct lower exit.
 - `R` reset the current route.
 
-Success criteria are unit-tested in `observed_traversal`: lower-floor landings are
-navigable, route timing is fast/medium/slow, and repeated runs are deterministic.
+Purple markers are threshold endpoints and the white line is the active runner trail.
+Success criteria are unit-tested in `observed_traversal`: the footprint and deck
+height are pinned, the jump route has at least twelve nodes and four heading changes,
+the three controller runs preserve fast/medium/slow timing, and generation/replay is
+deterministic across seeds.

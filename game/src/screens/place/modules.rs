@@ -239,7 +239,29 @@ pub(crate) fn solve_hallway_modules(
             });
         }
     }
-    out
+    match geom.architecture_register {
+        Some(observed_content::ArchitectureRegister::ShadowScreen) => out
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, placement)| {
+                (matches!(placement.kind, ModuleKind::Slat | ModuleKind::Seam)
+                    && index.is_multiple_of(3))
+                .then_some(placement)
+            })
+            .collect(),
+        Some(observed_content::ArchitectureRegister::Institutional) => out
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, placement)| {
+                (matches!(
+                    placement.kind,
+                    ModuleKind::Panel | ModuleKind::Practical | ModuleKind::Seam
+                ) && index.is_multiple_of(2))
+                .then_some(placement)
+            })
+            .collect(),
+        _ => out,
+    }
 }
 
 fn near_gap(center: Vec2, gaps: &[DoorGap], cell: f32) -> bool {

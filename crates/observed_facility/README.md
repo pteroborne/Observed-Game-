@@ -28,6 +28,16 @@ This crate defines the topology and layouts of individual rooms and hallways. It
   crate's own `#[cfg(all(test, feature = "wfc"))]` tests cover a smaller 20-seed
   corpus plus determinism/diversity checks directly against `MapSpec`.
 
+### Architecture catalogue v2
+
+`generate_liminal_map_v2` preserves the validated v1 topology pipeline, promotes its
+edges to first-class `CorridorId`s, and adds a deterministic architecture collapse.
+Each map has 4-6 connected register regions of at least three rooms. Corridor designs
+share a register with an endpoint region and map semantic roles onto compatible
+`TraversalArchetype`s; Gantry and Vertical are guaranteed to resolve to
+`GantryExpanse` and `Wellshaft` respectively. The exact choices and generation keys
+live in `MapSpec::designs`, so threshold rewiring never rerolls Place architecture.
+
 ### Corridor interiors (Phase 47 / Arc D5)
 
 - **Problem:** `game::maze` (a DFS+braid spanning-tree labyrinth) is the only hallway

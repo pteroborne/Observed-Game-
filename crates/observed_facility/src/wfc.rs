@@ -69,10 +69,12 @@ use ghx_proc_gen::{
     },
 };
 use glam::Vec2;
+use observed_content::{ARCHITECTURE_CATALOG_VERSION, ArchitectureRegister};
 use observed_core::{Direction, RoomId, SplitMix};
 
 use crate::map_spec::{
-    CorridorRole, MapEdge, MapEndpoint, MapRoom, MapSpec, MapValidationError, RoomRole,
+    CorridorDesign, CorridorRole, DesignAssignments, MapCorridor, MapEdge, MapEndpoint, MapRoom,
+    MapSpec, MapValidationError, RoomDesign, RoomRole, TraversalArchetype,
 };
 
 /// Configuration for [`generate_liminal_map`].
@@ -153,6 +155,315 @@ pub fn generate_liminal_map(seed: u64, config: &WfcMapConfig) -> Result<MapSpec,
         last_room_count,
         last_errors,
     })
+}
+
+/// Generate the catalogue-v2 form of the liminal map.
+///
+/// Topology and semantic room roles come from [`generate_liminal_map`], preserving
+/// its proven graph guarantees. V2 promotes legacy edges to first-class stable
+/// [`CorridorId`]s, collapses 4-6 connected architecture territories, and records an
+/// immutable room/corridor design payload. Threshold refactors can therefore change
+/// attachments without silently changing a Place's architecture.
+pub fn generate_liminal_map_v2(seed: u64, config: &WfcMapConfig) -> Result<MapSpec, WfcMapError> {
+    let mut spec = generate_liminal_map(seed, config)?;
+    spec.name = "WFC Liminal Map V2";
+    spec.corridors = spec.corridors();
+
+    let mut last_errors = Vec::new();
+    for attempt in 0..config.retry_budget {
+        let design_seed = salt_seed(seed ^ 0xCA7A_10A0_0000_0002, attempt);
+        let Some(room_registers) = collapse_architecture_regions(&spec, seed, design_seed) else {
+            continue;
+        };
+
+        let mut candidate = spec.clone();
+        normalize_special_corridor_roles(&mut candidate, &room_registers, design_seed);
+        let assignments = build_design_assignments(&candidate, &room_registers, design_seed);
+        candidate.designs = Some(assignments);
+        match candidate.validate() {
+            Ok(()) => return Ok(candidate),
+            Err(errors) => last_errors = errors,
+        }
+    }
+
+    Err(WfcMapError::RetryBudgetExhausted {
+        attempts: config.retry_budget,
+        last_room_count: spec.room_count(),
+        last_errors,
+    })
+}
+
+fn collapse_architecture_regions(
+    spec: &MapSpec,
+    map_seed: u64,
+    design_seed: u64,
+) -> Option<BTreeMap<RoomId, ArchitectureRegister>> {
+    let rooms: Vec<_> = spec.rooms.iter().map(|room| room.id).collect();
+    if rooms.len() < 12 {
+        return None;
+    }
+    let mut rng = SplitMix::new(design_seed);
+    let region_count = 4 + rng.below(3);
+    let registers = select_registers(map_seed, region_count);
+
+    // Farthest-point nuclei keep territories spatially distinct. Every candidate
+    // vector is sorted by RoomId before the seeded tie-break.
+    let mut nuclei = vec![rooms[rng.below(rooms.len())]];
+    while nuclei.len() < region_count {
+        let mut scored = Vec::new();
+        let mut best_distance = 0;
+        for &room in &rooms {
+            if nuclei.contains(&room) {
+                continue;
+            }
+            let distance = nuclei
+                .iter()
+                .filter_map(|&nucleus| spec.shortest_path(nucleus, room))
+                .map(|path| path.len().saturating_sub(1))
+                .min()?;
+            if distance > best_distance {
+                best_distance = distance;
+                scored.clear();
+            }
+            if distance == best_distance {
+                scored.push(room);
+            }
+        }
+        scored.sort_unstable();
+        nuclei.push(*scored.get(rng.below(scored.len()))?);
+    }
+
+    // Round-robin frontier growth makes each territory connected by construction
+    // and avoids a single early nucleus consuming the whole graph.
+    let mut regions: Vec<BTreeSet<RoomId>> = nuclei
+        .iter()
+        .copied()
+        .map(|room| BTreeSet::from([room]))
+        .collect();
+    let mut assigned: BTreeSet<RoomId> = nuclei.into_iter().collect();
+    while assigned.len() < rooms.len() {
+        let mut progressed = false;
+        for region in &mut regions {
+            let mut frontier: Vec<RoomId> = region
+                .iter()
+                .flat_map(|&room| spec.neighbors(room))
+                .filter(|room| !assigned.contains(room))
+                .collect();
+            frontier.sort_unstable();
+            frontier.dedup();
+            if let Some(&room) = frontier.get(rng.below(frontier.len().max(1))) {
+                region.insert(room);
+                assigned.insert(room);
+                progressed = true;
+            }
+        }
+        if !progressed {
+            return None;
+        }
+    }
+    if regions.iter().any(|region| region.len() < 3) {
+        return None;
+    }
+
+    Some(
+        regions
+            .into_iter()
+            .zip(registers)
+            .flat_map(|(region, register)| region.into_iter().map(move |room| (room, register)))
+            .collect(),
+    )
+}
+
+/// Select from the stable-ID order, not declaration/insertion order supplied by a
+/// caller. The rotating start ensures all nine registers are reachable in a compact
+/// pinned seed corpus while still giving each map only 4-6 registers.
+fn select_registers(seed: u64, count: usize) -> Vec<ArchitectureRegister> {
+    let start = (seed % ArchitectureRegister::ALL.len() as u64) as usize;
+    (0..count)
+        .map(|offset| ArchitectureRegister::ALL[(start + offset) % ArchitectureRegister::ALL.len()])
+        .collect()
+}
+
+fn normalize_special_corridor_roles(
+    spec: &mut MapSpec,
+    room_registers: &BTreeMap<RoomId, ArchitectureRegister>,
+    seed: u64,
+) {
+    for corridor in &mut spec.corridors {
+        if matches!(corridor.role, CorridorRole::Vertical | CorridorRole::Gantry) {
+            corridor.role = CorridorRole::Connector;
+        }
+    }
+
+    let room_roles: BTreeMap<_, _> = spec.rooms.iter().map(|room| (room.id, room.role)).collect();
+    let mut vertical_candidates: Vec<_> = spec
+        .corridors
+        .iter()
+        .filter(|corridor| {
+            corridor.endpoints.iter().any(|endpoint| {
+                room_registers.get(&endpoint.room) == Some(&ArchitectureRegister::Wellshaft)
+            }) && corridor.endpoints.iter().all(|endpoint| {
+                !matches!(
+                    room_roles.get(&endpoint.room),
+                    Some(RoomRole::Start | RoomRole::Exit | RoomRole::Keystone)
+                )
+            })
+        })
+        .map(|corridor| corridor.id)
+        .collect();
+    vertical_candidates.sort_by_key(|id| design_key(seed, 0x56, u64::from(id.0), 0));
+    if let Some(id) = vertical_candidates.first()
+        && let Some(corridor) = spec
+            .corridors
+            .iter_mut()
+            .find(|corridor| corridor.id == *id)
+    {
+        corridor.role = CorridorRole::Vertical;
+    }
+
+    let mut gantry_candidates: Vec<_> = spec
+        .corridors
+        .iter()
+        .filter(|corridor| corridor.role != CorridorRole::Vertical)
+        .filter(|corridor| {
+            corridor.endpoints.iter().any(|endpoint| {
+                room_registers.get(&endpoint.room).is_some_and(|register| {
+                    matches!(
+                        register,
+                        ArchitectureRegister::Monolith
+                            | ArchitectureRegister::FacetMonument
+                            | ArchitectureRegister::Megastructure
+                            | ArchitectureRegister::Thinning
+                    )
+                })
+            })
+        })
+        .map(|corridor| corridor.id)
+        .collect();
+    gantry_candidates.sort_by_key(|id| design_key(seed, 0x47, u64::from(id.0), 0));
+    if let Some(id) = gantry_candidates.first()
+        && let Some(corridor) = spec
+            .corridors
+            .iter_mut()
+            .find(|corridor| corridor.id == *id)
+    {
+        corridor.role = CorridorRole::Gantry;
+    }
+}
+
+fn build_design_assignments(
+    spec: &MapSpec,
+    room_registers: &BTreeMap<RoomId, ArchitectureRegister>,
+    seed: u64,
+) -> DesignAssignments {
+    let rooms = room_registers
+        .iter()
+        .map(|(&room, &register)| {
+            (
+                room,
+                RoomDesign {
+                    room,
+                    register,
+                    generation_key: design_key(seed, 0x52, u64::from(room.0), register.stable_id()),
+                },
+            )
+        })
+        .collect();
+    let corridors = spec
+        .corridors
+        .iter()
+        .map(|corridor| {
+            let key = design_key(seed, 0x43, u64::from(corridor.id.0), 0);
+            let register = corridor_register(corridor, room_registers, key);
+            let traversal = traversal_for(corridor.role, register, key);
+            (
+                corridor.id,
+                CorridorDesign {
+                    corridor: corridor.id,
+                    register,
+                    traversal,
+                    generation_key: design_key(
+                        seed,
+                        0x63,
+                        u64::from(corridor.id.0),
+                        register.stable_id(),
+                    ),
+                },
+            )
+        })
+        .collect();
+    DesignAssignments {
+        version: ARCHITECTURE_CATALOG_VERSION,
+        rooms,
+        corridors,
+    }
+}
+
+fn corridor_register(
+    corridor: &MapCorridor,
+    room_registers: &BTreeMap<RoomId, ArchitectureRegister>,
+    key: u64,
+) -> ArchitectureRegister {
+    let endpoint_registers: Vec<_> = corridor
+        .endpoints
+        .iter()
+        .filter_map(|endpoint| room_registers.get(&endpoint.room).copied())
+        .collect();
+    match corridor.role {
+        CorridorRole::Vertical => ArchitectureRegister::Wellshaft,
+        CorridorRole::Gantry => endpoint_registers
+            .iter()
+            .copied()
+            .find(|register| {
+                matches!(
+                    register,
+                    ArchitectureRegister::Monolith
+                        | ArchitectureRegister::FacetMonument
+                        | ArchitectureRegister::Megastructure
+                        | ArchitectureRegister::Thinning
+                )
+            })
+            .expect("gantry candidate has a compatible endpoint"),
+        _ => endpoint_registers[(key as usize) % endpoint_registers.len()],
+    }
+}
+
+fn traversal_for(
+    role: CorridorRole,
+    register: ArchitectureRegister,
+    key: u64,
+) -> TraversalArchetype {
+    if register == ArchitectureRegister::Institutional {
+        return TraversalArchetype::Orthogonal;
+    }
+    match role {
+        CorridorRole::Gantry => TraversalArchetype::GantryExpanse,
+        CorridorRole::Vertical => TraversalArchetype::Wellshaft,
+        CorridorRole::LongRoute => TraversalArchetype::Long,
+        CorridorRole::Mystery => {
+            [TraversalArchetype::Maze, TraversalArchetype::Chicane][key as usize % 2]
+        }
+        CorridorRole::Bypass => [
+            TraversalArchetype::Long,
+            TraversalArchetype::Chicane,
+            TraversalArchetype::Climb,
+        ][key as usize % 3],
+        CorridorRole::Connector => [
+            TraversalArchetype::Straight,
+            TraversalArchetype::Pressure,
+            TraversalArchetype::Climb,
+            TraversalArchetype::Colonnade,
+        ][key as usize % 4],
+    }
+}
+
+fn design_key(seed: u64, domain: u8, id: u64, variant: u8) -> u64 {
+    let mut rng = SplitMix::new(
+        seed ^ u64::from(domain).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            ^ id.wrapping_mul(0xBF58_476D_1CE4_E5B9)
+            ^ u64::from(variant).wrapping_mul(0x94D0_49BB_1331_11EB),
+    );
+    rng.next_u64()
 }
 
 /// Deterministic per-attempt seed salt (no relation to any hash iteration order).
@@ -421,6 +732,7 @@ fn assign_roles_and_build(
         rooms,
         edges: map_edges,
         corridors: Vec::new(),
+        designs: None,
     };
 
     // The repair passes above can add a shortcut edge that collapses the very
@@ -1203,6 +1515,158 @@ mod tests {
         assert_eq!(
             first, second,
             "same seed must produce byte-identical MapSpec"
+        );
+    }
+
+    #[test]
+    fn v2_generation_is_deterministic_and_preserves_v1() {
+        let config = WfcMapConfig::default();
+        let legacy = generate_liminal_map(1234, &config).expect("v1 generates");
+        assert!(legacy.designs.is_none());
+        assert!(legacy.corridors.is_empty());
+
+        let first = generate_liminal_map_v2(1234, &config).expect("v2 generates");
+        let second = generate_liminal_map_v2(1234, &config).expect("v2 regenerates");
+        assert_eq!(first, second);
+        assert_eq!(first.edges, legacy.edges);
+        assert!(!first.corridors.is_empty());
+        assert_eq!(
+            first.designs.as_ref().map(|designs| designs.version),
+            Some(ARCHITECTURE_CATALOG_VERSION)
+        );
+    }
+
+    #[test]
+    fn v2_retains_the_v1_legacy_edge_topology_for_runtime_adapters() {
+        let config = WfcMapConfig::default();
+        for seed in 0..16 {
+            let v1 = generate_liminal_map(seed, &config).unwrap();
+            let v2 = generate_liminal_map_v2(seed, &config).unwrap();
+            assert_eq!(v2.edges.len(), v1.edges.len());
+            assert_eq!(
+                v2.edges
+                    .iter()
+                    .map(|edge| (edge.a, edge.b))
+                    .collect::<Vec<_>>(),
+                v1.edges
+                    .iter()
+                    .map(|edge| (edge.a, edge.b))
+                    .collect::<Vec<_>>(),
+                "seed {seed}: ConstraintWorld's legacy edge adapter must see the v1 topology"
+            );
+        }
+    }
+
+    #[test]
+    fn v2_regions_are_connected_sized_and_cover_exactly_four_to_six_registers() {
+        let config = WfcMapConfig::default();
+        for seed in 0..24 {
+            let spec = generate_liminal_map_v2(seed, &config)
+                .unwrap_or_else(|error| panic!("seed {seed} failed: {error:?}"));
+            spec.validate()
+                .unwrap_or_else(|errors| panic!("seed {seed} invalid: {errors:?}"));
+            let designs = spec.designs.as_ref().expect("v2 assignments");
+            assert!((4..=6).contains(&designs.register_count()));
+            assert_eq!(designs.rooms.len(), spec.rooms.len());
+            assert_eq!(designs.corridors.len(), spec.corridors.len());
+
+            for register in ArchitectureRegister::ALL {
+                let region: BTreeSet<_> = designs
+                    .rooms
+                    .values()
+                    .filter_map(|design| (design.register == register).then_some(design.room))
+                    .collect();
+                if region.is_empty() {
+                    continue;
+                }
+                assert!(region.len() >= 3, "seed {seed} {register:?} too small");
+                let start = *region.iter().next().unwrap();
+                let mut reached = BTreeSet::from([start]);
+                let mut queue = VecDeque::from([start]);
+                while let Some(room) = queue.pop_front() {
+                    for neighbor in spec.neighbors(room) {
+                        if region.contains(&neighbor) && reached.insert(neighbor) {
+                            queue.push_back(neighbor);
+                        }
+                    }
+                }
+                assert_eq!(reached, region, "seed {seed} {register:?} disconnected");
+            }
+        }
+    }
+
+    #[test]
+    fn v2_seed_corpus_reaches_every_production_register() {
+        let config = WfcMapConfig::default();
+        let mut seen = BTreeSet::new();
+        for seed in 0..9 {
+            let spec = generate_liminal_map_v2(seed, &config).unwrap();
+            seen.extend(
+                spec.designs
+                    .as_ref()
+                    .unwrap()
+                    .rooms
+                    .values()
+                    .map(|design| design.register),
+            );
+        }
+        assert_eq!(
+            seen,
+            ArchitectureRegister::ALL.into_iter().collect(),
+            "the pinned compact corpus must exercise the complete catalogue"
+        );
+    }
+
+    #[test]
+    fn v2_corridor_assignments_obey_roles_boundaries_and_stable_ids() {
+        let config = WfcMapConfig::default();
+        for seed in 0..16 {
+            let mut spec = generate_liminal_map_v2(seed, &config).unwrap();
+            let before = spec.designs.clone().unwrap();
+            for corridor in &spec.corridors {
+                let design = before.corridor(corridor.id).expect("corridor design");
+                assert!(
+                    design
+                        .traversal
+                        .is_compatible(design.register, corridor.role)
+                );
+                assert!(corridor.endpoints.iter().any(|endpoint| {
+                    before.room(endpoint.room).unwrap().register == design.register
+                }));
+                match corridor.role {
+                    CorridorRole::Gantry => {
+                        assert_eq!(design.traversal, TraversalArchetype::GantryExpanse)
+                    }
+                    CorridorRole::Vertical => {
+                        assert_eq!(design.traversal, TraversalArchetype::Wellshaft);
+                        assert_eq!(design.register, ArchitectureRegister::Wellshaft);
+                        assert!(corridor.endpoints.iter().all(|endpoint| {
+                            !matches!(
+                                spec.room(endpoint.room).unwrap().role,
+                                RoomRole::Start | RoomRole::Exit | RoomRole::Keystone
+                            )
+                        }));
+                    }
+                    _ => {}
+                }
+            }
+
+            // Storage order is not identity: explicit CorridorIds keep every design
+            // stable even if a consumer presents the catalogue in reverse order.
+            spec.corridors.reverse();
+            spec.validate().unwrap();
+            assert_eq!(spec.designs.as_ref().unwrap(), &before);
+        }
+    }
+
+    #[test]
+    fn traversal_archetype_ids_are_pinned() {
+        assert_eq!(
+            TraversalArchetype::ALL
+                .into_iter()
+                .map(TraversalArchetype::stable_id)
+                .collect::<Vec<_>>(),
+            (0..10).collect::<Vec<_>>()
         );
     }
 

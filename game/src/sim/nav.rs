@@ -193,6 +193,28 @@ pub(crate) fn room_connection_slots(
         .collect()
 }
 
+fn live_corridor_connection(
+    game: &HybridMatch,
+    room: RoomId,
+    target: RoomId,
+    room_slot: crate::teleport::ThresholdSlotId,
+) -> Option<crate::teleport::LiveCorridorConnection> {
+    let side = *observed_observation::Side::ALL.get(room_slot.0 as usize)?;
+    let structure = &game.competitive.structure;
+    let door = structure.graph.door_id(room, side);
+    let partner = structure.graph.partner(door);
+    if partner == door || structure.graph.door(partner).room != target {
+        return None;
+    }
+    let socket = structure.corridor_socket(door)?;
+    Some(crate::teleport::LiveCorridorConnection {
+        room,
+        target,
+        corridor: socket.corridor,
+        slot: socket.slot,
+    })
+}
+
 pub(crate) fn room_target(
     game: &HybridMatch,
     room: RoomId,
@@ -217,6 +239,12 @@ pub(crate) fn nav_for_room(
 ) -> crate::teleport::Nav {
     let connections = connections_for_nav(game, items, room);
     let connection_slots = room_connection_slots(game, items, room, &connections);
+    let live_corridors = connection_slots
+        .iter()
+        .filter_map(|connection| {
+            live_corridor_connection(game, room, connection.target, connection.slot)
+        })
+        .collect();
     let sealed_slots = sealed_slots_for_room(game, room);
     let target_room = room_target(game, room, &connections);
     let room_role = game
@@ -247,6 +275,7 @@ pub(crate) fn nav_for_room(
         target_room,
         room_role,
         corridor_roles,
+        live_corridors,
         seed,
         version: game.reroute_commits,
         exit_locked: !keys.gate_open(),
@@ -279,6 +308,12 @@ pub(crate) fn nav_for_place(
             let mut nav = nav_for_room(seed, game, keys, items, from);
             nav.hallway_entry_room_slot = slot_for_connection(game, items, from, to);
             nav.hallway_exit_room_slot = slot_for_connection(game, items, to, from);
+            if let Some(room_slot) = nav.hallway_exit_room_slot
+                && let Some(connection) = live_corridor_connection(game, to, from, room_slot)
+                && !nav.live_corridors.contains(&connection)
+            {
+                nav.live_corridors.push(connection);
+            }
             // `nav_for_room`'s `corridor_roles` is keyed off `from`'s *live* rendered
             // connections, which should include `to` — but a hallway can be rendered
             // for a `to` that just decohered off that list, so make sure this specific

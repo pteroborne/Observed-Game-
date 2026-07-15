@@ -40,6 +40,14 @@ pub(crate) fn at_deck_height(local_feet_y: f32) -> bool {
     (local_feet_y - gantry::UPPER_DECK_Y).abs() <= DECK_HEIGHT_TOLERANCE
 }
 
+pub(crate) fn at_gantry_deck_height(geom: &PlaceGeom, local_feet_y: f32) -> bool {
+    if geom.structure_kind == crate::teleport::PlaceStructureKind::GantryExpanse {
+        (local_feet_y - gantry::GANTRY_EXPANSE_DECK_Y).abs() <= DECK_HEIGHT_TOLERANCE
+    } else {
+        at_deck_height(local_feet_y)
+    }
+}
+
 /// Whether a deck-piloted Gantry leg should fire the jump button this fixed tick.
 ///
 /// `leg_needs_jump` says the current route segment crosses a real platform gap. The
@@ -165,6 +173,47 @@ pub(crate) fn gantry_ground_recovery_route(
     waypoints.push(inside);
     waypoints.push(outside);
     BotPath { waypoints }
+}
+
+/// Follow the stable route guide projected by Gantry Expanses. Evidence/spectator bots
+/// choose the connected high bridge while on the 36 m entry platform and the long
+/// understory guide after a fall; the fast jump line remains a player skill route.
+pub(crate) fn gantry_expanse_route(
+    geom: &PlaceGeom,
+    config: &FpsConfig,
+    here: Vec2,
+    local_feet_y: f32,
+    gap: &DoorGap,
+) -> Option<BotPath> {
+    if geom.structure_kind != crate::teleport::PlaceStructureKind::GantryExpanse {
+        return None;
+    }
+    let wanted = if local_feet_y > gantry::GANTRY_EXPANSE_DECK_Y * 0.5 {
+        crate::teleport::PlaceRouteKind::HighBridge
+    } else {
+        crate::teleport::PlaceRouteKind::Understory
+    };
+    let route = geom
+        .route_guides
+        .iter()
+        .find(|route| route.kind == wanted)?;
+    let nearest = route
+        .nodes
+        .iter()
+        .enumerate()
+        .min_by(|(_, a), (_, b)| {
+            here.distance_squared(Vec2::new(a.x, a.z))
+                .total_cmp(&here.distance_squared(Vec2::new(b.x, b.z)))
+        })
+        .map(|(index, _)| index)
+        .unwrap_or(0);
+    let mut waypoints: Vec<Vec2> = route.nodes[nearest..]
+        .iter()
+        .map(|node| Vec2::new(node.x, node.z))
+        .collect();
+    waypoints.push(gap.center - gap.normal * (config.radius + 0.45));
+    waypoints.push(gap.center + gap.normal * (config.radius + 0.85));
+    Some(BotPath { waypoints })
 }
 
 /// Authored route through the WFC-owned hex-pillar wellshaft. Duplicate tread heights

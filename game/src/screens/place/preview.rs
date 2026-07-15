@@ -12,10 +12,9 @@ use super::mesh::{spawn_polygon_shell, spawn_polygon_walls};
 use super::shell;
 use crate::GameState;
 use crate::camera;
-use crate::hallway::{self, HallwayFlavor};
 use crate::layout::WALL_HEIGHT;
 use crate::rivals;
-use crate::screens::match_runtime::{district_for_place, palette_for_game};
+use crate::screens::match_runtime::{district_for_game, palette_for_game};
 use crate::sim::state::ThresholdTransit;
 use crate::teleport::{self, DoorGap, Place};
 use crate::view::assets::MatchAssets;
@@ -294,6 +293,7 @@ pub(crate) fn spawn_passage_preview(
             scene_offset,
             seed,
             palette_for_game(seed, destination.place, game, klaxon_active),
+            district_for_game(seed, destination.place, game),
             &destination.arena,
         ),
         Place::Room(dest_room) => spawn_room_preview(
@@ -328,9 +328,10 @@ pub(crate) fn spawn_hallway_preview(
     scene_offset: Vec3,
     seed: u64,
     palette: observed_style::DistrictPalette,
+    district: observed_style::District,
     arena: &observed_traversal::ArenaSpec,
 ) {
-    let Place::Hallway { variation, .. } = next else {
+    let Place::Hallway { .. } = next else {
         return;
     };
     let (hx, hz) = (dest.half.x, dest.half.y);
@@ -371,13 +372,13 @@ pub(crate) fn spawn_hallway_preview(
         arena_parent,
         &palette,
         super::authored::ShellMaterials {
-            floor: if hallway::template(variation).flavor == HallwayFlavor::PressureGate {
+            floor: if dest.structure_kind == teleport::PlaceStructureKind::PressureGate {
                 &assets.trap_idle_material
             } else {
                 &assets.floor_material
             },
             wall: &assets.wall_material,
-            interior: (hallway::template(variation).flavor == HallwayFlavor::Gantry)
+            interior: (dest.structure_kind == teleport::PlaceStructureKind::LegacyGantry)
                 .then_some((SurfaceRole::GantryDeck, &assets.gantry_deck_material)),
         },
     );
@@ -385,9 +386,9 @@ pub(crate) fn spawn_hallway_preview(
     // Module parity: the hallway you see through the doorway carries the same
     // WFC-composed light modules you will teleport into (same pure inputs).
     if let Place::Hallway { from, to, .. } = next {
-        let district = district_for_place(seed, next);
         let placements = super::modules::solve_hallway_modules(
-            super::modules::hall_module_seed(seed, from.0, to.0),
+            dest.design_key
+                .unwrap_or_else(|| super::modules::hall_module_seed(seed, from.0, to.0)),
             dest,
             teleport::MAZE_CELL,
             district,
@@ -405,7 +406,7 @@ pub(crate) fn spawn_hallway_preview(
             },
         );
     }
-    let accent = assets.district_accent_materials[district_for_place(seed, next).index()].clone();
+    let accent = assets.district_accent_materials[district.index()].clone();
     spawn_surface_detail(commands, assets, dest, accent, local_parent, true);
 }
 
@@ -508,17 +509,31 @@ pub(crate) fn spawn_room_miniature(
         &assets.ceiling_material,
         materials,
     );
-    spawn_polygon_shell(
-        commands,
-        assets,
-        meshes,
-        poly,
-        floor_material,
-        ceiling_material,
-        parent,
-        true,
-        WALL_HEIGHT,
-    );
+    if dest.architecture_register == Some(observed_content::ArchitectureRegister::FacetMonument) {
+        super::mesh::spawn_polygon_shell_with_aperture(
+            commands,
+            meshes,
+            poly,
+            floor_material,
+            ceiling_material,
+            parent,
+            true,
+            WALL_HEIGHT,
+            0.34,
+        );
+    } else {
+        spawn_polygon_shell(
+            commands,
+            assets,
+            meshes,
+            poly,
+            floor_material,
+            ceiling_material,
+            parent,
+            true,
+            WALL_HEIGHT,
+        );
+    }
     spawn_polygon_walls(
         commands,
         assets,

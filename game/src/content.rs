@@ -9,8 +9,7 @@ use observed_content::{
 };
 use observed_traversal::{ArenaSpec, ColliderShape, ColliderSpec, FpsConfig, StableColliderId};
 
-use crate::hallway::HallwayFlavor;
-use crate::teleport::{Place, PlaceGeom};
+use crate::teleport::{Place, PlaceGeom, PlaceStructureKind};
 
 #[derive(Resource)]
 pub(crate) struct GameContent {
@@ -84,16 +83,16 @@ impl ContentCollisionCatalog {
         if geom.is_wellshaft() {
             return None;
         }
-        let module_id = match crate::hallway::template(variation).flavor {
-            HallwayFlavor::Gantry => "corridor.gantry.01",
-            HallwayFlavor::Colonnade => "corridor.colonnade.01",
+        let module_id = match geom.structure_kind {
+            PlaceStructureKind::LegacyGantry => "corridor.gantry.01",
+            PlaceStructureKind::Colonnade => "corridor.colonnade.01",
             _ => return None,
         };
         let (definition, _) = self.modules.get(module_id)?;
         let source_width = definition.bounds.max[0] - definition.bounds.min[0];
         let source_length = definition.bounds.max[2] - definition.bounds.min[2];
         Some(PlaceLayoutSnapshot {
-            generation: variation as u32,
+            generation: geom.design_key.unwrap_or(variation as u64) as u32,
             placements: vec![ModulePlacement {
                 module_id: module_id.into(),
                 translation: [0.0, 0.0, geom.half.y],
@@ -225,6 +224,7 @@ fn config_from_profile(profile: TraversalProfile) -> FpsConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hallway::HallwayFlavor;
 
     #[test]
     fn committed_catalog_loads_every_declared_bake() {

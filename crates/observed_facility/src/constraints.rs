@@ -5,7 +5,7 @@
 //! off, the same rewiring can disconnect the graph — which is why the constraint
 //! exists. Pure logic; the `Resource` derive is behind the `bevy` feature.
 
-use observed_core::{RoomId, SplitMix, TeamId};
+use observed_core::{CorridorId, RoomId, SplitMix, TeamId, ThresholdSlotId};
 use observed_observation::contention::Anchor;
 use observed_observation::{Door, DoorId, ObservationWorld, ROOM_COUNT, Side};
 
@@ -24,6 +24,15 @@ const SPINE: [((u32, Side), (u32, Side)); 8] = [
     ((6, Side::East), (7, Side::West)),
     ((7, Side::East), (8, Side::West)),
 ];
+
+/// Stable identity of the corridor socket attached to one room door. Catalogue-v2
+/// decoherence moves these attachments as a bijective pool; it never creates a new
+/// corridor identity from the newly paired room ids.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CorridorSocket {
+    pub corridor: CorridorId,
+    pub slot: ThresholdSlotId,
+}
 
 #[cfg_attr(feature = "bevy", derive(bevy::prelude::Resource))]
 #[derive(Clone, Debug)]
@@ -49,6 +58,9 @@ pub struct ConstraintWorld {
     /// the one force that overrides every freeze — pins, anchors, and even the
     /// protected spine — see [`Self::seal_room`].
     pub sealed_rooms: Vec<RoomId>,
+    /// Present only for catalogue-v2 maps. Legacy worlds retain the original direct
+    /// door-pair behavior and derive corridor identity at the presentation boundary.
+    stable_corridor_sockets: Option<Vec<Option<CorridorSocket>>>,
 }
 
 impl ConstraintWorld {
@@ -72,6 +84,7 @@ impl ConstraintWorld {
             last_event: "Gold routes persist; the rest rewires but stays connected.".to_string(),
             anchors: Vec::new(),
             sealed_rooms: Vec::new(),
+            stable_corridor_sockets: None,
         };
         world.recompute_connectivity();
         world
@@ -91,6 +104,19 @@ impl ConstraintWorld {
             vec![start; observed_observation::PLAYER_COUNT],
             0x5EC7_0A11_EE00_0001,
         );
+        let stable_corridor_sockets = spec.designs.as_ref().map(|_| {
+            let mut sockets = vec![None; graph.doors.len()];
+            for corridor in &spec.corridors {
+                for (slot, endpoint) in corridor.endpoints.iter().enumerate() {
+                    let door = graph.door_id(endpoint.room, endpoint.side);
+                    sockets[door.0 as usize] = Some(CorridorSocket {
+                        corridor: corridor.id,
+                        slot: ThresholdSlotId(slot as u16),
+                    });
+                }
+            }
+            sockets
+        });
         let mut world = Self {
             protected: vec![false; graph.doors.len()],
             graph,
@@ -106,6 +132,7 @@ impl ConstraintWorld {
             ),
             anchors: Vec::new(),
             sealed_rooms: Vec::new(),
+            stable_corridor_sockets,
         };
         world.recompute_connectivity();
         world
@@ -117,6 +144,15 @@ impl ConstraintWorld {
 
     pub fn is_protected(&self, door: DoorId) -> bool {
         self.protected[door.0 as usize]
+    }
+
+    /// The stable catalogue corridor socket currently attached to `door`.
+    pub fn corridor_socket(&self, door: DoorId) -> Option<CorridorSocket> {
+        self.stable_corridor_sockets
+            .as_ref()?
+            .get(door.0 as usize)
+            .copied()
+            .flatten()
     }
 
     /// Whether any team has an anchor placed on `room`. Mirrors
@@ -145,6 +181,10 @@ impl ConstraintWorld {
             let partner = self.graph.partner(door);
             self.graph.links[door.0 as usize] = door;
             self.graph.links[partner.0 as usize] = partner;
+            if let Some(sockets) = &mut self.stable_corridor_sockets {
+                sockets[door.0 as usize] = None;
+                sockets[partner.0 as usize] = None;
+            }
         }
         if !self.sealed_rooms.contains(&room) {
             self.sealed_rooms.push(room);
@@ -223,6 +263,11 @@ impl ConstraintWorld {
         let free: Vec<DoorId> = (0..self.graph.doors.len())
             .map(|i| DoorId(i as u16))
             .filter(|d| !self.is_frozen(*d))
+            .filter(|d| {
+                self.stable_corridor_sockets
+                    .as_ref()
+                    .is_none_or(|sockets| sockets[d.0 as usize].is_some())
+            })
             .collect();
 
         let mut accepted = None;
@@ -255,6 +300,33 @@ impl ConstraintWorld {
         }
 
         if let Some(candidate) = accepted {
+            if let Some(sockets) = &mut self.stable_corridor_sockets {
+                let mut corridor_pool: Vec<CorridorId> = free
+                    .iter()
+                    .filter_map(|door| sockets[door.0 as usize].map(|socket| socket.corridor))
+                    .collect();
+                corridor_pool.sort_unstable();
+                corridor_pool.dedup();
+                let mut new_pairs: Vec<(DoorId, DoorId)> = free
+                    .iter()
+                    .filter_map(|door| {
+                        let partner = candidate[door.0 as usize];
+                        (door.0 < partner.0).then_some((*door, partner))
+                    })
+                    .collect();
+                new_pairs.sort_unstable_by_key(|(a, b)| (a.0, b.0));
+                debug_assert_eq!(corridor_pool.len(), new_pairs.len());
+                for (corridor, (a, b)) in corridor_pool.into_iter().zip(new_pairs) {
+                    sockets[a.0 as usize] = Some(CorridorSocket {
+                        corridor,
+                        slot: ThresholdSlotId(0),
+                    });
+                    sockets[b.0 as usize] = Some(CorridorSocket {
+                        corridor,
+                        slot: ThresholdSlotId(1),
+                    });
+                }
+            }
             self.graph.links = candidate;
         }
 
@@ -351,6 +423,46 @@ mod tests {
             .map(|i| DoorId(i as u16))
             .filter(|d| world.is_protected(*d))
             .collect()
+    }
+
+    #[cfg(feature = "wfc")]
+    #[test]
+    fn catalogue_v2_moves_corridor_attachments_without_restyling_places() {
+        use std::collections::BTreeSet;
+
+        let spec = crate::wfc::generate_liminal_map_v2(17, &crate::wfc::WfcMapConfig::default())
+            .expect("v2 map");
+        let mut world = ConstraintWorld::from_map_spec(&spec);
+        world.graph.players.clear();
+        let ids_before: BTreeSet<_> = world
+            .stable_corridor_sockets
+            .as_ref()
+            .expect("v2 socket ledger")
+            .iter()
+            .flatten()
+            .map(|socket| socket.corridor)
+            .collect();
+        let attachments_before = world.stable_corridor_sockets.clone().unwrap();
+
+        let mut changed = false;
+        for _ in 0..4 {
+            world.decohere();
+            let sockets = world.stable_corridor_sockets.as_ref().unwrap();
+            let ids_after: BTreeSet<_> = sockets
+                .iter()
+                .flatten()
+                .map(|socket| socket.corridor)
+                .collect();
+            assert_eq!(ids_after, ids_before, "the Place catalogue is conserved");
+            for (a, b) in world.graph.connections() {
+                let a_socket = sockets[a.0 as usize].expect("live door has corridor socket");
+                let b_socket = sockets[b.0 as usize].expect("partner has corridor socket");
+                assert_eq!(a_socket.corridor, b_socket.corridor);
+                assert_ne!(a_socket.slot, b_socket.slot);
+            }
+            changed |= *sockets != attachments_before;
+        }
+        assert!(changed, "unobserved socket attachments actually move");
     }
 
     #[test]

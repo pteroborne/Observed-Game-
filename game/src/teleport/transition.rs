@@ -147,6 +147,30 @@ pub fn place_junction(place: Place, nav: &Nav) -> JunctionTopology {
     let mut attachments: Vec<ThresholdAttachment> = Vec::new();
 
     let mut attach = |from_room: RoomId, target: RoomId, room_slot: super::ThresholdSlotId| {
+        if let Some(connection) = nav.live_corridor(from_room, target) {
+            let slot_count = nav
+                .map_spec
+                .as_ref()
+                .and_then(|spec| {
+                    spec.corridors
+                        .iter()
+                        .find(|corridor| corridor.id == connection.corridor)
+                })
+                .map_or(2, |corridor| corridor.endpoints.len());
+            if !specs.iter().any(|spec| spec.id == connection.corridor) {
+                specs.push(CorridorSpec::with_slot_count(
+                    connection.corridor,
+                    slot_count,
+                ));
+            }
+            let room_tid = ThresholdId::new(PlaceId::Room(from_room), room_slot.0);
+            let corridor_tid =
+                ThresholdId::new(PlaceId::Corridor(connection.corridor), connection.slot.0);
+            if let Ok(attachment) = ThresholdAttachment::new(room_tid, corridor_tid) {
+                attachments.push(attachment);
+            }
+            return;
+        }
         if let Some(spec) = &nav.map_spec {
             let mut found = false;
             for corridor in &spec.corridors {
@@ -210,6 +234,24 @@ pub fn place_junction(place: Place, nav: &Nav) -> JunctionTopology {
         Place::Hallway {
             corridor, from, to, ..
         } => {
+            if nav
+                .live_corridor(from, to)
+                .is_some_and(|connection| connection.corridor == corridor)
+            {
+                let from_slot = nav
+                    .hallway_entry_room_slot
+                    .unwrap_or(super::ThresholdSlotId(0));
+                let to_slot = nav
+                    .hallway_exit_room_slot
+                    .unwrap_or(super::ThresholdSlotId(0));
+                attach(from, to, from_slot);
+                attach(to, from, to_slot);
+                let mut topology = JunctionTopology::new(specs, Vec::new()).unwrap_or_default();
+                for attachment in attachments {
+                    let _ = topology.attach(attachment);
+                }
+                return topology;
+            }
             if let Some(spec) = &nav.map_spec
                 && let Some(corridor_def) = spec.corridors.iter().find(|c| c.id == corridor)
             {
@@ -495,12 +537,23 @@ pub fn wall_spans(half_len: f32, mut gaps: Vec<(f32, f32)>) -> Vec<(f32, f32)> {
 /// opening above their local floor, so a split-level hall raises the shell by the
 /// tallest threshold floor.
 pub fn structural_height(geom: &PlaceGeom, wall_height: f32) -> f32 {
-    wall_height
+    let threshold_height = wall_height
         + geom
             .gaps
             .iter()
             .map(|gap| gap.floor_y)
-            .fold(0.0_f32, f32::max)
+            .fold(0.0_f32, f32::max);
+    let oriented_height = geom
+        .oriented_solids
+        .iter()
+        .map(|solid| solid.top_y)
+        .fold(0.0_f32, f32::max);
+    let convex_height = geom
+        .convex_solids
+        .iter()
+        .map(|solid| solid.top_y)
+        .fold(0.0_f32, f32::max);
+    threshold_height.max(oriented_height).max(convex_height)
 }
 
 /// Build the collision world for a place: perimeter walls (as the proven controller's
@@ -733,6 +786,20 @@ pub fn place_structural_primitives(
             ));
         }
     }
+    for solid in &geom.oriented_solids {
+        let height = solid.top_y - solid.bottom_y;
+        if height > 0.01 {
+            primitives.push(StructuralCollider {
+                center: Vec3::new(
+                    solid.center.x,
+                    floor_y + solid.bottom_y + height * 0.5,
+                    solid.center.y,
+                ),
+                half: Vec3::new(solid.half.x, height * 0.5, solid.half.y),
+                yaw: solid.yaw,
+            });
+        }
+    }
     primitives
 }
 
@@ -851,11 +918,50 @@ pub fn place_arena_spec(geom: &PlaceGeom, floor_y: f32, wall_height: f32) -> Are
                 }
             }),
     );
+    let first_convex_id = colliders.len() as u32;
+    colliders.extend(
+        geom.convex_solids
+            .iter()
+            .enumerate()
+            .filter(|(_, solid)| solid.footprint.len() >= 3 && solid.top_y - solid.bottom_y > 0.01)
+            .map(|(index, solid)| {
+                let mut points = Vec::with_capacity(solid.footprint.len() * 2);
+                for y in [solid.bottom_y, solid.top_y] {
+                    points.extend(
+                        solid
+                            .footprint
+                            .iter()
+                            .map(|point| Vec3::new(point.x, y, point.y)),
+                    );
+                }
+                ColliderSpec {
+                    id: StableColliderId(first_convex_id + index as u32),
+                    center: Vec3::new(0.0, floor_y, 0.0),
+                    rotation: [0.0, 0.0, 0.0, 1.0],
+                    shape: ColliderShape::ConvexHull { points },
+                    friction: 0.8,
+                }
+            }),
+    );
+    let local_min_y = geom
+        .oriented_solids
+        .iter()
+        .map(|solid| solid.bottom_y)
+        .chain(geom.convex_solids.iter().map(|solid| solid.bottom_y))
+        .fold(0.0_f32, f32::min);
+    let local_max_y = structural_height(geom, wall_height).max(
+        geom.decks
+            .iter()
+            .map(|deck| deck.top_y)
+            .fold(0.0_f32, f32::max),
+    );
+    let safety_center_y = floor_y + (local_min_y + local_max_y) * 0.5;
+    let safety_half_y = (local_max_y - local_min_y) * 0.5 + 12.0;
     let spec = ArenaSpec {
         colliders,
         floor_y,
-        safety_center: Vec3::new(0.0, floor_y + wall_height * 0.5, 0.0),
-        safety_half: Vec3::new(geom.half.x + 1.0, wall_height + 12.0, geom.half.y + 1.0),
+        safety_center: Vec3::new(0.0, safety_center_y, 0.0),
+        safety_half: Vec3::new(geom.half.x + 1.0, safety_half_y, geom.half.y + 1.0),
     };
     debug_assert!(spec.validate().is_ok());
     spec

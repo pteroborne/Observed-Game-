@@ -70,12 +70,13 @@ fn main() {
         .add_systems(
             Update,
             (
+                handle_map_topology_input,
                 handle_input,
                 render_map,
                 update_ui,
-                handle_map_topology_input,
                 render_map_topology,
-            ),
+            )
+                .chain(),
         )
         .run();
 }
@@ -345,20 +346,32 @@ fn check_connectivity(
     true
 }
 
-fn handle_input(keys: Res<ButtonInput<KeyCode>>, mut state: ResMut<MapState>) {
-    if keys.just_pressed(KeyCode::Space) {
+fn handle_input(
+    keys: Res<ButtonInput<KeyCode>>,
+    topology: Res<MapTopologyState>,
+    mut state: ResMut<MapState>,
+) {
+    if !topology.active && keys.just_pressed(KeyCode::Space) {
         state.seed = state.seed.wrapping_add(37);
         solve_new_map(&mut state);
     }
 }
 
-fn update_ui(state: Res<MapState>, mut query: Query<&mut Text, With<SeedText>>) {
-    if !state.is_changed() {
+fn update_ui(
+    state: Res<MapState>,
+    topology: Res<MapTopologyState>,
+    mut query: Query<&mut Text, With<SeedText>>,
+) {
+    if !state.is_changed() && !topology.is_changed() {
         return;
     }
     for mut text in &mut query {
+        if topology.active {
+            text.0.clear();
+            continue;
+        }
         text.0 = format!(
-            "WFC Hallway Feasibility Lab\n\
+            "Archived abstract tile-WFC feasibility proof\n\
              -------------------------\n\
              Status: {}\n\
              Seed: {}\n\
@@ -367,7 +380,8 @@ fn update_ui(state: Res<MapState>, mut query: Query<&mut Text, With<SeedText>>) 
              Entry Slot (Left): Y=3, Y=4\n\
              Exit Slot (Right): Y=3, Y=4\n\n\
              [Controls]\n\
-             Press SPACE to randomize seed",
+             Press SPACE to randomize seed\n\
+             Press M to return to catalogue-v2 MapSpec proof",
             state.solve_status, state.seed, state.tries, GRID_SIZE, GRID_SIZE
         );
     }
@@ -376,14 +390,19 @@ fn update_ui(state: Res<MapState>, mut query: Query<&mut Text, With<SeedText>>) 
 fn render_map(
     mut commands: Commands,
     state: Res<MapState>,
+    topology: Res<MapTopologyState>,
     tiles_query: Query<Entity, With<GridTile>>,
 ) {
-    if !state.is_changed() {
+    if !state.is_changed() && !topology.is_changed() {
         return;
     }
 
     for ent in &tiles_query {
         commands.entity(ent).despawn();
+    }
+
+    if topology.active {
+        return;
     }
 
     let Some(ref grid_data) = state.grid else {

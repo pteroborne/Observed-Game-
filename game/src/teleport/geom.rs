@@ -10,11 +10,11 @@ use crate::layout::{ROOM_SCALE_HUB, ROOM_SCALE_MONITOR, ROOM_SCALE_STANDARD};
 use crate::maze;
 use bevy::math::Vec2;
 use observed_core::RoomId;
-use observed_facility::map_spec::{CorridorRole, RoomRole};
+use observed_facility::map_spec::{ArchitectureRegister, CorridorRole, RoomRole};
 use observed_facility::room_def::RoomTemplate;
 use observed_match::mutable::EXIT_ROOM;
 use observed_traversal::gantry;
-use std::f32::consts::PI;
+use std::f32::consts::{PI, TAU};
 
 /// A small deterministic hash (splitmix64 finalizer) for seeding room shapes.
 fn mix(seed: u64, salt: u64) -> u64 {
@@ -65,21 +65,66 @@ fn room_scale_for_role(role: Option<RoomRole>) -> f32 {
 /// enough edges to host every doorway. Scaled by `room_scale_for_role` (the Phase 46b
 /// liminal-scale dials in `layout.rs`) so hub/monitor/standard rooms breathe at
 /// role-appropriate volumes on top of the seeded per-room variety.
-fn room_polygon(seed: u64, role: Option<RoomRole>, template: Option<RoomTemplate>) -> Vec<Vec2> {
+fn room_polygon(
+    seed: u64,
+    role: Option<RoomRole>,
+    template: Option<RoomTemplate>,
+    register: Option<ArchitectureRegister>,
+) -> Vec<Vec2> {
     let observation_room = uses_observation_room_footprint(role);
     let scale = room_scale_for_role(role);
+    if !observation_room
+        && matches!(
+            register,
+            Some(
+                ArchitectureRegister::Institutional
+                    | ArchitectureRegister::OverlitGrid
+                    | ArchitectureRegister::ShadowScreen
+                    | ArchitectureRegister::InfiniteGallery
+            )
+        )
+    {
+        let (x_register, z_register) = match register {
+            Some(ArchitectureRegister::Institutional) => (1.8, 1.35),
+            Some(ArchitectureRegister::OverlitGrid) => (1.55, 1.55),
+            Some(ArchitectureRegister::InfiniteGallery) => (2.25, 0.9),
+            _ => (1.5, 1.2),
+        };
+        let hx = ROOM_HALF * scale * x_register * (0.96 + unit(seed, 2) * 0.08);
+        let hz = ROOM_HALF * scale * z_register * (0.96 + unit(seed, 3) * 0.08);
+        return vec![
+            Vec2::new(-hx, -hz),
+            Vec2::new(hx, -hz),
+            Vec2::new(hx, hz),
+            Vec2::new(-hx, hz),
+        ];
+    }
     let profile = template.map(RoomTemplate::shell_profile);
-    let n = profile
-        .map(|profile| usize::from(profile.sides))
-        .unwrap_or_else(|| {
-            if observation_room {
-                OBSERVATION_ROOM_SIDES
-            } else {
-                4 + (mix(seed, 1) % 5) as usize
-            }
-        });
-    let x_scale = profile.map(|profile| profile.x_scale).unwrap_or(1.0);
-    let z_scale = profile.map(|profile| profile.z_scale).unwrap_or(1.0);
+    let n = match register {
+        Some(ArchitectureRegister::Monolith) => 5,
+        Some(ArchitectureRegister::FacetMonument) => 8,
+        Some(ArchitectureRegister::Megastructure) => 6,
+        Some(ArchitectureRegister::Wellshaft) => 6,
+        Some(ArchitectureRegister::Thinning) => 7,
+        _ => profile
+            .map(|profile| usize::from(profile.sides))
+            .unwrap_or_else(|| {
+                if observation_room {
+                    OBSERVATION_ROOM_SIDES
+                } else {
+                    4 + (mix(seed, 1) % 5) as usize
+                }
+            }),
+    };
+    let register_scale = match register {
+        Some(ArchitectureRegister::FacetMonument) => Vec2::splat(1.35),
+        Some(ArchitectureRegister::Megastructure) => Vec2::splat(1.7),
+        Some(ArchitectureRegister::Wellshaft) => Vec2::splat(1.3),
+        Some(ArchitectureRegister::Thinning) => Vec2::new(0.9, 1.65),
+        _ => Vec2::ONE,
+    };
+    let x_scale = profile.map(|profile| profile.x_scale).unwrap_or(1.0) * register_scale.x;
+    let z_scale = profile.map(|profile| profile.z_scale).unwrap_or(1.0) * register_scale.y;
     if n == 4 {
         // A varied rectangle for visual distinction from the polygons.
         let hx = ROOM_HALF * scale * x_scale * (0.92 + unit(seed, 2) * 0.24);
@@ -215,7 +260,14 @@ pub(crate) fn room_geom_with_slots_and_seals_for_role_and_spec(
     assigned.sort_by_key(|(_, slot)| *slot);
     assigned.dedup_by_key(|(_, slot)| *slot);
     let template = map_spec.and_then(|spec| spec.room(room).map(|room| room.template));
-    let verts = room_polygon(seed, role, template);
+    let design = map_spec.and_then(|spec| spec.room_design(room));
+    let geometry_seed = design.map(|design| design.generation_key).unwrap_or(seed);
+    let verts = room_polygon(
+        geometry_seed,
+        role,
+        template,
+        design.map(|design| design.register),
+    );
     let n = verts.len();
     let mut assigned_slots: Vec<ThresholdSlotId> = assigned.iter().map(|(_, slot)| *slot).collect();
     assigned_slots.sort_unstable();
@@ -332,11 +384,17 @@ pub(crate) fn room_geom_with_slots_and_seals_for_role_and_spec(
         Vec2::new(acc.x.max(v.x.abs()), acc.y.max(v.y.abs()))
     });
     PlaceGeom {
+        structure_kind: super::PlaceStructureKind::Room,
+        architecture_register: None,
+        design_key: None,
         half,
         gaps,
         interior: Vec::new(),
         poly: Some(verts),
         decks: Vec::new(),
+        oriented_solids: Vec::new(),
+        convex_solids: Vec::new(),
+        route_guides: Vec::new(),
     }
 }
 
@@ -487,9 +545,9 @@ pub fn contain(geom: &PlaceGeom, pos: Vec2, radius: f32) -> Vec2 {
 /// Build a hallway piece's footprint from its template. A `Maze` template is a
 /// generated labyrinth (interior walls between an entry on the âˆ’Z wall and an exit on
 /// the +Z wall, both always connected; see [`crate::maze`]); its concrete layout comes
-/// from `layout_seed`. A `Chicane` is an **S-bend**: two staggered interior baffles force
-/// a slalom between an offset entry and exit (a gentle weave through a wide space, not a
-/// tight corner). Every other flavour is a straight run whose *length* varies by template.
+/// from `layout_seed`. A `Chicane` is a broad, sampled S-curve; `Orthogonal` is an
+/// institutional two-turn factory bay. Every other flavour is a straight run whose
+/// *length* varies by template.
 pub fn hallway_geom(
     from: RoomId,
     to: RoomId,
@@ -536,6 +594,133 @@ pub struct HallwayGeomEndpoints {
     pub from_room_slot: ThresholdSlotId,
     pub to_room_slot: ThresholdSlotId,
     pub exit_room: RoomId,
+}
+
+fn gantry_expanse_geom(
+    endpoints: HallwayGeomEndpoints,
+    generation_key: u64,
+    exit_locked: bool,
+    map_spec: Option<&observed_facility::map_spec::MapSpec>,
+) -> PlaceGeom {
+    let HallwayGeomEndpoints {
+        from,
+        to,
+        from_room_slot,
+        to_room_slot,
+        exit_room,
+    } = endpoints;
+    let course = gantry::GantryExpanseCourse::generate(generation_key);
+    let entry = course.threshold(gantry::GantryExpanseExit::Entry);
+    let upper = course.threshold(gantry::GantryExpanseExit::UpperExit);
+    let lower = course.threshold(gantry::GantryExpanseExit::LowerExit);
+    let exit_kind = if exit_locked && to == exit_room {
+        GapKind::LockedExit
+    } else {
+        GapKind::Exit
+    };
+    let from_corridor_slot = resolved_corridor_slot(from, to, from, from_room_slot, map_spec);
+    let to_corridor_slot = resolved_corridor_slot(from, to, to, to_room_slot, map_spec);
+
+    let mut oriented_solids = Vec::new();
+    for deck in std::iter::once(&course.entry_deck)
+        .chain(std::iter::once(&course.upper_exit_deck))
+        .chain(course.jump_decks.iter())
+    {
+        oriented_solids.push(super::OrientedBoxSolid {
+            center: deck.center,
+            half: deck.half,
+            yaw: deck.yaw,
+            bottom_y: deck.bottom_y,
+            top_y: deck.top_y,
+        });
+    }
+    oriented_solids.extend(
+        course
+            .bridge_spans
+            .iter()
+            .map(|span| super::OrientedBoxSolid {
+                center: span.center(),
+                half: Vec2::new(span.width * 0.5, span.length() * 0.5),
+                yaw: span.yaw(),
+                bottom_y: span.bottom_y,
+                top_y: span.top_y,
+            }),
+    );
+    let convex_solids = course
+        .columns
+        .iter()
+        .map(|column| super::ConvexPrismSolid {
+            footprint: (0..6)
+                .map(|index| {
+                    let angle = index as f32 * TAU / 6.0;
+                    column.center + Vec2::new(angle.cos(), angle.sin()) * column.radius
+                })
+                .collect(),
+            bottom_y: column.bottom_y,
+            top_y: column.top_y,
+        })
+        .collect();
+
+    PlaceGeom {
+        structure_kind: super::PlaceStructureKind::GantryExpanse,
+        architecture_register: None,
+        design_key: None,
+        half: course.footprint() * 0.5,
+        gaps: vec![
+            DoorGap {
+                center: entry.center,
+                normal: entry.normal,
+                width: entry.width,
+                target: from,
+                kind: GapKind::Entry,
+                threshold: hallway_gap_threshold(
+                    from,
+                    to,
+                    from,
+                    from_room_slot,
+                    from_corridor_slot,
+                ),
+                floor_y: entry.floor_y,
+            },
+            DoorGap {
+                center: upper.center,
+                normal: upper.normal,
+                width: upper.width,
+                target: to,
+                kind: exit_kind,
+                threshold: hallway_gap_threshold(from, to, to, to_room_slot, to_corridor_slot),
+                floor_y: upper.floor_y,
+            },
+            DoorGap {
+                center: lower.center,
+                normal: lower.normal,
+                width: lower.width,
+                target: to,
+                kind: exit_kind,
+                threshold: hallway_gap_threshold(from, to, to, to_room_slot, to_corridor_slot),
+                floor_y: lower.floor_y,
+            },
+        ],
+        interior: Vec::new(),
+        poly: None,
+        decks: Vec::new(),
+        oriented_solids,
+        convex_solids,
+        route_guides: course
+            .routes
+            .iter()
+            .map(|route| super::PlaceRouteGuide {
+                kind: match route.route {
+                    gantry::GantryExpanseRoute::JumpLine => super::PlaceRouteKind::JumpLine,
+                    gantry::GantryExpanseRoute::HighBridge => super::PlaceRouteKind::HighBridge,
+                    gantry::GantryExpanseRoute::UnderstoryRecovery => {
+                        super::PlaceRouteKind::Understory
+                    }
+                },
+                nodes: route.nodes.iter().map(|node| node.position).collect(),
+            })
+            .collect(),
+    }
 }
 
 /// A grid-driven hallway interior's shared shape, regardless of which generator
@@ -718,11 +903,17 @@ pub(crate) fn hallway_geom_with_slots_and_role_and_spec(
             });
         }
         return PlaceGeom {
+            structure_kind: super::PlaceStructureKind::Corridor,
+            architecture_register: None,
+            design_key: None,
             half: footprint,
             gaps,
             interior,
             poly: None,
             decks: Vec::new(),
+            oriented_solids: Vec::new(),
+            convex_solids: Vec::new(),
+            route_guides: Vec::new(),
         };
     }
     // Straight/chicane/climb pieces vary their length per edge (a deterministic
@@ -898,6 +1089,9 @@ pub(crate) fn hallway_geom_with_slots_and_role_and_spec(
         }
 
         return PlaceGeom {
+            structure_kind: super::PlaceStructureKind::Wellshaft,
+            architecture_register: None,
+            design_key: None,
             half: Vec2::new(
                 hallway::WELL_SHAFT_OUTER_APOTHEM,
                 hallway::WELL_SHAFT_OUTER_RADIUS,
@@ -906,38 +1100,39 @@ pub(crate) fn hallway_geom_with_slots_and_role_and_spec(
             interior: Vec::new(),
             poly: Some(poly),
             decks,
+            oriented_solids: Vec::new(),
+            convex_solids: Vec::new(),
+            route_guides: Vec::new(),
         };
     }
-    if template.flavor == hallway::HallwayFlavor::Chicane {
-        // An S-bend: a box with two staggered baffles, each sealing one side and leaving
-        // a corridor `c` on the other, so the path slaloms from the +X entry up through
-        // the low baffle's gap, across the open middle band, and out the high baffle's
-        // âˆ’X gap to the exit. The baffles live in `interior`, so they render + collide
-        // through the same path the labyrinths use.
-        let hx = w * 0.5;
-        let hz = (len * 0.5).max(w);
-        let c = (w * 0.42).max(2.4); // walkable corridor (â‰« the 0.4 body radius)
-        let baffle_half_x = hx - c * 0.5;
+    if template.flavor == hallway::HallwayFlavor::Orthogonal {
+        let lane_width = (w * 0.52).max(7.5);
+        let hx = (w * 1.4).max(20.0);
+        let hz = (len * 0.5).max(25.0);
+        let wall_half_x = hx - lane_width * 0.5;
+        let bay_half_depth = (hz * 0.24).max(8.0);
+        let entry_x = -hx + lane_width * 0.5;
+        let exit_x = hx - lane_width * 0.5;
         let interior = vec![
-            // Low baffle: seals the âˆ’X side, opening a gap on +X.
             WallSeg {
-                center: Vec2::new(-c * 0.5, -hz * 0.33),
-                half: Vec2::new(baffle_half_x, MAZE_WALL_T),
+                center: Vec2::new(lane_width * 0.5, -bay_half_depth),
+                half: Vec2::new(wall_half_x, MAZE_WALL_T),
             },
-            // High baffle: seals the +X side, opening a gap on âˆ’X.
             WallSeg {
-                center: Vec2::new(c * 0.5, hz * 0.33),
-                half: Vec2::new(baffle_half_x, MAZE_WALL_T),
+                center: Vec2::new(-lane_width * 0.5, bay_half_depth),
+                half: Vec2::new(wall_half_x, MAZE_WALL_T),
             },
         ];
-        let off = hx - c * 0.5; // align the doorways with the open sides
         return PlaceGeom {
+            structure_kind: super::PlaceStructureKind::Orthogonal,
+            architecture_register: None,
+            design_key: None,
             half: Vec2::new(hx, hz),
             gaps: vec![
                 DoorGap {
-                    center: Vec2::new(off, -hz),
+                    center: Vec2::new(entry_x, -hz),
                     normal: Vec2::new(0.0, -1.0),
-                    width: c,
+                    width: lane_width,
                     target: from,
                     kind: GapKind::Entry,
                     threshold: hallway_gap_threshold(
@@ -950,9 +1145,9 @@ pub(crate) fn hallway_geom_with_slots_and_role_and_spec(
                     floor_y: 0.0,
                 },
                 DoorGap {
-                    center: Vec2::new(-off, hz),
+                    center: Vec2::new(exit_x, hz),
                     normal: Vec2::new(0.0, 1.0),
-                    width: c,
+                    width: lane_width,
                     target: to,
                     kind: exit_kind,
                     threshold: hallway_gap_threshold(
@@ -968,6 +1163,88 @@ pub(crate) fn hallway_geom_with_slots_and_role_and_spec(
             interior,
             poly: None,
             decks: Vec::new(),
+            oriented_solids: Vec::new(),
+            convex_solids: Vec::new(),
+            route_guides: Vec::new(),
+        };
+    }
+    if template.flavor == hallway::HallwayFlavor::Chicane {
+        // The v2 lane follows a smooth sampled centreline; there are no hard baffles.
+        // Both walls overlap span-to-span so presentation, collision, and navigation
+        // consume a continuous broad curve.
+        const SAMPLES: usize = 20;
+        const WALL_HALF_T: f32 = 0.28;
+        let lane_width = (w * 0.62).max(7.5);
+        let amplitude = (w * 0.66).max(7.5);
+        let hz = (len * 0.5).max(w * 1.6);
+        let hx = amplitude + lane_width * 0.5 + WALL_HALF_T + 1.5;
+        let mirror = if layout_seed & 1 == 0 { 1.0 } else { -1.0 };
+        let centre = |sample: usize| {
+            let t = sample as f32 / SAMPLES as f32;
+            let x = mirror * amplitude * (TAU * t).sin() * (PI * t).sin();
+            Vec2::new(x, -hz + 2.0 * hz * t)
+        };
+        let mut oriented_solids = Vec::with_capacity(SAMPLES * 2);
+        for sample in 0..SAMPLES {
+            let a = centre(sample);
+            let b = centre(sample + 1);
+            let delta = b - a;
+            let tangent = delta.normalize();
+            let normal = Vec2::new(-tangent.y, tangent.x);
+            let offset = lane_width * 0.5 + WALL_HALF_T;
+            for side in [-1.0_f32, 1.0] {
+                oriented_solids.push(super::OrientedBoxSolid {
+                    center: (a + b) * 0.5 + normal * offset * side,
+                    half: Vec2::new(delta.length() * 0.5 + 0.18, WALL_HALF_T),
+                    yaw: (-delta.y).atan2(delta.x),
+                    bottom_y: 0.0,
+                    top_y: crate::layout::WALL_HEIGHT,
+                });
+            }
+        }
+        return PlaceGeom {
+            structure_kind: super::PlaceStructureKind::CurvedChicane,
+            architecture_register: None,
+            design_key: None,
+            half: Vec2::new(hx, hz),
+            gaps: vec![
+                DoorGap {
+                    center: Vec2::new(0.0, -hz),
+                    normal: Vec2::new(0.0, -1.0),
+                    width: lane_width,
+                    target: from,
+                    kind: GapKind::Entry,
+                    threshold: hallway_gap_threshold(
+                        from,
+                        to,
+                        from,
+                        from_room_slot,
+                        resolved_corridor_slot(from, to, from, from_room_slot, map_spec),
+                    ),
+                    floor_y: 0.0,
+                },
+                DoorGap {
+                    center: Vec2::new(0.0, hz),
+                    normal: Vec2::new(0.0, 1.0),
+                    width: lane_width,
+                    target: to,
+                    kind: exit_kind,
+                    threshold: hallway_gap_threshold(
+                        from,
+                        to,
+                        to,
+                        to_room_slot,
+                        resolved_corridor_slot(from, to, to, to_room_slot, map_spec),
+                    ),
+                    floor_y: 0.0,
+                },
+            ],
+            interior: Vec::new(),
+            poly: None,
+            decks: Vec::new(),
+            oriented_solids,
+            convex_solids: Vec::new(),
+            route_guides: Vec::new(),
         };
     }
     if template.flavor == hallway::HallwayFlavor::Gantry {
@@ -1075,6 +1352,9 @@ pub(crate) fn hallway_geom_with_slots_and_role_and_spec(
 
         let ground_return_center = Vec2::new(gantry::SAFE_BYPASS_X, entry_threshold.center.y);
         return PlaceGeom {
+            structure_kind: super::PlaceStructureKind::LegacyGantry,
+            architecture_register: None,
+            design_key: None,
             half: Vec2::new(hx, hz),
             gaps: vec![
                 DoorGap {
@@ -1138,6 +1418,9 @@ pub(crate) fn hallway_geom_with_slots_and_role_and_spec(
             interior: Vec::new(),
             poly: None,
             decks,
+            oriented_solids: Vec::new(),
+            convex_solids: Vec::new(),
+            route_guides: Vec::new(),
         };
     }
     if template.flavor == hallway::HallwayFlavor::Colonnade {
@@ -1160,6 +1443,9 @@ pub(crate) fn hallway_geom_with_slots_and_role_and_spec(
         // The doorways open onto the clear central lane (no pillar sits at x = 0).
         let lane = (PILLAR_SPACING - 2.0 * PILLAR_HALF).max(3.0);
         return PlaceGeom {
+            structure_kind: super::PlaceStructureKind::Colonnade,
+            architecture_register: None,
+            design_key: None,
             half: Vec2::new(hx, hz),
             gaps: vec![
                 DoorGap {
@@ -1196,6 +1482,9 @@ pub(crate) fn hallway_geom_with_slots_and_role_and_spec(
             interior,
             poly: None,
             decks: Vec::new(),
+            oriented_solids: Vec::new(),
+            convex_solids: Vec::new(),
+            route_guides: Vec::new(),
         };
     }
     let half = Vec2::new(w * 0.5, len * 0.5);
@@ -1203,6 +1492,13 @@ pub(crate) fn hallway_geom_with_slots_and_role_and_spec(
     // so a simple hall's mouths match the room doorways they meet.
     let door = THRESHOLD_WIDTH.min(w);
     PlaceGeom {
+        structure_kind: match template.flavor {
+            hallway::HallwayFlavor::PressureGate => super::PlaceStructureKind::PressureGate,
+            hallway::HallwayFlavor::Orthogonal => super::PlaceStructureKind::Orthogonal,
+            _ => super::PlaceStructureKind::Corridor,
+        },
+        architecture_register: None,
+        design_key: None,
         half,
         gaps: vec![
             DoorGap {
@@ -1239,6 +1535,9 @@ pub(crate) fn hallway_geom_with_slots_and_role_and_spec(
         interior: Vec::new(),
         poly: None,
         decks: Vec::new(),
+        oriented_solids: Vec::new(),
+        convex_solids: Vec::new(),
+        route_guides: Vec::new(),
     }
 }
 
@@ -1302,12 +1601,13 @@ pub fn geom_for(place: Place, nav: &Nav) -> PlaceGeom {
             nav.map_spec.as_ref(),
         ),
         Place::Hallway {
+            corridor,
             from,
             to,
             variation,
             ..
-        } => hallway_geom_with_slots_and_role_and_spec(
-            HallwayGeomEndpoints {
+        } => {
+            let endpoints = HallwayGeomEndpoints {
                 from,
                 to,
                 from_room_slot: nav
@@ -1316,21 +1616,97 @@ pub fn geom_for(place: Place, nav: &Nav) -> PlaceGeom {
                     .unwrap_or(ThresholdSlotId(0)),
                 to_room_slot: nav.hallway_exit_room_slot.unwrap_or(ThresholdSlotId(0)),
                 exit_room: nav.exit_room,
-            },
-            hallway::template(variation),
-            hallway::layout_seed(from, to, variation),
-            nav.exit_locked,
-            nav.corridor_role_for(to),
-            nav.map_spec.as_ref(),
-        ),
+            };
+            let design = nav
+                .map_spec
+                .as_ref()
+                .and_then(|spec| spec.corridor_design(corridor));
+            if design.is_some_and(|design| {
+                design.traversal == observed_facility::map_spec::TraversalArchetype::GantryExpanse
+            }) {
+                gantry_expanse_geom(
+                    endpoints,
+                    design.expect("checked design").generation_key,
+                    nav.exit_locked,
+                    nav.map_spec.as_ref(),
+                )
+            } else {
+                let template = design.map_or_else(
+                    || hallway::template(variation),
+                    |design| {
+                        hallway::template_for_traversal(design.traversal, design.generation_key)
+                    },
+                );
+                let layout_seed = design.map_or_else(
+                    || hallway::layout_seed(from, to, variation),
+                    |design| design.generation_key,
+                );
+                hallway_geom_with_slots_and_role_and_spec(
+                    endpoints,
+                    template,
+                    layout_seed,
+                    nav.exit_locked,
+                    nav.corridor_role_for(to),
+                    nav.map_spec.as_ref(),
+                )
+            }
+        }
+    };
+    geom.architecture_register = match place {
+        Place::Room(room) => nav
+            .map_spec
+            .as_ref()
+            .and_then(|spec| spec.room_design(room))
+            .map(|design| design.register),
+        Place::Hallway { corridor, .. } => nav
+            .map_spec
+            .as_ref()
+            .and_then(|spec| spec.corridor_design(corridor))
+            .map(|design| design.register),
+    };
+    geom.design_key = match place {
+        Place::Room(room) => nav
+            .map_spec
+            .as_ref()
+            .and_then(|spec| spec.room_design(room))
+            .map(|design| design.generation_key),
+        Place::Hallway { corridor, .. } => nav
+            .map_spec
+            .as_ref()
+            .and_then(|spec| spec.corridor_design(corridor))
+            .map(|design| design.generation_key),
     };
     // Hallway generators are directional shape functions and historically stamped a
     // pair-derived corridor id into their gaps. The `Place` already carries the socket
     // topology's authoritative corridor identity (including authored/multi-endpoint map
     // ids), so every hallway aperture must use that identity before any reciprocal check.
-    if let Place::Hallway { corridor, .. } = place {
-        for gap in &mut geom.gaps {
-            gap.threshold.hall.corridor = corridor;
+    match place {
+        Place::Room(room) => {
+            for gap in &mut geom.gaps {
+                if let Some(connection) = nav.live_corridor(room, gap.target) {
+                    gap.threshold.hall.corridor = connection.corridor;
+                    gap.threshold.hall.slot = connection.slot;
+                }
+            }
+        }
+        Place::Hallway {
+            corridor, from, to, ..
+        } => {
+            for gap in &mut geom.gaps {
+                gap.threshold.hall.corridor = corridor;
+                let connection = if gap.target == from {
+                    nav.live_corridor(from, to)
+                } else if gap.target == to {
+                    nav.live_corridor(to, from)
+                } else {
+                    None
+                };
+                if let Some(connection) = connection
+                    && connection.corridor == corridor
+                {
+                    gap.threshold.hall.slot = connection.slot;
+                }
+            }
         }
     }
     enforce_active_sockets(&mut geom, place, nav);

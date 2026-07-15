@@ -3,6 +3,7 @@ use crate::layout::WALL_HEIGHT;
 use crate::teleport;
 use crate::view::assets::MatchAssets;
 use crate::view::components::{FlickerLight, PassagePreview, PlaceGeometry};
+use bevy::light::{FogVolume, VolumetricLight};
 use bevy::prelude::*;
 use observed_style as style;
 
@@ -120,8 +121,18 @@ pub(crate) fn spawn_place_lighting(
             (hz * 0.75).max(2.0).min(hz - 0.3),
         )
     };
-    let key_pos = Vec3::new(key_xz.x, WALL_HEIGHT - 0.45, key_xz.y);
-    let key_target = Vec3::new(-key_xz.x * 0.4, 0.0, -key_xz.y * 0.4);
+    let facet_monument =
+        geom.architecture_register == Some(observed_content::ArchitectureRegister::FacetMonument);
+    let key_pos = if facet_monument {
+        Vec3::new(0.0, WALL_HEIGHT + 8.0, 0.0)
+    } else {
+        Vec3::new(key_xz.x, WALL_HEIGHT - 0.45, key_xz.y)
+    };
+    let key_target = if facet_monument {
+        Vec3::ZERO
+    } else {
+        Vec3::new(-key_xz.x * 0.4, 0.0, -key_xz.y * 0.4)
+    };
     let local_key_xform = Transform::from_translation(key_pos).looking_at(key_target, Vec3::Y);
 
     let mut key_light = commands.spawn((
@@ -142,6 +153,31 @@ pub(crate) fn spawn_place_lighting(
     ));
     if preview {
         key_light.insert(PassagePreview);
+    }
+    if facet_monument {
+        key_light.insert(VolumetricLight);
+        let mut volume = commands.spawn((
+            PlaceGeometry,
+            DespawnOnExit(GameState::Match),
+            FogVolume {
+                fog_color: palette.light_color,
+                density_factor: 0.055,
+                absorption: 0.14,
+                scattering: 0.46,
+                ..default()
+            },
+            place_in(
+                Transform::from_xyz(0.0, WALL_HEIGHT * 0.5, 0.0).with_scale(Vec3::new(
+                    hx * 0.75,
+                    WALL_HEIGHT,
+                    hz * 0.75,
+                )),
+            ),
+            Name::new("Facet Monument bounded shaft air"),
+        ));
+        if preview {
+            volume.insert(PassagePreview);
+        }
     }
 
     // 2. Overhead fill (steady supporting role)

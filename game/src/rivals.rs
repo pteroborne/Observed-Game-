@@ -116,11 +116,17 @@ mod tests {
     #[test]
     fn pace_segment_stays_inside_the_footprint() {
         let geom = PlaceGeom {
+            structure_kind: crate::teleport::PlaceStructureKind::Corridor,
+            architecture_register: None,
+            design_key: None,
             half: Vec2::new(6.0, 4.0),
             gaps: Vec::new(), // no forward gap → +Z fallback
             interior: Vec::new(),
             poly: None,
             decks: Vec::new(),
+            oriented_solids: Vec::new(),
+            convex_solids: Vec::new(),
+            route_guides: Vec::new(),
         };
         let (a, b) = pace_segment(&geom);
         let bound = geom.half.min_element();

@@ -805,6 +805,106 @@ pub enum District {
     Spillway,
 }
 
+/// The style-owned visual mapping for the production architecture catalogue. Gameplay
+/// code supplies a semantic register; presentation does not invent an ad-hoc colour.
+pub fn district_for_architecture(register: observed_content::ArchitectureRegister) -> District {
+    use observed_content::ArchitectureRegister as Register;
+    match register {
+        Register::ShadowScreen => District::Hollow,
+        Register::Monolith => District::Reactor,
+        Register::OverlitGrid => District::Archive,
+        Register::Institutional => District::Hollow,
+        Register::FacetMonument => District::Archive,
+        Register::Megastructure => District::Foundry,
+        Register::Wellshaft => District::Reactor,
+        Register::InfiniteGallery => District::Spillway,
+        Register::Thinning => District::Atrium,
+    }
+}
+
+/// Presentation treatment for a semantic architecture register. Signal colours remain
+/// governed by their existing semantic-state functions; these adjustments affect only
+/// environmental fill, fog, practical light, and structural accent.
+pub fn architecture(register: observed_content::ArchitectureRegister) -> DistrictPalette {
+    use observed_content::ArchitectureRegister as Register;
+    let mut palette = district(district_for_architecture(register));
+    match register {
+        Register::ShadowScreen => {
+            palette.ambient_brightness = DISTRICT_MIN_AMBIENT_BRIGHTNESS;
+            palette.fog_start = 9.0;
+            palette.fog_end = 30.0;
+            palette.pools_rhythm = true;
+        }
+        Register::Monolith => {
+            palette.ambient_brightness = 42.0;
+            palette.fog_end = 32.0;
+        }
+        Register::OverlitGrid => {
+            palette.ambient_brightness = 115.0;
+            palette.fog_start = 18.0;
+            palette.fog_end = 48.0;
+        }
+        Register::Institutional => {
+            palette.ambient_color = Color::srgb(0.72, 0.74, 0.70);
+            palette.ambient_brightness = 105.0;
+            palette.fog_color = Color::srgb(0.032, 0.035, 0.030);
+            palette.fog_start = 16.0;
+            palette.fog_end = 46.0;
+            palette.light_color = Color::srgb(0.93, 0.94, 0.86);
+            palette.pools_rhythm = false;
+        }
+        Register::FacetMonument => {
+            palette.ambient_brightness = DISTRICT_MIN_AMBIENT_BRIGHTNESS;
+            palette.fog_start = 7.0;
+            palette.fog_end = 34.0;
+            palette.key_intensity = 95_000_000.0;
+            palette.key_range = 64.0;
+        }
+        Register::Megastructure => {
+            palette.ambient_brightness = DISTRICT_MIN_AMBIENT_BRIGHTNESS;
+            palette.fog_start = 6.0;
+            palette.fog_end = 31.0;
+            palette.key_range = 75.0;
+            palette.pools_rhythm = true;
+        }
+        Register::Wellshaft => {
+            palette.ambient_brightness = DISTRICT_MIN_AMBIENT_BRIGHTNESS;
+            palette.fog_start = 14.0;
+            palette.fog_end = 40.0;
+            palette.pools_rhythm = true;
+        }
+        Register::InfiniteGallery => {
+            palette.fog_start = 12.0;
+            palette.fog_end = 38.0;
+            palette.pools_rhythm = true;
+        }
+        Register::Thinning => {
+            palette.ambient_brightness = DISTRICT_MIN_AMBIENT_BRIGHTNESS;
+            palette.fog_start = 8.0;
+            palette.fog_end = 34.0;
+        }
+    }
+    palette
+}
+
+pub fn gantry_expanse(mut palette: DistrictPalette) -> DistrictPalette {
+    palette.ambient_brightness = palette
+        .ambient_brightness
+        .clamp(DISTRICT_MIN_AMBIENT_BRIGHTNESS, 55.0);
+    palette.fog_start = 6.0;
+    palette.fog_end = 30.0;
+    palette.pools_rhythm = true;
+    palette
+}
+
+pub fn wellshaft(mut palette: DistrictPalette) -> DistrictPalette {
+    palette.ambient_brightness = DISTRICT_MIN_AMBIENT_BRIGHTNESS;
+    palette.fog_start = 14.0;
+    palette.fog_end = 40.0;
+    palette.pools_rhythm = true;
+    palette
+}
+
 impl District {
     pub const ALL: [District; 6] = [
         District::Archive,
@@ -1052,8 +1152,8 @@ pub const HALLWAY_MODULE_COUNT: usize = 7;
 /// construction, and the substrate the thinning gradient grows on.
 ///
 /// Provisional register mapping (Phase 70 confirms with the user):
-/// Reactor→shoji slats, Hollow→overlit panel grid, Foundry→wellshaft
-/// practicals, Archive→forerunner seams, Atrium→babel shelves, Spillway→cool
+/// Reactor→shadow slats, Hollow→overlit panel grid, Foundry→wellshaft
+/// practicals, Archive→monument seams, Atrium→gallery shelves, Spillway→cool
 /// mixed with megastructure void edges.
 pub fn hallway_module_weights(d: District) -> [u32; HALLWAY_MODULE_COUNT] {
     match d {
@@ -1537,5 +1637,32 @@ mod tests {
             legend.len(),
             "every outline legend entry is unique"
         );
+    }
+
+    #[test]
+    fn architecture_catalogue_has_a_style_owned_bounded_palette() {
+        use observed_content::ArchitectureRegister;
+
+        for register in ArchitectureRegister::ALL {
+            let palette = architecture(register);
+            assert!(
+                (DISTRICT_MIN_AMBIENT_BRIGHTNESS..=DISTRICT_MAX_AMBIENT_BRIGHTNESS)
+                    .contains(&palette.ambient_brightness),
+                "{} ambient is bounded",
+                register.slug()
+            );
+            assert!(
+                palette.fog_start < palette.fog_end,
+                "{} fog",
+                register.slug()
+            );
+            assert!(palette.key_intensity > 0.0 && palette.key_range > 0.0);
+        }
+        assert!(
+            architecture(ArchitectureRegister::Institutional).ambient_brightness
+                > architecture(ArchitectureRegister::ShadowScreen).ambient_brightness
+        );
+        assert!(architecture(ArchitectureRegister::Wellshaft).pools_rhythm);
+        assert!(architecture(ArchitectureRegister::Megastructure).fog_end <= 31.0);
     }
 }

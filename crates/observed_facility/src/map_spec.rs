@@ -8,6 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use glam::Vec2;
+pub use observed_content::ArchitectureRegister;
 use observed_core::{CorridorId, Direction, PlaceId, RoomId, ThresholdId, ThresholdSlotId};
 
 use crate::junction::{CorridorSpec, JunctionTopology, ThresholdAttachment};
@@ -71,6 +72,79 @@ pub enum CorridorRole {
     Bypass,
     /// Gantry elevated 3D pathway.
     Gantry,
+}
+
+/// Stable identity for a corridor's traversal grammar. The role says *why* a
+/// corridor exists in the racecourse; this says what movement course realizes it.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[repr(u8)]
+pub enum TraversalArchetype {
+    Straight = 0,
+    Long = 1,
+    Pressure = 2,
+    Climb = 3,
+    Maze = 4,
+    Chicane = 5,
+    GantryExpanse = 6,
+    Wellshaft = 7,
+    Colonnade = 8,
+    Orthogonal = 9,
+}
+
+impl TraversalArchetype {
+    pub const ALL: [Self; 10] = [
+        Self::Straight,
+        Self::Long,
+        Self::Pressure,
+        Self::Climb,
+        Self::Maze,
+        Self::Chicane,
+        Self::GantryExpanse,
+        Self::Wellshaft,
+        Self::Colonnade,
+        Self::Orthogonal,
+    ];
+
+    pub const fn stable_id(self) -> u8 {
+        self as u8
+    }
+
+    /// Catalogue-level compatibility. This is intentionally pure so generation,
+    /// content validation, and presentation consumers share one rule.
+    pub const fn is_compatible(self, register: ArchitectureRegister, role: CorridorRole) -> bool {
+        match self {
+            Self::GantryExpanse => {
+                matches!(role, CorridorRole::Gantry)
+                    && matches!(
+                        register,
+                        ArchitectureRegister::Monolith
+                            | ArchitectureRegister::FacetMonument
+                            | ArchitectureRegister::Megastructure
+                            | ArchitectureRegister::Thinning
+                    )
+            }
+            Self::Wellshaft => {
+                matches!(role, CorridorRole::Vertical)
+                    && matches!(register, ArchitectureRegister::Wellshaft)
+            }
+            Self::Orthogonal => {
+                !matches!(role, CorridorRole::Gantry | CorridorRole::Vertical)
+                    && matches!(register, ArchitectureRegister::Institutional)
+            }
+            Self::Chicane => {
+                !matches!(role, CorridorRole::Gantry | CorridorRole::Vertical)
+                    && !matches!(register, ArchitectureRegister::Institutional)
+            }
+            Self::Maze => matches!(role, CorridorRole::Mystery),
+            Self::Long => matches!(role, CorridorRole::LongRoute | CorridorRole::Bypass),
+            Self::Pressure | Self::Climb => {
+                !matches!(role, CorridorRole::Gantry | CorridorRole::Vertical)
+            }
+            Self::Straight | Self::Colonnade => {
+                !matches!(role, CorridorRole::Gantry | CorridorRole::Vertical)
+            }
+        }
+    }
 }
 
 impl CorridorRole {
@@ -284,6 +358,51 @@ pub struct MapCorridor {
     pub mutable: bool,
 }
 
+/// Immutable room-side catalogue choice. `generation_key` is the stable seed for
+/// the register's structural generator; it is not recomputed when attachments move.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RoomDesign {
+    pub room: RoomId,
+    pub register: ArchitectureRegister,
+    pub generation_key: u64,
+}
+
+/// Immutable corridor-side catalogue choice.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CorridorDesign {
+    pub corridor: CorridorId,
+    pub register: ArchitectureRegister,
+    pub traversal: TraversalArchetype,
+    pub generation_key: u64,
+}
+
+/// Versioned design payload for generated maps. B-tree maps make identity and
+/// iteration independent of manifest declaration or hash-map insertion order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DesignAssignments {
+    pub version: u32,
+    pub rooms: BTreeMap<RoomId, RoomDesign>,
+    pub corridors: BTreeMap<CorridorId, CorridorDesign>,
+}
+
+impl DesignAssignments {
+    pub fn room(&self, room: RoomId) -> Option<&RoomDesign> {
+        self.rooms.get(&room)
+    }
+
+    pub fn corridor(&self, corridor: CorridorId) -> Option<&CorridorDesign> {
+        self.corridors.get(&corridor)
+    }
+
+    pub fn register_count(&self) -> usize {
+        self.rooms
+            .values()
+            .map(|design| design.register)
+            .collect::<BTreeSet<_>>()
+            .len()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct MapSpec {
     pub name: &'static str,
@@ -293,6 +412,9 @@ pub struct MapSpec {
     /// First-class multi-endpoint corridors. When empty, [`Self::corridors`] derives
     /// one stable two-socket corridor per legacy edge.
     pub corridors: Vec<MapCorridor>,
+    /// `None` for legacy/authored v1 maps; generated catalogue v2 maps carry exact,
+    /// stable room and corridor choices here.
+    pub designs: Option<DesignAssignments>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -313,6 +435,17 @@ pub enum MapValidationError {
     DuplicateCorridor(CorridorId),
     CorridorHasTooFewEndpoints(CorridorId),
     DuplicateCorridorEndpoint(CorridorId, RoomId, Direction),
+    UnsupportedDesignVersion(u32),
+    MissingRoomDesign(RoomId),
+    UnknownRoomDesign(RoomId),
+    MissingCorridorDesign(CorridorId),
+    UnknownCorridorDesign(CorridorId),
+    CorridorDesignRegisterMismatch(CorridorId),
+    IncompatibleTraversal(CorridorId, TraversalArchetype),
+    ArchitectureRegionCount(usize),
+    ArchitectureRegionTooSmall(ArchitectureRegister, usize),
+    DisconnectedArchitectureRegion(ArchitectureRegister),
+    VerticalObjectiveCorridor(CorridorId),
 }
 
 impl MapSpec {
@@ -349,6 +482,14 @@ impl MapSpec {
 
     pub fn keystone_rooms(&self) -> Vec<RoomId> {
         self.rooms_with_role(RoomRole::Keystone)
+    }
+
+    pub fn room_design(&self, room: RoomId) -> Option<&RoomDesign> {
+        self.designs.as_ref()?.room(room)
+    }
+
+    pub fn corridor_design(&self, corridor: CorridorId) -> Option<&CorridorDesign> {
+        self.designs.as_ref()?.corridor(corridor)
     }
 
     pub fn neighbors(&self, room: RoomId) -> Vec<RoomId> {
@@ -480,6 +621,7 @@ impl MapSpec {
         if let Err(junction_errors) = self.junction_topology() {
             errors.extend(junction_errors);
         }
+        self.validate_design_assignments(&mut errors);
 
         if let (Some(start), Some(exit)) = (self.start_room(), self.exit_room()) {
             self.validate_connectivity(start, &mut errors);
@@ -503,6 +645,116 @@ impl MapSpec {
 
     fn room_ids(&self) -> Vec<RoomId> {
         self.rooms.iter().map(|room| room.id).collect()
+    }
+
+    fn validate_design_assignments(&self, errors: &mut Vec<MapValidationError>) {
+        let Some(designs) = &self.designs else {
+            return;
+        };
+        if designs.version != observed_content::ARCHITECTURE_CATALOG_VERSION {
+            errors.push(MapValidationError::UnsupportedDesignVersion(
+                designs.version,
+            ));
+        }
+
+        let room_ids: BTreeSet<_> = self.rooms.iter().map(|room| room.id).collect();
+        for room in &self.rooms {
+            match designs.rooms.get(&room.id) {
+                Some(design) if design.room == room.id => {}
+                _ => errors.push(MapValidationError::MissingRoomDesign(room.id)),
+            }
+        }
+        for (&id, design) in &designs.rooms {
+            if !room_ids.contains(&id) || design.room != id {
+                errors.push(MapValidationError::UnknownRoomDesign(id));
+            }
+        }
+
+        let corridors = self.corridors();
+        let corridor_ids: BTreeSet<_> = corridors.iter().map(|corridor| corridor.id).collect();
+        for corridor in &corridors {
+            let Some(design) = designs.corridors.get(&corridor.id) else {
+                errors.push(MapValidationError::MissingCorridorDesign(corridor.id));
+                continue;
+            };
+            if design.corridor != corridor.id {
+                errors.push(MapValidationError::MissingCorridorDesign(corridor.id));
+                continue;
+            }
+            let shares_endpoint_register = corridor.endpoints.iter().any(|endpoint| {
+                designs
+                    .rooms
+                    .get(&endpoint.room)
+                    .is_some_and(|room| room.register == design.register)
+            });
+            if !shares_endpoint_register {
+                errors.push(MapValidationError::CorridorDesignRegisterMismatch(
+                    corridor.id,
+                ));
+            }
+            if !design
+                .traversal
+                .is_compatible(design.register, corridor.role)
+            {
+                errors.push(MapValidationError::IncompatibleTraversal(
+                    corridor.id,
+                    design.traversal,
+                ));
+            }
+            if design.traversal == TraversalArchetype::Wellshaft
+                && corridor.endpoints.iter().any(|endpoint| {
+                    self.room(endpoint.room).is_some_and(|room| {
+                        matches!(
+                            room.role,
+                            RoomRole::Start | RoomRole::Exit | RoomRole::Keystone
+                        )
+                    })
+                })
+            {
+                errors.push(MapValidationError::VerticalObjectiveCorridor(corridor.id));
+            }
+        }
+        for (&id, design) in &designs.corridors {
+            if !corridor_ids.contains(&id) || design.corridor != id {
+                errors.push(MapValidationError::UnknownCorridorDesign(id));
+            }
+        }
+
+        let registers: BTreeSet<_> = designs
+            .rooms
+            .values()
+            .map(|design| design.register)
+            .collect();
+        if !(4..=6).contains(&registers.len()) {
+            errors.push(MapValidationError::ArchitectureRegionCount(registers.len()));
+        }
+        for register in registers {
+            let region: BTreeSet<_> = designs
+                .rooms
+                .values()
+                .filter_map(|design| (design.register == register).then_some(design.room))
+                .collect();
+            if region.len() < 3 {
+                errors.push(MapValidationError::ArchitectureRegionTooSmall(
+                    register,
+                    region.len(),
+                ));
+                continue;
+            }
+            let start = *region.iter().next().expect("non-empty region");
+            let mut reached = BTreeSet::from([start]);
+            let mut pending = VecDeque::from([start]);
+            while let Some(room) = pending.pop_front() {
+                for neighbor in self.neighbors(room) {
+                    if region.contains(&neighbor) && reached.insert(neighbor) {
+                        pending.push_back(neighbor);
+                    }
+                }
+            }
+            if reached != region {
+                errors.push(MapValidationError::DisconnectedArchitectureRegion(register));
+            }
+        }
     }
 
     fn edge_pairs(&self) -> Vec<(RoomId, RoomId)> {
@@ -846,6 +1098,7 @@ pub fn sector_relay_v1() -> MapSpec {
             edge(9, South, 13, West, C::Bypass),
         ],
         corridors: Vec::new(),
+        designs: None,
     }
 }
 
@@ -927,6 +1180,7 @@ pub fn multi_exit_fixture() -> MapSpec {
                 mutable: true,
             },
         ],
+        designs: None,
     }
 }
 

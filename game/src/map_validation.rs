@@ -285,6 +285,7 @@ pub(crate) fn nav_for_spec_room(spec: &MapSpec, seed: u64, version: u32, room: R
         target_room,
         room_role: spec.room(room).map(|room| room.role),
         corridor_roles,
+        live_corridors: Vec::new(),
         seed,
         version,
         exit_locked: true,

@@ -236,8 +236,9 @@ pub(crate) fn drive_bot_pov_capture(
         y_offset,
         crate::layout::WALL_HEIGHT,
     );
-    let fell_off_deck =
-        request.route_deck && !bot::at_deck_height(local_feet_y) && tp.body.grounded;
+    let fell_off_deck = request.route_deck
+        && !bot::at_gantry_deck_height(&tp.geom, local_feet_y)
+        && tp.body.grounded;
     if request.route_place != Some(tp.place)
         || request.waypoint >= request.route.len()
         || request.route.is_empty()
@@ -274,12 +275,15 @@ pub(crate) fn drive_bot_pov_capture(
             .is_wellshaft()
             .then(|| bot::wellshaft_route(&tp.geom, &tp.config, local_feet_y, &gap))
             .flatten();
-        let deck_pilot = (!tp.geom.is_wellshaft() && bot::at_deck_height(local_feet_y))
-            .then(|| bot::gantry_deck_route(&tp.geom, start, &gap))
-            .flatten();
+        let expanse_path =
+            bot::gantry_expanse_route(&tp.geom, &tp.config, start, local_feet_y, &gap);
+        let deck_pilot = (!tp.geom.is_wellshaft()
+            && bot::at_gantry_deck_height(&tp.geom, local_feet_y))
+        .then(|| bot::gantry_deck_route(&tp.geom, start, &gap))
+        .flatten();
         let in_gantry_understory = !tp.geom.is_wellshaft()
             && !tp.geom.decks.is_empty()
-            && !bot::at_deck_height(local_feet_y);
+            && !bot::at_gantry_deck_height(&tp.geom, local_feet_y);
         if let Some(path) = wellshaft_path {
             info!(
                 "BOT_NAV: Stair-piloting {:?} from {:?} through the wellshaft. Waypoints: {}",
@@ -291,6 +295,14 @@ pub(crate) fn drive_bot_pov_capture(
             request.route_jumps = vec![false; path.waypoints.len()];
             request.route = path.waypoints;
             request.route_deck = false;
+            request.waypoint = 0;
+            request.blocked_ticks = 0;
+        } else if let Some(path) = expanse_path {
+            request.route_place = Some(tp.place);
+            request.route_jumps = vec![false; path.waypoints.len()];
+            request.route = path.waypoints;
+            request.route_deck =
+                local_feet_y > observed_traversal::gantry::GANTRY_EXPANSE_DECK_Y * 0.5;
             request.waypoint = 0;
             request.blocked_ticks = 0;
         } else if let Some(pilot) = deck_pilot {

@@ -68,8 +68,9 @@ pub(crate) fn drive_spectator_bot(
     // A deck route's waypoints are platform centres reachable only at deck height; if the
     // body has dropped to the understory (a missed jump), that route is dead — force a
     // re-plan so the recovery path (below) takes over instead of freezing on the deck plan.
-    let fell_off_deck =
-        spectator.route_deck && !crate::bot::at_deck_height(local_feet_y) && tp.body.grounded;
+    let fell_off_deck = spectator.route_deck
+        && !crate::bot::at_gantry_deck_height(&tp.geom, local_feet_y)
+        && tp.body.grounded;
     if spectator.route_place != Some(tp.place)
         || spectator.waypoint >= spectator.route.len()
         || spectator.route.is_empty()
@@ -94,17 +95,28 @@ pub(crate) fn drive_spectator_bot(
             .is_wellshaft()
             .then(|| crate::bot::wellshaft_route(&tp.geom, &tp.config, local_feet_y, &gap))
             .flatten();
-        let deck_pilot = (!tp.geom.is_wellshaft() && crate::bot::at_deck_height(local_feet_y))
-            .then(|| crate::bot::gantry_deck_route(&tp.geom, here, &gap))
-            .flatten();
+        let expanse_path =
+            crate::bot::gantry_expanse_route(&tp.geom, &tp.config, here, local_feet_y, &gap);
+        let deck_pilot = (!tp.geom.is_wellshaft()
+            && crate::bot::at_gantry_deck_height(&tp.geom, local_feet_y))
+        .then(|| crate::bot::gantry_deck_route(&tp.geom, here, &gap))
+        .flatten();
         let in_gantry_understory = !tp.geom.is_wellshaft()
             && !tp.geom.decks.is_empty()
-            && !crate::bot::at_deck_height(local_feet_y);
+            && !crate::bot::at_gantry_deck_height(&tp.geom, local_feet_y);
         if let Some(path) = wellshaft_path {
             spectator.route_place = Some(tp.place);
             spectator.route_jumps = vec![false; path.waypoints.len()];
             spectator.route = path.waypoints;
             spectator.route_deck = false;
+            spectator.waypoint = 0;
+            spectator.blocked_ticks = 0;
+        } else if let Some(path) = expanse_path {
+            spectator.route_place = Some(tp.place);
+            spectator.route_jumps = vec![false; path.waypoints.len()];
+            spectator.route = path.waypoints;
+            spectator.route_deck =
+                local_feet_y > observed_traversal::gantry::GANTRY_EXPANSE_DECK_Y * 0.5;
             spectator.waypoint = 0;
             spectator.blocked_ticks = 0;
         } else if let Some(pilot) = deck_pilot {

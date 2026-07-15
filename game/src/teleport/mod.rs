@@ -11,7 +11,7 @@
 //! drives the body; the presentation renders the geometry. It is deliberately
 //! controller- and render-agnostic so it can be unit-tested.
 
-use bevy::math::Vec2;
+use bevy::math::{Vec2, Vec3};
 pub use observed_core::ThresholdSlotId;
 use observed_core::{CorridorId, PlaceId, RoomId};
 
@@ -258,6 +258,58 @@ pub struct DeckSeg {
     pub top_y: f32,
 }
 
+/// Explicit semantic structure kind for a frozen place. Consumers must use this rather
+/// than inferring architecture from deck counts, polygon shape, or elevation.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub enum PlaceStructureKind {
+    Room,
+    #[default]
+    Corridor,
+    CurvedChicane,
+    Orthogonal,
+    Colonnade,
+    PressureGate,
+    LegacyGantry,
+    GantryExpanse,
+    Wellshaft,
+}
+
+/// A yawed box footprint in a place's local XZ plane. This is the common structural
+/// shape used by smooth sampled walls, rotated platforms, and faceted architecture.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct OrientedBoxSolid {
+    pub center: Vec2,
+    pub half: Vec2,
+    pub yaw: f32,
+    pub bottom_y: f32,
+    pub top_y: f32,
+}
+
+/// A convex-prism structural solid. `footprint` is CCW in the place-local XZ plane.
+/// Hexagonal columns and non-rectangular structural masses use this so presentation
+/// and Rapier consume the exact same authored vertices.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ConvexPrismSolid {
+    pub footprint: Vec<Vec2>,
+    pub bottom_y: f32,
+    pub top_y: f32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum PlaceRouteKind {
+    JumpLine,
+    HighBridge,
+    Understory,
+}
+
+/// Stable ordered traversal hints projected from structural generation. They are debug
+/// and bot inputs only; simulation validity remains owned by the collision solids.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlaceRouteGuide {
+    pub kind: PlaceRouteKind,
+    pub nodes: Vec<Vec3>,
+}
+
 /// The current place's footprint + its doorway gaps (local frame, centred at 0).
 ///
 /// `half` is always the bounding half-extent (used for floor/light/bounds sizing). A
@@ -267,12 +319,21 @@ pub struct DeckSeg {
 /// colliders, and it has no `interior` or AABB perimeter.
 #[derive(Clone, Debug)]
 pub struct PlaceGeom {
+    pub structure_kind: PlaceStructureKind,
+    pub architecture_register: Option<observed_content::ArchitectureRegister>,
+    pub design_key: Option<u64>,
     pub half: Vec2,
     pub gaps: Vec<DoorGap>,
     pub interior: Vec<WallSeg>,
     pub poly: Option<Vec<Vec2>>,
     /// Walkable raised decks (the gantry's platforms + mount stair); empty everywhere else.
     pub decks: Vec<DeckSeg>,
+    /// General yawed structural boxes. Legacy axis-aligned walls/decks remain in their
+    /// compact fields; new architecture uses this list.
+    pub oriented_solids: Vec<OrientedBoxSolid>,
+    /// General convex structural prisms, including true hexagonal column fields.
+    pub convex_solids: Vec<ConvexPrismSolid>,
+    pub route_guides: Vec<PlaceRouteGuide>,
 }
 
 impl PlaceGeom {
@@ -283,11 +344,7 @@ impl PlaceGeom {
     /// Structural discriminator for the authored vertical connector. Kept derived from
     /// geometry so persistent simulation state does not acquire a presentation flavor.
     pub fn is_wellshaft(&self) -> bool {
-        self.decks.len() > 20
-            && self
-                .gaps
-                .iter()
-                .any(|gap| (gap.floor_y - crate::hallway::WELL_SHAFT_HEIGHT).abs() < 0.01)
+        self.structure_kind == PlaceStructureKind::Wellshaft
     }
 }
 
@@ -307,7 +364,7 @@ pub use geom::{
     hallway_geom_with_slots_and_role, open_entry, open_entry_threshold, room_geom,
     room_geom_with_slots, room_preview_geom,
 };
-pub use nav::{Nav, PinnedCorridor, PinnedEdge};
+pub use nav::{LiveCorridorConnection, Nav, PinnedCorridor, PinnedEdge};
 pub use transition::{
     Align2d, Crossing, GAP_FLOOR_TOLERANCE, PREVIEW_OUTSET, apply_crossing, arrival_gap,
     capsule_crossing_fraction, crossed, crossing_alignment, entry_spawn, feet_at_gap_floor,

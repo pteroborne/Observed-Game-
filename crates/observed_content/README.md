@@ -13,3 +13,7 @@ It deliberately exposes two revisions:
 Network sessions and deterministic replays require the simulation hash. Presentation
 hash mismatches may use declared procedural fallbacks because visual assets never own
 gameplay state.
+
+`ArchitectureRegister` is the code-owned, stable-ID vocabulary for procedural
+architecture. Its nine production names and explicit `u8` identities are independent
+of media references and versioned by `ARCHITECTURE_CATALOG_VERSION`.

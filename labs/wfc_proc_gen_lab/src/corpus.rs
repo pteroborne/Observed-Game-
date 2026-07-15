@@ -1,11 +1,10 @@
-//! Phase 45's success-criteria corpus: a 50-seed sweep over
-//! `observed_facility::wfc::generate_liminal_map`, proving the generator is fit to
-//! stand in for `sector_relay_v1` at liminal scale before the game ever adopts it
-//! (Phase 46). Run with `cargo test -p wfc_proc_gen_lab -- --nocapture` to see the
-//! summary table.
+//! Catalogue-v2 success-criteria corpus plus the retained v1 topology regression.
+//! Run with `cargo test -p wfc_proc_gen_lab -- --nocapture` to see the summary table.
 
-use observed_facility::map_spec::{MapSpec, RoomRole};
-use observed_facility::wfc::{WfcMapConfig, generate_liminal_map};
+use std::collections::{BTreeSet, VecDeque};
+
+use observed_facility::map_spec::{ArchitectureRegister, MapSpec, RoomRole};
+use observed_facility::wfc::{WfcMapConfig, generate_liminal_map, generate_liminal_map_v2};
 use observed_match::facility::CompetitiveFacility;
 
 const CORPUS_SEEDS: std::ops::Range<u64> = 0..50;
@@ -15,6 +14,89 @@ struct SeedResult {
     room_count: usize,
     edge_count: usize,
     monitor_count: usize,
+}
+
+#[test]
+fn catalogue_v2_is_deterministic_across_the_corpus() {
+    let config = WfcMapConfig::default();
+    for seed in CORPUS_SEEDS {
+        let first = generate_liminal_map_v2(seed, &config)
+            .unwrap_or_else(|error| panic!("v2 seed {seed}: {error:?}"));
+        let second = generate_liminal_map_v2(seed, &config)
+            .unwrap_or_else(|error| panic!("v2 seed {seed}: {error:?}"));
+        assert_eq!(first, second, "v2 seed {seed} must regenerate identically");
+    }
+}
+
+#[test]
+fn catalogue_v2_has_four_to_six_connected_architecture_regions_per_map() {
+    let config = WfcMapConfig::default();
+    for seed in CORPUS_SEEDS {
+        let spec = generate_liminal_map_v2(seed, &config)
+            .unwrap_or_else(|error| panic!("v2 seed {seed}: {error:?}"));
+        spec.validate()
+            .unwrap_or_else(|errors| panic!("v2 seed {seed}: {errors:?}"));
+        let designs = spec
+            .designs
+            .as_ref()
+            .expect("v2 carries design assignments");
+        assert!(
+            (4..=6).contains(&designs.register_count()),
+            "v2 seed {seed}: expected 4-6 regions, got {}",
+            designs.register_count()
+        );
+
+        for register in ArchitectureRegister::ALL {
+            let region: BTreeSet<_> = designs
+                .rooms
+                .values()
+                .filter_map(|design| (design.register == register).then_some(design.room))
+                .collect();
+            if region.is_empty() {
+                continue;
+            }
+
+            let start = *region.iter().next().expect("non-empty region");
+            let mut reached = BTreeSet::from([start]);
+            let mut queue = VecDeque::from([start]);
+            while let Some(room) = queue.pop_front() {
+                for neighbor in spec.neighbors(room) {
+                    if region.contains(&neighbor) && reached.insert(neighbor) {
+                        queue.push_back(neighbor);
+                    }
+                }
+            }
+            assert_eq!(
+                reached,
+                region,
+                "v2 seed {seed}: {} region is disconnected",
+                register.label()
+            );
+        }
+    }
+}
+
+#[test]
+fn catalogue_v2_corpus_exercises_all_nine_architecture_registers() {
+    let config = WfcMapConfig::default();
+    let mut seen = BTreeSet::new();
+    for seed in CORPUS_SEEDS {
+        let spec = generate_liminal_map_v2(seed, &config)
+            .unwrap_or_else(|error| panic!("v2 seed {seed}: {error:?}"));
+        seen.extend(
+            spec.designs
+                .as_ref()
+                .expect("v2 carries design assignments")
+                .rooms
+                .values()
+                .map(|design| design.register),
+        );
+    }
+    assert_eq!(
+        seen,
+        ArchitectureRegister::ALL.into_iter().collect(),
+        "the 50-seed corpus must exercise the complete production catalogue"
+    );
 }
 
 /// (a) Generation is deterministic by seed: regenerating the same seed produces a

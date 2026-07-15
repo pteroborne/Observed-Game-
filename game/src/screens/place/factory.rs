@@ -10,7 +10,6 @@ use observed_facility::map_spec::RoomRole;
 use observed_style::{self as style, SurfaceRole};
 
 use crate::GameState;
-use crate::hallway;
 use crate::items::ItemsState;
 use crate::keystones::KeystoneState;
 use crate::layout::WALL_HEIGHT;
@@ -206,7 +205,7 @@ pub(crate) fn rebuild_place(
                 y_offset,
             );
         }
-        Place::Hallway { variation, .. } => {
+        Place::Hallway { .. } => {
             let floor_material = place_surface_material(
                 SurfaceRole::Plain,
                 &palette,
@@ -265,8 +264,8 @@ pub(crate) fn rebuild_place(
                     super::authored::ShellMaterials {
                         floor: &assets.floor_material,
                         wall: &assets.wall_material,
-                        interior: (hallway::template(variation).flavor
-                            == hallway::HallwayFlavor::Gantry)
+                        interior: (geom.structure_kind
+                            == teleport::PlaceStructureKind::LegacyGantry)
                             .then_some((SurfaceRole::GantryDeck, &assets.gantry_deck_material)),
                     },
                 );
@@ -275,9 +274,11 @@ pub(crate) fn rebuild_place(
             // and light only, solved from the finished geometry — walls, gaps,
             // and thresholds are already final by the time this runs.
             if let Place::Hallway { from, to, .. } = tp.place {
-                let district = match_runtime::district_for_place(seed_val, tp.place);
+                let district =
+                    match_runtime::district_for_game(seed_val, tp.place, runtime.live.host_match());
                 let placements = modules::solve_hallway_modules(
-                    modules::hall_module_seed(seed_val, from.0, to.0),
+                    geom.design_key
+                        .unwrap_or_else(|| modules::hall_module_seed(seed_val, from.0, to.0)),
                     &geom,
                     teleport::MAZE_CELL,
                     district,

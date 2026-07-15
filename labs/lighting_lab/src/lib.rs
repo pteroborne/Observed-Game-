@@ -1,4 +1,4 @@
-//! **lighting_lab** — Arc I Phase 68: the nine liminal dioramas.
+//! **lighting_lab** — the nine production architecture-register dioramas.
 //!
 //! Each scene isolates one liminal register from the user-chosen reference set
 //! (see `docs/light_and_line_arc_plan.md`): keys **1–9** switch dioramas, **V**
@@ -8,7 +8,7 @@
 //! every scene: a register that hides a signal fails the Legibility Contract.
 //!
 //! `OBSERVED2_CAPTURE=<dir>` walks all nine scenes plus the volumetrics×bloom
-//! matrix on the forerunner scene, screenshots each, grades every capture
+//! matrix on the Facet Monument scene, screenshots each, grades every capture
 //! against the luminance corridor ([`luminance`]), records per-scene frame
 //! times, writes `manifest.json`, and exits.
 
@@ -52,7 +52,7 @@ pub struct LightingLabPlugin;
 impl Plugin for LightingLabPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(SceneState {
-            scene: Scene::Japanese,
+            scene: Scene::ShadowScreen,
             dirty: true,
         })
         .insert_resource(Toggles {
@@ -157,7 +157,11 @@ fn sync_camera_effects(
         let want_vol = toggles.volumetrics && state.scene.volumetric();
         if want_vol && !has_vol {
             commands.entity(cam).insert(VolumetricFog {
-                ambient_intensity: 0.0,
+                // A bounded volume must remain visible even when a backend
+                // culls an off-screen spotlight before the volume pass.
+                ambient_color: Color::srgb(0.32, 0.50, 0.78),
+                ambient_intensity: 0.72,
+                step_count: 96,
                 ..default()
             });
         } else if !want_vol && has_vol {
@@ -233,7 +237,7 @@ fn update_overlay(
 enum CaptureStep {
     /// One scene in its default rig.
     Scene(usize),
-    /// The volumetrics × bloom matrix on the forerunner scene:
+    /// The volumetrics × bloom matrix on the Facet Monument scene:
     /// 0 = vol off / bloom on, 1 = vol on / bloom off, 2 = vol off / bloom off.
     Matrix(usize),
 }
@@ -255,7 +259,7 @@ impl CaptureStep {
             }
             CaptureStep::Matrix(v) => {
                 let variant = ["vol-off_bloom-on", "vol-on_bloom-off", "vol-off_bloom-off"][v];
-                format!("scene_05_forerunner_{variant}")
+                format!("scene_05_facet-monument_{variant}")
             }
         }
     }
@@ -268,7 +272,7 @@ impl CaptureStep {
                 toggles.bloom = true;
             }
             CaptureStep::Matrix(v) => {
-                state.scene = Scene::Halo;
+                state.scene = Scene::FacetMonument;
                 toggles.volumetrics = v == 1;
                 toggles.bloom = v == 0;
             }
@@ -280,6 +284,7 @@ impl CaptureStep {
 #[derive(Serialize)]
 struct ManifestEntry {
     file: String,
+    frame_hash: String,
     #[serde(flatten)]
     verdict: luminance::CorridorVerdict,
     avg_frame_ms: f32,
@@ -345,12 +350,15 @@ fn capture_progress(
                     .observe(
                         move |shot: On<ScreenshotCaptured>,
                               mut manifest: ResMut<CaptureManifest>| {
-                            let verdict = match shot.image.clone().try_into_dynamic() {
+                            let (verdict, hash) = match shot.image.clone().try_into_dynamic() {
                                 Ok(dynamic) => {
                                     let rgba = dynamic.to_rgba8();
-                                    luminance::corridor(rgba.as_raw(), 4)
+                                    (
+                                        luminance::corridor(rgba.as_raw(), 4),
+                                        frame_hash(rgba.as_raw()),
+                                    )
                                 }
-                                Err(_) => luminance::corridor(&[], 1),
+                                Err(_) => (luminance::corridor(&[], 1), frame_hash(&[])),
                             };
                             info!(
                                 "CAPTURE_VERDICT {entry_file} p05={:.4} p50={:.4} p95={:.4} floor={} ceiling={}",
@@ -362,6 +370,7 @@ fn capture_progress(
                             );
                             manifest.entries.push(ManifestEntry {
                                 file: entry_file.clone(),
+                                frame_hash: format!("{hash:016x}"),
                                 verdict,
                                 avg_frame_ms,
                             });
@@ -381,17 +390,45 @@ fn capture_progress(
             }
         }
         3 if manifest.entries.len() >= manifest.expected || elapsed >= run.next_at => {
+            let volumetric_pair_differs = capture_pair_differs(
+                &manifest.entries,
+                "scene_05_facet-monument.png",
+                "scene_05_facet-monument_vol-off_bloom-on.png",
+            );
             let json = serde_json::to_string_pretty(&manifest.entries)
                 .unwrap_or_else(|e| format!("{{\"error\":\"{e}\"}}"));
             let path = format!("{}/manifest.json", run.dir);
             if let Err(e) = std::fs::write(&path, json) {
                 error!("manifest write failed: {e}");
             }
-            exit.write(AppExit::Success);
+            if !volumetric_pair_differs {
+                error!("Facet Monument volumetric-on/off captures are identical or missing");
+            }
+            exit.write(if volumetric_pair_differs {
+                AppExit::Success
+            } else {
+                AppExit::error()
+            });
             run.phase = 4;
         }
         _ => {}
     }
+}
+
+fn frame_hash(rgba: &[u8]) -> u64 {
+    rgba.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
+}
+
+fn capture_pair_differs(entries: &[ManifestEntry], on: &str, off: &str) -> bool {
+    let hash = |file: &str| {
+        entries
+            .iter()
+            .find(|entry| entry.file == file)
+            .map(|entry| entry.frame_hash.as_str())
+    };
+    matches!((hash(on), hash(off)), (Some(on), Some(off)) if on != off)
 }
 
 pub fn run() {
@@ -431,7 +468,11 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bevy::{asset::AssetPlugin, input::InputPlugin};
+    use bevy::{
+        asset::AssetPlugin,
+        input::InputPlugin,
+        light::{FogVolume, VolumetricLight},
+    };
 
     fn test_app() -> App {
         let mut app = App::new();
@@ -447,6 +488,21 @@ mod tests {
         let world = app.world_mut();
         let mut query = world.query_filtered::<Entity, With<T>>();
         query.iter(world).count()
+    }
+
+    fn count_named(app: &mut App, expected: &str) -> usize {
+        let world = app.world_mut();
+        let mut query = world.query::<&Name>();
+        query
+            .iter(world)
+            .filter(|name| name.as_str() == expected)
+            .count()
+    }
+
+    fn any_name_contains(app: &mut App, needle: &str) -> bool {
+        let world = app.world_mut();
+        let mut query = world.query::<&Name>();
+        query.iter(world).any(|name| name.as_str().contains(needle))
     }
 
     fn switch_to(app: &mut App, scene: Scene) {
@@ -479,12 +535,12 @@ mod tests {
     #[test]
     fn switching_scenes_leaks_nothing() {
         let mut app = test_app();
-        switch_to(&mut app, Scene::Japanese);
+        switch_to(&mut app, Scene::ShadowScreen);
         let baseline = count::<SceneSpawned>(&mut app);
         for scene in Scene::ALL {
             switch_to(&mut app, scene);
         }
-        switch_to(&mut app, Scene::Japanese);
+        switch_to(&mut app, Scene::ShadowScreen);
         assert_eq!(
             count::<SceneSpawned>(&mut app),
             baseline,
@@ -510,12 +566,131 @@ mod tests {
     #[test]
     fn scene_labels_are_stable_evidence_filenames() {
         // Evidence filenames are load-bearing (docs link them); pin them.
-        assert_eq!(CaptureStep::Scene(0).label(), "scene_01_shoji");
-        assert_eq!(CaptureStep::Scene(4).label(), "scene_05_forerunner");
+        assert_eq!(CaptureStep::Scene(0).label(), "scene_01_shadow-screen");
+        assert_eq!(CaptureStep::Scene(4).label(), "scene_05_facet-monument");
         assert_eq!(CaptureStep::Scene(8).label(), "scene_09_thinning");
         assert_eq!(
             CaptureStep::Matrix(2).label(),
-            "scene_05_forerunner_vol-off_bloom-off"
+            "scene_05_facet-monument_vol-off_bloom-off"
+        );
+    }
+
+    #[test]
+    fn exposed_catalogue_uses_production_register_names() {
+        let slugs: Vec<&str> = Scene::ALL.iter().map(|scene| scene.slug()).collect();
+        assert_eq!(
+            slugs,
+            [
+                "shadow-screen",
+                "monolith",
+                "overlit-grid",
+                "institutional",
+                "facet-monument",
+                "megastructure",
+                "wellshaft",
+                "infinite-gallery",
+                "thinning",
+            ]
+        );
+        let exposed = Scene::ALL
+            .iter()
+            .flat_map(|scene| [scene.slug(), scene.title()])
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase();
+        for reference in ["shoji", "lumon", "severance", "halo", "forerunner", "silo"] {
+            assert!(
+                !exposed.contains(reference),
+                "reference-only name leaked into the public catalogue: {reference}"
+            );
+        }
+    }
+
+    #[test]
+    fn shadow_screen_is_one_sparse_run_with_floor_only_blades() {
+        let coverage =
+            scenes::shadow_screen::SCREEN_LENGTH / scenes::shadow_screen::CORRIDOR_LENGTH;
+        assert!((0.20..=0.35).contains(&coverage));
+        assert!((3..=8).contains(&scenes::shadow_screen::FLOOR_BLADE_COUNT));
+
+        let mut app = test_app();
+        switch_to(&mut app, Scene::ShadowScreen);
+        assert_eq!(
+            count_named(&mut app, "Floor light blade"),
+            scenes::shadow_screen::FLOOR_BLADE_COUNT
+        );
+        assert!(count_named(&mut app, "Shadow screen slat") >= 12);
+        assert!(!any_name_contains(&mut app, "Paper"));
+    }
+
+    #[test]
+    fn institutional_set_contains_turns_decision_room_and_factory_expanse() {
+        use scenes::institutional::Zone;
+
+        assert_eq!(scenes::institutional::route_turn_count(), 4);
+        let plan = scenes::institutional::plan();
+        assert_eq!(
+            plan.values()
+                .filter(|zone| **zone == Zone::DecisionRoom)
+                .count(),
+            9
+        );
+        assert_eq!(
+            plan.values()
+                .filter(|zone| **zone == Zone::FactoryExpanse)
+                .count(),
+            24
+        );
+
+        let mut app = test_app();
+        switch_to(&mut app, Scene::Institutional);
+        assert_eq!(count_named(&mut app, "Decision room floor"), 9);
+        assert_eq!(count_named(&mut app, "Empty factory floor"), 24);
+    }
+
+    #[test]
+    fn facet_monument_uses_obtuse_junctions_and_toggleable_shaft_air() {
+        for headings in scenes::facet_monument::FACET_HEADINGS_DEGREES.windows(2) {
+            let turn = (headings[1] - headings[0]).abs();
+            let interior = 180.0 - turn;
+            assert!(
+                (120.0..=150.0).contains(&interior),
+                "junction must be an intentional obtuse facet: {interior}°"
+            );
+        }
+
+        let mut app = test_app();
+        switch_to(&mut app, Scene::FacetMonument);
+        assert_eq!(count_named(&mut app, "Connected facet panel"), 8);
+        assert_eq!(count::<FogVolume>(&mut app), 1);
+        assert_eq!(count::<VolumetricLight>(&mut app), 2);
+        assert_eq!(count::<VolumetricFog>(&mut app), 1);
+
+        app.world_mut().resource_mut::<Toggles>().volumetrics = false;
+        app.update();
+        app.update();
+        assert_eq!(count::<VolumetricFog>(&mut app), 0);
+        app.world_mut().resource_mut::<Toggles>().volumetrics = true;
+        app.update();
+        app.update();
+        assert_eq!(count::<VolumetricFog>(&mut app), 1);
+    }
+
+    #[test]
+    fn wellshaft_practicals_form_separate_pools_and_levels_stay_outlined() {
+        let mut app = test_app();
+        switch_to(&mut app, Scene::Wellshaft);
+        assert_eq!(
+            count_named(&mut app, "Practical light"),
+            scenes::wellshaft::LEVEL_COUNT
+        );
+        assert_eq!(
+            count_named(&mut app, "Practical floor pool"),
+            scenes::wellshaft::LEVEL_COUNT
+        );
+        assert_eq!(
+            count_named(&mut app, "Stair and level silhouette lip"),
+            scenes::wellshaft::LEVEL_COUNT * 4
         );
     }
 }

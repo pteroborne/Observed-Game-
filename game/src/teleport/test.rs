@@ -31,6 +31,7 @@ mod tests {
             target_room: target.map(RoomId),
             room_role: None,
             corridor_roles: Vec::new(),
+            live_corridors: Vec::new(),
             seed: 1,
             version: 0,
             exit_locked: false,
@@ -1111,17 +1112,148 @@ mod tests {
             let exit = geom.gaps.iter().find(|g| g.kind == GapKind::Exit).unwrap();
             assert_eq!(entry.target, RoomId(1));
             assert_eq!(exit.target, RoomId(4));
-            assert_eq!(geom.interior.len(), 2, "two staggered baffles form the S");
-            // The slalom: entry and exit doorways sit on opposite sides of the corridor.
-            assert!(
-                entry.center.x * exit.center.x < 0.0,
-                "seed {seed}: entry and exit are offset to opposite sides"
-            );
+            assert_eq!(geom.structure_kind, PlaceStructureKind::CurvedChicane);
+            assert!(geom.interior.is_empty(), "v2 chicanes have no hard baffles");
+            assert_eq!(geom.oriented_solids.len(), 40, "twenty spans per wall");
+            assert!(entry.center.x.abs() < 1e-3 && exit.center.x.abs() < 1e-3);
+            assert!(entry.width >= 7.5, "the clear curved lane stays wide");
+            for side in 0..2 {
+                let spans: Vec<_> = geom.oriented_solids.iter().skip(side).step_by(2).collect();
+                for pair in spans.windows(2) {
+                    let delta = pair[1].yaw - pair[0].yaw;
+                    let angular_step = delta.sin().atan2(delta.cos()).abs();
+                    assert!(
+                        angular_step < 0.45,
+                        "seed {seed}: adjacent curve spans turn smoothly ({angular_step})"
+                    );
+                }
+            }
             assert!(
                 maze_is_walkable(&geom),
                 "chicane (seed {seed}) must be walkable entryâ†’exit"
             );
         }
+    }
+
+    #[test]
+    fn catalogue_v2_gantry_projects_the_full_hex_column_expanse() {
+        use observed_facility::map_spec::TraversalArchetype;
+        use observed_facility::wfc::{WfcMapConfig, generate_liminal_map_v2};
+        use observed_traversal::ColliderShape;
+
+        let (spec, corridor) = (0..24_u64)
+            .find_map(|seed| {
+                let spec = generate_liminal_map_v2(seed, &WfcMapConfig::default()).ok()?;
+                let corridor = spec.corridors.iter().find(|corridor| {
+                    spec.corridor_design(corridor.id)
+                        .is_some_and(|design| design.traversal == TraversalArchetype::GantryExpanse)
+                })?;
+                Some((spec.clone(), corridor.clone()))
+            })
+            .expect("v2 corpus contains a gantry expanse");
+        let from_endpoint = corridor.endpoints[0];
+        let to_endpoint = corridor.endpoints[1];
+        let mut navigation = nav(&[to_endpoint.room.0], Some(to_endpoint.room.0));
+        navigation.connection_slots = vec![RoomConnectionSlot {
+            target: to_endpoint.room,
+            slot: ThresholdSlotId(from_endpoint.side.index() as u16),
+        }];
+        navigation.hallway_entry_room_slot =
+            Some(ThresholdSlotId(from_endpoint.side.index() as u16));
+        navigation.hallway_exit_room_slot = Some(ThresholdSlotId(to_endpoint.side.index() as u16));
+        navigation.corridor_roles = vec![(to_endpoint.room, corridor.role)];
+        navigation.map_spec = Some(spec);
+        let place = Place::Hallway {
+            corridor: corridor.id,
+            entered_socket: ThresholdSlotId(0),
+            variation: 0,
+            from: from_endpoint.room,
+            to: to_endpoint.room,
+        };
+        let geom = geom_for(place, &navigation);
+
+        assert_eq!(geom.structure_kind, PlaceStructureKind::GantryExpanse);
+        assert!(geom.half.x * 2.0 >= 120.0 && geom.half.y * 2.0 >= 80.0);
+        assert!(structural_height(&geom, 3.4) > 54.0);
+        assert!(
+            geom.convex_solids.len() >= 50,
+            "an expanse of true hex columns"
+        );
+        assert!(
+            geom.oriented_solids.len() >= 12,
+            "decks and turning bridge spans"
+        );
+        assert_eq!(geom.route_guides.len(), 3);
+        let bridge = geom
+            .route_guides
+            .iter()
+            .find(|route| route.kind == PlaceRouteKind::HighBridge)
+            .unwrap();
+        assert!(bridge.nodes.len() >= 12);
+        let heading_changes = bridge
+            .nodes
+            .windows(3)
+            .filter(|nodes| {
+                let a =
+                    Vec2::new(nodes[1].x - nodes[0].x, nodes[1].z - nodes[0].z).normalize_or_zero();
+                let b =
+                    Vec2::new(nodes[2].x - nodes[1].x, nodes[2].z - nodes[1].z).normalize_or_zero();
+                a.dot(b) < 0.94
+            })
+            .count();
+        assert!(heading_changes >= 4);
+        let entry = geom
+            .gaps
+            .iter()
+            .find(|gap| gap.kind == GapKind::Entry)
+            .unwrap();
+        let lower = geom
+            .gaps
+            .iter()
+            .find(|gap| gap.kind == GapKind::Exit && gap.floor_y == 0.0)
+            .unwrap();
+        assert_eq!(
+            entry.floor_y,
+            observed_traversal::gantry::GANTRY_EXPANSE_DECK_Y
+        );
+        assert_ne!(
+            entry.center, lower.center,
+            "understory has a distinct lower exit"
+        );
+
+        let arena = place_arena_spec(&geom, 0.0, 3.4);
+        let convex_count = arena
+            .colliders
+            .iter()
+            .filter(|collider| matches!(&collider.shape, ColliderShape::ConvexHull { .. }))
+            .count();
+        assert_eq!(convex_count, geom.convex_solids.len());
+    }
+
+    #[test]
+    fn institutional_connector_has_two_right_angle_turns_and_an_empty_bay() {
+        let geom = hallway_geom(
+            RoomId(1),
+            RoomId(2),
+            &hallway::ORTHOGONAL_TEMPLATE,
+            9,
+            false,
+        );
+        assert_eq!(geom.structure_kind, PlaceStructureKind::Orthogonal);
+        assert_eq!(geom.interior.len(), 2);
+        assert!(geom.half.x >= 20.0 && geom.half.y >= 25.0);
+        let entry = geom
+            .gaps
+            .iter()
+            .find(|gap| gap.kind == GapKind::Entry)
+            .unwrap();
+        let exit = geom
+            .gaps
+            .iter()
+            .find(|gap| gap.kind == GapKind::Exit)
+            .unwrap();
+        assert!(entry.center.x < 0.0 && exit.center.x > 0.0);
+        assert!(maze_is_walkable(&geom));
     }
 
     fn colonnade_templates() -> Vec<&'static hallway::HallwayTemplate> {
@@ -2332,6 +2464,7 @@ mod tests {
             target_room: Some(to),
             room_role: None,
             corridor_roles: role.map(|r| vec![(to, r)]).unwrap_or_default(),
+            live_corridors: Vec::new(),
             seed,
             version: 0,
             exit_locked: false,
@@ -2460,6 +2593,7 @@ mod tests {
                     target_room: Some(to),
                     room_role: role,
                     corridor_roles: Vec::new(),
+                    live_corridors: Vec::new(),
                     seed,
                     version: 0,
                     exit_locked: false,

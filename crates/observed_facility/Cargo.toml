@@ -19,6 +19,7 @@ wfc = ["dep:ghx_proc_gen"]
 
 [dependencies]
 observed_core = { path = "../observed_core" }
+observed_content = { path = "../observed_content" }
 # The constraint world builds on the observe/decohere graph; it embeds it as data, so
 # it needs no ECS from that crate.
 observed_observation = { path = "../observed_observation", default-features = false }

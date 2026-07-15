@@ -8,3 +8,4 @@ publish = false
 # Only `bevy::color` (Color / LinearRgba) is needed — this is a pure, render-free
 # data crate, so it takes Bevy with just the `bevy_color` feature (no renderer).
 bevy = { version = "0.18.1", default-features = false, features = ["bevy_color"] }
+observed_content = { path = "../observed_content" }

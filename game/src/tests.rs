@@ -2497,14 +2497,27 @@ fn collapse_sealed_thresholds_render_rubble_from_the_style_module() {
 /// blocks — so the commitment is visible before the jump.
 #[test]
 fn a_gantry_hallway_renders_readable_decks_and_no_deck_leaks_into_the_wall_path() {
-    use crate::hallway::{HallwayFlavor, TEMPLATES};
-    use crate::teleport::Place;
-    use observed_core::RoomId;
+    use crate::teleport::{Place, ThresholdSlotId};
+    use observed_facility::map_spec::TraversalArchetype;
 
-    let gantry_variation = TEMPLATES
-        .iter()
-        .position(|t| t.flavor == HallwayFlavor::Gantry)
-        .expect("a Gantry template exists in the hallway library");
+    let spec = crate::map_catalog::active_map_spec(MATCH_SEED);
+    let corridor = spec
+        .corridors()
+        .into_iter()
+        .find(|corridor| {
+            spec.corridor_design(corridor.id)
+                .is_some_and(|design| design.traversal == TraversalArchetype::GantryExpanse)
+        })
+        .expect("catalogue v2 contains a Gantry Expanse corridor");
+    let from = corridor.endpoints[0].room;
+    let to = corridor.endpoints[1].room;
+    let place = Place::Hallway {
+        corridor: corridor.id,
+        entered_socket: ThresholdSlotId(0),
+        variation: 0,
+        from,
+        to,
+    };
 
     let mut app = test_app();
     go(&mut app, GameState::Match);
@@ -2514,16 +2527,8 @@ fn a_gantry_hallway_renders_readable_decks_and_no_deck_leaks_into_the_wall_path(
             let runtime = world.resource::<crate::sim::director::MatchDirector>();
             let keys = world.resource::<keystones::KeystoneState>();
             let items = world.resource::<items::ItemsState>();
-            let game = runtime.live.host_match();
-            let from = game.local_room();
-            let to = game.local_target().unwrap_or(RoomId(from.0 + 1));
             crate::screens::match_runtime::debug_place_into(
-                &mut tp,
-                runtime,
-                Place::legacy_hallway(from, to, gantry_variation),
-                from,
-                keys,
-                items,
+                &mut tp, runtime, place, from, keys, items,
             );
         });
     app.update();
@@ -2534,20 +2539,28 @@ fn a_gantry_hallway_renders_readable_decks_and_no_deck_leaks_into_the_wall_path(
         query.iter(world).map(|n| n.as_str().to_string()).collect()
     };
 
-    let traversal_hull_count = names
+    let hex_column_count = names
         .iter()
-        .filter(|name| name.starts_with("Authored traversal hull"))
+        .filter(|name| name.as_str() == "Place convex structure")
         .count();
-    let aperture_wall_count = names
+    let platform_count = names
         .iter()
-        .filter(|name| name.starts_with("Generated aperture wall"))
+        .filter(|name| name.as_str() == "Gantry platform")
         .count();
-    assert_eq!(
-        traversal_hull_count, 4,
-        "the canonical Gantry bake contributes four styled interior traversal hulls"
+    let perimeter_wall_count = names
+        .iter()
+        .filter(|name| name.as_str() == "Place wall")
+        .count();
+    assert!(
+        hex_column_count >= 50,
+        "the catalogue Gantry Expanse renders its field of structural hex columns"
     );
     assert!(
-        aperture_wall_count >= 4,
+        platform_count >= 3,
+        "the entry, bridge, and exit platforms are visible"
+    );
+    assert!(
+        perimeter_wall_count >= 4,
         "generated aperture-safe perimeter walls must remain visible"
     );
 
@@ -2570,13 +2583,24 @@ fn a_gantry_hallway_renders_readable_decks_and_no_deck_leaks_into_the_wall_path(
 #[test]
 fn a_wellshaft_renders_the_hex_pillar_spiral_bridges_and_sealed_service_bays() {
     use crate::hallway::{HallwayFlavor, TEMPLATES};
-    use crate::teleport::Place;
-    use observed_core::RoomId;
+    use crate::teleport::{Place, ThresholdSlotId};
+    use observed_core::CorridorId;
 
     let variation = TEMPLATES
         .iter()
         .position(|template| template.flavor == HallwayFlavor::Wellshaft)
         .expect("wellshaft template");
+    let spec = crate::map_catalog::active_map_spec(MATCH_SEED);
+    let mut disconnected = None;
+    'rooms: for from in &spec.rooms {
+        for to in &spec.rooms {
+            if from.id != to.id && spec.corridor_role_between(from.id, to.id).is_none() {
+                disconnected = Some((from.id, to.id));
+                break 'rooms;
+            }
+        }
+    }
+    let (from, to) = disconnected.expect("the map has a valid non-adjacent room pair");
     let mut app = test_app();
     go(&mut app, GameState::Match);
     app.update();
@@ -2585,16 +2609,15 @@ fn a_wellshaft_renders_the_hex_pillar_spiral_bridges_and_sealed_service_bays() {
             let runtime = world.resource::<crate::sim::director::MatchDirector>();
             let keys = world.resource::<keystones::KeystoneState>();
             let items = world.resource::<items::ItemsState>();
-            let game = runtime.live.host_match();
-            let from = game.local_room();
-            let to = game.local_target().unwrap_or(RoomId(from.0 + 1));
-            crate::screens::match_runtime::debug_place_into(
-                &mut tp,
-                runtime,
-                Place::legacy_hallway(from, to, variation),
+            let place = Place::Hallway {
+                corridor: CorridorId(u32::MAX),
+                entered_socket: ThresholdSlotId(0),
+                variation,
                 from,
-                keys,
-                items,
+                to,
+            };
+            crate::screens::match_runtime::debug_place_into(
+                &mut tp, runtime, place, from, keys, items,
             );
         });
     app.update();

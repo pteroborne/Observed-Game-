@@ -1,81 +1,60 @@
 # WFC Procedural Generation Lab
 
-**Question:** can Wave Function Collapse generate a liminal-scale (24-32 room)
-`MapSpec` that passes the same validator the hand-authored `sector_relay_v1` map
-passes — unique rooms/endpoints, every required role, connectivity, redundancy
-(no single-edge-cut anywhere), and objective recovery (keystones/relays/anchor
-checkpoints/recovery/dual-stations all survive any single cut)? Phase 45 (Arc D)
-answers yes: `observed_facility::wfc::generate_liminal_map` (feature `wfc`, off by
-default) produces validated `MapSpec`s deterministically from a seed, and this lab
-is where that generator is proven before the game ever adopts it (Phase 46).
+This lab is the proof surface for the versioned liminal-map generator. Its default
+view runs `observed_facility::wfc::generate_liminal_map_v2` and renders both axes of
+the procedural design catalogue:
 
-The lab has two independent modes sharing one window:
+- Room fill is the room's stable architecture register: Shadow Screen, Monolith,
+  Overlit Grid, Institutional, Facet Monument, Megastructure, Wellshaft, Infinite
+  Gallery, or Thinning.
+- Corridor line color is its traversal archetype: Straight, Long, Pressure, Climb,
+  Maze, Chicane, Gantry Expanse, Wellshaft, Colonnade, or Orthogonal.
 
-1. **2D WFC feasibility demo** (`main.rs`'s original showcase) — an abstract
-   void/corridor/entrance/exit grid solved with `ghx_proc_gen`, unrelated to map
-   topology. Press `Space` to randomize its seed.
-2. **MapSpec topology visualization** (`map_topology.rs`, Phase 45) — drives the
-   real generator and renders the resulting `MapSpec`: rooms as boxes colored by
-   `RoomRole`, edges as lines styled by `CorridorRole`, Start/Exit outlined in
-   white, with an on-screen legend.
+All labels are production-safe. A white room border marks Start or Exit. Major
+Gantry Expanse and Wellshaft courses use thicker lines. The on-screen legend states
+every color/weight meaning so the debug visualization obeys the legibility contract.
 
 ## Controls
 
-- `Space` — randomize the 2D WFC feasibility demo's seed (mode 1, always active
-  underneath).
-- `M` — toggle MapSpec topology mode on/off.
-- `N` / `P` — next/previous seed while in topology mode (regenerates and
-  re-renders; a failed seed shows the `WfcMapError` in the legend instead of a
-  layout).
-- `R` — reset topology mode back to seed 0.
+- `N` / `P` — next/previous deterministic map seed.
+- `V` — toggle between catalogue v2 and the retained v1 role-only topology
+  regression.
+- `R` — reset to catalogue v2, seed 0.
+- `M` — toggle the catalogue view and the archived abstract tile-WFC feasibility
+  demo.
+- `Space` — randomize the archived tile-WFC seed while that view is active.
 
-Toggling modes, stepping seeds, or resetting despawns every entity the topology
-mode owns (`MapTopologyTile`) before respawning, so it never leaks state across
-seeds or into the WFC feasibility demo (per `agents.md`'s reset-and-leak rule).
+Changing seed, revision, or mode despawns every owned visualization entity before
+respawning. The lab therefore exposes reset behavior without leaking state between
+proofs.
 
-## The generation pipeline
+## Catalogue-v2 generation contract
 
-See `crates/observed_facility/src/wfc.rs`'s module docs for the full six-step
-pipeline (WFC room/void layout, dense extraction as full grid adjacency, farthest-
-point role spread, deterministic corridor roles, a redundancy/objective-recovery
-repair pass, then the `validate()` gate with a salted-seed retry budget). In
-short: WFC supplies the seeded stochastic *shape* (which grid cells are rooms);
-everything that keeps the graph provably fair (redundancy, objective recovery,
-tool-role usefulness) is a deterministic repair pass over the resulting grid
-graph, with the retry budget as a safety net rather than the whole strategy.
+`generate_liminal_map_v2` first preserves the validated v1 topology pipeline, then
+adds explicit corridor identities and deterministic design assignments. Each map
+has four to six architecture regions. Every region is connected in the room graph
+and contains at least three rooms. Corridor designs carry a compatible traversal
+archetype and a stable generation key, so later threshold rewiring changes
+attachments without rerolling a Place's design.
 
-## Corpus tests — this phase's success criteria
+The v1 generator remains available in the lab with `V`. This regression path makes
+the version boundary visible and keeps the original role-only output testable.
 
-`cargo test -p wfc_proc_gen_lab -- --nocapture` runs the 50-seed corpus in
-`src/corpus.rs`:
+## Corpus tests
 
-- **Determinism** — regenerating a seed produces a byte-identical `MapSpec`.
-- **Range + dense ids** — every seed generates `Ok` within the retry budget, with
-  room count in `[24, 32]` and no gaps in `RoomId(0..n)`.
-- **Full validation** — `MapSpec::validate()` passes for every seed.
-- **Monitor coverage** — every seed has at least `ceil(room_count / 9)` Monitor
-  rooms, enough to page every room at 9-panel density.
-- **Objective-sequence coherence** — `CompetitiveFacility::for_map_spec` builds
-  cleanly, `objective_sequence()` is non-empty and ends at the exit room, and
-  `collapse_rooms()` at the opening purge line is empty (the progress/collapse
-  model must not choke on a freshly generated map).
-- **Summary table** — a `println!` table of room/edge/monitor counts and
-  retry-budget context across all 50 seeds, for manual review.
+`cargo test -p wfc_proc_gen_lab -- --nocapture` runs a deterministic 50-seed corpus.
+The catalogue-v2 checks prove:
 
-`crates/observed_facility`'s own `#[cfg(all(test, feature = "wfc"))]` tests cover
-a smaller 20-seed slice of the same properties directly against `MapSpec`,
-independent of this lab's visualization and `observed_match` dependency.
+- regenerating a seed produces an identical `MapSpec`;
+- every map contains four to six connected architecture regions; and
+- the corpus exercises all nine architecture registers.
 
-## `hallway_wfc.rs` — archived, now re-exported (Phase 47 / Arc D5)
+The retained v1 suite also checks deterministic generation, dense room IDs, full
+`MapSpec::validate()` coverage, monitor paging capacity, competitive objective
+coherence, and prints a room/edge/monitor summary table for manual review.
 
-`hallway_wfc.rs` used to be a full copy of the game's former hallway-*interior*
-WFC generator (archived here in refactor Arc G1, 2026-07-02, when nothing in the
-game called it). Phase 47 ported that generator onto the current place-geometry
-API as `observed_facility::wfc::generate_interior_walls`/`InteriorSeg` (see that
-crate's README), and the game adopted it for `CorridorRole::Mystery` hallway
-interiors (`game::wfc_interior`, selected in
-`game::teleport::geom::hallway_geom_with_slots_and_role`, DFS-maze fallback on
-`WfcInteriorError`). `hallway_wfc.rs` is now a thin re-export of the live
-`observed_facility::wfc` functions (plus the old `generate_wfc_interior_walls`
-name, for any lab code still spelling it) — its smoke test exercises the real
-production code rather than a second, drifting copy.
+## Archived interior WFC adapter
+
+`src/hallway_wfc.rs` remains a thin compatibility re-export of
+`observed_facility::wfc::generate_interior_walls`. Its smoke test exercises the
+production corridor-interior implementation rather than a second copy.

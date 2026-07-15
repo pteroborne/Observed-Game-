@@ -1,8 +1,8 @@
-//! Gantry lab: the Phase 40 jump-map hallway proof.
+//! Gantry lab: the seeded multidirectional megastructure proof.
 //!
 //! The pure rules live in `observed_traversal::gantry`; this lab renders that course
-//! and runs the deterministic bot through clean-jump, fall-recover, and safe-bypass
-//! routes so the timing spread and lower-floor recovery are reviewable.
+//! and runs the deterministic bot through a fast jump line, connected high bridge,
+//! and full understory recovery route so scale, timing, and reset behavior are visible.
 
 mod lab;
 
@@ -15,7 +15,7 @@ use bevy::{
 };
 
 pub use lab::{GantryRunner, GantryRuntime, GantryUiRoot};
-use observed_traversal::gantry::GantryRoute;
+use observed_traversal::gantry::GantryExpanseRoute;
 
 pub struct GantryLabPlugin;
 
@@ -57,7 +57,7 @@ pub fn run() {
         app.insert_resource(CaptureRequest {
             path,
             phase: 0,
-            route: GantryRoute::FallRecover,
+            route: GantryExpanseRoute::JumpLine,
         })
         .add_systems(Update, capture_progress.after(lab::present_camera));
     }
@@ -69,7 +69,7 @@ pub fn run() {
 struct CaptureRequest {
     path: String,
     phase: u8,
-    route: GantryRoute,
+    route: GantryExpanseRoute,
 }
 
 fn capture_progress(
@@ -97,7 +97,9 @@ fn capture_progress(
 mod tests {
     use super::*;
     use bevy::{asset::AssetPlugin, gizmos::GizmoPlugin, input::InputPlugin};
-    use observed_traversal::gantry::{GantryExit, simulate_route};
+    use observed_traversal::gantry::{
+        GantryExpanseExit, GantryExpanseRoute, simulate_expanse_route,
+    };
 
     fn test_app() -> App {
         let mut app = App::new();
@@ -132,7 +134,7 @@ mod tests {
             !app.world()
                 .resource::<GantryRuntime>()
                 .course
-                .platforms
+                .jump_decks
                 .is_empty()
         );
     }
@@ -158,20 +160,24 @@ mod tests {
 
         assert_eq!(count::<lab::GantrySpawned>(&mut app), spawned);
         let runtime = app.world().resource::<GantryRuntime>();
-        assert_eq!(runtime.route, GantryRoute::FallRecover);
+        assert_eq!(runtime.route, GantryExpanseRoute::HighBridge);
         assert_eq!(runtime.reset_count, 2);
     }
 
     #[test]
     fn pure_routes_remain_available_to_the_lab() {
         let runtime = GantryRuntime::default();
-        let result = simulate_route(
-            GantryRoute::FallRecover,
+        let result = simulate_expanse_route(
+            GantryExpanseRoute::UnderstoryRecovery,
             &runtime.course,
             &runtime.config,
-            900,
+            7_200,
         )
-        .expect("fall route completes");
-        assert_eq!(result.exit, GantryExit::UnderstorySideExit);
+        .expect("understory route completes");
+        assert_eq!(result.exit, GantryExpanseExit::LowerExit);
+        assert_eq!(
+            result.exit,
+            lab::endpoint_for(GantryExpanseRoute::UnderstoryRecovery)
+        );
     }
 }

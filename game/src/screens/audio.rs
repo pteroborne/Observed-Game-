@@ -985,7 +985,12 @@ pub(crate) fn fade_ambience_beds(
     mut query: Query<(&mut AmbienceBed, &mut AudioSink)>,
 ) {
     let seed_val = seed.map(|s| s.0).unwrap_or(crate::flow::MATCH_SEED);
-    let active_bed = active_ambience_bed(seed_val, tp.place, !tp.geom.decks.is_empty());
+    let gantry = matches!(
+        tp.geom.structure_kind,
+        crate::teleport::PlaceStructureKind::LegacyGantry
+            | crate::teleport::PlaceStructureKind::GantryExpanse
+    );
+    let active_bed = active_ambience_bed(seed_val, tp.place, gantry);
     let music_volume = settings.effective_music_volume();
     let music_duck = director.bus_duck_factor(AudioBus::Music);
     let dt = (time.delta_secs() * DISTRICT_AMBIENCE_BLEND_RATE).clamp(0.0, 1.0);

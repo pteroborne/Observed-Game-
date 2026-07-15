@@ -29,6 +29,16 @@ pub struct PinnedCorridor {
     pub version: u32,
 }
 
+/// One live room-door attachment to a stable catalogue corridor socket. The two room
+/// endpoints may change after decoherence; `corridor` and its design do not.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LiveCorridorConnection {
+    pub room: RoomId,
+    pub target: RoomId,
+    pub corridor: CorridorId,
+    pub slot: ThresholdSlotId,
+}
+
 /// A snapshot of the brain's navigation state the place model reads (supplied by the
 /// match each frame; constructed directly in tests).
 #[derive(Clone, Debug)]
@@ -59,6 +69,9 @@ pub struct Nav {
     /// into a global map singleton. Empty when the current map has no spec
     /// (authored/dev fallbacks).
     pub corridor_roles: Vec<(RoomId, CorridorRole)>,
+    /// Stable v2 corridor/socket attachments for the live connections represented by
+    /// this snapshot. Empty on legacy maps.
+    pub live_corridors: Vec<LiveCorridorConnection>,
     pub seed: u64,
     /// Increments when the graph decoheres, so an edge re-rolls its hallway.
     pub version: u32,
@@ -91,6 +104,13 @@ impl Nav {
             .iter()
             .find(|(room, _)| *room == target)
             .map(|(_, role)| *role)
+    }
+
+    pub fn live_corridor(&self, room: RoomId, target: RoomId) -> Option<LiveCorridorConnection> {
+        self.live_corridors
+            .iter()
+            .copied()
+            .find(|connection| connection.room == room && connection.target == target)
     }
 
     /// The decohere version to use for `corridor`: the pinned version if an anchor torch

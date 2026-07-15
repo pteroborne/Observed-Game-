@@ -1,20 +1,17 @@
-//! MapSpec topology visualization mode (Phase 45 / Arc D).
+//! Catalogue-v2 `MapSpec` topology proof.
 //!
-//! The lab's primary showcase (`main.rs`) is a 2D WFC feasibility demo over an
-//! abstract void/corridor/entrance/exit grid. This module is a second, independent
-//! mode: it drives `observed_facility::wfc::generate_liminal_map` and renders the
-//! resulting `MapSpec` — rooms as boxes colored by `RoomRole`, edges as lines styled
-//! by `CorridorRole`, with Start/Exit highlighted and an on-screen legend. `M` toggles
-//! between the two modes; `N`/`P` step to the next/previous seed while in map-topology
-//! mode; `R` resets back to seed 0. Toggling modes or resetting tears down every
-//! entity this module owns (`MapTopologyTile`) so it never leaks into the WFC demo.
+//! This is the lab's default view. It renders room architecture registers and
+//! corridor traversal archetypes from `generate_liminal_map_v2`, including a full
+//! production-safe legend. `V` switches to the retained v1 topology regression;
+//! `M` opens the archived abstract tile-WFC feasibility view.
 
 use bevy::prelude::*;
-use observed_facility::map_spec::{CorridorRole, MapSpec, RoomRole};
-use observed_facility::wfc::{WfcMapConfig, generate_liminal_map};
+use observed_facility::map_spec::{
+    ArchitectureRegister, CorridorRole, MapSpec, RoomRole, TraversalArchetype,
+};
+use observed_facility::wfc::{WfcMapConfig, generate_liminal_map, generate_liminal_map_v2};
 
-/// World-space size of a schematic grid cell, matching `main.rs`'s `VIEW_TILE_SIZE`
-/// scale so both modes read at a similar zoom level.
+/// World-space size of a schematic grid cell, matching `main.rs`'s view scale.
 const CELL_SIZE: f32 = 64.0;
 const ROOM_BOX: f32 = 46.0;
 
@@ -24,10 +21,26 @@ pub struct MapTopologyTile;
 #[derive(Component)]
 pub struct MapTopologyLegendText;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CatalogueRevision {
+    V1Regression,
+    V2Catalogue,
+}
+
+impl CatalogueRevision {
+    fn label(self) -> &'static str {
+        match self {
+            Self::V1Regression => "v1 topology regression",
+            Self::V2Catalogue => "v2 architecture catalogue",
+        }
+    }
+}
+
 #[derive(Resource)]
 pub struct MapTopologyState {
     pub active: bool,
     pub seed: u64,
+    pub revision: CatalogueRevision,
     pub config: WfcMapConfig,
     pub spec: Option<MapSpec>,
     pub attempts_note: String,
@@ -36,8 +49,9 @@ pub struct MapTopologyState {
 impl Default for MapTopologyState {
     fn default() -> Self {
         let mut state = Self {
-            active: false,
+            active: true,
             seed: 0,
+            revision: CatalogueRevision::V2Catalogue,
             config: WfcMapConfig::default(),
             spec: None,
             attempts_note: String::new(),
@@ -49,18 +63,36 @@ impl Default for MapTopologyState {
 
 impl MapTopologyState {
     fn regenerate(&mut self) {
-        match generate_liminal_map(self.seed, &self.config) {
+        let generated = match self.revision {
+            CatalogueRevision::V1Regression => generate_liminal_map(self.seed, &self.config),
+            CatalogueRevision::V2Catalogue => generate_liminal_map_v2(self.seed, &self.config),
+        };
+        match generated {
             Ok(spec) => {
+                let design_note = spec.designs.as_ref().map_or_else(
+                    || "role-only legacy topology".to_string(),
+                    |designs| {
+                        format!(
+                            "{} connected architecture regions",
+                            designs.register_count()
+                        )
+                    },
+                );
                 self.attempts_note = format!(
-                    "seed {} -> {} rooms, {} edges",
+                    "{} | seed {} -> {} rooms, {} corridors | {design_note}",
+                    self.revision.label(),
                     self.seed,
                     spec.room_count(),
-                    spec.edges.len()
+                    spec.corridors().len()
                 );
                 self.spec = Some(spec);
             }
             Err(err) => {
-                self.attempts_note = format!("seed {} FAILED: {err:?}", self.seed);
+                self.attempts_note = format!(
+                    "{} | seed {} FAILED: {err:?}",
+                    self.revision.label(),
+                    self.seed
+                );
                 self.spec = None;
             }
         }
@@ -68,6 +100,15 @@ impl MapTopologyState {
 
     fn reset(&mut self) {
         self.seed = 0;
+        self.revision = CatalogueRevision::V2Catalogue;
+        self.regenerate();
+    }
+
+    fn toggle_revision(&mut self) {
+        self.revision = match self.revision {
+            CatalogueRevision::V1Regression => CatalogueRevision::V2Catalogue,
+            CatalogueRevision::V2Catalogue => CatalogueRevision::V1Regression,
+        };
         self.regenerate();
     }
 }
@@ -77,14 +118,14 @@ pub fn setup_map_topology_ui(mut commands: Commands) {
         MapTopologyLegendText,
         Text::new(""),
         TextFont {
-            font_size: 15.0,
+            font_size: 13.0,
             ..default()
         },
         TextColor(Color::srgb(0.9, 0.92, 0.98)),
         Node {
             position_type: PositionType::Absolute,
-            bottom: Val::Px(20.0),
-            left: Val::Px(20.0),
+            bottom: Val::Px(14.0),
+            left: Val::Px(14.0),
             ..default()
         },
     ));
@@ -108,8 +149,78 @@ pub fn handle_map_topology_input(
         state.seed = state.seed.wrapping_sub(1);
         state.regenerate();
     }
+    if keys.just_pressed(KeyCode::KeyV) {
+        state.toggle_revision();
+    }
     if keys.just_pressed(KeyCode::KeyR) {
         state.reset();
+    }
+}
+
+fn architecture_color(register: ArchitectureRegister) -> Color {
+    match register {
+        ArchitectureRegister::ShadowScreen => Color::srgb(0.28, 0.34, 0.72),
+        ArchitectureRegister::Monolith => Color::srgb(0.72, 0.31, 0.22),
+        ArchitectureRegister::OverlitGrid => Color::srgb(0.94, 0.88, 0.55),
+        ArchitectureRegister::Institutional => Color::srgb(0.58, 0.84, 0.68),
+        ArchitectureRegister::FacetMonument => Color::srgb(0.67, 0.39, 0.88),
+        ArchitectureRegister::Megastructure => Color::srgb(0.12, 0.68, 0.64),
+        ArchitectureRegister::Wellshaft => Color::srgb(0.16, 0.55, 0.96),
+        ArchitectureRegister::InfiniteGallery => Color::srgb(0.91, 0.32, 0.66),
+        ArchitectureRegister::Thinning => Color::srgb(0.59, 0.62, 0.67),
+    }
+}
+
+fn architecture_short_label(register: ArchitectureRegister) -> &'static str {
+    match register {
+        ArchitectureRegister::ShadowScreen => "Shadow",
+        ArchitectureRegister::Monolith => "Monolith",
+        ArchitectureRegister::OverlitGrid => "Overlit",
+        ArchitectureRegister::Institutional => "Institutional",
+        ArchitectureRegister::FacetMonument => "Facet",
+        ArchitectureRegister::Megastructure => "Mega",
+        ArchitectureRegister::Wellshaft => "Wellshaft",
+        ArchitectureRegister::InfiniteGallery => "Gallery",
+        ArchitectureRegister::Thinning => "Thinning",
+    }
+}
+
+fn architecture_text_color(register: ArchitectureRegister) -> Color {
+    match register {
+        ArchitectureRegister::OverlitGrid
+        | ArchitectureRegister::Institutional
+        | ArchitectureRegister::Thinning => Color::srgb(0.015, 0.02, 0.035),
+        _ => Color::WHITE,
+    }
+}
+
+fn traversal_color(traversal: TraversalArchetype) -> Color {
+    match traversal {
+        TraversalArchetype::Straight => Color::srgb(0.70, 0.72, 0.77),
+        TraversalArchetype::Long => Color::srgb(0.80, 0.72, 0.20),
+        TraversalArchetype::Pressure => Color::srgb(1.00, 0.30, 0.24),
+        TraversalArchetype::Climb => Color::srgb(0.20, 0.76, 1.00),
+        TraversalArchetype::Maze => Color::srgb(0.66, 0.28, 0.90),
+        TraversalArchetype::Chicane => Color::srgb(0.26, 0.96, 0.72),
+        TraversalArchetype::GantryExpanse => Color::srgb(1.00, 0.42, 0.82),
+        TraversalArchetype::Wellshaft => Color::srgb(0.22, 0.58, 1.00),
+        TraversalArchetype::Colonnade => Color::srgb(0.96, 0.63, 0.22),
+        TraversalArchetype::Orthogonal => Color::srgb(0.72, 0.95, 0.82),
+    }
+}
+
+fn traversal_label(traversal: TraversalArchetype) -> &'static str {
+    match traversal {
+        TraversalArchetype::Straight => "Straight",
+        TraversalArchetype::Long => "Long",
+        TraversalArchetype::Pressure => "Pressure",
+        TraversalArchetype::Climb => "Climb",
+        TraversalArchetype::Maze => "Maze",
+        TraversalArchetype::Chicane => "Chicane",
+        TraversalArchetype::GantryExpanse => "Gantry Expanse",
+        TraversalArchetype::Wellshaft => "Wellshaft",
+        TraversalArchetype::Colonnade => "Colonnade",
+        TraversalArchetype::Orthogonal => "Orthogonal",
     }
 }
 
@@ -164,81 +275,164 @@ pub fn render_map_topology(
     let Some(spec) = &state.spec else {
         if let Ok(mut text) = legend.single_mut() {
             text.0 = format!(
-                "WFC MapSpec topology (M to toggle, N/P seed, R reset)\n{}",
+                "WFC MapSpec catalogue (M: archived grid, N/P: seed, V: v1/v2, R: reset)\n{}",
                 state.attempts_note
             );
         }
         return;
     };
 
-    // Edges first (so room boxes render on top of the lines meeting them).
-    for edge in &spec.edges {
-        let Some(room_a) = spec.room(edge.a.room) else {
-            continue;
-        };
-        let Some(room_b) = spec.room(edge.b.room) else {
-            continue;
-        };
-        let start = room_a.schematic * CELL_SIZE;
-        let end = room_b.schematic * CELL_SIZE;
-        let mid = (start + end) * 0.5;
-        let delta = end - start;
-        let length = delta.length().max(1.0);
-        let angle = delta.y.atan2(delta.x);
+    let designs = spec.designs.as_ref();
+    let min = spec
+        .rooms
+        .iter()
+        .map(|room| room.schematic)
+        .reduce(Vec2::min)
+        .unwrap_or(Vec2::ZERO);
+    let max = spec
+        .rooms
+        .iter()
+        .map(|room| room.schematic)
+        .reduce(Vec2::max)
+        .unwrap_or(Vec2::ZERO);
+    let schematic_center = (min + max) * 0.5;
 
-        commands.spawn((
-            MapTopologyTile,
-            Sprite {
-                color: corridor_role_color(edge.role),
-                custom_size: Some(Vec2::new(length, 4.0)),
-                ..default()
-            },
-            Transform::from_xyz(mid.x, mid.y, 0.5).with_rotation(Quat::from_rotation_z(angle)),
-        ));
+    // Corridors render first so room-region boxes remain legible above them.
+    for corridor in spec.corridors() {
+        let Some(first) = corridor.endpoints.first() else {
+            continue;
+        };
+        let Some(room_a) = spec.room(first.room) else {
+            continue;
+        };
+        for endpoint in corridor.endpoints.iter().skip(1) {
+            let Some(room_b) = spec.room(endpoint.room) else {
+                continue;
+            };
+            let start = (room_a.schematic - schematic_center) * CELL_SIZE;
+            let end = (room_b.schematic - schematic_center) * CELL_SIZE;
+            let mid = (start + end) * 0.5;
+            let delta = end - start;
+            let length = delta.length().max(1.0);
+            let angle = delta.y.atan2(delta.x);
+            let traversal = designs
+                .and_then(|assignments| assignments.corridor(corridor.id))
+                .map(|design| design.traversal);
+            let color =
+                traversal.map_or_else(|| corridor_role_color(corridor.role), traversal_color);
+            let width = match traversal {
+                Some(TraversalArchetype::GantryExpanse) => 7.0,
+                Some(TraversalArchetype::Wellshaft) => 6.0,
+                _ => 4.0,
+            };
+
+            commands.spawn((
+                MapTopologyTile,
+                Sprite {
+                    color,
+                    custom_size: Some(Vec2::new(length, width)),
+                    ..default()
+                },
+                Transform::from_xyz(mid.x, mid.y, 0.5).with_rotation(Quat::from_rotation_z(angle)),
+            ));
+        }
     }
 
     for room in &spec.rooms {
-        let pos = room.schematic * CELL_SIZE;
+        let pos = (room.schematic - schematic_center) * CELL_SIZE;
         let is_terminal = matches!(room.role, RoomRole::Start | RoomRole::Exit);
         let size = if is_terminal {
             ROOM_BOX + 10.0
         } else {
             ROOM_BOX
         };
-
-        commands.spawn((
-            MapTopologyTile,
-            Sprite {
-                color: room_role_color(room.role),
-                custom_size: Some(Vec2::splat(size)),
-                ..default()
-            },
-            Transform::from_xyz(pos.x, pos.y, 1.0),
-        ));
+        let room_design = designs.and_then(|assignments| assignments.room(room.id));
+        let color = room_design.map_or_else(
+            || room_role_color(room.role),
+            |d| architecture_color(d.register),
+        );
 
         if is_terminal {
             commands.spawn((
                 MapTopologyTile,
                 Sprite {
-                    color: Color::srgb(1.0, 1.0, 1.0),
+                    color: Color::WHITE,
                     custom_size: Some(Vec2::splat(size + 8.0)),
                     ..default()
                 },
                 Transform::from_xyz(pos.x, pos.y, 0.9),
             ));
         }
+
+        commands.spawn((
+            MapTopologyTile,
+            Sprite {
+                color,
+                custom_size: Some(Vec2::splat(size)),
+                ..default()
+            },
+            Transform::from_xyz(pos.x, pos.y, 1.0),
+        ));
+
+        let label = room_design.map_or_else(
+            || format!("{}\n{}", room.id.0, room.role.label()),
+            |design| {
+                format!(
+                    "{}\n{}",
+                    room.id.0,
+                    architecture_short_label(design.register)
+                )
+            },
+        );
+        let label_color = room_design.map_or(Color::WHITE, |design| {
+            architecture_text_color(design.register)
+        });
+        commands.spawn((
+            MapTopologyTile,
+            Text2d::new(label),
+            TextFont {
+                font_size: 8.0,
+                ..default()
+            },
+            TextColor(label_color),
+            Transform::from_xyz(pos.x, pos.y, 2.0),
+        ));
     }
 
     if let Ok(mut text) = legend.single_mut() {
-        text.0 = format!(
-            "WFC MapSpec topology (M to toggle, N/P seed, R reset)\n\
-             {}\n\n\
-             [Room roles]  Start=green  Exit=red  Decision=grey  DecoherenceFork=purple\n\
-             AnchorCheckpoint=gold  TeleportRelay=cyan  Keystone=yellow  DualStation=lt-blue\n\
-             GuardianControl=orange  Monitor=teal  Recovery=lime\n\
-             [Corridor roles]  Connector=grey  LongRoute=olive  Mystery=violet\n\
-             Vertical=blue  Bypass=amber",
-            state.attempts_note
-        );
+        text.0 = if designs.is_some() {
+            format!(
+                "WFC MapSpec catalogue (M: archived grid, N/P: seed, V: v1/v2, R: reset)\n{}\n\n\
+                 [Room fill = architecture register; white border = Start / Exit]\n\
+                 Shadow Screen=indigo | Monolith=rust | Overlit Grid=yellow | Institutional=mint\n\
+                 Facet Monument=violet | Megastructure=teal | Wellshaft=blue\n\
+                 Infinite Gallery=magenta | Thinning=grey\n\n\
+                 [Corridor line = traversal archetype; thick = major vertical/gantry course]\n\
+                 {}=grey | {}=yellow | {}=red | {}=cyan | {}=violet\n\
+                 {}=green | {}=pink/thick | {}=blue/thick\n\
+                 {}=orange | {}=mint",
+                state.attempts_note,
+                traversal_label(TraversalArchetype::Straight),
+                traversal_label(TraversalArchetype::Long),
+                traversal_label(TraversalArchetype::Pressure),
+                traversal_label(TraversalArchetype::Climb),
+                traversal_label(TraversalArchetype::Maze),
+                traversal_label(TraversalArchetype::Chicane),
+                traversal_label(TraversalArchetype::GantryExpanse),
+                traversal_label(TraversalArchetype::Wellshaft),
+                traversal_label(TraversalArchetype::Colonnade),
+                traversal_label(TraversalArchetype::Orthogonal),
+            )
+        } else {
+            format!(
+                "WFC v1 regression (M: archived grid, N/P: seed, V: v1/v2, R: reset)\n{}\n\n\
+                 [Room roles] Start=green Exit=red Decision=grey DecoherenceFork=purple\n\
+                 AnchorCheckpoint=gold TeleportRelay=cyan Keystone=yellow DualStation=lt-blue\n\
+                 GuardianControl=orange Monitor=teal Recovery=lime\n\
+                 [Corridor roles] Connector=grey LongRoute=olive Mystery=violet\n\
+                 Vertical=blue Bypass=amber Gantry=pink",
+                state.attempts_note
+            )
+        };
     }
 }
