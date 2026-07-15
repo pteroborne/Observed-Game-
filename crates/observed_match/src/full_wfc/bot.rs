@@ -94,7 +94,7 @@ impl FullWfcMatch {
 fn steer_toward(yaw: f32, position: Vec3, target: Vec3) -> PlayerCommand {
     let direction = target - position;
     let desired_yaw = direction.x.atan2(-direction.z);
-    let look = wrap_angle(desired_yaw - yaw).clamp(-0.09, 0.09);
+    let look = (wrap_angle(desired_yaw - yaw) / 0.035).clamp(-5.0, 5.0);
     PlayerCommand {
         intent: PlayerIntent {
             movement: Vec2::Y,
