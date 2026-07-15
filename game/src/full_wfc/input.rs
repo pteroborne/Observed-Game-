@@ -16,7 +16,12 @@ pub(super) fn map_input(
     gamepads: Query<&Gamepad>,
     settings: Res<crate::settings::Settings>,
     mut intent: ResMut<FullWfcIntent>,
+    spectator_bot: Option<Res<crate::sim::state::SpectatorBot>>,
 ) {
+    if spectator_bot.is_some() {
+        intent.command = Default::default();
+        return;
+    }
     let bindings = &settings.bindings;
     let axis = |negative: KeyCode, positive: KeyCode| {
         (keyboard.pressed(positive) as i32 - keyboard.pressed(negative) as i32) as f32
@@ -78,10 +83,15 @@ pub(super) fn mode_hotkeys(
     }
 }
 
-pub(super) fn grab_cursor(mut cursors: Query<&mut CursorOptions, With<PrimaryWindow>>) {
-    if let Ok(mut cursor) = cursors.single_mut() {
-        cursor.grab_mode = CursorGrabMode::Locked;
-        cursor.visible = false;
+pub(super) fn grab_cursor(
+    mut cursors: Query<&mut CursorOptions, With<PrimaryWindow>>,
+    spectator_bot: Option<Res<crate::sim::state::SpectatorBot>>,
+) {
+    if spectator_bot.is_none() {
+        if let Ok(mut cursor) = cursors.single_mut() {
+            cursor.grab_mode = CursorGrabMode::Locked;
+            cursor.visible = false;
+        }
     }
 }
 

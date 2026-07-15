@@ -6,7 +6,11 @@ use crate::GameState;
 #[derive(Component)]
 pub(super) struct FullWfcHud;
 
-pub(super) fn setup(mut commands: Commands) {
+pub(super) fn setup(
+    mut commands: Commands,
+    spectator_bot: Option<Res<crate::sim::state::SpectatorBot>>,
+) {
+    let is_spectator = spectator_bot.is_some();
     commands
         .spawn((
             DespawnOnExit(GameState::FullWfc),
@@ -39,10 +43,13 @@ pub(super) fn setup(mut commands: Commands) {
                 BackgroundColor(Color::srgba(0.008, 0.018, 0.035, 0.9)),
                 BorderColor::all(Color::srgba(0.35, 0.9, 1.0, 0.6)),
             ));
+            let help_text = if is_spectator {
+                "SPECTATING BOT MATCH\nEsc menu\n\nGOAL: 2 keystones + dual station + both teammates exit\nCyan frame: mutable | Purple: anchored | Red: exit chain sealed"
+            } else {
+                "FULL WFC MATCH\nWASD / stick move | Shift sprint\nMouse / stick look | Space climb up | Ctrl down\nE interact / use pad | F anchor | C pad | R recover\nTab survivor map | Esc menu\n\nGOAL: 2 keystones + dual station + both teammates exit\nCyan frame: mutable | Purple: anchored | Red: exit chain sealed"
+            };
             root.spawn((
-                Text::new(
-                    "FULL WFC MATCH\nWASD / stick move | Shift sprint\nMouse / stick look | Space climb up | Ctrl down\nE interact / use pad | F anchor | C pad | R recover\nTab survivor map | Esc menu\n\nGOAL: 2 keystones + dual station + both teammates exit\nCyan frame: mutable | Purple: anchored | Red: exit chain sealed",
-                ),
+                Text::new(help_text),
                 TextFont {
                     font_size: 14.0,
                     ..default()
@@ -57,20 +64,22 @@ pub(super) fn setup(mut commands: Commands) {
                 BackgroundColor(Color::srgba(0.008, 0.018, 0.035, 0.88)),
                 BorderColor::all(Color::srgba(0.35, 0.9, 1.0, 0.45)),
             ));
-            root.spawn((
-                Text::new("+"),
-                TextFont {
-                    font_size: 22.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(0.9, 0.95, 1.0)),
-                Node {
-                    position_type: PositionType::Absolute,
-                    left: percent(50),
-                    top: percent(48),
-                    ..default()
-                },
-            ));
+            if !is_spectator {
+                root.spawn((
+                    Text::new("+"),
+                    TextFont {
+                        font_size: 22.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.9, 0.95, 1.0)),
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: percent(50),
+                        top: percent(48),
+                        ..default()
+                    },
+                ));
+            }
         });
 }
 

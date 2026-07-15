@@ -95,12 +95,14 @@ pub(super) fn finish_runtime(
 pub(super) fn cleanup_runtime(mut commands: Commands) {
     commands.remove_resource::<FullWfcRuntime>();
     commands.remove_resource::<FullWfcIntent>();
+    commands.remove_resource::<crate::sim::state::SpectatorBot>();
 }
 
 pub(super) fn step_runtime(
     mut intent: ResMut<FullWfcIntent>,
     mut runtime: ResMut<FullWfcRuntime>,
     mut replay: Option<ResMut<crate::sim::replay::ReplayTape>>,
+    spectator_bot: Option<Res<crate::sim::state::SpectatorBot>>,
 ) {
     if intent.toggle_map {
         runtime.map_open = !runtime.map_open;
@@ -114,7 +116,12 @@ pub(super) fn step_runtime(
         tick: runtime.match_state.tick + 1,
         ..Default::default()
     };
-    frame.commands.insert(runtime.local_player, intent.command);
+    let local_command = if spectator_bot.is_some() {
+        runtime.match_state.bot_command(runtime.local_player)
+    } else {
+        intent.command
+    };
+    frame.commands.insert(runtime.local_player, local_command);
     for id in runtime
         .match_state
         .players
