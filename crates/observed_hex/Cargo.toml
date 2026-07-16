@@ -1,0 +1,12 @@
+[package]
+name = "observed_hex"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# The single source of truth for the Arc L hex-prism grid: coordinates, faces,
+# port classes, and the quantized-hexagon metrics shared by the solver, the
+# geometry projector, the TrenchBroom importer, and the authoring template.
+# Deliberately dependency-free: pure data and integer/float math, no Bevy, no
+# Rapier, no I/O.
+[dependencies]

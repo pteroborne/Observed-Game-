@@ -14,6 +14,7 @@ members = [
     "crates/observed_progression",
     "crates/observed_net",
     "crates/observed_match",
+    "crates/observed_hex",
     "labs/menu_lab",
     "labs/control_lab",
     "labs/movement_lab",
