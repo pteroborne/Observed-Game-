@@ -20,6 +20,9 @@
 pub mod constraints;
 #[cfg(feature = "wfc")]
 pub mod full_wfc;
+// Unconditional by design: the Arc L hex solver is pure and dependency-light,
+// and the off-by-default `wfc` gate has already hidden compile errors once.
+pub mod hex_wfc;
 pub mod junction;
 pub mod map_spec;
 pub mod room_def;

@@ -16,7 +16,10 @@ pub mod faces;
 pub mod metrics;
 pub mod ports;
 
-pub use coords::{HexCoord, HexGridSize};
+pub use coords::{HexCoord, HexGridSize, lateral_distance, travel_distance};
 pub use faces::HexFace;
-pub use metrics::{ACROSS_CORNERS, ACROSS_FLATS, TILE_LEVEL_HEIGHT, hex_origin};
+pub use metrics::{
+    ACROSS_CORNERS, ACROSS_FLATS, CORNERS, TILE_LEVEL_HEIGHT, face_edge, hex_origin,
+    hex_origin_plan,
+};
 pub use ports::{PortClass, PortSignature, ports_compatible};

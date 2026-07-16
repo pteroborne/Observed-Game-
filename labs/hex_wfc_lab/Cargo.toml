@@ -1,0 +1,14 @@
+[package]
+name = "hex_wfc_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = ["2d", "png"] }
+# hex_wfc is unconditional in observed_facility — no `wfc` feature needed.
+observed_facility = { path = "../../crates/observed_facility" }
+observed_hex = { path = "../../crates/observed_hex" }
+# Colors come from the production style crate, never invented locally.
+observed_style = { path = "../../crates/observed_style" }
+serde_json = "1.0"

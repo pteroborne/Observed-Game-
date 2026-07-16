@@ -4095,6 +4095,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc0fef456e4baa96da950455cd02c081ca953b141298e41db3fc7e36b1da849c"
 
 [[package]]
+name = "hex_wfc_lab"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "observed_facility",
+ "observed_hex",
+ "observed_style",
+ "serde_json",
+]
+
+[[package]]
 name = "hexasphere"
 version = "16.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5402,6 +5413,7 @@ dependencies = [
  "glam 0.30.10",
  "observed_content",
  "observed_core",
+ "observed_hex",
  "observed_observation",
 ]
 

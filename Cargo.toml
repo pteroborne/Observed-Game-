@@ -78,6 +78,7 @@ members = [
     "labs/rapier_aesthetic_lab",
     "labs/content_manifest_lab",
     "labs/map_observer_lab",
+    "labs/hex_wfc_lab",
     "tools/content_baker",
     "game",
 ]
