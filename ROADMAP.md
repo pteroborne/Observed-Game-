@@ -10,7 +10,41 @@ This document outlines the current active development goals, completed milestone
 
 ## Active & Upcoming Phases
 
-**Arc K — Full-WFC Gameplay Lock** `[implementation complete; playtest pending]` (plan and gate record: [docs/full_wfc_gameplay_arc_plan.md](docs/full_wfc_gameplay_arc_plan.md)). The continuous full-WFC lattice is now the canonical game and owns the full room/hall catalog, four-team co-op race, physical objectives, anchors, team pads, Guardian, survivor tac-map, audiovisual feedback, bots, replay, and results behind a deterministic multiplayer-ready input/snapshot boundary. Its visual-parity pass now carries the proven pre-full-WFC language into the continuous shell: canonical apertures with Kenney frames/cables, full textured walls/floors and treated ceilings, all nine register dressings, fog/bloom/high SSAO/FXAA, bounded volumetrics, shadows, and a deterministic local-light budget. The legacy teleport-place match is regression-only. Phases 78–84 are complete; Phase 85 awaits hands-on tuning before the multiplayer arc.
+**Arc L — Hex Tile Facility** `[active]` (plan: [docs/hex_tile_arc_plan.md](docs/hex_tile_arc_plan.md); hand-offs: [docs/arc_l/](docs/arc_l/README.md)). The map-system pivot (user spec, 2026-07-16): replace the square full-WFC lattice with a TrenchBroom-authored hex-prism tile system — taller cells (8 m levels), a larger grid in all three axes (28×20×10), multi-tile room blueprints, halls as long as they need to be, walkable ramp prefabs and true shaft stacks producing tall formations (silo wellshafts, ramp chains). Landed lab-first per the mandated sequence: 2D hex WFC lab with an animated step mode → TrenchBroom tile lab (`observed_authoring` promotion — the A9 adopt-when trigger has fired) → 3D hex facility lab → full game integration. Locked rulings: hex replaces square at integration (square demoted to regression-only); full relayout/decoherence/determinism parity in-arc before the swap; ramps and shafts both first-class.
+
+### Phase 86 — Arc K Closeout & Clean Baseline `[x]`
+Commit the outstanding Arc K working tree (bot navigation/fall-recovery follow-ups, the untracked `map_observer_lab`, evidence refresh), split `full_wfc/collapse.rs` under the 600-line ratchet (validation extracted to `validate.rs`), and open the arc docs. The Arc K Phase 85 hands-on playtest gate is **formally carried into Phase 95**, where it is discharged on the hex game.
+
+### Phase 87 — observed_hex Foundation `[ ]`
+The shared hex-grid crate: axial `HexCoord`, 8-face `HexFace`, `PortClass`/`PortSignature` port vocabulary, the quantized-hexagon metrics (integer corners, exact TrenchBroom snapping), world mapping, property tests. ([docs/arc_l/phase_87_observed_hex_foundation.md](docs/arc_l/phase_87_observed_hex_foundation.md))
+
+### Phase 88 — 2D Hex WFC Solver + Animated Step Lab `[ ]`
+`observed_facility::hex_wfc` at one level (AC-3, min-entropy, SplitMix determinism, forced route, validation) plus `hex_wfc_lab`'s animated step mode showcasing propagation fronts, collapse order, and halls snaking between rooms. ([docs/arc_l/phase_88_hex_wfc_2d_lab.md](docs/arc_l/phase_88_hex_wfc_2d_lab.md))
+
+### Phase 89 — TrenchBroom Tile Pipeline + Tile Lab `[ ]`
+`crates/observed_authoring` (promoted from `trenchbroom_lab`/`rapier_authoring_lab`), the tile schema + manifest, the locked authoring template, seed tiles including a full two-level ramp prefab, and `hex_tile_lab` proving first-person ramp ascent. ([docs/arc_l/phase_89_tile_pipeline_lab.md](docs/arc_l/phase_89_tile_pipeline_lab.md))
+
+### Phase 90 — Solver Verticality & Room Blueprints `[ ]`
+Levels > 1: shaft stacks, paired ramp variants, multi-hex room blueprint stamping with stable `generation_key` identity, tall-formation validation, per-level slice view in the lab. ([docs/arc_l/phase_90_verticality_blueprints.md](docs/arc_l/phase_90_verticality_blueprints.md))
+
+### Phase 91 — Tile Library Authoring `[ ]`
+The real tile set against the frozen schema — hall families per archetype, ramps in all six directions, shaft segments/caps/landings, room blueprint footprints per role — with the manifest coverage validator green. ([docs/arc_l/phase_91_tile_library.md](docs/arc_l/phase_91_tile_library.md))
+
+### Phase 92 — 3D Hex Facility Lab `[ ]`
+`observed_match::hex_wfc::geometry`: solved world + manifest → tile prefab placement → `ArenaSpec`; the lab grows to 3D free-fly + FPS walkthrough with the 2D step mode retained; collider budget measured. ([docs/arc_l/phase_92_hex_facility_3d.md](docs/arc_l/phase_92_hex_facility_3d.md))
+
+### Phase 93 — Relayout / Decoherence Parity `[ ]`
+Multi-tick relayout on hex with blueprint-granularity pins, stable IDs across relayouts, commit-time route re-validation, replay determinism tests, and an animated relayout demo in the lab. ([docs/arc_l/phase_93_relayout_parity.md](docs/arc_l/phase_93_relayout_parity.md))
+
+### Phase 94 — Match-Layer Parity: Bots, Routing, Thresholds `[ ]`
+Ramp/shaft-aware routing costs, bots physically walking ramps and climbing shafts, threshold/door semantics on blueprint ports, and the headless gate: a bot completes spawn→exit across ramp levels and a shaft, deterministically. ([docs/arc_l/phase_94_match_parity.md](docs/arc_l/phase_94_match_parity.md))
+
+### Phase 95 — Game Integration & Square Demotion `[ ]`
+`game/src/hex_wfc/` becomes the Play flow with the full visual/audio language; the square lattice is demoted to regression-only; docs and evidence refresh; the arc closes on the hands-on user playtest (absorbing the Arc K Phase 85 gate). ([docs/arc_l/phase_95_game_integration.md](docs/arc_l/phase_95_game_integration.md))
+
+---
+
+**Arc K — Full-WFC Gameplay Lock** `[implementation complete; playtest carried into Arc L Phase 95]` (plan and gate record: [docs/full_wfc_gameplay_arc_plan.md](docs/full_wfc_gameplay_arc_plan.md)). The continuous full-WFC lattice is now the canonical game and owns the full room/hall catalog, four-team co-op race, physical objectives, anchors, team pads, Guardian, survivor tac-map, audiovisual feedback, bots, replay, and results behind a deterministic multiplayer-ready input/snapshot boundary. Its visual-parity pass now carries the proven pre-full-WFC language into the continuous shell: canonical apertures with Kenney frames/cables, full textured walls/floors and treated ceilings, all nine register dressings, fog/bloom/high SSAO/FXAA, bounded volumetrics, shadows, and a deterministic local-light budget. The legacy teleport-place match is regression-only. Phases 78–84 are complete; Phase 85's implementation landed and its hands-on playtest gate is formally deferred to Arc L Phase 95, where it is discharged on the hex facility (ruling 2026-07-16).
 
 ---
 
