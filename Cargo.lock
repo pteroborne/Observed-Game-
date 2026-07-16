@@ -4572,6 +4572,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "map_observer_lab"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_sprite3d",
+ "observed_assets",
+ "observed_content",
+ "observed_core",
+ "observed_facility",
+ "observed_game",
+ "observed_match",
+ "observed_style",
+ "player_input",
+]
+
+[[package]]
 name = "match_replay"
 version = "0.1.0"
 dependencies = [

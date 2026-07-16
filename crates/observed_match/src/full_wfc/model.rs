@@ -5,8 +5,7 @@ use glam::Vec2;
 use glam::Vec3;
 use observed_core::{EquipmentId, PlayerId, TeamId};
 use observed_facility::full_wfc::{
-    CellCoord, FullWfcConfig, FullWfcError, FullWfcWorld, ObservationFrame, RelayoutCandidate,
-    RelayoutWork,
+    CellCoord, FullWfcError, FullWfcWorld, ObservationFrame, RelayoutCandidate, RelayoutWork,
 };
 use observed_facility::map_spec::RoomRole;
 use observed_traversal::{FpsBody, FpsConfig, rapier_controller::RapierTraversalScene};
@@ -169,6 +168,7 @@ pub struct FullWfcMatchConfig {
     pub teams: u8,
     pub members_per_team: u8,
     pub keystones_required: u8,
+    pub wfc: Option<observed_facility::full_wfc::FullWfcConfig>,
 }
 
 impl Default for FullWfcMatchConfig {
@@ -177,6 +177,7 @@ impl Default for FullWfcMatchConfig {
             teams: 4,
             members_per_team: 2,
             keystones_required: 2,
+            wfc: None,
         }
     }
 }
@@ -253,7 +254,8 @@ impl FullWfcMatch {
         if config.teams != 4 || config.members_per_team != 2 || config.keystones_required != 2 {
             return Err(MatchError::InvalidRoster);
         }
-        let facility = FullWfcWorld::new(seed, FullWfcConfig::default())?;
+        let wfc_config = config.wfc.unwrap_or_default();
+        let facility = FullWfcWorld::new(seed, wfc_config)?;
         let geometry = FullWfcGeometrySnapshot::project(&facility);
         let physics = geometry.rapier_scene();
         let mut traversal_config = FpsConfig::deliberate_rapier();

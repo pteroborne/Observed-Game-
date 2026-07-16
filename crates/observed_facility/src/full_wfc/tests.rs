@@ -11,6 +11,7 @@ fn small_config() -> FullWfcConfig {
         max_rooms: 24,
         retry_budget: 128,
         pulse_ticks: 60,
+        min_room_distance: 1,
     }
 }
 

@@ -5,7 +5,7 @@ mod camera;
 mod content;
 mod evidence;
 pub mod flow;
-mod full_wfc;
+pub mod full_wfc;
 pub mod guardian;
 pub mod hallway;
 pub mod items;
@@ -42,6 +42,8 @@ pub enum GameState {
     MainMenu,
     Loadout,
     Lobby,
+    /// [DEPRECATED] Legacy place-based match system. Sunsetted in favor of GameState::FullWfc.
+    /// Kept only as a regression testing fixture for unit/integration tests.
     Match,
     FullWfc,
     Results,
@@ -68,6 +70,7 @@ impl Plugin for ObservedGamePlugin {
             .add_plugins((
                 Sprite3dPlugin,
                 screens::ScreensPlugin,
+                #[allow(deprecated)]
                 screens::MatchPlugin,
                 full_wfc::FullWfcPlugin,
             ));

@@ -11,21 +11,21 @@ use player_input::PlayerIntent;
 
 use crate::{Aabb3, FIXED_DT, FpsArena, FpsBody, FpsConfig, step_body};
 
-pub const GANTRY_LENGTH: f32 = 34.0;
+pub const GANTRY_LENGTH: f32 = 102.0;
 pub const GANTRY_WIDTH: f32 = 12.0;
 pub const UPPER_DECK_Y: f32 = 2.1;
 pub const PLATFORM_HALF_WIDTH: f32 = 1.35;
 pub const PLATFORM_HALF_LENGTH: f32 = 1.7;
 pub const PLATFORM_THICKNESS: f32 = 0.18;
 pub const PLATFORM_SPACING: f32 = 5.45;
-pub const PLATFORM_COUNT: usize = 6;
+pub const PLATFORM_COUNT: usize = 18;
 pub const SAFE_BYPASS_X: f32 = -4.6;
 pub const RECOVERY_LANE_X: f32 = 4.65;
-pub const UNDERSTORY_SIDE_EXIT_Z: f32 = 8.4;
+pub const UNDERSTORY_SIDE_EXIT_Z: f32 = 25.2;
 pub const WALL_HEIGHT: f32 = 4.8;
-pub const CLEAN_MAX_SECS: f32 = 5.2;
-pub const FALL_RECOVER_MAX_SECS: f32 = 8.8;
-pub const SAFE_BYPASS_MIN_SECS: f32 = 4.6;
+pub const CLEAN_MAX_SECS: f32 = 15.0;
+pub const FALL_RECOVER_MAX_SECS: f32 = 26.0;
+pub const SAFE_BYPASS_MIN_SECS: f32 = 14.0;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GantryRoute {
@@ -482,7 +482,9 @@ pub fn simulate_route(
 }
 
 fn authored_platforms() -> Vec<GantryPlatform> {
-    let first_z = -13.65;
+    let platform_span = (PLATFORM_COUNT - 1) as f32 * PLATFORM_SPACING;
+    let first_z =
+        -GANTRY_LENGTH * 0.5 + (GANTRY_LENGTH - platform_span) * 0.5 + PLATFORM_HALF_LENGTH;
     (0..PLATFORM_COUNT)
         .map(|index| GantryPlatform {
             index,

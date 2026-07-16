@@ -148,12 +148,20 @@ fn push_catalog_features(
         match template {
             RoomTemplate::StraightCorridor => {
                 let placement = &world.placements[&cell];
-                let offsets = if placement.is_open(ModuleFace::East) || placement.is_open(ModuleFace::West) {
-                    &[(0.0, -4.2), (0.0, 4.2)]
-                } else {
-                    &[(-4.2, 0.0), (4.2, 0.0)]
-                };
-                posts(pieces, next_id, cell, origin, offsets, Vec3::new(0.22, 2.1, 0.22))
+                let offsets =
+                    if placement.is_open(ModuleFace::East) || placement.is_open(ModuleFace::West) {
+                        &[(0.0, -4.2), (0.0, 4.2)]
+                    } else {
+                        &[(-4.2, 0.0), (4.2, 0.0)]
+                    };
+                posts(
+                    pieces,
+                    next_id,
+                    cell,
+                    origin,
+                    offsets,
+                    Vec3::new(0.22, 2.1, 0.22),
+                )
             }
             RoomTemplate::Corner => {
                 let placement = &world.placements[&cell];
@@ -175,7 +183,14 @@ fn push_catalog_features(
                 } else {
                     4.0
                 };
-                posts(pieces, next_id, cell, origin, &[(x, z)], Vec3::new(0.7, 1.4, 0.7))
+                posts(
+                    pieces,
+                    next_id,
+                    cell,
+                    origin,
+                    &[(x, z)],
+                    Vec3::new(0.7, 1.4, 0.7),
+                )
             }
             RoomTemplate::Junction => posts(
                 pieces,

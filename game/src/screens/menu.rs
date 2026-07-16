@@ -474,7 +474,7 @@ pub(crate) fn menu_activate(
             info!("MATCH_START mode=play seed={seed}");
             commands.insert_resource(crate::flow::ActiveMatchSeed(seed));
             commands.remove_resource::<SpectatorBot>();
-            next.set(GameState::Match);
+            next.set(GameState::FullWfc);
         }
         MenuAction::Spectate => {
             let seed = crate::flow::launch_seed();

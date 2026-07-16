@@ -734,8 +734,8 @@ mod tests {
     fn test_geom() -> PlaceGeom {
         let variation = crate::hallway::TEMPLATES
             .iter()
-            .position(|t| t.grid == Some((6, 7)))
-            .expect("a 6x7 grid template exists");
+            .position(|t| t.grid == Some((18, 21)))
+            .expect("a 18x21 grid template exists");
         geom::hallway_geom_with_slots(
             geom::HallwayGeomEndpoints {
                 from: RoomId(0),

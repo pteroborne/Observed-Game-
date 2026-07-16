@@ -1068,7 +1068,7 @@ pub(super) fn capture_maze_progress(
                     };
                     let variation = hallway::TEMPLATES
                         .iter()
-                        .position(|t| t.grid == Some((6, 7)))
+                        .position(|t| t.grid == Some((18, 21)))
                         .unwrap_or(0);
                     crate::screens::match_runtime::debug_place_into(
                         &mut tp,

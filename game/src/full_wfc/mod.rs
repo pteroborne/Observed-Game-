@@ -8,7 +8,7 @@ mod entities;
 mod feedback;
 mod hud;
 mod input;
-mod sim;
+pub mod sim;
 mod tacmap;
 mod view;
 

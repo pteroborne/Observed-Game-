@@ -136,10 +136,15 @@ impl Plugin for ScreensPlugin {
     }
 }
 
-/// The first-person match: lifecycle (setup/atmosphere/cursor/cleanup), the fixed-step
-/// teleport controller, place rendering, audio, HUD, and the tac-map.
+/// [DEPRECATED] Legacy place-based first-person match plugin.
+/// Sunsetted in favor of `full_wfc::FullWfcPlugin`. Kept only as a regression testing fixture.
+#[deprecated(
+    since = "2.0.0",
+    note = "Legacy isolated-place match. Use FullWfcPlugin instead."
+)]
 pub(crate) struct MatchPlugin;
 
+#[allow(deprecated)]
 impl Plugin for MatchPlugin {
     fn build(&self, app: &mut App) {
         let in_match = || in_state(GameState::Match).and(resource_exists::<MatchDirector>);

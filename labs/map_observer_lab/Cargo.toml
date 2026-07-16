@@ -1,0 +1,25 @@
+[package]
+name = "map_observer_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = [
+    "3d",
+    "png",
+    "jpeg",
+    "hdr",
+    "bevy_gltf",
+    "bevy_post_process",
+    "bevy_winit",
+] }
+bevy_sprite3d = { version = "=8.0.0", default-features = false }
+observed_core = { path = "../../crates/observed_core" }
+observed_content = { path = "../../crates/observed_content" }
+observed_facility = { path = "../../crates/observed_facility" }
+observed_match = { path = "../../crates/observed_match" }
+observed_style = { path = "../../crates/observed_style" }
+observed_assets = { path = "../../crates/observed_assets" }
+player_input = { path = "../../crates/player_input" }
+observed_game = { path = "../../game" }

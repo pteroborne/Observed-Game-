@@ -25,7 +25,7 @@ pub const DEFAULT_DECOHERE_VERSIONS: u32 = 4;
 /// templates to reach about 56 world units at their maximum deterministic stretch. Keep
 /// this audit as a runaway-geometry guard, but size it for the liminal renderer frame
 /// rather than the old dev-scale frame.
-const MAX_EXPECTED_PLACE_HALF: f32 = 64.0;
+const MAX_EXPECTED_PLACE_HALF: f32 = 192.0;
 const THRESHOLD_RECT_DEPTH: f32 = 0.35;
 const THRESHOLD_APPROACH_DEPTH: f32 = teleport::MAZE_CELL * 0.5;
 const THRESHOLD_OVERLAP_DEPTH: f32 = teleport::ENTRY_INSET;

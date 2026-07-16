@@ -15,6 +15,7 @@ pub(super) fn validate_config(config: FullWfcConfig) -> Result<(), FullWfcError>
         || config.max_rooms >= config.cell_count()
         || config.retry_budget == 0
         || config.pulse_ticks == 0
+        || config.min_room_distance == 0
     {
         return Err(FullWfcError::InvalidConfig);
     }
@@ -31,11 +32,25 @@ impl Default for FullWfcConfig {
             max_rooms: 32,
             retry_budget: 64,
             pulse_ticks: DEFAULT_PULSE_TICKS,
+            min_room_distance: 1,
         }
     }
 }
 
 impl FullWfcConfig {
+    pub fn liminal_large() -> Self {
+        Self {
+            cols: 20,
+            rows: 12,
+            levels: 5,
+            min_rooms: 24,
+            max_rooms: 36,
+            retry_budget: 128,
+            pulse_ticks: DEFAULT_PULSE_TICKS,
+            min_room_distance: 4,
+        }
+    }
+
     pub fn cell_count(self) -> usize {
         usize::from(self.cols) * usize::from(self.rows) * usize::from(self.levels)
     }

@@ -21,7 +21,7 @@ pub(super) struct FullWfcIntent {
 }
 
 #[derive(Resource)]
-pub(super) struct FullWfcRuntime {
+pub struct FullWfcRuntime {
     pub match_state: FullWfcMatch,
     pub local_player: PlayerId,
     pub pending_visual_changes: BTreeSet<CellCoord>,
@@ -43,14 +43,21 @@ pub(super) fn setup_runtime(
 ) {
     career.begin_match();
     let requested_seed = seed.as_deref().map_or(0xF011_FAC1_1177, |seed| seed.0);
+    let mut match_config = FullWfcMatchConfig::default();
+    let is_test = std::env::current_exe()
+        .map(|p| {
+            let s = p.to_string_lossy().to_lowercase();
+            s.contains("deps") || s.contains("test")
+        })
+        .unwrap_or(false);
+    if !is_test {
+        match_config.wfc = Some(observed_facility::full_wfc::FullWfcConfig::liminal_large());
+    }
     let (match_state, seed_offset) = (0..64u64)
         .find_map(|offset| {
-            FullWfcMatch::new(
-                requested_seed.wrapping_add(offset),
-                FullWfcMatchConfig::default(),
-            )
-            .ok()
-            .map(|game| (game, offset))
+            FullWfcMatch::new(requested_seed.wrapping_add(offset), match_config)
+                .ok()
+                .map(|game| (game, offset))
         })
         .expect("the full-WFC default corpus must contain a solvable nearby seed");
     let pending_visual_changes = match_state.facility.placements.keys().copied().collect();

@@ -176,42 +176,42 @@ pub const TEMPLATES: [HallwayTemplate; 14] = [
     HallwayTemplate {
         name: "small labyrinth",
         flavor: HallwayFlavor::Maze,
-        length: 16.8,
-        width: 16.8,
+        length: 50.4,
+        width: 50.4,
         rise: 0.0,
-        grid: Some((4, 4)),
+        grid: Some((12, 12)),
     },
     HallwayTemplate {
         name: "twisting labyrinth",
         flavor: HallwayFlavor::Maze,
-        length: 25.2,
-        width: 21.0,
+        length: 63.0,
+        width: 75.6,
         rise: 0.0,
-        grid: Some((5, 6)),
+        grid: Some((15, 18)),
     },
     HallwayTemplate {
         name: "deep labyrinth",
         flavor: HallwayFlavor::Maze,
-        length: 29.4,
-        width: 25.2,
+        length: 75.6,
+        width: 88.2,
         rise: 0.0,
-        grid: Some((6, 7)),
+        grid: Some((18, 21)),
     },
     HallwayTemplate {
         name: "wide labyrinth",
         flavor: HallwayFlavor::Maze,
-        length: 21.0,
-        width: 29.4,
+        length: 88.2,
+        width: 63.0,
         rise: 0.0,
-        grid: Some((7, 5)),
+        grid: Some((21, 15)),
     },
     HallwayTemplate {
         name: "tall labyrinth",
         flavor: HallwayFlavor::Maze,
-        length: 33.6,
-        width: 16.8,
+        length: 50.4,
+        width: 100.8,
         rise: 0.0,
-        grid: Some((4, 8)),
+        grid: Some((12, 24)),
     },
     HallwayTemplate {
         name: "wellshaft",
@@ -237,7 +237,7 @@ pub const ORTHOGONAL_TEMPLATE: HallwayTemplate = HallwayTemplate {
 };
 
 pub const WELL_SHAFT_LEVEL_HEIGHT: f32 = 3.0;
-pub const WELL_SHAFT_LEVELS: usize = 6;
+pub const WELL_SHAFT_LEVELS: usize = 18;
 pub const WELL_SHAFT_HEIGHT: f32 = WELL_SHAFT_LEVEL_HEIGHT * (WELL_SHAFT_LEVELS - 1) as f32;
 /// Visual hex-prism circumradius of the central pillar.
 pub const WELL_SHAFT_PILLAR_RADIUS: f32 = 6.0;
@@ -281,7 +281,7 @@ pub const WELL_SHAFT_DECK_THICKNESS: f32 = 0.24;
 /// Unit radial direction for a landing. Level zero points to the live bottom exit;
 /// level five points to the live elevated entry; levels 1–4 are sealed service bays.
 pub fn wellshaft_level_direction(level: usize) -> (f32, f32) {
-    let angle = level as f32 * TAU / WELL_SHAFT_LEVELS as f32;
+    let angle = level as f32 * TAU / 6.0;
     (angle.cos(), angle.sin())
 }
 
@@ -299,8 +299,8 @@ pub fn wellshaft_landing_rest(level: usize) -> (f32, f32) {
 /// Angle of the `step`-th tread of the flight rising from `lower_level`, evenly
 /// spaced across the 60° the spiral turns between adjacent landings.
 pub fn wellshaft_tread_angle(lower_level: usize, step: usize) -> f32 {
-    let a0 = lower_level as f32 * TAU / WELL_SHAFT_LEVELS as f32;
-    let a1 = (lower_level + 1) as f32 * TAU / WELL_SHAFT_LEVELS as f32;
+    let a0 = lower_level as f32 * TAU / 6.0;
+    let a1 = (lower_level + 1) as f32 * TAU / 6.0;
     a0 + (a1 - a0) * (step as f32 + 0.5) / WELL_SHAFT_STEPS_PER_FLIGHT as f32
 }
 

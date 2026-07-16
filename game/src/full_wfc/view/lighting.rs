@@ -54,13 +54,13 @@ pub(super) fn spawn_rig(commands: &mut Commands) {
         FullWfcFogVolume,
         DespawnOnExit(GameState::FullWfc),
         FogVolume {
-            density_factor: 0.012,
+            density_factor: 0.0,
             absorption: 0.32,
             scattering: 0.18,
             ..default()
         },
         Transform::default(),
-        Visibility::Hidden,
+        Visibility::Inherited,
         Name::new("Facet Monument bounded shaft air"),
     ));
     commands.spawn((
@@ -216,21 +216,38 @@ pub(in crate::full_wfc) fn sync_lighting_and_atmosphere(
         } else {
             Vec3::new(3.25, WALL_HEIGHT - 0.45, 3.25)
         };
-        let target = if wants_volumetric {
+        let target_translation = origin + local_key;
+        let target_aim = if wants_volumetric {
             origin + Vec3::Y * 0.1
         } else {
             origin + Vec3::new(-1.1, 0.2, -1.1)
         };
-        *transform = Transform::from_translation(origin + local_key).looking_at(target, Vec3::Y);
+        let target_rotation = Transform::from_translation(target_translation)
+            .looking_at(target_aim, Vec3::Y)
+            .rotation;
+
+        if transform.translation == Vec3::ZERO {
+            transform.translation = target_translation;
+            transform.rotation = target_rotation;
+        } else {
+            transform.translation = transform.translation.lerp(target_translation, t);
+            transform.rotation = transform.rotation.slerp(target_rotation, t);
+        }
+
         let threat = style::marker(MarkerRole::Collapse).base_color;
-        light.color = lerp_color(palette.key_color, threat, pressure * 0.42);
+        let target_color = lerp_color(palette.key_color, threat, pressure * 0.42);
+        light.color = lerp_color(light.color, target_color, t);
+
         let key_scale = if wants_volumetric { 0.16 } else { 0.68 };
-        light.intensity = palette.key_intensity * key_scale * (1.0 - pressure * 0.20);
-        light.range = palette.key_range;
-        light.radius = palette.key_radius;
-        light.inner_angle = palette.key_inner_angle;
-        light.outer_angle = palette.key_outer_angle;
+        let target_intensity = palette.key_intensity * key_scale * (1.0 - pressure * 0.20);
+        light.intensity = lerp_f(light.intensity, target_intensity, t);
+
+        light.range = lerp_f(light.range, palette.key_range, t);
+        light.radius = lerp_f(light.radius, palette.key_radius, t);
+        light.inner_angle = lerp_f(light.inner_angle, palette.key_inner_angle, t);
+        light.outer_angle = lerp_f(light.outer_angle, palette.key_outer_angle, t);
         light.shadows_enabled = palette.key_shadows_enabled;
+
         if wants_volumetric && !has_volumetric {
             commands.entity(entity).insert(VolumetricLight);
         } else if !wants_volumetric && has_volumetric {
@@ -238,14 +255,24 @@ pub(in crate::full_wfc) fn sync_lighting_and_atmosphere(
         }
     }
     if let Ok((mut fog, mut transform, mut visibility)) = volume.single_mut() {
-        fog.fog_color = lerp_color(palette.fog_color, palette.light_color, 0.18);
-        *transform = Transform::from_translation(origin + Vec3::Y * (WALL_HEIGHT * 0.5))
-            .with_scale(Vec3::new(8.0, WALL_HEIGHT, 8.0));
-        *visibility = if wants_volumetric {
-            Visibility::Inherited
+        let target_fog_color = lerp_color(palette.fog_color, palette.light_color, 0.18);
+        fog.fog_color = lerp_color(fog.fog_color, target_fog_color, t);
+
+        let target_translation = origin + Vec3::Y * (WALL_HEIGHT * 0.5);
+        let target_scale = Vec3::new(8.0, WALL_HEIGHT, 8.0);
+
+        if transform.translation == Vec3::ZERO {
+            transform.translation = target_translation;
+            transform.scale = target_scale;
         } else {
-            Visibility::Hidden
-        };
+            transform.translation = transform.translation.lerp(target_translation, t);
+            transform.scale = transform.scale.lerp(target_scale, t);
+        }
+
+        let target_density = if wants_volumetric { 0.055 } else { 0.0 };
+        fog.density_factor = lerp_f(fog.density_factor, target_density, t);
+
+        *visibility = Visibility::Inherited;
     }
 
     let active = active_light_cells(&runtime.match_state.facility, current);
@@ -261,35 +288,40 @@ pub(in crate::full_wfc) fn sync_lighting_and_atmosphere(
         1.0
     };
     for (practical, mut light) in &mut practicals {
-        if !active.contains(&practical.cell) {
-            light.intensity = 0.0;
-            continue;
-        }
-        let current_scale = if practical.cell == current { 1.0 } else { 0.52 };
-        let mut practical_palette = style::architecture(practical.architecture);
-        if matches!(runtime.match_state.status, MatchStatus::Countdown { .. }) {
-            practical_palette = style::klaxon_modulate(practical_palette);
-        }
-        let wave = (tick_time * 3.7 + practical.phase).sin()
-            + 0.55 * (tick_time * 7.1 + practical.phase * 1.7).sin();
-        let flicker = if wave > 1.12 {
-            0.38 + 0.62 * (tick_time * 31.0 + practical.phase).sin().abs()
+        let (target_intensity, target_color) = if active.contains(&practical.cell) {
+            let current_scale = if practical.cell == current { 1.0 } else { 0.52 };
+            let mut practical_palette = style::architecture(practical.architecture);
+            if matches!(runtime.match_state.status, MatchStatus::Countdown { .. }) {
+                practical_palette = style::klaxon_modulate(practical_palette);
+            }
+            let wave = (tick_time * 3.7 + practical.phase).sin()
+                + 0.55 * (tick_time * 7.1 + practical.phase * 1.7).sin();
+            let flicker = if wave > 1.12 {
+                0.38 + 0.62 * (tick_time * 31.0 + practical.phase).sin().abs()
+            } else {
+                1.0
+            };
+            let intensity = 2_600.0
+                * current_scale
+                * practical.detail
+                * flicker
+                * (1.0 - pressure * 0.28)
+                * mutation_cut;
+
+            light.range = if practical_palette.pools_rhythm {
+                7.5
+            } else {
+                11.0
+            };
+            light.shadows_enabled = false;
+
+            (intensity, practical_palette.light_color)
         } else {
-            1.0
+            (0.0, light.color)
         };
-        light.color = practical_palette.light_color;
-        light.intensity = 2_600.0
-            * current_scale
-            * practical.detail
-            * flicker
-            * (1.0 - pressure * 0.28)
-            * mutation_cut;
-        light.range = if practical_palette.pools_rhythm {
-            7.5
-        } else {
-            11.0
-        };
-        light.shadows_enabled = false;
+
+        light.color = lerp_color(light.color, target_color, t);
+        light.intensity = lerp_f(light.intensity, target_intensity, t);
     }
 }
 

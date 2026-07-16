@@ -15,6 +15,7 @@ mod config;
 mod constraints;
 mod relayout;
 mod topology;
+mod validate;
 pub use catalog::{CorridorInstance, RoomInstance};
 use collapse::collapse;
 use config::validate_config;
@@ -204,6 +205,7 @@ pub struct FullWfcConfig {
     pub max_rooms: usize,
     pub retry_budget: u32,
     pub pulse_ticks: u32,
+    pub min_room_distance: u8,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

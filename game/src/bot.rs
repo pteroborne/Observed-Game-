@@ -853,11 +853,11 @@ mod tests {
             .expect("wellshaft route");
         assert_eq!(
             path.waypoints.len(),
-            46,
-            "44 spiral points plus threshold crossing"
+            154,
+            "152 spiral points plus threshold crossing"
         );
         assert!(
-            (path.waypoints[45] - exit.center).dot(exit.normal) > 0.0,
+            (path.waypoints[153] - exit.center).dot(exit.normal) > 0.0,
             "route finishes through the threshold"
         );
 
@@ -868,9 +868,9 @@ mod tests {
             .copied()
             .expect("top entry");
         let ascent = wellshaft_route(&geom, &config(), 0.0, &entry).expect("ascent route");
-        assert_eq!(ascent.waypoints.len(), 46);
+        assert_eq!(ascent.waypoints.len(), 154);
         assert!(
-            (ascent.waypoints[45] - entry.center).dot(entry.normal) > 0.0,
+            (ascent.waypoints[153] - entry.center).dot(entry.normal) > 0.0,
             "ascent finishes through the elevated threshold"
         );
 

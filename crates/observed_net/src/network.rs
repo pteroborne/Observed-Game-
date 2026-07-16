@@ -16,9 +16,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use glam::{Vec2, Vec3};
-use observed_traversal::{
-    FIXED_DT, FpsArena, FpsBody, FpsConfig, PhysicsBackend,
-};
+use observed_traversal::{FIXED_DT, FpsArena, FpsBody, FpsConfig, PhysicsBackend};
 use player_input::PlayerIntent;
 
 use crate::protocol::{PEER_COUNT, PeerId, StatusPacket, WireIntent};
@@ -73,7 +71,8 @@ impl LockstepWorld {
             PhysicsBackend::LegacyAabb => FpsConfig::default(),
             PhysicsBackend::Rapier => FpsConfig::deliberate_rapier(),
         };
-        let rapier = observed_traversal::rapier_controller::RapierTraversalScene::from_arena(&arena);
+        let rapier =
+            observed_traversal::rapier_controller::RapierTraversalScene::from_arena(&arena);
         Self {
             bodies: [
                 FpsBody::spawned(Vec3::new(-7.5, 0.9, 13.5), 0.0),

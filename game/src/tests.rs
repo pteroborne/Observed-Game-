@@ -2626,10 +2626,15 @@ fn a_wellshaft_renders_the_hex_pillar_spiral_bridges_and_sealed_service_bays() {
         (crate::hallway::WELL_SHAFT_LEVELS - 1) * crate::hallway::WELL_SHAFT_STEPS_PER_FLIGHT
     );
     assert_eq!(
-        sealed_bays, 4,
-        "only the four non-graph bridge heads are sealed"
+        sealed_bays,
+        crate::hallway::WELL_SHAFT_LEVELS - 2,
+        "only the non-graph bridge heads are sealed"
     );
-    assert_eq!(braces, 8, "each sealed service bay has an explicit X brace");
+    assert_eq!(
+        braces,
+        (crate::hallway::WELL_SHAFT_LEVELS - 2) * 2,
+        "each sealed service bay has an explicit X brace"
+    );
     assert_eq!(practicals, crate::hallway::WELL_SHAFT_LEVELS);
     assert_eq!(shadowed, 1, "only the top practical spends shadow budget");
     assert_eq!(

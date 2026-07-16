@@ -54,7 +54,7 @@ pub(crate) const ROOM_SCALE_MONITOR: f32 = 1.8;
 /// templates (their footprint is cell-derived off `grid`; stretching the authored
 /// `length`/`width` fields for those would just relabel the same cell-driven geometry,
 /// not actually lengthen it, so they are left at their current footprint).
-pub(crate) const HALL_STRETCH: f32 = 1.7;
+pub(crate) const HALL_STRETCH: f32 = 5.1;
 
 /// Width multiplier applied alongside `HALL_STRETCH` to the same non-grid, non-Gantry
 /// hallway templates. Modest — hallway width mostly reads through `HALL_WIDTH` (the

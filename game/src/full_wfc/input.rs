@@ -87,11 +87,11 @@ pub(super) fn grab_cursor(
     mut cursors: Query<&mut CursorOptions, With<PrimaryWindow>>,
     spectator_bot: Option<Res<crate::sim::state::SpectatorBot>>,
 ) {
-    if spectator_bot.is_none() {
-        if let Ok(mut cursor) = cursors.single_mut() {
-            cursor.grab_mode = CursorGrabMode::Locked;
-            cursor.visible = false;
-        }
+    if spectator_bot.is_none()
+        && let Ok(mut cursor) = cursors.single_mut()
+    {
+        cursor.grab_mode = CursorGrabMode::Locked;
+        cursor.visible = false;
     }
 }
 

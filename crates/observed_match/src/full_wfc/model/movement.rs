@@ -7,7 +7,7 @@ use player_input::PlayerIntent;
 use super::{
     CLIMB_SPEED, FIXED_DT, FullWfcMatch, GameplayEventKind, INTERACTION_RADIUS, PlayerCommand,
 };
-use crate::full_wfc::{CELL_SIZE, DeployableKind, cell_origin, LEVEL_HEIGHT};
+use crate::full_wfc::{CELL_SIZE, DeployableKind, LEVEL_HEIGHT, cell_origin};
 
 impl FullWfcMatch {
     pub(super) fn step_player(&mut self, id: PlayerId, command: PlayerCommand) {
@@ -76,7 +76,12 @@ impl FullWfcMatch {
             let step = CLIMB_SPEED * FIXED_DT;
             if delta.abs() <= step {
                 let mut offset = Vec3::ZERO;
-                for face in [ModuleFace::East, ModuleFace::West, ModuleFace::South, ModuleFace::North] {
+                for face in [
+                    ModuleFace::East,
+                    ModuleFace::West,
+                    ModuleFace::South,
+                    ModuleFace::North,
+                ] {
                     if self.facility.placements[&target].is_open(face) {
                         let (dx, dz, _) = face.delta();
                         offset = Vec3::new(dx as f32 * 2.2, 0.0, dz as f32 * 2.2);
@@ -85,7 +90,10 @@ impl FullWfcMatch {
                 }
                 let angle = (id.0 as f32) * (std::f32::consts::TAU / 8.0);
                 let perturb = Vec3::new(angle.cos() * 0.5, 0.0, angle.sin() * 0.5);
-                body.position = cell_origin(target) + Vec3::Y * self.traversal_config.half_height + offset + perturb;
+                body.position = cell_origin(target)
+                    + Vec3::Y * self.traversal_config.half_height
+                    + offset
+                    + perturb;
                 body.velocity = Vec3::ZERO;
                 let player = self.players.get_mut(&id).expect("player");
                 player.cell = target;
