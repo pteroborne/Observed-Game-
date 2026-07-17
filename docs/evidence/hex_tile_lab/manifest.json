@@ -1,0 +1,13 @@
+{
+  "lab": "hex_tile_lab",
+  "ramp_gate_passed": true,
+  "ramp_height_gain_m": 7.537554740905762,
+  "ramp_max_feet_m": 8.487554550170898,
+  "ramp_start_feet_m": 0.9499999284744263,
+  "tiles": [
+    "hall_straight",
+    "hall_cap",
+    "ramp",
+    "shaft"
+  ]
+}

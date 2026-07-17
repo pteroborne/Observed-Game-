@@ -1,0 +1,25 @@
+[package]
+name = "observed_authoring"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# The TrenchBroom tile pipeline (Arc L Phase 89) — the A9 adopt-when trigger
+# fired: the design pivoted to hand-authored tiles composed procedurally.
+# Importer-only by principle (editor entities never become the game model) and
+# deliberately pure: `quake-map` text parsing + own convex plane-intersection
+# math, no Bevy, no asset server. Downstream consumers get `TilePrototype`s
+# (validated footprints, port signatures, convex hulls ready for `ColliderSpec`).
+[dependencies]
+glam = "0.30"
+observed_hex = { path = "../observed_hex" }
+# ColliderSpec / StableColliderId / ArenaSpec — the collision seam. Pure arm only.
+observed_traversal = { path = "../observed_traversal", default-features = false }
+# The same .map text parser bevy_trenchbroom uses internally; no Bevy pulled.
+quake-map = "0.6"
+ron = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+
+[dev-dependencies]
+# The ramp-walkability gate drives the shared controller with abstract intents.
+player_input = { path = "../player_input", default-features = false }

@@ -1,0 +1,18 @@
+[package]
+name = "hex_tile_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = ["3d", "png"] }
+observed_authoring = { path = "../../crates/observed_authoring" }
+observed_hex = { path = "../../crates/observed_hex" }
+# Colors come from the production style crate, never invented locally.
+observed_style = { path = "../../crates/observed_style" }
+# The SHARED controller — the ramp gate must hold on production movement code.
+observed_traversal = { path = "../../crates/observed_traversal", default-features = false }
+player_input = { path = "../../crates/player_input", default-features = false }
+# Hull triangulation for render meshes (same rapier the controller runs on).
+rapier3d = { version = "0.34", features = ["enhanced-determinism"] }
+serde_json = "1.0"

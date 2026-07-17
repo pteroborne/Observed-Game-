@@ -4095,6 +4095,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc0fef456e4baa96da950455cd02c081ca953b141298e41db3fc7e36b1da849c"
 
 [[package]]
+name = "hex_tile_lab"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "observed_authoring",
+ "observed_hex",
+ "observed_style",
+ "observed_traversal",
+ "player_input",
+ "rapier3d",
+ "serde_json",
+]
+
+[[package]]
 name = "hex_wfc_lab"
 version = "0.1.0"
 dependencies = [
@@ -5370,6 +5384,19 @@ dependencies = [
 [[package]]
 name = "observed_assets"
 version = "0.1.0"
+
+[[package]]
+name = "observed_authoring"
+version = "0.1.0"
+dependencies = [
+ "glam 0.30.10",
+ "observed_hex",
+ "observed_traversal",
+ "player_input",
+ "quake-map",
+ "ron 0.8.1",
+ "serde",
+]
 
 [[package]]
 name = "observed_content"

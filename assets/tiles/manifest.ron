@@ -1,0 +1,29 @@
+// Observed 2 hex tile manifest (Arc L). Tiles ARE the catalog.
+(
+    tiles: [
+        (
+            key: (archetype: "hall_straight", register: "institutional", variant: 0),
+            map_path: "hall_straight_ew.map",
+            levels: 1,
+            ports: [(face: "east", class: "door"), (face: "west", class: "door")],
+        ),
+        (
+            key: (archetype: "hall_cap", register: "institutional", variant: 0),
+            map_path: "hall_cap_e.map",
+            levels: 1,
+            ports: [(face: "east", class: "door")],
+        ),
+        (
+            key: (archetype: "ramp", register: "institutional", variant: 0),
+            map_path: "ramp_e.map",
+            levels: 2,
+            ports: [(face: "west", class: "door"), (face: "up", class: "ramp_open")],
+        ),
+        (
+            key: (archetype: "shaft", register: "institutional", variant: 0),
+            map_path: "shaft.map",
+            levels: 1,
+            ports: [(face: "up", class: "shaft_open"), (face: "down", class: "shaft_open")],
+        ),
+    ],
+)

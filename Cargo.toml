@@ -15,6 +15,7 @@ members = [
     "crates/observed_net",
     "crates/observed_match",
     "crates/observed_hex",
+    "crates/observed_authoring",
     "labs/menu_lab",
     "labs/control_lab",
     "labs/movement_lab",
@@ -79,6 +80,7 @@ members = [
     "labs/content_manifest_lab",
     "labs/map_observer_lab",
     "labs/hex_wfc_lab",
+    "labs/hex_tile_lab",
     "tools/content_baker",
     "game",
 ]
