@@ -1,7 +1,22 @@
+use std::collections::BTreeSet;
+
+use observed_hex::lateral_distance;
+
 use super::*;
 
 fn corpus_seeds() -> impl Iterator<Item = u64> {
     (0..100u64).map(|n| 0xA11C_E000_0000_0000 | n)
+}
+
+fn config_3d() -> HexWfcConfig {
+    HexWfcConfig {
+        levels: 4,
+        ..HexWfcConfig::default()
+    }
+}
+
+fn corpus_seeds_3d() -> impl Iterator<Item = u64> {
+    (0..100u64).map(|n| 0xA11C_E3D0_0000_0000 | n)
 }
 
 #[test]
@@ -12,8 +27,21 @@ fn the_same_seed_yields_identical_placements_and_trace() {
     let (second, second_trace) =
         HexWfcWorld::generate_traced(42, config).expect("seed 42 must solve");
     assert_eq!(first.placements, second.placements);
+    assert_eq!(first.blueprints, second.blueprints);
     assert_eq!(first_trace, second_trace);
     assert_eq!(first.last_attempts, second.last_attempts);
+}
+
+#[test]
+fn determinism_holds_for_the_3d_config() {
+    let config = config_3d();
+    let (first, first_trace) =
+        HexWfcWorld::generate_traced(0xA11C_E3D0_0000_0007, config).expect("must solve");
+    let (second, second_trace) =
+        HexWfcWorld::generate_traced(0xA11C_E3D0_0000_0007, config).expect("must solve");
+    assert_eq!(first.placements, second.placements);
+    assert_eq!(first.blueprints, second.blueprints);
+    assert_eq!(first_trace, second_trace);
 }
 
 #[test]
@@ -30,32 +58,48 @@ fn traced_and_untraced_solves_agree() {
     );
 }
 
-#[test]
-fn a_hundred_seed_corpus_solves_and_validates() {
-    let config = HexWfcConfig::default();
-    for seed in corpus_seeds() {
-        let world = HexWfcWorld::generate(seed, config)
-            .unwrap_or_else(|error| panic!("seed {seed:#x} failed: {error:?}"));
+/// Every stamped world must satisfy the structural invariants: edge symmetry
+/// across all faces, no adjacent open rooms, blueprint footprints disjoint and
+/// spaced by `min_room_distance`, and a spawn→exit route.
+fn assert_world_valid(world: &HexWfcWorld, seed: u64) {
+    let config = world.config;
+    let grid = config.grid();
 
-        // Spawn and exit are rooms with a live route between them.
-        assert_eq!(world.placements[&config.spawn()].space, HexSpace::Room);
-        assert_eq!(world.placements[&config.exit()].space, HexSpace::Room);
-        let route = world
-            .route_between(config.spawn(), config.exit())
-            .unwrap_or_else(|| panic!("seed {seed:#x} has no spawn->exit route"));
-        assert!(route.len() >= 2);
+    assert_eq!(world.placements[&config.spawn()].space, HexSpace::Room);
+    assert_eq!(world.placements[&config.exit()].space, HexSpace::Room);
+    let route = world
+        .route_between(config.spawn(), config.exit())
+        .unwrap_or_else(|| panic!("seed {seed:#x} has no spawn->exit route"));
+    assert!(route.len() >= 2);
 
-        // Room quota inside the configured range.
-        let rooms = world.room_count();
-        assert!(
-            (config.min_rooms..=config.max_rooms).contains(&rooms),
-            "seed {seed:#x} room count {rooms} outside range"
-        );
+    // Blueprint count in range, footprints disjoint, anchors spaced apart.
+    assert!(
+        (config.min_rooms..=config.max_rooms).contains(&world.blueprints.len()),
+        "seed {seed:#x}: blueprint count {} outside range",
+        world.blueprints.len()
+    );
+    let mut occupied = BTreeSet::new();
+    for stamped in &world.blueprints {
+        for &cell in &stamped.cells {
+            assert!(
+                occupied.insert(cell),
+                "seed {seed:#x}: blueprint footprints overlap at {cell:?}"
+            );
+        }
+    }
+    for i in 0..world.blueprints.len() {
+        for j in (i + 1)..world.blueprints.len() {
+            assert!(
+                lateral_distance(world.blueprints[i].anchor, world.blueprints[j].anchor)
+                    >= config.min_room_distance,
+                "seed {seed:#x}: anchors closer than min_room_distance"
+            );
+        }
+    }
 
-        // Edge symmetry, room separation, and hall grammar.
-        let grid = config.grid();
-        for placement in world.placements.values() {
-            for face in HexFace::LATERAL {
+    for placement in world.placements.values() {
+        for face in HexFace::ALL {
+            if face.is_lateral() {
                 let open = placement.is_open(face);
                 match grid.neighbor(placement.coord, face) {
                     Some(neighbor) => {
@@ -80,14 +124,258 @@ fn a_hundred_seed_corpus_solves_and_validates() {
                         placement.coord
                     ),
                 }
+            } else {
+                let a_port = if face == HexFace::Up {
+                    placement.up
+                } else {
+                    placement.down
+                };
+                match grid.neighbor(placement.coord, face) {
+                    Some(neighbor) => {
+                        let other = &world.placements[&neighbor];
+                        let b_port = if face == HexFace::Up {
+                            other.down
+                        } else {
+                            other.up
+                        };
+                        assert_eq!(
+                            a_port as u8, b_port as u8,
+                            "seed {seed:#x}: vertical port mismatch at {:?} {face:?}",
+                            placement.coord
+                        );
+                    }
+                    None => assert_eq!(
+                        a_port,
+                        PortClass::Sealed,
+                        "seed {seed:#x}: boundary vertical port at {:?} {face:?}",
+                        placement.coord
+                    ),
+                }
             }
         }
     }
 }
 
 #[test]
-fn ports_view_matches_the_door_mask() {
+fn a_hundred_seed_corpus_solves_and_validates() {
     let config = HexWfcConfig::default();
+    for seed in corpus_seeds() {
+        let world = HexWfcWorld::generate(seed, config)
+            .unwrap_or_else(|error| panic!("seed {seed:#x} failed: {error:?}"));
+        assert_world_valid(&world, seed);
+    }
+}
+
+#[test]
+fn a_hundred_seed_3d_corpus_solves_and_validates() {
+    let config = config_3d();
+    for seed in corpus_seeds_3d() {
+        let world = HexWfcWorld::generate(seed, config)
+            .unwrap_or_else(|error| panic!("3D seed {seed:#x} failed: {error:?}"));
+        assert_world_valid(&world, seed);
+    }
+}
+
+/// No `RampHead` sits without its matching `RampUp` below, and no `RampUp`
+/// without its `RampHead` above — over the whole 3D corpus.
+#[test]
+fn ramp_pairs_never_orphan_over_the_3d_corpus() {
+    let config = config_3d();
+    for seed in corpus_seeds_3d() {
+        let world = HexWfcWorld::generate(seed, config).expect("must solve");
+        let grid = config.grid();
+        for placement in world.placements.values() {
+            match placement.archetype {
+                HexArchetype::RampUp => {
+                    let above = grid
+                        .neighbor(placement.coord, HexFace::Up)
+                        .map(|c| world.placements[&c].archetype);
+                    assert_eq!(
+                        above,
+                        Some(HexArchetype::RampHead),
+                        "seed {seed:#x}: RampUp at {:?} not capped by RampHead",
+                        placement.coord
+                    );
+                }
+                HexArchetype::RampHead => {
+                    let below = grid
+                        .neighbor(placement.coord, HexFace::Down)
+                        .map(|c| world.placements[&c].archetype);
+                    assert_eq!(
+                        below,
+                        Some(HexArchetype::RampUp),
+                        "seed {seed:#x}: RampHead at {:?} not seated on RampUp",
+                        placement.coord
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// A vertical `GuardianControl` atrium blueprint stamps somewhere on the 3D
+/// corpus, and it carries an internal shaft between its two levels.
+#[test]
+fn a_two_level_atrium_blueprint_stamps_on_the_3d_corpus() {
+    let config = config_3d();
+    let mut found = false;
+    for seed in corpus_seeds_3d() {
+        let world = HexWfcWorld::generate(seed, config).expect("must solve");
+        if let Some(atrium) = world
+            .blueprints
+            .iter()
+            .find(|b| b.role == crate::map_spec::RoomRole::GuardianControl)
+        {
+            assert_eq!(atrium.cells.len(), 2, "atrium spans two cells");
+            let levels: BTreeSet<u8> = atrium.cells.iter().map(|c| c.level).collect();
+            assert_eq!(levels.len(), 2, "atrium spans two levels");
+            let lower = atrium.cells.iter().min_by_key(|c| c.level).unwrap();
+            assert_eq!(
+                world.placements[lower].up,
+                PortClass::ShaftOpen,
+                "atrium lower cell opens a shaft upward"
+            );
+            found = true;
+            break;
+        }
+    }
+    assert!(found, "some 3D seed stamps a GuardianControl atrium");
+}
+
+fn tallest_shaft_column(world: &HexWfcWorld) -> u8 {
+    let grid = world.config.grid();
+    let mut best = 0;
+    for q in 0..grid.cols {
+        for r in 0..grid.rows {
+            let mut run = 0u8;
+            for level in 0..grid.levels {
+                let coord = HexCoord { q, r, level };
+                let vertical = world.placements.get(&coord).is_some_and(|p| {
+                    p.up == PortClass::ShaftOpen || p.down == PortClass::ShaftOpen
+                });
+                if vertical {
+                    run += 1;
+                    best = best.max(run);
+                } else {
+                    run = 0;
+                }
+            }
+        }
+    }
+    best
+}
+
+fn tallest_ramp_chain(world: &HexWfcWorld) -> u8 {
+    // Longest ladder of stacked ramp pairs: each `RampUp` climbs one level,
+    // exiting laterally through its `RampHead` into the next base.
+    let grid = world.config.grid();
+    let mut best = 0;
+    for (&coord, placement) in &world.placements {
+        if placement.archetype != HexArchetype::RampUp {
+            continue;
+        }
+        let below_is_head = grid
+            .neighbor(coord, HexFace::Down)
+            .is_some_and(|c| world.placements[&c].archetype == HexArchetype::RampHead);
+        if below_is_head {
+            continue; // count from the base of a chain only
+        }
+        let mut climbed = 0u8;
+        let mut current = coord;
+        loop {
+            climbed += 1;
+            let Some(head) = grid.neighbor(current, HexFace::Up) else {
+                break;
+            };
+            let mut advanced = false;
+            for face in HexFace::LATERAL {
+                if world.placements[&head].is_open(face)
+                    && let Some(next) = grid.neighbor(head, face)
+                    && world.placements[&next].archetype == HexArchetype::RampUp
+                {
+                    current = next;
+                    advanced = true;
+                    break;
+                }
+            }
+            if !advanced {
+                break;
+            }
+        }
+        best = best.max(climbed);
+    }
+    best
+}
+
+/// The pinned showcase seed: a solve that contains a full-height (4-level)
+/// wellshaft column and a multi-level ramp chain, with a spawn→exit route that
+/// traverses a vertical element. If the seed ever drifts, re-pin from
+/// `search_for_pinnable_3d_seeds`.
+const PINNED_3D_SEED: u64 = 0xA11C_E3D0_0000_0004;
+
+#[test]
+fn the_pinned_seed_shows_a_tall_shaft_and_a_ramp_chain() {
+    let config = config_3d();
+    let world = HexWfcWorld::generate(PINNED_3D_SEED, config).expect("pinned seed must solve");
+
+    let shaft = tallest_shaft_column(&world);
+    assert!(shaft >= 4, "pinned seed shaft column only {shaft} levels");
+
+    let ramp = tallest_ramp_chain(&world);
+    assert!(ramp >= 2, "pinned seed ramp chain only {ramp} levels");
+
+    let route = world
+        .route_between(config.spawn(), config.exit())
+        .expect("pinned seed route");
+    let crosses_vertical = route.iter().any(|coord| {
+        let p = &world.placements[coord];
+        p.up != PortClass::Sealed || p.down != PortClass::Sealed
+    });
+    assert!(crosses_vertical, "pinned route stays flat");
+}
+
+/// Diagnostic search used to (re)pin the showcase seeds; ignored in normal
+/// runs. Run with `--ignored` to print candidate seeds.
+#[test]
+#[ignore]
+fn search_for_pinnable_3d_seeds() {
+    let config = config_3d();
+    let mut best_shaft = (0u8, 0u64);
+    let mut best_ramp = (0u8, 0u64);
+    let mut hits = Vec::new();
+    for n in 0..160u64 {
+        let seed = 0xA11C_E3D0_0000_0000 | n;
+        if let Ok(world) = HexWfcWorld::generate(seed, config) {
+            let shaft = tallest_shaft_column(&world);
+            let ramp = tallest_ramp_chain(&world);
+            let route_vertical = world
+                .route_between(config.spawn(), config.exit())
+                .is_some_and(|route| {
+                    route.iter().any(|c| {
+                        let p = &world.placements[c];
+                        p.up != PortClass::Sealed || p.down != PortClass::Sealed
+                    })
+                });
+            if shaft > best_shaft.0 {
+                best_shaft = (shaft, seed);
+            }
+            if ramp > best_ramp.0 {
+                best_ramp = (ramp, seed);
+            }
+            if shaft >= 4 && ramp >= 1 && route_vertical {
+                hits.push((format!("{seed:#x}"), shaft, ramp));
+            }
+        }
+    }
+    println!("best_shaft={best_shaft:x?} best_ramp={best_ramp:x?}");
+    println!("shaft>=4 & ramp>=1 & vertical route: {hits:?}");
+    assert!(!hits.is_empty(), "no pinnable seed found in search range");
+}
+
+#[test]
+fn ports_view_matches_the_placement() {
+    let config = config_3d();
     let world = HexWfcWorld::generate(3, config).expect("seed 3 must solve");
     for placement in world.placements.values() {
         let ports = placement.ports();
@@ -99,9 +387,34 @@ fn ports_view_matches_the_door_mask() {
             };
             assert_eq!(ports.port(face), expected);
         }
-        assert_eq!(ports.port(HexFace::Up), PortClass::Sealed);
-        assert_eq!(ports.port(HexFace::Down), PortClass::Sealed);
+        assert_eq!(ports.port(HexFace::Up), placement.up);
+        assert_eq!(ports.port(HexFace::Down), placement.down);
     }
+}
+
+#[test]
+fn demandable_signatures_are_distinct_and_include_vertical_classes() {
+    let signatures = demandable_signatures();
+    let unique: BTreeSet<_> = signatures.iter().copied().collect();
+    assert_eq!(unique.len(), signatures.len(), "list has duplicates");
+    assert!(
+        signatures
+            .iter()
+            .any(|s| s.port(HexFace::Up) == PortClass::ShaftOpen),
+        "coverage feed must demand ShaftOpen up faces"
+    );
+    assert!(
+        signatures
+            .iter()
+            .any(|s| s.port(HexFace::Up) == PortClass::RampOpen),
+        "coverage feed must demand RampOpen up faces"
+    );
+    assert!(
+        signatures
+            .iter()
+            .any(|s| s.port(HexFace::Down) == PortClass::RampOpen),
+        "coverage feed must demand RampOpen down faces"
+    );
 }
 
 #[test]

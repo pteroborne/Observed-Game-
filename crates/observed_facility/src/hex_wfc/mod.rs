@@ -1,12 +1,13 @@
 //! The Arc L hex-prism WFC facility solver.
 //!
 //! Sibling of [`crate::full_wfc`] built on the [`observed_hex`] grid
-//! vocabulary. Phase 88 scope: a single level (lateral `Door` ports only),
-//! deterministic collapse with a forced spawn→exit route, and an optional
-//! [`trace::SolveStep`] log so the lab can replay a solve step by step.
-//! Verticality (ramp pairs, shaft stacks) and room blueprints arrive in
-//! Phase 90; relayout parity in Phase 93.
+//! vocabulary. Phase 90 scope: full 3D (lateral `Door` ports plus vertical
+//! `ShaftOpen`/`RampOpen` ports), multi-hex room blueprints stamped before
+//! collapse, deterministic collapse with a forced spawn→exit route that may
+//! climb, and an optional [`trace::SolveStep`] log so the lab can replay a
+//! solve step by step. Relayout parity arrives in Phase 93.
 
+pub mod blueprint;
 mod collapse;
 mod constraints;
 #[cfg(test)]
@@ -18,8 +19,10 @@ mod variants;
 
 use std::collections::BTreeMap;
 
+pub use blueprint::{RoomBlueprint, StampedBlueprint, blueprint_for_role};
 pub use observed_hex::{HexCoord, HexFace, HexGridSize, PortClass, PortSignature};
 pub use trace::SolveStep;
+pub use variants::demandable_signatures;
 
 /// What a collapsed cell is, coarsely.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -37,6 +40,9 @@ pub enum HexArchetype {
     Straight,
     Corner,
     Junction,
+    RampUp,
+    RampHead,
+    Shaft,
 }
 
 /// One collapsed cell.
@@ -47,6 +53,8 @@ pub struct HexPlacement {
     pub archetype: HexArchetype,
     /// Lateral door mask, bit `face.index()` for the six lateral faces.
     pub doors: u8,
+    pub up: PortClass,
+    pub down: PortClass,
 }
 
 impl HexPlacement {
@@ -64,6 +72,8 @@ impl HexPlacement {
                 ports[face.index()] = PortClass::Door;
             }
         }
+        ports[HexFace::Up.index()] = self.up;
+        ports[HexFace::Down.index()] = self.down;
         PortSignature::try_from_ports(ports).expect("lateral doors are always a valid signature")
     }
 }
@@ -81,6 +91,7 @@ pub const fn lateral_bit(face: HexFace) -> u8 {
 pub struct HexWfcConfig {
     pub cols: u16,
     pub rows: u16,
+    pub levels: u8,
     pub min_rooms: usize,
     pub max_rooms: usize,
     pub retry_budget: u32,
@@ -93,9 +104,10 @@ impl Default for HexWfcConfig {
         Self {
             cols: 12,
             rows: 9,
-            min_rooms: 8,
-            max_rooms: 18,
-            retry_budget: 64,
+            levels: 1,
+            min_rooms: 4,
+            max_rooms: 8,
+            retry_budget: 100,
             min_room_distance: 2,
         }
     }
@@ -107,7 +119,7 @@ impl HexWfcConfig {
         HexGridSize {
             cols: self.cols,
             rows: self.rows,
-            levels: 1,
+            levels: self.levels,
         }
     }
 
@@ -125,7 +137,7 @@ impl HexWfcConfig {
         HexCoord {
             q: self.cols - 1,
             r: self.rows - 1,
-            level: 0,
+            level: self.levels.saturating_sub(1),
         }
     }
 }
@@ -147,6 +159,8 @@ pub struct HexWfcWorld {
     pub generation: u32,
     pub config: HexWfcConfig,
     pub placements: BTreeMap<HexCoord, HexPlacement>,
+    /// The room blueprints stamped into this solve, in stamp order.
+    pub blueprints: Vec<StampedBlueprint>,
     /// Attempts consumed by the accepted solve (1-based).
     pub last_attempts: u32,
 }
@@ -177,13 +191,15 @@ impl HexWfcWorld {
             return Err(HexWfcError::InvalidConfig);
         }
         let generation = 0;
-        let (placements, attempts) = collapse::collapse(seed, generation, config, trace)?;
+        let (placements, blueprints, attempts) =
+            collapse::collapse(seed, generation, config, trace)?;
         Ok((
             HexWfcWorld {
                 seed,
                 generation,
                 config,
                 placements,
+                blueprints,
                 last_attempts: attempts,
             },
             attempts,

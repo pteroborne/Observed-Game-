@@ -1,6 +1,8 @@
 //! The solve trace: an ordered event log the lab replays step by step.
 
-use observed_hex::HexCoord;
+use observed_hex::{HexCoord, PortClass};
+
+use crate::map_spec::RoomRole;
 
 use super::{HexArchetype, HexSpace};
 
@@ -11,8 +13,8 @@ use super::{HexArchetype, HexSpace};
 pub enum SolveStep {
     /// A retry attempt began.
     AttemptStart { attempt: u32 },
-    /// A cell was seeded as a candidate room site for this attempt.
-    RoomSite { coord: HexCoord },
+    /// A blueprint cell was stamped before the WFC collapse.
+    BlueprintCell { coord: HexCoord, role: RoomRole },
     /// The forced spawn→exit route claimed door bits on this cell.
     ForcedCell { coord: HexCoord, required: u8 },
     /// Propagation narrowed a cell's domain (only emitted on change).
@@ -23,6 +25,8 @@ pub enum SolveStep {
         space: HexSpace,
         archetype: HexArchetype,
         doors: u8,
+        up: PortClass,
+        down: PortClass,
     },
     /// Propagation emptied a domain; the attempt is abandoned.
     Contradiction { coord: HexCoord },

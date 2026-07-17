@@ -3,36 +3,81 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use observed_core::SplitMix;
-use observed_hex::{HexCoord, HexFace};
+use observed_hex::{HexCoord, HexFace, PortClass, PortSignature};
 
-use super::constraints::{all_coords, forced_route_edges, room_sites};
+use super::blueprint::StampedBlueprint;
+use super::constraints::{all_coords, forced_route_edges, stamp_blueprints, stamped_signatures};
 use super::trace::SolveStep;
 use super::validate::layout_failure;
 use super::variants::{HexVariant, catalogue, variants_compatible};
 use super::{HexArchetype, HexPlacement, HexSpace, HexWfcConfig, HexWfcError};
+
+type CollapseOutput = (BTreeMap<HexCoord, HexPlacement>, Vec<StampedBlueprint>, u32);
 
 pub(super) fn collapse(
     seed: u64,
     generation: u32,
     config: HexWfcConfig,
     mut trace: Option<&mut Vec<SolveStep>>,
-) -> Result<(BTreeMap<HexCoord, HexPlacement>, u32), HexWfcError> {
+) -> Result<CollapseOutput, HexWfcError> {
     let variants = catalogue();
     let mut last_failure: Option<&'static str> = None;
     for attempt in 0..config.retry_budget {
         emit(&mut trace, SolveStep::AttemptStart { attempt });
         let mut rng = SplitMix::new(mixed(seed, generation, attempt, 0x4E8C_0FFE_D011_88AA));
-        let sites = room_sites(config, &mut rng);
-        let forced = forced_route_edges(config, &mut rng);
+
+        let blueprints = stamp_blueprints(config, &mut rng);
+        let signatures = stamped_signatures(config, &blueprints);
+        let Some((forced_doors, forced_up, forced_down)) =
+            forced_route_edges(config, &blueprints, &signatures, &mut rng)
+        else {
+            last_failure = Some("blueprints blocked every forced route");
+            continue;
+        };
+
         if let Some(steps) = trace.as_deref_mut() {
-            for &coord in &sites {
-                steps.push(SolveStep::RoomSite { coord });
+            for stamped in &blueprints {
+                for &coord in &stamped.cells {
+                    steps.push(SolveStep::BlueprintCell {
+                        coord,
+                        role: stamped.role,
+                    });
+                }
             }
-            for (&coord, &required) in &forced {
+            for (&coord, &required) in &forced_doors {
                 steps.push(SolveStep::ForcedCell { coord, required });
             }
         }
-        let mut domains = initial_domains(config, &variants, &forced, &sites);
+
+        let mut domains = initial_domains(
+            config,
+            &variants,
+            &forced_doors,
+            &forced_up,
+            &forced_down,
+            &signatures,
+        );
+
+        // Blueprint cells are pre-collapsed to their exact signature; replay
+        // them as Collapsed so the lab shows the stamp before hall collapse.
+        if let Some(steps) = trace.as_deref_mut() {
+            let grid = config.grid();
+            for &coord in signatures.keys() {
+                let domain = &domains[grid.index(coord)];
+                if let [only] = domain[..] {
+                    let variant = variants[only];
+                    steps.push(SolveStep::Collapsed {
+                        coord,
+                        space: variant.space,
+                        archetype: variant.archetype,
+                        doors: variant.doors,
+                        up: variant.up,
+                        down: variant.down,
+                    });
+                }
+            }
+        }
+
         if !propagate_all(config, &variants, &mut domains, &mut trace) {
             last_failure = Some("propagation contradiction");
             continue;
@@ -43,20 +88,15 @@ pub(super) fn collapse(
         }
         let mut placements = materialize(config, &variants, &domains);
         prune_disconnected(config, &mut placements);
-        promote_hall_junction(seed, generation, config, &mut placements);
 
+        if let Some(reason) = layout_failure(config, &placements, &blueprints) {
+            last_failure = Some(reason);
+            continue;
+        }
         let rooms = placements
             .values()
             .filter(|placement| placement.space == HexSpace::Room)
             .count();
-        if !(config.min_rooms..=config.max_rooms).contains(&rooms) {
-            last_failure = Some("room count outside configured range");
-            continue;
-        }
-        if let Some(reason) = layout_failure(config, &placements) {
-            last_failure = Some(reason);
-            continue;
-        }
         let halls = placements
             .values()
             .filter(|placement| placement.space == HexSpace::Hall)
@@ -68,7 +108,7 @@ pub(super) fn collapse(
                 halls: halls as u16,
             },
         );
-        return Ok((placements, attempt + 1));
+        return Ok((placements, blueprints, attempt + 1));
     }
     Err(HexWfcError::RetryBudgetExhausted {
         attempts: config.retry_budget,
@@ -82,41 +122,74 @@ fn emit(trace: &mut Option<&mut Vec<SolveStep>>, step: SolveStep) {
     }
 }
 
+fn signature_doors(signature: PortSignature) -> u8 {
+    let mut mask = 0u8;
+    for face in HexFace::LATERAL {
+        if signature.port(face) == PortClass::Door {
+            mask |= super::lateral_bit(face);
+        }
+    }
+    mask
+}
+
+/// The starting domain of every cell: boundary-safe variants that satisfy the
+/// forced route, with blueprint cells pinned to their exact stamped signature
+/// and rooms excluded everywhere else.
 fn initial_domains(
     config: HexWfcConfig,
     variants: &[HexVariant],
-    forced: &BTreeMap<HexCoord, u8>,
-    sites: &std::collections::BTreeSet<HexCoord>,
+    forced_doors: &BTreeMap<HexCoord, u8>,
+    forced_up: &BTreeMap<HexCoord, PortClass>,
+    forced_down: &BTreeMap<HexCoord, PortClass>,
+    signatures: &BTreeMap<HexCoord, PortSignature>,
 ) -> Vec<Vec<usize>> {
     let grid = config.grid();
     all_coords(config)
         .map(|coord| {
-            let required = forced.get(&coord).copied().unwrap_or(0);
-            let is_site = sites.contains(&coord);
+            let required_doors = forced_doors.get(&coord).copied().unwrap_or(0);
+            let required_up = forced_up.get(&coord).copied().unwrap_or(PortClass::Sealed);
+            let required_down = forced_down
+                .get(&coord)
+                .copied()
+                .unwrap_or(PortClass::Sealed);
+            let blueprint_signature = signatures.get(&coord);
+
             variants
                 .iter()
                 .enumerate()
                 .filter(|(_, variant)| {
-                    // No door may face the lattice boundary.
-                    if HexFace::LATERAL.iter().any(|&face| {
+                    // No opening may face the lattice boundary.
+                    if HexFace::ALL.iter().any(|&face| {
                         grid.neighbor(coord, face).is_none()
-                            && variant.doors & super::lateral_bit(face) != 0
+                            && ((face.is_lateral()
+                                && variant.doors & super::lateral_bit(face) != 0)
+                                || (face == HexFace::Up && variant.up != PortClass::Sealed)
+                                || (face == HexFace::Down && variant.down != PortClass::Sealed))
                     }) {
                         return false;
                     }
-                    if variant.doors & required != required {
+                    if variant.doors & required_doors != required_doors {
                         return false;
                     }
-                    // Rooms exist only at seeded sites (which stay rooms);
-                    // everything else is connective fabric. This makes room
-                    // separation structural rather than a retry lottery.
-                    if is_site {
-                        return variant.space == HexSpace::Room;
-                    }
-                    if variant.space == HexSpace::Room {
+                    if required_up != PortClass::Sealed && variant.up != required_up {
                         return false;
                     }
-                    true
+                    if required_down != PortClass::Sealed && variant.down != required_down {
+                        return false;
+                    }
+                    match blueprint_signature {
+                        // Blueprint cells collapse to exactly the stamped
+                        // exterior signature.
+                        Some(&signature) => {
+                            variant.space == HexSpace::Room
+                                && variant.doors == signature_doors(signature)
+                                && variant.up == signature.port(HexFace::Up)
+                                && variant.down == signature.port(HexFace::Down)
+                        }
+                        // Rooms exist only inside blueprint footprints;
+                        // everything else is connective fabric.
+                        None => variant.space != HexSpace::Room,
+                    }
                 })
                 .map(|(index, _)| index)
                 .collect()
@@ -124,9 +197,9 @@ fn initial_domains(
         .collect()
 }
 
-/// AC-3 style arc consistency: retain only variants with a compatible
-/// neighbor variant across every lateral face. Returns false on an emptied
-/// domain (contradiction).
+/// AC-3 style arc consistency over all eight faces: retain only variants with
+/// a compatible neighbor variant across every face. Returns false on an
+/// emptied domain (contradiction).
 fn propagate_all(
     config: HexWfcConfig,
     variants: &[HexVariant],
@@ -137,7 +210,7 @@ fn propagate_all(
     let mut queue: VecDeque<usize> = (0..domains.len()).collect();
     while let Some(index) = queue.pop_front() {
         let coord = grid.coord(index);
-        for face in HexFace::LATERAL {
+        for face in HexFace::ALL {
             let Some(neighbor) = grid.neighbor(coord, face) else {
                 continue;
             };
@@ -182,6 +255,8 @@ fn emit_narrowing(
                 space: variant.space,
                 archetype: variant.archetype,
                 doors: variant.doors,
+                up: variant.up,
+                down: variant.down,
             },
         );
     } else {
@@ -242,6 +317,8 @@ fn collapse_domains(
                 space: variant.space,
                 archetype: variant.archetype,
                 doors: variant.doors,
+                up: variant.up,
+                down: variant.down,
             },
         );
         if !propagate_all(config, variants, domains, trace) {
@@ -270,6 +347,8 @@ fn materialize(
                     space: variant.space,
                     archetype: variant.archetype,
                     doors: variant.doors,
+                    up: variant.up,
+                    down: variant.down,
                 },
             )
         })
@@ -285,44 +364,10 @@ fn prune_disconnected(config: HexWfcConfig, placements: &mut BTreeMap<HexCoord, 
             placement.space = HexSpace::Void;
             placement.archetype = HexArchetype::Void;
             placement.doors = 0;
+            placement.up = PortClass::Sealed;
+            placement.down = PortClass::Sealed;
         }
     }
-}
-
-/// Deterministically promote one 3-4 door room (never spawn/exit) into a
-/// junction hall so multi-exit halls exist in fresh solves.
-fn promote_hall_junction(
-    seed: u64,
-    generation: u32,
-    config: HexWfcConfig,
-    placements: &mut BTreeMap<HexCoord, HexPlacement>,
-) {
-    let rooms = placements
-        .values()
-        .filter(|placement| placement.space == HexSpace::Room)
-        .count();
-    if rooms <= config.min_rooms {
-        return;
-    }
-    let candidate = placements
-        .values()
-        .filter(|placement| {
-            placement.space == HexSpace::Room
-                && placement.coord != config.spawn()
-                && placement.coord != config.exit()
-                && (3..=4).contains(&placement.doors.count_ones())
-        })
-        .min_by_key(|placement| mixed(seed, generation, 0, coord_key(placement.coord)));
-    let Some(coord) = candidate.map(|placement| placement.coord) else {
-        return;
-    };
-    let placement = placements.get_mut(&coord).expect("candidate exists");
-    placement.space = HexSpace::Hall;
-    placement.archetype = HexArchetype::Junction;
-}
-
-fn coord_key(coord: HexCoord) -> u64 {
-    u64::from(coord.q) | (u64::from(coord.r) << 16) | (u64::from(coord.level) << 32)
 }
 
 fn mixed(seed: u64, generation: u32, attempt: u32, domain: u64) -> u64 {
