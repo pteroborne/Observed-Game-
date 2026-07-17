@@ -1,5 +1,5 @@
 use glam::{Vec2, Vec3};
-use observed_hex::{HexFace, PortClass, PortSignature, TILE_LEVEL_HEIGHT};
+use observed_hex::{HexFace, PortClass, PortSignature, TILE_LEVEL_HEIGHT, face_edge};
 use observed_traversal::rapier_controller::{RapierTraversalScene, step_character};
 use observed_traversal::{FpsBody, FpsConfig};
 use player_input::PlayerIntent;
@@ -16,8 +16,12 @@ fn signature(ports: &[(HexFace, PortClass)]) -> PortSignature {
     PortSignature::try_from_ports(all).expect("test signature is valid")
 }
 
+fn doors(faces: &[HexFace]) -> Vec<(HexFace, PortClass)> {
+    faces.iter().map(|&face| (face, PortClass::Door)).collect()
+}
+
 #[test]
-fn every_generated_seed_tile_parses_and_snaps() {
+fn every_generated_tile_parses_and_snaps() {
     for (name, content) in tile_source::sources() {
         if name.ends_with(".ron") {
             continue;
@@ -25,6 +29,22 @@ fn every_generated_seed_tile_parses_and_snaps() {
         let tile = parse_tile(&content)
             .unwrap_or_else(|error| panic!("{name} failed to parse: {error:?}"));
         assert!(!tile.hulls.is_empty(), "{name} has no geometry");
+    }
+}
+
+/// The pin: every committed asset is byte-identical to the typed generator's
+/// output. If this fails, rerun `cargo run -p observed_authoring --bin
+/// bake_tiles`.
+#[test]
+fn committed_assets_do_not_drift_from_the_typed_source() {
+    for (name, content) in tile_source::sources() {
+        let committed = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../assets/tiles")
+                .join(&name),
+        )
+        .unwrap_or_else(|error| panic!("committed {name} missing: {error}"));
+        assert_eq!(committed, content, "{name} drifted — rerun bake_tiles");
     }
 }
 
@@ -98,11 +118,8 @@ fn vertical_overflow_fails_with_the_level_bound() {
 fn the_manifest_parses_and_covers_the_seed_demands() {
     let manifest = Manifest::from_ron(&tile_source::manifest_ron()).expect("manifest parses");
     let demands = [
-        signature(&[
-            (HexFace::East, PortClass::Door),
-            (HexFace::West, PortClass::Door),
-        ]),
-        signature(&[(HexFace::East, PortClass::Door)]),
+        signature(&doors(&[HexFace::East, HexFace::West])),
+        signature(&doors(&[HexFace::East])),
         signature(&[
             (HexFace::West, PortClass::Door),
             (HexFace::Up, PortClass::RampOpen),
@@ -114,44 +131,204 @@ fn the_manifest_parses_and_covers_the_seed_demands() {
     ];
     assert_eq!(manifest.uncovered(&demands), Vec::new());
 
-    // A demand nothing covers is reported, not swallowed.
-    let missing = signature(&[
-        (HexFace::SouthEast, PortClass::Door),
-        (HexFace::NorthWest, PortClass::Door),
-    ]);
+    // A demand nothing covers is reported, not swallowed: no tile is a ramp
+    // head (`down: ramp_open`) — the two-level ramp prefab bakes its head in.
+    let missing = signature(&[(HexFace::Down, PortClass::RampOpen)]);
     assert_eq!(manifest.uncovered(&[missing]), vec![missing]);
 }
 
+/// Keys must be unique (the loader hard-fails on duplicates) and every entry
+/// must agree with the generated `.map` it points at — this is the pin between
+/// the committed manifest and the committed tile files.
 #[test]
-fn committed_assets_do_not_drift_from_the_typed_source() {
-    for (name, content) in tile_source::sources() {
-        let committed = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../assets/tiles")
-                .join(name),
-        )
-        .unwrap_or_else(|error| panic!("committed {name} missing: {error}"));
-        assert_eq!(committed, content, "{name} drifted — rerun bake_tiles");
+fn manifest_keys_are_unique_and_entries_match_their_maps() {
+    let manifest = Manifest::from_ron(&tile_source::manifest_ron()).expect("manifest parses");
+    let maps: std::collections::BTreeMap<String, String> =
+        tile_source::sources().into_iter().collect();
+    let mut seen = std::collections::BTreeSet::new();
+    for entry in &manifest.tiles {
+        assert!(
+            seen.insert(entry.key.clone()),
+            "duplicate TileKey {:?}",
+            entry.key
+        );
+        let text = maps
+            .get(&entry.map_path)
+            .unwrap_or_else(|| panic!("{} is not a generated asset", entry.map_path));
+        let tile = parse_tile(text)
+            .unwrap_or_else(|error| panic!("{} failed to parse: {error:?}", entry.map_path));
+        assert_eq!(tile.key, entry.key, "{} key mismatch", entry.map_path);
+        assert_eq!(tile.levels, entry.levels, "{} levels", entry.map_path);
+        assert_eq!(
+            tile.signature,
+            entry
+                .declared_signature()
+                .expect("declared ports are valid"),
+            "{} ports disagree with the manifest",
+            entry.map_path
+        );
     }
 }
 
-/// THE PHASE 89 GATE: the shared production controller walks up the ramp
-/// prefab and gains a full level without jumping. If this fails, the taller
-/// tile / walkable ramp assumption of the whole arc is invalid.
+/// Every register covers the full demand alphabet expressible today: all door
+/// combinations for halls, every ramp direction, the shaft family, and the
+/// room tiles.
 #[test]
-fn the_shared_controller_walks_the_ramp_up_a_full_level() {
-    let ramp = parse_tile(&tile_source::ramp_e_map()).expect("ramp parses");
+fn every_register_covers_the_full_demand_alphabet() {
+    let manifest = Manifest::from_ron(&tile_source::manifest_ron()).expect("manifest parses");
+    let mut missing: Vec<String> = Vec::new();
+    let mut require = |archetype: &str, reg: &str, sig: PortSignature| {
+        if !manifest.tiles.iter().any(|t| {
+            t.key.archetype == archetype
+                && t.key.register == reg
+                && t.declared_signature().ok() == Some(sig)
+        }) {
+            missing.push(format!("{archetype}/{reg}/{sig:?}"));
+        }
+    };
+    let lat = HexFace::LATERAL;
+    for &reg in tile_source::REGISTERS {
+        for i in 0..6 {
+            require("hall_cap", reg, signature(&doors(&[lat[i]])));
+            require(
+                "ramp",
+                reg,
+                signature(&[
+                    (lat[i].opposite(), PortClass::Door),
+                    (HexFace::Up, PortClass::RampOpen),
+                ]),
+            );
+            require(
+                "shaft_landing",
+                reg,
+                signature(&[
+                    (HexFace::Up, PortClass::ShaftOpen),
+                    (HexFace::Down, PortClass::ShaftOpen),
+                    (lat[i], PortClass::Door),
+                ]),
+            );
+            for j in (i + 1)..6 {
+                let archetype = if j == i + 3 {
+                    "hall_straight"
+                } else {
+                    "hall_corner"
+                };
+                require(archetype, reg, signature(&doors(&[lat[i], lat[j]])));
+                for k in (j + 1)..6 {
+                    require(
+                        "hall_junction",
+                        reg,
+                        signature(&doors(&[lat[i], lat[j], lat[k]])),
+                    );
+                    for l in (k + 1)..6 {
+                        require(
+                            "hall_junction",
+                            reg,
+                            signature(&doors(&[lat[i], lat[j], lat[k], lat[l]])),
+                        );
+                    }
+                }
+            }
+        }
+        require(
+            "shaft",
+            reg,
+            signature(&[
+                (HexFace::Up, PortClass::ShaftOpen),
+                (HexFace::Down, PortClass::ShaftOpen),
+            ]),
+        );
+        require(
+            "shaft_top",
+            reg,
+            signature(&[(HexFace::Down, PortClass::ShaftOpen)]),
+        );
+        require(
+            "shaft_bottom",
+            reg,
+            signature(&[(HexFace::Up, PortClass::ShaftOpen)]),
+        );
+        // Straight halls carry all three interior readings per axis.
+        let straights = manifest
+            .tiles
+            .iter()
+            .filter(|t| t.key.archetype == "hall_straight" && t.key.register == reg)
+            .count();
+        assert_eq!(straights, 9, "{reg} straight interiors");
+    }
+    assert!(missing.is_empty(), "missing tiles: {missing:#?}");
+}
+
+/// The room blueprint cells match the Phase 90 alignment note
+/// (`docs/arc_l/phase_90_91_alignment.md`): internal faces sealed, every
+/// exterior face a door, and the two-level atrium pair joined by
+/// `shaft_open` verticals.
+#[test]
+fn blueprint_footprint_cells_match_the_phase_90_alignment() {
+    let manifest = Manifest::from_ron(&tile_source::manifest_ron()).expect("manifest parses");
+    let mut missing: Vec<String> = Vec::new();
+    let mut require = |archetype: &str, reg: &str, sig: PortSignature| {
+        if !manifest.tiles.iter().any(|t| {
+            t.key.archetype == archetype
+                && t.key.register == reg
+                && t.declared_signature().ok() == Some(sig)
+        }) {
+            missing.push(format!("{archetype}/{reg}"));
+        }
+    };
+    // Cell -> internally-sealed faces, straight from the alignment note.
+    let sealed: [(&str, &[HexFace]); 11] = [
+        ("room_double_west", &[HexFace::East]),
+        ("room_double_east", &[HexFace::West]),
+        ("room_double_nw", &[HexFace::SouthEast]),
+        ("room_double_se", &[HexFace::NorthWest]),
+        ("room_tri_a", &[HexFace::East, HexFace::SouthEast]),
+        ("room_tri_b", &[HexFace::West, HexFace::SouthWest]),
+        ("room_tri_c", &[HexFace::NorthWest, HexFace::NorthEast]),
+        ("room_fork_a", &[HexFace::East, HexFace::SouthEast]),
+        (
+            "room_fork_b",
+            &[HexFace::West, HexFace::SouthWest, HexFace::SouthEast],
+        ),
+        (
+            "room_fork_c",
+            &[HexFace::NorthWest, HexFace::NorthEast, HexFace::East],
+        ),
+        ("room_fork_d", &[HexFace::West, HexFace::NorthWest]),
+    ];
+    for &reg in tile_source::REGISTERS {
+        require("room_single", reg, signature(&doors(&HexFace::LATERAL)));
+        for (archetype, internal) in sealed {
+            let exterior: Vec<HexFace> = HexFace::LATERAL
+                .into_iter()
+                .filter(|face| !internal.contains(face))
+                .collect();
+            require(archetype, reg, signature(&doors(&exterior)));
+        }
+        let mut lower = doors(&HexFace::LATERAL);
+        lower.push((HexFace::Up, PortClass::ShaftOpen));
+        require("room_atrium_lower", reg, signature(&lower));
+        let mut upper = doors(&HexFace::LATERAL);
+        upper.push((HexFace::Down, PortClass::ShaftOpen));
+        require("room_atrium_upper", reg, signature(&upper));
+    }
+    assert!(missing.is_empty(), "missing blueprint cells: {missing:#?}");
+}
+
+fn walk_ramp_and_measure_rise(map: &str, entrance: HexFace) -> (f32, bool) {
+    let ramp = parse_tile(map).expect("ramp parses");
     let arena = ramp.arena_spec();
     arena.validate().expect("ramp arena is valid");
     let scene = RapierTraversalScene::from_arena_spec(&arena);
     let config = FpsConfig::default();
-
-    // Feet on the West slab top (0.5 m), just inside the door, facing East.
-    let start_feet = Vec3::new(-5.6, 0.5, 0.0);
-    let mut body = FpsBody::spawned(
-        start_feet + Vec3::Y * config.half_height,
-        std::f32::consts::FRAC_PI_2,
-    );
+    // Feet just inside the entrance door, facing the exit across the cell.
+    let [a, b] = face_edge(entrance);
+    let mid = Vec2::new((a.0 + b.0) as f32 * 0.5, (a.1 + b.1) as f32 * 0.5);
+    let dir = mid.normalize();
+    let start_feet = Vec3::new(dir.x * 6.3, 0.95, dir.y * 6.3);
+    let facing = -dir;
+    let yaw = facing.x.atan2(-facing.y);
+    let mut body = FpsBody::spawned(start_feet + Vec3::Y * config.half_height, yaw);
     let intent = PlayerIntent {
         movement: Vec2::new(0.0, 1.0),
         ..PlayerIntent::default()
@@ -163,11 +340,33 @@ fn the_shared_controller_walks_the_ramp_up_a_full_level() {
         jumped |= report.jumped;
         max_feet = max_feet.max(body.position.y - config.half_height);
     }
+    (max_feet - start_feet.y, jumped)
+}
+
+/// THE PHASE 89 GATE: the shared production controller walks up the ramp
+/// prefab and gains a full level without jumping. If this fails, the taller
+/// tile / walkable ramp assumption of the whole arc is invalid.
+#[test]
+fn the_shared_controller_walks_the_ramp_up_a_full_level() {
+    let (rise, jumped) = walk_ramp_and_measure_rise(&tile_source::ramp_e_map(), HexFace::West);
     assert!(!jumped, "ascent must be plain walking");
-    let rise = max_feet - start_feet.y;
     assert!(
         rise >= TILE_LEVEL_HEIGHT - 0.6,
-        "controller only climbed {rise:.2} m of the {TILE_LEVEL_HEIGHT} m level \
-         (max feet {max_feet:.2}); the walkable-ramp assumption is broken"
+        "controller only climbed {rise:.2} m of the {TILE_LEVEL_HEIGHT} m level; \
+         the walkable-ramp assumption is broken"
+    );
+}
+
+/// Phase 91: the diagonal-direction ramp prefabs are just as walkable — the
+/// controller climbs the SouthWest-exit ramp entering through its NorthEast
+/// door.
+#[test]
+fn the_shared_controller_walks_a_diagonal_ramp_too() {
+    let map = tile_source::ramp_map("megastructure", HexFace::SouthWest);
+    let (rise, jumped) = walk_ramp_and_measure_rise(&map, HexFace::NorthEast);
+    assert!(!jumped, "diagonal ascent must be plain walking");
+    assert!(
+        rise >= TILE_LEVEL_HEIGHT - 0.6,
+        "controller only climbed {rise:.2} m on the diagonal ramp"
     );
 }

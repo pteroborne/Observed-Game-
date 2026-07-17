@@ -7,15 +7,16 @@
 //!
 //! Keys: WASD walk · mouse look · Shift sprint · Space jump · [ / ] cycle
 //! tiles · R respawn · C collider view · F1 overlay. `OBSERVED2_CAPTURE=<dir>`
-//! records one still per tile plus a scripted first-person ramp ascent
-//! sequence, writes `manifest.json` (with the measured height gain), and exits.
+//! records one still per curated family representative (the Phase 91 library
+//! is ~750 tiles) plus a scripted first-person diagonal-ramp ascent, writes
+//! `manifest.json` (with the measured height gain), and exits.
 
-use bevy::app::AppExit;
+mod capture;
+
 use bevy::asset::RenderAssetUsages;
 use bevy::input::mouse::MouseMotion;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
-use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use bevy::window::{CursorGrabMode, CursorOptions, PresentMode, PrimaryWindow, WindowResolution};
 use observed_authoring::{Manifest, TilePrototype};
 use observed_style::SurfaceRole;
@@ -23,6 +24,8 @@ use observed_traversal::rapier_controller::{RapierTraversalScene, step_character
 use observed_traversal::{FpsBody, FpsConfig};
 use player_input::PlayerIntent;
 use rapier3d::prelude::{SharedShape, Vector as RapierVector};
+
+use crate::capture::{CaptureRun, capture_progress};
 
 #[derive(Component)]
 struct TileVisual;
@@ -48,19 +51,55 @@ struct LabState {
     dirty: bool,
 }
 
-/// Per-tile spawn: feet position + yaw. The shaft spawns on its low landing.
+/// Outward plan direction (world x, z) of a lateral face's midpoint.
+fn face_plan_dir(face: observed_hex::HexFace) -> Vec2 {
+    let [a, b] = observed_hex::face_edge(face);
+    Vec2::new((a.0 + b.0) as f32 * 0.5, (a.1 + b.1) as f32 * 0.5).normalize()
+}
+
+/// The first lateral door in face order, if any.
+fn first_lateral_door(tile: &TilePrototype) -> Option<observed_hex::HexFace> {
+    observed_hex::HexFace::LATERAL
+        .into_iter()
+        .find(|&face| tile.signature.port(face) == observed_hex::PortClass::Door)
+}
+
+/// Yaw that faces the plan direction `f` (forward is `(sin yaw, 0, -cos yaw)`).
+fn yaw_toward(f: Vec2) -> f32 {
+    f.x.atan2(-f.y)
+}
+
+/// Per-tile spawn: feet position + yaw + pitch. Ramps spawn just inside their
+/// entrance door facing the climb; the shaft family spawns on its low ledge;
+/// everything else spawns inside its first doorway facing the interior.
 fn spawn_pose(tile: &TilePrototype) -> (Vec3, f32, f32) {
     match tile.key.archetype.as_str() {
-        // Feet on the ramp surface just inside the West door (the slope is
+        // Feet on the ramp surface just inside the entrance (the slope is
         // already ~0.9 m high there — spawning lower embeds the capsule);
         // pitched up so the view reads the full climb ahead.
-        "ramp" => (
-            Vec3::new(-6.3, 0.95, 0.0),
-            std::f32::consts::FRAC_PI_2,
-            0.42,
-        ),
-        "shaft" => (Vec3::new(-2.0, 2.0, 0.0), std::f32::consts::FRAC_PI_2, 0.25),
-        _ => (Vec3::new(-4.5, 0.5, 0.0), std::f32::consts::FRAC_PI_2, 0.0),
+        "ramp" => {
+            let door = first_lateral_door(tile).expect("ramp has an entrance door");
+            let dir = face_plan_dir(door);
+            (
+                Vec3::new(dir.x * 6.3, 0.95, dir.y * 6.3),
+                yaw_toward(-dir),
+                0.42,
+            )
+        }
+        "shaft" | "shaft_top" | "shaft_bottom" | "shaft_landing" => {
+            (Vec3::new(-2.0, 2.0, 0.0), std::f32::consts::FRAC_PI_2, 0.25)
+        }
+        _ => match first_lateral_door(tile) {
+            Some(door) => {
+                let dir = face_plan_dir(door);
+                (
+                    Vec3::new(dir.x * 5.2, 0.5, dir.y * 5.2),
+                    yaw_toward(-dir),
+                    0.0,
+                )
+            }
+            None => (Vec3::new(-4.5, 0.5, 0.0), std::f32::consts::FRAC_PI_2, 0.0),
+        },
     }
 }
 
@@ -322,7 +361,7 @@ fn rebuild_visuals(
         commands.entity(entity).despawn();
     }
     let treatment = observed_style::surface(match state.tile().key.archetype.as_str() {
-        "shaft" => SurfaceRole::WellshaftStone,
+        archetype if archetype.starts_with("shaft") => SurfaceRole::WellshaftStone,
         "ramp" => SurfaceRole::GantryDeck,
         _ => SurfaceRole::Plain,
     });
@@ -409,119 +448,6 @@ fn update_status(state: Res<LabState>, mut status: Query<&mut Text, With<LabStat
         state.feet_height(),
         state.body.grounded,
     );
-}
-
-#[derive(Resource)]
-struct CaptureRun {
-    dir: String,
-    phase: usize,
-    timer: f32,
-    walk_frame: u32,
-    start_feet: f32,
-    max_feet: f32,
-    finished: bool,
-}
-
-impl CaptureRun {
-    fn new(dir: String) -> Self {
-        std::fs::create_dir_all(&dir).expect("capture dir must be creatable");
-        Self {
-            dir,
-            phase: 0,
-            timer: 0.0,
-            walk_frame: 0,
-            start_feet: 0.0,
-            max_feet: f32::MIN,
-            finished: false,
-        }
-    }
-}
-
-/// Capture script: one still per tile, then a scripted ramp ascent with
-/// periodic frames, then the manifest (including the measured height gain).
-#[allow(clippy::too_many_arguments)]
-fn capture_progress(
-    time: Res<Time>,
-    mut run: ResMut<CaptureRun>,
-    mut state: ResMut<LabState>,
-    mut commands: Commands,
-    mut exit: MessageWriter<AppExit>,
-) {
-    if run.finished {
-        return;
-    }
-    run.timer += time.delta_secs();
-    let tile_count = state.tiles.len();
-
-    if run.phase < tile_count * 2 {
-        // Even phases settle + screenshot the current tile; odd phases wait
-        // for the async save before switching, so frames never bleed across.
-        if run.phase.is_multiple_of(2) && run.timer >= 0.9 {
-            let name = state.tiles[run.phase / 2].key.archetype.clone();
-            commands
-                .spawn(Screenshot::primary_window())
-                .observe(save_to_disk(format!("{}/tile_{name}.png", run.dir)));
-            run.phase += 1;
-            run.timer = 0.0;
-        } else if run.phase % 2 == 1 && run.timer >= 0.5 {
-            run.phase += 1;
-            run.timer = 0.0;
-            if run.phase < tile_count * 2 {
-                state.switch(run.phase / 2);
-            } else {
-                // Set up the scripted ramp ascent (step_body drives it).
-                let ramp = state
-                    .tiles
-                    .iter()
-                    .position(|tile| tile.key.archetype == "ramp")
-                    .expect("ramp tile present");
-                state.switch(ramp);
-                run.start_feet = state.feet_height();
-                state.scripted_walk = true;
-                // Near-level gaze while walking: the slope and walls stay in
-                // frame instead of the doorway void filling the view.
-                state.body.pitch = 0.10;
-            }
-        }
-        return;
-    }
-
-    // Scripted ascent runs in step_body; sample height and frames here.
-    let feet = state.feet_height();
-    run.max_feet = run.max_feet.max(feet);
-    // Stop at the summit instead of marching out the level-1 door and off
-    // the tile — the remaining frames hold the top-of-ramp view.
-    if state.scripted_walk && feet >= observed_hex::TILE_LEVEL_HEIGHT + 0.35 {
-        state.scripted_walk = false;
-    }
-    if run.timer >= 0.6 && run.walk_frame < 8 {
-        commands
-            .spawn(Screenshot::primary_window())
-            .observe(save_to_disk(format!(
-                "{}/ramp_walk_{:03}.png",
-                run.dir, run.walk_frame
-            )));
-        run.walk_frame += 1;
-        run.timer = 0.0;
-    }
-    if run.walk_frame >= 8 && run.timer >= 1.0 {
-        let gain = run.max_feet - run.start_feet;
-        let manifest = serde_json::json!({
-            "lab": "hex_tile_lab",
-            "tiles": state.tiles.iter().map(|t| t.key.archetype.clone()).collect::<Vec<_>>(),
-            "ramp_start_feet_m": run.start_feet,
-            "ramp_max_feet_m": run.max_feet,
-            "ramp_height_gain_m": gain,
-            "ramp_gate_passed": gain >= 7.4,
-        });
-        std::fs::write(
-            format!("{}/manifest.json", run.dir),
-            serde_json::to_string_pretty(&manifest).expect("manifest serializes"),
-        )
-        .expect("manifest must be writable");
-        run.finished = true;
-        exit.write(AppExit::Success);
-    }
 }
 
 #[cfg(test)]
