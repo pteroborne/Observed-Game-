@@ -8,6 +8,7 @@ pub mod flow;
 pub mod full_wfc;
 pub mod guardian;
 pub mod hallway;
+pub mod hex_wfc;
 pub mod items;
 pub mod keystones;
 mod layout;
@@ -45,7 +46,13 @@ pub enum GameState {
     /// [DEPRECATED] Legacy place-based match system. Sunsetted in favor of GameState::FullWfc.
     /// Kept only as a regression testing fixture for unit/integration tests.
     Match,
+    /// [DEMOTED] The square-lattice continuous facility. Since Arc L Phase 95 the hex
+    /// facility ([`GameState::HexWfc`]) is the canonical Play flow; `FullWfc` is reachable
+    /// only via the `OBSERVED2_MAP=square` launch override and stays as the byte-for-byte
+    /// regression fixture. Its systems and tests remain green, unchanged.
     FullWfc,
+    /// The canonical Arc L hex-prism facility Play flow.
+    HexWfc,
     Results,
     Replay,
     Settings,
@@ -73,6 +80,7 @@ impl Plugin for ObservedGamePlugin {
                 #[allow(deprecated)]
                 screens::MatchPlugin,
                 full_wfc::FullWfcPlugin,
+                hex_wfc::HexWfcPlugin,
             ));
     }
 }

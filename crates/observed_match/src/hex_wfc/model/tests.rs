@@ -94,6 +94,60 @@ fn run_bot_to_exit(game: &mut HexWfcMatch, max_ticks: u64) -> Option<u64> {
 }
 
 #[test]
+#[ignore = "seed scan for a mid-match committed relayout; run manually with --nocapture"]
+fn scan_mutation_seeds() {
+    for raw in 0u64..40 {
+        let seed = 0xA11C_9500_0000_0000 ^ raw.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        let Ok(mut game) = HexWfcMatch::new(
+            seed,
+            HexMatchConfig {
+                players: 4,
+                wfc: showcase_config(4),
+            },
+            &tiles(),
+        ) else {
+            continue;
+        };
+        let mut warned = None;
+        let mut committed = None;
+        let mut cancelled = 0u32;
+        for tick in 0..2_400u64 {
+            let commands = game
+                .players
+                .keys()
+                .copied()
+                .filter(|id| !game.players[id].escaped)
+                .map(|id| (id, game.bot_command(id)))
+                .collect();
+            let events = game
+                .step(&HexInputFrame {
+                    version: HEX_INPUT_VERSION,
+                    tick,
+                    commands,
+                })
+                .to_vec();
+            for event in events {
+                match event.kind {
+                    HexMatchEventKind::MutationWarning => warned = warned.or(Some(event.tick)),
+                    HexMatchEventKind::MutationCommitted => {
+                        committed = committed.or(Some((event.tick, game.facility.generation)));
+                    }
+                    HexMatchEventKind::MutationCancelled => cancelled += 1,
+                    _ => {}
+                }
+            }
+            if game.status == HexMatchStatus::Finished {
+                break;
+            }
+        }
+        eprintln!(
+            "seed={seed:#018x} warned={warned:?} committed={committed:?} cancelled={cancelled} final_gen={}",
+            game.facility.generation
+        );
+    }
+}
+
+#[test]
 #[ignore = "seed scan for the headless gate; run manually with --nocapture"]
 fn scan_gate_seeds() {
     for &levels in &[5u8, 4u8] {
@@ -397,6 +451,87 @@ fn ordinary_drops_do_not_trigger_recovery_on_the_gate_route() {
         game.status,
         HexMatchStatus::Finished,
         "gate bot must finish"
+    );
+}
+
+/// Phase 95 gate 5 — a mid-match observation-safe relayout actually fires in
+/// play, and does so deterministically. On this pinned showcase seed a warning
+/// raises at tick 1620 and the re-collapse commits at tick 1800, bumping
+/// `facility.generation` 0 → 1 while four objective bots drive the match. Two
+/// independent runs with the identical scripted bot inputs must reproduce the
+/// same generation timeline and the same final snapshot digest byte-for-byte.
+///
+/// The follow-up evidence agent captures gate 5's "observed relayout" here:
+/// seed `0xcb85_21b1_f77d_d0fc`, showcase config (12×9×4), commit at tick 1800.
+const MUTATION_SEED: u64 = 0xcb85_21b1_f77d_d0fc;
+
+#[test]
+fn observed_relayout_commits_mid_match_deterministically() {
+    fn run() -> (Vec<(u64, u32)>, Vec<u32>, u64) {
+        let mut game = showcase_match(MUTATION_SEED, 4, 4);
+        let mut committed = Vec::new();
+        let mut generations = Vec::new();
+        let mut warned = false;
+        for tick in 0..1_850u64 {
+            let commands = game
+                .players
+                .keys()
+                .copied()
+                .filter(|id| !game.players[id].escaped)
+                .map(|id| (id, game.bot_command(id)))
+                .collect();
+            let events = game
+                .step(&HexInputFrame {
+                    version: HEX_INPUT_VERSION,
+                    tick,
+                    commands,
+                })
+                .to_vec();
+            for event in events {
+                match event.kind {
+                    HexMatchEventKind::MutationWarning => warned = true,
+                    HexMatchEventKind::MutationCommitted => {
+                        committed.push((event.tick, game.facility.generation));
+                    }
+                    _ => {}
+                }
+            }
+            generations.push(game.facility.generation);
+        }
+        assert!(warned, "a relayout warning must precede the commit");
+        (committed, generations, game.snapshot().digest)
+    }
+
+    let (committed, generations, digest) = run();
+    assert_eq!(
+        committed,
+        vec![(1800, 1)],
+        "the observed relayout must commit exactly once at tick 1800, lifting generation to 1"
+    );
+    assert_eq!(
+        generations.first().copied(),
+        Some(0),
+        "the facility starts at generation 0"
+    );
+    assert_eq!(
+        generations.last().copied(),
+        Some(1),
+        "the committed relayout leaves the match at generation 1"
+    );
+
+    // Determinism: identical seed + scripted bot inputs reproduce the timeline.
+    let (committed_b, generations_b, digest_b) = run();
+    assert_eq!(
+        committed, committed_b,
+        "commit timeline must be deterministic"
+    );
+    assert_eq!(
+        generations, generations_b,
+        "the per-tick generation timeline must be deterministic"
+    );
+    assert_eq!(
+        digest, digest_b,
+        "the final snapshot digest must be deterministic"
     );
 }
 

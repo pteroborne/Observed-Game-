@@ -39,6 +39,8 @@ observed_progression = { path = "../crates/observed_progression" }
 observed_net = { path = "../crates/observed_net" }
 observed_observation = { path = "../crates/observed_observation" }
 observed_facility = { path = "../crates/observed_facility", features = ["wfc"] }
+observed_hex = { path = "../crates/observed_hex" }
+observed_authoring = { path = "../crates/observed_authoring" }
 observed_match = { path = "../crates/observed_match" }
 observed_traversal = { path = "../crates/observed_traversal" }
 vleue_navigator = { version = "0.15.0", default-features = false }

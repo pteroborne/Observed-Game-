@@ -26,6 +26,26 @@ pub const LOCAL_TEAM: TeamId = TeamId(0);
 pub const MATCH_SEED: u64 = 1;
 pub const SEED_OVERRIDE_ENV: &str = "OBSERVED2_SEED";
 
+/// Launch override selecting which facility the Play flow enters. Since Arc L Phase 95
+/// the hex facility is canonical; `OBSERVED2_MAP=square` (or `full_wfc`) demotes back to
+/// the square-lattice regression fixture for a side-by-side comparison. Mirrors the Arc
+/// K map-override precedent.
+pub const MAP_OVERRIDE_ENV: &str = "OBSERVED2_MAP";
+
+/// The `GameState` the menu Play/Rematch/Spectate arms route to. Hex by default; the
+/// `OBSERVED2_MAP=square` override returns the demoted square facility.
+#[must_use]
+pub fn play_target_state() -> crate::GameState {
+    play_target_for_override(std::env::var(MAP_OVERRIDE_ENV).ok().as_deref())
+}
+
+fn play_target_for_override(value: Option<&str>) -> crate::GameState {
+    match value.map(str::trim).map(str::to_ascii_lowercase).as_deref() {
+        Some("square") | Some("full_wfc") | Some("full-wfc") => crate::GameState::FullWfc,
+        _ => crate::GameState::HexWfc,
+    }
+}
+
 #[derive(Resource, Copy, Clone, Debug, PartialEq, Eq)]
 pub struct ActiveMatchSeed(pub u64);
 
@@ -120,6 +140,34 @@ pub fn resolve_full_wfc(game: &observed_match::full_wfc::FullWfcMatch) -> MatchR
         absorbed: game.teams.values().filter(|team| team.eliminated).count(),
         winner,
         local_won: winner == Some(LOCAL_TEAM),
+    }
+}
+
+/// Resolve the canonical hex facility match into the career/result envelope. The hex
+/// match is a pure spawn→exit race keyed by [`observed_core::PlayerId`]; the local
+/// player is `PlayerId(0)` (mapped to [`LOCAL_TEAM`]). Mirrors [`resolve_full_wfc`].
+pub fn resolve_hex_wfc(game: &observed_match::hex_wfc::HexWfcMatch) -> MatchResult {
+    let local = observed_core::PlayerId(0);
+    let placement = game
+        .escape_order
+        .iter()
+        .position(|player| *player == local)
+        .map(|index| index as u8 + 1);
+    let winner = game.escape_order.first().copied();
+    MatchResult {
+        placement,
+        escaped: game
+            .players
+            .values()
+            .filter(|player| player.escaped)
+            .count(),
+        absorbed: game
+            .players
+            .values()
+            .filter(|player| !player.escaped)
+            .count(),
+        winner: winner.map(|player| TeamId(player.0 as u8)),
+        local_won: winner == Some(local),
     }
 }
 
@@ -365,6 +413,24 @@ mod tests {
         assert_eq!(parse_seed_override("42"), Some(42));
         assert_eq!(parse_seed_override(" 0x2a "), Some(42));
         assert_eq!(parse_seed_override("not-a-seed"), None);
+    }
+
+    #[test]
+    fn hex_is_canonical_and_square_is_an_explicit_regression_override() {
+        assert_eq!(play_target_for_override(None), crate::GameState::HexWfc);
+        assert_eq!(
+            play_target_for_override(Some("square")),
+            crate::GameState::FullWfc
+        );
+        assert_eq!(
+            play_target_for_override(Some(" FULL-WFC ")),
+            crate::GameState::FullWfc
+        );
+        assert_eq!(
+            play_target_for_override(Some("liminal_wfc_v2")),
+            crate::GameState::HexWfc,
+            "legacy map names no longer redirect canonical Play away from hex"
+        );
     }
 
     #[test]

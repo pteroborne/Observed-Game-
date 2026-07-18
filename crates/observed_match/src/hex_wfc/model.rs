@@ -8,8 +8,8 @@ use glam::Vec3;
 use observed_authoring::TilePrototype;
 use observed_core::{CorridorId, PlayerId, RoomId};
 use observed_facility::hex_wfc::{
-    HexObservationFrame, HexThresholdKey, HexWfcConfig, HexWfcError, HexWfcWorld,
-    blueprint_for_role,
+    HexObservationFrame, HexRelayoutCandidate, HexRelayoutWork, HexThresholdKey, HexWfcConfig,
+    HexWfcError, HexWfcWorld, blueprint_for_role,
 };
 use observed_hex::{HexCoord, HexFace, hex_origin};
 use observed_traversal::{FpsBody, FpsConfig, rapier_controller::RapierTraversalScene};
@@ -19,6 +19,7 @@ use super::geometry::{HexGeometryError, HexWfcGeometrySnapshot};
 
 mod bot;
 mod movement;
+mod mutation;
 mod snapshot;
 #[cfg(test)]
 mod tests;
@@ -29,6 +30,16 @@ pub(super) const FIXED_DT: f32 = 1.0 / 60.0;
 /// Shafts keep the climb-style vertical traversal; ramps are plain walking.
 pub(super) const CLIMB_SPEED: f32 = 2.5;
 pub const HEX_INPUT_VERSION: u16 = 1;
+
+/// Ticks of forewarning between a [`HexMatchEventKind::MutationWarning`] and the
+/// deterministic commit tick, so observation has a window to pin structure. Mirrors
+/// the square lattice's `MUTATION_WARNING_TICKS`.
+pub(super) const MUTATION_WARNING_TICKS: u64 = 180;
+/// Baseline spacing between relayout attempts while nobody has escaped.
+pub(super) const CALM_MUTATION_TICKS: u64 = 1_800;
+/// Compressed spacing once every runner has escaped (peak pressure). Interpolated
+/// against [`CALM_MUTATION_TICKS`] by the escaped fraction.
+pub(super) const PRESSURED_MUTATION_TICKS: u64 = 600;
 
 /// One simulation input frame: sanitized intents keyed by stable player ID.
 #[derive(Clone, Debug, PartialEq)]
@@ -62,6 +73,15 @@ pub enum HexMatchEventKind {
     /// including full 8 m shaft/ramp falls — are survivable-by-design and do
     /// not raise this.
     PlayerRecovered,
+    /// A deterministic relayout warning fired: unobserved structure has begun to
+    /// breathe and will re-collapse at the scheduled commit tick unless pinned.
+    MutationWarning,
+    /// A relayout re-collapse committed: `facility.generation` incremented and
+    /// unobserved cells mutated. Presentation re-snapshots geometry on this.
+    MutationCommitted,
+    /// A pending relayout was rejected — observation held the structure, the
+    /// re-collapse failed, or the candidate no longer projected.
+    MutationCancelled,
     MatchFinished,
 }
 
@@ -170,6 +190,22 @@ pub struct HexWfcMatch {
     /// The last position from which a player made clear net progress; the
     /// reference the stuck tracker measures displacement against.
     pub(super) progress_anchor: BTreeMap<PlayerId, Vec3>,
+    /// Authored tile corpus retained so a committed relayout can re-project the
+    /// collision geometry mid-match. Same prototypes the initial solve used.
+    pub(super) prototypes: Vec<TilePrototype>,
+    /// In-flight observation-safe relayout, if any. `None` between cycles.
+    pub(super) pending_relayout: Option<PendingRelayout>,
+    /// The deterministic tick at which the next relayout commits. The paired
+    /// warning fires [`MUTATION_WARNING_TICKS`] earlier.
+    pub(super) next_mutation_tick: u64,
+}
+
+/// The two phases of one relayout cycle: an incremental solve, then a solved
+/// candidate awaiting its commit tick. Mirrors the square `PendingRelayout`.
+#[derive(Clone, Debug)]
+pub(super) enum PendingRelayout {
+    Solving(HexRelayoutWork),
+    Ready(HexRelayoutCandidate),
 }
 
 impl HexWfcMatch {
@@ -229,6 +265,9 @@ impl HexWfcMatch {
             traversal_config,
             stuck_ticks: BTreeMap::new(),
             progress_anchor: BTreeMap::new(),
+            prototypes: prototypes.to_vec(),
+            pending_relayout: None,
+            next_mutation_tick: CALM_MUTATION_TICKS,
         };
         game.observation = game.build_observation();
         Ok(game)
@@ -248,6 +287,7 @@ impl HexWfcMatch {
         self.update_stuck_ticks();
         self.recover_fallen_bodies();
         self.observation = self.build_observation();
+        self.step_mutation();
         self.resolve_escapes();
         &self.recent_events
     }

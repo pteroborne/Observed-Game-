@@ -276,6 +276,111 @@ impl ReplayTape {
         }
     }
 
+    /// Build a fresh tape for the canonical hex facility match, keyed by
+    /// [`observed_match::hex_wfc::HEX_INPUT_VERSION`]. Mirrors [`Self::new_full_wfc`].
+    pub fn new_hex_wfc(game: &observed_match::hex_wfc::HexWfcMatch) -> Self {
+        let mut tape = Self {
+            seed: game.seed,
+            input_version: observed_match::hex_wfc::HEX_INPUT_VERSION,
+            map_name: "hex_wfc_v1".to_string(),
+            simulation_content_hash: [0; 32],
+            presentation_content_hash: [0; 32],
+            rooms: Vec::new(),
+            actors: Vec::new(),
+            samples: Vec::new(),
+            markers: Vec::new(),
+            result: None,
+            visited_rooms: Vec::new(),
+            collapsed_rooms: Vec::new(),
+            escape_order: Vec::new(),
+            keystones_collected: 0,
+            keystones_required: 0,
+            anchor_uses: 0,
+            seen_actors: BTreeSet::new(),
+            seen_markers: BTreeSet::new(),
+            anchor_was_placed: false,
+        };
+        tape.ensure_actor(ReplayActorId::LocalPlayer);
+        for player in game.players.values().filter(|player| player.id.0 != 0) {
+            tape.ensure_actor(ReplayActorId::Team(TeamId(player.id.0 as u8)));
+        }
+        tape.sync_hex_rooms(game);
+        tape
+    }
+
+    /// Sample the hex match. Same passive shape as [`Self::record_full_wfc`]: it reads
+    /// already-owned simulation state and never drives gameplay.
+    pub fn record_hex_wfc(&mut self, game: &observed_match::hex_wfc::HexWfcMatch) {
+        if self.seed != game.seed {
+            return;
+        }
+        self.sync_hex_rooms(game);
+        let local = observed_core::PlayerId(0);
+        if let Some(player) = game.players.get(&local)
+            && let Some(room) = hex_room_at(game, player.cell)
+            && !self.visited_rooms.contains(&room)
+        {
+            self.visited_rooms.push(room);
+        }
+        self.escape_order = game
+            .escape_order
+            .iter()
+            .map(|player| TeamId(player.0 as u8))
+            .collect();
+
+        if game.tick.is_multiple_of(6) || self.samples.is_empty() {
+            let actors = game
+                .players
+                .values()
+                .map(|player| ReplayActorPose {
+                    actor: if player.id.0 == 0 {
+                        ReplayActorId::LocalPlayer
+                    } else {
+                        ReplayActorId::Team(TeamId(player.id.0 as u8))
+                    },
+                    room: hex_room_at(game, player.cell),
+                    place: None,
+                    status: if player.escaped {
+                        "escaped".to_string()
+                    } else {
+                        "active".to_string()
+                    },
+                    task: "reach exit".to_string(),
+                })
+                .collect();
+            self.push_sample(
+                game.tick.min(u64::from(u32::MAX)) as u32,
+                game.facility.generation,
+                actors,
+            );
+        }
+        for event in &game.recent_events {
+            self.push_marker(
+                game.tick.min(u64::from(u32::MAX)) as u32,
+                game.facility.generation,
+                format!("t{} {:?}", game.tick, event.kind),
+            );
+        }
+    }
+
+    fn sync_hex_rooms(&mut self, game: &observed_match::hex_wfc::HexWfcMatch) {
+        let cols = f32::from(game.facility.config.cols) + 1.0;
+        for blueprint in &game.facility.blueprints {
+            let id = RoomId(blueprint.id);
+            if self.rooms.iter().any(|existing| existing.id == id) {
+                continue;
+            }
+            self.rooms.push(ReplayRoom {
+                id,
+                schematic: Vec2::new(
+                    f32::from(blueprint.anchor.q) + f32::from(blueprint.anchor.level) * cols,
+                    f32::from(blueprint.anchor.r),
+                ),
+                role: blueprint.role,
+            });
+        }
+    }
+
     pub fn ensure_actor(&mut self, id: ReplayActorId) {
         if self.seen_actors.insert(id) {
             self.actors.push(ReplayActor {
@@ -511,6 +616,19 @@ fn task_label(task: TeamTask) -> &'static str {
         TeamTask::Escape(_) => "escape",
         TeamTask::EvadeGuardian(_) => "evade guardian",
     }
+}
+
+/// The room (stamped blueprint) whose footprint contains `cell`, if any. Keyed by the
+/// blueprint stamp id, stable per `(seed, generation)`.
+fn hex_room_at(
+    game: &observed_match::hex_wfc::HexWfcMatch,
+    cell: observed_facility::hex_wfc::HexCoord,
+) -> Option<RoomId> {
+    game.facility
+        .blueprints
+        .iter()
+        .find(|blueprint| blueprint.cells.contains(&cell))
+        .map(|blueprint| RoomId(blueprint.id))
 }
 
 fn ordinal(place: u8) -> String {

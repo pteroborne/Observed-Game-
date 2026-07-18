@@ -112,11 +112,14 @@ not increase the first two rows.
 | 4 | 32 | 5,568 | 99.43% |
 
 Blueprint pinning therefore does not starve relayout on this accepted default
-seed. The remaining scale risk is solve latency: a production-size collapse is
-currently an offline-scale operation, so the interactive evidence deliberately
-uses the 12 x 9 x 4 showcase and a 12-attempt bound. Phase 95 should not schedule
-a 5,600-cell full collapse on the render thread without further solver
-budgeting/optimization.
+seed. At Phase 93 the remaining scale risk was solve latency, so its interactive
+evidence deliberately used the 12 x 9 x 4 showcase and a 12-attempt bound.
+
+> **Phase 95 correction (2026-07-18):** subsequent solver work reduced the
+> production-shaped solve from offline-scale (~10 minutes in the Phase 92/93
+> measurements) to roughly 0.8 seconds. Phase 95 therefore uses the real
+> 28 x 20 x 10 configuration in normal Play while keeping the compact fixture for
+> deterministic capture and test timelines.
 
 ### Verification and evidence
 
