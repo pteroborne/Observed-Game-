@@ -88,6 +88,22 @@ Examples:
 
 A limitation is acceptable when it is consistent, readable, and capable of producing meaningful gameplay.
 
+### Compile-Time and Linking Speedups
+
+To optimize build and link times during active development (especially with multiple parallel worktrees):
+* **Disable dependency debug info**: Add `debug = false` to `[profile.dev.package."*"]` in `Cargo.toml`.
+* **Share target directory**: Point worktrees to a central target directory using `CARGO_TARGET_DIR` or `.cargo/config.toml`:
+  ```toml
+  [build]
+  target-dir = "O:/Observed 2/target"
+  ```
+* **Fast Linker (LLD)**: Configure `.cargo/config.toml` to use the Rust toolchain's LLD on Windows:
+  ```toml
+  [target.x86_64-pc-windows-msvc]
+  linker = "rust-lld.exe"
+  ```
+* **Dynamic Linking**: Use the `.cargo/config.toml` development aliases (`cargo dev-run`, `cargo dev-test`, and `cargo dev-clippy`) to enable Bevy's `dynamic_linking` feature without enabling it in release builds.
+
 ## Core Architectural Rules
 
 ### Separate input from player behavior

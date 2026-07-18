@@ -29,7 +29,11 @@ const CAPTURE_SET: &[(&str, &str, u16)] = &[
     ("megastructure", "hall_junction", 0b010101), // three-way E/SW/NW
     ("megastructure", "hall_junction", 0b001111), // four-way E/SE/SW/W
     ("megastructure", "ramp", 0),
+    ("megastructure", "ramp", 1),
     ("megastructure", "ramp", 2), // SouthWest exit — the walked diagonal
+    ("megastructure", "ramp", 3),
+    ("megastructure", "ramp", 4),
+    ("megastructure", "ramp", 5),
     ("megastructure", "shaft", 0),
     ("megastructure", "shaft_top", 0),
     ("megastructure", "shaft_bottom", 0),

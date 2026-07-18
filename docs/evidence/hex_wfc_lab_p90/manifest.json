@@ -1,5 +1,5 @@
 {
-  "attempts": 1,
+  "attempts": 2,
   "frames": [
     "hex_wfc_000.png",
     "hex_wfc_001.png",
@@ -32,13 +32,13 @@
   ],
   "lab": "hex_wfc_lab",
   "levels": 4,
-  "rooms": 10,
-  "seed": "0xa11ce3d000000004",
+  "rooms": 8,
+  "seed": "0xa11ce3d000000008",
   "slices": [
     "slice_0.png",
     "slice_1.png",
     "slice_2.png",
     "slice_3.png"
   ],
-  "trace_steps": 2821
+  "trace_steps": 5655
 }

@@ -4113,9 +4113,15 @@ name = "hex_wfc_lab"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "observed_authoring",
+ "observed_core",
  "observed_facility",
  "observed_hex",
+ "observed_match",
  "observed_style",
+ "observed_traversal",
+ "player_input",
+ "rapier3d",
  "serde_json",
 ]
 
@@ -5390,6 +5396,7 @@ name = "observed_authoring"
 version = "0.1.0"
 dependencies = [
  "glam 0.30.10",
+ "observed_facility",
  "observed_hex",
  "observed_traversal",
  "player_input",
@@ -5488,8 +5495,10 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "glam 0.30.10",
+ "observed_authoring",
  "observed_core",
  "observed_facility",
+ "observed_hex",
  "observed_observation",
  "observed_traversal",
  "player_input",

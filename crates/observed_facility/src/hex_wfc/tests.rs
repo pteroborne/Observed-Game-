@@ -309,10 +309,10 @@ fn tallest_ramp_chain(world: &HexWfcWorld) -> u8 {
 }
 
 /// The pinned showcase seed: a solve that contains a full-height (4-level)
-/// wellshaft column and a multi-level ramp chain, with a spawn→exit route that
-/// traverses a vertical element. If the seed ever drifts, re-pin from
-/// `search_for_pinnable_3d_seeds`.
-const PINNED_3D_SEED: u64 = 0xA11C_E3D0_0000_0004;
+/// wellshaft column and a ramp chain climbing three levels, with a spawn→exit
+/// route that traverses a vertical element. If the seed ever drifts, re-pin
+/// from `search_for_pinnable_3d_seeds`.
+const PINNED_3D_SEED: u64 = 0xA11C_E3D0_0000_0008;
 
 #[test]
 fn the_pinned_seed_shows_a_tall_shaft_and_a_ramp_chain() {
@@ -323,7 +323,7 @@ fn the_pinned_seed_shows_a_tall_shaft_and_a_ramp_chain() {
     assert!(shaft >= 4, "pinned seed shaft column only {shaft} levels");
 
     let ramp = tallest_ramp_chain(&world);
-    assert!(ramp >= 2, "pinned seed ramp chain only {ramp} levels");
+    assert!(ramp >= 3, "pinned seed ramp chain only {ramp} levels");
 
     let route = world
         .route_between(config.spawn(), config.exit())
@@ -363,14 +363,86 @@ fn search_for_pinnable_3d_seeds() {
             if ramp > best_ramp.0 {
                 best_ramp = (ramp, seed);
             }
-            if shaft >= 4 && ramp >= 1 && route_vertical {
+            if shaft >= 4 && ramp >= 3 && route_vertical {
                 hits.push((format!("{seed:#x}"), shaft, ramp));
             }
         }
     }
     println!("best_shaft={best_shaft:x?} best_ramp={best_ramp:x?}");
-    println!("shaft>=4 & ramp>=1 & vertical route: {hits:?}");
+    println!("shaft>=4 & ramp>=3 & vertical route: {hits:?}");
     assert!(!hits.is_empty(), "no pinnable seed found in search range");
+}
+
+fn fnv1a(text: &str) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    for byte in text.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01B3);
+    }
+    hash
+}
+
+/// Refactor audit: stable digests of materialized placements across explicit
+/// `(seed, generation, attempt)` triples and whole solves. Run with
+/// `--ignored --nocapture` before and after solver-internal changes; the
+/// printed digests must not move.
+#[test]
+#[ignore = "solver-refactor placement-digest audit"]
+fn print_placement_digests() {
+    let small = HexWfcConfig::default();
+    let showcase = config_3d();
+    for (label, config, seed) in [
+        ("small", small, 42u64),
+        ("small", small, 7),
+        ("small", small, 0xA11C_E000_0000_0005),
+        ("showcase", showcase, 0xA11C_E3D0_0000_0007),
+        ("showcase", showcase, PINNED_3D_SEED),
+    ] {
+        let world = HexWfcWorld::generate(seed, config).expect("digest seed must solve");
+        let digest = fnv1a(&format!("{:?}|{:?}", world.placements, world.blueprints));
+        println!(
+            "{label} seed={seed:#x} attempts={} digest={digest:#018x}",
+            world.last_attempts
+        );
+    }
+    let no_pins = BTreeSet::new();
+    for (label, config, seed, generation, attempt) in [
+        ("small", small, 42u64, 0u32, 0u32),
+        ("small", small, 42, 3, 1),
+        ("small", small, 7, 0, 3),
+        ("small", small, 0xA11C_E000_0000_0005, 0, 3),
+        ("showcase", showcase, 0xA11C_E3D0_0000_0007, 0, 2),
+        ("showcase", showcase, PINNED_3D_SEED, 0, 1),
+    ] {
+        let digest = match collapse::collapse_attempt(
+            seed, generation, attempt, config, None, &no_pins, None,
+        ) {
+            Ok(solved) => fnv1a(&format!("{:?}|{:?}", solved.placements, solved.blueprints)),
+            Err(reason) => fnv1a(reason),
+        };
+        println!("{label} seed={seed:#x} gen={generation} attempt={attempt} digest={digest:#018x}");
+    }
+}
+
+/// Manual Arc L performance audit at the 5,600-cell production dimensions.
+/// Run with `--ignored --nocapture` to print the wall-clock solve time.
+#[test]
+#[ignore = "production-scale solve timing audit"]
+fn time_arc_default_production_solve() {
+    let config = HexWfcConfig::arc_default();
+    let start = std::time::Instant::now();
+    let world =
+        HexWfcWorld::generate(0xA11C_9300_0000_0001, config).expect("arc-default seed must solve");
+    let elapsed = start.elapsed();
+    println!(
+        "arc_default 28x20x10 solved in {elapsed:?} (attempts={}, rooms={})",
+        world.last_attempts,
+        world.room_count()
+    );
+    assert!(
+        elapsed.as_secs() < 10,
+        "production solve took {elapsed:?}; budget is 10s"
+    );
 }
 
 #[test]

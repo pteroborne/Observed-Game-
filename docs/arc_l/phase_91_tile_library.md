@@ -1,5 +1,12 @@
 # Phase 91 — Tile Library Authoring
 
+**Status: Complete (verified 2026-07-17).** The 1,332-tile exact-snap manifest
+covers all 134 exact geometry-emitter demands in every architecture register,
+all six ramp directions pass the shared-controller walking corpus, and the
+refreshed family evidence is green. A Wave 4 preflight audit repaired the
+original hand-written coverage subset by adding the 57 missing Shaft signatures
+per register without changing the frozen manifest schema or solver behavior.
+
 **Wave 3, parallel with Phase 90 — content-only.** You own `assets/tiles/**` and
 validator additions in `crates/observed_authoring/`. Do not touch solver code
 (`crates/observed_facility/`), and do not change the manifest **schema** — if the
@@ -35,9 +42,10 @@ game's visual language.
   rotation story if `observed_authoring` supports yaw-rotation of tiles — check
   with the parent before building rotation; authoring 6 explicit variants is the
   safe default).
-- **Shaft tiles**: segments (ShaftOpen Up+Down), bottom caps, top caps, and at
-  least one landing variant with a lateral Door — enough to compose a Silo well
-  with entries at multiple levels.
+- **Shaft tiles**: segments (ShaftOpen Up+Down), bottom caps, top caps, and the
+  complete one/two-door landing alphabet for Up-only, Down-only, and through
+  vertical ports — enough to project every solver Silo/wellshaft signature
+  exactly.
 - **Room blueprint footprints**: multi-hex room shapes (2–4 hexes; at least one
   2-level-tall atrium) with named exterior ports, covering the RoomRole needs
   (start, exit, keystone, monitor, control at minimum).

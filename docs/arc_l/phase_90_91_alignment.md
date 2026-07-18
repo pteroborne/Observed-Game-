@@ -20,10 +20,18 @@ solver now enforces, for Phase 91 to author against:
 - **Identity:** `StampedBlueprint::generation_key()` = `hash(blueprint role,
   anchor cell)`; stable across relayouts, mirrors
   `full_wfc::catalog::corridor_generation_key` discipline.
-- **Solver demand feed:** `observed_facility::hex_wfc::demandable_signatures()`
-  returns every `PortSignature` the solver's variant alphabet can require
-  (rooms, halls, junctions, ramp halves, shaft segments). This is the input to
-  the Phase 91 coverage validator.
+- **Geometry demand feed:** `observed_facility::hex_wfc::geometry_demands()`
+  returns every exact `(tile archetype, PortSignature)` pair the projector can
+  emit. It includes authored blueprint-cell semantics, flat halls, RampUp, and
+  all 64 Shaft variants; it deliberately excludes Void, the geometry-free
+  RampHead, and generic Room variants that cannot leave a stamped blueprint
+  domain. The Phase 91 validator requires every demand in every architecture
+  register. `demandable_signatures()` remains the broader WFC propagation
+  alphabet and is not a tile-coverage oracle.
+- **Boundary blueprint rule:** room prefab selection uses the blueprint's
+  authored `cell_signature(offset)`. Boundary-adjusted solver placements may
+  seal out-of-grid faces (notably Start/Exit); the Phase 92 rhombus boundary
+  shell closes those authored exterior apertures physically.
 
 ## Blueprint Footprints & Named Ports
 

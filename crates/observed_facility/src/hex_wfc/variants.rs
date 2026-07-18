@@ -5,7 +5,21 @@ use std::collections::BTreeSet;
 
 use observed_hex::{HexFace, PortClass, PortSignature};
 
-use super::{HexArchetype, HexSpace, lateral_bit};
+use crate::map_spec::RoomRole;
+
+use super::blueprint::{blueprint_cell_archetype, blueprint_for_role};
+use super::{HexArchetype, HexPlacement, HexSpace, lateral_bit};
+
+/// One exact authored-tile requirement emitted by hex geometry projection.
+///
+/// Architecture register is deliberately not part of this value: the
+/// authoring coverage gate requires every one of these semantic pairs in every
+/// production register.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct HexGeometryDemand {
+    pub archetype: &'static str,
+    pub signature: PortSignature,
+}
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct HexVariant {
@@ -104,7 +118,9 @@ pub(super) fn catalogue() -> Vec<HexVariant> {
             doors: lateral_bit(d.opposite()),
             up: PortClass::RampOpen,
             down: PortClass::Sealed,
-            weight: 5,
+            // Ramp halves are sparse in the much larger flat-hall alphabet;
+            // this weight makes three-level chains occur in the seeded corpus.
+            weight: 20,
         });
         variants.push(HexVariant {
             space: HexSpace::Hall,
@@ -112,7 +128,7 @@ pub(super) fn catalogue() -> Vec<HexVariant> {
             doors: lateral_bit(d),
             up: PortClass::Sealed,
             down: PortClass::RampOpen,
-            weight: 5,
+            weight: 20,
         });
     }
 
@@ -163,6 +179,82 @@ pub fn demandable_signatures() -> Vec<PortSignature> {
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
+}
+
+/// Manifest archetype for a non-room placement, or `None` when the cell emits
+/// no prefab. Rooms are projected once per stamped blueprint through
+/// [`blueprint_cell_archetype`]; `RampHead` is the empty upper half of the
+/// two-level prefab emitted by its `RampUp` below.
+#[must_use]
+pub fn placement_tile_archetype(placement: &HexPlacement) -> Option<&'static str> {
+    match placement.archetype {
+        HexArchetype::Void | HexArchetype::Room | HexArchetype::RampHead => None,
+        HexArchetype::Straight => Some("hall_straight"),
+        HexArchetype::Corner => Some("hall_corner"),
+        HexArchetype::Junction => Some("hall_junction"),
+        HexArchetype::RampUp => Some("ramp"),
+        HexArchetype::Shaft if placement.doors != 0 => Some("shaft_landing"),
+        HexArchetype::Shaft => match (placement.up, placement.down) {
+            (PortClass::ShaftOpen, PortClass::ShaftOpen) => Some("shaft"),
+            (PortClass::Sealed, PortClass::ShaftOpen) => Some("shaft_top"),
+            (PortClass::ShaftOpen, PortClass::Sealed) => Some("shaft_bottom"),
+            _ => None,
+        },
+    }
+}
+
+/// Every exact `(archetype, signature)` pair geometry projection can request.
+///
+/// This is intentionally narrower than [`demandable_signatures`], which is the
+/// WFC propagation alphabet and includes generic Room variants that can never
+/// leave a blueprint domain plus the geometry-free `RampHead`. The manifest
+/// coverage gate and projector both consume this function so the contract
+/// cannot drift back to a hand-written subset.
+#[must_use]
+pub fn geometry_demands() -> Vec<HexGeometryDemand> {
+    let mut demands = BTreeSet::new();
+    for variant in catalogue() {
+        let placement = HexPlacement {
+            coord: observed_hex::HexCoord::default(),
+            space: variant.space,
+            archetype: variant.archetype,
+            doors: variant.doors,
+            up: variant.up,
+            down: variant.down,
+        };
+        if let Some(archetype) = placement_tile_archetype(&placement) {
+            demands.insert(HexGeometryDemand {
+                archetype,
+                signature: variant.signature(),
+            });
+        }
+    }
+
+    const ROOM_ROLES: [RoomRole; 11] = [
+        RoomRole::Start,
+        RoomRole::Exit,
+        RoomRole::Decision,
+        RoomRole::DecoherenceFork,
+        RoomRole::AnchorCheckpoint,
+        RoomRole::TeleportRelay,
+        RoomRole::Keystone,
+        RoomRole::DualStation,
+        RoomRole::GuardianControl,
+        RoomRole::Monitor,
+        RoomRole::Recovery,
+    ];
+    for role in ROOM_ROLES {
+        let blueprint = blueprint_for_role(role);
+        for (cell_index, &offset) in blueprint.cells.iter().enumerate() {
+            let archetype = blueprint_cell_archetype(role, cell_index)
+                .expect("every blueprint cell has an authored tile archetype");
+            demands.insert(HexGeometryDemand {
+                archetype,
+                signature: blueprint.cell_signature(offset),
+            });
+        }
+    }
+    demands.into_iter().collect()
 }
 
 pub(super) fn hall_archetype(mask: u8) -> HexArchetype {
@@ -227,5 +319,55 @@ fn ramp_direction(variant: HexVariant) -> Option<HexFace> {
             .into_iter()
             .find(|&f| variant.doors & lateral_bit(f) != 0),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod geometry_tests {
+    use super::*;
+
+    #[test]
+    fn geometry_demands_are_exact_and_exclude_non_emitters() {
+        let demands = geometry_demands();
+        assert_eq!(demands.len(), 134);
+        let unique: BTreeSet<_> = demands.iter().copied().collect();
+        assert_eq!(unique.len(), demands.len());
+        assert_eq!(
+            demands
+                .iter()
+                .filter(|demand| demand.archetype == "shaft" || demand.archetype == "shaft_landing")
+                .count(),
+            64
+        );
+        assert_eq!(
+            demands
+                .iter()
+                .filter(|demand| demand.archetype == "ramp")
+                .count(),
+            6
+        );
+        assert!(!demands.iter().any(|demand| demand.archetype == "void"));
+        assert!(!demands.iter().any(|demand| demand.archetype == "ramp_head"));
+        assert!(!demands.iter().any(|demand| demand.archetype == "room"));
+    }
+
+    #[test]
+    fn ramp_head_is_geometry_free_but_ramp_up_selects_the_prefab() {
+        let placement = |archetype| HexPlacement {
+            coord: observed_hex::HexCoord::default(),
+            space: HexSpace::Hall,
+            archetype,
+            doors: lateral_bit(HexFace::East),
+            up: PortClass::Sealed,
+            down: PortClass::RampOpen,
+        };
+        assert_eq!(
+            placement_tile_archetype(&placement(HexArchetype::RampHead)),
+            None
+        );
+        assert_eq!(
+            placement_tile_archetype(&placement(HexArchetype::RampUp)),
+            Some("ramp")
+        );
     }
 }

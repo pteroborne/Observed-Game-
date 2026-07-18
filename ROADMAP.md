@@ -24,19 +24,19 @@ The shared hex-grid crate: axial `HexCoord`, 8-face `HexFace`, `PortClass`/`Port
 ### Phase 89 — TrenchBroom Tile Pipeline + Tile Lab `[ ]`
 `crates/observed_authoring` (promoted from `trenchbroom_lab`/`rapier_authoring_lab`), the tile schema + manifest, the locked authoring template, seed tiles including a full two-level ramp prefab, and `hex_tile_lab` proving first-person ramp ascent. ([docs/arc_l/phase_89_tile_pipeline_lab.md](docs/arc_l/phase_89_tile_pipeline_lab.md))
 
-### Phase 90 — Solver Verticality & Room Blueprints `[ ]`
-Levels > 1: shaft stacks, paired ramp variants, multi-hex room blueprint stamping with stable `generation_key` identity, tall-formation validation, per-level slice view in the lab. ([docs/arc_l/phase_90_verticality_blueprints.md](docs/arc_l/phase_90_verticality_blueprints.md))
+### Phase 90 — Solver Verticality & Room Blueprints `[x]`
+Levels > 1: shaft stacks, paired ramp variants, multi-hex room blueprint stamping with stable `generation_key` identity, tall-formation validation, per-level slice view in the lab. Verified on the pinned four-level seed `0xa11ce3d000000008`: a full-height wellshaft, a ramp chain climbing three levels, a vertical spawn→exit route, deterministic 100-seed 3D validation, and refreshed four-slice evidence. ([docs/arc_l/phase_90_verticality_blueprints.md](docs/arc_l/phase_90_verticality_blueprints.md))
 
-### Phase 91 — Tile Library Authoring `[ ]`
-The real tile set against the frozen schema — hall families per archetype, ramps in all six directions, shaft segments/caps/landings, room blueprint footprints per role — with the manifest coverage validator green. ([docs/arc_l/phase_91_tile_library.md](docs/arc_l/phase_91_tile_library.md))
+### Phase 91 — Tile Library Authoring `[x]`
+The real tile set against the frozen schema — 1,332 exact-snap tiles covering all 134 geometry-emitting archetype/signature demands per register, ramps in all six directions, the complete shaft segment/cap/landing alphabet, and room blueprint footprints per role. Manifest demand coverage is green; the shared production controller walks every ramp direction without jumping, and the refreshed capture measures a 7.51 m ascent. ([docs/arc_l/phase_91_tile_library.md](docs/arc_l/phase_91_tile_library.md))
 
-### Phase 92 — 3D Hex Facility Lab `[ ]`
-`observed_match::hex_wfc::geometry`: solved world + manifest → tile prefab placement → `ArenaSpec`; the lab grows to 3D free-fly + FPS walkthrough with the 2D step mode retained; collider budget measured. ([docs/arc_l/phase_92_hex_facility_3d.md](docs/arc_l/phase_92_hex_facility_3d.md))
+### Phase 92 — 3D Hex Facility Lab `[x]`
+`observed_match::hex_wfc::geometry` now projects solved worlds and exact manifest prefabs into stable render/collision pieces plus one `ArenaSpec`; the lab retains the 2D step view alongside free-fly, shared-controller Walk mode, exact-collider debug, and reset/relayout synchronization. The production-shaped 28×20×10 audit projected 5,488 non-void cells into 108,332 authored colliders; eight moving controller queries averaged 470 µs per 60 Hz frame. The current full solve took about 10.4 minutes and full-scale Bevy spawn/GPU cost remains unmeasured, both recorded as Phase 94/95 integration risks. ([docs/arc_l/phase_92_hex_facility_3d.md](docs/arc_l/phase_92_hex_facility_3d.md))
 
-### Phase 93 — Relayout / Decoherence Parity `[ ]`
-Multi-tick relayout on hex with blueprint-granularity pins, stable IDs across relayouts, commit-time route re-validation, replay determinism tests, and an animated relayout demo in the lab. ([docs/arc_l/phase_93_relayout_parity.md](docs/arc_l/phase_93_relayout_parity.md))
+### Phase 93 — Relayout / Decoherence Parity `[x]`
+Hex relayout now advances one deterministic attempt per tick with blueprint/ramp/threshold pinning, stable room/corridor/geometry identity, latest-frame route and observation validation, cancellable seed/config-safe work tokens, and a port-preserving register fallback. The 100-seed × 20-pulse corpus produced 264 genuine topology changes across 74 seeds with every pin/route invariant held; the 28×20×10 yield audit left 99.43% of cells free with four rooms observed. The animated lab evidence shows a stable pinned room and atomic topology commit. ([docs/arc_l/phase_93_relayout_parity.md](docs/arc_l/phase_93_relayout_parity.md))
 
-### Phase 94 — Match-Layer Parity: Bots, Routing, Thresholds `[ ]`
+### Phase 94 — Match-Layer Parity: Bots, Routing, Thresholds `[x]`
 Ramp/shaft-aware routing costs, bots physically walking ramps and climbing shafts, threshold/door semantics on blueprint ports, and the headless gate: a bot completes spawn→exit across ramp levels and a shaft, deterministically. ([docs/arc_l/phase_94_match_parity.md](docs/arc_l/phase_94_match_parity.md))
 
 ### Phase 95 — Game Integration & Square Demotion `[ ]`

@@ -21,5 +21,8 @@ ron = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 
 [dev-dependencies]
+# The coverage gate consumes the production solver's exact geometry-emitter
+# demands instead of maintaining a second hand-written alphabet.
+observed_facility = { path = "../observed_facility", default-features = false }
 # The ramp-walkability gate drives the shared controller with abstract intents.
 player_input = { path = "../player_input", default-features = false }

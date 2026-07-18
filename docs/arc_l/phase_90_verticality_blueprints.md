@@ -1,5 +1,10 @@
 # Phase 90 — Solver Verticality & Room Blueprints
 
+**Status: Complete (verified 2026-07-17).** Pinned seed
+`0xa11ce3d000000008` contains a four-level wellshaft and a ramp chain climbing
+three levels; the full solver corpus, workspace tests, Clippy, and refreshed
+four-slice evidence are green.
+
 **Wave 3, parallel with Phase 91.** You own `crates/observed_facility/src/hex_wfc/`
 and `labs/hex_wfc_lab/`. Do not touch `assets/tiles/**` content (Phase 91 owns
 it); the manifest **schema** is frozen — if you need a schema change, stop and

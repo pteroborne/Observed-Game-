@@ -11,8 +11,8 @@ was parent-executed and has no separate brief.
 Wave 0: [86]         (Arc K closeout, clean committed baseline — parent, done)
 Wave 1: [87]         (observed_hex foundation crate — everything depends on it)
 Wave 2: [88 ∥ 89]    (2D hex WFC solver + animated step lab ∥ TrenchBroom tile pipeline + tile lab)
-Wave 3: [90 ∥ 91]    (solver verticality + room blueprints ∥ tile library authoring)
-Wave 4: [92 ∥ 93]    (3D hex facility lab ∥ relayout/decoherence parity)
+Wave 3: [90 ∥ 91]    (solver verticality + room blueprints ∥ tile library authoring, done)
+Wave 4: [92 ∥ 93]    (3D hex facility lab ∥ relayout/decoherence parity, done)
 Wave 5: [94]         (match-layer parity: bots, routing, thresholds)
 Wave 6: [95]         (game integration; hex replaces square; playtest gate)
 ```
@@ -63,8 +63,8 @@ Arc L additions:
 
 ```
 cargo fmt --all
-cargo clippy --workspace --all-targets       # zero warnings — resolve, don't suppress
-cargo test --workspace                        # all green; note count + wall time
+cargo dev-clippy                              # dynamic Bevy linking; zero warnings
+cargo dev-test                                # dynamic Bevy linking; all green
 ```
 
 ## Phase index
@@ -75,9 +75,9 @@ cargo test --workspace                        # all green; note count + wall tim
 | 87 — observed_hex Foundation | [phase_87_observed_hex_foundation.md](phase_87_observed_hex_foundation.md) | 1 | blocks everything |
 | 88 — 2D Hex WFC Solver + Animated Step Lab | [phase_88_hex_wfc_2d_lab.md](phase_88_hex_wfc_2d_lab.md) | 2 | ∥ 89 |
 | 89 — TrenchBroom Tile Pipeline + Tile Lab | [phase_89_tile_pipeline_lab.md](phase_89_tile_pipeline_lab.md) | 2 | ∥ 88; fires the A9 adopt-when trigger |
-| 90 — Solver Verticality & Room Blueprints | [phase_90_verticality_blueprints.md](phase_90_verticality_blueprints.md) | 3 | ∥ 91 |
-| 91 — Tile Library Authoring | [phase_91_tile_library.md](phase_91_tile_library.md) | 3 | ∥ 90; content-only |
-| 92 — 3D Hex Facility Lab | [phase_92_hex_facility_3d.md](phase_92_hex_facility_3d.md) | 4 | ∥ 93; collider budget measured here |
-| 93 — Relayout / Decoherence Parity | [phase_93_relayout_parity.md](phase_93_relayout_parity.md) | 4 | ∥ 92 |
+| 90 — Solver Verticality & Room Blueprints | [phase_90_verticality_blueprints.md](phase_90_verticality_blueprints.md) | 3 | complete; ∥ 91 |
+| 91 — Tile Library Authoring | [phase_91_tile_library.md](phase_91_tile_library.md) | 3 | complete; ∥ 90; content-only |
+| 92 — 3D Hex Facility Lab | [phase_92_hex_facility_3d.md](phase_92_hex_facility_3d.md) | 4 | complete; ∥ 93; collider budget measured |
+| 93 — Relayout / Decoherence Parity | [phase_93_relayout_parity.md](phase_93_relayout_parity.md) | 4 | complete; ∥ 92; production yield measured |
 | 94 — Match-Layer Parity | [phase_94_match_parity.md](phase_94_match_parity.md) | 5 | serial |
 | 95 — Game Integration & Square Demotion | [phase_95_game_integration.md](phase_95_game_integration.md) | 6 | serial; user playtest gate |
