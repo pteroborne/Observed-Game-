@@ -5,10 +5,16 @@ edition = "2024"
 publish = false
 
 [dependencies]
-bevy = { version = "0.18.1", default-features = false, features = ["2d", "png"] }
+bevy = { version = "0.18.1", default-features = false, features = ["2d", "3d", "png"] }
+observed_authoring = { path = "../../crates/observed_authoring" }
+observed_core = { path = "../../crates/observed_core", default-features = false }
 # hex_wfc is unconditional in observed_facility — no `wfc` feature needed.
 observed_facility = { path = "../../crates/observed_facility" }
 observed_hex = { path = "../../crates/observed_hex" }
+observed_match = { path = "../../crates/observed_match", default-features = false }
 # Colors come from the production style crate, never invented locally.
 observed_style = { path = "../../crates/observed_style" }
+observed_traversal = { path = "../../crates/observed_traversal", default-features = false }
+player_input = { path = "../../crates/player_input", default-features = false }
+rapier3d = { version = "0.34", features = ["enhanced-determinism"] }
 serde_json = "1.0"

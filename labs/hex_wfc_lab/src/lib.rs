@@ -1,6 +1,9 @@
 //! Hex WFC lab — the Arc L Phase 90 animated-step showcase.
 
 mod capture;
+mod facility_3d;
+mod plan_input;
+mod relayout_demo;
 
 use std::collections::BTreeMap;
 
@@ -17,7 +20,7 @@ use observed_style::{MarkerRole, SurfaceRole};
 const SCALE: f32 = 5.2;
 const PRESET_SEEDS: [u64; 9] = [
     // Preset 1 is the pinned 3D showcase seed: full-height wellshaft + ramp chain.
-    0xA11C_E3D0_0000_0004,
+    0xA11C_E3D0_0000_0008,
     0xA11C_E3D0_0000_0011,
     0xA11C_E3D0_0000_0023,
     0xA11C_E3D0_0000_002A,
@@ -62,7 +65,7 @@ impl LabState {
         let config = HexWfcConfig {
             cols: 12,
             rows: 9,
-            levels: 4, // 3D config for verticality
+            levels: 4, // accepted Phase 90/P93 plan-view fixture
             min_rooms: 4,
             max_rooms: 8,
             retry_budget: 100,
@@ -147,15 +150,23 @@ pub fn run() {
             ..default()
         }))
         .add_systems(Startup, setup)
-        .add_systems(FixedUpdate, playback)
+        .add_systems(
+            FixedUpdate,
+            playback.run_if(facility_3d::plan_or_relayout_mode_active),
+        )
         .add_systems(
             Update,
-            (handle_input, rebuild_visuals, update_status).chain(),
+            (plan_input::handle, rebuild_visuals, update_status)
+                .chain()
+                .before(relayout_demo::cancel_requested)
+                .run_if(facility_3d::plan_or_relayout_mode_active),
         );
     if let Ok(path) = std::env::var("OBSERVED2_CAPTURE") {
         app.insert_resource(capture::CaptureRun::new(path))
             .add_systems(Update, capture::capture_progress.after(rebuild_visuals));
     }
+    facility_3d::register(&mut app);
+    relayout_demo::register(&mut app);
     app.run();
 }
 
@@ -187,74 +198,6 @@ fn playback(mut state: ResMut<LabState>) {
     if state.playing && !state.finished() {
         let steps = state.steps_per_tick;
         state.advance(steps);
-    }
-}
-
-fn handle_input(keyboard: Res<ButtonInput<KeyCode>>, mut state: ResMut<LabState>) {
-    if keyboard.just_pressed(KeyCode::Space) {
-        state.playing = !state.playing;
-        state.status = if state.playing { "playing" } else { "paused" }.to_string();
-        state.dirty = true;
-    }
-    if keyboard.just_pressed(KeyCode::KeyN) {
-        state.playing = false;
-        state.advance(1);
-        state.status = "single step".to_string();
-    }
-    if keyboard.just_pressed(KeyCode::KeyI) {
-        state.cursor = state.trace.len();
-        state.status = "instant solve".to_string();
-        state.dirty = true;
-    }
-    if keyboard.just_pressed(KeyCode::Equal) || keyboard.just_pressed(KeyCode::NumpadAdd) {
-        state.steps_per_tick = (state.steps_per_tick * 2).min(64);
-        state.status = format!("speed {} steps/tick", state.steps_per_tick);
-        state.dirty = true;
-    }
-    if keyboard.just_pressed(KeyCode::Minus) || keyboard.just_pressed(KeyCode::NumpadSubtract) {
-        state.steps_per_tick = (state.steps_per_tick / 2).max(1);
-        state.status = format!("speed {} steps/tick", state.steps_per_tick);
-        state.dirty = true;
-    }
-    if keyboard.just_pressed(KeyCode::KeyR) {
-        let next = state.world.seed.wrapping_add(1);
-        *state = LabState::new(next);
-        state.status = format!("reset to seed {next:#018x}");
-    }
-    if keyboard.just_pressed(KeyCode::F1) {
-        state.overlay = !state.overlay;
-        state.dirty = true;
-    }
-
-    // PageUp/PageDown & [/] to slice levels
-    if keyboard.just_pressed(KeyCode::PageUp) || keyboard.just_pressed(KeyCode::BracketRight) {
-        state.current_level =
-            (state.current_level + 1).min(state.world.config.levels.saturating_sub(1));
-        state.status = format!("viewing level {}", state.current_level);
-        state.dirty = true;
-    }
-    if keyboard.just_pressed(KeyCode::PageDown) || keyboard.just_pressed(KeyCode::BracketLeft) {
-        state.current_level = state.current_level.saturating_sub(1);
-        state.status = format!("viewing level {}", state.current_level);
-        state.dirty = true;
-    }
-
-    let digits = [
-        KeyCode::Digit1,
-        KeyCode::Digit2,
-        KeyCode::Digit3,
-        KeyCode::Digit4,
-        KeyCode::Digit5,
-        KeyCode::Digit6,
-        KeyCode::Digit7,
-        KeyCode::Digit8,
-        KeyCode::Digit9,
-    ];
-    for (index, key) in digits.into_iter().enumerate() {
-        if keyboard.just_pressed(key) {
-            *state = LabState::new(PRESET_SEEDS[index]);
-            state.status = format!("preset seed {}", index + 1);
-        }
     }
 }
 
@@ -544,5 +487,44 @@ mod tests {
         assert!(has(|s| matches!(s, SolveStep::ForcedCell { .. })));
         assert!(has(|s| matches!(s, SolveStep::Collapsed { .. })));
         assert!(has(|s| matches!(s, SolveStep::Completed { .. })));
+    }
+
+    #[test]
+    fn every_numbered_preset_solves_and_starts_at_a_clean_replay() {
+        for seed in PRESET_SEEDS {
+            let state = LabState::new(seed);
+            assert_eq!(state.world.seed, seed);
+            assert_eq!(state.cursor, 0);
+            assert!(!state.trace.is_empty());
+        }
+    }
+
+    #[test]
+    fn lab_rust_sources_stay_below_the_architecture_size_limit() {
+        fn visit(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(dir).expect("read src tree") {
+                let path = entry.expect("directory entry").path();
+                if path.is_dir() {
+                    visit(&path, files);
+                } else if path.extension().is_some_and(|extension| extension == "rs") {
+                    files.push(path);
+                }
+            }
+        }
+
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut files = Vec::new();
+        visit(&src, &mut files);
+        for file in files {
+            let lines = std::fs::read_to_string(&file)
+                .expect("read Rust source")
+                .lines()
+                .count();
+            assert!(
+                lines < 600,
+                "{} has {lines} lines; split it below 600",
+                file.display()
+            );
+        }
     }
 }

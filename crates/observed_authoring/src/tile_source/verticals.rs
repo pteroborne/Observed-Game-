@@ -9,6 +9,26 @@ use super::geometry::{
 };
 use super::{face_name, register_style};
 
+/// Which vertical openings a lateral shaft landing keeps. The solver can
+/// enter/leave a shaft at a top cap, a bottom cap, or a through segment, so
+/// authored landings cover every one of those exact port signatures.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ShaftVertical {
+    UpOnly,
+    DownOnly,
+    Through,
+}
+
+impl ShaftVertical {
+    fn label(self) -> &'static str {
+        match self {
+            Self::UpOnly => "up",
+            Self::DownOnly => "down",
+            Self::Through => "through",
+        }
+    }
+}
+
 /// Two-level ramp rising from the door on `exit_face.opposite()` to the
 /// upper-level doorway on `exit_face`. Explicit prefab per direction — the
 /// frozen schema has no tile rotation. Variant = exit face index.
@@ -101,27 +121,74 @@ pub fn shaft_bottom_cap_map(register: &str) -> String {
 /// Shaft landing: an open segment with a lateral door and a bridge floor
 /// reaching it. Variant = door face index.
 pub fn shaft_landing_map(register: &str, door_face: HexFace) -> String {
+    shaft_access_map(
+        register,
+        &[door_face],
+        ShaftVertical::Through,
+        door_face.index() as u16,
+    )
+}
+
+/// A shaft access tile with one or two lateral doors and an exact vertical
+/// opening class. Existing through/one-door variants call this helper too, so
+/// their committed source remains byte-identical while the solver's complete
+/// shaft alphabet uses the same geometry construction.
+pub(crate) fn shaft_access_map(
+    register: &str,
+    door_faces: &[HexFace],
+    vertical: ShaftVertical,
+    variant: u16,
+) -> String {
+    debug_assert!((1..=2).contains(&door_faces.len()));
+    debug_assert!(door_faces.iter().all(|face| face.is_lateral()));
     let style = register_style(register);
     let h = level_units();
     let mut brushes = shaft_ledges();
-    let (a, b) = tb_edge(door_face);
-    let (ia_48, ib_48) = offset_inward(a, b, 48.0);
-    let inward = [ia_48[0] - a[0], ia_48[1] - a[1]];
-    let mid = [(a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5];
-    let bridge_hint = [mid[0] + inward[0] * 0.5, mid[1] + inward[1] * 0.5];
-    brushes += &general_prism_brush(&[a, b, ib_48, ia_48], 0.0, FLOOR_TOP, bridge_hint);
+    if vertical != ShaftVertical::UpOnly {
+        for &door_face in door_faces {
+            let (a, b) = tb_edge(door_face);
+            let (ia_48, ib_48) = offset_inward(a, b, 48.0);
+            let inward = [ia_48[0] - a[0], ia_48[1] - a[1]];
+            let mid = [(a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5];
+            let bridge_hint = [mid[0] + inward[0] * 0.5, mid[1] + inward[1] * 0.5];
+            brushes += &general_prism_brush(&[a, b, ib_48, ia_48], 0.0, FLOOR_TOP, bridge_hint);
+        }
+    }
     for face in HexFace::LATERAL {
-        if face == door_face {
+        if door_faces.contains(&face) {
             brushes += &door_wall(face, 0.0, h, FLOOR_TOP, DOOR_TOP, style.trim_height);
         } else {
             brushes += &wall_brush(face, 0.0, h);
         }
     }
-    let mut out = format!("// Shaft landing door {}.\n", face_name(door_face));
+    match vertical {
+        ShaftVertical::UpOnly => brushes += &hex_slab_brush(0.0, FLOOR_TOP),
+        ShaftVertical::DownOnly => brushes += &hex_slab_brush(h - FLOOR_TOP, h),
+        ShaftVertical::Through => {}
+    }
+    let door_names = door_faces
+        .iter()
+        .map(|&face| face_name(face))
+        .collect::<Vec<_>>();
+    let mut out = if vertical == ShaftVertical::Through && door_faces.len() == 1 {
+        format!("// Shaft landing door {}.\n", door_names[0])
+    } else {
+        format!(
+            "// Shaft landing {} doors {}.\n",
+            vertical.label(),
+            door_names.join(", ")
+        )
+    };
     out += &worldspawn(&brushes);
-    out += &tile_meta("shaft_landing", register, door_face.index() as u16, 1);
-    out += &tile_port("up", "shaft_open");
-    out += &tile_port("down", "shaft_open");
-    out += &tile_port(face_name(door_face), "door");
+    out += &tile_meta("shaft_landing", register, variant, 1);
+    if matches!(vertical, ShaftVertical::UpOnly | ShaftVertical::Through) {
+        out += &tile_port("up", "shaft_open");
+    }
+    if matches!(vertical, ShaftVertical::DownOnly | ShaftVertical::Through) {
+        out += &tile_port("down", "shaft_open");
+    }
+    for door in door_names {
+        out += &tile_port(door, "door");
+    }
     out
 }

@@ -8,7 +8,8 @@ use super::geometry::{FLOOR_TOP, hex_slab_brush, level_units, tile_meta, wall_br
 use super::halls::{hall_cap_map, hall_corner_map, hall_junction_map, hall_straight_map};
 use super::rooms::{room_atrium_lower_map, room_atrium_upper_map, room_single_map, room_wing_map};
 use super::verticals::{
-    ramp_map, shaft_bottom_cap_map, shaft_landing_map, shaft_segment_map, shaft_top_cap_map,
+    ShaftVertical, ramp_map, shaft_access_map, shaft_bottom_cap_map, shaft_landing_map,
+    shaft_segment_map, shaft_top_cap_map,
 };
 use super::{REGISTERS, face_name};
 
@@ -201,6 +202,70 @@ pub(crate) fn library() -> Vec<GeneratedTile> {
                 ports,
             );
         }
+        // The solver can terminate or pass a shaft at a one/two-door access
+        // cell. Variants 0..5 above stay the original through/one-door keys;
+        // the missing exact signatures occupy the contiguous 6..62 range.
+        let mut shaft_variant = 6u16;
+        for vertical in [ShaftVertical::UpOnly, ShaftVertical::DownOnly] {
+            for face in HexFace::LATERAL {
+                let faces = [face];
+                let mut ports = match vertical {
+                    ShaftVertical::UpOnly => vec![("up", "shaft_open")],
+                    ShaftVertical::DownOnly => vec![("down", "shaft_open")],
+                    ShaftVertical::Through => unreachable!(),
+                };
+                ports.extend(door_ports(&faces));
+                push(
+                    format!("{reg}_shaft_landing_{shaft_variant}.map"),
+                    shaft_access_map(reg, &faces, vertical, shaft_variant),
+                    "shaft_landing",
+                    reg,
+                    shaft_variant,
+                    1,
+                    ports,
+                );
+                shaft_variant += 1;
+            }
+            for i in 0..6 {
+                for j in (i + 1)..6 {
+                    let faces = [HexFace::LATERAL[i], HexFace::LATERAL[j]];
+                    let mut ports = match vertical {
+                        ShaftVertical::UpOnly => vec![("up", "shaft_open")],
+                        ShaftVertical::DownOnly => vec![("down", "shaft_open")],
+                        ShaftVertical::Through => unreachable!(),
+                    };
+                    ports.extend(door_ports(&faces));
+                    push(
+                        format!("{reg}_shaft_landing_{shaft_variant}.map"),
+                        shaft_access_map(reg, &faces, vertical, shaft_variant),
+                        "shaft_landing",
+                        reg,
+                        shaft_variant,
+                        1,
+                        ports,
+                    );
+                    shaft_variant += 1;
+                }
+            }
+        }
+        for i in 0..6 {
+            for j in (i + 1)..6 {
+                let faces = [HexFace::LATERAL[i], HexFace::LATERAL[j]];
+                let mut ports = vec![("up", "shaft_open"), ("down", "shaft_open")];
+                ports.extend(door_ports(&faces));
+                push(
+                    format!("{reg}_shaft_landing_{shaft_variant}.map"),
+                    shaft_access_map(reg, &faces, ShaftVertical::Through, shaft_variant),
+                    "shaft_landing",
+                    reg,
+                    shaft_variant,
+                    1,
+                    ports,
+                );
+                shaft_variant += 1;
+            }
+        }
+        debug_assert_eq!(shaft_variant, 63);
         // Rooms: single, blueprint strip / triangle / diamond cells, atrium.
         push(
             format!("{reg}_room_single.map"),

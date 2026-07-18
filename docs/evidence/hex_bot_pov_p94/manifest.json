@@ -1,0 +1,16 @@
+{
+  "capture": "bot_pov",
+  "escaped": true,
+  "final_tick": 2866,
+  "frames": 288,
+  "grid_3d": [
+    12,
+    9,
+    5
+  ],
+  "lab": "hex_wfc_lab",
+  "note": "objective bot spawn->exit; route crosses two ramp levels and two shafts",
+  "phase": 94,
+  "seed": "0xa11c000000000000",
+  "steps_per_frame": 10
+}

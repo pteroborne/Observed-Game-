@@ -10,7 +10,9 @@
 //! direction so every key stays unique):
 //! - `hall_straight`: `axis * 3 + interior` (axis 0 = E/W, 1 = SE/NW,
 //!   2 = SW/NE; interior 0 = plain, 1 = colonnade, 2 = pressure).
-//! - `hall_cap`, `ramp`, `shaft_landing`: the door / exit face index (0..5).
+//! - `hall_cap`, `ramp`: the door / exit face index (0..5).
+//! - `shaft_landing`: original through/one-door tiles retain face indices
+//!   0..5; the complete one/two-door cap/through alphabet occupies 6..62.
 //! - `hall_corner`: `low_face * 6 + high_face`.
 //! - `hall_junction`: bitmask of open faces (`1 << face_index`).
 //! - shafts and rooms: 0 (unique per archetype already).

@@ -30,35 +30,38 @@ Day-to-day working reference and command runbook for agents and developers.
 ### Running Labs
 Each prototype lab launches independently:
 ```powershell
-cargo run -p movement_lab      # ...or any other lab listed in Catalogue.md
+cargo dev-run -p movement_lab      # ...or any other lab listed in Catalogue.md
 ```
 
 ### Running the Game
 To run the main game:
 ```powershell
-cargo run -p observed_game
+cargo dev-run -p observed_game
 ```
+
+`dev-run` enables Bevy dynamic linking for faster iteration. Use ordinary
+`cargo run` when validating a standalone/release-style executable.
 
 ### Verifying Changes
 Run these commands before claiming completion of any task (warnings must be resolved, not suppressed):
 ```powershell
 cargo fmt --all
-cargo clippy --workspace --all-targets
-cargo test --workspace
+cargo dev-clippy
+cargo dev-test
 ```
 *Note: Make sure resetting the lab removes all of its Bevy entities/resources without leaking state.*
 
 ### Capture Evidence (Showcase screenshot)
 Renders the lab/showcase, saves a PNG, and exits:
 ```powershell
-$env:OBSERVED2_CAPTURE = "docs/evidence/<lab_name>.png"; cargo run -p <lab_name>
+$env:OBSERVED2_CAPTURE = "docs/evidence/<lab_name>.png"; cargo dev-run -p <lab_name>
 ```
 
 ### Capture Bot POV walkthrough GIF
 To build interactive loopable GIFs for evidence using FFmpeg:
 1. Run bot POV capture:
    ```powershell
-   $env:OBSERVED2_CAPTURE_BOT = "docs/evidence/bot_pov"; cargo run -p observed_game
+   $env:OBSERVED2_CAPTURE_BOT = "docs/evidence/bot_pov"; cargo dev-run -p observed_game
    ```
 2. Compile frames into an optimized GIF using FFmpeg:
    ```powershell

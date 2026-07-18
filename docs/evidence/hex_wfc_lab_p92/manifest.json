@@ -1,0 +1,35 @@
+{
+  "colliders": 10951,
+  "grid_2d": [
+    12,
+    9,
+    4
+  ],
+  "grid_3d": [
+    12,
+    9,
+    5
+  ],
+  "lab": "hex_wfc_lab",
+  "legend": {
+    "blue": "hall / traversal",
+    "bright_cyan": "ramp ascent",
+    "dark": "rhombus boundary shell",
+    "gold": "room / decision place",
+    "orange": "wellshaft"
+  },
+  "phase": 92,
+  "ramp_heads_baked_by_low_prefab": 39,
+  "room_blueprints": 6,
+  "seed": "0xa11ce3d000000008",
+  "shots": [
+    "hall_chain.png",
+    "ramp_mid_slope.png",
+    "wellshaft_down.png",
+    "collider_debug.png",
+    "plan_2d.png"
+  ],
+  "wellshaft_levels": 5,
+  "wellshaft_rim_drop_m": 32.0,
+  "wellshaft_structural_depth_m": 40.0
+}

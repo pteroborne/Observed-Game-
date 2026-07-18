@@ -1,4 +1,5 @@
 use glam::{Vec2, Vec3};
+use observed_facility::hex_wfc::geometry_demands;
 use observed_hex::{HexFace, PortClass, PortSignature, TILE_LEVEL_HEIGHT, face_edge};
 use observed_traversal::rapier_controller::{RapierTraversalScene, step_character};
 use observed_traversal::{FpsBody, FpsConfig};
@@ -170,85 +171,35 @@ fn manifest_keys_are_unique_and_entries_match_their_maps() {
     }
 }
 
-/// Every register covers the full demand alphabet expressible today: all door
-/// combinations for halls, every ramp direction, the shaft family, and the
-/// room tiles.
+/// Every register covers the production solver's exact geometry-emitter
+/// contract. Matching includes semantic archetype as well as signature: a hall
+/// with coincidentally equal ports cannot stand in for an authored room wing or
+/// shaft landing.
 #[test]
-fn every_register_covers_the_full_demand_alphabet() {
+fn every_register_covers_the_production_geometry_demands() {
     let manifest = Manifest::from_ron(&tile_source::manifest_ron()).expect("manifest parses");
+    let demands = geometry_demands();
+    assert_eq!(demands.len(), 134, "geometry-demand alphabet drifted");
     let mut missing: Vec<String> = Vec::new();
-    let mut require = |archetype: &str, reg: &str, sig: PortSignature| {
-        if !manifest.tiles.iter().any(|t| {
-            t.key.archetype == archetype
-                && t.key.register == reg
-                && t.declared_signature().ok() == Some(sig)
-        }) {
-            missing.push(format!("{archetype}/{reg}/{sig:?}"));
-        }
-    };
-    let lat = HexFace::LATERAL;
     for &reg in tile_source::REGISTERS {
-        for i in 0..6 {
-            require("hall_cap", reg, signature(&doors(&[lat[i]])));
-            require(
-                "ramp",
-                reg,
-                signature(&[
-                    (lat[i].opposite(), PortClass::Door),
-                    (HexFace::Up, PortClass::RampOpen),
-                ]),
-            );
-            require(
-                "shaft_landing",
-                reg,
-                signature(&[
-                    (HexFace::Up, PortClass::ShaftOpen),
-                    (HexFace::Down, PortClass::ShaftOpen),
-                    (lat[i], PortClass::Door),
-                ]),
-            );
-            for j in (i + 1)..6 {
-                let archetype = if j == i + 3 {
-                    "hall_straight"
-                } else {
-                    "hall_corner"
-                };
-                require(archetype, reg, signature(&doors(&[lat[i], lat[j]])));
-                for k in (j + 1)..6 {
-                    require(
-                        "hall_junction",
-                        reg,
-                        signature(&doors(&[lat[i], lat[j], lat[k]])),
-                    );
-                    for l in (k + 1)..6 {
-                        require(
-                            "hall_junction",
-                            reg,
-                            signature(&doors(&[lat[i], lat[j], lat[k], lat[l]])),
-                        );
-                    }
-                }
+        for demand in &demands {
+            if !manifest.tiles.iter().any(|tile| {
+                tile.key.archetype == demand.archetype
+                    && tile.key.register == reg
+                    && tile.declared_signature().ok() == Some(demand.signature)
+            }) {
+                missing.push(format!("{}/{reg}/{:?}", demand.archetype, demand.signature));
             }
         }
-        require(
-            "shaft",
-            reg,
-            signature(&[
-                (HexFace::Up, PortClass::ShaftOpen),
-                (HexFace::Down, PortClass::ShaftOpen),
-            ]),
-        );
-        require(
-            "shaft_top",
-            reg,
-            signature(&[(HexFace::Down, PortClass::ShaftOpen)]),
-        );
-        require(
-            "shaft_bottom",
-            reg,
-            signature(&[(HexFace::Up, PortClass::ShaftOpen)]),
-        );
-        // Straight halls carry all three interior readings per axis.
+        let shaft_landings = manifest
+            .tiles
+            .iter()
+            .filter(|tile| tile.key.archetype == "shaft_landing" && tile.key.register == reg)
+            .count();
+        assert_eq!(shaft_landings, 63, "{reg} shaft signature coverage");
+
+        // Straight halls still carry all three interior readings per axis even
+        // though geometry coverage needs only one tile per exact signature.
         let straights = manifest
             .tiles
             .iter()
@@ -257,6 +208,7 @@ fn every_register_covers_the_full_demand_alphabet() {
         assert_eq!(straights, 9, "{reg} straight interiors");
     }
     assert!(missing.is_empty(), "missing tiles: {missing:#?}");
+    assert_eq!(manifest.tiles.len(), 1_332, "library-size drift");
 }
 
 /// The room blueprint cells match the Phase 90 alignment note
@@ -357,16 +309,18 @@ fn the_shared_controller_walks_the_ramp_up_a_full_level() {
     );
 }
 
-/// Phase 91: the diagonal-direction ramp prefabs are just as walkable — the
-/// controller climbs the SouthWest-exit ramp entering through its NorthEast
-/// door.
+/// Phase 91: every authored direction is walkable with the shared production
+/// controller. This is deliberately a six-direction corpus rather than an
+/// assumption that rotated brush geometry remains equivalent.
 #[test]
-fn the_shared_controller_walks_a_diagonal_ramp_too() {
-    let map = tile_source::ramp_map("megastructure", HexFace::SouthWest);
-    let (rise, jumped) = walk_ramp_and_measure_rise(&map, HexFace::NorthEast);
-    assert!(!jumped, "diagonal ascent must be plain walking");
-    assert!(
-        rise >= TILE_LEVEL_HEIGHT - 0.6,
-        "controller only climbed {rise:.2} m on the diagonal ramp"
-    );
+fn the_shared_controller_walks_all_six_ramp_directions() {
+    for exit in HexFace::LATERAL {
+        let map = tile_source::ramp_map("megastructure", exit);
+        let (rise, jumped) = walk_ramp_and_measure_rise(&map, exit.opposite());
+        assert!(!jumped, "{exit:?} ascent must be plain walking");
+        assert!(
+            rise >= TILE_LEVEL_HEIGHT - 0.6,
+            "controller only climbed {rise:.2} m on the {exit:?} ramp"
+        );
+    }
 }

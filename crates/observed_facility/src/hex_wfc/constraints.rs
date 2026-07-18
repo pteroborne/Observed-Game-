@@ -118,9 +118,16 @@ fn stamp_at(
 /// `Exit` at spawn/exit, then pool roles over a greedy blue-noise sweep of an
 /// rng-salted coordinate order. Footprints never overlap or touch laterally,
 /// and anchors keep `min_room_distance` structurally.
-pub(super) fn stamp_blueprints(config: HexWfcConfig, rng: &mut SplitMix) -> Vec<StampedBlueprint> {
+/// Stamp around room blueprints frozen by observation. Locked stamps retain
+/// their exact role, anchor, footprint, and stamp ID; new stamps receive IDs
+/// above the previous maximum so identity is never inferred from vector order.
+pub(super) fn stamp_blueprints_with_pins(
+    config: HexWfcConfig,
+    rng: &mut SplitMix,
+    locked: &[StampedBlueprint],
+) -> Vec<StampedBlueprint> {
     let span = (config.max_rooms - config.min_rooms).max(1) as u64;
-    let target = config.min_rooms + (rng.next_u64() % span) as usize;
+    let target = (config.min_rooms + (rng.next_u64() % span) as usize).max(locked.len());
 
     let mut pool = vec![
         RoomRole::Decision,
@@ -139,23 +146,35 @@ pub(super) fn stamp_blueprints(config: HexWfcConfig, rng: &mut SplitMix) -> Vec<
     let mut coords: Vec<HexCoord> = all_coords(config).collect();
     coords.sort_by_key(|&coord| SplitMix::new(coord_key(coord) ^ salt).next_u64());
 
-    let mut stamped: Vec<StampedBlueprint> = Vec::new();
-    let mut occupied: BTreeSet<HexCoord> = BTreeSet::new();
-    let mut anchors: Vec<HexCoord> = Vec::new();
+    let mut stamped: Vec<StampedBlueprint> = locked.to_vec();
+    let mut occupied: BTreeSet<HexCoord> = locked
+        .iter()
+        .flat_map(|blueprint| blueprint.cells.iter().copied())
+        .collect();
+    let mut anchors: Vec<HexCoord> = locked.iter().map(|blueprint| blueprint.anchor).collect();
+    let mut next_id = locked
+        .iter()
+        .map(|blueprint| blueprint.id)
+        .max()
+        .map_or(0, |id| id.wrapping_add(1));
 
     for (role, anchor) in [
         (RoomRole::Start, config.spawn()),
         (RoomRole::Exit, config.exit()),
     ] {
+        if stamped.iter().any(|blueprint| blueprint.role == role) {
+            continue;
+        }
         if let Some(cells) = stamp_at(role, anchor, false, config, &occupied, &anchors) {
             occupied.extend(cells.iter().copied());
             anchors.push(anchor);
             stamped.push(StampedBlueprint {
-                id: stamped.len() as u32,
+                id: next_id,
                 role,
                 anchor,
                 cells,
             });
+            next_id = next_id.wrapping_add(1);
         }
     }
 
@@ -163,16 +182,20 @@ pub(super) fn stamp_blueprints(config: HexWfcConfig, rng: &mut SplitMix) -> Vec<
     while stamped.len() < target && pool_index < pool.len() {
         let role = pool[pool_index];
         pool_index += 1;
+        if stamped.iter().any(|blueprint| blueprint.role == role) {
+            continue;
+        }
         for &anchor in &coords {
             if let Some(cells) = stamp_at(role, anchor, true, config, &occupied, &anchors) {
                 occupied.extend(cells.iter().copied());
                 anchors.push(anchor);
                 stamped.push(StampedBlueprint {
-                    id: stamped.len() as u32,
+                    id: next_id,
                     role,
                     anchor,
                     cells,
                 });
+                next_id = next_id.wrapping_add(1);
                 break;
             }
         }

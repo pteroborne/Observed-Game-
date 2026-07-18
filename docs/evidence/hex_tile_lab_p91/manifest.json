@@ -14,7 +14,11 @@
     "megastructure/hall_junction/v21",
     "megastructure/hall_junction/v15",
     "megastructure/ramp/v0",
+    "megastructure/ramp/v1",
     "megastructure/ramp/v2",
+    "megastructure/ramp/v3",
+    "megastructure/ramp/v4",
+    "megastructure/ramp/v5",
     "megastructure/shaft/v0",
     "megastructure/shaft_top/v0",
     "megastructure/shaft_bottom/v0",
@@ -30,8 +34,8 @@
   "lab": "hex_tile_lab",
   "library_tiles": 819,
   "ramp_gate_passed": true,
-  "ramp_height_gain_m": 7.544325828552246,
-  "ramp_max_feet_m": 8.494325637817383,
+  "ramp_height_gain_m": 7.508233070373535,
+  "ramp_max_feet_m": 8.458232879638672,
   "ramp_start_feet_m": 0.9499999284744263,
   "walk_ramp": "megastructure/ramp/v2"
 }
