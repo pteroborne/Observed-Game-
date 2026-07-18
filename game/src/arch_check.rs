@@ -106,9 +106,41 @@ fn sim_never_imports_presentation() {
     );
 }
 
-/// Arc K keeps agent-owned production modules reviewable. The scope is deliberately
-/// limited to the new canonical full-WFC paths so unrelated legacy fixtures can be
-/// retired independently instead of weakening this ratchet.
+/// The hex sim adapter (`hex_wfc/sim.rs`) owns match construction and stepping. It reads
+/// simulation crates only; like `full_wfc/sim.rs` it must never reach into presentation
+/// (`crate::view` / `crate::screens`). The rest of `hex_wfc/` is the presentation shell
+/// that reads the sim, never the reverse.
+#[test]
+fn hex_sim_never_imports_presentation() {
+    let sim = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join("hex_wfc")
+        .join("sim.rs");
+    let text = fs::read_to_string(&sim).expect("hex_wfc sim source is readable");
+    let mut offenders = Vec::new();
+    let mut in_test_scope = false;
+    for (i, line) in text.lines().enumerate() {
+        if line.contains("#[cfg(test)]") {
+            in_test_scope = true;
+        }
+        let code = line.trim_start();
+        if in_test_scope || code.starts_with("//") {
+            continue;
+        }
+        if code.contains("crate::view") || code.contains("crate::screens") {
+            offenders.push(format!("{}:{}: {}", sim.display(), i + 1, line.trim()));
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "hex_wfc/sim.rs must stay presentation-free (the view reads sim, never the reverse):\n{}",
+        offenders.join("\n")
+    );
+}
+
+/// Arc K/L keep agent-owned production modules reviewable. The scope is the canonical
+/// full-WFC and hex-WFC paths so unrelated legacy fixtures can be retired independently
+/// instead of weakening this ratchet.
 #[test]
 fn full_wfc_production_files_stay_under_six_hundred_lines() {
     let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -119,6 +151,10 @@ fn full_wfc_production_files_stay_under_six_hundred_lines() {
         workspace.join("game/src/full_wfc"),
         workspace.join("crates/observed_facility/src/full_wfc"),
         workspace.join("crates/observed_match/src/full_wfc"),
+        // Only the game-side hex shell is agent-owned by this arc. The Phase 90–94
+        // solver/match crates predate this ratchet (`hex_wfc/collapse.rs` is already
+        // 604 lines) and are frozen as the stable substrate; they are not in scope.
+        workspace.join("game/src/hex_wfc"),
     ];
     let mut offenders = Vec::new();
     for root in roots {

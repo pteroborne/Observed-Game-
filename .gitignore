@@ -3,6 +3,7 @@
 .claude/
 docs/evidence/bot_pov/bot_pov_*.png
 docs/evidence/bot_pov/palette.png
+docs/evidence/hex_wfc/relayout/frame_*.png
 docs/evidence/debug_coercion*/
 docs/evidence/visual_audit_camera_rooms/
 docs/evidence/visual_audit_topdown/

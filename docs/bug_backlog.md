@@ -55,6 +55,32 @@ change, not a regeneration; the palette itself is fine. Look at:
 (bed sink levels vs. cue playback volumes), and confirm the settings sliders
 (master/SFX/music) still scale sensibly around the new defaults.
 
+### 8. Hex lighting is washed out before its semantic rig takes effect
+**Unscheduled; candidate opener for the post-Arc-L polish/performance arc.**
+**Found 2026-07-18 during the Phase 95 closure playtest.** The first visible
+hex-game frames look washed out before the hex-specific lighting rules pop in;
+once the semantic rig is active, the intended presentation reads much better.
+Treat this as initialization/staging correctness, not a request for ad-hoc
+colors: inspect `game/src/hex_wfc/view/lighting.rs`, state-enter ordering, camera
+HDR/tonemapping, fog, and material readiness. The acceptance gate is that the
+first player-visible frame already uses the correct `observed_style`-owned hex
+lighting treatment, with no default-rig flash or exposure transition.
+
+### 9. Hex mutation commit stalls the whole game
+**Unscheduled; candidate centerpiece for the post-Arc-L polish/performance arc.**
+**Found 2026-07-18 during the Phase 95 closure playtest.** When a relayout
+commits, the whole game visibly freezes while mutation geometry/state is rebuilt
+and synchronized. Phase 93 already advances search attempts deterministically
+over multiple ticks; the remaining hitch therefore needs profiling across the
+commit, geometry snapshot, collider/render streaming, and entity synchronization
+paths. Explore bounded continuous work — dirty-cell deltas, queued geometry and
+collider projection, per-frame budgets, or equivalent — while retaining an
+atomic authoritative topology commit. Visible/occupied/observed/pinned geometry
+must remain stable, headless and interactive digests must agree, and replay
+results must remain deterministic. The acceptance gate should include measured
+frame-time bounds on a production `28 x 20 x 10` relayout, not merely a smaller
+fixture.
+
 ## Minor / hygiene
 
 **Scheduled: Arc H Phase 61 (as-landed notes).**

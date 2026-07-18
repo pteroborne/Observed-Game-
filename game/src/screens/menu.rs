@@ -454,34 +454,38 @@ pub(crate) fn menu_activate(
         MenuAction::Goto(state) => next.set(state),
         MenuAction::StartRun => {
             let seed = crate::flow::launch_seed();
-            info!("MATCH_START mode=full_wfc seed={seed}");
+            let target = crate::flow::play_target_state();
+            info!("MATCH_START mode=hex seed={seed} target={target:?}");
             commands.insert_resource(crate::flow::ActiveMatchSeed(seed));
             commands.remove_resource::<SpectatorBot>();
-            next.set(GameState::FullWfc);
+            next.set(target);
         }
         MenuAction::Rematch => {
             let previous = active_seed
                 .as_deref()
                 .map_or(crate::flow::MATCH_SEED, |seed| seed.0);
             let seed = crate::flow::rematch_seed(previous);
-            info!("MATCH_START mode=rematch seed={seed}");
+            let target = crate::flow::play_target_state();
+            info!("MATCH_START mode=rematch seed={seed} target={target:?}");
             commands.insert_resource(crate::flow::ActiveMatchSeed(seed));
             commands.remove_resource::<SpectatorBot>();
-            next.set(GameState::FullWfc);
+            next.set(target);
         }
         MenuAction::Launch => {
             let seed = crate::flow::launch_seed();
-            info!("MATCH_START mode=play seed={seed}");
+            let target = crate::flow::play_target_state();
+            info!("MATCH_START mode=play seed={seed} target={target:?}");
             commands.insert_resource(crate::flow::ActiveMatchSeed(seed));
             commands.remove_resource::<SpectatorBot>();
-            next.set(GameState::FullWfc);
+            next.set(target);
         }
         MenuAction::Spectate => {
             let seed = crate::flow::launch_seed();
-            info!("MATCH_START mode=spectate seed={seed}");
+            let target = crate::flow::play_target_state();
+            info!("MATCH_START mode=spectate seed={seed} target={target:?}");
             commands.insert_resource(crate::flow::ActiveMatchSeed(seed));
             commands.insert_resource(SpectatorBot::for_seed(seed));
-            next.set(GameState::FullWfc);
+            next.set(target);
         }
         MenuAction::Equip(id) => {
             if career.profile.equip(id) {

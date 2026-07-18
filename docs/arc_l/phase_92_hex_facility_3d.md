@@ -94,9 +94,15 @@ The moving eight-body batch is comfortably below the `16,667 us` CPU query
 budget, so Phase 92 preserves exact authored collision instead of merging hulls.
 This benchmark excludes the WFC solve, projection, scene construction, Bevy
 entity spawning, and GPU rendering from the per-frame number. In particular,
-the roughly 10.4-minute production WFC solve is an explicit remaining generation
-cost, and full-scale Bevy spawning/rendering of 108k pieces has not been claimed
-as measured.
+the roughly 10.4-minute production WFC solve was an explicit remaining generation
+cost, and full-scale Bevy spawning/rendering of 108k pieces had not yet been
+claimed as measured.
+
+> **Phase 95 correction (2026-07-18):** the 622,817 ms number above is retained as
+> the historical Phase 92 benchmark, not the current solver cost. Subsequent solver
+> work reduced the same production-shaped solve to roughly 0.8 seconds, so the
+> canonical game now constructs `HexWfcConfig::arc_default()` on its setup path.
+> Full-scale Bevy streaming/render cost is exercised by the Phase 95 capture path.
 
 ### Evidence and verification
 

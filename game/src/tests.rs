@@ -1633,7 +1633,7 @@ fn results_screen_renders_every_outcome_shape() {
 }
 
 #[test]
-fn results_rematch_launches_full_wfc_directly_with_a_new_seed() {
+fn results_rematch_launches_hex_wfc_directly_with_a_new_seed() {
     let mut app = test_app();
     let previous = 99_u64;
     app.insert_resource(flow::ActiveMatchSeed(previous));
@@ -1660,7 +1660,8 @@ fn results_rematch_launches_full_wfc_directly_with_a_new_seed() {
 
     assert_eq!(
         *app.world().resource::<State<GameState>>().get(),
-        GameState::FullWfc
+        GameState::HexWfc,
+        "since Arc L Phase 95 the canonical Play/Rematch flow is the hex facility"
     );
     assert_ne!(
         app.world().resource::<flow::ActiveMatchSeed>().0,
@@ -1738,7 +1739,7 @@ fn equipping_a_cosmetic_from_the_loadout_persists_in_the_career() {
 }
 
 #[test]
-fn play_launches_the_continuous_full_wfc_match() {
+fn play_launches_the_canonical_hex_wfc_match() {
     let mut app = test_app();
     go(&mut app, GameState::MainMenu);
     app.world_mut().resource_mut::<screens::MenuCursor>().0 = 0;
@@ -1750,12 +1751,13 @@ fn play_launches_the_continuous_full_wfc_match() {
 
     assert_eq!(
         *app.world().resource::<State<GameState>>().get(),
-        GameState::FullWfc
+        GameState::HexWfc,
+        "since Arc L Phase 95 the default Play flow is the hex facility"
     );
     assert!(
         !app.world()
             .contains_resource::<crate::sim::state::SpectatorBot>(),
-        "Full WFC owns its eight-player command simulation, not the legacy spectator resource"
+        "the hex race owns its multi-runner command simulation, not the legacy spectator resource"
     );
 }
 
@@ -4775,4 +4777,195 @@ fn phase75_corpus_parity_lifecycle() {
         !app.world().contains_resource::<TeleportState>(),
         "TeleportState must be despawned on Match exit"
     );
+}
+
+/// Arc L Phase 95 gates for the canonical hex facility Play flow.
+mod hex_wfc_gates {
+    use super::*;
+    use crate::hex_wfc::sim::{HexWfcRuntime, load_prototypes};
+    use crate::sim::state::SpectatorBot;
+    use observed_match::hex_wfc::{HexInputFrame, HexMatchConfig, HexMatchStatus, HexWfcMatch};
+
+    /// A solvable compact showcase match near `base` (mirrors the adapter's offset
+    /// search so a rare contradiction seed cannot flake the test).
+    fn solvable_showcase(base: u64) -> HexWfcMatch {
+        let protos = load_prototypes();
+        (0..64u64)
+            .find_map(|offset| {
+                HexWfcMatch::new(
+                    base.wrapping_add(offset),
+                    HexMatchConfig::default(),
+                    &protos,
+                )
+                .ok()
+            })
+            .expect("the showcase corpus contains a solvable nearby seed")
+    }
+
+    /// Step a match one tick the same way `sim::step_runtime` does: every actor crosses
+    /// the `bot_command` boundary. Returns the post-step snapshot digest.
+    fn step_all_bots(game: &mut HexWfcMatch) -> u64 {
+        let mut frame = HexInputFrame {
+            tick: game.tick + 1,
+            ..Default::default()
+        };
+        for id in game.players.keys().copied().collect::<Vec<_>>() {
+            frame.commands.insert(id, game.bot_command(id));
+        }
+        game.step(&frame);
+        game.snapshot().digest
+    }
+
+    fn headless_digests(mut game: HexWfcMatch, ticks: usize) -> Vec<u64> {
+        let mut out = vec![game.snapshot().digest];
+        for _ in 0..ticks {
+            out.push(step_all_bots(&mut game));
+        }
+        out
+    }
+
+    /// Gate 2 (headless): same seed + inputs ⇒ byte-identical per-tick digest sequence.
+    #[test]
+    fn hex_headless_is_deterministic() {
+        let a = headless_digests(solvable_showcase(flow::MATCH_SEED), 300);
+        let b = headless_digests(solvable_showcase(flow::MATCH_SEED), 300);
+        assert_eq!(a, b, "same seed + inputs must yield identical digests");
+        assert!(
+            a.windows(2).any(|pair| pair[0] != pair[1]),
+            "the soak/digest fixture must actually advance state"
+        );
+    }
+
+    /// Gate 2 (interactive): the fixed-step Bevy adapter produces the exact same digest
+    /// sequence as a headless clone stepped identically. Proves headless and interactive
+    /// agree on hex.
+    #[test]
+    fn hex_headless_and_interactive_agree() {
+        let mut app = test_app();
+        app.world_mut()
+            .insert_resource(flow::ActiveMatchSeed(flow::MATCH_SEED));
+        app.world_mut()
+            .insert_resource(SpectatorBot::for_seed(flow::MATCH_SEED));
+        go(&mut app, GameState::HexWfc);
+
+        // Fork the authoritative state right after setup; step the fork headlessly and
+        // the app through the real FixedUpdate schedule, comparing every tick.
+        let mut headless = app.world().resource::<HexWfcRuntime>().match_state.clone();
+        for _ in 0..300 {
+            app.world_mut().run_schedule(FixedUpdate);
+            let interactive = app
+                .world()
+                .resource::<HexWfcRuntime>()
+                .match_state
+                .snapshot()
+                .digest;
+            let headless_digest = step_all_bots(&mut headless);
+            assert_eq!(
+                interactive, headless_digest,
+                "interactive tick {} diverged from headless",
+                headless.tick
+            );
+        }
+    }
+
+    /// Gate 2 (across a relayout commit): the gate-2 agreement tests stop at 300 ticks,
+    /// before the first mutation (cadence 1800), so headless == interactive was never
+    /// proven *across* a committed relayout. This steps the real app FixedUpdate schedule
+    /// and a headless clone identically through the pinned seed's deterministic commit at
+    /// tick 1800 (generation 0 → 1) and asserts the per-tick digests stay byte-identical
+    /// the whole way, including the tick the generation bumps. Determinism is the arc's
+    /// sacred invariant; this closes the proof across the mutation boundary.
+    ///
+    /// `#[ignore]` for runtime (~1810 real FixedUpdate steps); run with
+    /// `cargo test -p observed_game -- --ignored`.
+    #[test]
+    #[ignore = "~1810-tick run through a committed relayout; run explicitly"]
+    fn hex_headless_and_interactive_agree_across_relayout_commit() {
+        // The pinned seed whose showcase-config relayout commits at tick 1800. The test
+        // binary already runs `runtime_config` on the showcase (12×9×4) fixture, so the
+        // deterministic warning@1620 / commit@1800 timeline reproduces here.
+        const RELAYOUT_SEED: u64 = 0xcb85_21b1_f77d_d0fc;
+        let mut app = test_app();
+        app.world_mut()
+            .insert_resource(flow::ActiveMatchSeed(RELAYOUT_SEED));
+        app.world_mut()
+            .insert_resource(SpectatorBot::for_seed(flow::MATCH_SEED));
+        go(&mut app, GameState::HexWfc);
+
+        // Fork the authoritative state right after setup; both halves then step under the
+        // identical all-bots command regime.
+        let mut headless = app.world().resource::<HexWfcRuntime>().match_state.clone();
+        assert_eq!(
+            headless.facility.generation, 0,
+            "the facility must start at generation 0"
+        );
+
+        let mut generations = Vec::new();
+        for _ in 0..1_810u64 {
+            app.world_mut().run_schedule(FixedUpdate);
+            let runtime = app.world().resource::<HexWfcRuntime>();
+            let interactive = runtime.match_state.snapshot().digest;
+            let interactive_generation = runtime.match_state.facility.generation;
+            let headless_digest = step_all_bots(&mut headless);
+            assert_eq!(
+                interactive, headless_digest,
+                "interactive tick {} diverged from headless (generation {})",
+                headless.tick, interactive_generation
+            );
+            assert_eq!(
+                interactive_generation, headless.facility.generation,
+                "generation timelines diverged at tick {}",
+                headless.tick
+            );
+            generations.push(headless.facility.generation);
+        }
+
+        assert_eq!(
+            headless.facility.generation, 1,
+            "the observed relayout must have committed (generation 0 → 1) within the window"
+        );
+        assert!(
+            generations.windows(2).any(|pair| pair[0] != pair[1]),
+            "a generation bump must occur inside the compared window, not before it"
+        );
+    }
+
+    /// Gate 3: full-match autonomous soak mirroring the Arc K 36,000-tick run. The
+    /// objective bots must drive every runner to the exit with zero panics/stalls.
+    /// `#[ignore]` for runtime; run with `cargo test -p observed_game -- --ignored`.
+    #[test]
+    #[ignore = "36k-tick soak; run explicitly"]
+    fn hex_full_match_soak() {
+        let mut game = solvable_showcase(flow::MATCH_SEED);
+        let mut last_progress_tick = 0u64;
+        let mut last_positions: std::collections::BTreeMap<_, _> = game
+            .players
+            .iter()
+            .map(|(id, player)| (*id, player.cell))
+            .collect();
+        for _ in 0..36_000 {
+            step_all_bots(&mut game);
+            let positions: std::collections::BTreeMap<_, _> = game
+                .players
+                .iter()
+                .map(|(id, player)| (*id, player.cell))
+                .collect();
+            if positions != last_positions || game.players.values().any(|p| p.escaped) {
+                last_progress_tick = game.tick;
+                last_positions = positions;
+            }
+            if game.status == HexMatchStatus::Finished {
+                break;
+            }
+        }
+        assert_eq!(
+            game.status,
+            HexMatchStatus::Finished,
+            "every runner should reach the exit within the soak window (last cell progress at tick {last_progress_tick})"
+        );
+        assert!(
+            game.players.values().all(|player| player.escaped),
+            "a finished hex match escapes all runners"
+        );
+    }
 }

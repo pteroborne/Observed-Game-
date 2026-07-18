@@ -1,6 +1,8 @@
 # Arc L — Hex Tile Facility
 
-**Status:** active (opened 2026-07-16).
+**Status:** complete (opened 2026-07-16; closed 2026-07-18 after the Phase 95
+hands-on playtest). Startup lighting wash and the mutation-commit frame stall
+are tracked as backlog #8 and #9 for the next arc.
 **Baseline:** `main` at the Arc K closeout commit (Phase 86).
 **Goal:** replace the square full-WFC lattice with a TrenchBroom-authored hex-prism
 tile system — taller cells, a larger grid in all three axes, multi-tile rooms, halls
