@@ -1,0 +1,55 @@
+// Observed 2 strict tile-source entities. Geometry stays in worldspawn.
+
+@PointClass color(70 180 255) size(-8 -8 -8, 8 8 8) = tile_meta : "Module metadata (exactly one)" [
+    authoring_version(integer) : "Contract version" : 2
+    id(string) : "Stable source ID" : "district/module_name"
+    kind(choices) : "Module kind" : "cell" = [
+        "cell" : "One-cell structural kit"
+        "room" : "Whole-room multi-cell module"
+    ]
+    archetype(string) : "WFC archetype" : "hall_cap"
+    room_role(string) : "Room role (room kind only)" : "decision"
+    register(string) : "Legacy compatibility register" : "generic"
+    register_scope(string) : "all or comma-separated register overrides" : "all"
+    variant(integer) : "Legacy compatibility variant" : 0
+    levels(integer) : "Total local level extent" : 1
+    rotation_policy(choices) : "Compiler rotation expansion" : "sixfold" = [
+        "none" : "No rotation"
+        "sixfold" : "All six 60-degree rotations"
+    ]
+    weight(integer) : "Deterministic WFC weight (1..1000)" : 1
+]
+
+@PointClass color(80 255 150) size(-6 -6 -6, 6 6 6) = tile_cell : "Occupied hex/level footprint" [
+    q(integer) : "Relative axial q" : 0
+    r(integer) : "Relative axial r" : 0
+    level(integer) : "Relative base level" : 0
+    levels(integer) : "Contiguous vertical levels" : 1
+    floor(choices) : "Floor contract" : "solid" = [
+        "solid" : "Continuous walkable floor required"
+        "ramp" : "Continuous one-level ramp required"
+        "open" : "Declared shaft/opening; floor is intentionally absent"
+    ]
+]
+
+@PointClass color(255 190 70) size(-7 -7 -7, 7 7 7) = tile_port : "Named external connection" [
+    q(integer) : "Owning relative axial q" : 0
+    r(integer) : "Owning relative axial r" : 0
+    level(integer) : "Owning relative level" : 0
+    face(choices) : "Hex-prism face" : "east" = [
+        "east" : "East"
+        "south_east" : "South East"
+        "south_west" : "South West"
+        "west" : "West"
+        "north_west" : "North West"
+        "north_east" : "North East"
+        "up" : "Up"
+        "down" : "Down"
+    ]
+    class(choices) : "Typed connection" : "door" = [
+        "door" : "Walkable threshold"
+        "ramp_open" : "Ramp continuation"
+        "shaft_open" : "Vertical shaft opening"
+    ]
+    name(string) : "Stable threshold name" : "east_threshold"
+]

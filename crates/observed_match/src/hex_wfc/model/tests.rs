@@ -39,6 +39,13 @@ fn showcase_match(seed: u64, levels: u8, players: u8) -> HexWfcMatch {
     .expect("showcase match")
 }
 
+fn bot_player_command(game: &HexWfcMatch, id: PlayerId) -> HexPlayerCommand {
+    HexPlayerCommand {
+        intent: game.bot_command(id),
+        actions: HexActionButtons::default(),
+    }
+}
+
 /// Classify the vertical transitions on the solved spawn→exit route.
 /// Returns `(ramp_transitions, shaft_transitions)`.
 fn route_vertical_profile(world: &HexWfcWorld) -> (u32, u32) {
@@ -79,7 +86,7 @@ fn run_bot_to_exit(game: &mut HexWfcMatch, max_ticks: u64) -> Option<u64> {
             .keys()
             .copied()
             .filter(|id| !game.players[id].escaped)
-            .map(|id| (id, game.bot_command(id)))
+            .map(|id| (id, bot_player_command(game, id)))
             .collect();
         game.step(&HexInputFrame {
             version: HEX_INPUT_VERSION,
@@ -117,7 +124,7 @@ fn scan_mutation_seeds() {
                 .keys()
                 .copied()
                 .filter(|id| !game.players[id].escaped)
-                .map(|id| (id, game.bot_command(id)))
+                .map(|id| (id, bot_player_command(&game, id)))
                 .collect();
             let events = game
                 .step(&HexInputFrame {
@@ -204,7 +211,13 @@ fn diagnose_bot() {
     let mut last_cell = game.players[&PlayerId(0)].cell;
     for tick in 0..8_000u64 {
         let cmd = game.bot_command(PlayerId(0));
-        let commands = BTreeMap::from([(PlayerId(0), cmd)]);
+        let commands = BTreeMap::from([(
+            PlayerId(0),
+            HexPlayerCommand {
+                intent: cmd,
+                actions: HexActionButtons::default(),
+            },
+        )]);
         game.step(&HexInputFrame {
             version: HEX_INPUT_VERSION,
             tick,
@@ -291,6 +304,16 @@ fn headless_gate_bot_crosses_ramps_and_shaft_deterministically() {
     );
 }
 
+#[test]
+fn compiled_catalog_hash_participates_in_network_snapshot_identity() {
+    let first = showcase_match(GATE_SEED, GATE_LEVELS, 1);
+    let mut mismatched = showcase_match(GATE_SEED, GATE_LEVELS, 1);
+    mismatched.bind_simulation_content_hash([0xA5; 32]);
+
+    assert_ne!(first.snapshot().digest, mismatched.snapshot().digest);
+    assert_eq!(mismatched.snapshot().simulation_content_hash, [0xA5; 32]);
+}
+
 /// Phase 94 success criterion 2 — the bot-stall soak (Arc K standard). Every bot
 /// of a four-bot cohort must reach the exit on every generated showcase layout;
 /// a single stall is a failure. Layouts that fail to generate or expose no
@@ -316,8 +339,11 @@ fn bot_soak_has_no_stalls() {
             assert!(
                 finished.is_some(),
                 "STALL: seed={seed:#018x} levels={levels}: not all four bots escaped within budget \
-                 (escaped={:?})",
-                game.escape_order
+                 (escaped={:?}, players={:?}, stuck={:?}, guardian={:?})",
+                game.escape_order,
+                game.players,
+                game.stuck_ticks,
+                game.guardian
             );
             // A robust route must never fling a body out of the world.
             assert!(
@@ -428,7 +454,7 @@ fn ordinary_drops_do_not_trigger_recovery_on_the_gate_route() {
             .keys()
             .copied()
             .filter(|id| !game.players[id].escaped)
-            .map(|id| (id, game.bot_command(id)))
+            .map(|id| (id, bot_player_command(&game, id)))
             .collect();
         let events = game.step(&HexInputFrame {
             version: HEX_INPUT_VERSION,
@@ -454,31 +480,29 @@ fn ordinary_drops_do_not_trigger_recovery_on_the_gate_route() {
     );
 }
 
-/// Phase 95 gate 5 — a mid-match observation-safe relayout actually fires in
-/// play, and does so deterministically. On this pinned showcase seed a warning
-/// raises at tick 1620 and the re-collapse commits at tick 1800, bumping
-/// `facility.generation` 0 → 1 while four objective bots drive the match. Two
+/// A mid-match observation-safe local relayout actually fires in play at the
+/// deterministic 8--12 second cadence. Two
 /// independent runs with the identical scripted bot inputs must reproduce the
 /// same generation timeline and the same final snapshot digest byte-for-byte.
 ///
-/// The follow-up evidence agent captures gate 5's "observed relayout" here:
-/// seed `0xcb85_21b1_f77d_d0fc`, showcase config (12×9×4), commit at tick 1800.
-const MUTATION_SEED: u64 = 0xcb85_21b1_f77d_d0fc;
+/// The fixture's first warned pocket commits on its first scheduled attempt.
+const MUTATION_SEED: u64 = 0xA11C_9500_0000_0000;
 
 #[test]
 fn observed_relayout_commits_mid_match_deterministically() {
     fn run() -> (Vec<(u64, u32)>, Vec<u32>, u64) {
         let mut game = showcase_match(MUTATION_SEED, 4, 4);
+        let first_commit = mutation::scheduled_mutation_tick(MUTATION_SEED, 0);
         let mut committed = Vec::new();
         let mut generations = Vec::new();
         let mut warned = false;
-        for tick in 0..1_850u64 {
+        for tick in 0..first_commit + 30 {
             let commands = game
                 .players
                 .keys()
                 .copied()
                 .filter(|id| !game.players[id].escaped)
-                .map(|id| (id, game.bot_command(id)))
+                .map(|id| (id, bot_player_command(&game, id)))
                 .collect();
             let events = game
                 .step(&HexInputFrame {
@@ -503,10 +527,11 @@ fn observed_relayout_commits_mid_match_deterministically() {
     }
 
     let (committed, generations, digest) = run();
+    let first_commit = mutation::scheduled_mutation_tick(MUTATION_SEED, 0);
     assert_eq!(
         committed,
-        vec![(1800, 1)],
-        "the observed relayout must commit exactly once at tick 1800, lifting generation to 1"
+        vec![(first_commit, 1)],
+        "the observed local relayout must commit at its deterministic scheduled tick"
     );
     assert_eq!(
         generations.first().copied(),
@@ -555,7 +580,13 @@ fn scripted_inputs(ticks: u64) -> Vec<HexInputFrame> {
                     interact_held: phase % 17 == 0,
                     ..PlayerIntent::default()
                 };
-                commands.insert(PlayerId(raw), intent);
+                commands.insert(
+                    PlayerId(raw),
+                    HexPlayerCommand {
+                        intent,
+                        actions: HexActionButtons::default(),
+                    },
+                );
             }
             HexInputFrame {
                 version: HEX_INPUT_VERSION,

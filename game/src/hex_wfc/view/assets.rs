@@ -60,14 +60,29 @@ impl HexWfcVisualAssets {
             .map(|register| {
                 let palette = style::architecture(register);
                 let mut tinted = |role: SurfaceRole, texture: Option<Handle<Image>>| {
-                    materials.add(palette_tinted_neon_material(
-                        &style::surface(role),
-                        &palette,
-                        texture,
-                    ))
+                    let mut material =
+                        palette_tinted_neon_material(&style::surface(role), &palette, texture);
+                    // Exact hex hulls put much more surface area close to the
+                    // camera than the teleport rooms this helper was tuned on.
+                    // Preserve the style hue while returning shell albedo and
+                    // non-signal emission to the neon-noir atmosphere tier.
+                    let base = material.base_color.to_srgba();
+                    material.base_color = Color::srgba(
+                        base.red * 0.38,
+                        base.green * 0.38,
+                        base.blue * 0.38,
+                        base.alpha,
+                    );
+                    material.emissive *= 0.35;
+                    materials.add(material)
                 };
                 RegisterMaterials {
-                    room: tinted(SurfaceRole::Spine, floor_texture.clone()),
+                    // One authored convex hull can contain floor, wall, and
+                    // ceiling faces. Applying the bright Spine route treatment
+                    // to the whole room shell turned every vertical surface
+                    // into an amber emissive slab. Room decisions are signaled
+                    // by thresholds/equipment, so the shell stays structural.
+                    room: tinted(SurfaceRole::Plain, floor_texture.clone()),
                     hall: tinted(SurfaceRole::GantryDeck, floor_texture.clone()),
                     ramp: tinted(SurfaceRole::SafeBypass, floor_texture.clone()),
                     shaft: tinted(SurfaceRole::WellshaftStone, wall_texture.clone()),

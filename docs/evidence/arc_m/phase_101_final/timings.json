@@ -1,0 +1,177 @@
+{
+  "schema_version": 2,
+  "seed": 263960012067191,
+  "generation": 10,
+  "grid": [
+    28,
+    20,
+    10
+  ],
+  "pipeline": {
+    "solve_microseconds": 0,
+    "projection_microseconds": 0,
+    "collider_scene_microseconds": 0,
+    "cells": 0,
+    "geometry_pieces": 0,
+    "colliders": 0
+  },
+  "view": [
+    {
+      "kind": "startup",
+      "tick": 0,
+      "generation": 0,
+      "microseconds": 463819
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 542,
+      "generation": 1,
+      "microseconds": 2979
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 1905,
+      "generation": 2,
+      "microseconds": 3299
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 2546,
+      "generation": 3,
+      "microseconds": 2912
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 3071,
+      "generation": 4,
+      "microseconds": 3551
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 3580,
+      "generation": 5,
+      "microseconds": 2608
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 4153,
+      "generation": 6,
+      "microseconds": 2611
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 4633,
+      "generation": 7,
+      "microseconds": 3146
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 5335,
+      "generation": 8,
+      "microseconds": 2975
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 5944,
+      "generation": 9,
+      "microseconds": 2888
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 6582,
+      "generation": 10,
+      "microseconds": 3079
+    }
+  ],
+  "fixed": {
+    "samples": 6463,
+    "minimum_microseconds": 87,
+    "median_microseconds": 383,
+    "p95_microseconds": 1518,
+    "maximum_microseconds": 38922,
+    "mean_microseconds": 552
+  },
+  "frame": {
+    "samples": 12386,
+    "minimum_microseconds": 4577,
+    "median_microseconds": 8547,
+    "p95_microseconds": 8628,
+    "maximum_microseconds": 56427,
+    "mean_microseconds": 8695
+  },
+  "commits": [
+    {
+      "tick": 542,
+      "generation": 1,
+      "fixed_microseconds": 12950,
+      "frame_microseconds": 8546
+    },
+    {
+      "tick": 1905,
+      "generation": 2,
+      "fixed_microseconds": 9043,
+      "frame_microseconds": 8545
+    },
+    {
+      "tick": 2546,
+      "generation": 3,
+      "fixed_microseconds": 9038,
+      "frame_microseconds": 8544
+    },
+    {
+      "tick": 3071,
+      "generation": 4,
+      "fixed_microseconds": 9581,
+      "frame_microseconds": 8540
+    },
+    {
+      "tick": 3580,
+      "generation": 5,
+      "fixed_microseconds": 8755,
+      "frame_microseconds": 8551
+    },
+    {
+      "tick": 4153,
+      "generation": 6,
+      "fixed_microseconds": 8334,
+      "frame_microseconds": 8563
+    },
+    {
+      "tick": 4633,
+      "generation": 7,
+      "fixed_microseconds": 8796,
+      "frame_microseconds": 8549
+    },
+    {
+      "tick": 5335,
+      "generation": 8,
+      "fixed_microseconds": 8859,
+      "frame_microseconds": 8548
+    },
+    {
+      "tick": 5944,
+      "generation": 9,
+      "fixed_microseconds": 8593,
+      "frame_microseconds": 8552
+    },
+    {
+      "tick": 6582,
+      "generation": 10,
+      "fixed_microseconds": 9738,
+      "frame_microseconds": 8545
+    }
+  ],
+  "gate": {
+    "required_commits": 10,
+    "observed_commits": 10,
+    "p95_frame_microseconds": 8628,
+    "maximum_mutation_frame_microseconds": 8563,
+    "passed": true
+  },
+  "notes": [
+    "wall-clock evidence only; never read by simulation",
+    "pipeline probe reproduces the live seed/config and discards its artifacts",
+    "frame samples are Bevy Time deltas and include presentation/present delay",
+    "mutation frame is the next measured frame, which contains prior-frame fixed/update work"
+  ]
+}

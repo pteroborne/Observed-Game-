@@ -4,6 +4,8 @@
 //! module adds style-owned materials, a bounded lighting/post-process rig, and
 //! visibility streaming by proximity to the runner.
 
+use std::time::Instant;
+
 mod assets;
 mod lighting;
 mod shell;
@@ -39,22 +41,18 @@ pub(super) struct HexWfcGeometry;
 #[derive(Component)]
 pub(super) struct HexWfcKeyLight;
 
-#[derive(Component)]
-pub(super) struct HexHeadlamp;
-
+#[allow(clippy::too_many_arguments)]
 pub(super) fn setup_view(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut runtime: ResMut<HexWfcRuntime>,
-    camera: Query<Entity, With<GameCam>>,
+    runtime: Res<HexWfcRuntime>,
+    mut camera: Query<(Entity, &mut Transform), With<GameCam>>,
     mut sun: Query<&mut DirectionalLight, With<GameSun>>,
+    mut perf: Option<ResMut<super::perf::HexPerfMetrics>>,
 ) {
-    let mut assets = HexWfcVisualAssets::load(&asset_server, &mut materials);
-    shell::spawn_geometry(&mut commands, &mut assets, &mut meshes, &runtime);
-    runtime.pending_full_rebuild = false;
-
+    let started = Instant::now();
     let architecture = *runtime
         .match_state
         .facility
@@ -62,7 +60,9 @@ pub(super) fn setup_view(
         .get(&runtime.local().cell)
         .unwrap_or(&ArchitectureRegister::ALL[0]);
     let palette = observed_style::architecture(architecture);
-    if let Ok(camera) = camera.single() {
+    let current = runtime.local().cell;
+    if let Ok((camera, mut transform)) = camera.single_mut() {
+        lighting::prime_camera(&mut transform, runtime.local());
         commands.entity(camera).insert((
             Hdr,
             Bloom {
@@ -82,7 +82,10 @@ pub(super) fn setup_view(
             DepthPrepass,
             NormalPrepass,
             ScreenSpaceAmbientOcclusion {
-                quality_level: ScreenSpaceAmbientOcclusionQualityLevel::High,
+                // The authored shell already carries strong semantic edge light and
+                // fog separation. Low SSAO preserves local contact depth without
+                // consuming the GPU margin needed by a 1440x900 mutation frame.
+                quality_level: ScreenSpaceAmbientOcclusionQualityLevel::Low,
                 ..default()
             },
         ));
@@ -95,26 +98,49 @@ pub(super) fn setup_view(
         brightness: palette.ambient_brightness,
         ..default()
     });
-    commands.insert_resource(ClearColor(Color::srgb(0.002, 0.006, 0.015)));
-    lighting::spawn_rig(&mut commands);
+    commands.insert_resource(ClearColor(palette.fog_color));
+    lighting::spawn_rig(&mut commands, architecture, current, runtime.local());
+
+    // Geometry is deliberately enqueued only after the camera, atmosphere, menu sun,
+    // and both semantic lights have their exact initial values. The renderer therefore
+    // cannot observe a shell under the outgoing menu rig.
+    let mut assets = HexWfcVisualAssets::load(&asset_server, &mut materials);
+    shell::spawn_geometry(&mut commands, &mut assets, &mut meshes, &runtime);
     commands.insert_resource(assets);
+    super::perf::record_view(
+        &mut perf,
+        super::perf::ViewTimingKind::Startup,
+        &runtime,
+        started.elapsed(),
+    );
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn sync_changed_geometry(
     mut commands: Commands,
     mut runtime: ResMut<HexWfcRuntime>,
     mut assets: ResMut<HexWfcVisualAssets>,
     mut meshes: ResMut<Assets<Mesh>>,
-    existing: Query<Entity, With<HexWfcGeometry>>,
+    existing: Query<(Entity, &HexWfcCell)>,
+    mut perf: Option<ResMut<super::perf::HexPerfMetrics>>,
 ) {
-    if !runtime.pending_full_rebuild {
+    if runtime.pending_visual_cells.is_empty() {
         return;
     }
-    for entity in &existing {
-        commands.entity(entity).despawn();
+    let started = Instant::now();
+    let changed = std::mem::take(&mut runtime.pending_visual_cells);
+    for (entity, cell) in &existing {
+        if changed.contains(&cell.0) {
+            commands.entity(entity).despawn();
+        }
     }
-    shell::spawn_geometry(&mut commands, &mut assets, &mut meshes, &runtime);
-    runtime.pending_full_rebuild = false;
+    shell::spawn_cells(&mut commands, &mut assets, &mut meshes, &runtime, &changed);
+    super::perf::record_view(
+        &mut perf,
+        super::perf::ViewTimingKind::MutationRebuild,
+        &runtime,
+        started.elapsed(),
+    );
 }
 
 pub(super) fn sync_streamed_cells(
@@ -134,7 +160,7 @@ pub(super) fn sync_streamed_cells(
     }
 }
 
-pub(super) use lighting::{sync_camera_and_headlamp, sync_lighting_and_atmosphere};
+pub(super) use lighting::{sync_camera, sync_lighting_and_atmosphere};
 
 pub(super) fn clear_view(
     mut commands: Commands,

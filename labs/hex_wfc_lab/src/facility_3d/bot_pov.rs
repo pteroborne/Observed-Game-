@@ -141,7 +141,13 @@ pub(crate) fn run(
         }
         let command = run.game.bot_command(PlayerId(0));
         let tick = run.game.tick;
-        let commands = BTreeMap::from([(PlayerId(0), command)]);
+        let commands = BTreeMap::from([(
+            PlayerId(0),
+            observed_match::hex_wfc::HexPlayerCommand {
+                intent: command,
+                actions: Default::default(),
+            },
+        )]);
         run.game.step(&HexInputFrame {
             version: HEX_INPUT_VERSION,
             tick,

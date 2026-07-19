@@ -1,0 +1,69 @@
+{
+  "schema_version": 2,
+  "seed": 263960012067191,
+  "generation": 1,
+  "grid": [
+    28,
+    20,
+    10
+  ],
+  "pipeline": {
+    "solve_microseconds": 1341305,
+    "projection_microseconds": 876060,
+    "collider_scene_microseconds": 1632922,
+    "cells": 5600,
+    "geometry_pieces": 109155,
+    "colliders": 109155
+  },
+  "view": [
+    {
+      "kind": "startup",
+      "tick": 0,
+      "generation": 0,
+      "microseconds": 371530
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 542,
+      "generation": 1,
+      "microseconds": 3436
+    }
+  ],
+  "fixed": {
+    "samples": 600,
+    "minimum_microseconds": 1048,
+    "median_microseconds": 1794,
+    "p95_microseconds": 3124,
+    "maximum_microseconds": 12532,
+    "mean_microseconds": 2075
+  },
+  "frame": {
+    "samples": 911,
+    "minimum_microseconds": 0,
+    "median_microseconds": 8642,
+    "p95_microseconds": 18292,
+    "maximum_microseconds": 250000,
+    "mean_microseconds": 10978
+  },
+  "commits": [
+    {
+      "tick": 542,
+      "generation": 1,
+      "fixed_microseconds": 12532,
+      "frame_microseconds": 28520
+    }
+  ],
+  "gate": {
+    "required_commits": 0,
+    "observed_commits": 1,
+    "p95_frame_microseconds": 18292,
+    "maximum_mutation_frame_microseconds": 28520,
+    "passed": true
+  },
+  "notes": [
+    "wall-clock evidence only; never read by simulation",
+    "pipeline probe reproduces the live seed/config and discards its artifacts",
+    "frame samples are Bevy Time deltas and include presentation/present delay",
+    "mutation frame is the next measured frame, which contains prior-frame fixed/update work"
+  ]
+}

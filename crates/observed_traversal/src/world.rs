@@ -5,6 +5,8 @@
 //! data and owns all backend runtime state. The legacy arm exists only for migration;
 //! new authored convex geometry is accepted by the Rapier arm only.
 
+use std::collections::BTreeSet;
+
 use crate::FpsArena;
 use glam::Vec3;
 use rapier3d::prelude::*;
@@ -27,6 +29,34 @@ pub struct ColliderSpec {
     pub rotation: [f32; 4],
     pub shape: ColliderShape,
     pub friction: f32,
+}
+
+/// Bounded structural update keyed by stable collider identity. `upserted`
+/// replaces an existing collider with the same ID or inserts a new one.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ColliderDelta {
+    pub removed: BTreeSet<StableColliderId>,
+    pub upserted: Vec<ColliderSpec>,
+}
+
+impl ColliderDelta {
+    pub fn validate(&self) -> Result<(), ColliderDeltaError> {
+        let mut ids = BTreeSet::new();
+        for collider in &self.upserted {
+            if !ids.insert(collider.id) {
+                return Err(ColliderDeltaError::DuplicateUpsert(collider.id));
+            }
+            validate_collider(collider).map_err(ColliderDeltaError::InvalidSpec)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ColliderDeltaError {
+    DuplicateUpsert(StableColliderId),
+    UnknownRemoval(StableColliderId),
+    InvalidSpec(ArenaSpecError),
 }
 
 impl ColliderSpec {
@@ -83,30 +113,7 @@ impl ArenaSpec {
             if !ids.insert(collider.id) {
                 return Err(ArenaSpecError::DuplicateId(collider.id));
             }
-            if !collider.center.is_finite()
-                || !collider.friction.is_finite()
-                || collider.friction < 0.0
-                || !collider.rotation.iter().all(|value| value.is_finite())
-            {
-                return Err(ArenaSpecError::InvalidCollider(collider.id));
-            }
-            match &collider.shape {
-                ColliderShape::Cuboid { half } => {
-                    if !half.is_finite() || half.min_element() <= 0.0 {
-                        return Err(ArenaSpecError::InvalidCollider(collider.id));
-                    }
-                }
-                ColliderShape::ConvexHull { points } => {
-                    if points.len() < 4 || points.iter().any(|point| !point.is_finite()) {
-                        return Err(ArenaSpecError::InvalidCollider(collider.id));
-                    }
-                    let rapier_points: Vec<Vector> =
-                        points.iter().copied().map(into_rapier).collect();
-                    if ColliderBuilder::convex_hull(&rapier_points).is_none() {
-                        return Err(ArenaSpecError::DegenerateHull(collider.id));
-                    }
-                }
-            }
+            validate_collider(collider)?;
         }
         if !self.floor_y.is_finite()
             || !self.safety_center.is_finite()
@@ -117,6 +124,43 @@ impl ArenaSpec {
         }
         Ok(())
     }
+}
+
+fn validate_collider(collider: &ColliderSpec) -> Result<(), ArenaSpecError> {
+    validate_collider_metadata(collider)?;
+    if let ColliderShape::ConvexHull { points } = &collider.shape {
+        let rapier_points: Vec<Vector> = points.iter().copied().map(into_rapier).collect();
+        if ColliderBuilder::convex_hull(&rapier_points).is_none() {
+            return Err(ArenaSpecError::DegenerateHull(collider.id));
+        }
+    }
+    Ok(())
+}
+
+/// Validate every collider property except convex-hull construction. Runtime
+/// delta application uses this before constructing each Rapier hull exactly
+/// once, preserving atomic rejection without duplicating the expensive work.
+pub(crate) fn validate_collider_metadata(collider: &ColliderSpec) -> Result<(), ArenaSpecError> {
+    if !collider.center.is_finite()
+        || !collider.friction.is_finite()
+        || collider.friction < 0.0
+        || !collider.rotation.iter().all(|value| value.is_finite())
+    {
+        return Err(ArenaSpecError::InvalidCollider(collider.id));
+    }
+    match &collider.shape {
+        ColliderShape::Cuboid { half } => {
+            if !half.is_finite() || half.min_element() <= 0.0 {
+                return Err(ArenaSpecError::InvalidCollider(collider.id));
+            }
+        }
+        ColliderShape::ConvexHull { points } => {
+            if points.len() < 4 || points.iter().any(|point| !point.is_finite()) {
+                return Err(ArenaSpecError::InvalidCollider(collider.id));
+            }
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -30,8 +30,9 @@ pub use blueprint::{
 };
 pub use observed_hex::{HexCoord, HexFace, HexGridSize, PortClass, PortSignature};
 pub use relayout::{
-    HexObservationFrame, HexRelayoutCandidate, HexRelayoutProgress, HexRelayoutWork,
-    HexThresholdKey,
+    DEFAULT_MUTATION_MAX_CELLS, DEFAULT_MUTATION_TARGET_CELLS, HexMutationRegion,
+    HexObservationFrame, HexRelayoutCandidate, HexRelayoutDelta, HexRelayoutProgress,
+    HexRelayoutWork, HexThresholdKey,
 };
 pub use topology::HexRoute;
 pub use trace::SolveStep;
@@ -138,8 +139,10 @@ impl HexWfcConfig {
             cols: 28,
             rows: 20,
             levels: 10,
-            min_rooms: 4,
-            max_rooms: 8,
+            // Start + exit + every current authored gameplay role. Production
+            // must never silently omit the lantern caches or Guardian origin.
+            min_rooms: 9,
+            max_rooms: 10,
             retry_budget: 100,
             min_room_distance: 2,
         }
@@ -185,6 +188,7 @@ pub enum HexWfcError {
     UnsafeChange(HexCoord),
     MissingPlayerRoute(observed_core::PlayerId),
     MissingObjectiveRoute(HexCoord),
+    NoMutationRegion,
 }
 
 /// Stable room identity projected from a blueprint's generation key.
@@ -235,6 +239,9 @@ pub struct HexWfcWorld {
     /// Presentation-independent architectural treatment. The fallback relayout
     /// changes this while preserving the cell's exact traversal ports.
     pub architecture: BTreeMap<HexCoord, ArchitectureRegister>,
+    /// Per-cell topology/presentation revision. A local relayout increments
+    /// only cells whose placement or architectural treatment changed.
+    pub cell_revisions: BTreeMap<HexCoord, u32>,
     /// Attempts consumed by the accepted solve (1-based).
     pub last_attempts: u32,
 }
@@ -268,6 +275,7 @@ impl HexWfcWorld {
         let (placements, blueprints, attempts) =
             collapse::collapse(seed, generation, config, trace)?;
         let architecture = relayout::initial_architecture(seed, &placements);
+        let cell_revisions = placements.keys().copied().map(|coord| (coord, 0)).collect();
         Ok((
             HexWfcWorld {
                 seed,
@@ -276,6 +284,7 @@ impl HexWfcWorld {
                 placements,
                 blueprints,
                 architecture,
+                cell_revisions,
                 last_attempts: attempts,
             },
             attempts,
@@ -369,5 +378,10 @@ impl HexWfcWorld {
             architecture: *self.architecture.get(&coord)?,
             variation_key: self.tile_variation_key(coord),
         })
+    }
+
+    #[must_use]
+    pub fn cell_revision(&self, coord: HexCoord) -> Option<u32> {
+        self.cell_revisions.get(&coord).copied()
     }
 }

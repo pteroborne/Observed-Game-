@@ -9,6 +9,8 @@ mod entities;
 mod feedback;
 mod hud;
 mod input;
+mod lantern;
+mod perf;
 pub mod sim;
 mod tacmap;
 mod view;
@@ -22,6 +24,7 @@ pub(crate) struct HexWfcPlugin;
 
 impl Plugin for HexWfcPlugin {
     fn build(&self, app: &mut App) {
+        perf::configure(app);
         app.add_systems(
             OnEnter(GameState::HexWfc),
             (
@@ -32,13 +35,19 @@ impl Plugin for HexWfcPlugin {
                 feedback::setup,
                 audio::setup,
                 entities::setup,
+                lantern::setup,
                 input::grab_cursor,
             )
                 .chain(),
         )
         .add_systems(
             FixedUpdate,
-            (drive_traversal_capture, sim::step_runtime)
+            (
+                perf::begin_fixed,
+                drive_traversal_capture,
+                sim::step_runtime,
+                perf::end_fixed,
+            )
                 .chain()
                 .run_if(in_state(GameState::HexWfc)),
         )
@@ -49,13 +58,15 @@ impl Plugin for HexWfcPlugin {
                 input::mode_hotkeys,
                 view::sync_changed_geometry,
                 view::sync_streamed_cells,
-                view::sync_camera_and_headlamp,
+                view::sync_camera,
                 view::sync_lighting_and_atmosphere,
                 hud::sync,
                 tacmap::sync,
                 feedback::sync,
                 audio::sync,
                 entities::sync,
+                lantern::sync_projection,
+                lantern::sync_dynamic,
                 sim::finish_runtime,
             )
                 .chain()
@@ -70,6 +81,7 @@ impl Plugin for HexWfcPlugin {
                 feedback::cleanup,
                 audio::cleanup,
                 entities::cleanup,
+                lantern::cleanup,
                 sim::cleanup_runtime,
             )
                 .chain(),
@@ -120,7 +132,7 @@ impl Plugin for HexWfcPlugin {
             .add_systems(
                 Update,
                 sync_traversal_capture_camera
-                    .after(view::sync_camera_and_headlamp)
+                    .after(view::sync_camera)
                     .run_if(in_state(GameState::HexWfc)),
             );
         }
@@ -146,7 +158,7 @@ pub(super) enum HexWfcCaptureMode {
     Style,
     /// The arc headline: a mid-match observation-safe relayout captured before, during
     /// the warning window, and after the committed re-collapse. Forces the pinned seed
-    /// and the showcase (12×9×4) config so the deterministic warning@1620 / commit@1800
+    /// and the showcase (12×9×4) config so the deterministic warning@575 / commit@695
     /// timeline (proven by `observed_relayout_commits_mid_match_deterministically`)
     /// reproduces on the capture path.
     Relayout,
@@ -161,9 +173,9 @@ pub(super) enum HexWfcCaptureMode {
 const STYLE_SHOTS: u16 = 8;
 const STYLE_STRIDE: u16 = 45;
 
-/// The pinned seed whose showcase-config relayout commits deterministically at tick 1800
+/// The pinned seed whose showcase-config relayout commits deterministically at tick 695
 /// (generation 0 → 1). Shared with the match-layer determinism test.
-const RELAYOUT_CAPTURE_SEED: u64 = 0xcb85_21b1_f77d_d0fc;
+const RELAYOUT_CAPTURE_SEED: u64 = 0xA11C_9500_0000_0000;
 /// Phase 94's route gate: two ramp transitions and two shaft transitions on a compact
 /// five-level facility. Reused here so the integration evidence is reproducible.
 const TRAVERSAL_CAPTURE_SEED: u64 = 0xa11c_0000_0000_0000;
@@ -240,7 +252,7 @@ fn capture_progress(
         }
         HexWfcCaptureMode::Relayout => {
             // Keyed on the simulation tick, never the frame counter: the warning fires at
-            // 1620 and the commit at 1800, and several FixedUpdate steps can share one
+            // 575 and the commit at 695, and several FixedUpdate steps can share one
             // render frame. At most one screenshot entity is spawned per frame so the
             // async saves never race on the same window.
             let Some(runtime) = runtime.as_deref() else {
@@ -249,9 +261,9 @@ fn capture_progress(
             let tick = runtime.match_state.tick;
             // The three headline stills: quiescent, mid-warning banner, post-commit.
             const STILLS: [(u64, u8, &str); 3] = [
-                (1600, 0b001, "relayout_1_before"),
-                (1680, 0b010, "relayout_2_warning"),
-                (1810, 0b100, "relayout_3_after"),
+                (555, 0b001, "relayout_1_before"),
+                (635, 0b010, "relayout_2_warning"),
+                (705, 0b100, "relayout_3_after"),
             ];
             for (at, bit, name) in STILLS {
                 if tick >= at && request.stills & bit == 0 {
@@ -264,8 +276,8 @@ fn capture_progress(
                 }
             }
             // Dense GIF frames spanning the whole warning→commit window.
-            const GIF_START: u64 = 1560;
-            const GIF_END: u64 = 1860;
+            const GIF_START: u64 = 540;
+            const GIF_END: u64 = 735;
             if (GIF_START..=GIF_END).contains(&tick)
                 && tick.saturating_sub(request.last_shot_tick) >= 4
             {
@@ -383,7 +395,6 @@ fn stage_local_player(
     player.climb_target = None;
     player.transit_target = None;
     player.escaped = false;
-    runtime.discovered.insert(cell);
 }
 
 /// First-person flat-shaded collider surfaces can fill the frame as one colour at close

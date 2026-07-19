@@ -20,6 +20,11 @@ type CollapseOutput = (BTreeMap<HexCoord, HexPlacement>, Vec<StampedBlueprint>, 
 /// Fixed-width bitset over catalogue variant indices. The catalogue currently
 /// holds 382 variants; `solver_tables` asserts the capacity still fits.
 const MASK_WORDS: usize = 6;
+/// A cadence event refreshes the architecture register across its full
+/// target-32 pocket, but only this connected structural core is allowed to
+/// change topology. This keeps collision churn bounded independently of
+/// authored hull density.
+const POCKET_TOPOLOGY_CELLS: usize = 4;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct VariantSet([u64; MASK_WORDS]);
@@ -173,28 +178,266 @@ pub(super) fn collapse_attempt(
     collapse_attempt_with_blueprints(config, tables, &mut rng, previous, pinned, &[], trace)
 }
 
-/// Relayout variant of [`collapse_attempt`] that also freezes complete room
-/// blueprints. Kept separate so the base generation call remains minimal.
-pub(super) fn collapse_relayout_attempt(
+/// Collapse only a bounded mutation pocket. Live outside neighbors become
+/// exact boundary constraints, room cells remain tied to their stamped
+/// blueprint signatures, and all propagation/entropy work is proportional to
+/// the pocket rather than the full production lattice.
+pub(super) fn collapse_pocket_attempt(
     seed: u64,
     generation: u32,
     attempt: u32,
     config: HexWfcConfig,
     previous: &BTreeMap<HexCoord, HexPlacement>,
-    pinned: &BTreeSet<HexCoord>,
-    locked_blueprints: &[StampedBlueprint],
+    blueprints: &[StampedBlueprint],
+    region: &super::relayout::HexMutationRegion,
 ) -> Result<CollapseAttempt, &'static str> {
     let tables = solver_tables();
     let mut rng = SplitMix::new(mixed(seed, generation, attempt, 0x4E8C_0FFE_D011_88AA));
-    collapse_attempt_with_blueprints(
-        config,
-        tables,
-        &mut rng,
-        Some(previous),
-        pinned,
-        locked_blueprints,
-        None,
+    let topology_core =
+        select_topology_core(seed, generation, attempt, config, previous, &region.cells);
+    let mut domains = region
+        .cells
+        .iter()
+        .copied()
+        .map(|coord| {
+            let before = previous[&coord];
+            let domain = tables
+                .variants
+                .iter()
+                .enumerate()
+                .filter(|(_, variant)| {
+                    if !topology_core.contains(&coord) {
+                        return variant_matches(**variant, before);
+                    }
+                    if !variant_is_mutable_topology(**variant) {
+                        return false;
+                    }
+                    HexFace::ALL
+                        .iter()
+                        .all(|&face| match config.grid().neighbor(coord, face) {
+                            None => variant.signature().port(face) == PortClass::Sealed,
+                            Some(neighbor) if !region.cells.contains(&neighbor) => {
+                                variants_compatible(
+                                    **variant,
+                                    placement_variant(previous[&neighbor]),
+                                    face,
+                                )
+                            }
+                            Some(_) => true,
+                        })
+                })
+                .fold(VariantSet::EMPTY, |mut domain, (index, _)| {
+                    domain.insert(index);
+                    domain
+                });
+            (coord, domain)
+        })
+        .collect::<BTreeMap<_, _>>();
+    if domains.values().any(VariantSet::is_empty) {
+        return Err("pocket boundary contradiction");
+    }
+    if !propagate_pocket(tables, region, &mut domains) {
+        return Err("pocket propagation contradiction");
+    }
+    if !collapse_pocket_domains(tables, region, &mut domains, &mut rng) {
+        return Err("pocket collapse contradiction");
+    }
+    let placements = domains
+        .iter()
+        .map(|(&coord, domain)| {
+            let variant = tables.variants[domain.single().expect("solved pocket domain")];
+            (
+                coord,
+                HexPlacement {
+                    coord,
+                    space: variant.space,
+                    archetype: variant.archetype,
+                    doors: variant.doors,
+                    up: variant.up,
+                    down: variant.down,
+                },
+            )
+        })
+        .collect();
+    let blueprints = blueprints
+        .iter()
+        .filter(|blueprint| {
+            blueprint
+                .cells
+                .iter()
+                .all(|cell| region.cells.contains(cell))
+        })
+        .cloned()
+        .collect();
+    Ok(CollapseAttempt {
+        placements,
+        blueprints,
+    })
+}
+
+fn select_topology_core(
+    seed: u64,
+    generation: u32,
+    attempt: u32,
+    config: HexWfcConfig,
+    previous: &BTreeMap<HexCoord, HexPlacement>,
+    region: &BTreeSet<HexCoord>,
+) -> BTreeSet<HexCoord> {
+    let eligible = region
+        .iter()
+        .copied()
+        .filter(|coord| placement_is_mutable_topology(previous[coord]))
+        .collect::<BTreeSet<_>>();
+    let mut seeds = eligible.iter().copied().collect::<Vec<_>>();
+    seeds.sort_by_key(|coord| {
+        mixed(
+            seed,
+            generation,
+            attempt,
+            u64::try_from(config.grid().index(*coord)).expect("grid index fits u64")
+                ^ 0xC011_1DE2_C0DE_0004,
+        )
+    });
+    let mut best = BTreeSet::new();
+    for seed_coord in seeds {
+        let mut core = BTreeSet::new();
+        let mut queued = BTreeSet::from([seed_coord]);
+        let mut queue = VecDeque::from([seed_coord]);
+        while let Some(coord) = queue.pop_front() {
+            core.insert(coord);
+            if core.len() == POCKET_TOPOLOGY_CELLS {
+                return core;
+            }
+            let mut neighbors = HexFace::LATERAL
+                .iter()
+                .filter_map(|&face| config.grid().neighbor(coord, face))
+                .filter(|neighbor| eligible.contains(neighbor) && queued.insert(*neighbor))
+                .collect::<Vec<_>>();
+            neighbors.sort_by_key(|coord| {
+                mixed(
+                    seed,
+                    generation,
+                    attempt,
+                    u64::try_from(config.grid().index(*coord)).expect("grid index fits u64")
+                        ^ 0xC011_1DE2_C0DE_0004,
+                )
+            });
+            queue.extend(neighbors);
+        }
+        if core.len() > best.len() {
+            best = core;
+        }
+    }
+    best
+}
+
+fn placement_is_mutable_topology(placement: HexPlacement) -> bool {
+    matches!(
+        placement.archetype,
+        HexArchetype::Void | HexArchetype::Straight | HexArchetype::Corner | HexArchetype::Junction
     )
+}
+
+fn variant_is_mutable_topology(variant: HexVariant) -> bool {
+    matches!(
+        variant.archetype,
+        HexArchetype::Void | HexArchetype::Straight | HexArchetype::Corner | HexArchetype::Junction
+    )
+}
+
+fn placement_variant(placement: HexPlacement) -> HexVariant {
+    HexVariant {
+        space: placement.space,
+        archetype: placement.archetype,
+        doors: placement.doors,
+        up: placement.up,
+        down: placement.down,
+        weight: 0,
+    }
+}
+
+fn variant_matches(variant: HexVariant, placement: HexPlacement) -> bool {
+    variant.space == placement.space
+        && variant.archetype == placement.archetype
+        && variant.doors == placement.doors
+        && variant.up == placement.up
+        && variant.down == placement.down
+}
+
+fn propagate_pocket(
+    tables: &SolverTables,
+    region: &super::relayout::HexMutationRegion,
+    domains: &mut BTreeMap<HexCoord, VariantSet>,
+) -> bool {
+    let mut queue = region.cells.iter().copied().collect::<VecDeque<_>>();
+    while let Some(coord) = queue.pop_front() {
+        let source = domains[&coord];
+        for face in HexFace::ALL {
+            let Some(neighbor) = region.cells.iter().copied().find(|candidate| {
+                let delta = face.delta();
+                i32::from(candidate.q) == i32::from(coord.q) + delta.0
+                    && i32::from(candidate.r) == i32::from(coord.r) + delta.1
+                    && i32::from(candidate.level) == i32::from(coord.level) + delta.2
+            }) else {
+                continue;
+            };
+            let mut allowed = VariantSet::EMPTY;
+            for variant in source.iter() {
+                allowed.union_with(tables.compat(variant, face));
+            }
+            let neighbor_domain = domains.get_mut(&neighbor).expect("pocket neighbor domain");
+            let changed = neighbor_domain.intersect_with(&allowed);
+            if neighbor_domain.is_empty() {
+                return false;
+            }
+            if changed {
+                queue.push_back(neighbor);
+            }
+        }
+    }
+    true
+}
+
+fn collapse_pocket_domains(
+    tables: &SolverTables,
+    region: &super::relayout::HexMutationRegion,
+    domains: &mut BTreeMap<HexCoord, VariantSet>,
+    rng: &mut SplitMix,
+) -> bool {
+    loop {
+        let Some(min_size) = domains
+            .values()
+            .map(VariantSet::len)
+            .filter(|&len| len > 1)
+            .min()
+        else {
+            return true;
+        };
+        let candidates = domains
+            .iter()
+            .filter_map(|(&coord, domain)| (domain.len() == min_size).then_some(coord))
+            .collect::<Vec<_>>();
+        let coord = candidates[(rng.next_u64() % candidates.len() as u64) as usize];
+        let domain = domains[&coord];
+        let total = domain
+            .iter()
+            .map(|variant| u64::from(tables.variants[variant].weight))
+            .sum::<u64>();
+        let mut roll = rng.next_u64() % total.max(1);
+        let mut picked = domain.iter().next().expect("non-empty pocket domain");
+        for variant in domain.iter() {
+            let weight = u64::from(tables.variants[variant].weight);
+            if roll < weight {
+                picked = variant;
+                break;
+            }
+            roll = roll.saturating_sub(weight);
+        }
+        domains.insert(coord, VariantSet::only(picked));
+        if !propagate_pocket(tables, region, domains) {
+            return false;
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

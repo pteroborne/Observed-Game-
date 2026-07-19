@@ -14,6 +14,7 @@ pub(super) struct HexWfcAudioAssets {
     recover: Handle<AudioSource>,
     escape: Handle<AudioSource>,
     complete: Handle<AudioSource>,
+    guardian: Handle<AudioSource>,
 }
 
 #[derive(Resource, Default)]
@@ -28,6 +29,7 @@ pub(super) fn setup(mut commands: Commands, assets: Res<AssetServer>) {
         recover: assets.load(observed_assets::REROUTE.path),
         escape: assets.load(observed_assets::ESCAPE.path),
         complete: assets.load(observed_assets::EXIT_UNLOCK.path),
+        guardian: assets.load(observed_assets::GUARDIAN_DREAD.path),
     });
     commands.insert_resource(HexWfcAudioState::default());
 }
@@ -68,6 +70,7 @@ fn sound(assets: &HexWfcAudioAssets, cue: HexWfcSound) -> Handle<AudioSource> {
         HexWfcSound::Recover => assets.recover.clone(),
         HexWfcSound::Escape => assets.escape.clone(),
         HexWfcSound::Complete => assets.complete.clone(),
+        HexWfcSound::Guardian => assets.guardian.clone(),
     }
 }
 

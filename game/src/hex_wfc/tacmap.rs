@@ -1,26 +1,22 @@
-//! Multi-level hex survivor sketch: the cells the local runner has seen, drawn as hex
-//! outline tiles per level in the sketch style. Purely presentation — it reads the
-//! runtime's presentation-derived `discovered` set and never drives simulation.
+//! Active-level, player-local survivor sketch for the hex facility.
+
+use std::collections::BTreeSet;
 
 use bevy::prelude::*;
+use observed_hex::{HexCoord, HexFace, PortClass};
+use observed_match::hex_wfc::HexMapDiscovery;
 use observed_style::{MarkerRole, ObservedState, SurfaceRole};
 
 use super::sim::HexWfcRuntime;
 use crate::GameState;
 
-// Pointy-top hexes use the same axial projection as the world, scaled down to the
-// survivor sketch: x = sqrt(3) * side * (q + r/2), y = 1.5 * side * r. Keeping the
-// outline as six UI bars (rather than a rotated square) makes the map's topology
-// truthful even at this deliberately tiny scale.
-const HEX_SIDE: f32 = 4.2;
-const HEX_WIDTH: f32 = 7.274_613;
+const HEX_SIDE: f32 = 9.0;
+const HEX_WIDTH: f32 = 15.588_457;
 const HEX_HEIGHT: f32 = HEX_SIDE * 2.0;
 const Q_PITCH: f32 = HEX_WIDTH;
 const R_X_PITCH: f32 = HEX_WIDTH * 0.5;
 const R_Y_PITCH: f32 = HEX_SIDE * 1.5;
-const LEVEL_COLUMNS: u8 = 4;
-const LEVEL_GAP_X: f32 = 18.0;
-const LEVEL_GAP_Y: f32 = 26.0;
+const PANEL_PADDING: f32 = 24.0;
 
 #[derive(Component)]
 pub(super) struct HexWfcTacMap;
@@ -52,36 +48,50 @@ pub(super) fn sync(
     for entity in &existing {
         commands.entity(entity).despawn();
     }
-    if !runtime.map_open {
-        return;
+    if runtime.map_open {
+        spawn_map(&mut commands, &runtime);
     }
-    spawn_map(&mut commands, &runtime);
 }
 
 fn spawn_map(commands: &mut Commands, runtime: &HexWfcRuntime) {
     let world = &runtime.match_state.facility;
-    let level_width = f32::from(world.config.cols.saturating_sub(1)) * Q_PITCH
+    let knowledge = runtime
+        .match_state
+        .player_map(runtime.local_player)
+        .expect("local player owns survivor knowledge");
+    let discovered = knowledge.cells.keys().copied().collect::<BTreeSet<_>>();
+    let map_width = f32::from(world.config.cols.saturating_sub(1)) * Q_PITCH
         + f32::from(world.config.rows.saturating_sub(1)) * R_X_PITCH
         + HEX_WIDTH;
-    let level_height = f32::from(world.config.rows.saturating_sub(1)) * R_Y_PITCH + HEX_HEIGHT;
-    let level_columns = world.config.levels.min(LEVEL_COLUMNS);
-    let level_rows = world.config.levels.div_ceil(LEVEL_COLUMNS);
-    let map_width = f32::from(level_columns) * level_width
-        + f32::from(level_columns.saturating_sub(1)) * LEVEL_GAP_X
-        + 32.0;
-    let map_height = f32::from(level_rows) * level_height
-        + f32::from(level_rows.saturating_sub(1)) * LEVEL_GAP_Y
-        + 116.0;
+    let map_height = f32::from(world.config.rows.saturating_sub(1)) * R_Y_PITCH + HEX_HEIGHT;
+    let panel_width = (map_width + PANEL_PADDING * 2.0).min(1_180.0);
+    let panel_height = (map_height + 132.0).min(760.0);
     let you = observed_style::marker(MarkerRole::You).base_color;
     let exit_color = observed_style::marker(MarkerRole::Exit).base_color;
-    let runner = observed_style::marker(MarkerRole::Rival).base_color;
+    let anchored = observed_style::marker(MarkerRole::Control).base_color;
     let glimpsed = observed_style::observed_modulate(
         observed_style::surface(SurfaceRole::Spine),
         ObservedState::Unobserved,
     )
     .base_color;
-    let exit = world.config.exit();
+    let stale = observed_style::observed_modulate(
+        observed_style::surface(SurfaceRole::Wall),
+        ObservedState::Unobserved,
+    )
+    .base_color;
+    let panel = stale.with_alpha(0.94);
     let local_cell = runtime.local().cell;
+    let viewed = runtime.map_level;
+    let exit = world.config.exit();
+    let discovered_exit = knowledge.cells.contains_key(&exit);
+    let lower = adjacent_discovered_level(&discovered, viewed, -1);
+    let upper = adjacent_discovered_level(&discovered, viewed, 1);
+    let level_hint = format!(
+        "{}  FLOOR {viewed}  {}",
+        lower.map_or("--".to_string(), |level| format!("L{level} down")),
+        upper.map_or("--".to_string(), |level| format!("up L{level}")),
+    );
+
     commands
         .spawn((
             HexWfcTacMap,
@@ -90,88 +100,132 @@ fn spawn_map(commands: &mut Commands, runtime: &HexWfcRuntime) {
                 position_type: PositionType::Absolute,
                 right: px(18),
                 bottom: px(18),
-                width: px(map_width.min(1180.0)),
-                height: px(map_height.min(760.0)),
+                width: px(panel_width),
+                height: px(panel_height),
                 border: UiRect::all(px(1)),
                 overflow: Overflow::clip(),
-                ..Default::default()
+                ..default()
             },
-            BackgroundColor(Color::srgba(0.004, 0.01, 0.024, 0.94)),
+            BackgroundColor(panel),
             BorderColor::all(glimpsed),
             GlobalZIndex(45),
-            Name::new("Hex survivor sketch"),
+            Name::new("Active-level hex survivor sketch"),
         ))
         .with_children(|root| {
             root.spawn((
-                Text::new("SURVIVOR SKETCH  [TAB CLOSE]"),
+                Text::new("SURVIVOR SKETCH  [TAB CLOSE]  [PGUP/PGDN FLOOR]"),
                 TextFont {
                     font_size: 15.0,
-                    ..Default::default()
+                    ..default()
                 },
                 TextColor(you),
                 Node {
                     position_type: PositionType::Absolute,
                     left: px(14),
                     top: px(10),
-                    ..Default::default()
+                    ..default()
                 },
             ));
             root.spawn((
-                Text::new("hex outline: seen   @ you   X exit   T runner"),
+                Text::new(level_hint),
+                TextFont {
+                    font_size: 13.0,
+                    ..default()
+                },
+                TextColor(glimpsed),
+                Node {
+                    position_type: PositionType::Absolute,
+                    right: px(14),
+                    top: px(10),
+                    ..default()
+                },
+            ));
+            root.spawn((
+                Text::new(
+                    "hollow glimpsed | bright traversed | ? stale | # anchored | @ you | X exit | V vertical",
+                ),
                 TextFont {
                     font_size: 12.0,
-                    ..Default::default()
+                    ..default()
                 },
-                TextColor(Color::srgb(0.76, 0.84, 0.94)),
+                TextColor(glimpsed),
                 Node {
                     position_type: PositionType::Absolute,
                     left: px(14),
                     bottom: px(10),
-                    ..Default::default()
+                    ..default()
                 },
             ));
-            for level in 0..world.config.levels {
-                let column = level % LEVEL_COLUMNS;
-                let row = level / LEVEL_COLUMNS;
-                let level_left = 16.0 + f32::from(column) * (level_width + LEVEL_GAP_X);
-                let level_top = 42.0 + f32::from(row) * (level_height + LEVEL_GAP_Y);
-                root.spawn((
-                    Text::new(format!("L{level}")),
-                    TextFont {
-                        font_size: 12.0,
-                        ..Default::default()
-                    },
-                    TextColor(Color::srgb(0.76, 0.84, 0.94)),
-                    Node {
-                        position_type: PositionType::Absolute,
-                        left: px(level_left),
-                        top: px(level_top),
-                        ..Default::default()
-                    },
-                ));
+
+            for (&cell, known) in knowledge
+                .cells
+                .iter()
+                .filter(|(cell, _)| cell.level == viewed)
+            {
+                for face in [HexFace::East, HexFace::SouthEast, HexFace::SouthWest] {
+                    if known.known_ports.port(face) == PortClass::Sealed {
+                        continue;
+                    }
+                    let Some(neighbor) = world.config.grid().neighbor(cell, face) else {
+                        continue;
+                    };
+                    let Some(neighbor_known) = knowledge.cells.get(&neighbor) else {
+                        continue;
+                    };
+                    if neighbor.level != viewed
+                        || neighbor_known.known_ports.port(face.opposite()) == PortClass::Sealed
+                    {
+                        continue;
+                    }
+                    let color = if known.is_stale(world, cell)
+                        || neighbor_known.is_stale(world, neighbor)
+                    {
+                        stale
+                    } else if known.discovery == HexMapDiscovery::Traversed
+                        && neighbor_known.discovery == HexMapDiscovery::Traversed
+                    {
+                        you
+                    } else {
+                        glimpsed
+                    };
+                    spawn_connection(root, cell_center(cell), cell_center(neighbor), color);
+                }
             }
-            let others: Vec<_> = runtime
-                .match_state
-                .players
-                .values()
-                .filter(|player| player.id != runtime.local_player && !player.escaped)
-                .map(|player| player.cell)
-                .collect();
-            for &cell in &runtime.discovered {
-                let column = cell.level % LEVEL_COLUMNS;
-                let row = cell.level / LEVEL_COLUMNS;
-                let level_left = 16.0 + f32::from(column) * (level_width + LEVEL_GAP_X);
-                let level_top = 62.0 + f32::from(row) * (level_height + LEVEL_GAP_Y);
-                let left = level_left + f32::from(cell.q) * Q_PITCH + f32::from(cell.r) * R_X_PITCH;
-                let top = level_top + f32::from(cell.r) * R_Y_PITCH;
-                let (glyph, border_color, glyph_color) = if cell == local_cell {
-                    ("@", you, you)
-                } else if cell == exit {
-                    ("X", exit_color, exit_color)
-                } else if others.contains(&cell) {
-                    ("T", runner, runner)
+
+            for (&cell, known) in knowledge
+                .cells
+                .iter()
+                .filter(|(cell, _)| cell.level == viewed)
+            {
+                let left = PANEL_PADDING
+                    + f32::from(cell.q) * Q_PITCH
+                    + f32::from(cell.r) * R_X_PITCH;
+                let top = 54.0 + f32::from(cell.r) * R_Y_PITCH;
+                let placement = &world.placements[&cell];
+                let vertical = placement.up != observed_hex::PortClass::Sealed
+                    || placement.down != observed_hex::PortClass::Sealed;
+                let is_stale = known.is_stale(world, cell);
+                let treatment = if known.anchored {
+                    anchored
+                } else if is_stale {
+                    stale
+                } else if known.discovery == HexMapDiscovery::Traversed {
+                    you
                 } else {
-                    ("", glimpsed, you)
+                    glimpsed
+                };
+                let (glyph, color) = if cell == local_cell {
+                    ("@", you)
+                } else if discovered_exit && cell == exit {
+                    ("X", exit_color)
+                } else if known.anchored {
+                    ("#", anchored)
+                } else if is_stale {
+                    ("?", stale)
+                } else if vertical {
+                    ("V", treatment)
+                } else {
+                    ("", treatment)
                 };
                 root.spawn((Node {
                     position_type: PositionType::Absolute,
@@ -181,25 +235,70 @@ fn spawn_map(commands: &mut Commands, runtime: &HexWfcRuntime) {
                     height: px(HEX_HEIGHT),
                     justify_content: JustifyContent::Center,
                     align_items: AlignItems::Center,
-                    ..Default::default()
+                    ..default()
                 },))
                     .with_children(|hex| {
-                        spawn_hex_outline(hex, border_color);
+                        spawn_hex_outline(hex, color);
                         hex.spawn((
                             Text::new(glyph),
                             TextFont {
-                                font_size: 9.0,
-                                ..Default::default()
+                                font_size: 11.0,
+                                ..default()
                             },
-                            TextColor(glyph_color),
+                            TextColor(color),
                         ));
                     });
             }
         });
 }
 
-/// Six thin UI bars tracing a pointy-top hex. Positions are relative to the owning
-/// `HEX_WIDTH × HEX_HEIGHT` tile; rotations match the canonical axial projection.
+fn cell_center(cell: HexCoord) -> Vec2 {
+    Vec2::new(
+        PANEL_PADDING
+            + f32::from(cell.q) * Q_PITCH
+            + f32::from(cell.r) * R_X_PITCH
+            + HEX_WIDTH * 0.5,
+        54.0 + f32::from(cell.r) * R_Y_PITCH + HEX_HEIGHT * 0.5,
+    )
+}
+
+fn spawn_connection(root: &mut ChildSpawnerCommands, from: Vec2, to: Vec2, color: Color) {
+    let delta = to - from;
+    let midpoint = (from + to) * 0.5;
+    root.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            left: px(midpoint.x - delta.length() * 0.5),
+            top: px(midpoint.y - 1.0),
+            width: px(delta.length()),
+            height: px(2.0),
+            ..default()
+        },
+        BackgroundColor(color),
+        UiTransform::from_rotation(Rot2::radians(delta.y.atan2(delta.x))),
+    ));
+}
+
+fn adjacent_discovered_level(
+    discovered: &BTreeSet<HexCoord>,
+    current: u8,
+    direction: i8,
+) -> Option<u8> {
+    if direction > 0 {
+        discovered
+            .iter()
+            .map(|cell| cell.level)
+            .filter(|&level| level > current)
+            .min()
+    } else {
+        discovered
+            .iter()
+            .map(|cell| cell.level)
+            .filter(|&level| level < current)
+            .max()
+    }
+}
+
 fn spawn_hex_outline(hex: &mut ChildSpawnerCommands, color: Color) {
     let half_w = HEX_WIDTH * 0.5;
     let half_h = HEX_HEIGHT * 0.5;
@@ -219,7 +318,7 @@ fn spawn_hex_outline(hex: &mut ChildSpawnerCommands, color: Color) {
                 top: px(center_y - 0.75),
                 width: px(HEX_SIDE),
                 height: px(1.5),
-                ..Default::default()
+                ..default()
             },
             BackgroundColor(color),
             UiTransform::from_rotation(Rot2::degrees(degrees)),
@@ -229,16 +328,22 @@ fn spawn_hex_outline(hex: &mut ChildSpawnerCommands, color: Color) {
 
 fn signature(runtime: &HexWfcRuntime) -> u64 {
     let mut signature = u64::from(runtime.map_open);
-    signature ^= u64::from(runtime.match_state.facility.generation) << 1;
-    signature ^= (runtime.discovered.len() as u64) << 8;
+    signature ^= u64::from(runtime.map_level) << 1;
+    signature ^= u64::from(runtime.match_state.facility.generation) << 8;
     let local = runtime.local().cell;
     signature ^= u64::from(local.q) | (u64::from(local.r) << 16) | (u64::from(local.level) << 32);
-    for player in runtime.match_state.players.values() {
-        signature = signature.rotate_left(7)
-            ^ (u64::from(player.cell.q)
-                | (u64::from(player.cell.r) << 16)
-                | (u64::from(player.cell.level) << 32)
-                | (u64::from(player.escaped) << 48));
+    if let Some(knowledge) = runtime.match_state.player_map(runtime.local_player) {
+        signature ^= (knowledge.cells.len() as u64) << 24;
+        for (&cell, known) in &knowledge.cells {
+            signature = signature.rotate_left(7)
+                ^ u64::from(cell.q)
+                ^ (u64::from(cell.r) << 16)
+                ^ (u64::from(cell.level) << 32)
+                ^ (u64::from(known.last_confirmed_revision) << 40)
+                ^ (u64::from(known.known_ports.0) << 47)
+                ^ (u64::from(known.discovery == HexMapDiscovery::Traversed) << 62)
+                ^ (u64::from(known.anchored) << 63);
+        }
     }
     signature
 }
@@ -248,20 +353,39 @@ mod tests {
     use super::*;
 
     #[test]
-    fn production_ten_level_sketch_fits_the_capture_viewport() {
+    fn active_level_panel_fits_the_capture_viewport() {
         let cols = 28u8;
         let rows = 20u8;
-        let levels = 10u8;
-        let level_width =
-            f32::from(cols - 1) * Q_PITCH + f32::from(rows - 1) * R_X_PITCH + HEX_WIDTH;
-        let level_height = f32::from(rows - 1) * R_Y_PITCH + HEX_HEIGHT;
-        let width = f32::from(levels.min(LEVEL_COLUMNS)) * level_width
-            + f32::from(levels.min(LEVEL_COLUMNS) - 1) * LEVEL_GAP_X
-            + 32.0;
-        let level_rows = levels.div_ceil(LEVEL_COLUMNS);
-        let height =
-            f32::from(level_rows) * level_height + f32::from(level_rows - 1) * LEVEL_GAP_Y + 116.0;
-        assert!(width <= 1_180.0, "map width {width} exceeds its UI cap");
-        assert!(height <= 760.0, "map height {height} exceeds its UI cap");
+        let width = f32::from(cols - 1) * Q_PITCH
+            + f32::from(rows - 1) * R_X_PITCH
+            + HEX_WIDTH
+            + PANEL_PADDING * 2.0;
+        let height = f32::from(rows - 1) * R_Y_PITCH + HEX_HEIGHT + 132.0;
+        assert!(width <= 1_180.0, "map width {width} exceeds UI cap");
+        assert!(height <= 760.0, "map height {height} exceeds UI cap");
+    }
+
+    #[test]
+    fn adjacent_hints_skip_undiscovered_floors() {
+        let cells = BTreeSet::from([
+            HexCoord {
+                q: 0,
+                r: 0,
+                level: 0,
+            },
+            HexCoord {
+                q: 0,
+                r: 0,
+                level: 4,
+            },
+            HexCoord {
+                q: 0,
+                r: 0,
+                level: 9,
+            },
+        ]);
+        assert_eq!(adjacent_discovered_level(&cells, 4, -1), Some(0));
+        assert_eq!(adjacent_discovered_level(&cells, 4, 1), Some(9));
+        assert_eq!(adjacent_discovered_level(&cells, 9, 1), None);
     }
 }

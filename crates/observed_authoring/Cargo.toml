@@ -19,6 +19,7 @@ observed_traversal = { path = "../observed_traversal", default-features = false 
 quake-map = "0.6"
 ron = "0.8"
 serde = { version = "1.0", features = ["derive"] }
+sha2 = "0.10"
 
 [dev-dependencies]
 # The coverage gate consumes the production solver's exact geometry-emitter

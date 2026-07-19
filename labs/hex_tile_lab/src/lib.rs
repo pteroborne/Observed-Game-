@@ -48,7 +48,26 @@ struct LabState {
     look: Vec2,
     /// Capture script drives the body forward instead of the keyboard.
     scripted_walk: bool,
+    last_reload: String,
     dirty: bool,
+}
+
+fn tile_source_dir() -> std::path::PathBuf {
+    let root = std::path::PathBuf::from("assets/tiles");
+    if root.exists() {
+        root
+    } else {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tiles")
+    }
+}
+
+fn load_manifest_tiles() -> Result<Vec<TilePrototype>, String> {
+    let base = tile_source_dir();
+    let manifest = Manifest::load(&base.join("manifest.ron"))
+        .map_err(|error| format!("manifest: {error:?}"))?;
+    manifest
+        .load_tiles(&base)
+        .map_err(|error| format!("source validation: {error:?}"))
 }
 
 /// Outward plan direction (world x, z) of a lateral face's midpoint.
@@ -107,14 +126,7 @@ impl LabState {
     fn load() -> Self {
         // Workspace root when launched via `cargo run`; fall back to the
         // manifest-relative path under `cargo test` (crate-local CWD).
-        let mut base = std::path::PathBuf::from("assets/tiles");
-        if !base.exists() {
-            base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tiles");
-        }
-        let manifest = Manifest::load(&base.join("manifest.ron")).expect("manifest loads");
-        let tiles = manifest
-            .load_tiles(&base)
-            .expect("all manifest tiles validate");
+        let tiles = load_manifest_tiles().expect("all manifest tiles validate");
         assert!(!tiles.is_empty(), "manifest has tiles");
         let mut state = Self {
             scene: RapierTraversalScene::from_arena_spec(&tiles[0].arena_spec()),
@@ -126,6 +138,7 @@ impl LabState {
             overlay: true,
             look: Vec2::ZERO,
             scripted_walk: false,
+            last_reload: "authored sources loaded".to_string(),
             dirty: true,
         };
         state.switch(0);
@@ -144,6 +157,22 @@ impl LabState {
 
     fn respawn(&mut self) {
         self.switch(self.current);
+    }
+
+    fn reload_authored_sources(&mut self) -> Result<(), String> {
+        let previous = self.tile().key.clone();
+        let tiles = load_manifest_tiles()?;
+        if tiles.is_empty() {
+            return Err("manifest contains no tiles".to_string());
+        }
+        let next = tiles
+            .iter()
+            .position(|tile| tile.key == previous)
+            .unwrap_or(0);
+        self.tiles = tiles;
+        self.switch(next);
+        self.last_reload = format!("hot reload OK: {} validated sources", self.tiles.len());
+        Ok(())
     }
 
     fn tile(&self) -> &TilePrototype {
@@ -262,6 +291,11 @@ fn handle_input(
     }
     if keyboard.just_pressed(KeyCode::KeyR) {
         state.respawn();
+    }
+    if keyboard.just_pressed(KeyCode::KeyH)
+        && let Err(error) = state.reload_authored_sources()
+    {
+        state.last_reload = format!("hot reload FAILED: {error}");
     }
     if keyboard.just_pressed(KeyCode::KeyC) {
         state.collider_view = !state.collider_view;
@@ -448,6 +482,7 @@ fn update_status(state: Res<LabState>, mut status: Query<&mut Text, With<LabStat
         state.feet_height(),
         state.body.grounded,
     );
+    **text += &format!("\nH hot reload | {}", state.last_reload);
 }
 
 #[cfg(test)]
@@ -479,5 +514,14 @@ mod tests {
             feet + Vec3::Y * state.config.half_height
         );
         assert_eq!(state.body.yaw, yaw);
+    }
+
+    #[test]
+    fn hot_reload_preserves_the_selected_authored_key() {
+        let mut state = LabState::load();
+        let key = state.tile().key.clone();
+        state.reload_authored_sources().expect("reload succeeds");
+        assert_eq!(state.tile().key, key);
+        assert!(state.last_reload.contains("validated sources"));
     }
 }

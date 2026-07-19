@@ -1,31 +1,30 @@
-//! Mid-match observation-safe relayout for the hex facility.
-//!
-//! This mirrors the square lattice's `full_wfc/model/mutation.rs` state machine:
-//! at a deterministic warning tick the match begins a relayout keyed on the
-//! current [`HexObservationFrame`](observed_facility::hex_wfc::HexObservationFrame)
-//! (built by [`HexWfcMatch::build_observation`]); it advances one seeded collapse
-//! attempt per tick; and at the scheduled commit tick it either commits — bumping
-//! `facility.generation`, re-projecting geometry and physics — or cancels. Every
-//! decision is a pure function of `(seed, tick, observation)`, so the same seed and
-//! scripted inputs reproduce the same generation timeline byte-for-byte.
+//! Mid-match observation-safe local relayout state machine.
+
+use std::collections::BTreeSet;
 
 use observed_facility::hex_wfc::{HexRelayoutCandidate, HexRelayoutProgress};
 
 use super::{
-    CALM_MUTATION_TICKS, HexMatchEvent, HexMatchEventKind, HexWfcGeometrySnapshot, HexWfcMatch,
-    MUTATION_WARNING_TICKS, PRESSURED_MUTATION_TICKS, PendingRelayout,
+    HexMatchEvent, HexMatchEventKind, HexWfcMatch, MAX_MUTATION_TICKS, MIN_MUTATION_TICKS,
+    MUTATION_WARNING_TICKS, PendingRelayout,
 };
 
 impl HexWfcMatch {
-    /// Advance the relayout cycle exactly one tick. Called once per `step` after
-    /// the observation frame for this tick has been rebuilt.
+    /// Advance at most one seeded collapse attempt this tick, then atomically
+    /// apply the bounded logical/geometry/physics delta at the scheduled tick.
     pub(super) fn step_mutation(&mut self) {
         let warning_tick = self
             .next_mutation_tick
             .saturating_sub(MUTATION_WARNING_TICKS);
         if self.tick == warning_tick && self.pending_relayout.is_none() {
+            let frontier = self
+                .map_knowledge
+                .values()
+                .flat_map(|knowledge| knowledge.cells.keys().copied())
+                .collect::<BTreeSet<_>>();
             self.pending_relayout = Some(PendingRelayout::Solving(
-                self.facility.begin_relayout(&self.observation),
+                self.facility
+                    .begin_frontier_relayout(&self.observation, &frontier),
             ));
             self.push_mutation_event(HexMatchEventKind::MutationWarning);
         }
@@ -62,26 +61,43 @@ impl HexWfcMatch {
         self.schedule_next_mutation();
     }
 
-    /// Commit a solved candidate against the latest observation, or reject it.
-    ///
-    /// The commit is staged on a clone of the facility so that a candidate that
-    /// re-validates but no longer projects (a register/signature the corpus does
-    /// not cover) leaves the live facility and geometry untouched — never a
-    /// facility/geometry generation mismatch.
     fn commit_mutation(&mut self, candidate: HexRelayoutCandidate) -> HexMatchEventKind {
-        let mut probe = self.facility.clone();
-        if probe.commit_relayout(candidate, &self.observation).is_err() {
+        let logical = match self
+            .facility
+            .commit_relayout_delta(candidate, &self.observation)
+        {
+            Ok(delta) => delta,
+            Err(_) => return HexMatchEventKind::MutationCancelled,
+        };
+        let geometry = match self.geometry.project_delta_with_rooms(
+            &self.facility,
+            &logical,
+            &self.prototypes,
+            &self.room_prototypes,
+        ) {
+            Ok(delta) => delta,
+            Err(_) => {
+                self.facility
+                    .revert_relayout_delta(logical)
+                    .expect("the just-accepted logical delta is revertible");
+                return HexMatchEventKind::MutationCancelled;
+            }
+        };
+        if self
+            .physics
+            .apply_collider_delta(&geometry.colliders)
+            .is_err()
+        {
+            self.facility
+                .revert_relayout_delta(logical)
+                .expect("the just-accepted logical delta is revertible");
             return HexMatchEventKind::MutationCancelled;
         }
-        match HexWfcGeometrySnapshot::project(&probe, &self.prototypes) {
-            Ok(geometry) => {
-                self.physics = geometry.rapier_scene();
-                self.geometry = geometry;
-                self.facility = probe;
-                HexMatchEventKind::MutationCommitted
-            }
-            Err(_) => HexMatchEventKind::MutationCancelled,
-        }
+        self.geometry
+            .apply_delta(&geometry)
+            .expect("geometry delta was projected from this snapshot");
+        self.last_relayout_delta = Some(logical);
+        HexMatchEventKind::MutationCommitted
     }
 
     fn cancel_mutation(&mut self) {
@@ -90,17 +106,8 @@ impl HexWfcMatch {
         self.schedule_next_mutation();
     }
 
-    /// Schedule the next commit tick. Spacing tightens with escape pressure, plus
-    /// a seed/tick-derived jitter so cycles are aperiodic yet fully deterministic.
     fn schedule_next_mutation(&mut self) {
-        let escaped = self.escape_order.len() as f32;
-        let pressure = (escaped / self.players.len().max(1) as f32).clamp(0.0, 1.0);
-        let base = CALM_MUTATION_TICKS as f32
-            + (PRESSURED_MUTATION_TICKS as f32 - CALM_MUTATION_TICKS as f32) * pressure;
-        let jitter = ((self.seed ^ self.tick).rotate_left(17) % 241) as i64 - 120;
-        self.next_mutation_tick = self
-            .tick
-            .saturating_add((base as i64 + jitter).max(MUTATION_WARNING_TICKS as i64 + 1) as u64);
+        self.next_mutation_tick = scheduled_mutation_tick(self.seed, self.tick);
     }
 
     fn push_mutation_event(&mut self, kind: HexMatchEventKind) {
@@ -111,4 +118,10 @@ impl HexWfcMatch {
             cell: None,
         });
     }
+}
+
+pub(super) fn scheduled_mutation_tick(seed: u64, from_tick: u64) -> u64 {
+    let span = MAX_MUTATION_TICKS - MIN_MUTATION_TICKS + 1;
+    let mixed = (seed ^ from_tick.wrapping_mul(0x9E37_79B9_7F4A_7C15)).rotate_left(17);
+    from_tick.saturating_add(MIN_MUTATION_TICKS + mixed % span)
 }

@@ -24,7 +24,10 @@ pub mod gantry;
 pub mod rapier_controller;
 mod world;
 
-pub use world::{ArenaSpec, ArenaSpecError, ColliderShape, ColliderSpec, StableColliderId};
+pub use world::{
+    ArenaSpec, ArenaSpecError, ColliderDelta, ColliderDeltaError, ColliderShape, ColliderSpec,
+    StableColliderId,
+};
 
 /// Serialized compatibility tag retained for replay/network fixtures. The assembled
 /// first-person game has promoted Rapier to its sole runtime controller path.

@@ -7,9 +7,13 @@
 mod geometry;
 mod model;
 
-pub use geometry::{HexGeometryError, HexStructurePiece, HexStructureRole, HexWfcGeometrySnapshot};
+pub use geometry::{
+    HexGeometryDelta, HexGeometryError, HexStructurePiece, HexStructureRole, HexWfcGeometrySnapshot,
+};
 pub use model::{
-    HEX_INPUT_VERSION, HexDoorState, HexInputFrame, HexMatchConfig, HexMatchError, HexMatchEvent,
-    HexMatchEventKind, HexMatchSnapshot, HexMatchStatus, HexPlayerSnapshot, HexPlayerState,
-    HexWfcMatch,
+    HEX_INPUT_VERSION, HexActionButtons, HexDeployedLantern, HexDoorState, HexGuardianState,
+    HexGuardianStatus, HexInputFrame, HexLanternCache, HexLanternState, HexMapCellKnowledge,
+    HexMapDiscovery, HexMatchConfig, HexMatchError, HexMatchEvent, HexMatchEventKind,
+    HexMatchSnapshot, HexMatchStatus, HexPlayerCommand, HexPlayerMapKnowledge, HexPlayerSnapshot,
+    HexPlayerState, HexWfcMatch,
 };

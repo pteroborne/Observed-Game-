@@ -17,6 +17,7 @@ pub(super) enum HexWfcSound {
     Recover,
     Escape,
     Complete,
+    Guardian,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -28,12 +29,16 @@ pub(super) struct CueDefinition {
 }
 
 #[cfg(test)]
-pub(super) const ALL_EVENTS: [HexMatchEventKind; 6] = [
+pub(super) const ALL_EVENTS: [HexMatchEventKind; 10] = [
     HexMatchEventKind::MutationWarning,
     HexMatchEventKind::MutationCommitted,
     HexMatchEventKind::MutationCancelled,
     HexMatchEventKind::PlayerRecovered,
     HexMatchEventKind::PlayerEscaped,
+    HexMatchEventKind::LanternCacheCollected,
+    HexMatchEventKind::AnchorDeployed,
+    HexMatchEventKind::AnchorRecovered,
+    HexMatchEventKind::GuardianCatch,
     HexMatchEventKind::MatchFinished,
 ];
 
@@ -63,6 +68,30 @@ pub(super) fn cue_for(kind: HexMatchEventKind) -> CueDefinition {
         HexMatchEventKind::PlayerEscaped => {
             cue(">", "RUNNER ESCAPED", MarkerRole::Exit, HexWfcSound::Escape)
         }
+        HexMatchEventKind::LanternCacheCollected => cue(
+            "+",
+            "LANTERNS RECOVERED",
+            MarkerRole::Teammate,
+            HexWfcSound::Recover,
+        ),
+        HexMatchEventKind::AnchorDeployed => cue(
+            "#",
+            "THRESHOLD ANCHORED",
+            MarkerRole::Control,
+            HexWfcSound::Hold,
+        ),
+        HexMatchEventKind::AnchorRecovered => cue(
+            "^",
+            "LANTERN RECOVERED",
+            MarkerRole::Control,
+            HexWfcSound::Recover,
+        ),
+        HexMatchEventKind::GuardianCatch => cue(
+            "!",
+            "GUARDIAN SETBACK",
+            MarkerRole::Collapse,
+            HexWfcSound::Guardian,
+        ),
         HexMatchEventKind::MatchFinished => cue(
             "#",
             "MATCH COMPLETE",

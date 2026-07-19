@@ -13,7 +13,7 @@ pub(super) struct ActorVisual(PlayerId);
 
 #[derive(Resource)]
 pub(super) struct EntityVisualAssets {
-    cube: Handle<Mesh>,
+    runner: Handle<Mesh>,
     beacon: Handle<Mesh>,
     local: Handle<StandardMaterial>,
     rival: Handle<StandardMaterial>,
@@ -28,7 +28,10 @@ pub(super) fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let assets = EntityVisualAssets {
-        cube: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
+        // Rival silhouettes are deliberately compact: the physical bodies
+        // begin close together, and a full-height opaque capsule at arm's
+        // length obscures the architecture players must read.
+        runner: meshes.add(Capsule3d::new(0.25, 0.8)),
         beacon: meshes.add(Cuboid::new(1.1, 3.6, 1.1)),
         local: signal_material(&mut materials, MarkerRole::You),
         rival: signal_material(&mut materials, MarkerRole::Rival),
@@ -51,9 +54,9 @@ pub(super) fn setup(
         commands.spawn((
             ActorVisual(player.id),
             DespawnOnExit(GameState::HexWfc),
-            Mesh3d(assets.cube.clone()),
+            Mesh3d(assets.runner.clone()),
             MeshMaterial3d(material),
-            Transform::from_translation(player.position).with_scale(Vec3::new(0.72, 1.8, 0.72)),
+            Transform::from_translation(player.position).with_scale(Vec3::new(0.8, 1.0, 0.8)),
             Name::new(format!("runner {} domain visual", player.id.0)),
         ));
     }
@@ -105,8 +108,11 @@ fn signal_material(
 ) -> Handle<StandardMaterial> {
     let treatment = observed_style::marker(role);
     materials.add(StandardMaterial {
-        base_color: treatment.base_color,
-        emissive: treatment.emissive,
+        // Close-range rivals remain unmistakably style-owned signals without
+        // turning into opaque bloom cards over thresholds and ramps.
+        base_color: treatment.base_color.with_alpha(0.46),
+        emissive: treatment.emissive * 0.24,
+        alpha_mode: AlphaMode::Blend,
         metallic: 0.22,
         perceptual_roughness: 0.38,
         ..Default::default()

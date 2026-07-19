@@ -5,13 +5,17 @@
 //! search), and the fixed-step command threading. It reads simulation crates only and
 //! never imports presentation (enforced by `arch_check::hex_sim_never_imports_presentation`).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::OnceLock;
 
 use bevy::prelude::*;
-use observed_authoring::{Manifest, TilePrototype};
+use observed_authoring::{CompiledTileCatalog, Manifest, RoomPrototype, TilePrototype};
+use observed_content::ArchitectureRegister;
 use observed_core::PlayerId;
 use observed_facility::hex_wfc::{HexCoord, HexWfcConfig};
-use observed_match::hex_wfc::{HexInputFrame, HexMatchConfig, HexMatchStatus, HexWfcMatch};
+use observed_match::hex_wfc::{
+    HexActionButtons, HexInputFrame, HexMatchConfig, HexMatchStatus, HexPlayerCommand, HexWfcMatch,
+};
 use player_input::PlayerIntent;
 
 use crate::flow::ActiveMatchSeed;
@@ -25,7 +29,12 @@ pub(super) const EYE_OFFSET: f32 = 0.70;
 #[derive(Resource, Default)]
 pub(super) struct HexWfcIntent {
     pub intent: PlayerIntent,
+    pub actions: HexActionButtons,
     pub toggle_map: bool,
+    /// One-shot request to browse the survivor sketch one discovered floor up
+    /// (`1`) or down (`-1`). Device adapters write this; the fixed-step runtime
+    /// remains the sole owner of map state.
+    pub browse_map_level: i8,
 }
 
 #[derive(Resource)]
@@ -35,12 +44,12 @@ pub struct HexWfcRuntime {
     /// Cells whose visuals must be (re)spawned — everything on entry, then the whole
     /// facility again after any relayout generation change. Mirrors the full-WFC
     /// `pending_visual_changes` streaming trigger.
-    pub pending_full_rebuild: bool,
-    /// Presentation-derived survivor knowledge: every cell the local player has ever
-    /// occupied or seen. Never feeds simulation; drives only the tac-map sketch.
-    pub discovered: BTreeSet<HexCoord>,
+    pub pending_visual_cells: BTreeSet<HexCoord>,
+    pub presented_revisions: BTreeMap<HexCoord, u32>,
     pub status: String,
     pub map_open: bool,
+    /// Floor currently shown by the active-level survivor sketch.
+    pub map_level: u8,
     pub results_delay_frames: u16,
 }
 
@@ -61,14 +70,61 @@ fn tile_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/tiles")
 }
 
-/// Load the committed authored hex-tile corpus from the workspace `assets/tiles`
-/// manifest. This is the same corpus the hex labs and geometry tests project.
+/// Load legacy compatibility cells plus strict compiled cell modules. Tests and
+/// evidence use the same merged corpus as the production match.
 pub(crate) fn load_prototypes() -> Vec<TilePrototype> {
-    let base = tile_dir();
-    Manifest::load(&base.join("manifest.ron"))
-        .expect("committed hex tile manifest loads")
-        .load_tiles(&base)
-        .expect("committed hex tile prototypes validate")
+    load_authoring_corpus().cells
+}
+
+#[derive(Clone)]
+struct HexAuthoringCorpus {
+    cells: Vec<TilePrototype>,
+    rooms: Vec<RoomPrototype>,
+    simulation_content_hash: [u8; 32],
+}
+
+fn load_authoring_corpus() -> HexAuthoringCorpus {
+    static CORPUS: OnceLock<HexAuthoringCorpus> = OnceLock::new();
+    CORPUS
+        .get_or_init(|| {
+            let base = tile_dir();
+            let mut cells = Manifest::load(&base.join("manifest.ron"))
+                .expect("committed hex tile manifest loads")
+                .load_tiles(&base)
+                .expect("committed hex tile prototypes validate");
+            let text = std::fs::read_to_string(base.join("compiled_catalog.ron"))
+                .expect("compiled tile catalog is committed");
+            let compiled =
+                CompiledTileCatalog::from_ron(&text).expect("compiled tile catalog schema loads");
+            let sidecar = std::fs::read_to_string(base.join("compiled_catalog.sha256"))
+                .expect("compiled tile catalog hash is committed");
+            assert_eq!(
+                sidecar.trim(),
+                compiled.simulation_content_hash,
+                "compiled catalog and network hash sidecar agree"
+            );
+            let register_slugs = ArchitectureRegister::ALL.map(ArchitectureRegister::slug);
+            let strict = compiled
+                .runtime_catalog(&register_slugs)
+                .expect("compiled strict modules expand into runtime geometry");
+            cells.extend(strict.cells);
+            HexAuthoringCorpus {
+                cells,
+                rooms: strict.rooms,
+                simulation_content_hash: decode_simulation_content_hash(sidecar.trim()),
+            }
+        })
+        .clone()
+}
+
+fn decode_simulation_content_hash(text: &str) -> [u8; 32] {
+    assert_eq!(text.len(), 64, "compiled tile catalog hash is SHA-256 hex");
+    let mut hash = [0_u8; 32];
+    for (index, byte) in hash.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&text[index * 2..index * 2 + 2], 16)
+            .expect("compiled tile catalog hash contains hex digits");
+    }
+    hash
 }
 
 /// True when running under the test harness, where the production 28×20×10 solve is
@@ -86,7 +142,7 @@ fn is_test_binary() -> bool {
 /// `arc_default()` 28×20×10 facility (now ~0.8 s to solve, fine on the setup path);
 /// tests use the compact showcase fixture from [`HexMatchConfig::default`]. The relayout
 /// evidence capture also forces the showcase fixture so the pinned deterministic
-/// warning@1620 / commit@1800 timeline (12×9×4, seed `0xcb85_21b1_f77d_d0fc`) reproduces
+/// warning@575 / commit@695 timeline (12×9×4, seed `0xA11C_9500_0000_0000`) reproduces
 /// on the capture path — the production facility has a different mutation schedule.
 fn runtime_config() -> HexMatchConfig {
     let mut config = HexMatchConfig::default();
@@ -106,20 +162,20 @@ fn runtime_config() -> HexMatchConfig {
     config
 }
 
-/// Build a hex match near `requested_seed`, advancing the seed over a small window if a
-/// particular seed hits an unsolvable contradiction. Mirrors the full-WFC offset search.
-pub(super) fn solve_nearby(
-    requested_seed: u64,
-    prototypes: &[TilePrototype],
-) -> (HexWfcMatch, u64) {
+fn solve_nearby_with_rooms(requested_seed: u64, corpus: &HexAuthoringCorpus) -> (HexWfcMatch, u64) {
     let config = runtime_config();
     (0..64u64)
         .find_map(|offset| {
-            HexWfcMatch::new(requested_seed.wrapping_add(offset), config, prototypes)
-                .ok()
-                .map(|game| (game, offset))
+            HexWfcMatch::new_with_rooms(
+                requested_seed.wrapping_add(offset),
+                config,
+                &corpus.cells,
+                &corpus.rooms,
+            )
+            .ok()
+            .map(|game| (game, offset))
         })
-        .expect("the hex tile corpus must contain a solvable nearby seed")
+        .expect("the hex authoring catalog must contain a solvable nearby seed")
 }
 
 pub(super) fn setup_runtime(
@@ -129,22 +185,24 @@ pub(super) fn setup_runtime(
 ) {
     career.begin_match();
     let requested_seed = seed.as_deref().map_or(0xF011_FAC1_1177, |seed| seed.0);
-    let prototypes = load_prototypes();
-    let (match_state, seed_offset) = solve_nearby(requested_seed, &prototypes);
+    let corpus = load_authoring_corpus();
+    let (mut match_state, seed_offset) = solve_nearby_with_rooms(requested_seed, &corpus);
+    match_state.bind_simulation_content_hash(corpus.simulation_content_hash);
     let replay = crate::sim::replay::ReplayTape::new_hex_wfc(&match_state);
-    let mut discovered = BTreeSet::new();
-    discovered.insert(match_state.players[&LOCAL_PLAYER].cell);
+    let map_level = match_state.players[&LOCAL_PLAYER].cell.level;
+    let presented_revisions = match_state.facility.cell_revisions.clone();
     commands.insert_resource(HexWfcRuntime {
         match_state,
         local_player: LOCAL_PLAYER,
-        pending_full_rebuild: true,
-        discovered,
+        pending_visual_cells: BTreeSet::new(),
+        presented_revisions,
         status: if seed_offset == 0 {
             "authoritative hex facility ready".to_string()
         } else {
             format!("seed advanced by {seed_offset} after solve contradictions")
         },
         map_open: false,
+        map_level,
         results_delay_frames: 0,
     });
     commands.insert_resource(HexWfcIntent::default());
@@ -186,22 +244,41 @@ pub(super) fn step_runtime(
 ) {
     if intent.toggle_map {
         runtime.map_open = !runtime.map_open;
+        if runtime.map_open {
+            runtime.map_level = runtime.local().cell.level;
+        }
         intent.toggle_map = false;
     }
+    if runtime.map_open && intent.browse_map_level != 0 {
+        let discovered = runtime
+            .match_state
+            .player_map(runtime.local_player)
+            .map(|knowledge| knowledge.cells.keys().copied().collect())
+            .unwrap_or_default();
+        runtime.map_level = browsed_level(&discovered, runtime.map_level, intent.browse_map_level);
+    }
+    intent.browse_map_level = 0;
     if runtime.match_state.status == HexMatchStatus::Finished {
         clear_one_shot_input(&mut intent.intent);
+        intent.actions = HexActionButtons::default();
         return;
     }
-    let local_intent = if spectator_bot.is_some() {
-        runtime.match_state.bot_command(runtime.local_player)
+    let local_command = if spectator_bot.is_some() {
+        HexPlayerCommand {
+            intent: runtime.match_state.bot_command(runtime.local_player),
+            actions: HexActionButtons::default(),
+        }
     } else {
-        intent.intent
+        HexPlayerCommand {
+            intent: intent.intent,
+            actions: intent.actions,
+        }
     };
     let mut frame = HexInputFrame {
         tick: runtime.match_state.tick + 1,
         ..Default::default()
     };
-    frame.commands.insert(runtime.local_player, local_intent);
+    frame.commands.insert(runtime.local_player, local_command);
     for id in runtime
         .match_state
         .players
@@ -210,9 +287,13 @@ pub(super) fn step_runtime(
         .collect::<Vec<_>>()
     {
         if id != runtime.local_player {
-            frame
-                .commands
-                .insert(id, runtime.match_state.bot_command(id));
+            frame.commands.insert(
+                id,
+                HexPlayerCommand {
+                    intent: runtime.match_state.bot_command(id),
+                    actions: HexActionButtons::default(),
+                },
+            );
         }
     }
     let previous_generation = runtime.match_state.facility.generation;
@@ -221,22 +302,59 @@ pub(super) fn step_runtime(
         replay.record_hex_wfc(&runtime.match_state);
     }
     if runtime.match_state.facility.generation != previous_generation {
-        runtime.pending_full_rebuild = true;
+        let changed = changed_revisions(
+            &runtime.match_state.facility.cell_revisions,
+            &runtime.presented_revisions,
+        );
+        for (cell, revision) in changed {
+            runtime.pending_visual_cells.insert(cell);
+            runtime.presented_revisions.insert(cell, revision);
+        }
     }
-    // The authoritative observation frame aggregates every runner for relayout safety.
-    // Survivor-map knowledge is deliberately local: rival occupancy must not leak their
-    // private route into the local player's sketch.
-    let local_cell = runtime.local().cell;
-    runtime.discovered.insert(local_cell);
+    // Survivor-map knowledge is simulation-owned and player-local. Presentation
+    // reads it directly; rival occupancy never enters the local ledger.
     if let Some(event) = runtime.match_state.recent_events.last() {
         runtime.status = super::cues::cue_for(event.kind).label.to_string();
     }
     clear_one_shot_input(&mut intent.intent);
+    intent.actions = HexActionButtons::default();
 }
 
 fn clear_one_shot_input(intent: &mut PlayerIntent) {
     intent.look = Vec2::ZERO;
     intent.jump_pressed = false;
+}
+
+fn browsed_level(discovered: &BTreeSet<HexCoord>, current: u8, direction: i8) -> u8 {
+    let levels = discovered
+        .iter()
+        .map(|cell| cell.level)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    if direction > 0 {
+        levels
+            .into_iter()
+            .find(|&level| level > current)
+            .unwrap_or(current)
+    } else {
+        levels
+            .into_iter()
+            .rev()
+            .find(|&level| level < current)
+            .unwrap_or(current)
+    }
+}
+
+fn changed_revisions(
+    live: &BTreeMap<HexCoord, u32>,
+    presented: &BTreeMap<HexCoord, u32>,
+) -> Vec<(HexCoord, u32)> {
+    live.iter()
+        .filter_map(|(&cell, &revision)| {
+            (presented.get(&cell).copied().unwrap_or(0) != revision).then_some((cell, revision))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -246,6 +364,54 @@ mod tests {
     fn showcase_match(seed: u64) -> HexWfcMatch {
         let prototypes = load_prototypes();
         HexWfcMatch::new(seed, HexMatchConfig::default(), &prototypes).expect("showcase solves")
+    }
+
+    #[test]
+    fn map_browsing_visits_only_discovered_levels() {
+        let discovered = BTreeSet::from([
+            HexCoord {
+                q: 1,
+                r: 1,
+                level: 0,
+            },
+            HexCoord {
+                q: 1,
+                r: 1,
+                level: 3,
+            },
+            HexCoord {
+                q: 1,
+                r: 1,
+                level: 7,
+            },
+        ]);
+        assert_eq!(browsed_level(&discovered, 0, 1), 3);
+        assert_eq!(browsed_level(&discovered, 3, 1), 7);
+        assert_eq!(browsed_level(&discovered, 7, 1), 7);
+        assert_eq!(browsed_level(&discovered, 7, -1), 3);
+        assert_eq!(browsed_level(&discovered, 0, -1), 0);
+    }
+
+    #[test]
+    fn presentation_cursor_selects_only_cells_with_new_revisions() {
+        let a = HexCoord {
+            q: 1,
+            r: 1,
+            level: 0,
+        };
+        let b = HexCoord {
+            q: 2,
+            r: 1,
+            level: 0,
+        };
+        let c = HexCoord {
+            q: 3,
+            r: 1,
+            level: 0,
+        };
+        let live = BTreeMap::from([(a, 0), (b, 2), (c, 1)]);
+        let presented = BTreeMap::from([(a, 0), (b, 1), (c, 1)]);
+        assert_eq!(changed_revisions(&live, &presented), vec![(b, 2)]);
     }
 
     #[test]
@@ -266,12 +432,21 @@ mod tests {
     #[test]
     fn hex_replay_records_the_versioned_simulation() {
         let mut game = showcase_match(44);
+        game.bind_simulation_content_hash([0x5A; 32]);
         let mut replay = crate::sim::replay::ReplayTape::new_hex_wfc(&game);
         let commands = game
             .players
             .keys()
             .copied()
-            .map(|id| (id, game.bot_command(id)))
+            .map(|id| {
+                (
+                    id,
+                    HexPlayerCommand {
+                        intent: game.bot_command(id),
+                        actions: HexActionButtons::default(),
+                    },
+                )
+            })
             .collect();
         game.step(&HexInputFrame {
             tick: 1,
@@ -283,6 +458,8 @@ mod tests {
             replay.input_version,
             observed_match::hex_wfc::HEX_INPUT_VERSION
         );
+        assert_eq!(replay.map_name, "hex_wfc_v2");
+        assert_eq!(replay.simulation_content_hash, [0x5A; 32]);
         assert_eq!(replay.actors.len(), game.players.len());
         assert_eq!(replay.samples[0].actors.len(), game.players.len());
     }

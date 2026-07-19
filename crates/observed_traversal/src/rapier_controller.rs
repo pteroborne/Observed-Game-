@@ -5,6 +5,7 @@
 //! boundary at the production fixed timestep. No Bevy or `bevy_rapier` types enter
 //! this module.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::f32::consts::TAU;
 
 use glam::Vec3;
@@ -40,6 +41,8 @@ impl StructuralCollider {
 pub struct RapierTraversalScene {
     bodies: RigidBodySet,
     colliders: ColliderSet,
+    stable_handles: BTreeMap<super::StableColliderId, ColliderHandle>,
+    dormant_handles: Vec<ColliderHandle>,
     broad_phase: BroadPhaseBvh,
     narrow_phase: NarrowPhase,
     floor_y: f32,
@@ -97,30 +100,34 @@ impl RapierTraversalScene {
         let bodies = RigidBodySet::new();
         let mut colliders = ColliderSet::new();
         let mut handles = Vec::with_capacity(primitives.len() + 1);
+        let mut stable_handles = BTreeMap::new();
 
         // A finite floor keeps the discrete-place respawn contract meaningful.
-        handles.push(
-            colliders.insert(
-                ColliderBuilder::cuboid(floor_half, 0.1, floor_half)
-                    .translation(Vector::new(0.0, floor_y - 0.1, 0.0))
-                    .friction(0.9)
-                    .build(),
-            ),
+        let floor_handle = colliders.insert(
+            ColliderBuilder::cuboid(floor_half, 0.1, floor_half)
+                .translation(Vector::new(0.0, floor_y - 0.1, 0.0))
+                .friction(0.9)
+                .user_data(0)
+                .build(),
         );
-        for primitive in primitives {
-            handles.push(
-                colliders.insert(
-                    ColliderBuilder::cuboid(primitive.half.x, primitive.half.y, primitive.half.z)
-                        .translation(Vector::new(
-                            primitive.center.x,
-                            primitive.center.y,
-                            primitive.center.z,
-                        ))
-                        .rotation(Vector::Y * primitive.yaw)
-                        .friction(0.8)
-                        .build(),
-                ),
+        handles.push(floor_handle);
+        stable_handles.insert(super::StableColliderId(0), floor_handle);
+        for (index, primitive) in primitives.iter().enumerate() {
+            let id = super::StableColliderId(index as u32 + 1);
+            let handle = colliders.insert(
+                ColliderBuilder::cuboid(primitive.half.x, primitive.half.y, primitive.half.z)
+                    .translation(Vector::new(
+                        primitive.center.x,
+                        primitive.center.y,
+                        primitive.center.z,
+                    ))
+                    .rotation(Vector::Y * primitive.yaw)
+                    .friction(0.8)
+                    .user_data(u128::from(id.0))
+                    .build(),
             );
+            handles.push(handle);
+            stable_handles.insert(id, handle);
         }
 
         let mut broad_phase = BroadPhaseBvh::new();
@@ -137,6 +144,8 @@ impl RapierTraversalScene {
         Self {
             bodies,
             colliders,
+            stable_handles,
+            dormant_handles: Vec::new(),
             broad_phase,
             narrow_phase,
             floor_y,
@@ -149,32 +158,12 @@ impl RapierTraversalScene {
         let bodies = RigidBodySet::new();
         let mut colliders = ColliderSet::new();
         let mut handles = Vec::with_capacity(spec.colliders.len());
+        let mut stable_handles = BTreeMap::new();
 
         for collider in &spec.colliders {
-            let [x, y, z, w] = collider.rotation;
-            let rotation = Rotation::from_xyzw(x, y, z, w).normalize();
-            let builder = match &collider.shape {
-                super::ColliderShape::Cuboid { half } => {
-                    ColliderBuilder::cuboid(half.x, half.y, half.z)
-                }
-                super::ColliderShape::ConvexHull { points } => {
-                    let pts: Vec<Vector> =
-                        points.iter().map(|p| Vector::new(p.x, p.y, p.z)).collect();
-                    ColliderBuilder::convex_hull(&pts).expect("validated convex hull")
-                }
-            };
-            handles.push(
-                colliders.insert(
-                    builder
-                        .position(Pose::from_parts(
-                            Vector::new(collider.center.x, collider.center.y, collider.center.z),
-                            rotation,
-                        ))
-                        .friction(collider.friction)
-                        .user_data(u128::from(collider.id.0))
-                        .build(),
-                ),
-            );
+            let handle = colliders.insert(build_collider(collider));
+            handles.push(handle);
+            stable_handles.insert(collider.id, handle);
         }
 
         let mut broad_phase = BroadPhaseBvh::new();
@@ -192,6 +181,8 @@ impl RapierTraversalScene {
         Self {
             bodies,
             colliders,
+            stable_handles,
+            dormant_handles: Vec::new(),
             broad_phase,
             narrow_phase,
             floor_y: spec.floor_y,
@@ -208,11 +199,16 @@ impl RapierTraversalScene {
     pub fn capsule_is_clear(&self, center: Vec3, radius: f32, half_height: f32) -> bool {
         let segment_half = (half_height - radius).max(0.01);
         let capsule = Capsule::new_y(segment_half, radius);
+        let active = |handle: ColliderHandle, collider: &Collider| {
+            self.stable_handles
+                .get(&super::StableColliderId(collider.user_data as u32))
+                == Some(&handle)
+        };
         let query = self.broad_phase.as_query_pipeline(
             self.narrow_phase.query_dispatcher(),
             &self.bodies,
             &self.colliders,
-            QueryFilter::default(),
+            QueryFilter::default().predicate(&active),
         );
         let pose = Pose::translation(center.x, center.y, center.z);
         !query
@@ -221,7 +217,61 @@ impl RapierTraversalScene {
     }
 
     pub fn collider_count(&self) -> usize {
-        self.colliders.len()
+        self.stable_handles.len()
+    }
+
+    #[must_use]
+    pub fn contains_collider(&self, id: super::StableColliderId) -> bool {
+        self.stable_handles.contains_key(&id)
+    }
+
+    /// Apply a stable-ID structural delta without rebuilding the scene. This
+    /// scene serves spatial queries rather than rigid-body pair generation, so
+    /// direct BVH leaf updates avoid Rapier's global broad-phase pair scan.
+    /// Removed handles remain dormant and are filtered from every query until
+    /// a later insertion reuses their ColliderSet slot.
+    pub fn apply_collider_delta(
+        &mut self,
+        delta: &super::ColliderDelta,
+    ) -> Result<(), super::ColliderDeltaError> {
+        let mut upsert_ids = BTreeSet::new();
+        let mut prepared = Vec::with_capacity(delta.upserted.len());
+        for collider in &delta.upserted {
+            if !upsert_ids.insert(collider.id) {
+                return Err(super::ColliderDeltaError::DuplicateUpsert(collider.id));
+            }
+            let built =
+                build_collider_checked(collider).map_err(super::ColliderDeltaError::InvalidSpec)?;
+            prepared.push((collider.id, built));
+        }
+        for &id in &delta.removed {
+            if !self.stable_handles.contains_key(&id) {
+                return Err(super::ColliderDeltaError::UnknownRemoval(id));
+            }
+        }
+
+        for &id in &delta.removed {
+            let handle = self.stable_handles.remove(&id).expect("validated removal");
+            self.dormant_handles.push(handle);
+        }
+
+        let parameters = IntegrationParameters::default();
+        for (id, collider) in prepared {
+            let handle = self
+                .stable_handles
+                .get(&id)
+                .copied()
+                .or_else(|| self.dormant_handles.pop())
+                .unwrap_or_else(|| self.colliders.insert(collider.clone()));
+            *self
+                .colliders
+                .get_mut(handle)
+                .expect("stable or dormant handle references a live collider") = collider;
+            self.stable_handles.insert(id, handle);
+            let aabb = self.colliders[handle].compute_broad_phase_aabb(&parameters, &self.bodies);
+            self.broad_phase.set_aabb(&parameters, handle, aabb);
+        }
+        Ok(())
     }
 
     pub fn floor_y(&self) -> f32 {
@@ -231,6 +281,37 @@ impl RapierTraversalScene {
     pub fn floor_half(&self) -> f32 {
         self.safety_half.x.max(self.safety_half.z)
     }
+}
+
+fn build_collider(collider: &super::ColliderSpec) -> Collider {
+    build_collider_checked(collider).expect("validated collider spec")
+}
+
+fn build_collider_checked(
+    collider: &super::ColliderSpec,
+) -> Result<Collider, super::ArenaSpecError> {
+    super::world::validate_collider_metadata(collider)?;
+    let [x, y, z, w] = collider.rotation;
+    let rotation = Rotation::from_xyzw(x, y, z, w).normalize();
+    let builder = match &collider.shape {
+        super::ColliderShape::Cuboid { half } => ColliderBuilder::cuboid(half.x, half.y, half.z),
+        super::ColliderShape::ConvexHull { points } => {
+            let pts: Vec<Vector> = points
+                .iter()
+                .map(|point| Vector::new(point.x, point.y, point.z))
+                .collect();
+            ColliderBuilder::convex_hull(&pts)
+                .ok_or(super::ArenaSpecError::DegenerateHull(collider.id))?
+        }
+    };
+    Ok(builder
+        .position(Pose::from_parts(
+            Vector::new(collider.center.x, collider.center.y, collider.center.z),
+            rotation,
+        ))
+        .friction(collider.friction)
+        .user_data(u128::from(collider.id.0))
+        .build())
 }
 
 /// Advance a character with Rapier owning all physical resolution.
@@ -297,11 +378,17 @@ pub fn step_character(
         min_slope_slide_angle: 52.0_f32.to_radians(),
         ..Default::default()
     };
+    let active = |handle: ColliderHandle, collider: &Collider| {
+        scene
+            .stable_handles
+            .get(&super::StableColliderId(collider.user_data as u32))
+            == Some(&handle)
+    };
     let query = scene.broad_phase.as_query_pipeline(
         scene.narrow_phase.query_dispatcher(),
         &scene.bodies,
         &scene.colliders,
-        QueryFilter::default(),
+        QueryFilter::default().predicate(&active),
     );
     let pose = Pose::translation(body.position.x, body.position.y, body.position.z);
     let desired = body.velocity * dt;
@@ -425,5 +512,63 @@ mod tests {
         let spec = super::super::ArenaSpec::from_legacy(&arena);
         let scene = RapierTraversalScene::from_arena_spec(&spec);
         assert_eq!(scene.collider_count(), spec.colliders.len());
+    }
+
+    #[test]
+    fn stable_collider_delta_updates_the_live_query_scene() {
+        let spec = super::super::ArenaSpec {
+            colliders: vec![
+                super::super::ColliderSpec::cuboid(
+                    super::super::StableColliderId(0),
+                    Vec3::new(0.0, -0.1, 0.0),
+                    Vec3::new(4.0, 0.1, 4.0),
+                ),
+                super::super::ColliderSpec::cuboid(
+                    super::super::StableColliderId(1),
+                    Vec3::new(1.5, 1.0, 0.0),
+                    Vec3::new(0.2, 1.0, 1.0),
+                ),
+            ],
+            floor_y: 0.0,
+            safety_center: Vec3::new(0.0, 2.0, 0.0),
+            safety_half: Vec3::splat(5.0),
+        };
+        let mut scene = RapierTraversalScene::from_arena_spec(&spec);
+        assert!(!scene.capsule_is_clear(Vec3::new(1.5, 0.9, 0.0), 0.35, 0.9));
+        assert!(scene.capsule_is_clear(Vec3::new(-1.5, 0.9, 0.0), 0.35, 0.9));
+
+        let delta = super::super::ColliderDelta {
+            removed: BTreeSet::from([super::super::StableColliderId(1)]),
+            upserted: vec![super::super::ColliderSpec::cuboid(
+                super::super::StableColliderId(3),
+                Vec3::new(-1.5, 1.0, 0.0),
+                Vec3::new(0.2, 1.0, 1.0),
+            )],
+        };
+        scene.apply_collider_delta(&delta).expect("delta");
+        assert!(!scene.contains_collider(super::super::StableColliderId(1)));
+        assert!(scene.contains_collider(super::super::StableColliderId(3)));
+        assert!(scene.capsule_is_clear(Vec3::new(1.5, 0.9, 0.0), 0.35, 0.9));
+        assert!(!scene.capsule_is_clear(Vec3::new(-1.5, 0.9, 0.0), 0.35, 0.9));
+        assert_eq!(scene.collider_count(), 2);
+        assert_eq!(scene.colliders.len(), 2, "removed slot is reused");
+    }
+
+    #[test]
+    fn invalid_delta_is_rejected_before_scene_mutation() {
+        let arena = FpsArena::authored();
+        let mut scene = RapierTraversalScene::from_arena(&arena);
+        let count = scene.collider_count();
+        let delta = super::super::ColliderDelta {
+            removed: BTreeSet::from([super::super::StableColliderId(u32::MAX)]),
+            upserted: Vec::new(),
+        };
+        assert_eq!(
+            scene.apply_collider_delta(&delta),
+            Err(super::super::ColliderDeltaError::UnknownRemoval(
+                super::super::StableColliderId(u32::MAX)
+            ))
+        );
+        assert_eq!(scene.collider_count(), count);
     }
 }

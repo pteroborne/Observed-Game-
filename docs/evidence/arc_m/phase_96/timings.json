@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "seed": 263960012067191,
+  "generation": 1,
+  "grid": [
+    28,
+    20,
+    10
+  ],
+  "pipeline": {
+    "solve_microseconds": 1055012,
+    "projection_microseconds": 1199585,
+    "collider_scene_microseconds": 2300360,
+    "cells": 5600,
+    "geometry_pieces": 108634,
+    "colliders": 108634
+  },
+  "view": [
+    {
+      "kind": "startup",
+      "tick": 0,
+      "generation": 0,
+      "microseconds": 451699
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 1255,
+      "generation": 1,
+      "microseconds": 5904
+    }
+  ],
+  "fixed": {
+    "samples": 1900,
+    "minimum_microseconds": 31,
+    "median_microseconds": 1462,
+    "p95_microseconds": 3150,
+    "maximum_microseconds": 235694,
+    "mean_microseconds": 1694
+  },
+  "frame": {
+    "samples": 1666,
+    "minimum_microseconds": 0,
+    "median_microseconds": 15611,
+    "p95_microseconds": 39002,
+    "maximum_microseconds": 250000,
+    "mean_microseconds": 19012
+  },
+  "commits": [
+    {
+      "tick": 1255,
+      "generation": 1,
+      "fixed_microseconds": 235694
+    }
+  ],
+  "notes": [
+    "wall-clock evidence only; never read by simulation",
+    "pipeline probe reproduces the live seed/config and discards its artifacts",
+    "frame samples are Bevy Time deltas and include presentation/present delay"
+  ]
+}

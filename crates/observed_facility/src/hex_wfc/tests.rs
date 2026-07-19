@@ -45,6 +45,32 @@ fn determinism_holds_for_the_3d_config() {
 }
 
 #[test]
+fn production_generation_guarantees_every_arc_m_gameplay_room() {
+    use crate::map_spec::RoomRole;
+
+    let world = HexWfcWorld::generate(0xA11C_9600_0000_0001, HexWfcConfig::arc_default())
+        .expect("production Arc M seed solves");
+    let roles = world
+        .blueprints
+        .iter()
+        .map(|blueprint| blueprint.role)
+        .collect::<Vec<_>>();
+    for role in [
+        RoomRole::Start,
+        RoomRole::Exit,
+        RoomRole::GuardianControl,
+        RoomRole::Decision,
+        RoomRole::Keystone,
+        RoomRole::DualStation,
+        RoomRole::Monitor,
+        RoomRole::AnchorCheckpoint,
+        RoomRole::Recovery,
+    ] {
+        assert!(roles.contains(&role), "production omitted {role:?}");
+    }
+}
+
+#[test]
 fn traced_and_untraced_solves_agree() {
     let config = HexWfcConfig::default();
     let plain = HexWfcWorld::generate(7, config).expect("seed 7 must solve");

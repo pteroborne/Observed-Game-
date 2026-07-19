@@ -324,15 +324,6 @@ fn pin_blueprint_and_thresholds(
     }
 }
 
-pub(super) fn change_is_safe(
-    coord: HexCoord,
-    before: &HexPlacement,
-    after: &HexPlacement,
-    pins: &BTreeSet<HexCoord>,
-) -> bool {
-    !pins.contains(&coord) || before == after
-}
-
 pub(super) fn corridor_instances(
     config: HexWfcConfig,
     placements: &BTreeMap<HexCoord, HexPlacement>,

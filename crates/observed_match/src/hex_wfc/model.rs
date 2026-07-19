@@ -5,11 +5,11 @@
 use std::collections::BTreeMap;
 
 use glam::Vec3;
-use observed_authoring::TilePrototype;
+use observed_authoring::{RoomPrototype, TilePrototype};
 use observed_core::{CorridorId, PlayerId, RoomId};
 use observed_facility::hex_wfc::{
-    HexObservationFrame, HexRelayoutCandidate, HexRelayoutWork, HexThresholdKey, HexWfcConfig,
-    HexWfcError, HexWfcWorld, blueprint_for_role,
+    HexObservationFrame, HexRelayoutCandidate, HexRelayoutDelta, HexRelayoutWork, HexThresholdKey,
+    HexWfcConfig, HexWfcError, HexWfcWorld, blueprint_for_role,
 };
 use observed_hex::{HexCoord, HexFace, hex_origin};
 use observed_traversal::{FpsBody, FpsConfig, rapier_controller::RapierTraversalScene};
@@ -18,35 +18,52 @@ use player_input::PlayerIntent;
 use super::geometry::{HexGeometryError, HexWfcGeometrySnapshot};
 
 mod bot;
+mod equipment;
+mod guardian;
+mod knowledge;
 mod movement;
 mod mutation;
 mod snapshot;
 #[cfg(test)]
 mod tests;
 
+pub use equipment::{HexDeployedLantern, HexLanternCache, HexLanternState};
+pub use guardian::{HexGuardianState, HexGuardianStatus};
+pub use knowledge::{HexMapCellKnowledge, HexMapDiscovery, HexPlayerMapKnowledge};
 pub use snapshot::{HexMatchSnapshot, HexPlayerSnapshot};
 
 pub(super) const FIXED_DT: f32 = 1.0 / 60.0;
 /// Shafts keep the climb-style vertical traversal; ramps are plain walking.
 pub(super) const CLIMB_SPEED: f32 = 2.5;
-pub const HEX_INPUT_VERSION: u16 = 1;
+pub const HEX_INPUT_VERSION: u16 = 2;
 
 /// Ticks of forewarning between a [`HexMatchEventKind::MutationWarning`] and the
 /// deterministic commit tick, so observation has a window to pin structure. Mirrors
 /// the square lattice's `MUTATION_WARNING_TICKS`.
-pub(super) const MUTATION_WARNING_TICKS: u64 = 180;
-/// Baseline spacing between relayout attempts while nobody has escaped.
-pub(super) const CALM_MUTATION_TICKS: u64 = 1_800;
-/// Compressed spacing once every runner has escaped (peak pressure). Interpolated
-/// against [`CALM_MUTATION_TICKS`] by the escaped fraction.
-pub(super) const PRESSURED_MUTATION_TICKS: u64 = 600;
+pub(super) const MUTATION_WARNING_TICKS: u64 = 120;
+/// Deterministic local-breath interval range (8--12 seconds at 60 Hz).
+pub(super) const MIN_MUTATION_TICKS: u64 = 480;
+pub(super) const MAX_MUTATION_TICKS: u64 = 720;
 
-/// One simulation input frame: sanitized intents keyed by stable player ID.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct HexActionButtons {
+    pub interact: bool,
+    pub deploy_lantern: bool,
+    pub recover_lantern: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct HexPlayerCommand {
+    pub intent: PlayerIntent,
+    pub actions: HexActionButtons,
+}
+
+/// One simulation input frame: sanitized commands keyed by stable player ID.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HexInputFrame {
     pub version: u16,
     pub tick: u64,
-    pub commands: BTreeMap<PlayerId, PlayerIntent>,
+    pub commands: BTreeMap<PlayerId, HexPlayerCommand>,
 }
 
 impl Default for HexInputFrame {
@@ -82,6 +99,10 @@ pub enum HexMatchEventKind {
     /// A pending relayout was rejected — observation held the structure, the
     /// re-collapse failed, or the candidate no longer projected.
     MutationCancelled,
+    LanternCacheCollected,
+    AnchorDeployed,
+    AnchorRecovered,
+    GuardianCatch,
     MatchFinished,
 }
 
@@ -167,13 +188,24 @@ pub struct HexDoorState {
 #[derive(Clone, Debug)]
 pub struct HexWfcMatch {
     pub seed: u64,
+    /// Canonical authored simulation-content identity supplied by the host
+    /// before tick zero. Snapshots/replays carry it so peers cannot silently
+    /// simulate different collision catalogues with identical input frames.
+    pub simulation_content_hash: [u8; 32],
     pub tick: u64,
     pub facility: HexWfcWorld,
     pub geometry: HexWfcGeometrySnapshot,
     pub players: BTreeMap<PlayerId, HexPlayerState>,
+    pub lanterns: HexLanternState,
+    pub guardian: HexGuardianState,
+    pub map_knowledge: BTreeMap<PlayerId, HexPlayerMapKnowledge>,
     pub status: HexMatchStatus,
     pub escape_order: Vec<PlayerId>,
     pub recent_events: Vec<HexMatchEvent>,
+    /// Accepted bounded relayout from the current step, if any. Presentation
+    /// and map-knowledge consumers can update exact cells without inferring a
+    /// global rebuild from `facility.generation`.
+    pub last_relayout_delta: Option<HexRelayoutDelta>,
     /// The latest simulation-frame observation projection (occupied cells and
     /// the looked-at blueprint thresholds). Relayout directors consume this to
     /// pin geometry exactly as on the square lattice.
@@ -193,6 +225,8 @@ pub struct HexWfcMatch {
     /// Authored tile corpus retained so a committed relayout can re-project the
     /// collision geometry mid-match. Same prototypes the initial solve used.
     pub(super) prototypes: Vec<TilePrototype>,
+    /// Validated whole-room modules, selected before the per-cell fallback kit.
+    pub(super) room_prototypes: Vec<RoomPrototype>,
     /// In-flight observation-safe relayout, if any. `None` between cycles.
     pub(super) pending_relayout: Option<PendingRelayout>,
     /// The deterministic tick at which the next relayout commits. The paired
@@ -214,11 +248,21 @@ impl HexWfcMatch {
         config: HexMatchConfig,
         prototypes: &[TilePrototype],
     ) -> Result<Self, HexMatchError> {
+        Self::new_with_rooms(seed, config, prototypes, &[])
+    }
+
+    pub fn new_with_rooms(
+        seed: u64,
+        config: HexMatchConfig,
+        prototypes: &[TilePrototype],
+        room_prototypes: &[RoomPrototype],
+    ) -> Result<Self, HexMatchError> {
         if config.players == 0 || config.players > 8 {
             return Err(HexMatchError::InvalidRoster);
         }
         let facility = HexWfcWorld::generate(seed, config.wfc)?;
-        let geometry = HexWfcGeometrySnapshot::project(&facility, prototypes)?;
+        let geometry =
+            HexWfcGeometrySnapshot::project_with_rooms(&facility, prototypes, room_prototypes)?;
         let physics = geometry.rapier_scene();
         let mut traversal_config = FpsConfig::deliberate_rapier();
         traversal_config.look_step = 1.0;
@@ -250,15 +294,27 @@ impl HexWfcMatch {
             );
             bodies.insert(id, FpsBody::spawned(position, spawn_yaw));
         }
+        let lanterns = HexLanternState::new(players.keys().copied(), &facility);
+        let guardian = HexGuardianState::new(&facility);
+        let map_knowledge = players
+            .keys()
+            .copied()
+            .map(|player| (player, HexPlayerMapKnowledge::default()))
+            .collect();
         let mut game = Self {
             seed,
+            simulation_content_hash: [0; 32],
             tick: 0,
             facility,
             geometry,
             players,
+            lanterns,
+            guardian,
+            map_knowledge,
             status: HexMatchStatus::Running,
             escape_order: Vec::new(),
             recent_events: Vec::new(),
+            last_relayout_delta: None,
             observation: HexObservationFrame::default(),
             bodies,
             physics,
@@ -266,28 +322,52 @@ impl HexWfcMatch {
             stuck_ticks: BTreeMap::new(),
             progress_anchor: BTreeMap::new(),
             prototypes: prototypes.to_vec(),
+            room_prototypes: room_prototypes.to_vec(),
             pending_relayout: None,
-            next_mutation_tick: CALM_MUTATION_TICKS,
+            next_mutation_tick: mutation::scheduled_mutation_tick(seed, 0),
         };
         game.observation = game.build_observation();
+        game.update_map_knowledge();
         Ok(game)
+    }
+
+    /// Bind the compiled authoring catalogue before the first input frame.
+    /// Keeping filesystem discovery in the host preserves the pure simulation
+    /// boundary while making content mismatch part of authoritative state.
+    pub fn bind_simulation_content_hash(&mut self, hash: [u8; 32]) {
+        assert_eq!(
+            self.tick, 0,
+            "simulation content must be bound before tick zero"
+        );
+        self.simulation_content_hash = hash;
     }
 
     pub fn step(&mut self, frame: &HexInputFrame) -> &[HexMatchEvent] {
         self.recent_events.clear();
+        self.last_relayout_delta = None;
         if self.status == HexMatchStatus::Finished || frame.version != HEX_INPUT_VERSION {
             return &self.recent_events;
         }
         self.tick = self.tick.wrapping_add(1);
         self.sync_teleports_to_bodies();
         for id in self.players.keys().copied().collect::<Vec<_>>() {
-            let intent = frame.commands.get(&id).copied().unwrap_or_default();
-            self.move_player(id, intent.sanitized());
+            let command = frame.commands.get(&id).copied().unwrap_or_default();
+            self.move_player(id, command.intent.sanitized());
+            self.step_lantern_actions(id, command.actions);
         }
         self.update_stuck_ticks();
         self.recover_fallen_bodies();
         self.observation = self.build_observation();
         self.step_mutation();
+        self.guardian.step(
+            self.tick,
+            &self.facility,
+            &self.lanterns,
+            &mut self.players,
+            &mut self.recent_events,
+        );
+        self.sync_teleports_to_bodies();
+        self.update_map_knowledge();
         self.resolve_escapes();
         &self.recent_events
     }
@@ -307,10 +387,12 @@ impl HexWfcMatch {
                 frame.visible_thresholds.insert(key);
             }
         }
+        self.lanterns.apply_mutation_pins(&mut frame);
+        frame.landmark_cells.insert(self.guardian.cell);
         frame
     }
 
-    fn looked_at_threshold(&self, player: &HexPlayerState) -> Option<HexThresholdKey> {
+    pub(super) fn looked_at_threshold(&self, player: &HexPlayerState) -> Option<HexThresholdKey> {
         let blueprint = self
             .facility
             .blueprints
@@ -376,6 +458,48 @@ impl HexWfcMatch {
             }
         }
         states
+    }
+
+    #[must_use]
+    pub fn lantern_proximity(&self, player: PlayerId) -> f32 {
+        if self.lanterns.inventory(player) == 0 {
+            return 0.0;
+        }
+        let Some(player) = self.players.get(&player) else {
+            return 0.0;
+        };
+        let exit = self.facility.config.exit();
+        let baseline = self
+            .facility
+            .route_between_cells(self.facility.config.spawn(), exit)
+            .map_or(1, |route| route.cost_millis.max(1));
+        let remaining = self
+            .facility
+            .route_between_cells(player.cell, exit)
+            .map_or(baseline, |route| route.cost_millis);
+        (1.0 - remaining as f32 / baseline as f32).clamp(0.0, 1.0)
+    }
+
+    #[must_use]
+    pub fn guardian_pressure(&self, player: PlayerId) -> f32 {
+        self.players.get(&player).map_or(0.0, |player| {
+            self.guardian.pressure_for(&self.facility, player)
+        })
+    }
+
+    #[must_use]
+    pub fn player_map(&self, player: PlayerId) -> Option<&HexPlayerMapKnowledge> {
+        self.map_knowledge.get(&player)
+    }
+
+    fn update_map_knowledge(&mut self) {
+        for (&id, player) in &self.players {
+            self.map_knowledge.entry(id).or_default().observe(
+                &self.facility,
+                player,
+                &self.lanterns,
+            );
+        }
     }
 
     fn resolve_escapes(&mut self) {

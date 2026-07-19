@@ -5403,6 +5403,7 @@ dependencies = [
  "quake-map",
  "ron 0.8.1",
  "serde",
+ "sha2",
 ]
 
 [[package]]

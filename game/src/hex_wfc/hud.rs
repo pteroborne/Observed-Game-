@@ -48,7 +48,7 @@ pub(super) fn setup(
             let help_text = if is_spectator {
                 "SPECTATING BOT RUN\nEsc menu\n\nGOAL: descend the hex facility and reach the exit rhombus"
             } else {
-                "HEX FACILITY RACE\nWASD / stick move | Shift sprint\nMouse / stick look | Space climb up | Ctrl climb down / ramp descend\nTab survivor map | Esc menu\n\nGOAL: walk the ramps, drop the silo shafts, reach the exit rhombus"
+                "HEX FACILITY RACE\nWASD / stick move | Shift sprint\nMouse / stick look | Space climb up | Ctrl climb down / ramp descend\nE collect cache | F deploy lantern at a looked-at threshold | R recover\nTab survivor map | PgUp/PgDn floor | Esc menu\n\nGOAL: walk the ramps, drop the silo shafts, reach the exit rhombus"
             };
             root.spawn((
                 Text::new(help_text),
@@ -103,9 +103,11 @@ pub(super) fn sync(runtime: Res<HexWfcRuntime>, mut hud: Query<&mut Text, With<H
         .count();
     let total = runtime.match_state.players.len();
     **text = format!(
-        "GENERATION {}  |  tick {}\nrunners escaped {escaped}/{total}\ncell q{} r{} L{}  |  exit q{} r{} L{}\n{}{}",
+        "GENERATION {}  |  tick {}\nrunners escaped {escaped}/{total}\nlanterns {}  |  Guardian {:?}\ncell q{} r{} L{}  |  exit q{} r{} L{}\n{}{}",
         world.generation,
         runtime.match_state.tick,
+        runtime.match_state.lanterns.inventory(runtime.local_player),
+        runtime.match_state.guardian.status,
         player.cell.q,
         player.cell.r,
         player.cell.level,

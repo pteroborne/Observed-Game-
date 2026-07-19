@@ -27,6 +27,7 @@ use observed_hex::HexFace;
 
 pub use catalog::{manifest_ron, sources, template_map};
 pub use geometry::box_brush_text;
+pub(crate) use geometry::hex_slab_brush;
 pub use halls::{hall_cap_map, hall_corner_map, hall_junction_map, hall_straight_map};
 pub use rooms::{
     room_atrium_lower_map, room_atrium_upper_map, room_double_map, room_single_map, room_wing_map,

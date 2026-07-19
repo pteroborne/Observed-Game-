@@ -4784,7 +4784,9 @@ mod hex_wfc_gates {
     use super::*;
     use crate::hex_wfc::sim::{HexWfcRuntime, load_prototypes};
     use crate::sim::state::SpectatorBot;
-    use observed_match::hex_wfc::{HexInputFrame, HexMatchConfig, HexMatchStatus, HexWfcMatch};
+    use observed_match::hex_wfc::{
+        HexInputFrame, HexMatchConfig, HexMatchStatus, HexPlayerCommand, HexWfcMatch,
+    };
 
     /// A solvable compact showcase match near `base` (mirrors the adapter's offset
     /// search so a rare contradiction seed cannot flake the test).
@@ -4810,7 +4812,13 @@ mod hex_wfc_gates {
             ..Default::default()
         };
         for id in game.players.keys().copied().collect::<Vec<_>>() {
-            frame.commands.insert(id, game.bot_command(id));
+            frame.commands.insert(
+                id,
+                HexPlayerCommand {
+                    intent: game.bot_command(id),
+                    actions: Default::default(),
+                },
+            );
         }
         game.step(&frame);
         game.snapshot().digest
@@ -4869,22 +4877,22 @@ mod hex_wfc_gates {
     }
 
     /// Gate 2 (across a relayout commit): the gate-2 agreement tests stop at 300 ticks,
-    /// before the first mutation (cadence 1800), so headless == interactive was never
+    /// before the first mutation, so headless == interactive was never
     /// proven *across* a committed relayout. This steps the real app FixedUpdate schedule
     /// and a headless clone identically through the pinned seed's deterministic commit at
-    /// tick 1800 (generation 0 → 1) and asserts the per-tick digests stay byte-identical
+    /// tick 695 (generation 0 → 1) and asserts the per-tick digests stay byte-identical
     /// the whole way, including the tick the generation bumps. Determinism is the arc's
     /// sacred invariant; this closes the proof across the mutation boundary.
     ///
-    /// `#[ignore]` for runtime (~1810 real FixedUpdate steps); run with
+    /// `#[ignore]` for runtime (~725 real FixedUpdate steps); run with
     /// `cargo test -p observed_game -- --ignored`.
     #[test]
-    #[ignore = "~1810-tick run through a committed relayout; run explicitly"]
+    #[ignore = "~725-tick run through a committed relayout; run explicitly"]
     fn hex_headless_and_interactive_agree_across_relayout_commit() {
-        // The pinned seed whose showcase-config relayout commits at tick 1800. The test
+        // The pinned seed whose showcase-config relayout commits at tick 695. The test
         // binary already runs `runtime_config` on the showcase (12×9×4) fixture, so the
-        // deterministic warning@1620 / commit@1800 timeline reproduces here.
-        const RELAYOUT_SEED: u64 = 0xcb85_21b1_f77d_d0fc;
+        // deterministic warning@575 / commit@695 timeline reproduces here.
+        const RELAYOUT_SEED: u64 = 0xA11C_9500_0000_0000;
         let mut app = test_app();
         app.world_mut()
             .insert_resource(flow::ActiveMatchSeed(RELAYOUT_SEED));
@@ -4901,7 +4909,7 @@ mod hex_wfc_gates {
         );
 
         let mut generations = Vec::new();
-        for _ in 0..1_810u64 {
+        for _ in 0..725u64 {
             app.world_mut().run_schedule(FixedUpdate);
             let runtime = app.world().resource::<HexWfcRuntime>();
             let interactive = runtime.match_state.snapshot().digest;

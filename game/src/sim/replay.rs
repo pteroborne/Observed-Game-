@@ -282,8 +282,8 @@ impl ReplayTape {
         let mut tape = Self {
             seed: game.seed,
             input_version: observed_match::hex_wfc::HEX_INPUT_VERSION,
-            map_name: "hex_wfc_v1".to_string(),
-            simulation_content_hash: [0; 32],
+            map_name: "hex_wfc_v2".to_string(),
+            simulation_content_hash: game.simulation_content_hash,
             presentation_content_hash: [0; 32],
             rooms: Vec::new(),
             actors: Vec::new(),
@@ -327,6 +327,15 @@ impl ReplayTape {
             .iter()
             .map(|player| TeamId(player.0 as u8))
             .collect();
+        let anchor_is_placed = game
+            .lanterns
+            .deployed
+            .values()
+            .any(|lantern| lantern.owner == local);
+        if anchor_is_placed && !self.anchor_was_placed {
+            self.anchor_uses += 1;
+        }
+        self.anchor_was_placed = anchor_is_placed;
 
         if game.tick.is_multiple_of(6) || self.samples.is_empty() {
             let actors = game

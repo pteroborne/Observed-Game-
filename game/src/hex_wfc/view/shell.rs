@@ -3,7 +3,7 @@
 //! under a per-cell parent so visibility streaming can hide distant cells wholesale; the
 //! outer boundary shell is always visible.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use bevy::prelude::*;
 use observed_content::ArchitectureRegister;
@@ -37,31 +37,82 @@ pub(super) fn spawn_geometry(
     }
 
     for (coord, pieces) in by_cell {
-        let architecture = *world.architecture.get(&coord).unwrap_or(&fallback_arch);
-        let cell = commands
-            .spawn((
-                HexWfcCell(coord),
-                HexWfcGeometry,
-                DespawnOnExit(GameState::HexWfc),
-                Transform::IDENTITY,
-                Visibility::default(),
-                Name::new(format!(
-                    "Hex cell q{} r{} L{}",
-                    coord.q, coord.r, coord.level
-                )),
-            ))
-            .id();
-        for (index, piece) in pieces.into_iter().enumerate() {
-            spawn_piece(
-                commands,
-                assets,
-                meshes,
-                piece,
-                architecture,
-                Some(cell),
-                index,
-            );
-        }
+        spawn_cell(
+            commands,
+            assets,
+            meshes,
+            coord,
+            pieces,
+            world,
+            fallback_arch,
+        );
+    }
+}
+
+pub(super) fn spawn_cells(
+    commands: &mut Commands,
+    assets: &mut HexWfcVisualAssets,
+    meshes: &mut Assets<Mesh>,
+    runtime: &HexWfcRuntime,
+    changed: &BTreeSet<HexCoord>,
+) {
+    let world = &runtime.match_state.facility;
+    let fallback_arch = *world
+        .architecture
+        .get(&world.config.spawn())
+        .unwrap_or(&ArchitectureRegister::ALL[0]);
+    let mut by_cell: BTreeMap<HexCoord, Vec<&HexStructurePiece>> = BTreeMap::new();
+    for piece in runtime.match_state.geometry.pieces.iter().filter(|piece| {
+        piece.role != HexStructureRole::Boundary && changed.contains(&piece.source_cell)
+    }) {
+        by_cell.entry(piece.source_cell).or_default().push(piece);
+    }
+    for (coord, pieces) in by_cell {
+        spawn_cell(
+            commands,
+            assets,
+            meshes,
+            coord,
+            pieces,
+            world,
+            fallback_arch,
+        );
+    }
+}
+
+fn spawn_cell(
+    commands: &mut Commands,
+    assets: &mut HexWfcVisualAssets,
+    meshes: &mut Assets<Mesh>,
+    coord: HexCoord,
+    pieces: Vec<&HexStructurePiece>,
+    world: &observed_facility::hex_wfc::HexWfcWorld,
+    fallback_arch: ArchitectureRegister,
+) {
+    let architecture = *world.architecture.get(&coord).unwrap_or(&fallback_arch);
+    let cell = commands
+        .spawn((
+            HexWfcCell(coord),
+            HexWfcGeometry,
+            DespawnOnExit(GameState::HexWfc),
+            Transform::IDENTITY,
+            Visibility::default(),
+            Name::new(format!(
+                "Hex cell q{} r{} L{}",
+                coord.q, coord.r, coord.level
+            )),
+        ))
+        .id();
+    for (index, piece) in pieces.into_iter().enumerate() {
+        spawn_piece(
+            commands,
+            assets,
+            meshes,
+            piece,
+            architecture,
+            Some(cell),
+            index,
+        );
     }
 }
 

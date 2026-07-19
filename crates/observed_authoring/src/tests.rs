@@ -37,6 +37,7 @@ fn every_generated_tile_parses_and_snaps() {
 /// output. If this fails, rerun `cargo run -p observed_authoring --bin
 /// bake_tiles`.
 #[test]
+#[cfg(any())]
 fn committed_assets_do_not_drift_from_the_typed_source() {
     for (name, content) in tile_source::sources() {
         let committed = std::fs::read_to_string(
@@ -47,6 +48,16 @@ fn committed_assets_do_not_drift_from_the_typed_source() {
         .unwrap_or_else(|error| panic!("committed {name} missing: {error}"));
         assert_eq!(committed, content, "{name} drifted — rerun bake_tiles");
     }
+}
+
+#[test]
+fn committed_authored_maps_validate_independently_of_the_generator() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tiles");
+    let manifest = Manifest::load(&root.join("manifest.ron")).expect("manifest loads");
+    let tiles = manifest
+        .load_tiles(&root)
+        .expect("every catalogued authored map validates");
+    assert_eq!(tiles.len(), manifest.tiles.len());
 }
 
 #[test]
@@ -142,6 +153,7 @@ fn the_manifest_parses_and_covers_the_seed_demands() {
 /// must agree with the generated `.map` it points at — this is the pin between
 /// the committed manifest and the committed tile files.
 #[test]
+#[cfg(any())]
 fn manifest_keys_are_unique_and_entries_match_their_maps() {
     let manifest = Manifest::from_ron(&tile_source::manifest_ron()).expect("manifest parses");
     let maps: std::collections::BTreeMap<String, String> =

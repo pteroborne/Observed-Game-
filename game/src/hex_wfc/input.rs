@@ -2,9 +2,11 @@
 //! [`PlayerIntent`]. The hex match is a spawn→exit traversal race — movement, look,
 //! sprint, jump (climb up), and interact-held (climb down / ramp descend).
 
+use bevy::input::gamepad::GamepadButton;
 use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow};
+use observed_match::hex_wfc::HexActionButtons;
 use player_input::PlayerIntent;
 
 use super::sim::HexWfcIntent;
@@ -22,6 +24,9 @@ pub(super) fn map_input(
 ) {
     if spectator_bot.is_some() {
         intent.intent = PlayerIntent::default();
+        intent.actions = HexActionButtons::default();
+        intent.toggle_map = false;
+        intent.browse_map_level = 0;
         return;
     }
     let bindings = &settings.bindings;
@@ -35,13 +40,17 @@ pub(super) fn map_input(
     .normalize_or_zero();
     let mouse_delta = mouse.map_or(Vec2::ZERO, |motion| motion.delta);
     let mut gamepad_intent = PlayerIntent::default();
+    let mut gamepad_deploy = false;
+    let mut gamepad_recover = false;
     for gamepad in &gamepads {
-        let (command, _items) = crate::screens::input::read_gamepad_match(gamepad);
+        let (command, items) = crate::screens::input::read_gamepad_match(gamepad);
         gamepad_intent.movement += command.movement;
         gamepad_intent.look += command.look;
         gamepad_intent.jump_pressed |= command.jump_pressed;
         gamepad_intent.sprint_held |= command.sprint_held;
         gamepad_intent.interact_held |= command.interact_held;
+        gamepad_deploy |= items.torch_action;
+        gamepad_recover |= gamepad.just_pressed(GamepadButton::East);
     }
     intent.intent = PlayerIntent {
         movement: (movement + gamepad_intent.movement).clamp_length_max(1.0),
@@ -61,7 +70,28 @@ pub(super) fn map_input(
             || gamepad_intent.interact_held,
         ..Default::default()
     };
+    intent.actions = HexActionButtons {
+        interact: keyboard.just_pressed(bindings.interact) || gamepad_intent.interact_pressed,
+        deploy_lantern: keyboard.just_pressed(bindings.torch) || gamepad_deploy,
+        recover_lantern: keyboard.just_pressed(KeyCode::KeyR) || gamepad_recover,
+    };
     intent.toggle_map |= keyboard.just_pressed(bindings.tac_map);
+    intent.toggle_map |= crate::screens::input::gamepad_map_pressed(&gamepads);
+    let keyboard_up =
+        keyboard.just_pressed(KeyCode::PageUp) || keyboard.just_pressed(KeyCode::BracketRight);
+    let keyboard_down =
+        keyboard.just_pressed(KeyCode::PageDown) || keyboard.just_pressed(KeyCode::BracketLeft);
+    let gamepad_up = gamepads
+        .iter()
+        .any(|gamepad| gamepad.just_pressed(GamepadButton::DPadUp));
+    let gamepad_down = gamepads
+        .iter()
+        .any(|gamepad| gamepad.just_pressed(GamepadButton::DPadDown));
+    intent.browse_map_level = match (keyboard_up || gamepad_up, keyboard_down || gamepad_down) {
+        (true, false) => 1,
+        (false, true) => -1,
+        _ => 0,
+    };
 }
 
 pub(super) fn mode_hotkeys(

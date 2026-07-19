@@ -10,6 +10,31 @@ This document outlines the current active development goals, completed milestone
 
 ## Active & Upcoming Phases
 
+**Arc M — Breath & Flame: Hex Facility Hardening** `[in progress]` (plan and hand-offs: [docs/arc_m/](docs/arc_m/README.md)). Arc M makes the Arc-L facility pleasant and reliable to play before competitive scale work begins: first-frame neon-noir lighting, a first-class TrenchBroom authoring path, seam-safe geometry, one caged anchor-lantern mechanic, the physical Guardian, bounded frontier mutation, incremental collision/render updates, and a mutation-aware active-level survivor map. Multiplayer transport, the six-team/four-player roster migration, and eliminated-team graph control remain explicitly out of scope until the facility holds 60 fps through repeated mutation.
+
+### Phase 96 — Measurement & First-Frame Lighting `[x]`
+Instrument the mutation pipeline and prime the exact hex lighting state before facility geometry is revealed, eliminating the washed menu-light transient and creating a repeatable production-size performance record.
+
+### Phase 97 — First-Class TrenchBroom Pipeline `[x]`
+Make editable `.map` sources canonical through a repo-owned TrenchBroom game configuration/FGD and deterministic `new`, `validate`, `build`, and `audit` commands. Generated runtime catalogues carry a canonical simulation-content hash; register styling no longer requires duplicated structural geometry.
+
+### Phase 98 — Geometry Contract & Authored Kit `[x]`
+Support whole-room multi-hex modules and seam-safe per-cell modules. Enforce exact external ports, sealed/open face contracts, floor coverage, capsule clearance, continuous one-level ramps, safe shafts, internal reachability, deterministic rotation coverage, and collider-complexity budgets in the compiler and tile lab.
+
+### Phase 99 — Caged Anchor Lantern & Guardian `[x]`
+Unify candle guidance and durable anchoring in one inventory-backed caged lantern, guarantee purposeful room caches, and port the physical observation-driven Guardian to the hex simulation with deterministic pressure, capture recovery, and mutation pinning.
+
+### Phase 100 — Local Mutation Simulation `[x]`
+Replace global relayout with seeded 32-cell frontier pockets (64-cell hard cap), a two-second warning, complete blueprint closure, protected-cell halos, pinned boundary signatures, per-cell revisions, and patch-only deterministic commits every approximately 8–12 seconds.
+
+### Phase 101 — Incremental Physics & Presentation `[x]`
+Apply stable-ID collider and changed-cell presentation deltas instead of rebuilding the complete facility. Closure requires p95 frame time at or below 16.7 ms and no mutation-attributable frame above 33.3 ms across ten moving commits.
+
+### Phase 102 — Active-Level TAC Map & Arc Gate `[in progress]`
+Promote survivor knowledge into simulation, show one browsable active floor with adjacent-level hints, distinguish traversed/glimpsed/stale/anchored states without rival leakage, and close the arc through authoring round-trip, traversal, Guardian, mutation, performance, and visual playtest evidence.
+
+---
+
 **Arc L — Hex Tile Facility** `[x]` (plan: [docs/hex_tile_arc_plan.md](docs/hex_tile_arc_plan.md); hand-offs: [docs/arc_l/](docs/arc_l/README.md)). **Completed 2026-07-18.** The map-system pivot replaced the square full-WFC lattice with a TrenchBroom-authored hex-prism tile system — taller cells (8 m levels), a larger grid in all three axes (28×20×10), multi-tile room blueprints, variable-length halls, walkable ramp prefabs, and true shaft stacks producing tall formations. It landed lab-first: 2D hex WFC → TrenchBroom tile pipeline → 3D hex facility → match parity → canonical game integration. The hands-on closure playtest passed; startup lighting wash and the mutation-commit stall are recorded as backlog #8 and #9 for the next arc rather than hidden inside this completed integration phase.
 
 ### Phase 86 — Arc K Closeout & Clean Baseline `[x]`

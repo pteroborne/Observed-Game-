@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use observed_authoring::Manifest;
+use observed_core::PlayerId;
 use observed_facility::hex_wfc::{
     HexArchetype, HexObservationFrame, HexRelayoutProgress, HexSpace, HexWfcConfig, HexWfcWorld,
 };
@@ -75,6 +76,7 @@ fn oversized_grid_reports_collider_id_capacity_before_projection() {
         placements: BTreeMap::new(),
         blueprints: Vec::new(),
         architecture: BTreeMap::new(),
+        cell_revisions: BTreeMap::new(),
         last_attempts: 1,
     };
     assert!(matches!(
@@ -218,7 +220,75 @@ fn boundary_start_uses_its_authored_blueprint_signature_and_the_shell_closes_it(
 }
 
 #[test]
-fn pinned_prefab_pieces_remain_byte_identical_across_a_committed_generation() {
+fn matching_whole_room_module_takes_precedence_over_cell_fallbacks() {
+    let world = showcase();
+    let start = world
+        .blueprints
+        .iter()
+        .find(|blueprint| blueprint.anchor == world.config.spawn())
+        .expect("start blueprint");
+    let register = world.architecture[&start.anchor].slug().to_string();
+    let fallback_hulls = tiles()
+        .into_iter()
+        .find(|tile| {
+            tile.key.archetype == "room_single"
+                && tile.key.register == register
+                && tile.signature == blueprint_for_role(start.role).cell_signature((0, 0, 0))
+        })
+        .expect("start fallback")
+        .hulls;
+    let ports = HexFace::LATERAL
+        .into_iter()
+        .map(|face| observed_authoring::RoomPrototypePort {
+            cell: ModuleCellRef {
+                q: 0,
+                r: 0,
+                level: 0,
+            },
+            face,
+            class: PortClass::Door,
+            name: match face {
+                HexFace::West => "entrance".to_string(),
+                HexFace::East => "exit".to_string(),
+                _ => format!("side_{face:?}"),
+            },
+        })
+        .collect();
+    let room = RoomPrototype {
+        id: "test/whole-start".to_string(),
+        room_role: "start".to_string(),
+        key: TileKey {
+            archetype: "whole_start".to_string(),
+            register,
+            variant: 60_000,
+        },
+        weight: 1,
+        footprint: vec![ModuleCellRef {
+            q: 0,
+            r: 0,
+            level: 0,
+        }],
+        ports,
+        hulls: fallback_hulls,
+    };
+    let snapshot = HexWfcGeometrySnapshot::project_with_rooms(&world, &tiles(), &[room])
+        .expect("whole-room projection");
+    let start_pieces = snapshot
+        .pieces
+        .iter()
+        .filter(|piece| piece.role == HexStructureRole::Room && piece.anchor == start.anchor)
+        .collect::<Vec<_>>();
+    assert!(!start_pieces.is_empty());
+    assert!(start_pieces.iter().all(|piece| {
+        piece
+            .tile
+            .as_ref()
+            .is_some_and(|key| key.archetype == "whole_start")
+    }));
+}
+
+#[test]
+fn bounded_delta_matches_full_projection_and_preserves_pinned_pieces() {
     let prototypes = tiles();
     let mut world = showcase();
     world.config.retry_budget = 1;
@@ -260,10 +330,49 @@ fn pinned_prefab_pieces_remain_byte_identical_across_a_committed_generation() {
         HexRelayoutProgress::Ready(candidate) => candidate,
         HexRelayoutProgress::Pending(_) => panic!("retry budget one must finish"),
     };
-    world.commit_relayout(candidate, &frame).expect("commit");
+    let logical = world
+        .commit_relayout_delta(candidate, &frame)
+        .expect("commit");
     assert_eq!(world.generation, 1);
+    let delta = before
+        .project_delta(&world, &logical, &prototypes)
+        .expect("delta projection");
+    assert!(
+        delta
+            .upserted_pieces
+            .iter()
+            .all(|piece| logical.changed_cells.contains(&piece.source_cell))
+    );
+    let mut incremental = before.clone();
+    let mut scene = before.rapier_scene();
+    scene
+        .apply_collider_delta(&delta.colliders)
+        .expect("live collider update");
+    incremental.apply_delta(&delta).expect("snapshot update");
     let after = HexWfcGeometrySnapshot::project(&world, &prototypes).expect("after");
     let after_by_id: BTreeMap<_, _> = after.pieces.iter().map(|piece| (piece.id, piece)).collect();
+    let incremental_by_id: BTreeMap<_, _> = incremental
+        .pieces
+        .iter()
+        .map(|piece| (piece.id, piece))
+        .collect();
+    assert_eq!(incremental_by_id, after_by_id);
+    let incremental_colliders = incremental
+        .arena
+        .colliders
+        .iter()
+        .map(|collider| (collider.id, collider))
+        .collect::<BTreeMap<_, _>>();
+    let after_colliders = after
+        .arena
+        .colliders
+        .iter()
+        .map(|collider| (collider.id, collider))
+        .collect::<BTreeMap<_, _>>();
+    assert_eq!(incremental_colliders, after_colliders);
+    assert_eq!(incremental.ramp_heads, after.ramp_heads);
+    assert_eq!(incremental.blueprint_instances, after.blueprint_instances);
+    assert_eq!(scene.collider_count(), after.arena.colliders.len());
     for (id, before_piece) in before_pinned {
         assert_eq!(
             after_by_id.get(&id).copied(),
@@ -279,17 +388,55 @@ fn pinned_prefab_pieces_remain_byte_identical_across_a_committed_generation() {
 #[ignore = "manual 28x20x10 collider budget measurement"]
 fn report_arc_default_collider_build_and_step_budget() {
     let started = std::time::Instant::now();
-    let world = HexWfcWorld::generate(0xA11C_9300_0000_0001, HexWfcConfig::arc_default())
+    let mut world = HexWfcWorld::generate(0xA11C_9300_0000_0001, HexWfcConfig::arc_default())
         .expect("arc default solves");
     let solve_time = started.elapsed();
 
     let prototypes = tiles();
     let started = std::time::Instant::now();
-    let snapshot = HexWfcGeometrySnapshot::project(&world, &prototypes).expect("projection");
+    let mut snapshot = HexWfcGeometrySnapshot::project(&world, &prototypes).expect("projection");
     let projection_time = started.elapsed();
     let started = std::time::Instant::now();
-    let scene = snapshot.rapier_scene();
+    let mut scene = snapshot.rapier_scene();
     let scene_build_time = started.elapsed();
+
+    let mut observation = HexObservationFrame::default();
+    for raw in 0..4 {
+        observation
+            .occupied_cells
+            .insert(PlayerId(raw), world.config.spawn());
+    }
+    let started = std::time::Instant::now();
+    let mut work = world.begin_relayout(&observation);
+    let candidate = loop {
+        match world.advance_relayout(work).expect("local solve") {
+            HexRelayoutProgress::Pending(next) => work = next,
+            HexRelayoutProgress::Ready(candidate) => break candidate,
+        }
+    };
+    let pocket_solve_time = started.elapsed();
+    let started = std::time::Instant::now();
+    let logical = world
+        .commit_relayout_delta(candidate, &observation)
+        .expect("local commit");
+    let logical_commit_time = started.elapsed();
+    let started = std::time::Instant::now();
+    let geometry_delta = snapshot
+        .project_delta(&world, &logical, &prototypes)
+        .expect("delta projection");
+    let delta_projection_time = started.elapsed();
+    let collider_ops =
+        geometry_delta.colliders.removed.len() + geometry_delta.colliders.upserted.len();
+    let started = std::time::Instant::now();
+    scene
+        .apply_collider_delta(&geometry_delta.colliders)
+        .expect("incremental Rapier update");
+    let physics_delta_time = started.elapsed();
+    let started = std::time::Instant::now();
+    snapshot
+        .apply_delta(&geometry_delta)
+        .expect("snapshot delta");
+    let snapshot_delta_time = started.elapsed();
 
     let config = FpsConfig::deliberate_rapier();
     let spawn =
@@ -324,13 +471,21 @@ fn report_arc_default_collider_build_and_step_budget() {
         .filter(|placement| placement.space != HexSpace::Void)
         .count();
     eprintln!(
-        "ARC_L_P92_BUDGET cells={} non_void={} colliders={} solve_ms={} projection_ms={} scene_build_ms={} characters={} batch_frame_us={} character_query_us={}",
+        "ARC_M_MUTATION_BUDGET cells={} non_void={} colliders={} solve_ms={} projection_ms={} scene_build_ms={} pocket_cells={} changed_cells={} collider_ops={} pocket_solve_us={} logical_commit_us={} delta_projection_us={} physics_delta_us={} snapshot_delta_us={} characters={} batch_frame_us={} character_query_us={}",
         world.config.grid().cell_count(),
         non_void,
         snapshot.pieces.len(),
         solve_time.as_millis(),
         projection_time.as_millis(),
         scene_build_time.as_millis(),
+        logical.region.cells.len(),
+        logical.changed_cells.len(),
+        collider_ops,
+        pocket_solve_time.as_micros(),
+        logical_commit_time.as_micros(),
+        delta_projection_time.as_micros(),
+        physics_delta_time.as_micros(),
+        snapshot_delta_time.as_micros(),
         characters,
         batch_frame_micros,
         character_query_micros,
