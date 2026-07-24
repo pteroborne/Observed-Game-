@@ -9,7 +9,9 @@ use bevy::prelude::*;
 use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::HexCoord;
 use observed_hex::hex_origin;
-use observed_match::hex_wfc::{HexLightSource, HexStructurePiece, HexStructureRole};
+use observed_match::hex_wfc::{
+    HexLightSource, HexStructurePiece, HexStructureRole, HexTrimPiece, derive_trim,
+};
 
 use super::assets::HexWfcVisualAssets;
 use super::{HexPractical, HexWfcCell, HexWfcGeometry};
@@ -56,6 +58,9 @@ pub(super) fn spawn_geometry(
         }
     }
 
+    let trim = derive_trim(&runtime.match_state.geometry);
+    let mut trim_by_cell = group_trim_by_cell(&trim);
+
     for (coord, pieces) in by_cell {
         let lights = lights_by_cell.remove(&coord).unwrap_or_default();
         spawn_cell(
@@ -66,11 +71,23 @@ pub(super) fn spawn_geometry(
                 coord,
                 pieces,
                 lights,
+                trim: trim_by_cell.remove(&coord).unwrap_or_default(),
             },
             world,
             fallback_arch,
         );
     }
+}
+
+/// Group derived seam-trim pieces by their owning cell so each cell's parent
+/// entity can own its trim (and a changed-cell rebuild regenerates only the
+/// affected cells' trim).
+fn group_trim_by_cell(trim: &[HexTrimPiece]) -> BTreeMap<HexCoord, Vec<&HexTrimPiece>> {
+    let mut by_cell: BTreeMap<HexCoord, Vec<&HexTrimPiece>> = BTreeMap::new();
+    for piece in trim {
+        by_cell.entry(piece.cell).or_default().push(piece);
+    }
+    by_cell
 }
 
 pub(super) fn spawn_cells(
@@ -104,6 +121,8 @@ pub(super) fn spawn_cells(
     }) {
         by_cell.entry(piece.source_cell).or_default().push(piece);
     }
+    let trim = derive_trim(&runtime.match_state.geometry);
+    let mut trim_by_cell = group_trim_by_cell(&trim);
     for (coord, pieces) in by_cell {
         let lights = lights_by_cell.remove(&coord).unwrap_or_default();
         spawn_cell(
@@ -114,6 +133,10 @@ pub(super) fn spawn_cells(
                 coord,
                 pieces,
                 lights,
+                // Only the changed cells are rebuilt here, so their trim is
+                // regenerated with them; unchanged cells keep their existing
+                // trim entities.
+                trim: trim_by_cell.remove(&coord).unwrap_or_default(),
             },
             world,
             fallback_arch,
@@ -125,6 +148,7 @@ struct CellProjection<'a> {
     coord: HexCoord,
     pieces: Vec<&'a HexStructurePiece>,
     lights: Vec<&'a HexLightSource>,
+    trim: Vec<&'a HexTrimPiece>,
 }
 
 fn spawn_cell(
@@ -139,6 +163,7 @@ fn spawn_cell(
         coord,
         pieces,
         lights,
+        trim,
     } = projection;
     let architecture = *world.architecture.get(&coord).unwrap_or(&fallback_arch);
     let cell_role = pieces
@@ -157,7 +182,18 @@ fn spawn_cell(
             )),
         ))
         .id();
-    spawn_cell_practicals(commands, cell, coord, architecture, cell_role, &lights);
+    spawn_cell_practicals(
+        commands,
+        assets,
+        meshes,
+        PracticalProjection {
+            parent: cell,
+            coord,
+            architecture,
+            role: cell_role,
+            authored_lights: &lights,
+        },
+    );
     for (index, piece) in pieces.into_iter().enumerate() {
         spawn_piece(
             commands,
@@ -169,6 +205,33 @@ fn spawn_cell(
             index,
         );
     }
+    for piece in trim {
+        spawn_trim(commands, assets, meshes, piece, architecture, cell);
+    }
+}
+
+/// Spawn one derived seam-trim descriptor as a dim structural mesh, parented to
+/// its owning cell so it streams and relayout-rebuilds with that cell. Trim is
+/// non-authoritative decoration (no collider) and non-signal (Legibility
+/// Contract) — it only hides tile seams and makes the facility read as one
+/// megastructure.
+fn spawn_trim(
+    commands: &mut Commands,
+    assets: &mut HexWfcVisualAssets,
+    meshes: &mut Assets<Mesh>,
+    piece: &HexTrimPiece,
+    architecture: ArchitectureRegister,
+    parent: Entity,
+) {
+    let mesh = assets.trim_mesh(meshes, piece.kind);
+    let material = assets.trim_material(architecture);
+    commands.spawn((
+        Mesh3d(mesh),
+        MeshMaterial3d(material),
+        Transform::from_translation(piece.position).with_rotation(Quat::from_array(piece.rotation)),
+        Name::new(format!("Hex trim {:?} {:?}", piece.kind, piece.face)),
+        ChildOf(parent),
+    ));
 }
 
 /// Stage the per-tile downlight fixture for a cell — tier 2 of the lighting-lab rig.
@@ -180,14 +243,27 @@ fn spawn_cell(
 /// Shadows start off — [`super::sync_practical_shadow_budget`] turns them on for the
 /// handful of fixtures nearest the runner each time the cell changes, so wherever you
 /// stand there is real cast-shadow contrast.
-fn spawn_cell_practicals(
-    commands: &mut Commands,
+struct PracticalProjection<'a> {
     parent: Entity,
     coord: HexCoord,
     architecture: ArchitectureRegister,
     role: HexStructureRole,
-    authored_lights: &[&HexLightSource],
+    authored_lights: &'a [&'a HexLightSource],
+}
+
+fn spawn_cell_practicals(
+    commands: &mut Commands,
+    assets: &mut HexWfcVisualAssets,
+    meshes: &mut Assets<Mesh>,
+    projection: PracticalProjection<'_>,
 ) {
+    let PracticalProjection {
+        parent,
+        coord,
+        architecture,
+        role,
+        authored_lights,
+    } = projection;
     if role == HexStructureRole::Boundary {
         return;
     }
@@ -208,7 +284,8 @@ fn spawn_cell_practicals(
     } else {
         1.0
     };
-    let positions = if authored_lights.is_empty() {
+    let has_authored_lights = !authored_lights.is_empty();
+    let positions = if !has_authored_lights {
         vec![Vec3::from_array(hex_origin(coord)) + Vec3::Y * PRACTICAL_HEIGHT]
     } else {
         authored_lights
@@ -218,6 +295,15 @@ fn spawn_cell_practicals(
     };
     let per_source_scale = (positions.len() as f32).sqrt().recip().clamp(0.55, 1.0);
     for position in positions {
+        if has_authored_lights && matches!(role, HexStructureRole::Room | HexStructureRole::Hall) {
+            commands.spawn((
+                Mesh3d(assets.fixture_mesh(meshes)),
+                MeshMaterial3d(assets.register(architecture).fixture()),
+                Transform::from_translation(position + Vec3::Y * 0.18),
+                ChildOf(parent),
+                Name::new("Authored fluorescent diffuser"),
+            ));
+        }
         commands.spawn((
             HexPractical(coord),
             PointLight {
@@ -250,7 +336,7 @@ fn spawn_piece(
     let Some(mesh) = assets.mesh_for(meshes, piece, hull_index) else {
         return;
     };
-    let material = assets.register(architecture).for_role(piece.role);
+    let material = assets.material_for_piece(architecture, piece);
     let mut entity = commands.spawn((
         Mesh3d(mesh),
         MeshMaterial3d(material),

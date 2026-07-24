@@ -12,33 +12,52 @@ use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use observed_content::ArchitectureRegister;
-use observed_match::hex_wfc::{HexStructurePiece, HexStructureRole};
-use observed_style::{self as style, SurfaceRole};
-use observed_traversal::ColliderShape;
-use rapier3d::prelude::{SharedShape, Vector as RapierVector};
+use observed_match::hex_wfc::{HexStructurePiece, HexStructureRole, HexTrimKind};
+use observed_style::{self as style, ArchitectureSurfaceRole, SurfaceRole};
+use observed_traversal::{ColliderShape, ConvexRenderMesh};
 
 use crate::view::assets::palette_tinted_neon_material;
 use crate::view::environment::{cuboid_mesh, load_repeating_texture};
 
 #[derive(Clone)]
 pub(in crate::hex_wfc) struct RegisterMaterials {
-    room: Handle<StandardMaterial>,
-    hall: Handle<StandardMaterial>,
+    floor: Handle<StandardMaterial>,
+    wall: Handle<StandardMaterial>,
+    ceiling: Handle<StandardMaterial>,
+    fixture: Handle<StandardMaterial>,
     ramp: Handle<StandardMaterial>,
     shaft: Handle<StandardMaterial>,
     boundary: Handle<StandardMaterial>,
 }
 
 impl RegisterMaterials {
-    pub(in crate::hex_wfc) fn for_role(&self, role: HexStructureRole) -> Handle<StandardMaterial> {
+    fn for_piece(
+        &self,
+        role: HexStructureRole,
+        horizontal_surface: HorizontalSurface,
+    ) -> Handle<StandardMaterial> {
         match role {
-            HexStructureRole::Room => self.room.clone(),
-            HexStructureRole::Hall => self.hall.clone(),
+            HexStructureRole::Room | HexStructureRole::Hall => match horizontal_surface {
+                HorizontalSurface::Floor => self.floor.clone(),
+                HorizontalSurface::Wall => self.wall.clone(),
+                HorizontalSurface::Ceiling => self.ceiling.clone(),
+            },
             HexStructureRole::Ramp => self.ramp.clone(),
             HexStructureRole::Shaft => self.shaft.clone(),
             HexStructureRole::Boundary => self.boundary.clone(),
         }
     }
+
+    pub(in crate::hex_wfc) fn fixture(&self) -> Handle<StandardMaterial> {
+        self.fixture.clone()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum HorizontalSurface {
+    Floor,
+    Wall,
+    Ceiling,
 }
 
 #[derive(Resource)]
@@ -59,34 +78,50 @@ impl HexWfcVisualAssets {
             .into_iter()
             .map(|register| {
                 let palette = style::architecture(register);
-                let mut tinted = |role: SurfaceRole, texture: Option<Handle<Image>>| {
-                    let mut material =
-                        palette_tinted_neon_material(&style::surface(role), &palette, texture);
+                let mut tinted = |treatment: style::Treatment, texture: Option<Handle<Image>>| {
+                    let mut material = palette_tinted_neon_material(&treatment, &palette, texture);
                     // Exact hex hulls put much more surface area close to the
                     // camera than the teleport rooms this helper was tuned on.
                     // Preserve the style hue while returning shell albedo and
                     // non-signal emission to the neon-noir atmosphere tier.
                     let base = material.base_color.to_srgba();
+                    let shell_scale = if register == ArchitectureRegister::LiminalGrid {
+                        0.82
+                    } else {
+                        0.38
+                    };
                     material.base_color = Color::srgba(
-                        base.red * 0.38,
-                        base.green * 0.38,
-                        base.blue * 0.38,
+                        base.red * shell_scale,
+                        base.green * shell_scale,
+                        base.blue * shell_scale,
                         base.alpha,
                     );
                     material.emissive *= 0.35;
                     materials.add(material)
                 };
                 RegisterMaterials {
-                    // One authored convex hull can contain floor, wall, and
-                    // ceiling faces. Applying the bright Spine route treatment
-                    // to the whole room shell turned every vertical surface
-                    // into an amber emissive slab. Room decisions are signaled
-                    // by thresholds/equipment, so the shell stays structural.
-                    room: tinted(SurfaceRole::Plain, floor_texture.clone()),
-                    hall: tinted(SurfaceRole::GantryDeck, floor_texture.clone()),
-                    ramp: tinted(SurfaceRole::SafeBypass, floor_texture.clone()),
-                    shaft: tinted(SurfaceRole::WellshaftStone, wall_texture.clone()),
-                    boundary: tinted(SurfaceRole::Wall, wall_texture.clone()),
+                    floor: tinted(
+                        style::architecture_surface(register, ArchitectureSurfaceRole::Floor),
+                        floor_texture.clone(),
+                    ),
+                    wall: tinted(
+                        style::architecture_surface(register, ArchitectureSurfaceRole::Wall),
+                        wall_texture.clone(),
+                    ),
+                    ceiling: tinted(
+                        style::architecture_surface(register, ArchitectureSurfaceRole::Ceiling),
+                        wall_texture.clone(),
+                    ),
+                    fixture: tinted(style::architecture_practical_fixture(register), None),
+                    ramp: tinted(
+                        style::surface(SurfaceRole::SafeBypass),
+                        floor_texture.clone(),
+                    ),
+                    shaft: tinted(
+                        style::surface(SurfaceRole::WellshaftStone),
+                        wall_texture.clone(),
+                    ),
+                    boundary: tinted(style::surface(SurfaceRole::Wall), wall_texture.clone()),
                 }
             })
             .collect();
@@ -102,6 +137,64 @@ impl HexWfcVisualAssets {
         register: ArchitectureRegister,
     ) -> &RegisterMaterials {
         &self.registers[register.stable_id() as usize]
+    }
+
+    pub(in crate::hex_wfc) fn material_for_piece(
+        &self,
+        register: ArchitectureRegister,
+        piece: &HexStructurePiece,
+    ) -> Handle<StandardMaterial> {
+        self.register(register)
+            .for_piece(piece.role, horizontal_surface(piece))
+    }
+
+    /// Cached mesh for a derived seam-trim descriptor. Railings run along a
+    /// cell's open lateral edge (a long thin bar at waist height); buttresses
+    /// stand at a role/register seam (a slim near-full-level pillar). Both are
+    /// cuboids keyed by size in the shared `cuboid_cache`, so every trim piece
+    /// of a kind shares one handle. `Lintel` is defined but never emitted by
+    /// `derive_trim` yet (the snapshot carries no port class); it maps to a
+    /// header bar so the match is exhaustive.
+    pub(in crate::hex_wfc) fn trim_mesh(
+        &mut self,
+        meshes: &mut Assets<Mesh>,
+        kind: HexTrimKind,
+    ) -> Handle<Mesh> {
+        // A hex lateral edge is ~8 m; inset the railing slightly so neighbouring
+        // faces' rails do not visibly overlap at the shared corners.
+        let size = match kind {
+            HexTrimKind::Railing => Vec3::new(7.4, 0.12, 0.12),
+            HexTrimKind::Buttress => {
+                Vec3::new(0.55, observed_hex::TILE_LEVEL_HEIGHT * 0.9, 0.55)
+            }
+            HexTrimKind::Lintel => Vec3::new(2.0, 0.22, 0.30),
+        };
+        let key = [size.x.to_bits(), size.y.to_bits(), size.z.to_bits()];
+        self.cuboid_cache
+            .entry(key)
+            .or_insert_with(|| meshes.add(cuboid_mesh(size)))
+            .clone()
+    }
+
+    /// Material for derived seam trim: the current register's wall treatment —
+    /// already returned to shell albedo and non-signal emission in `load`, so
+    /// trim reads as dim structure and never competes with gameplay signals
+    /// (Legibility Contract). Reuses the style module rather than inventing a
+    /// colour, per the visual-language rule.
+    pub(in crate::hex_wfc) fn trim_material(
+        &self,
+        register: ArchitectureRegister,
+    ) -> Handle<StandardMaterial> {
+        self.register(register).wall.clone()
+    }
+
+    pub(in crate::hex_wfc) fn fixture_mesh(&mut self, meshes: &mut Assets<Mesh>) -> Handle<Mesh> {
+        let size = Vec3::new(2.25, 0.10, 0.55);
+        let key = [size.x.to_bits(), size.y.to_bits(), size.z.to_bits()];
+        self.cuboid_cache
+            .entry(key)
+            .or_insert_with(|| meshes.add(cuboid_mesh(size)))
+            .clone()
     }
 
     /// A cached render mesh for a collider piece. Cuboids are keyed by size; hull meshes
@@ -142,27 +235,76 @@ impl HexWfcVisualAssets {
     }
 }
 
-/// Convert a convex-hull collider's points into a flat-shaded render mesh. Mirrors the
-/// hex lab's exact-collider renderer so the visible surface is the collision surface.
+/// Convert shared engine-independent render data into Bevy's mesh format.
 fn hull_mesh(hull: &[Vec3]) -> Option<Mesh> {
-    let points: Vec<_> = hull
-        .iter()
-        .map(|point| RapierVector::new(point.x, point.y, point.z))
-        .collect();
-    let shape = SharedShape::convex_hull(&points)?;
-    let (vertices, indices) = shape.as_convex_polyhedron()?.to_trimesh();
-    let positions: Vec<[f32; 3]> = vertices
-        .iter()
-        .map(|point| [point.x, point.y, point.z])
-        .collect();
+    let data = ConvexRenderMesh::from_convex_hull(hull)?;
     Some(
         Mesh::new(
             PrimitiveTopology::TriangleList,
             RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
         )
-        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-        .with_inserted_indices(Indices::U32(indices.into_iter().flatten().collect()))
-        .with_duplicated_vertices()
-        .with_computed_flat_normals(),
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, data.positions)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, data.uvs)
+        .with_inserted_indices(Indices::U32(data.indices)),
     )
+}
+
+fn horizontal_surface(piece: &HexStructurePiece) -> HorizontalSurface {
+    let ColliderShape::ConvexHull { points } = &piece.shape else {
+        return HorizontalSurface::Wall;
+    };
+    let minimum = points
+        .iter()
+        .map(|point| point.y)
+        .fold(f32::INFINITY, f32::min);
+    let maximum = points
+        .iter()
+        .map(|point| point.y)
+        .fold(f32::NEG_INFINITY, f32::max);
+    if maximum <= 0.75 {
+        HorizontalSurface::Floor
+    } else if minimum >= observed_hex::TILE_LEVEL_HEIGHT - 0.75 {
+        HorizontalSurface::Ceiling
+    } else {
+        HorizontalSurface::Wall
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use observed_traversal::StableColliderId;
+
+    fn piece(points: Vec<Vec3>) -> HexStructurePiece {
+        HexStructurePiece {
+            id: StableColliderId(1),
+            anchor: default(),
+            source_cell: default(),
+            role: HexStructureRole::Hall,
+            tile: None,
+            center: Vec3::ZERO,
+            rotation: [0.0, 0.0, 0.0, 1.0],
+            shape: ColliderShape::ConvexHull { points },
+        }
+    }
+
+    #[test]
+    fn horizontal_hulls_select_floor_wall_and_ceiling_material_classes() {
+        assert_eq!(
+            horizontal_surface(&piece(vec![Vec3::ZERO, Vec3::Y * 0.5])),
+            HorizontalSurface::Floor
+        );
+        assert_eq!(
+            horizontal_surface(&piece(vec![Vec3::ZERO, Vec3::Y * 4.0])),
+            HorizontalSurface::Wall
+        );
+        assert_eq!(
+            horizontal_surface(&piece(vec![
+                Vec3::Y * 7.5,
+                Vec3::Y * observed_hex::TILE_LEVEL_HEIGHT,
+            ])),
+            HorizontalSurface::Ceiling
+        );
+    }
 }
