@@ -108,7 +108,11 @@ fn near_face_edge(x: f32, z: f32, a: (f32, f32), b: (f32, f32)) -> bool {
 ///
 /// Lateral faces sample every hull vertex that lies on the vertical plane
 /// running along the cell's hex edge for that face: the lowest vertex found
-/// there is the boundary's floor, the highest its ceiling. Vertical faces
+/// there is the boundary's floor. Headroom is the span up to the highest
+/// vertex, but bounded to one [`TILE_LEVEL_HEIGHT`] — a door is a single-level
+/// opening, and on a multi-level tile the full-height jamb wall above the
+/// lintel would otherwise be read as extra headroom (see the inline note).
+/// Vertical faces
 /// (`Up`/`Down`, used only by `RampOpen`/`ShaftOpen`) are the horizontal
 /// level-boundary plane itself; the compiled catalog keeps geometry per
 /// hull set but not per declared port, so there is no independent way to
@@ -139,10 +143,22 @@ fn sample_face_signature(
         ys.sort_by(|x, y| x.total_cmp(y));
         let floor = ys[0];
         let ceiling = *ys.last().expect("non-empty");
+        // A door/opening is a single-level aperture. On a multi-level tile
+        // (e.g. a two-level ramp) the jamb brushes beside and above the
+        // doorway run the tile's *full* height, so sampling min/max Y over the
+        // whole boundary plane reports the wall's height, not the walkable
+        // opening's — a normal lower-level door in a 16 m ramp then reads 16 m
+        // of "headroom" and falsely mismatches an ordinary 8 m hall door. The
+        // wall mass above the lintel is not part of the seam, so bound the
+        // sampled clearance to one level height: a lower-level door reads the
+        // same headroom whether the structure above it is one storey or two.
+        // A genuine cross-level misplacement still surfaces through
+        // `floor_height`, which is compared independently.
+        let headroom = (ceiling - floor).min(TILE_LEVEL_HEIGHT);
         Some(FaceSignature {
             class,
             floor_height: floor,
-            headroom: ceiling - floor,
+            headroom,
         })
     } else {
         let plane_y = match face {
@@ -411,6 +427,30 @@ mod tests {
             &root,
             "b.map",
             &door_slab_map("test_hall_b", 0, "west", 0.0, 8.0),
+        );
+        let report = audit_seams(&root).expect("audit runs");
+        assert_eq!(report.mismatched_seams, 0, "{}", report.report);
+        assert!(report.valid_seams >= 1, "{}", report.report);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn audit_seams_does_not_flag_a_multi_level_door_against_a_single_level_door() {
+        // A two-level-tall tile (a ramp) has full-height wall mass on its door
+        // face, but the walkable opening is a single-level door at the same
+        // floor as an ordinary one-level hall. The extra wall height above the
+        // lintel must not be read as a headroom mismatch. One level is
+        // `TILE_LEVEL_HEIGHT * UNITS_PER_METER` = 128 authored units.
+        let root = temp_dir("multi_level_door");
+        write_module(
+            &root,
+            "tall.map",
+            &door_slab_map("test_ramp_tall", 0, "east", 0.0, 256.0),
+        );
+        write_module(
+            &root,
+            "short.map",
+            &door_slab_map("test_hall_short", 0, "west", 0.0, 128.0),
         );
         let report = audit_seams(&root).expect("audit runs");
         assert_eq!(report.mismatched_seams, 0, "{}", report.report);
