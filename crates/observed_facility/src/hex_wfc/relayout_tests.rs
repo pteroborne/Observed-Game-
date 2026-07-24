@@ -1,12 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use observed_content::ArchitectureRegister;
 use observed_core::PlayerId;
 
 use super::relayout::fallback_geometry_relayout;
 use super::{
     DEFAULT_MUTATION_MAX_CELLS, DEFAULT_MUTATION_TARGET_CELLS, HexArchetype, HexFace,
-    HexObservationFrame, HexRelayoutProgress, HexThresholdKey, HexWfcConfig, HexWfcError,
-    HexWfcWorld,
+    HexInfluenceField, HexObservationFrame, HexRelayoutProgress, HexThresholdKey, HexWfcConfig,
+    HexWfcError, HexWfcWorld,
 };
 
 fn config() -> HexWfcConfig {
@@ -23,6 +24,76 @@ fn candidate(world: &HexWfcWorld, frame: &HexObservationFrame) -> super::HexRela
             HexRelayoutProgress::Pending(next) => work = next,
             HexRelayoutProgress::Ready(candidate) => return candidate,
         }
+    }
+}
+
+#[test]
+fn production_levels_have_one_seed_stable_bounded_seven_by_seven_zone() {
+    let config = HexWfcConfig::arc_default();
+    let first = super::liminal_grid_zones(0x11_1A_1A, config);
+    let second = super::liminal_grid_zones(0x11_1A_1A, config);
+    assert_eq!(first, second);
+    assert_eq!(first.len(), usize::from(config.levels));
+    for (level, zone) in first.iter().enumerate() {
+        assert_eq!(zone.level, level as u8);
+        assert_eq!(zone.size, super::LIMINAL_GRID_ZONE_SIZE);
+        assert!(zone.q_start + zone.size <= config.cols);
+        assert!(zone.r_start + zone.size <= config.rows);
+    }
+}
+
+#[test]
+fn liminal_zone_assignment_is_exact_outside_whole_room_normalization() {
+    let world = HexWfcWorld::generate(0x11_1A_1B, config()).expect("world");
+    let zones = world.liminal_grid_zones();
+    assert_eq!(zones.len(), usize::from(world.config.levels));
+
+    let blueprint_cells = world
+        .blueprints
+        .iter()
+        .flat_map(|blueprint| blueprint.cells.iter().copied())
+        .collect::<BTreeSet<_>>();
+    for blueprint in &world.blueprints {
+        let anchor_register = world.architecture[&blueprint.anchor];
+        assert!(
+            blueprint
+                .cells
+                .iter()
+                .all(|cell| world.architecture[cell] == anchor_register),
+            "room {:?} mixed architecture registers",
+            blueprint.role
+        );
+    }
+    for (&coord, &register) in &world.architecture {
+        if blueprint_cells.contains(&coord) {
+            continue;
+        }
+        let in_zone = zones.iter().any(|zone| zone.contains(coord));
+        assert_eq!(
+            register == ArchitectureRegister::LiminalGrid,
+            in_zone,
+            "{coord:?}"
+        );
+    }
+}
+
+#[test]
+fn liminal_zones_do_not_drift_across_relayout_generations() {
+    let mut world = HexWfcWorld::generate(0x11_1A_1C, config()).expect("world");
+    let before = world.liminal_grid_zones();
+    let proposal = candidate(&world, &HexObservationFrame::default());
+    world
+        .commit_relayout(proposal, &HexObservationFrame::default())
+        .expect("commit");
+    assert_eq!(world.liminal_grid_zones(), before);
+    for blueprint in &world.blueprints {
+        let anchor_register = world.architecture[&blueprint.anchor];
+        assert!(
+            blueprint
+                .cells
+                .iter()
+                .all(|cell| world.architecture[cell] == anchor_register)
+        );
     }
 }
 
@@ -265,6 +336,89 @@ fn committed_patch_preserves_player_and_objective_routes() {
             .route_between(world.config.spawn(), world.config.exit())
             .is_some()
     );
+}
+
+/// Phase 4 feasibility: an eliminated team's bounded influence field can drive
+/// the facility's refactoring without ever breaking traversal. Uses
+/// `encourage_dead_ends` because it biases *among* the connective halls that
+/// dominate the small lateral relayout pockets, so its effect is observable
+/// there. Across a seed corpus: the influence changes the pocket layout for at
+/// least some seeds (it actually does something), and every driven pocket that
+/// commits leaves a valid spawn->exit route — the commit guard
+/// (`validate_patch_routes_and_boundary`) rejects any that would not, so a
+/// driven layout can never strand a team.
+#[test]
+fn driven_relayout_reshapes_pockets_yet_always_preserves_routes() {
+    let influence = HexInfluenceField::encourage_dead_ends();
+    let mut attempted = 0;
+    let mut changed = 0;
+    let mut commits = 0;
+    for seed in 0xA11C_0100..0xA11C_0140u64 {
+        let world = HexWfcWorld::generate(seed, config()).expect("world");
+        let mut frame = HexObservationFrame::default();
+        frame
+            .occupied_cells
+            .insert(PlayerId(0), world.config.spawn());
+        frame.objective_cells.insert(world.config.spawn());
+
+        // Region selection is influence-independent, so the base and driven
+        // pockets cover the same cells and are directly comparable.
+        let (Ok(base), Ok(driven)) = (
+            world.propose_relayout(&frame),
+            world.propose_driven_relayout(&frame, &influence),
+        ) else {
+            continue;
+        };
+        attempted += 1;
+        if driven.placements != base.placements {
+            changed += 1;
+        }
+
+        let mut committed = world.clone();
+        if committed.commit_relayout(driven, &frame).is_ok() {
+            commits += 1;
+            assert!(
+                committed
+                    .route_between(committed.config.spawn(), committed.config.exit())
+                    .is_some(),
+                "driven relayout broke the spawn->exit route for seed {seed:#x}"
+            );
+        }
+    }
+
+    assert!(
+        attempted >= 32,
+        "corpus mostly proposed pockets; got {attempted}/64"
+    );
+    assert!(
+        commits >= attempted / 2,
+        "most driven pockets should commit with valid routes; got {commits}/{attempted}"
+    );
+    assert!(
+        changed > 0,
+        "the influence never changed any pocket layout across the corpus"
+    );
+}
+
+/// A no-op influence (`neutral`) must leave a relayout byte-identical to the
+/// undriven path — the driven machinery adds no drift of its own.
+#[test]
+fn neutral_influence_matches_the_undriven_relayout() {
+    let neutral = HexInfluenceField::neutral();
+    for seed in 0xA11C_0200..0xA11C_0208u64 {
+        let world = HexWfcWorld::generate(seed, config()).expect("world");
+        let frame = HexObservationFrame::default();
+        let (Ok(base), Ok(driven)) = (
+            world.propose_relayout(&frame),
+            world.propose_driven_relayout(&frame, &neutral),
+        ) else {
+            continue;
+        };
+        assert_eq!(
+            base.placements, driven.placements,
+            "neutral influence drifted from the undriven relayout for seed {seed:#x}"
+        );
+    }
 }
 
 #[test]

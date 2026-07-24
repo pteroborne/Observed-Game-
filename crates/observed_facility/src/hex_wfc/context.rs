@@ -92,23 +92,149 @@ pub(super) fn context_multiplier(
     }
 }
 
+/// The narrowest a bounded influence bias may drive a category's weight.
+const INFLUENCE_MIN: f64 = 0.25;
+/// The widest a bounded influence bias may drive a category's weight.
+const INFLUENCE_MAX: f64 = 4.0;
+
+/// The number of biasable archetypes (every [`HexArchetype`] except `Void`,
+/// which is empty space and always neutral).
+const INFLUENCE_SLOTS: usize = 7;
+
+/// A bounded, per-archetype weight bias an eliminated team applies to *drive*
+/// the facility's refactoring (Phase 4 feasibility): it perturbs which
+/// archetypes the WFC tends to place during a driven relayout, rather than
+/// placing exact tiles. Every multiplier is clamped to
+/// `[INFLUENCE_MIN, INFLUENCE_MAX]`, so an archetype is never zeroed — the WFC
+/// still guarantees routes, anchors, observation locks, and legal geometry; the
+/// team biases *tendencies* only.
+///
+/// Bias is per-archetype (not lumped by category) so a driven pocket can shift
+/// even among connective halls — e.g. fewer junctions, more caps for a
+/// dead-ended layout — which is what makes the effect observable in the small,
+/// heavily-constrained relayout pockets.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HexInfluenceField {
+    /// Per-archetype multipliers, indexed by [`slot`]; `Void` has no slot.
+    biases: [f64; INFLUENCE_SLOTS],
+}
+
+/// The bias slot for an archetype, or `None` for `Void` (always neutral).
+fn slot(archetype: HexArchetype) -> Option<usize> {
+    Some(match archetype {
+        HexArchetype::Room => 0,
+        HexArchetype::Straight => 1,
+        HexArchetype::Corner => 2,
+        HexArchetype::Junction => 3,
+        HexArchetype::RampUp => 4,
+        HexArchetype::RampHead => 5,
+        HexArchetype::Shaft => 6,
+        HexArchetype::Void => return None,
+    })
+}
+
+impl Default for HexInfluenceField {
+    fn default() -> Self {
+        Self::neutral()
+    }
+}
+
+impl HexInfluenceField {
+    /// No bias — every archetype at its natural weight.
+    #[must_use]
+    pub fn neutral() -> Self {
+        Self {
+            biases: [1.0; INFLUENCE_SLOTS],
+        }
+    }
+
+    /// Set one archetype's bias, clamped to the safe range. Chainable.
+    #[must_use]
+    pub fn with_bias(mut self, archetype: HexArchetype, factor: f64) -> Self {
+        if let Some(index) = slot(archetype) {
+            self.biases[index] = factor.clamp(INFLUENCE_MIN, INFLUENCE_MAX);
+        }
+        self
+    }
+
+    /// Push the facility taller: favour ramps and shafts.
+    #[must_use]
+    pub fn encourage_verticality() -> Self {
+        Self::neutral()
+            .with_bias(HexArchetype::RampUp, 2.5)
+            .with_bias(HexArchetype::RampHead, 2.5)
+            .with_bias(HexArchetype::Shaft, 2.5)
+    }
+
+    /// Make the facility less forgiving: starve recovery rooms.
+    #[must_use]
+    pub fn discourage_recovery_rooms() -> Self {
+        Self::neutral().with_bias(HexArchetype::Room, 0.4)
+    }
+
+    /// Dead-ends: starve junctions and favour caps/corners for a more
+    /// dead-ended, harder-to-cross layout.
+    #[must_use]
+    pub fn encourage_dead_ends() -> Self {
+        Self::neutral()
+            .with_bias(HexArchetype::Junction, 0.4)
+            .with_bias(HexArchetype::Corner, 1.8)
+    }
+
+    /// Decay: thin junctions and rooms for a sparser layout.
+    #[must_use]
+    pub fn encourage_decay() -> Self {
+        Self::neutral()
+            .with_bias(HexArchetype::Junction, 0.5)
+            .with_bias(HexArchetype::Room, 0.6)
+    }
+
+    /// The bias multiplier for `archetype` (already clamped on assignment).
+    fn multiplier(&self, archetype: HexArchetype) -> f64 {
+        slot(archetype).map_or(1.0, |index| self.biases[index])
+    }
+}
+
 /// The effective weight for the weighted lottery: the static `weight` scaled by
-/// [`context_multiplier`]. A zero static weight stays zero (never selectable, by
-/// design); any positive weight keeps a floor of `1`, so a legal variant can
-/// always still be chosen and solvability is preserved.
+/// the geometry [`context_multiplier`] and, when a driven relayout supplies one,
+/// a bounded [`HexInfluenceField`] bias. A zero static weight stays zero (never
+/// selectable, by design); any positive weight keeps a floor of `1`, so a legal
+/// variant can always still be chosen and solvability is preserved.
 #[must_use]
 pub(super) fn effective_weight(
     coord: HexCoord,
     archetype: HexArchetype,
     weight: u32,
     config: HexWfcConfig,
+    influence: Option<&HexInfluenceField>,
 ) -> u64 {
     if weight == 0 {
         return 0;
     }
-    let scaled = (f64::from(weight) * context_multiplier(coord, archetype, config)).round();
-    // `scaled` is finite and >= 0 here (multiplier is bounded positive), so the
-    // cast is well-defined; floor at 1 to preserve selectability.
+    let geometry = context_multiplier(coord, archetype, config);
+    let bias = influence.map_or(1.0, |field| field.multiplier(archetype));
+    let scaled = (f64::from(weight) * geometry * bias).round();
+    // `scaled` is finite and >= 0 here (both factors are bounded positive), so
+    // the cast is well-defined; floor at 1 to preserve selectability.
+    (scaled as u64).max(1)
+}
+
+/// The effective weight for a *driven relayout* pocket: the static `weight`
+/// scaled by the influence bias **only** — no geometry context. Relayout pockets
+/// deliberately do not apply the initial-solve geometry tendencies (that would
+/// perturb every ordinary relayout too), so a `neutral` field leaves the pocket
+/// byte-identical to the undriven path and the influence is the sole driven
+/// difference. Zero stays zero; any positive weight keeps a floor of `1`.
+#[must_use]
+pub(super) fn influenced_weight(
+    archetype: HexArchetype,
+    weight: u32,
+    influence: &HexInfluenceField,
+) -> u64 {
+    if weight == 0 {
+        return 0;
+    }
+    let scaled = (f64::from(weight) * influence.multiplier(archetype)).round();
     (scaled as u64).max(1)
 }
 
@@ -142,7 +268,7 @@ mod tests {
                 HexArchetype::Straight,
                 HexArchetype::RampUp,
             ] {
-                let edge = effective_weight(coord(0, 0, level), archetype, 4, cfg);
+                let edge = effective_weight(coord(0, 0, level), archetype, 4, cfg, None);
                 assert!(
                     edge >= 1,
                     "{archetype:?} @ level {level} zeroed a legal variant"
@@ -154,7 +280,7 @@ mod tests {
     #[test]
     fn zero_weight_stays_zero() {
         assert_eq!(
-            effective_weight(coord(5, 5, 2), HexArchetype::Straight, 0, config()),
+            effective_weight(coord(5, 5, 2), HexArchetype::Straight, 0, config(), None),
             0
         );
     }
@@ -164,8 +290,8 @@ mod tests {
         let cfg = config();
         let center = coord(cfg.cols / 2, cfg.rows / 2, 1);
         let edge = coord(0, 0, 1);
-        let center_w = effective_weight(center, HexArchetype::Shaft, 10, cfg);
-        let edge_w = effective_weight(edge, HexArchetype::Shaft, 10, cfg);
+        let center_w = effective_weight(center, HexArchetype::Shaft, 10, cfg, None);
+        let edge_w = effective_weight(edge, HexArchetype::Shaft, 10, cfg, None);
         assert!(
             center_w > edge_w,
             "shaft weight should be higher at the axis ({center_w}) than the edge ({edge_w})"
@@ -177,8 +303,8 @@ mod tests {
         let cfg = config();
         let low = coord(5, 5, 0);
         let high = coord(5, 5, cfg.levels - 1);
-        let low_w = effective_weight(low, HexArchetype::Room, 10, cfg);
-        let high_w = effective_weight(high, HexArchetype::Room, 10, cfg);
+        let low_w = effective_weight(low, HexArchetype::Room, 10, cfg, None);
+        let high_w = effective_weight(high, HexArchetype::Room, 10, cfg, None);
         assert!(
             high_w > low_w,
             "room weight should be higher up high ({high_w}) than down low ({low_w})"
@@ -196,6 +322,57 @@ mod tests {
             a.placements, b.placements,
             "same seed must reproduce exactly"
         );
+    }
+
+    #[test]
+    fn influence_biases_the_targeted_category_only() {
+        let cfg = config();
+        let c = coord(5, 5, 1);
+        let vertical = HexInfluenceField::encourage_verticality();
+        // Shaft weight rises under encourage_verticality; a hall is untouched.
+        let shaft_base = effective_weight(c, HexArchetype::Shaft, 10, cfg, None);
+        let shaft_driven = effective_weight(c, HexArchetype::Shaft, 10, cfg, Some(&vertical));
+        assert!(
+            shaft_driven > shaft_base,
+            "verticality should raise shaft weight ({shaft_driven} vs {shaft_base})"
+        );
+        let hall_base = effective_weight(c, HexArchetype::Straight, 10, cfg, None);
+        let hall_driven = effective_weight(c, HexArchetype::Straight, 10, cfg, Some(&vertical));
+        assert_eq!(hall_base, hall_driven, "verticality must not touch halls");
+    }
+
+    #[test]
+    fn influence_lowers_but_never_zeroes_a_starved_category() {
+        let cfg = config();
+        let c = coord(5, 5, 3);
+        let starve = HexInfluenceField::discourage_recovery_rooms();
+        let base = effective_weight(c, HexArchetype::Room, 10, cfg, None);
+        let driven = effective_weight(c, HexArchetype::Room, 10, cfg, Some(&starve));
+        assert!(driven < base, "recovery rooms should be starved");
+        assert!(
+            driven >= 1,
+            "a legal room variant is never zeroed (solvability)"
+        );
+    }
+
+    #[test]
+    fn influence_biases_are_clamped_to_the_safe_range() {
+        let cfg = config();
+        let c = coord(5, 5, 1);
+        // Absurd requested biases clamp to the bounded range, so weight stays sane.
+        let extreme = HexInfluenceField::neutral()
+            .with_bias(HexArchetype::Shaft, 1_000.0)
+            .with_bias(HexArchetype::Room, 0.0);
+        let shaft = effective_weight(c, HexArchetype::Shaft, 10, cfg, Some(&extreme));
+        let room = effective_weight(c, HexArchetype::Room, 10, cfg, Some(&extreme));
+        // Vertical clamps to <= MAX (4.0) of geometry*static; never explodes.
+        let ceiling = (10.0 * INFLUENCE_MAX * VERTICAL_CENTER_BOOST).ceil() as u64;
+        assert!(
+            shaft <= ceiling,
+            "clamped high bias still exploded: {shaft}"
+        );
+        // Room's 0.0 request clamps up to MIN (0.25), never zero.
+        assert!(room >= 1, "clamped low bias must not zero a legal variant");
     }
 
     #[test]

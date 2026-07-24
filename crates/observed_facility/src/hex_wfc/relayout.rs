@@ -15,11 +15,72 @@ use observed_hex::{HexCoord, HexFace, travel_distance};
 
 use super::blueprint::StampedBlueprint;
 use super::collapse::collapse_pocket_attempt;
+use super::context::HexInfluenceField;
 use super::topology::pinned_cells;
 use super::{HexArchetype, HexPlacement, HexSpace, HexWfcConfig, HexWfcError, HexWfcWorld};
 
 pub const DEFAULT_MUTATION_TARGET_CELLS: usize = 32;
 pub const DEFAULT_MUTATION_MAX_CELLS: usize = 64;
+pub const LIMINAL_GRID_ZONE_SIZE: u16 = 7;
+
+const BASE_ARCHITECTURE_REGISTERS: [ArchitectureRegister; 9] = [
+    ArchitectureRegister::ShadowScreen,
+    ArchitectureRegister::Monolith,
+    ArchitectureRegister::OverlitGrid,
+    ArchitectureRegister::Institutional,
+    ArchitectureRegister::FacetMonument,
+    ArchitectureRegister::Megastructure,
+    ArchitectureRegister::Wellshaft,
+    ArchitectureRegister::InfiniteGallery,
+    ArchitectureRegister::Thinning,
+];
+
+/// One seed-stable rectangular Liminal Grid district on a facility level.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LiminalGridZone {
+    pub q_start: u16,
+    pub r_start: u16,
+    pub level: u8,
+    pub size: u16,
+}
+
+impl LiminalGridZone {
+    #[must_use]
+    pub const fn contains(self, coord: HexCoord) -> bool {
+        coord.level == self.level
+            && coord.q >= self.q_start
+            && coord.q < self.q_start + self.size
+            && coord.r >= self.r_start
+            && coord.r < self.r_start + self.size
+    }
+}
+
+/// Select exactly one bounded 7x7 zone on every level that can contain it.
+/// The selection intentionally excludes relayout generation, so observation-
+/// safe mutation can change local geometry without making the district drift.
+#[must_use]
+pub fn liminal_grid_zones(seed: u64, config: HexWfcConfig) -> Vec<LiminalGridZone> {
+    if config.cols < LIMINAL_GRID_ZONE_SIZE || config.rows < LIMINAL_GRID_ZONE_SIZE {
+        return Vec::new();
+    }
+    (0..config.levels)
+        .map(|level| {
+            let mut rng = SplitMix::new(
+                seed ^ 0x4C49_4D49_4E41_4C47 ^ u64::from(level).wrapping_mul(0x9E37_79B9_7F4A_7C15),
+            );
+            let q_start =
+                (rng.next_u64() % u64::from(config.cols - LIMINAL_GRID_ZONE_SIZE + 1)) as u16;
+            let r_start =
+                (rng.next_u64() % u64::from(config.rows - LIMINAL_GRID_ZONE_SIZE + 1)) as u16;
+            LiminalGridZone {
+                q_start,
+                r_start,
+                level,
+                size: LIMINAL_GRID_ZONE_SIZE,
+            }
+        })
+        .collect()
+}
 
 /// Stable identity of one named room threshold.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -135,6 +196,12 @@ pub enum HexRelayoutProgress {
 }
 
 impl HexWfcWorld {
+    /// Seed-stable Liminal Grid districts for map/debug presentation.
+    #[must_use]
+    pub fn liminal_grid_zones(&self) -> Vec<LiminalGridZone> {
+        liminal_grid_zones(self.seed, self.config)
+    }
+
     /// Select a deterministic pocket using the current observed cells as the
     /// frontier hint. Call [`Self::begin_frontier_relayout`] when a simulation
     /// owns richer discovered-territory knowledge.
@@ -175,7 +242,29 @@ impl HexWfcWorld {
     /// Execute exactly one deterministic topological attempt.
     pub fn advance_relayout(
         &self,
+        work: HexRelayoutWork,
+    ) -> Result<HexRelayoutProgress, HexWfcError> {
+        self.advance_relayout_inner(work, None)
+    }
+
+    /// Driven relayout: an eliminated team's bounded [`HexInfluenceField`]
+    /// biases which archetypes the pocket collapse tends to place. Legality is
+    /// still guaranteed — the influence only reweights a *valid* domain, a
+    /// failed attempt falls back to the geometry relayout, and
+    /// [`Self::commit_relayout_delta`] revalidates routes and boundary before
+    /// accepting the patch.
+    pub fn advance_driven_relayout(
+        &self,
+        work: HexRelayoutWork,
+        influence: &HexInfluenceField,
+    ) -> Result<HexRelayoutProgress, HexWfcError> {
+        self.advance_relayout_inner(work, Some(influence))
+    }
+
+    fn advance_relayout_inner(
+        &self,
         mut work: HexRelayoutWork,
+        influence: Option<&HexInfluenceField>,
     ) -> Result<HexRelayoutProgress, HexWfcError> {
         if work.base_seed != self.seed
             || work.base_config != self.config
@@ -195,6 +284,7 @@ impl HexWfcWorld {
             &self.placements,
             &self.blueprints,
             &work.region,
+            influence,
         ) {
             Ok(solved) => Ok(HexRelayoutProgress::Ready(make_candidate(
                 self,
@@ -230,6 +320,24 @@ impl HexWfcWorld {
         let mut work = self.begin_relayout(observation);
         loop {
             match self.advance_relayout(work)? {
+                HexRelayoutProgress::Pending(next) => work = next,
+                HexRelayoutProgress::Ready(candidate) => return Ok(candidate),
+            }
+        }
+    }
+
+    /// Drive a full bounded relayout under an eliminated team's influence field.
+    /// Mirrors [`Self::propose_relayout`]; the returned candidate must still be
+    /// accepted through [`Self::commit_relayout_delta`], which revalidates
+    /// routes and boundary, so a driven layout can never break traversal.
+    pub fn propose_driven_relayout(
+        &self,
+        observation: &HexObservationFrame,
+        influence: &HexInfluenceField,
+    ) -> Result<HexRelayoutCandidate, HexWfcError> {
+        let mut work = self.begin_relayout(observation);
+        loop {
+            match self.advance_driven_relayout(work, influence)? {
                 HexRelayoutProgress::Pending(next) => work = next,
                 HexRelayoutProgress::Ready(candidate) => return Ok(candidate),
             }
@@ -466,11 +574,13 @@ fn make_candidate(
         .iter()
         .map(|&coord| (coord, solved_placements[&coord]))
         .collect::<BTreeMap<_, _>>();
-    let architecture = region
-        .cells
-        .iter()
-        .map(|&coord| (coord, register_for(world.seed, generation, coord)))
-        .collect::<BTreeMap<_, _>>();
+    let architecture = architecture_for_cells(
+        world.seed,
+        generation,
+        world.config,
+        region.cells.iter().copied(),
+        solved_blueprints,
+    );
     let changed_cells = region
         .cells
         .iter()
@@ -521,22 +631,58 @@ fn blueprint_cell_identity(
 
 pub(super) fn initial_architecture(
     seed: u64,
+    config: HexWfcConfig,
     placements: &BTreeMap<HexCoord, HexPlacement>,
+    blueprints: &[StampedBlueprint],
 ) -> BTreeMap<HexCoord, ArchitectureRegister> {
-    placements
-        .keys()
-        .copied()
-        .map(|coord| (coord, register_for(seed, 0, coord)))
-        .collect()
+    architecture_for_cells(seed, 0, config, placements.keys().copied(), blueprints)
 }
 
-fn register_for(seed: u64, generation: u32, coord: HexCoord) -> ArchitectureRegister {
+fn architecture_for_cells(
+    seed: u64,
+    generation: u32,
+    config: HexWfcConfig,
+    coords: impl IntoIterator<Item = HexCoord>,
+    blueprints: &[StampedBlueprint],
+) -> BTreeMap<HexCoord, ArchitectureRegister> {
+    let zones = liminal_grid_zones(seed, config);
+    let mut architecture = coords
+        .into_iter()
+        .map(|coord| (coord, register_for(seed, generation, coord, &zones)))
+        .collect::<BTreeMap<_, _>>();
+    // A room is one decision beat and must never straddle visual registers.
+    // Its anchor owns the register even when another footprint cell crosses a
+    // zone boundary.
+    for blueprint in blueprints {
+        let register = architecture
+            .get(&blueprint.anchor)
+            .copied()
+            .unwrap_or_else(|| register_for(seed, generation, blueprint.anchor, &zones));
+        for cell in &blueprint.cells {
+            if let Some(cell_register) = architecture.get_mut(cell) {
+                *cell_register = register;
+            }
+        }
+    }
+    architecture
+}
+
+fn register_for(
+    seed: u64,
+    generation: u32,
+    coord: HexCoord,
+    zones: &[LiminalGridZone],
+) -> ArchitectureRegister {
+    if zones.iter().any(|zone| zone.contains(coord)) {
+        return ArchitectureRegister::LiminalGrid;
+    }
     let coord_key = coord_key(coord);
     let mut rng = SplitMix::new(
         seed ^ coord_key.wrapping_mul(0x9E37_79B9_7F4A_7C15)
             ^ u64::from(generation).wrapping_mul(0xBF58_476D_1CE4_E5B9),
     );
-    ArchitectureRegister::ALL[(rng.next_u64() % ArchitectureRegister::ALL.len() as u64) as usize]
+    BASE_ARCHITECTURE_REGISTERS
+        [(rng.next_u64() % BASE_ARCHITECTURE_REGISTERS.len() as u64) as usize]
 }
 
 pub(super) fn fallback_geometry_relayout(
@@ -549,10 +695,17 @@ pub(super) fn fallback_geometry_relayout(
         .cells
         .iter()
         .copied()
-        .filter(|coord| world.placements[coord].space != HexSpace::Void)
+        .filter(|coord| world.architecture[coord] != ArchitectureRegister::LiminalGrid)
+        .filter(|coord| world.placements[coord].space == HexSpace::Hall)
         .collect::<Vec<_>>();
     let candidates = if candidates.is_empty() {
-        region.cells.iter().copied().collect::<Vec<_>>()
+        region
+            .cells
+            .iter()
+            .copied()
+            .filter(|coord| world.architecture[coord] != ArchitectureRegister::LiminalGrid)
+            .filter(|coord| world.placements[coord].space != HexSpace::Room)
+            .collect::<Vec<_>>()
     } else {
         candidates
     };
@@ -570,11 +723,12 @@ pub(super) fn fallback_geometry_relayout(
         .map(|&coord| (coord, world.architecture[&coord]))
         .collect::<BTreeMap<_, _>>();
     let register = architecture.get_mut(&selected)?;
-    let register_index = ArchitectureRegister::ALL
+    let register_index = BASE_ARCHITECTURE_REGISTERS
         .iter()
         .position(|candidate| candidate == register)
         .unwrap_or(0);
-    *register = ArchitectureRegister::ALL[(register_index + 1) % ArchitectureRegister::ALL.len()];
+    *register =
+        BASE_ARCHITECTURE_REGISTERS[(register_index + 1) % BASE_ARCHITECTURE_REGISTERS.len()];
     let blueprints = world
         .blueprints
         .iter()

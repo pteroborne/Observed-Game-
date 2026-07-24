@@ -30,6 +30,7 @@ use observed_core::{CorridorId, RoomId};
 pub use blueprint::{
     RoomBlueprint, StampedBlueprint, blueprint_cell_archetype, blueprint_for_role,
 };
+pub use context::HexInfluenceField;
 pub use observed_hex::{HexCoord, HexFace, HexGridSize, PortClass, PortSignature};
 pub use relayout::{
     DEFAULT_MUTATION_MAX_CELLS, DEFAULT_MUTATION_TARGET_CELLS, HexMutationRegion,

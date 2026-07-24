@@ -182,6 +182,7 @@ pub(super) fn collapse_attempt(
 /// exact boundary constraints, room cells remain tied to their stamped
 /// blueprint signatures, and all propagation/entropy work is proportional to
 /// the pocket rather than the full production lattice.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn collapse_pocket_attempt(
     seed: u64,
     generation: u32,
@@ -190,6 +191,7 @@ pub(super) fn collapse_pocket_attempt(
     previous: &BTreeMap<HexCoord, HexPlacement>,
     blueprints: &[StampedBlueprint],
     region: &super::relayout::HexMutationRegion,
+    influence: Option<&super::context::HexInfluenceField>,
 ) -> Result<CollapseAttempt, &'static str> {
     let tables = solver_tables();
     let mut rng = SplitMix::new(mixed(seed, generation, attempt, 0x4E8C_0FFE_D011_88AA));
@@ -239,7 +241,7 @@ pub(super) fn collapse_pocket_attempt(
     if !propagate_pocket(tables, region, &mut domains) {
         return Err("pocket propagation contradiction");
     }
-    if !collapse_pocket_domains(tables, region, &mut domains, &mut rng) {
+    if !collapse_pocket_domains(tables, region, &mut domains, &mut rng, influence) {
         return Err("pocket collapse contradiction");
     }
     let placements = domains
@@ -403,6 +405,7 @@ fn collapse_pocket_domains(
     region: &super::relayout::HexMutationRegion,
     domains: &mut BTreeMap<HexCoord, VariantSet>,
     rng: &mut SplitMix,
+    influence: Option<&super::context::HexInfluenceField>,
 ) -> bool {
     loop {
         let Some(min_size) = domains
@@ -419,14 +422,23 @@ fn collapse_pocket_domains(
             .collect::<Vec<_>>();
         let coord = candidates[(rng.next_u64() % candidates.len() as u64) as usize];
         let domain = domains[&coord];
-        let total = domain
-            .iter()
-            .map(|variant| u64::from(tables.variants[variant].weight))
-            .sum::<u64>();
+        // Only a driven relayout weights the pocket, and only by the influence
+        // bias (no geometry context). An ordinary relayout (`influence == None`)
+        // keeps the exact static-weight lottery, so its output is byte-identical
+        // to before this feature, and a `neutral` field matches it too.
+        let weight_of = |variant: usize| match influence {
+            Some(field) => super::context::influenced_weight(
+                tables.variants[variant].archetype,
+                tables.variants[variant].weight,
+                field,
+            ),
+            None => u64::from(tables.variants[variant].weight),
+        };
+        let total = domain.iter().map(weight_of).sum::<u64>();
         let mut roll = rng.next_u64() % total.max(1);
         let mut picked = domain.iter().next().expect("non-empty pocket domain");
         for variant in domain.iter() {
-            let weight = u64::from(tables.variants[variant].weight);
+            let weight = weight_of(variant);
             if roll < weight {
                 picked = variant;
                 break;
@@ -765,6 +777,7 @@ fn collapse_domains(
                 variants[variant].archetype,
                 variants[variant].weight,
                 config,
+                None,
             )
         };
         let total: u64 = domains[cell].iter().map(weight_of).sum();
