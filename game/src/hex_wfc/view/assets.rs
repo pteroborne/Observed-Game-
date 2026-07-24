@@ -164,9 +164,7 @@ impl HexWfcVisualAssets {
         // faces' rails do not visibly overlap at the shared corners.
         let size = match kind {
             HexTrimKind::Railing => Vec3::new(7.4, 0.12, 0.12),
-            HexTrimKind::Buttress => {
-                Vec3::new(0.55, observed_hex::TILE_LEVEL_HEIGHT * 0.9, 0.55)
-            }
+            HexTrimKind::Buttress => Vec3::new(0.55, observed_hex::TILE_LEVEL_HEIGHT * 0.9, 0.55),
             HexTrimKind::Lintel => Vec3::new(2.0, 0.22, 0.30),
         };
         let key = [size.x.to_bits(), size.y.to_bits(), size.z.to_bits()];

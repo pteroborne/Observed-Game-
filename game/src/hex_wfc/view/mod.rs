@@ -34,6 +34,22 @@ const STREAM_LEVELS: u8 = 2;
 #[derive(Component)]
 pub(super) struct HexWfcCell(pub HexCoord);
 
+/// The full set of grid cells a [`HexWfcCell`]'s fixture group actually
+/// occupies. An ordinary tile's footprint is just its own coordinate. A
+/// whole-room module is different: `push_room` in
+/// `observed_match::hex_wfc::geometry` stamps every hull of the room with
+/// `source_cell = anchor`, so all of a room's pieces are grouped under one
+/// [`HexWfcCell`] keyed by its anchor — `shell::cell_footprint` recovers the
+/// room's true footprint from the solved world's stamped blueprints so this
+/// carries every cell the room occupies, not only its anchor. Streaming keys
+/// off "any cell of the footprint is in range" so a large multi-cell room
+/// stays visible while the player is anywhere inside it. For today's
+/// room-less catalog (and every ordinary tile once rooms exist) this is
+/// always a single-element list equal to the `HexWfcCell` coordinate, so
+/// streaming behavior is unchanged.
+#[derive(Component)]
+pub(super) struct HexWfcCellFootprint(pub Vec<HexCoord>);
+
 /// Every shell entity carries this so a relayout can clear the whole facility at once.
 #[derive(Component)]
 pub(super) struct HexWfcGeometry;
@@ -149,16 +165,35 @@ pub(super) fn sync_changed_geometry(
     );
 }
 
+/// Whether `coord` alone is within the streaming window of `focus_position`
+/// / `focus_level`. Pure arithmetic core of [`sync_streamed_cells`], kept
+/// standalone so [`footprint_in_range`] (and its unit tests) can reuse it.
+fn cell_in_stream_range(coord: HexCoord, focus_position: Vec3, focus_level: u8) -> bool {
+    let origin = Vec3::from_array(hex_origin(coord));
+    let plan = Vec2::new(origin.x - focus_position.x, origin.z - focus_position.z).length();
+    let level_gap = coord.level.abs_diff(focus_level);
+    plan <= STREAM_RADIUS && level_gap <= STREAM_LEVELS
+}
+
+/// A cell's fixture group is streamed in when ANY cell of its footprint is
+/// in range — for an ordinary tile the footprint is just its own coordinate
+/// (identical to the old single-point check); for a whole-room module it is
+/// the room's complete stamped footprint, so a large room stays visible
+/// while the player is anywhere inside it rather than popping in/out keyed
+/// to a single anchor cell that might be far from the player.
+fn footprint_in_range(footprint: &[HexCoord], focus_position: Vec3, focus_level: u8) -> bool {
+    footprint
+        .iter()
+        .any(|&coord| cell_in_stream_range(coord, focus_position, focus_level))
+}
+
 pub(super) fn sync_streamed_cells(
     runtime: Res<HexWfcRuntime>,
-    mut cells: Query<(&HexWfcCell, &mut Visibility)>,
+    mut cells: Query<(&HexWfcCellFootprint, &mut Visibility)>,
 ) {
     let focus = runtime.local();
-    for (cell, mut visibility) in &mut cells {
-        let origin = Vec3::from_array(hex_origin(cell.0));
-        let plan = Vec2::new(origin.x - focus.position.x, origin.z - focus.position.z).length();
-        let level_gap = cell.0.level.abs_diff(focus.cell.level);
-        *visibility = if plan <= STREAM_RADIUS && level_gap <= STREAM_LEVELS {
+    for (footprint, mut visibility) in &mut cells {
+        *visibility = if footprint_in_range(&footprint.0, focus.position, focus.cell.level) {
             Visibility::Inherited
         } else {
             Visibility::Hidden
@@ -207,11 +242,76 @@ mod tests {
 
     #[test]
     fn streaming_window_is_bounded() {
-        // A cell directly under the runner is streamed; far plan distance or level gap
-        // is culled. (Pure arithmetic mirror of `sync_streamed_cells`.)
-        let close = Vec2::new(4.0, 3.0).length();
-        assert!(close <= STREAM_RADIUS);
-        assert!(0u8.abs_diff(1) <= STREAM_LEVELS);
-        assert!(3u8.abs_diff(0) > STREAM_LEVELS);
+        // A cell directly under the runner is streamed; far plan distance or
+        // level gap is culled.
+        let close = HexCoord {
+            q: 5,
+            r: 5,
+            level: 0,
+        };
+        let focus_position = Vec3::from_array(hex_origin(close));
+        assert!(cell_in_stream_range(close, focus_position, 0));
+
+        let far_plan = HexCoord {
+            q: 45,
+            r: 5,
+            level: 0,
+        };
+        assert!(!cell_in_stream_range(far_plan, focus_position, 0));
+
+        let far_level = HexCoord {
+            q: 5,
+            r: 5,
+            level: 5,
+        };
+        assert!(!cell_in_stream_range(far_level, focus_position, 0));
+    }
+
+    #[test]
+    fn footprint_in_range_is_a_no_op_for_single_cell_footprints() {
+        // An ordinary tile's footprint is always `[coord]`; the ANY-of-footprint
+        // check used for whole-room modules must degrade to exactly the
+        // single-cell check it replaced, near or far.
+        let coord = HexCoord {
+            q: 10,
+            r: 10,
+            level: 1,
+        };
+        let near_focus = Vec3::from_array(hex_origin(coord));
+        assert_eq!(
+            footprint_in_range(&[coord], near_focus, 1),
+            cell_in_stream_range(coord, near_focus, 1)
+        );
+
+        let far_focus = near_focus + Vec3::new(500.0, 0.0, 0.0);
+        assert_eq!(
+            footprint_in_range(&[coord], far_focus, 1),
+            cell_in_stream_range(coord, far_focus, 1)
+        );
+    }
+
+    #[test]
+    fn footprint_in_range_covers_a_whole_room_footprint() {
+        // A whole-room module's single `HexWfcCell` is keyed by its anchor,
+        // which can sit far from the player while another footprint cell is
+        // close — the room must still stream in, which is exactly the bug
+        // this stream fixes (previously only the anchor coordinate was
+        // checked, so a large room could vanish while the player stood in
+        // one of its far corners).
+        let anchor = HexCoord {
+            q: 0,
+            r: 0,
+            level: 0,
+        };
+        let near_cell = HexCoord {
+            q: 5,
+            r: 5,
+            level: 0,
+        };
+        let focus_position = Vec3::from_array(hex_origin(near_cell));
+
+        assert!(!cell_in_stream_range(anchor, focus_position, 0));
+        assert!(cell_in_stream_range(near_cell, focus_position, 0));
+        assert!(footprint_in_range(&[anchor, near_cell], focus_position, 0));
     }
 }

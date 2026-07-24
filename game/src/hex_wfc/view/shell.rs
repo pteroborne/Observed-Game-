@@ -7,14 +7,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use bevy::prelude::*;
 use observed_content::ArchitectureRegister;
-use observed_facility::hex_wfc::HexCoord;
+use observed_facility::hex_wfc::{HexCoord, HexWfcWorld};
 use observed_hex::hex_origin;
 use observed_match::hex_wfc::{
     HexLightSource, HexStructurePiece, HexStructureRole, HexTrimPiece, derive_trim,
 };
 
 use super::assets::HexWfcVisualAssets;
-use super::{HexPractical, HexWfcCell, HexWfcGeometry};
+use super::{HexPractical, HexWfcCell, HexWfcCellFootprint, HexWfcGeometry};
 use crate::GameState;
 use crate::hex_wfc::sim::HexWfcRuntime;
 
@@ -88,6 +88,27 @@ fn group_trim_by_cell(trim: &[HexTrimPiece]) -> BTreeMap<HexCoord, Vec<&HexTrimP
         by_cell.entry(piece.cell).or_default().push(piece);
     }
     by_cell
+}
+
+/// The grid cells a spawned cell's fixtures actually occupy. An ordinary
+/// tile's footprint is just its own coordinate — `push_tile` in
+/// `observed_match::hex_wfc::geometry` keys it that way. A whole-room
+/// module is different: `push_room` stamps `source_cell = anchor` on every
+/// hull of the room, so all of a room's pieces are grouped here under one
+/// coordinate, its anchor. Looking that anchor up against the solved
+/// world's stamped blueprints recovers the room's true footprint, so
+/// streaming and the defensive light fallback can treat every cell the room
+/// actually occupies rather than only its anchor. For every coordinate that
+/// is *not* a room anchor (all of today's catalog, and every ordinary tile
+/// once rooms exist) this returns exactly `[coord]`, matching prior
+/// behavior precisely.
+fn cell_footprint(world: &HexWfcWorld, coord: HexCoord) -> Vec<HexCoord> {
+    world
+        .blueprints
+        .iter()
+        .find(|blueprint| blueprint.anchor == coord)
+        .map(|blueprint| blueprint.cells.clone())
+        .unwrap_or_else(|| vec![coord])
 }
 
 pub(super) fn spawn_cells(
@@ -169,9 +190,11 @@ fn spawn_cell(
     let cell_role = pieces
         .first()
         .map_or(HexStructureRole::Hall, |piece| piece.role);
+    let footprint = cell_footprint(world, coord);
     let cell = commands
         .spawn((
             HexWfcCell(coord),
+            HexWfcCellFootprint(footprint.clone()),
             HexWfcGeometry,
             DespawnOnExit(GameState::HexWfc),
             Transform::IDENTITY,
@@ -189,6 +212,7 @@ fn spawn_cell(
         PracticalProjection {
             parent: cell,
             coord,
+            footprint: &footprint,
             architecture,
             role: cell_role,
             authored_lights: &lights,
@@ -246,6 +270,10 @@ fn spawn_trim(
 struct PracticalProjection<'a> {
     parent: Entity,
     coord: HexCoord,
+    /// The full set of cells this fixture group is responsible for lighting
+    /// — `[coord]` for an ordinary tile, or a room's complete footprint when
+    /// `coord` is a whole-room module's anchor (see [`cell_footprint`]).
+    footprint: &'a [HexCoord],
     architecture: ArchitectureRegister,
     role: HexStructureRole,
     authored_lights: &'a [&'a HexLightSource],
@@ -260,6 +288,7 @@ fn spawn_cell_practicals(
     let PracticalProjection {
         parent,
         coord,
+        footprint,
         architecture,
         role,
         authored_lights,
@@ -285,8 +314,16 @@ fn spawn_cell_practicals(
         1.0
     };
     let has_authored_lights = !authored_lights.is_empty();
-    let positions = if !has_authored_lights {
-        vec![Vec3::from_array(hex_origin(coord)) + Vec3::Y * PRACTICAL_HEIGHT]
+    let positions: Vec<Vec3> = if !has_authored_lights {
+        // Defensive fallback: one fixture per footprint cell, not just the
+        // anchor, so a whole-room module with no authored lights still has
+        // every part of its floor lit (Legibility Contract). For an
+        // ordinary tile `footprint` is exactly `[coord]`, so this produces
+        // the same single fixture as before.
+        footprint
+            .iter()
+            .map(|&cell| Vec3::from_array(hex_origin(cell)) + Vec3::Y * PRACTICAL_HEIGHT)
+            .collect()
     } else {
         authored_lights
             .iter()
