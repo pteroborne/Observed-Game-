@@ -32,6 +32,7 @@ Contract cheat sheet (enforced by `tilec validate`):
 
 import math
 import os
+import re
 
 UPM = 16.0
 LEVEL = 128.0            # one level in TB units (8 m)
@@ -75,6 +76,40 @@ def offset_inward(a, b, t):
     sign = -1.0 if outward[0] * a[0] + outward[1] * a[1] > 0.0 else 1.0
     m = (outward[0] * sign * t, outward[1] * sign * t)
     return (a[0] + m[0], a[1] + m[1]), (b[0] + m[0], b[1] + m[1])
+
+
+# --- multi-cell (whole-room) support ---------------------------------------
+#
+# Axial neighbor step per lateral face index, matching `observed_hex::HexFace`
+# (east=0 .. north_east=5) and FACE_NAMES above.
+FACE_DELTA = [(1, 0), (0, 1), (-1, 1), (-1, 0), (0, -1), (1, -1)]
+
+
+def cell_origin(q, r):
+    """TB-unit plan origin of footprint cell (q, r).
+
+    Mirrors `expected_port_origin` / `plan_origin` in
+    `crates/observed_authoring/src/source.rs`: world x = q*14 + r*7 metres,
+    world z = r*12 metres, and TB y is the negated world z."""
+    return ((q * 14 + r * 7) * UPM, -(r * 12) * UPM)
+
+
+_COORD = re.compile(r"\(\s*(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s*\)")
+
+
+def translate(brushes, dx, dy):
+    """Shift every brush plane coordinate triple in `brushes` by (dx, dy).
+
+    `plane_line` is the only emitter of parenthesised coordinate triples, and
+    its format is fixed, so a textual shift is exact here. Only ever pass
+    worldspawn BRUSH text — point entities carry their origin as a quoted
+    property, which this deliberately does not touch."""
+    def shift(match):
+        x = float(match.group(1)) + dx
+        y = float(match.group(2)) + dy
+        return f"( {_fmt(x)} {_fmt(y)} {_fmt(float(match.group(3)))} )"
+
+    return _COORD.sub(shift, brushes)
 
 
 # --- plane and brush emission (exact port of geometry.rs) -------------------
@@ -367,8 +402,13 @@ def worldspawn(brushes):
 
 def tile_meta(tile_id, archetype, variant, levels, weight, register="generic",
               register_scope=ORIGINAL_REGISTER_SCOPE,
-              rotation_policy="sixfold", kind="cell"):
-    return point_entity([
+              rotation_policy="sixfold", kind="cell", room_role=None):
+    """`kind="room"` REQUIRES `room_role` — the importer hard-errors
+    (`SourceError::RoomRoleMissing`) and that fails the whole `tilec build`,
+    not just this module."""
+    if kind == "room" and not room_role:
+        raise ValueError(f"{tile_id}: kind=room requires room_role")
+    props = [
         ("classname", "tile_meta"),
         ("authoring_version", "2"),
         ("id", tile_id),
@@ -380,7 +420,10 @@ def tile_meta(tile_id, archetype, variant, levels, weight, register="generic",
         ("levels", str(levels)),
         ("rotation_policy", rotation_policy),
         ("weight", str(weight)),
-    ])
+    ]
+    if room_role:
+        props.insert(5, ("room_role", room_role))
+    return point_entity(props)
 
 
 def tile_cell(q=0, r=0, level=0, levels=1, floor="solid"):
@@ -409,14 +452,18 @@ def vertical_port(face_name, klass, name, level=0):
     ])
 
 
-def lateral_port(face, klass, name, level=0):
-    """A lateral port with the exact origin the validator demands."""
+def lateral_port(face, klass, name, level=0, q=0, r=0):
+    """A lateral port with the exact origin the validator demands.
+
+    For a multi-cell room the origin is the face-edge midpoint of *that cell*,
+    i.e. shifted by the cell's plan origin — see `expected_port_origin`."""
     mid = face_mid(face)
-    origin = f"{_fmt(mid[0])} {_fmt(mid[1])} {_fmt(level * LEVEL + 48.0)}"
+    ox, oy = cell_origin(q, r)
+    origin = f"{_fmt(mid[0] + ox)} {_fmt(mid[1] + oy)} {_fmt(level * LEVEL + 48.0)}"
     return point_entity([
         ("classname", "tile_port"),
-        ("q", "0"),
-        ("r", "0"),
+        ("q", str(q)),
+        ("r", str(r)),
         ("level", str(level)),
         ("face", FACE_NAMES[face]),
         ("class", klass),
@@ -967,7 +1014,111 @@ def register_liminal_tiles(tiles):
             )
 
 
+# --- whole-room modules (multi-hex) ----------------------------------------
+#
+# A room blueprint is stamped by the solver as N adjacent cells. Authored as N
+# separate single-cell tiles it renders as N sealed rooms with walls at every
+# internal seam; authored as ONE room module it renders as a single continuous
+# space. These builders emit the latter.
+
+def room_shell(cells):
+    """Per-cell floor and ceiling slabs, a door wall on every face that LEAVES
+    the footprint, and nothing at all on faces shared with a sibling cell — so
+    the room reads as one continuous space.
+
+    Slabs are deliberately unchamfered: a rim bevel on a shared edge would cut
+    a visible groove across the middle of the room's floor."""
+    footprint = set(cells)
+    brushes = ""
+    for (q, r) in cells:
+        cell = f"// --- cell q{q} r{r}: floor + ceiling\n"
+        cell += hex_slab(0.0, FLOOR_TOP)
+        cell += hex_slab(LEVEL - FLOOR_TOP, LEVEL)
+        for face in range(6):
+            dq, dr = FACE_DELTA[face]
+            if (q + dq, r + dr) in footprint:
+                cell += f"// open seam to sibling cell: {FACE_NAMES[face]}\n"
+                continue
+            cell += f"// Door wall: {FACE_NAMES[face]}\n"
+            cell += door_wall(face, 0.0, LEVEL)
+        ox, oy = cell_origin(q, r)
+        brushes += translate(cell, ox, oy)
+    return brushes
+
+
+def room_fixtures(cells):
+    """One recessed ceiling practical per footprint cell, so every cell of the
+    room is lit (Legibility Contract) — not just the anchor."""
+    brushes = ""
+    lights = ""
+    for (q, r) in cells:
+        ox, oy = cell_origin(q, r)
+        fixture, _ = ceiling_fixture()
+        brushes += translate(fixture, ox, oy)
+        lights += tile_light(ox, oy, LEVEL - 12.0)
+    return brushes, lights
+
+
+def room_module(name, room_role, cells, named, archetype="sanctuary", weight=10):
+    """A whole-room module matching one `RoomBlueprint`.
+
+    `named` maps `(q, r, face)` to the blueprint's port name. Contract enforced
+    by `room_contract_matches` (observed_match) and `validate_ports`
+    (observed_authoring):
+      * footprint must equal the blueprint's cells exactly (no runtime rotation);
+      * EVERY face leaving the footprint is a `Door` — that is what
+        `RoomBlueprint::cell_signature` declares for a room;
+      * a port on an internal face is a hard error (`PortOnInternalFace`);
+      * each blueprint named port must be one of those doors.
+    `rotation_policy` is `none` because stamped blueprints are never rotated,
+    so a sixfold room would compile five unreachable variants."""
+    footprint = set(cells)
+    brushes = room_shell(cells)
+    fixtures, lights = room_fixtures(cells)
+    brushes += fixtures
+
+    out = f"// Whole-room module: {room_role} — {len(cells)} hexes, one continuous space.\n"
+    out += "// Generated by tools/tileforge.py - edit that script, not this file.\n"
+    out += worldspawn(brushes)
+    out += tile_meta(
+        f"authored/{name}", archetype, 0, 1, weight,
+        register_scope="all", rotation_policy="none",
+        kind="room", room_role=room_role,
+    )
+    for (q, r) in cells:
+        out += tile_cell(q=q, r=r)
+    for (q, r) in cells:
+        for face in range(6):
+            dq, dr = FACE_DELTA[face]
+            if (q + dq, r + dr) in footprint:
+                continue
+            port_name = named.get((q, r, face), f"{FACE_NAMES[face]}_q{q}_r{r}")
+            out += lateral_port(face, "door", port_name, q=q, r=r)
+    out += lights
+    return out
+
+
+def room_dual_station():
+    """DualStation: cells (0,0)+(1,0), joined across the east/west seam."""
+    return room_module(
+        "room_dual_station", "DualStation",
+        [(0, 0), (1, 0)],
+        {(0, 0, 3): "port_a", (1, 0, 0): "port_b"},
+    )
+
+
+def room_decision():
+    """Decision: cells (0,0)+(1,0)+(0,1) — a triangular three-hex chamber."""
+    return room_module(
+        "room_decision", "Decision",
+        [(0, 0), (1, 0), (0, 1)],
+        {(0, 0, 3): "port_a", (1, 0, 0): "port_b", (0, 1, 1): "port_c"},
+    )
+
+
 TILES = {
+    "assets/tiles/authored/room_dual_station.map": room_dual_station,
+    "assets/tiles/authored/room_decision.map": room_decision,
     "assets/tiles/authored/silo_core.map": silo_core,
     "assets/tiles/authored/silo_ring.map": silo_ring,
     "assets/tiles/authored/silo_ring_bridge.map": silo_ring_bridge,
