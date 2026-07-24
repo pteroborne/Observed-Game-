@@ -5,27 +5,33 @@
 //! can see which tiles/rotations never get a chance to appear and which
 //! families dominate the mix.
 //!
-//! Wiring note: this command currently tallies over the **compiled catalog's
-//! declared alphabet** (archetype x register x variant x rotation, weighted
-//! by each module's authored `weight`), not a live hex WFC solve's actual
-//! placements. `observed_facility`'s hex solver lives behind the
-//! off-by-default `wfc` cargo feature and is only a dev-dependency of this
-//! crate (see `Cargo.toml`); wiring a live solve would require promoting it
-//! to a normal dependency with `features = ["wfc"]`, which risked colliding
-//! with concurrent Cargo.lock edits from other in-flight work on this
-//! codebase. A module `weight` of zero is a genuine catalog bug (the tile is
-//! authored but the weighted selector will never choose it), so the
-//! catalog-only tally still surfaces real "this will never place" cases;
-//! true per-seed placement frequency is deferred to a follow-up that wires
-//! [`crate::catalog::CompiledModule`] data through an actual
-//! `HexWfcWorld::generate` run and feeds its `placements` map into
-//! [`tally_placement_distribution`] instead.
+//! Two complementary views are reported:
 //!
-//! The tally itself ([`tally_placement_distribution`]) is pure and takes
-//! plain [`CatalogSample`] rows, so it works unchanged once a live-solve
-//! producer exists -- only the sample source needs to change.
+//! 1. **Catalog alphabet** ([`tally_placement_distribution`] over
+//!    [`samples_from_modules`]): archetype x register x variant x rotation,
+//!    weighted by each module's authored `weight`. A `weight` of zero is a
+//!    genuine catalog bug (the tile is authored but the weighted selector will
+//!    never choose it), so this surfaces "this will never place" cases and
+//!    unused rotations from the declared alphabet alone.
+//! 2. **Live per-seed placements** ([`tally_live_placements`] over
+//!    [`architecture_rows`]): how often each [`HexArchetype`] actually places,
+//!    and how live cells distribute across registers (districts), from a real
+//!    `HexWfcWorld::generate` solve. This answers "what does a solve actually
+//!    produce?", which the catalog alphabet cannot.
+//!
+//! The live view stops at the **architecture level**: the WFC solver places
+//! `HexArchetype`s + port signatures, and the concrete authored tile + rotation
+//! for each cell is only chosen later, at projection time, in `observed_match`
+//! (which `observed_authoring` cannot depend on without a dependency cycle). So
+//! catalog variant/rotation frequency stays the catalog tally's job; true
+//! per-tile placement frequency would need a projection-side producer.
+//!
+//! All three tallies are pure functions of plain rows, so their producers can
+//! be swapped without touching the reporting logic.
 
 use std::collections::{BTreeMap, BTreeSet};
+
+use observed_facility::hex_wfc::{HexArchetype, HexWfcWorld};
 
 use crate::catalog::CompiledModule;
 
@@ -69,6 +75,99 @@ pub fn samples_from_modules(modules: &[CompiledModule]) -> Vec<CatalogSample> {
         }
     }
     samples
+}
+
+/// Stable report name for a solver archetype (independent of `Debug`).
+fn archetype_name(archetype: HexArchetype) -> &'static str {
+    match archetype {
+        HexArchetype::Void => "void",
+        HexArchetype::Room => "room",
+        HexArchetype::Straight => "straight",
+        HexArchetype::Corner => "corner",
+        HexArchetype::Junction => "junction",
+        HexArchetype::RampUp => "ramp_up",
+        HexArchetype::RampHead => "ramp_head",
+        HexArchetype::Shaft => "shaft",
+    }
+}
+
+/// Extract one `(archetype, register)` row per live (non-`Void`) placed cell of
+/// a solved world — the input rows for [`tally_live_placements`]. Reads the
+/// world only; no IO, no solve. `Void` cells are empty space, not placed tiles,
+/// so they are excluded from the placement distribution.
+#[must_use]
+pub fn architecture_rows(world: &HexWfcWorld) -> Vec<(String, String)> {
+    world
+        .placements
+        .values()
+        .filter(|placement| placement.archetype != HexArchetype::Void)
+        .map(|placement| {
+            let register = world
+                .architecture
+                .get(&placement.coord)
+                .map_or("(none)", |register| register.slug());
+            (
+                archetype_name(placement.archetype).to_string(),
+                register.to_string(),
+            )
+        })
+        .collect()
+}
+
+/// A live solve's placement distribution: per-archetype and per-register cell
+/// counts from an actual `HexWfcWorld`. Distinct from the catalog alphabet
+/// (see module docs) — the solver has no catalog variant/rotation, so this
+/// reports the architecture level it actually produces.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LivePlacementReport {
+    /// Live (non-`Void`) cells placed.
+    pub total_cells: u32,
+    /// Solver attempts the accepted solve consumed (1-based).
+    pub attempts: u32,
+    pub archetype_instances: BTreeMap<String, u32>,
+    pub register_instances: BTreeMap<String, u32>,
+    pub report: String,
+}
+
+/// Pure tally over `(archetype, register)` rows — one per live placed cell (see
+/// [`architecture_rows`]). IO/solve-free.
+#[must_use]
+pub fn tally_live_placements(rows: &[(String, String)], attempts: u32) -> LivePlacementReport {
+    let mut archetype_instances: BTreeMap<String, u32> = BTreeMap::new();
+    let mut register_instances: BTreeMap<String, u32> = BTreeMap::new();
+    for (archetype, register) in rows {
+        *archetype_instances.entry(archetype.clone()).or_insert(0) += 1;
+        *register_instances.entry(register.clone()).or_insert(0) += 1;
+    }
+    let total_cells = rows.len() as u32;
+
+    let mut report = String::new();
+    report.push_str(&format!(
+        "LIVE PLACEMENT DISTRIBUTION (per-seed solve)\n{total_cells} live cells across {} archetypes, {} registers (solve took {attempts} attempt(s)).\n\n",
+        archetype_instances.len(),
+        register_instances.len(),
+    ));
+    report.push_str("Per-archetype placements:\n");
+    for (archetype, count) in &archetype_instances {
+        let share = if total_cells == 0 {
+            0.0
+        } else {
+            100.0 * *count as f32 / total_cells as f32
+        };
+        report.push_str(&format!("  - {archetype}: {count} ({share:.1}%)\n"));
+    }
+    report.push_str("\nPer-register placements:\n");
+    for (register, count) in &register_instances {
+        report.push_str(&format!("  - {register}: {count}\n"));
+    }
+
+    LivePlacementReport {
+        total_cells,
+        attempts,
+        archetype_instances,
+        register_instances,
+        report,
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -391,6 +490,49 @@ mod tests {
             out.under_represented,
             vec!["hall_junction".to_string(), "hall_turn".to_string()]
         );
+    }
+
+    #[test]
+    fn live_tally_counts_archetypes_and_registers_per_cell() {
+        let rows = vec![
+            ("straight".to_string(), "monolith".to_string()),
+            ("straight".to_string(), "monolith".to_string()),
+            ("junction".to_string(), "wellshaft".to_string()),
+            ("room".to_string(), "monolith".to_string()),
+        ];
+        let out = tally_live_placements(&rows, 3);
+        assert_eq!(out.total_cells, 4);
+        assert_eq!(out.attempts, 3);
+        assert_eq!(out.archetype_instances["straight"], 2);
+        assert_eq!(out.archetype_instances["junction"], 1);
+        assert_eq!(out.archetype_instances["room"], 1);
+        assert_eq!(out.register_instances["monolith"], 3);
+        assert_eq!(out.register_instances["wellshaft"], 1);
+        assert!(out.report.contains("straight: 2 (50.0%)"));
+    }
+
+    #[test]
+    fn architecture_rows_skip_void_and_map_archetype_and_register() {
+        use observed_facility::hex_wfc::{HexWfcConfig, HexWfcWorld};
+
+        // A real solve so the mapping is exercised end to end; arc_default is
+        // the representative facility. Deterministic in the seed.
+        let world = HexWfcWorld::generate(0xa11c_0000_0000_0000, HexWfcConfig::arc_default())
+            .expect("arc_default solve");
+        let rows = architecture_rows(&world);
+        // Every row is a live cell (no void) and carries a non-empty label pair.
+        assert!(!rows.is_empty());
+        assert!(
+            rows.iter()
+                .all(|(a, r)| a != "void" && !a.is_empty() && !r.is_empty())
+        );
+        // The row count equals the non-void placements.
+        let live = world
+            .placements
+            .values()
+            .filter(|p| p.archetype != HexArchetype::Void)
+            .count();
+        assert_eq!(rows.len(), live);
     }
 
     #[test]

@@ -115,6 +115,25 @@ fn run() -> Result<(), String> {
                 usage();
             }
             let built = build_catalog(&root).map_err(|error| error.to_string())?;
+
+            // Live per-seed placements from a representative solve.
+            use observed_facility::hex_wfc::{HexWfcConfig, HexWfcWorld};
+            let seed = 0xa11c_0000_0000_0000;
+            match HexWfcWorld::generate(seed, HexWfcConfig::arc_default()) {
+                Ok(world) => {
+                    let rows = observed_authoring::distribution::architecture_rows(&world);
+                    let live = observed_authoring::distribution::tally_live_placements(
+                        &rows,
+                        world.last_attempts,
+                    );
+                    println!("{}", live.report);
+                }
+                Err(error) => {
+                    println!("LIVE PLACEMENT DISTRIBUTION: solve failed ({error:?}) — skipping.\n");
+                }
+            }
+
+            // Catalog alphabet (variant/rotation granularity the solver lacks).
             let samples =
                 observed_authoring::distribution::samples_from_modules(&built.catalog.modules);
             let report = observed_authoring::distribution::tally_placement_distribution(&samples);
