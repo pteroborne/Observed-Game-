@@ -6,6 +6,7 @@
 
 mod geometry;
 mod model;
+pub mod trim;
 
 pub use geometry::{
     HexGeometryDelta, HexGeometryError, HexLightSource, HexStructurePiece, HexStructureRole,
@@ -18,3 +19,4 @@ pub use model::{
     HexMatchSnapshot, HexMatchStatus, HexPlayerCommand, HexPlayerMapKnowledge, HexPlayerSnapshot,
     HexPlayerState, HexTeamState, HexWfcMatch,
 };
+pub use trim::{HexTrimKind, HexTrimPiece, derive_trim};

@@ -12,6 +12,7 @@ fn usage() -> ! {
          tilec validate <source.map>\n\
          tilec audit [source-root]\n\
          tilec audit-seams [source-root]\n\
+         tilec audit-distribution [source-root]\n\
          tilec gen-tower [output-dir]\n\
          tilec render-cad [output.svg]\n\
          tilec build [source-root] [catalog.ron] [manifest.ron]"
@@ -106,6 +107,17 @@ fn run() -> Result<(), String> {
                 usage();
             }
             let report = observed_authoring::seam_auditor::audit_seams(&root)?;
+            println!("{}", report.report);
+        }
+        "audit-distribution" => {
+            let root = PathBuf::from(args.next().unwrap_or_else(|| "assets/tiles".to_string()));
+            if args.next().is_some() {
+                usage();
+            }
+            let built = build_catalog(&root).map_err(|error| error.to_string())?;
+            let samples =
+                observed_authoring::distribution::samples_from_modules(&built.catalog.modules);
+            let report = observed_authoring::distribution::tally_placement_distribution(&samples);
             println!("{}", report.report);
         }
         "gen-tower" => {

@@ -14,6 +14,7 @@
 pub mod brush;
 pub mod cad_renderer;
 pub mod catalog;
+pub mod distribution;
 pub mod generator;
 pub mod manifest;
 pub mod seam_auditor;

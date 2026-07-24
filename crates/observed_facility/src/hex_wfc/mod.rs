@@ -13,6 +13,7 @@ mod constraints;
 mod relayout;
 #[cfg(test)]
 mod relayout_tests;
+mod score;
 #[cfg(test)]
 mod tests;
 mod topology;
@@ -32,7 +33,7 @@ pub use observed_hex::{HexCoord, HexFace, HexGridSize, PortClass, PortSignature}
 pub use relayout::{
     DEFAULT_MUTATION_MAX_CELLS, DEFAULT_MUTATION_TARGET_CELLS, HexMutationRegion,
     HexObservationFrame, HexRelayoutCandidate, HexRelayoutDelta, HexRelayoutProgress,
-    HexRelayoutWork, HexThresholdKey,
+    HexRelayoutWork, HexThresholdKey, LIMINAL_GRID_ZONE_SIZE, LiminalGridZone, liminal_grid_zones,
 };
 pub use topology::HexRoute;
 pub use trace::SolveStep;
@@ -263,6 +264,44 @@ impl HexWfcWorld {
             .map(|world| (world, steps))
     }
 
+    /// Solve `candidates` deterministic candidate layouts from `seed` and
+    /// keep the highest-scoring one (see [`score::score_layout`]). Purely
+    /// additive to [`Self::generate`]: each candidate is an ordinary,
+    /// independent `generate` call at a distinct derived seed, so existing
+    /// single-candidate callers and their behavior are untouched.
+    ///
+    /// Candidates that fail to solve are skipped. Ties in score keep the
+    /// lowest candidate index (guaranteed by scanning in ascending order and
+    /// only replacing the incumbent on a strictly higher score), so the
+    /// result is identical across repeated calls with the same inputs. If
+    /// every candidate fails, the last observed error is returned.
+    pub fn generate_best(
+        seed: u64,
+        config: HexWfcConfig,
+        candidates: u32,
+    ) -> Result<HexWfcWorld, HexWfcError> {
+        let mut best: Option<(HexWfcWorld, f64)> = None;
+        let mut last_err: Option<HexWfcError> = None;
+        for candidate in 0..candidates.max(1) {
+            let candidate_seed = score::candidate_seed(seed, candidate);
+            match Self::generate(candidate_seed, config) {
+                Ok(world) => {
+                    let total = score::score_layout(&world).total;
+                    let is_better = match &best {
+                        Some((_, best_total)) => total > *best_total,
+                        None => true,
+                    };
+                    if is_better {
+                        best = Some((world, total));
+                    }
+                }
+                Err(err) => last_err = Some(err),
+            }
+        }
+        best.map(|(world, _)| world)
+            .ok_or_else(|| last_err.unwrap_or(HexWfcError::InvalidConfig))
+    }
+
     fn generate_inner(
         seed: u64,
         config: HexWfcConfig,
@@ -274,7 +313,7 @@ impl HexWfcWorld {
         let generation = 0;
         let (placements, blueprints, attempts) =
             collapse::collapse(seed, generation, config, trace)?;
-        let architecture = relayout::initial_architecture(seed, &placements);
+        let architecture = relayout::initial_architecture(seed, config, &placements, &blueprints);
         let cell_revisions = placements.keys().copied().map(|coord| (coord, 0)).collect();
         Ok((
             HexWfcWorld {

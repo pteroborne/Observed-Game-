@@ -1,6 +1,32 @@
 //! Height continuity and seam alignment auditor for 3D hex blueprints and compositions.
+//!
+//! WFC face compatibility (`observed_hex::ports_compatible`) is equal-class
+//! matching only: any two faces declaring the same [`PortClass`] are legal
+//! neighbors to the solver, regardless of what elevation the authored
+//! geometry actually puts at that boundary. That is a real gap — a `Door`
+//! face authored one level too high would still bond happily with any other
+//! `Door` face and only manifest as a broken seam in play.
+//!
+//! This auditor closes that gap for real: it builds the authoring catalog,
+//! samples the authored brush geometry at every declared port's boundary
+//! plane to derive a [`FaceSignature`] (port class + floor height +
+//! headroom), then checks every pair of same-class boundaries the solver
+//! would consider compatible for elevation agreement.
+//!
+//! Known limitation: vertical faces (`Up`/`Down`, the only faces
+//! `RampOpen`/`ShaftOpen` may sit on) are reported but not compared — their
+//! elevation is pinned by the shared level grid rather than independently
+//! authored, so a naive comparison across un-placed sources would flag every
+//! correctly authored pair as a false mismatch (see `audit_seams`).
 
+use std::collections::BTreeMap;
 use std::path::Path;
+
+use observed_hex::{HexFace, PortClass, TILE_LEVEL_HEIGHT, face_edge, ports_compatible};
+
+use crate::catalog::CompiledPort;
+use crate::source::ModuleCellRef;
+use crate::tile::{class_from_name, face_from_name, face_name};
 
 pub struct SeamAuditReport {
     pub valid_seams: usize,
@@ -8,71 +34,281 @@ pub struct SeamAuditReport {
     pub report: String,
 }
 
-/// Audit height continuity across adjacent hex cells in the catalog.
+/// How far apart two elevations (meters) may be and still count as
+/// continuous. Authored planes are integer TrenchBroom units, so real
+/// agreement lands far under this.
+const ELEVATION_EPSILON: f32 = 0.05;
+/// Horizontal tolerance (meters, plan view) for treating a hull vertex as
+/// lying on a face's boundary plane/line.
+const BOUNDARY_EPSILON: f32 = 0.05;
+
+/// A boundary's physical signature: what class of opening it declares, plus
+/// the floor height and headroom the authored geometry actually provides
+/// there. Two faces the solver considers compatible (equal `class`) must
+/// also agree on `floor_height` and `headroom` to be a real, walkable seam.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FaceSignature {
+    pub class: PortClass,
+    /// World-space height (meters) of the boundary's floor.
+    pub floor_height: f32,
+    /// Vertical clearance (meters) authored at the boundary.
+    pub headroom: f32,
+}
+
+/// Whether two boundary signatures may seamlessly meet. The WFC solver joins
+/// any two faces of equal [`PortClass`]; this additionally demands the
+/// authored geometry agrees on floor height and headroom, since class
+/// matching alone cannot see a physical discontinuity.
+#[must_use]
+pub fn faces_compatible(a: &FaceSignature, b: &FaceSignature) -> bool {
+    ports_compatible(a.class, b.class)
+        && (a.floor_height - b.floor_height).abs() <= ELEVATION_EPSILON
+        && (a.headroom - b.headroom).abs() <= ELEVATION_EPSILON
+}
+
+/// One located boundary: which module/face it came from, and its signature.
+#[derive(Clone, Debug)]
+struct LocatedSignature {
+    module_id: String,
+    face: HexFace,
+    signature: FaceSignature,
+}
+
+/// Cell-local plan origin `(x, y, z)` in world meters, matching the
+/// `hex_origin_plan`/level-height arithmetic every authored cell is placed
+/// by (see `observed_hex::metrics` and `source::plan_origin`).
+fn cell_origin(cell: ModuleCellRef) -> [f32; 3] {
+    [
+        f32::from(cell.q) * 14.0 + f32::from(cell.r) * 7.0,
+        f32::from(cell.level) * TILE_LEVEL_HEIGHT,
+        f32::from(cell.r) * 12.0,
+    ]
+}
+
+/// Whether plan point `(x, z)` lies within [`BOUNDARY_EPSILON`] of the
+/// segment `a`-`b` (not just its infinite extension).
+fn near_face_edge(x: f32, z: f32, a: (f32, f32), b: (f32, f32)) -> bool {
+    let (dx, dz) = (b.0 - a.0, b.1 - a.1);
+    let len_sq = dx * dx + dz * dz;
+    if len_sq < 1.0e-6 {
+        return ((x - a.0).powi(2) + (z - a.1).powi(2)).sqrt() <= BOUNDARY_EPSILON;
+    }
+    // Segment-clamped projection parameter, with a small margin so vertices
+    // authored exactly at the corners still count.
+    let t = ((x - a.0) * dx + (z - a.1) * dz) / len_sq;
+    if !(-0.05..=1.05).contains(&t) {
+        return false;
+    }
+    let proj = (a.0 + dx * t, a.1 + dz * t);
+    ((x - proj.0).powi(2) + (z - proj.1).powi(2)).sqrt() <= BOUNDARY_EPSILON
+}
+
+/// Sample authored hull geometry at one declared port's boundary and derive
+/// its physical signature.
+///
+/// Lateral faces sample every hull vertex that lies on the vertical plane
+/// running along the cell's hex edge for that face: the lowest vertex found
+/// there is the boundary's floor, the highest its ceiling. Vertical faces
+/// (`Up`/`Down`, used only by `RampOpen`/`ShaftOpen`) are the horizontal
+/// level-boundary plane itself; the compiled catalog keeps geometry per
+/// hull set but not per declared port, so there is no independent way to
+/// recover a sloped landing's true clearance at that plane — this treats
+/// vertical headroom as one authored level height, which is a known
+/// limitation (see module docs / report notes).
+fn sample_face_signature(
+    hulls: &[Vec<[f32; 3]>],
+    class: PortClass,
+    cell: ModuleCellRef,
+    face: HexFace,
+) -> Option<FaceSignature> {
+    let origin = cell_origin(cell);
+    if face.is_lateral() {
+        let [ca, cb] = face_edge(face);
+        let a = (origin[0] + ca.0 as f32, origin[2] + ca.1 as f32);
+        let b = (origin[0] + cb.0 as f32, origin[2] + cb.1 as f32);
+        let mut ys: Vec<f32> = hulls
+            .iter()
+            .flatten()
+            .copied()
+            .filter(|point| near_face_edge(point[0], point[2], a, b))
+            .map(|point| point[1])
+            .collect();
+        if ys.is_empty() {
+            return None;
+        }
+        ys.sort_by(|x, y| x.total_cmp(y));
+        let floor = ys[0];
+        let ceiling = *ys.last().expect("non-empty");
+        Some(FaceSignature {
+            class,
+            floor_height: floor,
+            headroom: ceiling - floor,
+        })
+    } else {
+        let plane_y = match face {
+            HexFace::Up => origin[1] + TILE_LEVEL_HEIGHT,
+            HexFace::Down => origin[1],
+            _ => unreachable!("HexFace::is_vertical only admits Up/Down"),
+        };
+        Some(FaceSignature {
+            class,
+            floor_height: plane_y,
+            headroom: TILE_LEVEL_HEIGHT,
+        })
+    }
+}
+
+/// Resolve one compiled port's face/class strings into the typed vocabulary,
+/// returning a diagnostic string on failure instead of erroring the whole
+/// audit — an unresolvable port is itself worth reporting, not hiding.
+fn resolve_port(module_id: &str, port: &CompiledPort) -> Result<(HexFace, PortClass), String> {
+    let face = face_from_name(&port.face)
+        .map_err(|_| format!("{module_id}: unknown port face {:?}", port.face))?;
+    let class = class_from_name(&port.class)
+        .map_err(|_| format!("{module_id}: unknown port class {:?}", port.class))?;
+    Ok((face, class))
+}
+
+/// Audit height/headroom continuity across every declared-compatible seam in
+/// the catalog. Two boundaries are "declared compatible" exactly when the
+/// WFC solver would treat them as such: equal `PortClass` on the faces that
+/// may meet across a placed seam. Anything not `Sealed` is compared, since
+/// `Sealed` faces never meet another tile's opening and agreement there
+/// proves nothing about traversal.
 pub fn audit_seams(root: &Path) -> Result<SeamAuditReport, String> {
     let built = crate::build_catalog(root).map_err(|err| err.to_string())?;
 
-    let mut report = String::new();
-    report.push_str("=== OBSERVED 2 TILE HEIGHT CONTINUITY & SEAM AUDIT ===\n\n");
+    let hull_sets: BTreeMap<&str, &Vec<Vec<[f32; 3]>>> = built
+        .catalog
+        .hull_sets
+        .iter()
+        .map(|set| (set.structural_hash.as_str(), &set.hulls))
+        .collect();
 
-    let mut valid_seams = 0;
-    let mismatched_seams = 0;
+    let mut located: Vec<LocatedSignature> = Vec::new();
+    let mut unresolved: Vec<String> = Vec::new();
 
-    // Audit Option A: 7-hex 3-level solid core tower blueprint continuity (2 Ramps + 4 Flat Decks per floor)
-    report.push_str("Auditing Option A: 7-Hex Solid Core Spiral Ramp Tower Blueprint...\n");
-
-    let footprint = [(0, 0), (1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1)];
-    report.push_str("Footprint: 7 Hexes (1 Solid Center Pillar + 2 Inner-Wall Ramps [4.0m rise] + 4 Flat Decks per floor)\n");
-    report.push_str("Levels: 3 Elevation Levels (0.0m, 8.0m, 16.0m -> 24.0m Total Height)\n\n");
-
-    report.push_str("Continuous Elevation & Landing Deck Profile:\n");
-
-    for level in 0..3 {
-        let base_z = level as f32 * 8.0;
-        report.push_str(&format!("--- LEVEL {level} (Z = {base_z:.1}m) ---\n"));
-        for (i, &(q, r)) in footprint.iter().enumerate() {
-            if q == 0 && r == 0 {
-                report.push_str(
-                    "  Cell (0, 0): [SOLID CORE PILLAR] (100% Solid Central Structural Column)\n",
-                );
-            } else {
-                let sector = (i - 1) % 6;
-                match sector {
-                    0 => {
-                        report.push_str(&format!("  Cell ({q:2}, {r:2}): Flat Landing Deck | Z = {base_z:5.2}m | Seam: OK [FLAT]\n"));
-                    }
-                    1 => {
-                        let z0 = base_z;
-                        let z1 = base_z + 4.0;
-                        report.push_str(&format!("  Cell ({q:2}, {r:2}): Inner Ramp 1      | Start: {z0:5.2}m ==> End: {z1:5.2}m | Seam: OK [CONTINUOUS]\n"));
-                    }
-                    2 => {
-                        let z = base_z + 4.0;
-                        report.push_str(&format!("  Cell ({q:2}, {r:2}): Mid Flat Deck     | Z = {z:5.2}m | Seam: OK [FLAT]\n"));
-                    }
-                    3 => {
-                        let z = base_z + 4.0;
-                        report.push_str(&format!("  Cell ({q:2}, {r:2}): Mid Flat Deck     | Z = {z:5.2}m | Seam: OK [FLAT]\n"));
-                    }
-                    4 => {
-                        let z0 = base_z + 4.0;
-                        let z1 = base_z + 8.0;
-                        report.push_str(&format!("  Cell ({q:2}, {r:2}): Inner Ramp 2      | Start: {z0:5.2}m ==> End: {z1:5.2}m | Seam: OK [CONTINUOUS]\n"));
-                    }
-                    5 => {
-                        let z = base_z + 8.0;
-                        report.push_str(&format!("  Cell ({q:2}, {r:2}): Upper Flat Deck   | Z = {z:5.2}m | Seam: OK [FLAT]\n"));
-                    }
-                    _ => {}
+    for module in &built.catalog.modules {
+        let Some(&hulls) = hull_sets.get(module.structural_hash.as_str()) else {
+            unresolved.push(format!(
+                "{}: no hull set for structural hash {}",
+                module.id, module.structural_hash
+            ));
+            continue;
+        };
+        for port in &module.ports {
+            let (face, class) = match resolve_port(&module.id, port) {
+                Ok(pair) => pair,
+                Err(message) => {
+                    unresolved.push(message);
+                    continue;
                 }
-                valid_seams += 1;
+            };
+            match sample_face_signature(hulls, class, port.cell, face) {
+                Some(signature) => located.push(LocatedSignature {
+                    module_id: module.id.clone(),
+                    face,
+                    signature,
+                }),
+                None => unresolved.push(format!(
+                    "{}: no authored geometry found on the {} boundary plane",
+                    module.id,
+                    face_name(face)
+                )),
             }
         }
     }
 
+    let mut by_class: BTreeMap<PortClass, Vec<&LocatedSignature>> = BTreeMap::new();
+    for entry in &located {
+        by_class
+            .entry(entry.signature.class)
+            .or_default()
+            .push(entry);
+    }
+
+    let mut report = String::new();
+    report.push_str("=== OBSERVED 2 TILE HEIGHT CONTINUITY & SEAM AUDIT ===\n\n");
     report.push_str(&format!(
-        "\nSeam Audit Summary: {} sources checked | {} valid seamless boundaries | {} height gaps\nStatus: 100% GREEN PASSED\n",
-        built.audit.sources, valid_seams, mismatched_seams
+        "Catalog: {} authored sources ({} strict, {} legacy) | {} declared ports sampled | {} unresolved\n\n",
+        built.audit.sources,
+        built.audit.strict_sources,
+        built.audit.legacy_sources,
+        located.len(),
+        unresolved.len(),
+    ));
+
+    let mut valid_seams = 0usize;
+    let mut mismatched_seams = 0usize;
+
+    for (class, entries) in &by_class {
+        // Sealed faces never meet another tile's opening; comparing them
+        // proves nothing about traversal continuity.
+        if *class == PortClass::Sealed {
+            continue;
+        }
+        report.push_str(&format!(
+            "--- Port class {class:?}: {} declared boundaries, {} declared-compatible pairs ---\n",
+            entries.len(),
+            entries.len() * entries.len().saturating_sub(1) / 2
+        ));
+        // Vertical faces (`Up`/`Down`, the only faces `RampOpen`/`ShaftOpen`
+        // may sit on) are excluded from elevation comparison. Their
+        // signature's `floor_height` is a formula over the port's *authored*
+        // cell level, not its solve-time world level — a `Down` port is
+        // always exactly one `TILE_LEVEL_HEIGHT` "below" an `Up` port of
+        // matching class by construction, since that is precisely the
+        // contract the WFC grid already guarantees (Up meets the Down of
+        // whatever gets placed one level above). Comparing them here would
+        // manufacture a guaranteed false mismatch on every correctly
+        // authored pair, not catch a real one.
+        if entries.iter().all(|entry| entry.face.is_vertical()) {
+            report.push_str(
+                "  (vertical faces: elevation is pinned by the shared level grid, not independently authorable — not compared)\n",
+            );
+            continue;
+        }
+        for i in 0..entries.len() {
+            for j in (i + 1)..entries.len() {
+                let a = entries[i];
+                let b = entries[j];
+                if faces_compatible(&a.signature, &b.signature) {
+                    valid_seams += 1;
+                } else {
+                    mismatched_seams += 1;
+                    report.push_str(&format!(
+                        "  MISMATCH: {} {:?} (floor {:.2}m, headroom {:.2}m) <-> {} {:?} (floor {:.2}m, headroom {:.2}m)\n",
+                        a.module_id,
+                        a.face,
+                        a.signature.floor_height,
+                        a.signature.headroom,
+                        b.module_id,
+                        b.face,
+                        b.signature.floor_height,
+                        b.signature.headroom,
+                    ));
+                }
+            }
+        }
+    }
+
+    if !unresolved.is_empty() {
+        report.push_str("\n--- Unresolved ports (excluded from comparison) ---\n");
+        for line in &unresolved {
+            report.push_str(&format!("  {line}\n"));
+        }
+    }
+
+    report.push_str(&format!(
+        "\nSeam Audit Summary: {} sources checked | {} valid seamless boundaries | {} height mismatches\nStatus: {}\n",
+        built.audit.sources,
+        valid_seams,
+        mismatched_seams,
+        if mismatched_seams == 0 {
+            "GREEN PASSED"
+        } else {
+            "RED - MISMATCHES FOUND"
+        }
     ));
 
     Ok(SeamAuditReport {
@@ -80,4 +316,127 @@ pub fn audit_seams(root: &Path) -> Result<SeamAuditReport, String> {
         mismatched_seams,
         report,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn signature(class: PortClass, floor_height: f32, headroom: f32) -> FaceSignature {
+        FaceSignature {
+            class,
+            floor_height,
+            headroom,
+        }
+    }
+
+    #[test]
+    fn identical_door_signatures_are_compatible() {
+        let a = signature(PortClass::Door, 0.0, 4.0);
+        let b = signature(PortClass::Door, 0.0, 4.0);
+        assert!(faces_compatible(&a, &b));
+    }
+
+    #[test]
+    fn negligible_noise_within_epsilon_still_passes() {
+        let a = signature(PortClass::Door, 8.0, 8.0);
+        let b = signature(PortClass::Door, 8.02, 7.98);
+        assert!(faces_compatible(&a, &b));
+    }
+
+    #[test]
+    fn floor_height_mismatch_is_caught() {
+        // Same class, same headroom, but one boundary's floor sits a full
+        // meter above the other: a real trip/fall hazard the solver's
+        // class-only matching would happily bond.
+        let a = signature(PortClass::Door, 0.0, 4.0);
+        let b = signature(PortClass::Door, 1.0, 4.0);
+        assert!(!faces_compatible(&a, &b));
+    }
+
+    #[test]
+    fn headroom_mismatch_is_caught() {
+        let a = signature(PortClass::Door, 0.0, 4.0);
+        let b = signature(PortClass::Door, 0.0, 2.5);
+        assert!(!faces_compatible(&a, &b));
+    }
+
+    #[test]
+    fn incompatible_port_classes_never_bond_even_with_matching_geometry() {
+        let a = signature(PortClass::Door, 0.0, 4.0);
+        let b = signature(PortClass::RampOpen, 0.0, 4.0);
+        assert!(!faces_compatible(&a, &b));
+    }
+
+    fn write_module(dir: &Path, name: &str, text: &str) {
+        std::fs::write(dir.join(name), text).expect("write synthetic module");
+    }
+
+    fn temp_dir(name: &str) -> std::path::PathBuf {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "observed2_seam_auditor_{name}_{}_{}",
+            std::process::id(),
+            nonce
+        ));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).expect("temp dir");
+        path
+    }
+
+    /// A minimal legacy (`authoring_version` 1) module: a flat hex slab from
+    /// `z0` to `z1` (TrenchBroom units) with one `Door` port declared on
+    /// `face`. Legacy sources skip the strict floor/headroom/port-origin
+    /// contract, so this is free to author a deliberately mismatched
+    /// boundary for the negative test below.
+    fn door_slab_map(archetype: &str, variant: u16, face: &str, z0: f64, z1: f64) -> String {
+        format!(
+            "{{\n\"classname\" \"worldspawn\"\n{}\n}}\n{{\n\"classname\" \"tile_meta\"\n\"archetype\" \"{archetype}\"\n\"register\" \"institutional\"\n\"variant\" \"{variant}\"\n\"levels\" \"2\"\n}}\n{{\n\"classname\" \"tile_port\"\n\"face\" \"{face}\"\n\"class\" \"door\"\n}}\n",
+            crate::tile_source::hex_slab_brush(z0, z1),
+        )
+    }
+
+    #[test]
+    fn audit_seams_passes_two_doors_authored_at_the_same_elevation() {
+        let root = temp_dir("good_pair");
+        write_module(
+            &root,
+            "a.map",
+            &door_slab_map("test_hall_a", 0, "east", 0.0, 8.0),
+        );
+        write_module(
+            &root,
+            "b.map",
+            &door_slab_map("test_hall_b", 0, "west", 0.0, 8.0),
+        );
+        let report = audit_seams(&root).expect("audit runs");
+        assert_eq!(report.mismatched_seams, 0, "{}", report.report);
+        assert!(report.valid_seams >= 1, "{}", report.report);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn audit_seams_catches_a_door_authored_a_level_too_high() {
+        let root = temp_dir("bad_pair");
+        write_module(
+            &root,
+            "a.map",
+            &door_slab_map("test_hall_a", 0, "east", 0.0, 8.0),
+        );
+        // A full-level-up authoring slip: same declared class, same
+        // headroom, but the slab (and its door) sits one level higher.
+        write_module(
+            &root,
+            "b.map",
+            &door_slab_map("test_hall_b", 0, "west", 128.0, 136.0),
+        );
+        let report = audit_seams(&root).expect("audit runs");
+        assert_eq!(report.valid_seams, 0, "{}", report.report);
+        assert_eq!(report.mismatched_seams, 1, "{}", report.report);
+        assert!(report.report.contains("MISMATCH"), "{}", report.report);
+        let _ = std::fs::remove_dir_all(root);
+    }
 }
