@@ -754,10 +754,20 @@ fn collapse_domains(
             .collect();
         let cell = candidates[(rng.next_u64() % candidates.len() as u64) as usize];
 
-        let total: u64 = domains[cell]
-            .iter()
-            .map(|variant| u64::from(variants[variant].weight))
-            .sum();
+        // Geometry-only contextual composition: scale each variant's static
+        // weight by its position in the grid (verticals cluster to the axis,
+        // atria favour upper levels). Never zeroes a legal variant, and draws
+        // the same RNG values in the same order, so determinism is preserved.
+        let cell_coord = grid.coord(cell);
+        let weight_of = |variant: usize| {
+            super::context::effective_weight(
+                cell_coord,
+                variants[variant].archetype,
+                variants[variant].weight,
+                config,
+            )
+        };
+        let total: u64 = domains[cell].iter().map(weight_of).sum();
         let first = domains[cell].iter().next().expect("candidate is non-empty");
         let picked = if total == 0 {
             first
@@ -765,7 +775,7 @@ fn collapse_domains(
             let mut roll = rng.next_u64() % total;
             let mut chosen = first;
             for variant in domains[cell].iter() {
-                let weight = u64::from(variants[variant].weight);
+                let weight = weight_of(variant);
                 if roll < weight {
                     chosen = variant;
                     break;
