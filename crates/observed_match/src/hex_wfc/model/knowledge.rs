@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use observed_core::TeamId;
 use observed_facility::hex_wfc::{HexSpace, HexWfcWorld, PortSignature};
 use observed_hex::{HexCoord, HexFace};
 
@@ -35,16 +36,22 @@ pub struct HexPlayerMapKnowledge {
 }
 
 impl HexPlayerMapKnowledge {
-    pub fn observe(
+    pub fn observe_team<'a>(
         &mut self,
+        team: TeamId,
         world: &HexWfcWorld,
-        player: &HexPlayerState,
+        players: impl Iterator<Item = &'a HexPlayerState>,
         lanterns: &HexLanternState,
     ) {
+        let players = players.collect::<Vec<_>>();
+        let member_ids = players.iter().map(|player| player.id).collect::<Vec<_>>();
         for known in self.cells.values_mut() {
             known.anchored = false;
         }
-        if !player.escaped {
+        for player in players
+            .into_iter()
+            .filter(|player| player.team == team && !player.escaped)
+        {
             self.record(world, player.cell, HexMapDiscovery::Traversed, false);
             let placement = &world.placements[&player.cell];
             for face in HexFace::ALL {
@@ -59,7 +66,7 @@ impl HexPlayerMapKnowledge {
         for lantern in lanterns
             .deployed
             .values()
-            .filter(|item| item.owner == player.id)
+            .filter(|item| member_ids.contains(&item.owner))
         {
             self.record(world, lantern.cell, HexMapDiscovery::Traversed, true);
         }
@@ -96,7 +103,7 @@ impl HexPlayerMapKnowledge {
 #[cfg(test)]
 mod tests {
     use glam::Vec3;
-    use observed_core::PlayerId;
+    use observed_core::{PlayerId, TeamId};
     use observed_facility::hex_wfc::HexWfcConfig;
 
     use super::*;
@@ -107,22 +114,21 @@ mod tests {
         let cell = world.config.spawn();
         let player = HexPlayerState {
             id: PlayerId(0),
+            team: TeamId(0),
             cell,
             position: Vec3::ZERO,
             yaw: 0.0,
             pitch: 0.0,
-            climb_target: None,
-            transit_target: None,
             escaped: false,
         };
         let lanterns = HexLanternState::new([player.id], &world);
         let mut map = HexPlayerMapKnowledge::default();
-        map.observe(&world, &player, &lanterns);
+        map.observe_team(TeamId(0), &world, [&player].into_iter(), &lanterns);
         world.generation += 1;
         assert!(!map.cells[&cell].is_stale(&world, cell));
         *world.cell_revisions.entry(cell).or_default() += 1;
         assert!(map.cells[&cell].is_stale(&world, cell));
-        map.observe(&world, &player, &lanterns);
+        map.observe_team(TeamId(0), &world, [&player].into_iter(), &lanterns);
         assert!(!map.cells[&cell].is_stale(&world, cell));
     }
 }

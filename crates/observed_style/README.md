@@ -1,20 +1,26 @@
-# observed_style
+# `observed_style`
 
-This crate defines the semantic design tokens for the game's neon-noir aesthetic. It guarantees that gameplay information is always legible regardless of lighting or atmospheric conditions.
+The **`observed_style`** production crate defines the semantic design tokens, HSL/RGB palette registries, and contrast rules for Observed 2's neon-noir aesthetic.
 
-## Style Tokens & Roles
-- **Semantic State Mapping:** Connects game states (Control, Danger, Alert, Neutral) to specific emissive colors, marker layers, and line overlays.
-- **Door Identity Reads:** Defines legend-backed doorframe glyph treatments for typed-room reads, including Sensor map feeds and false-exit Decoy signals.
-- **Gantry Traversal Reads:** Defines semantic surface treatments for raised gantry decks, lit jump edges, and visible understory landings.
-- **Rubble Surfaces:** Collapse-sealed thresholds rendered as dark ash rubble fill with dying-ember emissive, signal-tier to stay legible.
-- **District Palettes:** Defines structural lighting tones for facility sectors, including drained collapse-state transitions.
-- **Klaxon State:** Facility-wide escape countdown lighting (red alarm tier, signal-tier for legibility).
-- **Team Palette:** `team(index)` maps a team index (mod `TEAM_COUNT`, style-local — does not depend on `observed_match`) to a signal-tier treatment; base colours match the game's pre-existing team colours so nothing shifts visually. `team_label`/`team_legend` back every team with a unique legend entry.
-- **Legibility Rules:** Enforces minimum contrast constraints and floor lighting values so players, hazards, and pathways are never hidden by atmospheric bloom or fog.
+It guarantees that gameplay-critical signals (paths, threats, interactables, player avatars, door identity reads) always punch through atmospheric fog and bloom at guaranteed contrast thresholds (**Legibility Contract**).
 
-## Module Structure
-- **[`lib.rs`](src/lib.rs):** Defines semantic roles (`MarkerRole`, `DoorIdentityRole`, `OutlineRole`, `SurfaceRole`), the team palette, color palettes, brightness checks, and visual legends.
+---
 
-## Audit Notes
-- **Bloat:** `lib.rs` (792 lines) is relatively large but holds the complete visual language logic, keeping presentation code strictly separated.
-- **Overlap:** None.
+## Semantic Token Categories
+
+- **`SurfaceRole`**: Structural surface treatments (`Plain`, `Spine`, `SafeBypass`, `GantryDeck`, `WellshaftStone`, `GantryEdge`, `Understory`, `Rubble`).
+- **`MarkerRole`**: Gameplay beacon markers (`NextRoom`, `Exit`, `Control`, `Collapse`, `You`, `Teammate`, `Rival`, `Director`).
+- **`ThresholdFrameState`**: Always-open threshold frame indicator lights (`Mutable`, `Anchored`, `Sealed`).
+- **`DoorIdentityRole`**: Pre-commit doorframe semantic reads (`KeystoneVault`, `PowerCache`, `Reactor`, `Control`, `Survey`, `Sensor`, `FalseExit`, `Decoy`, `DeadEnd`).
+- **`OutlineRole`**: Mesh-outline legibility treatments (`OpenDoor`, `ClosedDoor`, `Interactable`, `Hazard`, `Rival`, `ObjectiveBeacon`, `Pickup`, `LocalPlayer`).
+- **`District` & Palettes**: Six district atmosphere registers (`Archive`, `Reactor`, `Atrium`, `Foundry`, `Hollow`, `Spillway`).
+- **`team(index)` & `team_legend()`**: Legibility-contract team colors mapped by team index.
+
+---
+
+## Testing
+
+Run unit tests and color contrast verification:
+```bash
+cargo test -p observed_style
+```

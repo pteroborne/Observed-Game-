@@ -10,7 +10,12 @@ This document outlines the current active development goals, completed milestone
 
 ## Active & Upcoming Phases
 
-**Arc M — Breath & Flame: Hex Facility Hardening** `[in progress]` (plan and hand-offs: [docs/arc_m/](docs/arc_m/README.md)). Arc M makes the Arc-L facility pleasant and reliable to play before competitive scale work begins: first-frame neon-noir lighting, a first-class TrenchBroom authoring path, seam-safe geometry, one caged anchor-lantern mechanic, the physical Guardian, bounded frontier mutation, incremental collision/render updates, and a mutation-aware active-level survivor map. Multiplayer transport, the six-team/four-player roster migration, and eliminated-team graph control remain explicitly out of scope until the facility holds 60 fps through repeated mutation.
+**Arc N — Authoritative LAN Race** `[x]` — Completed 2026-07-23. The canonical hex match is now a stable four-seat 2v2 race with shared teammate map knowledge and team completion. A Bevy-free 60 Hz dedicated server owns lobby/countdown/match/post-match state, bot fill/takeover, reconnect reservations, late-join history replay, simulation-content compatibility, and authoritative frame digests. The game adds broadcast discovery, direct IP, listen hosting, team/readiness controls, and one-shot deterministic desync recovery; `lan_lab` and real-UDP integration tests prove the production seam. Internet matchmaking, NAT traversal, relays, authentication, encryption, and server migration remain non-goals. ([docs/lan_integration.md](docs/lan_integration.md))
+
+### Phase 103 — Dedicated Server & LAN Integration `[x]`
+Promote the single-player-shaped hex roster to two fixed teams of two, add the versioned UDP transport and headless server, integrate browser/lobby/play/results flow, and verify packet loss recovery plus real loopback launch/frame replay.
+
+**Arc M — Breath & Flame: Hex Facility Hardening** `[x]` (plan and hand-offs: [docs/arc_m/](docs/arc_m/README.md)). Completed 2026-07-20. Arc M makes the Arc-L facility pleasant and reliable to play before competitive scale work begins: first-frame neon-noir lighting, a first-class TrenchBroom authoring path, seam-safe geometry, one caged anchor-lantern mechanic, the physical Guardian, bounded frontier mutation, incremental collision/render updates, and a mutation-aware active-level survivor map. Multiplayer transport, the six-team/four-player roster migration, and eliminated-team graph control remain explicitly out of scope until the facility holds 60 fps through repeated mutation.
 
 ### Phase 96 — Measurement & First-Frame Lighting `[x]`
 Instrument the mutation pipeline and prime the exact hex lighting state before facility geometry is revealed, eliminating the washed menu-light transient and creating a repeatable production-size performance record.
@@ -30,8 +35,8 @@ Replace global relayout with seeded 32-cell frontier pockets (64-cell hard cap),
 ### Phase 101 — Incremental Physics & Presentation `[x]`
 Apply stable-ID collider and changed-cell presentation deltas instead of rebuilding the complete facility. Closure requires p95 frame time at or below 16.7 ms and no mutation-attributable frame above 33.3 ms across ten moving commits.
 
-### Phase 102 — Active-Level TAC Map & Arc Gate `[in progress]`
-Promote survivor knowledge into simulation, show one browsable active floor with adjacent-level hints, distinguish traversed/glimpsed/stale/anchored states without rival leakage, and close the arc through authoring round-trip, traversal, Guardian, mutation, performance, and visual playtest evidence.
+### Phase 102 — Active-Level TAC Map & Arc Gate `[x]`
+Promote survivor knowledge into simulation, show one browsable active floor with adjacent-level hints, distinguish traversed/glimpsed/stale/anchored states without rival leakage, and close the arc through authoring round-trip, traversal, Guardian, mutation, performance, and visual playtest evidence. ([docs/arc_m/phase_102_tacmap_arc_gate.md](docs/arc_m/phase_102_tacmap_arc_gate.md))
 
 ---
 
@@ -138,23 +143,23 @@ The results screen tells the run's story (placement, escapes in order, what the 
 
 **Arc I — Light & Line** (plan: [docs/light_and_line_arc_plan.md](docs/light_and_line_arc_plan.md); hand-offs: [docs/arc_i/](docs/arc_i/README.md)). The atmosphere-and-legibility arc, planned 2026-07-11 with the user, same day the MVP shipped. Thesis: **atmosphere and legibility are the same problem** — the game currently renders zero shadows, and one shadow-casting light per place buys both mood and readability at once (cheap under the teleport model: light budget is per-place). Nine user-chosen media references (Japanese architecture, Brutalism, Backrooms, Severance, Halo CE, BLAME!, Silo, Library of Babel, Rudon's Plane) each isolate one liminal element and become one lab diorama; districts then take identities as coordinates on the resulting axes (brightness, scale, repetition, directionality). All Arc H standing rules carry over. Waves: [67 ∥ 68] → [69] → [70 ∥ 71] → [72].
 
-### Phase 67 — Hygiene Opener: Audio Mix & Bot-POV Stall `[ ]`
-Rebalance the gain staging (effects down, ambience beds up — backlog #7, user listen-through finding) with a pinned mix-relationship test, and fix the bot-POV walkthrough freezing in Room 11 (backlog #5) so the evidence GIF reaches the exit. ([docs/arc_i/phase_67_audio_mix_bot_stall.md](docs/arc_i/phase_67_audio_mix_bot_stall.md))
+### Phase 67 — Hygiene Opener: Audio Mix & Bot-POV Stall `[x]`
+Rebalanced gain staging (bed sink levels up, effect cues down) with a pinned mix-relationship test, and fixed the bot-POV walkthrough driver to cleanly reach the exit without tail freezes. ([docs/arc_i/phase_67_audio_mix_bot_stall.md](docs/arc_i/phase_67_audio_mix_bot_stall.md))
 
-### Phase 68 — lighting_lab: Nine Liminal Dioramas `[ ]`
-A new lab staging the nine reference registers as static dioramas with freestanding geometry (user ruling), keys 1–9, one viewed capture per scene, the signal kit staged in every scene, the volumetrics × bloom matrix, slat shadow tuning, per-scene frame times, and the luminance-corridor check prototyped (fails on the archived near-black Phase-62 capture and on an all-white fixture). ([docs/arc_i/phase_68_lighting_lab.md](docs/arc_i/phase_68_lighting_lab.md))
+### Phase 68 — lighting_lab: Nine Liminal Dioramas `[x]`
+A standalone lab staging the nine reference registers as static dioramas with freestanding geometry, keys 1–9, signal kit staged in every scene, volumetrics × bloom matrix, slat shadow tuning, per-scene frame times, and the luminance-corridor check (`luminance.rs`). Second pass completed for full 3D hex WFC metric and module composition alignment. ([docs/arc_i/phase_68_lighting_lab.md](docs/arc_i/phase_68_lighting_lab.md))
 
-### Phase 69 — Light Staging in the Game + the Luminance Gate `[ ]`
-One shadow-casting key light per place, per-district key/fill temperature pairs as style data, pools-rhythm fixture spacing, and the luminance corridor joining the visual audit as a permanent gate; the Phase-62 evidence set re-captured legibly. Closes backlog #6. ([docs/arc_i/phase_69_light_staging_gate.md](docs/arc_i/phase_69_light_staging_gate.md))
+### Phase 69 — Light Staging in the Game + the Luminance Gate `[x]`
+One shadow-casting key light per place, per-district key/fill temperature pairs as style data, pools-rhythm fixture spacing, and the luminance corridor joining the visual audit as a permanent gate; lockstep corridor constant test verified. Closes backlog #6. ([docs/arc_i/phase_69_light_staging_gate.md](docs/arc_i/phase_69_light_staging_gate.md))
 
-### Phase 70 — District Light Identities `[ ]`
+### Phase 70 — District Light Identities `[x]`
 Each district takes a register coordinate — exactly one district is the **overlit** register (user-endorsed) — two districts unmistakable in captures by light alone, drained/klaxon reading under every identity, all identity parameters as `observed_style` data. ([docs/arc_i/phase_70_district_light_identities.md](docs/arc_i/phase_70_district_light_identities.md))
 
-### Phase 71 — WFC Register Composition `[ ]`
+### Phase 71 — WFC Register Composition `[x]`
 **Fast-track ruling 2026-07-11 (user):** all nine registers enter the game with WFC as the composition mechanism — geometry grammar and light staging merge into one module layer (slat screens, seam strips, panel grids, practicals, shelf runs, bare decay, void edges) the hallway WFC solves with adjacency rules, weighted by district identity; includes the lab reference-scene rework (monolith shaft, forerunner volumetrics, shoji simplification). Within the prop rules and the Phase-64 threshold gate, deterministic from seed, sim/nav untouched. ([docs/arc_i/phase_71_district_geometry_language.md](docs/arc_i/phase_71_district_geometry_language.md))
 
-### Phase 72 — Arc Gate: Evidence Refresh & Playtest `[ ]`
-The Arc H ship-gate pattern rerun: full evidence refresh from one build (all viewed, luminance corridor green), then the user playtest — liminal feel per district, overlit-as-intent, signal legibility in darkest/brightest, the mix verdict, comfort check. The arc closes when the checklist passes. ([docs/arc_i/phase_72_arc_gate.md](docs/arc_i/phase_72_arc_gate.md))
+### Phase 72 — Arc Gate: Evidence Refresh & Playtest `[x]`
+The Arc H ship-gate pattern rerun: full evidence refresh from one build (all viewed, luminance corridor green), then the user playtest — liminal feel per district, overlit-as-intent, signal legibility in darkest/brightest, the mix verdict, comfort check. Completed 2026-07-20: all phases green, full workspace tests passed, Arc I closed. ([docs/arc_i/phase_72_arc_gate.md](docs/arc_i/phase_72_arc_gate.md))
 
 ---
 
@@ -199,9 +204,9 @@ land in the backlog first, then get scheduled.
 
 ## Post-MVP Backlog (listed, not scheduled)
 
-Recorded so the horizon is explicit; none of this is being built yet.
+Recorded so the horizon is explicit; remaining unstruck items are not scheduled.
 
-1. **True LAN multiplayer with dedicated servers.** The deferred Arc E designs (Phases 51–53: shared lockstep actions, socket transport behind `observed_net`, LAN lobby/discovery) plus a dedicated-server deployment model — a headless deterministic host that peers connect to, replacing pure peer-to-peer session ownership. Full online play (NAT traversal / relay / matchmaking) remains beyond even that.
+1. ~~**True LAN multiplayer with dedicated servers.**~~ **Implemented in Phase 103.** Full online play (NAT traversal, relay, authentication, and matchmaking) remains unscheduled.
 2. **World interaction.** Players act on the facility graph itself: explorers "hacking" a room console to connect it to a specified room ID (player-driven rerouting, subject to the solvability invariant and decoherence rules), and fallen/absorbed teams connecting nodes from a top-down view — extending "eliminated teams join the adversary" into an active graph-editing role that keeps every player playing to the end.
 3. **Carried follow-ups from Arcs C/D:** ~~a third hall endpoint so the gantry's understory exit reaches a genuinely different neighbour~~ **scheduled into Arc J Phases 74–76**; the decoherence counter-tool (Phase 38's criterion (d) never triggered it) remains unscheduled.
 4. ~~District architectural language (user idea, 2026-07-11).~~ **Scheduled into Arc I Phase 71** (geometry grammar per district).

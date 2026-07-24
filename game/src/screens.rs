@@ -26,6 +26,7 @@ use crate::view::theme::DIM;
 pub(crate) mod audio;
 pub(crate) mod hud;
 pub(crate) mod input;
+pub(crate) mod lan;
 pub(crate) mod loadout;
 pub(crate) mod lobby;
 pub(crate) mod match_runtime;
@@ -41,13 +42,16 @@ pub(crate) enum MenuAction {
     Goto(GameState),
     StartRun,
     Rematch,
-    Launch,
     Spectate,
+    HostLan,
+    JoinLan,
+    JoinLanDirect,
+    RefreshLan,
+    ToggleLanReady,
+    RequestLanTeam(observed_core::TeamId),
+    LeaveLan,
     Equip(u16),
     QuitApp,
-    ToggleRivalTeams,
-    ToggleAiTeammates,
-    ToggleGuardian,
 }
 
 #[derive(Component)]
@@ -68,7 +72,11 @@ pub struct MenuCursor(pub usize);
 #[derive(Resource)]
 pub struct SplashTimer(pub Timer);
 
-fn menu_button(index: usize, action: MenuAction, label: impl Into<String>) -> impl Bundle {
+pub(crate) fn menu_button(
+    index: usize,
+    action: MenuAction,
+    label: impl Into<String>,
+) -> impl Bundle {
     (
         MenuButton { index, action },
         Text::new(label.into()),
@@ -92,6 +100,7 @@ impl Plugin for ScreensPlugin {
             .init_resource::<settings::SettingsRebind>()
             .add_systems(OnEnter(GameState::Splash), menu::setup_splash)
             .add_systems(OnEnter(GameState::MainMenu), menu::setup_main_menu)
+            .add_systems(OnEnter(GameState::LanBrowser), lan::setup_browser)
             .add_systems(OnEnter(GameState::Loadout), loadout::setup_loadout)
             .add_systems(OnEnter(GameState::Lobby), lobby::setup_lobby)
             .add_systems(OnEnter(GameState::Results), menu::setup_results)
@@ -106,6 +115,10 @@ impl Plugin for ScreensPlugin {
                     menu::menu_highlight,
                     menu::menu_activate,
                     menu::menu_escape,
+                    lan::poll_lan,
+                    lan::edit_direct_address.run_if(in_state(GameState::LanBrowser)),
+                    lan::refresh_browser_text.run_if(in_state(GameState::LanBrowser)),
+                    lan::refresh_lobby_text.run_if(in_state(GameState::Lobby)),
                     menu::splash_advance.run_if(in_state(GameState::Splash)),
                     menu::main_menu_banner.run_if(in_state(GameState::MainMenu)),
                     loadout::loadout_header.run_if(in_state(GameState::Loadout)),

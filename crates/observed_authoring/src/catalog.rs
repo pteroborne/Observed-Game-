@@ -14,9 +14,9 @@ use crate::source::{
     AuthoredModule, ModuleCell, ModuleCellRef, ModuleKind, RotationPolicy, SourceError,
     parse_authored_module,
 };
-use crate::tile::TilePrototype;
+use crate::tile::{TileLight, TileLightKind, TilePrototype};
 
-pub const COMPILED_CATALOG_VERSION: u16 = 2;
+pub const COMPILED_CATALOG_VERSION: u16 = 3;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CompiledHullSet {
@@ -32,7 +32,13 @@ pub struct CompiledPort {
     pub name: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+pub struct CompiledLight {
+    pub kind: TileLightKind,
+    pub position: [f32; 3],
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CompiledModule {
     pub id: String,
     pub source_path: String,
@@ -49,6 +55,7 @@ pub struct CompiledModule {
     pub weight: u16,
     pub footprint: Vec<ModuleCell>,
     pub ports: Vec<CompiledPort>,
+    pub lights: Vec<CompiledLight>,
     pub structural_hash: String,
     /// Present while the old runtime manifest remains the compatibility seam.
     pub legacy_key: Option<TileKey>,
@@ -74,6 +81,7 @@ pub struct RoomPrototype {
     pub footprint: Vec<ModuleCellRef>,
     pub ports: Vec<RoomPrototypePort>,
     pub hulls: Vec<Vec<Vec3>>,
+    pub lights: Vec<TileLight>,
 }
 
 /// Strict v2 modules projected into the runtime forms consumed by WFC geometry.
@@ -149,6 +157,7 @@ impl CompiledTileCatalog {
                     });
                 }
                 let rotated_hulls = rotate_hulls(hulls, turn);
+                let rotated_lights = rotate_lights(&module.lights, turn);
                 let rotated_ports = module
                     .ports
                     .iter()
@@ -191,6 +200,7 @@ impl CompiledTileCatalog {
                                 levels: module.levels,
                                 signature,
                                 hulls: rotated_hulls.clone(),
+                                lights: rotated_lights.clone(),
                             });
                         }
                         ModuleKind::Room => runtime.rooms.push(RoomPrototype {
@@ -204,6 +214,7 @@ impl CompiledTileCatalog {
                             footprint: expanded_rotated_footprint(&module.footprint, turn),
                             ports: rotated_ports.clone(),
                             hulls: rotated_hulls.clone(),
+                            lights: rotated_lights.clone(),
                         }),
                     }
                 }
@@ -261,17 +272,20 @@ pub enum CatalogError {
 }
 
 fn expanded_registers(scope: &[String], architecture_registers: &[&str]) -> Vec<String> {
-    let mut registers = if scope.iter().any(|register| register == "all") {
-        architecture_registers
-            .iter()
-            .map(|register| (*register).to_string())
-            .collect::<Vec<_>>()
+    if scope.iter().any(|r| r == "all") {
+        if architecture_registers.is_empty() {
+            vec!["generic".to_string()]
+        } else {
+            architecture_registers
+                .iter()
+                .map(|&r| r.to_string())
+                .collect()
+        }
+    } else if let Some(first) = scope.first() {
+        vec![first.clone()]
     } else {
-        scope.to_vec()
-    };
-    registers.sort();
-    registers.dedup();
-    registers
+        vec!["generic".to_string()]
+    }
 }
 
 fn rotate_cell(cell: ModuleCellRef, turn: u8) -> ModuleCellRef {
@@ -336,6 +350,17 @@ fn rotate_hulls(hulls: &[Vec<[f32; 3]>], turn: u8) -> Vec<Vec<Vec3>> {
             hull.iter()
                 .map(|point| rotation * Vec3::from_array(*point))
                 .collect()
+        })
+        .collect()
+}
+
+fn rotate_lights(lights: &[CompiledLight], turn: u8) -> Vec<TileLight> {
+    let rotation = Quat::from_rotation_y(-f32::from(turn) * std::f32::consts::TAU / 6.0);
+    lights
+        .iter()
+        .map(|light| TileLight {
+            kind: light.kind,
+            position: rotation * Vec3::from_array(light.position),
         })
         .collect()
 }
@@ -494,6 +519,15 @@ fn compile_module(
             name: port.name.clone(),
         })
         .collect();
+    let lights = module
+        .prototype
+        .lights
+        .iter()
+        .map(|light| CompiledLight {
+            kind: light.kind,
+            position: light.position.to_array(),
+        })
+        .collect();
     CompiledModule {
         id: module.id.clone(),
         source_path,
@@ -511,6 +545,7 @@ fn compile_module(
         weight: module.weight,
         footprint: module.footprint.clone(),
         ports,
+        lights,
         structural_hash,
         legacy_key: (module.authoring_version < 2).then(|| module.prototype.key.clone()),
     }
@@ -620,6 +655,143 @@ pub fn write_catalog_build(
     Ok(())
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct DistrictAuditGroup {
+    pub archetype: String,
+    pub variant: u16,
+    pub district_sources: BTreeMap<String, String>,
+    pub is_identical_across_districts: bool,
+    pub total_districts: usize,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DistrictAuditResult {
+    pub total_sources: usize,
+    pub unique_archetype_variants: usize,
+    pub identical_archetype_variants: usize,
+    pub distinct_archetype_variants: usize,
+    pub groups: Vec<DistrictAuditGroup>,
+    pub report: String,
+}
+
+pub fn audit_district_variations(root: &Path) -> Result<DistrictAuditResult, CatalogError> {
+    let paths = discover_sources(root)?;
+    let total_sources = paths.len();
+    let mut groups: BTreeMap<(String, u16), DistrictAuditGroup> = BTreeMap::new();
+
+    for path in paths {
+        let text = std::fs::read_to_string(&path)
+            .map_err(|error| CatalogError::Io(format!("{}: {error}", path.display())))?;
+        let module = parse_authored_module(&text).map_err(|error| CatalogError::Source {
+            path: path.clone(),
+            error,
+        })?;
+        let structural_hash = hash_hulls(&module);
+        let archetype = module.archetype.clone();
+        let variant = module.prototype.key.variant;
+        let register = module.prototype.key.register.clone();
+
+        let group = groups
+            .entry((archetype.clone(), variant))
+            .or_insert_with(|| DistrictAuditGroup {
+                archetype,
+                variant,
+                district_sources: BTreeMap::new(),
+                is_identical_across_districts: true,
+                total_districts: 0,
+            });
+        group.district_sources.insert(register, structural_hash);
+    }
+
+    let mut identical_count = 0;
+    let mut distinct_count = 0;
+
+    for group in groups.values_mut() {
+        group.total_districts = group.district_sources.len();
+        let first_hash = group
+            .district_sources
+            .values()
+            .next()
+            .cloned()
+            .unwrap_or_default();
+        let all_same = group.district_sources.values().all(|h| h == &first_hash);
+        group.is_identical_across_districts = all_same;
+        if all_same && group.total_districts > 1 {
+            identical_count += 1;
+        } else {
+            distinct_count += 1;
+        }
+    }
+
+    let mut report = String::new();
+    report.push_str(&format!(
+        "DISTRICT VARIATION AUDIT\nScanned {} source maps across {} unique (archetype, variant) groups.\n",
+        total_sources,
+        groups.len()
+    ));
+    report.push_str(&format!(
+        "Identical across districts: {}/{} groups ({:.1}%)\nDistinct physical variations: {}/{} groups ({:.1}%)\n\n",
+        identical_count,
+        groups.len(),
+        if groups.is_empty() { 0.0 } else { identical_count as f32 / groups.len() as f32 * 100.0 },
+        distinct_count,
+        groups.len(),
+        if groups.is_empty() { 0.0 } else { distinct_count as f32 / groups.len() as f32 * 100.0 }
+    ));
+
+    report.push_str("Summary of Groups:\n");
+    for group in groups.values() {
+        let status = if group.is_identical_across_districts && group.total_districts > 1 {
+            "IDENTICAL GEOMETRY"
+        } else if group.total_districts == 1 {
+            "SINGLE DISTRICT ONLY"
+        } else {
+            "HAS PHYSICAL VARIATIONS"
+        };
+        report.push_str(&format!(
+            "  - {}-v{} ({} districts): {}\n",
+            group.archetype, group.variant, group.total_districts, status
+        ));
+    }
+
+    let group_list: Vec<_> = groups.into_values().collect();
+    Ok(DistrictAuditResult {
+        total_sources,
+        unique_archetype_variants: group_list.len(),
+        identical_archetype_variants: identical_count,
+        distinct_archetype_variants: distinct_count,
+        groups: group_list,
+        report,
+    })
+}
+
+/// Load every runtime cell for a tile directory: legacy compatibility
+/// manifest entries plus the strict compiled catalog expanded for
+/// `registers`. This is the one canonical corpus loader — since the corpus
+/// went all-strict (`register_scope: all`), the manifest alone is empty and
+/// anything loading only `manifest.ron` sees zero tiles.
+pub fn load_runtime_cells(
+    root: &Path,
+    registers: &[&str],
+) -> Result<Vec<crate::TilePrototype>, String> {
+    let mut cells = crate::Manifest::load(&root.join("manifest.ron"))
+        .map_err(|error| format!("manifest: {error:?}"))?
+        .load_tiles(root)
+        .map_err(|error| format!("manifest tiles: {error:?}"))?;
+    let path = root.join("compiled_catalog.ron");
+    if path.exists() {
+        let text = std::fs::read_to_string(&path)
+            .map_err(|error| format!("{}: {error}", path.display()))?;
+        let compiled = CompiledTileCatalog::from_ron(&text)
+            .map_err(|error| format!("compiled catalog: {error}"))?;
+        let strict = compiled
+            .runtime_catalog(registers)
+            .map_err(|error| format!("runtime catalog: {error}"))?;
+        cells.extend(strict.cells);
+    }
+    Ok(cells)
+}
+
 /// Generate a minimal strict source. Geometry is a safe center floor brush;
 /// authors add contract-shell walls and ports in TrenchBroom before building.
 pub fn new_module_template(id: &str, kind: ModuleKind) -> String {
@@ -629,7 +801,7 @@ pub fn new_module_template(id: &str, kind: ModuleKind) -> String {
         "\"kind\" \"cell\"\n"
     };
     format!(
-        "// Observed 2 strict authored module. Validate with: tilec validate <file>\n{{\n\"classname\" \"worldspawn\"\n{}\n}}\n{{\n\"classname\" \"tile_meta\"\n\"authoring_version\" \"2\"\n\"id\" \"{id}\"\n{room}\"archetype\" \"hall_cap\"\n\"register\" \"generic\"\n\"register_scope\" \"all\"\n\"variant\" \"0\"\n\"levels\" \"1\"\n\"rotation_policy\" \"sixfold\"\n\"weight\" \"1\"\n}}\n{{\n\"classname\" \"tile_cell\"\n\"q\" \"0\"\n\"r\" \"0\"\n\"level\" \"0\"\n\"levels\" \"1\"\n\"floor\" \"solid\"\n}}\n{{\n\"classname\" \"tile_port\"\n\"q\" \"0\"\n\"r\" \"0\"\n\"level\" \"0\"\n\"face\" \"east\"\n\"class\" \"door\"\n\"name\" \"east_threshold\"\n\"origin\" \"112 0 48\"\n}}\n",
+        "// Observed 2 strict authored module. Validate with: tilec validate <file>\n{{\n\"classname\" \"worldspawn\"\n{}\n}}\n{{\n\"classname\" \"tile_meta\"\n\"authoring_version\" \"2\"\n\"id\" \"{id}\"\n{room}\"archetype\" \"hall_cap\"\n\"register\" \"generic\"\n\"register_scope\" \"all\"\n\"variant\" \"0\"\n\"levels\" \"1\"\n\"rotation_policy\" \"sixfold\"\n\"weight\" \"1\"\n}}\n{{\n\"classname\" \"tile_cell\"\n\"q\" \"0\"\n\"r\" \"0\"\n\"level\" \"0\"\n\"levels\" \"1\"\n\"floor\" \"solid\"\n}}\n{{\n\"classname\" \"tile_port\"\n\"q\" \"0\"\n\"r\" \"0\"\n\"level\" \"0\"\n\"face\" \"east\"\n\"class\" \"door\"\n\"name\" \"east_threshold\"\n\"origin\" \"112 0 48\"\n}}\n{{\n\"classname\" \"tile_light\"\n\"kind\" \"practical\"\n\"origin\" \"48 0 96\"\n}}\n",
         crate::tile_source::hex_slab_brush(0.0, 8.0)
     )
 }
@@ -719,19 +891,35 @@ mod tests {
             .catalog
             .runtime_catalog(&["institutional", "monolith"])
             .expect("runtime expansion");
+        // `register_scope: all` expands into every requested register, each
+        // with all six rotations.
         assert_eq!(runtime.cells.len(), 12);
         assert!(runtime.rooms.is_empty());
-        for (turn, face) in HexFace::LATERAL.into_iter().enumerate() {
-            let tile = runtime
-                .cells
-                .iter()
-                .find(|tile| {
-                    tile.key.register == "institutional"
-                        && tile.key.variant == u16::try_from(turn).expect("turn")
-                })
-                .expect("rotated tile");
-            assert_eq!(tile.signature.port(face), PortClass::Door);
-            assert_eq!(tile.weight, 1);
+        for register in ["institutional", "monolith"] {
+            for (turn, face) in HexFace::LATERAL.into_iter().enumerate() {
+                let tile = runtime
+                    .cells
+                    .iter()
+                    .find(|tile| {
+                        tile.key.register == register
+                            && tile.key.variant == u16::try_from(turn).expect("turn")
+                    })
+                    .expect("rotated tile");
+                assert_eq!(tile.signature.port(face), PortClass::Door);
+                assert_eq!(tile.weight, 1);
+                assert_eq!(tile.lights.len(), 1);
+                assert!(
+                    (tile.lights[0].position.y - 6.0).abs() < 1e-5,
+                    "unexpected rotated light {:?}",
+                    tile.lights[0].position
+                );
+                if turn == 0 {
+                    assert_eq!(tile.lights[0].position, Vec3::new(3.0, 6.0, 0.0));
+                }
+                if turn == 3 {
+                    assert!((tile.lights[0].position - Vec3::new(-3.0, 6.0, 0.0)).length() < 1e-5);
+                }
+            }
         }
         let _ = std::fs::remove_dir_all(root);
     }

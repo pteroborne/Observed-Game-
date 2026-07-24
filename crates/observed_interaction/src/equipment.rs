@@ -15,11 +15,19 @@ pub const HANDOFF_RADIUS: f32 = 140.0;
 /// authored battery starts at 0.9 charge, so a room stays lit for ~18s.
 pub const DRAIN_RATE: f32 = 0.05;
 
-/// A lab-local connection point. Equipment sockets are distinct from the
-/// interaction sockets in `interaction_lab`; this identifier is promoted into
-/// `observed_core` only once a second system genuinely shares it.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct SocketId(pub u16);
+observed_core::domain_id!(
+    /// A lab-local connection point. Equipment sockets are distinct from the
+    /// interaction sockets in `interaction_lab`; this identifier is promoted into
+    /// `observed_core` only once a second system genuinely shares it.
+    SocketId,
+    u16
+);
+
+impl SocketId {
+    pub const fn as_u16(self) -> u16 {
+        self.0
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EquipmentKind {

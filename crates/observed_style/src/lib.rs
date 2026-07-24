@@ -878,6 +878,9 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
             palette.ambient_brightness = DISTRICT_MIN_AMBIENT_BRIGHTNESS;
             palette.fog_start = 9.0;
             palette.fog_end = 30.0;
+            palette.key_shadows_enabled = true;
+            palette.key_intensity = 55_000_000.0;
+            palette.key_range = 42.0;
             palette.pools_rhythm = true;
         }
         Register::Monolith => {
@@ -885,10 +888,11 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
             palette.fog_end = 32.0;
         }
         Register::OverlitGrid => {
-            palette.ambient_brightness = 115.0;
+            palette.ambient_brightness = 140.0;
             palette.fog_start = 18.0;
             palette.fog_end = 48.0;
             palette.key_shadows_enabled = false;
+            palette.key_intensity = 0.0;
         }
         Register::Institutional => {
             palette.ambient_color = Color::srgb(0.72, 0.74, 0.70);
@@ -897,6 +901,9 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
             palette.fog_start = 16.0;
             palette.fog_end = 46.0;
             palette.light_color = Color::srgb(0.93, 0.94, 0.86);
+            palette.key_shadows_enabled = true;
+            palette.key_intensity = 65_000_000.0;
+            palette.key_range = 45.0;
             palette.pools_rhythm = false;
         }
         Register::FacetMonument => {
@@ -1111,20 +1118,20 @@ pub fn district(d: District) -> DistrictPalette {
             pools_rhythm: false,
         },
         District::Hollow => DistrictPalette {
-            ambient_color: Color::srgb(0.42, 0.45, 0.50),
-            ambient_brightness: 65.0,
+            ambient_color: Color::srgb(0.68, 0.70, 0.74),
+            ambient_brightness: 140.0,
             fog_color: Color::srgb(0.020, 0.022, 0.026),
             fog_start: 14.0,
             fog_end: 36.0,
-            light_color: Color::srgb(0.82, 0.86, 0.92),
+            light_color: Color::srgb(0.88, 0.90, 0.94),
             accent: LinearRgba::rgb(0.35, 0.40, 0.48),
-            key_color: Color::srgb(0.82, 0.86, 0.92),
-            key_intensity: 70_000_000.0,
-            key_range: 48.0,
-            key_radius: 0.1,
-            key_inner_angle: 0.4,
-            key_outer_angle: 0.8,
-            key_shadows_enabled: true,
+            key_color: Color::srgb(0.88, 0.90, 0.94),
+            key_intensity: 0.0,
+            key_range: 0.0,
+            key_radius: 0.0,
+            key_inner_angle: 0.0,
+            key_outer_angle: 0.0,
+            key_shadows_enabled: false,
             pools_rhythm: false,
         },
         District::Spillway => DistrictPalette {
@@ -1551,6 +1558,40 @@ mod tests {
     }
 
     #[test]
+    fn exactly_one_district_is_the_overlit_register() {
+        let unshadowed: Vec<District> = District::ALL
+            .iter()
+            .copied()
+            .filter(|d| !district(*d).key_shadows_enabled)
+            .collect();
+        assert_eq!(
+            unshadowed,
+            vec![District::Hollow],
+            "exactly one district (District::Hollow) must be unshadowed overlit"
+        );
+        let overlit_pal = district(District::Hollow);
+        assert!(
+            overlit_pal.ambient_brightness > 100.0,
+            "overlit district must have high ambient fill brightness"
+        );
+    }
+
+    #[test]
+    fn drained_and_klaxon_transforms_preserve_overlit_legibility() {
+        let overlit = district(District::Hollow);
+        let drained_pal = drained(&overlit);
+        assert!(
+            drained_pal.ambient_brightness < overlit.ambient_brightness,
+            "drained overlit district drops ambient brightness for feedback"
+        );
+        let klaxon_pal = klaxon_modulate(overlit);
+        assert!(
+            klaxon_pal.ambient_color != overlit.ambient_color,
+            "klaxon modulation alters ambient color on overlit district"
+        );
+    }
+
+    #[test]
     fn district_assignment_is_deterministic_and_covers_the_set() {
         // Stable for a key, and across a facility's rooms every district can appear (the
         // mapping isn't degenerate).
@@ -1734,7 +1775,9 @@ mod tests {
                 "{} fog",
                 register.slug()
             );
-            assert!(palette.key_intensity > 0.0 && palette.key_range > 0.0);
+            if palette.key_shadows_enabled {
+                assert!(palette.key_intensity > 0.0 && palette.key_range > 0.0);
+            }
         }
         assert!(
             architecture(ArchitectureRegister::Institutional).ambient_brightness

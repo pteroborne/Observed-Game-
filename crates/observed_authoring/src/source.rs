@@ -248,7 +248,13 @@ fn validate_ports(module: &AuthoredModule) -> Result<(), SourceError> {
                 face: port.face,
             });
         }
-        if module.authoring_version >= 2 && cells.contains(&neighbor(port.cell, port.face)) {
+        let prefab_ramp_handoff = module.kind == ModuleKind::Cell
+            && port.face == HexFace::Up
+            && port.class == PortClass::RampOpen;
+        if module.authoring_version >= 2
+            && cells.contains(&neighbor(port.cell, port.face))
+            && !prefab_ramp_handoff
+        {
             return Err(SourceError::PortOnInternalFace {
                 cell: port.cell,
                 face: port.face,
@@ -664,6 +670,7 @@ pub struct ModuleSummary {
     pub footprint_cells: usize,
     pub ports: usize,
     pub hulls: usize,
+    pub lights: usize,
 }
 
 impl From<&AuthoredModule> for ModuleSummary {
@@ -675,6 +682,7 @@ impl From<&AuthoredModule> for ModuleSummary {
             footprint_cells: expanded_cells(&module.footprint).len(),
             ports: module.ports.len(),
             hulls: module.prototype.hulls.len(),
+            lights: module.prototype.lights.len(),
         }
     }
 }

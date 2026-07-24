@@ -1,13 +1,13 @@
 //! Room blueprint footprint tiles: the single-hex room, the multi-hex
-//! strip / triangle / diamond cells (open internal faces, doors elsewhere),
-//! and the two-level atrium pair. Shapes and internal seals follow the
+//! strip / triangle / diamond cells (open internal faces, doors elsewhere).
+//! Shapes and internal seals follow the
 //! Phase 90 blueprint alignment note (`docs/arc_l/phase_90_91_alignment.md`).
 
 use observed_hex::HexFace;
 
 use super::geometry::{
     DOOR_TOP, FLOOR_TOP, band_brush, door_wall, hex_slab_brush, level_units, pillar_brush,
-    pylon_brush, tb_edge, tile_meta, tile_port, worldspawn,
+    pylon_brush, tb_edge, tile_light, tile_meta, tile_port, worldspawn,
 };
 use super::{face_name, register_style};
 
@@ -53,6 +53,9 @@ pub fn room_single_map(register: &str) -> String {
     for face in HexFace::LATERAL {
         out += &tile_port(face_name(face), "door");
     }
+    for [x, y] in [[-48.0, -24.0], [48.0, -24.0], [0.0, 48.0]] {
+        out += &tile_light(x, y, h - 32.0);
+    }
     out
 }
 
@@ -82,6 +85,7 @@ pub fn room_wing_map(register: &str, archetype: &str, open_faces: &[HexFace]) ->
             out += &tile_port(face_name(face), "door");
         }
     }
+    out += &tile_light(0.0, 0.0, h - 32.0);
     out
 }
 
@@ -90,8 +94,8 @@ pub fn room_double_map(register: &str, position: &str, open_face: HexFace) -> St
     room_wing_map(register, &format!("room_double_{position}"), &[open_face])
 }
 
-/// Atrium lower cell: doors on all six faces, a central dais, and an open
-/// ceiling (`up: shaft_open`) under the upper gallery. Variant 0.
+/// Guardian-control atrium lower cell: a grounded dais and an open ceiling
+/// below the upper wall-supported gallery.
 pub fn room_atrium_lower_map(register: &str) -> String {
     let style = register_style(register);
     let h = level_units();
@@ -100,24 +104,25 @@ pub fn room_atrium_lower_map(register: &str) -> String {
     for face in HexFace::LATERAL {
         brushes += &door_wall(face, 0.0, h, FLOOR_TOP, DOOR_TOP, style.trim_height);
     }
-    let mut out = String::from("// Room atrium lower: open ceiling, central dais.\n");
+    let mut out = String::from("// Guardian atrium lower: grounded dais, open ceiling.\n");
     out += &worldspawn(&brushes);
     out += &tile_meta("room_atrium_lower", register, 0, 1);
     out += &tile_port("up", "shaft_open");
     for face in HexFace::LATERAL {
         out += &tile_port(face_name(face), "door");
     }
+    out += &tile_light(-56.0, 0.0, h - 32.0);
+    out += &tile_light(56.0, 0.0, h - 32.0);
     out
 }
 
-/// Atrium upper cell: a gallery balcony ring with a railing around the open
-/// center (`down: shaft_open`), doors on all six faces. Variant 0.
+/// Guardian-control atrium upper cell: a gallery ring continuously supported
+/// by the perimeter walls, with an open center over the lower room.
 pub fn room_atrium_upper_map(register: &str) -> String {
     let style = register_style(register);
     let h = level_units();
     let mut brushes = String::new();
     for face in HexFace::LATERAL {
-        // Balcony ring floor and its inner railing.
         brushes += &band_brush(face, 0.0, 48.0, 0.0, FLOOR_TOP);
         brushes += &band_brush(face, 40.0, 48.0, FLOOR_TOP, FLOOR_TOP + 20.0);
     }
@@ -125,12 +130,15 @@ pub fn room_atrium_upper_map(register: &str) -> String {
         brushes += &door_wall(face, 0.0, h, FLOOR_TOP, DOOR_TOP, style.trim_height);
     }
     brushes += &hex_slab_brush(h - FLOOR_TOP, h);
-    let mut out = String::from("// Room atrium upper: balcony ring over the open well.\n");
+    let mut out = String::from("// Guardian atrium upper: wall-supported gallery ring.\n");
     out += &worldspawn(&brushes);
     out += &tile_meta("room_atrium_upper", register, 0, 1);
     out += &tile_port("down", "shaft_open");
     for face in HexFace::LATERAL {
         out += &tile_port(face_name(face), "door");
+    }
+    for [x, y] in [[-64.0, 0.0], [32.0, -56.0], [32.0, 56.0]] {
+        out += &tile_light(x, y, h - 32.0);
     }
     out
 }

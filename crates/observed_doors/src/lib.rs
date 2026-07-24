@@ -25,11 +25,27 @@ use glam::Vec2;
 use observed_core::{RoomId, SplitMix};
 use observed_observation::{COLS, DOOR_COUNT, DoorId, ObservationWorld, ROOM_COUNT, Side};
 
-/// The protected spine: a path of rooms whose connecting doors are always pinned so
-/// the exit is always reachable. Start → exit across the 3×3 lattice.
-const SPINE_ROOMS: [u32; 5] = [0, 1, 2, 5, 8];
-const START_ROOM: RoomId = RoomId(0);
-const EXIT_ROOM: RoomId = RoomId(8);
+/// Configures protected spine rooms whose connecting doors remain pinned so the exit
+/// is always reachable across room graphs.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SpineConfig {
+    pub spine_rooms: Vec<u32>,
+    pub start_room: RoomId,
+    pub exit_room: RoomId,
+}
+
+impl Default for SpineConfig {
+    fn default() -> Self {
+        Self {
+            spine_rooms: vec![0, 1, 2, 5, 8],
+            start_room: RoomId(0),
+            exit_room: RoomId(8),
+        }
+    }
+}
+
+pub const START_ROOM: RoomId = RoomId(0);
+pub const EXIT_ROOM: RoomId = RoomId(8);
 
 #[derive(Clone)]
 pub struct DoorWorld {
@@ -68,10 +84,14 @@ fn side_between(a: RoomId, b: RoomId) -> Option<Side> {
 
 impl DoorWorld {
     pub fn authored() -> Self {
+        Self::with_config(SpineConfig::default())
+    }
+
+    pub fn with_config(config: SpineConfig) -> Self {
         let graph = ObservationWorld::authored();
         let mut spine = vec![false; DOOR_COUNT];
         // Mark both doorways of every spine connection.
-        for pair in SPINE_ROOMS.windows(2) {
+        for pair in config.spine_rooms.windows(2) {
             let (a, b) = (RoomId(pair[0]), RoomId(pair[1]));
             let side = side_between(a, b).expect("spine rooms are grid-adjacent");
             let door = graph.door_id(a, side);
@@ -84,7 +104,7 @@ impl DoorWorld {
             open: vec![false; DOOR_COUNT],
             spine,
             partner_when_opened: vec![None; DOOR_COUNT],
-            player: START_ROOM,
+            player: config.start_room,
             base_seed: 0xD00D_5EED_0000_0001,
             decoherence_count: 0,
             rewires_last: 0,

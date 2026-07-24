@@ -1512,10 +1512,11 @@ fn results_screen_renders_every_outcome_shape() {
     let cases = [
         (
             flow::MatchResult {
+                local_team: TeamId(1),
                 placement: Some(1),
                 escaped: 1,
                 absorbed: 3,
-                winner: Some(TeamId(0)),
+                winner: Some(TeamId(1)),
                 local_won: true,
             },
             false,
@@ -1524,6 +1525,7 @@ fn results_screen_renders_every_outcome_shape() {
         ),
         (
             flow::MatchResult {
+                local_team: TeamId(0),
                 placement: Some(2),
                 escaped: 1,
                 absorbed: 3,
@@ -1536,6 +1538,7 @@ fn results_screen_renders_every_outcome_shape() {
         ),
         (
             flow::MatchResult {
+                local_team: TeamId(0),
                 placement: None,
                 escaped: 1,
                 absorbed: 3,
@@ -1548,6 +1551,7 @@ fn results_screen_renders_every_outcome_shape() {
         ),
         (
             flow::MatchResult {
+                local_team: TeamId(0),
                 placement: Some(4),
                 escaped: 1,
                 absorbed: 3,
@@ -1560,6 +1564,7 @@ fn results_screen_renders_every_outcome_shape() {
         ),
         (
             flow::MatchResult {
+                local_team: TeamId(0),
                 placement: Some(1),
                 escaped: 1,
                 absorbed: 0,
@@ -1601,6 +1606,9 @@ fn results_screen_renders_every_outcome_shape() {
         assert!(story.lines.join("\n").contains("3 rooms"));
         assert!(story.lines.join("\n").contains("3/3 keystones"));
         assert!(story.lines.join("\n").contains("anchor once"));
+        if result.local_team == TeamId(1) {
+            assert!(story.lines.join("\n").contains("Escape order: You"));
+        }
 
         let mut app = test_app();
         app.world_mut().resource_mut::<Career>().bot_rival_teams = !solo;
@@ -1643,6 +1651,7 @@ fn results_rematch_launches_hex_wfc_directly_with_a_new_seed() {
         career.bot_ai_teammates = false;
         career.bot_guardian = true;
         career.record(flow::MatchResult {
+            local_team: observed_core::TeamId(0),
             placement: Some(1),
             escaped: 1,
             absorbed: 0,
@@ -4791,15 +4800,20 @@ mod hex_wfc_gates {
     /// A solvable compact showcase match near `base` (mirrors the adapter's offset
     /// search so a rare contradiction seed cannot flake the test).
     fn solvable_showcase(base: u64) -> HexWfcMatch {
+        let config = HexMatchConfig::default();
+        solvable_showcase_with_players(base, config.teams.saturating_mul(config.members_per_team))
+    }
+
+    fn solvable_showcase_with_players(base: u64, players: u8) -> HexWfcMatch {
         let protos = load_prototypes();
         (0..64u64)
             .find_map(|offset| {
-                HexWfcMatch::new(
-                    base.wrapping_add(offset),
-                    HexMatchConfig::default(),
-                    &protos,
-                )
-                .ok()
+                let config = HexMatchConfig {
+                    teams: players,
+                    members_per_team: 1,
+                    ..Default::default()
+                };
+                HexWfcMatch::new(base.wrapping_add(offset), config, &protos).ok()
             })
             .expect("the showcase corpus contains a solvable nearby seed")
     }
@@ -4832,7 +4846,74 @@ mod hex_wfc_gates {
         out
     }
 
-    /// Gate 2 (headless): same seed + inputs ⇒ byte-identical per-tick digest sequence.
+    /// A changing snapshot digest is not evidence that the spectator moved: the
+    /// authoritative tick is part of that digest. Prove the watched runner can
+    /// physically clear the authored spawn room and enter the route's next cell.
+    #[test]
+    fn hex_spectator_physically_leaves_spawn() {
+        let mut game = solvable_showcase_with_players(flow::MATCH_SEED, 1);
+        let spawn = game.facility.config.spawn();
+        let route = game
+            .facility
+            .route_between_cells(spawn, game.facility.config.exit())
+            .expect("spawn has a logical route to exit");
+        let next = route.cells[1];
+        for _ in 0..2_400 {
+            step_all_bots(&mut game);
+            if game.players.values().next().expect("runner").cell != spawn {
+                return;
+            }
+        }
+
+        let next_tiles = game
+            .geometry
+            .pieces
+            .iter()
+            .filter(|piece| piece.source_cell == next)
+            .filter_map(|piece| piece.tile.as_ref())
+            .collect::<Vec<_>>();
+        panic!(
+            "spectator never left spawn; player={:?}; next={next:?}; next_placement={:?}; \
+             next_tiles={next_tiles:?}",
+            game.players.values().next().expect("runner"),
+            game.facility.placements[&next]
+        );
+    }
+
+    #[test]
+    fn hex_spectator_route_is_physically_completable_without_guardian_pressure() {
+        let mut game = solvable_showcase_with_players(flow::MATCH_SEED, 1);
+        let spawn_route = game
+            .facility
+            .route_between_cells(game.facility.config.spawn(), game.facility.config.exit())
+            .expect("spawn route");
+        let first_step = spawn_route.cells[1];
+        for _ in 0..36_000 {
+            step_all_bots(&mut game);
+            if game.status == HexMatchStatus::Finished {
+                return;
+            }
+        }
+        panic!(
+            "solo spectator stalled on a logical route; player={:?}; route={:?}; \
+             first_step={:?}; first_step_tiles={:?}",
+            game.players.values().next().expect("runner"),
+            game.facility.route_between_cells(
+                game.players.values().next().expect("runner").cell,
+                game.facility.config.exit()
+            ),
+            game.facility.placements[&first_step],
+            game.geometry
+                .pieces
+                .iter()
+                .filter(|piece| piece.source_cell == first_step)
+                .filter_map(|piece| piece.tile.as_ref())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// Gate 2 (headless): same seed + inputs must produce a byte-identical
+    /// per-tick digest sequence.
     #[test]
     fn hex_headless_is_deterministic() {
         let a = headless_digests(solvable_showcase(flow::MATCH_SEED), 300);
@@ -4880,7 +4961,7 @@ mod hex_wfc_gates {
     /// before the first mutation, so headless == interactive was never
     /// proven *across* a committed relayout. This steps the real app FixedUpdate schedule
     /// and a headless clone identically through the pinned seed's deterministic commit at
-    /// tick 695 (generation 0 → 1) and asserts the per-tick digests stay byte-identical
+    /// tick 666 (generation 0 → 1) and asserts the per-tick digests stay byte-identical
     /// the whole way, including the tick the generation bumps. Determinism is the arc's
     /// sacred invariant; this closes the proof across the mutation boundary.
     ///
@@ -4889,10 +4970,10 @@ mod hex_wfc_gates {
     #[test]
     #[ignore = "~725-tick run through a committed relayout; run explicitly"]
     fn hex_headless_and_interactive_agree_across_relayout_commit() {
-        // The pinned seed whose showcase-config relayout commits at tick 695. The test
+        // The pinned seed whose showcase-config relayout commits at tick 666. The test
         // binary already runs `runtime_config` on the showcase (12×9×4) fixture, so the
-        // deterministic warning@575 / commit@695 timeline reproduces here.
-        const RELAYOUT_SEED: u64 = 0xA11C_9500_0000_0000;
+        // deterministic warning@546 / commit@666 timeline reproduces here.
+        const RELAYOUT_SEED: u64 = 0x3F2B_ECB9_7F4A_7C15;
         let mut app = test_app();
         app.world_mut()
             .insert_resource(flow::ActiveMatchSeed(RELAYOUT_SEED));
@@ -4969,7 +5050,13 @@ mod hex_wfc_gates {
         assert_eq!(
             game.status,
             HexMatchStatus::Finished,
-            "every runner should reach the exit within the soak window (last cell progress at tick {last_progress_tick})"
+            "every runner should reach the exit within the soak window (last cell progress at tick \
+             {last_progress_tick}; players={:?}; route={:?})",
+            game.players,
+            game.facility.route_between_cells(
+                game.players.values().next().expect("runner").cell,
+                game.facility.config.exit()
+            )
         );
         assert!(
             game.players.values().all(|player| player.escaped),

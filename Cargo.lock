@@ -4095,16 +4095,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc0fef456e4baa96da950455cd02c081ca953b141298e41db3fc7e36b1da849c"
 
 [[package]]
+name = "hex_room_lab"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "observed_authoring",
+ "observed_content",
+ "observed_facility",
+ "observed_hex",
+ "observed_style",
+ "rapier3d",
+]
+
+[[package]]
 name = "hex_tile_lab"
 version = "0.1.0"
 dependencies = [
  "bevy",
  "observed_authoring",
+ "observed_content",
+ "observed_facility",
  "observed_hex",
  "observed_style",
  "observed_traversal",
  "player_input",
  "rapier3d",
+ "serde",
  "serde_json",
 ]
 
@@ -4114,6 +4130,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "observed_authoring",
+ "observed_content",
  "observed_core",
  "observed_facility",
  "observed_hex",
@@ -4460,6 +4477,17 @@ dependencies = [
  "bevy_mod_config",
  "observed_style",
  "player_input",
+]
+
+[[package]]
+name = "lan_lab"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "observed_authoring",
+ "observed_content",
+ "observed_net",
+ "observed_server",
 ]
 
 [[package]]
@@ -5470,6 +5498,7 @@ dependencies = [
  "observed_net",
  "observed_observation",
  "observed_progression",
+ "observed_server",
  "observed_style",
  "observed_traversal",
  "player_input",
@@ -5499,6 +5528,7 @@ dependencies = [
  "bevy",
  "glam 0.30.10",
  "observed_authoring",
+ "observed_content",
  "observed_core",
  "observed_facility",
  "observed_hex",
@@ -5535,6 +5565,19 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "observed_core",
+]
+
+[[package]]
+name = "observed_server"
+version = "0.1.0"
+dependencies = [
+ "observed_authoring",
+ "observed_content",
+ "observed_core",
+ "observed_facility",
+ "observed_match",
+ "observed_net",
+ "observed_progression",
 ]
 
 [[package]]

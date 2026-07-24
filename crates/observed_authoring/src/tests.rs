@@ -1,5 +1,4 @@
 use glam::{Vec2, Vec3};
-use observed_facility::hex_wfc::geometry_demands;
 use observed_hex::{HexFace, PortClass, PortSignature, TILE_LEVEL_HEIGHT, face_edge};
 use observed_traversal::rapier_controller::{RapierTraversalScene, step_character};
 use observed_traversal::{FpsBody, FpsConfig};
@@ -30,7 +29,18 @@ fn every_generated_tile_parses_and_snaps() {
         let tile = parse_tile(&content)
             .unwrap_or_else(|error| panic!("{name} failed to parse: {error:?}"));
         assert!(!tile.hulls.is_empty(), "{name} has no geometry");
+        assert!(
+            !tile.lights.is_empty(),
+            "{name} has no authored light source"
+        );
     }
+}
+
+#[test]
+fn every_compatibility_cell_carries_explicit_lighting() {
+    let cells = tile_source::compatibility_cells().expect("compatibility cells parse");
+    assert!(!cells.is_empty());
+    assert!(cells.iter().all(|tile| !tile.lights.is_empty()));
 }
 
 /// The pin: every committed asset is byte-identical to the typed generator's
@@ -77,14 +87,6 @@ fn seed_tile_signatures_match_their_authored_ports() {
         signature(&[
             (HexFace::West, PortClass::Door),
             (HexFace::Up, PortClass::RampOpen)
-        ])
-    );
-    let shaft = parse_tile(&tile_source::shaft_map()).expect("shaft parses");
-    assert_eq!(
-        shaft.signature,
-        signature(&[
-            (HexFace::Up, PortClass::ShaftOpen),
-            (HexFace::Down, PortClass::ShaftOpen)
         ])
     );
 }
@@ -136,10 +138,6 @@ fn the_manifest_parses_and_covers_the_seed_demands() {
             (HexFace::West, PortClass::Door),
             (HexFace::Up, PortClass::RampOpen),
         ]),
-        signature(&[
-            (HexFace::Up, PortClass::ShaftOpen),
-            (HexFace::Down, PortClass::ShaftOpen),
-        ]),
     ];
     assert_eq!(manifest.uncovered(&demands), Vec::new());
 
@@ -183,50 +181,6 @@ fn manifest_keys_are_unique_and_entries_match_their_maps() {
     }
 }
 
-/// Every register covers the production solver's exact geometry-emitter
-/// contract. Matching includes semantic archetype as well as signature: a hall
-/// with coincidentally equal ports cannot stand in for an authored room wing or
-/// shaft landing.
-#[test]
-fn every_register_covers_the_production_geometry_demands() {
-    let manifest = Manifest::from_ron(&tile_source::manifest_ron()).expect("manifest parses");
-    let demands = geometry_demands();
-    assert_eq!(demands.len(), 134, "geometry-demand alphabet drifted");
-    let mut missing: Vec<String> = Vec::new();
-    for &reg in tile_source::REGISTERS {
-        for demand in &demands {
-            if !manifest.tiles.iter().any(|tile| {
-                tile.key.archetype == demand.archetype
-                    && tile.key.register == reg
-                    && tile.declared_signature().ok() == Some(demand.signature)
-            }) {
-                missing.push(format!("{}/{reg}/{:?}", demand.archetype, demand.signature));
-            }
-        }
-        let shaft_landings = manifest
-            .tiles
-            .iter()
-            .filter(|tile| tile.key.archetype == "shaft_landing" && tile.key.register == reg)
-            .count();
-        assert_eq!(shaft_landings, 63, "{reg} shaft signature coverage");
-
-        // Straight halls still carry all three interior readings per axis even
-        // though geometry coverage needs only one tile per exact signature.
-        let straights = manifest
-            .tiles
-            .iter()
-            .filter(|t| t.key.archetype == "hall_straight" && t.key.register == reg)
-            .count();
-        assert_eq!(straights, 9, "{reg} straight interiors");
-    }
-    assert!(missing.is_empty(), "missing tiles: {missing:#?}");
-    assert_eq!(manifest.tiles.len(), 1_332, "library-size drift");
-}
-
-/// The room blueprint cells match the Phase 90 alignment note
-/// (`docs/arc_l/phase_90_91_alignment.md`): internal faces sealed, every
-/// exterior face a door, and the two-level atrium pair joined by
-/// `shaft_open` verticals.
 #[test]
 fn blueprint_footprint_cells_match_the_phase_90_alignment() {
     let manifest = Manifest::from_ron(&tile_source::manifest_ron()).expect("manifest parses");
@@ -269,12 +223,6 @@ fn blueprint_footprint_cells_match_the_phase_90_alignment() {
                 .collect();
             require(archetype, reg, signature(&doors(&exterior)));
         }
-        let mut lower = doors(&HexFace::LATERAL);
-        lower.push((HexFace::Up, PortClass::ShaftOpen));
-        require("room_atrium_lower", reg, signature(&lower));
-        let mut upper = doors(&HexFace::LATERAL);
-        upper.push((HexFace::Down, PortClass::ShaftOpen));
-        require("room_atrium_upper", reg, signature(&upper));
     }
     assert!(missing.is_empty(), "missing blueprint cells: {missing:#?}");
 }

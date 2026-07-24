@@ -1,14 +1,22 @@
-# player_input
+# `player_input`
 
-This production crate establishes the input abstraction layer for Observed 2. It translates raw hardware scans or controller updates into semantic intents.
+The **`player_input`** production crate provides the abstract input boundary for Observed 2.
 
-## Input Intent Models
-- **`PlayerId(pub u16)`:** Stable identifier mapping a participant to their input device slot.
-- **`PlayerIntent`:** An abstract container capturing movement vectors, camera lookup scales, and action flags (jump, sprint, interact, climb, recover).
+It decouples character movement systems, AI bots, replay tapes, and network protocol packets from hardware sampling (keyboard, mouse, gamepad).
 
-## Module Structure
-- **[`lib.rs`](src/lib.rs):** Defines `PlayerId`, `PlayerIntent`, and default control behaviors.
+---
 
-## Audit Notes
-- **Bloat:** None.
-- **Overlap:** None.
+## Core Types
+
+- **`PlayerId(pub u16)`**: Stable identifier for a player slot (`P1`, `P2`, etc.).
+- **`PlayerIntent`**: Abstract container capturing normalized 2D movement (`movement`), camera delta (`look`), and semantic action flags (`jump_pressed`, `sprint_held`, `interact_pressed`, `interact_held`, `climb_pressed`).
+- **`sanitized()`**: Normalizes movement and look vectors to unit length to prevent diagonal speed exploits.
+
+---
+
+## Testing
+
+Run unit tests:
+```bash
+cargo test -p player_input
+```

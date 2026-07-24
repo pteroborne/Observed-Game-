@@ -1,10 +1,10 @@
-//! The lobby screen: forms a real balanced session via the proven matchmaker
-//! (`session_lab`) and renders it. The formed session is retained in [`LobbyRuntime`]
-//! for the duration of the lobby/match.
+//! Live authoritative LAN lobby. The server owns seats, teams, readiness, and launch.
 
 use bevy::prelude::*;
+use observed_core::TeamId;
 use observed_progression::session::SessionLabWorld;
 
+use super::lan::LanLobbyRosterText;
 use super::{MenuAction, MenuCursor, menu_button};
 use crate::GameState;
 use crate::sim::state::LobbyRuntime;
@@ -13,121 +13,56 @@ use crate::view::theme::{DIM, TITLE, panel, screen_root, text};
 #[derive(Component)]
 pub(crate) struct LobbyButtonText(pub(crate) MenuAction);
 
-fn rival_teams_label(on: bool) -> String {
-    format!("Rival teams: {}", if on { "ON" } else { "OFF" })
-}
-fn ai_teammates_label(on: bool) -> String {
-    format!("AI teammates: {}", if on { "ON" } else { "OFF" })
-}
-fn guardian_label(on: bool) -> String {
-    format!("Guardian: {}", if on { "ON" } else { "OFF" })
-}
-
-pub(crate) fn lobby_update_labels(
-    career: Res<crate::flow::Career>,
-    mut query: Query<(&LobbyButtonText, &mut Text)>,
-) {
-    for (btn, mut text) in &mut query {
-        match btn.0 {
-            MenuAction::ToggleRivalTeams => {
-                **text = rival_teams_label(career.bot_rival_teams);
-            }
-            MenuAction::ToggleAiTeammates => {
-                **text = ai_teammates_label(career.bot_ai_teammates);
-            }
-            MenuAction::ToggleGuardian => {
-                **text = guardian_label(career.bot_guardian);
-            }
-            _ => {}
-        }
-    }
-}
-
-pub(crate) fn setup_lobby(
-    mut commands: Commands,
-    mut cursor: ResMut<MenuCursor>,
-    career: Res<crate::flow::Career>,
-) {
+pub(crate) fn setup_lobby(mut commands: Commands, mut cursor: ResMut<MenuCursor>) {
     cursor.0 = 0;
-    // Form a session via the proven matchmaker, then ready it up.
-    let mut world = SessionLabWorld::authored();
-    for _ in 0..3 {
-        world.advance_demo();
-    }
-
-    let mut lines: Vec<String> = Vec::new();
-    if let Some(session) = &world.session {
-        lines.push(format!(
-            "{} | {} | {} players | {}",
-            session.id.label(),
-            session.region.label(),
-            session.participants.len(),
-            session.phase.label(),
-        ));
-        for team in 0..2u8 {
-            let count = session
-                .participants
-                .iter()
-                .filter(|p| p.team.0 == team)
-                .count();
-            lines.push(format!(
-                "  Team {}  {} players  | rating {}",
-                team + 1,
-                count,
-                session.team_rating(observed_core::TeamId(team)),
-            ));
-        }
-    } else {
-        lines.push("Matchmaking…".to_string());
-    }
-
     commands
         .spawn(screen_root(GameState::Lobby))
         .with_children(|root| {
-            root.spawn(text("LOBBY", 40.0, TITLE));
-            root.spawn(panel()).with_children(|p| {
-                for line in &lines {
-                    p.spawn(text(line.clone(), 18.0, DIM));
-                }
+            root.spawn(text("LAN LOBBY", 40.0, TITLE));
+            root.spawn(panel()).with_children(|panel| {
+                panel.spawn((
+                    LanLobbyRosterText,
+                    text("Waiting for server roster...", 17.0, DIM),
+                ));
             });
-            root.spawn(panel()).with_children(|p| {
-                p.spawn(menu_button(0, MenuAction::Launch, "Launch match"));
-                p.spawn(menu_button(1, MenuAction::Spectate, "Spectate match"));
-                p.spawn((
-                    LobbyButtonText(MenuAction::ToggleRivalTeams),
-                    menu_button(
-                        2,
-                        MenuAction::ToggleRivalTeams,
-                        rival_teams_label(career.bot_rival_teams),
-                    ),
+            root.spawn(panel()).with_children(|panel| {
+                panel.spawn((
+                    LobbyButtonText(MenuAction::ToggleLanReady),
+                    menu_button(0, MenuAction::ToggleLanReady, "Ready: OFF"),
                 ));
-                p.spawn((
-                    LobbyButtonText(MenuAction::ToggleAiTeammates),
-                    menu_button(
-                        3,
-                        MenuAction::ToggleAiTeammates,
-                        ai_teammates_label(career.bot_ai_teammates),
-                    ),
+                panel.spawn(menu_button(
+                    1,
+                    MenuAction::RequestLanTeam(TeamId(0)),
+                    "Request Team 1",
                 ));
-                p.spawn((
-                    LobbyButtonText(MenuAction::ToggleGuardian),
-                    menu_button(
-                        4,
-                        MenuAction::ToggleGuardian,
-                        guardian_label(career.bot_guardian),
-                    ),
+                panel.spawn(menu_button(
+                    2,
+                    MenuAction::RequestLanTeam(TeamId(1)),
+                    "Request Team 2",
                 ));
-                p.spawn(menu_button(
-                    5,
-                    MenuAction::Goto(GameState::MainMenu),
-                    "Back",
-                ));
+                panel.spawn(menu_button(3, MenuAction::LeaveLan, "Leave LAN"));
             });
             root.spawn(text(
-                "You are Team 1. Launch to drop into the facility. | Esc back",
-                15.0,
+                "Both teammates must escape. Teammates share survivor-map knowledge.",
+                14.0,
                 DIM,
             ));
         });
-    commands.insert_resource(LobbyRuntime { world });
+
+    // Retain the historical resource shape for callers/tests that inspect lobby
+    // lifecycle; production LAN truth lives in `LanRuntime`.
+    commands.insert_resource(LobbyRuntime {
+        world: SessionLabWorld::authored(),
+    });
+}
+
+pub(crate) fn lobby_update_labels(
+    lan: Res<crate::lan::LanRuntime>,
+    mut query: Query<(&LobbyButtonText, &mut Text)>,
+) {
+    for (button, mut text) in &mut query {
+        if button.0 == MenuAction::ToggleLanReady {
+            **text = format!("Ready: {}", if lan.ready { "ON" } else { "OFF" });
+        }
+    }
 }

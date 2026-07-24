@@ -1,0 +1,15 @@
+[package]
+name = "observed_server"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+observed_authoring = { path = "../crates/observed_authoring" }
+observed_content = { path = "../crates/observed_content" }
+observed_core = { path = "../crates/observed_core" }
+observed_facility = { path = "../crates/observed_facility", default-features = false, features = ["wfc"] }
+observed_match = { path = "../crates/observed_match", default-features = false }
+observed_net = { path = "../crates/observed_net", default-features = false }
+observed_progression = { path = "../crates/observed_progression", default-features = false }
+

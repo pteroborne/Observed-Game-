@@ -1,4 +1,5 @@
 /target
+/scratch/
 *.pdb
 .claude/
 docs/evidence/bot_pov/bot_pov_*.png

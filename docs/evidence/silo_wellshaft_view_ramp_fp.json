@@ -1,0 +1,8 @@
+{
+  "composition": "silo_wellshaft",
+  "view_mode": "firstperson",
+  "render_mode": "lit",
+  "register": 4,
+  "hide_menu": false,
+  "output_image": "docs/evidence/silo_wellshaft_ramp_fp.png"
+}

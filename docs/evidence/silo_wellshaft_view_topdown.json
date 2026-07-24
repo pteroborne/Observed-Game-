@@ -1,0 +1,12 @@
+{
+  "composition": "silo_wellshaft",
+  "view_mode": "orbit",
+  "render_mode": "clay",
+  "cross_section": true,
+  "orbit_yaw": 0.5,
+  "orbit_pitch": 1.0,
+  "radius": 58.0,
+  "height": 30.0,
+  "camera_target": [0.0, 12.0, 0.0],
+  "output_image": "docs/evidence/silo_wellshaft_topdown.png"
+}

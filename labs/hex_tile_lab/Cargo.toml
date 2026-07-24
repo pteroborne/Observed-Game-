@@ -5,8 +5,10 @@ edition = "2024"
 publish = false
 
 [dependencies]
-bevy = { version = "0.18.1", default-features = false, features = ["3d", "png"] }
+bevy = { version = "0.18.1", default-features = false, features = ["3d", "png", "bevy_dev_tools"] }
 observed_authoring = { path = "../../crates/observed_authoring" }
+observed_content = { path = "../../crates/observed_content" }
+observed_facility = { path = "../../crates/observed_facility" }
 observed_hex = { path = "../../crates/observed_hex" }
 # Colors come from the production style crate, never invented locally.
 observed_style = { path = "../../crates/observed_style" }
@@ -15,4 +17,5 @@ observed_traversal = { path = "../../crates/observed_traversal", default-feature
 player_input = { path = "../../crates/player_input", default-features = false }
 # Hull triangulation for render meshes (same rapier the controller runs on).
 rapier3d = { version = "0.34", features = ["enhanced-determinism"] }
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

@@ -21,15 +21,63 @@ pub use prng::SplitMix;
 pub mod direction;
 pub use direction::Direction;
 
-/// Stable identifier for a logical room instance.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct RoomId(pub u32);
+/// Common trait implemented by all domain newtype identifiers.
+pub trait DomainId: Copy + Eq + Ord + std::hash::Hash {
+    fn as_u32(self) -> u32;
+    fn as_usize(self) -> usize;
+}
 
-/// Stable identifier for a logical corridor instance. A corridor may expose any
-/// number of authored threshold sockets; unlike the legacy room-pair hallway key,
-/// its identity does not change when those sockets are rewired.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct CorridorId(pub u32);
+#[macro_export]
+macro_rules! domain_id {
+    ($(#[$meta:meta])* $name:ident, $inner:ty) => {
+        $(#[$meta])*
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub struct $name(pub $inner);
+
+        impl $name {
+            #[inline]
+            pub const fn as_u32(self) -> u32 {
+                self.0 as u32
+            }
+
+            #[inline]
+            pub const fn as_usize(self) -> usize {
+                self.0 as usize
+            }
+        }
+
+        impl $crate::DomainId for $name {
+            #[inline]
+            fn as_u32(self) -> u32 {
+                self.0 as u32
+            }
+
+            #[inline]
+            fn as_usize(self) -> usize {
+                self.0 as usize
+            }
+        }
+
+        impl From<$inner> for $name {
+            #[inline]
+            fn from(val: $inner) -> Self {
+                Self(val)
+            }
+        }
+    };
+}
+
+domain_id!(
+    /// Stable identifier for a logical room instance.
+    RoomId,
+    u32
+);
+
+domain_id!(
+    /// Stable identifier for a logical corridor instance.
+    CorridorId,
+    u32
+);
 
 /// Stable identifier for a discrete playable place.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -56,26 +104,41 @@ impl ThresholdId {
     }
 }
 
-/// Place-local stable slot for a threshold aperture.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ThresholdSlotId(pub u16);
+domain_id!(
+    /// Place-local stable slot for a threshold aperture.
+    ThresholdSlotId,
+    u16
+);
 
-/// Stable identifier for an authored connection point on a room (a port or
-/// socket). Unique within the room that owns it.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct PortId(pub u32);
+impl ThresholdSlotId {
+    pub const fn as_u16(self) -> u16 {
+        self.0
+    }
+}
 
-/// Stable identifier for a persistent piece of equipment. Equipment keeps this
-/// identity while it is carried, deployed, socketed, or temporarily despawned.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct EquipmentId(pub u32);
+domain_id!(
+    /// Stable identifier for an authored connection point on a room (a port or socket).
+    PortId,
+    u32
+);
 
-/// Stable identifier for a team of cooperating players. A team groups one or
-/// more `PlayerId`s; shared resources may be contended or owned per team.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct TeamId(pub u8);
+domain_id!(
+    /// Stable identifier for a persistent piece of equipment.
+    EquipmentId,
+    u32
+);
+
+domain_id!(
+    /// Stable identifier for a team of cooperating players.
+    TeamId,
+    u8
+);
 
 impl TeamId {
+    pub const fn as_u8(self) -> u8 {
+        self.0
+    }
+
     pub fn index(self) -> usize {
         usize::from(self.0)
     }

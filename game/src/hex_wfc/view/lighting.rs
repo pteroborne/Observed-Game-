@@ -1,25 +1,41 @@
-//! Deterministic local-light budget and district atmosphere for the hex facility.
+//! Lighting-lab register rig for the hex facility (Arc I "Light & Line" language).
 //!
-//! The rig is bounded: one district key spotlight staged above the runner's current
-//! cell plus district ambient and distance fog. The caged lantern is the only
-//! player-following light, so spending the last one has a real visibility cost.
-//! Authored tile hulls carry surface detail; the district rig carries atmosphere.
+//! Three staged tiers, all driven by the per-register `observed_style` palette — the
+//! artifact into which the lighting lab's findings were transferred as parameters:
+//!   1. a shadow-casting **district key** spotlight over the runner's current cell,
+//!      giving each register its dramatic directional read (overlit-grid alone runs it
+//!      flat, `key_shadows_enabled = false`);
+//!   2. per-cell **practical pools** (see [`super::shell`]) tinted by the cell's
+//!      `light_color`, staged as pools-in-dark on `pools_rhythm` registers (places lit,
+//!      connective halls dark) or as an even fill elsewhere;
+//!   3. district **ambient + distance fog** for depth.
+//!
+//! There is deliberately no eye-follow headlamp: a flat player-locked fill washed out
+//! the very shadows this rig exists to cast. The caged lantern remains the only
+//! discretionary player-following light, so spending the last one still has a cost.
 
 use bevy::prelude::*;
 use observed_content::ArchitectureRegister;
 use observed_hex::hex_origin;
 use observed_style::{self as style};
 
-use super::HexWfcKeyLight;
+use super::{HexPractical, HexWfcKeyLight};
 use crate::GameState;
 use crate::hex_wfc::sim::{EYE_OFFSET, HexWfcRuntime};
 use crate::view::components::GameCam;
 
+/// Per-tile fill fixtures allowed to cast shadows at once (the district key casts on top
+/// of this). Bounded because point-light shadows are six-face cubemaps; kept small to
+/// hold GPU margin while still giving real cast-shadow contrast around the runner.
+const PRACTICAL_SHADOW_BUDGET: usize = 4;
+
 const BLEND_RATE: f32 = 2.5;
-/// Hex cells are much tighter than the teleport-era rooms that established the
-/// style palette's absolute lumen values. Keep the semantic colour/cone/range,
-/// but scale the practical key so a nearby wall retains material contrast.
-const HEX_KEY_INTENSITY_SCALE: f32 = 0.000_01;
+/// Hex cells are somewhat tighter than the teleport-era rooms that established the
+/// style palette's absolute lumen values, so the shadow-casting key is trimmed a little
+/// to keep a nearby wall in material contrast without blowing out. Value sits in the
+/// proven `full_wfc` key range (`0.16..=0.68`); the per-cell practicals in
+/// [`super::shell`] now carry the interior read the deleted eye headlamp used to fake.
+const HEX_KEY_INTENSITY_SCALE: f32 = 0.62;
 
 /// Spawn the complete semantic rig at its final treatment for the initial cell.
 ///
@@ -33,8 +49,8 @@ pub(super) fn spawn_rig(
     current: observed_facility::hex_wfc::HexCoord,
     player: &observed_match::hex_wfc::HexPlayerState,
 ) {
-    let (key_translation, key_rotation) = key_pose(current);
     let _ = player;
+    let (key_translation, key_rotation) = key_pose(current);
     commands.spawn((
         HexWfcKeyLight,
         DespawnOnExit(GameState::HexWfc),
@@ -79,6 +95,60 @@ pub(in crate::hex_wfc) fn sync_camera(
         transform.translation = eye;
         transform.rotation = rotation;
     }
+}
+
+/// Enable shadows on the [`HexPractical`] downlights nearest the runner and disable the
+/// rest — the lighting lab's "per-place shadow-casting staging". Recomputed only when the
+/// runner's cell changes, so cast-shadow contrast follows the player across every tile
+/// without paying for a shadow map on all ~thousands of fixtures.
+pub(in crate::hex_wfc) fn sync_practical_shadow_budget(
+    runtime: Res<HexWfcRuntime>,
+    mut last_cell: Local<Option<observed_facility::hex_wfc::HexCoord>>,
+    mut shadowed: Local<Vec<Entity>>,
+    mut practicals: Query<(Entity, &HexPractical, &mut PointLight)>,
+) {
+    let current = runtime.local().cell;
+    if *last_cell == Some(current) {
+        return;
+    }
+    *last_cell = Some(current);
+    let focus = runtime.local().position;
+
+    // Nearest fixtures by squared distance to the runner (small budget → cheap select).
+    let mut ranked: Vec<(f32, Entity)> = practicals
+        .iter()
+        .map(|(entity, practical, _)| {
+            (
+                Vec3::from_array(hex_origin(practical.0)).distance_squared(focus),
+                entity,
+            )
+        })
+        .collect();
+    ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let want: Vec<Entity> = ranked
+        .into_iter()
+        .take(PRACTICAL_SHADOW_BUDGET)
+        .map(|(_, entity)| entity)
+        .collect();
+
+    // Turn off any fixture that was casting and is no longer chosen, then turn on the
+    // chosen set. Guarded assignments keep change detection quiet on the steady state.
+    for entity in std::mem::take(&mut *shadowed) {
+        if !want.contains(&entity)
+            && let Ok((_, _, mut light)) = practicals.get_mut(entity)
+            && light.shadows_enabled
+        {
+            light.shadows_enabled = false;
+        }
+    }
+    for &entity in &want {
+        if let Ok((_, _, mut light)) = practicals.get_mut(entity)
+            && !light.shadows_enabled
+        {
+            light.shadows_enabled = true;
+        }
+    }
+    *shadowed = want;
 }
 
 pub(in crate::hex_wfc) fn sync_lighting_and_atmosphere(
@@ -193,6 +263,7 @@ mod tests {
     fn camera_is_primed_to_the_authoritative_eye_pose() {
         let player = observed_match::hex_wfc::HexPlayerState {
             id: PlayerId(0),
+            team: observed_core::TeamId(0),
             cell: observed_facility::hex_wfc::HexCoord {
                 q: 2,
                 r: 3,
@@ -201,8 +272,6 @@ mod tests {
             position: Vec3::new(4.0, 8.5, -2.0),
             yaw: 0.7,
             pitch: -0.2,
-            climb_target: None,
-            transit_target: None,
             escaped: false,
         };
         let mut camera = Transform::default();

@@ -1,6 +1,6 @@
 //! Local input capture for the hex match: keyboard/mouse/gamepad into a sanitized
 //! [`PlayerIntent`]. The hex match is a spawn→exit traversal race — movement, look,
-//! sprint, jump (climb up), and interact-held (climb down / ramp descend).
+//! sprint, ordinary jump, and interaction.
 
 use bevy::input::gamepad::GamepadButton;
 use bevy::input::mouse::AccumulatedMouseMotion;
@@ -60,14 +60,13 @@ pub(super) fn map_input(
                 axis(bindings.look_up, bindings.look_down) * KEY_LOOK_STEP,
             )
             + gamepad_intent.look,
-        // Holding Space climbs upward in an authored shaft; holding Ctrl descends.
+        // Jump always uses the ordinary physical controller. Vertical routes
+        // are walked on authored ramps and stairs.
         jump_pressed: keyboard.pressed(bindings.jump) || gamepad_intent.jump_pressed,
         sprint_held: keyboard.pressed(bindings.sprint)
             || keyboard.pressed(bindings.sprint_alt)
             || gamepad_intent.sprint_held,
-        interact_held: keyboard.pressed(KeyCode::ControlLeft)
-            || keyboard.pressed(bindings.interact)
-            || gamepad_intent.interact_held,
+        interact_held: keyboard.pressed(bindings.interact) || gamepad_intent.interact_held,
         ..Default::default()
     };
     intent.actions = HexActionButtons {
@@ -97,8 +96,13 @@ pub(super) fn map_input(
 pub(super) fn mode_hotkeys(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut next: ResMut<NextState<GameState>>,
+    runtime: Option<Res<super::sim::HexWfcRuntime>>,
+    mut lan: ResMut<crate::lan::LanRuntime>,
 ) {
     if keyboard.just_pressed(KeyCode::Escape) {
+        if runtime.is_some_and(|runtime| runtime.networked) {
+            lan.leave();
+        }
         next.set(GameState::MainMenu);
     }
 }

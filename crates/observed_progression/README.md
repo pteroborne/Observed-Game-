@@ -1,12 +1,25 @@
-# observed_progression
+# `observed_progression`
 
-This production crate manages client cosmetics, profiles, matchmaking status, and multiplayer game lobbies.
+The **`observed_progression`** production crate provides profile progression, cosmetic unlocks, matchmaking queue management, and session lobby state machines.
 
-## Module Structure
-- **[`lib.rs`](src/lib.rs):** Crate exports.
-- **[`progression.rs`](src/progression.rs):** Handles profile levels, character cosmetics, equipment unlocks, and serialization formats.
-- **[`session.rs`](src/session.rs):** Handles matchmaking queues, local player allocations, team distributions, lobby ready checks, and rematch states.
+All progression and cosmetic data is strictly orthogonal to simulation mechanics: profiles and cosmetics never alter gameplay stats or collision boundaries.
 
-## Audit Notes
-- **Bloat:** `session.rs` is over 1,000 lines long. It concurrently manages connection states, matchmaking errors, lobby assignments, and game configurations. It is recommended to split it into `session/matchmaking.rs` and `session/lobby.rs`.
-- **Overlap:** None.
+---
+
+## Submodules
+
+- **[`progression`](src/progression.rs)**: Character profile state (`Profile`), level calculations, XP accrual, cosmetic unlock criteria, slot loadouts, and string serialization.
+- **[`session`](src/session/mod.rs)**:
+  - **[`lobby`](src/session/lobby.rs)**: Session lifecycle state machine (`SessionPhase`: Lobby, Countdown, InMatch, ReconnectGrace, PostMatch, Closed), readiness checks, host migration, and launch manifests (`LaunchManifest`).
+  - **[`matchmaking`](src/session/matchmaking.rs)**: Rating calculations, skill-window matchmaking queues, region pairing (`East`/`West`), and ticket pairing.
+  - **[`connection`](src/session/connection.rs)**: Client connection states and account mapping.
+  - **[`lan`](src/session/lan.rs)**: Pure four-seat 2v2 LAN lobby with stable `PlayerId`/`TeamId` ownership, team requests, bot fill/takeover, ready countdown, reconnect reservations, late joins, and post-match return.
+
+---
+
+## Testing
+
+Run unit tests:
+```bash
+cargo test -p observed_progression
+```

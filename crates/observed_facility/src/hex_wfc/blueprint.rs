@@ -76,21 +76,8 @@ pub struct StampedBlueprint {
 /// the manifest projector: callers must not infer a room wing from its door
 /// mask because boundary-adjusted stamps deliberately seal out-of-grid faces.
 #[must_use]
-pub fn blueprint_cell_archetype(role: RoomRole, cell_index: usize) -> Option<&'static str> {
-    let archetypes: &[&str] = match role {
-        RoomRole::Start
-        | RoomRole::Exit
-        | RoomRole::TeleportRelay
-        | RoomRole::Keystone
-        | RoomRole::Monitor
-        | RoomRole::Recovery => &["room_single"],
-        RoomRole::Decision => &["room_tri_a", "room_tri_b", "room_tri_c"],
-        RoomRole::DecoherenceFork => &["room_fork_a", "room_fork_b", "room_fork_c", "room_fork_d"],
-        RoomRole::AnchorCheckpoint => &["room_double_nw", "room_double_se"],
-        RoomRole::DualStation => &["room_double_west", "room_double_east"],
-        RoomRole::GuardianControl => &["room_atrium_lower", "room_atrium_upper"],
-    };
-    archetypes.get(cell_index).copied()
+pub fn blueprint_cell_archetype(_role: RoomRole, _cell_index: usize) -> Option<&'static str> {
+    Some("sanctuary")
 }
 
 impl StampedBlueprint {

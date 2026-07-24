@@ -1,32 +1,19 @@
-//! Deterministic objective bot: emits the same `PlayerIntent` a client would,
-//! routing through the facility A* and physically steering through hex centres,
-//! walking ramps and climbing shafts to reach the exit.
+//! Deterministic objective bot. It emits the same `PlayerIntent` as a client
+//! and physically walks halls, ramps, and grounded switchback stairs.
 
 use std::f32::consts::PI;
 
 use glam::{Vec2, Vec3};
 use observed_core::PlayerId;
-use observed_facility::hex_wfc::{HexArchetype, HexCoord, HexFace, HexPlacement};
-use observed_hex::hex_origin;
+use observed_facility::hex_wfc::{HexArchetype, HexCoord, HexFace, HexPlacement, PortClass};
+use observed_hex::{TILE_LEVEL_HEIGHT, hex_origin};
 use player_input::PlayerIntent;
 
-use super::HexWfcMatch;
-use super::movement::{face_plan_dir, shaft_target};
+use super::movement::face_plan_dir;
+use super::{FLOOR_SLAB_TOP, HexWfcMatch};
 
-/// How close (metres, plan view) the bot steers toward a shaft column's centre
-/// before it commits the climb press. Kept just inside the movement layer's
-/// `SHAFT_CLIMB_RADIUS` so a committed press always takes.
-const SHAFT_ALIGN_RADIUS: f32 = 4.5;
-
-/// Consecutive no-progress ticks (reported by the step loop as `stuck_ticks`)
-/// before the bot starts a sideways unstick sweep. Set clear of the ticks a
-/// body legitimately spends accelerating off a hand-off so normal motion never
-/// trips it, while a true jam (which never progresses) always does.
-const STUCK_ENTER_TICKS: u16 = 12;
-/// How many ticks each unstick sweep holds one side before reversing, so a bot
-/// that guessed the blocked side reliably tries the other.
+const STUCK_ENTER_TICKS: u16 = 45;
 const STUCK_SWEEP_TICKS: u16 = 24;
-/// Sideways and forward components of the unstick sweep intent.
 const UNSTICK_STRAFE: f32 = 0.9;
 const UNSTICK_FORWARD: f32 = 0.45;
 
@@ -38,11 +25,6 @@ impl HexWfcMatch {
             return PlayerIntent::default();
         };
         if player.escaped {
-            return PlayerIntent::default();
-        }
-        // A scripted shaft transit — vertical climb or the lateral step off a
-        // landing — owns the body; keep hands off until it completes.
-        if player.climb_target.is_some() || player.transit_target.is_some() {
             return PlayerIntent::default();
         }
         let Some(target) = self.bot_objective_cell(id) else {
@@ -57,25 +39,26 @@ impl HexWfcMatch {
         let Some(&next) = route.cells.get(1) else {
             return PlayerIntent::default();
         };
-        let base = if next.level == player.cell.level {
+        let base = if next.level != player.cell.level {
+            self.vertical_command(player.cell, player.yaw, player.position, next)
+        } else if let Some(command) =
+            self.finish_stair_command(player.cell, player.yaw, player.position)
+        {
+            command
+        } else if let Some(command) =
+            self.stair_lateral_command(player.cell, next, player.yaw, player.position)
+        {
+            command
+        } else {
             steer_toward(
                 player.yaw,
                 player.position,
                 Vec3::from_array(hex_origin(next)),
             )
-        } else {
-            self.vertical_command(player.cell, player.yaw, player.position, next)
         };
         self.apply_unstick(id, base)
     }
 
-    /// Reactive wall-slide. Junction pylons, wall corners, and off-centre door
-    /// approaches can leave a bot pushing into geometry with no forward progress
-    /// — most often after a deterministic scripted glide deposits it dead on an
-    /// axis. When the step loop reports a body wedged for several ticks
-    /// (`stuck_ticks`), override its heading with a sideways sweep — alternating
-    /// sides so it always finds the open way around — while keeping the target
-    /// look direction, so it slides off the obstacle and resumes routing.
     fn apply_unstick(&self, id: PlayerId, mut intent: PlayerIntent) -> PlayerIntent {
         let stuck = self.stuck_ticks.get(&id).copied().unwrap_or(0);
         if stuck >= STUCK_ENTER_TICKS {
@@ -89,8 +72,6 @@ impl HexWfcMatch {
         intent
     }
 
-    /// The bot's current destination cell. The hex match is a pure spawn→exit
-    /// race, so the objective is always the exit rhombus corner.
     #[must_use]
     pub(crate) fn bot_objective_cell(&self, id: PlayerId) -> Option<HexCoord> {
         let player = self.players.get(&id)?;
@@ -105,37 +86,251 @@ impl HexWfcMatch {
         next: HexCoord,
     ) -> PlayerIntent {
         let up = next.level > cell.level;
-        let face = if up { HexFace::Up } else { HexFace::Down };
-        // A shaft is climbed; a ramp is walked. `shaft_target` only fires on a
-        // matched `ShaftOpen` pair, so its absence here means a ramp bond.
-        if shaft_target(self.facility.config, &self.facility.placements, cell, face).is_some() {
-            let center = Vec3::from_array(hex_origin(cell));
-            if plan_distance(center, position) > SHAFT_ALIGN_RADIUS {
-                return steer_toward(yaw, position, center);
-            }
-            return PlayerIntent {
-                jump_pressed: up,
-                interact_held: !up,
-                ..PlayerIntent::default()
-            };
-        }
         let placement = &self.facility.placements[&cell];
+        let class = if up { placement.up } else { placement.down };
+        if class == PortClass::ShaftOpen {
+            let feet = position.y - self.traversal_config.half_height;
+            let floor = hex_origin(cell)[1] + FLOOR_SLAB_TOP;
+            let base = if up && feet < floor - 0.15 && cell.level > 0 {
+                HexCoord {
+                    level: cell.level - 1,
+                    ..cell
+                }
+            } else if up || feet > floor + 0.35 {
+                cell
+            } else {
+                next
+            };
+            return stair_command(base, yaw, position, self.traversal_config.half_height, up);
+        }
+
         let dir = ramp_walk_dir(placement, up);
         if dir == Vec2::ZERO {
-            // Degenerate ramp cell (should not occur on a solved route); fall
-            // back to holding centre rather than emitting a null heading.
             return steer_toward(yaw, position, Vec3::from_array(hex_origin(cell)));
         }
         let aim = position + Vec3::new(dir.x, 0.0, dir.y) * 12.0;
         steer_toward(yaw, position, aim)
     }
+
+    /// Continue a stair flight after height rounding has changed the logical
+    /// cell but before the capsule's feet reach the destination deck.
+    fn finish_stair_command(
+        &self,
+        cell: HexCoord,
+        yaw: f32,
+        position: Vec3,
+    ) -> Option<PlayerIntent> {
+        let placement = self.facility.placements.get(&cell)?;
+        if placement.archetype != HexArchetype::Shaft {
+            return None;
+        }
+        let feet = position.y - self.traversal_config.half_height;
+        let origin = Vec3::from_array(hex_origin(cell));
+        let floor = origin.y + FLOOR_SLAB_TOP;
+        let local = Vec2::new(position.x - origin.x, position.z - origin.z);
+        let on_incoming_flight = local.x > -4.7
+            && local.x < 4.2
+            && local.y > -3.3
+            && local.y < -0.6
+            && feet < floor + 0.75;
+        if (feet < floor - 0.15 || on_incoming_flight) && cell.level > 0 {
+            let base = HexCoord {
+                level: cell.level - 1,
+                ..cell
+            };
+            Some(stair_command(
+                base,
+                yaw,
+                position,
+                self.traversal_config.half_height,
+                true,
+            ))
+        } else if feet > floor + 0.35 {
+            Some(stair_command(
+                cell,
+                yaw,
+                position,
+                self.traversal_config.half_height,
+                false,
+            ))
+        } else {
+            None
+        }
+    }
+
+    /// Follow the solid perimeter deck between a stair landing and its lateral
+    /// door. A centre-to-centre heading would cut directly across the stairwell.
+    fn stair_lateral_command(
+        &self,
+        cell: HexCoord,
+        next: HexCoord,
+        yaw: f32,
+        position: Vec3,
+    ) -> Option<PlayerIntent> {
+        if self.facility.placements.get(&cell)?.archetype != HexArchetype::Shaft {
+            return None;
+        }
+        let face = HexFace::LATERAL
+            .into_iter()
+            .find(|&face| self.facility.config.grid().neighbor(cell, face) == Some(next))?;
+        let target = match face {
+            HexFace::East => Vec2::new(5.5, 0.0),
+            HexFace::SouthEast => Vec2::new(3.0, 5.2),
+            HexFace::SouthWest => Vec2::new(-3.0, 5.2),
+            HexFace::West => Vec2::new(-5.5, 0.0),
+            HexFace::NorthWest => Vec2::new(-3.0, -5.2),
+            HexFace::NorthEast => Vec2::new(3.0, -5.2),
+            HexFace::Up | HexFace::Down => unreachable!(),
+        };
+        let origin = Vec3::from_array(hex_origin(cell));
+        let local = Vec2::new(position.x - origin.x, position.z - origin.z);
+        let outward = face_plan_dir(face);
+        let across = Vec2::new(-outward.y, outward.x);
+        let crossed_aligned_threshold = local.dot(outward) >= target.dot(outward) - 0.1
+            && (local.dot(across) - target.dot(across)).abs() < 1.0;
+        if local.distance(target) < 0.9 || crossed_aligned_threshold {
+            return Some(walk_toward(
+                yaw,
+                position,
+                Vec3::from_array(hex_origin(next)),
+            ));
+        }
+        // A bot arriving from below first clears the stair opening along the
+        // north and east perimeter. This keeps later southbound motion from
+        // being mistaken for another pass along the incoming flight.
+        let waypoint = if local.y < -4.3 {
+            Vec2::new(local.x.clamp(-3.0, 3.0), -3.8)
+        } else if local.y < -3.25 && local.x < 5.4 && target.y > -0.75 {
+            Vec2::new(5.7, -4.0)
+        } else if face == HexFace::East && local.x < -4.0 && local.y < 3.8 {
+            Vec2::new(-4.5, 4.1)
+        } else if face == HexFace::East && local.x < 5.0 && local.y < 3.8 {
+            Vec2::new(3.0, 4.1)
+        } else if face == HexFace::East && local.x < 5.2 {
+            Vec2::new(5.5, 4.1)
+        } else if face == HexFace::SouthEast && local.x < -4.0 && local.y < 3.8 {
+            Vec2::new(-4.5, 4.1)
+        } else if face == HexFace::SouthWest && local.x > 4.8 && local.y < 3.8 {
+            Vec2::new(5.3, 4.1)
+        } else if local.x > 5.2 && local.y < -0.2 && target.y > -0.75 {
+            Vec2::new(5.7, -0.3)
+        // The guarded stair opening occupies this rectangle. When a direct
+        // chord would cross it, choose the shortest safe corner around it.
+        } else if segment_crosses_rect(local, target, Vec2::new(-4.0, -3.5), Vec2::new(5.2, -0.75))
+        {
+            [
+                Vec2::new(-4.5, -4.0),
+                Vec2::new(5.7, -4.0),
+                Vec2::new(-4.5, -0.3),
+                Vec2::new(5.7, -0.3),
+            ]
+            .into_iter()
+            .filter(|corner| {
+                !segment_crosses_rect(local, *corner, Vec2::new(-4.0, -3.5), Vec2::new(5.2, -0.75))
+                    && !segment_crosses_rect(
+                        *corner,
+                        target,
+                        Vec2::new(-4.0, -3.5),
+                        Vec2::new(5.2, -0.75),
+                    )
+            })
+            .min_by(|a, b| {
+                (local.distance(*a) + a.distance(target))
+                    .total_cmp(&(local.distance(*b) + b.distance(target)))
+            })
+            .unwrap_or(target)
+        } else {
+            target
+        };
+        Some(walk_toward(
+            yaw,
+            position,
+            origin + Vec3::new(waypoint.x, 0.0, waypoint.y),
+        ))
+    }
 }
 
-/// The plan-view heading that walks a ramp cell toward `next`. `RampUp` rises
-/// toward `d = opposite(entrance)`; `RampHead` tops out toward its exit face
-/// `d`. Ascending walks toward `d`, descending back toward `opposite(d)`.
+fn segment_crosses_rect(start: Vec2, end: Vec2, min: Vec2, max: Vec2) -> bool {
+    let delta = end - start;
+    let mut enter: f32 = 0.0;
+    let mut exit: f32 = 1.0;
+    for (origin, direction, low, high) in [
+        (start.x, delta.x, min.x, max.x),
+        (start.y, delta.y, min.y, max.y),
+    ] {
+        if direction.abs() < 1.0e-6 {
+            if origin < low || origin > high {
+                return false;
+            }
+            continue;
+        }
+        let a = (low - origin) / direction;
+        let b = (high - origin) / direction;
+        enter = enter.max(a.min(b));
+        exit = exit.min(a.max(b));
+        if enter > exit {
+            return false;
+        }
+    }
+    exit >= 0.0 && enter <= 1.0
+}
+
+/// Walk the generated switchback using waypoints on its real collision
+/// surfaces. Height selects the current flight; no position is written here.
+fn stair_command(
+    base: HexCoord,
+    yaw: f32,
+    position: Vec3,
+    half_height: f32,
+    up: bool,
+) -> PlayerIntent {
+    let origin = Vec3::from_array(hex_origin(base));
+    let rise = position.y - half_height - origin.y;
+    let point = |x: f32, z: f32| origin + Vec3::new(x, 0.0, z);
+    let local = Vec2::new(position.x - origin.x, position.z - origin.z);
+    let low_start = point(-3.5, 2.125);
+
+    let target = if up {
+        if rise < 0.8 && plan_distance(position, low_start) > 0.75 {
+            if local.y < 3.4 {
+                if local.x >= 0.0 {
+                    point(5.5, 3.75)
+                } else {
+                    point(-3.5, 3.75)
+                }
+            } else if (local.x + 3.5).abs() > 0.4 {
+                point(-3.5, 3.75)
+            } else {
+                low_start
+            }
+        } else if rise < 3.7 {
+            point(3.5, 2.125)
+        } else if rise < 4.3 && plan_distance(position, point(4.25, -2.125)) > 0.75 {
+            point(4.25, -2.125)
+        } else if rise < TILE_LEVEL_HEIGHT - 0.35 || local.x > -4.45 {
+            point(-4.5, -2.125)
+        } else {
+            point(-4.5, -3.75)
+        }
+    } else if rise > TILE_LEVEL_HEIGHT - 0.35 && plan_distance(position, point(-4.1, -2.125)) > 0.75
+    {
+        point(-4.1, -2.125)
+    } else if rise > 4.3 {
+        point(3.5, -2.125)
+    } else if plan_distance(position, point(4.25, 2.125)) > 0.75 {
+        point(4.25, 2.125)
+    } else {
+        point(-3.5, 2.125)
+    };
+    walk_toward(yaw, position, target)
+}
+
+/// Plan heading that walks a two-cell ramp in the requested direction.
 fn ramp_walk_dir(placement: &HexPlacement, up: bool) -> Vec2 {
-    let Some(open) = HexFace::LATERAL.into_iter().find(|&f| placement.is_open(f)) else {
+    let Some(open) = HexFace::LATERAL
+        .into_iter()
+        .find(|&face| placement.is_open(face))
+    else {
         return Vec2::ZERO;
     };
     let rise = match placement.archetype {
@@ -143,8 +338,7 @@ fn ramp_walk_dir(placement: &HexPlacement, up: bool) -> Vec2 {
         HexArchetype::RampHead => open,
         _ => open,
     };
-    let walk = if up { rise } else { rise.opposite() };
-    face_plan_dir(walk)
+    face_plan_dir(if up { rise } else { rise.opposite() })
 }
 
 fn plan_distance(a: Vec3, b: Vec3) -> f32 {
@@ -152,13 +346,27 @@ fn plan_distance(a: Vec3, b: Vec3) -> f32 {
 }
 
 fn steer_toward(yaw: f32, position: Vec3, target: Vec3) -> PlayerIntent {
+    steer_toward_with_speed(yaw, position, target, true, 1.0)
+}
+
+fn walk_toward(yaw: f32, position: Vec3, target: Vec3) -> PlayerIntent {
+    steer_toward_with_speed(yaw, position, target, false, 0.35)
+}
+
+fn steer_toward_with_speed(
+    yaw: f32,
+    position: Vec3,
+    target: Vec3,
+    sprint: bool,
+    movement_scale: f32,
+) -> PlayerIntent {
     let direction = target - position;
     let desired_yaw = direction.x.atan2(-direction.z);
     let look = wrap_angle(desired_yaw - yaw).clamp(-0.25, 0.25);
     PlayerIntent {
-        movement: Vec2::Y,
+        movement: Vec2::Y * movement_scale,
         look: Vec2::new(look, 0.0),
-        sprint_held: true,
+        sprint_held: sprint,
         ..PlayerIntent::default()
     }
 }

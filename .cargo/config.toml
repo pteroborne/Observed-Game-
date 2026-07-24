@@ -1,0 +1,15 @@
+[build]
+# One absolute cache shared by the primary checkout and sibling worktrees.
+target-dir = "O:/Observed 2/target"
+
+[target.x86_64-pc-windows-msvc]
+# Rust ships rust-lld with this toolchain; it is substantially faster than the
+# default MSVC linker for Bevy's large dependency graph.
+linker = "rust-lld.exe"
+
+[alias]
+# Dynamic Bevy linking is a development-only optimization. Keeping it behind
+# aliases avoids accidentally shipping a binary that requires bevy_dylib.
+dev-run = "run --features bevy/dynamic_linking"
+dev-test = "test --workspace --features bevy/dynamic_linking"
+dev-clippy = "clippy --workspace --all-targets --features bevy/dynamic_linking -- -D warnings"

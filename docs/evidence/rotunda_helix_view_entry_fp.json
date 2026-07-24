@@ -1,0 +1,8 @@
+{
+  "tile_id": "rotunda",
+  "view_mode": "firstperson",
+  "render_mode": "lit",
+  "register": 4,
+  "hide_menu": false,
+  "output_image": "docs/evidence/rotunda_helix_entry_fp.png"
+}

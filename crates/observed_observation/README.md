@@ -1,17 +1,29 @@
-# observed_observation
+# `observed_observation`
 
-This production crate models the grid-based observation and decoherence graph. It tracks client visibility coverage across logical rooms and determines which connections rewire when unobserved.
+The **`observed_observation`** production crate establishes the foundational observation and decoherence graph model for Observed 2.
 
-## Core Rules & Logic
-- **Room Spacing:** Sets bounds definitions and distances for the room grid (`ROWS`, `COLS`, `ROOM_HALF`, `ROOM_SPACING`).
-- **Observation:** Rooms occupied by players freeze their four doorways, pinning the connection path.
-- **Decoherence:** Unpinned doorways undergo dynamic, deterministic re-matching upon query, creating the shifting layout mechanic.
+It defines how player presence freezes spatial connections ("observe-to-freeze") while unobserved, unpinned doorways undergo deterministic, seeded rewires upon decoherence pulses.
 
-## Module Structure
-- **[`lib.rs`](src/lib.rs):** Defines `ObservationWorld`, `Side`, `DoorId`, `Door`, and contains the grid alignment calculations.
+---
 
-## Audit Notes
-- **Bloat:** None.
-- **Overlap:**
-  - `lib.rs:L80` contains a duplicate private implementation of the `SplitMix` PRNG.
-  - `Side` duplicates the N/E/S/W direction coordinates defined as `observed_facility::Cardinal`.
+## Core Engine: `ObservationWorld`
+
+- **`authored()`**: Constructs the initial 3×3 room grid lattice with 4 default player positions.
+- **`is_pinned(door)`**: Checks if a doorway or its connecting partner is frozen by player observation.
+- **`decohere()`**: Deterministically rematches unobserved doorways using `SplitMix`.
+- **`traverse(player, side)`**: Moves a player along their room's connected doorway.
+
+---
+
+## Submodules
+
+- **[`contention`](src/contention.rs)**: Submodule managing doorway contention, multi-player observation overlaps, and solvability guards.
+
+---
+
+## Testing
+
+Run unit tests:
+```bash
+cargo test -p observed_observation
+```

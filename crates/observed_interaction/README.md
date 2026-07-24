@@ -1,14 +1,23 @@
-# observed_interaction
+# `observed_interaction`
 
-This production crate manages carried equipment and player-world interactions. It models physical inventories, deployment, and timed control inputs.
+The **`observed_interaction`** production crate provides pure, engine-independent state machines for equipment management and interactive mechanisms in Observed 2.
 
-## Module Structure
-- **[`lib.rs`](src/lib.rs):** Defines API entry points.
-- **[`equipment.rs`](src/equipment.rs):** Governing portable item slots, cable spools, structural jacks, batteries, carrying coordinates, and drop behaviors.
-- **[`src/interaction/model.rs`](src/interaction/model.rs):** Pure data structs representing active actors, target sockets, interaction policies, and event states.
-- **[`src/interaction/engine.rs`](src/interaction/engine.rs):** Deterministic state machine resolving ticks for activations, holds, contention over a single target, and quorum overrides.
-- **[`src/interaction/mod.rs`](src/interaction/mod.rs):** Module setup and exports.
+It models carried items (batteries, structural jacks, light spools) and deterministic tick-based interactions (activations, hold channels, item contention, co-op quorum gates, and interruptions).
 
-## Audit Notes
-- **Bloat:** `equipment.rs` (876 lines) and `engine.rs` (530 lines) are large, but their segregation of data (`model.rs`) from transitions (`engine.rs`) conforms strictly to pure simulation guidelines.
-- **Overlap:** None.
+---
+
+## Submodules
+
+- **[`equipment`](src/equipment.rs)**: Persistent equipment models (`EquipmentItem`, `EquipmentState`: Carried, Deployed, Socketed, Ground), inventory slots, cable spools, and drop/pickup physics bounds.
+- **[`interaction`](src/interaction/mod.rs)**:
+  - **[`model`](src/interaction/model.rs)**: Data types for interaction targets, sockets, hold policies (`Instant`, `Hold`, `Quorum`), and actor states.
+  - **[`engine`](src/interaction/engine.rs)**: Deterministic tick resolution engine for player interactions, handling exclusive target contention, hold timers, and interruptions.
+
+---
+
+## Testing
+
+Run unit tests:
+```bash
+cargo test -p observed_interaction
+```

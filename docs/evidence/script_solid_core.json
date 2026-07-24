@@ -1,0 +1,15 @@
+{
+  "tile_id": "tower_solid_core",
+  "composition": "single_tile",
+  "view_mode": "orbit",
+  "camera_target": [0.0, 4.0, 0.0],
+  "orbit_yaw": 0.785,
+  "orbit_pitch": 0.45,
+  "radius": 24.0,
+  "height": 12.0,
+  "strong_wireframe": true,
+  "dev_mode": true,
+  "cross_section": false,
+  "hide_menu": true,
+  "output_image": "docs/evidence/tile_solid_core.png"
+}

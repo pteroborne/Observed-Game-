@@ -1,0 +1,13 @@
+{
+  "tile_id": "rotunda",
+  "view_mode": "orbit",
+  "render_mode": "lit",
+  "register": 4,
+  "cross_section": true,
+  "orbit_yaw": 0.9,
+  "orbit_pitch": 0.85,
+  "radius": 26.0,
+  "height": 12.0,
+  "camera_target": [0.0, 4.0, 0.0],
+  "output_image": "docs/evidence/rotunda_helix_lit_cutaway.png"
+}

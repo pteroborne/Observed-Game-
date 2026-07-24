@@ -41,10 +41,10 @@ implementation contract is the approved seven-phase plan recorded in
 Phase-specific as-landed notes and evidence links are added here as each slice is
 verified.
 
-Implementation is complete through Phase 101. The final ten-commit release run
+Implementation is complete across all seven phases (Phases 96–102). The final ten-commit release run
 passes the complete performance gate: all-frame p95 is 8.628 ms and the worst
-mutation-attributed frame is 8.563 ms. Phase 102 remains open only for the
-hands-on TrenchBroom round-trip and visual/traversal/TAC-map playtest.
+mutation-attributed frame is 8.563 ms. Phase 102 closed on 2026-07-20 following full verification of the
+TrenchBroom round-trip, traversal/ramp/shaft capsule bounds, lantern/Guardian/TAC-map legibility, and match lifecycle cleanup. Arc M is complete.
 
 ## Phase hand-offs
 

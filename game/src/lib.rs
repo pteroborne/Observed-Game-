@@ -11,6 +11,7 @@ pub mod hallway;
 pub mod hex_wfc;
 pub mod items;
 pub mod keystones;
+mod lan;
 mod layout;
 pub mod map_catalog;
 pub mod map_validation;
@@ -42,6 +43,7 @@ pub enum GameState {
     Splash,
     MainMenu,
     Loadout,
+    LanBrowser,
     Lobby,
     /// [DEPRECATED] Legacy place-based match system. Sunsetted in favor of GameState::FullWfc.
     /// Kept only as a regression testing fixture for unit/integration tests.
@@ -70,6 +72,7 @@ impl Plugin for ObservedGamePlugin {
             .init_resource::<crate::flow::ActiveMatchSeed>()
             .insert_resource(crate::flow::load_career())
             .insert_resource(crate::settings::load_settings())
+            .insert_resource(crate::lan::LanRuntime::new())
             .insert_resource(crate::view::components::DebugHud(
                 crate::evidence::debug_hud_enabled(),
             ))

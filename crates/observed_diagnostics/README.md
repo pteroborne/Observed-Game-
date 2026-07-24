@@ -1,14 +1,24 @@
-# observed_diagnostics
+# `observed_diagnostics`
 
-Pure, engine-independent schemas and checks for visual diagnostics.
+The **`observed_diagnostics`** production crate provides pure, engine-independent schemas and rule checks for automated visual audits.
 
-This crate turns rendered game state into agent-readable evidence:
+It converts rendered game snapshots into structured findings that AI agents and test suites can inspect to catch legibility and visual regressions.
 
-- geometry footprints and preview AABBs for overlap checks
-- threshold frame/leaf/light/label counts keyed by stable threshold IDs
-- light and material brightness records for the legibility contract
-- TAC-map expected/rendered element counts
-- camera/monitor luminance checks for black-screen regressions
+---
 
-It deliberately has no Bevy dependency. Bevy-facing adapters live in the game crate and
-serialize snapshots into this crate's `DiagnosticSnapshot` format.
+## Diagnostic Checks
+
+- **Geometry Footprints**: AABB overlap verification (`check_geometry`) to detect colliding room/corridor bounding boxes.
+- **Threshold Integrity**: Ensures visible thresholds have rendered frames, door leaves, point lights, and control-colored status indicators (`check_thresholds`).
+- **Lighting & Emissive Luminance**: Verifies light intensities and material emission levels meet Legibility Contract minimum thresholds (`check_lights`, `check_materials`).
+- **Tactical Map (Tac-Map)**: Validates rendered room, route, keystone, rival, and player marker element counts match simulation state (`check_tac_map`).
+- **Monitors & Displays**: Detects black-screen or hidden monitor regressions (`check_monitors`).
+
+---
+
+## Testing
+
+Run unit tests:
+```bash
+cargo test -p observed_diagnostics
+```

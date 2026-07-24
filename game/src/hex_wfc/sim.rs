@@ -1,15 +1,11 @@
-//! Bevy adapter around the pure authoritative hex-facility match.
-//!
-//! Pure simulation lives in `observed_match::hex_wfc`; this module owns only the Bevy
-//! resource wrapper, match construction (tile-prototype corpus + nearby-solvable seed
-//! search), and the fixed-step command threading. It reads simulation crates only and
-//! never imports presentation (enforced by `arch_check::hex_sim_never_imports_presentation`).
+//! Bevy wrapper, deterministic construction, and fixed-step command threading for the
+//! pure authoritative hex-facility match.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
 use bevy::prelude::*;
-use observed_authoring::{CompiledTileCatalog, Manifest, RoomPrototype, TilePrototype};
+use observed_authoring::{RoomPrototype, RuntimeHexCatalog, TilePrototype};
 use observed_content::ArchitectureRegister;
 use observed_core::PlayerId;
 use observed_facility::hex_wfc::{HexCoord, HexWfcConfig};
@@ -21,8 +17,7 @@ use player_input::PlayerIntent;
 use crate::flow::ActiveMatchSeed;
 
 pub(super) const LOCAL_PLAYER: PlayerId = PlayerId(0);
-/// Camera eye rise above the simulation body centre (metres). Matches the full-WFC
-/// adapter's first-person eye placement.
+/// Camera eye rise above the simulation body centre, in metres.
 pub(super) const EYE_OFFSET: f32 = 0.70;
 
 /// One-shot + held local input for the current tick, sanitized into a [`PlayerIntent`].
@@ -31,9 +26,7 @@ pub(super) struct HexWfcIntent {
     pub intent: PlayerIntent,
     pub actions: HexActionButtons,
     pub toggle_map: bool,
-    /// One-shot request to browse the survivor sketch one discovered floor up
-    /// (`1`) or down (`-1`). Device adapters write this; the fixed-step runtime
-    /// remains the sole owner of map state.
+    /// One-shot survivor-map floor browse request (`1` up, `-1` down).
     pub browse_map_level: i8,
 }
 
@@ -41,9 +34,7 @@ pub(super) struct HexWfcIntent {
 pub struct HexWfcRuntime {
     pub match_state: HexWfcMatch,
     pub local_player: PlayerId,
-    /// Cells whose visuals must be (re)spawned — everything on entry, then the whole
-    /// facility again after any relayout generation change. Mirrors the full-WFC
-    /// `pending_visual_changes` streaming trigger.
+    /// Cells whose visuals must be (re)spawned after entry or relayout.
     pub pending_visual_cells: BTreeSet<HexCoord>,
     pub presented_revisions: BTreeMap<HexCoord, u32>,
     pub status: String,
@@ -51,6 +42,9 @@ pub struct HexWfcRuntime {
     /// Floor currently shown by the active-level survivor sketch.
     pub map_level: u8,
     pub results_delay_frames: u16,
+    pub networked: bool,
+    /// One history replay is allowed before a repeated desync disconnects.
+    pub resync_attempts: u8,
 }
 
 impl HexWfcRuntime {
@@ -59,9 +53,7 @@ impl HexWfcRuntime {
     }
 }
 
-/// The workspace `assets/tiles` directory. Resolved without touching presentation: the
-/// runtime cwd when it holds the tiles, otherwise the compile-time crate location. Same
-/// resolution the hex labs use.
+/// Resolve the workspace tile directory without involving presentation.
 fn tile_dir() -> std::path::PathBuf {
     let cwd_relative = std::path::PathBuf::from("assets/tiles");
     if cwd_relative.exists() {
@@ -70,8 +62,7 @@ fn tile_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/tiles")
 }
 
-/// Load legacy compatibility cells plus strict compiled cell modules. Tests and
-/// evidence use the same merged corpus as the production match.
+/// Load the same authored-plus-compatibility corpus used by tests and evidence.
 pub(crate) fn load_prototypes() -> Vec<TilePrototype> {
     load_authoring_corpus().cells
 }
@@ -83,52 +74,43 @@ struct HexAuthoringCorpus {
     simulation_content_hash: [u8; 32],
 }
 
+pub(crate) fn simulation_content_hash() -> [u8; 32] {
+    load_authoring_corpus().simulation_content_hash
+}
+
+pub(crate) fn match_from_launch(
+    seed: u64,
+    config: HexMatchConfig,
+    expected_hash: [u8; 32],
+) -> Result<HexWfcMatch, String> {
+    let corpus = load_authoring_corpus();
+    if corpus.simulation_content_hash != expected_hash {
+        return Err("server simulation content does not match this client".to_string());
+    }
+    let mut game = HexWfcMatch::new_with_rooms(seed, config, &corpus.cells, &corpus.rooms)
+        .map_err(|error| format!("construct network match: {error:?}"))?;
+    game.bind_simulation_content_hash(expected_hash);
+    Ok(game)
+}
+
 fn load_authoring_corpus() -> HexAuthoringCorpus {
     static CORPUS: OnceLock<HexAuthoringCorpus> = OnceLock::new();
     CORPUS
         .get_or_init(|| {
             let base = tile_dir();
-            let mut cells = Manifest::load(&base.join("manifest.ron"))
-                .expect("committed hex tile manifest loads")
-                .load_tiles(&base)
-                .expect("committed hex tile prototypes validate");
-            let text = std::fs::read_to_string(base.join("compiled_catalog.ron"))
-                .expect("compiled tile catalog is committed");
-            let compiled =
-                CompiledTileCatalog::from_ron(&text).expect("compiled tile catalog schema loads");
-            let sidecar = std::fs::read_to_string(base.join("compiled_catalog.sha256"))
-                .expect("compiled tile catalog hash is committed");
-            assert_eq!(
-                sidecar.trim(),
-                compiled.simulation_content_hash,
-                "compiled catalog and network hash sidecar agree"
-            );
             let register_slugs = ArchitectureRegister::ALL.map(ArchitectureRegister::slug);
-            let strict = compiled
-                .runtime_catalog(&register_slugs)
-                .expect("compiled strict modules expand into runtime geometry");
-            cells.extend(strict.cells);
+            let loaded = RuntimeHexCatalog::load(&base, &register_slugs)
+                .expect("committed runtime hex catalog loads");
             HexAuthoringCorpus {
-                cells,
-                rooms: strict.rooms,
-                simulation_content_hash: decode_simulation_content_hash(sidecar.trim()),
+                cells: loaded.cells,
+                rooms: loaded.rooms,
+                simulation_content_hash: loaded.simulation_content_hash,
             }
         })
         .clone()
 }
 
-fn decode_simulation_content_hash(text: &str) -> [u8; 32] {
-    assert_eq!(text.len(), 64, "compiled tile catalog hash is SHA-256 hex");
-    let mut hash = [0_u8; 32];
-    for (index, byte) in hash.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(&text[index * 2..index * 2 + 2], 16)
-            .expect("compiled tile catalog hash contains hex digits");
-    }
-    hash
-}
-
-/// True when running under the test harness, where the production 28×20×10 solve is
-/// swapped for the compact showcase fixture. Mirrors the full-WFC detection.
+/// Tests swap the production 28×20×10 solve for the compact showcase fixture.
 fn is_test_binary() -> bool {
     std::env::current_exe()
         .map(|path| {
@@ -138,12 +120,8 @@ fn is_test_binary() -> bool {
         .unwrap_or(false)
 }
 
-/// The match configuration for the current run. Production uses the real
-/// `arc_default()` 28×20×10 facility (now ~0.8 s to solve, fine on the setup path);
-/// tests use the compact showcase fixture from [`HexMatchConfig::default`]. The relayout
-/// evidence capture also forces the showcase fixture so the pinned deterministic
-/// warning@575 / commit@695 timeline (12×9×4, seed `0xA11C_9500_0000_0000`) reproduces
-/// on the capture path — the production facility has a different mutation schedule.
+/// Production uses `arc_default`; tests and relayout evidence use the compact fixture
+/// so its pinned warning@546 / commit@666 mutation timeline remains reproducible.
 fn runtime_config() -> HexMatchConfig {
     let mut config = HexMatchConfig::default();
     let relayout_capture = std::env::var("OBSERVED2_CAPTURE_HEX_WFC_RELAYOUT").is_ok();
@@ -152,8 +130,8 @@ fn runtime_config() -> HexMatchConfig {
         .ok()
         .map(|value| value.trim().to_ascii_lowercase());
     if traversal_capture || playtest.as_deref() == Some("gate") {
-        // Phase 94's pinned five-level route fixture: two ramp transitions plus two
-        // shaft transitions. `OBSERVED2_HEX_PLAYTEST=gate` exposes the same compact
+        // Pinned five-level route fixture: two ramp transitions plus two physical
+        // stair transitions. `OBSERVED2_HEX_PLAYTEST=gate` exposes the same compact
         // fixture for the required hands-on traversal/complete-match gate.
         config.wfc.levels = 5;
     } else if !is_test_binary() && !relayout_capture && playtest.as_deref() != Some("relayout") {
@@ -182,18 +160,33 @@ pub(super) fn setup_runtime(
     mut commands: Commands,
     seed: Option<Res<ActiveMatchSeed>>,
     mut career: ResMut<crate::flow::Career>,
+    lan: Res<crate::lan::LanRuntime>,
 ) {
     career.begin_match();
-    let requested_seed = seed.as_deref().map_or(0xF011_FAC1_1177, |seed| seed.0);
-    let corpus = load_authoring_corpus();
-    let (mut match_state, seed_offset) = solve_nearby_with_rooms(requested_seed, &corpus);
-    match_state.bind_simulation_content_hash(corpus.simulation_content_hash);
-    let replay = crate::sim::replay::ReplayTape::new_hex_wfc(&match_state);
-    let map_level = match_state.players[&LOCAL_PLAYER].cell.level;
+    let network_launch = lan.client.as_ref().and_then(|client| client.launch);
+    let (match_state, local_player, seed_offset, networked) =
+        if let Some((launch_seed, _, config, content_hash)) = network_launch {
+            let game = match_from_launch(launch_seed, config, content_hash)
+                .expect("a compatible LAN launch constructs locally");
+            let local_player = lan
+                .client
+                .as_ref()
+                .and_then(|client| client.player)
+                .expect("welcomed LAN client has a stable player seat");
+            (game, local_player, 0, true)
+        } else {
+            let requested_seed = seed.as_deref().map_or(0xF011_FAC1_1177, |seed| seed.0);
+            let corpus = load_authoring_corpus();
+            let (mut game, seed_offset) = solve_nearby_with_rooms(requested_seed, &corpus);
+            game.bind_simulation_content_hash(corpus.simulation_content_hash);
+            (game, LOCAL_PLAYER, seed_offset, false)
+        };
+    let replay = crate::sim::replay::ReplayTape::new_hex_wfc_for_player(&match_state, local_player);
+    let map_level = match_state.players[&local_player].cell.level;
     let presented_revisions = match_state.facility.cell_revisions.clone();
     commands.insert_resource(HexWfcRuntime {
         match_state,
-        local_player: LOCAL_PLAYER,
+        local_player,
         pending_visual_cells: BTreeSet::new(),
         presented_revisions,
         status: if seed_offset == 0 {
@@ -204,6 +197,8 @@ pub(super) fn setup_runtime(
         map_open: false,
         map_level,
         results_delay_frames: 0,
+        networked,
+        resync_attempts: 0,
     });
     commands.insert_resource(HexWfcIntent::default());
     commands.insert_resource(replay);
@@ -222,7 +217,8 @@ pub(super) fn finish_runtime(
     if runtime.results_delay_frames < 90 {
         return;
     }
-    let result = crate::flow::resolve_hex_wfc(&runtime.match_state);
+    let result =
+        crate::flow::resolve_hex_wfc_for_player(&runtime.match_state, runtime.local_player);
     if let Some(replay) = replay.as_deref_mut() {
         replay.result = Some(result.clone());
     }
@@ -241,6 +237,8 @@ pub(super) fn step_runtime(
     mut runtime: ResMut<HexWfcRuntime>,
     mut replay: Option<ResMut<crate::sim::replay::ReplayTape>>,
     spectator_bot: Option<Res<crate::sim::state::SpectatorBot>>,
+    mut lan: ResMut<crate::lan::LanRuntime>,
+    mut next: ResMut<NextState<crate::GameState>>,
 ) {
     if intent.toggle_map {
         runtime.map_open = !runtime.map_open;
@@ -274,6 +272,98 @@ pub(super) fn step_runtime(
             actions: intent.actions,
         }
     };
+    if runtime.networked {
+        let Some(client) = lan.client.as_mut() else {
+            runtime.status = "LAN server disconnected".to_string();
+            clear_one_shot_input(&mut intent.intent);
+            intent.actions = HexActionButtons::default();
+            return;
+        };
+        client.poll();
+        let target_tick = runtime
+            .match_state
+            .tick
+            .saturating_add(observed_net::lan::INPUT_LEAD_TICKS);
+        if let Err(error) = client.queue_input(target_tick, local_command) {
+            runtime.status = format!("LAN input error: {error}");
+        }
+        let frames = client.take_ready_frames(observed_net::lan::FRAME_WINDOW);
+        let mut request_resync = false;
+        let mut repeated_desync = false;
+        for frame in frames {
+            let previous_generation = runtime.match_state.facility.generation;
+            runtime.match_state.step(&frame.to_input_frame());
+            let digest = runtime.match_state.snapshot().digest;
+            if digest != frame.digest {
+                if runtime.resync_attempts == 0 {
+                    runtime.status = format!(
+                        "DESYNC at tick {}; replaying authoritative history",
+                        frame.tick
+                    );
+                    request_resync = true;
+                } else {
+                    runtime.status = format!(
+                        "Repeated DESYNC at tick {}: local {digest:016x}, server {:016x}",
+                        frame.tick, frame.digest
+                    );
+                    repeated_desync = true;
+                }
+                break;
+            }
+            if let Some(replay) = replay.as_deref_mut() {
+                replay.record_hex_wfc(&runtime.match_state);
+            }
+            record_generation_changes(&mut runtime, previous_generation);
+        }
+        if request_resync {
+            let launch = client.launch;
+            match launch
+                .and_then(|(seed, _, config, hash)| match_from_launch(seed, config, hash).ok())
+            {
+                Some(match_state) => {
+                    runtime.match_state = match_state;
+                    runtime.presented_revisions =
+                        runtime.match_state.facility.cell_revisions.clone();
+                    runtime.pending_visual_cells = runtime
+                        .match_state
+                        .facility
+                        .placements
+                        .keys()
+                        .copied()
+                        .collect();
+                    runtime.map_level = runtime.local().cell.level;
+                    runtime.resync_attempts = runtime.resync_attempts.saturating_add(1);
+                    if let Some(replay) = replay.as_deref_mut() {
+                        *replay = crate::sim::replay::ReplayTape::new_hex_wfc_for_player(
+                            &runtime.match_state,
+                            runtime.local_player,
+                        );
+                    }
+                    if let Err(error) = client.request_resync() {
+                        runtime.status = format!("LAN resync request failed: {error}");
+                        repeated_desync = true;
+                    }
+                }
+                None => {
+                    runtime.status = "LAN resync could not reconstruct the launch".to_string();
+                    repeated_desync = true;
+                }
+            }
+        }
+        if repeated_desync {
+            client.goodbye();
+        }
+        if let Some(event) = runtime.match_state.recent_events.last() {
+            runtime.status = super::cues::cue_for(event.kind).label.to_string();
+        }
+        clear_one_shot_input(&mut intent.intent);
+        intent.actions = HexActionButtons::default();
+        if repeated_desync {
+            lan.leave();
+            next.set(crate::GameState::MainMenu);
+        }
+        return;
+    }
     let mut frame = HexInputFrame {
         tick: runtime.match_state.tick + 1,
         ..Default::default()
@@ -301,16 +391,7 @@ pub(super) fn step_runtime(
     if let Some(replay) = replay.as_deref_mut() {
         replay.record_hex_wfc(&runtime.match_state);
     }
-    if runtime.match_state.facility.generation != previous_generation {
-        let changed = changed_revisions(
-            &runtime.match_state.facility.cell_revisions,
-            &runtime.presented_revisions,
-        );
-        for (cell, revision) in changed {
-            runtime.pending_visual_cells.insert(cell);
-            runtime.presented_revisions.insert(cell, revision);
-        }
-    }
+    record_generation_changes(&mut runtime, previous_generation);
     // Survivor-map knowledge is simulation-owned and player-local. Presentation
     // reads it directly; rival occupancy never enters the local ledger.
     if let Some(event) = runtime.match_state.recent_events.last() {
@@ -318,6 +399,20 @@ pub(super) fn step_runtime(
     }
     clear_one_shot_input(&mut intent.intent);
     intent.actions = HexActionButtons::default();
+}
+
+fn record_generation_changes(runtime: &mut HexWfcRuntime, previous_generation: u32) {
+    if runtime.match_state.facility.generation == previous_generation {
+        return;
+    }
+    let changed = changed_revisions(
+        &runtime.match_state.facility.cell_revisions,
+        &runtime.presented_revisions,
+    );
+    for (cell, revision) in changed {
+        runtime.pending_visual_cells.insert(cell);
+        runtime.presented_revisions.insert(cell, revision);
+    }
 }
 
 fn clear_one_shot_input(intent: &mut PlayerIntent) {
@@ -415,6 +510,27 @@ mod tests {
     }
 
     #[test]
+    fn merged_authoring_corpus_covers_every_wfc_geometry_demand_exactly() {
+        let corpus = load_authoring_corpus();
+        for demand in observed_facility::hex_wfc::geometry_demands() {
+            for register in ArchitectureRegister::ALL {
+                let register = register.slug();
+                assert!(
+                    corpus.cells.iter().any(|tile| {
+                        tile.key.archetype == demand.archetype
+                            && tile.signature == demand.signature
+                            && (tile.key.register == register || tile.key.register == "generic")
+                    }),
+                    "missing exact tile coverage for archetype={} register={} signature={:?}",
+                    demand.archetype,
+                    register,
+                    demand.signature
+                );
+            }
+        }
+    }
+
+    #[test]
     fn all_non_local_actors_cross_the_same_command_boundary() {
         let game = showcase_match(44);
         assert!(game.players.len() >= 2);
@@ -433,7 +549,8 @@ mod tests {
     fn hex_replay_records_the_versioned_simulation() {
         let mut game = showcase_match(44);
         game.bind_simulation_content_hash([0x5A; 32]);
-        let mut replay = crate::sim::replay::ReplayTape::new_hex_wfc(&game);
+        let local = PlayerId(2);
+        let mut replay = crate::sim::replay::ReplayTape::new_hex_wfc_for_player(&game, local);
         let commands = game
             .players
             .keys()
@@ -462,5 +579,9 @@ mod tests {
         assert_eq!(replay.simulation_content_hash, [0x5A; 32]);
         assert_eq!(replay.actors.len(), game.players.len());
         assert_eq!(replay.samples[0].actors.len(), game.players.len());
+        assert_eq!(
+            replay.samples[0].actors[local.index()].actor,
+            crate::sim::replay::ReplayActorId::LocalPlayer
+        );
     }
 }

@@ -16,6 +16,7 @@ pub(super) struct EntityVisualAssets {
     runner: Handle<Mesh>,
     beacon: Handle<Mesh>,
     local: Handle<StandardMaterial>,
+    teammate: Handle<StandardMaterial>,
     rival: Handle<StandardMaterial>,
     exit: Handle<StandardMaterial>,
 }
@@ -34,6 +35,7 @@ pub(super) fn setup(
         runner: meshes.add(Capsule3d::new(0.25, 0.8)),
         beacon: meshes.add(Cuboid::new(1.1, 3.6, 1.1)),
         local: signal_material(&mut materials, MarkerRole::You),
+        teammate: signal_material(&mut materials, MarkerRole::Teammate),
         rival: signal_material(&mut materials, MarkerRole::Rival),
         exit: signal_material(&mut materials, MarkerRole::Exit),
     };
@@ -46,8 +48,11 @@ pub(super) fn setup(
         .values()
         .filter(|player| show_local || player.id != runtime.local_player)
     {
+        let local_team = runtime.local().team;
         let material = if player.id == runtime.local_player {
             assets.local.clone()
+        } else if player.team == local_team {
+            assets.teammate.clone()
         } else {
             assets.rival.clone()
         };

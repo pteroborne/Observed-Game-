@@ -13,6 +13,7 @@
 //! controller. The optional, default-on `bevy` feature derives `Resource` on the
 //! lockstep world for the lab.
 
+pub mod lan;
 pub mod netmatch;
 pub mod network;
 pub mod protocol;

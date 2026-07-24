@@ -1,8 +1,9 @@
-//! Procedural presentation for the caged anchor lantern and physical Guardian.
+//! Presentation for the caged anchor lantern and physical Guardian. The lantern
+//! uses the authored drop-in mesh when present and a procedural cage otherwise.
 //! Every material comes from `observed_style`; geometry communicates state in
 //! addition to colour (cage, core, deployed threshold lock, tall threat body).
 
-use bevy::prelude::*;
+use bevy::{gltf::GltfAssetLabel, prelude::*};
 use observed_core::{EquipmentId, PlayerId};
 use observed_hex::hex_origin;
 use observed_style::MarkerRole;
@@ -25,6 +26,7 @@ pub(super) struct HexGuardianVisual;
 
 #[derive(Resource)]
 pub(super) struct LanternVisualAssets {
+    lantern_mesh: Option<Handle<Mesh>>,
     core: Handle<Mesh>,
     cage_bar: Handle<Mesh>,
     cage_ring: Handle<Mesh>,
@@ -42,10 +44,26 @@ pub(super) struct LanternProjection {
 
 pub(super) fn setup(
     mut commands: Commands,
+    asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    // The upstream GLB is an Import Replacer sample: its full scene contains
+    // Godot-only helper and collision nodes. Loading just the authored torch
+    // primitive keeps those helpers out of Bevy and lets the shared semantic
+    // material remain the source of colour/emission.
+    let lantern_mesh =
+        crate::view::assets::asset_present(observed_assets::LANTERN.path).then(|| {
+            asset_server.load(
+                GltfAssetLabel::Primitive {
+                    mesh: 1,
+                    primitive: 0,
+                }
+                .from_asset(observed_assets::LANTERN.path),
+            )
+        });
     let assets = LanternVisualAssets {
+        lantern_mesh,
         core: meshes.add(Sphere::new(0.18)),
         cage_bar: meshes.add(Cylinder::new(0.025, 0.62)),
         cage_ring: meshes.add(Torus::new(0.20, 0.235)),
@@ -211,32 +229,54 @@ fn spawn_caged_lantern(
             Name::new("Caged anchor lantern"),
         ))
         .with_children(|root| {
+            let authored_mesh = assets.lantern_mesh.is_some();
+            let core_transform = if authored_mesh {
+                // The source mesh is a slim torch rather than the wide procedural
+                // cage. Seat a smaller guide core at its head so the authored
+                // handle remains readable instead of disappearing inside a globe.
+                Transform::from_translation(Vec3::Y * 0.24).with_scale(Vec3::splat(0.30))
+            } else {
+                Transform::IDENTITY
+            };
             root.spawn((
                 Mesh3d(assets.core.clone()),
                 MeshMaterial3d(assets.guide.clone()),
+                Visibility::Inherited,
+                core_transform,
             ));
-            for angle in [
-                0.0,
-                std::f32::consts::FRAC_PI_2,
-                std::f32::consts::PI,
-                4.712_389,
-            ] {
+            if let Some(ref mesh) = assets.lantern_mesh {
                 root.spawn((
-                    Mesh3d(assets.cage_bar.clone()),
+                    Mesh3d(mesh.clone()),
                     MeshMaterial3d(cage_material.clone()),
-                    Transform::from_translation(Vec3::new(
-                        angle.cos() * 0.23,
-                        0.0,
-                        angle.sin() * 0.23,
-                    )),
+                    Visibility::Inherited,
+                    Transform::from_translation(Vec3::ZERO).with_scale(Vec3::splat(0.85)),
                 ));
-            }
-            for y in [-0.31, 0.31] {
-                root.spawn((
-                    Mesh3d(assets.cage_ring.clone()),
-                    MeshMaterial3d(cage_material.clone()),
-                    Transform::from_translation(Vec3::Y * y),
-                ));
+            } else {
+                for angle in [
+                    0.0,
+                    std::f32::consts::FRAC_PI_2,
+                    std::f32::consts::PI,
+                    4.712_389,
+                ] {
+                    root.spawn((
+                        Mesh3d(assets.cage_bar.clone()),
+                        MeshMaterial3d(cage_material.clone()),
+                        Visibility::Inherited,
+                        Transform::from_translation(Vec3::new(
+                            angle.cos() * 0.23,
+                            0.0,
+                            angle.sin() * 0.23,
+                        )),
+                    ));
+                }
+                for y in [-0.31, 0.31] {
+                    root.spawn((
+                        Mesh3d(assets.cage_ring.clone()),
+                        MeshMaterial3d(cage_material.clone()),
+                        Visibility::Inherited,
+                        Transform::from_translation(Vec3::Y * y),
+                    ));
+                }
             }
             if let Some(owner) = held_owner {
                 root.spawn((
@@ -248,15 +288,19 @@ fn spawn_caged_lantern(
                         shadows_enabled: false,
                         ..default()
                     },
+                    Transform::from_translation(core_transform.translation),
                 ));
             } else {
-                root.spawn((PointLight {
-                    color: observed_style::marker(MarkerRole::Control).base_color,
-                    intensity: 180.0,
-                    range: 5.0,
-                    shadows_enabled: false,
-                    ..default()
-                },));
+                root.spawn((
+                    PointLight {
+                        color: observed_style::marker(MarkerRole::Control).base_color,
+                        intensity: 180.0,
+                        range: 5.0,
+                        shadows_enabled: false,
+                        ..default()
+                    },
+                    Transform::from_translation(core_transform.translation),
+                ));
             }
         });
 }
@@ -264,10 +308,10 @@ fn spawn_caged_lantern(
 fn held_pose(player: &observed_match::hex_wfc::HexPlayerState) -> Transform {
     let rotation = Quat::from_rotation_y(-player.yaw) * Quat::from_rotation_x(player.pitch);
     Transform::from_translation(
-        player.position + Vec3::Y * EYE_OFFSET + rotation * Vec3::new(0.42, -0.48, -0.9),
+        player.position + Vec3::Y * EYE_OFFSET + rotation * Vec3::new(0.28, -0.24, -0.82),
     )
     .with_rotation(rotation)
-    .with_scale(Vec3::splat(0.36))
+    .with_scale(Vec3::splat(0.42))
 }
 
 fn carried_light_budget(guide: f32, pulse: f32) -> (f32, f32) {

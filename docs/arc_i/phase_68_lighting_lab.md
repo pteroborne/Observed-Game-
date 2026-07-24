@@ -1,6 +1,8 @@
 # Phase 68 — `lighting_lab`: Nine Liminal Dioramas
 
-**Objective:** prove the arc's entire lighting vocabulary in one new lab before
+**Status:** `[x]` — complete (2026-07-20; second pass aligned with full 3D hex WFC architecture).
+
+**Objective:** prove the arc's entire lighting vocabulary in one lab before
 any game code changes: nine static dioramas, one per user-chosen reference, each
 isolating one liminal element, each screenshotted and viewed. Prototype the
 luminance-corridor check against these captures. Read [README.md](README.md)

@@ -1,12 +1,12 @@
 //! Deterministic match layer over the hex facility: players on Rapier bodies,
-//! shaft climbing, ramp walking, threshold-keyed door states, and the
+//! physical stair/ramp walking, threshold-keyed door states, and the
 //! observation frames that pin them — everything Phase 95's game shell drives.
 
 use std::collections::BTreeMap;
 
 use glam::Vec3;
 use observed_authoring::{RoomPrototype, TilePrototype};
-use observed_core::{CorridorId, PlayerId, RoomId};
+use observed_core::{CorridorId, PlayerId, RoomId, TeamId};
 use observed_facility::hex_wfc::{
     HexObservationFrame, HexRelayoutCandidate, HexRelayoutDelta, HexRelayoutWork, HexThresholdKey,
     HexWfcConfig, HexWfcError, HexWfcWorld, blueprint_for_role,
@@ -33,9 +33,14 @@ pub use knowledge::{HexMapCellKnowledge, HexMapDiscovery, HexPlayerMapKnowledge}
 pub use snapshot::{HexMatchSnapshot, HexPlayerSnapshot};
 
 pub(super) const FIXED_DT: f32 = 1.0 / 60.0;
-/// Shafts keep the climb-style vertical traversal; ramps are plain walking.
-pub(super) const CLIMB_SPEED: f32 = 2.5;
-pub const HEX_INPUT_VERSION: u16 = 2;
+/// Height of the authored floor surface above a cell's level origin.
+///
+/// Tile intake is standardized at 16 TrenchBroom units per metre and every
+/// production cell uses an 8-unit floor slab. Spawn, recovery, and scripted
+/// traversal must all agree on this surface or a capsule starts half embedded
+/// in collision.
+pub(super) const FLOOR_SLAB_TOP: f32 = 0.5;
+pub const HEX_INPUT_VERSION: u16 = 4;
 
 /// Ticks of forewarning between a [`HexMatchEventKind::MutationWarning`] and the
 /// deterministic commit tick, so observation has a window to pin structure. Mirrors
@@ -87,7 +92,7 @@ pub enum HexMatchEventKind {
     PlayerEscaped,
     /// A body left the world volume (NaN or below the arena floor) and was
     /// deterministically reset to its logical cell anchor. Ordinary drops —
-    /// including full 8 m shaft/ramp falls — are survivable-by-design and do
+    /// including full 8 m stairwell/ramp falls — are survivable-by-design and do
     /// not raise this.
     PlayerRecovered,
     /// A deterministic relayout warning fired: unobserved structure has begun to
@@ -117,30 +122,34 @@ pub struct HexMatchEvent {
 #[derive(Clone, Debug, PartialEq)]
 pub struct HexPlayerState {
     pub id: PlayerId,
+    pub team: TeamId,
     pub cell: HexCoord,
     pub position: Vec3,
     pub yaw: f32,
     pub pitch: f32,
-    /// Active shaft climb destination (one vertical neighbor at a time).
-    pub climb_target: Option<HexCoord>,
-    /// Active scripted lateral shaft exit: the lateral neighbor a shaft-transit
-    /// glide is currently crossing the landing toward. Ledges and the central
-    /// well make naive center-seeking physics tangle, so the lateral step off a
-    /// shaft landing is scripted just like the vertical climb.
-    pub transit_target: Option<HexCoord>,
     pub escaped: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HexTeamState {
+    pub id: TeamId,
+    pub members: Vec<PlayerId>,
+    pub escaped: bool,
+    pub finish_tick: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct HexMatchConfig {
-    pub players: u8,
+    pub teams: u8,
+    pub members_per_team: u8,
     pub wfc: HexWfcConfig,
 }
 
 impl Default for HexMatchConfig {
     fn default() -> Self {
         Self {
-            players: 4,
+            teams: 2,
+            members_per_team: 2,
             wfc: HexWfcConfig {
                 levels: 4,
                 ..HexWfcConfig::default()
@@ -152,6 +161,7 @@ impl Default for HexMatchConfig {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HexMatchError {
     InvalidRoster,
+    BlockedSpawn(PlayerId),
     Facility(HexWfcError),
     Geometry(HexGeometryError),
 }
@@ -196,11 +206,13 @@ pub struct HexWfcMatch {
     pub facility: HexWfcWorld,
     pub geometry: HexWfcGeometrySnapshot,
     pub players: BTreeMap<PlayerId, HexPlayerState>,
+    pub teams: BTreeMap<TeamId, HexTeamState>,
     pub lanterns: HexLanternState,
     pub guardian: HexGuardianState,
-    pub map_knowledge: BTreeMap<PlayerId, HexPlayerMapKnowledge>,
+    pub map_knowledge: BTreeMap<TeamId, HexPlayerMapKnowledge>,
     pub status: HexMatchStatus,
-    pub escape_order: Vec<PlayerId>,
+    pub escape_order: Vec<TeamId>,
+    pub player_escape_order: Vec<PlayerId>,
     pub recent_events: Vec<HexMatchEvent>,
     /// Accepted bounded relayout from the current step, if any. Presentation
     /// and map-knowledge consumers can update exact cells without inferring a
@@ -215,8 +227,8 @@ pub struct HexWfcMatch {
     pub(super) traversal_config: FpsConfig,
     /// Consecutive ticks each non-escaped player's body has failed to make net
     /// progress (wedged against geometry). The objective bot reads this to
-    /// trigger a sideways unstick sweep; real net motion or a scripted transit
-    /// resets it. Measured against [`Self::progress_anchor`] so a body jittering
+    /// trigger a sideways unstick sweep; real net motion resets it. Measured
+    /// against [`Self::progress_anchor`] so a body jittering
     /// in place still counts as stuck.
     pub(super) stuck_ticks: BTreeMap<PlayerId, u16>,
     /// The last position from which a player made clear net progress; the
@@ -257,7 +269,12 @@ impl HexWfcMatch {
         prototypes: &[TilePrototype],
         room_prototypes: &[RoomPrototype],
     ) -> Result<Self, HexMatchError> {
-        if config.players == 0 || config.players > 8 {
+        let player_count = config.teams.saturating_mul(config.members_per_team);
+        if config.teams == 0
+            || config.members_per_team == 0
+            || player_count == 0
+            || player_count > 8
+        {
             return Err(HexMatchError::InvalidRoster);
         }
         let facility = HexWfcWorld::generate(seed, config.wfc)?;
@@ -268,27 +285,40 @@ impl HexWfcMatch {
         traversal_config.look_step = 1.0;
         let spawn = facility.config.spawn();
         let spawn_yaw = initial_spawn_yaw(&facility);
+        let spawn_origin = Vec3::from_array(hex_origin(spawn));
         let mut players = BTreeMap::new();
         let mut bodies = BTreeMap::new();
-        for index in 0..config.players {
+        let mut teams = BTreeMap::new();
+        for team_index in 0..config.teams {
+            let team = TeamId(team_index);
+            let first = u16::from(team_index) * u16::from(config.members_per_team);
+            let members = (0..config.members_per_team)
+                .map(|member| PlayerId(first + u16::from(member)))
+                .collect();
+            teams.insert(
+                team,
+                HexTeamState {
+                    id: team,
+                    members,
+                    escaped: false,
+                    finish_tick: None,
+                },
+            );
+        }
+        for index in 0..player_count {
             let id = PlayerId(u16::from(index));
-            let angle = f32::from(index) * std::f32::consts::TAU / 8.0;
-            let position = Vec3::from_array(hex_origin(spawn))
-                + Vec3::new(
-                    angle.cos() * 2.5,
-                    traversal_config.half_height + 0.25,
-                    angle.sin() * 2.5,
-                );
+            let team = TeamId(index / config.members_per_team);
+            let position = clear_spawn_position(&physics, spawn_origin, &traversal_config, index)
+                .ok_or(HexMatchError::BlockedSpawn(id))?;
             players.insert(
                 id,
                 HexPlayerState {
                     id,
+                    team,
                     cell: spawn,
                     position,
                     yaw: spawn_yaw,
                     pitch: 0.0,
-                    climb_target: None,
-                    transit_target: None,
                     escaped: false,
                 },
             );
@@ -296,10 +326,10 @@ impl HexWfcMatch {
         }
         let lanterns = HexLanternState::new(players.keys().copied(), &facility);
         let guardian = HexGuardianState::new(&facility);
-        let map_knowledge = players
+        let map_knowledge = teams
             .keys()
             .copied()
-            .map(|player| (player, HexPlayerMapKnowledge::default()))
+            .map(|team| (team, HexPlayerMapKnowledge::default()))
             .collect();
         let mut game = Self {
             seed,
@@ -308,11 +338,13 @@ impl HexWfcMatch {
             facility,
             geometry,
             players,
+            teams,
             lanterns,
             guardian,
             map_knowledge,
             status: HexMatchStatus::Running,
             escape_order: Vec::new(),
+            player_escape_order: Vec::new(),
             recent_events: Vec::new(),
             last_relayout_delta: None,
             observation: HexObservationFrame::default(),
@@ -489,14 +521,23 @@ impl HexWfcMatch {
 
     #[must_use]
     pub fn player_map(&self, player: PlayerId) -> Option<&HexPlayerMapKnowledge> {
-        self.map_knowledge.get(&player)
+        self.players
+            .get(&player)
+            .and_then(|player| self.map_knowledge.get(&player.team))
+    }
+
+    #[must_use]
+    pub fn team_map(&self, team: TeamId) -> Option<&HexPlayerMapKnowledge> {
+        self.map_knowledge.get(&team)
     }
 
     fn update_map_knowledge(&mut self) {
-        for (&id, player) in &self.players {
-            self.map_knowledge.entry(id).or_default().observe(
+        for (&team, state) in &self.teams {
+            let players = state.members.iter().filter_map(|id| self.players.get(id));
+            self.map_knowledge.entry(team).or_default().observe_team(
+                team,
                 &self.facility,
-                player,
+                players,
                 &self.lanterns,
             );
         }
@@ -512,7 +553,7 @@ impl HexWfcMatch {
         }
         for id in escaped {
             self.players.get_mut(&id).expect("player").escaped = true;
-            self.escape_order.push(id);
+            self.player_escape_order.push(id);
             self.recent_events.push(HexMatchEvent {
                 tick: self.tick,
                 kind: HexMatchEventKind::PlayerEscaped,
@@ -520,9 +561,25 @@ impl HexWfcMatch {
                 cell: Some(exit),
             });
         }
-        if self.status == HexMatchStatus::Running
-            && self.players.values().all(|player| player.escaped)
-        {
+        let finished_teams = self
+            .teams
+            .iter()
+            .filter_map(|(&team, state)| {
+                (!state.escaped
+                    && state
+                        .members
+                        .iter()
+                        .all(|player| self.players[player].escaped))
+                .then_some(team)
+            })
+            .collect::<Vec<_>>();
+        for team in finished_teams {
+            let state = self.teams.get_mut(&team).expect("team");
+            state.escaped = true;
+            state.finish_tick = Some(self.tick);
+            self.escape_order.push(team);
+        }
+        if self.status == HexMatchStatus::Running && self.teams.values().all(|team| team.escaped) {
             self.status = HexMatchStatus::Finished;
             self.recent_events.push(HexMatchEvent {
                 tick: self.tick,
@@ -532,6 +589,38 @@ impl HexWfcMatch {
             });
         }
     }
+}
+
+/// Pick a deterministic, collision-proven point on the spawn cell's walkable
+/// floor. Authored rooms are allowed to occupy their centre with machinery or
+/// landmarks, so a fixed-radius ring is not a valid spawn contract.
+fn clear_spawn_position(
+    physics: &RapierTraversalScene,
+    origin: Vec3,
+    config: &FpsConfig,
+    player_index: u8,
+) -> Option<Vec3> {
+    const RADII: [f32; 4] = [4.0, 5.0, 3.0, 1.5];
+    const ANGLE_STEPS: u8 = 16;
+    const CLEARANCE: f32 = 0.02;
+
+    let preferred = f32::from(player_index) * std::f32::consts::TAU / 8.0;
+    let y = origin.y + FLOOR_SLAB_TOP + config.half_height + CLEARANCE;
+    for radius in RADII {
+        for step in 0..ANGLE_STEPS {
+            let angle =
+                preferred + f32::from(step) * std::f32::consts::TAU / f32::from(ANGLE_STEPS);
+            let candidate = Vec3::new(
+                origin.x + angle.cos() * radius,
+                y,
+                origin.z + angle.sin() * radius,
+            );
+            if physics.capsule_is_clear(candidate, config.radius, config.half_height) {
+                return Some(candidate);
+            }
+        }
+    }
+    None
 }
 
 fn initial_spawn_yaw(world: &HexWfcWorld) -> f32 {

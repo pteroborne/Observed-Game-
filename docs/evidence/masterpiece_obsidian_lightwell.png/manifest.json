@@ -1,0 +1,23 @@
+{
+  "captured": [
+    "megastructure/ramp/v0",
+    "megastructure/ramp/v1",
+    "megastructure/ramp/v2",
+    "megastructure/ramp/v3",
+    "megastructure/ramp/v4",
+    "megastructure/ramp/v5"
+  ],
+  "lab": "hex_tile_lab",
+  "library_tiles": 216,
+  "ramp_gate_passed": false,
+  "ramp_height_gain_m": 1.0500000715255737,
+  "ramp_max_feet_m": 2.0,
+  "ramp_start_feet_m": 0.9499999284744263,
+  "tower_7hex_dev_screenshots": [
+    "tower_7hex_dev_overview.png",
+    "tower_7hex_dev_lightwell.png",
+    "tower_7hex_dev_gantry_pov.png",
+    "tower_7hex_dev_cross_section.png"
+  ],
+  "walk_ramp": "megastructure/ramp/v2"
+}

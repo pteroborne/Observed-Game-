@@ -1,19 +1,26 @@
-# observed_content
+# `observed_content`
 
-Pure schemas and validation for immutable Observed 2 content manifests. The crate
-contains no Bevy, Rapier, renderer, filesystem watcher, or editor integration.
+The **`observed_content`** production crate provides pure, deny-unknown-fields schemas and SHA-256 fingerprinting for immutable game content manifests.
 
-It deliberately exposes two revisions:
+It enforces strict separation between:
+- **`SimulationContentHash`**: Hashes traversal physics parameters, module definitions, convex collision hulls, port alignments, and navigation graphs.
+- **`PresentationContentHash`**: Hashes visual dressing, district lighting scales, and optional asset paths.
 
-- `SimulationContentHash` covers traversal settings, module selection, convex bake
-  fingerprints, ports, gameplay sockets, and navigation.
-- `PresentationContentHash` covers the complete manifest, including district
-  atmosphere and optional visual assets.
+---
 
-Network sessions and deterministic replays require the simulation hash. Presentation
-hash mismatches may use declared procedural fallbacks because visual assets never own
-gameplay state.
+## Core Types
 
-`ArchitectureRegister` is the code-owned, stable-ID vocabulary for procedural
-architecture. Its nine production names and explicit `u8` identities are independent
-of media references and versioned by `ARCHITECTURE_CATALOG_VERSION`.
+- **`ContentManifest`**: Top-level manifest struct containing schema version, traversal profiles, district definitions, module lists, and asset declarations.
+- **`ArchitectureRegister`**: Code-owned enum (`ShadowScreen`, `Monolith`, `OverlitGrid`, `Institutional`, `FacetMonument`, `Megastructure`, `Wellshaft`, `InfiniteGallery`, `Thinning`) providing stable `u8` IDs for procedural architecture registers.
+- **`TraversalProfile`**: Standardized physical traversal parameters (`walk_speed`, `run_speed`, `gravity`, `radius`, `half_height`, `step_height`).
+- **`BakedModule`**: Serialized convex hull geometry (`ConvexHull`) produced by TrenchBroom compilation.
+- **`PlaceLayoutSnapshot`**: Authored module placement snapshots consumed by physics, rendering, and spectator AI.
+
+---
+
+## Verification
+
+To run unit tests and validation checks:
+```bash
+cargo test -p observed_content
+```

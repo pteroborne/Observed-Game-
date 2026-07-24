@@ -1,4 +1,4 @@
-# Arc I — Light & Line: implementation plans
+# Arc I — Light & Line: implementation plans `[x]` (Completed 2026-07-20)
 
 One hand-off document per phase (67–72), each self-contained enough to give a
 fresh implementation agent. Arc design and staging:

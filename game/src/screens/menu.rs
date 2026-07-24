@@ -69,19 +69,24 @@ pub(crate) fn setup_main_menu(mut commands: Commands, mut cursor: ResMut<MenuCur
             root.spawn(text("OBSERVED 2", 52.0, TITLE));
             root.spawn((MenuBanner, text("", 18.0, ACCENT)));
             root.spawn(panel()).with_children(|p| {
-                p.spawn(menu_button(0, MenuAction::StartRun, "Play"));
-                p.spawn(menu_button(1, MenuAction::Spectate, "Spectate AI"));
+                p.spawn(menu_button(0, MenuAction::StartRun, "Solo Play"));
                 p.spawn(menu_button(
-                    2,
+                    1,
+                    MenuAction::Goto(GameState::LanBrowser),
+                    "LAN Play",
+                ));
+                p.spawn(menu_button(2, MenuAction::Spectate, "Spectate AI"));
+                p.spawn(menu_button(
+                    3,
                     MenuAction::Goto(GameState::Loadout),
                     "Loadout",
                 ));
                 p.spawn(menu_button(
-                    3,
+                    4,
                     MenuAction::Goto(GameState::Settings),
                     "Settings",
                 ));
-                p.spawn(menu_button(4, MenuAction::QuitApp, "Quit"));
+                p.spawn(menu_button(5, MenuAction::QuitApp, "Quit"));
             });
             root.spawn(text(
                 "Up/Down or D-pad select | Enter/A confirm | Esc/B back",
@@ -181,6 +186,7 @@ pub(crate) fn build_results_story(
     solo: bool,
 ) -> ResultsStory {
     let headline = result_headline(result).to_string();
+    let local_team = result.map_or(crate::flow::LOCAL_TEAM, |result| result.local_team);
     let outcome = match result {
         Some(result) if solo && result.local_won => "Solo traversal complete.".to_string(),
         Some(_) if solo => "The solo traversal ended in the facility.".to_string(),
@@ -193,11 +199,11 @@ pub(crate) fn build_results_story(
         Some(result) if result.placement.is_some() => format!(
             "You finished {}; {} won the series.",
             placement_label(result.placement),
-            winner_label(result.winner)
+            winner_label(result.winner, local_team)
         ),
         Some(result) => format!(
             "The facility absorbed your team; {} survived.",
-            winner_label(result.winner)
+            winner_label(result.winner, local_team)
         ),
         None => "No completed run was recorded.".to_string(),
     };
@@ -209,14 +215,19 @@ pub(crate) fn build_results_story(
             .map(|tape| {
                 tape.escape_order
                     .iter()
-                    .map(|team| team_story_label(*team))
+                    .map(|team| team_story_label(*team, local_team))
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
         if order.is_empty() {
             result
                 .and_then(|result| result.winner)
-                .map(|winner| format!("Escape order: {} crossed first.", team_story_label(winner)))
+                .map(|winner| {
+                    format!(
+                        "Escape order: {} crossed first.",
+                        team_story_label(winner, local_team)
+                    )
+                })
                 .unwrap_or_else(|| "Escape order: no team escaped.".to_string())
         } else {
             format!("Escape order: {}.", order.join(" -> "))
@@ -324,14 +335,17 @@ fn placement_label(placement: Option<u8>) -> String {
     }
 }
 
-fn winner_label(winner: Option<observed_core::TeamId>) -> String {
+fn winner_label(
+    winner: Option<observed_core::TeamId>,
+    local_team: observed_core::TeamId,
+) -> String {
     winner
-        .map(team_story_label)
+        .map(|team| team_story_label(team, local_team))
         .unwrap_or_else(|| "no team".to_string())
 }
 
-fn team_story_label(team: observed_core::TeamId) -> String {
-    if team == crate::flow::LOCAL_TEAM {
+fn team_story_label(team: observed_core::TeamId, local_team: observed_core::TeamId) -> String {
+    if team == local_team {
         "You".to_string()
     } else {
         team.label()
@@ -433,6 +447,7 @@ pub(crate) fn menu_activate(
     ui_assets: Res<UiAssets>,
     settings: Res<crate::settings::Settings>,
     active_seed: Option<Res<crate::flow::ActiveMatchSeed>>,
+    mut lan: ResMut<crate::lan::LanRuntime>,
 ) {
     if !keyboard.just_pressed(KeyCode::Enter)
         && !keyboard.just_pressed(KeyCode::Space)
@@ -451,7 +466,12 @@ pub(crate) fn menu_activate(
         &settings,
     );
     match button.action {
-        MenuAction::Goto(state) => next.set(state),
+        MenuAction::Goto(state) => {
+            if state == GameState::MainMenu && lan.client.is_some() {
+                lan.leave();
+            }
+            next.set(state);
+        }
         MenuAction::StartRun => {
             let seed = crate::flow::launch_seed();
             let target = crate::flow::play_target_state();
@@ -461,20 +481,16 @@ pub(crate) fn menu_activate(
             next.set(target);
         }
         MenuAction::Rematch => {
+            if lan.client.is_some() {
+                next.set(GameState::Lobby);
+                return;
+            }
             let previous = active_seed
                 .as_deref()
                 .map_or(crate::flow::MATCH_SEED, |seed| seed.0);
             let seed = crate::flow::rematch_seed(previous);
             let target = crate::flow::play_target_state();
             info!("MATCH_START mode=rematch seed={seed} target={target:?}");
-            commands.insert_resource(crate::flow::ActiveMatchSeed(seed));
-            commands.remove_resource::<SpectatorBot>();
-            next.set(target);
-        }
-        MenuAction::Launch => {
-            let seed = crate::flow::launch_seed();
-            let target = crate::flow::play_target_state();
-            info!("MATCH_START mode=play seed={seed} target={target:?}");
             commands.insert_resource(crate::flow::ActiveMatchSeed(seed));
             commands.remove_resource::<SpectatorBot>();
             next.set(target);
@@ -487,22 +503,44 @@ pub(crate) fn menu_activate(
             commands.insert_resource(SpectatorBot::for_seed(seed));
             next.set(target);
         }
+        MenuAction::HostLan => {
+            if let Err(error) = lan.host() {
+                lan.status = error;
+            }
+        }
+        MenuAction::JoinLan => {
+            if let Err(error) = lan.join_discovered() {
+                lan.status = error;
+            }
+        }
+        MenuAction::JoinLanDirect => {
+            if let Err(error) = lan.join_direct() {
+                lan.status = error;
+            }
+        }
+        MenuAction::RefreshLan => {
+            if let Some(browser) = lan.browser.as_ref() {
+                let _ = browser.probe();
+            }
+        }
+        MenuAction::ToggleLanReady => {
+            if let Err(error) = lan.toggle_ready() {
+                lan.status = error;
+            }
+        }
+        MenuAction::RequestLanTeam(team) => {
+            if let Err(error) = lan.request_team(team) {
+                lan.status = error;
+            }
+        }
+        MenuAction::LeaveLan => {
+            lan.leave();
+            next.set(GameState::MainMenu);
+        }
         MenuAction::Equip(id) => {
             if career.profile.equip(id) {
                 crate::flow::save_profile(&career);
             }
-        }
-        MenuAction::ToggleRivalTeams => {
-            career.bot_rival_teams = !career.bot_rival_teams;
-            crate::flow::save_profile(&career);
-        }
-        MenuAction::ToggleAiTeammates => {
-            career.bot_ai_teammates = !career.bot_ai_teammates;
-            crate::flow::save_profile(&career);
-        }
-        MenuAction::ToggleGuardian => {
-            career.bot_guardian = !career.bot_guardian;
-            crate::flow::save_profile(&career);
         }
         MenuAction::QuitApp => {
             exit.write(bevy::app::AppExit::Success);
@@ -516,6 +554,7 @@ pub(crate) fn menu_escape(
     state: Res<State<GameState>>,
     mut next: ResMut<NextState<GameState>>,
     mut exit: MessageWriter<bevy::app::AppExit>,
+    mut lan: ResMut<crate::lan::LanRuntime>,
 ) {
     if !keyboard.just_pressed(KeyCode::Escape) && !gamepad_back_pressed(&gamepads) {
         return;
@@ -524,7 +563,13 @@ pub(crate) fn menu_escape(
         GameState::MainMenu => {
             exit.write(bevy::app::AppExit::Success);
         }
-        GameState::Loadout | GameState::Lobby | GameState::Results => next.set(GameState::MainMenu),
+        GameState::LanBrowser => next.set(GameState::MainMenu),
+        GameState::Lobby => {
+            lan.leave();
+            next.set(GameState::MainMenu);
+        }
+        GameState::Results if lan.client.is_some() => next.set(GameState::Lobby),
+        GameState::Loadout | GameState::Results => next.set(GameState::MainMenu),
         GameState::Replay => next.set(GameState::Results),
         _ => {}
     }

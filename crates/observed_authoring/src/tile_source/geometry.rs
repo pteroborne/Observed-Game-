@@ -149,6 +149,68 @@ pub(crate) fn general_prism_brush(
     out
 }
 
+/// A finite-thickness convex ramp deck. The top heights correspond one-for-one
+/// with `corners`; the bottom plane is parallel and `thickness` lower. Unlike a
+/// solid wedge this leaves usable headroom when identical stair cells stack.
+pub(crate) fn sloped_deck_brush(
+    corners: &[[f64; 2]],
+    top_heights: &[f64],
+    thickness: f64,
+    interior_hint: [f64; 2],
+) -> String {
+    debug_assert!(corners.len() >= 3);
+    debug_assert_eq!(corners.len(), top_heights.len());
+    debug_assert!(thickness > 0.0);
+
+    let top = corners
+        .iter()
+        .zip(top_heights)
+        .map(|(&[x, y], &z)| [x, y, z])
+        .collect::<Vec<_>>();
+    let bottom = top
+        .iter()
+        .map(|&[x, y, z]| [x, y, z - thickness])
+        .collect::<Vec<_>>();
+    let interior = [
+        interior_hint[0],
+        interior_hint[1],
+        top_heights.iter().sum::<f64>() / top_heights.len() as f64 - thickness * 0.5,
+    ];
+
+    let mut out = String::from("{\n");
+    for i in 0..corners.len() {
+        out += &side_plane(
+            corners[i],
+            corners[(i + 1) % corners.len()],
+            bottom[i][2],
+            interior_hint,
+        );
+    }
+    out += &oriented_plane(top[0], top[1], top[2], interior);
+    out += &oriented_plane(bottom[0], bottom[1], bottom[2], interior);
+    out += "}\n";
+    out
+}
+
+/// Wind a 3D plane so its normal points away from a point known to be inside
+/// the brush. Quake-map plane normals use `cross(c - a, b - a)`.
+fn oriented_plane(a: [f64; 3], mut b: [f64; 3], mut c: [f64; 3], interior: [f64; 3]) -> String {
+    let ca = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    let ba = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    let normal = [
+        ca[1] * ba[2] - ca[2] * ba[1],
+        ca[2] * ba[0] - ca[0] * ba[2],
+        ca[0] * ba[1] - ca[1] * ba[0],
+    ];
+    let toward_inside = [interior[0] - a[0], interior[1] - a[1], interior[2] - a[2]];
+    if normal[0] * toward_inside[0] + normal[1] * toward_inside[1] + normal[2] * toward_inside[2]
+        > 0.0
+    {
+        std::mem::swap(&mut b, &mut c);
+    }
+    plane_line(a, b, c)
+}
+
 /// A band hugging `face` between inward offsets `t0..t1`, mitered against the
 /// neighbor faces at offset `t0` (so bands at matching offsets meet cleanly).
 pub(crate) fn band_brush(face: HexFace, t0: f64, t1: f64, z0: f64, z1: f64) -> String {
@@ -288,6 +350,34 @@ pub(crate) fn door_wall(
     out
 }
 
+/// A floor apron through only the clear doorway span of `face`.
+///
+/// Using the complete hex edge for an apron fills the corners beside the
+/// doorway as well. That is harmless in flat halls, but in a stair tower it
+/// can cap the flight arriving from below. Keeping this to the same aperture
+/// as [`door_wall`] leaves those circulation volumes disjoint.
+pub(crate) fn door_floor_apron(face: HexFace, depth: f64, z0: f64, z1: f64) -> String {
+    let (a, b) = tb_edge(face);
+    let d = [b[0] - a[0], b[1] - a[1]];
+    let length = (d[0] * d[0] + d[1] * d[1]).sqrt();
+    let u = [d[0] / length, d[1] / length];
+    let mid = [(a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5];
+    let da = [
+        mid[0] - u[0] * DOOR_HALF_WIDTH,
+        mid[1] - u[1] * DOOR_HALF_WIDTH,
+    ];
+    let db = [
+        mid[0] + u[0] * DOOR_HALF_WIDTH,
+        mid[1] + u[1] * DOOR_HALF_WIDTH,
+    ];
+    let (ida, idb) = offset_inward(da, db, depth);
+    let hint = [
+        (da[0] + db[0] + ida[0] + idb[0]) * 0.25,
+        (da[1] + db[1] + ida[1] + idb[1]) * 0.25,
+    ];
+    general_prism_brush(&[da, db, idb, ida], z0, z1, hint)
+}
+
 /// The two-level ramp floor: a full-footprint wedge rising from the entrance
 /// edge (at `floor_top`) to the exit face midpoint (at `floor_top + h`).
 pub(crate) fn sloped_slab_brush(
@@ -335,6 +425,17 @@ pub(crate) fn tile_meta(archetype: &str, register: &str, variant: u16, levels: u
 
 pub(crate) fn tile_port(face: &str, class: &str) -> String {
     point_entity(&[("classname", "tile_port"), ("face", face), ("class", class)])
+}
+
+/// A presentation-owned practical light at a tile-local TrenchBroom point.
+/// Geometry generators choose placement; the shared style layer chooses its
+/// colour, energy, and legibility treatment at runtime.
+pub(crate) fn tile_light(x: f64, y: f64, z: f64) -> String {
+    point_entity(&[
+        ("classname", "tile_light"),
+        ("kind", "practical"),
+        ("origin", &format!("{} {} {}", fmt(x), fmt(y), fmt(z))),
+    ])
 }
 
 pub(crate) fn worldspawn(brushes: &str) -> String {

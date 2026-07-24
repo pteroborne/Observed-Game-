@@ -20,6 +20,7 @@ Day-to-day working reference and command runbook for agents and developers.
 ├── crates/                   # Promoted production crates (observed_core, observed_doors, etc.)
 ├── labs/                     # Independently runnable prototype labs
 ├── game/                     # Assembled first-person game entry point
+├── server/                   # Headless/listen authoritative LAN host
 └── docs/                     # Documentation archives, decisions, and evidence
 ```
 
@@ -42,6 +43,15 @@ cargo dev-run -p observed_game
 `dev-run` enables Bevy dynamic linking for faster iteration. Use ordinary
 `cargo run` when validating a standalone/release-style executable.
 
+### Running LAN Multiplayer
+```powershell
+cargo run -p observed_server -- --bind 0.0.0.0:47624 --name "Workshop"
+cargo dev-run -p observed_game
+cargo dev-run -p lan_lab       # resettable real-UDP loopback proof
+```
+The game discovers hosts by LAN broadcast and also accepts direct `IP:port` entry.
+See [docs/lan_integration.md](docs/lan_integration.md) for protocol and deployment details.
+
 ### Verifying Changes
 Run these commands before claiming completion of any task (warnings must be resolved, not suppressed):
 ```powershell
@@ -50,6 +60,15 @@ cargo dev-clippy
 cargo dev-test
 ```
 *Note: Make sure resetting the lab removes all of its Bevy entities/resources without leaking state.*
+
+### Authoring Hex Tiles
+Full workflow (tileforge primitives, contract cheat sheet, lab preview scripts, gotchas): see [docs/tile_authoring.md](docs/tile_authoring.md).
+```powershell
+python tools/tileforge.py                                                  # regenerate authored .map sources
+cargo run -p observed_authoring --bin tilec -- validate <map>              # contract check
+cargo run -p observed_authoring --bin tilec -- build                       # recompile assets/tiles catalog
+$env:OBSERVED2_SCRIPT = "scratch/<view>.json"; cargo dev-run -p hex_tile_lab   # headless preview capture
+```
 
 ### Capture Evidence (Showcase screenshot)
 Renders the lab/showcase, saves a PNG, and exits:

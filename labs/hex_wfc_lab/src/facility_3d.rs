@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow};
-use observed_authoring::{Manifest, TilePrototype};
+use observed_authoring::{CompiledTileCatalog, Manifest, TilePrototype};
+use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::{HexArchetype, HexWfcWorld};
 use observed_hex::{HexCoord, HexFace, PortClass, TILE_LEVEL_HEIGHT, face_edge, hex_origin};
 use observed_match::hex_wfc::HexWfcGeometrySnapshot;
@@ -164,10 +165,22 @@ fn tile_dir() -> PathBuf {
 
 fn load_tiles() -> Vec<TilePrototype> {
     let base = tile_dir();
-    Manifest::load(&base.join("manifest.ron"))
+    // Legacy manifest entries plus the strict compiled catalog: since the
+    // corpus went all-strict (`register_scope: all`), the compatibility
+    // manifest is empty and every runtime cell lives in the catalog.
+    let mut cells = Manifest::load(&base.join("manifest.ron"))
         .expect("tile manifest loads")
         .load_tiles(&base)
-        .expect("tile prototypes validate")
+        .expect("tile prototypes validate");
+    let text =
+        std::fs::read_to_string(base.join("compiled_catalog.ron")).expect("compiled catalog loads");
+    let compiled = CompiledTileCatalog::from_ron(&text).expect("compiled catalog parses");
+    let slugs = ArchitectureRegister::ALL.map(ArchitectureRegister::slug);
+    let strict = compiled
+        .runtime_catalog(&slugs)
+        .expect("compiled catalog expands");
+    cells.extend(strict.cells);
+    cells
 }
 
 fn spawn_pose(world: &HexWfcWorld, config: &FpsConfig) -> (Vec3, f32) {

@@ -13,6 +13,10 @@ pub(super) fn setup(
     spectator_bot: Option<Res<crate::sim::state::SpectatorBot>>,
 ) {
     let is_spectator = spectator_bot.is_some();
+    // Phase 50 immersion ruling: normal play is diegetic/HUD-free. The status
+    // readout and the controls/goal instructions are debug-only overlays; only the
+    // aiming crosshair is a permanent gameplay aid.
+    let debug_hud = crate::evidence::debug_hud_enabled();
     commands
         .spawn((
             DespawnOnExit(GameState::HexWfc),
@@ -28,44 +32,46 @@ pub(super) fn setup(
             Name::new("Hex WFC HUD root"),
         ))
         .with_children(|root| {
-            root.spawn((
-                HexWfcHud,
-                Text::new("Hex facility initializing"),
-                TextFont {
-                    font_size: 16.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(0.88, 0.95, 1.0)),
-                Node {
-                    width: px(470),
-                    padding: UiRect::all(px(14)),
-                    border: UiRect::all(px(1)),
-                    ..default()
-                },
-                BackgroundColor(Color::srgba(0.008, 0.018, 0.035, 0.9)),
-                BorderColor::all(Color::srgba(0.35, 0.9, 1.0, 0.6)),
-            ));
-            let help_text = if is_spectator {
-                "SPECTATING BOT RUN\nEsc menu\n\nGOAL: descend the hex facility and reach the exit rhombus"
-            } else {
-                "HEX FACILITY RACE\nWASD / stick move | Shift sprint\nMouse / stick look | Space climb up | Ctrl climb down / ramp descend\nE collect cache | F deploy lantern at a looked-at threshold | R recover\nTab survivor map | PgUp/PgDn floor | Esc menu\n\nGOAL: walk the ramps, drop the silo shafts, reach the exit rhombus"
-            };
-            root.spawn((
-                Text::new(help_text),
-                TextFont {
-                    font_size: 14.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(0.70, 0.78, 0.9)),
-                Node {
-                    width: px(330),
-                    padding: UiRect::all(px(14)),
-                    border: UiRect::all(px(1)),
-                    ..default()
-                },
-                BackgroundColor(Color::srgba(0.008, 0.018, 0.035, 0.88)),
-                BorderColor::all(Color::srgba(0.35, 0.9, 1.0, 0.45)),
-            ));
+            if debug_hud {
+                root.spawn((
+                    HexWfcHud,
+                    Text::new("Hex facility initializing"),
+                    TextFont {
+                        font_size: 16.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.88, 0.95, 1.0)),
+                    Node {
+                        width: px(470),
+                        padding: UiRect::all(px(14)),
+                        border: UiRect::all(px(1)),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.008, 0.018, 0.035, 0.9)),
+                    BorderColor::all(Color::srgba(0.35, 0.9, 1.0, 0.6)),
+                ));
+                let help_text = if is_spectator {
+                    "SPECTATING BOT RUN\nEsc menu\n\nGOAL: traverse the hex facility and reach the exit rhombus"
+                } else {
+                    "HEX FACILITY RACE\nWASD / stick move | Shift sprint\nMouse / stick look | Space jump\nE collect cache | F deploy lantern at a looked-at threshold | R recover\nTab survivor map | PgUp/PgDn floor | Esc menu\n\nGOAL: walk the ramps and stair towers, reach the exit rhombus"
+                };
+                root.spawn((
+                    Text::new(help_text),
+                    TextFont {
+                        font_size: 14.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.70, 0.78, 0.9)),
+                    Node {
+                        width: px(330),
+                        padding: UiRect::all(px(14)),
+                        border: UiRect::all(px(1)),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.008, 0.018, 0.035, 0.88)),
+                    BorderColor::all(Color::srgba(0.35, 0.9, 1.0, 0.45)),
+                ));
+            }
             if !is_spectator {
                 root.spawn((
                     Text::new("+"),
@@ -97,13 +103,13 @@ pub(super) fn sync(runtime: Res<HexWfcRuntime>, mut hud: Query<&mut Text, With<H
     let exit = world.config.exit();
     let escaped = runtime
         .match_state
-        .players
+        .teams
         .values()
-        .filter(|player| player.escaped)
+        .filter(|team| team.escaped)
         .count();
-    let total = runtime.match_state.players.len();
+    let total = runtime.match_state.teams.len();
     **text = format!(
-        "GENERATION {}  |  tick {}\nrunners escaped {escaped}/{total}\nlanterns {}  |  Guardian {:?}\ncell q{} r{} L{}  |  exit q{} r{} L{}\n{}{}",
+        "GENERATION {}  |  tick {}\nteams escaped {escaped}/{total}\nlanterns {}  |  Guardian {:?}\ncell q{} r{} L{}  |  exit q{} r{} L{}\n{}{}",
         world.generation,
         runtime.match_state.tick,
         runtime.match_state.lanterns.inventory(runtime.local_player),

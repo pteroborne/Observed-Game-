@@ -1,18 +1,13 @@
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 
-use observed_authoring::{Manifest, TilePrototype};
+use observed_authoring::TilePrototype;
 use observed_core::PlayerId;
 use observed_facility::hex_wfc::{HexFace, HexWfcConfig, HexWfcWorld, PortClass};
 
 use super::*;
 
 fn tiles() -> Vec<TilePrototype> {
-    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/tiles");
-    Manifest::load(&base.join("manifest.ron"))
-        .expect("manifest")
-        .load_tiles(&base)
-        .expect("tiles")
+    observed_authoring::tile_source::compatibility_cells().expect("compatibility tiles")
 }
 
 fn showcase_config(levels: u8) -> HexWfcConfig {
@@ -31,7 +26,8 @@ fn showcase_match(seed: u64, levels: u8, players: u8) -> HexWfcMatch {
     HexWfcMatch::new(
         seed,
         HexMatchConfig {
-            players,
+            teams: players,
+            members_per_team: 1,
             wfc: showcase_config(levels),
         },
         &tiles(),
@@ -46,14 +42,84 @@ fn bot_player_command(game: &HexWfcMatch, id: PlayerId) -> HexPlayerCommand {
     }
 }
 
+#[test]
+fn default_roster_is_two_stable_teams_of_two() {
+    let game =
+        HexWfcMatch::new(44, HexMatchConfig::default(), &tiles()).expect("default showcase match");
+    assert_eq!(game.teams.len(), 2);
+    assert_eq!(
+        game.teams[&observed_core::TeamId(0)].members,
+        vec![PlayerId(0), PlayerId(1)]
+    );
+    assert_eq!(
+        game.teams[&observed_core::TeamId(1)].members,
+        vec![PlayerId(2), PlayerId(3)]
+    );
+    assert_eq!(game.players[&PlayerId(1)].team, observed_core::TeamId(0));
+    assert_eq!(game.players[&PlayerId(2)].team, observed_core::TeamId(1));
+}
+
+#[test]
+fn a_team_finishes_only_after_both_members_escape() {
+    let mut game = HexWfcMatch::new(
+        44,
+        HexMatchConfig {
+            teams: 1,
+            members_per_team: 2,
+            wfc: showcase_config(4),
+        },
+        &tiles(),
+    )
+    .expect("two-member showcase");
+    let exit = game.facility.config.exit();
+    game.players.get_mut(&PlayerId(0)).expect("p1").cell = exit;
+    game.resolve_escapes();
+    assert!(game.players[&PlayerId(0)].escaped);
+    assert!(!game.teams[&observed_core::TeamId(0)].escaped);
+    assert!(game.escape_order.is_empty());
+
+    game.players.get_mut(&PlayerId(1)).expect("p2").cell = exit;
+    game.resolve_escapes();
+    assert!(game.teams[&observed_core::TeamId(0)].escaped);
+    assert_eq!(game.escape_order, vec![observed_core::TeamId(0)]);
+    assert_eq!(game.status, HexMatchStatus::Finished);
+}
+
+#[test]
+fn teammate_observations_share_one_survivor_map() {
+    let mut game = HexWfcMatch::new(
+        44,
+        HexMatchConfig {
+            teams: 1,
+            members_per_team: 2,
+            wfc: showcase_config(4),
+        },
+        &tiles(),
+    )
+    .expect("two-member showcase");
+    let teammate_cell = game
+        .facility
+        .placements
+        .keys()
+        .copied()
+        .find(|cell| *cell != game.facility.config.spawn())
+        .expect("second cell");
+    game.players.get_mut(&PlayerId(1)).expect("p2").cell = teammate_cell;
+    game.update_map_knowledge();
+    let team_map = game.team_map(observed_core::TeamId(0)).expect("team map");
+    assert!(team_map.cells.contains_key(&game.facility.config.spawn()));
+    assert!(team_map.cells.contains_key(&teammate_cell));
+    assert_eq!(game.player_map(PlayerId(0)), game.player_map(PlayerId(1)));
+}
+
 /// Classify the vertical transitions on the solved spawn→exit route.
-/// Returns `(ramp_transitions, shaft_transitions)`.
+/// Returns `(ramp_transitions, stair_transitions)`.
 fn route_vertical_profile(world: &HexWfcWorld) -> (u32, u32) {
     let Some(route) = world.route_between(world.config.spawn(), world.config.exit()) else {
         return (0, 0);
     };
     let mut ramps = 0;
-    let mut shafts = 0;
+    let mut stairs = 0;
     for pair in route.windows(2) {
         let (a, b) = (pair[0], pair[1]);
         if a.level == b.level {
@@ -72,11 +138,11 @@ fn route_vertical_profile(world: &HexWfcWorld) -> (u32, u32) {
         };
         match class {
             PortClass::RampOpen => ramps += 1,
-            PortClass::ShaftOpen => shafts += 1,
+            PortClass::ShaftOpen => stairs += 1,
             _ => {}
         }
     }
-    (ramps, shafts)
+    (ramps, stairs)
 }
 
 fn run_bot_to_exit(game: &mut HexWfcMatch, max_ticks: u64) -> Option<u64> {
@@ -108,7 +174,8 @@ fn scan_mutation_seeds() {
         let Ok(mut game) = HexWfcMatch::new(
             seed,
             HexMatchConfig {
-                players: 4,
+                teams: 2,
+                members_per_team: 2,
                 wfc: showcase_config(4),
             },
             &tiles(),
@@ -164,10 +231,10 @@ fn scan_gate_seeds() {
             let Ok(world) = HexWfcWorld::generate(seed, showcase_config(levels)) else {
                 continue;
             };
-            let (ramps, shafts) = route_vertical_profile(&world);
-            if ramps >= 2 && shafts >= 1 {
+            let (ramps, stairs) = route_vertical_profile(&world);
+            if ramps >= 2 && stairs >= 1 {
                 eprintln!(
-                    "GATE_CANDIDATE levels={levels} seed={seed:#018x} ramps={ramps} shafts={shafts}"
+                    "GATE_CANDIDATE levels={levels} seed={seed:#018x} ramps={ramps} stairs={stairs}"
                 );
                 found += 1;
                 if found >= 12 {
@@ -190,6 +257,20 @@ fn diagnose_bot() {
         .ok()
         .and_then(|value| value.parse().ok())
         .unwrap_or(5);
+    let max_ticks: u64 = std::env::var("HEX_DIAG_TICKS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(8_000);
+    let players: u8 = std::env::var("HEX_DIAG_PLAYERS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(1);
+    let focus = PlayerId(
+        std::env::var("HEX_DIAG_PLAYER")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0),
+    );
     let world = HexWfcWorld::generate(seed, showcase_config(levels)).expect("world");
     let route = world
         .route_between_cells(world.config.spawn(), world.config.exit())
@@ -207,45 +288,45 @@ fn diagnose_bot() {
             c, p.archetype, p.up, p.down, p.doors
         );
     }
-    let mut game = showcase_match(seed, levels, 1);
-    let mut last_cell = game.players[&PlayerId(0)].cell;
-    for tick in 0..8_000u64 {
-        let cmd = game.bot_command(PlayerId(0));
-        let commands = BTreeMap::from([(
-            PlayerId(0),
-            HexPlayerCommand {
-                intent: cmd,
-                actions: HexActionButtons::default(),
-            },
-        )]);
+    let mut game = showcase_match(seed, levels, players);
+    if std::env::var("HEX_DIAG_PIN_GUARDIAN").is_ok() {
+        pin_guardian_for_path_soak(&mut game);
+    }
+    let mut last_cell = game.players[&focus].cell;
+    for tick in 0..max_ticks {
+        let cmd = game.bot_command(focus);
+        let commands = game
+            .players
+            .keys()
+            .copied()
+            .filter(|id| !game.players[id].escaped)
+            .map(|id| (id, bot_player_command(&game, id)))
+            .collect();
         game.step(&HexInputFrame {
             version: HEX_INPUT_VERSION,
             tick,
             commands,
         });
-        let p = &game.players[&PlayerId(0)];
+        let p = &game.players[&focus];
         if p.cell != last_cell {
             eprintln!(
-                "tick={tick} cell={:?} pos=({:.1},{:.1},{:.1}) climb={:?} cmd_jump={} cmd_int={}",
+                "tick={tick} cell={:?} pos=({:.1},{:.1},{:.1}) cmd_jump={} cmd_int={}",
                 p.cell,
                 p.position.x,
                 p.position.y,
                 p.position.z,
-                p.climb_target,
                 cmd.jump_pressed,
                 cmd.interact_held
             );
             last_cell = p.cell;
         } else if tick % 1000 == 0 && tick > 0 {
-            let b = game.bodies[&PlayerId(0)];
+            let b = game.bodies[&focus];
             eprintln!(
-                "  ..stuck tick={tick} cell={:?} pos=({:.1},{:.1},{:.1}) climb={:?} transit={:?} mv=({:.2},{:.2}) look={:.2} jump={} int={} yaw={:.2} vel=({:.2},{:.2},{:.2}) grounded={}",
+                "  ..stuck tick={tick} cell={:?} pos=({:.1},{:.1},{:.1}) mv=({:.2},{:.2}) look={:.2} jump={} int={} yaw={:.2} vel=({:.2},{:.2},{:.2}) grounded={}",
                 p.cell,
                 p.position.x,
                 p.position.y,
                 p.position.z,
-                p.climb_target,
-                p.transit_target,
                 cmd.movement.x,
                 cmd.movement.y,
                 cmd.look.x,
@@ -263,29 +344,58 @@ fn diagnose_bot() {
             break;
         }
     }
-    let p = &game.players[&PlayerId(0)];
+    let p = &game.players[&focus];
     eprintln!(
         "final cell={:?} pos=({:.1},{:.1},{:.1})",
         p.cell, p.position.x, p.position.y, p.position.z
     );
+    let body_min_y = p.position.y - game.traversal_config.half_height;
+    let body_max_y = p.position.y + game.traversal_config.half_height;
+    for piece in &game.geometry.pieces {
+        let observed_traversal::ColliderShape::ConvexHull { points } = &piece.shape else {
+            continue;
+        };
+        let min = points
+            .iter()
+            .fold(Vec3::splat(f32::INFINITY), |min, point| {
+                min.min(*point + piece.center)
+            });
+        let max = points
+            .iter()
+            .fold(Vec3::splat(f32::NEG_INFINITY), |max, point| {
+                max.max(*point + piece.center)
+            });
+        if p.position.x >= min.x - 1.0
+            && p.position.x <= max.x + 1.0
+            && p.position.z >= min.z - 1.0
+            && p.position.z <= max.z + 1.0
+            && body_max_y >= min.y
+            && body_min_y <= max.y
+        {
+            eprintln!(
+                "  nearby collider source={:?} tile={:?} bounds=({:.1},{:.1},{:.1})..({:.1},{:.1},{:.1})",
+                piece.source_cell, piece.tile, min.x, min.y, min.z, max.x, max.y, max.z
+            );
+        }
+    }
 }
 
 /// Pinned headless gate seed (found via `scan_gate_seeds`). Its solved 12×9×5
-/// showcase route crosses two ramp levels and two shafts.
+/// showcase route crosses two ramp levels and two physical stair towers.
 const GATE_SEED: u64 = 0xa11c_0000_0000_0000;
 const GATE_LEVELS: u8 = 5;
 
 /// Phase 94 success criterion 1 — the headless gate. On a pinned seed whose
-/// solved route crosses ≥2 ramp levels and ≥1 shaft, an objective bot completes
+/// solved route crosses ≥2 ramp levels and ≥1 stair tower, an objective bot completes
 /// spawn→exit, and it does so deterministically: two independent runs reach the
 /// exit on the identical tick and end on the identical snapshot digest.
 #[test]
-fn headless_gate_bot_crosses_ramps_and_shaft_deterministically() {
+fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
     let world = HexWfcWorld::generate(GATE_SEED, showcase_config(GATE_LEVELS)).expect("world");
-    let (ramps, shafts) = route_vertical_profile(&world);
+    let (ramps, stairs) = route_vertical_profile(&world);
     assert!(
-        ramps >= 2 && shafts >= 1,
-        "gate route must cross >=2 ramp levels and >=1 shaft, got ramps={ramps} shafts={shafts}"
+        ramps >= 2 && stairs >= 1,
+        "gate route must cross >=2 ramp levels and >=1 stair tower, got ramps={ramps} stairs={stairs}"
     );
 
     let mut first = showcase_match(GATE_SEED, GATE_LEVELS, 1);
@@ -302,6 +412,25 @@ fn headless_gate_bot_crosses_ramps_and_shaft_deterministically() {
         second.snapshot().digest,
         "identical inputs must yield identical final snapshot digests"
     );
+}
+
+/// Keep the Guardian out of geometry/pathfinding soaks. Its competitive
+/// setbacks have their own tests and can otherwise turn a walkability failure
+/// into repeated, valid returns to a recovery room.
+fn pin_guardian_for_path_soak(game: &mut HexWfcMatch) {
+    let blueprint = game
+        .facility
+        .blueprints
+        .iter()
+        .find(|blueprint| blueprint.cells.contains(&game.guardian.cell))
+        .expect("Guardian belongs to a blueprint");
+    let threshold = HexThresholdKey {
+        room_generation_key: blueprint.generation_key(),
+        port: "path-soak-pin",
+    };
+    game.lanterns
+        .deploy(PlayerId(0), threshold, blueprint.anchor, Vec3::ZERO)
+        .expect("path soak starts with one anchor lantern");
 }
 
 #[test]
@@ -335,6 +464,7 @@ fn bot_soak_has_no_stalls() {
                 continue;
             }
             let mut game = showcase_match(seed, levels, 4);
+            pin_guardian_for_path_soak(&mut game);
             let finished = run_bot_to_exit(&mut game, 40_000);
             assert!(
                 finished.is_some(),
@@ -374,7 +504,8 @@ fn every_open_blueprint_door_is_two_way_traversable() {
         let Ok(game) = HexWfcMatch::new(
             seed,
             HexMatchConfig {
-                players: 1,
+                teams: 1,
+                members_per_team: 1,
                 wfc: showcase_config(5),
             },
             &tiles(),
@@ -486,7 +617,7 @@ fn ordinary_drops_do_not_trigger_recovery_on_the_gate_route() {
 /// same generation timeline and the same final snapshot digest byte-for-byte.
 ///
 /// The fixture's first warned pocket commits on its first scheduled attempt.
-const MUTATION_SEED: u64 = 0xA11C_9500_0000_0000;
+const MUTATION_SEED: u64 = 0x3F2B_ECB9_7F4A_7C15;
 
 #[test]
 fn observed_relayout_commits_mid_match_deterministically() {

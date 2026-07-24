@@ -53,3 +53,9 @@
     ]
     name(string) : "Stable threshold name" : "east_threshold"
 ]
+
+@PointClass color(255 244 170) size(-5 -5 -5, 5 5 5) = tile_light : "Semantic practical light source" [
+    kind(choices) : "Presentation-owned treatment" : "practical" = [
+        "practical" : "District-coloured architectural practical"
+    ]
+]

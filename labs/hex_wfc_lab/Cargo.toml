@@ -7,6 +7,7 @@ publish = false
 [dependencies]
 bevy = { version = "0.18.1", default-features = false, features = ["2d", "3d", "png"] }
 observed_authoring = { path = "../../crates/observed_authoring" }
+observed_content = { path = "../../crates/observed_content" }
 observed_core = { path = "../../crates/observed_core", default-features = false }
 # hex_wfc is unconditional in observed_facility — no `wfc` feature needed.
 observed_facility = { path = "../../crates/observed_facility" }

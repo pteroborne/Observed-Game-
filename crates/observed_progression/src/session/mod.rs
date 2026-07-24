@@ -14,12 +14,16 @@ pub const PROTOCOL_VERSION: u16 = 1;
 pub const CURRENT_BUILD: u32 = 0x2026_0619;
 
 pub mod connection;
+pub mod lan;
 pub mod lobby;
 pub mod matchmaking;
 
 #[cfg(test)]
 pub mod test;
 
+pub use lan::{
+    LanJoinError, LanLaunchManifest, LanLaunchSeat, LanPhase, LanSeat, LanSeatOccupant, LanSession,
+};
 pub use lobby::{Session, SessionLabWorld};
 pub use matchmaking::{Matchmaker, QueueError, QueueTicket};
 

@@ -61,7 +61,8 @@ pub(crate) fn setup(mut commands: Commands, mut facility: ResMut<FacilityState>)
     let game = HexWfcMatch::new(
         GATE_SEED,
         HexMatchConfig {
-            players: 1,
+            teams: 1,
+            members_per_team: 1,
             wfc: gate_config(),
         },
         &facility.prototypes,

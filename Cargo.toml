@@ -35,6 +35,7 @@ members = [
     "labs/incentive_lab",
     "labs/hazard_lab",
     "labs/network_lab",
+    "labs/lan_lab",
     "labs/session_lab",
     "labs/mutable_facility",
     "labs/competitive_facility",
@@ -81,7 +82,9 @@ members = [
     "labs/map_observer_lab",
     "labs/hex_wfc_lab",
     "labs/hex_tile_lab",
+    "labs/hex_room_lab",
     "tools/content_baker",
+    "server",
     "game",
 ]
 resolver = "3"

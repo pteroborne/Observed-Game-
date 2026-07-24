@@ -7,7 +7,7 @@
 use std::collections::BTreeSet;
 
 use bevy::prelude::*;
-use observed_core::{RoomId, TeamId};
+use observed_core::{PlayerId, RoomId, TeamId};
 use observed_facility::map_spec::{MapSpec, RoomRole};
 use observed_match::facility::{TEAM_COUNT, TeamRun};
 use observed_match::teamplay::{TeamMemberState, TeamTask};
@@ -97,6 +97,7 @@ pub struct ReplayTape {
     seen_actors: BTreeSet<ReplayActorId>,
     seen_markers: BTreeSet<String>,
     anchor_was_placed: bool,
+    hex_local_player: Option<PlayerId>,
 }
 
 impl ReplayTape {
@@ -138,6 +139,7 @@ impl ReplayTape {
             seen_actors: BTreeSet::new(),
             seen_markers: BTreeSet::new(),
             anchor_was_placed: false,
+            hex_local_player: None,
         };
         tape.ensure_actor(ReplayActorId::LocalPlayer);
         for team in 0..TEAM_COUNT as u8 {
@@ -167,6 +169,7 @@ impl ReplayTape {
             seen_actors: BTreeSet::new(),
             seen_markers: BTreeSet::new(),
             anchor_was_placed: false,
+            hex_local_player: None,
         };
         tape.ensure_actor(ReplayActorId::LocalPlayer);
         for player in game.players.values().filter(|player| player.id.0 != 0) {
@@ -278,7 +281,10 @@ impl ReplayTape {
 
     /// Build a fresh tape for the canonical hex facility match, keyed by
     /// [`observed_match::hex_wfc::HEX_INPUT_VERSION`]. Mirrors [`Self::new_full_wfc`].
-    pub fn new_hex_wfc(game: &observed_match::hex_wfc::HexWfcMatch) -> Self {
+    pub fn new_hex_wfc_for_player(
+        game: &observed_match::hex_wfc::HexWfcMatch,
+        local: PlayerId,
+    ) -> Self {
         let mut tape = Self {
             seed: game.seed,
             input_version: observed_match::hex_wfc::HEX_INPUT_VERSION,
@@ -299,10 +305,14 @@ impl ReplayTape {
             seen_actors: BTreeSet::new(),
             seen_markers: BTreeSet::new(),
             anchor_was_placed: false,
+            hex_local_player: Some(local),
         };
         tape.ensure_actor(ReplayActorId::LocalPlayer);
-        for player in game.players.values().filter(|player| player.id.0 != 0) {
-            tape.ensure_actor(ReplayActorId::Team(TeamId(player.id.0 as u8)));
+        for player in game.players.values().filter(|player| player.id != local) {
+            tape.ensure_actor(ReplayActorId::Member {
+                team: player.team,
+                member: (player.id.0 % 2) as u8,
+            });
         }
         tape.sync_hex_rooms(game);
         tape
@@ -315,18 +325,14 @@ impl ReplayTape {
             return;
         }
         self.sync_hex_rooms(game);
-        let local = observed_core::PlayerId(0);
+        let local = self.hex_local_player.unwrap_or(PlayerId(0));
         if let Some(player) = game.players.get(&local)
             && let Some(room) = hex_room_at(game, player.cell)
             && !self.visited_rooms.contains(&room)
         {
             self.visited_rooms.push(room);
         }
-        self.escape_order = game
-            .escape_order
-            .iter()
-            .map(|player| TeamId(player.0 as u8))
-            .collect();
+        self.escape_order.clone_from(&game.escape_order);
         let anchor_is_placed = game
             .lanterns
             .deployed
@@ -342,10 +348,13 @@ impl ReplayTape {
                 .players
                 .values()
                 .map(|player| ReplayActorPose {
-                    actor: if player.id.0 == 0 {
+                    actor: if player.id == local {
                         ReplayActorId::LocalPlayer
                     } else {
-                        ReplayActorId::Team(TeamId(player.id.0 as u8))
+                        ReplayActorId::Member {
+                            team: player.team,
+                            member: (player.id.0 % 2) as u8,
+                        }
                     },
                     room: hex_room_at(game, player.cell),
                     place: None,

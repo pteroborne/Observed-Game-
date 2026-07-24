@@ -8,12 +8,13 @@ mod geometry;
 mod model;
 
 pub use geometry::{
-    HexGeometryDelta, HexGeometryError, HexStructurePiece, HexStructureRole, HexWfcGeometrySnapshot,
+    HexGeometryDelta, HexGeometryError, HexLightSource, HexStructurePiece, HexStructureRole,
+    HexWfcGeometrySnapshot,
 };
 pub use model::{
     HEX_INPUT_VERSION, HexActionButtons, HexDeployedLantern, HexDoorState, HexGuardianState,
     HexGuardianStatus, HexInputFrame, HexLanternCache, HexLanternState, HexMapCellKnowledge,
     HexMapDiscovery, HexMatchConfig, HexMatchError, HexMatchEvent, HexMatchEventKind,
     HexMatchSnapshot, HexMatchStatus, HexPlayerCommand, HexPlayerMapKnowledge, HexPlayerSnapshot,
-    HexPlayerState, HexWfcMatch,
+    HexPlayerState, HexTeamState, HexWfcMatch,
 };

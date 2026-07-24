@@ -41,6 +41,12 @@ pub(super) struct HexWfcGeometry;
 #[derive(Component)]
 pub(super) struct HexWfcKeyLight;
 
+/// A per-tile downlight fixture (tier 2 of the rig). Carries its cell so the shadow
+/// budget can pick the fixtures nearest the runner to cast; the rest stay shadowless
+/// fill. Every non-boundary cell gets one, so no tile is left without a light source.
+#[derive(Component)]
+pub(super) struct HexPractical(pub HexCoord);
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn setup_view(
     mut commands: Commands,
@@ -160,7 +166,9 @@ pub(super) fn sync_streamed_cells(
     }
 }
 
-pub(super) use lighting::{sync_camera, sync_lighting_and_atmosphere};
+pub(super) use lighting::{
+    sync_camera, sync_lighting_and_atmosphere, sync_practical_shadow_budget,
+};
 
 pub(super) fn clear_view(
     mut commands: Commands,

@@ -1,6 +1,3 @@
-use std::path::{Path, PathBuf};
-
-use observed_authoring::Manifest;
 use observed_core::PlayerId;
 use observed_facility::hex_wfc::{
     HexArchetype, HexObservationFrame, HexRelayoutProgress, HexSpace, HexWfcConfig, HexWfcWorld,
@@ -14,16 +11,8 @@ use super::*;
 
 const SHOWCASE_SEED: u64 = 0xA11C_E3D0_0000_0008;
 
-fn tile_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tiles")
-}
-
 fn tiles() -> Vec<TilePrototype> {
-    let base = tile_dir();
-    Manifest::load(&base.join("manifest.ron"))
-        .expect("manifest")
-        .load_tiles(&base)
-        .expect("tiles")
+    observed_authoring::tile_source::compatibility_cells().expect("compatibility tiles")
 }
 
 fn showcase() -> HexWfcWorld {
@@ -50,6 +39,13 @@ fn identical_world_and_manifest_project_identically() {
     let b = HexWfcGeometrySnapshot::project(&world, &tiles).expect("projection");
     assert_eq!(a, b);
     a.arena.validate().expect("valid arena");
+    assert!(
+        !a.lights.is_empty(),
+        "walkable prefabs project authored lights"
+    );
+    assert!(a.lights.iter().all(|light| {
+        world.placements.contains_key(&light.source_cell) && light.position.is_finite()
+    }));
 }
 
 #[test]
@@ -209,7 +205,7 @@ fn boundary_start_uses_its_authored_blueprint_signature_and_the_shell_closes_it(
         piece
             .tile
             .as_ref()
-            .is_some_and(|key| key.archetype == "room_single")
+            .is_some_and(|key| key.archetype == "sanctuary")
     }));
     assert!(
         snapshot
@@ -231,8 +227,8 @@ fn matching_whole_room_module_takes_precedence_over_cell_fallbacks() {
     let fallback_hulls = tiles()
         .into_iter()
         .find(|tile| {
-            tile.key.archetype == "room_single"
-                && tile.key.register == register
+            tile.key.archetype == "sanctuary"
+                && (tile.key.register == register || tile.key.register == "generic")
                 && tile.signature == blueprint_for_role(start.role).cell_signature((0, 0, 0))
         })
         .expect("start fallback")
@@ -270,6 +266,7 @@ fn matching_whole_room_module_takes_precedence_over_cell_fallbacks() {
         }],
         ports,
         hulls: fallback_hulls,
+        lights: Vec::new(),
     };
     let snapshot = HexWfcGeometrySnapshot::project_with_rooms(&world, &tiles(), &[room])
         .expect("whole-room projection");

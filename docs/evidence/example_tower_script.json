@@ -1,0 +1,14 @@
+{
+  "tile_id": "authored/tower_solid_core",
+  "composition": "tower_7hex_3level",
+  "view_mode": "orbit",
+  "orbit_yaw": 0.785,
+  "orbit_pitch": 0.45,
+  "radius": 48.0,
+  "height": 12.0,
+  "strong_wireframe": true,
+  "dev_mode": true,
+  "cross_section": false,
+  "hide_menu": true,
+  "output_image": "docs/evidence/scripted_tower_wireframe.png"
+}

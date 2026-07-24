@@ -1,21 +1,18 @@
 //! Typed source for the locked authoring template and the full tile library.
 //!
-//! Committed `.map` assets are pinned to this generator by test — the editable
-//! files can be opened in TrenchBroom, but they never drift from source. The
-//! library spans every [`REGISTERS`] register x the hall / ramp / shaft / room
-//! families; [`catalog::library`] is the single registry both the generated
-//! files and `manifest.ron` are derived from, so they cannot disagree.
+//! The library spans every [`REGISTERS`] register x the grounded hall / ramp /
+//! stair-tower / room families. It supplies the topology-complete generic collision kit
+//! beneath curated production modules, keeping exact WFC port coverage in code
+//! without committing hundreds of mechanically derived `.map` files.
 //!
 //! Variant numbering (the `TileKey` schema is frozen; `variant: u16` encodes
 //! direction so every key stays unique):
 //! - `hall_straight`: `axis * 3 + interior` (axis 0 = E/W, 1 = SE/NW,
 //!   2 = SW/NE; interior 0 = plain, 1 = colonnade, 2 = pressure).
 //! - `hall_cap`, `ramp`: the door / exit face index (0..5).
-//! - `shaft_landing`: original through/one-door tiles retain face indices
-//!   0..5; the complete one/two-door cap/through alphabet occupies 6..62.
 //! - `hall_corner`: `low_face * 6 + high_face`.
 //! - `hall_junction`: bitmask of open faces (`1 << face_index`).
-//! - shafts and rooms: 0 (unique per archetype already).
+//! - rooms: 0 (unique per archetype already).
 
 mod catalog;
 mod geometry;
@@ -33,8 +30,62 @@ pub use rooms::{
     room_atrium_lower_map, room_atrium_upper_map, room_double_map, room_single_map, room_wing_map,
 };
 pub use verticals::{
-    ramp_map, shaft_bottom_cap_map, shaft_landing_map, shaft_segment_map, shaft_top_cap_map,
+    ramp_map, stair_bottom_cap_map, stair_landing_map, stair_segment_map, stair_top_cap_map,
 };
+
+/// One complete, generic collision kit for the canonical WFC alphabet.
+///
+/// Production-authored modules may deliberately cover only a curated subset of
+/// signatures. These generated cells preserve the hard topology/geometry
+/// contract underneath that subset without requiring hundreds of derived `.map`
+/// files in the repository. Exact register-authored cells still win selection;
+/// this kit is keyed as `generic` and is used only for missing signatures.
+pub fn compatibility_cells() -> Result<Vec<crate::TilePrototype>, crate::TileError> {
+    catalog::library_for(&["institutional"])
+        .into_iter()
+        .map(|source| {
+            let mut tile = crate::parse_tile(&source.text)?;
+            tile.key.register = "generic".to_string();
+            tile.key.archetype = compatibility_archetype(&tile).to_string();
+            Ok(tile)
+        })
+        .collect()
+}
+
+fn compatibility_archetype(tile: &crate::TilePrototype) -> &'static str {
+    match tile.key.archetype.as_str() {
+        "hall_corner" => {
+            let faces = HexFace::LATERAL
+                .into_iter()
+                .filter(|&face| tile.signature.port(face) == observed_hex::PortClass::Door)
+                .map(HexFace::index)
+                .collect::<Vec<_>>();
+            let distance = faces[0].abs_diff(faces[1]);
+            if distance.min(6 - distance) == 1 {
+                "hall_turn_60"
+            } else {
+                "hall_turn_120"
+            }
+        }
+        "hall_junction" => {
+            let doors = HexFace::LATERAL
+                .into_iter()
+                .filter(|&face| tile.signature.port(face) == observed_hex::PortClass::Door)
+                .count();
+            if doors == 3 {
+                "hall_junction_3way"
+            } else {
+                "hall_junction_4way"
+            }
+        }
+        "ramp" => "hall_ramp",
+        "stair_segment" | "stair_top" | "stair_bottom" | "stair_landing" => "stair_tower",
+        archetype if archetype.starts_with("room_") => "sanctuary",
+        "hall_straight" => "hall_straight",
+        "hall_cap" => "hall_cap",
+        unexpected => panic!("unmapped compatibility archetype {unexpected}"),
+    }
+}
 
 /// The nine architecture registers the library is authored for.
 pub const REGISTERS: &[&str] = &[
@@ -90,10 +141,6 @@ pub fn hall_cap_e_map() -> String {
 
 pub fn ramp_e_map() -> String {
     ramp_map("institutional", HexFace::East)
-}
-
-pub fn shaft_map() -> String {
-    shaft_segment_map("institutional")
 }
 
 /// Regenerate the committed tile assets (only rewrites files that changed).

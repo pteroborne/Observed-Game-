@@ -4,12 +4,14 @@
 
 use observed_hex::HexFace;
 
-use super::geometry::{FLOOR_TOP, hex_slab_brush, level_units, tile_meta, wall_brush, worldspawn};
+use super::geometry::{
+    FLOOR_TOP, hex_slab_brush, level_units, tile_light, tile_meta, wall_brush, worldspawn,
+};
 use super::halls::{hall_cap_map, hall_corner_map, hall_junction_map, hall_straight_map};
 use super::rooms::{room_atrium_lower_map, room_atrium_upper_map, room_single_map, room_wing_map};
 use super::verticals::{
-    ShaftVertical, ramp_map, shaft_access_map, shaft_bottom_cap_map, shaft_landing_map,
-    shaft_segment_map, shaft_top_cap_map,
+    StairVertical, ramp_map, stair_access_map, stair_bottom_cap_map, stair_landing_map,
+    stair_segment_map, stair_top_cap_map,
 };
 use super::{REGISTERS, face_name};
 
@@ -44,7 +46,7 @@ fn corner_pairs() -> Vec<(usize, usize)> {
 }
 
 #[allow(clippy::too_many_lines)]
-pub(crate) fn library() -> Vec<GeneratedTile> {
+pub(crate) fn library_for(registers: &[&'static str]) -> Vec<GeneratedTile> {
     let mut tiles = Vec::new();
     let mut push = |file: String,
                     text: String,
@@ -64,7 +66,7 @@ pub(crate) fn library() -> Vec<GeneratedTile> {
         });
     };
 
-    for &reg in REGISTERS {
+    for &reg in registers {
         // Straight halls: three axes x three interior readings.
         for (axis, low, high) in [
             (HexFace::East, 0, 3),
@@ -161,90 +163,88 @@ pub(crate) fn library() -> Vec<GeneratedTile> {
                 ports,
             );
         }
-        // Shaft family.
+        // Ground-supported stair-tower family. Source archetypes stay unique
+        // for manifest keys; runtime compatibility maps them to `stair_tower`.
         push(
-            format!("{reg}_shaft.map"),
-            shaft_segment_map(reg),
-            "shaft",
+            format!("{reg}_stair_segment.map"),
+            stair_segment_map(reg),
+            "stair_segment",
             reg,
             0,
-            1,
+            2,
             vec![("up", "shaft_open"), ("down", "shaft_open")],
         );
         push(
-            format!("{reg}_shaft_top.map"),
-            shaft_top_cap_map(reg),
-            "shaft_top",
+            format!("{reg}_stair_top.map"),
+            stair_top_cap_map(reg),
+            "stair_top",
             reg,
             0,
-            1,
+            2,
             vec![("down", "shaft_open")],
         );
         push(
-            format!("{reg}_shaft_bottom.map"),
-            shaft_bottom_cap_map(reg),
-            "shaft_bottom",
+            format!("{reg}_stair_bottom.map"),
+            stair_bottom_cap_map(reg),
+            "stair_bottom",
             reg,
             0,
-            1,
+            2,
             vec![("up", "shaft_open")],
         );
         for (i, face) in HexFace::LATERAL.into_iter().enumerate() {
             let mut ports = vec![("up", "shaft_open"), ("down", "shaft_open")];
             ports.extend(door_ports(&[face]));
             push(
-                format!("{reg}_shaft_landing_{i}.map"),
-                shaft_landing_map(reg, face),
-                "shaft_landing",
+                format!("{reg}_stair_landing_{i}.map"),
+                stair_landing_map(reg, face),
+                "stair_landing",
                 reg,
                 i as u16,
-                1,
+                2,
                 ports,
             );
         }
-        // The solver can terminate or pass a shaft at a one/two-door access
-        // cell. Variants 0..5 above stay the original through/one-door keys;
-        // the missing exact signatures occupy the contiguous 6..62 range.
-        let mut shaft_variant = 6u16;
-        for vertical in [ShaftVertical::UpOnly, ShaftVertical::DownOnly] {
+        let mut stair_variant = 6u16;
+        for vertical in [StairVertical::UpOnly, StairVertical::DownOnly] {
             for face in HexFace::LATERAL {
                 let faces = [face];
                 let mut ports = match vertical {
-                    ShaftVertical::UpOnly => vec![("up", "shaft_open")],
-                    ShaftVertical::DownOnly => vec![("down", "shaft_open")],
-                    ShaftVertical::Through => unreachable!(),
+                    StairVertical::UpOnly => vec![("up", "shaft_open")],
+                    StairVertical::DownOnly => vec![("down", "shaft_open")],
+                    StairVertical::Through => unreachable!(),
                 };
                 ports.extend(door_ports(&faces));
                 push(
-                    format!("{reg}_shaft_landing_{shaft_variant}.map"),
-                    shaft_access_map(reg, &faces, vertical, shaft_variant),
-                    "shaft_landing",
+                    format!("{reg}_stair_landing_{stair_variant}.map"),
+                    stair_access_map(reg, &faces, vertical, stair_variant),
+                    "stair_landing",
                     reg,
-                    shaft_variant,
-                    1,
+                    stair_variant,
+                    2,
                     ports,
                 );
-                shaft_variant += 1;
+                stair_variant += 1;
             }
             for i in 0..6 {
                 for j in (i + 1)..6 {
                     let faces = [HexFace::LATERAL[i], HexFace::LATERAL[j]];
                     let mut ports = match vertical {
-                        ShaftVertical::UpOnly => vec![("up", "shaft_open")],
-                        ShaftVertical::DownOnly => vec![("down", "shaft_open")],
-                        ShaftVertical::Through => unreachable!(),
+                        StairVertical::UpOnly => vec![("up", "shaft_open")],
+                        StairVertical::DownOnly => vec![("down", "shaft_open")],
+                        StairVertical::Through => unreachable!(),
                     };
                     ports.extend(door_ports(&faces));
                     push(
-                        format!("{reg}_shaft_landing_{shaft_variant}.map"),
-                        shaft_access_map(reg, &faces, vertical, shaft_variant),
-                        "shaft_landing",
+                        format!("{reg}_stair_landing_{stair_variant}.map"),
+                        stair_access_map(reg, &faces, vertical, stair_variant),
+                        "stair_landing",
                         reg,
-                        shaft_variant,
-                        1,
+                        stair_variant,
+                        2,
                         ports,
                     );
-                    shaft_variant += 1;
+                    stair_variant += 1;
                 }
             }
         }
@@ -254,19 +254,19 @@ pub(crate) fn library() -> Vec<GeneratedTile> {
                 let mut ports = vec![("up", "shaft_open"), ("down", "shaft_open")];
                 ports.extend(door_ports(&faces));
                 push(
-                    format!("{reg}_shaft_landing_{shaft_variant}.map"),
-                    shaft_access_map(reg, &faces, ShaftVertical::Through, shaft_variant),
-                    "shaft_landing",
+                    format!("{reg}_stair_landing_{stair_variant}.map"),
+                    stair_access_map(reg, &faces, StairVertical::Through, stair_variant),
+                    "stair_landing",
                     reg,
-                    shaft_variant,
-                    1,
+                    stair_variant,
+                    2,
                     ports,
                 );
-                shaft_variant += 1;
+                stair_variant += 1;
             }
         }
-        debug_assert_eq!(shaft_variant, 63);
-        // Rooms: single, blueprint strip / triangle / diamond cells, atrium.
+        debug_assert_eq!(stair_variant, 63);
+        // Rooms: single and blueprint strip / triangle / diamond cells.
         push(
             format!("{reg}_room_single.map"),
             room_single_map(reg),
@@ -336,6 +336,10 @@ pub(crate) fn library() -> Vec<GeneratedTile> {
     tiles
 }
 
+pub(crate) fn library() -> Vec<GeneratedTile> {
+    library_for(REGISTERS)
+}
+
 /// The locked authoring template: sealed hexagonal cell, one level.
 pub fn template_map() -> String {
     let h = level_units();
@@ -349,6 +353,7 @@ pub fn template_map() -> String {
     );
     out += &worldspawn(&brushes);
     out += &tile_meta("template", "institutional", 0, 1);
+    out += &tile_light(0.0, 0.0, h - 32.0);
     out
 }
 
@@ -363,7 +368,6 @@ pub fn sources() -> Vec<(String, String)> {
         ),
         ("hall_cap_e.map".to_string(), super::hall_cap_e_map()),
         ("ramp_e.map".to_string(), super::ramp_e_map()),
-        ("shaft.map".to_string(), super::shaft_map()),
     ];
     for tile in library() {
         s.push((tile.file, tile.text));

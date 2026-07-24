@@ -1,0 +1,35 @@
+{
+  "captured": [
+    "megastructure/hall_straight/v0",
+    "megastructure/hall_straight/v1",
+    "megastructure/hall_straight/v2",
+    "institutional/hall_straight/v0",
+    "monolith/hall_straight/v0",
+    "thinning/hall_straight/v0",
+    "megastructure/hall_straight/v4",
+    "megastructure/hall_cap/v0",
+    "megastructure/hall_cap/v1",
+    "megastructure/hall_junction/v21",
+    "megastructure/hall_junction/v15",
+    "megastructure/ramp/v0",
+    "megastructure/ramp/v1",
+    "megastructure/ramp/v2",
+    "megastructure/ramp/v3",
+    "megastructure/ramp/v4",
+    "megastructure/ramp/v5",
+    "megastructure/shaft/v0"
+  ],
+  "lab": "hex_tile_lab",
+  "library_tiles": 54,
+  "ramp_gate_passed": false,
+  "ramp_height_gain_m": 1.5,
+  "ramp_max_feet_m": 2.0,
+  "ramp_start_feet_m": 0.5,
+  "tower_7hex_dev_screenshots": [
+    "tower_7hex_dev_overview.png",
+    "tower_7hex_dev_lightwell.png",
+    "tower_7hex_dev_gantry_pov.png",
+    "tower_7hex_dev_cross_section.png"
+  ],
+  "walk_ramp": "megastructure/ramp/v2"
+}

@@ -95,6 +95,7 @@ pub fn rematch_seed(previous: u64) -> u64 {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MatchResult {
+    pub local_team: TeamId,
     pub placement: Option<u8>,
     pub escaped: usize,
     pub absorbed: usize,
@@ -105,6 +106,7 @@ pub struct MatchResult {
 /// Read the local player's outcome from a finished match.
 pub fn resolve(facility: &CompetitiveFacility) -> MatchResult {
     MatchResult {
+        local_team: LOCAL_TEAM,
         placement: facility.team(LOCAL_TEAM).and_then(|t| t.placement),
         escaped: facility.escaped_count(),
         absorbed: facility.absorbed_count(),
@@ -116,6 +118,7 @@ pub fn resolve(facility: &CompetitiveFacility) -> MatchResult {
 /// Read the local player's final outcome from a completed elimination series.
 pub fn resolve_series(series: &EliminationSeries) -> MatchResult {
     MatchResult {
+        local_team: LOCAL_TEAM,
         placement: series.placement_for(LOCAL_TEAM),
         escaped: series.escaped_total(),
         absorbed: series.absorbed_total(),
@@ -135,6 +138,7 @@ pub fn resolve_full_wfc(game: &observed_match::full_wfc::FullWfcMatch) -> MatchR
         .map(|index| index as u8 + 1);
     let winner = game.escape_order.first().copied();
     MatchResult {
+        local_team: LOCAL_TEAM,
         placement,
         escaped: game.teams.values().filter(|team| team.escaped).count(),
         absorbed: game.teams.values().filter(|team| team.eliminated).count(),
@@ -147,27 +151,30 @@ pub fn resolve_full_wfc(game: &observed_match::full_wfc::FullWfcMatch) -> MatchR
 /// match is a pure spawn→exit race keyed by [`observed_core::PlayerId`]; the local
 /// player is `PlayerId(0)` (mapped to [`LOCAL_TEAM`]). Mirrors [`resolve_full_wfc`].
 pub fn resolve_hex_wfc(game: &observed_match::hex_wfc::HexWfcMatch) -> MatchResult {
-    let local = observed_core::PlayerId(0);
+    resolve_hex_wfc_for_player(game, observed_core::PlayerId(0))
+}
+
+pub fn resolve_hex_wfc_for_player(
+    game: &observed_match::hex_wfc::HexWfcMatch,
+    local: observed_core::PlayerId,
+) -> MatchResult {
+    let local_team = game
+        .players
+        .get(&local)
+        .map_or(TeamId(0), |player| player.team);
     let placement = game
         .escape_order
         .iter()
-        .position(|player| *player == local)
+        .position(|team| *team == local_team)
         .map(|index| index as u8 + 1);
     let winner = game.escape_order.first().copied();
     MatchResult {
+        local_team,
         placement,
-        escaped: game
-            .players
-            .values()
-            .filter(|player| player.escaped)
-            .count(),
-        absorbed: game
-            .players
-            .values()
-            .filter(|player| !player.escaped)
-            .count(),
-        winner: winner.map(|player| TeamId(player.0 as u8)),
-        local_won: winner == Some(local),
+        escaped: game.teams.values().filter(|team| team.escaped).count(),
+        absorbed: game.teams.values().filter(|team| !team.escaped).count(),
+        winner,
+        local_won: winner == Some(local_team),
     }
 }
 

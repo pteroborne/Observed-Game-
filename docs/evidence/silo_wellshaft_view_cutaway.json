@@ -1,0 +1,12 @@
+{
+  "composition": "silo_wellshaft",
+  "view_mode": "orbit",
+  "render_mode": "clay",
+  "cross_section": true,
+  "orbit_yaw": 1.2,
+  "orbit_pitch": 0.55,
+  "radius": 62.0,
+  "height": 22.0,
+  "camera_target": [0.0, 14.0, 0.0],
+  "output_image": "docs/evidence/silo_wellshaft_cutaway.png"
+}

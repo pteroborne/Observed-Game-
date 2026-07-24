@@ -1171,4 +1171,12 @@ mod tests {
             "a readable frame passes the corridor: {verdict:?}"
         );
     }
+
+    #[test]
+    fn corridor_constants_are_pinned_to_spec_bounds() {
+        assert_eq!(FLOOR_P95_MIN, 0.02, "FLOOR_P95_MIN is pinned to 0.02");
+        assert_eq!(FLOOR_P50_MIN, 0.002, "FLOOR_P50_MIN is pinned to 0.002");
+        assert_eq!(CEILING_P50_MAX, 0.75, "CEILING_P50_MAX is pinned to 0.75");
+        assert_eq!(CEILING_P05_MAX, 0.40, "CEILING_P05_MAX is pinned to 0.40");
+    }
 }

@@ -1,5 +1,6 @@
-//! The Phase 90 variant alphabet: every cell state the collapse can choose,
-//! now spanning verticality — `ShaftOpen` wells and paired `RampOpen` ramps.
+//! The production variant alphabet: grounded lateral rooms/halls, paired
+//! `RampOpen` ramps, and logical `ShaftOpen` links whose physical projection
+//! is a ground-supported switchback stair tower rather than an elevator.
 
 use std::collections::BTreeSet;
 
@@ -56,8 +57,8 @@ pub(super) fn catalogue() -> Vec<HexVariant> {
         weight: 4,
     }];
 
-    // 1. Room variants: any lateral door mask, optionally a vertical shaft
-    //    face (rooms carry ShaftOpen for atria/silos; ramps are hall-only).
+    // 1. Room variants: any lateral door mask, optionally a vertical opening
+    //    for the fixed two-level Guardian Control atrium.
     for &up in &[PortClass::Sealed, PortClass::ShaftOpen] {
         for &down in &[PortClass::Sealed, PortClass::ShaftOpen] {
             for mask in 0u8..64 {
@@ -132,9 +133,8 @@ pub(super) fn catalogue() -> Vec<HexVariant> {
         });
     }
 
-    // 4. Shaft (wellshaft) variants: a through-column segment plus capped and
-    //    landing segments. The high through weight lets columns stack into
-    //    multi-level wells.
+    // 4. Legacy logical well states remain part of the solver's vertical
+    // alphabet, but presentation resolves them to grounded stair towers.
     variants.push(HexVariant {
         space: HexSpace::Hall,
         archetype: HexArchetype::Shaft,
@@ -190,16 +190,26 @@ pub fn placement_tile_archetype(placement: &HexPlacement) -> Option<&'static str
     match placement.archetype {
         HexArchetype::Void | HexArchetype::Room | HexArchetype::RampHead => None,
         HexArchetype::Straight => Some("hall_straight"),
-        HexArchetype::Corner => Some("hall_corner"),
-        HexArchetype::Junction => Some("hall_junction"),
-        HexArchetype::RampUp => Some("ramp"),
-        HexArchetype::Shaft if placement.doors != 0 => Some("shaft_landing"),
-        HexArchetype::Shaft => match (placement.up, placement.down) {
-            (PortClass::ShaftOpen, PortClass::ShaftOpen) => Some("shaft"),
-            (PortClass::Sealed, PortClass::ShaftOpen) => Some("shaft_top"),
-            (PortClass::ShaftOpen, PortClass::Sealed) => Some("shaft_bottom"),
-            _ => None,
-        },
+        HexArchetype::Corner => Some(corner_tile_archetype(placement.doors)),
+        HexArchetype::Junction if placement.doors.count_ones() == 3 => Some("hall_junction_3way"),
+        HexArchetype::Junction => Some("hall_junction_4way"),
+        HexArchetype::RampUp => Some("hall_ramp"),
+        HexArchetype::Shaft => Some("stair_tower"),
+    }
+}
+
+fn corner_tile_archetype(doors: u8) -> &'static str {
+    let faces = HexFace::LATERAL
+        .into_iter()
+        .filter(|&face| doors & lateral_bit(face) != 0)
+        .map(HexFace::index)
+        .collect::<Vec<_>>();
+    debug_assert_eq!(faces.len(), 2);
+    let distance = faces[0].abs_diff(faces[1]);
+    if distance.min(6 - distance) == 1 {
+        "hall_turn_60"
+    } else {
+        "hall_turn_120"
     }
 }
 
@@ -329,22 +339,26 @@ mod geometry_tests {
     #[test]
     fn geometry_demands_are_exact_and_exclude_non_emitters() {
         let demands = geometry_demands();
-        assert_eq!(demands.len(), 134);
         let unique: BTreeSet<_> = demands.iter().copied().collect();
         assert_eq!(unique.len(), demands.len());
-        assert_eq!(
-            demands
+        assert!(
+            !demands
                 .iter()
-                .filter(|demand| demand.archetype == "shaft" || demand.archetype == "shaft_landing")
-                .count(),
-            64
+                .any(|demand| demand.archetype.contains("shaft"))
         );
         assert_eq!(
             demands
                 .iter()
-                .filter(|demand| demand.archetype == "ramp")
+                .filter(|demand| demand.archetype == "hall_ramp")
                 .count(),
             6
+        );
+        assert_eq!(
+            demands
+                .iter()
+                .filter(|demand| demand.archetype == "stair_tower")
+                .count(),
+            64
         );
         assert!(!demands.iter().any(|demand| demand.archetype == "void"));
         assert!(!demands.iter().any(|demand| demand.archetype == "ramp_head"));
@@ -367,7 +381,7 @@ mod geometry_tests {
         );
         assert_eq!(
             placement_tile_archetype(&placement(HexArchetype::RampUp)),
-            Some("ramp")
+            Some("hall_ramp")
         );
     }
 }

@@ -25,6 +25,23 @@ pub enum InteractionPolicy {
     SharedHold { minimum_users: usize },
 }
 
+impl InteractionPolicy {
+    pub fn is_instant(self) -> bool {
+        matches!(self, InteractionPolicy::Instant)
+    }
+
+    pub fn required_users(self) -> usize {
+        match self {
+            InteractionPolicy::Instant | InteractionPolicy::ExclusiveHold => 1,
+            InteractionPolicy::SharedHold { minimum_users } => minimum_users,
+        }
+    }
+
+    pub fn is_quorum_met(self, active_users: usize) -> bool {
+        active_users >= self.required_users()
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ItemLocation {
     Ground(Vec2),

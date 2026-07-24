@@ -37,6 +37,7 @@ observed_assets = { path = "../crates/observed_assets" }
 player_input = { path = "../crates/player_input" }
 observed_progression = { path = "../crates/observed_progression" }
 observed_net = { path = "../crates/observed_net" }
+observed_server = { path = "../server" }
 observed_observation = { path = "../crates/observed_observation" }
 observed_facility = { path = "../crates/observed_facility", features = ["wfc"] }
 observed_hex = { path = "../crates/observed_hex" }

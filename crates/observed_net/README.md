@@ -1,14 +1,22 @@
-# observed_net
+# `observed_net`
 
-This production crate implements the deterministic lockstep multiplayer networking protocol. It manages lossy UDP packet repairs, frame validation hashes, simulation-content compatibility, and client-server sync messages.
+The **`observed_net`** production crate implements deterministic lockstep multiplayer networking, wire protocol serialization, packet repair buffers, and frame checksum validation.
 
-## Module Structure
-- **[`lib.rs`](src/lib.rs):** Entry point.
-- **[`protocol.rs`](src/protocol.rs):** Defines Status messages containing inputs (`WireIntent`), the simulation-content SHA-256, and checksum validation. Peers with different movement/collision content are rejected before a frame commits.
-- **[`network.rs`](src/network.rs):** Manages packet repair buffers, frame sequencing, duplicate handling, and simulated transport delay/jitter.
-- **[`netmatch.rs`](src/netmatch.rs):** Bridges networked lockstep frames into matching client-side simulation updates.
+---
 
-## Audit Notes
-- **Bloat:** `netmatch.rs` (688 lines) and `network.rs` (634 lines) are substantial.
-- **Overlap:**
-  - `PacketError` enum was unified into the crate-level root `lib.rs` and is imported across both `netmatch.rs` and `protocol.rs`.
+## Submodules
+
+- **[`protocol`](src/protocol.rs)**: Fixed-size binary wire serialization (`WireIntent`), status packet headers, SHA-256 simulation-content validation, and packet checksum checks.
+- **[`network`](src/network.rs)**: Lockstep frame synchronizer, managing packet loss repair, out-of-order packet reordering, and simulated transport delay/jitter.
+- **[`netmatch`](src/netmatch.rs)**: Client-server match state synchronization and lockstep frame execution over production controller instances.
+- **[`lan`](src/lan.rs)**: Versioned/checksummed UDP datagrams, broadcast discovery, direct-address clients, lobby commands/snapshots, redundant input bundles, authoritative frame windows, acknowledgements, reconnect tokens, and deterministic history resync.
+- **[`PacketError`](src/lib.rs)**: Unified error enum for network packet validation.
+
+---
+
+## Testing
+
+Run unit tests:
+```bash
+cargo test -p observed_net
+```

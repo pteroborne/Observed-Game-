@@ -32,3 +32,11 @@ pub mod hybrid;
 pub mod maze;
 pub mod mutable;
 pub mod teamplay;
+
+/// Common trait for deterministic, versioned match simulation commands.
+pub trait SimulationCommand {
+    type Target;
+    type Outcome;
+
+    fn apply(&self, target: &mut Self::Target) -> Self::Outcome;
+}

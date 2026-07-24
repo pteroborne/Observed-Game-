@@ -21,3 +21,6 @@ observed_traversal = { path = "../observed_traversal", default-features = false 
 player_input = { path = "../player_input", default-features = false }
 glam = "0.30"
 bevy = { version = "0.18.1", default-features = false, optional = true }
+
+[dev-dependencies]
+observed_content = { path = "../observed_content" }

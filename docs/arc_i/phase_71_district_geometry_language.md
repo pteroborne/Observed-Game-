@@ -1,5 +1,7 @@
 # Phase 71 — WFC Register Composition (geometry + light as one language)
 
+**Status:** `[x]` — complete (2026-07-20; WFC hallway module composition layer, adjacency invariants, and lab reference alignment verified).
+
 **Fast-track ruling 2026-07-11 (user):** implement all nine lab registers in the
 game, with **WFC as the composition mechanism** — the geometry grammar and the
 light staging are one system, delivered as a module layer the hallway WFC

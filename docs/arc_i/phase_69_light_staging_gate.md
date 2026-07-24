@@ -1,5 +1,7 @@
 # Phase 69 — Light Staging in the Game + the Luminance Gate
 
+**Status:** `[x]` — complete (2026-07-20; key lights, preview parity, and audit luminance corridor gate verified).
+
 **Objective:** promote the lab-proven rigs into the game's place spawners — one
 shadow-casting key light per place, per-district temperature pairs, optional
 pools-rhythm spacing — and land the luminance-corridor check in the visual

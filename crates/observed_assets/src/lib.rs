@@ -44,7 +44,7 @@ impl AssetKind {
 
 /// One drop-in slot: a logical name, what kind of asset it is, and the path it
 /// expects (relative to the `assets/` root), plus a hint of what to put there.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AssetSlot {
     pub name: &'static str,
     pub kind: AssetKind,
@@ -154,6 +154,12 @@ pub const HAZARD: AssetSlot = AssetSlot {
     kind: AssetKind::Model,
     path: "models/hazard.glb",
     hint: "warning beacon for collapsing rooms",
+};
+pub const LANTERN: AssetSlot = AssetSlot {
+    name: "lantern",
+    kind: AssetKind::Model,
+    path: "models/lantern.glb",
+    hint: "handheld caged anchor lantern or torch body",
 };
 pub const FOOTSTEP: AssetSlot = AssetSlot {
     name: "footstep",
@@ -468,6 +474,7 @@ pub const SLOTS: &[AssetSlot] = &[
     DECOR_CRATE,
     DECOR_CONSOLE,
     HAZARD,
+    LANTERN,
     FOOTSTEP,
     REROUTE,
     ESCAPE,
@@ -516,19 +523,26 @@ pub const SLOTS: &[AssetSlot] = &[
     WALL_ALBEDO_LAB,
 ];
 
+/// Returns the static slice of all authored asset slots without dynamic vector allocation.
+pub fn slots() -> &'static [AssetSlot] {
+    SLOTS
+}
+
 /// The authored slots a showcase wires up, as an owned vector (back-compat with the
 /// original `manifest()` API). [`SLOTS`] is the same data as a `'static` slice.
 pub fn manifest() -> Vec<AssetSlot> {
-    SLOTS.to_vec()
+    slots().to_vec()
+}
+
+/// Look a slot up by its logical name, returning `None` if the slot name is not in [`SLOTS`].
+pub fn find_slot(name: &str) -> Option<AssetSlot> {
+    SLOTS.iter().copied().find(|s| s.name == name)
 }
 
 /// Look a slot up by its logical name. Panics if the name is not in [`SLOTS`] — a
 /// missing name is a programming error, caught by tests, not a runtime condition.
 pub fn slot(name: &str) -> AssetSlot {
-    *SLOTS
-        .iter()
-        .find(|s| s.name == name)
-        .unwrap_or_else(|| panic!("no asset slot named {name:?}"))
+    find_slot(name).unwrap_or_else(|| panic!("no asset slot named {name:?}"))
 }
 
 /// The `assets/` root relative to the current working directory (where `cargo run`
@@ -607,6 +621,7 @@ mod tests {
         assert_eq!(slot("ambience_archive").path, AMBIENCE_ARCHIVE.path);
         assert_eq!(slot("runner_stand").path, RUNNER_STAND.path);
         assert_eq!(slot("control_device").path, CONTROL_DEVICE.path);
+        assert_eq!(slot("lantern").path, LANTERN.path);
         assert_eq!(slot("keystone_card").path, KEYSTONE_CARD.path);
         assert_eq!(slot("keystone_core").path, KEYSTONE_CORE.path);
         assert_eq!(slot("exit_access_card").path, EXIT_ACCESS_CARD.path);
@@ -642,5 +657,17 @@ mod tests {
         for hall_slot in [AMBIENCE_CORRIDOR, AMBIENCE_GANTRY] {
             assert_eq!(slot(hall_slot.name).path, hall_slot.path);
         }
+    }
+
+    #[test]
+    fn find_slot_returns_option() {
+        assert_eq!(find_slot("wall").map(|s| s.path), Some(WALL.path));
+        assert_eq!(find_slot("non_existent_slot_name"), None);
+    }
+
+    #[test]
+    fn slots_matches_manifest() {
+        assert_eq!(slots().len(), manifest().len());
+        assert_eq!(slots(), manifest().as_slice());
     }
 }

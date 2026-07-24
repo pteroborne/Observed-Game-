@@ -125,7 +125,108 @@ pub struct TraversalProfile {
     pub ground_snap: f32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct KinematicSpeeds {
+    pub walk: f32,
+    pub run: f32,
+    pub ground_accel: f32,
+    pub ground_decel: f32,
+    pub air_accel: f32,
+    pub gravity: f32,
+    pub max_fall: f32,
+    pub jump_speed: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CapsuleShape {
+    pub radius: f32,
+    pub half_height: f32,
+    pub eye_height: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StepLimits {
+    pub step_height: f32,
+    pub controller_offset: f32,
+    pub minimum_step_width: f32,
+    pub maximum_slope_degrees: f32,
+    pub ground_snap: f32,
+}
+
+#[derive(Clone, Debug)]
+pub struct TraversalProfileBuilder {
+    profile: TraversalProfile,
+}
+
+impl TraversalProfileBuilder {
+    pub fn new() -> Self {
+        Self {
+            profile: TraversalProfile::deliberate_rapier(),
+        }
+    }
+
+    pub fn walk_speed(mut self, speed: f32) -> Self {
+        self.profile.walk_speed = speed;
+        self
+    }
+
+    pub fn run_speed(mut self, speed: f32) -> Self {
+        self.profile.run_speed = speed;
+        self
+    }
+
+    pub fn jump_speed(mut self, speed: f32) -> Self {
+        self.profile.jump_speed = speed;
+        self
+    }
+
+    pub fn build(self) -> TraversalProfile {
+        self.profile
+    }
+}
+
+impl Default for TraversalProfileBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TraversalProfile {
+    pub fn builder() -> TraversalProfileBuilder {
+        TraversalProfileBuilder::new()
+    }
+
+    pub fn speeds(&self) -> KinematicSpeeds {
+        KinematicSpeeds {
+            walk: self.walk_speed,
+            run: self.run_speed,
+            ground_accel: self.ground_accel,
+            ground_decel: self.ground_decel,
+            air_accel: self.air_accel,
+            gravity: self.gravity,
+            max_fall: self.max_fall,
+            jump_speed: self.jump_speed,
+        }
+    }
+
+    pub fn shape(&self) -> CapsuleShape {
+        CapsuleShape {
+            radius: self.radius,
+            half_height: self.half_height,
+            eye_height: self.eye_height,
+        }
+    }
+
+    pub fn step_limits(&self) -> StepLimits {
+        StepLimits {
+            step_height: self.step_height,
+            controller_offset: self.controller_offset,
+            minimum_step_width: self.minimum_step_width,
+            maximum_slope_degrees: self.maximum_slope_degrees,
+            ground_snap: self.ground_snap,
+        }
+    }
+
     pub fn deliberate_rapier() -> Self {
         Self {
             walk_speed: 4.6,
@@ -718,8 +819,12 @@ fn is_sha256(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
+pub fn try_hash_json(value: &impl Serialize) -> Result<[u8; 32], serde_json::Error> {
+    serde_json::to_vec(value).map(|vec| Sha256::digest(vec).into())
+}
+
 fn hash_json(value: &impl Serialize) -> [u8; 32] {
-    Sha256::digest(serde_json::to_vec(value).expect("canonical content serializes")).into()
+    try_hash_json(value).expect("canonical content serializes")
 }
 
 pub fn sha256(bytes: &[u8]) -> String {
@@ -974,5 +1079,17 @@ mod tests {
             let baked: BakedModule = serde_json::from_slice(bytes).unwrap();
             baked.validate().unwrap();
         }
+    }
+
+    #[test]
+    fn traversal_profile_builder_constructs_profile() {
+        let profile = TraversalProfile::builder()
+            .walk_speed(5.5)
+            .run_speed(8.5)
+            .jump_speed(7.0)
+            .build();
+        assert_eq!(profile.walk_speed, 5.5);
+        assert_eq!(profile.run_speed, 8.5);
+        assert_eq!(profile.jump_speed, 7.0);
     }
 }

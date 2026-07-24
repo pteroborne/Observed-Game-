@@ -1,0 +1,12 @@
+{
+  "tile_id": "rotunda",
+  "view_mode": "orbit",
+  "render_mode": "clay",
+  "cross_section": true,
+  "orbit_yaw": 0.5,
+  "orbit_pitch": 1.25,
+  "radius": 24.0,
+  "height": 16.0,
+  "camera_target": [0.0, 2.0, 0.0],
+  "output_image": "docs/evidence/rotunda_helix_topdown.png"
+}

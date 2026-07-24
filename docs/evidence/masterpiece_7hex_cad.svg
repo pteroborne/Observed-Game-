@@ -1,0 +1,180 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1200" width="1600" height="1200">
+  <!-- Background Blueprint Paper -->
+  <rect width="1600" height="1200" fill="#0a121e" />
+  
+  <!-- Grid Pattern -->
+  <defs>
+    <pattern id="cad_grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#14263c" stroke-width="1" />
+    </pattern>
+  </defs>
+  <rect width="1600" height="1200" fill="url(#cad_grid)" />
+
+  <!-- Outer Border & Division Lines -->
+  <rect x="20" y="20" width="1560" height="1160" fill="none" stroke="#00e5ff" stroke-width="2" opacity="0.6" />
+  <line x1="800" y1="20" x2="800" y2="1140" stroke="#00e5ff" stroke-width="1.5" stroke-dasharray="6,6" opacity="0.4" />
+  <line x1="20" y1="580" x2="1580" y2="580" stroke="#00e5ff" stroke-width="1.5" stroke-dasharray="6,6" opacity="0.4" />
+
+  <!-- Title Block Bottom Right -->
+  <rect x="1080" y="1060" width="480" height="100" fill="#0d1b2a" stroke="#00e5ff" stroke-width="1.5" />
+  <text x="1100" y="1088" font-family="monospace" font-size="16" font-weight="bold" fill="#00e5ff">OBSERVED 2 CAD BLUEPRINT: authored/masterpiece_7hex_gantry_west</text>
+  <text x="1100" y="1110" font-family="monospace" font-size="12" fill="#ffb703">ARCHETYPE: ramp | KIND: Cell | FOOTPRINT CELLS: 1</text>
+  <text x="1100" y="1130" font-family="monospace" font-size="11" fill="#8d99ae">HULLS: 3 | VERTICES: 32 | BOUNDS: 14.00m x 8.00m x 16.00m</text>
+  <text x="1100" y="1148" font-family="monospace" font-size="11" font-weight="bold" fill="#00ff88">STATUS: VERIFIED GREEN | LEGIBILITY CONTRACT PASSED</text>
+  <!-- QUADRANT 1: 1. TOP PLAN VIEW (LOOKING DOWN Y-AXIS / XZ PLANE) -->
+  <g transform="translate(0, 0)">
+    <text x="50" y="50" font-family="monospace" font-size="16" font-weight="bold" fill="#00e5ff">1. TOP PLAN VIEW (LOOKING DOWN Y-AXIS / XZ PLANE)</text>
+    <polygon points="190.0,180.0 400.0,60.0 610.0,180.0 610.0,420.0 400.0,540.0 190.0,420.0" fill="#00e5ff" fill-opacity="0.2" stroke="#00e5ff" stroke-width="1.5" />
+    <circle cx="190.0" cy="420.0" r="2.5" fill="#00e5ff" />
+    <circle cx="190.0" cy="420.0" r="2.5" fill="#00e5ff" />
+    <circle cx="190.0" cy="180.0" r="2.5" fill="#00e5ff" />
+    <circle cx="190.0" cy="180.0" r="2.5" fill="#00e5ff" />
+    <circle cx="400.0" cy="540.0" r="2.5" fill="#00e5ff" />
+    <circle cx="400.0" cy="540.0" r="2.5" fill="#00e5ff" />
+    <circle cx="400.0" cy="60.0" r="2.5" fill="#00e5ff" />
+    <circle cx="400.0" cy="60.0" r="2.5" fill="#00e5ff" />
+    <circle cx="610.0" cy="420.0" r="2.5" fill="#00e5ff" />
+    <circle cx="610.0" cy="420.0" r="2.5" fill="#00e5ff" />
+    <circle cx="610.0" cy="180.0" r="2.5" fill="#00e5ff" />
+    <circle cx="610.0" cy="180.0" r="2.5" fill="#00e5ff" />
+    <polygon points="190.0,255.0 610.0,255.0 610.0,345.0 190.0,345.0" fill="#ffb703" fill-opacity="0.2" stroke="#ffb703" stroke-width="1.5" />
+    <circle cx="190.0" cy="345.0" r="2.5" fill="#ffb703" />
+    <circle cx="190.0" cy="345.0" r="2.5" fill="#ffb703" />
+    <circle cx="190.0" cy="255.0" r="2.5" fill="#ffb703" />
+    <circle cx="190.0" cy="255.0" r="2.5" fill="#ffb703" />
+    <circle cx="610.0" cy="345.0" r="2.5" fill="#ffb703" />
+    <circle cx="610.0" cy="345.0" r="2.5" fill="#ffb703" />
+    <circle cx="610.0" cy="255.0" r="2.5" fill="#ffb703" />
+    <circle cx="610.0" cy="255.0" r="2.5" fill="#ffb703" />
+    <polygon points="190.0,180.0 400.0,60.0 610.0,180.0 610.0,420.0 400.0,540.0 190.0,420.0" fill="#ff007f" fill-opacity="0.2" stroke="#ff007f" stroke-width="1.5" />
+    <circle cx="190.0" cy="420.0" r="2.5" fill="#ff007f" />
+    <circle cx="190.0" cy="420.0" r="2.5" fill="#ff007f" />
+    <circle cx="190.0" cy="180.0" r="2.5" fill="#ff007f" />
+    <circle cx="190.0" cy="180.0" r="2.5" fill="#ff007f" />
+    <circle cx="400.0" cy="540.0" r="2.5" fill="#ff007f" />
+    <circle cx="400.0" cy="540.0" r="2.5" fill="#ff007f" />
+    <circle cx="400.0" cy="60.0" r="2.5" fill="#ff007f" />
+    <circle cx="400.0" cy="60.0" r="2.5" fill="#ff007f" />
+    <circle cx="610.0" cy="420.0" r="2.5" fill="#ff007f" />
+    <circle cx="610.0" cy="420.0" r="2.5" fill="#ff007f" />
+    <circle cx="610.0" cy="180.0" r="2.5" fill="#ff007f" />
+    <circle cx="610.0" cy="180.0" r="2.5" fill="#ff007f" />
+  </g>
+  <!-- QUADRANT 2: 2. FRONT ELEVATION VIEW (XY PLANE) -->
+  <g transform="translate(0, 0)">
+    <text x="850" y="50" font-family="monospace" font-size="16" font-weight="bold" fill="#00e5ff">2. FRONT ELEVATION VIEW (XY PLANE)</text>
+    <polygon points="990.0,405.0 1410.0,405.0 1410.0,420.0 990.0,420.0" fill="#00e5ff" fill-opacity="0.2" stroke="#00e5ff" stroke-width="1.5" />
+    <circle cx="990.0" cy="420.0" r="2.5" fill="#00e5ff" />
+    <circle cx="990.0" cy="405.0" r="2.5" fill="#00e5ff" />
+    <circle cx="990.0" cy="420.0" r="2.5" fill="#00e5ff" />
+    <circle cx="990.0" cy="405.0" r="2.5" fill="#00e5ff" />
+    <circle cx="1200.0" cy="420.0" r="2.5" fill="#00e5ff" />
+    <circle cx="1200.0" cy="405.0" r="2.5" fill="#00e5ff" />
+    <circle cx="1200.0" cy="420.0" r="2.5" fill="#00e5ff" />
+    <circle cx="1200.0" cy="405.0" r="2.5" fill="#00e5ff" />
+    <circle cx="1410.0" cy="420.0" r="2.5" fill="#00e5ff" />
+    <circle cx="1410.0" cy="405.0" r="2.5" fill="#00e5ff" />
+    <circle cx="1410.0" cy="420.0" r="2.5" fill="#00e5ff" />
+    <circle cx="1410.0" cy="405.0" r="2.5" fill="#00e5ff" />
+    <polygon points="990.0,285.0 1410.0,285.0 1410.0,300.0 990.0,300.0" fill="#ffb703" fill-opacity="0.2" stroke="#ffb703" stroke-width="1.5" />
+    <circle cx="990.0" cy="300.0" r="2.5" fill="#ffb703" />
+    <circle cx="990.0" cy="285.0" r="2.5" fill="#ffb703" />
+    <circle cx="990.0" cy="300.0" r="2.5" fill="#ffb703" />
+    <circle cx="990.0" cy="285.0" r="2.5" fill="#ffb703" />
+    <circle cx="1410.0" cy="300.0" r="2.5" fill="#ffb703" />
+    <circle cx="1410.0" cy="285.0" r="2.5" fill="#ffb703" />
+    <circle cx="1410.0" cy="300.0" r="2.5" fill="#ffb703" />
+    <circle cx="1410.0" cy="285.0" r="2.5" fill="#ffb703" />
+    <polygon points="990.0,180.0 1410.0,180.0 1410.0,195.0 990.0,195.0" fill="#ff007f" fill-opacity="0.2" stroke="#ff007f" stroke-width="1.5" />
+    <circle cx="990.0" cy="195.0" r="2.5" fill="#ff007f" />
+    <circle cx="990.0" cy="180.0" r="2.5" fill="#ff007f" />
+    <circle cx="990.0" cy="195.0" r="2.5" fill="#ff007f" />
+    <circle cx="990.0" cy="180.0" r="2.5" fill="#ff007f" />
+    <circle cx="1200.0" cy="195.0" r="2.5" fill="#ff007f" />
+    <circle cx="1200.0" cy="180.0" r="2.5" fill="#ff007f" />
+    <circle cx="1200.0" cy="195.0" r="2.5" fill="#ff007f" />
+    <circle cx="1200.0" cy="180.0" r="2.5" fill="#ff007f" />
+    <circle cx="1410.0" cy="195.0" r="2.5" fill="#ff007f" />
+    <circle cx="1410.0" cy="180.0" r="2.5" fill="#ff007f" />
+    <circle cx="1410.0" cy="195.0" r="2.5" fill="#ff007f" />
+    <circle cx="1410.0" cy="180.0" r="2.5" fill="#ff007f" />
+  </g>
+  <!-- QUADRANT 3: 3. SIDE ELEVATION VIEW (ZY PLANE) -->
+  <g transform="translate(0, 0)">
+    <text x="50" y="620" font-family="monospace" font-size="16" font-weight="bold" fill="#00e5ff">3. SIDE ELEVATION VIEW (ZY PLANE)</text>
+    <polygon points="160.0,985.0 640.0,985.0 640.0,1000.0 160.0,1000.0" fill="#00e5ff" fill-opacity="0.2" stroke="#00e5ff" stroke-width="1.5" />
+    <circle cx="520.0" cy="1000.0" r="2.5" fill="#00e5ff" />
+    <circle cx="520.0" cy="985.0" r="2.5" fill="#00e5ff" />
+    <circle cx="280.0" cy="1000.0" r="2.5" fill="#00e5ff" />
+    <circle cx="280.0" cy="985.0" r="2.5" fill="#00e5ff" />
+    <circle cx="640.0" cy="1000.0" r="2.5" fill="#00e5ff" />
+    <circle cx="640.0" cy="985.0" r="2.5" fill="#00e5ff" />
+    <circle cx="160.0" cy="1000.0" r="2.5" fill="#00e5ff" />
+    <circle cx="160.0" cy="985.0" r="2.5" fill="#00e5ff" />
+    <circle cx="520.0" cy="1000.0" r="2.5" fill="#00e5ff" />
+    <circle cx="520.0" cy="985.0" r="2.5" fill="#00e5ff" />
+    <circle cx="280.0" cy="1000.0" r="2.5" fill="#00e5ff" />
+    <circle cx="280.0" cy="985.0" r="2.5" fill="#00e5ff" />
+    <polygon points="355.0,865.0 445.0,865.0 445.0,880.0 355.0,880.0" fill="#ffb703" fill-opacity="0.2" stroke="#ffb703" stroke-width="1.5" />
+    <circle cx="445.0" cy="880.0" r="2.5" fill="#ffb703" />
+    <circle cx="445.0" cy="865.0" r="2.5" fill="#ffb703" />
+    <circle cx="355.0" cy="880.0" r="2.5" fill="#ffb703" />
+    <circle cx="355.0" cy="865.0" r="2.5" fill="#ffb703" />
+    <circle cx="445.0" cy="880.0" r="2.5" fill="#ffb703" />
+    <circle cx="445.0" cy="865.0" r="2.5" fill="#ffb703" />
+    <circle cx="355.0" cy="880.0" r="2.5" fill="#ffb703" />
+    <circle cx="355.0" cy="865.0" r="2.5" fill="#ffb703" />
+    <polygon points="160.0,760.0 640.0,760.0 640.0,775.0 160.0,775.0" fill="#ff007f" fill-opacity="0.2" stroke="#ff007f" stroke-width="1.5" />
+    <circle cx="520.0" cy="775.0" r="2.5" fill="#ff007f" />
+    <circle cx="520.0" cy="760.0" r="2.5" fill="#ff007f" />
+    <circle cx="280.0" cy="775.0" r="2.5" fill="#ff007f" />
+    <circle cx="280.0" cy="760.0" r="2.5" fill="#ff007f" />
+    <circle cx="640.0" cy="775.0" r="2.5" fill="#ff007f" />
+    <circle cx="640.0" cy="760.0" r="2.5" fill="#ff007f" />
+    <circle cx="160.0" cy="775.0" r="2.5" fill="#ff007f" />
+    <circle cx="160.0" cy="760.0" r="2.5" fill="#ff007f" />
+    <circle cx="520.0" cy="775.0" r="2.5" fill="#ff007f" />
+    <circle cx="520.0" cy="760.0" r="2.5" fill="#ff007f" />
+    <circle cx="280.0" cy="775.0" r="2.5" fill="#ff007f" />
+    <circle cx="280.0" cy="760.0" r="2.5" fill="#ff007f" />
+  </g>
+  <!-- QUADRANT 4: 4. 3D ISOMETRIC AXONOMETRIC VIEW (30°/30°) -->
+  <g transform="translate(0, 0)">
+    <text x="850" y="620" font-family="monospace" font-size="16" font-weight="bold" fill="#00e5ff">4. 3D ISOMETRIC AXONOMETRIC VIEW (30°/30°)</text>
+    <polygon points="914.2,994.8 992.2,862.8 1277.9,826.8 1485.8,922.8 1485.8,934.0 1407.8,1066.0 1122.1,1102.0 914.2,1006.0" fill="#00e5ff" fill-opacity="0.2" stroke="#00e5ff" stroke-width="1.5" />
+    <circle cx="914.2" cy="1006.0" r="2.5" fill="#00e5ff" />
+    <circle cx="914.2" cy="994.8" r="2.5" fill="#00e5ff" />
+    <circle cx="1122.1" cy="1102.0" r="2.5" fill="#00e5ff" />
+    <circle cx="1122.1" cy="1090.8" r="2.5" fill="#00e5ff" />
+    <circle cx="992.2" cy="874.0" r="2.5" fill="#00e5ff" />
+    <circle cx="992.2" cy="862.8" r="2.5" fill="#00e5ff" />
+    <circle cx="1407.8" cy="1066.0" r="2.5" fill="#00e5ff" />
+    <circle cx="1407.8" cy="1054.8" r="2.5" fill="#00e5ff" />
+    <circle cx="1277.9" cy="838.0" r="2.5" fill="#00e5ff" />
+    <circle cx="1277.9" cy="826.8" r="2.5" fill="#00e5ff" />
+    <circle cx="1485.8" cy="934.0" r="2.5" fill="#00e5ff" />
+    <circle cx="1485.8" cy="922.8" r="2.5" fill="#00e5ff" />
+    <polygon points="979.2,934.8 1342.9,766.8 1420.8,802.8 1420.8,814.0 1057.1,982.0 979.2,946.0" fill="#ffb703" fill-opacity="0.2" stroke="#ffb703" stroke-width="1.5" />
+    <circle cx="979.2" cy="946.0" r="2.5" fill="#ffb703" />
+    <circle cx="979.2" cy="934.8" r="2.5" fill="#ffb703" />
+    <circle cx="1057.1" cy="982.0" r="2.5" fill="#ffb703" />
+    <circle cx="1057.1" cy="970.8" r="2.5" fill="#ffb703" />
+    <circle cx="1342.9" cy="778.0" r="2.5" fill="#ffb703" />
+    <circle cx="1342.9" cy="766.8" r="2.5" fill="#ffb703" />
+    <circle cx="1420.8" cy="814.0" r="2.5" fill="#ffb703" />
+    <circle cx="1420.8" cy="802.8" r="2.5" fill="#ffb703" />
+    <polygon points="914.2,826.0 992.2,694.0 1277.9,658.0 1485.8,754.0 1485.8,765.2 1407.8,897.2 1122.1,933.2 914.2,837.2" fill="#ff007f" fill-opacity="0.2" stroke="#ff007f" stroke-width="1.5" />
+    <circle cx="914.2" cy="837.2" r="2.5" fill="#ff007f" />
+    <circle cx="914.2" cy="826.0" r="2.5" fill="#ff007f" />
+    <circle cx="1122.1" cy="933.2" r="2.5" fill="#ff007f" />
+    <circle cx="1122.1" cy="922.0" r="2.5" fill="#ff007f" />
+    <circle cx="992.2" cy="705.2" r="2.5" fill="#ff007f" />
+    <circle cx="992.2" cy="694.0" r="2.5" fill="#ff007f" />
+    <circle cx="1407.8" cy="897.2" r="2.5" fill="#ff007f" />
+    <circle cx="1407.8" cy="886.0" r="2.5" fill="#ff007f" />
+    <circle cx="1277.9" cy="669.2" r="2.5" fill="#ff007f" />
+    <circle cx="1277.9" cy="658.0" r="2.5" fill="#ff007f" />
+    <circle cx="1485.8" cy="765.2" r="2.5" fill="#ff007f" />
+    <circle cx="1485.8" cy="754.0" r="2.5" fill="#ff007f" />
+  </g>
+</svg>

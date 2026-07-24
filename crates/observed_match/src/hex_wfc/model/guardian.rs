@@ -93,8 +93,6 @@ impl HexGuardianState {
                 let from = player.cell;
                 player.cell = destination;
                 player.position = Vec3::from_array(hex_origin(destination)) + Vec3::Y * 0.9;
-                player.climb_target = None;
-                player.transit_target = None;
                 events.push(HexMatchEvent {
                     tick,
                     kind: HexMatchEventKind::GuardianCatch,
@@ -222,12 +220,11 @@ mod tests {
     fn player(id: PlayerId, cell: HexCoord, position: Vec3, yaw: f32) -> HexPlayerState {
         HexPlayerState {
             id,
+            team: observed_core::TeamId((id.0 / 2) as u8),
             cell,
             position,
             yaw,
             pitch: 0.0,
-            climb_target: None,
-            transit_target: None,
             escaped: false,
         }
     }

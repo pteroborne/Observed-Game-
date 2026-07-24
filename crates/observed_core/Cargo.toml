@@ -5,5 +5,5 @@ edition = "2024"
 publish = false
 
 [dependencies]
-player_input = { path = "../player_input" }
+player_input = { path = "../player_input", default-features = false }
 glam = "0.30"

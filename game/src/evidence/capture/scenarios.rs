@@ -539,6 +539,7 @@ fn staged_results_case(index: usize) -> (&'static str, flow::MatchResult, bool, 
         (
             "00_victory",
             flow::MatchResult {
+                local_team: TeamId(0),
                 placement: Some(1),
                 escaped: 2,
                 absorbed: 2,
@@ -550,6 +551,7 @@ fn staged_results_case(index: usize) -> (&'static str, flow::MatchResult, bool, 
         (
             "01_placed",
             flow::MatchResult {
+                local_team: TeamId(0),
                 placement: Some(2),
                 escaped: 2,
                 absorbed: 2,
@@ -561,6 +563,7 @@ fn staged_results_case(index: usize) -> (&'static str, flow::MatchResult, bool, 
         (
             "02_absorbed",
             flow::MatchResult {
+                local_team: TeamId(0),
                 placement: None,
                 escaped: 1,
                 absorbed: 3,
@@ -572,6 +575,7 @@ fn staged_results_case(index: usize) -> (&'static str, flow::MatchResult, bool, 
         (
             "03_solo",
             flow::MatchResult {
+                local_team: TeamId(0),
                 placement: Some(1),
                 escaped: 1,
                 absorbed: 0,

@@ -26,9 +26,17 @@ The content-manifest feasibility lab downloaded Kenney's Modular Space Kit from
 OpenGameArt on July 12, 2026. Only two GLBs and the original license file are checked
 in. Both files are CC0 and remain presentation-only dressing with procedural fallbacks.
 
+The handheld anchor-lantern body was imported unmodified on July 22, 2026 from
+Import Replacer's torch sample at commit `6677ca55d50329e9a36e72969b682d657107c0dd`.
+It is MIT-licensed (not CC0); the required notice is retained in
+`licenses/import-replacer-MIT.txt`. Bevy loads only mesh 1 / primitive 0, omitting
+the sample's Godot-specific import helper and collision nodes. The checked-in GLB's
+SHA-256 is `BE5F3E3DFC1655D36FC2572CAD665AB88209D2322F4163D716CA8C119D858027`.
+
 License references: [Kenney support](https://kenney.nl/support),
 [ambientCG license](https://docs.ambientcg.com/license/), and
-[Poly Haven license](https://polyhaven.com/license).
+[Poly Haven license](https://polyhaven.com/license), and
+[Import Replacer MIT license](https://github.com/micha-daniel/import-replacer/blob/6677ca55d50329e9a36e72969b682d657107c0dd/LICENSE).
 
 The selected Kenney models were repacked as self-contained GLB files so their
 original `Textures/colormap.png` references cannot collide after renaming. Their
@@ -50,6 +58,8 @@ ceiling fixture uses a top-center pivot.
 | `models/decor_crate.glb` | `container.glb` | [Kenney Space Station Kit](https://kenney.nl/assets/space-station-kit) |
 | `models/decor_console.glb` | `computer-wide.glb` | [Kenney Space Station Kit](https://kenney.nl/assets/space-station-kit) |
 | `models/hazard.glb` | `warning-orange.glb` | [Kenney Factory Kit](https://kenney.nl/assets/factory-kit) |
+| `models/lantern.glb` | `torch.glb` | [Import Replacer torch sample](https://github.com/micha-daniel/import-replacer/tree/6677ca55d50329e9a36e72969b682d657107c0dd/sample/assets/props/torch), MIT, copyright Micha Schmid |
+| `licenses/import-replacer-MIT.txt` | `LICENSE` | [Import Replacer](https://github.com/micha-daniel/import-replacer/blob/6677ca55d50329e9a36e72969b682d657107c0dd/LICENSE) |
 | `content_manifest_lab/kenney_modular_space/cables.glb` | `Models/GLB format/cables.glb` | [Kenney Modular Space Kit on OpenGameArt](https://opengameart.org/content/modular-space-kit), CC0 |
 | `content_manifest_lab/kenney_modular_space/gate.glb` | `Models/GLB format/gate.glb` | [Kenney Modular Space Kit on OpenGameArt](https://opengameart.org/content/modular-space-kit), CC0 |
 | `content_manifest_lab/kenney_modular_space/Textures/colormap.png` | Shared GLB `Textures/colormap.png` | [Kenney Modular Space Kit on OpenGameArt](https://opengameart.org/content/modular-space-kit), CC0 |

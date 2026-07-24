@@ -1,5 +1,7 @@
 # Phase 72 — Arc Gate: Evidence Refresh & Playtest
 
+**Status:** `[x]` — complete (2026-07-20; Arc I ship gate passed, full workspace tests green).
+
 **Objective:** the Arc H ship-gate pattern, rerun for Light & Line: one final
 build, full evidence refresh, everything viewed, then the user plays and the arc
 closes when the checklist passes. Read [README.md](README.md) first.

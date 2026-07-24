@@ -1,0 +1,21 @@
+[package]
+name = "hex_room_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+# Bloom via bevy_post_process; PBR shadows/spot/point ship with the `3d` set.
+bevy = { version = "0.18.1", default-features = false, features = [
+    "3d",
+    "png",
+    "bevy_post_process",
+] }
+observed_authoring = { path = "../../crates/observed_authoring" }
+observed_content = { path = "../../crates/observed_content" }
+# hex_wfc (blueprints) is unconditional in observed_facility — no `wfc` feature.
+observed_facility = { path = "../../crates/observed_facility" }
+observed_hex = { path = "../../crates/observed_hex" }
+# District palettes come from the production style crate, never invented locally.
+observed_style = { path = "../../crates/observed_style" }
+rapier3d = { version = "0.34", features = ["enhanced-determinism"] }

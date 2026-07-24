@@ -1,5 +1,7 @@
 # Phase 70 — District Light Identities (incl. the Overlit District)
 
+**Status:** `[x]` — complete (2026-07-20; 4-axis district light distinctness and unshadowed Overlit District registered).
+
 **Objective:** give each district a light identity — a coordinate on the lab's
 four axes (brightness, scale, repetition, directionality) — and add the
 user-endorsed **overlit district** (the Backrooms/Severance register). Two

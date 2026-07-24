@@ -8,10 +8,11 @@
 
 use std::ffi::CString;
 
-use glam::Vec3;
+use glam::{Quat, Vec3};
 use observed_hex::{HexFace, PortClass, PortSignature, TILE_LEVEL_HEIGHT, face_edge};
 use observed_traversal::{ArenaSpec, ColliderShape, ColliderSpec, StableColliderId};
 use quake_map::{Entity, QuakeMap};
+use serde::{Deserialize, Serialize};
 
 use crate::UNITS_PER_METER;
 use crate::brush::brush_vertices;
@@ -35,6 +36,7 @@ pub enum TileError {
     },
     UnknownFace(String),
     UnknownClass(String),
+    UnknownLightKind(String),
     InvalidPort {
         face: HexFace,
         class: PortClass,
@@ -52,6 +54,21 @@ pub enum TileError {
     },
 }
 
+/// Semantic authored light source. Presentation owns its colour and energy;
+/// tile sources own only placement and purpose, keeping district treatment in
+/// `observed_style` instead of baking ad-hoc RGB values into geometry files.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum TileLightKind {
+    Practical,
+}
+
+/// One tile-local light source in world-space metres (Y-up).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TileLight {
+    pub kind: TileLightKind,
+    pub position: Vec3,
+}
+
 /// A validated, world-space tile ready for placement.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TilePrototype {
@@ -64,23 +81,39 @@ pub struct TilePrototype {
     /// Convex hulls in tile-local world meters: origin at the cell center,
     /// level 0 floor at y = 0.
     pub hulls: Vec<Vec<Vec3>>,
+    /// Semantic practicals authored against visible fixture geometry.
+    pub lights: Vec<TileLight>,
 }
 
 impl TilePrototype {
     /// Collider specs for one instance of this tile, ids offset by `base_id`,
     /// hulls translated by `offset` (typically `hex_origin` of the cell).
     pub fn collider_specs(&self, base_id: u32, offset: Vec3) -> Vec<ColliderSpec> {
+        self.collider_specs_with_transform(base_id, offset, Quat::IDENTITY)
+    }
+
+    /// Collider specs with translation and rotation transform applied.
+    pub fn collider_specs_with_transform(
+        &self,
+        base_id: u32,
+        offset: Vec3,
+        rotation: Quat,
+    ) -> Vec<ColliderSpec> {
+        let rot_arr = [rotation.x, rotation.y, rotation.z, rotation.w];
         self.hulls
             .iter()
             .enumerate()
-            .map(|(index, hull)| ColliderSpec {
-                id: StableColliderId(base_id + index as u32),
-                center: offset,
-                rotation: [0.0, 0.0, 0.0, 1.0],
-                shape: ColliderShape::ConvexHull {
-                    points: hull.clone(),
-                },
-                friction: 0.8,
+            .map(|(index, hull)| {
+                let rotated_hull: Vec<Vec3> = hull.iter().map(|v| rotation * *v).collect();
+                ColliderSpec {
+                    id: StableColliderId(base_id + index as u32),
+                    center: offset,
+                    rotation: rot_arr,
+                    shape: ColliderShape::ConvexHull {
+                        points: rotated_hull,
+                    },
+                    friction: 0.8,
+                }
             })
             .collect()
     }
@@ -172,6 +205,25 @@ fn to_world(point: [f64; 3]) -> Vec3 {
         (point[2] / UNITS_PER_METER) as f32,
         (-point[1] / UNITS_PER_METER) as f32,
     )
+}
+
+fn parse_origin(entity: &Entity, name: &'static str) -> Result<[f64; 3], TileError> {
+    let value = required(entity, name, "origin")?;
+    let values = value
+        .split_ascii_whitespace()
+        .map(str::parse::<f64>)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| TileError::MissingProperty {
+            entity: name,
+            key: "origin (three numbers)".to_string(),
+        })?;
+    if values.len() != 3 {
+        return Err(TileError::MissingProperty {
+            entity: name,
+            key: "origin (three numbers)".to_string(),
+        });
+    }
+    Ok([values[0], values[1], values[2]])
 }
 
 /// Canonical footprint corner in TrenchBroom units: world plan `(x, z)` maps
@@ -393,12 +445,37 @@ pub fn parse_tile(text: &str) -> Result<TilePrototype, TileError> {
         }
     }
 
+    let mut lights = Vec::new();
+    for entity in &map.entities {
+        if prop(entity, "classname").as_deref() != Some("tile_light") {
+            continue;
+        }
+        let origin = parse_origin(entity, "tile_light")?;
+        validate_footprint(&[origin], &footprint)?;
+        let kind = match prop(entity, "kind").as_deref().unwrap_or("practical") {
+            "practical" => TileLightKind::Practical,
+            other => return Err(TileError::UnknownLightKind(other.to_string())),
+        };
+        lights.push(TileLight {
+            kind,
+            position: to_world(origin),
+        });
+    }
+    lights.sort_by(|a, b| {
+        a.position
+            .x
+            .total_cmp(&b.position.x)
+            .then(a.position.y.total_cmp(&b.position.y))
+            .then(a.position.z.total_cmp(&b.position.z))
+    });
+
     Ok(TilePrototype {
         key,
         weight,
         levels,
         signature,
         hulls,
+        lights,
     })
 }
 
