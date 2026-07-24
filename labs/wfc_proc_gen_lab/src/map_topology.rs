@@ -168,6 +168,7 @@ fn architecture_color(register: ArchitectureRegister) -> Color {
         ArchitectureRegister::Wellshaft => Color::srgb(0.16, 0.55, 0.96),
         ArchitectureRegister::InfiniteGallery => Color::srgb(0.91, 0.32, 0.66),
         ArchitectureRegister::Thinning => Color::srgb(0.59, 0.62, 0.67),
+        ArchitectureRegister::LiminalGrid => Color::srgb(0.82, 0.74, 0.24),
     }
 }
 
@@ -182,6 +183,7 @@ fn architecture_short_label(register: ArchitectureRegister) -> &'static str {
         ArchitectureRegister::Wellshaft => "Wellshaft",
         ArchitectureRegister::InfiniteGallery => "Gallery",
         ArchitectureRegister::Thinning => "Thinning",
+        ArchitectureRegister::LiminalGrid => "Liminal",
     }
 }
 
@@ -189,6 +191,7 @@ fn architecture_text_color(register: ArchitectureRegister) -> Color {
     match register {
         ArchitectureRegister::OverlitGrid
         | ArchitectureRegister::Institutional
+        | ArchitectureRegister::LiminalGrid
         | ArchitectureRegister::Thinning => Color::srgb(0.015, 0.02, 0.035),
         _ => Color::WHITE,
     }

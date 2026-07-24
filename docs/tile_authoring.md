@@ -30,6 +30,7 @@ View script schema (all fields optional; see `labs/hex_tile_lab/src/script_runne
 ```json
 {
   "tile_id": "<archetype>",
+  "variant": 0,
   "view_mode": "orbit | firstperson | freelook",
   "render_mode": "lit | clay | xray | colliders",
   "register": 4,
@@ -44,8 +45,9 @@ View script schema (all fields optional; see `labs/hex_tile_lab/src/script_runne
 lighting preview (ambient legibility floor + interior practical pools + key
 spot), `clay` is the guaranteed-legibility study mode (shadowless studio
 directionals — nothing can be too dark to read), `xray` is translucent +
-wireframe, `colliders` shows collision shells. `register` is 1-9 (digit-key
-order). Legacy `dev_mode` / `strong_wireframe` booleans still map to clay /
+wireframe, `colliders` shows collision shells. `register` is 1-10 in catalogue
+order; interactive hotkeys use 1-9 for the original registers and 0 for Liminal
+Grid. Legacy `dev_mode` / `strong_wireframe` booleans still map to clay /
 xray.
 
 ## Why tileforge.py exists
@@ -88,8 +90,8 @@ sources; the game's centered fallback is only a defensive legacy path.
   `rim_chamfers` / the `chamfer_*` parameters are how masses blend into each
   other. (True slope-easing wedges are deliberately not provided: they create
   small step-downs that break walking.)
-- *Shading*: the lab renderer smooths normals across facets meeting below
-  ~45 degrees (`SMOOTH_CREASE_COS` in `labs/hex_tile_lab/src/lib.rs`), so a
+- *Shading*: the shared production/lab renderer smooths normals across facets meeting below
+  ~45 degrees (`DEFAULT_SMOOTH_CREASE_COS` in `observed_traversal::render_mesh`), so a
   21-degree flight meeting a flat deck shades as one continuous surface while
   true corners stay crisp. Textures are box-projected per face — no planar
   streaking. Keep deliberate hard edges above ~50 degrees of dihedral.

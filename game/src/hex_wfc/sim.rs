@@ -453,6 +453,10 @@ fn changed_revisions(
 }
 
 #[cfg(test)]
+#[path = "sim_catalog_tests.rs"]
+mod catalog_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -507,27 +511,6 @@ mod tests {
         let live = BTreeMap::from([(a, 0), (b, 2), (c, 1)]);
         let presented = BTreeMap::from([(a, 0), (b, 1), (c, 1)]);
         assert_eq!(changed_revisions(&live, &presented), vec![(b, 2)]);
-    }
-
-    #[test]
-    fn merged_authoring_corpus_covers_every_wfc_geometry_demand_exactly() {
-        let corpus = load_authoring_corpus();
-        for demand in observed_facility::hex_wfc::geometry_demands() {
-            for register in ArchitectureRegister::ALL {
-                let register = register.slug();
-                assert!(
-                    corpus.cells.iter().any(|tile| {
-                        tile.key.archetype == demand.archetype
-                            && tile.signature == demand.signature
-                            && (tile.key.register == register || tile.key.register == "generic")
-                    }),
-                    "missing exact tile coverage for archetype={} register={} signature={:?}",
-                    demand.archetype,
-                    register,
-                    demand.signature
-                );
-            }
-        }
     }
 
     #[test]

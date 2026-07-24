@@ -4,6 +4,7 @@ use observed_traversal::rapier_controller::{RapierTraversalScene, step_character
 use observed_traversal::{FpsBody, FpsConfig};
 use player_input::PlayerIntent;
 
+use crate::CompiledTileCatalog;
 use crate::manifest::Manifest;
 use crate::tile::{TileError, parse_tile};
 use crate::tile_source;
@@ -283,4 +284,112 @@ fn the_shared_controller_walks_all_six_ramp_directions() {
             "controller only climbed {rise:.2} m on the {exit:?} ramp"
         );
     }
+}
+
+fn committed_liminal_cells() -> Vec<crate::TilePrototype> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tiles");
+    let text = std::fs::read_to_string(root.join("compiled_catalog.ron"))
+        .expect("compiled catalogue is committed");
+    CompiledTileCatalog::from_ron(&text)
+        .expect("catalogue schema")
+        .runtime_catalog(&["liminal_grid"])
+        .expect("Liminal runtime expansion")
+        .cells
+        .into_iter()
+        .filter(|tile| tile.key.register == "liminal_grid")
+        .collect()
+}
+
+fn face_direction(face: HexFace) -> Vec2 {
+    let [a, b] = face_edge(face);
+    Vec2::new((a.0 + b.0) as f32 * 0.5, (a.1 + b.1) as f32 * 0.5).normalize()
+}
+
+fn drive_capsule_to(
+    scene: &RapierTraversalScene,
+    body: &mut FpsBody,
+    target: Vec2,
+    config: &FpsConfig,
+) -> bool {
+    for _ in 0..300 {
+        let plan = Vec2::new(body.position.x, body.position.z);
+        let delta = target - plan;
+        if delta.length() <= 0.75 {
+            return true;
+        }
+        let direction = delta.normalize();
+        body.yaw = direction.x.atan2(-direction.y);
+        step_character(
+            scene,
+            body,
+            PlayerIntent {
+                movement: Vec2::Y,
+                ..PlayerIntent::default()
+            },
+            config,
+            1.0 / 60.0,
+        );
+    }
+    false
+}
+
+/// Every Liminal horizontal runtime variant is physically open between each
+/// pair of declared lateral thresholds. Vertical sanctuary apertures are
+/// intentionally excluded: their stair-tower traversal remains the existing
+/// vertical kit, outside this horizontal expansion.
+#[test]
+fn every_liminal_horizontal_variant_is_capsule_traversable_between_entrances() {
+    let horizontal = [
+        "hall_cap",
+        "hall_straight",
+        "hall_turn_60",
+        "hall_turn_120",
+        "hall_junction_3way",
+        "hall_junction_4way",
+        "sanctuary",
+    ];
+    let config = FpsConfig::default();
+    let mut exercised = 0usize;
+    for tile in committed_liminal_cells().into_iter().filter(|tile| {
+        horizontal.contains(&tile.key.archetype.as_str())
+            && tile.signature.port(HexFace::Up) == PortClass::Sealed
+            && tile.signature.port(HexFace::Down) == PortClass::Sealed
+    }) {
+        let doors = HexFace::LATERAL
+            .into_iter()
+            .filter(|&face| tile.signature.port(face) == PortClass::Door)
+            .collect::<Vec<_>>();
+        let scene = RapierTraversalScene::from_arena_spec(&tile.arena_spec());
+        for &entrance in &doors {
+            let start = face_direction(entrance) * 6.1;
+            let mut body =
+                FpsBody::spawned(Vec3::new(start.x, 0.5 + config.half_height, start.y), 0.0);
+            assert!(
+                drive_capsule_to(&scene, &mut body, Vec2::ZERO, &config),
+                "{:?} could not reach its center from {entrance:?}",
+                tile.key
+            );
+            for &exit in &doors {
+                if exit == entrance {
+                    continue;
+                }
+                let mut branch = body;
+                let destination = face_direction(exit) * 6.1;
+                assert!(
+                    drive_capsule_to(&scene, &mut branch, destination, &config),
+                    "{:?} blocked {entrance:?} -> {exit:?}; ended at {:?}",
+                    tile.key,
+                    branch.position
+                );
+                exercised += 1;
+            }
+            if doors.len() == 1 {
+                exercised += 1;
+            }
+        }
+    }
+    assert!(
+        exercised > 1_000,
+        "unexpectedly small traversal corpus: {exercised}"
+    );
 }

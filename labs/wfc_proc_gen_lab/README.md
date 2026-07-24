@@ -47,7 +47,8 @@ The catalogue-v2 checks prove:
 
 - regenerating a seed produces an identical `MapSpec`;
 - every map contains four to six connected architecture regions; and
-- the corpus exercises all nine architecture registers.
+- the legacy square-WFC corpus exercises all original nine architecture registers;
+  Liminal Grid coverage lives in the canonical hex-WFC facility and its labs.
 
 The retained v1 suite also checks deterministic generation, dense room IDs, full
 `MapSpec::validate()` coverage, monitor paging capacity, competitive objective

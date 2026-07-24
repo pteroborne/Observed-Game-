@@ -81,6 +81,7 @@ fn room_polygon(
                     | ArchitectureRegister::OverlitGrid
                     | ArchitectureRegister::ShadowScreen
                     | ArchitectureRegister::InfiniteGallery
+                    | ArchitectureRegister::LiminalGrid
             )
         )
     {
@@ -88,6 +89,7 @@ fn room_polygon(
             Some(ArchitectureRegister::Institutional) => (1.8, 1.35),
             Some(ArchitectureRegister::OverlitGrid) => (1.55, 1.55),
             Some(ArchitectureRegister::InfiniteGallery) => (2.25, 0.9),
+            Some(ArchitectureRegister::LiminalGrid) => (1.8, 1.35),
             _ => (1.5, 1.2),
         };
         let hx = ROOM_HALF * scale * x_register * (0.96 + unit(seed, 2) * 0.08);

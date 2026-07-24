@@ -195,7 +195,7 @@
 "kind" "cell"
 "archetype" "hall_cap"
 "register" "generic"
-"register_scope" "all"
+"register_scope" "shadow_screen,monolith,overlit_grid,institutional,facet_monument,megastructure,wellshaft,infinite_gallery,thinning"
 "variant" "0"
 "levels" "1"
 "rotation_policy" "sixfold"

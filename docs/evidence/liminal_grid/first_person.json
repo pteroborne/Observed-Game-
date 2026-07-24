@@ -1,0 +1,11 @@
+{
+  "tile_id": "hall_straight",
+  "view_mode": "firstperson",
+  "render_mode": "lit",
+  "register": 10,
+  "camera_pos": [-4.6, 1.7, 1.2],
+  "camera_target": [2.4, 3.4, 0.0],
+  "volumetrics": true,
+  "hide_menu": true,
+  "output_image": "docs/evidence/liminal_grid/first_person.png"
+}

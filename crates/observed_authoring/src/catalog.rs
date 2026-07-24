@@ -281,8 +281,13 @@ fn expanded_registers(scope: &[String], architecture_registers: &[&str]) -> Vec<
                 .map(|&r| r.to_string())
                 .collect()
         }
-    } else if let Some(first) = scope.first() {
-        vec![first.clone()]
+    } else if !scope.is_empty() {
+        scope
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
     } else {
         vec!["generic".to_string()]
     }
@@ -481,6 +486,13 @@ pub fn discover_sources(root: &Path) -> Result<Vec<PathBuf>, CatalogError> {
 }
 
 fn compatibility_entry(module: &AuthoredModule, source_path: String) -> Option<ManifestEntry> {
+    // Version-2 sources always expand from the compiled catalog, including
+    // an explicit one-register scope such as `liminal_grid`. Mirroring those
+    // strict cells into the legacy manifest would load the unrotated source a
+    // second time and bypass its compiled weight/rotation contract.
+    if module.authoring_version >= 2 {
+        return None;
+    }
     let scope = (module.register_scope.len() == 1).then(|| &module.register_scope[0])?;
     if scope == "all" || scope != &module.prototype.key.register {
         return None;
@@ -921,6 +933,56 @@ mod tests {
                 }
             }
         }
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn explicit_multi_register_scope_expands_every_named_register() {
+        let root = temp_dir("multi_register_scope");
+        let text = new_module_template("test/multi-register", ModuleKind::Cell).replace(
+            "\"register_scope\" \"all\"",
+            "\"register_scope\" \"institutional,monolith\"",
+        );
+        std::fs::write(root.join("module.map"), text).expect("write map");
+        let built = build_catalog(&root).expect("build");
+        let runtime = built
+            .catalog
+            .runtime_catalog(&["institutional", "monolith", "liminal_grid"])
+            .expect("runtime expansion");
+        assert_eq!(runtime.cells.len(), 12);
+        assert!(
+            runtime
+                .cells
+                .iter()
+                .all(|tile| { matches!(tile.key.register.as_str(), "institutional" | "monolith") })
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn strict_single_register_scope_stays_out_of_legacy_manifest() {
+        let root = temp_dir("strict_single_scope");
+        let text = new_module_template("test/single-register", ModuleKind::Cell)
+            .replace(
+                "\"register_scope\" \"all\"",
+                "\"register_scope\" \"liminal_grid\"",
+            )
+            .replace("\"register\" \"generic\"", "\"register\" \"liminal_grid\"");
+        std::fs::write(root.join("module.map"), text).expect("write map");
+        let built = build_catalog(&root).expect("build");
+        assert_eq!(built.audit.compatibility_manifest_entries, 0);
+        assert!(built.compatibility_manifest.tiles.is_empty());
+        let runtime = built
+            .catalog
+            .runtime_catalog(&["institutional", "liminal_grid"])
+            .expect("runtime expansion");
+        assert_eq!(runtime.cells.len(), 6);
+        assert!(
+            runtime
+                .cells
+                .iter()
+                .all(|tile| tile.key.register == "liminal_grid")
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 

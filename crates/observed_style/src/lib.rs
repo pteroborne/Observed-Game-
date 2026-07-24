@@ -191,6 +191,29 @@ pub enum SurfaceRole {
     Rubble,
 }
 
+/// Register-specific structural surfaces used by authored hex tiles.
+///
+/// This is deliberately separate from [`SurfaceRole`]: the latter carries
+/// gameplay semantics shared by every map representation, while this enum
+/// describes ordinary authored construction. Neither floor, wall, ceiling,
+/// nor a practical fixture is a gameplay signal.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ArchitectureSurfaceRole {
+    Floor,
+    Wall,
+    Ceiling,
+    PracticalFixture,
+}
+
+impl ArchitectureSurfaceRole {
+    pub const ALL: [Self; 4] = [
+        Self::Floor,
+        Self::Wall,
+        Self::Ceiling,
+        Self::PracticalFixture,
+    ];
+}
+
 impl SurfaceRole {
     pub const ALL: [SurfaceRole; 12] = [
         SurfaceRole::Plain,
@@ -864,6 +887,7 @@ pub fn district_for_architecture(register: observed_content::ArchitectureRegiste
         Register::Wellshaft => District::Reactor,
         Register::InfiniteGallery => District::Spillway,
         Register::Thinning => District::Atrium,
+        Register::LiminalGrid => District::Hollow,
     }
 }
 
@@ -936,8 +960,84 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
             palette.fog_start = 8.0;
             palette.fog_end = 34.0;
         }
+        Register::LiminalGrid => {
+            palette.ambient_color = Color::srgb(0.62, 0.58, 0.38);
+            palette.ambient_brightness = 145.0;
+            palette.fog_color = Color::srgb(0.035, 0.038, 0.014);
+            palette.fog_start = 13.0;
+            palette.fog_end = 41.0;
+            palette.light_color = Color::srgb(0.82, 0.98, 0.70);
+            palette.accent = LinearRgba::rgb(0.38, 0.32, 0.10);
+            palette.key_color = Color::srgb(0.92, 0.93, 0.67);
+            // The uncanny grid is fluorescent-flat; hard fixture shadows
+            // would create false obstacle silhouettes on traversable floors.
+            palette.key_shadows_enabled = false;
+            palette.key_intensity = 72_000_000.0;
+            palette.key_range = 44.0;
+            palette.pools_rhythm = false;
+        }
     }
     palette
+}
+
+/// Style-owned material treatment for ordinary authored structure.
+///
+/// Liminal Grid owns a deliberately yellow/olive material family. Other
+/// registers preserve the established semantic structural treatments while
+/// gaining the same typed API, so renderers never invent register colours.
+pub fn architecture_surface(
+    register: observed_content::ArchitectureRegister,
+    role: ArchitectureSurfaceRole,
+) -> Treatment {
+    use observed_content::ArchitectureRegister as Register;
+    if register == Register::LiminalGrid {
+        return match role {
+            ArchitectureSurfaceRole::Floor => Treatment {
+                base_color: Color::srgb(0.18, 0.13, 0.035),
+                emissive: LinearRgba::rgb(0.008, 0.008, 0.003),
+                signal: false,
+                edge: None,
+            },
+            ArchitectureSurfaceRole::Wall => Treatment {
+                base_color: Color::srgb(0.58, 0.50, 0.12),
+                emissive: LinearRgba::rgb(0.018, 0.016, 0.004),
+                signal: false,
+                edge: None,
+            },
+            ArchitectureSurfaceRole::Ceiling => Treatment {
+                base_color: Color::srgb(0.54, 0.50, 0.35),
+                // Liminal ceilings read as uniformly fluorescent-washed even
+                // where a fixture's direct pool is occluded.
+                emissive: LinearRgba::rgb(0.09, 0.085, 0.055),
+                signal: false,
+                edge: None,
+            },
+            ArchitectureSurfaceRole::PracticalFixture => Treatment {
+                base_color: Color::srgb(0.70, 0.82, 0.52),
+                emissive: LinearRgba::rgb(0.80, 1.10, 0.55),
+                signal: false,
+                edge: None,
+            },
+        };
+    }
+    match role {
+        ArchitectureSurfaceRole::Floor => surface(SurfaceRole::Plain),
+        ArchitectureSurfaceRole::Wall => surface(SurfaceRole::Wall),
+        ArchitectureSurfaceRole::Ceiling => surface(SurfaceRole::Ceiling),
+        ArchitectureSurfaceRole::PracticalFixture => Treatment {
+            base_color: Color::srgb(0.16, 0.18, 0.20),
+            emissive: architecture(register).accent * 0.35,
+            signal: false,
+            edge: None,
+        },
+    }
+}
+
+/// The non-signal fluorescent treatment used by authored practical housings.
+pub fn architecture_practical_fixture(
+    register: observed_content::ArchitectureRegister,
+) -> Treatment {
+    architecture_surface(register, ArchitectureSurfaceRole::PracticalFixture)
 }
 
 /// Apply the countdown alarm to an architecture palette without allowing the
@@ -1786,6 +1886,39 @@ mod tests {
         assert!(architecture(ArchitectureRegister::Wellshaft).pools_rhythm);
         assert!(architecture(ArchitectureRegister::Megastructure).fog_end <= 31.0);
         assert!(!architecture(ArchitectureRegister::OverlitGrid).key_shadows_enabled);
+    }
+
+    #[test]
+    fn architecture_surfaces_and_fixtures_are_style_owned_non_signals() {
+        use observed_content::ArchitectureRegister;
+
+        for register in ArchitectureRegister::ALL {
+            for role in ArchitectureSurfaceRole::ALL {
+                let treatment = architecture_surface(register, role);
+                assert!(!treatment.signal, "{} {role:?}", register.slug());
+                assert!(
+                    luminance(treatment.emissive) < SIGNAL_MIN_LUMINANCE,
+                    "{} {role:?} must not masquerade as a signal",
+                    register.slug()
+                );
+            }
+        }
+        let liminal_wall = architecture_surface(
+            ArchitectureRegister::LiminalGrid,
+            ArchitectureSurfaceRole::Wall,
+        );
+        let institutional_wall = architecture_surface(
+            ArchitectureRegister::Institutional,
+            ArchitectureSurfaceRole::Wall,
+        );
+        assert_ne!(liminal_wall, institutional_wall);
+        assert_eq!(
+            architecture_practical_fixture(ArchitectureRegister::LiminalGrid),
+            architecture_surface(
+                ArchitectureRegister::LiminalGrid,
+                ArchitectureSurfaceRole::PracticalFixture
+            )
+        );
     }
 
     #[test]

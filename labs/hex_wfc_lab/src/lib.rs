@@ -9,12 +9,13 @@ use std::collections::BTreeMap;
 
 use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResolution};
+use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::blueprint;
 use observed_facility::hex_wfc::{
     HexSpace, HexWfcConfig, HexWfcWorld, PortClass, SolveStep, lateral_bit,
 };
 use observed_hex::{HexCoord, HexFace, hex_origin_plan};
-use observed_style::{MarkerRole, SurfaceRole};
+use observed_style::{ArchitectureSurfaceRole, MarkerRole, SurfaceRole};
 
 /// Screen pixels per plan meter.
 const SCALE: f32 = 5.2;
@@ -235,7 +236,7 @@ fn rebuild_visuals(
         let view = views.get(&coord).copied().unwrap_or_default();
         let center = screen_position(coord);
 
-        let fill = match view.resolved {
+        let topology_fill = match view.resolved {
             Some((HexSpace::Room, _, _, _)) => spine.emissive,
             Some((HexSpace::Hall, _, up, down)) => {
                 if up == PortClass::RampOpen || down == PortClass::RampOpen {
@@ -251,6 +252,20 @@ fn rebuild_visuals(
             None if view.site => spine.emissive * 0.09,
             None if view.pruned_to.is_some() => plain.emissive * 0.5,
             None => plain.base_color.to_linear(),
+        };
+        let fill = if view
+            .resolved
+            .is_some_and(|(space, _, _, _)| space != HexSpace::Void)
+            && state.world.architecture[&coord] == ArchitectureRegister::LiminalGrid
+        {
+            observed_style::architecture_surface(
+                ArchitectureRegister::LiminalGrid,
+                ArchitectureSurfaceRole::Wall,
+            )
+            .base_color
+            .to_linear()
+        } else {
+            topology_fill
         };
         let alpha = match view.resolved {
             Some((HexSpace::Void, _, _, _)) => 0.35,
@@ -418,7 +433,7 @@ fn update_status(state: Res<LabState>, mut status: Query<&mut Text, With<LabStat
         .next_back()
         .unwrap_or_else(|| "solving...".to_string());
     **text = format!(
-        "HEX WFC / ANIMATED STEP — Arc L Phase 90\nseed {:#018x} | step {}/{} | {} | attempts {}\n{}\nlevel {}/{} (PgUp/PgDn or [/] to slice)\n\nSpace play/pause | N step | +/- speed ({}/tick) | I instant | R next seed | 1-9 presets | F1 overlay\nLegend: gold-fill room site -> bright gold room | cyan hall | purple/blue ramp | orange/yellow shaft | dim uncollapsed | diamond markers: spawn, exit, route",
+        "HEX WFC / ANIMATED STEP — Arc L Phase 90\nseed {:#018x} | step {}/{} | {} | attempts {}\n{}\nlevel {}/{} (PgUp/PgDn or [/] to slice)\n\nSpace play/pause | N step | +/- speed ({}/tick) | I instant | R next seed | 1-9 presets | F1 overlay\nLegend: classic-yellow resolved cells = Liminal Grid zone/normalized room | gold room | cyan hall | purple/blue ramp | orange shaft | dim uncollapsed | diamonds: spawn, exit, route",
         state.world.seed,
         state.cursor,
         state.trace.len(),

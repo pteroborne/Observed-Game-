@@ -1,0 +1,14 @@
+{
+  "tile_id": "hall_junction_4way",
+  "view_mode": "orbit",
+  "render_mode": "colliders",
+  "register": 10,
+  "variant": 6,
+  "orbit_yaw": 0.72,
+  "orbit_pitch": 0.76,
+  "radius": 25.0,
+  "height": 10.0,
+  "cross_section": true,
+  "hide_menu": true,
+  "output_image": "docs/evidence/liminal_grid/colliders.png"
+}

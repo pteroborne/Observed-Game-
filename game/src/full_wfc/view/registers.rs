@@ -130,6 +130,23 @@ pub(super) fn spawn_register_dressing(
                 }
             }
         }
+        ArchitectureRegister::LiminalGrid => {
+            if let Some(face) = closed_face {
+                for along in [-3.0, 0.0, 3.0] {
+                    spawn_wall_box(
+                        parent,
+                        assets,
+                        meshes,
+                        face,
+                        along,
+                        2.15,
+                        Vec3::new(2.5, 3.7, 0.07),
+                        mats.wall.clone(),
+                        "liminal-grid wall panel",
+                    );
+                }
+            }
+        }
         ArchitectureRegister::FacetMonument => {
             if let Some(face) = closed_face {
                 for along in [-3.0, 0.0, 3.0] {

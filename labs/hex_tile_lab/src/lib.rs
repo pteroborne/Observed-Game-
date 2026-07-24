@@ -10,12 +10,12 @@
 //!   are lit from *inside*, not by a roof-blocked key light alone), and a
 //!   shadow-casting district key spot for cutaway/orbit drama.
 //! - **Deduplicated composition list**: one entry per authored module
-//!   (rotation 0); the register (1-9) re-skins the current composition
+//!   (rotation 0); the register (1-9, then 0 for Liminal Grid) re-skins the current composition
 //!   instead of multiplying the list by 54.
 //!
 //! Controls: WASD/mouse move (first person), M camera mode, Tab render mode,
 //! X cutaway, O auto-orbit, V volumetrics, B bloom, R respawn, H hot reload,
-//! `[`/`]` cycle compositions, 1-9 register, F1 HUD, F2 menu.
+//! `[`/`]` cycle compositions, 1-9/0 register, F1 HUD, F2 menu.
 
 mod capture;
 mod lab_menu;
@@ -34,16 +34,15 @@ use bevy::prelude::*;
 use bevy::render::view::Hdr;
 use bevy::window::{CursorGrabMode, CursorOptions, PresentMode, PrimaryWindow, WindowResolution};
 use lab_menu::{FilterCategory, LabMenuState, MenuTab};
-use observed_authoring::{CompiledTileCatalog, Manifest, TilePrototype};
+use observed_authoring::{RuntimeHexCatalog, TilePrototype};
 use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::{blueprint_cell_archetype, blueprint_for_role};
 use observed_facility::map_spec::RoomRole;
 use observed_hex::{HexCoord, TILE_LEVEL_HEIGHT, hex_origin};
 use observed_style as style;
 use observed_traversal::rapier_controller::{RapierTraversalScene, step_character};
-use observed_traversal::{ColliderSpec, FpsBody, FpsConfig};
+use observed_traversal::{ColliderSpec, ConvexRenderMesh, FpsBody, FpsConfig};
 use player_input::PlayerIntent;
-use rapier3d::prelude::{SharedShape, Vector as RapierVector};
 
 pub use capture::CaptureRun;
 use capture::capture_progress;
@@ -239,9 +238,9 @@ impl Composition {
     }
 }
 
-/// Resolve a composition tile to the best catalog entry for `register`:
-/// exact register+variant, then any register at that variant, then the
-/// archetype's lowest variant.
+/// Resolve a composition tile without borrowing another register's authored
+/// geometry. Generic compatibility remains a valid fallback for signatures
+/// that do not have register-specific production art.
 fn resolve_tile<'a>(
     tiles: &'a [TilePrototype],
     archetype: &str,
@@ -254,15 +253,11 @@ fn resolve_tile<'a>(
             t.key.archetype == archetype && t.key.register == register && t.key.variant == variant
         })
         .or_else(|| {
-            tiles
-                .iter()
-                .find(|t| t.key.archetype == archetype && t.key.variant == variant)
-        })
-        .or_else(|| {
-            tiles
-                .iter()
-                .filter(|t| t.key.archetype == archetype)
-                .min_by_key(|t| t.key.variant)
+            tiles.iter().find(|t| {
+                t.key.archetype == archetype
+                    && t.key.register == "generic"
+                    && t.key.variant == variant
+            })
         })
 }
 
@@ -331,20 +326,10 @@ fn tile_source_dir() -> std::path::PathBuf {
 
 fn load_corpus_tiles() -> Vec<TilePrototype> {
     let base = tile_source_dir();
-    let mut cells = Manifest::load(&base.join("manifest.ron"))
-        .expect("tile manifest loads")
-        .load_tiles(&base)
-        .expect("tile prototypes validate");
-    let text = std::fs::read_to_string(base.join("compiled_catalog.ron"))
-        .expect("compiled tile catalog is committed");
-    let compiled =
-        CompiledTileCatalog::from_ron(&text).expect("compiled tile catalog schema loads");
     let slugs = ArchitectureRegister::ALL.map(ArchitectureRegister::slug);
-    let strict = compiled
-        .runtime_catalog(&slugs)
-        .expect("compiled catalog expands into runtime tiles");
-    cells.extend(strict.cells);
-    cells
+    RuntimeHexCatalog::load(&base, &slugs)
+        .expect("canonical runtime tile catalog loads")
+        .cells
 }
 
 fn face_plan_dir(face: observed_hex::HexFace) -> Vec2 {
@@ -471,9 +456,29 @@ impl LabState {
         self.compositions
             .iter()
             .enumerate()
-            .filter(|(_, comp)| comp.matches_filter(filter))
+            .filter(|(index, comp)| {
+                comp.matches_filter(filter) && self.composition_available(*index)
+            })
             .map(|(idx, _)| idx)
             .collect()
+    }
+
+    fn composition_available(&self, index: usize) -> bool {
+        let register = self.register().slug();
+        match &self.compositions[index % self.compositions.len()] {
+            Composition::SingleTile { archetype, variant } => {
+                resolve_tile(&self.tiles, archetype, *variant, register).is_some()
+            }
+            Composition::Room(role) => blueprint_for_role(*role)
+                .cells
+                .iter()
+                .enumerate()
+                .filter_map(|(cell, _)| blueprint_cell_archetype(*role, cell))
+                .all(|archetype| resolve_tile(&self.tiles, archetype, 0, register).is_some()),
+            Composition::SiloWellshaft => ["silo_core", "silo_ring", "silo_ring_bridge"]
+                .into_iter()
+                .all(|archetype| resolve_tile(&self.tiles, archetype, 0, register).is_some()),
+        }
     }
 
     pub fn cycle_filtered(&mut self, forward: bool, filter: FilterCategory) {
@@ -514,7 +519,25 @@ impl LabState {
     }
 
     pub fn switch(&mut self, index: usize) {
-        self.current_composition = index % self.compositions.len();
+        let requested = index % self.compositions.len();
+        self.current_composition = if self.composition_available(requested) {
+            requested
+        } else {
+            let requested_archetype = match &self.compositions[requested] {
+                Composition::SingleTile { archetype, .. } => Some(archetype.as_str()),
+                _ => None,
+            };
+            self.compositions
+                .iter()
+                .enumerate()
+                .find(|(candidate, composition)| {
+                    self.composition_available(*candidate)
+                        && requested_archetype.is_none_or(|archetype| {
+                            matches!(composition, Composition::SingleTile { archetype: candidate, .. } if candidate == archetype)
+                        })
+                })
+                .map_or(0, |(candidate, _)| candidate)
+        };
         let composition = self.composition().clone();
         let register = self.register();
 
@@ -863,7 +886,7 @@ fn handle_input(
         state.last_reload = format!("hot reload FAILED: {error}");
     }
 
-    const DIGITS: [KeyCode; 9] = [
+    const DIGITS: [KeyCode; 10] = [
         KeyCode::Digit1,
         KeyCode::Digit2,
         KeyCode::Digit3,
@@ -873,6 +896,7 @@ fn handle_input(
         KeyCode::Digit7,
         KeyCode::Digit8,
         KeyCode::Digit9,
+        KeyCode::Digit0,
     ];
     for (index, key) in DIGITS.iter().enumerate() {
         if keyboard.just_pressed(*key) {
@@ -1209,96 +1233,20 @@ fn hull_surface_kind(hull: &[Vec3], top_y: f32) -> SurfaceKind {
     }
 }
 
-/// Faces meeting at less than this dihedral angle shade as one smooth
-/// surface; sharper edges stay crisp. Chamfers and slope transitions
-/// (~20-45 degrees) blend; hex corners and wall-floor joints (60-90) do not.
-const SMOOTH_CREASE_COS: f32 = 0.70; // cos(~45.5 degrees)
-
 /// Build a render mesh from a convex hull with crease-angle normal smoothing
-/// and per-face box-projected UVs. Replaces the old forced flat shading
-/// (every facet hard-edged: the "assembled blocks" look) and the old planar
-/// UV projection (streaky textures on off-axis walls).
+/// and per-face box-projected UVs through the shared Bevy-free policy used by
+/// the assembled game.
 fn hull_mesh(hull: &[Vec3]) -> Option<Mesh> {
-    let points: Vec<_> = hull
-        .iter()
-        .map(|v| RapierVector::new(v.x, v.y, v.z))
-        .collect();
-    let shape = SharedShape::convex_hull(&points)?;
-    let (vertices, indices) = shape.as_convex_polyhedron()?.to_trimesh();
-
-    // Face normals per triangle.
-    let tri_normal = |tri: &[u32; 3]| -> Vec3 {
-        let a = vertices[tri[0] as usize];
-        let b = vertices[tri[1] as usize];
-        let c = vertices[tri[2] as usize];
-        let a = Vec3::new(a.x, a.y, a.z);
-        let b = Vec3::new(b.x, b.y, b.z);
-        let c = Vec3::new(c.x, c.y, c.z);
-        (b - a).cross(c - a).normalize_or_zero()
-    };
-    let face_normals: Vec<Vec3> = indices.iter().map(tri_normal).collect();
-
-    // Group triangles by shared (quantized) vertex position so smoothing can
-    // average across coincident corners from different triangles.
-    let key = |p: &RapierVector| -> (i64, i64, i64) {
-        (
-            (p.x * 1024.0).round() as i64,
-            (p.y * 1024.0).round() as i64,
-            (p.z * 1024.0).round() as i64,
-        )
-    };
-    let mut adjacent: std::collections::HashMap<(i64, i64, i64), Vec<usize>> =
-        std::collections::HashMap::new();
-    for (tri_idx, tri) in indices.iter().enumerate() {
-        for &vert in tri {
-            adjacent
-                .entry(key(&vertices[vert as usize]))
-                .or_default()
-                .push(tri_idx);
-        }
-    }
-
-    // One output vertex per triangle corner: position, smoothed normal, and a
-    // UV projected along the face's dominant axis (box mapping).
-    let mut positions = Vec::with_capacity(indices.len() * 3);
-    let mut normals = Vec::with_capacity(indices.len() * 3);
-    let mut uvs = Vec::with_capacity(indices.len() * 3);
-    for (tri_idx, tri) in indices.iter().enumerate() {
-        let face_n = face_normals[tri_idx];
-        for &vert in tri {
-            let p = vertices[vert as usize];
-            let mut n = Vec3::ZERO;
-            for &other in &adjacent[&key(&p)] {
-                let other_n = face_normals[other];
-                if face_n.dot(other_n) >= SMOOTH_CREASE_COS {
-                    n += other_n;
-                }
-            }
-            let n = n.normalize_or(face_n);
-            positions.push([p.x, p.y, p.z]);
-            normals.push([n.x, n.y, n.z]);
-            let abs = face_n.abs();
-            let uv = if abs.y >= abs.x && abs.y >= abs.z {
-                [p.x * 0.25, p.z * 0.25]
-            } else if abs.x >= abs.z {
-                [p.z * 0.25, p.y * 0.25]
-            } else {
-                [p.x * 0.25, p.y * 0.25]
-            };
-            uvs.push(uv);
-        }
-    }
-    let index_list: Vec<u32> = (0..positions.len() as u32).collect();
-
+    let data = ConvexRenderMesh::from_convex_hull(hull)?;
     Some(
         Mesh::new(
             PrimitiveTopology::TriangleList,
             RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
         )
-        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
-        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
-        .with_inserted_indices(Indices::U32(index_list)),
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, data.positions)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, data.uvs)
+        .with_inserted_indices(Indices::U32(data.indices)),
     )
 }
 
@@ -1402,7 +1350,22 @@ fn rebuild_visuals(
             RenderMode::Lit => {
                 // District materials: near-zero emissive — light, not glow,
                 // shapes the space. Trim keeps a whisper of accent.
-                let (color, tex, emissive) = if register == ArchitectureRegister::Monolith {
+                let (color, tex, emissive) = if register == ArchitectureRegister::LiminalGrid {
+                    let role = match kind {
+                        SurfaceKind::Floor => style::ArchitectureSurfaceRole::Floor,
+                        SurfaceKind::Wall | SurfaceKind::Trim => {
+                            style::ArchitectureSurfaceRole::Wall
+                        }
+                        SurfaceKind::Ceiling => style::ArchitectureSurfaceRole::Ceiling,
+                    };
+                    let treatment = style::architecture_surface(register, role);
+                    let texture = match kind {
+                        SurfaceKind::Floor => Some(floor_tex.clone()),
+                        SurfaceKind::Wall | SurfaceKind::Trim => Some(wall_tex.clone()),
+                        SurfaceKind::Ceiling => Some(ceiling_tex.clone()),
+                    };
+                    (treatment.base_color, texture, treatment.emissive)
+                } else if register == ArchitectureRegister::Monolith {
                     let (color, tex) = match kind {
                         SurfaceKind::Floor => {
                             (Color::srgb(0.26, 0.255, 0.245), Some(floor_tex.clone()))
@@ -1638,7 +1601,22 @@ fn rebuild_visuals(
 
     if mode == RenderMode::Lit {
         // Tier 3: exact authored practicals, backed by fixture geometry.
+        let fixture = style::architecture_practical_fixture(register);
+        let fixture_mesh = meshes.add(Cuboid::new(2.2, 0.08, 0.48));
+        let fixture_material = materials.add(StandardMaterial {
+            base_color: fixture.base_color,
+            emissive: fixture.emissive,
+            perceptual_roughness: 0.72,
+            ..default()
+        });
         for origin in &pool_origins {
+            commands.spawn((
+                TileVisual,
+                Mesh3d(fixture_mesh.clone()),
+                MeshMaterial3d(fixture_material.clone()),
+                Transform::from_translation(*origin - Vec3::Y * 0.06),
+                Name::new("Style-owned practical diffuser"),
+            ));
             commands.spawn((
                 TileVisual,
                 PointLight {
@@ -1723,12 +1701,13 @@ fn update_status(
         .unwrap_or(0);
     **text = format!(
         "{}\n\
-         Render: {}  |  View: {}  |  Register {}/9: {}  |  {}{}\n\
-         [{}] {}/{} in filter \"{}\"  —  Tab render · M view · X cutaway · 1-9 register · F2 menu · F1 hide",
+         Render: {}  |  View: {}  |  Register {}/{}: {}  |  {}{}\n\
+         [{}] {}/{} in filter \"{}\"  —  Tab render · M view · X cutaway · 1-9/0 register · F2 menu · F1 hide",
         state.composition().title(&state.tiles, register.slug()),
         state.render_mode.label(),
         state.view_mode.label(),
         state.register_index + 1,
+        ArchitectureRegister::ALL.len(),
         register.slug(),
         if state.cross_section { "CUTAWAY  " } else { "" },
         if state.auto_orbit { "AUTO-ORBIT" } else { "" },
@@ -1887,7 +1866,9 @@ mod tests {
         );
         assert_eq!(
             state.filtered_compositions(FilterCategory::All).len(),
-            state.compositions.len()
+            (0..state.compositions.len())
+                .filter(|&index| state.composition_available(index))
+                .count()
         );
     }
 
@@ -1924,24 +1905,51 @@ mod tests {
     }
 
     #[test]
-    fn all_registers_resolve_every_composition_without_fallback() {
+    fn every_visible_composition_resolves_without_cross_register_fallback() {
         let mut state = LabState::load();
         for (reg_idx, reg) in ArchitectureRegister::ALL.iter().enumerate() {
             state.register_index = reg_idx;
-            for comp_idx in 0..state.compositions.len() {
+            for comp_idx in state.filtered_compositions(FilterCategory::All) {
                 state.switch(comp_idx);
                 let comp = &state.compositions[comp_idx];
                 if let Composition::SingleTile { archetype, variant } = comp {
                     let resolved = resolve_tile(&state.tiles, archetype, *variant, reg.slug())
                         .expect("single tile resolves");
-                    assert_eq!(
+                    assert!(
+                        resolved.key.register == reg.slug() || resolved.key.register == "generic",
+                        "archetype {archetype} v{variant} borrowed {} while browsing {}",
                         resolved.key.register,
                         reg.slug(),
-                        "archetype {archetype} v{variant} missing for register {}",
-                        reg.slug()
                     );
                 }
             }
         }
+    }
+
+    #[test]
+    fn liminal_layout_variants_are_hidden_from_other_registers() {
+        let mut state = LabState::load();
+        let liminal_only = state
+            .compositions
+            .iter()
+            .enumerate()
+            .find(|(_, composition)| {
+                matches!(composition, Composition::SingleTile { archetype, variant }
+                    if archetype == "hall_cap" && *variant == 6)
+            })
+            .map(|(index, _)| index)
+            .expect("sparse Liminal cap composition exists");
+
+        state.register_index = ArchitectureRegister::ALL
+            .iter()
+            .position(|register| *register == ArchitectureRegister::Institutional)
+            .expect("institutional register");
+        assert!(!state.composition_available(liminal_only));
+
+        state.register_index = ArchitectureRegister::ALL
+            .iter()
+            .position(|register| *register == ArchitectureRegister::LiminalGrid)
+            .expect("liminal register");
+        assert!(state.composition_available(liminal_only));
     }
 }

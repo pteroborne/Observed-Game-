@@ -4119,7 +4119,6 @@ dependencies = [
  "observed_style",
  "observed_traversal",
  "player_input",
- "rapier3d",
  "serde",
  "serde_json",
 ]
@@ -5438,6 +5437,7 @@ dependencies = [
 name = "observed_content"
 version = "0.1.0"
 dependencies = [
+ "ron 0.8.1",
  "serde",
  "serde_json",
  "sha2",

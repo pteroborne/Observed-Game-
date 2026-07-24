@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use bevy::app::AppExit;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
+use observed_content::ArchitectureRegister;
 use serde::Deserialize;
 
 use crate::{Composition, LabState, RenderMode, ViewMode};
@@ -19,10 +20,12 @@ use crate::{Composition, LabState, RenderMode, ViewMode};
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct ViewScript {
     pub tile_id: Option<String>,
+    /// Runtime variant (rotation-0 layout 0 is 0; layout 1 is 6).
+    pub variant: Option<u16>,
     pub composition: Option<String>,
     pub view_mode: Option<String>,
     pub render_mode: Option<String>,
-    /// District register 1-9 (same order as the digit hotkeys).
+    /// Architecture register 1-10 (1-9 use the matching digit; 10 uses 0).
     pub register: Option<u8>,
     pub camera_pos: Option<[f32; 3]>,
     pub camera_target: Option<[f32; 3]>,
@@ -74,7 +77,7 @@ impl ScriptExecution {
     }
 }
 
-fn composition_position(state: &LabState, needle: &str) -> Option<usize> {
+fn composition_position(state: &LabState, needle: &str, variant: Option<u16>) -> Option<usize> {
     if needle == "silo" || needle == "wellshaft" || needle == "silo_wellshaft" {
         return state
             .compositions
@@ -88,8 +91,9 @@ fn composition_position(state: &LabState, needle: &str) -> Option<usize> {
             .position(|c| *c == Composition::SiloWellshaft);
     }
     state.compositions.iter().position(|c| {
-        matches!(c, Composition::SingleTile { archetype, .. }
-            if archetype == needle || archetype.contains(needle))
+        matches!(c, Composition::SingleTile { archetype, variant: candidate }
+            if (archetype == needle || archetype.contains(needle))
+                && variant.is_none_or(|variant| *candidate == variant))
     })
 }
 
@@ -117,7 +121,7 @@ pub fn run_script_system(
         }
 
         if let Some(register) = script.register
-            && (1..=9).contains(&register)
+            && (1..=ArchitectureRegister::ALL.len() as u8).contains(&register)
         {
             state.register_index = usize::from(register - 1);
         }
@@ -140,7 +144,7 @@ pub fn run_script_system(
             .tile_id
             .as_deref()
             .or(script.composition.as_deref())
-            .and_then(|needle| composition_position(&state, needle));
+            .and_then(|needle| composition_position(&state, needle, script.variant));
         if let Some(position) = target {
             state.switch(position);
         }
@@ -162,6 +166,21 @@ pub fn run_script_system(
             let dir = (state.center - state.free_fly_pos).normalize_or_zero();
             state.free_fly_yaw = dir.x.atan2(-dir.z);
             state.free_fly_pitch = dir.y.asin();
+        }
+        if state.view_mode == ViewMode::FirstPerson
+            && let Some(position) = script.camera_pos
+        {
+            let eye = Vec3::from_array(position);
+            let target = script
+                .camera_target
+                .map(Vec3::from_array)
+                .unwrap_or(state.center);
+            let direction = (target - eye).normalize_or_zero();
+            state.body.position =
+                eye - Vec3::Y * (state.config.eye_height - state.config.half_height);
+            state.body.velocity = Vec3::ZERO;
+            state.body.yaw = direction.x.atan2(-direction.z);
+            state.body.pitch = direction.y.asin();
         }
         if let Some(yaw) = script.orbit_yaw {
             state.orbit_yaw = yaw;

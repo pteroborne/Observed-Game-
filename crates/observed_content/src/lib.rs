@@ -12,7 +12,7 @@ pub const SUPPORTED_SCHEMA_VERSION: u32 = 1;
 /// These values participate in generated-map identity independently of the authored
 /// content-manifest schema. Increment this version when a register's simulation
 /// contract changes incompatibly; presentation-only tuning does not require a bump.
-pub const ARCHITECTURE_CATALOG_VERSION: u32 = 2;
+pub const ARCHITECTURE_CATALOG_VERSION: u32 = 3;
 
 /// Stable, production-safe identities for the procedural architecture registers.
 ///
@@ -31,10 +31,11 @@ pub enum ArchitectureRegister {
     Wellshaft = 6,
     InfiniteGallery = 7,
     Thinning = 8,
+    LiminalGrid = 9,
 }
 
 impl ArchitectureRegister {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::ShadowScreen,
         Self::Monolith,
         Self::OverlitGrid,
@@ -44,6 +45,7 @@ impl ArchitectureRegister {
         Self::Wellshaft,
         Self::InfiniteGallery,
         Self::Thinning,
+        Self::LiminalGrid,
     ];
 
     pub const fn stable_id(self) -> u8 {
@@ -61,6 +63,7 @@ impl ArchitectureRegister {
             Self::Wellshaft => "wellshaft",
             Self::InfiniteGallery => "infinite_gallery",
             Self::Thinning => "thinning",
+            Self::LiminalGrid => "liminal_grid",
         }
     }
 
@@ -75,6 +78,7 @@ impl ArchitectureRegister {
             Self::Wellshaft => "Wellshaft",
             Self::InfiniteGallery => "Infinite Gallery",
             Self::Thinning => "Thinning",
+            Self::LiminalGrid => "Liminal Grid",
         }
     }
 }
@@ -850,8 +854,8 @@ mod tests {
             .into_iter()
             .map(ArchitectureRegister::stable_id)
             .collect();
-        assert_eq!(ids, (0..9).collect::<Vec<_>>());
-        assert_eq!(ARCHITECTURE_CATALOG_VERSION, 2);
+        assert_eq!(ids, (0..10).collect::<Vec<_>>());
+        assert_eq!(ARCHITECTURE_CATALOG_VERSION, 3);
         for register in ArchitectureRegister::ALL {
             assert_eq!(
                 ArchitectureRegister::try_from(register.stable_id()),
@@ -860,7 +864,14 @@ mod tests {
             assert!(!register.slug().is_empty());
             assert!(!register.label().is_empty());
         }
-        assert_eq!(ArchitectureRegister::try_from(9), Err(9));
+        assert_eq!(ArchitectureRegister::try_from(10), Err(10));
+
+        let encoded = ron::to_string(&ArchitectureRegister::LiminalGrid).expect("serialize");
+        assert_eq!(encoded, "liminal_grid");
+        assert_eq!(
+            ron::from_str::<ArchitectureRegister>(&encoded).expect("deserialize"),
+            ArchitectureRegister::LiminalGrid
+        );
     }
 
     fn fixture() -> ContentManifest {

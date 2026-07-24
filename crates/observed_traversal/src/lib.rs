@@ -22,8 +22,10 @@ use player_input::PlayerIntent;
 
 pub mod gantry;
 pub mod rapier_controller;
+pub mod render_mesh;
 mod world;
 
+pub use render_mesh::ConvexRenderMesh;
 pub use world::{
     ArenaSpec, ArenaSpecError, ColliderDelta, ColliderDeltaError, ColliderShape, ColliderSpec,
     StableColliderId,

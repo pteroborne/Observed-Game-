@@ -11,7 +11,7 @@ It enforces strict separation between:
 ## Core Types
 
 - **`ContentManifest`**: Top-level manifest struct containing schema version, traversal profiles, district definitions, module lists, and asset declarations.
-- **`ArchitectureRegister`**: Code-owned enum (`ShadowScreen`, `Monolith`, `OverlitGrid`, `Institutional`, `FacetMonument`, `Megastructure`, `Wellshaft`, `InfiniteGallery`, `Thinning`) providing stable `u8` IDs for procedural architecture registers.
+- **`ArchitectureRegister`**: Code-owned enum (`ShadowScreen`, `Monolith`, `OverlitGrid`, `Institutional`, `FacetMonument`, `Megastructure`, `Wellshaft`, `InfiniteGallery`, `Thinning`, `LiminalGrid`) providing stable `u8` IDs for procedural architecture registers. IDs 0-8 remain pinned; `LiminalGrid` is ID 9.
 - **`TraversalProfile`**: Standardized physical traversal parameters (`walk_speed`, `run_speed`, `gravity`, `radius`, `half_height`, `step_height`).
 - **`BakedModule`**: Serialized convex hull geometry (`ConvexHull`) produced by TrenchBroom compilation.
 - **`PlaceLayoutSnapshot`**: Authored module placement snapshots consumed by physics, rendering, and spectator AI.
