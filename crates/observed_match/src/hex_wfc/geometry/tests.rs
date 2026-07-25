@@ -1,6 +1,8 @@
+use observed_content::ArchitectureRegister;
 use observed_core::PlayerId;
 use observed_facility::hex_wfc::{
-    HexArchetype, HexObservationFrame, HexRelayoutProgress, HexSpace, HexWfcConfig, HexWfcWorld,
+    HexArchetype, HexMutationRegion, HexObservationFrame, HexRelayoutProgress, HexSpace,
+    HexWfcConfig, HexWfcWorld,
 };
 use observed_hex::{HexFace, hex_origin};
 use observed_traversal::rapier_controller::step_character;
@@ -491,5 +493,399 @@ fn report_arc_default_collider_build_and_step_budget() {
     assert!(
         batch_frame_micros < 16_667,
         "eight moving characters must step inside 60 Hz"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Multi-cell whole-room projection (Stream B).
+//
+// The single existing whole-room test above
+// (`matching_whole_room_module_takes_precedence_over_cell_fallbacks`) only
+// exercises a one-cell `Start` blueprint. Every test below hand-builds a
+// genuinely multi-cell `HexWfcWorld` (two- and three-cell footprints) so the
+// real fan-out in `project_blueprint`/`push_room`/`project_delta_with_rooms`
+// gets covered instead of just its single-cell degenerate case.
+
+/// A small, definitely-non-degenerate convex hull (Rapier's `convex_hull`
+/// builder rejects anything with fewer than 4 non-coplanar points).
+fn tiny_tetrahedron(offset: f32) -> Vec<Vec3> {
+    vec![
+        Vec3::new(offset, 0.0, 0.0),
+        Vec3::new(offset + 1.0, 0.0, 0.0),
+        Vec3::new(offset, 1.0, 0.0),
+        Vec3::new(offset, 0.0, 1.0),
+    ]
+}
+
+/// A contract-valid whole-room prototype for `role`: footprint mirrors
+/// `blueprint_for_role(role).cells` exactly, and every lateral face that does
+/// not border another footprint cell is authored as `Door` (mirroring
+/// `RoomBlueprint::cell_signature`'s "whole exterior is a door" rule) —
+/// named ports keep their blueprint name, the rest get synthesized names.
+fn multi_cell_room_prototype(role: RoomRole, archetype: &str, variant: u16) -> RoomPrototype {
+    let blueprint = blueprint_for_role(role);
+    let footprint = blueprint
+        .cells
+        .iter()
+        .map(|&offset| cell_ref(offset).expect("small test offsets fit ModuleCellRef"))
+        .collect();
+    let mut ports = Vec::new();
+    for (index, &offset) in blueprint.cells.iter().enumerate() {
+        for face in HexFace::LATERAL {
+            let (dq, dr, dl) = face.delta();
+            let neighbor = (offset.0 + dq, offset.1 + dr, offset.2 + dl);
+            if blueprint.cells.contains(&neighbor) {
+                continue; // interior face: stays Sealed on both sides.
+            }
+            let cell = cell_ref(offset).expect("small test offsets fit ModuleCellRef");
+            let name = blueprint
+                .named_ports
+                .iter()
+                .find(|&&(_, port_offset, port_face)| port_offset == offset && port_face == face)
+                .map(|&(name, _, _)| name.to_string())
+                .unwrap_or_else(|| format!("aux_{index}_{face:?}"));
+            ports.push(observed_authoring::RoomPrototypePort {
+                cell,
+                face,
+                class: PortClass::Door,
+                name,
+            });
+        }
+    }
+    RoomPrototype {
+        id: format!("test/{archetype}"),
+        room_role: blueprint.name.to_string(),
+        key: TileKey {
+            archetype: archetype.to_string(),
+            register: "generic".to_string(),
+            variant,
+        },
+        weight: 1,
+        footprint,
+        ports,
+        hulls: vec![tiny_tetrahedron(0.0)],
+        lights: Vec::new(),
+    }
+}
+
+/// A minimal solved world whose only content is one multi-cell blueprint
+/// stamped at `anchor`, matching `blueprint_for_role(role)` exactly. Small
+/// enough to stay independent of the real WFC solver and the production
+/// catalog entirely.
+fn multi_cell_world(role: RoomRole, anchor: HexCoord) -> HexWfcWorld {
+    let blueprint = blueprint_for_role(role);
+    let cells: Vec<HexCoord> = blueprint
+        .cells
+        .iter()
+        .map(|&(dq, dr, dl)| HexCoord {
+            q: (i32::from(anchor.q) + dq) as u16,
+            r: (i32::from(anchor.r) + dr) as u16,
+            level: (i32::from(anchor.level) + dl) as u8,
+        })
+        .collect();
+    let mut placements = BTreeMap::new();
+    let mut architecture = BTreeMap::new();
+    let mut cell_revisions = BTreeMap::new();
+    for &coord in &cells {
+        placements.insert(
+            coord,
+            HexPlacement {
+                coord,
+                space: HexSpace::Room,
+                archetype: HexArchetype::Room,
+                doors: 0,
+                up: PortClass::Sealed,
+                down: PortClass::Sealed,
+            },
+        );
+        architecture.insert(coord, ArchitectureRegister::Institutional);
+        cell_revisions.insert(coord, 0);
+    }
+    HexWfcWorld {
+        seed: 0xD00D_0000_0000_0001,
+        generation: 0,
+        config: HexWfcConfig {
+            cols: 6,
+            rows: 6,
+            levels: 1,
+            min_rooms: 2,
+            max_rooms: 2,
+            retry_budget: 1,
+            min_room_distance: 1,
+        },
+        placements,
+        blueprints: vec![StampedBlueprint {
+            id: 0,
+            role,
+            anchor,
+            cells,
+        }],
+        architecture,
+        cell_revisions,
+        last_attempts: 1,
+    }
+}
+
+/// Pins the multi-cell selection contract: a valid two-cell `DualStation`
+/// module wins over the per-cell fallback, and — because `push_room` always
+/// anchors every hull it emits at `stamped.anchor` — the *entire* footprint
+/// collapses into one piece set rather than leaving a leftover per-cell
+/// fallback piece at the second cell.
+#[test]
+fn matching_two_cell_room_module_consumes_the_entire_footprint_as_one_piece_set() {
+    let anchor = HexCoord {
+        q: 0,
+        r: 0,
+        level: 0,
+    };
+    let world = multi_cell_world(RoomRole::DualStation, anchor);
+    let second_cell = HexCoord {
+        q: 1,
+        r: 0,
+        level: 0,
+    };
+    let room = multi_cell_room_prototype(RoomRole::DualStation, "whole_dual_station", 1);
+    let snapshot = HexWfcGeometrySnapshot::project_with_rooms(&world, &[], &[room])
+        .expect("contract-valid two-cell module must project");
+
+    let room_pieces: Vec<_> = snapshot
+        .pieces
+        .iter()
+        .filter(|piece| piece.role == HexStructureRole::Room)
+        .collect();
+    assert!(!room_pieces.is_empty());
+    assert!(room_pieces.iter().all(|piece| {
+        piece.anchor == anchor
+            && piece.source_cell == anchor
+            && piece
+                .tile
+                .as_ref()
+                .is_some_and(|key| key.archetype == "whole_dual_station")
+    }));
+    // No leftover per-cell fallback piece at the non-anchor footprint cell.
+    assert!(
+        !room_pieces
+            .iter()
+            .any(|piece| piece.source_cell == second_cell),
+        "whole-room pieces must not be split back out per footprint cell"
+    );
+    assert_eq!(snapshot.blueprint_instances, 1);
+}
+
+/// Delta-path counterpart: touching just one non-anchor cell of a matching
+/// three-cell `Decision` module must still (a) recognize the room match and
+/// (b) expand `changed_cells`/`upserted_pieces` to the room's whole
+/// footprint, not just the literally-touched cell. This path was completely
+/// unexercised before this test.
+#[test]
+fn multi_cell_room_delta_projection_expands_a_partial_touch_to_the_full_footprint() {
+    let anchor = HexCoord {
+        q: 0,
+        r: 0,
+        level: 0,
+    };
+    let touched_cell = HexCoord {
+        q: 1,
+        r: 0,
+        level: 0,
+    };
+    let before_world = multi_cell_world(RoomRole::Decision, anchor);
+    let prototypes = tiles();
+    // Project without the room prototype first: every footprint cell gets its
+    // own per-cell fallback piece, exactly like a plain hall relayout would
+    // have produced before the room module existed.
+    let before = HexWfcGeometrySnapshot::project(&before_world, &prototypes)
+        .expect("per-cell fallback projects the Decision footprint");
+
+    let mut after_world = before_world.clone();
+    after_world.generation = 1;
+    let room = multi_cell_room_prototype(RoomRole::Decision, "whole_decision", 1);
+
+    let mut initial_changed_cells = BTreeSet::new();
+    initial_changed_cells.insert(touched_cell);
+    let logical = HexRelayoutDelta {
+        previous_generation: 0,
+        generation: 1,
+        previous_attempts: before_world.last_attempts,
+        region: HexMutationRegion {
+            cells: BTreeSet::new(),
+            boundary_cells: BTreeSet::new(),
+            protected_cells: BTreeSet::new(),
+        },
+        changed_cells: initial_changed_cells.clone(),
+        placements: BTreeMap::new(),
+        architecture: BTreeMap::new(),
+        cell_revisions: BTreeMap::new(),
+        previous_placements: BTreeMap::new(),
+        previous_architecture: BTreeMap::new(),
+        previous_cell_revisions: BTreeMap::new(),
+        previous_blueprints: Vec::new(),
+        removed_blueprints: Vec::new(),
+        upserted_blueprints: Vec::new(),
+    };
+
+    let delta = before
+        .project_delta_with_rooms(&after_world, &logical, &prototypes, &[room])
+        .expect("matching multi-cell room delta must project");
+
+    let footprint: BTreeSet<HexCoord> = after_world.blueprints[0].cells.iter().copied().collect();
+    assert_eq!(footprint.len(), 3, "Decision is a three-cell blueprint");
+    assert!(
+        initial_changed_cells.len() < delta.changed_cells.len(),
+        "touching one footprint cell must expand to the whole room"
+    );
+    assert_eq!(
+        delta.changed_cells, footprint,
+        "delta must cover exactly the room's footprint, no more, no less"
+    );
+    assert!(!delta.upserted_pieces.is_empty());
+    assert!(delta.upserted_pieces.iter().all(|piece| {
+        piece.source_cell == anchor
+            && piece
+                .tile
+                .as_ref()
+                .is_some_and(|key| key.archetype == "whole_decision")
+    }));
+    // The three old per-cell fallback pieces (one id range per footprint
+    // cell) must be retired now that one room piece set replaces them.
+    assert!(!delta.removed_piece_ids.is_empty());
+}
+
+/// Every way a candidate room can fail `room_contract_matches` must fall back
+/// to per-cell tiles cleanly — never panic, never silently emit a
+/// half-matched room.
+#[test]
+fn mismatched_room_contracts_fall_back_to_per_cell_tiles_without_panicking() {
+    let anchor = HexCoord {
+        q: 0,
+        r: 0,
+        level: 0,
+    };
+    let second_cell = HexCoord {
+        q: 1,
+        r: 0,
+        level: 0,
+    };
+    let world = multi_cell_world(RoomRole::DualStation, anchor);
+    let prototypes = tiles();
+    let base = multi_cell_room_prototype(RoomRole::DualStation, "whole_dual_station_reject", 1);
+
+    let assert_falls_back = |room: RoomPrototype, case: &str| {
+        let snapshot = HexWfcGeometrySnapshot::project_with_rooms(&world, &prototypes, &[room])
+            .unwrap_or_else(|error| panic!("{case} must fall back, not error: {error:?}"));
+        let room_pieces: Vec<_> = snapshot
+            .pieces
+            .iter()
+            .filter(|piece| piece.role == HexStructureRole::Room)
+            .collect();
+        assert!(
+            !room_pieces.is_empty(),
+            "{case}: fallback must still project"
+        );
+        assert!(
+            room_pieces.iter().all(|piece| piece
+                .tile
+                .as_ref()
+                .is_some_and(|key| key.archetype == "sanctuary")),
+            "{case}: rejected candidate must not win, per-cell fallback must be used instead"
+        );
+        // Fallback covers both footprint cells individually (unlike the
+        // whole-room path, whose pieces all anchor at the anchor cell).
+        assert!(
+            room_pieces
+                .iter()
+                .any(|piece| piece.source_cell == second_cell),
+            "{case}: fallback must still cover the second footprint cell"
+        );
+    };
+
+    // Clause: footprint must be set-equal to the stamped blueprint cells —
+    // missing a cell.
+    let mut missing_cell = base.clone();
+    missing_cell.footprint.pop();
+    assert_falls_back(missing_cell, "footprint missing a cell");
+
+    // Clause: footprint must be set-equal — an extra, unexpected cell.
+    let mut extra_cell = base.clone();
+    extra_cell.footprint.push(ModuleCellRef {
+        q: 5,
+        r: 5,
+        level: 0,
+    });
+    assert_falls_back(extra_cell, "footprint has an extra cell");
+
+    // Clause: `room_contract_matches` only checks faces that leave the
+    // footprint, and every one of those must be authored `Door`. Dropping an
+    // (unnamed) exterior port leaves that face unauthored, which
+    // `room_contract_matches` treats as `Sealed` (its `unwrap_or` default) —
+    // exercising the same branch as an explicitly-authored `Sealed` face.
+    let mut sealed_face = base.clone();
+    let dropped_index = sealed_face
+        .ports
+        .iter()
+        .position(|port| {
+            port.cell
+                == ModuleCellRef {
+                    q: 1,
+                    r: 0,
+                    level: 0,
+                }
+                && port.face == HexFace::SouthEast
+        })
+        .expect("aux port exists on the second cell's SouthEast face");
+    sealed_face.ports.remove(dropped_index);
+    assert_falls_back(sealed_face, "exterior face missing/Sealed instead of Door");
+
+    // Clause: every blueprint `named_port` needs a matching authored port
+    // with class `Door` and the same `normalized_role(name)` — renaming the
+    // authored port leaves the face itself still `Door` (so the exterior
+    // face-signature loop still passes) but breaks the distinct named-port
+    // identity check.
+    let mut renamed_named_port = base.clone();
+    let named_port = renamed_named_port
+        .ports
+        .iter_mut()
+        .find(|port| port.name == "port_a")
+        .expect("port_a is authored on the base prototype");
+    named_port.name = "not_port_a".to_string();
+    assert_falls_back(renamed_named_port, "named port present but misnamed");
+}
+
+/// Regression-risk capture: `push_room` (geometry.rs) checks
+/// `room.hulls.len() > COLLIDER_STRIDE` exactly **once**, for the whole
+/// multi-cell footprint. The per-cell fallback (`push_tile`) checks the same
+/// bound **once per cell** instead. So a two-cell `DualStation` fallback kit
+/// can carry up to `COLLIDER_STRIDE * 2` hulls total, but promoting the same
+/// room to a whole-room module caps it at `COLLIDER_STRIDE` — half the
+/// budget, and proportionally worse for larger footprints (Decision's
+/// three-cell fallback allows `COLLIDER_STRIDE * 3`). A sufficiently detailed
+/// authored room module can therefore regress from "renders fine per-cell"
+/// to `HexGeometryError::TooManyHulls` purely by being promoted to a
+/// whole-room module, with no change to its actual geometric complexity.
+#[test]
+fn whole_room_hull_budget_is_shared_across_the_entire_footprint_not_per_cell() {
+    let anchor = HexCoord {
+        q: 0,
+        r: 0,
+        level: 0,
+    };
+    let world = multi_cell_world(RoomRole::DualStation, anchor);
+    let mut room =
+        multi_cell_room_prototype(RoomRole::DualStation, "whole_dual_station_oversized", 1);
+    let oversized = COLLIDER_STRIDE + 1;
+    // Hull point data is irrelevant here: `push_room`'s length check runs
+    // before any per-hull validation, so a single placeholder point per hull
+    // is enough to exercise the budget check without touching arena
+    // validation at all.
+    room.hulls = (0..oversized).map(|_| vec![Vec3::ZERO]).collect();
+
+    let error = HexWfcGeometrySnapshot::project_with_rooms(&world, &[], &[room])
+        .expect_err("a room over the shared hull budget must be rejected");
+    assert_eq!(
+        error,
+        HexGeometryError::TooManyHulls {
+            coord: anchor,
+            hulls: oversized,
+        }
     );
 }
