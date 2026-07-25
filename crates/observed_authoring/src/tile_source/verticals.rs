@@ -144,7 +144,13 @@ fn supported_switchback() -> String {
     );
     // The turn landing is a thick cantilever keyed into the east structural
     // wall. Ground-level circulation passes underneath its clearance.
-    out += &box_brush([56.0, -20.0, landing - 8.0], [96.0, 20.0, landing]);
+    //
+    // It spans the full depth of BOTH flights. It used to be only 40 units deep
+    // (TB y -20..20) while the flights sit at y -52..-16 and 16..52, so each
+    // flight met it across a 0.25 m x 0.25 m corner patch — narrower than the
+    // 0.76 m player capsule, which is why the turn was impassable without
+    // threading an exact corner, and why the staircase read as broken.
+    out += &box_brush([56.0, -52.0, landing - 8.0], [96.0, 52.0, landing]);
     out += &sloped_deck_brush(
         &high_flight,
         &[climb_top, landing, landing, climb_top],
