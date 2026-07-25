@@ -85,16 +85,51 @@ pub(super) fn prime_camera(
     transform.rotation = rotation;
 }
 
+/// How far behind and above the bot the spectator camera trails, in metres, and
+/// how far it looks down. Matches the over-the-shoulder framing already proven
+/// by `hex_wfc_lab`'s bot-POV capture.
+const CHASE_BACK: f32 = 2.6;
+const CHASE_RISE: f32 = 1.6;
+const CHASE_PITCH: f32 = -0.26;
+/// Fraction of the remaining gap the chase camera closes per second. The bot's
+/// yaw is a simulation value that can still swing quickly; easing toward it
+/// keeps the view readable without altering anything the simulation sees.
+const CHASE_RESPONSE: f32 = 6.0;
+
 pub(in crate::hex_wfc) fn sync_camera(
     runtime: Res<HexWfcRuntime>,
+    spectating: Option<Res<crate::sim::state::SpectatorBot>>,
+    time: Res<Time>,
     mut camera: Query<&mut Transform, With<GameCam>>,
 ) {
     let player = runtime.local();
-    let (eye, rotation) = player_eye_pose(player);
-    if let Ok(mut transform) = camera.single_mut() {
+    let Ok(mut transform) = camera.single_mut() else {
+        return;
+    };
+    if spectating.is_none() {
+        // Human play is untouched: the eye pose, rigidly, every frame.
+        let (eye, rotation) = player_eye_pose(player);
         transform.translation = eye;
         transform.rotation = rotation;
+        return;
     }
+
+    // Spectating: trail the bot instead of riding inside its head, and ease
+    // rather than snap. A bot can still change heading faster than is
+    // comfortable to watch from the first person, and this is presentation
+    // only — no simulation state is read back or written.
+    let forward = Vec3::new(player.yaw.sin(), 0.0, -player.yaw.cos());
+    let eye = player.position + Vec3::Y * EYE_OFFSET;
+    let target_translation = eye + Vec3::Y * CHASE_RISE - forward * CHASE_BACK;
+    let target_rotation = Quat::from_rotation_y(-player.yaw) * Quat::from_rotation_x(CHASE_PITCH);
+    if transform.translation == Vec3::ZERO {
+        transform.translation = target_translation;
+        transform.rotation = target_rotation;
+        return;
+    }
+    let t = (CHASE_RESPONSE * time.delta_secs()).clamp(0.0, 1.0);
+    transform.translation = transform.translation.lerp(target_translation, t);
+    transform.rotation = transform.rotation.slerp(target_rotation, t);
 }
 
 /// Enable shadows on the [`HexPractical`] downlights nearest the runner and disable the
