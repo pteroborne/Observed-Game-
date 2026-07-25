@@ -12,6 +12,20 @@ use player_input::PlayerIntent;
 use super::movement::face_plan_dir;
 use super::{FLOOR_SLAB_TOP, HexWfcMatch};
 
+/// Most yaw a bot may turn in one 60 Hz tick, in radians.
+///
+/// `HexWfcMatch` overrides `FpsConfig::look_step` to `1.0`, so the look delta a
+/// bot emits *is* the yaw delta the controller applies — this constant is
+/// already in rad/tick, no scaling in between. It used to be 0.25, i.e. ~859
+/// deg/s: a bot snapped to any new heading within a couple of ticks, which both
+/// whipped the spectator camera and made reversing free, so an oscillating
+/// waypoint cost the bot nothing. At ~275 deg/s a marginal flip is ridden out
+/// instead of chased.
+///
+/// Bot-side on purpose: `step_character` is shared with human look input, so
+/// clamping there would slow the player's mouse.
+const MAX_TURN_PER_TICK: f32 = 0.08;
+
 const STUCK_ENTER_TICKS: u16 = 45;
 const STUCK_SWEEP_TICKS: u16 = 24;
 const UNSTICK_STRAFE: f32 = 0.9;
@@ -403,7 +417,7 @@ fn steer_toward_with_speed(
 ) -> PlayerIntent {
     let direction = target - position;
     let desired_yaw = direction.x.atan2(-direction.z);
-    let look = wrap_angle(desired_yaw - yaw).clamp(-0.25, 0.25);
+    let look = wrap_angle(desired_yaw - yaw).clamp(-MAX_TURN_PER_TICK, MAX_TURN_PER_TICK);
     PlayerIntent {
         movement: Vec2::Y * movement_scale,
         look: Vec2::new(look, 0.0),
