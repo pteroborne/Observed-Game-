@@ -21,14 +21,31 @@ use observed_hex::HexCoord;
 
 use super::{HexArchetype, HexWfcConfig};
 
+/// Whether the geometry composition tendencies below are actually applied to
+/// the solve.
+///
+/// **Currently `false`, deliberately.** The tendencies are a nice-to-have
+/// aesthetic bias, but applying them shifts every layout, and one of the
+/// resulting layouts stalls all four bots at a known-fragile spot — breaking
+/// `bot_soak_has_no_stalls` (the Arc-K zero-stall invariant, Phase 94 success
+/// criterion 2). Softening the constants only moved the failure around; the
+/// same cell kept stalling, which says the root cause is bot-navigation
+/// fragility rather than the weighting itself. Navigability is a shipping
+/// invariant and composition tendency is not, so the tendency yields until
+/// bot navigation is hardened.
+///
+/// The tendency logic and its tests stay live so re-enabling is this one line
+/// plus a re-run of `cargo test -p observed_match hex_wfc::model::tests`.
+const COMPOSITION_TENDENCIES_ENABLED: bool = false;
+
 /// Weight multiplier at the central axis for vertical archetypes.
-const VERTICAL_CENTER_BOOST: f64 = 1.6;
+const VERTICAL_CENTER_BOOST: f64 = 1.2;
 /// Weight multiplier at the grid edge for vertical archetypes.
-const VERTICAL_EDGE_FALLOFF: f64 = 0.7;
+const VERTICAL_EDGE_FALLOFF: f64 = 0.9;
 /// Weight multiplier for rooms at the lowest level.
-const ROOM_LOW_LEVEL: f64 = 0.8;
+const ROOM_LOW_LEVEL: f64 = 0.9;
 /// Weight multiplier for rooms at the highest level.
-const ROOM_HIGH_LEVEL: f64 = 1.5;
+const ROOM_HIGH_LEVEL: f64 = 1.2;
 
 /// Linear interpolation from `a` (at `t = 0`) to `b` (at `t = 1`).
 fn lerp(a: f64, b: f64, t: f64) -> f64 {
@@ -211,7 +228,11 @@ pub(super) fn effective_weight(
     if weight == 0 {
         return 0;
     }
-    let geometry = context_multiplier(coord, archetype, config);
+    let geometry = if COMPOSITION_TENDENCIES_ENABLED {
+        context_multiplier(coord, archetype, config)
+    } else {
+        1.0
+    };
     let bias = influence.map_or(1.0, |field| field.multiplier(archetype));
     let scaled = (f64::from(weight) * geometry * bias).round();
     // `scaled` is finite and >= 0 here (both factors are bounded positive), so
@@ -285,29 +306,49 @@ mod tests {
         );
     }
 
+    // The next two pin the *designed* tendency via `context_multiplier`, which
+    // stays live even while `COMPOSITION_TENDENCIES_ENABLED` keeps it out of the
+    // solve — so the design is still covered and re-enabling is a one-line change.
     #[test]
     fn verticals_are_favored_near_the_central_axis() {
         let cfg = config();
-        let center = coord(cfg.cols / 2, cfg.rows / 2, 1);
-        let edge = coord(0, 0, 1);
-        let center_w = effective_weight(center, HexArchetype::Shaft, 10, cfg, None);
-        let edge_w = effective_weight(edge, HexArchetype::Shaft, 10, cfg, None);
+        let center = context_multiplier(
+            coord(cfg.cols / 2, cfg.rows / 2, 1),
+            HexArchetype::Shaft,
+            cfg,
+        );
+        let edge = context_multiplier(coord(0, 0, 1), HexArchetype::Shaft, cfg);
         assert!(
-            center_w > edge_w,
-            "shaft weight should be higher at the axis ({center_w}) than the edge ({edge_w})"
+            center > edge,
+            "shaft tendency should be higher at the axis ({center}) than the edge ({edge})"
         );
     }
 
     #[test]
     fn rooms_are_favored_on_upper_levels() {
         let cfg = config();
-        let low = coord(5, 5, 0);
-        let high = coord(5, 5, cfg.levels - 1);
-        let low_w = effective_weight(low, HexArchetype::Room, 10, cfg, None);
-        let high_w = effective_weight(high, HexArchetype::Room, 10, cfg, None);
+        let low = context_multiplier(coord(5, 5, 0), HexArchetype::Room, cfg);
+        let high = context_multiplier(coord(5, 5, cfg.levels - 1), HexArchetype::Room, cfg);
         assert!(
-            high_w > low_w,
-            "room weight should be higher up high ({high_w}) than down low ({low_w})"
+            high > low,
+            "room tendency should be higher up high ({high}) than down low ({low})"
+        );
+    }
+
+    /// Pins the deliberate current state: the geometry tendency is authored and
+    /// tested but NOT applied to the solve, because doing so regressed
+    /// `bot_soak_has_no_stalls`. If this test starts failing, the tendency was
+    /// re-enabled — re-run that soak before accepting it.
+    #[test]
+    fn composition_tendencies_are_not_applied_to_the_solve_yet() {
+        let cfg = config();
+        // A shaft at the axis has a non-neutral *tendency* but a neutral
+        // *effective weight*, so layouts match the pre-tendency solver exactly.
+        let center = coord(cfg.cols / 2, cfg.rows / 2, 1);
+        assert!(context_multiplier(center, HexArchetype::Shaft, cfg) > 1.0);
+        assert_eq!(
+            effective_weight(center, HexArchetype::Shaft, 10, cfg, None),
+            10
         );
     }
 

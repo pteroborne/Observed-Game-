@@ -338,7 +338,7 @@ fn tallest_ramp_chain(world: &HexWfcWorld) -> u8 {
 /// wellshaft column and a ramp chain climbing three levels, with a spawn→exit
 /// route that traverses a vertical element. If the seed ever drifts, re-pin
 /// from `search_for_pinnable_3d_seeds`.
-const PINNED_3D_SEED: u64 = 0xA11C_E3D0_0000_006A;
+const PINNED_3D_SEED: u64 = 0xA11C_E3D0_0000_0008;
 
 #[test]
 fn the_pinned_seed_shows_a_tall_shaft_and_a_ramp_chain() {
