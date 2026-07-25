@@ -50,11 +50,10 @@ impl HexWfcMatch {
         {
             command
         } else {
-            steer_toward(
-                player.yaw,
-                player.position,
-                Vec3::from_array(hex_origin(next)),
-            )
+            let target = self
+                .lateral_waypoint(player.cell, next, player.position)
+                .unwrap_or_else(|| Vec3::from_array(hex_origin(next)));
+            steer_toward(player.yaw, player.position, target)
         };
         self.apply_unstick(id, base)
     }
@@ -155,6 +154,42 @@ impl HexWfcMatch {
             ))
         } else {
             None
+        }
+    }
+
+    /// Waypoint for an ordinary lateral hop: steer at the shared doorway until
+    /// the body is through its plane, then at the neighbour's centre.
+    ///
+    /// Aiming straight at the neighbour's centre works only from near a cell's
+    /// middle. From anywhere off-centre the heading runs wide of the 4.5 m
+    /// aperture and into the corner where three cells meet — and there the
+    /// logical cell can resolve to a third, *off-route* cell whose own route
+    /// points back the way it came, so the bot shuttles between the two. That
+    /// was measured as a 2.2 m limit cycle, identical positions each pass,
+    /// repeated for ~2,300 ticks with the bot never registering as stuck.
+    ///
+    /// Steering at the door and only then at the centre keeps the path inside
+    /// the two cells that actually share the aperture.
+    fn lateral_waypoint(&self, cell: HexCoord, next: HexCoord, position: Vec3) -> Option<Vec3> {
+        let face = HexFace::LATERAL
+            .into_iter()
+            .find(|&face| self.facility.config.grid().neighbor(cell, face) == Some(next))?;
+        let origin = Vec3::from_array(hex_origin(cell));
+        let [a, b] = observed_hex::face_edge(face);
+        let door = Vec3::new(
+            origin.x + (a.0 + b.0) as f32 * 0.5,
+            position.y,
+            origin.z + (a.1 + b.1) as f32 * 0.5,
+        );
+        let outward = face_plan_dir(face);
+        let past_aperture = Vec2::new(position.x - door.x, position.z - door.z).dot(outward) > 0.0;
+        if past_aperture {
+            // Through the doorway; head for the neighbour's middle so the body
+            // clears the threshold instead of loitering in it.
+            let next_origin = Vec3::from_array(hex_origin(next));
+            Some(Vec3::new(next_origin.x, position.y, next_origin.z))
+        } else {
+            Some(door)
         }
     }
 
