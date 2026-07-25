@@ -767,3 +767,44 @@ fn scripted_inputs(ticks: u64) -> Vec<HexInputFrame> {
         })
         .collect()
 }
+
+/// A bot that cannot route to the exit used to return `PlayerIntent::default()`
+/// and stand still forever. Nothing caught it: the stall soak skips any layout
+/// whose spawn cannot reach the exit, so the branch never ran. It now falls back
+/// to Explore and keeps moving, which is what lets a bot leave a pocket or a
+/// cell orphaned by a relayout.
+#[test]
+fn a_bot_with_no_route_explores_instead_of_freezing() {
+    use super::bot::BotBehaviour;
+
+    let mut game = showcase_match(0xB07B_0000_0000_0001, 4, 1);
+    let id = PlayerId(0);
+    // Wall the objective off so no route to it can exist, while leaving the
+    // rest of the facility connected — the bot must still have somewhere to go.
+    let exit = game.facility.config.exit();
+    let grid = game.facility.config.grid();
+    for face in HexFace::LATERAL {
+        if let Some(neighbour) = grid.neighbor(exit, face)
+            && let Some(placement) = game.facility.placements.get_mut(&neighbour)
+        {
+            placement.doors &= !(1 << face.opposite().index());
+        }
+    }
+    if let Some(placement) = game.facility.placements.get_mut(&exit) {
+        placement.doors = 0;
+        placement.up = PortClass::Sealed;
+        placement.down = PortClass::Sealed;
+    }
+    // The bot is somewhere that cannot reach the exit ...
+    assert_eq!(
+        game.bot_behaviour(id),
+        BotBehaviour::Explore,
+        "a bot with no route should be exploring"
+    );
+    // ... and it must still be trying to move.
+    let intent = game.bot_command(id);
+    assert!(
+        intent.movement.length_squared() > 0.0,
+        "Explore must emit movement, not freeze the bot"
+    );
+}

@@ -5,7 +5,9 @@ use std::f32::consts::PI;
 
 use glam::{Vec2, Vec3};
 use observed_core::PlayerId;
-use observed_facility::hex_wfc::{HexArchetype, HexCoord, HexFace, HexPlacement, PortClass};
+use observed_facility::hex_wfc::{
+    HexArchetype, HexCoord, HexFace, HexPlacement, HexSpace, PortClass,
+};
 use observed_hex::{TILE_LEVEL_HEIGHT, hex_origin};
 use player_input::PlayerIntent;
 
@@ -31,25 +33,71 @@ const STUCK_SWEEP_TICKS: u16 = 24;
 const UNSTICK_STRAFE: f32 = 0.9;
 const UNSTICK_FORWARD: f32 = 0.45;
 
+/// What a bot is trying to do this tick.
+///
+/// Deliberately a plain enum chosen by one pure function, mirroring the
+/// Guardian (`super::guardian::HexGuardianStatus`) rather than introducing a
+/// behaviour-tree framework: there are four behaviours, none of them nest, and
+/// `agents.md` asks for the smallest thing that works before any framework. If
+/// behaviours ever need to compose or reorder, that is the moment to revisit.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BotBehaviour {
+    /// Escaped, absent, or already standing on the objective.
+    Idle,
+    /// A route to the objective exists: follow it.
+    Seek,
+    /// Following a route but making no headway; break contact.
+    Recover,
+    /// **No route to the objective exists.** Head for whichever open neighbour
+    /// sits nearest the objective and try again next tick.
+    Explore,
+}
+
 impl HexWfcMatch {
+    /// Which behaviour `id` is in this tick. Pure: reads only existing state.
+    #[must_use]
+    pub fn bot_behaviour(&self, id: PlayerId) -> BotBehaviour {
+        let Some(player) = self.players.get(&id) else {
+            return BotBehaviour::Idle;
+        };
+        let Some(target) = self.bot_objective_cell(id) else {
+            return BotBehaviour::Idle;
+        };
+        if target == player.cell {
+            return BotBehaviour::Idle;
+        }
+        let routed = self
+            .facility
+            .route_between_cells(player.cell, target)
+            .is_some_and(|route| route.cells.len() > 1);
+        if !routed {
+            return BotBehaviour::Explore;
+        }
+        if self.stuck_ticks.get(&id).copied().unwrap_or(0) >= STUCK_ENTER_TICKS {
+            BotBehaviour::Recover
+        } else {
+            BotBehaviour::Seek
+        }
+    }
+
     /// The abstract command the objective bot issues for `id` this tick.
     #[must_use]
     pub fn bot_command(&self, id: PlayerId) -> PlayerIntent {
         let Some(player) = self.players.get(&id) else {
             return PlayerIntent::default();
         };
-        if player.escaped {
-            return PlayerIntent::default();
+        match self.bot_behaviour(id) {
+            BotBehaviour::Idle => return PlayerIntent::default(),
+            BotBehaviour::Explore => return self.explore_command(player),
+            BotBehaviour::Seek | BotBehaviour::Recover => {}
         }
-        let Some(target) = self.bot_objective_cell(id) else {
-            return PlayerIntent::default();
-        };
-        if target == player.cell {
-            return PlayerIntent::default();
-        }
-        let Some(route) = self.facility.route_between_cells(player.cell, target) else {
-            return PlayerIntent::default();
-        };
+        let target = self
+            .bot_objective_cell(id)
+            .expect("Seek/Recover imply an objective");
+        let route = self
+            .facility
+            .route_between_cells(player.cell, target)
+            .expect("Seek/Recover imply a route");
         let Some(&next) = route.cells.get(1) else {
             return PlayerIntent::default();
         };
@@ -70,6 +118,51 @@ impl HexWfcMatch {
             steer_toward(player.yaw, player.position, target)
         };
         self.apply_unstick(id, base)
+    }
+
+    /// Fallback when no route to the objective exists.
+    ///
+    /// Previously this case returned `PlayerIntent::default()`, so a bot that
+    /// lost its route — stranded in a pocket, or on a cell orphaned by a
+    /// relayout — stood still forever. It was never exercised: the stall soak
+    /// skips any layout whose spawn cannot reach the exit at all.
+    ///
+    /// Instead, walk to whichever open lateral neighbour lies nearest the
+    /// objective in plan. Greedy and deliberately memoryless: the real route is
+    /// retried every tick, so this only has to break the deadlock, not solve
+    /// the maze. Deterministic — ties fall to `HexFace::LATERAL` order.
+    fn explore_command(&self, player: &super::HexPlayerState) -> PlayerIntent {
+        let Some(placement) = self.facility.placements.get(&player.cell) else {
+            return PlayerIntent::default();
+        };
+        let goal = Vec3::from_array(hex_origin(self.facility.config.exit()));
+        let grid = self.facility.config.grid();
+        let best = HexFace::LATERAL
+            .into_iter()
+            .filter(|&face| placement.is_open(face))
+            .filter_map(|face| grid.neighbor(player.cell, face))
+            .filter(|cell| {
+                self.facility
+                    .placements
+                    .get(cell)
+                    .is_some_and(|neighbour| neighbour.space != HexSpace::Void)
+            })
+            .min_by(|a, b| {
+                let plan = |cell: &HexCoord| {
+                    let origin = Vec3::from_array(hex_origin(*cell));
+                    Vec2::new(origin.x - goal.x, origin.z - goal.z).length()
+                };
+                plan(a).total_cmp(&plan(b))
+            });
+        match best {
+            Some(cell) => {
+                let target = self
+                    .lateral_waypoint(player.cell, cell, player.position)
+                    .unwrap_or_else(|| Vec3::from_array(hex_origin(cell)));
+                steer_toward(player.yaw, player.position, target)
+            }
+            None => PlayerIntent::default(),
+        }
     }
 
     fn apply_unstick(&self, id: PlayerId, mut intent: PlayerIntent) -> PlayerIntent {
