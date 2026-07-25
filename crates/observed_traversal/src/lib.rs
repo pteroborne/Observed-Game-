@@ -21,10 +21,12 @@ use glam::Vec3;
 use player_input::PlayerIntent;
 
 pub mod gantry;
+pub mod plan_hull;
 pub mod rapier_controller;
 pub mod render_mesh;
 mod world;
 
+pub use plan_hull::{plan_convex_hull, point_in_convex_plan_hull, segment_crosses_convex_hull};
 pub use render_mesh::ConvexRenderMesh;
 pub use world::{
     ArenaSpec, ArenaSpecError, ColliderDelta, ColliderDeltaError, ColliderShape, ColliderSpec,
