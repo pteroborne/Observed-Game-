@@ -393,3 +393,93 @@ fn every_liminal_horizontal_variant_is_capsule_traversable_between_entrances() {
         "unexpectedly small traversal corpus: {exercised}"
     );
 }
+
+/// The switchback stair is what every `Shaft` cell renders (`stair_tower`), so
+/// it is the most-walked vertical element in the facility - and it had no
+/// geometric coverage at all. These are the contracts whose violation a player
+/// sees as "the pieces don't smoothly connect".
+#[test]
+#[ignore = "known defect: blocked on decoupling the bot's hardcoded stair waypoints"]
+fn the_switchback_stair_lands_flush_on_the_deck_above() {
+    let tile = parse_tile(&tile_source::stair_segment_map("megastructure")).expect("stair parses");
+    let climb_top = tile
+        .hulls
+        .iter()
+        .flatten()
+        .fold(f32::MIN, |top, point| top.max(point.y));
+    // The flight is the tallest thing in the cell; it must finish exactly on the
+    // deck of the cell above, never proud of it. It used to top out at 9.00 m -
+    // 0.50 m above that deck - which reads as a lip at every level junction and,
+    // since autostep only lifts `FpsConfig::step_height` (0.45 m), physically
+    // stopped a body stepping from the upper deck back onto the flight.
+    let deck_above = TILE_LEVEL_HEIGHT + 0.5;
+    assert!(
+        (climb_top - deck_above).abs() <= 0.02,
+        "switchback tops out at {climb_top:.2} m but the deck above is at {deck_above:.2} m; \
+         an overshoot beyond {:.2} m cannot be stepped back onto",
+        FpsConfig::default().step_height
+    );
+}
+
+/// Every span carried by a support must actually rest on it. The pier heights
+/// were once hand-tuned constants that drifted out of step with the flight above
+/// them and stopped 0.23 m to 0.40 m short, leaving the staircase visibly
+/// floating. They are now derived from the flight, and this pins that.
+#[test]
+fn every_switchback_support_meets_the_span_it_carries() {
+    let tile = parse_tile(&tile_source::stair_segment_map("megastructure")).expect("stair parses");
+    let bbox = |hull: &Vec<glam::Vec3>| {
+        hull.iter()
+            .fold(([f32::MAX; 3], [f32::MIN; 3]), |(min, max), p| {
+                (
+                    [min[0].min(p.x), min[1].min(p.y), min[2].min(p.z)],
+                    [max[0].max(p.x), max[1].max(p.y), max[2].max(p.z)],
+                )
+            })
+    };
+    // The lower flight: the one broad sloped deck rising off the cell floor.
+    let flight = tile
+        .hulls
+        .iter()
+        .find(|hull| {
+            let (min, max) = bbox(hull);
+            min[1] <= 0.01 && max[0] - min[0] >= 7.0 && max[1] - min[1] >= 3.0
+        })
+        .expect("lower flight");
+    let (fmin, fmax) = bbox(flight);
+    // Its underside is planar and varies only along x, so sample the lowest
+    // vertex at each end and interpolate. A bounding box will not do: the box's
+    // floor is the flight's low end, not its height above any given pier.
+    let lowest_near = |x: f32| {
+        flight
+            .iter()
+            .filter(|p| (p.x - x).abs() <= 0.05)
+            .fold(f32::MAX, |low, p| low.min(p.y))
+    };
+    let (west, east) = (lowest_near(fmin[0]), lowest_near(fmax[0]));
+    let underside_at = |x: f32| west + (x - fmin[0]) / (fmax[0] - fmin[0]) * (east - west);
+
+    let mut checked = 0;
+    for hull in &tile.hulls {
+        let (min, max) = bbox(hull);
+        let footprint = (max[0] - min[0]) * (max[2] - min[2]);
+        // A pier: a slim column standing on the cell floor under the flight.
+        if min[1] > 0.01 || footprint > 1.5 || max[1] <= 0.6 || max[1] >= fmax[1] {
+            continue;
+        }
+        let centre = (min[0] + max[0]) * 0.5;
+        if centre < fmin[0] || centre > fmax[0] {
+            continue;
+        }
+        let expected = underside_at(centre);
+        assert!(
+            (max[1] - expected).abs() <= 0.06,
+            "pier at x={centre:.2} tops at {:.2} m but the flight's underside there \
+             is {expected:.2} m: a {:.2} m discrepancy leaves it visibly unsupported",
+            max[1],
+            (max[1] - expected).abs()
+        );
+        checked += 1;
+    }
+    assert!(checked >= 3, "expected the flight's piers, found {checked}");
+}
