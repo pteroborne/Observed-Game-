@@ -14,6 +14,7 @@
 //! Findings here are meant to transfer to `game/src/hex_wfc/view/` as parameters, the
 //! same discipline `lighting_lab` established for the atmosphere palette.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::f32::consts::TAU;
 use std::path::{Path, PathBuf};
 
@@ -26,11 +27,13 @@ use bevy::prelude::*;
 use bevy::render::view::Hdr;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use bevy::window::{PresentMode, WindowResolution};
-use observed_authoring::{CompiledTileCatalog, Manifest, TilePrototype};
+use observed_authoring::{
+    CompiledTileCatalog, Manifest, ModuleCellRef, RoomPrototype, TilePrototype,
+};
 use observed_content::ArchitectureRegister;
-use observed_facility::hex_wfc::{blueprint_cell_archetype, blueprint_for_role};
+use observed_facility::hex_wfc::{RoomBlueprint, blueprint_cell_archetype, blueprint_for_role};
 use observed_facility::map_spec::RoomRole;
-use observed_hex::{HexCoord, PortSignature, TILE_LEVEL_HEIGHT, hex_origin};
+use observed_hex::{HexCoord, HexFace, PortClass, PortSignature, TILE_LEVEL_HEIGHT, hex_origin};
 use observed_style::{self as style};
 use rapier3d::prelude::{SharedShape, Vector as RapierVector};
 
@@ -71,7 +74,225 @@ struct OrbitCamera;
 struct OverlayText;
 
 #[derive(Resource)]
-struct Corpus(Vec<TilePrototype>);
+struct Corpus {
+    cells: Vec<TilePrototype>,
+    /// Whole-room modules, if the compiled catalog has any (Stream — the tile
+    /// compiler side of this handoff — currently emits zero; see `load_corpus`).
+    rooms: Vec<RoomPrototype>,
+}
+
+/// Author-facing verdict for one room role/register: did a whole-room module
+/// match the blueprint contract, and if not, precisely why not. Mirrors
+/// `observed_match::hex_wfc::geometry::room_contract_matches`, which is
+/// private to that crate — this is a read-only reimplementation of the same
+/// three clauses (footprint set-equality, per-face port signature on faces
+/// leaving the footprint, named door ports) for lab diagnostics only.
+enum RoomMatchOutcome<'a> {
+    Matched(&'a RoomPrototype),
+    /// No authored candidate even shares the role name in this register (or
+    /// `generic`) — most common today, since the catalog has zero rooms.
+    NoCandidates {
+        role_name: String,
+        total_rooms: usize,
+        authored_for_role: usize,
+    },
+    /// At least one candidate shared the role name, but every one failed the
+    /// contract; each failure lists its specific clause violations.
+    Rejected(Vec<CandidateFailure>),
+}
+
+struct CandidateFailure {
+    id: String,
+    register: String,
+    reasons: Vec<String>,
+}
+
+/// Same folding `RoomCatalogue`/`room_contract_matches` use to compare role
+/// names ("DecoherenceFork" vs "decoherence_fork" etc.) — ASCII-alphanumeric,
+/// lowercased.
+fn normalized_role(role: &str) -> String {
+    role.chars()
+        .filter(char::is_ascii_alphanumeric)
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+fn cell_ref(offset: (i32, i32, i32)) -> Option<ModuleCellRef> {
+    Some(ModuleCellRef {
+        q: i16::try_from(offset.0).ok()?,
+        r: i16::try_from(offset.1).ok()?,
+        level: i8::try_from(offset.2).ok()?,
+    })
+}
+
+/// Every contract clause `room_contract_matches` checks, collecting *all*
+/// violations (not just the first) so an author sees the whole picture in one
+/// pass: footprint set-equality, then per-face port signature on every
+/// lateral/vertical face that leaves the footprint, then named door ports.
+fn contract_failures(candidate: &RoomPrototype, blueprint: &RoomBlueprint) -> Vec<String> {
+    let mut reasons = Vec::new();
+
+    let Some(expected_cells): Option<BTreeSet<ModuleCellRef>> =
+        blueprint.cells.iter().copied().map(cell_ref).collect()
+    else {
+        reasons.push("blueprint footprint offsets overflow ModuleCellRef bounds".to_string());
+        return reasons;
+    };
+    let candidate_cells: BTreeSet<ModuleCellRef> = candidate.footprint.iter().copied().collect();
+    if candidate_cells != expected_cells {
+        reasons.push(format!(
+            "footprint mismatch: expected cells {expected_cells:?}, authored cells {candidate_cells:?}"
+        ));
+    }
+
+    let authored_ports: BTreeMap<(ModuleCellRef, HexFace), PortClass> = candidate
+        .ports
+        .iter()
+        .map(|port| ((port.cell, port.face), port.class))
+        .collect();
+    for &offset in &blueprint.cells {
+        let Some(cell) = cell_ref(offset) else {
+            continue;
+        };
+        let signature = blueprint.cell_signature(offset);
+        for face in HexFace::ALL {
+            let (dq, dr, dl) = face.delta();
+            let neighbor = cell_ref((offset.0 + dq, offset.1 + dr, offset.2 + dl));
+            if neighbor.is_some_and(|neighbor| expected_cells.contains(&neighbor)) {
+                continue; // interior face between two footprint cells: stays sealed, unchecked
+            }
+            let expected = signature.port(face);
+            let authored = authored_ports
+                .get(&(cell, face))
+                .copied()
+                .unwrap_or(PortClass::Sealed);
+            if authored != expected {
+                reasons.push(format!(
+                    "cell {offset:?} face {face:?}: expected port {expected:?}, authored {authored:?}"
+                ));
+            }
+        }
+    }
+
+    for &(name, offset, face) in &blueprint.named_ports {
+        let Some(cell) = cell_ref(offset) else {
+            continue;
+        };
+        let found = candidate.ports.iter().any(|port| {
+            port.cell == cell
+                && port.face == face
+                && port.class == PortClass::Door
+                && normalized_role(&port.name) == normalized_role(name)
+        });
+        if !found {
+            reasons.push(format!(
+                "named port '{name}' missing: expected a Door port at cell {offset:?} face {face:?}"
+            ));
+        }
+    }
+
+    reasons
+}
+
+/// Attempt the whole-room path for `role`/`register` against the loaded
+/// `rooms`, mirroring `RoomCatalogue::select`'s bucket lookup (exact register,
+/// falling back to `generic`) but reporting *why* instead of just `None`.
+fn evaluate_room_match<'a>(
+    role: RoomRole,
+    register: ArchitectureRegister,
+    rooms: &'a [RoomPrototype],
+) -> RoomMatchOutcome<'a> {
+    let blueprint = blueprint_for_role(role);
+    let role_name = normalized_role(blueprint.name);
+    let register_slug = register.slug();
+
+    let same_role: Vec<&RoomPrototype> = rooms
+        .iter()
+        .filter(|candidate| normalized_role(&candidate.room_role) == role_name)
+        .collect();
+    let register_bucket: Vec<&RoomPrototype> = same_role
+        .iter()
+        .copied()
+        .filter(|candidate| candidate.key.register == register_slug)
+        .collect();
+    let candidates = if register_bucket.is_empty() {
+        same_role
+            .iter()
+            .copied()
+            .filter(|candidate| candidate.key.register == "generic")
+            .collect::<Vec<_>>()
+    } else {
+        register_bucket
+    };
+
+    if candidates.is_empty() {
+        return RoomMatchOutcome::NoCandidates {
+            role_name,
+            total_rooms: rooms.len(),
+            authored_for_role: same_role.len(),
+        };
+    }
+
+    let mut failures = Vec::new();
+    for candidate in candidates {
+        let reasons = contract_failures(candidate, &blueprint);
+        if reasons.is_empty() {
+            return RoomMatchOutcome::Matched(candidate);
+        }
+        failures.push(CandidateFailure {
+            id: candidate.id.clone(),
+            register: candidate.key.register.clone(),
+            reasons,
+        });
+    }
+    RoomMatchOutcome::Rejected(failures)
+}
+
+/// Full diagnostic text for `outcome` — printed to stdout in full, and
+/// truncated for the on-screen HUD.
+fn describe_outcome(outcome: &RoomMatchOutcome) -> Vec<String> {
+    match outcome {
+        RoomMatchOutcome::Matched(candidate) => vec![format!(
+            "matched whole-room module '{}' (register {}, weight {})",
+            candidate.id, candidate.key.register, candidate.weight
+        )],
+        RoomMatchOutcome::NoCandidates {
+            role_name,
+            total_rooms,
+            authored_for_role,
+        } => {
+            if *authored_for_role == 0 {
+                vec![format!(
+                    "no whole-room module authored for role '{role_name}' in any register — catalog has {total_rooms} room module(s) total"
+                )]
+            } else {
+                vec![format!(
+                    "role '{role_name}' has {authored_for_role} authored module(s), but none for this register or 'generic'"
+                )]
+            }
+        }
+        RoomMatchOutcome::Rejected(failures) => {
+            let mut lines = vec![format!(
+                "{} candidate room module(s) share this role, none matched the contract:",
+                failures.len()
+            )];
+            for failure in failures {
+                lines.push(format!("  [{} / {}]", failure.id, failure.register));
+                for reason in &failure.reasons {
+                    lines.push(format!("    - {reason}"));
+                }
+            }
+            lines
+        }
+    }
+}
+
+/// Mirrors the lab's on-screen HUD; updated once per rebuild.
+#[derive(Resource, Default)]
+struct RoomReport {
+    mode_label: &'static str,
+    lines: Vec<String>,
+}
 
 #[derive(Resource)]
 struct LabState {
@@ -106,7 +327,8 @@ pub fn run() {
         }),
         ..default()
     }))
-    .insert_resource(Corpus(load_corpus()))
+    .insert_resource(load_corpus())
+    .insert_resource(RoomReport::default())
     .insert_resource(LabState {
         register: 0,
         role: 0,
@@ -254,48 +476,108 @@ fn rebuild(
 
     let blueprint = blueprint_for_role(role);
     let mut origins = Vec::new();
-    for (index, &offset) in blueprint.cells.iter().enumerate() {
+    for &offset in &blueprint.cells {
         let coord = HexCoord {
             q: (i32::from(ANCHOR.q) + offset.0) as u16,
             r: (i32::from(ANCHOR.r) + offset.1) as u16,
             level: (i32::from(ANCHOR.level) + offset.2) as u8,
         };
-        let origin = Vec3::from_array(hex_origin(coord));
-        origins.push(origin);
+        origins.push(Vec3::from_array(hex_origin(coord)));
+    }
 
-        let Some(archetype) = blueprint_cell_archetype(role, index) else {
-            continue;
-        };
-        let signature = blueprint.cell_signature(offset);
-        match select_tile(&corpus.0, archetype, register, signature) {
-            Some(tile) => {
-                for hull in &tile.hulls {
-                    // Dollhouse cutaway: drop ceiling slabs so the orbit sees into the
-                    // room and the key light reaches the interior — the whole point of
-                    // the lab is judging interior tile composition, not the roof.
-                    if is_ceiling(hull) {
-                        continue;
+    // Attempt the whole-room path first (Stream — the tile compiler side of
+    // this handoff — is what actually populates `corpus.rooms`; today it is
+    // always empty, so this always falls back). Diagnostics report exactly
+    // why, so an author iterating on a new room module can see which
+    // contract clause is still unmet instead of a bare "no match".
+    let outcome = evaluate_room_match(role, register, &corpus.rooms);
+    let diagnostic_lines = describe_outcome(&outcome);
+    let mode_label = if matches!(outcome, RoomMatchOutcome::Matched(_)) {
+        "WHOLE-ROOM MODULE"
+    } else {
+        "PER-CELL FALLBACK"
+    };
+    if matches!(outcome, RoomMatchOutcome::Matched(_)) {
+        for line in &diagnostic_lines {
+            info!("hex_room_lab [{mode_label}] {role:?}: {line}");
+        }
+    } else {
+        for line in &diagnostic_lines {
+            warn!("hex_room_lab [{mode_label}] {role:?}: {line}");
+        }
+    }
+    commands.insert_resource(RoomReport {
+        mode_label,
+        lines: diagnostic_lines,
+    });
+
+    match &outcome {
+        RoomMatchOutcome::Matched(room) => {
+            // Whole-room module: one prefab, its hulls already spanning the full
+            // footprint relative to the anchor cell (mirrors
+            // `geometry::push_room`'s single `hex_origin(anchor)` center).
+            let anchor_origin = Vec3::from_array(hex_origin(ANCHOR));
+            for hull in &room.hulls {
+                if is_ceiling(hull) {
+                    continue;
+                }
+                let Some(mesh) = hull_mesh(hull) else {
+                    continue;
+                };
+                commands.spawn((
+                    RoomEntity,
+                    Mesh3d(meshes.add(mesh)),
+                    MeshMaterial3d(surface.clone()),
+                    Transform::from_translation(anchor_origin),
+                    Name::new(format!("Room module {}", room.id)),
+                ));
+            }
+        }
+        RoomMatchOutcome::NoCandidates { .. } | RoomMatchOutcome::Rejected(_) => {
+            // Per-cell fallback: today's only path, since the catalog has zero
+            // room modules — select and assemble one authored tile per
+            // footprint cell, exactly as the geometry projector's non-room path.
+            for (index, &offset) in blueprint.cells.iter().enumerate() {
+                let origin = origins[index];
+                let Some(archetype) = blueprint_cell_archetype(role, index) else {
+                    continue;
+                };
+                let signature = blueprint.cell_signature(offset);
+                match select_tile(&corpus.cells, archetype, register, signature) {
+                    Some(tile) => {
+                        for hull in &tile.hulls {
+                            // Dollhouse cutaway: drop ceiling slabs so the orbit sees into
+                            // the room and the key light reaches the interior — the whole
+                            // point of the lab is judging interior tile composition, not
+                            // the roof.
+                            if is_ceiling(hull) {
+                                continue;
+                            }
+                            let Some(mesh) = hull_mesh(hull) else {
+                                continue;
+                            };
+                            commands.spawn((
+                                RoomEntity,
+                                Mesh3d(meshes.add(mesh)),
+                                MeshMaterial3d(surface.clone()),
+                                Transform::from_translation(origin),
+                                Name::new(format!("Room tile {archetype}")),
+                            ));
+                        }
                     }
-                    let Some(mesh) = hull_mesh(hull) else {
-                        continue;
-                    };
-                    commands.spawn((
-                        RoomEntity,
-                        Mesh3d(meshes.add(mesh)),
-                        MeshMaterial3d(surface.clone()),
-                        Transform::from_translation(origin),
-                        Name::new(format!("Room tile {archetype}")),
-                    ));
+                    None => warn!(
+                        "hex_room_lab: no tile for {archetype} / {} / {signature:?}",
+                        register.slug()
+                    ),
                 }
             }
-            None => warn!(
-                "hex_room_lab: no tile for {archetype} / {} / {signature:?}",
-                register.slug()
-            ),
         }
+    }
 
-        // Tier-2 per-tile fill (mirrors the game rig): a tinted omni so every cell of
-        // the room is lit, not just the one under the key.
+    // Tier-2 per-tile fill (mirrors the game rig): a tinted omni so every cell of
+    // the room is lit, not just the one under the key. Applies in both modes —
+    // it lights the interior volume, independent of which geometry filled it.
+    for &origin in &origins {
         commands.spawn((
             RoomEntity,
             PointLight {
@@ -353,17 +635,40 @@ fn orbit(state: Res<LabState>, mut camera: Query<&mut Transform, With<OrbitCamer
     *transform = Transform::from_translation(position).looking_at(state.center, Vec3::Y);
 }
 
-fn overlay(state: Res<LabState>, mut text: Query<&mut Text, With<OverlayText>>) {
+/// HUD lines are capped so a long `Rejected` diagnostic (many candidates ×
+/// many reasons) never spills the panel off-screen; stdout always has the
+/// full, untruncated list (see `rebuild`'s `info!`/`warn!` calls).
+const HUD_DIAGNOSTIC_LINES: usize = 10;
+
+fn overlay(
+    state: Res<LabState>,
+    report: Option<Res<RoomReport>>,
+    mut text: Query<&mut Text, With<OverlayText>>,
+) {
     let Ok(mut text) = text.single_mut() else {
         return;
     };
-    **text = format!(
+    let mut body = format!(
         "HEX ROOM LAB\nregister {}/9  [{}]\nroom  [{:?}]  ({} tiles)\n\n1–9 register · Tab room · auto-orbit",
         state.register + 1,
         state.register().slug(),
         state.role(),
         blueprint_for_role(state.role()).cells.len(),
     );
+    if let Some(report) = report {
+        body.push_str(&format!("\n\nmode: {}", report.mode_label));
+        for line in report.lines.iter().take(HUD_DIAGNOSTIC_LINES) {
+            body.push('\n');
+            body.push_str(line);
+        }
+        if report.lines.len() > HUD_DIAGNOSTIC_LINES {
+            body.push_str(&format!(
+                "\n… {} more line(s), see stdout",
+                report.lines.len() - HUD_DIAGNOSTIC_LINES
+            ));
+        }
+    }
+    **text = body;
 }
 
 // --- tile selection + meshing (mirrors the geometry projector) ----------------
@@ -426,21 +731,26 @@ fn tile_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tiles")
 }
 
-fn load_corpus() -> Vec<TilePrototype> {
+/// Loads both `strict.cells` (per-cell tiles, today's only preview path) and
+/// `strict.rooms` (whole-room modules — the compiler side of this handoff
+/// currently emits none, so this is always empty until that lands).
+fn load_corpus() -> Corpus {
     let base = tile_dir();
     let mut cells = Manifest::load(&base.join("manifest.ron"))
         .expect("hex tile manifest loads")
         .load_tiles(&base)
         .expect("hex tile prototypes validate");
+    let mut rooms = Vec::new();
     if let Ok(text) = std::fs::read_to_string(base.join("compiled_catalog.ron"))
         && let Ok(compiled) = CompiledTileCatalog::from_ron(&text)
     {
         let slugs = ArchitectureRegister::ALL.map(ArchitectureRegister::slug);
         if let Ok(strict) = compiled.runtime_catalog(&slugs) {
             cells.extend(strict.cells);
+            rooms.extend(strict.rooms);
         }
     }
-    cells
+    Corpus { cells, rooms }
 }
 
 // --- capture turntable --------------------------------------------------------
@@ -511,5 +821,198 @@ fn capture_progress(
             exit.write(AppExit::Success);
         }
         _ => {}
+    }
+}
+
+// --- room contract diagnostics tests -------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use observed_authoring::{RoomPrototypePort, TileKey};
+
+    /// A synthetic whole-room module that satisfies `blueprint`'s contract
+    /// exactly: every exterior lateral face is `Door`, every declared vertical
+    /// port carries its class, and every named port is present with a
+    /// matching name. Tests mutate a clone to break one clause at a time.
+    fn matching_room(blueprint: &RoomBlueprint, register: &str) -> RoomPrototype {
+        let footprint = blueprint
+            .cells
+            .iter()
+            .copied()
+            .map(|offset| cell_ref(offset).expect("test offsets fit ModuleCellRef"))
+            .collect::<Vec<_>>();
+        let mut ports = Vec::new();
+        for &offset in &blueprint.cells {
+            let cell = cell_ref(offset).expect("test offsets fit ModuleCellRef");
+            let signature = blueprint.cell_signature(offset);
+            for face in HexFace::ALL {
+                let class = signature.port(face);
+                if class != PortClass::Sealed {
+                    ports.push(RoomPrototypePort {
+                        cell,
+                        face,
+                        class,
+                        name: String::new(),
+                    });
+                }
+            }
+        }
+        for &(name, offset, face) in &blueprint.named_ports {
+            let cell = cell_ref(offset).expect("test offsets fit ModuleCellRef");
+            if let Some(port) = ports
+                .iter_mut()
+                .find(|port| port.cell == cell && port.face == face)
+            {
+                port.name = name.to_string();
+            }
+        }
+        RoomPrototype {
+            id: format!("{}_test", blueprint.name),
+            room_role: blueprint.name.to_string(),
+            key: TileKey {
+                archetype: "room".to_string(),
+                register: register.to_string(),
+                variant: 0,
+            },
+            weight: 1,
+            footprint,
+            ports,
+            hulls: Vec::new(),
+            lights: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn normalized_role_folds_case_and_punctuation() {
+        assert_eq!(normalized_role("Decoherence Fork"), "decoherencefork");
+        assert_eq!(normalized_role("DecoherenceFork"), "decoherencefork");
+        assert_eq!(normalized_role("decoherence_fork"), "decoherencefork");
+    }
+
+    #[test]
+    fn a_correctly_authored_room_passes_the_full_contract() {
+        let blueprint = blueprint_for_role(RoomRole::DualStation);
+        let room = matching_room(&blueprint, "generic");
+        assert!(
+            contract_failures(&room, &blueprint).is_empty(),
+            "a room built exactly from the blueprint's own signature must satisfy it"
+        );
+    }
+
+    #[test]
+    fn footprint_set_mismatch_is_reported_with_both_sides() {
+        let blueprint = blueprint_for_role(RoomRole::DualStation);
+        let mut room = matching_room(&blueprint, "generic");
+        room.footprint.pop();
+        let reasons = contract_failures(&room, &blueprint);
+        assert!(
+            reasons
+                .iter()
+                .any(|reason| reason.starts_with("footprint mismatch: expected cells")),
+            "expected a footprint-mismatch reason, got {reasons:?}"
+        );
+    }
+
+    #[test]
+    fn an_external_face_left_sealed_instead_of_door_is_reported() {
+        let blueprint = blueprint_for_role(RoomRole::DualStation);
+        let mut room = matching_room(&blueprint, "generic");
+        let west_of_anchor = cell_ref((0, 0, 0)).unwrap();
+        room.ports
+            .retain(|port| !(port.cell == west_of_anchor && port.face == HexFace::West));
+        let reasons = contract_failures(&room, &blueprint);
+        assert!(
+            reasons
+                .iter()
+                .any(|reason| reason.contains("expected port Door, authored Sealed")),
+            "expected a port-signature-mismatch reason, got {reasons:?}"
+        );
+    }
+
+    #[test]
+    fn a_missing_named_port_is_reported_by_name() {
+        let blueprint = blueprint_for_role(RoomRole::DualStation);
+        let mut room = matching_room(&blueprint, "generic");
+        for port in &mut room.ports {
+            if port.name == "port_a" {
+                port.name = "unrelated".to_string();
+            }
+        }
+        let reasons = contract_failures(&room, &blueprint);
+        assert!(
+            reasons
+                .iter()
+                .any(|reason| reason.starts_with("named port 'port_a' missing")),
+            "expected a named-port reason, got {reasons:?}"
+        );
+    }
+
+    #[test]
+    fn evaluate_room_match_with_an_empty_catalog_reports_zero_of_zero() {
+        let outcome =
+            evaluate_room_match(RoomRole::DecoherenceFork, ArchitectureRegister::ALL[0], &[]);
+        match outcome {
+            RoomMatchOutcome::NoCandidates {
+                total_rooms: 0,
+                authored_for_role: 0,
+                ..
+            } => {}
+            other => panic!(
+                "expected NoCandidates{{0, 0, _}}, got a different outcome (variant index {})",
+                match other {
+                    RoomMatchOutcome::Matched(_) => 0,
+                    RoomMatchOutcome::NoCandidates { .. } => 1,
+                    RoomMatchOutcome::Rejected(_) => 2,
+                }
+            ),
+        }
+    }
+
+    #[test]
+    #[ignore = "manual probe against the live authored catalog, not a regression test"]
+    fn probe_live_catalog_for_every_showcase_role() {
+        let corpus = load_corpus();
+        for role in SHOWCASE_ROLES {
+            for register in ArchitectureRegister::ALL {
+                let outcome = evaluate_room_match(role, register, &corpus.rooms);
+                for line in describe_outcome(&outcome) {
+                    println!("{role:?} / {}: {line}", register.slug());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn evaluate_room_match_finds_a_correctly_authored_room() {
+        let blueprint = blueprint_for_role(RoomRole::DualStation);
+        let register = ArchitectureRegister::ALL[0];
+        let rooms = vec![matching_room(&blueprint, register.slug())];
+        let outcome = evaluate_room_match(RoomRole::DualStation, register, &rooms);
+        assert!(matches!(outcome, RoomMatchOutcome::Matched(_)));
+    }
+
+    #[test]
+    fn evaluate_room_match_rejects_a_role_matched_but_contract_broken_room() {
+        let blueprint = blueprint_for_role(RoomRole::DualStation);
+        let register = ArchitectureRegister::ALL[0];
+        let mut room = matching_room(&blueprint, register.slug());
+        room.footprint.pop();
+        let rooms = [room];
+        let outcome = evaluate_room_match(RoomRole::DualStation, register, &rooms);
+        match outcome {
+            RoomMatchOutcome::Rejected(failures) => {
+                assert_eq!(failures.len(), 1);
+                assert!(!failures[0].reasons.is_empty());
+            }
+            other => panic!(
+                "expected Rejected with one failing candidate, got variant index {}",
+                match other {
+                    RoomMatchOutcome::Matched(_) => 0,
+                    RoomMatchOutcome::NoCandidates { .. } => 1,
+                    RoomMatchOutcome::Rejected(_) => 2,
+                }
+            ),
+        }
     }
 }
