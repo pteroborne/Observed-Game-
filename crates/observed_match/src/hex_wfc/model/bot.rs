@@ -312,6 +312,15 @@ fn segment_crosses_rect(start: Vec2, end: Vec2, min: Vec2, max: Vec2) -> bool {
 
 /// Walk the generated switchback using waypoints on its real collision
 /// surfaces. Height selects the current flight; no position is written here.
+///
+/// Each stage hands over on a **monotonic** test — rise, or which side of the
+/// turn the body is on — never on "am I within X of the waypoint". A proximity
+/// test is not monotonic along the path: walking away from the landing onto the
+/// upper flight grows that distance back past the threshold, so the target
+/// flipped between the landing (east) and the flight's top (west) every few
+/// ticks and the bot span on the spot just past the turn, in a ~30 cm band of
+/// rise. It eventually escaped on jitter, having burnt ~31,000 ticks on one
+/// storey. Both directions had it.
 fn stair_command(
     base: HexCoord,
     yaw: f32,
@@ -326,7 +335,7 @@ fn stair_command(
     let low_start = point(-3.5, 2.125);
 
     let target = if up {
-        if rise < 0.8 && plan_distance(position, low_start) > 0.75 {
+        if rise < 0.8 && local.x > -3.1 {
             if local.y < 3.4 {
                 if local.x >= 0.0 {
                     point(5.5, 3.75)
@@ -340,19 +349,20 @@ fn stair_command(
             }
         } else if rise < 3.7 {
             point(3.5, 2.125)
-        } else if rise < 4.3 && plan_distance(position, point(4.25, -2.125)) > 0.75 {
+        } else if rise < 4.3 && local.y > -1.6 {
+            // Crossing the turn landing toward the upper flight's band.
             point(4.25, -2.125)
         } else if rise < TILE_LEVEL_HEIGHT - 0.35 || local.x > -4.45 {
             point(-4.5, -2.125)
         } else {
             point(-4.5, -3.75)
         }
-    } else if rise > TILE_LEVEL_HEIGHT - 0.35 && plan_distance(position, point(-4.1, -2.125)) > 0.75
-    {
+    } else if rise > TILE_LEVEL_HEIGHT - 0.35 && local.x < -4.0 {
         point(-4.1, -2.125)
     } else if rise > 4.3 {
         point(3.5, -2.125)
-    } else if plan_distance(position, point(4.25, 2.125)) > 0.75 {
+    } else if local.y < 1.6 {
+        // Crossing the turn landing back toward the lower flight's band.
         point(4.25, 2.125)
     } else {
         point(-3.5, 2.125)
@@ -374,10 +384,6 @@ fn ramp_walk_dir(placement: &HexPlacement, up: bool) -> Vec2 {
         _ => open,
     };
     face_plan_dir(if up { rise } else { rise.opposite() })
-}
-
-fn plan_distance(a: Vec3, b: Vec3) -> f32 {
-    Vec2::new(a.x - b.x, a.z - b.z).length()
 }
 
 fn steer_toward(yaw: f32, position: Vec3, target: Vec3) -> PlayerIntent {
