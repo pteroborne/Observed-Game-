@@ -905,6 +905,13 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
             palette.key_shadows_enabled = true;
             palette.key_intensity = 55_000_000.0;
             palette.key_range = 42.0;
+            // Hollow is a keyless district, so its cone angles are zero. A register that
+            // switches the key back ON must state its own: a zero outer angle is a
+            // zero-width cone that emits nothing, and it puts `1/tan(0)` into the shadow
+            // projection. Tight and raking — this is the register whose whole identity is
+            // the cast shadow.
+            palette.key_inner_angle = 0.30;
+            palette.key_outer_angle = 0.58;
             palette.pools_rhythm = true;
         }
         Register::Monolith => {
@@ -928,6 +935,10 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
             palette.key_shadows_enabled = true;
             palette.key_intensity = 65_000_000.0;
             palette.key_range = 45.0;
+            // As for ShadowScreen: Hollow's zero cone would emit nothing. Wide and even,
+            // matching the flat overhead-fluorescent read this register is after.
+            palette.key_inner_angle = 0.45;
+            palette.key_outer_angle = 0.85;
             palette.pools_rhythm = false;
         }
         Register::FacetMonument => {
@@ -1877,6 +1888,27 @@ mod tests {
             );
             if palette.key_shadows_enabled {
                 assert!(palette.key_intensity > 0.0 && palette.key_range > 0.0);
+                // A shadow-casting key must describe a real cone. Bevy builds the shadow
+                // projection as `perspective_infinite_reverse_rh(outer_angle * 2.0, ..)`,
+                // so a zero outer angle yields `1/tan(0)` = inf in the matrix, and a
+                // zero-width cone emits no light at all — a key that costs a shadow map
+                // and lights nothing. Registers deriving from the keyless Hollow district
+                // inherit zero angles, so this must be asserted, not assumed.
+                assert!(
+                    palette.key_outer_angle > 0.0
+                        && palette.key_outer_angle < std::f32::consts::FRAC_PI_2,
+                    "{} shadow-casting key needs an outer angle in (0, PI/2), got {}",
+                    register.slug(),
+                    palette.key_outer_angle
+                );
+                assert!(
+                    palette.key_inner_angle > 0.0
+                        && palette.key_inner_angle <= palette.key_outer_angle,
+                    "{} shadow-casting key needs 0 < inner <= outer, got {} / {}",
+                    register.slug(),
+                    palette.key_inner_angle,
+                    palette.key_outer_angle
+                );
             }
         }
         assert!(
