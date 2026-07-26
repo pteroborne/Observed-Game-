@@ -225,7 +225,7 @@ fn buttress_pieces_mark_a_real_role_or_register_seam_between_two_occupied_cells(
     let world = showcase();
     let prototypes = tiles();
     let snapshot = HexWfcGeometrySnapshot::project(&world, &prototypes).expect("projection");
-    let cells = summarize_cells(&snapshot.pieces);
+    let cells = summarize_cells(&snapshot.pieces, None);
     for piece in derive_trim(&snapshot)
         .into_iter()
         .filter(|piece| piece.kind == HexTrimKind::Buttress)
@@ -251,7 +251,7 @@ fn railing_pieces_mark_a_real_open_ledge_on_a_walkable_cell() {
     let world = showcase();
     let prototypes = tiles();
     let snapshot = HexWfcGeometrySnapshot::project(&world, &prototypes).expect("projection");
-    let cells = summarize_cells(&snapshot.pieces);
+    let cells = summarize_cells(&snapshot.pieces, None);
     for piece in derive_trim(&snapshot)
         .into_iter()
         .filter(|piece| piece.kind == HexTrimKind::Railing)
@@ -262,4 +262,59 @@ fn railing_pieces_mark_a_real_open_ledge_on_a_walkable_cell() {
             .unwrap_or(true);
         assert!(neighbor_absent, "railing must border an unoccupied cell");
     }
+}
+
+/// The scoped derivation is an optimisation, so it has to be indistinguishable from
+/// filtering the full one. If these ever diverge, a relayout commit would respawn subtly
+/// different trim than a fresh build of the same facility.
+#[test]
+fn scoped_trim_matches_the_owned_subset_of_the_full_derivation() {
+    let world = showcase();
+    let prototypes = tiles();
+    let snapshot = HexWfcGeometrySnapshot::project(&world, &prototypes).expect("projection");
+    let full = derive_trim(&snapshot);
+    assert!(!full.is_empty(), "fixture must produce trim to compare");
+
+    let owners: Vec<observed_hex::HexCoord> = {
+        let mut seen: Vec<observed_hex::HexCoord> = full
+            .iter()
+            .map(|piece| piece.cell)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        seen.truncate(24);
+        seen
+    };
+    assert!(
+        owners.len() > 4,
+        "need several owners to be a real comparison"
+    );
+
+    // Each owner alone, then a batch: a commit invalidates an arbitrary set, and the
+    // halo must be recomputed per call rather than accumulated across calls.
+    for owner in &owners {
+        let scoped = derive_trim_for(&snapshot, &BTreeSet::from([*owner]));
+        let expected: Vec<_> = full.iter().filter(|p| p.cell == *owner).cloned().collect();
+        assert_eq!(scoped, expected, "scoped trim diverged for {owner:?}");
+    }
+
+    let batch: BTreeSet<observed_hex::HexCoord> = owners.iter().copied().collect();
+    let scoped = derive_trim_for(&snapshot, &batch);
+    let expected: Vec<_> = full
+        .iter()
+        .filter(|piece| batch.contains(&piece.cell))
+        .cloned()
+        .collect();
+    assert_eq!(
+        scoped, expected,
+        "scoped batch diverged from the full derivation"
+    );
+
+    // Cells with no projected pieces contribute nothing rather than panicking.
+    let absent = observed_hex::HexCoord {
+        q: u16::MAX - 1,
+        r: u16::MAX - 1,
+        level: 0,
+    };
+    assert!(derive_trim_for(&snapshot, &BTreeSet::from([absent])).is_empty());
 }

@@ -19,4 +19,4 @@ pub use model::{
     HexMatchSnapshot, HexMatchStatus, HexPlayerCommand, HexPlayerMapKnowledge, HexPlayerSnapshot,
     HexPlayerState, HexTeamState, HexWfcMatch,
 };
-pub use trim::{HexTrimKind, HexTrimPiece, derive_trim};
+pub use trim::{HexTrimKind, HexTrimPiece, derive_trim, derive_trim_for};

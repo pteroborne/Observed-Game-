@@ -23,7 +23,7 @@
 //! owned by another stream) or a follow-up pass fed the solved `HexWfcWorld`
 //! directly.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use glam::{Quat, Vec2, Vec3};
 use observed_hex::{HexCoord, HexFace, TILE_LEVEL_HEIGHT, face_edge, hex_origin};
@@ -91,52 +91,107 @@ struct CellSummary<'a> {
 /// state outside `snapshot`.
 #[must_use]
 pub fn derive_trim(snapshot: &HexWfcGeometrySnapshot) -> Vec<HexTrimPiece> {
-    let cells = summarize_cells(&snapshot.pieces);
+    let cells = summarize_cells(&snapshot.pieces, None);
     let mut trim = Vec::new();
     for (&coord, summary) in &cells {
-        for face in HexFace::LATERAL {
-            let Some(neighbor_coord) = step(coord, face) else {
-                continue;
-            };
-            match cells.get(&neighbor_coord) {
-                None => {
-                    // Solid <-> void: an open ledge. `cells` already excludes
-                    // the Boundary-role shell (see `summarize_cells`), so
-                    // every remaining role (Hall, Room, Ramp, Shaft) is a
-                    // walkable surface that can have an open lateral edge.
-                    trim.push(trim_piece(
-                        HexTrimKind::Railing,
-                        coord,
-                        face,
-                        RAILING_HEIGHT,
-                    ));
-                }
-                Some(neighbor) => {
-                    // Only emit once per unordered pair, on the lower-ordered cell,
-                    // so the two cells sharing a seam do not each emit a duplicate.
-                    if coord < neighbor_coord
-                        && (summary.role != neighbor.role || summary.register != neighbor.register)
-                    {
-                        trim.push(trim_piece(
-                            HexTrimKind::Buttress,
-                            coord,
-                            face,
-                            TILE_LEVEL_HEIGHT * 0.5,
-                        ));
-                    }
-                }
-            }
-        }
+        push_cell_trim(coord, summary, &cells, &mut trim);
     }
     trim
 }
 
+/// [`derive_trim`] restricted to the trim *owned by* `owners`.
+///
+/// A relayout commit invalidates a handful of cells, but the full derivation summarizes
+/// every projected piece in the facility (~109 k) and sweeps every cell to produce trim
+/// the caller then throws all but a few of away. That whole-facility pass was the bulk of
+/// the mutation-frame spike.
+///
+/// Only two things are needed to decide `owners`' trim: their own summaries, and those of
+/// their lateral neighbours (a seam is classified by comparing the two sides). So this
+/// summarizes just that halo and emits for `owners` alone. Ownership rules are untouched —
+/// a buttress still belongs to the lower-ordered cell of its pair — so the result is
+/// exactly the `owners` subset of [`derive_trim`], in the same order.
+#[must_use]
+pub fn derive_trim_for(
+    snapshot: &HexWfcGeometrySnapshot,
+    owners: &BTreeSet<HexCoord>,
+) -> Vec<HexTrimPiece> {
+    let mut halo = owners.clone();
+    for &coord in owners {
+        for face in HexFace::LATERAL {
+            if let Some(neighbor) = step(coord, face) {
+                halo.insert(neighbor);
+            }
+        }
+    }
+    let cells = summarize_cells(&snapshot.pieces, Some(&halo));
+    let mut trim = Vec::new();
+    for &coord in owners {
+        let Some(summary) = cells.get(&coord) else {
+            continue;
+        };
+        push_cell_trim(coord, summary, &cells, &mut trim);
+    }
+    trim
+}
+
+/// Emit the trim owned by `coord`. Shared by both derivations so the scoped form cannot
+/// drift from the full one.
+fn push_cell_trim(
+    coord: HexCoord,
+    summary: &CellSummary<'_>,
+    cells: &BTreeMap<HexCoord, CellSummary<'_>>,
+    trim: &mut Vec<HexTrimPiece>,
+) {
+    for face in HexFace::LATERAL {
+        let Some(neighbor_coord) = step(coord, face) else {
+            continue;
+        };
+        match cells.get(&neighbor_coord) {
+            None => {
+                // Solid <-> void: an open ledge. `cells` already excludes
+                // the Boundary-role shell (see `summarize_cells`), so
+                // every remaining role (Hall, Room, Ramp, Shaft) is a
+                // walkable surface that can have an open lateral edge.
+                trim.push(trim_piece(
+                    HexTrimKind::Railing,
+                    coord,
+                    face,
+                    RAILING_HEIGHT,
+                ));
+            }
+            Some(neighbor) => {
+                // Only emit once per unordered pair, on the lower-ordered cell,
+                // so the two cells sharing a seam do not each emit a duplicate.
+                if coord < neighbor_coord
+                    && (summary.role != neighbor.role || summary.register != neighbor.register)
+                {
+                    trim.push(trim_piece(
+                        HexTrimKind::Buttress,
+                        coord,
+                        face,
+                        TILE_LEVEL_HEIGHT * 0.5,
+                    ));
+                }
+            }
+        }
+    }
+}
+
 /// Reduce every projected piece down to one role/register summary per
 /// `source_cell`, skipping the boundary shell (see [`CellSummary`] docs).
-fn summarize_cells(pieces: &[HexStructurePiece]) -> BTreeMap<HexCoord, CellSummary<'_>> {
+/// `within`, when given, restricts the summary to those cells — the scoped derivation
+/// only needs a small halo, and skipping the rest avoids a map insert per projected piece.
+fn summarize_cells<'a>(
+    pieces: &'a [HexStructurePiece],
+    within: Option<&BTreeSet<HexCoord>>,
+) -> BTreeMap<HexCoord, CellSummary<'a>> {
     let mut cells = BTreeMap::new();
     for piece in pieces {
         if piece.role == HexStructureRole::Boundary {
+            continue;
+        }
+        if within.is_some_and(|within| !within.contains(&piece.source_cell)) {
             continue;
         }
         cells.entry(piece.source_cell).or_insert(CellSummary {

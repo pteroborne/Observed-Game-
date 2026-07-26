@@ -10,7 +10,7 @@ use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::{HexCoord, HexWfcWorld};
 use observed_hex::hex_origin;
 use observed_match::hex_wfc::{
-    HexLightSource, HexStructurePiece, HexStructureRole, HexTrimPiece, derive_trim,
+    HexLightSource, HexStructurePiece, HexStructureRole, HexTrimPiece, derive_trim, derive_trim_for,
 };
 
 use super::assets::HexWfcVisualAssets;
@@ -142,7 +142,10 @@ pub(super) fn spawn_cells(
     }) {
         by_cell.entry(piece.source_cell).or_default().push(piece);
     }
-    let trim = derive_trim(&runtime.match_state.geometry);
+    // Scoped to the changed cells: only their trim is respawned here (the loop below
+    // takes `trim_by_cell` entries for `by_cell` coords and drops the rest), so deriving
+    // it for the whole facility was work thrown away on every relayout commit.
+    let trim = derive_trim_for(&runtime.match_state.geometry, changed);
     let mut trim_by_cell = group_trim_by_cell(&trim);
     for (coord, pieces) in by_cell {
         let lights = lights_by_cell.remove(&coord).unwrap_or_default();
