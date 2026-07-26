@@ -5571,6 +5571,7 @@ dependencies = [
 name = "observed_server"
 version = "0.1.0"
 dependencies = [
+ "observed_assets",
  "observed_authoring",
  "observed_content",
  "observed_core",

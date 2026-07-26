@@ -129,9 +129,8 @@ pub fn run() {
     app.insert_resource(ClearColor(Color::srgb(0.02, 0.03, 0.05)))
         .add_plugins(
             DefaultPlugins
-                // Resolve drop-in assets against the workspace `assets/` directory
-                // (Bevy otherwise reads `assets/` relative to the crate dir under
-                // `cargo run`, missing files dropped at the repo root).
+                // Resolve drop-in assets beside a packaged executable, from the workspace
+                // during development, or from OBSERVED2_ASSET_ROOT when explicitly set.
                 .set(AssetPlugin {
                     file_path: crate::view::assets::assets_dir()
                         .to_string_lossy()

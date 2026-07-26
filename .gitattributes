@@ -1,3 +1,5 @@
 *.json text eol=lf
 *.map text eol=lf
 *.ron text eol=lf
+*.sh text eol=lf
+*.yml text eol=lf
