@@ -189,16 +189,35 @@ fn footprint_in_range(footprint: &[HexCoord], focus_position: Vec3, focus_level:
 
 pub(super) fn sync_streamed_cells(
     runtime: Res<HexWfcRuntime>,
-    mut cells: Query<(&HexWfcCellFootprint, &mut Visibility)>,
+    mut cells: Query<(&HexWfcCellFootprint, &mut Visibility, Option<&Children>)>,
+    mut perf: Option<ResMut<super::perf::HexPerfMetrics>>,
 ) {
     let focus = runtime.local();
-    for (footprint, mut visibility) in &mut cells {
-        *visibility = if footprint_in_range(&footprint.0, focus.position, focus.cell.level) {
+    let (mut visible, mut flipped, mut visible_pieces) = (0usize, 0usize, 0usize);
+    for (footprint, mut visibility, children) in &mut cells {
+        let wanted = if footprint_in_range(&footprint.0, focus.position, focus.cell.level) {
             Visibility::Inherited
         } else {
             Visibility::Hidden
         };
+        // Guarded, not unconditional: `Mut` deref marks `Changed<Visibility>`, and Bevy's
+        // visibility propagation is gated on exactly that filter. Writing every frame
+        // re-propagated the whole facility (~5.6k cells, ~109k child pieces) to reach a
+        // steady state it was already in. Same guarded-assignment reasoning as
+        // `sync_practical_shadow_budget`.
+        if wanted == Visibility::Inherited {
+            visible += 1;
+            // Draw-call proxy: a cell's children are its hull meshes, and hull counts vary
+            // by an order of magnitude across the tile corpus, so resident cells are a far
+            // worse cost estimate than resident pieces.
+            visible_pieces += children.map_or(0, |children| children.len());
+        }
+        if *visibility != wanted {
+            *visibility = wanted;
+            flipped += 1;
+        }
     }
+    super::perf::record_streaming(&mut perf, visible, flipped, visible_pieces);
 }
 
 pub(super) use lighting::{
