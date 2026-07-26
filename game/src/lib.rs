@@ -29,6 +29,11 @@ mod wfc_interior;
 use bevy::{
     asset::AssetPlugin,
     prelude::*,
+    render::{
+        RenderPlugin,
+        diagnostic::RenderDiagnosticsPlugin,
+        settings::{RenderCreation, WgpuFeatures, WgpuSettings},
+    },
     window::{PresentMode, WindowResolution},
 };
 use bevy_sprite3d::prelude::Sprite3dPlugin;
@@ -126,30 +131,49 @@ fn setup_camera(mut commands: Commands) {
 
 pub fn run() {
     let mut app = App::new();
+    // Opt-in GPU pass timing. Timestamp queries must be requested at device creation, so
+    // unlike the rest of the evidence harness this cannot be switched on after the fact.
+    // Requesting features can fail renderer init on adapters that lack them, which is why
+    // it stays behind the flag rather than being always-on.
+    let gpu_profiling = std::env::var(crate::hex_wfc::GPU_PROFILE_ENV).is_ok();
+    let mut plugins = DefaultPlugins
+        // Resolve drop-in assets against the workspace `assets/` directory
+        // (Bevy otherwise reads `assets/` relative to the crate dir under
+        // `cargo run`, missing files dropped at the repo root).
+        .set(AssetPlugin {
+            file_path: crate::view::assets::assets_dir()
+                .to_string_lossy()
+                .into_owned(),
+            ..default()
+        })
+        .set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Observed 2".to_string(),
+                resolution: WindowResolution::new(1440, 900),
+                present_mode: PresentMode::AutoVsync,
+                resizable: true,
+                ..default()
+            }),
+            ..default()
+        });
+    if gpu_profiling {
+        plugins = plugins.set(RenderPlugin {
+            render_creation: RenderCreation::Automatic(WgpuSettings {
+                features: WgpuFeatures::TIMESTAMP_QUERY
+                    | WgpuFeatures::TIMESTAMP_QUERY_INSIDE_PASSES
+                    | WgpuFeatures::TIMESTAMP_QUERY_INSIDE_ENCODERS,
+                ..default()
+            }),
+            ..default()
+        });
+    }
+
     app.insert_resource(ClearColor(Color::srgb(0.02, 0.03, 0.05)))
-        .add_plugins(
-            DefaultPlugins
-                // Resolve drop-in assets against the workspace `assets/` directory
-                // (Bevy otherwise reads `assets/` relative to the crate dir under
-                // `cargo run`, missing files dropped at the repo root).
-                .set(AssetPlugin {
-                    file_path: crate::view::assets::assets_dir()
-                        .to_string_lossy()
-                        .into_owned(),
-                    ..default()
-                })
-                .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        title: "Observed 2".to_string(),
-                        resolution: WindowResolution::new(1440, 900),
-                        present_mode: PresentMode::AutoVsync,
-                        resizable: true,
-                        ..default()
-                    }),
-                    ..default()
-                }),
-        )
+        .add_plugins(plugins)
         .add_plugins(ObservedGamePlugin);
+    if gpu_profiling {
+        app.add_plugins(RenderDiagnosticsPlugin);
+    }
 
     // Opt-in evidence capture (no-op in normal play).
     evidence::configure(&mut app);

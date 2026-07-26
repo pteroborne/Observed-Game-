@@ -11,6 +11,8 @@ mod hud;
 mod input;
 mod lantern;
 mod perf;
+
+pub(crate) use perf::GPU_PROFILE_ENV;
 pub mod sim;
 mod tacmap;
 mod view;
