@@ -1,4 +1,5 @@
 /target
+/dist/
 /scratch/
 *.pdb
 .claude/

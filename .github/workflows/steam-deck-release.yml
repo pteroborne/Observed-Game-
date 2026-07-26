@@ -1,0 +1,115 @@
+name: Steam Deck release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_HOME: /opt/observed-cargo
+  CARGO_TARGET_DIR: ${{ github.workspace }}/target
+  RUSTUP_HOME: /opt/observed-rustup
+  RUST_TOOLCHAIN: "1.96.0"
+
+jobs:
+  build:
+    name: Build Steam Deck artifact
+    runs-on: ubuntu-latest
+    container:
+      # Valve recommends building native Linux games inside the SDK for the runtime
+      # they target. Pin the image so tagged artifacts remain reproducible.
+      image: registry.gitlab.steamos.cloud/steamrt/steamrt4/sdk@sha256:584939ebd7d2f1eec719e771fdde4ae3bd469ee741c783abb7fe812ddaaf3ee4
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Install native build dependencies
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends \
+            build-essential \
+            ca-certificates \
+            curl \
+            libasound2-dev \
+            libudev-dev \
+            pkg-config
+
+      - name: Install pinned Rust toolchain
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+            | sh -s -- -y --profile minimal --default-toolchain "$RUST_TOOLCHAIN" --no-modify-path
+          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Restore Cargo cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ${{ env.CARGO_HOME }}/registry/index
+            ${{ env.CARGO_HOME }}/registry/cache
+            ${{ env.CARGO_HOME }}/git/db
+            ${{ env.CARGO_TARGET_DIR }}
+          key: steamrt4-rust-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            steamrt4-rust-${{ env.RUST_TOOLCHAIN }}-
+
+      - name: Test portable runtime paths and server startup contracts
+        run: cargo test --locked -p observed_assets -p observed_server
+
+      - name: Build optimized game
+        run: cargo build --locked --release -p observed_game
+
+      - name: Check linked libraries
+        run: |
+          ldd "$CARGO_TARGET_DIR/release/observed" | tee linked-libraries.txt
+          if grep -q "not found" linked-libraries.txt; then
+            exit 1
+          fi
+
+      - name: Package game and assets
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="dev-${GITHUB_SHA:0:7}"
+          fi
+          bash tools/package_steam_deck.sh "$version" dist
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: observed-steam-deck-linux-x86_64
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download packaged artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: observed-steam-deck-linux-x86_64
+          path: dist
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --verify-tag \
+              --generate-notes \
+              --title "Observed 2 $GITHUB_REF_NAME"
+          fi

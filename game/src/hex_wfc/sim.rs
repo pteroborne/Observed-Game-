@@ -55,11 +55,7 @@ impl HexWfcRuntime {
 
 /// Resolve the workspace tile directory without involving presentation.
 fn tile_dir() -> std::path::PathBuf {
-    let cwd_relative = std::path::PathBuf::from("assets/tiles");
-    if cwd_relative.exists() {
-        return cwd_relative;
-    }
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/tiles")
+    observed_assets::assets_root().join("tiles")
 }
 
 /// Load the same authored-plus-compatibility corpus used by tests and evidence.

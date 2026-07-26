@@ -24,6 +24,12 @@ Splash → Main Menu → Solo/LAN Browser → LAN Lobby → HexWfc → Results �
   cargo dev-test -p game
   ```
 
+## Steam Deck / Linux releases
+
+Tagged `v*` builds are packaged as native x86_64 Linux GitHub Release artifacts using
+Valve's Steam Linux Runtime 4 SDK. Manual workflow runs create a test workflow artifact
+without publishing a release. See [the release runbook](../docs/github_releases.md).
+
 ---
 
 ## Architectural Boundaries

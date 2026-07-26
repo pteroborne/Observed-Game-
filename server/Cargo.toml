@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 observed_authoring = { path = "../crates/observed_authoring" }
+observed_assets = { path = "../crates/observed_assets" }
 observed_content = { path = "../crates/observed_content" }
 observed_core = { path = "../crates/observed_core" }
 observed_facility = { path = "../crates/observed_facility", default-features = false, features = ["wfc"] }

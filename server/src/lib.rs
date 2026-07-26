@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::io;
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
@@ -115,12 +115,7 @@ fn time_seed() -> u64 {
 }
 
 fn default_tile_dir() -> PathBuf {
-    let cwd = PathBuf::from("assets/tiles");
-    if cwd.is_dir() {
-        cwd
-    } else {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/tiles")
-    }
+    observed_assets::assets_root().join("tiles")
 }
 
 #[derive(Clone, Debug)]
