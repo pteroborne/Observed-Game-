@@ -6,7 +6,7 @@ use std::f32::consts::PI;
 use glam::{Vec2, Vec3};
 use observed_core::PlayerId;
 use observed_facility::hex_wfc::{
-    HexArchetype, HexCoord, HexFace, HexPlacement, HexSpace, PortClass,
+    HexArchetype, HexCoord, HexFace, HexPlacement, HexRoute, HexSpace, PortClass,
 };
 use observed_hex::{TILE_LEVEL_HEIGHT, hex_origin};
 use player_input::PlayerIntent;
@@ -57,27 +57,36 @@ impl HexWfcMatch {
     /// Which behaviour `id` is in this tick. Pure: reads only existing state.
     #[must_use]
     pub fn bot_behaviour(&self, id: PlayerId) -> BotBehaviour {
+        self.bot_behaviour_and_route(id).0
+    }
+
+    /// The behaviour *and* the route it was decided from.
+    ///
+    /// Deciding the behaviour requires routing to the objective, and acting on `Seek` or
+    /// `Recover` requires that same route. Returning both means the A* runs once per bot
+    /// per tick rather than twice — the callers were previously recomputing an identical
+    /// search. Pure, and the behaviour is bit-for-bit what [`Self::bot_behaviour`]
+    /// returned before.
+    fn bot_behaviour_and_route(&self, id: PlayerId) -> (BotBehaviour, Option<HexRoute>) {
         let Some(player) = self.players.get(&id) else {
-            return BotBehaviour::Idle;
+            return (BotBehaviour::Idle, None);
         };
         let Some(target) = self.bot_objective_cell(id) else {
-            return BotBehaviour::Idle;
+            return (BotBehaviour::Idle, None);
         };
         if target == player.cell {
-            return BotBehaviour::Idle;
+            return (BotBehaviour::Idle, None);
         }
-        let routed = self
-            .facility
-            .route_between_cells(player.cell, target)
-            .is_some_and(|route| route.cells.len() > 1);
-        if !routed {
-            return BotBehaviour::Explore;
+        let route = self.facility.route_between_cells(player.cell, target);
+        if route.as_ref().is_none_or(|route| route.cells.len() <= 1) {
+            return (BotBehaviour::Explore, route);
         }
-        if self.stuck_ticks.get(&id).copied().unwrap_or(0) >= STUCK_ENTER_TICKS {
+        let behaviour = if self.stuck_ticks.get(&id).copied().unwrap_or(0) >= STUCK_ENTER_TICKS {
             BotBehaviour::Recover
         } else {
             BotBehaviour::Seek
-        }
+        };
+        (behaviour, route)
     }
 
     /// The abstract command the objective bot issues for `id` this tick.
@@ -86,18 +95,13 @@ impl HexWfcMatch {
         let Some(player) = self.players.get(&id) else {
             return PlayerIntent::default();
         };
-        match self.bot_behaviour(id) {
+        let (behaviour, route) = self.bot_behaviour_and_route(id);
+        match behaviour {
             BotBehaviour::Idle => return PlayerIntent::default(),
             BotBehaviour::Explore => return self.explore_command(player),
             BotBehaviour::Seek | BotBehaviour::Recover => {}
         }
-        let target = self
-            .bot_objective_cell(id)
-            .expect("Seek/Recover imply an objective");
-        let route = self
-            .facility
-            .route_between_cells(player.cell, target)
-            .expect("Seek/Recover imply a route");
+        let route = route.expect("Seek/Recover imply a route");
         let Some(&next) = route.cells.get(1) else {
             return PlayerIntent::default();
         };

@@ -808,3 +808,66 @@ fn a_bot_with_no_route_explores_instead_of_freezing() {
         "Explore must emit movement, not freeze the bot"
     );
 }
+
+/// `spawn_to_exit_cost` is a cache, so the only way it can be wrong is by going stale.
+/// Drive a match until a relayout actually commits and assert it still equals a fresh
+/// computation — before, during, and after the facility changing shape.
+#[test]
+fn cached_spawn_to_exit_cost_survives_a_committed_relayout() {
+    let fresh = |game: &HexWfcMatch| {
+        let config = game.facility.config;
+        game.facility
+            .route_between_cells(config.spawn(), config.exit())
+            .map_or(1, |route| route.cost_millis.max(1))
+    };
+
+    let mut game = HexWfcMatch::new(
+        0xA11C_9500_0000_0000,
+        HexMatchConfig {
+            teams: 2,
+            members_per_team: 2,
+            wfc: showcase_config(4),
+        },
+        &tiles(),
+    )
+    .expect("fixture seed builds");
+    assert_eq!(
+        game.spawn_to_exit_cost,
+        fresh(&game),
+        "cache must be primed at construction"
+    );
+
+    let mut generations = 0u32;
+    for tick in 0..2_400u64 {
+        let commands = game
+            .players
+            .keys()
+            .copied()
+            .filter(|id| !game.players[id].escaped)
+            .map(|id| (id, bot_player_command(&game, id)))
+            .collect();
+        let committed = game
+            .step(&HexInputFrame {
+                version: HEX_INPUT_VERSION,
+                tick,
+                commands,
+            })
+            .iter()
+            .any(|event| event.kind == HexMatchEventKind::MutationCommitted);
+        if committed {
+            generations += 1;
+        }
+        assert_eq!(
+            game.spawn_to_exit_cost,
+            fresh(&game),
+            "cache went stale at tick {tick} (committed this tick: {committed})"
+        );
+        if game.status == HexMatchStatus::Finished {
+            break;
+        }
+    }
+    assert!(
+        generations > 0,
+        "fixture must actually commit a relayout, or this proves nothing"
+    );
+}

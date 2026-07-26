@@ -244,6 +244,16 @@ pub struct HexWfcMatch {
     /// The deterministic tick at which the next relayout commits. The paired
     /// warning fires [`MUTATION_WARNING_TICKS`] earlier.
     pub(super) next_mutation_tick: u64,
+    /// Route cost from spawn to exit, the denominator [`Self::lantern_proximity`]
+    /// normalises against.
+    ///
+    /// Derived, not authoritative: a pure function of `facility`, refreshed at the one
+    /// place the facility changes (`commit_mutation`). Cached because presentation calls
+    /// `lantern_proximity` every frame, per lantern, and this term is identical for all of
+    /// them — recomputing a facility-wide A* per call was the cost that survived the
+    /// bounding pass. Excluded from [`HexMatchSnapshot`], which allowlists its fields, so
+    /// it cannot affect the digest.
+    pub(super) spawn_to_exit_cost: u32,
 }
 
 /// The two phases of one relayout cycle: an incremental solve, then a solved
@@ -357,7 +367,9 @@ impl HexWfcMatch {
             room_prototypes: room_prototypes.to_vec(),
             pending_relayout: None,
             next_mutation_tick: mutation::scheduled_mutation_tick(seed, 0),
+            spawn_to_exit_cost: 1,
         };
+        game.refresh_spawn_to_exit_cost();
         game.observation = game.build_observation();
         game.update_map_knowledge();
         Ok(game)
@@ -492,6 +504,16 @@ impl HexWfcMatch {
         states
     }
 
+    /// Recompute [`Self::spawn_to_exit_cost`]. Called at construction and after every
+    /// committed relayout — the only two moments `facility` can change.
+    pub(super) fn refresh_spawn_to_exit_cost(&mut self) {
+        let config = self.facility.config;
+        self.spawn_to_exit_cost = self
+            .facility
+            .route_between_cells(config.spawn(), config.exit())
+            .map_or(1, |route| route.cost_millis.max(1));
+    }
+
     #[must_use]
     pub fn lantern_proximity(&self, player: PlayerId) -> f32 {
         if self.lanterns.inventory(player) == 0 {
@@ -501,13 +523,15 @@ impl HexWfcMatch {
             return 0.0;
         };
         let exit = self.facility.config.exit();
-        let baseline = self
-            .facility
-            .route_between_cells(self.facility.config.spawn(), exit)
-            .map_or(1, |route| route.cost_millis.max(1));
+        let baseline = self.spawn_to_exit_cost;
+        // Bounded at the baseline, where the formula saturates: `1 - remaining/baseline`
+        // is <= 0 once `remaining` reaches it, and the clamp floors that at 0.0 — the same
+        // value the `None` arm substitutes. A route priced at or past the baseline is
+        // therefore indistinguishable from no route, so searching beyond it is wasted.
+        // Presentation calls this per lantern per frame.
         let remaining = self
             .facility
-            .route_between_cells(player.cell, exit)
+            .route_within_cost(player.cell, exit, baseline)
             .map_or(baseline, |route| route.cost_millis);
         (1.0 - remaining as f32 / baseline as f32).clamp(0.0, 1.0)
     }

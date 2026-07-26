@@ -97,6 +97,10 @@ impl HexWfcMatch {
             .apply_delta(&geometry)
             .expect("geometry delta was projected from this snapshot");
         self.last_relayout_delta = Some(logical);
+        // The facility just changed shape, so the cached spawn->exit denominator behind
+        // `lantern_proximity` is stale. This is the only path that mutates the facility
+        // after construction — every earlier `return` above leaves it untouched.
+        self.refresh_spawn_to_exit_cost();
         HexMatchEventKind::MutationCommitted
     }
 
