@@ -37,7 +37,7 @@ pub use relayout::{
     HexObservationFrame, HexRelayoutCandidate, HexRelayoutDelta, HexRelayoutProgress,
     HexRelayoutWork, HexThresholdKey, LIMINAL_GRID_ZONE_SIZE, LiminalGridZone, liminal_grid_zones,
 };
-pub use topology::HexRoute;
+pub use topology::{HexRoute, MAX_CONNECTION_COST};
 pub use trace::SolveStep;
 pub use variants::{
     HexGeometryDemand, demandable_signatures, geometry_demands, placement_tile_archetype,
@@ -345,6 +345,22 @@ impl HexWfcWorld {
     #[must_use]
     pub fn route_between_cells(&self, from: HexCoord, to: HexCoord) -> Option<HexRoute> {
         topology::costed_route_between(self.config, &self.placements, from, to)
+    }
+
+    /// [`Self::route_between_cells`], abandoned once no route within `max_cost` remains.
+    ///
+    /// For callers whose answer saturates past a known cost, an unbounded search is pure
+    /// waste: it expands the entire reachable component just to report `None` for a pair
+    /// that is far apart or disconnected. Inside the bound this returns exactly what the
+    /// unbounded search returns.
+    #[must_use]
+    pub fn route_within_cost(
+        &self,
+        from: HexCoord,
+        to: HexCoord,
+        max_cost: u32,
+    ) -> Option<HexRoute> {
+        topology::costed_route_within(self.config, &self.placements, from, to, max_cost)
     }
 
     #[must_use]

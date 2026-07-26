@@ -17,6 +17,9 @@ use super::{
 const COST_DOOR_LATERAL: u32 = 1_000;
 const COST_RAMP_LEVEL: u32 = 2_000;
 const COST_SHAFT_LEVEL: u32 = 2_500;
+/// The dearest single connection. A route of one edge can never cost more than this, so
+/// it is the exact search bound for "are these two cells adjacent?" questions.
+pub const MAX_CONNECTION_COST: u32 = COST_SHAFT_LEVEL;
 
 /// A weighted route over typed ports.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -108,6 +111,30 @@ pub(super) fn costed_route_between(
     from: HexCoord,
     to: HexCoord,
 ) -> Option<HexRoute> {
+    costed_route_within(config, placements, from, to, u32::MAX)
+}
+
+/// [`costed_route_between`], abandoned once every remaining candidate would cost more
+/// than `max_cost`.
+///
+/// Unbounded A* over a disconnected or distant pair expands the entire reachable
+/// component before it can answer `None` — thousands of cells of `BTreeMap` work. Callers
+/// that only care about routes up to some threshold (proximity and pressure tests, which
+/// saturate past a known cost) can therefore stop early.
+///
+/// The pruning is exact, not approximate: [`heuristic`] scales `travel_distance` by
+/// `COST_DOOR_LATERAL`, the cheapest edge tier, so it never overestimates. An admissible
+/// heuristic means `f_score = g + h` is a lower bound on any completion through that node,
+/// so discarding `f_score > max_cost` can never discard a route that would have come in
+/// at or under the bound. Within the bound this returns exactly what the unbounded search
+/// returns; past it, `None`.
+pub(super) fn costed_route_within(
+    config: HexWfcConfig,
+    placements: &BTreeMap<HexCoord, HexPlacement>,
+    from: HexCoord,
+    to: HexCoord,
+    max_cost: u32,
+) -> Option<HexRoute> {
     let grid = config.grid();
     if !grid.contains(from) || !grid.contains(to) {
         return None;
@@ -123,7 +150,12 @@ pub(super) fn costed_route_between(
         f_score: heuristic(from, to),
     });
 
-    while let Some(AStarNode { coord, f_score: _ }) = open_set.pop() {
+    while let Some(AStarNode { coord, f_score }) = open_set.pop() {
+        // The heap is a min-heap on an admissible `f_score`, so once the cheapest
+        // remaining candidate is over budget every other one is too.
+        if f_score > max_cost {
+            return None;
+        }
         if coord == to {
             let mut path = vec![to];
             let mut walk = to;
@@ -155,9 +187,12 @@ pub(super) fn costed_route_between(
             let current_next_g = g_score.get(&next).copied().unwrap_or(u32::MAX);
 
             if tentative_g < current_next_g {
+                let f = tentative_g + heuristic(next, to);
+                if f > max_cost {
+                    continue;
+                }
                 previous.insert(next, coord);
                 g_score.insert(next, tentative_g);
-                let f = tentative_g + heuristic(next, to);
                 open_set.push(AStarNode {
                     coord: next,
                     f_score: f,

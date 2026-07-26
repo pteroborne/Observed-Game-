@@ -534,3 +534,52 @@ fn invalid_configs_are_rejected() {
         Err(HexWfcError::InvalidConfig)
     );
 }
+
+/// The bound in [`HexWfcWorld::route_within_cost`] must be exact, not heuristic: inside it
+/// the answer has to be byte-for-byte the unbounded one, and outside it `None`. This is
+/// what lets `pressure_for` and the Guardian visibility test bound their searches at the
+/// cost where their answers saturate without changing any behaviour.
+#[test]
+fn bounded_routing_agrees_with_unbounded_inside_the_bound() {
+    let mut checked = 0usize;
+    let mut saw_truncation = false;
+    for seed in corpus_seeds().take(12) {
+        let world = HexWfcWorld::generate(seed, HexWfcConfig::default()).expect("seed generates");
+        let live: Vec<HexCoord> = world
+            .placements
+            .iter()
+            .filter(|(_, placement)| placement.space != HexSpace::Void)
+            .map(|(coord, _)| *coord)
+            .collect();
+        let Some(&from) = live.first() else { continue };
+        for &to in live.iter().step_by(7) {
+            let unbounded = world.route_between_cells(from, to);
+            for bound in [0, 1_000, 4_000, 12_000, u32::MAX] {
+                let bounded = world.route_within_cost(from, to, bound);
+                match &unbounded {
+                    Some(route) if route.cost_millis <= bound => {
+                        let bounded = bounded.expect("a route inside the bound must be found");
+                        assert_eq!(
+                            bounded.cells, route.cells,
+                            "seed {seed:x} bound {bound}: bounded route diverged"
+                        );
+                        assert_eq!(bounded.cost_millis, route.cost_millis);
+                    }
+                    _ => {
+                        saw_truncation |= bounded.is_none() && unbounded.is_some();
+                        assert!(
+                            bounded.is_none(),
+                            "seed {seed:x} bound {bound}: found a route the bound excludes"
+                        );
+                    }
+                }
+                checked += 1;
+            }
+        }
+    }
+    assert!(checked > 100, "corpus must actually exercise the bound");
+    assert!(
+        saw_truncation,
+        "corpus must include pairs the bound genuinely excludes, or this proves nothing"
+    );
+}
