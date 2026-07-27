@@ -215,16 +215,16 @@ fn capture_progress(
             // photographing: at frame 900 it has barely left spawn and the map
             // shows five cells, which proves the fog-of-war contract but makes a
             // useless visual gate.
-            if request.frame == 2_400
+            if request.frame == 7_200
                 && let Some(runtime) = runtime.as_deref_mut()
             {
                 runtime.map_open = true;
             }
-            if request.frame == 2_460 {
+            if request.frame == 7_260 {
                 commands
                     .spawn(Screenshot::primary_window())
                     .observe(save_to_disk(request.path.clone()));
-            } else if request.frame == 2_530 {
+            } else if request.frame == 7_330 {
                 exit.write(AppExit::Success);
             }
         }

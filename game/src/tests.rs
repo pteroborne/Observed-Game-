@@ -5071,7 +5071,7 @@ mod hex_wfc_gates {
     // this feature could go wrong: the map must never draw a cell the team has
     // not discovered, and must never surface a rival.
 
-    use crate::hex_wfc::view::map::{HexMapCamera, HexMapProjection, HexMapVisual};
+    use crate::hex_wfc::view::map::{HexMapCamera, HexMapCell, HexMapProjection, HexMapVisual};
 
     /// Drive the app far enough that the team has discovered some, but nowhere
     /// near all, of the facility, then open the map.
@@ -5103,7 +5103,7 @@ mod hex_wfc_gates {
                 .len();
             (known, runtime.match_state.facility.placements.len())
         };
-        let drawn = count::<HexMapVisual>(&mut app);
+        let drawn = count::<HexMapCell>(&mut app);
 
         assert!(known > 0, "the bot must have discovered something by now");
         assert!(
@@ -5157,7 +5157,7 @@ mod hex_wfc_gates {
 
         let drawn = {
             let world = app.world_mut();
-            let mut query = world.query_filtered::<&Transform, With<HexMapVisual>>();
+            let mut query = world.query_filtered::<&Transform, With<HexMapCell>>();
             query
                 .iter(world)
                 .map(|transform| {
@@ -5177,6 +5177,24 @@ mod hex_wfc_gates {
             "the map drew {} solid(s) over hexes the team has never discovered: {:?}",
             leaked.len(),
             &leaked[..leaked.len().min(5)]
+        );
+    }
+
+    /// The connectivity channel is easy to break silently — a wrong port check
+    /// draws nothing and the map still looks fine, just less useful. This asserts
+    /// the map spawns more than its cells, which it can only do by drawing the
+    /// links between them.
+    #[test]
+    fn the_map_draws_the_connections_between_its_cells() {
+        let mut app = app_with_open_map_after(120);
+        let cells = count::<HexMapCell>(&mut app);
+        let everything = count::<HexMapVisual>(&mut app);
+        assert!(cells > 0, "the map must have drawn cells");
+        assert!(
+            everything > cells,
+            "the map drew {cells} cells and {everything} entities total — the \
+             connection bars are missing, so the sketch is a field of tiles \
+             rather than a graph"
         );
     }
 
