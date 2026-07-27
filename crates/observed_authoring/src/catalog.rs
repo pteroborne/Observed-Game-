@@ -14,7 +14,7 @@ use crate::source::{
     AuthoredModule, ModuleCell, ModuleCellRef, ModuleKind, RotationPolicy, SourceError,
     parse_authored_module,
 };
-use crate::tile::{TileLight, TileLightKind, TilePrototype};
+use crate::tile::{DeckPath, StairSpine, TileLight, TileLightKind, TilePrototype};
 
 pub const COMPILED_CATALOG_VERSION: u16 = 3;
 
@@ -56,6 +56,20 @@ pub struct CompiledModule {
     pub footprint: Vec<ModuleCell>,
     pub ports: Vec<CompiledPort>,
     pub lights: Vec<CompiledLight>,
+    /// Climb nodes in tile-local metres, bottom to top.
+    ///
+    /// Skipped when empty, which matters more than it looks: the catalog's
+    /// canonical serialization *is* the simulation content hash, and that hash
+    /// gates LAN compatibility. Writing `stair_spine: []` into every module
+    /// would have moved it for every client without a single module's geometry
+    /// changing. It moves when a module actually declares a climb, and not
+    /// before.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stair_spine: Vec<[f32; 3]>,
+    /// Walkable floor path in tile-local metres. Skipped when empty, for the
+    /// same content-hash reason as `stair_spine`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deck_path: Vec<[f32; 3]>,
     pub structural_hash: String,
     /// Present while the old runtime manifest remains the compatibility seam.
     pub legacy_key: Option<TileKey>,
@@ -158,6 +172,24 @@ impl CompiledTileCatalog {
                 }
                 let rotated_hulls = rotate_hulls(hulls, turn);
                 let rotated_lights = rotate_lights(&module.lights, turn);
+                let rotated_spine = StairSpine {
+                    nodes: module
+                        .stair_spine
+                        .iter()
+                        .copied()
+                        .map(Vec3::from_array)
+                        .collect(),
+                }
+                .rotated(turn);
+                let rotated_deck = DeckPath {
+                    nodes: module
+                        .deck_path
+                        .iter()
+                        .copied()
+                        .map(Vec3::from_array)
+                        .collect(),
+                }
+                .rotated(turn);
                 let rotated_ports = module
                     .ports
                     .iter()
@@ -201,6 +233,8 @@ impl CompiledTileCatalog {
                                 signature,
                                 hulls: rotated_hulls.clone(),
                                 lights: rotated_lights.clone(),
+                                spine: rotated_spine.clone(),
+                                deck: rotated_deck.clone(),
                             });
                         }
                         ModuleKind::Room => runtime.rooms.push(RoomPrototype {
@@ -540,6 +574,20 @@ fn compile_module(
             position: light.position.to_array(),
         })
         .collect();
+    let stair_spine = module
+        .prototype
+        .spine
+        .nodes
+        .iter()
+        .map(Vec3::to_array)
+        .collect();
+    let deck_path = module
+        .prototype
+        .deck
+        .nodes
+        .iter()
+        .map(Vec3::to_array)
+        .collect();
     CompiledModule {
         id: module.id.clone(),
         source_path,
@@ -558,6 +606,8 @@ fn compile_module(
         footprint: module.footprint.clone(),
         ports,
         lights,
+        stair_spine,
+        deck_path,
         structural_hash,
         legacy_key: (module.authoring_version < 2).then(|| module.prototype.key.clone()),
     }

@@ -4,11 +4,12 @@
 use std::f32::consts::PI;
 
 use glam::{Vec2, Vec3};
+use observed_authoring::StairSpine;
 use observed_core::PlayerId;
 use observed_facility::hex_wfc::{
     HexArchetype, HexCoord, HexFace, HexPlacement, HexRoute, HexSpace, PortClass,
 };
-use observed_hex::{TILE_LEVEL_HEIGHT, hex_origin};
+use observed_hex::hex_origin;
 use player_input::PlayerIntent;
 
 use super::movement::face_plan_dir;
@@ -27,6 +28,10 @@ use super::{FLOOR_SLAB_TOP, HexWfcMatch};
 /// Bot-side on purpose: `step_character` is shared with human look input, so
 /// clamping there would slow the player's mouse.
 const MAX_TURN_PER_TICK: f32 = 0.08;
+/// How near a body's feet must be to a climb to count as standing on it, in
+/// metres. A flight is 2.25 m wide, so half of that plus a margin covers a body
+/// anywhere on the treads while staying far short of the far side of a tower.
+const CLIMB_CAPTURE_RADIUS: f32 = 1.6;
 
 const STUCK_ENTER_TICKS: u16 = 45;
 const STUCK_SWEEP_TICKS: u16 = 24;
@@ -211,7 +216,14 @@ impl HexWfcMatch {
             } else {
                 next
             };
-            return stair_command(base, yaw, position, self.traversal_config.half_height, up);
+            let feet_point = Vec3::new(position.x, feet, position.z);
+            if let Some(command) = self.climb_command(base, yaw, feet_point, up) {
+                return command;
+            }
+            // No climb under this cell at all. Nothing can be steered along a
+            // line that does not exist, so head for the centre and let the
+            // stuck detector recover rather than issuing a nonsense heading.
+            return steer_toward(yaw, position, Vec3::from_array(hex_origin(base)));
         }
 
         let dir = ramp_walk_dir(placement, up);
@@ -220,6 +232,43 @@ impl HexWfcMatch {
         }
         let aim = position + Vec3::new(dir.x, 0.0, dir.y) * 12.0;
         steer_toward(yaw, position, aim)
+    }
+
+    /// Walk `cell`'s climb in the requested direction, first crossing the floor
+    /// to reach it if the body is not on it yet.
+    ///
+    /// The approach is the half that is easy to forget. A body that enters a
+    /// tower through a lateral door stands wherever that door is, which for the
+    /// switchback can be the far side of the stairwell from the foot of the
+    /// climb. Steering it straight at the flight walks it into the guard rail
+    /// around the opening and holds it there — measured, all four soak bots
+    /// pinned against the same rail. The floor path is how it gets round.
+    fn climb_command(
+        &self,
+        cell: HexCoord,
+        yaw: f32,
+        feet_point: Vec3,
+        up: bool,
+    ) -> Option<PlayerIntent> {
+        let spine = self.geometry.climbs.get(&cell)?;
+        if spine.is_empty() {
+            return None;
+        }
+        let entry = if up {
+            *spine.nodes.first()?
+        } else {
+            *spine.nodes.last()?
+        };
+        let off_the_climb = spine
+            .distance(feet_point)
+            .is_some_and(|distance| distance > CLIMB_CAPTURE_RADIUS);
+        if off_the_climb
+            && let Some(deck) = self.geometry.decks.get(&cell)
+            && let Some(target) = deck.step_toward(feet_point, entry)
+        {
+            return Some(walk_toward(yaw, feet_point, target));
+        }
+        spine_command(spine, yaw, feet_point, up)
     }
 
     /// Continue a stair flight after height rounding has changed the logical
@@ -237,32 +286,31 @@ impl HexWfcMatch {
         let feet = position.y - self.traversal_config.half_height;
         let origin = Vec3::from_array(hex_origin(cell));
         let floor = origin.y + FLOOR_SLAB_TOP;
-        let local = Vec2::new(position.x - origin.x, position.z - origin.z);
-        let on_incoming_flight = local.x > -4.7
-            && local.x < 4.2
-            && local.y > -3.3
-            && local.y < -0.6
-            && feet < floor + 0.75;
-        if (feet < floor - 0.15 || on_incoming_flight) && cell.level > 0 {
-            let base = HexCoord {
-                level: cell.level - 1,
-                ..cell
-            };
-            Some(stair_command(
-                base,
-                yaw,
-                position,
-                self.traversal_config.half_height,
-                true,
-            ))
-        } else if feet > floor + 0.35 {
-            Some(stair_command(
-                cell,
-                yaw,
-                position,
-                self.traversal_config.half_height,
-                false,
-            ))
+        let feet_point = Vec3::new(position.x, feet, position.z);
+        let below = (cell.level > 0).then(|| HexCoord {
+            level: cell.level - 1,
+            ..cell
+        });
+        // Below this cell's deck means still climbing out of the one underneath.
+        //
+        // There used to be a second clause here — a box measured off the
+        // switchback's own treads, catching a body that was already above the
+        // deck but not yet off the flight. That case existed only because the
+        // flight overshot the deck by half a metre. It lands flush now, so a
+        // body at deck height has genuinely arrived, and the clause is not
+        // merely unnecessary but harmful: any "still climbing" test that stays
+        // true on the deck fights the lateral steering that wants to leave, and
+        // the body oscillates between the two on the spot.
+        if let Some(below) = below
+            && feet < floor - 0.15
+        {
+            self.climb_command(below, yaw, feet_point, true)
+        } else if feet > floor + self.traversal_config.step_height {
+            // Up on the climb and unable to simply step down. Below one autostep
+            // the body does not need the stair at all, and steering it back to
+            // the foot would fight whatever is trying to walk it across the
+            // floor — the two cancel and the body stays put.
+            self.climb_command(cell, yaw, feet_point, false)
         } else {
             None
         }
@@ -304,8 +352,15 @@ impl HexWfcMatch {
         }
     }
 
-    /// Follow the solid perimeter deck between a stair landing and its lateral
-    /// door. A centre-to-centre heading would cut directly across the stairwell.
+    /// Cross a stair tower's floor to a lateral door by following the walkable
+    /// path the tile declares, rather than heading straight for the aperture.
+    ///
+    /// A centre-to-centre heading cuts across the stairwell. This used to be
+    /// sixty lines of local coordinates measured off the generated switchback —
+    /// corner cases for arriving from below, for each door face, and a
+    /// rectangle-crossing test against the guarded opening — all of which were
+    /// true of exactly one tower shape. The tile now says where its floor goes
+    /// (`DeckPath`), so this walks that and nothing here knows the shape.
     fn stair_lateral_command(
         &self,
         cell: HexCoord,
@@ -316,169 +371,62 @@ impl HexWfcMatch {
         if self.facility.placements.get(&cell)?.archetype != HexArchetype::Shaft {
             return None;
         }
+        let deck = self.geometry.decks.get(&cell)?;
         let face = HexFace::LATERAL
             .into_iter()
             .find(|&face| self.facility.config.grid().neighbor(cell, face) == Some(next))?;
-        let target = match face {
-            HexFace::East => Vec2::new(5.5, 0.0),
-            HexFace::SouthEast => Vec2::new(3.0, 5.2),
-            HexFace::SouthWest => Vec2::new(-3.0, 5.2),
-            HexFace::West => Vec2::new(-5.5, 0.0),
-            HexFace::NorthWest => Vec2::new(-3.0, -5.2),
-            HexFace::NorthEast => Vec2::new(3.0, -5.2),
-            HexFace::Up | HexFace::Down => unreachable!(),
-        };
         let origin = Vec3::from_array(hex_origin(cell));
-        let local = Vec2::new(position.x - origin.x, position.z - origin.z);
+        let [a, b] = observed_hex::face_edge(face);
+        let door = origin
+            + Vec3::new(
+                (a.0 + b.0) as f32 * 0.5,
+                FLOOR_SLAB_TOP,
+                (a.1 + b.1) as f32 * 0.5,
+            );
+        // Once through the aperture the deck no longer applies: this cell's path
+        // cannot describe the neighbour's floor.
         let outward = face_plan_dir(face);
-        let across = Vec2::new(-outward.y, outward.x);
-        let crossed_aligned_threshold = local.dot(outward) >= target.dot(outward) - 0.1
-            && (local.dot(across) - target.dot(across)).abs() < 1.0;
-        if local.distance(target) < 0.9 || crossed_aligned_threshold {
+        if Vec2::new(position.x - door.x, position.z - door.z).dot(outward) > 0.0 {
             return Some(walk_toward(
                 yaw,
                 position,
                 Vec3::from_array(hex_origin(next)),
             ));
         }
-        // A bot arriving from below first clears the stair opening along the
-        // north and east perimeter. This keeps later southbound motion from
-        // being mistaken for another pass along the incoming flight.
-        let waypoint = if local.y < -4.3 {
-            Vec2::new(local.x.clamp(-3.0, 3.0), -3.8)
-        } else if local.y < -3.25 && local.x < 5.4 && target.y > -0.75 {
-            Vec2::new(5.7, -4.0)
-        } else if face == HexFace::East && local.x < -4.0 && local.y < 3.8 {
-            Vec2::new(-4.5, 4.1)
-        } else if face == HexFace::East && local.x < 5.0 && local.y < 3.8 {
-            Vec2::new(3.0, 4.1)
-        } else if face == HexFace::East && local.x < 5.2 {
-            Vec2::new(5.5, 4.1)
-        } else if face == HexFace::SouthEast && local.x < -4.0 && local.y < 3.8 {
-            Vec2::new(-4.5, 4.1)
-        } else if face == HexFace::SouthWest && local.x > 4.8 && local.y < 3.8 {
-            Vec2::new(5.3, 4.1)
-        } else if local.x > 5.2 && local.y < -0.2 && target.y > -0.75 {
-            Vec2::new(5.7, -0.3)
-        // The guarded stair opening occupies this rectangle. When a direct
-        // chord would cross it, choose the shortest safe corner around it.
-        } else if segment_crosses_rect(local, target, Vec2::new(-4.0, -3.5), Vec2::new(5.2, -0.75))
-        {
-            [
-                Vec2::new(-4.5, -4.0),
-                Vec2::new(5.7, -4.0),
-                Vec2::new(-4.5, -0.3),
-                Vec2::new(5.7, -0.3),
-            ]
-            .into_iter()
-            .filter(|corner| {
-                !segment_crosses_rect(local, *corner, Vec2::new(-4.0, -3.5), Vec2::new(5.2, -0.75))
-                    && !segment_crosses_rect(
-                        *corner,
-                        target,
-                        Vec2::new(-4.0, -3.5),
-                        Vec2::new(5.2, -0.75),
-                    )
-            })
-            .min_by(|a, b| {
-                (local.distance(*a) + a.distance(target))
-                    .total_cmp(&(local.distance(*b) + b.distance(target)))
-            })
-            .unwrap_or(target)
-        } else {
-            target
-        };
-        Some(walk_toward(
-            yaw,
-            position,
-            origin + Vec3::new(waypoint.x, 0.0, waypoint.y),
-        ))
+        let feet = Vec3::new(
+            position.x,
+            position.y - self.traversal_config.half_height,
+            position.z,
+        );
+        deck.step_toward(feet, door)
+            .map(|target| walk_toward(yaw, position, target))
     }
 }
 
-fn segment_crosses_rect(start: Vec2, end: Vec2, min: Vec2, max: Vec2) -> bool {
-    let delta = end - start;
-    let mut enter: f32 = 0.0;
-    let mut exit: f32 = 1.0;
-    for (origin, direction, low, high) in [
-        (start.x, delta.x, min.x, max.x),
-        (start.y, delta.y, min.y, max.y),
-    ] {
-        if direction.abs() < 1.0e-6 {
-            if origin < low || origin > high {
-                return false;
-            }
-            continue;
-        }
-        let a = (low - origin) / direction;
-        let b = (high - origin) / direction;
-        enter = enter.max(a.min(b));
-        exit = exit.min(a.max(b));
-        if enter > exit {
-            return false;
-        }
-    }
-    exit >= 0.0 && enter <= 1.0
-}
-
-/// Walk the generated switchback using waypoints on its real collision
-/// surfaces. Height selects the current flight; no position is written here.
+/// Walk the climb the tile itself ships, in whichever direction is wanted.
 ///
-/// Each stage hands over on a **monotonic** test — rise, or which side of the
-/// turn the body is on — never on "am I within X of the waypoint". A proximity
-/// test is not monotonic along the path: walking away from the landing onto the
-/// upper flight grows that distance back past the threshold, so the target
-/// flipped between the landing (east) and the flight's top (west) every few
-/// ticks and the bot span on the spot just past the turn, in a ~30 cm band of
-/// rise. It eventually escaped on jitter, having burnt ~31,000 ticks on one
-/// storey. Both directions had it.
-fn stair_command(
-    base: HexCoord,
-    yaw: f32,
-    position: Vec3,
-    half_height: f32,
-    up: bool,
-) -> PlayerIntent {
-    let origin = Vec3::from_array(hex_origin(base));
-    let rise = position.y - half_height - origin.y;
-    let point = |x: f32, z: f32| origin + Vec3::new(x, 0.0, z);
-    let local = Vec2::new(position.x - origin.x, position.z - origin.z);
-    let low_start = point(-3.5, 2.125);
-
-    let target = if up {
-        if rise < 0.8 && local.x > -3.1 {
-            if local.y < 3.4 {
-                if local.x >= 0.0 {
-                    point(5.5, 3.75)
-                } else {
-                    point(-3.5, 3.75)
-                }
-            } else if (local.x + 3.5).abs() > 0.4 {
-                point(-3.5, 3.75)
-            } else {
-                low_start
-            }
-        } else if rise < 3.7 {
-            point(3.5, 2.125)
-        } else if rise < 4.3 && local.y > -1.6 {
-            // Crossing the turn landing toward the upper flight's band.
-            point(4.25, -2.125)
-        } else if rise < TILE_LEVEL_HEIGHT - 0.35 || local.x > -4.45 {
-            point(-4.5, -2.125)
-        } else {
-            point(-4.5, -3.75)
-        }
-    } else if rise > TILE_LEVEL_HEIGHT - 0.35 && local.x < -4.0 {
-        point(-4.1, -2.125)
-    } else if rise > 4.3 {
-        point(3.5, -2.125)
-    } else if local.y < 1.6 {
-        // Crossing the turn landing back toward the lower flight's band.
-        point(4.25, 2.125)
-    } else {
-        point(-3.5, 2.125)
-    };
-    walk_toward(yaw, position, target)
+/// This used to be a ladder of hardcoded rise thresholds and named tread points
+/// measured off the one generated switchback. That made the staircase and the
+/// steering a single unit: the geometry could not be fixed without stranding the
+/// bot, and a second tower shape could not be authored at all. The tile now
+/// carries its own line (`StairSpine`), so this function no longer knows or
+/// cares what the tower looks like inside.
+///
+/// The hand-over rule from the old code is kept, because it was the hard part.
+/// A target chosen by proximity to a waypoint is not monotonic along a path —
+/// walking away from the landing onto the upper flight grows that distance back
+/// past any threshold, so the target flipped between the landing and the
+/// flight's top every few ticks and the bot span on the spot in a ~30 cm band of
+/// rise, burning ~31,000 ticks on one storey. `StairSpine::locate` picks the
+/// nearest *segment* instead, whose distance falls and rises exactly once as you
+/// walk it, and the authoring gate rejects any spine whose stretches come within
+/// a body's width of each other so that choice is never ambiguous.
+fn spine_command(spine: &StairSpine, yaw: f32, position: Vec3, up: bool) -> Option<PlayerIntent> {
+    if spine.is_empty() {
+        return None;
+    }
+    let target = spine.target(position, up)?;
+    Some(walk_toward(yaw, position, target))
 }
 
 /// Plan heading that walks a two-cell ramp in the requested direction.

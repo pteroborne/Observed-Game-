@@ -1,5 +1,7 @@
 use glam::{Vec2, Vec3};
-use observed_hex::{HexFace, PortClass, PortSignature, TILE_LEVEL_HEIGHT, face_edge};
+use observed_hex::{
+    FLOOR_SLAB_TOP, HexFace, PortClass, PortSignature, TILE_LEVEL_HEIGHT, face_edge,
+};
 use observed_traversal::rapier_controller::{RapierTraversalScene, step_character};
 use observed_traversal::{FpsBody, FpsConfig};
 use player_input::PlayerIntent;
@@ -399,7 +401,6 @@ fn every_liminal_horizontal_variant_is_capsule_traversable_between_entrances() {
 /// geometric coverage at all. These are the contracts whose violation a player
 /// sees as "the pieces don't smoothly connect".
 #[test]
-#[ignore = "known defect: blocked on decoupling the bot's hardcoded stair waypoints"]
 fn the_switchback_stair_lands_flush_on_the_deck_above() {
     let tile = parse_tile(&tile_source::stair_segment_map("megastructure")).expect("stair parses");
     let climb_top = tile
@@ -482,4 +483,132 @@ fn every_switchback_support_meets_the_span_it_carries() {
         checked += 1;
     }
     assert!(checked >= 3, "expected the flight's piers, found {checked}");
+}
+
+/// The spine is the contract that lets vertical circulation be more than one
+/// shape. Every stair tower has to ship a line a body can walk, whatever its
+/// interior looks like, or authoring a second tower produces geometry the
+/// objective bot cannot follow — which is precisely what blocked backlog #13
+/// for an arc.
+#[test]
+fn every_generated_stair_tower_ships_a_followable_spine() {
+    let cells = tile_source::compatibility_cells().expect("generated kit parses");
+    let towers = cells
+        .iter()
+        .filter(|tile| tile.key.archetype.starts_with("stair_"))
+        .collect::<Vec<_>>();
+    assert!(!towers.is_empty(), "the generated kit has stair towers");
+    for tile in towers {
+        let spine = &tile.spine;
+        assert!(
+            !spine.is_empty(),
+            "{} {} ships no climb spine",
+            tile.key.archetype,
+            tile.key.register
+        );
+        assert_eq!(
+            spine.self_crossing(),
+            None,
+            "{} {} doubles back within a body's width of itself, so a follower \
+             cannot tell which stretch it is on",
+            tile.key.archetype,
+            tile.key.register
+        );
+
+        // Both ends stand on flat deck: the bottom on this cell's floor slab and
+        // the top on the deck of the cell above. A spine that starts partway up
+        // a flight strands a body that walks in through a lateral door.
+        let first = spine.nodes.first().expect("checked non-empty");
+        let last = spine.nodes.last().expect("checked non-empty");
+        assert!(
+            (first.y - FLOOR_SLAB_TOP).abs() <= 0.05,
+            "{} {} starts at {:.2} m, off this cell's deck at {FLOOR_SLAB_TOP:.2} m",
+            tile.key.archetype,
+            tile.key.register,
+            first.y
+        );
+        assert!(
+            (last.y - (TILE_LEVEL_HEIGHT + FLOOR_SLAB_TOP)).abs() <= 0.05,
+            "{} {} ends at {:.2} m, off the deck above at {:.2} m",
+            tile.key.archetype,
+            tile.key.register,
+            last.y,
+            TILE_LEVEL_HEIGHT + FLOOR_SLAB_TOP
+        );
+    }
+}
+
+/// A follower walking the spine must never be sent backwards. This is the
+/// property the old hardcoded steering lacked: it chose its target by proximity
+/// to a waypoint, which flips as you walk away from one, so the bot span on the
+/// spot just past the turn and burnt ~31,000 ticks on a single storey.
+#[test]
+fn walking_the_spine_never_sends_a_follower_backwards() {
+    let tile = parse_tile(&tile_source::stair_segment_map("wellshaft")).expect("stair parses");
+    let spine = &tile.spine;
+    let mut highest = 0;
+    // Sample densely along the spine itself, which is the path a body on the
+    // stair actually traces.
+    for segment in 0..spine.nodes.len() - 1 {
+        for step in 0..=40_u32 {
+            let point = spine.nodes[segment].lerp(spine.nodes[segment + 1], step as f32 / 40.0);
+            let (index, _) = spine.locate(point).expect("a spine with nodes locates");
+            assert!(
+                index >= highest,
+                "walking segment {segment} sent the follower back from {highest} to {index}"
+            );
+            highest = index;
+        }
+    }
+    assert_eq!(
+        highest,
+        spine.nodes.len() - 2,
+        "the walk should finish on the last segment"
+    );
+}
+
+/// The floor path is the other half of the tower contract, and the one that
+/// closes bug backlog #19. A tower's deck has a hole in it; without a declared
+/// route around that hole a body crossing to a lateral door walks into the
+/// stairwell or into a pier, which is exactly how the objective bot wedged.
+#[test]
+fn every_generated_stair_tower_ships_a_walkable_deck() {
+    let cells = tile_source::compatibility_cells().expect("generated kit parses");
+    for tile in cells
+        .iter()
+        .filter(|tile| tile.key.archetype.starts_with("stair_"))
+    {
+        let deck = &tile.deck;
+        assert!(
+            !deck.is_empty(),
+            "{} {} ships no deck path",
+            tile.key.archetype,
+            tile.key.register
+        );
+        for node in &deck.nodes {
+            assert!(
+                (node.y - FLOOR_SLAB_TOP).abs() <= 0.05,
+                "{} {} has a deck node at {:.2} m, off the floor slab at {FLOOR_SLAB_TOP:.2} m",
+                tile.key.archetype,
+                tile.key.register,
+                node.y
+            );
+        }
+
+        // The climb has to be reachable from the floor, or the tower is a
+        // staircase nobody can get to the bottom of.
+        let foot = *tile.spine.nodes.first().expect("towers ship a spine");
+        let approach = deck
+            .nodes
+            .iter()
+            .map(|node| (node.x - foot.x).hypot(node.z - foot.z))
+            .fold(f32::MAX, f32::min);
+        assert!(
+            approach <= 2.0,
+            "{} {}: the foot of the climb is {approach:.2} m from the nearest deck node, so a \
+             body crossing the floor has no declared way onto it",
+            tile.key.archetype,
+            tile.key.register
+        );
+    }
 }

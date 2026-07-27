@@ -4,8 +4,8 @@ use observed_hex::HexFace;
 
 use super::geometry::{
     DOOR_TOP, FLOOR_TOP, box_brush, door_floor_apron, door_wall, general_prism_brush,
-    hex_slab_brush, level_units, sloped_deck_brush, sloped_slab_brush, tb_edge, tile_light,
-    tile_meta, tile_port, wall_brush, worldspawn,
+    hex_slab_brush, level_units, sloped_deck_brush, sloped_slab_brush, tb_edge, tile_deck_node,
+    tile_light, tile_meta, tile_port, tile_stair_node, wall_brush, worldspawn,
 };
 use super::{face_name, register_style};
 
@@ -64,40 +64,32 @@ pub fn ramp_map(register: &str, exit_face: HexFace) -> String {
     out
 }
 
-/// A physically continuous switchback stair. Thin flights preserve headroom
-/// when cells stack; floor piers and wall-connected brackets visibly support
-/// every span. The north-west opening is kept clear so the flight below can
-/// emerge into this cell instead of meeting the underside of another wedge.
-fn supported_switchback() -> String {
+/// A physically continuous switchback stair, with the walkable line through it.
+///
+/// Thin flights preserve headroom when cells stack; floor piers and
+/// wall-connected brackets visibly support every span. The north-west opening is
+/// kept clear so the flight below can emerge into this cell instead of meeting
+/// the underside of another wedge.
+///
+/// The returned spine is derived from the same flight constants as the brushes,
+/// which is the point: the bot follows the line, so the line cannot fall out of
+/// step with the surface the way a hand-written copy of these numbers did.
+fn supported_switchback() -> (String, Vec<[f64; 3]>, Vec<[f64; 3]>) {
     let low_flight = [[-72.0, -52.0], [60.0, -52.0], [60.0, -16.0], [-72.0, -16.0]];
     let high_flight = [[-80.0, 16.0], [60.0, 16.0], [60.0, 52.0], [-80.0, 52.0]];
     let mut out = String::new();
 
-    // KNOWN DEFECT, deliberately left in place for now. The climb tops out half
-    // a metre proud of the deck of the cell above (`level_units() + FLOOR_TOP`,
-    // i.e. 136), which reads as a lip at every level junction and, because
-    // autostep only lifts `step_height` (0.45 m), stops a body stepping from
-    // that deck back down onto the flight.
-    //
-    // Landing it flush is a two-line change here, but the objective bot's
-    // `stair_command` / `finish_stair_command` (observed_match) follow this
-    // staircase by hardcoded rise thresholds keyed to exactly these heights, and
-    // dropping the flight desynchronises them — measured as a fresh bot stall on
-    // the soak corpus. The geometry fix is blocked on decoupling that steering,
-    // and is pinned by an ignored test in `observed_authoring::tests`.
-    let climb_top = 144.0;
+    // Flush with the deck of the cell above (`level_units() + FLOOR_TOP`). It
+    // used to top out at 144 — half a metre proud — which read as a lip at every
+    // level junction and, because autostep only lifts `step_height` (0.45 m),
+    // stopped a body stepping from that deck back down onto the flight. The fix
+    // was blocked for an arc on the bot's hardcoded rise thresholds, which broke
+    // whenever these numbers moved; the bot now reads the spine below instead.
+    let climb_top = level_units() + FLOOR_TOP;
     // The low flight starts buried in the grounded deck and rises through it.
     let climb_base = 4.0;
     // Runs are measured along x, the only axis either flight's height varies on.
     let low_run = 132.0;
-    // The turn landing deliberately stays at its historic height. `stair_command`
-    // in `observed_match`'s objective bot follows this staircase by hardcoded
-    // rise thresholds and named tread points calibrated against exactly these
-    // numbers, so moving the landing desynchronises the bot from the surface it
-    // is walking and strands it mid-climb (measured: every bot stuck on the
-    // first soak layout). Equalising the two flights' gradients therefore has to
-    // wait for that steering to stop being geometry-coupled; lowering the high
-    // flight already removes the steepest surface here (0.571 -> 0.514).
     let landing = 64.0;
     // Flight undersides, so the supports below can be derived rather than
     // hand-tuned. The old pier and bracket constants had drifted out of step
@@ -177,9 +169,62 @@ fn supported_switchback() -> String {
     // The upper span keys into the east turn cantilever and the west wall
     // brackets below, leaving its underside free of collider seams.
     for (y0, y1) in [(18.0, 26.0), (42.0, 50.0)] {
-        out += &box_brush([-104.0, y0, 120.0], [-72.0, y1, 128.0]);
+        out += &box_brush([-104.0, y0, 120.0], [-72.0, y1, climb_top - 8.0]);
     }
-    out
+
+    // The line a body walks, bottom to top. It starts at the foot of the low
+    // flight and ends clear of the opening on the deck above — both ends at
+    // deck height, so it joins the flat circulation without a special case.
+    //
+    // It deliberately does *not* include the run across the grounded deck to
+    // reach that foot. The deck path below already describes the floor, and two
+    // descriptions of the same floor is one too many: a body crossing the deck
+    // came within a capture radius of the spine's flat lead-in, was taken to be
+    // on the climb, and was steered straight down the lead-in — through a floor
+    // pier. Getting to the climb is the floor's business; the climb starts where
+    // the floor stops being enough.
+    let low_height = |x: f64| climb_base + (x + 72.0) / low_run * (landing - climb_base);
+    let spine = vec![
+        [-64.0, -34.0, low_height(-64.0)],
+        // Up the low flight to the turn.
+        [60.0, -34.0, landing],
+        // Around the turn landing, which spans the depth of both flights.
+        [76.0, 0.0, landing],
+        [60.0, 34.0, landing],
+        // Up the high flight and out through the north-west opening onto the
+        // deck of the cell above.
+        [-80.0, 34.0, climb_top],
+        [-72.0, 60.0, climb_top],
+    ];
+
+    // The walkable floor, as an open path rather than a ring. The grounded deck
+    // above is a C: the stairwell and the flights above it cut the west side
+    // between the north strip and the west strip, so there is no way round that
+    // way. Running the path north-east-south instead is longer but it is the
+    // only route that exists, and every lateral door apron is reachable from
+    // some node on it.
+    //
+    // The corner nodes are not decoration. Stepping straight from the north
+    // strip to the east strip clips the corner where the upper flight is, so
+    // the path turns at the corner instead of cutting it.
+    let deck = vec![
+        [-72.0, 60.0, FLOOR_TOP],
+        [-20.0, 62.0, FLOOR_TOP],
+        [72.0, 62.0, FLOOR_TOP],
+        [72.0, 0.0, FLOOR_TOP],
+        [72.0, -60.0, FLOOR_TOP],
+        [0.0, -60.0, FLOOR_TOP],
+        [-76.0, -56.0, FLOOR_TOP],
+        [-76.0, -20.0, FLOOR_TOP],
+    ];
+    // The west leg runs at x = -76, clear of the low flight's west end at
+    // x = -72. Two units further east it passes under the flight's shallowest
+    // treads, where the tread is barely a step above the deck — and a body
+    // crossing the tower laterally drifts up onto it, whereupon the descend
+    // steering tries to walk it back down while the lateral steering keeps
+    // pushing it across. Measured: all four soak bots wedged in that argument.
+    debug_assert!(deck[6][0] < -72.0 && deck[7][0] < -72.0);
+    (out, spine, deck)
 }
 
 pub fn stair_segment_map(register: &str) -> String {
@@ -214,7 +259,7 @@ pub(crate) fn stair_access_map(
     debug_assert!(door_faces.len() <= 2);
     let style = register_style(register);
     let h = level_units();
-    let mut brushes = supported_switchback();
+    let (mut brushes, spine, deck) = supported_switchback();
     for &door_face in door_faces {
         brushes += &door_floor_apron(door_face, 28.0, 0.0, FLOOR_TOP);
     }
@@ -263,5 +308,11 @@ pub(crate) fn stair_access_map(
     }
     out += &tile_light(-24.0, -30.0, 72.0);
     out += &tile_light(24.0, 30.0, 112.0);
+    for (index, node) in spine.iter().enumerate() {
+        out += &tile_stair_node(index as u16, node[0], node[1], node[2]);
+    }
+    for (index, node) in deck.iter().enumerate() {
+        out += &tile_deck_node(index as u16, node[0], node[1], node[2]);
+    }
     out
 }

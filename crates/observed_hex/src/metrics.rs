@@ -21,6 +21,10 @@ pub const ACROSS_CORNERS: f32 = 16.0;
 /// Height of one level (meters) — tall enough for a full-level ramp rise
 /// inside one cell at a walkable slope (rise 8 over run 14, ~29.7 degrees).
 pub const TILE_LEVEL_HEIGHT: f32 = 8.0;
+/// Top of a cell's floor slab above its level's base (meters). Bodies stand on
+/// this, tile geometry is authored against it, and a climb has to arrive on it
+/// — so it is one number here rather than a copy per crate.
+pub const FLOOR_SLAB_TOP: f32 = 0.5;
 
 /// The canonical footprint corners `(x, z)` in meters, counterclockwise in
 /// plan view starting north-east. Edge `i` runs from corner `i` to corner

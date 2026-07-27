@@ -39,7 +39,7 @@ pub(super) const FIXED_DT: f32 = 1.0 / 60.0;
 /// production cell uses an 8-unit floor slab. Spawn, recovery, and scripted
 /// traversal must all agree on this surface or a capsule starts half embedded
 /// in collision.
-pub(super) const FLOOR_SLAB_TOP: f32 = 0.5;
+pub(super) use observed_hex::FLOOR_SLAB_TOP;
 pub const HEX_INPUT_VERSION: u16 = 4;
 
 /// Ticks of forewarning between a [`HexMatchEventKind::MutationWarning`] and the

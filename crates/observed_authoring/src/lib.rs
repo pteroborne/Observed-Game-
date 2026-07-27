@@ -40,7 +40,10 @@ pub use source::{
     AuthoredModule, FloorPolicy, ModuleCell, ModuleCellRef, ModuleKind, ModulePort, ModuleSummary,
     RotationPolicy, SourceError, parse_authored_module, validate_module,
 };
-pub use tile::{TileError, TileLight, TileLightKind, TilePrototype, load_tile, parse_tile};
+pub use tile::{
+    DeckPath, STAIR_SPINE_MIN_SEPARATION, StairSpine, TileError, TileLight, TileLightKind,
+    TilePrototype, load_tile, parse_tile,
+};
 
 /// The exact authored corpus consumed by both interactive and headless hex matches.
 /// Filesystem discovery stays outside the deterministic simulation, while this loader

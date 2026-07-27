@@ -235,21 +235,6 @@ connection — which is a correct guard but not a fix. When #15 gives rooms real
 per-role geometry, a two-level room should get real stairs and this guard should
 be lifted, or the blueprint should stop claiming a vertical port it cannot serve.
 
-### 19. Bots can stall exiting a switchback tower laterally
-**Unscheduled; the standing obstacle to composition work.**
-**Found 2026-07-27 during Phase 107.** With shafts boosted in the vertical
-district profiles, a soak layout stalled all four bots at `(0,1,L0)` — a `Shaft`
-cell they entered and could not leave laterally, at local `(-3.8, 2.6)` against
-lateral-exit targets around `(±3.0, ±5.2)`
-(`crates/observed_match/src/hex_wfc/model/bot.rs:310-330`). The exit waypoints
-are hardcoded to the generic switchback tower's geometry, so any layout that
-routes laterally out of a shaft at an awkward approach angle can trap a bot.
-Phase 107 avoided it by not boosting shafts anywhere — which was the right call
-for other reasons too — but this is the reason composition work keeps tripping
-the soak, and it will bite again in Phase 109 when authored stair towers arrive
-with *different* geometry to the hardcoded targets. Look at:
-`stair_exit_command` and `finish_stair_command`, both of which assume one tile.
-
 ### 20. Liminal Grid has no authored `expanse` tiles
 **Scheduled: Arc O Phase 110** ([arc_o/README.md](arc_o/README.md)).
 **Found 2026-07-27 during Phase 108.** The `Expanse` archetype ships with
@@ -275,6 +260,18 @@ tracking it.
 
 ## Fixed
 
+- ~~Bots can stall exiting a switchback tower laterally~~ — fixed 2026-07-27 in
+  Arc O Phase 109
+  ([arc_o/phase_109_authored_stair_towers.md](arc_o/phase_109_authored_stair_towers.md)).
+  Both directions were broken, not only the exit: a bot *entering* a tower
+  laterally was steered straight at the flight and pinned against the guard rail
+  around the stairwell, and one leaving was steered across the void. The exit
+  waypoints were hardcoded to the generic switchback's geometry, so authored
+  towers with different interiors would have been unwalkable by construction.
+  Fixed by having each tile declare its own walkable floor (`DeckPath`) beside
+  its climb (`StairSpine`), and following those. Sixty lines of per-face local
+  coordinates and a rectangle-crossing test are gone from `bot.rs`; nothing in
+  the bot now knows what a tower looks like inside.
 - ~~Composition tendencies are compiled off after breaking the bot soak~~ —
   fixed 2026-07-27 in Arc O Phase 107
   ([arc_o/phase_107_district_composition.md](arc_o/phase_107_district_composition.md)).
