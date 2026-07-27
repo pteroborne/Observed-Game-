@@ -88,6 +88,7 @@ fn archetype_name(archetype: HexArchetype) -> &'static str {
         HexArchetype::RampUp => "ramp_up",
         HexArchetype::RampHead => "ramp_head",
         HexArchetype::Shaft => "shaft",
+        HexArchetype::Expanse => "expanse",
     }
 }
 

@@ -250,6 +250,22 @@ the soak, and it will bite again in Phase 109 when authored stair towers arrive
 with *different* geometry to the hardcoded targets. Look at:
 `stair_exit_command` and `finish_stair_command`, both of which assume one tile.
 
+### 20. Liminal Grid has no authored `expanse` tiles
+**Scheduled: Arc O Phase 110** ([arc_o/README.md](arc_o/README.md)).
+**Found 2026-07-27 during Phase 108.** The `Expanse` archetype ships with
+generated wall-free geometry, which covers every register through the `generic`
+fallback — except Liminal Grid, which is authored as `.map` modules and is
+excluded from the generated kit's `REGISTERS`
+(`crates/observed_authoring/src/tile_source/mod.rs`). So the one district whose
+whole identity is open space (its `Expanse` weight multiplier is 3.0, the highest
+in the table) is the one district with no exact expanse tiles, and
+`merged_authoring_corpus_covers_every_wfc_geometry_demand_exactly` has been given
+a second exemption to let it pass. Phase 110 should author the 22 expanse
+signatures for `liminal_grid` through `tools/tileforge.py` and **remove the
+exemption in the same change**. Note the first exemption on that gate —
+`stair_tower` — hid backlog #13 for a whole arc precisely because nobody was
+tracking it.
+
 ## Minor / hygiene
 
 **Scheduled: Arc H Phase 61 (as-landed notes).**

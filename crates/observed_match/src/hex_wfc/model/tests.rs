@@ -422,7 +422,13 @@ fn diagnose_bot() {
 
 /// Pinned headless gate seed (found via `scan_gate_seeds`). Its solved 12×9×5
 /// showcase route crosses two ramp levels and two physical stair towers.
-const GATE_SEED: u64 = 0xa11c_0000_0000_0000;
+///
+/// Re-pinned in Arc O Phase 108: the previous seed's route lost its ramps when
+/// district composition profiles and the `Expanse` archetype changed what the
+/// solver builds. That is expected — the gate asserts the *bot* can walk a route
+/// with both vertical kinds on it, not that one particular seed produces one.
+/// Any arc that touches weighting should expect to re-run `scan_gate_seeds`.
+const GATE_SEED: u64 = 0x742f_6963_eefb_a1f8;
 const GATE_LEVELS: u8 = 5;
 
 /// Phase 94 success criterion 1 — the headless gate. On a pinned seed whose

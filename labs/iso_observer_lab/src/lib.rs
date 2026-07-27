@@ -388,6 +388,7 @@ pub fn sketch_role(archetype: HexArchetype, space: HexSpace, in_blueprint: bool)
         HexArchetype::RampUp => HexSketchRole::Ramp,
         HexArchetype::RampHead => HexSketchRole::RampHead,
         HexArchetype::Shaft => HexSketchRole::Shaft,
+        HexArchetype::Expanse => HexSketchRole::Expanse,
         HexArchetype::Room => HexSketchRole::Room,
     }
 }
@@ -414,6 +415,7 @@ pub fn archetype_label(archetype: HexArchetype) -> &'static str {
         HexArchetype::RampUp => "ramp",
         HexArchetype::RampHead => "ramp head",
         HexArchetype::Shaft => "shaft",
+        HexArchetype::Expanse => "expanse",
     }
 }
 

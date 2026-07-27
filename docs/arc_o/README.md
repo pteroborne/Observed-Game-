@@ -31,10 +31,11 @@ the catalog, and the projector rather than by playing.
   connective alphabet, leaving ~24 % flat corridor. (#13)
 - **Rooms have no geometric identity.** `blueprint_cell_archetype` discards both of its
   parameters and returns `"sanctuary"` unconditionally. (#15)
-- **There is no vocabulary for open space.** `HexArchetype` is a closed eight-variant enum
-  matched exhaustively in roughly fourteen places; `../tile_authoring.md` documents this as
-  the reason novel archetypes never reach the game. Vast halls cannot be *asked for*. (#16
-  covers the related dead content; the enum itself is addressed in Phase 108.)
+- ~~**There is no vocabulary for open space.**~~ **Closed in Phase 108.** `Expanse` landed
+  across sixteen match sites and reached 20 % of the facility. Note for future archetypes:
+  two of those sites were `matches!` lists the compiler does not check, and one of them
+  (the hall two-to-four-door rule in `validate.rs`) failed *every* solve until the new
+  variant was exempted. Adding an archetype is not done when it compiles.
 
 ## Scope rulings
 
@@ -126,7 +127,7 @@ Phase-specific as-landed notes and evidence links are added here as each slice i
 - [Phase 105 — Full-Screen Isometric Tac Map](phase_105_isometric_tac_map.md) `[x]`
 - [Phase 106 — Spatial Districts](phase_106_spatial_districts.md) `[x]`
 - [Phase 107 — District Composition Profiles](phase_107_district_composition.md) `[x]`
-- Phase 108 — The `Expanse` Archetype
+- [Phase 108 — The `Expanse` Archetype](phase_108_expanse_archetype.md) `[x]`
 - Phase 109 — Authored Stair Towers & Vertical Rebalance
 - Phase 110 — District-Exclusive Tilesets
 - Phase 111 — Rooms Belong to Districts

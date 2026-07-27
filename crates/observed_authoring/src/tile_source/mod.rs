@@ -83,6 +83,7 @@ fn compatibility_archetype(tile: &crate::TilePrototype) -> &'static str {
         archetype if archetype.starts_with("room_") => "sanctuary",
         "hall_straight" => "hall_straight",
         "hall_cap" => "hall_cap",
+        "expanse" => "expanse",
         unexpected => panic!("unmapped compatibility archetype {unexpected}"),
     }
 }

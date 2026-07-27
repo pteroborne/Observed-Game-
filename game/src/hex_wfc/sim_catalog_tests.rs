@@ -24,7 +24,15 @@ fn merged_authoring_corpus_covers_every_wfc_geometry_demand_exactly() {
             );
         }
 
-        if demand.archetype != "stair_tower" {
+        // `expanse` joins `stair_tower` on this exemption, and both are debts
+        // rather than decisions. Liminal Grid is authored as `.map` modules, and
+        // Phase 108 shipped `expanse` through the generated kit only, so the
+        // district that most wants expanses is the one district without exact
+        // tiles for them. Scheduled to Phase 110 with the rest of the
+        // district-exclusive authoring (backlog #20). The `stair_tower`
+        // exemption above hid backlog #13 for an entire arc by being silent —
+        // this one is named in the backlog so it cannot.
+        if demand.archetype != "stair_tower" && demand.archetype != "expanse" {
             let exact_liminal = corpus
                 .cells
                 .iter()

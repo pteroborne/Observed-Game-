@@ -25,7 +25,7 @@ const WEIGHT_RHYTHM: f64 = 1.0;
 /// The traversal-grammar kinds `archetype_variety` distributes probability
 /// mass over (every non-`Void` [`HexArchetype`] variant). Used to normalize
 /// the raw Shannon entropy into a stable `0.0..=1.0` range.
-const SCOREABLE_ARCHETYPE_KINDS: u32 = 7; // Room, Straight, Corner, Junction, RampUp, RampHead, Shaft
+const SCOREABLE_ARCHETYPE_KINDS: u32 = 8; // Room, Straight, Corner, Junction, RampUp, RampHead, Shaft
 
 /// Breakdown of a solved layout's "interestingness". Every field is a pure
 /// function of [`HexWfcWorld`]'s existing public accessors, so two calls

@@ -62,6 +62,11 @@ pub enum HexArchetype {
     RampUp,
     RampHead,
     Shaft,
+    /// Open floor with no perimeter walls of its own. Adjacent `Expanse` cells
+    /// leave their shared faces open, so a run of them reads as one continuous
+    /// volume rather than as a row of tiles — the vocabulary the solver was
+    /// missing for a vast space.
+    Expanse,
 }
 
 /// One collapsed cell.

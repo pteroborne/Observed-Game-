@@ -133,7 +133,26 @@ pub(super) fn catalogue() -> Vec<HexVariant> {
         });
     }
 
-    // 4. Legacy logical well states remain part of the solver's vertical
+    // 4. Open expanse cells. Only masks of four or more doors qualify: the
+    //    archetype exists so neighbouring cells leave their shared faces open
+    //    and merge into one volume, and a cell that seals half its perimeter
+    //    cannot do that. Weight is modest at the alphabet level — the district
+    //    profiles decide where expanses actually belong.
+    for mask in 1u8..64 {
+        if mask.count_ones() < 4 {
+            continue;
+        }
+        variants.push(HexVariant {
+            space: HexSpace::Hall,
+            archetype: HexArchetype::Expanse,
+            doors: mask,
+            up: PortClass::Sealed,
+            down: PortClass::Sealed,
+            weight: 5,
+        });
+    }
+
+    // 5. Legacy logical well states remain part of the solver's vertical
     // alphabet, but presentation resolves them to grounded stair towers.
     variants.push(HexVariant {
         space: HexSpace::Hall,
@@ -195,6 +214,7 @@ pub fn placement_tile_archetype(placement: &HexPlacement) -> Option<&'static str
         HexArchetype::Junction => Some("hall_junction_4way"),
         HexArchetype::RampUp => Some("hall_ramp"),
         HexArchetype::Shaft => Some("stair_tower"),
+        HexArchetype::Expanse => Some("expanse"),
     }
 }
 

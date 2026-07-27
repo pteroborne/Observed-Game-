@@ -43,7 +43,11 @@ const CELL_EXTENT: f32 = 1.0;
 pub fn is_volatile(archetype: HexArchetype) -> bool {
     matches!(
         archetype,
-        HexArchetype::Void | HexArchetype::Straight | HexArchetype::Corner | HexArchetype::Junction
+        HexArchetype::Void
+            | HexArchetype::Straight
+            | HexArchetype::Corner
+            | HexArchetype::Junction
+            | HexArchetype::Expanse
     )
 }
 

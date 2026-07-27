@@ -1257,10 +1257,13 @@ pub enum HexSketchRole {
     Ramp,
     /// A vertical shaft.
     Shaft,
+    /// Open floor with no perimeter walls of its own, meant to merge with its
+    /// neighbours into one volume.
+    Expanse,
 }
 
 impl HexSketchRole {
-    pub const ALL: [HexSketchRole; 7] = [
+    pub const ALL: [HexSketchRole; 8] = [
         HexSketchRole::Void,
         HexSketchRole::Corridor,
         HexSketchRole::Junction,
@@ -1268,6 +1271,7 @@ impl HexSketchRole {
         HexSketchRole::Room,
         HexSketchRole::Ramp,
         HexSketchRole::Shaft,
+        HexSketchRole::Expanse,
     ];
 
     /// The coarse grouping a reader actually perceives: is this a place, a way
@@ -1277,6 +1281,10 @@ impl HexSketchRole {
         match self {
             Self::Room => HexComposition::Room,
             Self::Ramp | Self::RampHead | Self::Shaft => HexComposition::Vertical,
+            // An expanse is a place, not a way between places: it fills its
+            // hex so a run of them reads as one room-scale volume, which is the
+            // whole reason the archetype exists.
+            Self::Expanse => HexComposition::Room,
             Self::Void | Self::Corridor | Self::Junction => HexComposition::Hall,
         }
     }
@@ -1330,6 +1338,8 @@ pub fn hex_sketch(role: HexSketchRole) -> HexSketch {
         HexSketchRole::Ramp => Some(4.5),
         // A shaft nearly spans its level, so a stack of them reads as a column.
         HexSketchRole::Shaft => Some(6.8),
+        // Low and wide: an expanse should read as floor, not as massing.
+        HexSketchRole::Expanse => Some(0.7),
     };
     HexSketch {
         height,

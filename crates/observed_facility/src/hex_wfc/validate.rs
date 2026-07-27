@@ -96,10 +96,18 @@ fn all_edges_match(config: HexWfcConfig, placements: &BTreeMap<HexCoord, HexPlac
     let grid = config.grid();
     for coord in all_coords(config) {
         let placement = &placements[&coord];
+        // A hall cell carries two to four doors: fewer is a dead end, more is
+        // not a corridor. Vertical circulation is exempt because its doors are
+        // vertical, and an `Expanse` is exempt because merging with everything
+        // around it is the entire archetype — capped at four it would just be a
+        // junction with a different name.
         if placement.space == HexSpace::Hall
             && !matches!(
                 placement.archetype,
-                HexArchetype::RampUp | HexArchetype::RampHead | HexArchetype::Shaft
+                HexArchetype::RampUp
+                    | HexArchetype::RampHead
+                    | HexArchetype::Shaft
+                    | HexArchetype::Expanse
             )
             && !(2..=4).contains(&placement.doors.count_ones())
         {

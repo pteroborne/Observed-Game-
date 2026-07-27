@@ -17,9 +17,10 @@ use super::{HexArchetype, HexPlacement, HexSpace, HexWfcConfig, HexWfcError};
 
 type CollapseOutput = (BTreeMap<HexCoord, HexPlacement>, Vec<StampedBlueprint>, u32);
 
-/// Fixed-width bitset over catalogue variant indices. The catalogue currently
-/// holds 382 variants; `solver_tables` asserts the capacity still fits.
-const MASK_WORDS: usize = 6;
+/// Fixed-width bitset over catalogue variant indices. The catalogue holds 404
+/// variants since Phase 108 added `Expanse`, which needed one more word — six
+/// gave 384 slots against 382 in use. `solver_tables` asserts the fit.
+const MASK_WORDS: usize = 7;
 /// A cadence event refreshes the architecture register across its full
 /// target-32 pocket, but only this connected structural core is allowed to
 /// change topology. This keeps collision churn bounded independently of
@@ -336,14 +337,24 @@ fn select_topology_core(
 fn placement_is_mutable_topology(placement: HexPlacement) -> bool {
     matches!(
         placement.archetype,
-        HexArchetype::Void | HexArchetype::Straight | HexArchetype::Corner | HexArchetype::Junction
+        HexArchetype::Void
+            | HexArchetype::Straight
+            | HexArchetype::Corner
+            | HexArchetype::Junction
+            // Open floor with nothing authored to protect: relayout is free to
+            // reshape an expanse exactly as it reshapes a corridor.
+            | HexArchetype::Expanse
     )
 }
 
 fn variant_is_mutable_topology(variant: HexVariant) -> bool {
     matches!(
         variant.archetype,
-        HexArchetype::Void | HexArchetype::Straight | HexArchetype::Corner | HexArchetype::Junction
+        HexArchetype::Void
+            | HexArchetype::Straight
+            | HexArchetype::Corner
+            | HexArchetype::Junction
+            | HexArchetype::Expanse
     )
 }
 

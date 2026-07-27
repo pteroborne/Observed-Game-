@@ -7,7 +7,9 @@ use observed_hex::HexFace;
 use super::geometry::{
     FLOOR_TOP, hex_slab_brush, level_units, tile_light, tile_meta, wall_brush, worldspawn,
 };
-use super::halls::{hall_cap_map, hall_corner_map, hall_junction_map, hall_straight_map};
+use super::halls::{
+    expanse_map, hall_cap_map, hall_corner_map, hall_junction_map, hall_straight_map,
+};
 use super::rooms::{room_atrium_lower_map, room_atrium_upper_map, room_single_map, room_wing_map};
 use super::verticals::{
     StairVertical, ramp_map, stair_access_map, stair_bottom_cap_map, stair_landing_map,
@@ -267,6 +269,30 @@ pub(crate) fn library_for(registers: &[&'static str]) -> Vec<GeneratedTile> {
         }
         debug_assert_eq!(stair_variant, 63);
         // Rooms: single and blueprint strip / triangle / diamond cells.
+        // Expanses: open floor with walls only where a face is sealed, so a
+        // run of them merges into one volume. Geometry is the junction's —
+        // walls on sealed faces, nothing in the middle — because that is
+        // already exactly "wall-free where it opens". What makes an expanse an
+        // expanse is how many faces open, not a different interior.
+        for mask in 1u8..64 {
+            if mask.count_ones() < 4 {
+                continue;
+            }
+            let faces = HexFace::LATERAL
+                .into_iter()
+                .filter(|face| mask & (1 << face.index()) != 0)
+                .collect::<Vec<_>>();
+            push(
+                format!("{reg}_expanse_{mask:02}.map"),
+                expanse_map(reg, &faces),
+                "expanse",
+                reg,
+                u16::from(mask),
+                1,
+                door_ports(&faces),
+            );
+        }
+
         push(
             format!("{reg}_room_single.map"),
             room_single_map(reg),

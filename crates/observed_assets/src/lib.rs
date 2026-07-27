@@ -14,7 +14,11 @@
 //! plain filesystem logic, so they unit-test without a running app. A consumer
 //! projects the result into a 3D showcase or the match presentation.
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+
+/// Optional override for locating the packaged `assets/` directory.
+pub const ASSET_ROOT_ENV: &str = "OBSERVED2_ASSET_ROOT";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AssetKind {
@@ -545,13 +549,46 @@ pub fn slot(name: &str) -> AssetSlot {
     find_slot(name).unwrap_or_else(|| panic!("no asset slot named {name:?}"))
 }
 
-/// The `assets/` root relative to the current working directory (where `cargo run`
-/// resolves Bevy's asset folder). Returned absolute so the overlay can show exactly
-/// where to drop files.
+/// Locate the runtime `assets/` root.
+///
+/// Packaged builds keep `assets/` beside the executable, while development commands
+/// usually run from the workspace root. The explicit environment override is useful
+/// for unusual launchers and diagnostics. The source-tree fallback only exists so a
+/// developer can still run a lab from a nested crate directory.
 pub fn assets_root() -> PathBuf {
-    std::env::current_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join("assets")
+    discover_assets_root(
+        std::env::var_os(ASSET_ROOT_ENV),
+        std::env::current_exe().ok(),
+        std::env::current_dir().ok(),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets"),
+    )
+}
+
+fn discover_assets_root(
+    override_root: Option<OsString>,
+    executable: Option<PathBuf>,
+    current_dir: Option<PathBuf>,
+    source_tree_fallback: PathBuf,
+) -> PathBuf {
+    if let Some(root) = override_root.filter(|value| !value.is_empty()) {
+        return PathBuf::from(root);
+    }
+
+    if let Some(root) = executable
+        .and_then(|path| path.parent().map(|parent| parent.join("assets")))
+        .filter(|path| path.is_dir())
+    {
+        return root;
+    }
+
+    if let Some(root) = current_dir
+        .map(|path| path.join("assets"))
+        .filter(|path| path.is_dir())
+    {
+        return root;
+    }
+
+    source_tree_fallback
 }
 
 /// Is a real file present for this slot under `root`?
@@ -568,6 +605,21 @@ pub fn slot_full_path(slot: &AssetSlot, root: &Path) -> PathBuf {
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temporary_directory(label: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time is after the Unix epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "observed_assets_{label}_{}_{}",
+            std::process::id(),
+            nonce
+        ));
+        std::fs::create_dir_all(&root).expect("temporary directory can be created");
+        root
+    }
 
     #[test]
     fn the_manifest_is_well_formed() {
@@ -609,6 +661,65 @@ mod tests {
         for slot in manifest() {
             assert!(!slot_present(&slot, root));
         }
+    }
+
+    #[test]
+    fn packaged_assets_beside_the_executable_take_priority() {
+        let root = temporary_directory("packaged");
+        let executable_dir = root.join("package");
+        let packaged_assets = executable_dir.join("assets");
+        let working_dir = root.join("working");
+        std::fs::create_dir_all(&packaged_assets).expect("packaged assets directory");
+        std::fs::create_dir_all(working_dir.join("assets")).expect("working assets directory");
+
+        let resolved = discover_assets_root(
+            None,
+            Some(executable_dir.join("observed")),
+            Some(working_dir),
+            root.join("fallback"),
+        );
+
+        assert_eq!(resolved, packaged_assets);
+        std::fs::remove_dir_all(root).expect("temporary directory can be removed");
+    }
+
+    #[test]
+    fn working_directory_and_source_tree_are_development_fallbacks() {
+        let root = temporary_directory("fallbacks");
+        let working_dir = root.join("working");
+        let working_assets = working_dir.join("assets");
+        let source_tree_assets = root.join("source-assets");
+        std::fs::create_dir_all(&working_assets).expect("working assets directory");
+
+        assert_eq!(
+            discover_assets_root(
+                None,
+                Some(root.join("bin/observed")),
+                Some(working_dir),
+                source_tree_assets.clone(),
+            ),
+            working_assets
+        );
+        assert_eq!(
+            discover_assets_root(None, None, None, source_tree_assets.clone()),
+            source_tree_assets
+        );
+
+        std::fs::remove_dir_all(root).expect("temporary directory can be removed");
+    }
+
+    #[test]
+    fn explicit_asset_root_override_wins_even_before_it_exists() {
+        let override_root = PathBuf::from("custom/runtime/assets");
+        assert_eq!(
+            discover_assets_root(
+                Some(override_root.clone().into_os_string()),
+                Some(PathBuf::from("package/observed")),
+                Some(PathBuf::from("working")),
+                PathBuf::from("source-assets"),
+            ),
+            override_root
+        );
     }
 
     #[test]

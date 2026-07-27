@@ -107,6 +107,9 @@ pub(super) fn context_multiplier(
             VERTICAL_EDGE_FALLOFF,
             radial_fraction(coord, config),
         ),
+        // An expanse is flat floor: it wants neither the vertical core nor the
+        // upper levels, so it takes no positional tendency at all.
+        HexArchetype::Expanse => 1.0,
         // Rooms (the atria) favour the upper levels; heavier connective
         // structure fills the lower ones.
         HexArchetype::Room => lerp(
@@ -129,7 +132,7 @@ const INFLUENCE_MAX: f64 = 4.0;
 
 /// The number of biasable archetypes (every [`HexArchetype`] except `Void`,
 /// which is empty space and always neutral).
-const INFLUENCE_SLOTS: usize = 7;
+const INFLUENCE_SLOTS: usize = 8;
 
 /// A bounded, per-archetype weight bias an eliminated team applies to *drive*
 /// the facility's refactoring (Phase 4 feasibility): it perturbs which
@@ -159,6 +162,7 @@ fn slot(archetype: HexArchetype) -> Option<usize> {
         HexArchetype::RampUp => 4,
         HexArchetype::RampHead => 5,
         HexArchetype::Shaft => 6,
+        HexArchetype::Expanse => 7,
         HexArchetype::Void => return None,
     })
 }
@@ -261,6 +265,8 @@ fn district_multiplier(register: ArchitectureRegister, archetype: HexArchetype) 
             A::RampUp | A::RampHead => 0.6,
             A::Shaft => 0.3,
             A::Room => 1.2,
+            // The district the archetype exists for.
+            A::Expanse => 3.0,
             A::Void => 1.0,
         },
         // Winding: turns and runs, junctions suppressed so a path commits.
@@ -271,6 +277,8 @@ fn district_multiplier(register: ArchitectureRegister, archetype: HexArchetype) 
             A::RampUp | A::RampHead => 0.8,
             A::Shaft => 0.4,
             A::Room => 1.0,
+            // A winding district is the opposite of an open one.
+            A::Expanse => 0.3,
             A::Void => 1.0,
         },
         // The vertical districts. Wellshaft is shafts; Megastructure climbs on
@@ -282,6 +290,7 @@ fn district_multiplier(register: ArchitectureRegister, archetype: HexArchetype) 
             A::RampUp | A::RampHead => 1.6,
             A::Shaft => 1.0,
             A::Room => 0.9,
+            A::Expanse => 0.5,
             A::Void => 1.0,
         },
         R::Megastructure => match archetype {
@@ -291,6 +300,8 @@ fn district_multiplier(register: ArchitectureRegister, archetype: HexArchetype) 
             A::RampUp | A::RampHead => 2.6,
             A::Shaft => 0.8,
             A::Room => 1.0,
+            // A megastructure earns its scale from open floor as well as ramps.
+            A::Expanse => 1.6,
             A::Void => 1.0,
         },
         // The remaining registers take mild characters, so the strong four read
