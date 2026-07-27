@@ -17,6 +17,6 @@ pub use model::{
     HexGuardianStatus, HexInputFrame, HexLanternCache, HexLanternState, HexMapCellKnowledge,
     HexMapDiscovery, HexMatchConfig, HexMatchError, HexMatchEvent, HexMatchEventKind,
     HexMatchSnapshot, HexMatchStatus, HexPlayerCommand, HexPlayerMapKnowledge, HexPlayerSnapshot,
-    HexPlayerState, HexTeamState, HexWfcMatch,
+    HexPlayerState, HexTeamState, HexWfcMatch, MAX_ROSTER,
 };
 pub use trim::{HexTrimKind, HexTrimPiece, derive_trim, derive_trim_for};

@@ -1,12 +1,78 @@
-//! Pure dedicated/listen-server lobby state with stable 2v2 seats.
+//! Pure dedicated/listen-server lobby state with stable, host-configured seats.
 
 use observed_core::{PlayerId, TeamId};
 
 use super::{AccountId, SessionId};
 
-pub const LAN_TEAM_COUNT: u8 = 2;
-pub const LAN_MEMBERS_PER_TEAM: u8 = 2;
-pub const LAN_ROSTER_SIZE: usize = 4;
+/// The roster the host asks for. It was three constants pinned to 2v2, which is
+/// what made every layer above assume four seats and two teams.
+///
+/// One team is co-op: the whole roster shares a map, and the escape condition is
+/// the team's rather than a race between teams.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LanRoster {
+    pub teams: u8,
+    pub members_per_team: u8,
+}
+
+/// The most seats any match may have, on the wire and in the simulation alike.
+/// See `observed_net::lan::MAX_SEATS`, which must agree with it.
+pub const LAN_MAX_SEATS: usize = 16;
+
+#[cfg(test)]
+mod seat_cap {
+    /// Pinned to the literal because no crate can see all three copies at once:
+    /// `observed_net` depends on `observed_match` and neither depends on this
+    /// one. `observed_net`'s `the_wire_cap_and_the_roster_guard_agree` covers
+    /// the other two against each other.
+    #[test]
+    fn the_lobby_cap_matches_the_wire_and_the_simulation() {
+        assert_eq!(super::LAN_MAX_SEATS, 16);
+    }
+}
+
+/// What a host gets without saying otherwise: the 2v2 race the arc inherited.
+pub const LAN_DEFAULT_ROSTER: LanRoster = LanRoster {
+    teams: 2,
+    members_per_team: 2,
+};
+
+impl LanRoster {
+    /// A single team of `members`, which is the co-op configuration.
+    #[must_use]
+    pub const fn co_op(members: u8) -> Self {
+        Self {
+            teams: 1,
+            members_per_team: members,
+        }
+    }
+
+    #[must_use]
+    pub fn seats(self) -> usize {
+        usize::from(self.teams) * usize::from(self.members_per_team)
+    }
+
+    /// Whether this roster can actually be seated and sent.
+    #[must_use]
+    pub fn is_valid(self) -> bool {
+        self.teams >= 1 && self.members_per_team >= 1 && (1..=LAN_MAX_SEATS).contains(&self.seats())
+    }
+
+    /// The nearest roster that is valid, so a bad host argument clamps rather
+    /// than refusing to start a server.
+    #[must_use]
+    pub fn clamped(self) -> Self {
+        let teams = self.teams.max(1);
+        let members = self
+            .members_per_team
+            .max(1)
+            .min((LAN_MAX_SEATS / usize::from(teams)).max(1) as u8);
+        Self {
+            teams,
+            members_per_team: members,
+        }
+    }
+}
 pub const LAN_COUNTDOWN_TICKS: u16 = 180;
 pub const LAN_POST_MATCH_TICKS: u16 = 600;
 pub const LAN_RECONNECT_GRACE_TICKS: u64 = 1_800;
@@ -87,6 +153,7 @@ pub struct LanLaunchManifest {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LanSession {
     pub id: SessionId,
+    pub roster: LanRoster,
     pub seats: Vec<LanSeat>,
     pub phase: LanPhase,
     pub min_humans: u8,
@@ -94,21 +161,29 @@ pub struct LanSession {
 }
 
 impl LanSession {
+    /// A lobby with the inherited 2v2 roster.
     #[must_use]
     pub fn new(id: SessionId, min_humans: u8) -> Self {
-        let seats = (0..LAN_ROSTER_SIZE as u16)
+        Self::with_roster(id, min_humans, LAN_DEFAULT_ROSTER)
+    }
+
+    #[must_use]
+    pub fn with_roster(id: SessionId, min_humans: u8, roster: LanRoster) -> Self {
+        let roster = roster.clamped();
+        let seats = (0..roster.seats() as u16)
             .map(|raw| LanSeat {
                 player: PlayerId(raw),
-                team: TeamId((raw / u16::from(LAN_MEMBERS_PER_TEAM)) as u8),
+                team: TeamId((raw / u16::from(roster.members_per_team)) as u8),
                 occupant: LanSeatOccupant::Bot,
                 ready: false,
             })
             .collect();
         Self {
             id,
+            roster,
             seats,
             phase: LanPhase::Lobby,
-            min_humans: min_humans.clamp(1, LAN_ROSTER_SIZE as u8),
+            min_humans: min_humans.clamp(1, roster.seats() as u8),
             match_number: 0,
         }
     }
@@ -142,7 +217,7 @@ impl LanSession {
             return Err(LanJoinError::AlreadyJoined);
         }
         let team = requested_team
-            .filter(|team| team.0 < LAN_TEAM_COUNT && self.open_bot_on_team(*team).is_some())
+            .filter(|team| team.0 < self.roster.teams && self.open_bot_on_team(*team).is_some())
             .unwrap_or_else(|| self.balanced_open_team());
         let index = self
             .open_bot_on_team(team)
@@ -168,7 +243,7 @@ impl LanSession {
 
     pub fn request_team(&mut self, account: AccountId, team: TeamId) -> Option<PlayerId> {
         if !matches!(self.phase, LanPhase::Lobby | LanPhase::Countdown { .. })
-            || team.0 >= LAN_TEAM_COUNT
+            || team.0 >= self.roster.teams
         {
             return None;
         }
@@ -342,7 +417,7 @@ impl LanSession {
     }
 
     fn balanced_open_team(&self) -> TeamId {
-        (0..LAN_TEAM_COUNT)
+        (0..self.roster.teams)
             .map(TeamId)
             .filter(|team| self.open_bot_on_team(*team).is_some())
             .min_by_key(|team| {
@@ -391,7 +466,7 @@ mod tests {
             launch = session.tick(44).or(launch);
         }
         let launch = launch.expect("launch");
-        assert_eq!(launch.seats.len(), LAN_ROSTER_SIZE);
+        assert_eq!(launch.seats.len(), LAN_DEFAULT_ROSTER.seats());
         assert_eq!(
             launch
                 .seats

@@ -13,11 +13,22 @@ use observed_match::hex_wfc::{
 
 use crate::protocol::WireIntent;
 
-pub const LAN_PROTOCOL_VERSION: u16 = 1;
+/// Bumped to 2 in Arc O Phase 112, when the frame stopped carrying a fixed four
+/// commands and started carrying a counted list. A version-1 client reading a
+/// version-2 frame would not fail — it would read the count byte as the first
+/// byte of a tick and desynchronise silently, which is the failure mode a
+/// version number exists to prevent.
+pub const LAN_PROTOCOL_VERSION: u16 = 2;
 pub const DEFAULT_LAN_PORT: u16 = 47_624;
 pub const MAX_DATAGRAM: usize = 1_200;
 pub const INPUT_LEAD_TICKS: u64 = 3;
 pub const FRAME_WINDOW: usize = 16;
+/// Hard ceiling on seats in one match, and so on commands in one frame.
+///
+/// A wire-format limit, not a gameplay one: the count is a `u8` and the
+/// per-frame cost is what drives [`frames_per_bundle`]. Raising it means
+/// re-checking that budget, not just this constant.
+pub const MAX_SEATS: usize = 16;
 const MAGIC: [u8; 4] = *b"O2LN";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -103,7 +114,10 @@ pub struct WireSeat {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WireFrame {
     pub tick: u64,
-    pub commands: [WireHexCommand; 4],
+    /// One command per seat, in seat order. Length-prefixed on the wire and
+    /// capped at [`MAX_SEATS`]; it was a fixed `[WireHexCommand; 4]`, which is
+    /// what pinned the whole stack to 2v2.
+    pub commands: Vec<WireHexCommand>,
     pub digest: u64,
 }
 
@@ -121,6 +135,32 @@ impl WireFrame {
                 .collect(),
         }
     }
+
+    /// Bytes this frame occupies inside a [`LanPacket::FrameBundle`].
+    #[must_use]
+    pub fn wire_len(&self) -> usize {
+        // tick + seat count + commands + digest.
+        8 + 1 + self.commands.len() * WIRE_COMMAND_BYTES + 8
+    }
+}
+
+/// Encoded size of one [`WireHexCommand`]: a [`WireIntent`] plus its action bits.
+const WIRE_COMMAND_BYTES: usize = 5 + 1;
+
+/// How many frames of `seats` commands fit in one datagram alongside the header.
+///
+/// The old code sent [`FRAME_WINDOW`] frames unconditionally, which was fine at
+/// four seats and impossible at sixteen: sixteen frames of sixteen commands is
+/// 1 808 bytes against a 1 200-byte [`MAX_DATAGRAM`], so `encode` did not
+/// degrade — it returned `Oversized` and the bundle never went out. Budgeting by
+/// bytes means the window shrinks as the roster grows instead of the send
+/// failing.
+#[must_use]
+pub fn frames_per_bundle(seats: usize) -> usize {
+    // Envelope, packet tag, and the bundle's own frame count.
+    const OVERHEAD: usize = 12 + 1 + 1;
+    let per_frame = 8 + 1 + seats.max(1) * WIRE_COMMAND_BYTES + 8;
+    ((MAX_DATAGRAM - OVERHEAD) / per_frame).clamp(1, FRAME_WINDOW)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -356,8 +396,9 @@ fn encode_payload(packet: &LanPacket) -> Result<(u8, Vec<u8>), LanCodecError> {
             out.push(frames.len() as u8);
             for frame in frames {
                 put_u64(&mut out, frame.tick);
-                for command in frame.commands {
-                    encode_command(&mut out, command);
+                out.push(frame.commands.len() as u8);
+                for command in &frame.commands {
+                    encode_command(&mut out, *command);
                 }
                 put_u64(&mut out, frame.digest);
             }
@@ -471,9 +512,15 @@ fn decode_payload(kind: u8, bytes: &[u8]) -> Result<LanPacket, LanCodecError> {
             let mut frames = Vec::with_capacity(count);
             for _ in 0..count {
                 let tick = cursor.u64()?;
-                let mut commands = [WireHexCommand::default(); 4];
-                for command in &mut commands {
-                    *command = decode_command(&mut cursor)?;
+                let seats = usize::from(cursor.u8()?);
+                if seats > MAX_SEATS {
+                    // A count past the cap is a malformed or hostile datagram,
+                    // not a bigger match: refuse rather than allocate for it.
+                    return Err(LanCodecError::InvalidValue);
+                }
+                let mut commands = Vec::with_capacity(seats);
+                for _ in 0..seats {
+                    commands.push(decode_command(&mut cursor)?);
                 }
                 frames.push(WireFrame {
                     tick,
@@ -538,6 +585,10 @@ fn decode_command(cursor: &mut Cursor<'_>) -> Result<WireHexCommand, LanCodecErr
 fn encode_config(out: &mut Vec<u8>, config: HexMatchConfig) {
     out.push(config.teams);
     out.push(config.members_per_team);
+    // The Guardian flag changes the simulation, so it has to cross the wire.
+    // A host running co-op without a Guardian and a client assuming one would
+    // diverge on the first tick the Guardian would have moved.
+    out.push(u8::from(config.guardian));
     put_u16(out, config.wfc.cols);
     put_u16(out, config.wfc.rows);
     out.push(config.wfc.levels);
@@ -551,6 +602,7 @@ fn decode_config(cursor: &mut Cursor<'_>) -> Result<HexMatchConfig, LanCodecErro
     Ok(HexMatchConfig {
         teams: cursor.u8()?,
         members_per_team: cursor.u8()?,
+        guardian: cursor.u8()? != 0,
         wfc: HexWfcConfig {
             cols: cursor.u16()?,
             rows: cursor.u16()?,
@@ -1005,7 +1057,7 @@ mod tests {
             LanPacket::FrameBundle {
                 frames: vec![WireFrame {
                     tick: 4,
-                    commands: [command; 4],
+                    commands: vec![command; 4],
                     digest: 88,
                 }],
             },
@@ -1042,5 +1094,106 @@ mod tests {
             LanPacket::decode(&bytes),
             Err(LanCodecError::UnsupportedVersion)
         );
+    }
+    /// The sixteen-seat worst case fits a datagram, which it did not before.
+    ///
+    /// A frame of sixteen commands is 113 bytes, so the old fixed window of
+    /// `FRAME_WINDOW` frames came to 1 808 against a 1 200-byte limit — `encode`
+    /// returned `Oversized` and the bundle simply never went out. This is the
+    /// exact cliff the phase existed to remove, so it is pinned at the boundary
+    /// rather than at a comfortable size.
+    #[test]
+    fn a_full_sixteen_seat_bundle_fits_one_datagram() {
+        let seats = MAX_SEATS;
+        let per_bundle = frames_per_bundle(seats);
+        assert!(per_bundle >= 1, "a bundle must carry at least one frame");
+        assert!(
+            per_bundle < FRAME_WINDOW,
+            "sixteen seats should shrink the window below the four-seat one"
+        );
+
+        let frame = |tick: u64| WireFrame {
+            tick,
+            commands: vec![
+                WireHexCommand {
+                    intent: WireIntent {
+                        movement_x: i8::MAX,
+                        movement_y: i8::MIN,
+                        look_x: i8::MAX,
+                        look_y: i8::MIN,
+                        // Every defined flag bit; `u8::MAX` would set
+                        // undefined ones and the decoder rightly refuses those.
+                        flags: 0b0001_1111,
+                    },
+                    actions: 0b0000_0111,
+                };
+                seats
+            ],
+            digest: u64::MAX,
+        };
+        let frames: Vec<_> = (0..per_bundle as u64).map(frame).collect();
+        let encoded = LanPacket::FrameBundle {
+            frames: frames.clone(),
+        }
+        .encode()
+        .expect("a budgeted bundle encodes");
+        assert!(
+            encoded.len() <= MAX_DATAGRAM,
+            "{} bytes exceeds the {MAX_DATAGRAM}-byte datagram",
+            encoded.len()
+        );
+        assert_eq!(
+            LanPacket::decode(&encoded).expect("round trip"),
+            LanPacket::FrameBundle { frames }
+        );
+
+        // One frame more than the budget must not fit, or the budget is slack
+        // and this test would keep passing while the cliff crept back.
+        let overflowing: Vec<_> = (0..=per_bundle as u64).map(frame).collect();
+        assert!(
+            LanPacket::FrameBundle {
+                frames: overflowing
+            }
+            .encode()
+            .is_err(),
+            "the budget should be the largest bundle that fits"
+        );
+    }
+
+    /// The wire cap and the simulation's roster guard must be the same number.
+    ///
+    /// They live in different crates and `observed_match` cannot see this one —
+    /// the dependency runs the other way — so the agreement is asserted here,
+    /// where both are visible. Disagreement is invisible until a lobby fills to
+    /// the wire's cap and the match then refuses to start.
+    ///
+    /// `observed_progression`'s `LAN_MAX_SEATS` is the third copy and is not
+    /// reachable from any crate that can also see these two; it pins itself to
+    /// the same literal.
+    #[test]
+    fn the_wire_cap_and_the_roster_guard_agree() {
+        assert_eq!(
+            MAX_SEATS,
+            usize::from(observed_match::hex_wfc::MAX_ROSTER),
+            "observed_net::lan::MAX_SEATS and observed_match MAX_ROSTER disagree"
+        );
+    }
+
+    /// A seat count past the cap is refused rather than allocated for.
+    #[test]
+    fn a_frame_claiming_more_than_the_cap_is_rejected() {
+        let mut bytes = LanPacket::FrameBundle {
+            frames: vec![WireFrame {
+                tick: 1,
+                commands: vec![WireHexCommand::default(); 2],
+                digest: 7,
+            }],
+        }
+        .encode()
+        .expect("encodes");
+        // The seat count sits after the envelope, the frame count and the tick.
+        let seat_count = 12 + 1 + 8;
+        bytes[seat_count] = (MAX_SEATS + 1) as u8;
+        assert!(LanPacket::decode(&bytes).is_err());
     }
 }

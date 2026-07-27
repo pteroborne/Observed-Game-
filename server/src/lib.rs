@@ -17,10 +17,12 @@ use observed_match::hex_wfc::{
     HEX_INPUT_VERSION, HexInputFrame, HexMatchConfig, HexMatchStatus, HexPlayerCommand, HexWfcMatch,
 };
 use observed_net::lan::{
-    FRAME_WINDOW, LanPacket, LobbyAction, MAX_DATAGRAM, WireFrame, WireHexCommand, WirePhase,
-    WireSeat,
+    LanPacket, LobbyAction, MAX_DATAGRAM, WireFrame, WireHexCommand, WirePhase, WireSeat,
+    frames_per_bundle,
 };
-use observed_progression::session::lan::{LAN_RECONNECT_GRACE_TICKS, LAN_ROSTER_SIZE};
+use observed_progression::session::lan::{
+    LAN_DEFAULT_ROSTER, LAN_MAX_SEATS, LAN_RECONNECT_GRACE_TICKS, LanRoster,
+};
 use observed_progression::session::{AccountId, LanPhase, LanSeatOccupant, LanSession, SessionId};
 
 pub const SERVER_HZ: u64 = 60;
@@ -30,6 +32,8 @@ const CLIENT_TIMEOUT: Duration = Duration::from_secs(2);
 pub struct ServerConfig {
     pub bind: SocketAddr,
     pub name: String,
+    /// Teams and seats per team. One team is co-op.
+    pub roster: LanRoster,
     pub min_humans: u8,
     pub base_seed: u64,
     pub discovery: bool,
@@ -42,11 +46,13 @@ impl Default for ServerConfig {
         Self {
             bind: SocketAddr::from((Ipv4Addr::UNSPECIFIED, observed_net::lan::DEFAULT_LAN_PORT)),
             name: "Observed 2 LAN".to_string(),
+            roster: LAN_DEFAULT_ROSTER,
             min_humans: 1,
             base_seed: time_seed(),
             discovery: true,
             tile_dir: default_tile_dir(),
             match_config: HexMatchConfig {
+                guardian: true,
                 teams: 2,
                 members_per_team: 2,
                 wfc: HexWfcConfig::arc_default(),
@@ -73,10 +79,32 @@ impl ServerConfig {
                 "--min-humans" => {
                     config.min_humans = args
                         .next()
-                        .ok_or("--min-humans requires 1..4")?
+                        .ok_or("--min-humans requires 1..16")?
                         .parse::<u8>()
-                        .map_err(|_| "--min-humans requires 1..4")?
-                        .clamp(1, LAN_ROSTER_SIZE as u8);
+                        .map_err(|_| "--min-humans requires 1..16")?
+                        .clamp(1, LAN_MAX_SEATS as u8);
+                }
+                "--teams" => {
+                    config.roster.teams = args
+                        .next()
+                        .ok_or("--teams requires 1..16")?
+                        .parse::<u8>()
+                        .map_err(|_| "--teams requires 1..16")?;
+                }
+                "--team-size" => {
+                    config.roster.members_per_team = args
+                        .next()
+                        .ok_or("--team-size requires 1..16")?
+                        .parse::<u8>()
+                        .map_err(|_| "--team-size requires 1..16")?;
+                }
+                "--co-op" => {
+                    let members = args
+                        .next()
+                        .ok_or("--co-op requires a team size of 1..16")?
+                        .parse::<u8>()
+                        .map_err(|_| "--co-op requires a team size of 1..16")?;
+                    config.roster = LanRoster::co_op(members);
                 }
                 "--seed" => {
                     let value = args.next().ok_or("--seed requires an integer")?;
@@ -86,6 +114,7 @@ impl ServerConfig {
                     config.tile_dir = PathBuf::from(args.next().ok_or("--tiles requires a path")?)
                 }
                 "--no-discovery" => config.discovery = false,
+                "--no-guardian" => config.match_config.guardian = false,
                 "--help" | "-h" => return Err(help_text().to_string()),
                 unknown => return Err(format!("unknown option {unknown}\n{}", help_text())),
             }
@@ -149,10 +178,19 @@ pub struct AuthoritativeServer {
 }
 
 impl AuthoritativeServer {
-    pub fn bind(config: ServerConfig) -> Result<Self, String> {
-        if config.match_config.teams != 2 || config.match_config.members_per_team != 2 {
-            return Err("the LAN wire format requires a 2v2 match configuration".to_string());
+    pub fn bind(mut config: ServerConfig) -> Result<Self, String> {
+        // The wire format used to require exactly 2v2, because a frame carried a
+        // fixed four commands. It now carries a counted list, so the only limit
+        // left is the cap the count byte and the datagram budget imply.
+        let roster = config.roster.clamped();
+        if !roster.is_valid() {
+            return Err(format!(
+                "a roster of {} teams x {} is not seatable (1..={LAN_MAX_SEATS} seats)",
+                roster.teams, roster.members_per_team
+            ));
         }
+        config.match_config.teams = roster.teams;
+        config.match_config.members_per_team = roster.members_per_team;
         let register_slugs = ArchitectureRegister::ALL.map(ArchitectureRegister::slug);
         let catalog = RuntimeHexCatalog::load(&config.tile_dir, &register_slugs)
             .map_err(|error| format!("load runtime hex catalog: {error}"))?;
@@ -458,7 +496,7 @@ impl AuthoritativeServer {
     }
 
     fn step_match(&mut self) {
-        let human_controls = (0..LAN_ROSTER_SIZE)
+        let human_controls = (0..self.session.seats.len())
             .map(|index| self.human_controls(PlayerId(index as u16)))
             .collect::<Vec<_>>();
         let Some(game) = self.match_state.as_mut() else {
@@ -468,7 +506,7 @@ impl AuthoritativeServer {
             return;
         }
         let tick = game.tick + 1;
-        let mut wire = [WireHexCommand::default(); 4];
+        let mut wire = vec![WireHexCommand::default(); self.session.seats.len()];
         let mut commands = BTreeMap::new();
         for seat in &self.session.seats {
             let command = if human_controls[seat.player.index()] {
@@ -550,7 +588,7 @@ impl AuthoritativeServer {
                 .frames
                 .iter()
                 .filter(|frame| frame.tick >= start)
-                .take(FRAME_WINDOW)
+                .take(frames_per_bundle(self.session.seats.len()))
                 .cloned()
                 .collect::<Vec<_>>();
             if !frames.is_empty() {
@@ -809,7 +847,7 @@ mod tests {
         for _ in 0..64 {
             server.fixed_tick().expect("server tick");
             client.poll();
-            received.extend(client.take_ready_frames(FRAME_WINDOW));
+            received.extend(client.take_ready_frames(observed_net::lan::FRAME_WINDOW));
             if !received.is_empty() {
                 break;
             }
@@ -843,7 +881,7 @@ mod tests {
         for _ in 0..64 {
             server.fixed_tick().expect("server tick");
             client.poll();
-            replayed.extend(client.take_ready_frames(FRAME_WINDOW));
+            replayed.extend(client.take_ready_frames(observed_net::lan::FRAME_WINDOW));
             if !replayed.is_empty() {
                 break;
             }

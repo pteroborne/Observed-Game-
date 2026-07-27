@@ -209,6 +209,18 @@ pub struct Settings {
     /// Flips false the first time the player completes (or skips) the onboarding
     /// beat, so it shows exactly once.
     pub first_run: bool,
+    /// Whether empty seats are filled with bots.
+    ///
+    /// Off means the roster is *smaller*, not that the seats stand idle: an
+    /// unfilled seat would be a body in the facility doing nothing, which is
+    /// worse than no body at all. Until Arc O Phase 112 every non-local seat was
+    /// bot-driven unconditionally, with no way to say otherwise.
+    pub bot_fill: bool,
+    /// Whether the Guardian hunts. Off, the facility is there to be explored.
+    pub guardian: bool,
+    /// Seats in a co-op team, when the player hosts one. Clamped to the
+    /// sixteen-seat wire cap.
+    pub co_op_team_size: u8,
 }
 
 /// The mouse sensitivity multiplier `screens::input::match_input` used before Phase
@@ -225,6 +237,9 @@ impl Default for Settings {
             bindings: KeyBindings::default(),
             high_contrast: false,
             first_run: true,
+            bot_fill: true,
+            guardian: true,
+            co_op_team_size: 4,
         }
     }
 }

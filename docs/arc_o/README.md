@@ -137,5 +137,5 @@ Phase-specific as-landed notes and evidence links are added here as each slice i
 - [Phase 109 — Authored Stair Towers & Vertical Rebalance](phase_109_authored_stair_towers.md) `[x]`
 - [Phase 110 — District-Exclusive Tilesets](phase_110_district_tilesets.md) `[x]`
 - [Phase 111 — Rooms Belong to Districts](phase_111_rooms_belong_to_districts.md) `[x]`
-- Phase 112 — Co-op Mode & the Sixteen-Seat Roster
+- [Phase 112 — Co-op Mode & the Sixteen-Seat Roster](phase_112_co_op_and_sixteen_seats.md) `[x]`
 - Phase 113 — Arc Gate

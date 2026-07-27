@@ -42,6 +42,11 @@ pub(super) const FIXED_DT: f32 = 1.0 / 60.0;
 pub(super) use observed_hex::FLOOR_SLAB_TOP;
 pub const HEX_INPUT_VERSION: u16 = 4;
 
+/// Most players one match may hold. Agrees with `observed_net::lan::MAX_SEATS`
+/// and `observed_progression::session::lan::LAN_MAX_SEATS`; a mismatch shows up
+/// as a lobby that fills and a match that then refuses to start.
+pub const MAX_ROSTER: u8 = 16;
+
 /// Ticks of forewarning between a [`HexMatchEventKind::MutationWarning`] and the
 /// deterministic commit tick, so observation has a window to pin structure. Mirrors
 /// the square lattice's `MUTATION_WARNING_TICKS`.
@@ -142,6 +147,12 @@ pub struct HexTeamState {
 pub struct HexMatchConfig {
     pub teams: u8,
     pub members_per_team: u8,
+    /// Whether the Guardian hunts. Off, it is still constructed and still
+    /// snapshotted — so the digest keeps its shape and a co-op lobby and a
+    /// versus lobby stay wire-compatible — but it does not move and applies no
+    /// pressure. A match without a Guardian is an exploration mode, which is
+    /// what co-op with the bots off amounts to.
+    pub guardian: bool,
     pub wfc: HexWfcConfig,
 }
 
@@ -150,6 +161,7 @@ impl Default for HexMatchConfig {
         Self {
             teams: 2,
             members_per_team: 2,
+            guardian: true,
             wfc: HexWfcConfig {
                 levels: 4,
                 ..HexWfcConfig::default()
@@ -209,6 +221,8 @@ pub struct HexWfcMatch {
     pub teams: BTreeMap<TeamId, HexTeamState>,
     pub lanterns: HexLanternState,
     pub guardian: HexGuardianState,
+    /// Whether the Guardian hunts this match. See `HexMatchConfig::guardian`.
+    pub(super) guardian_active: bool,
     pub map_knowledge: BTreeMap<TeamId, HexPlayerMapKnowledge>,
     pub status: HexMatchStatus,
     pub escape_order: Vec<TeamId>,
@@ -280,10 +294,14 @@ impl HexWfcMatch {
         room_prototypes: &[RoomPrototype],
     ) -> Result<Self, HexMatchError> {
         let player_count = config.teams.saturating_mul(config.members_per_team);
+        // Sixteen, matching `observed_net::lan::MAX_SEATS`. The old ceiling of 8
+        // was below what the wire could carry once frames stopped being a fixed
+        // four commands, and a simulation that refuses a roster the transport
+        // accepts fails at match start rather than at configuration time.
         if config.teams == 0
             || config.members_per_team == 0
             || player_count == 0
-            || player_count > 8
+            || player_count > MAX_ROSTER
         {
             return Err(HexMatchError::InvalidRoster);
         }
@@ -336,6 +354,7 @@ impl HexWfcMatch {
         }
         let lanterns = HexLanternState::new(players.keys().copied(), &facility);
         let guardian = HexGuardianState::new(&facility);
+        let guardian_active = config.guardian;
         let map_knowledge = teams
             .keys()
             .copied()
@@ -351,6 +370,7 @@ impl HexWfcMatch {
             teams,
             lanterns,
             guardian,
+            guardian_active,
             map_knowledge,
             status: HexMatchStatus::Running,
             escape_order: Vec::new(),
@@ -403,13 +423,15 @@ impl HexWfcMatch {
         self.recover_fallen_bodies();
         self.observation = self.build_observation();
         self.step_mutation();
-        self.guardian.step(
-            self.tick,
-            &self.facility,
-            &self.lanterns,
-            &mut self.players,
-            &mut self.recent_events,
-        );
+        if self.guardian_active {
+            self.guardian.step(
+                self.tick,
+                &self.facility,
+                &self.lanterns,
+                &mut self.players,
+                &mut self.recent_events,
+            );
+        }
         self.sync_teleports_to_bodies();
         self.update_map_knowledge();
         self.resolve_escapes();

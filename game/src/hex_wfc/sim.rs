@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
+use crate::settings::Settings;
 use bevy::prelude::*;
 use observed_authoring::{RoomPrototype, RuntimeHexCatalog, TilePrototype};
 use observed_content::ArchitectureRegister;
@@ -118,8 +119,21 @@ fn is_test_binary() -> bool {
 
 /// Production uses `arc_default`; tests and relayout evidence use the compact fixture
 /// so its pinned warning@546 / commit@666 mutation timeline remains reproducible.
-fn runtime_config() -> HexMatchConfig {
-    let mut config = HexMatchConfig::default();
+/// The match configuration a given set of settings asks for.
+///
+/// Bot fill is a *roster* decision, not a per-tick one. Turning it off shrinks
+/// the match to the seats a human occupies rather than leaving bot-shaped bodies
+/// standing in the facility, which is what filling a seat with no driver would
+/// mean.
+fn runtime_config_for(settings: &Settings) -> HexMatchConfig {
+    let mut config = HexMatchConfig {
+        guardian: settings.guardian,
+        ..HexMatchConfig::default()
+    };
+    if !settings.bot_fill {
+        config.teams = 1;
+        config.members_per_team = 1;
+    }
     let relayout_capture = std::env::var("OBSERVED2_CAPTURE_HEX_WFC_RELAYOUT").is_ok();
     let traversal_capture = std::env::var("OBSERVED2_CAPTURE_HEX_WFC_TRAVERSAL").is_ok();
     let playtest = std::env::var("OBSERVED2_HEX_PLAYTEST")
@@ -136,8 +150,12 @@ fn runtime_config() -> HexMatchConfig {
     config
 }
 
-fn solve_nearby_with_rooms(requested_seed: u64, corpus: &HexAuthoringCorpus) -> (HexWfcMatch, u64) {
-    let config = runtime_config();
+fn solve_nearby_with_rooms(
+    requested_seed: u64,
+    corpus: &HexAuthoringCorpus,
+    settings: &Settings,
+) -> (HexWfcMatch, u64) {
+    let config = runtime_config_for(settings);
     (0..64u64)
         .find_map(|offset| {
             HexWfcMatch::new_with_rooms(
@@ -157,6 +175,7 @@ pub(super) fn setup_runtime(
     seed: Option<Res<ActiveMatchSeed>>,
     mut career: ResMut<crate::flow::Career>,
     lan: Res<crate::lan::LanRuntime>,
+    settings: Res<Settings>,
 ) {
     career.begin_match();
     let network_launch = lan.client.as_ref().and_then(|client| client.launch);
@@ -173,7 +192,8 @@ pub(super) fn setup_runtime(
         } else {
             let requested_seed = seed.as_deref().map_or(0xF011_FAC1_1177, |seed| seed.0);
             let corpus = load_authoring_corpus();
-            let (mut game, seed_offset) = solve_nearby_with_rooms(requested_seed, &corpus);
+            let (mut game, seed_offset) =
+                solve_nearby_with_rooms(requested_seed, &corpus, &settings);
             game.bind_simulation_content_hash(corpus.simulation_content_hash);
             (game, LOCAL_PLAYER, seed_offset, false)
         };

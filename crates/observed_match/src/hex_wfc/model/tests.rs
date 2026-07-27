@@ -65,6 +65,7 @@ fn showcase_match(seed: u64, levels: u8, players: u8) -> HexWfcMatch {
     HexWfcMatch::new_with_rooms(
         seed,
         HexMatchConfig {
+            guardian: true,
             teams: players,
             members_per_team: 1,
             wfc: showcase_config(levels),
@@ -104,6 +105,7 @@ fn a_team_finishes_only_after_both_members_escape() {
     let mut game = HexWfcMatch::new(
         44,
         HexMatchConfig {
+            guardian: true,
             teams: 1,
             members_per_team: 2,
             wfc: showcase_config(4),
@@ -130,6 +132,7 @@ fn teammate_observations_share_one_survivor_map() {
     let mut game = HexWfcMatch::new(
         44,
         HexMatchConfig {
+            guardian: true,
             teams: 1,
             members_per_team: 2,
             wfc: showcase_config(4),
@@ -214,6 +217,7 @@ fn scan_mutation_seeds() {
         let Ok(mut game) = HexWfcMatch::new(
             seed,
             HexMatchConfig {
+                guardian: true,
                 teams: 2,
                 members_per_team: 2,
                 wfc: showcase_config(4),
@@ -550,6 +554,7 @@ fn every_open_blueprint_door_is_two_way_traversable() {
         let Ok(game) = HexWfcMatch::new(
             seed,
             HexMatchConfig {
+                guardian: true,
                 teams: 1,
                 members_per_team: 1,
                 wfc: showcase_config(5),
@@ -830,6 +835,7 @@ fn cached_spawn_to_exit_cost_survives_a_committed_relayout() {
     let mut game = HexWfcMatch::new(
         0xA11C_9500_0000_0000,
         HexMatchConfig {
+            guardian: true,
             teams: 2,
             members_per_team: 2,
             wfc: showcase_config(4),
@@ -875,5 +881,149 @@ fn cached_spawn_to_exit_cost_survives_a_committed_relayout() {
     assert!(
         generations > 0,
         "fixture must actually commit a relayout, or this proves nothing"
+    );
+}
+
+/// Sixteen seats actually run, which the simulation refused before Phase 112.
+///
+/// The roster guard was 8, below what the widened wire can carry, so a lobby
+/// could fill to sixteen and the match would then fail to start. The soak proves
+/// bodies at that scale still route; this proves they can exist at all, and that
+/// the guard and the wire agree on where the ceiling is.
+#[test]
+fn a_sixteen_seat_match_runs_and_seventeen_is_refused() {
+    let mut game = HexWfcMatch::new_with_rooms(
+        0xA11C_E3D0_0000_0011,
+        HexMatchConfig {
+            guardian: true,
+            teams: 4,
+            members_per_team: 4,
+            wfc: showcase_config(4),
+        },
+        &tiles(),
+        rooms(),
+    )
+    .expect("sixteen seats is within the roster guard");
+    assert_eq!(game.players.len(), 16);
+    assert_eq!(usize::from(MAX_ROSTER), 16);
+
+    for tick in 0..240 {
+        let commands = game
+            .players
+            .keys()
+            .copied()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|id| (id, bot_player_command(&game, id)))
+            .collect();
+        game.step(&HexInputFrame {
+            version: HEX_INPUT_VERSION,
+            tick,
+            commands,
+        });
+    }
+    assert!(
+        game.players
+            .values()
+            .all(|player| player.position.is_finite()),
+        "sixteen bodies must all stay in the world"
+    );
+
+    assert!(
+        HexWfcMatch::new_with_rooms(
+            0xA11C_E3D0_0000_0011,
+            HexMatchConfig {
+                guardian: true,
+                teams: 17,
+                members_per_team: 1,
+                wfc: showcase_config(4),
+            },
+            &tiles(),
+            rooms(),
+        )
+        .is_err(),
+        "seventeen seats exceeds what the wire can carry and must be refused"
+    );
+}
+
+/// Co-op is one team, and the escape condition is the team's.
+///
+/// The simulation already had the semantics — team completion and shared map
+/// knowledge are keyed by team — so this pins that a single team behaves rather
+/// than adding machinery to make it.
+#[test]
+fn a_single_team_shares_its_map_and_finishes_together() {
+    let game = HexWfcMatch::new_with_rooms(
+        0xA11C_E3D0_0000_0012,
+        HexMatchConfig {
+            guardian: false,
+            teams: 1,
+            members_per_team: 4,
+            wfc: showcase_config(4),
+        },
+        &tiles(),
+        rooms(),
+    )
+    .expect("a single team is a valid roster");
+    assert_eq!(game.players.len(), 4);
+    let teams: std::collections::BTreeSet<_> =
+        game.players.values().map(|player| player.team).collect();
+    assert_eq!(teams.len(), 1, "co-op puts everyone on one team");
+
+    // Everyone reads the same sketch, because knowledge is team-scoped.
+    let first = game.players.keys().next().copied().expect("a player");
+    for id in game.players.keys().copied() {
+        assert_eq!(
+            game.player_map(id).map(|map| map.cells.len()),
+            game.player_map(first).map(|map| map.cells.len()),
+            "teammates must share one map"
+        );
+    }
+}
+
+/// The Guardian toggle actually stops it hunting.
+#[test]
+fn a_match_without_a_guardian_leaves_it_where_it_started() {
+    let build = |guardian: bool| {
+        HexWfcMatch::new_with_rooms(
+            0xA11C_E3D0_0000_0013,
+            HexMatchConfig {
+                guardian,
+                teams: 2,
+                members_per_team: 2,
+                wfc: showcase_config(4),
+            },
+            &tiles(),
+            rooms(),
+        )
+        .expect("match")
+    };
+    let mut off = build(false);
+    let mut on = build(true);
+    let start = off.guardian.cell;
+    for tick in 0..600 {
+        for game in [&mut off, &mut on] {
+            let commands = game
+                .players
+                .keys()
+                .copied()
+                .collect::<Vec<_>>()
+                .into_iter()
+                .map(|id| (id, bot_player_command(game, id)))
+                .collect();
+            game.step(&HexInputFrame {
+                version: HEX_INPUT_VERSION,
+                tick,
+                commands,
+            });
+        }
+    }
+    assert_eq!(
+        off.guardian.cell, start,
+        "a disabled Guardian must not move"
+    );
+    assert_ne!(
+        on.guardian.cell, start,
+        "an enabled Guardian should have hunted, or this test proves nothing"
     );
 }

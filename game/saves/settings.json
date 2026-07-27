@@ -23,5 +23,8 @@
     "pause": "Escape"
   },
   "high_contrast": false,
-  "first_run": true
+  "first_run": true,
+  "bot_fill": true,
+  "guardian": true,
+  "co_op_team_size": 4
 }
