@@ -475,7 +475,10 @@ fn collapse_attempt_with_blueprints(
     mut trace: Option<&mut Vec<SolveStep>>,
 ) -> Result<CollapseAttempt, &'static str> {
     let variants = &tables.variants[..];
-    let blueprints = stamp_blueprints_with_pins(config, rng, locked_blueprints);
+    // Districts are a pure function of (seed, config), so they are known before
+    // anything is stamped — which is what lets a room role belong to a district.
+    let districts = super::relayout::district_sites(seed, config);
+    let blueprints = stamp_blueprints_with_pins(config, rng, locked_blueprints, &districts);
     let signatures = stamped_signatures(config, &blueprints);
     let Some((forced_doors, forced_up, forced_down)) =
         forced_route_edges(config, &blueprints, &signatures, rng)
@@ -503,10 +506,6 @@ fn collapse_attempt_with_blueprints(
     if !propagate(config, tables, &mut domains, all_cells, &mut trace) {
         return Err("propagation contradiction");
     }
-    // Districts are a pure function of (seed, config), so they are known before
-    // a single cell collapses - which is what lets a district decide what gets
-    // built in it rather than only how it is lit afterwards.
-    let districts = super::relayout::district_sites(seed, config);
     if !collapse_domains(config, tables, &mut domains, rng, &districts, &mut trace) {
         return Err("collapse contradiction");
     }

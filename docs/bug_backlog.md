@@ -167,34 +167,6 @@ fixes below, and both are candidates for `route_within_cost` bounding or for
 hoisting the shared spawn→exit term. Left alone because after the fixes below they
 no longer show up in the profile — pick this up only if the sim step regresses.
 
-### 15. Every room cell of every room role asks for the same archetype
-**Scheduled: Arc O Phase 111** ([arc_o/README.md](arc_o/README.md)).
-**Found 2026-07-26 during the Arc O planning survey.**
-`blueprint_cell_archetype(_role, _cell_index)`
-(`crates/observed_facility/src/hex_wfc/blueprint.rs:79-81`) discards both of its
-parameters and returns `"sanctuary"` unconditionally, so a Guardian Control atrium
-cell, a Decision cell, and a Keystone cell all demand identical geometry. Five
-authored whole-room modules do exist and are correctly plumbed through
-`project_with_rooms`, but they cover only five of the eleven `RoomRole` variants;
-every other stamped role falls back to the per-cell `sanctuary` path
-(`crates/observed_match/src/hex_wfc/geometry.rs:739-765`). Look at: `blueprint.rs`,
-`crates/observed_facility/src/map_spec.rs:18-41` (the role enum), and the
-`RoomCatalogue` contract match at `geometry.rs:638`.
-
-### 16. Authored content is compiled but unreachable from the solver
-**Scheduled: Arc O Phase 111** ([arc_o/README.md](arc_o/README.md)).
-**Found 2026-07-26 during the Arc O planning survey.** Two separate dead paths. (a)
-`silo_core`, `silo_ring`, and `silo_ring_bridge` compile into the catalog but no
-archetype mapping ever names them, so the seven-hex SiloWellshaft composition is
-reachable only from `labs/hex_tile_lab` (`silo_placements`,
-`labs/hex_tile_lab/src/lib.rs:155`). (b) `DecoherenceFork` and `TeleportRelay` have
-blueprints in `blueprint_for_role` but are absent from the stamping pool at
-`crates/observed_facility/src/hex_wfc/constraints.rs:132-143`, so
-`assets/tiles/authored/room_decoherence_fork.map` — the largest authored room at
-four hexes — has never appeared in a match. Decide per item whether to wire it or
-delete it; unreachable authored content silently inflates the catalog and flatters
-the coverage audits.
-
 ### 18. A two-level room's internal vertical link is not traversable
 **Scheduled: Arc O Phase 111** ([arc_o/README.md](arc_o/README.md)).
 **Found 2026-07-27 while reproducing the Phase 107 soak failure.** A room
@@ -204,12 +176,20 @@ its stacked cells, and nothing can climb it. The bot's stair handling is gated o
 room's geometry comes from `blueprint_cell_archetype`, which returns `sanctuary`
 for every role and cell (#15), so there are no treads inside it either.
 
-**Updated 2026-07-27 (Phase 109).** The hard half of this is done. The bot no
-longer follows hardcoded waypoints — a tile ships a `StairSpine` and a
-`DeckPath`, and the bot walks whatever the cell declares. So a two-level room
-becomes traversable by *giving its blueprint a climb*, not by teaching the bot
-about rooms. What remains is #15: the room has no geometry of its own to hang one
-on.
+**Updated 2026-07-27 (Phases 109 and 111).** Both prerequisites are now done and
+this is a geometry task, not a wiring one. The bot follows whatever climb a tile
+declares — `vertical_command` gates on the *port class*, not the archetype, so an
+atrium shipping a `StairSpine` would simply be climbed — and the atrium now has
+geometry of its own (`room_atrium_lower` / `room_atrium_upper`) to hang a stair
+on rather than two copies of a single-hex room.
+
+What remains is the stair, and it is the size of Phase 109's tower work. The
+lower cell declares doors on all six faces and is one level tall, so a flight
+cannot run along a wall without blocking a door, and cannot reach the upper
+cell's gallery without the tile spanning two levels. Either the blueprint gives
+up a door and the tile gains a level, or the room gives up its vertical port. The
+Phase 107 guard in `topology::is_connection_open` stays until then: it is
+correct, and it costs nothing but a connection that does not exist.
 Phase 107 stopped the router promising the climb —
 `topology::is_connection_open` no longer treats a room-to-room vertical port as a
 connection — which is a correct guard but not a fix. When #15 gives rooms real
@@ -225,6 +205,32 @@ be lifted, or the blueprint should stop claiming a vertical port it cannot serve
 
 ## Fixed
 
+- ~~Every room cell of every room role asks for the same archetype~~ — fixed
+  2026-07-27 in Arc O Phase 111
+  ([arc_o/phase_111_rooms_belong_to_districts.md](arc_o/phase_111_rooms_belong_to_districts.md)).
+  `blueprint_cell_archetype` discarded both arguments and answered `"sanctuary"`,
+  so a three-hex Decision room was one single-hex shape repeated three times. The
+  fix authored nothing: `room_double_*`, `room_tri_*`, `room_fork_*` and the
+  atrium pair have been generated in every register since Arc L, their names map
+  one-to-one onto the blueprint footprints, and `compatibility_archetype`
+  flattened every `room_*` name back to `sanctuary` on the way in. Two stubs
+  facing each other across a seam, cancelling a whole family of geometry. Phase
+  110's coverage gate checked the fourteen pairings — a wing paired to the wrong
+  cell produces a signature nothing satisfies.
+- ~~Authored content is unreachable from the solver~~ — fixed 2026-07-27 in Arc O
+  Phase 111
+  ([arc_o/phase_111_rooms_belong_to_districts.md](arc_o/phase_111_rooms_belong_to_districts.md)).
+  `DecoherenceFork` — four hexes, the largest authored module in the corpus — was
+  absent from the stamping pool, and adding it was not enough. `span` was
+  `max_rooms - min_rooms`, which for the production 9..=10 contract is 1, so
+  `rng % span` was always 0: the target was always 9, `max_rooms` had never once
+  been reached, and the pool's last slot was unreachable. With the range made
+  inclusive the fork appears in 5 of 12 seeds, in exactly its two districts.
+  `TeleportRelay` was decided rather than deferred: **not wired**, because the
+  hex match has no teleport-pad mechanic — `sync_teleports_to_bodies` reconciles
+  spawn, setback and escape moves only — so stamping one would spend a room slot
+  on a room that does nothing. Its blueprint stays for the deprecated `full_wfc`
+  path, which requires a pair.
 - ~~Liminal Grid has no authored `expanse` tiles~~ — fixed 2026-07-27 in Arc O
   Phase 110
   ([arc_o/phase_110_district_tilesets.md](arc_o/phase_110_district_tilesets.md)).

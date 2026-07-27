@@ -609,3 +609,54 @@ fn bounded_routing_agrees_with_unbounded_inside_the_bound() {
         "corpus must include pairs the bound genuinely excludes, or this proves nothing"
     );
 }
+
+/// Rooms belong to districts, and the binding actually holds on real seeds.
+///
+/// This is the legibility payoff the arc is for: recognising a district should
+/// tell a player what it holds. The binding is a preference rather than a
+/// constraint — a seed can put a role's districts somewhere a room will not fit
+/// — so this asserts it dominates rather than that it never yields. Losing a
+/// room to an unplaceable role would be a far worse failure than a Monitor
+/// turning up somewhere odd.
+#[test]
+fn stamped_rooms_land_in_the_districts_their_role_belongs_to() {
+    let mut bound = 0usize;
+    let mut fell_back = 0usize;
+    let mut forks = 0usize;
+    for raw in 0u64..12 {
+        let seed = 0xa11c_e3d0_0000_0000 ^ raw.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        let Ok(world) = HexWfcWorld::generate(seed, super::HexWfcConfig::arc_default()) else {
+            continue;
+        };
+        for stamped in &world.blueprints {
+            if stamped.role == crate::map_spec::RoomRole::DecoherenceFork {
+                forks += 1;
+            }
+            let Some(register) = world.architecture.get(&stamped.anchor) else {
+                continue;
+            };
+            let wanted = super::constraints::role_districts_for_probe(stamped.role);
+            if wanted.is_empty() {
+                continue;
+            }
+            if wanted.contains(register) {
+                bound += 1;
+            } else {
+                fell_back += 1;
+            }
+        }
+    }
+    assert!(bound + fell_back > 60, "unexpectedly small sample");
+    let ratio = bound as f64 / (bound + fell_back) as f64;
+    assert!(
+        ratio >= 0.9,
+        "only {bound} of {} rooms landed in their own district",
+        bound + fell_back
+    );
+
+    // The largest authored room in the corpus had a blueprint, a `.map` module
+    // and no way into a match: it was absent from the stamping pool, and the
+    // room-count target could never reach the pool's last slot anyway. Bug
+    // backlog #16. It should be rare, not impossible.
+    assert!(forks > 0, "DecoherenceFork still never reaches a facility");
+}

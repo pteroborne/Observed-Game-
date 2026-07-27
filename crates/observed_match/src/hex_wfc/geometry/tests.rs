@@ -203,11 +203,16 @@ fn boundary_start_uses_its_authored_blueprint_signature_and_the_shell_closes_it(
         .filter(|piece| piece.anchor == start.anchor && piece.tile.is_some())
         .collect();
     assert!(!start_pieces.is_empty());
+    // `room_single`, not `sanctuary`. Every room cell of every role used to ask
+    // for the same single-hex shape (bug backlog #15); a Start room is a
+    // single-hex room, so this is the one case where the answer looks the same
+    // and the reason is different.
+    let expected = blueprint_cell_archetype(start.role, 0).expect("start has a cell archetype");
     assert!(start_pieces.iter().all(|piece| {
         piece
             .tile
             .as_ref()
-            .is_some_and(|key| key.archetype == "sanctuary")
+            .is_some_and(|key| key.archetype == expected)
     }));
     assert!(
         snapshot
@@ -229,7 +234,8 @@ fn matching_whole_room_module_takes_precedence_over_cell_fallbacks() {
     let fallback_hulls = tiles()
         .into_iter()
         .find(|tile| {
-            tile.key.archetype == "sanctuary"
+            tile.key.archetype
+                == blueprint_cell_archetype(start.role, 0).expect("start cell archetype")
                 && (tile.key.register == register || tile.key.register == "generic")
                 && tile.signature == blueprint_for_role(start.role).cell_signature((0, 0, 0))
         })
@@ -782,11 +788,20 @@ fn mismatched_room_contracts_fall_back_to_per_cell_tiles_without_panicking() {
             !room_pieces.is_empty(),
             "{case}: fallback must still project"
         );
+        // The per-cell fallback for a two-hex room is now the pair of wing
+        // shapes that actually open toward each other, not one shape twice
+        // (bug backlog #15).
+        let wings: Vec<&str> = (0..2)
+            .map(|index| {
+                blueprint_cell_archetype(RoomRole::DualStation, index)
+                    .expect("dual station cell archetype")
+            })
+            .collect();
         assert!(
             room_pieces.iter().all(|piece| piece
                 .tile
                 .as_ref()
-                .is_some_and(|key| key.archetype == "sanctuary")),
+                .is_some_and(|key| wings.contains(&key.archetype.as_str()))),
             "{case}: rejected candidate must not win, per-cell fallback must be used instead"
         );
         // Fallback covers both footprint cells individually (unlike the

@@ -101,6 +101,18 @@ fn compatibility_archetype(tile: &crate::TilePrototype) -> &'static str {
         }
         "ramp" => "hall_ramp",
         "stair_segment" | "stair_top" | "stair_bottom" | "stair_landing" => "stair_tower",
+        // Room-cell geometry keeps the name it was generated under.
+        //
+        // It used to be flattened to `sanctuary` here, which was the second half
+        // of backlog #15: even once a blueprint asked for `room_tri_b`, the kit
+        // had already relabelled every wing to the same single-hex shape on the
+        // way in, so the demand could not have been met even by accident. The
+        // authored whole-room `.map` modules are a different path and still map
+        // to `sanctuary` below.
+        archetype if ROOM_CELL_ARCHETYPES.contains(&archetype) => ROOM_CELL_ARCHETYPES
+            .iter()
+            .find(|name| **name == archetype)
+            .expect("just matched"),
         archetype if archetype.starts_with("room_") => "sanctuary",
         "hall_straight" => "hall_straight",
         "hall_cap" => "hall_cap",
@@ -110,6 +122,26 @@ fn compatibility_archetype(tile: &crate::TilePrototype) -> &'static str {
 }
 
 /// The nine architecture registers the library is authored for.
+/// The per-cell room geometry the blueprints ask for, generated in every
+/// register. Kept as a list so [`compatibility_archetype`] can hand each name
+/// straight through with a `'static` lifetime instead of leaking a `String`.
+pub(crate) const ROOM_CELL_ARCHETYPES: &[&str] = &[
+    "room_single",
+    "room_double_west",
+    "room_double_east",
+    "room_double_nw",
+    "room_double_se",
+    "room_tri_a",
+    "room_tri_b",
+    "room_tri_c",
+    "room_fork_a",
+    "room_fork_b",
+    "room_fork_c",
+    "room_fork_d",
+    "room_atrium_lower",
+    "room_atrium_upper",
+];
+
 pub const REGISTERS: &[&str] = &[
     "shadow_screen",
     "monolith",

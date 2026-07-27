@@ -75,9 +75,56 @@ pub struct StampedBlueprint {
 /// the shared coordination seam between the solver's multi-cell room stamp and
 /// the manifest projector: callers must not infer a room wing from its door
 /// mask because boundary-adjusted stamps deliberately seal out-of-grid faces.
+///
+/// This used to discard both arguments and answer `"sanctuary"` for everything —
+/// bug backlog #15. Every room in the facility, of every role, was the same
+/// single-hex shape repeated across its footprint, which is why a three-hex
+/// Decision room read as three rooms rather than one. The wing geometry it now
+/// asks for is not new: `room_double_*`, `room_tri_*`, `room_fork_*` and the
+/// atrium pair have been generated in every register since Arc L. Nothing ever
+/// asked for them, and `compatibility_archetype` flattened them back to
+/// `sanctuary` on the way in, so they could not have been reached even by
+/// accident.
 #[must_use]
-pub fn blueprint_cell_archetype(_role: RoomRole, _cell_index: usize) -> Option<&'static str> {
-    Some("sanctuary")
+pub fn blueprint_cell_archetype(role: RoomRole, cell_index: usize) -> Option<&'static str> {
+    Some(match (role, cell_index) {
+        // Rooms that occupy a single hex. Their one cell is walled on every
+        // face the stamp does not open, so one shape serves all of them.
+        (
+            RoomRole::Start
+            | RoomRole::Exit
+            | RoomRole::TeleportRelay
+            | RoomRole::Keystone
+            | RoomRole::Monitor
+            | RoomRole::Recovery,
+            0,
+        ) => "room_single",
+
+        // Two hexes side by side along q: each opens toward its sibling.
+        (RoomRole::DualStation, 0) => "room_double_west",
+        (RoomRole::DualStation, 1) => "room_double_east",
+
+        // Two hexes along r, which runs north-west to south-east.
+        (RoomRole::AnchorCheckpoint, 0) => "room_double_nw",
+        (RoomRole::AnchorCheckpoint, 1) => "room_double_se",
+
+        // Three hexes in an L: two openings each, facing the other two.
+        (RoomRole::Decision, 0) => "room_tri_a",
+        (RoomRole::Decision, 1) => "room_tri_b",
+        (RoomRole::Decision, 2) => "room_tri_c",
+
+        // Four hexes in a rhombus; the two interior cells open three ways.
+        (RoomRole::DecoherenceFork, 0) => "room_fork_a",
+        (RoomRole::DecoherenceFork, 1) => "room_fork_b",
+        (RoomRole::DecoherenceFork, 2) => "room_fork_c",
+        (RoomRole::DecoherenceFork, 3) => "room_fork_d",
+
+        // The one room that stacks: a two-storey atrium open through its floor.
+        (RoomRole::GuardianControl, 0) => "room_atrium_lower",
+        (RoomRole::GuardianControl, 1) => "room_atrium_upper",
+
+        _ => return None,
+    })
 }
 
 impl StampedBlueprint {

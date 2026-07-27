@@ -428,7 +428,7 @@ fn diagnose_bot() {
 /// solver builds. That is expected — the gate asserts the *bot* can walk a route
 /// with both vertical kinds on it, not that one particular seed produces one.
 /// Any arc that touches weighting should expect to re-run `scan_gate_seeds`.
-const GATE_SEED: u64 = 0xd9c1_e6e5_fd29_f054;
+const GATE_SEED: u64 = 0xad33_590e_5eac_c7db;
 const GATE_LEVELS: u8 = 5;
 
 /// Phase 94 success criterion 1 — the headless gate. On a pinned seed whose
@@ -663,7 +663,7 @@ fn ordinary_drops_do_not_trigger_recovery_on_the_gate_route() {
 /// same generation timeline and the same final snapshot digest byte-for-byte.
 ///
 /// The fixture's first warned pocket commits on its first scheduled attempt.
-const MUTATION_SEED: u64 = 0x3F2B_ECB9_7F4A_7C15;
+const MUTATION_SEED: u64 = 0x7BBA_F82C_7DDF_743F;
 
 #[test]
 fn observed_relayout_commits_mid_match_deterministically() {

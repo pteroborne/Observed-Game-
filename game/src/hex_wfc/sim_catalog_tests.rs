@@ -58,23 +58,31 @@ fn every_district_covers_every_wfc_geometry_demand_with_its_own_geometry() {
         }
 
         // Liminal Grid is the one district with hand-authored modules, and the
-        // generated kit sits *under* them rather than replacing them. Both
-        // authored layouts (weights 2 and 3) must still be reachable, or the
-        // floor has quietly become the ceiling.
-        if demand.archetype != "stair_tower"
-            && demand.archetype != "expanse"
-            && demand.archetype != "hall_ramp"
-        {
-            let weights = corpus
-                .cells
-                .iter()
-                .filter(|tile| {
-                    tile.key.archetype == demand.archetype
-                        && tile.signature == demand.signature
-                        && tile.key.register == ArchitectureRegister::LiminalGrid.slug()
-                })
-                .map(|tile| tile.weight)
-                .collect::<BTreeSet<_>>();
+        // generated kit sits *under* them rather than replacing them. Where it
+        // has authored layouts, both must still be reachable, or the floor has
+        // quietly become the ceiling.
+        //
+        // Which archetypes those are is read from the corpus rather than listed
+        // here. A list would have to grow every time the kit gains a family the
+        // authored corpus does not cover — it already would have, twice — and a
+        // stale exclusion is indistinguishable from a real gap.
+        let liminal = corpus
+            .cells
+            .iter()
+            .filter(|tile| {
+                tile.key.archetype == demand.archetype
+                    && tile.signature == demand.signature
+                    && tile.key.register == ArchitectureRegister::LiminalGrid.slug()
+            })
+            .collect::<Vec<_>>();
+        // Weights 2 and 3 are how the two-layout hall families are marked; the
+        // authored ramp carries 10 and generated tiles carry 1, so seeing either
+        // marker is what says this archetype has a pair to keep.
+        let weights = liminal
+            .iter()
+            .map(|tile| tile.weight)
+            .collect::<BTreeSet<_>>();
+        if weights.contains(&2) || weights.contains(&3) {
             assert!(
                 weights.contains(&2) && weights.contains(&3),
                 "{} {:?} lost one of Liminal Grid's authored layouts: {weights:?}",

@@ -32,8 +32,11 @@ the catalog, and the projector rather than by playing.
   have been walked and no fix to the first could be made. Tiles now declare how they are
   climbed and crossed. Anything that hardcodes another tile's interior will block the same
   way. (#13, and #19 with it)
-- **Rooms have no geometric identity.** `blueprint_cell_archetype` discards both of its
-  parameters and returns `"sanctuary"` unconditionally. (#15)
+- ~~**Rooms have no geometric identity.**~~ **Closed in Phase 111.** The wing, strip and
+  atrium geometry had existed in every register since Arc L; a stub on each side of the
+  seam meant nothing could ask for it and nothing could have answered. Worth remembering
+  as a shape: a capability can be fully built and still be unreachable, and neither stub
+  looks wrong on its own. (#15, and #16 with it)
 - ~~**There is no vocabulary for open space.**~~ **Closed in Phase 108.** `Expanse` landed
   across sixteen match sites and reached 20 % of the facility. Note for future archetypes:
   two of those sites were `matches!` lists the compiler does not check, and one of them
@@ -133,6 +136,6 @@ Phase-specific as-landed notes and evidence links are added here as each slice i
 - [Phase 108 — The `Expanse` Archetype](phase_108_expanse_archetype.md) `[x]`
 - [Phase 109 — Authored Stair Towers & Vertical Rebalance](phase_109_authored_stair_towers.md) `[x]`
 - [Phase 110 — District-Exclusive Tilesets](phase_110_district_tilesets.md) `[x]`
-- Phase 111 — Rooms Belong to Districts
+- [Phase 111 — Rooms Belong to Districts](phase_111_rooms_belong_to_districts.md) `[x]`
 - Phase 112 — Co-op Mode & the Sixteen-Seat Roster
 - Phase 113 — Arc Gate
