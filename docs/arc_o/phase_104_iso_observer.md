@@ -74,6 +74,42 @@ sharper statement of backlog #13 than the shaft figure was:
 - **Rooms are 0 %** — 14 cells, rounding to zero.
 - 5 297 lateral connections and 2 041 vertical ones.
 
+## Revised again: the console schematic
+
+The lab was drawing a lot of true information densely enough that it was hard to
+read. It now draws as a ship's console would — line work on a dark screen, with
+hue spent on exactly one question: **green will not rewire, red the solver can.**
+That is the distinction the solver actually enforces, and it is the one a reader
+needs before any other.
+
+Four things make that work:
+
+- **Density is managed by the layer cycle, not by drawing less.** `Tab` walks
+  level 0 … N-1 and then the whole stack. On a single layer the schematic draws
+  the **real authored hulls**, so what you are looking at is genuinely what the
+  tiles compose; across all ten it drops to cell shells, because 126 000 hulls is
+  not a diagram.
+- **Only structural edges are drawn.** Triangulating a hull introduces a diagonal
+  across every flat face, and keeping those turns a clean prism into a web. An
+  edge whose two adjacent faces share a normal is filtered. On one production
+  layer that took 630 810 segments down to 370 788 and, far more importantly,
+  made the picture readable.
+- **`D` restores the solid district massing** as a dev view. It answers a
+  different question — where the districts are — and is still the right tool for
+  Phase 106.
+- **Clicking a hex pins it** and reports the resolved tile key, hull and vertex
+  counts, archetype and space, open doors and vertical ports, district, room
+  role, cell revision, and whether the solver may move it.
+
+The inspector states backlog #13 more plainly than any statistic has: click a
+shaft and the tile line reads `stair_tower/generic v16`. The fallback kit, named
+on screen, in the register it was supposed to be replaced in.
+
+Two capture bugs surfaced building this, both of the same shape — `save_to_disk`
+reads the framebuffer a frame or more after it is requested. Clearing the
+selection immediately after asking for the inspector shot photographed an empty
+panel, and exiting immediately after the last seed's shot never wrote it at all.
+
 ## Baseline measurements
 
 All five pinned seeds, production `28 x 20 x 10`, one solve attempt each:

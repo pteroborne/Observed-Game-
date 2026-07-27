@@ -101,6 +101,11 @@ the catalog, and the projector rather than by playing.
   `district_for_architecture` maps them onto six districts plus the LiminalGrid override —
   so colour alone can never separate all ten. Phase 110 has to decide whether
   district-exclusive *tilesets* are enough, or whether the style mapping widens too.
+- **The schematic is the arc's showcase surface.** `iso_observer_lab` draws every
+  later phase's result as a console diagram: green will not rewire, red can, real
+  authored hulls on a single layer. Its palette is `observed_style::schematic`,
+  its geometry comes from the same projector production uses, and its five pinned
+  seeds are the evidence contract. Phase captures should come from it.
 - **The map vocabulary lives in `observed_style`, not in either renderer.**
   `hex_sketch` owns every slab height and footprint width, and `hex_link` owns the
   connection treatment; `iso_observer_lab` and `game/src/hex_wfc/view/map` each

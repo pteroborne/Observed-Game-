@@ -1157,6 +1157,78 @@ pub struct DistrictPalette {
     pub pools_rhythm: bool,
 }
 
+/// The schematic register: a facility diagram as a ship's console would draw it.
+///
+/// This is a deliberately different visual language from the world's neon-noir
+/// surfaces. A schematic is read, not inhabited: it is line work on a dark
+/// screen, and its whole job is to separate what is settled from what is not.
+/// Hue carries that one distinction and nothing else, so the reading survives a
+/// glance and does not compete with the district palette.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SchematicRole {
+    /// Geometry the solver will not rewire. Phosphor green: settled.
+    Pinned,
+    /// Topology the solver may rewire under you. Alert red: provisional.
+    Volatile,
+    /// The cell currently under inspection.
+    Selected,
+    /// Structure that is present but not the subject — off-focus layers, and
+    /// the annotation lines that carry no state of their own.
+    Grid,
+}
+
+impl SchematicRole {
+    pub const ALL: [SchematicRole; 4] = [
+        SchematicRole::Pinned,
+        SchematicRole::Volatile,
+        SchematicRole::Selected,
+        SchematicRole::Grid,
+    ];
+
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Pinned => "will not rewire",
+            Self::Volatile => "can rewire",
+            Self::Selected => "selected",
+            Self::Grid => "off-focus",
+        }
+    }
+}
+
+/// The line colour for a schematic role.
+///
+/// Emission is what carries a schematic — the lines are the light source, and
+/// the surface behind them is nearly black — so these run hot enough to bloom
+/// and sit well above [`SIGNAL_MIN_LUMINANCE`].
+#[must_use]
+pub fn schematic(role: SchematicRole) -> Treatment {
+    let (base, emissive) = match role {
+        SchematicRole::Pinned => (Color::srgb(0.36, 1.0, 0.48), LinearRgba::rgb(0.9, 5.4, 1.5)),
+        SchematicRole::Volatile => (Color::srgb(1.0, 0.29, 0.24), LinearRgba::rgb(6.0, 0.7, 0.5)),
+        SchematicRole::Selected => (Color::srgb(1.0, 0.78, 0.30), LinearRgba::rgb(7.2, 4.4, 1.0)),
+        // Present, legible, and clearly subordinate: an off-focus layer must not
+        // read as competing with the one being examined.
+        SchematicRole::Grid => (
+            Color::srgb(0.16, 0.34, 0.22),
+            LinearRgba::rgb(0.10, 0.42, 0.16),
+        ),
+    };
+    Treatment {
+        base_color: base,
+        emissive,
+        signal: matches!(role, SchematicRole::Selected),
+        edge: Some(base),
+    }
+}
+
+/// The screen a schematic is drawn on: near-black with a faint phosphor cast, so
+/// unlit space still reads as a display rather than as a hole.
+#[must_use]
+pub fn schematic_screen() -> Color {
+    Color::srgb(0.006, 0.020, 0.012)
+}
+
 /// What a hex cell is, for the purpose of *drawing a map of it*.
 ///
 /// The isometric map and `iso_observer_lab` both render a solved facility as
@@ -2154,6 +2226,66 @@ mod tests {
         assert!(
             luminance(hearsay.base_color.to_linear()) < luminance(confident.base_color.to_linear()),
             "a link the survivor has not confirmed from both sides must read dimmer"
+        );
+    }
+
+    #[test]
+    fn the_schematic_separates_settled_from_provisional_by_hue() {
+        let pinned = schematic(SchematicRole::Pinned).base_color.to_linear();
+        let volatile = schematic(SchematicRole::Volatile).base_color.to_linear();
+        // Green vs red is the whole point: the two must not be confusable, and
+        // neither may collapse toward grey.
+        assert!(pinned.green > pinned.red * 2.0, "pinned reads green");
+        assert!(volatile.red > volatile.green * 2.0, "volatile reads red");
+    }
+
+    #[test]
+    fn every_schematic_role_is_a_light_source_and_off_focus_is_subordinate() {
+        for role in SchematicRole::ALL {
+            let treatment = schematic(role);
+            assert!(
+                luminance(treatment.emissive) > 0.0,
+                "{role:?} must emit — the lines are what lights a schematic"
+            );
+            assert!(treatment.edge.is_some(), "{role:?} carries an edge colour");
+            assert!(!role.label().is_empty());
+        }
+        let grid = luminance(schematic(SchematicRole::Grid).emissive);
+        for role in [
+            SchematicRole::Pinned,
+            SchematicRole::Volatile,
+            SchematicRole::Selected,
+        ] {
+            assert!(
+                luminance(schematic(role).emissive) > grid,
+                "{role:?} must read above the off-focus grid"
+            );
+        }
+    }
+
+    #[test]
+    fn the_selected_cell_is_signal_tier_and_the_brightest_thing_drawn() {
+        let selected = schematic(SchematicRole::Selected);
+        assert!(
+            selected.signal,
+            "the inspected cell is a gameplay-critical cue"
+        );
+        let brightest = luminance(selected.emissive);
+        for role in [
+            SchematicRole::Pinned,
+            SchematicRole::Volatile,
+            SchematicRole::Grid,
+        ] {
+            assert!(luminance(schematic(role).emissive) < brightest);
+        }
+    }
+
+    #[test]
+    fn the_schematic_screen_is_dark_enough_for_lines_to_carry() {
+        let screen = schematic_screen().to_linear();
+        assert!(
+            luminance(screen) < ATMOSPHERE_MAX_LUMINANCE,
+            "the screen is background, never a wash"
         );
     }
 }

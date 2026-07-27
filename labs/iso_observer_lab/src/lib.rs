@@ -1,41 +1,50 @@
-//! Isometric facility observer — the Arc O Phase 104 instrument.
+//! Isometric facility observer — Arc O's composition instrument.
 //!
 //! Arc O changes what the hex WFC composes: contiguous districts, per-district
-//! composition profiles, an `Expanse` archetype, authored vertical kits. None of
-//! that is falsifiable from a first-person camera inside a corridor, so this lab
-//! exists to make a whole solved facility legible at a glance. A tile is a
-//! pixel: on its own it says almost nothing, so the lab draws what the tiles
-//! *compose*, on channels that do not compete:
+//! profiles, an `Expanse` archetype, authored vertical kits. None of that is
+//! falsifiable from a first-person camera inside a corridor, so this lab makes a
+//! whole solved facility legible at a glance.
 //!
-//! - **Colour is the district.** Every cell is tinted by its district accent
-//!   from [`observed_style::architecture`]. The lab never invents a colour.
-//! - **Height is the archetype**, and **width is the composition** — both from
-//!   [`observed_style::hex_sketch`], the same table the in-game survivor map
-//!   reads, so the two views cannot drift. Rooms fill their hex and meet with no
-//!   seam, so a multi-cell room reads as one space; corridors are ribbons.
-//! - **Bars are connections.** One per open port pair, so a corridor run reads
-//!   as a route and a riser shows two floors are joined.
+//! It draws as a ship's console would: line work on a dark screen, with hue
+//! spent on exactly one question — **green will not rewire, red can**. That is
+//! the distinction the solver actually enforces (rooms, ramps and shafts are
+//! structural; plain circulation is what relayout eats), and it is the one a
+//! reader needs before any other.
 //!
-//! Reading them together answers the questions Arc O is accountable for: are
-//! districts contiguous, does one register compose differently from its
-//! neighbour, and is verticality clustered or sprayed uniformly across the map.
+//! Density is managed by the layer cycle rather than by drawing less. On a
+//! single layer the schematic draws the **real authored hulls**, so you see what
+//! the tiles genuinely compose; across all layers it drops to cell shells,
+//! because a hundred and twenty thousand hulls is not a diagram.
 //!
-//! This is the lab, not the game: it renders the world directly and shows ground
-//! truth. The in-game map promoted from it in Phase 105 reads player knowledge
-//! instead and must never see a cell the team has not discovered.
+//! A dev toggle restores the district-coloured solid massing, which answers the
+//! other question — where the districts are. Clicking a hex pins it and reports
+//! what the solver and the tile compiler decided for it.
+//!
+//! This is the lab, not the game: it renders ground truth. The in-game map
+//! promoted from it reads player knowledge and must never see a cell the team
+//! has not discovered.
 
 mod capture;
+mod draw;
+mod inspect;
 mod prism;
+mod wire;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::f32::consts::FRAC_PI_4;
+use std::sync::OnceLock;
 
 use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResolution};
+use observed_authoring::{RoomPrototype, RuntimeHexCatalog, TilePrototype};
 use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::{HexArchetype, HexSpace, HexWfcConfig, HexWfcWorld};
-use observed_hex::{HexCoord, HexFace, PortClass, TILE_LEVEL_HEIGHT, hex_origin};
-use observed_style::{HexSketch, HexSketchRole, MarkerRole, hex_link, hex_sketch, marker};
+use observed_hex::{HexCoord, HexFace, PortClass};
+use observed_match::hex_wfc::HexWfcGeometrySnapshot;
+use observed_style::{HexSketch, HexSketchRole, SchematicRole, hex_sketch, schematic_screen};
+
+use crate::draw::DrawReport;
+use crate::wire::EdgeCache;
 
 /// The pinned baseline corpus. Every Arc O phase re-captures these same five
 /// seeds so before/after comparisons are like-for-like; changing this list
@@ -53,83 +62,159 @@ pub const PRESET_SEEDS: [u64; 5] = [
 const ISO_PITCH: f32 = -0.615_479_7;
 const WINDOW_WIDTH: f32 = 1600.0;
 const WINDOW_HEIGHT: f32 = 1000.0;
-/// Connection bars ride just above the lower of the two cells they join, so they
-/// read as a bridge over the composition rather than a rod through it.
-const LINK_CLEARANCE: f32 = 0.25;
-const LINK_THICKNESS: f32 = 1.7;
-/// A riser is pushed past the footprint, because a bar drawn up the middle of a
-/// shaft column is inside the column and invisible.
-const RISER_OFFSET: f32 = 6.6;
 /// Only the three forward lateral faces are walked, so each undirected edge is
-/// drawn once rather than twice from opposite ends.
+/// counted once rather than twice from opposite ends.
 const FORWARD_FACES: [HexFace; 3] = [HexFace::East, HexFace::SouthEast, HexFace::SouthWest];
 
 #[derive(Component)]
-struct LabVisual;
+pub(crate) struct LabVisual;
 
 #[derive(Component)]
 struct LabStatus;
 
 #[derive(Component)]
+struct LabDiagnostics;
+
+#[derive(Component)]
 struct LabCamera;
 
-/// Which levels are drawn.
+/// Which levels are drawn. The cycle runs `0, 1, … N-1, All` and wraps.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum ViewMode {
-    /// Every level, stacked — the composition read.
+pub enum Layer {
+    Single(u8),
     #[default]
-    Stack,
-    /// One level alone, for counting a floor plan without occlusion.
-    Slice,
+    All,
+}
+
+impl Layer {
+    /// Advance the cycle. `All` is the last stop, not a separate mode.
+    #[must_use]
+    pub fn next(self, levels: u8) -> Self {
+        match self {
+            Self::Single(level) if level + 1 < levels => Self::Single(level + 1),
+            Self::Single(_) => Self::All,
+            Self::All => Self::Single(0),
+        }
+    }
+
+    #[must_use]
+    pub fn previous(self, levels: u8) -> Self {
+        match self {
+            Self::Single(0) => Self::All,
+            Self::Single(level) => Self::Single(level - 1),
+            Self::All => Self::Single(levels.saturating_sub(1)),
+        }
+    }
+
+    #[must_use]
+    pub fn label(self) -> String {
+        match self {
+            Self::Single(level) => format!("layer {level}"),
+            Self::All => "all layers".to_string(),
+        }
+    }
+}
+
+/// Schematic is the instrument; solid is the dev view it replaced.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RenderMode {
+    #[default]
+    Schematic,
+    Solid,
 }
 
 #[derive(Resource)]
 pub struct LabState {
     pub world: HexWfcWorld,
+    /// The projector's answer for every cell: which authored tile, and its real
+    /// hulls. `None` when the catalog could not be loaded or projected, in which
+    /// case the schematic falls back to cell shells and says so.
+    pub geometry: Option<HexWfcGeometrySnapshot>,
     pub seed_index: usize,
-    pub mode: ViewMode,
-    pub focus_level: u8,
+    pub layer: Layer,
+    pub mode: RenderMode,
+    pub selected: Option<HexCoord>,
     pub dirty: bool,
     pub reset_count: u32,
+    pub(crate) edges: EdgeCache,
+    report: DrawReport,
     status: String,
 }
 
+/// The lab resolves the workspace tile corpus itself rather than through the
+/// game's asset root, so it keeps working regardless of how the shipped
+/// executable locates its assets.
+fn tile_dir() -> std::path::PathBuf {
+    let cwd_relative = std::path::PathBuf::from("assets/tiles");
+    if cwd_relative.exists() {
+        return cwd_relative;
+    }
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tiles")
+}
+
+fn corpus() -> &'static (Vec<TilePrototype>, Vec<RoomPrototype>) {
+    static CORPUS: OnceLock<(Vec<TilePrototype>, Vec<RoomPrototype>)> = OnceLock::new();
+    CORPUS.get_or_init(|| {
+        let slugs = ArchitectureRegister::ALL.map(ArchitectureRegister::slug);
+        match RuntimeHexCatalog::load(&tile_dir(), &slugs) {
+            Ok(loaded) => (loaded.cells, loaded.rooms),
+            // A missing catalog degrades the schematic to shells rather than
+            // taking the lab down; the status line reports it.
+            Err(error) => {
+                warn!("tile catalog unavailable, drawing shells only: {error}");
+                (Vec::new(), Vec::new())
+            }
+        }
+    })
+}
+
 impl LabState {
-    /// Solve the preset at `seed_index` at production facility scale.
+    /// Solve the preset at `seed_index` at production facility scale and project
+    /// its geometry once.
     #[must_use]
     pub fn new(seed_index: usize) -> Self {
         let index = seed_index % PRESET_SEEDS.len();
         let seed = PRESET_SEEDS[index];
-        let config = HexWfcConfig::arc_default();
-        let world = HexWfcWorld::generate(seed, config)
+        let world = HexWfcWorld::generate(seed, HexWfcConfig::arc_default())
             .expect("the production hex config must solve at every preset seed");
+        let (cells, rooms) = corpus();
+        let geometry = if cells.is_empty() {
+            None
+        } else {
+            match HexWfcGeometrySnapshot::project_with_rooms(&world, cells, rooms) {
+                Ok(snapshot) => Some(snapshot),
+                Err(error) => {
+                    warn!("projection failed, drawing shells only: {error:?}");
+                    None
+                }
+            }
+        };
         Self {
             world,
+            geometry,
             seed_index: index,
-            mode: ViewMode::Stack,
-            focus_level: 0,
+            layer: Layer::Single(0),
+            mode: RenderMode::Schematic,
+            selected: None,
             dirty: true,
             reset_count: 0,
+            edges: EdgeCache::default(),
+            report: DrawReport::default(),
             status: String::new(),
         }
     }
 
     fn reload(&mut self, seed_index: usize) {
         let carried = self.reset_count;
+        let layer = self.layer;
+        let mode = self.mode;
         *self = Self::new(seed_index);
         self.reset_count = carried;
+        self.layer = layer;
+        self.mode = mode;
     }
 
-    fn drawn(&self, coord: HexCoord) -> bool {
-        match self.mode {
-            ViewMode::Stack => true,
-            ViewMode::Slice => coord.level == self.focus_level,
-        }
-    }
-
-    /// How many cells of each archetype the current solve placed. This is the
-    /// number Arc O's composition phases move, so it is on screen rather than
-    /// in a log.
+    /// How many cells of each archetype the current solve placed.
     #[must_use]
     pub fn archetype_census(&self) -> BTreeMap<&'static str, usize> {
         let mut census = BTreeMap::new();
@@ -195,9 +280,9 @@ impl LabState {
     }
 
     /// How many cells each register owns, and how many disjoint regions those
-    /// cells form on the level grid. A district that is a *place* has few, large
-    /// regions; today's per-cell lottery produces hundreds of singletons, which
-    /// is bug backlog #14 made visible.
+    /// cells form. A district that is a *place* has few, large regions; today's
+    /// per-cell lottery produces hundreds of singletons, which is bug backlog
+    /// #14 made visible.
     #[must_use]
     pub fn district_census(&self) -> BTreeMap<ArchitectureRegister, (usize, usize)> {
         let mut cells: BTreeMap<ArchitectureRegister, BTreeSet<HexCoord>> = BTreeMap::new();
@@ -233,10 +318,10 @@ fn count_regions(cells: &BTreeSet<HexCoord>) -> usize {
         unvisited.remove(&start);
         while let Some(coord) = frontier.pop() {
             for (dq, dr) in [(1, 0), (-1, 0), (0, 1), (0, -1), (1, -1), (-1, 1)] {
-                let Some(q) = coord.q.checked_add_signed(dq) else {
-                    continue;
-                };
-                let Some(r) = coord.r.checked_add_signed(dr) else {
+                let (Some(q), Some(r)) = (
+                    coord.q.checked_add_signed(dq),
+                    coord.r.checked_add_signed(dr),
+                ) else {
                     continue;
                 };
                 let neighbour = HexCoord {
@@ -286,12 +371,6 @@ pub fn cell_sketch(world: &HexWfcWorld, coord: HexCoord) -> Option<HexSketch> {
     )))
 }
 
-/// Slab height for an archetype alone, for callers that only need to clear it.
-#[must_use]
-pub fn archetype_height(archetype: HexArchetype) -> Option<f32> {
-    hex_sketch(sketch_role(archetype, HexSpace::Hall, false)).height
-}
-
 #[must_use]
 pub fn archetype_label(archetype: HexArchetype) -> &'static str {
     match archetype {
@@ -321,39 +400,13 @@ fn register_label(register: ArchitectureRegister) -> &'static str {
     }
 }
 
-/// The world-space axis-aligned bounds of every drawn cell, padded by one cell.
-fn world_bounds(state: &LabState) -> (Vec3, Vec3) {
-    let mut min = Vec3::splat(f32::MAX);
-    let mut max = Vec3::splat(f32::MIN);
-    for (coord, placement) in &state.world.placements {
-        let Some(height) = archetype_height(placement.archetype) else {
-            continue;
-        };
-        let origin = Vec3::from_array(hex_origin(*coord));
-        min = min.min(origin - Vec3::new(8.0, 0.0, 8.0));
-        max = max.max(origin + Vec3::new(8.0, height, 8.0));
-    }
-    if min.x > max.x {
-        return (Vec3::ZERO, Vec3::ONE);
-    }
-    (min, max)
-}
-
-/// Frame the whole facility in an orthographic isometric view.
-///
-/// Returned as (transform, scale, far) so the framing maths is testable without
-/// a renderer. `scale` is world units per pixel, which is what
-/// [`OrthographicProjection::default_3d`] consumes; `far` must be passed
-/// explicitly because the 3D default is 1000 m and a production facility's
-/// diagonal alone exceeds that — leave it and most of the map is clipped away.
+/// Frame the drawn cells in an orthographic isometric view, returning
+/// (transform, world-units-per-pixel, far plane).
 #[must_use]
 pub fn frame_camera(min: Vec3, max: Vec3) -> (Transform, f32, f32) {
     let rotation = Quat::from_euler(EulerRot::YXZ, FRAC_PI_4, ISO_PITCH, 0.0);
     let centre = (min + max) * 0.5;
     let inverse = rotation.inverse();
-
-    // Project the eight AABB corners into camera space and take the screen
-    // extent. Exact, and independent of which way the isometric angle faces.
     let mut extent = Vec2::ZERO;
     for i in 0..8u8 {
         let corner = Vec3::new(
@@ -361,10 +414,8 @@ pub fn frame_camera(min: Vec3, max: Vec3) -> (Transform, f32, f32) {
             if i & 2 == 0 { min.y } else { max.y },
             if i & 4 == 0 { min.z } else { max.z },
         );
-        let camera_space = inverse * (corner - centre);
-        extent = extent.max(camera_space.truncate().abs());
+        extent = extent.max((inverse * (corner - centre)).truncate().abs());
     }
-
     let scale = (extent.x * 2.0 / WINDOW_WIDTH)
         .max(extent.y * 2.0 / WINDOW_HEIGHT)
         .max(f32::MIN_POSITIVE)
@@ -377,7 +428,7 @@ pub fn frame_camera(min: Vec3, max: Vec3) -> (Transform, f32, f32) {
 
 pub fn run() {
     let mut app = App::new();
-    app.insert_resource(ClearColor(Color::srgb(0.008, 0.010, 0.020)))
+    app.insert_resource(ClearColor(schematic_screen()))
         .insert_resource(LabState::new(0))
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
@@ -391,7 +442,10 @@ pub fn run() {
             ..default()
         }))
         .add_systems(Startup, setup)
-        .add_systems(Update, (handle_input, rebuild, update_status).chain());
+        .add_systems(
+            Update,
+            (handle_input, handle_click, rebuild, update_status).chain(),
+        );
 
     if let Ok(dir) = std::env::var("OBSERVED2_CAPTURE") {
         app.insert_resource(capture::CaptureRun::new(dir))
@@ -401,7 +455,8 @@ pub fn run() {
 }
 
 fn setup(mut commands: Commands, state: Res<LabState>) {
-    let (min, max) = world_bounds(&state);
+    let (min, max) =
+        draw::drawn_bounds(&state.world, state.layer).unwrap_or((Vec3::ZERO, Vec3::splat(64.0)));
     let (transform, scale, far) = frame_camera(min, max);
     commands.spawn((
         LabCamera,
@@ -416,10 +471,8 @@ fn setup(mut commands: Commands, state: Res<LabState>) {
         Name::new("Isometric observer camera"),
     ));
 
-    // Studio lighting, not district atmosphere. This lab shows ten registers in
-    // one frame, so no single district palette applies; the fill is deliberately
-    // neutral and even so the register tints carry the whole colour signal. Same
-    // reasoning as `hex_tile_lab`'s `clay` render mode.
+    // Studio fill for the dev solid view only; the schematic's lines are unlit
+    // and light themselves.
     commands.insert_resource(GlobalAmbientLight {
         color: Color::WHITE,
         brightness: 220.0,
@@ -442,17 +495,39 @@ fn setup(mut commands: Commands, state: Res<LabState>) {
             font_size: 14.0,
             ..default()
         },
-        TextColor(Color::srgb(0.88, 0.94, 1.0)),
+        TextColor(observed_style::schematic(SchematicRole::Pinned).base_color),
         Node {
             position_type: PositionType::Absolute,
-            top: Val::Px(12.0),
-            left: Val::Px(16.0),
+            top: px(12),
+            left: px(16),
+            padding: UiRect::all(px(8)),
             ..default()
         },
+        // The schematic fills the frame, so the console needs its own screen
+        // behind it or the numbers read through the geometry.
+        BackgroundColor(schematic_screen().with_alpha(0.86)),
+    ));
+    commands.spawn((
+        LabDiagnostics,
+        Text::new(""),
+        TextFont {
+            font_size: 14.0,
+            ..default()
+        },
+        TextColor(observed_style::schematic(SchematicRole::Selected).base_color),
+        Node {
+            position_type: PositionType::Absolute,
+            bottom: px(16),
+            left: px(16),
+            padding: UiRect::all(px(8)),
+            ..default()
+        },
+        BackgroundColor(schematic_screen().with_alpha(0.86)),
     ));
 }
 
 fn handle_input(keyboard: Res<ButtonInput<KeyCode>>, mut state: ResMut<LabState>) {
+    let levels = state.world.config.levels;
     if keyboard.just_pressed(KeyCode::KeyR) {
         let index = state.seed_index;
         let count = state.reset_count + 1;
@@ -470,21 +545,45 @@ fn handle_input(keyboard: Res<ButtonInput<KeyCode>>, mut state: ResMut<LabState>
         state.reload(next);
         return;
     }
-    if keyboard.just_pressed(KeyCode::Tab) {
+    if keyboard.just_pressed(KeyCode::Tab) || keyboard.just_pressed(KeyCode::PageUp) {
+        state.layer = state.layer.next(levels);
+        state.dirty = true;
+    }
+    if keyboard.just_pressed(KeyCode::PageDown) {
+        state.layer = state.layer.previous(levels);
+        state.dirty = true;
+    }
+    if keyboard.just_pressed(KeyCode::KeyD) {
         state.mode = match state.mode {
-            ViewMode::Stack => ViewMode::Slice,
-            ViewMode::Slice => ViewMode::Stack,
+            RenderMode::Schematic => RenderMode::Solid,
+            RenderMode::Solid => RenderMode::Schematic,
         };
         state.dirty = true;
-        return;
     }
-    let levels = state.world.config.levels;
-    if keyboard.just_pressed(KeyCode::PageUp) && state.focus_level + 1 < levels {
-        state.focus_level += 1;
+    if keyboard.just_pressed(KeyCode::Escape) && state.selected.is_some() {
+        state.selected = None;
         state.dirty = true;
     }
-    if keyboard.just_pressed(KeyCode::PageDown) && state.focus_level > 0 {
-        state.focus_level -= 1;
+}
+
+fn handle_click(
+    mouse: Res<ButtonInput<MouseButton>>,
+    windows: Query<&Window>,
+    camera: Query<(&Camera, &GlobalTransform), With<LabCamera>>,
+    mut state: ResMut<LabState>,
+) {
+    if !mouse.just_pressed(MouseButton::Left) {
+        return;
+    }
+    let (Ok(window), Ok((camera, transform))) = (windows.single(), camera.single()) else {
+        return;
+    };
+    let Some(cursor) = window.cursor_position() else {
+        return;
+    };
+    let picked = inspect::pick(&state.world, state.layer, camera, transform, cursor);
+    if picked.is_some() && picked != state.selected {
+        state.selected = picked;
         state.dirty = true;
     }
 }
@@ -494,6 +593,7 @@ fn rebuild(
     mut state: ResMut<LabState>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut camera: Query<(&mut Projection, &mut Transform), With<LabCamera>>,
     existing: Query<Entity, With<LabVisual>>,
 ) {
     if !state.dirty {
@@ -504,210 +604,43 @@ fn rebuild(
         commands.entity(entity).despawn();
     }
 
-    // One mesh per archetype and one material per (register, archetype-is-room)
-    // pair: a few dozen assets for a few thousand cells.
-    let mut mesh_cache: BTreeMap<(u32, u32), Handle<Mesh>> = BTreeMap::new();
-    let mut material_cache: BTreeMap<u8, Handle<StandardMaterial>> = BTreeMap::new();
-
-    let spawn = state.world.config.spawn();
-    let exit = state.world.config.exit();
-
-    for (coord, placement) in &state.world.placements {
-        if !state.drawn(*coord) {
-            continue;
+    let report = match state.mode {
+        RenderMode::Schematic => {
+            draw::schematic_view(&mut commands, &mut state, &mut meshes, &mut materials)
         }
-        let drawn = hex_sketch(sketch_role(
-            placement.archetype,
-            placement.space,
-            state.world.room_id_at(*coord).is_some(),
-        ));
-        let Some(height) = drawn.height else {
-            continue;
-        };
-        let register = state
-            .world
-            .architecture
-            .get(coord)
-            .copied()
-            .unwrap_or(ArchitectureRegister::Institutional);
-
-        let mesh = mesh_cache
-            .entry((height.to_bits(), drawn.inset.to_bits()))
-            .or_insert_with(|| meshes.add(prism::hex_prism(height, drawn.inset)))
-            .clone();
-        let material = material_cache
-            .entry(register as u8)
-            .or_insert_with(|| {
-                // `architecture_surface(_, Floor)` is register-blind: every base
-                // register falls through to `surface(SurfaceRole::Plain)`, so
-                // using it here paints the whole map one grey. The style crate's
-                // actual per-neighbourhood structural colour is the district
-                // accent — the same channel `PracticalFixture` reads. Note ten
-                // registers collapse onto seven accent families, so colour
-                // separates districts, not registers; the census below carries
-                // the per-register numbers.
-                let accent = observed_style::architecture(register).accent;
-                materials.add(StandardMaterial {
-                    base_color: Color::LinearRgba(accent),
-                    emissive: accent * 0.22,
-                    perceptual_roughness: 0.92,
-                    ..default()
-                })
-            })
-            .clone();
-
-        let origin = Vec3::from_array(hex_origin(*coord));
-        commands.spawn((
-            LabVisual,
-            Mesh3d(mesh),
-            MeshMaterial3d(material),
-            Transform::from_translation(origin),
-            Name::new(archetype_label(placement.archetype)),
-        ));
-    }
-
-    // Connections. This is what turns a field of tiles into a graph: corridor
-    // runs become visible lines and a riser shows two floors are joined. The lab
-    // reads ground truth, so both sides come straight from the placements rather
-    // than from anyone's knowledge.
-    let grid = state.world.config.grid();
-    let mut bar_cache: BTreeMap<(u32, u32, u32), Handle<Mesh>> = BTreeMap::new();
-    let link_material = {
-        let treatment = hex_link(true);
-        materials.add(StandardMaterial {
-            base_color: treatment.base_color,
-            emissive: treatment.emissive,
-            perceptual_roughness: 0.6,
-            ..default()
-        })
+        RenderMode::Solid => draw::solid_view(&mut commands, &state, &mut meshes, &mut materials),
     };
-    for (coord, placement) in &state.world.placements {
-        if !state.drawn(*coord) {
-            continue;
-        }
-        let here = archetype_height(placement.archetype).unwrap_or(0.9);
-        let origin = Vec3::from_array(hex_origin(*coord));
+    state.report = report;
 
-        for face in FORWARD_FACES {
-            if !placement.is_open(face) {
-                continue;
-            }
-            let Some(neighbour) = grid.neighbor(*coord, face) else {
-                continue;
-            };
-            if !state.drawn(neighbour) {
-                continue;
-            }
-            let Some(other) = state.world.placements.get(&neighbour) else {
-                continue;
-            };
-            if !other.is_open(face.opposite()) {
-                continue;
-            }
-            let target = Vec3::from_array(hex_origin(neighbour));
-            let span = target - origin;
-            let length = ((span.length() * 16.0).round() / 16.0).max(f32::EPSILON);
-            let deck = here.min(archetype_height(other.archetype).unwrap_or(0.9)) + LINK_CLEARANCE;
-            let mesh = bar_cache
-                .entry((
-                    length.to_bits(),
-                    (LINK_THICKNESS * 0.4).to_bits(),
-                    LINK_THICKNESS.to_bits(),
-                ))
-                .or_insert_with(|| {
-                    meshes.add(Cuboid::new(length, LINK_THICKNESS * 0.4, LINK_THICKNESS))
-                })
-                .clone();
-            commands.spawn((
-                LabVisual,
-                Mesh3d(mesh),
-                MeshMaterial3d(link_material.clone()),
-                Transform::from_translation(origin + span * 0.5 + Vec3::Y * deck)
-                    .with_rotation(Quat::from_rotation_y((-span.z).atan2(span.x))),
-                Name::new("link"),
-            ));
-        }
-
-        if placement.up == PortClass::Sealed {
-            continue;
-        }
-        let above = HexCoord {
-            q: coord.q,
-            r: coord.r,
-            level: coord.level.saturating_add(1),
-        };
-        if !state.drawn(above) {
-            continue;
-        }
-        if state
-            .world
-            .placements
-            .get(&above)
-            .is_none_or(|other| other.down == PortClass::Sealed)
-        {
-            continue;
-        }
-        let mesh = bar_cache
-            .entry((
-                (LINK_THICKNESS * 0.8).to_bits(),
-                TILE_LEVEL_HEIGHT.to_bits(),
-                (LINK_THICKNESS * 0.8).to_bits(),
-            ))
-            .or_insert_with(|| {
-                meshes.add(Cuboid::new(
-                    LINK_THICKNESS * 0.8,
-                    TILE_LEVEL_HEIGHT,
-                    LINK_THICKNESS * 0.8,
-                ))
-            })
-            .clone();
-        commands.spawn((
-            LabVisual,
-            Mesh3d(mesh),
-            MeshMaterial3d(link_material.clone()),
-            Transform::from_translation(
-                origin + Vec3::Y * (TILE_LEVEL_HEIGHT * 0.5) - Vec3::Z * RISER_OFFSET,
-            ),
-            Name::new("riser"),
-        ));
-    }
-
-    // The two fixed endpoints get real gameplay markers — these are signal-tier
-    // and legitimately owned by `observed_style::marker`.
-    for (coord, role, label) in [
-        (spawn, MarkerRole::You, "spawn marker"),
-        (exit, MarkerRole::Exit, "exit marker"),
-    ] {
-        if !state.drawn(coord) {
-            continue;
-        }
-        let treatment = marker(role);
-        let mesh = meshes.add(prism::hex_prism(0.5, 0.55));
-        let material = materials.add(StandardMaterial {
-            base_color: treatment.base_color,
-            emissive: treatment.emissive,
-            perceptual_roughness: 0.4,
-            ..default()
+    if let (Some((min, max)), Ok((mut projection, mut transform))) = (
+        draw::drawn_bounds(&state.world, state.layer),
+        camera.single_mut(),
+    ) {
+        let (framed, scale, far) = frame_camera(min, max);
+        *transform = framed;
+        *projection = Projection::Orthographic(OrthographicProjection {
+            scale,
+            near: 0.1,
+            far,
+            ..OrthographicProjection::default_3d()
         });
-        let origin = Vec3::from_array(hex_origin(coord));
-        commands.spawn((
-            LabVisual,
-            Mesh3d(mesh),
-            MeshMaterial3d(material),
-            Transform::from_translation(origin + Vec3::Y * 9.0),
-            Name::new(label),
-        ));
     }
 }
 
-fn update_status(mut state: ResMut<LabState>, mut status: Query<&mut Text, With<LabStatus>>) {
+fn update_status(
+    mut state: ResMut<LabState>,
+    mut status: Query<&mut Text, (With<LabStatus>, Without<LabDiagnostics>)>,
+    mut diagnostics: Query<&mut Text, (With<LabDiagnostics>, Without<LabStatus>)>,
+) {
+    if let Ok(mut text) = diagnostics.single_mut() {
+        **text = inspect::diagnostics(&state);
+    }
     let Ok(mut text) = status.single_mut() else {
         return;
     };
-    let census = state.archetype_census();
-    let districts = state.district_census();
-    let total: usize = census.values().sum();
 
+    let census = state.archetype_census();
+    let total: usize = census.values().sum();
     let archetypes = census
         .iter()
         .map(|(label, count)| {
@@ -718,7 +651,15 @@ fn update_status(mut state: ResMut<LabState>, mut status: Query<&mut Text, With<
         .collect::<Vec<_>>()
         .join("  ");
 
-    let mut district_lines = districts
+    let (by_kind, lateral, vertical) = state.composition_census();
+    let composed = by_kind
+        .iter()
+        .map(|(label, count)| format!("{label} {count}"))
+        .collect::<Vec<_>>()
+        .join("  ");
+
+    let mut district_lines = state
+        .district_census()
         .iter()
         .map(|(register, (cells, regions))| {
             #[allow(clippy::cast_precision_loss)]
@@ -731,35 +672,37 @@ fn update_status(mut state: ResMut<LabState>, mut status: Query<&mut Text, With<
         .collect::<Vec<_>>();
     district_lines.sort();
 
-    let view = match state.mode {
-        ViewMode::Stack => "stacked".to_string(),
-        ViewMode::Slice => format!("level {}", state.focus_level),
+    let geometry = if state.report.real_geometry {
+        format!(
+            "real authored hulls ({} tiles wired)",
+            state.report.tiles_wired
+        )
+    } else if state.geometry.is_some() {
+        "cell shells (cycle to a single layer for real geometry)".to_string()
+    } else {
+        "cell shells (tile catalog unavailable)".to_string()
+    };
+    let mode = match state.mode {
+        RenderMode::Schematic => "schematic",
+        RenderMode::Solid => "solid (dev)",
     };
 
-    let (by_kind, lateral, vertical) = state.composition_census();
-    let composed = by_kind
-        .iter()
-        .map(|(label, count)| {
-            #[allow(clippy::cast_precision_loss)]
-            let share = *count as f32 * 100.0 / total.max(1) as f32;
-            format!("{label} {count} ({share:.0}%)")
-        })
-        .collect::<Vec<_>>()
-        .join("  ");
-
     state.status = format!(
-        "seed {:#018x}  ({} of {})   view: {view}   {total} placed cells   attempts {}\n\
-         colour = district   width = room/hallway/vertical   height = archetype   bars = connections\n\
-         archetypes   {archetypes}\n\
-         composes     {composed}\n\
-         connects     {lateral} lateral | {vertical} vertical\n\
+        "seed {:#018x}  ({} of {})   {}   {mode}   attempts {}\n\
+         green will not rewire    red the solver can rewire    amber selected\n\
+         drawing     {geometry}   {} cells, {} line segments\n\
+         archetypes  {archetypes}\n\
+         composes    {composed}      connects {lateral} lateral | {vertical} vertical\n\
          districts (cells / disjoint regions; a district that is a place has few, large regions):\n\
          {}\n\
-         [ ] seed   Tab stack/slice   PageUp/PageDown level   R resolve",
+         Tab cycle layer   D solid dev view   click a hex   Esc clear   [ ] seed   R resolve",
         state.world.seed,
         state.seed_index + 1,
         PRESET_SEEDS.len(),
+        state.layer.label(),
         state.world.last_attempts,
+        state.report.cells,
+        state.report.segments,
         district_lines.join("\n"),
     );
     **text = state.status.clone();
@@ -793,101 +736,60 @@ mod tests {
         for (index, seed) in PRESET_SEEDS.iter().enumerate() {
             let state = LabState::new(index);
             assert_eq!(state.world.seed, *seed);
-            assert!(
-                !state.world.placements.is_empty(),
-                "preset {index} produced an empty facility"
-            );
+            assert!(!state.world.placements.is_empty());
         }
     }
 
     #[test]
-    fn void_is_the_only_archetype_without_a_slab() {
-        for archetype in [
-            HexArchetype::Void,
-            HexArchetype::Room,
-            HexArchetype::Straight,
-            HexArchetype::Corner,
-            HexArchetype::Junction,
-            HexArchetype::RampUp,
-            HexArchetype::RampHead,
-            HexArchetype::Shaft,
-        ] {
-            let height = archetype_height(archetype);
-            if archetype == HexArchetype::Void {
-                assert!(height.is_none(), "void draws nothing");
-            } else {
-                assert!(
-                    height.is_some_and(|h| h > 0.0),
-                    "{} needs a positive slab",
-                    archetype_label(archetype)
-                );
-            }
+    fn the_layer_cycle_visits_every_level_then_the_whole_stack() {
+        let mut layer = Layer::Single(0);
+        let mut seen = Vec::new();
+        for _ in 0..12 {
+            seen.push(layer);
+            layer = layer.next(10);
+        }
+        for level in 0..10u8 {
+            assert!(
+                seen.contains(&Layer::Single(level)),
+                "layer {level} is in the cycle"
+            );
+        }
+        assert!(
+            seen.contains(&Layer::All),
+            "the all-layers state is in the cycle"
+        );
+        assert_eq!(layer, Layer::Single(1), "the cycle wraps");
+    }
+
+    #[test]
+    fn the_layer_cycle_reverses_exactly() {
+        for start in [Layer::Single(0), Layer::Single(5), Layer::All] {
+            assert_eq!(start.next(10).previous(10), start, "{start:?} round-trips");
         }
     }
 
     #[test]
-    fn vertical_archetypes_stand_taller_than_flat_circulation() {
-        let straight = archetype_height(HexArchetype::Straight).expect("straight draws");
-        let junction = archetype_height(HexArchetype::Junction).expect("junction draws");
-        let room = archetype_height(HexArchetype::Room).expect("room draws");
-        let shaft = archetype_height(HexArchetype::Shaft).expect("shaft draws");
-        assert!(straight < junction, "junctions read above corridors");
-        assert!(junction < room, "rooms read above junctions");
-        assert!(room < shaft, "vertical circulation is the tallest read");
-    }
-
-    #[test]
-    fn the_framing_fits_the_facility_inside_the_viewport() {
-        let state = LabState::new(0);
-        let (min, max) = world_bounds(&state);
-        let (transform, scale, _far) = frame_camera(min, max);
-        let inverse = transform.rotation.inverse();
-        let centre = (min + max) * 0.5;
-        for i in 0..8u8 {
-            let corner = Vec3::new(
-                if i & 1 == 0 { min.x } else { max.x },
-                if i & 2 == 0 { min.y } else { max.y },
-                if i & 4 == 0 { min.z } else { max.z },
-            );
-            let projected = (inverse * (corner - centre)).truncate();
-            assert!(
-                projected.x.abs() <= scale * WINDOW_WIDTH * 0.5 + 1e-3,
-                "corner {i} escaped the viewport horizontally"
-            );
-            assert!(
-                projected.y.abs() <= scale * WINDOW_HEIGHT * 0.5 + 1e-3,
-                "corner {i} escaped the viewport vertically"
-            );
-        }
-    }
-
-    #[test]
-    fn slice_mode_draws_strictly_fewer_cells_than_the_stack() {
-        let state = LabState::new(0);
-        let stacked = state
-            .world
-            .placements
-            .keys()
-            .filter(|c| state.drawn(**c))
-            .count();
-        let mut sliced = state;
-        sliced.mode = ViewMode::Slice;
-        sliced.focus_level = 0;
-        let one_level = sliced
-            .world
-            .placements
-            .keys()
-            .filter(|c| sliced.drawn(**c))
-            .count();
-        assert!(one_level > 0, "level 0 must draw something");
-        assert!(one_level < stacked, "a slice is a subset of the stack");
+    fn the_schematic_batches_line_work_instead_of_spawning_per_edge() {
+        let mut app = test_app();
+        let drawn = count_visuals(&mut app);
+        let (cells, segments) = {
+            let state = app.world().resource::<LabState>();
+            (state.report.cells, state.report.segments)
+        };
+        assert!(cells > 0, "a layer must draw cells");
+        assert!(segments > cells, "each cell contributes several segments");
+        assert!(
+            drawn <= 3,
+            "the schematic batches into at most one mesh per role, saw {drawn} entities \
+             for {cells} cells and {segments} segments"
+        );
     }
 
     #[test]
     fn reset_rebuilds_the_projection_without_leaking_entities() {
         let mut app = test_app();
         let baseline = count_visuals(&mut app);
-        assert!(baseline > 0, "the first build must draw the facility");
+        assert!(baseline > 0);
         for expected in 1..=3 {
             {
                 let mut state = app.world_mut().resource_mut::<LabState>();
@@ -897,13 +799,19 @@ mod tests {
                 state.reset_count = count;
             }
             app.update();
-            assert_eq!(
-                count_visuals(&mut app),
-                baseline,
-                "reset {expected} leaked or dropped visuals"
-            );
+            assert_eq!(count_visuals(&mut app), baseline, "reset {expected} leaked");
             assert_eq!(app.world().resource::<LabState>().reset_count, expected);
         }
+    }
+
+    #[test]
+    fn reloading_a_seed_keeps_the_view_you_were_using() {
+        let mut state = LabState::new(0);
+        state.layer = Layer::Single(4);
+        state.mode = RenderMode::Solid;
+        state.reload(1);
+        assert_eq!(state.layer, Layer::Single(4), "the layer survives a reseed");
+        assert_eq!(state.mode, RenderMode::Solid, "the view mode survives too");
     }
 
     #[test]
@@ -920,10 +828,7 @@ mod tests {
             .values()
             .map(|(cells, _)| cells)
             .sum();
-        assert_eq!(
-            counted, drawn,
-            "every placed cell belongs to exactly one district"
-        );
+        assert_eq!(counted, drawn);
     }
 
     #[test]
@@ -936,23 +841,12 @@ mod tests {
             .filter(|p| p.archetype != HexArchetype::Void)
             .count();
         let (by_kind, lateral, vertical) = state.composition_census();
-        let counted: usize = by_kind.values().sum();
-        assert_eq!(
-            counted, drawn,
-            "every placed cell composes exactly one of room/hallway/vertical"
-        );
-        assert!(
-            lateral > 0 && vertical > 0,
-            "a solved facility is connected laterally and vertically; saw \
-             {lateral} lateral and {vertical} vertical"
-        );
+        assert_eq!(by_kind.values().sum::<usize>(), drawn);
+        assert!(lateral > 0 && vertical > 0);
     }
 
     #[test]
     fn the_lab_and_the_game_share_one_sketch_table() {
-        // Both views map their archetypes onto `observed_style`'s roles, so a
-        // height or width change lands in both at once. This pins the mapping
-        // rather than the numbers, which belong to the style crate's own tests.
         assert_eq!(
             sketch_role(HexArchetype::Shaft, HexSpace::Hall, false),
             HexSketchRole::Shaft
@@ -963,17 +857,16 @@ mod tests {
             "blueprint membership wins over archetype"
         );
         let room = hex_sketch(HexSketchRole::Room);
-        assert!((room.inset - 1.0).abs() < f32::EPSILON, "rooms merge");
+        assert!((room.inset - 1.0).abs() < f32::EPSILON);
         assert!(hex_sketch(HexSketchRole::Corridor).inset < room.inset);
     }
 
     #[test]
     fn todays_registers_fragment_into_many_regions() {
-        // Pins bug backlog #14 as an observation rather than a claim: with the
-        // per-cell lottery, base registers shatter into hundreds of tiny
-        // regions. Phase 106 replaces the lottery, and this test is the one that
-        // must be inverted to prove it — mean region size should climb by orders
-        // of magnitude.
+        // Pins bug backlog #14 as an observation rather than a claim. Phase 106
+        // replaces the per-cell lottery, and this test is the one that must be
+        // inverted to prove it — mean region size should climb by orders of
+        // magnitude.
         let state = LabState::new(0);
         let census = state.district_census();
         let base = census
@@ -983,9 +876,6 @@ mod tests {
             .expect("a base register is always assigned");
         #[allow(clippy::cast_precision_loss)]
         let mean = base.0 as f32 / base.1.max(1) as f32;
-        assert!(
-            mean < 4.0,
-            "expected the pre-Phase-106 lottery to fragment registers, saw mean region {mean}"
-        );
+        assert!(mean < 4.0, "expected fragmentation, saw mean region {mean}");
     }
 }

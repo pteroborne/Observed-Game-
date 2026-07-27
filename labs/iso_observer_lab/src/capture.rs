@@ -6,7 +6,7 @@ use bevy::app::AppExit;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 
-use crate::{LabState, PRESET_SEEDS, ViewMode};
+use crate::{LabState, Layer, PRESET_SEEDS};
 
 /// Frames are deferred one tick after the state change that produced them:
 /// `capture_progress` runs after `rebuild`, so a newly requested view only
@@ -26,6 +26,7 @@ pub(crate) struct CaptureRun {
 enum Stage {
     Overview,
     Slices,
+    Inspect,
     Advance,
     Finished,
 }
@@ -60,7 +61,8 @@ pub(crate) fn capture_progress(
         Stage::Overview => {
             if !run.armed {
                 std::fs::create_dir_all(&run.dir).expect("capture dir must be creatable");
-                state.mode = ViewMode::Stack;
+                state.layer = Layer::All;
+                state.selected = None;
                 state.dirty = true;
                 run.armed = true;
                 run.timer = 0.0;
@@ -84,14 +86,13 @@ pub(crate) fn capture_progress(
         Stage::Slices => {
             let levels = state.world.config.levels;
             if run.slice >= levels {
-                run.stage = Stage::Advance;
+                run.stage = Stage::Inspect;
                 run.armed = false;
                 run.timer = 0.0;
                 return;
             }
             if !run.armed {
-                state.mode = ViewMode::Slice;
-                state.focus_level = run.slice;
+                state.layer = Layer::Single(run.slice);
                 state.dirty = true;
                 run.armed = true;
                 run.timer = 0.0;
@@ -106,6 +107,42 @@ pub(crate) fn capture_progress(
                     .spawn(Screenshot::primary_window())
                     .observe(save_to_disk(path));
                 run.slice += 1;
+                run.armed = false;
+                run.timer = 0.0;
+            }
+        }
+        // One frame with a cell pinned, so the inspector has evidence of its
+        // own rather than only existing when a human is holding the mouse.
+        Stage::Inspect => {
+            if !run.armed {
+                state.layer = Layer::Single(0);
+                // A shaft on the ground floor: the most-placed archetype in the
+                // facility, and the one whose tile identity matters most.
+                state.selected = state
+                    .world
+                    .placements
+                    .iter()
+                    .find(|(coord, placement)| {
+                        coord.level == 0
+                            && placement.archetype
+                                == observed_facility::hex_wfc::HexArchetype::Shaft
+                    })
+                    .or_else(|| state.world.placements.iter().next())
+                    .map(|(coord, _)| *coord);
+                state.dirty = true;
+                run.armed = true;
+                run.timer = 0.0;
+                return;
+            }
+            if run.timer >= 1.2 {
+                let path = format!("{}/seed_{}_inspect.png", run.dir, run.seed_index);
+                commands
+                    .spawn(Screenshot::primary_window())
+                    .observe(save_to_disk(path));
+                // The selection is cleared when the next seed starts, not here:
+                // `save_to_disk` reads the framebuffer a frame or more later, so
+                // clearing now photographs an empty panel.
+                run.stage = Stage::Advance;
                 run.armed = false;
                 run.timer = 0.0;
             }
@@ -136,11 +173,17 @@ pub(crate) fn capture_progress(
 
             let next = run.seed_index + 1;
             if next < PRESET_SEEDS.len() {
+                run.timer = 0.0;
                 run.seed_index = next;
                 *state = LabState::new(next);
                 run.stage = Stage::Overview;
                 run.armed = false;
                 run.timer = 0.0;
+                return;
+            }
+            // `save_to_disk` writes on a later frame, so the final seed needs a
+            // grace window or its screenshots never reach the disk.
+            if run.timer < 1.5 {
                 return;
             }
             let config = state.world.config;
