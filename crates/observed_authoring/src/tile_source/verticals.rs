@@ -64,19 +64,64 @@ pub fn ramp_map(register: &str, exit_face: HexFace) -> String {
     out
 }
 
-/// A physically continuous switchback stair, with the walkable line through it.
+/// Which way a tower turns, and so which side its stairwell opening falls on.
+///
+/// The quantized hexagon is symmetric about `x = 0`, so a tower can be
+/// reflected exactly — brushes, climb, and floor path together. A handed pair is
+/// not cosmetic: you turn the other way, the well is on the other side, and the
+/// opening you climb through faces north-east instead of north-west. That is
+/// what a player reads when two districts stack towers differently.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TowerHand {
+    /// Turn landing east, stairwell opening north-west.
+    Left,
+    /// The mirror image: turn landing west, opening north-east.
+    Right,
+}
+
+impl TowerHand {
+    /// Reflect an x coordinate. Applied to every input and never to the output
+    /// text, so there is one geometry and two readings of it.
+    fn x(self, x: f64) -> f64 {
+        match self {
+            Self::Left => x,
+            Self::Right => -x,
+        }
+    }
+
+    /// A reflected pair, re-sorted. `box_brush` needs min before max, and
+    /// reflection swaps them.
+    fn pair(self, min: f64, max: f64) -> (f64, f64) {
+        let (a, b) = (self.x(min), self.x(max));
+        if a <= b { (a, b) } else { (b, a) }
+    }
+}
+
+/// A physically continuous switchback stair, with the walkable line through it
+/// and the floor path around it.
 ///
 /// Thin flights preserve headroom when cells stack; floor piers and
-/// wall-connected brackets visibly support every span. The north-west opening is
-/// kept clear so the flight below can emerge into this cell instead of meeting
-/// the underside of another wedge.
+/// wall-connected brackets visibly support every span. The opening beyond the
+/// upper flight is kept clear so the flight below can emerge into this cell
+/// instead of meeting the underside of another wedge.
 ///
-/// The returned spine is derived from the same flight constants as the brushes,
-/// which is the point: the bot follows the line, so the line cannot fall out of
-/// step with the surface the way a hand-written copy of these numbers did.
-fn supported_switchback() -> (String, Vec<[f64; 3]>, Vec<[f64; 3]>) {
-    let low_flight = [[-72.0, -52.0], [60.0, -52.0], [60.0, -16.0], [-72.0, -16.0]];
-    let high_flight = [[-80.0, 16.0], [60.0, 16.0], [60.0, 52.0], [-80.0, 52.0]];
+/// The spine and deck are derived from the same flight constants as the
+/// brushes, which is the point: the bot follows those lines, so they cannot
+/// fall out of step with the surface the way a hand-written copy did.
+fn supported_switchback(hand: TowerHand) -> (String, Vec<[f64; 3]>, Vec<[f64; 3]>) {
+    let mx = |x: f64| hand.x(x);
+    let low_flight = [
+        [mx(-72.0), -52.0],
+        [mx(60.0), -52.0],
+        [mx(60.0), -16.0],
+        [mx(-72.0), -16.0],
+    ];
+    let high_flight = [
+        [mx(-80.0), 16.0],
+        [mx(60.0), 16.0],
+        [mx(60.0), 52.0],
+        [mx(-80.0), 52.0],
+    ];
     let mut out = String::new();
 
     // Flush with the deck of the cell above (`level_units() + FLOOR_TOP`). It
@@ -103,27 +148,28 @@ fn supported_switchback() -> (String, Vec<[f64; 3]>, Vec<[f64; 3]>) {
     // stairwell through which the preceding cell's high flight arrives.
     out += &general_prism_brush(
         &[
-            [-80.0, -40.0],
-            [96.0, -40.0],
-            [96.0, -68.0],
-            [88.0, -76.0],
-            [64.0, -80.0],
-            [-64.0, -80.0],
-            [-88.0, -76.0],
-            [-80.0, -68.0],
+            [mx(-80.0), -40.0],
+            [mx(96.0), -40.0],
+            [mx(96.0), -68.0],
+            [mx(88.0), -76.0],
+            [mx(64.0), -80.0],
+            [mx(-64.0), -80.0],
+            [mx(-88.0), -76.0],
+            [mx(-80.0), -68.0],
         ],
         0.0,
         FLOOR_TOP,
         [0.0, -60.0],
     );
-    for (min, max) in [
-        ([48.0, -52.0, 0.0], [96.0, 68.0, FLOOR_TOP]),
-        ([-64.0, 56.0, 0.0], [60.0, 68.0, FLOOR_TOP]),
-        ([-80.0, 52.0, 0.0], [-64.0, 68.0, FLOOR_TOP]),
-        ([-84.0, -52.0, 0.0], [-48.0, 16.0, FLOOR_TOP]),
-        ([-48.0, -16.0, 0.0], [48.0, 16.0, FLOOR_TOP]),
+    for (x0, x1, y0, y1) in [
+        (48.0, 96.0, -52.0, 68.0),
+        (-64.0, 60.0, 56.0, 68.0),
+        (-80.0, -64.0, 52.0, 68.0),
+        (-84.0, -48.0, -52.0, 16.0),
+        (-48.0, 48.0, -16.0, 16.0),
     ] {
-        out += &box_brush(min, max);
+        let (lo, hi) = hand.pair(x0, x1);
+        out += &box_brush([lo, y0, 0.0], [hi, y1, FLOOR_TOP]);
     }
 
     // The low edge begins inside the grounded south deck and rises through its
@@ -132,7 +178,15 @@ fn supported_switchback() -> (String, Vec<[f64; 3]>, Vec<[f64; 3]>) {
         &low_flight,
         &[climb_base, landing, landing, climb_base],
         low_thickness,
-        [-6.0, -34.0],
+        // Mirrored with the corners. An interior hint is a point inside the
+        // solid, and `sloped_deck_brush` derives the height it tests at from
+        // the mean of the corner heights — which is only the true mid-height at
+        // the flight's plan midpoint. Leave the hint unreflected and it lands
+        // outside the reflected wedge, `oriented_plane` reads the normal
+        // backwards, and the flight comes out a quarter-metre low along its
+        // whole run. That is what a mirrored tower failing where its mirror
+        // image passed actually meant.
+        [mx(-6.0), -34.0],
     );
     // The turn landing is a thick cantilever keyed into the east structural
     // wall. Ground-level circulation passes underneath its clearance.
@@ -142,12 +196,20 @@ fn supported_switchback() -> (String, Vec<[f64; 3]>, Vec<[f64; 3]>) {
     // flight met it across a 0.25 m x 0.25 m corner patch — narrower than the
     // 0.76 m player capsule, which is why the turn was impassable without
     // threading an exact corner, and why the staircase read as broken.
-    out += &box_brush([56.0, -52.0, landing - 8.0], [96.0, 52.0, landing]);
+    // The landing stops at x = 56, clear of the rising flight beneath it.
+    // Reaching it back to 48 to soften the step onto it does the opposite of
+    // what it looks like: the slab's underside is at 3.5 m and the flight is
+    // already at 3.66 m by then, so the extra landing takes the headroom a body
+    // climbing the flight needs and stops it dead. Measured as a fresh soak
+    // stall with the tower unmirrored, which is how it was told apart from the
+    // mirroring work landing at the same time.
+    let (turn_lo, turn_hi) = hand.pair(56.0, 96.0);
+    out += &box_brush([turn_lo, -52.0, landing - 8.0], [turn_hi, 52.0, landing]);
     out += &sloped_deck_brush(
         &high_flight,
         &[climb_top, landing, landing, climb_top],
         8.0,
-        [-6.0, 34.0],
+        [mx(-6.0), 34.0],
     );
 
     // The upper flight itself runs through the north-west opening and a short
@@ -157,19 +219,23 @@ fn supported_switchback() -> (String, Vec<[f64; 3]>, Vec<[f64; 3]>) {
     // Guard the through-opening on each level. The lower flight rises inside
     // these rails and exits at the open west end; lateral traffic cannot cut
     // across the void by accident.
-    out += &box_brush([-48.0, 52.0, FLOOR_TOP], [48.0, 56.0, 28.0]);
-    out += &box_brush([48.0, 16.0, FLOOR_TOP], [52.0, 52.0, 28.0]);
+    let (rail_lo, rail_hi) = hand.pair(-48.0, 48.0);
+    out += &box_brush([rail_lo, 52.0, FLOOR_TOP], [rail_hi, 56.0, 28.0]);
+    let (stub_lo, stub_hi) = hand.pair(48.0, 52.0);
+    out += &box_brush([stub_lo, 16.0, FLOOR_TOP], [stub_hi, 52.0, 28.0]);
 
     // Narrow floor piers support the lower flight inside its footprint; they
     // never protrude into the south circulation bypass. Heights come from the
     // flight itself so a pier always meets the span it carries.
     for x in [-40.0, 4.0, 48.0] {
-        out += &box_brush([x - 4.0, -52.0, 0.0], [x + 4.0, -16.0, low_underside(x)]);
+        let (lo, hi) = hand.pair(x - 4.0, x + 4.0);
+        out += &box_brush([lo, -52.0, 0.0], [hi, -16.0, low_underside(x)]);
     }
     // The upper span keys into the east turn cantilever and the west wall
     // brackets below, leaving its underside free of collider seams.
+    let (bracket_lo, bracket_hi) = hand.pair(-104.0, -72.0);
     for (y0, y1) in [(18.0, 26.0), (42.0, 50.0)] {
-        out += &box_brush([-104.0, y0, 120.0], [-72.0, y1, climb_top - 8.0]);
+        out += &box_brush([bracket_lo, y0, 120.0], [bracket_hi, y1, climb_top - 8.0]);
     }
 
     // The line a body walks, bottom to top. It starts at the foot of the low
@@ -185,16 +251,21 @@ fn supported_switchback() -> (String, Vec<[f64; 3]>, Vec<[f64; 3]>) {
     // the floor stops being enough.
     let low_height = |x: f64| climb_base + (x + 72.0) / low_run * (landing - climb_base);
     let spine = vec![
-        [-64.0, -34.0, low_height(-64.0)],
-        // Up the low flight to the turn.
-        [60.0, -34.0, landing],
+        [mx(-64.0), -34.0, low_height(-64.0)],
+        // Up the low flight and *onto* the turn landing, not merely to the top
+        // edge of the flight. A node on the edge is a node on the slope: a body
+        // that stops a little short of it stands below the landing, and once
+        // that gap exceeds one autostep it cannot get up and falls back down
+        // the flight. Measured at 0.50 m against a 0.45 m step. The landing
+        // spans x 56..96, so 72 is comfortably inside it.
+        [mx(72.0), -34.0, landing],
         // Around the turn landing, which spans the depth of both flights.
-        [76.0, 0.0, landing],
-        [60.0, 34.0, landing],
-        // Up the high flight and out through the north-west opening onto the
-        // deck of the cell above.
-        [-80.0, 34.0, climb_top],
-        [-72.0, 60.0, climb_top],
+        [mx(76.0), 0.0, landing],
+        [mx(72.0), 34.0, landing],
+        // Up the high flight and out through the opening onto the deck of the
+        // cell above.
+        [mx(-80.0), 34.0, climb_top],
+        [mx(-72.0), 60.0, climb_top],
     ];
 
     // The walkable floor, as an open path rather than a ring. The grounded deck
@@ -208,14 +279,14 @@ fn supported_switchback() -> (String, Vec<[f64; 3]>, Vec<[f64; 3]>) {
     // strip to the east strip clips the corner where the upper flight is, so
     // the path turns at the corner instead of cutting it.
     let deck = vec![
-        [-72.0, 60.0, FLOOR_TOP],
-        [-20.0, 62.0, FLOOR_TOP],
-        [72.0, 62.0, FLOOR_TOP],
-        [72.0, 0.0, FLOOR_TOP],
-        [72.0, -60.0, FLOOR_TOP],
-        [0.0, -60.0, FLOOR_TOP],
-        [-76.0, -56.0, FLOOR_TOP],
-        [-76.0, -20.0, FLOOR_TOP],
+        [mx(-72.0), 60.0, FLOOR_TOP],
+        [mx(-20.0), 62.0, FLOOR_TOP],
+        [mx(72.0), 62.0, FLOOR_TOP],
+        [mx(72.0), 0.0, FLOOR_TOP],
+        [mx(72.0), -60.0, FLOOR_TOP],
+        [mx(0.0), -60.0, FLOOR_TOP],
+        [mx(-76.0), -56.0, FLOOR_TOP],
+        [mx(-76.0), -20.0, FLOOR_TOP],
     ];
     // The west leg runs at x = -76, clear of the low flight's west end at
     // x = -72. Two units further east it passes under the flight's shallowest
@@ -223,8 +294,30 @@ fn supported_switchback() -> (String, Vec<[f64; 3]>, Vec<[f64; 3]>) {
     // crossing the tower laterally drifts up onto it, whereupon the descend
     // steering tries to walk it back down while the lateral steering keeps
     // pushing it across. Measured: all four soak bots wedged in that argument.
-    debug_assert!(deck[6][0] < -72.0 && deck[7][0] < -72.0);
+    debug_assert!(deck[6][0].abs() > 72.0 && deck[7][0].abs() > 72.0);
     (out, spine, deck)
+}
+
+/// Which way a register's towers turn.
+///
+/// This is the whole of backlog #13 in one function today: before it, every
+/// `Shaft` cell in every district resolved to one procedural switchback through
+/// the `generic` fallback, so a facility that is a quarter stairs was a quarter
+/// of *the same* stair. The vertical districts now turn the other way from
+/// everywhere else, which is the difference a player descending through
+/// Wellshaft actually notices.
+///
+/// It is a small vocabulary on purpose. A handed pair is exact — the hexagon is
+/// symmetric, so the mirror is the same geometry with the same guarantees — and
+/// nothing here can drift, because the climb and the floor path are reflected
+/// with the brushes. Genuinely new skeletons belong in authored `.map` modules
+/// under `register_scope`, which is Phase 110.
+#[must_use]
+pub(crate) fn register_tower_hand(register: &str) -> TowerHand {
+    match register {
+        "wellshaft" | "megastructure" => TowerHand::Right,
+        _ => TowerHand::Left,
+    }
 }
 
 pub fn stair_segment_map(register: &str) -> String {
@@ -259,7 +352,7 @@ pub(crate) fn stair_access_map(
     debug_assert!(door_faces.len() <= 2);
     let style = register_style(register);
     let h = level_units();
-    let (mut brushes, spine, deck) = supported_switchback();
+    let (mut brushes, spine, deck) = supported_switchback(register_tower_hand(register));
     for &door_face in door_faces {
         brushes += &door_floor_apron(door_face, 28.0, 0.0, FLOOR_TOP);
     }

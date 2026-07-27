@@ -167,31 +167,6 @@ fixes below, and both are candidates for `route_within_cost` bounding or for
 hoisting the shared spawn→exit term. Left alone because after the fixes below they
 no longer show up in the profile — pick this up only if the sim step regresses.
 
-### 13. Every vertical cell in the facility is the same procedural stair
-**Scheduled: Arc O Phase 109** ([arc_o/README.md](arc_o/README.md)).
-**Found 2026-07-26 during the Arc O planning survey.** There are zero authored
-`stair_tower` modules in `assets/tiles/compiled_catalog.ron`, yet
-`placement_tile_archetype` demands `stair_tower` for every `Shaft` placement
-(`crates/observed_facility/src/hex_wfc/variants.rs:197`). `Catalogue::select`
-therefore falls through to the `(archetype, "generic")` lookup
-(`crates/observed_match/src/hex_wfc/geometry.rs:544`) in all ten registers, and the
-generic kit's 66 switchback variants are the only vertical geometry the game has
-ever rendered. The weight table compounds it: of the ~662 live connective-cell
-weight, Shaft is ~258 (39 %) and ramp halves ~240 (36 %), leaving ~24 % flat
-corridor — so the most-walked element is also the least varied. Look at:
-`variants.rs:50-168` (the weights),
-`crates/observed_authoring/src/tile_source/catalog.rs:168-268` (the generic stair
-kit), and the exemption at `game/src/hex_wfc/sim_catalog_tests.rs:27`, which
-excuses `stair_tower` from the "must not use generic fallback" assertion and has
-been hiding this. The acceptance gate is authored stair geometry in at least the
-vertical-identity registers, plus removal of that exemption.
-
-**Measured 2026-07-26 (Phase 104 baseline, `arc_o/phase_104_iso_observer.md`).**
-The weight estimate above understated it. Across all five pinned seeds, `Shaft`
-is **46.5–47.5 % of every placed cell** — 2 543 to 2 608 of ~5 490 — while flat
-`Straight` corridor is **3.9–4.3 %** and room cells are 14. Nearly half the
-facility is the one procedural switchback.
-
 ### 15. Every room cell of every room role asks for the same archetype
 **Scheduled: Arc O Phase 111** ([arc_o/README.md](arc_o/README.md)).
 **Found 2026-07-26 during the Arc O planning survey.**
@@ -260,6 +235,22 @@ tracking it.
 
 ## Fixed
 
+- ~~Every vertical cell in the facility is the same procedural stair~~ — fixed
+  2026-07-27 in Arc O Phase 109
+  ([arc_o/phase_109_authored_stair_towers.md](arc_o/phase_109_authored_stair_towers.md)).
+  Measured at 46.5–47.5 % of every placed cell at the Phase 104 baseline, all of
+  it one procedural switchback reached through the `generic` fallback. Now
+  **17.7 %**, and the vertical districts build handed towers of their own that
+  turn the other way. The blocker was never authoring: the objective bot climbed
+  by constants measured off that one tower, so a second shape would have been
+  unwalkable and even fixing the first one broke the steering. Tiles now declare
+  their own climb and floor path and the bot follows those.
+  **Not fully discharged:** the `stair_tower` coverage exemption stands, because
+  exact coverage needs a tower per register and there are three. It is no longer
+  hiding anything — the monoculture is measured and broken — but it comes down in
+  Phase 110 with the authored kits, beside the `expanse` exemption (#20). Two
+  shapes is also a handed pair rather than two designs; a genuinely new skeleton
+  is Phase 110 authoring work.
 - ~~Bots can stall exiting a switchback tower laterally~~ — fixed 2026-07-27 in
   Arc O Phase 109
   ([arc_o/phase_109_authored_stair_towers.md](arc_o/phase_109_authored_stair_towers.md)).

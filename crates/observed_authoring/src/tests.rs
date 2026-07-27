@@ -8,7 +8,7 @@ use player_input::PlayerIntent;
 
 use crate::CompiledTileCatalog;
 use crate::manifest::Manifest;
-use crate::tile::{TileError, parse_tile};
+use crate::tile::{TileError, TilePrototype, parse_tile};
 use crate::tile_source;
 
 fn signature(ports: &[(HexFace, PortClass)]) -> PortSignature {
@@ -610,5 +610,122 @@ fn every_generated_stair_tower_ships_a_walkable_deck() {
             tile.key.archetype,
             tile.key.register
         );
+    }
+}
+
+/// Drive a capsule up a tower's own declared climb and see whether it arrives.
+///
+/// This is the gate a new tower shape has to pass. Geometry that validates, and
+/// a spine that parses, still prove nothing about whether a body fits between
+/// the treads and the soffit, or can make the turn — and the cost of finding out
+/// from the bot soak instead is an afternoon of bisecting a stalled match.
+fn climb_capsule_up(tile: &TilePrototype) -> Result<f32, String> {
+    let config = FpsConfig::default();
+    let scene = RapierTraversalScene::from_arena_spec(&tile.arena_spec());
+    let foot = tile
+        .spine
+        .nodes
+        .first()
+        .copied()
+        .expect("towers ship a spine");
+    let mut body = FpsBody::spawned(
+        Vec3::new(foot.x, foot.y + config.half_height + 0.05, foot.z),
+        0.0,
+    );
+    for (index, node) in tile.spine.nodes.iter().enumerate().skip(1) {
+        if !drive_capsule_to(&scene, &mut body, Vec2::new(node.x, node.z), &config) {
+            return Err(format!(
+                "stalled short of spine node {index} at {:?}, feet {:.2} m",
+                body.position,
+                body.position.y - config.half_height
+            ));
+        }
+        let feet = body.position.y - config.half_height;
+        if (feet - node.y).abs() > 0.6 {
+            return Err(format!(
+                "reached spine node {index} in plan but at {feet:.2} m, not the {:.2} m the                  climb declares - the body is not on the surface the line describes",
+                node.y
+            ));
+        }
+    }
+    Ok(body.position.y - config.half_height)
+}
+
+#[test]
+fn every_generated_stair_tower_is_physically_climbable() {
+    let cells = tile_source::compatibility_cells().expect("generated kit parses");
+    let mut exercised = 0usize;
+    // The doorless through-segment of each register: the tower stripped to its
+    // climb, which is the part every landing and cap variant shares.
+    for tile in cells.iter().filter(|tile| {
+        tile.key.archetype == "stair_tower"
+            && tile.signature.port(HexFace::Up) == PortClass::ShaftOpen
+            && tile.signature.port(HexFace::Down) == PortClass::ShaftOpen
+            && HexFace::LATERAL
+                .into_iter()
+                .all(|face| tile.signature.port(face) != PortClass::Door)
+    }) {
+        let feet = climb_capsule_up(tile).unwrap_or_else(|error| {
+            panic!("{} {}: {error}", tile.key.archetype, tile.key.register)
+        });
+        let deck_above = TILE_LEVEL_HEIGHT + FLOOR_SLAB_TOP;
+        assert!(
+            (feet - deck_above).abs() <= 0.35,
+            "{} {} climbed to {feet:.2} m, not the deck above at {deck_above:.2} m",
+            tile.key.archetype,
+            tile.key.register
+        );
+        exercised += 1;
+    }
+    assert!(
+        exercised >= 3,
+        "expected the neutral tower and one per handed district: {exercised}"
+    );
+}
+
+/// Closes bug backlog #13's premise. Every `Shaft` cell used to resolve to one
+/// procedural switchback through the `generic` fallback, in all ten registers —
+/// a facility that is a quarter stairs was a quarter of the *same* stair. The
+/// vertical districts now have towers of their own, and they are not copies.
+#[test]
+fn the_vertical_districts_have_towers_of_their_own() {
+    let cells = tile_source::compatibility_cells().expect("generated kit parses");
+    let through = |register: &str| {
+        cells
+            .iter()
+            .find(|tile| {
+                tile.key.archetype == "stair_tower"
+                    && tile.key.register == register
+                    && tile.signature.port(HexFace::Up) == PortClass::ShaftOpen
+                    && tile.signature.port(HexFace::Down) == PortClass::ShaftOpen
+                    && HexFace::LATERAL
+                        .into_iter()
+                        .all(|face| tile.signature.port(face) != PortClass::Door)
+            })
+            .cloned()
+    };
+    let neutral = through("generic").expect("the fallback tower still exists");
+    for register in ["wellshaft", "megastructure"] {
+        let tower = through(register).unwrap_or_else(|| {
+            panic!("{register} has no tower of its own, so it uses the fallback")
+        });
+
+        // Handed, not merely re-keyed: the climb turns the other way, so the
+        // stairwell opening is on the other side of the cell. Re-keying the same
+        // geometry would satisfy a coverage check while changing nothing a
+        // player can see, which is the trap the `generic` fallback set.
+        let mirrored = neutral
+            .spine
+            .nodes
+            .iter()
+            .zip(&tower.spine.nodes)
+            .all(|(a, b)| (a.x + b.x).abs() < 0.01 && (a.y - b.y).abs() < 0.01);
+        assert!(
+            mirrored,
+            "{register}'s tower is not the mirror of the neutral one: {:?} vs {:?}",
+            neutral.spine.nodes, tower.spine.nodes
+        );
+        let turns_the_other_way = neutral.spine.nodes[1].x * tower.spine.nodes[1].x < 0.0;
+        assert!(turns_the_other_way, "{register}'s tower turns the same way");
     }
 }

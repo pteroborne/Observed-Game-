@@ -744,10 +744,25 @@ fn tile_for<'a>(
     archetype: &'static str,
     signature: PortSignature,
 ) -> Result<&'a TilePrototype, HexGeometryError> {
+    // A stair tower is chosen for the whole column, not the cell.
+    //
+    // A tower's stairwell opening is the hole the flight below arrives through.
+    // Give two cells in one column towers of different shapes and the lower
+    // flight tops out under the upper cell's solid deck: the surfaces union, so
+    // nothing looks broken, but a body climbing meets the underside of the floor
+    // above and stops. Districts are spatial and drift between levels, so a
+    // column crosses district boundaries routinely — picking per cell would make
+    // that the common case rather than the exception. The base cell's register
+    // is the one thing every cell in a column agrees on.
+    let identity = if archetype == "stair_tower" {
+        HexCoord { level: 0, ..coord }
+    } else {
+        coord
+    };
     let register = world
         .architecture
-        .get(&coord)
-        .ok_or(HexGeometryError::MissingArchitecture(coord))?
+        .get(&identity)
+        .ok_or(HexGeometryError::MissingArchitecture(identity))?
         .slug();
     catalogue
         .select(

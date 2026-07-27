@@ -889,3 +889,51 @@ fn whole_room_hull_budget_is_shared_across_the_entire_footprint_not_per_cell() {
         }
     );
 }
+
+/// A shaft column must use one tower shape all the way up.
+///
+/// A tower's stairwell opening is the hole the flight below arrives through, so
+/// two shapes in one column leave the lower flight topping out under the upper
+/// cell's solid deck. The surfaces union, so nothing reads as broken — a body
+/// simply climbs into the underside of the floor above and stops. Districts
+/// drift between levels, so a column crossing a district boundary is routine
+/// rather than rare, and choosing the tower per cell made this the common case:
+/// measured as a soak stall the moment a second tower shape shipped.
+#[test]
+fn a_shaft_column_uses_one_tower_shape() {
+    let world = HexWfcWorld::generate(SHOWCASE_SEED, HexWfcConfig::arc_default()).expect("solves");
+    let snapshot = HexWfcGeometrySnapshot::project(&world, &tiles()).expect("projects");
+    let mut per_column: BTreeMap<(u16, u16), BTreeSet<String>> = BTreeMap::new();
+    for piece in &snapshot.pieces {
+        let Some(tile) = piece.tile.as_ref() else {
+            continue;
+        };
+        if tile.archetype != "stair_tower" {
+            continue;
+        }
+        per_column
+            .entry((piece.source_cell.q, piece.source_cell.r))
+            .or_default()
+            .insert(tile.register.clone());
+    }
+    assert!(
+        !per_column.is_empty(),
+        "the pinned seed should place stair towers"
+    );
+    for (column, registers) in &per_column {
+        assert_eq!(
+            registers.len(),
+            1,
+            "column {column:?} mixes tower shapes: {registers:?}"
+        );
+    }
+
+    // And the handed districts really are reaching their own towers, or the
+    // check above would pass on a facility that still has only one shape.
+    let shapes: BTreeSet<_> = per_column.values().flatten().cloned().collect();
+    assert!(
+        shapes.len() > 1,
+        "every column drew the same tower, so vertical circulation is still a \
+         monoculture: {shapes:?}"
+    );
+}

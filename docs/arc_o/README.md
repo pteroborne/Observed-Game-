@@ -25,10 +25,13 @@ the catalog, and the projector rather than by playing.
 - ~~**Districts are not spatial.**~~ **Closed in Phase 106.** `register_for` drew an
   architecture register per hex; it is now a lookup against one seeded anchor per register
   per level. Mean region size went from 1.4 cells to 29–86. (#14)
-- **Vertical circulation is a monoculture.** Zero authored `stair_tower` modules exist, so
-  every `Shaft` cell in every district resolves to one procedural switchback through the
-  `"generic"` fallback. The weight table makes Shaft ~39 % and ramps ~36 % of the live
-  connective alphabet, leaving ~24 % flat corridor. (#13)
+- ~~**Vertical circulation is a monoculture.**~~ **Closed in Phase 109.** It was 47 % of
+  the facility and one shape; it is 17.7 % and two, with the vertical districts turning the
+  other way. The lesson for the rest of the arc: the obstacle was not the authoring but the
+  *consumer* — the bot had the one tower's dimensions memorised, so no second tower could
+  have been walked and no fix to the first could be made. Tiles now declare how they are
+  climbed and crossed. Anything that hardcodes another tile's interior will block the same
+  way. (#13, and #19 with it)
 - **Rooms have no geometric identity.** `blueprint_cell_archetype` discards both of its
   parameters and returns `"sanctuary"` unconditionally. (#15)
 - ~~**There is no vocabulary for open space.**~~ **Closed in Phase 108.** `Expanse` landed
@@ -128,7 +131,7 @@ Phase-specific as-landed notes and evidence links are added here as each slice i
 - [Phase 106 — Spatial Districts](phase_106_spatial_districts.md) `[x]`
 - [Phase 107 — District Composition Profiles](phase_107_district_composition.md) `[x]`
 - [Phase 108 — The `Expanse` Archetype](phase_108_expanse_archetype.md) `[x]`
-- Phase 109 — Authored Stair Towers & Vertical Rebalance
+- [Phase 109 — Authored Stair Towers & Vertical Rebalance](phase_109_authored_stair_towers.md) `[x]`
 - Phase 110 — District-Exclusive Tilesets
 - Phase 111 — Rooms Belong to Districts
 - Phase 112 — Co-op Mode & the Sixteen-Seat Roster

@@ -41,7 +41,7 @@ pub use verticals::{
 /// files in the repository. Exact register-authored cells still win selection;
 /// this kit is keyed as `generic` and is used only for missing signatures.
 pub fn compatibility_cells() -> Result<Vec<crate::TilePrototype>, crate::TileError> {
-    catalog::library_for(&["institutional"])
+    let mut cells = catalog::library_for(&["institutional"])
         .into_iter()
         .map(|source| {
             let mut tile = crate::parse_tile(&source.text)?;
@@ -49,7 +49,33 @@ pub fn compatibility_cells() -> Result<Vec<crate::TilePrototype>, crate::TileErr
             tile.key.archetype = compatibility_archetype(&tile).to_string();
             Ok(tile)
         })
-        .collect()
+        .collect::<Result<Vec<_>, crate::TileError>>()?;
+
+    // Vertical circulation is the one family that must not be a single shape.
+    //
+    // The rest of this kit is register-blind on purpose: it is a topology safety
+    // net keyed `generic`, and exact register-authored cells outrank it. But
+    // stair towers had no authored modules at all, so `generic` was never a net
+    // under them — it was the only thing there, and every `Shaft` cell in the
+    // facility resolved to the same procedural switchback. That is bug backlog
+    // #13. A register whose towers turn the other way therefore gets its own
+    // exact keys, which `Catalogue::select` finds before it reaches the fallback.
+    for &register in REGISTERS {
+        if verticals::register_tower_hand(register)
+            == verticals::register_tower_hand("institutional")
+        {
+            continue;
+        }
+        for source in catalog::library_for(&[register])
+            .into_iter()
+            .filter(|source| source.archetype.starts_with("stair_"))
+        {
+            let mut tile = crate::parse_tile(&source.text)?;
+            tile.key.archetype = compatibility_archetype(&tile).to_string();
+            cells.push(tile);
+        }
+    }
+    Ok(cells)
 }
 
 fn compatibility_archetype(tile: &crate::TilePrototype) -> &'static str {

@@ -154,13 +154,22 @@ pub(super) fn catalogue() -> Vec<HexVariant> {
 
     // 5. Legacy logical well states remain part of the solver's vertical
     // alphabet, but presentation resolves them to grounded stair towers.
+    //
+    // Weights here are deliberately low relative to the flat alphabet. The
+    // shaft family is enormous — a doorless through-shaft plus every one- and
+    // two-door mask against three vertical combinations, 190 entries against a
+    // handful for a straight — so equal per-entry weight is not equal weight at
+    // all, and that arithmetic is how the facility ended up 47 % stairs
+    // (backlog #13). Verticality now comes from Phase 107's district profiles,
+    // which raise it where it is the identity, rather than from a baseline that
+    // raises it everywhere.
     variants.push(HexVariant {
         space: HexSpace::Hall,
         archetype: HexArchetype::Shaft,
         doors: 0,
         up: PortClass::ShaftOpen,
         down: PortClass::ShaftOpen,
-        weight: 6,
+        weight: 3,
     });
     for &up in &[PortClass::Sealed, PortClass::ShaftOpen] {
         for &down in &[PortClass::Sealed, PortClass::ShaftOpen] {
@@ -176,7 +185,7 @@ pub(super) fn catalogue() -> Vec<HexVariant> {
                         doors: mask,
                         up,
                         down,
-                        weight: 4,
+                        weight: 2,
                     });
                 }
             }
