@@ -132,7 +132,7 @@ Phase-specific as-landed notes and evidence links are added here as each slice i
 - [Phase 107 — District Composition Profiles](phase_107_district_composition.md) `[x]`
 - [Phase 108 — The `Expanse` Archetype](phase_108_expanse_archetype.md) `[x]`
 - [Phase 109 — Authored Stair Towers & Vertical Rebalance](phase_109_authored_stair_towers.md) `[x]`
-- Phase 110 — District-Exclusive Tilesets
+- [Phase 110 — District-Exclusive Tilesets](phase_110_district_tilesets.md) `[x]`
 - Phase 111 — Rooms Belong to Districts
 - Phase 112 — Co-op Mode & the Sixteen-Seat Roster
 - Phase 113 — Arc Gate

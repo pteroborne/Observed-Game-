@@ -38,41 +38,36 @@ pub use verticals::{
 /// Production-authored modules may deliberately cover only a curated subset of
 /// signatures. These generated cells preserve the hard topology/geometry
 /// contract underneath that subset without requiring hundreds of derived `.map`
-/// files in the repository. Exact register-authored cells still win selection;
-/// this kit is keyed as `generic` and is used only for missing signatures.
+/// files in the repository.
+///
+/// **One kit per register**, since Arc O Phase 110. It used to be a single
+/// institutional-derived library relabelled `generic`, consulted whenever an
+/// exact register tile was missing — and since only Liminal Grid had authored
+/// modules, "whenever" meant nearly always. Nine of the ten districts were built
+/// entirely out of one district's geometry, which is why they read as one place
+/// however they were lit or composed.
+///
+/// Each register now generates its own library through [`register_style`], so a
+/// district's dado, its junction pylons and its stair towers are its own. The
+/// `generic` copy stays underneath as a net for a register nothing was generated
+/// for, and authored `.map` modules still outrank both.
 pub fn compatibility_cells() -> Result<Vec<crate::TilePrototype>, crate::TileError> {
+    let convert = |source: catalog::GeneratedTile, register: Option<&str>| {
+        let mut tile = crate::parse_tile(&source.text)?;
+        if let Some(register) = register {
+            tile.key.register = register.to_string();
+        }
+        tile.key.archetype = compatibility_archetype(&tile).to_string();
+        Ok(tile)
+    };
+
     let mut cells = catalog::library_for(&["institutional"])
         .into_iter()
-        .map(|source| {
-            let mut tile = crate::parse_tile(&source.text)?;
-            tile.key.register = "generic".to_string();
-            tile.key.archetype = compatibility_archetype(&tile).to_string();
-            Ok(tile)
-        })
+        .map(|source| convert(source, Some("generic")))
         .collect::<Result<Vec<_>, crate::TileError>>()?;
-
-    // Vertical circulation is the one family that must not be a single shape.
-    //
-    // The rest of this kit is register-blind on purpose: it is a topology safety
-    // net keyed `generic`, and exact register-authored cells outrank it. But
-    // stair towers had no authored modules at all, so `generic` was never a net
-    // under them — it was the only thing there, and every `Shaft` cell in the
-    // facility resolved to the same procedural switchback. That is bug backlog
-    // #13. A register whose towers turn the other way therefore gets its own
-    // exact keys, which `Catalogue::select` finds before it reaches the fallback.
     for &register in REGISTERS {
-        if verticals::register_tower_hand(register)
-            == verticals::register_tower_hand("institutional")
-        {
-            continue;
-        }
-        for source in catalog::library_for(&[register])
-            .into_iter()
-            .filter(|source| source.archetype.starts_with("stair_"))
-        {
-            let mut tile = crate::parse_tile(&source.text)?;
-            tile.key.archetype = compatibility_archetype(&tile).to_string();
-            cells.push(tile);
+        for source in catalog::library_for(&[register]) {
+            cells.push(convert(source, None)?);
         }
     }
     Ok(cells)
@@ -125,6 +120,15 @@ pub const REGISTERS: &[&str] = &[
     "wellshaft",
     "infinite_gallery",
     "thinning",
+    // Liminal Grid was absent for the whole of Arc L and Arc M, on the reasoning
+    // that it is the one district authored as `.map` modules and so needs no
+    // generated kit. That held only while the authored corpus covered every
+    // demand the solver could make. It stopped holding the moment `Expanse`
+    // arrived (backlog #20): the district whose identity *is* open space had no
+    // exact tiles for it and fell through to a fallback drawn in another
+    // district's style. A generated kit under authored modules is a floor, not a
+    // replacement — authored tiles outweigh it and still win selection.
+    "liminal_grid",
 ];
 
 /// Register-specific interior parameters, in TB units. `trim_height` is the
@@ -147,6 +151,9 @@ pub(crate) fn register_style(register: &str) -> RegisterStyle {
         "wellshaft" => (20.0, 12.0),
         "infinite_gallery" => (8.0, 10.0),
         "thinning" => (0.0, 8.0),
+        // Vast and open: the lowest trim of any district that has one, and slim
+        // pylons, so nothing in a Liminal hall interrupts the run of the walls.
+        "liminal_grid" => (6.0, 9.0),
         // institutional and the template default: a modest dado rail.
         _ => (12.0, 12.0),
     };

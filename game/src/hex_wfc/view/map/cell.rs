@@ -41,6 +41,7 @@ pub(super) fn sketch_role(
         HexArchetype::RampUp => HexSketchRole::Ramp,
         HexArchetype::RampHead => HexSketchRole::RampHead,
         HexArchetype::Shaft => HexSketchRole::Shaft,
+        HexArchetype::Expanse => HexSketchRole::Expanse,
         HexArchetype::Room => HexSketchRole::Room,
     }
 }
@@ -92,6 +93,7 @@ impl Stability {
                 | HexArchetype::Straight
                 | HexArchetype::Corner
                 | HexArchetype::Junction
+                | HexArchetype::Expanse
         );
         if !mutable_topology {
             Self::Permanent

@@ -137,9 +137,8 @@ pub fn run() {
     // it stays behind the flag rather than being always-on.
     let gpu_profiling = std::env::var(crate::hex_wfc::GPU_PROFILE_ENV).is_ok();
     let mut plugins = DefaultPlugins
-        // Resolve drop-in assets against the workspace `assets/` directory
-        // (Bevy otherwise reads `assets/` relative to the crate dir under
-        // `cargo run`, missing files dropped at the repo root).
+        // Resolve drop-in assets beside a packaged executable, from the workspace
+        // during development, or from OBSERVED2_ASSET_ROOT when explicitly set.
         .set(AssetPlugin {
             file_path: crate::view::assets::assets_dir()
                 .to_string_lossy()

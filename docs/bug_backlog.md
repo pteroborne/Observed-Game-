@@ -200,31 +200,21 @@ the coverage audits.
 **Found 2026-07-27 while reproducing the Phase 107 soak failure.** A room
 blueprint that spans two levels (`GuardianControl`) exposes `ShaftOpen` between
 its stacked cells, and nothing can climb it. The bot's stair handling is gated on
-`HexArchetype::Shaft` (`crates/observed_match/src/hex_wfc/model/bot.rs:234,316`)
-and its waypoints are tuned to the generic switchback's own local geometry; the
+`HexArchetype::Shaft` (`crates/observed_match/src/hex_wfc/model/bot.rs`), and the
 room's geometry comes from `blueprint_cell_archetype`, which returns `sanctuary`
 for every role and cell (#15), so there are no treads inside it either.
+
+**Updated 2026-07-27 (Phase 109).** The hard half of this is done. The bot no
+longer follows hardcoded waypoints — a tile ships a `StairSpine` and a
+`DeckPath`, and the bot walks whatever the cell declares. So a two-level room
+becomes traversable by *giving its blueprint a climb*, not by teaching the bot
+about rooms. What remains is #15: the room has no geometry of its own to hang one
+on.
 Phase 107 stopped the router promising the climb —
 `topology::is_connection_open` no longer treats a room-to-room vertical port as a
 connection — which is a correct guard but not a fix. When #15 gives rooms real
 per-role geometry, a two-level room should get real stairs and this guard should
 be lifted, or the blueprint should stop claiming a vertical port it cannot serve.
-
-### 20. Liminal Grid has no authored `expanse` tiles
-**Scheduled: Arc O Phase 110** ([arc_o/README.md](arc_o/README.md)).
-**Found 2026-07-27 during Phase 108.** The `Expanse` archetype ships with
-generated wall-free geometry, which covers every register through the `generic`
-fallback — except Liminal Grid, which is authored as `.map` modules and is
-excluded from the generated kit's `REGISTERS`
-(`crates/observed_authoring/src/tile_source/mod.rs`). So the one district whose
-whole identity is open space (its `Expanse` weight multiplier is 3.0, the highest
-in the table) is the one district with no exact expanse tiles, and
-`merged_authoring_corpus_covers_every_wfc_geometry_demand_exactly` has been given
-a second exemption to let it pass. Phase 110 should author the 22 expanse
-signatures for `liminal_grid` through `tools/tileforge.py` and **remove the
-exemption in the same change**. Note the first exemption on that gate —
-`stair_tower` — hid backlog #13 for a whole arc precisely because nobody was
-tracking it.
 
 ## Minor / hygiene
 
@@ -235,6 +225,17 @@ tracking it.
 
 ## Fixed
 
+- ~~Liminal Grid has no authored `expanse` tiles~~ — fixed 2026-07-27 in Arc O
+  Phase 110
+  ([arc_o/phase_110_district_tilesets.md](arc_o/phase_110_district_tilesets.md)).
+  Liminal Grid had been left out of the generated kit's register table for two
+  arcs, on the reasoning that the one district with hand-authored modules needs
+  no generated floor under it. That held only while the authored corpus covered
+  every demand the solver could make, and `Expanse` ended it. It is now in
+  `REGISTERS` with a style of its own, the generated kit sits *under* the
+  authored modules rather than replacing them, and a test pins that both
+  authored Liminal layouts are still reachable. The `expanse` exemption is gone,
+  and so is the `stair_tower` one beside it.
 - ~~Every vertical cell in the facility is the same procedural stair~~ — fixed
   2026-07-27 in Arc O Phase 109
   ([arc_o/phase_109_authored_stair_towers.md](arc_o/phase_109_authored_stair_towers.md)).
@@ -245,12 +246,10 @@ tracking it.
   by constants measured off that one tower, so a second shape would have been
   unwalkable and even fixing the first one broke the steering. Tiles now declare
   their own climb and floor path and the bot follows those.
-  **Not fully discharged:** the `stair_tower` coverage exemption stands, because
-  exact coverage needs a tower per register and there are three. It is no longer
-  hiding anything — the monoculture is measured and broken — but it comes down in
-  Phase 110 with the authored kits, beside the `expanse` exemption (#20). Two
-  shapes is also a handed pair rather than two designs; a genuinely new skeleton
-  is Phase 110 authoring work.
+  The `stair_tower` coverage exemption it left behind came down in Phase 110,
+  when every register gained an exact kit of its own. Two tower shapes remains a
+  handed pair rather than two designs; a genuinely new skeleton is unscheduled
+  authoring work.
 - ~~Bots can stall exiting a switchback tower laterally~~ — fixed 2026-07-27 in
   Arc O Phase 109
   ([arc_o/phase_109_authored_stair_towers.md](arc_o/phase_109_authored_stair_towers.md)).

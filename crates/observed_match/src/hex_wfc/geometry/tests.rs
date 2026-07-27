@@ -937,3 +937,116 @@ fn a_shaft_column_uses_one_tower_shape() {
          monoculture: {shapes:?}"
     );
 }
+
+/// A district-exclusive tile must be unreachable from a foreign district.
+///
+/// Exclusivity has to be a property of the selector, not a convention about how
+/// tiles are keyed. `Catalogue::select` tries the exact `(archetype, register,
+/// signature)` first and falls back to `generic` — so a tile keyed to Liminal
+/// Grid can only ever be reached by asking for Liminal Grid, and a widened
+/// fallback (or a stray `generic` relabel) would be the way that breaks. This
+/// pins it by asking every other register for every exclusive tile's signature
+/// and checking none of them hands it back.
+#[test]
+fn a_district_exclusive_tile_never_answers_for_another_district() {
+    let tiles = tiles();
+    let catalogue = Catalogue::new(&tiles);
+    let registers: Vec<&str> = ArchitectureRegister::ALL
+        .iter()
+        .map(|register| register.slug())
+        .collect();
+
+    let exclusive: Vec<&TilePrototype> = tiles
+        .iter()
+        .filter(|tile| tile.key.register == ArchitectureRegister::LiminalGrid.slug())
+        .collect();
+    assert!(
+        !exclusive.is_empty(),
+        "Liminal Grid should have tiles of its own to be exclusive about"
+    );
+
+    let mut checked = 0usize;
+    for tile in exclusive {
+        // Only archetypes the solver actually asks for can leak through
+        // selection; `hall_cap` and friends exist in the kit but are never
+        // demanded, so there is nothing to probe.
+        let Some(archetype) = observed_facility::hex_wfc::geometry_demands()
+            .into_iter()
+            .map(|demand| demand.archetype)
+            .find(|candidate| *candidate == tile.key.archetype)
+        else {
+            continue;
+        };
+        for foreign in &registers {
+            if *foreign == tile.key.register {
+                continue;
+            }
+            // Every variation key, not one: selection is weighted, so a single
+            // probe could miss a leak that only shows on some rolls.
+            for variation in 0..16u64 {
+                let picked = catalogue.select(
+                    archetype,
+                    foreign,
+                    tile.signature,
+                    variation.wrapping_mul(0x9E37_79B9_7F4A_7C15),
+                );
+                if let Some(picked) = picked {
+                    assert_ne!(
+                        picked.key.register, tile.key.register,
+                        "{foreign} was handed a {} tile ({archetype}, {:?})",
+                        tile.key.register, tile.signature
+                    );
+                }
+            }
+            checked += 1;
+        }
+    }
+    assert!(
+        checked > 100,
+        "unexpectedly small exclusivity probe: {checked}"
+    );
+}
+
+/// End to end: no cell in a solved facility is built out of another district's
+/// geometry.
+///
+/// The catalog-side gate proves every demand has an exact tile for every
+/// register. This proves the selector actually reaches them on a real solve,
+/// which is the claim a player can see. Before Phase 110 the generated kit was
+/// one institutional library relabelled `generic`, so nine of the ten districts
+/// were built almost entirely from a tenth district's geometry however they were
+/// lit or composed.
+#[test]
+fn every_placed_cell_is_built_from_its_own_district() {
+    let world =
+        HexWfcWorld::generate(SHOWCASE_SEED, HexWfcConfig::arc_default()).expect("world solves");
+    let snapshot = HexWfcGeometrySnapshot::project(&world, &tiles()).expect("projects");
+    let mut foreign: BTreeMap<String, usize> = BTreeMap::new();
+    let mut own = 0usize;
+    for piece in &snapshot.pieces {
+        let Some(tile) = piece.tile.as_ref() else {
+            continue;
+        };
+        // A stair tower is deliberately chosen for the whole column from its
+        // base cell's register (Phase 109), so it need not match the cell it
+        // stands in — only the column, which `a_shaft_column_uses_one_tower_shape`
+        // covers.
+        if tile.archetype == "stair_tower" {
+            continue;
+        }
+        let Some(register) = world.architecture.get(&piece.source_cell) else {
+            continue;
+        };
+        if tile.register == register.slug() {
+            own += 1;
+        } else {
+            *foreign.entry(tile.register.clone()).or_default() += 1;
+        }
+    }
+    assert!(own > 1_000, "unexpectedly small sample: {own}");
+    assert!(
+        foreign.is_empty(),
+        "{} colliders are drawn from another district's kit: {foreign:?}",
+        foreign.values().sum::<usize>()
+    );
+}
