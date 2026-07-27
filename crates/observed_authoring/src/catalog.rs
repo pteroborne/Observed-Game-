@@ -102,7 +102,8 @@ pub struct CompiledTileCatalog {
 
 impl CompiledTileCatalog {
     pub fn to_pretty_ron(&self) -> Result<String, CatalogError> {
-        ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default())
+        let config = ron::ser::PrettyConfig::default().new_line("\n".to_owned());
+        ron::ser::to_string_pretty(self, config)
             .map_err(|error| CatalogError::Serialize(error.to_string()))
     }
 
@@ -853,6 +854,16 @@ mod tests {
         assert_eq!(first.audit.strict_sources, 1);
         assert_eq!(first.audit.compatibility_manifest_entries, 0);
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn canonical_catalog_ron_always_uses_lf_line_endings() {
+        let ron = CompiledTileCatalog::default()
+            .to_pretty_ron()
+            .expect("serialize catalog");
+
+        assert!(ron.contains('\n'));
+        assert!(!ron.contains('\r'));
     }
 
     #[test]
