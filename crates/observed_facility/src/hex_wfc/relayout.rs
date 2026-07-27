@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use observed_content::ArchitectureRegister;
 use observed_core::{PlayerId, SplitMix};
-use observed_hex::{HexCoord, HexFace, travel_distance};
+use observed_hex::{HexCoord, HexFace, lateral_distance, travel_distance};
 
 use super::blueprint::StampedBlueprint;
 use super::collapse::collapse_pocket_attempt;
@@ -21,65 +21,70 @@ use super::{HexArchetype, HexPlacement, HexSpace, HexWfcConfig, HexWfcError, Hex
 
 pub const DEFAULT_MUTATION_TARGET_CELLS: usize = 32;
 pub const DEFAULT_MUTATION_MAX_CELLS: usize = 64;
-pub const LIMINAL_GRID_ZONE_SIZE: u16 = 7;
+/// One district site per register per level. Ten registers means ten districts
+/// on every floor, which both guarantees every authored register is exercised
+/// and keeps a district big enough to be a place: a production floor is 560
+/// cells, so a district averages about fifty-six.
+const DISTRICTS_PER_LEVEL: usize = ArchitectureRegister::ALL.len();
+/// How far a district's anchor may wander per level, in cells. Small on purpose:
+/// a district should lean as you climb, so a floor is not a carbon copy of the
+/// one below, while staying recognisably the same neighbourhood.
+const DISTRICT_LEVEL_DRIFT: i32 = 3;
 
-const BASE_ARCHITECTURE_REGISTERS: [ArchitectureRegister; 9] = [
-    ArchitectureRegister::ShadowScreen,
-    ArchitectureRegister::Monolith,
-    ArchitectureRegister::OverlitGrid,
-    ArchitectureRegister::Institutional,
-    ArchitectureRegister::FacetMonument,
-    ArchitectureRegister::Megastructure,
-    ArchitectureRegister::Wellshaft,
-    ArchitectureRegister::InfiniteGallery,
-    ArchitectureRegister::Thinning,
-];
-
-/// One seed-stable rectangular Liminal Grid district on a facility level.
+/// The anchor of one district on one level. A cell belongs to the nearest site
+/// on its own level, which makes districts contiguous by construction.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LiminalGridZone {
-    pub q_start: u16,
-    pub r_start: u16,
-    pub level: u8,
-    pub size: u16,
+pub struct DistrictSite {
+    pub register: ArchitectureRegister,
+    pub anchor: HexCoord,
 }
 
-impl LiminalGridZone {
-    #[must_use]
-    pub const fn contains(self, coord: HexCoord) -> bool {
-        coord.level == self.level
-            && coord.q >= self.q_start
-            && coord.q < self.q_start + self.size
-            && coord.r >= self.r_start
-            && coord.r < self.r_start + self.size
-    }
-}
-
-/// Select exactly one bounded 7x7 zone on every level that can contain it.
-/// The selection intentionally excludes relayout generation, so observation-
-/// safe mutation can change local geometry without making the district drift.
+/// Every district anchor for a facility, seed-stable and ordered by level.
+///
+/// The selection deliberately excludes relayout generation, so observation-safe
+/// mutation can change local geometry without making the districts drift under
+/// the player. That property is why this is a *lookup* rather than a per-cell
+/// draw: a cell's district is a function of where it is, not of when it was
+/// last touched.
 #[must_use]
-pub fn liminal_grid_zones(seed: u64, config: HexWfcConfig) -> Vec<LiminalGridZone> {
-    if config.cols < LIMINAL_GRID_ZONE_SIZE || config.rows < LIMINAL_GRID_ZONE_SIZE {
-        return Vec::new();
+pub fn district_sites(seed: u64, config: HexWfcConfig) -> Vec<DistrictSite> {
+    let mut sites = Vec::with_capacity(usize::from(config.levels) * DISTRICTS_PER_LEVEL);
+    if config.cols == 0 || config.rows == 0 {
+        return sites;
     }
-    (0..config.levels)
-        .map(|level| {
-            let mut rng = SplitMix::new(
-                seed ^ 0x4C49_4D49_4E41_4C47 ^ u64::from(level).wrapping_mul(0x9E37_79B9_7F4A_7C15),
+    for level in 0..config.levels {
+        for (index, register) in ArchitectureRegister::ALL.into_iter().enumerate() {
+            // The base anchor is level-independent, so a district occupies
+            // roughly the same ground on every floor and can be navigated
+            // toward vertically as well as laterally.
+            let mut base = SplitMix::new(
+                seed ^ 0xD157_2C70_0000_0000 ^ (index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
             );
-            let q_start =
-                (rng.next_u64() % u64::from(config.cols - LIMINAL_GRID_ZONE_SIZE + 1)) as u16;
-            let r_start =
-                (rng.next_u64() % u64::from(config.rows - LIMINAL_GRID_ZONE_SIZE + 1)) as u16;
-            LiminalGridZone {
-                q_start,
-                r_start,
-                level,
-                size: LIMINAL_GRID_ZONE_SIZE,
-            }
-        })
-        .collect()
+            let base_q = (base.next_u64() % u64::from(config.cols)) as i32;
+            let base_r = (base.next_u64() % u64::from(config.rows)) as i32;
+
+            let mut drift = SplitMix::new(
+                seed ^ 0x0DD1_F700_0000_0000
+                    ^ (index as u64).wrapping_mul(0xBF58_476D_1CE4_E5B9)
+                    ^ u64::from(level).wrapping_mul(0x94D0_49BB_1331_11EB),
+            );
+            let span = DISTRICT_LEVEL_DRIFT * 2 + 1;
+            let dq = (drift.next_u64() % span as u64) as i32 - DISTRICT_LEVEL_DRIFT;
+            let dr = (drift.next_u64() % span as u64) as i32 - DISTRICT_LEVEL_DRIFT;
+
+            let q = (base_q + dq).clamp(0, i32::from(config.cols) - 1);
+            let r = (base_r + dr).clamp(0, i32::from(config.rows) - 1);
+            sites.push(DistrictSite {
+                register,
+                anchor: HexCoord {
+                    q: q as u16,
+                    r: r as u16,
+                    level,
+                },
+            });
+        }
+    }
+    sites
 }
 
 /// Stable identity of one named room threshold.
@@ -196,10 +201,10 @@ pub enum HexRelayoutProgress {
 }
 
 impl HexWfcWorld {
-    /// Seed-stable Liminal Grid districts for map/debug presentation.
+    /// Seed-stable district anchors for map, audit and debug presentation.
     #[must_use]
-    pub fn liminal_grid_zones(&self) -> Vec<LiminalGridZone> {
-        liminal_grid_zones(self.seed, self.config)
+    pub fn district_sites(&self) -> Vec<DistrictSite> {
+        district_sites(self.seed, self.config)
     }
 
     /// Select a deterministic pocket using the current observed cells as the
@@ -574,9 +579,14 @@ fn make_candidate(
         .iter()
         .map(|&coord| (coord, solved_placements[&coord]))
         .collect::<BTreeMap<_, _>>();
+    // Deliberately not keyed on `generation`. It used to be, which meant every
+    // committed relayout re-rolled the register of every cell in the pocket
+    // even where nothing moved - and because an architecture-only change counts
+    // as a changed cell, that churn bumped cell revisions and therefore the
+    // snapshot digest. Districts are a function of place, not of when a pocket
+    // was last touched.
     let architecture = architecture_for_cells(
         world.seed,
-        generation,
         world.config,
         region.cells.iter().copied(),
         solved_blueprints,
@@ -635,29 +645,28 @@ pub(super) fn initial_architecture(
     placements: &BTreeMap<HexCoord, HexPlacement>,
     blueprints: &[StampedBlueprint],
 ) -> BTreeMap<HexCoord, ArchitectureRegister> {
-    architecture_for_cells(seed, 0, config, placements.keys().copied(), blueprints)
+    architecture_for_cells(seed, config, placements.keys().copied(), blueprints)
 }
 
 fn architecture_for_cells(
     seed: u64,
-    generation: u32,
     config: HexWfcConfig,
     coords: impl IntoIterator<Item = HexCoord>,
     blueprints: &[StampedBlueprint],
 ) -> BTreeMap<HexCoord, ArchitectureRegister> {
-    let zones = liminal_grid_zones(seed, config);
+    let sites = district_sites(seed, config);
     let mut architecture = coords
         .into_iter()
-        .map(|coord| (coord, register_for(seed, generation, coord, &zones)))
+        .map(|coord| (coord, register_for(coord, &sites)))
         .collect::<BTreeMap<_, _>>();
     // A room is one decision beat and must never straddle visual registers.
     // Its anchor owns the register even when another footprint cell crosses a
-    // zone boundary.
+    // district boundary.
     for blueprint in blueprints {
         let register = architecture
             .get(&blueprint.anchor)
             .copied()
-            .unwrap_or_else(|| register_for(seed, generation, blueprint.anchor, &zones));
+            .unwrap_or_else(|| register_for(blueprint.anchor, &sites));
         for cell in &blueprint.cells {
             if let Some(cell_register) = architecture.get_mut(cell) {
                 *cell_register = register;
@@ -667,22 +676,19 @@ fn architecture_for_cells(
     architecture
 }
 
-fn register_for(
-    seed: u64,
-    generation: u32,
-    coord: HexCoord,
-    zones: &[LiminalGridZone],
-) -> ArchitectureRegister {
-    if zones.iter().any(|zone| zone.contains(coord)) {
-        return ArchitectureRegister::LiminalGrid;
-    }
-    let coord_key = coord_key(coord);
-    let mut rng = SplitMix::new(
-        seed ^ coord_key.wrapping_mul(0x9E37_79B9_7F4A_7C15)
-            ^ u64::from(generation).wrapping_mul(0xBF58_476D_1CE4_E5B9),
-    );
-    BASE_ARCHITECTURE_REGISTERS
-        [(rng.next_u64() % BASE_ARCHITECTURE_REGISTERS.len() as u64) as usize]
+/// The district a cell belongs to: the nearest anchor on its own level.
+///
+/// Nearest-site ownership is what makes a district contiguous — every cell on
+/// the path between a cell and its anchor is at least as close to that anchor,
+/// so a district cannot be split. Distance is lateral only: districts are
+/// defined per level, and mixing in a vertical term would let a cell several
+/// floors away win ownership over a neighbour on the same floor.
+fn register_for(coord: HexCoord, sites: &[DistrictSite]) -> ArchitectureRegister {
+    sites
+        .iter()
+        .filter(|site| site.anchor.level == coord.level)
+        .min_by_key(|site| (lateral_distance(site.anchor, coord), site.register as u8))
+        .map_or(ArchitectureRegister::Institutional, |site| site.register)
 }
 
 pub(super) fn fallback_geometry_relayout(
@@ -722,13 +728,23 @@ pub(super) fn fallback_geometry_relayout(
         .iter()
         .map(|&coord| (coord, world.architecture[&coord]))
         .collect::<BTreeMap<_, _>>();
-    let register = architecture.get_mut(&selected)?;
-    let register_index = BASE_ARCHITECTURE_REGISTERS
-        .iter()
-        .position(|candidate| candidate == register)
-        .unwrap_or(0);
-    *register =
-        BASE_ARCHITECTURE_REGISTERS[(register_index + 1) % BASE_ARCHITECTURE_REGISTERS.len()];
+    // Hand the cell to a neighbouring district rather than to an arbitrary
+    // register. A geometry-only relayout should read as a district boundary
+    // shifting by one cell, not as a hole punched in the middle of one.
+    let current = *architecture.get(&selected)?;
+    let neighbour = HexFace::LATERAL
+        .into_iter()
+        .filter_map(|face| world.config.grid().neighbor(selected, face))
+        .filter_map(|coord| world.architecture.get(&coord).copied())
+        .find(|register| *register != current);
+    let next = neighbour.unwrap_or_else(|| {
+        let index = ArchitectureRegister::ALL
+            .iter()
+            .position(|candidate| *candidate == current)
+            .unwrap_or(0);
+        ArchitectureRegister::ALL[(index + 1) % ArchitectureRegister::ALL.len()]
+    });
+    *architecture.get_mut(&selected)? = next;
     let blueprints = world
         .blueprints
         .iter()

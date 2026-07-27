@@ -5,7 +5,7 @@ use observed_core::PlayerId;
 
 use super::relayout::fallback_geometry_relayout;
 use super::{
-    DEFAULT_MUTATION_MAX_CELLS, DEFAULT_MUTATION_TARGET_CELLS, HexArchetype, HexFace,
+    DEFAULT_MUTATION_MAX_CELLS, DEFAULT_MUTATION_TARGET_CELLS, HexArchetype, HexCoord, HexFace,
     HexInfluenceField, HexObservationFrame, HexRelayoutProgress, HexThresholdKey, HexWfcConfig,
     HexWfcError, HexWfcWorld,
 };
@@ -28,31 +28,64 @@ fn candidate(world: &HexWfcWorld, frame: &HexObservationFrame) -> super::HexRela
 }
 
 #[test]
-fn production_levels_have_one_seed_stable_bounded_seven_by_seven_zone() {
+fn every_level_anchors_one_seed_stable_district_per_register() {
     let config = HexWfcConfig::arc_default();
-    let first = super::liminal_grid_zones(0x11_1A_1A, config);
-    let second = super::liminal_grid_zones(0x11_1A_1A, config);
-    assert_eq!(first, second);
-    assert_eq!(first.len(), usize::from(config.levels));
-    for (level, zone) in first.iter().enumerate() {
-        assert_eq!(zone.level, level as u8);
-        assert_eq!(zone.size, super::LIMINAL_GRID_ZONE_SIZE);
-        assert!(zone.q_start + zone.size <= config.cols);
-        assert!(zone.r_start + zone.size <= config.rows);
+    let first = super::district_sites(0x11_1A_1A, config);
+    let second = super::district_sites(0x11_1A_1A, config);
+    assert_eq!(first, second, "district anchors are a function of the seed");
+    assert_eq!(
+        first.len(),
+        usize::from(config.levels) * ArchitectureRegister::ALL.len()
+    );
+    for level in 0..config.levels {
+        let on_level = first
+            .iter()
+            .filter(|site| site.anchor.level == level)
+            .collect::<Vec<_>>();
+        let registers = on_level
+            .iter()
+            .map(|site| site.register)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            registers.len(),
+            ArchitectureRegister::ALL.len(),
+            "level {level} must anchor every register exactly once"
+        );
+        for site in on_level {
+            assert!(site.anchor.q < config.cols && site.anchor.r < config.rows);
+        }
     }
 }
 
 #[test]
-fn liminal_zone_assignment_is_exact_outside_whole_room_normalization() {
-    let world = HexWfcWorld::generate(0x11_1A_1B, config()).expect("world");
-    let zones = world.liminal_grid_zones();
-    assert_eq!(zones.len(), usize::from(world.config.levels));
+fn a_district_stays_in_one_piece() {
+    // The point of the phase: a district is a place you can walk across, not a
+    // scatter of cells that happen to share a colour. Nearest-anchor ownership
+    // guarantees it, and this measures it on a real solve.
+    let world = HexWfcWorld::generate(0x11_1A_1B, HexWfcConfig::arc_default()).expect("world");
+    let mut by_register: BTreeMap<ArchitectureRegister, BTreeSet<HexCoord>> = BTreeMap::new();
+    for (&coord, &register) in &world.architecture {
+        by_register.entry(register).or_default().insert(coord);
+    }
+    assert_eq!(
+        by_register.len(),
+        ArchitectureRegister::ALL.len(),
+        "every register is somewhere in the facility"
+    );
+    for (register, cells) in &by_register {
+        let regions = connected_regions(cells);
+        #[allow(clippy::cast_precision_loss)]
+        let mean = cells.len() as f32 / regions.max(1) as f32;
+        assert!(
+            mean > 8.0,
+            "{register:?} averages {mean:.1} cells per region - that is confetti, not a district"
+        );
+    }
+}
 
-    let blueprint_cells = world
-        .blueprints
-        .iter()
-        .flat_map(|blueprint| blueprint.cells.iter().copied())
-        .collect::<BTreeSet<_>>();
+#[test]
+fn a_room_never_straddles_two_districts() {
+    let world = HexWfcWorld::generate(0x11_1A_1B, config()).expect("world");
     for blueprint in &world.blueprints {
         let anchor_register = world.architecture[&blueprint.anchor];
         assert!(
@@ -64,28 +97,37 @@ fn liminal_zone_assignment_is_exact_outside_whole_room_normalization() {
             blueprint.role
         );
     }
-    for (&coord, &register) in &world.architecture {
-        if blueprint_cells.contains(&coord) {
-            continue;
-        }
-        let in_zone = zones.iter().any(|zone| zone.contains(coord));
-        assert_eq!(
-            register == ArchitectureRegister::LiminalGrid,
-            in_zone,
-            "{coord:?}"
-        );
-    }
 }
 
 #[test]
-fn liminal_zones_do_not_drift_across_relayout_generations() {
+fn districts_do_not_drift_across_relayout_generations() {
+    // The old lottery folded the relayout generation into its key, so every
+    // commit re-rolled the register of every cell in the pocket even where
+    // nothing moved. That churn bumped cell revisions and therefore the
+    // snapshot digest. A district is a function of place, so a commit must
+    // leave every unmoved cell's register exactly where it was.
     let mut world = HexWfcWorld::generate(0x11_1A_1C, config()).expect("world");
-    let before = world.liminal_grid_zones();
+    let before_sites = world.district_sites();
+    let before = world.architecture.clone();
     let proposal = candidate(&world, &HexObservationFrame::default());
     world
         .commit_relayout(proposal, &HexObservationFrame::default())
         .expect("commit");
-    assert_eq!(world.liminal_grid_zones(), before);
+
+    assert_eq!(world.district_sites(), before_sites, "anchors never move");
+    let moved = before
+        .iter()
+        .filter(|(coord, register)| {
+            world
+                .architecture
+                .get(*coord)
+                .is_some_and(|now| now != *register)
+        })
+        .count();
+    assert_eq!(
+        moved, 0,
+        "a committed relayout re-assigned {moved} cells' districts"
+    );
     for blueprint in &world.blueprints {
         let anchor_register = world.architecture[&blueprint.anchor];
         assert!(
@@ -95,6 +137,36 @@ fn liminal_zones_do_not_drift_across_relayout_generations() {
                 .all(|cell| world.architecture[cell] == anchor_register)
         );
     }
+}
+
+/// Flood-fill over lateral adjacency within a level.
+fn connected_regions(cells: &BTreeSet<HexCoord>) -> usize {
+    let mut unvisited = cells.clone();
+    let mut regions = 0;
+    while let Some(&start) = unvisited.iter().next() {
+        regions += 1;
+        let mut frontier = vec![start];
+        unvisited.remove(&start);
+        while let Some(coord) = frontier.pop() {
+            for (dq, dr) in [(1, 0), (-1, 0), (0, 1), (0, -1), (1, -1), (-1, 1)] {
+                let (Some(q), Some(r)) = (
+                    coord.q.checked_add_signed(dq),
+                    coord.r.checked_add_signed(dr),
+                ) else {
+                    continue;
+                };
+                let neighbour = HexCoord {
+                    q,
+                    r,
+                    level: coord.level,
+                };
+                if unvisited.remove(&neighbour) {
+                    frontier.push(neighbour);
+                }
+            }
+        }
+    }
+    regions
 }
 
 #[test]

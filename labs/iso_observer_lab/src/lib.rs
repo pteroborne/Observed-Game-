@@ -311,9 +311,10 @@ impl LabState {
     }
 
     /// How many cells each register owns, and how many disjoint regions those
-    /// cells form. A district that is a *place* has few, large regions; today's
-    /// per-cell lottery produces hundreds of singletons, which is bug backlog
-    /// #14 made visible.
+    /// cells form. A district that is a *place* has few, large regions. Before
+    /// Phase 106 this reported hundreds of singletons per register — bug backlog
+    /// #14 made visible — and it is now the measurement that shows the spatial
+    /// partition holding.
     #[must_use]
     pub fn district_census(&self) -> BTreeMap<ArchitectureRegister, (usize, usize)> {
         let mut cells: BTreeMap<ArchitectureRegister, BTreeSet<HexCoord>> = BTreeMap::new();
@@ -943,20 +944,27 @@ mod tests {
     }
 
     #[test]
-    fn todays_registers_fragment_into_many_regions() {
-        // Pins bug backlog #14 as an observation rather than a claim. Phase 106
-        // replaces the per-cell lottery, and this test is the one that must be
-        // inverted to prove it — mean region size should climb by orders of
-        // magnitude.
+    fn every_district_is_a_place_rather_than_confetti() {
+        // The inverse of the test this replaced. Before Phase 106 the per-cell
+        // lottery gave every register a mean region size under 1.5 — hundreds of
+        // singletons scattered across the floor. A district is now a
+        // neighbourhood you can cross, so the mean climbs by orders of
+        // magnitude, and it must hold for *every* register rather than on
+        // average across them.
         let state = LabState::new(0);
         let census = state.district_census();
-        let base = census
-            .iter()
-            .find(|(register, _)| **register != ArchitectureRegister::LiminalGrid)
-            .map(|(_, counts)| *counts)
-            .expect("a base register is always assigned");
-        #[allow(clippy::cast_precision_loss)]
-        let mean = base.0 as f32 / base.1.max(1) as f32;
-        assert!(mean < 4.0, "expected fragmentation, saw mean region {mean}");
+        assert_eq!(
+            census.len(),
+            ArchitectureRegister::ALL.len(),
+            "every register is somewhere in the facility"
+        );
+        for (register, (cells, regions)) in &census {
+            #[allow(clippy::cast_precision_loss)]
+            let mean = *cells as f32 / (*regions).max(1) as f32;
+            assert!(
+                mean > 8.0,
+                "{register:?} averages {mean:.1} cells per region across {cells} cells"
+            );
+        }
     }
 }

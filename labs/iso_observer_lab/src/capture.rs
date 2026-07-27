@@ -6,7 +6,7 @@ use bevy::app::AppExit;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 
-use crate::{LabState, Layer, PRESET_SEEDS};
+use crate::{LabState, Layer, PRESET_SEEDS, RenderMode};
 
 /// Frames are deferred one tick after the state change that produced them:
 /// `capture_progress` runs after `rebuild`, so a newly requested view only
@@ -26,6 +26,7 @@ pub(crate) struct CaptureRun {
 enum Stage {
     Overview,
     Slices,
+    Districts,
     Inspect,
     Advance,
     Finished,
@@ -61,6 +62,7 @@ pub(crate) fn capture_progress(
         Stage::Overview => {
             if !run.armed {
                 std::fs::create_dir_all(&run.dir).expect("capture dir must be creatable");
+                state.mode = RenderMode::Schematic;
                 state.layer = Layer::All;
                 state.selected = None;
                 // Evidence frames fit the whole layer. The interactive default
@@ -91,7 +93,7 @@ pub(crate) fn capture_progress(
         Stage::Slices => {
             let levels = state.world.config.levels;
             if run.slice >= levels {
-                run.stage = Stage::Inspect;
+                run.stage = Stage::Districts;
                 run.armed = false;
                 run.timer = 0.0;
                 return;
@@ -116,10 +118,34 @@ pub(crate) fn capture_progress(
                 run.timer = 0.0;
             }
         }
+        // The schematic spends its colour channel on mutability, so districts
+        // need the solid view to be evidence at all. One mid-stack floor is the
+        // right frame: district contiguity reads on a floor plan.
+        Stage::Districts => {
+            if !run.armed {
+                state.mode = RenderMode::Solid;
+                state.layer = Layer::Single(3.min(state.world.config.levels.saturating_sub(1)));
+                state.zoom = 1.0;
+                state.dirty = true;
+                run.armed = true;
+                run.timer = 0.0;
+                return;
+            }
+            if run.timer >= 1.2 {
+                let path = format!("{}/seed_{}_districts.png", run.dir, run.seed_index);
+                commands
+                    .spawn(Screenshot::primary_window())
+                    .observe(save_to_disk(path));
+                run.stage = Stage::Inspect;
+                run.armed = false;
+                run.timer = 0.0;
+            }
+        }
         // One frame with a cell pinned, so the inspector has evidence of its
         // own rather than only existing when a human is holding the mouse.
         Stage::Inspect => {
             if !run.armed {
+                state.mode = RenderMode::Schematic;
                 state.layer = Layer::Single(0);
                 // The inspector frame shows the interactive view, close in,
                 // because that is how the panel is actually used.

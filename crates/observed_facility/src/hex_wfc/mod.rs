@@ -33,9 +33,9 @@ pub use blueprint::{
 pub use context::HexInfluenceField;
 pub use observed_hex::{HexCoord, HexFace, HexGridSize, PortClass, PortSignature};
 pub use relayout::{
-    DEFAULT_MUTATION_MAX_CELLS, DEFAULT_MUTATION_TARGET_CELLS, HexMutationRegion,
+    DEFAULT_MUTATION_MAX_CELLS, DEFAULT_MUTATION_TARGET_CELLS, DistrictSite, HexMutationRegion,
     HexObservationFrame, HexRelayoutCandidate, HexRelayoutDelta, HexRelayoutProgress,
-    HexRelayoutWork, HexThresholdKey, LIMINAL_GRID_ZONE_SIZE, LiminalGridZone, liminal_grid_zones,
+    HexRelayoutWork, HexThresholdKey, district_sites,
 };
 pub use topology::{HexRoute, MAX_CONNECTION_COST};
 pub use trace::SolveStep;

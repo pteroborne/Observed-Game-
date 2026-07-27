@@ -192,30 +192,6 @@ is **46.5–47.5 % of every placed cell** — 2 543 to 2 608 of ~5 490 — while
 `Straight` corridor is **3.9–4.3 %** and room cells are 14. Nearly half the
 facility is the one procedural switchback.
 
-### 14. Architecture registers are assigned as per-cell white noise
-**Scheduled: Arc O Phase 106** ([arc_o/README.md](arc_o/README.md)).
-**Found 2026-07-26 during the Arc O planning survey.** `register_for`
-(`crates/observed_facility/src/hex_wfc/relayout.rs:670`) draws one of the nine
-`BASE_ARCHITECTURE_REGISTERS` per hex from a SplitMix keyed on the coordinate, so
-nine of the ten districts are spatially incoherent. Only `LiminalGrid` is a place:
-`liminal_grid_zones` (`relayout.rs:62`) reserves exactly one 7 x 7 rhombus per
-level. The consequence reaches presentation — `observed_style::architecture()` sets
-ambient, fog range, and key-light behaviour per register, so adjacent cells fight
-each other, and no amount of palette work can make a district read as somewhere a
-player is heading toward. Look at: `relayout.rs:26-83` (register array and zone
-type) and `relayout.rs:641-668` (`architecture_for_cells`, whose room-anchor
-override must be preserved — a room must never straddle registers). Zone selection
-deliberately excludes relayout generation so districts do not drift under mutation;
-any replacement must keep that property and stay seed-stable, because the register
-assignment feeds the LAN frame digest.
-
-**Measured 2026-07-26 (Phase 104 baseline, `arc_o/phase_104_iso_observer.md`).**
-Each of the nine base registers owns 516–585 cells spread across **378–426
-disjoint regions** — a mean region size of **1.38–1.42 cells**, i.e. mostly
-singletons. `LiminalGrid`, the one register with a real zone, averages **47.8–48.1**.
-The isometric slices in that evidence set show it directly: one olive island in a
-field of confetti, identically on every seed.
-
 ### 15. Every room cell of every room role asks for the same archetype
 **Scheduled: Arc O Phase 111** ([arc_o/README.md](arc_o/README.md)).
 **Found 2026-07-26 during the Arc O planning survey.**
@@ -270,6 +246,18 @@ specialization that replaces this.
 
 ## Fixed
 
+- ~~Architecture registers are assigned as per-cell white noise~~ — fixed
+  2026-07-27 in Arc O Phase 106 ([arc_o/phase_106_spatial_districts.md](arc_o/phase_106_spatial_districts.md)).
+  `register_for` drew one of nine registers per hex from a SplitMix keyed on the
+  coordinate, so nine of the ten districts were spatially incoherent; only
+  `LiminalGrid` had a zone. It is now a lookup: one seeded anchor per register
+  per level, and a cell belongs to the nearest anchor on its own level, which
+  makes a district contiguous by construction. Measured across the five pinned
+  seeds, mean region size went from **1.4 cells to 29–86**, and every register
+  now resolves to exactly one region per level. The old key also folded the
+  relayout generation in, so every commit re-rolled the register of every cell in
+  the pocket — that churn reached `cell_revisions` and therefore the snapshot
+  digest the LAN wire compares, and is now gone.
 - ~~FPS collapses to 9 in some hex regions (a fixed-timestep catch-up spiral)~~ —
   fixed 2026-07-26. Reported as "FPS drops hard in certain lighting districts";
   the district correlation was incidental. The fixed timestep is 60 Hz (16.67 ms,

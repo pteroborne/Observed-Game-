@@ -1,0 +1,7142 @@
+{
+  "grid": {
+    "cols": 28,
+    "levels": 10,
+    "rows": 20
+  },
+  "lab": "iso_observer_lab",
+  "legend": {
+    "bars": "one per open port pair; risers join floors",
+    "colour": "district accent, via observed_style::architecture",
+    "height": "hex archetype, via observed_style::hex_sketch",
+    "width": "composition: rooms fill their hex and merge, hallways are ribbons"
+  },
+  "phase": "arc_o_phase_104_baseline",
+  "seeds": [
+    {
+      "archetypes": {
+        "corner": 1012,
+        "junction": 889,
+        "ramp": 380,
+        "ramp head": 380,
+        "room": 14,
+        "shaft": 2608,
+        "straight": 212
+      },
+      "attempts": 1,
+      "composition": {
+        "hallway": 2113,
+        "room": 14,
+        "vertical": 3368
+      },
+      "districts": [
+        {
+          "cells": 658,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 415,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 693,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 561,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 564,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 619,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 359,
+          "regions": 9,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 291,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 476,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 859,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5297,
+        "vertical": 2041
+      },
+      "rooms": 9,
+      "seed": "0xa11ce3d000000008"
+    },
+    {
+      "archetypes": {
+        "corner": 987,
+        "junction": 821,
+        "ramp": 415,
+        "ramp head": 415,
+        "room": 14,
+        "shaft": 2595,
+        "straight": 236
+      },
+      "attempts": 1,
+      "composition": {
+        "hallway": 2044,
+        "room": 14,
+        "vertical": 3425
+      },
+      "districts": [
+        {
+          "cells": 1510,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 548,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 433,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 566,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 662,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 183,
+          "regions": 11,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 591,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 182,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 574,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 234,
+          "regions": 9,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5185,
+        "vertical": 2063
+      },
+      "rooms": 9,
+      "seed": "0x00000000000c0ffe"
+    },
+    {
+      "archetypes": {
+        "corner": 956,
+        "junction": 878,
+        "ramp": 434,
+        "ramp head": 434,
+        "room": 14,
+        "shaft": 2552,
+        "straight": 215
+      },
+      "attempts": 1,
+      "composition": {
+        "hallway": 2049,
+        "room": 14,
+        "vertical": 3420
+      },
+      "districts": [
+        {
+          "cells": 805,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 656,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 507,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 819,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 467,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 441,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 350,
+          "regions": 11,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 497,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 541,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 400,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5262,
+        "vertical": 2065
+      },
+      "rooms": 9,
+      "seed": "0x0000000000000b0b"
+    },
+    {
+      "archetypes": {
+        "corner": 1026,
+        "junction": 887,
+        "ramp": 386,
+        "ramp head": 386,
+        "room": 14,
+        "shaft": 2543,
+        "straight": 230
+      },
+      "attempts": 1,
+      "composition": {
+        "hallway": 2143,
+        "room": 14,
+        "vertical": 3315
+      },
+      "districts": [
+        {
+          "cells": 720,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 809,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 584,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 403,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 658,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 473,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 486,
+          "regions": 11,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 159,
+          "regions": 9,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 459,
+          "regions": 11,
+          "register": "Thinning"
+        },
+        {
+          "cells": 721,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5310,
+        "vertical": 1982
+      },
+      "rooms": 9,
+      "seed": "0x00000000000d00d0"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    },
+    {
+      "archetypes": {
+        "corner": 1107,
+        "junction": 888,
+        "ramp": 351,
+        "ramp head": 351,
+        "room": 14,
+        "shaft": 2561,
+        "straight": 223
+      },
+      "attempts": 3,
+      "composition": {
+        "hallway": 2218,
+        "room": 14,
+        "vertical": 3263
+      },
+      "districts": [
+        {
+          "cells": 672,
+          "regions": 10,
+          "register": "ShadowScreen"
+        },
+        {
+          "cells": 587,
+          "regions": 10,
+          "register": "Monolith"
+        },
+        {
+          "cells": 417,
+          "regions": 10,
+          "register": "OverlitGrid"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "Institutional"
+        },
+        {
+          "cells": 490,
+          "regions": 10,
+          "register": "FacetMonument"
+        },
+        {
+          "cells": 1000,
+          "regions": 10,
+          "register": "Megastructure"
+        },
+        {
+          "cells": 329,
+          "regions": 10,
+          "register": "Wellshaft"
+        },
+        {
+          "cells": 601,
+          "regions": 10,
+          "register": "InfiniteGallery"
+        },
+        {
+          "cells": 475,
+          "regions": 10,
+          "register": "Thinning"
+        },
+        {
+          "cells": 323,
+          "regions": 10,
+          "register": "LiminalGrid"
+        }
+      ],
+      "links": {
+        "lateral": 5318,
+        "vertical": 1979
+      },
+      "rooms": 9,
+      "seed": "0x5eed000000000001"
+    }
+  ]
+}

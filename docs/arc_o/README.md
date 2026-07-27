@@ -22,10 +22,9 @@ Recorded as bug backlog #13–#17
 ([../bug_backlog.md](../bug_backlog.md)); each was found by reading the solver,
 the catalog, and the projector rather than by playing.
 
-- **Districts are not spatial.** `register_for`
-  (`crates/observed_facility/src/hex_wfc/relayout.rs:670`) draws an architecture register
-  per hex. Nine of the ten registers are white noise; only `LiminalGrid` has a contiguous
-  zone. There is nothing to head toward. (#14)
+- ~~**Districts are not spatial.**~~ **Closed in Phase 106.** `register_for` drew an
+  architecture register per hex; it is now a lookup against one seeded anchor per register
+  per level. Mean region size went from 1.4 cells to 29–86. (#14)
 - **Vertical circulation is a monoculture.** Zero authored `stair_tower` modules exist, so
   every `Shaft` cell in every district resolves to one procedural switchback through the
   `"generic"` fallback. The weight table makes Shaft ~39 % and ramps ~36 % of the live
@@ -122,7 +121,7 @@ Phase-specific as-landed notes and evidence links are added here as each slice i
 
 - [Phase 104 — Arc M Closeout & Isometric Observer Lab](phase_104_iso_observer.md) `[x]`
 - [Phase 105 — Full-Screen Isometric Tac Map](phase_105_isometric_tac_map.md) `[x]`
-- Phase 106 — Spatial Districts
+- [Phase 106 — Spatial Districts](phase_106_spatial_districts.md) `[x]`
 - Phase 107 — District Composition Profiles
 - Phase 108 — The `Expanse` Archetype
 - Phase 109 — Authored Stair Towers & Vertical Rebalance
