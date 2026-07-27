@@ -10,7 +10,7 @@ use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::HexWfcWorld;
 use observed_hex::{HexCoord, HexFace, PortClass, TILE_LEVEL_HEIGHT, hex_origin, prism_hull};
 use observed_match::hex_wfc::{HexMapDiscovery, HexPlayerMapKnowledge};
-use observed_style::{MarkerRole, ObservedState, SurfaceRole};
+use observed_style::{HexComposition, MarkerRole, hex_link};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::GameState;
@@ -18,7 +18,7 @@ use crate::hex_wfc::sim::HexWfcRuntime;
 
 use crate::hex_wfc::view::assets::hull_mesh;
 
-use super::cell::{CellState, Composition, Stability, archetype_height, marker_key};
+use super::cell::{CellState, Stability, archetype_height, composition, marker_key, sketch};
 use super::{HexMapCell, HexMapVisual, MAP_RENDER_LAYER};
 
 /// Only the three "forward" lateral faces are walked, so each undirected edge is
@@ -137,11 +137,7 @@ impl Assets<'_> {
         self.signal
             .entry(if confident { 200 } else { 201 })
             .or_insert_with(|| {
-                let mut treatment = observed_style::surface(SurfaceRole::Spine);
-                if !confident {
-                    treatment =
-                        observed_style::observed_modulate(treatment, ObservedState::Unobserved);
-                }
+                let treatment = hex_link(confident);
                 self.materials.add(StandardMaterial {
                     base_color: treatment.base_color,
                     emissive: treatment.emissive,
@@ -195,14 +191,12 @@ pub(super) fn build(
         let Some(placement) = world.placements.get(&cell) else {
             continue;
         };
-        let Some(height) = archetype_height(placement.archetype) else {
+        let in_blueprint = world.room_id_at(cell).is_some();
+        let drawn = sketch(placement.archetype, placement.space, in_blueprint);
+        let Some(height) = drawn.height else {
             continue;
         };
-        let composition = Composition::of(
-            placement.archetype,
-            placement.space,
-            world.room_id_at(cell).is_some(),
-        );
+        let composition = composition(placement.archetype, placement.space, in_blueprint);
         let stability = Stability::of(
             placement.archetype,
             known.anchored,
@@ -223,9 +217,9 @@ pub(super) fn build(
             CellState::Stale => census.stale += 1,
         }
         match composition {
-            Composition::Room => census.room_cells += 1,
-            Composition::Hall => census.hall_cells += 1,
-            Composition::Vertical => census.vertical_cells += 1,
+            HexComposition::Room => census.room_cells += 1,
+            HexComposition::Hall => census.hall_cells += 1,
+            HexComposition::Vertical => census.vertical_cells += 1,
         }
         match stability {
             Stability::Permanent => census.permanent += 1,
@@ -250,7 +244,7 @@ pub(super) fn build(
         let origin = Vec3::from_array(hex_origin(cell));
         census.see(origin + Vec3::Y * height * 0.5, Vec3::new(8.0, height, 8.0));
 
-        let mesh = assets.prism(height, composition.inset());
+        let mesh = assets.prism(height, drawn.inset);
         let material = match signal {
             Some(role) => assets.signal(role),
             None => assets.tint(register, state, focused),
@@ -267,7 +261,7 @@ pub(super) fn build(
         ));
 
         if let Some(role) = stability.cap() {
-            let cap = assets.prism(CAP_THICKNESS, composition.inset() * 0.62);
+            let cap = assets.prism(CAP_THICKNESS, drawn.inset * 0.62);
             let material = assets.signal(role);
             commands.spawn((
                 HexMapVisual,

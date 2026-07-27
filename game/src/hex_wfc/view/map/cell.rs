@@ -8,61 +8,57 @@
 use bevy::prelude::*;
 use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::{HexArchetype, HexSpace, HexWfcWorld};
-use observed_hex::{HexCoord, TILE_LEVEL_HEIGHT};
+use observed_hex::HexCoord;
 use observed_match::hex_wfc::{HexMapCellKnowledge, HexMapDiscovery};
-use observed_style::{MarkerRole, ObservedState, SurfaceRole};
+use observed_style::{
+    HexComposition, HexSketch, HexSketchRole, MarkerRole, ObservedState, SurfaceRole, hex_sketch,
+};
 
-/// A room reads as one mass, so its hexes meet with no seam.
-pub(super) const ROOM_INSET: f32 = 1.0;
-/// A corridor reads as a ribbon between things, not as a tile.
-pub(super) const HALL_INSET: f32 = 0.52;
-/// Vertical circulation is a node on the run: wider than a corridor, narrower
-/// than a room.
-pub(super) const VERTICAL_INSET: f32 = 0.74;
 /// How far a level off the focus floor is pushed down in brightness.
 pub(super) const UNFOCUSED_DIM: f32 = 0.42;
 /// Glimpsed cells are dimmer than traversed ones but must stay readable.
 const GLIMPSED_DIM: f32 = 0.5;
 
-/// What the tile is part of. This is the "pixels compose something" channel, and
-/// it is carried by footprint width rather than colour, so it survives being
-/// read at a glance and does not compete with the district hue.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum Composition {
-    /// Part of a stamped room blueprint.
-    Room,
-    /// Flat circulation — the connective tissue between everything else.
-    Hall,
-    /// A ramp or shaft: the run's vertical joint.
-    Vertical,
+/// Which style-owned sketch role this cell draws as.
+///
+/// The heights and widths themselves belong to `observed_style` so the game map
+/// and `iso_observer_lab` cannot drift apart; this is only the mapping from the
+/// solver's vocabulary onto that one. Blueprint membership wins over archetype,
+/// because the blueprint is the authority on what composes a room.
+#[must_use]
+pub(super) fn sketch_role(
+    archetype: HexArchetype,
+    space: HexSpace,
+    in_blueprint: bool,
+) -> HexSketchRole {
+    if in_blueprint || space == HexSpace::Room {
+        return HexSketchRole::Room;
+    }
+    match archetype {
+        HexArchetype::Void => HexSketchRole::Void,
+        HexArchetype::Straight | HexArchetype::Corner => HexSketchRole::Corridor,
+        HexArchetype::Junction => HexSketchRole::Junction,
+        HexArchetype::RampUp => HexSketchRole::Ramp,
+        HexArchetype::RampHead => HexSketchRole::RampHead,
+        HexArchetype::Shaft => HexSketchRole::Shaft,
+        HexArchetype::Room => HexSketchRole::Room,
+    }
 }
 
-impl Composition {
-    pub(super) fn of(archetype: HexArchetype, space: HexSpace, in_blueprint: bool) -> Self {
-        if in_blueprint || space == HexSpace::Room {
-            return Self::Room;
-        }
-        match archetype {
-            HexArchetype::RampUp | HexArchetype::RampHead | HexArchetype::Shaft => Self::Vertical,
-            _ => Self::Hall,
-        }
-    }
+/// How this cell is drawn: slab height and footprint fill.
+#[must_use]
+pub(super) fn sketch(archetype: HexArchetype, space: HexSpace, in_blueprint: bool) -> HexSketch {
+    hex_sketch(sketch_role(archetype, space, in_blueprint))
+}
 
-    pub(super) fn inset(self) -> f32 {
-        match self {
-            Self::Room => ROOM_INSET,
-            Self::Hall => HALL_INSET,
-            Self::Vertical => VERTICAL_INSET,
-        }
-    }
-
-    pub(super) fn label(self) -> &'static str {
-        match self {
-            Self::Room => "room",
-            Self::Hall => "hallway",
-            Self::Vertical => "vertical",
-        }
-    }
+/// What this cell is part of, as a reader perceives it.
+#[must_use]
+pub(super) fn composition(
+    archetype: HexArchetype,
+    space: HexSpace,
+    in_blueprint: bool,
+) -> HexComposition {
+    sketch_role(archetype, space, in_blueprint).composition()
 }
 
 /// Whether this part of the sketch can be trusted to still be there later.
@@ -191,18 +187,11 @@ impl CellState {
     }
 }
 
-/// Height in metres for an archetype's slab; the ordering is the legend.
+/// Slab height for a cell known only by its archetype - used for the link deck,
+/// where blueprint membership does not change the height a bar has to clear.
 #[must_use]
 pub(super) fn archetype_height(archetype: HexArchetype) -> Option<f32> {
-    match archetype {
-        HexArchetype::Void => None,
-        HexArchetype::Straight | HexArchetype::Corner => Some(0.9),
-        HexArchetype::Junction => Some(1.5),
-        HexArchetype::RampHead => Some(0.6),
-        HexArchetype::Room => Some(2.6),
-        HexArchetype::RampUp => Some(4.5),
-        HexArchetype::Shaft => Some(TILE_LEVEL_HEIGHT * 0.85),
-    }
+    hex_sketch(sketch_role(archetype, HexSpace::Hall, false)).height
 }
 
 /// Distinct cache key per signal role, so two roles never share a material.
@@ -246,31 +235,24 @@ mod tests {
     }
 
     #[test]
-    fn a_room_fills_its_hex_and_a_hallway_does_not() {
-        // This is the whole "tiles are pixels" channel: adjacent room cells must
-        // meet with no seam so a multi-cell room reads as one space, while a
-        // corridor must read as a ribbon strung between things.
-        assert!((Composition::Room.inset() - 1.0).abs() < f32::EPSILON);
-        assert!(Composition::Hall.inset() < Composition::Vertical.inset());
-        assert!(Composition::Vertical.inset() < Composition::Room.inset());
-    }
-
-    #[test]
     fn blueprint_membership_beats_archetype_when_classifying_a_room() {
         // A room's footprint can contain a cell whose archetype is not `Room`;
         // the blueprint is the authority on what composes a room.
         assert_eq!(
-            Composition::of(HexArchetype::Junction, HexSpace::Hall, true),
-            Composition::Room
+            composition(HexArchetype::Junction, HexSpace::Hall, true),
+            HexComposition::Room
         );
         assert_eq!(
-            Composition::of(HexArchetype::Junction, HexSpace::Hall, false),
-            Composition::Hall
+            composition(HexArchetype::Junction, HexSpace::Hall, false),
+            HexComposition::Hall
         );
         assert_eq!(
-            Composition::of(HexArchetype::Shaft, HexSpace::Hall, false),
-            Composition::Vertical
+            composition(HexArchetype::Shaft, HexSpace::Hall, false),
+            HexComposition::Vertical
         );
+        // And a blueprint cell is drawn seam-free whatever its archetype is.
+        let drawn = sketch(HexArchetype::Junction, HexSpace::Hall, true);
+        assert!((drawn.inset - 1.0).abs() < f32::EPSILON);
     }
 
     #[test]

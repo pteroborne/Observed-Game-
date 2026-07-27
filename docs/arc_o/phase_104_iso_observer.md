@@ -55,6 +55,25 @@ colour separates districts, not registers.
 diagonal exceeds that on its own, so the first capture clipped most of the map
 away. `frame_camera` now returns an explicit far plane derived from the bounds.
 
+## Revised after Phase 105
+
+The lab was upgraded alongside the in-game map so it stays the arc's showcase
+surface rather than falling behind it. It now draws what the tiles *compose*:
+footprint width separates room from hallway from vertical, and bars mark every
+open port pair, with risers joining floors. The heights and widths moved into
+`observed_style::hex_sketch` — the lab and the game each only map their
+archetypes onto its roles, so a change lands in both at once instead of drifting.
+
+The baseline captures below were re-taken with that renderer so before/after
+comparisons across Phases 106–113 stay like-for-like. The solve is byte-identical;
+only the drawing changed. The census gained two lines, and the first one is a
+sharper statement of backlog #13 than the shaft figure was:
+
+- **61 % of the facility is vertical circulation** (ramps, ramp heads and shafts
+  together, 3 368 of 5 495 cells), against 38 % hallway.
+- **Rooms are 0 %** — 14 cells, rounding to zero.
+- 5 297 lateral connections and 2 041 vertical ones.
+
 ## Baseline measurements
 
 All five pinned seeds, production `28 x 20 x 10`, one solve attempt each:

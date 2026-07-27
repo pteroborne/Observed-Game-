@@ -101,6 +101,12 @@ the catalog, and the projector rather than by playing.
   `district_for_architecture` maps them onto six districts plus the LiminalGrid override —
   so colour alone can never separate all ten. Phase 110 has to decide whether
   district-exclusive *tilesets* are enough, or whether the style mapping widens too.
+- **The map vocabulary lives in `observed_style`, not in either renderer.**
+  `hex_sketch` owns every slab height and footprint width, and `hex_link` owns the
+  connection treatment; `iso_observer_lab` and `game/src/hex_wfc/view/map` each
+  only map their archetypes onto its roles. Adding an archetype (Phase 108's
+  `Expanse`) means adding one role there and an arm in each mapping — not a new
+  table.
 - **The 3D orthographic far plane defaults to 1000 m**, which a production facility's
   diagonal exceeds on its own. Any whole-facility camera must set it explicitly or it
   silently clips most of the map away.

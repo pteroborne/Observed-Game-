@@ -1157,6 +1157,132 @@ pub struct DistrictPalette {
     pub pools_rhythm: bool,
 }
 
+/// What a hex cell is, for the purpose of *drawing a map of it*.
+///
+/// The isometric map and `iso_observer_lab` both render a solved facility as
+/// solids, and both need the same answers: how tall is this cell's slab, and how
+/// much of its hex does it fill. Those are visual-language decisions, so they
+/// live here rather than being invented twice.
+///
+/// Callers map their own archetype onto this, because the solver's
+/// `HexArchetype` lives in `observed_facility` and this crate stays render-free
+/// and dependency-light. A cell inside a room blueprint maps to [`Self::Room`]
+/// regardless of its archetype — the blueprint is the authority on what composes
+/// a room.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HexSketchRole {
+    /// Nothing is drawn.
+    Void,
+    /// Flat two-door circulation: a straight run or a turn.
+    Corridor,
+    /// Flat circulation with three or more doors.
+    Junction,
+    /// The empty upper half of a ramp pair.
+    RampHead,
+    /// Any cell inside a stamped room footprint.
+    Room,
+    /// The lower, walkable half of a ramp pair.
+    Ramp,
+    /// A vertical shaft.
+    Shaft,
+}
+
+impl HexSketchRole {
+    pub const ALL: [HexSketchRole; 7] = [
+        HexSketchRole::Void,
+        HexSketchRole::Corridor,
+        HexSketchRole::Junction,
+        HexSketchRole::RampHead,
+        HexSketchRole::Room,
+        HexSketchRole::Ramp,
+        HexSketchRole::Shaft,
+    ];
+
+    /// The coarse grouping a reader actually perceives: is this a place, a way
+    /// between places, or the joint that changes floor.
+    #[must_use]
+    pub fn composition(self) -> HexComposition {
+        match self {
+            Self::Room => HexComposition::Room,
+            Self::Ramp | Self::RampHead | Self::Shaft => HexComposition::Vertical,
+            Self::Void | Self::Corridor | Self::Junction => HexComposition::Hall,
+        }
+    }
+}
+
+/// The three things a hex can be part of, as a map reader perceives it.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HexComposition {
+    Room,
+    Hall,
+    Vertical,
+}
+
+impl HexComposition {
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Room => "room",
+            Self::Hall => "hallway",
+            Self::Vertical => "vertical",
+        }
+    }
+}
+
+/// How one hex is drawn on a map: the height of its slab and how much of its
+/// footprint it fills.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HexSketch {
+    /// Slab height in metres, or `None` when the cell draws nothing.
+    pub height: Option<f32>,
+    /// Footprint scale. `1.0` means neighbours meet with no seam, which is what
+    /// makes a multi-cell room read as one space instead of as several tiles.
+    pub inset: f32,
+}
+
+/// The map vocabulary for a hex role.
+///
+/// Two ordered channels, deliberately independent. **Height** rises with how
+/// much a cell interrupts a run: corridor, junction, room, then vertical
+/// circulation tallest. **Width** says what the cell is part of: a room fills its
+/// hex so rooms merge, a corridor is a narrow ribbon strung between things, and a
+/// vertical joint sits between the two.
+#[must_use]
+pub fn hex_sketch(role: HexSketchRole) -> HexSketch {
+    let height = match role {
+        HexSketchRole::Void => None,
+        HexSketchRole::Corridor => Some(0.9),
+        HexSketchRole::Junction => Some(1.5),
+        HexSketchRole::RampHead => Some(0.6),
+        HexSketchRole::Room => Some(2.6),
+        HexSketchRole::Ramp => Some(4.5),
+        // A shaft nearly spans its level, so a stack of them reads as a column.
+        HexSketchRole::Shaft => Some(6.8),
+    };
+    HexSketch {
+        height,
+        inset: match role.composition() {
+            HexComposition::Room => 1.0,
+            HexComposition::Hall => 0.52,
+            HexComposition::Vertical => 0.74,
+        },
+    }
+}
+
+/// The treatment for a drawn connection between two hexes. Connections are
+/// structure, not district: a bar means "you can get from here to there", so it
+/// takes the spine treatment and dims when the survivor's knowledge of either
+/// end is second-hand.
+#[must_use]
+pub fn hex_link(confident: bool) -> Treatment {
+    let treatment = surface(SurfaceRole::Spine);
+    if confident {
+        treatment
+    } else {
+        observed_modulate(treatment, ObservedState::Unobserved)
+    }
+}
+
 /// The atmosphere palette for a district.
 pub fn district(d: District) -> DistrictPalette {
     match d {
@@ -1973,5 +2099,61 @@ mod tests {
         );
         assert_ne!(treatments[0], treatments[1]);
         assert_ne!(treatments[1], treatments[2]);
+    }
+
+    #[test]
+    fn the_hex_sketch_height_rises_with_how_much_a_cell_interrupts_a_run() {
+        let h = |role| hex_sketch(role).height.expect("draws");
+        assert!(hex_sketch(HexSketchRole::Void).height.is_none());
+        assert!(h(HexSketchRole::Corridor) < h(HexSketchRole::Junction));
+        assert!(h(HexSketchRole::Junction) < h(HexSketchRole::Room));
+        assert!(h(HexSketchRole::Room) < h(HexSketchRole::Shaft));
+        assert!(h(HexSketchRole::RampHead) < h(HexSketchRole::Ramp));
+    }
+
+    #[test]
+    fn only_a_room_fills_its_hex_so_only_rooms_merge() {
+        // This is the channel that makes a multi-cell room read as one space
+        // rather than as several tiles, so the room inset must be exactly 1.0
+        // and every other role must leave a visible seam.
+        assert!((hex_sketch(HexSketchRole::Room).inset - 1.0).abs() < f32::EPSILON);
+        for role in HexSketchRole::ALL {
+            if role.composition() == HexComposition::Room {
+                continue;
+            }
+            assert!(
+                hex_sketch(role).inset < 1.0,
+                "{role:?} must not merge with its neighbours"
+            );
+        }
+    }
+
+    #[test]
+    fn a_hallway_is_the_narrowest_thing_on_the_map() {
+        let hall = hex_sketch(HexSketchRole::Corridor).inset;
+        let vertical = hex_sketch(HexSketchRole::Shaft).inset;
+        let room = hex_sketch(HexSketchRole::Room).inset;
+        assert!(hall < vertical && vertical < room);
+    }
+
+    #[test]
+    fn every_sketch_role_lands_in_exactly_one_composition() {
+        for role in HexSketchRole::ALL {
+            let composition = role.composition();
+            assert!(!composition.label().is_empty());
+        }
+        assert_eq!(HexSketchRole::Room.composition(), HexComposition::Room);
+        assert_eq!(HexSketchRole::Shaft.composition(), HexComposition::Vertical);
+        assert_eq!(HexSketchRole::Corridor.composition(), HexComposition::Hall);
+    }
+
+    #[test]
+    fn a_second_hand_link_reads_below_a_confirmed_one() {
+        let confident = hex_link(true);
+        let hearsay = hex_link(false);
+        assert!(
+            luminance(hearsay.base_color.to_linear()) < luminance(confident.base_color.to_linear()),
+            "a link the survivor has not confirmed from both sides must read dimmer"
+        );
     }
 }

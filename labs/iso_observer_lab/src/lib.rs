@@ -3,14 +3,18 @@
 //! Arc O changes what the hex WFC composes: contiguous districts, per-district
 //! composition profiles, an `Expanse` archetype, authored vertical kits. None of
 //! that is falsifiable from a first-person camera inside a corridor, so this lab
-//! exists to make a whole solved facility legible at a glance, on two orthogonal
-//! channels:
+//! exists to make a whole solved facility legible at a glance. A tile is a
+//! pixel: on its own it says almost nothing, so the lab draws what the tiles
+//! *compose*, on channels that do not compete:
 //!
 //! - **Colour is the district.** Every cell is tinted by its district accent
 //!   from [`observed_style::architecture`]. The lab never invents a colour.
-//! - **Height is the archetype.** Corridors are thin slabs, junctions a little
-//!   thicker, rooms thicker still, ramps a wedge-height block, shafts a column
-//!   reaching for the level above.
+//! - **Height is the archetype**, and **width is the composition** — both from
+//!   [`observed_style::hex_sketch`], the same table the in-game survivor map
+//!   reads, so the two views cannot drift. Rooms fill their hex and meet with no
+//!   seam, so a multi-cell room reads as one space; corridors are ribbons.
+//! - **Bars are connections.** One per open port pair, so a corridor run reads
+//!   as a route and a riser shows two floors are joined.
 //!
 //! Reading them together answers the questions Arc O is accountable for: are
 //! districts contiguous, does one register compose differently from its
@@ -29,9 +33,9 @@ use std::f32::consts::FRAC_PI_4;
 use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResolution};
 use observed_content::ArchitectureRegister;
-use observed_facility::hex_wfc::{HexArchetype, HexWfcConfig, HexWfcWorld};
-use observed_hex::{HexCoord, TILE_LEVEL_HEIGHT, hex_origin};
-use observed_style::{MarkerRole, marker};
+use observed_facility::hex_wfc::{HexArchetype, HexSpace, HexWfcConfig, HexWfcWorld};
+use observed_hex::{HexCoord, HexFace, PortClass, TILE_LEVEL_HEIGHT, hex_origin};
+use observed_style::{HexSketch, HexSketchRole, MarkerRole, hex_link, hex_sketch, marker};
 
 /// The pinned baseline corpus. Every Arc O phase re-captures these same five
 /// seeds so before/after comparisons are like-for-like; changing this list
@@ -49,10 +53,16 @@ pub const PRESET_SEEDS: [u64; 5] = [
 const ISO_PITCH: f32 = -0.615_479_7;
 const WINDOW_WIDTH: f32 = 1600.0;
 const WINDOW_HEIGHT: f32 = 1000.0;
-/// Slight per-cell shrink so neighbours read as countable tiles. Kept close to
-/// 1.0 deliberately — widen it and genuinely open regions stop reading as one
-/// continuous space, which is the exact signal Arc O needs to see.
-const CELL_INSET: f32 = 0.94;
+/// Connection bars ride just above the lower of the two cells they join, so they
+/// read as a bridge over the composition rather than a rod through it.
+const LINK_CLEARANCE: f32 = 0.25;
+const LINK_THICKNESS: f32 = 1.7;
+/// A riser is pushed past the footprint, because a bar drawn up the middle of a
+/// shaft column is inside the column and invisible.
+const RISER_OFFSET: f32 = 6.6;
+/// Only the three forward lateral faces are walked, so each undirected edge is
+/// drawn once rather than twice from opposite ends.
+const FORWARD_FACES: [HexFace; 3] = [HexFace::East, HexFace::SouthEast, HexFace::SouthWest];
 
 #[derive(Component)]
 struct LabVisual;
@@ -134,6 +144,56 @@ impl LabState {
         census
     }
 
+    /// How many cells fall into each composition, and how many connections join
+    /// them. These are the numbers Arc O's composition phases are supposed to
+    /// move, so they belong on screen rather than in a log.
+    #[must_use]
+    pub fn composition_census(&self) -> (BTreeMap<&'static str, usize>, usize, usize) {
+        let mut by_kind: BTreeMap<&'static str, usize> = BTreeMap::new();
+        let mut lateral = 0;
+        let mut vertical = 0;
+        let grid = self.world.config.grid();
+        for (coord, placement) in &self.world.placements {
+            if placement.archetype == HexArchetype::Void {
+                continue;
+            }
+            let role = sketch_role(
+                placement.archetype,
+                placement.space,
+                self.world.room_id_at(*coord).is_some(),
+            );
+            *by_kind.entry(role.composition().label()).or_insert(0) += 1;
+            for face in FORWARD_FACES {
+                if placement.is_open(face)
+                    && let Some(neighbour) = grid.neighbor(*coord, face)
+                    && self
+                        .world
+                        .placements
+                        .get(&neighbour)
+                        .is_some_and(|other| other.is_open(face.opposite()))
+                {
+                    lateral += 1;
+                }
+            }
+            if placement.up != PortClass::Sealed {
+                let above = HexCoord {
+                    q: coord.q,
+                    r: coord.r,
+                    level: coord.level.saturating_add(1),
+                };
+                if self
+                    .world
+                    .placements
+                    .get(&above)
+                    .is_some_and(|other| other.down != PortClass::Sealed)
+                {
+                    vertical += 1;
+                }
+            }
+        }
+        (by_kind, lateral, vertical)
+    }
+
     /// How many cells each register owns, and how many disjoint regions those
     /// cells form on the level grid. A district that is a *place* has few, large
     /// regions; today's per-cell lottery produces hundreds of singletons, which
@@ -193,19 +253,43 @@ fn count_regions(cells: &BTreeSet<HexCoord>) -> usize {
     regions
 }
 
-/// Height in metres for an archetype's slab. The ordering *is* the legend:
-/// flat circulation is low, decision space is mid, vertical circulation is tall.
+/// Which style-owned sketch role a cell draws as.
+///
+/// The heights and widths live in `observed_style` so this lab and the in-game
+/// survivor map cannot drift apart; only the mapping from the solver's
+/// vocabulary is local. Blueprint membership wins over archetype, because the
+/// blueprint is the authority on what composes a room.
+#[must_use]
+pub fn sketch_role(archetype: HexArchetype, space: HexSpace, in_blueprint: bool) -> HexSketchRole {
+    if in_blueprint || space == HexSpace::Room {
+        return HexSketchRole::Room;
+    }
+    match archetype {
+        HexArchetype::Void => HexSketchRole::Void,
+        HexArchetype::Straight | HexArchetype::Corner => HexSketchRole::Corridor,
+        HexArchetype::Junction => HexSketchRole::Junction,
+        HexArchetype::RampUp => HexSketchRole::Ramp,
+        HexArchetype::RampHead => HexSketchRole::RampHead,
+        HexArchetype::Shaft => HexSketchRole::Shaft,
+        HexArchetype::Room => HexSketchRole::Room,
+    }
+}
+
+/// How a cell of this world is drawn: slab height and footprint fill.
+#[must_use]
+pub fn cell_sketch(world: &HexWfcWorld, coord: HexCoord) -> Option<HexSketch> {
+    let placement = world.placements.get(&coord)?;
+    Some(hex_sketch(sketch_role(
+        placement.archetype,
+        placement.space,
+        world.room_id_at(coord).is_some(),
+    )))
+}
+
+/// Slab height for an archetype alone, for callers that only need to clear it.
 #[must_use]
 pub fn archetype_height(archetype: HexArchetype) -> Option<f32> {
-    match archetype {
-        HexArchetype::Void => None,
-        HexArchetype::Straight | HexArchetype::Corner => Some(0.9),
-        HexArchetype::Junction => Some(1.5),
-        HexArchetype::RampHead => Some(0.6),
-        HexArchetype::Room => Some(2.6),
-        HexArchetype::RampUp => Some(4.5),
-        HexArchetype::Shaft => Some(TILE_LEVEL_HEIGHT * 0.85),
-    }
+    hex_sketch(sketch_role(archetype, HexSpace::Hall, false)).height
 }
 
 #[must_use]
@@ -422,7 +506,7 @@ fn rebuild(
 
     // One mesh per archetype and one material per (register, archetype-is-room)
     // pair: a few dozen assets for a few thousand cells.
-    let mut mesh_cache: BTreeMap<u32, Handle<Mesh>> = BTreeMap::new();
+    let mut mesh_cache: BTreeMap<(u32, u32), Handle<Mesh>> = BTreeMap::new();
     let mut material_cache: BTreeMap<u8, Handle<StandardMaterial>> = BTreeMap::new();
 
     let spawn = state.world.config.spawn();
@@ -432,7 +516,12 @@ fn rebuild(
         if !state.drawn(*coord) {
             continue;
         }
-        let Some(height) = archetype_height(placement.archetype) else {
+        let drawn = hex_sketch(sketch_role(
+            placement.archetype,
+            placement.space,
+            state.world.room_id_at(*coord).is_some(),
+        ));
+        let Some(height) = drawn.height else {
             continue;
         };
         let register = state
@@ -443,8 +532,8 @@ fn rebuild(
             .unwrap_or(ArchitectureRegister::Institutional);
 
         let mesh = mesh_cache
-            .entry(height.to_bits())
-            .or_insert_with(|| meshes.add(prism::hex_prism(height, CELL_INSET)))
+            .entry((height.to_bits(), drawn.inset.to_bits()))
+            .or_insert_with(|| meshes.add(prism::hex_prism(height, drawn.inset)))
             .clone();
         let material = material_cache
             .entry(register as u8)
@@ -474,6 +563,112 @@ fn rebuild(
             MeshMaterial3d(material),
             Transform::from_translation(origin),
             Name::new(archetype_label(placement.archetype)),
+        ));
+    }
+
+    // Connections. This is what turns a field of tiles into a graph: corridor
+    // runs become visible lines and a riser shows two floors are joined. The lab
+    // reads ground truth, so both sides come straight from the placements rather
+    // than from anyone's knowledge.
+    let grid = state.world.config.grid();
+    let mut bar_cache: BTreeMap<(u32, u32, u32), Handle<Mesh>> = BTreeMap::new();
+    let link_material = {
+        let treatment = hex_link(true);
+        materials.add(StandardMaterial {
+            base_color: treatment.base_color,
+            emissive: treatment.emissive,
+            perceptual_roughness: 0.6,
+            ..default()
+        })
+    };
+    for (coord, placement) in &state.world.placements {
+        if !state.drawn(*coord) {
+            continue;
+        }
+        let here = archetype_height(placement.archetype).unwrap_or(0.9);
+        let origin = Vec3::from_array(hex_origin(*coord));
+
+        for face in FORWARD_FACES {
+            if !placement.is_open(face) {
+                continue;
+            }
+            let Some(neighbour) = grid.neighbor(*coord, face) else {
+                continue;
+            };
+            if !state.drawn(neighbour) {
+                continue;
+            }
+            let Some(other) = state.world.placements.get(&neighbour) else {
+                continue;
+            };
+            if !other.is_open(face.opposite()) {
+                continue;
+            }
+            let target = Vec3::from_array(hex_origin(neighbour));
+            let span = target - origin;
+            let length = ((span.length() * 16.0).round() / 16.0).max(f32::EPSILON);
+            let deck = here.min(archetype_height(other.archetype).unwrap_or(0.9)) + LINK_CLEARANCE;
+            let mesh = bar_cache
+                .entry((
+                    length.to_bits(),
+                    (LINK_THICKNESS * 0.4).to_bits(),
+                    LINK_THICKNESS.to_bits(),
+                ))
+                .or_insert_with(|| {
+                    meshes.add(Cuboid::new(length, LINK_THICKNESS * 0.4, LINK_THICKNESS))
+                })
+                .clone();
+            commands.spawn((
+                LabVisual,
+                Mesh3d(mesh),
+                MeshMaterial3d(link_material.clone()),
+                Transform::from_translation(origin + span * 0.5 + Vec3::Y * deck)
+                    .with_rotation(Quat::from_rotation_y((-span.z).atan2(span.x))),
+                Name::new("link"),
+            ));
+        }
+
+        if placement.up == PortClass::Sealed {
+            continue;
+        }
+        let above = HexCoord {
+            q: coord.q,
+            r: coord.r,
+            level: coord.level.saturating_add(1),
+        };
+        if !state.drawn(above) {
+            continue;
+        }
+        if state
+            .world
+            .placements
+            .get(&above)
+            .is_none_or(|other| other.down == PortClass::Sealed)
+        {
+            continue;
+        }
+        let mesh = bar_cache
+            .entry((
+                (LINK_THICKNESS * 0.8).to_bits(),
+                TILE_LEVEL_HEIGHT.to_bits(),
+                (LINK_THICKNESS * 0.8).to_bits(),
+            ))
+            .or_insert_with(|| {
+                meshes.add(Cuboid::new(
+                    LINK_THICKNESS * 0.8,
+                    TILE_LEVEL_HEIGHT,
+                    LINK_THICKNESS * 0.8,
+                ))
+            })
+            .clone();
+        commands.spawn((
+            LabVisual,
+            Mesh3d(mesh),
+            MeshMaterial3d(link_material.clone()),
+            Transform::from_translation(
+                origin + Vec3::Y * (TILE_LEVEL_HEIGHT * 0.5) - Vec3::Z * RISER_OFFSET,
+            ),
+            Name::new("riser"),
         ));
     }
 
@@ -541,10 +736,23 @@ fn update_status(mut state: ResMut<LabState>, mut status: Query<&mut Text, With<
         ViewMode::Slice => format!("level {}", state.focus_level),
     };
 
+    let (by_kind, lateral, vertical) = state.composition_census();
+    let composed = by_kind
+        .iter()
+        .map(|(label, count)| {
+            #[allow(clippy::cast_precision_loss)]
+            let share = *count as f32 * 100.0 / total.max(1) as f32;
+            format!("{label} {count} ({share:.0}%)")
+        })
+        .collect::<Vec<_>>()
+        .join("  ");
+
     state.status = format!(
         "seed {:#018x}  ({} of {})   view: {view}   {total} placed cells   attempts {}\n\
-         colour = district register    height = archetype\n\
-         {archetypes}\n\
+         colour = district   width = room/hallway/vertical   height = archetype   bars = connections\n\
+         archetypes   {archetypes}\n\
+         composes     {composed}\n\
+         connects     {lateral} lateral | {vertical} vertical\n\
          districts (cells / disjoint regions; a district that is a place has few, large regions):\n\
          {}\n\
          [ ] seed   Tab stack/slice   PageUp/PageDown level   R resolve",
@@ -716,6 +924,47 @@ mod tests {
             counted, drawn,
             "every placed cell belongs to exactly one district"
         );
+    }
+
+    #[test]
+    fn the_composition_census_covers_every_drawn_cell_and_finds_connections() {
+        let state = LabState::new(0);
+        let drawn = state
+            .world
+            .placements
+            .values()
+            .filter(|p| p.archetype != HexArchetype::Void)
+            .count();
+        let (by_kind, lateral, vertical) = state.composition_census();
+        let counted: usize = by_kind.values().sum();
+        assert_eq!(
+            counted, drawn,
+            "every placed cell composes exactly one of room/hallway/vertical"
+        );
+        assert!(
+            lateral > 0 && vertical > 0,
+            "a solved facility is connected laterally and vertically; saw \
+             {lateral} lateral and {vertical} vertical"
+        );
+    }
+
+    #[test]
+    fn the_lab_and_the_game_share_one_sketch_table() {
+        // Both views map their archetypes onto `observed_style`'s roles, so a
+        // height or width change lands in both at once. This pins the mapping
+        // rather than the numbers, which belong to the style crate's own tests.
+        assert_eq!(
+            sketch_role(HexArchetype::Shaft, HexSpace::Hall, false),
+            HexSketchRole::Shaft
+        );
+        assert_eq!(
+            sketch_role(HexArchetype::Junction, HexSpace::Hall, true),
+            HexSketchRole::Room,
+            "blueprint membership wins over archetype"
+        );
+        let room = hex_sketch(HexSketchRole::Room);
+        assert!((room.inset - 1.0).abs() < f32::EPSILON, "rooms merge");
+        assert!(hex_sketch(HexSketchRole::Corridor).inset < room.inset);
     }
 
     #[test]

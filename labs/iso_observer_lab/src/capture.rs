@@ -66,7 +66,11 @@ pub(crate) fn capture_progress(
                 run.timer = 0.0;
                 return;
             }
-            if run.timer >= 0.5 {
+            // The stacked view spawns every cell of every level plus every
+            // connection — roughly thirteen thousand entities at production
+            // scale. Half a second was enough before links existed; it is not
+            // now, and a short window screenshots an empty frame.
+            if run.timer >= 2.0 {
                 let path = format!("{}/seed_{}_stack.png", run.dir, run.seed_index);
                 commands
                     .spawn(Screenshot::primary_window())
@@ -93,7 +97,7 @@ pub(crate) fn capture_progress(
                 run.timer = 0.0;
                 return;
             }
-            if run.timer >= 0.4 {
+            if run.timer >= 0.8 {
                 let path = format!(
                     "{}/seed_{}_level_{}.png",
                     run.dir, run.seed_index, run.slice
@@ -119,11 +123,14 @@ pub(crate) fn capture_progress(
                     })
                 })
                 .collect::<Vec<_>>();
+            let (composition, lateral, vertical) = state.composition_census();
             run.manifest.push(serde_json::json!({
                 "seed": format!("{:#018x}", state.world.seed),
                 "attempts": state.world.last_attempts,
                 "rooms": state.world.blueprints.len(),
                 "archetypes": census,
+                "composition": composition,
+                "links": { "lateral": lateral, "vertical": vertical },
                 "districts": districts,
             }));
 
@@ -146,8 +153,10 @@ pub(crate) fn capture_progress(
                     "levels": config.levels,
                 },
                 "legend": {
-                    "colour": "architecture register, via observed_style::architecture_surface",
-                    "height": "hex archetype; corridors low, rooms mid, shafts tall",
+                    "colour": "district accent, via observed_style::architecture",
+                    "height": "hex archetype, via observed_style::hex_sketch",
+                    "width": "composition: rooms fill their hex and merge, hallways are ribbons",
+                    "bars": "one per open port pair; risers join floors",
                 },
                 "seeds": run.manifest,
             });
