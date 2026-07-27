@@ -18,12 +18,18 @@ use observed_hex::{HexFace, PortClass, hex_origin};
 use observed_style::{MarkerRole, SchematicRole, hex_sketch, marker, schematic};
 use observed_traversal::ColliderShape;
 
-use crate::wire::{LineBatch, cell_outline, ramp_glyph, stair_glyph};
+use crate::wire::{LineBatch, SurfaceBatch, floor_ring, ramp_glyph, stair_glyph, wall_bands};
 use crate::{LabState, LabVisual, Layer, cell_sketch, sketch_role};
 
-/// World width of a schematic line. Constant in world space, so zooming in
-/// thickens the stroke the way leaning toward a screen would.
-const STROKE: f32 = 0.42;
+/// Walls are drawn at a fraction of the cell's height. A floor plan is read
+/// from above; full-height cages stack into an unreadable thicket, while a low
+/// solid band says "you cannot pass here" immediately and never occludes the
+/// cell behind it.
+const WALL_FRACTION: f32 = 1.0 / 3.0;
+/// Cells meet edge to edge. Composition is carried by which faces are walled —
+/// a room's internal faces are open, so a room emerges as one enclosed area on
+/// its own — rather than by shrinking a hex away from its neighbours.
+const CELL_EXTENT: f32 = 1.0;
 
 /// Whether the solver may rewire this cell.
 ///
@@ -46,6 +52,7 @@ pub fn is_volatile(archetype: HexArchetype) -> bool {
 pub struct DrawReport {
     pub cells: usize,
     pub segments: usize,
+    pub walls: usize,
     pub tiles_wired: usize,
     pub real_geometry: bool,
 }
@@ -76,11 +83,13 @@ pub fn schematic_view(
     state: &mut LabState,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
-    view: Vec3,
 ) -> DrawReport {
     let mut pinned = LineBatch::default();
     let mut volatile = LineBatch::default();
     let mut selected = LineBatch::default();
+    let mut pinned_walls = SurfaceBatch::default();
+    let mut volatile_walls = SurfaceBatch::default();
+    let mut selected_walls = SurfaceBatch::default();
     let mut report = DrawReport {
         real_geometry: state.detail && state.geometry.is_some(),
         ..DrawReport::default()
@@ -109,12 +118,12 @@ pub fn schematic_view(
         report.cells += 1;
         let origin = Vec3::from_array(hex_origin(*coord));
         let is_selected = selected_cell == Some(*coord);
-        let batch = if is_selected {
-            &mut selected
+        let (batch, walls) = if is_selected {
+            (&mut selected, &mut selected_walls)
         } else if is_volatile(placement.archetype) {
-            &mut volatile
+            (&mut volatile, &mut volatile_walls)
         } else {
-            &mut pinned
+            (&mut pinned, &mut pinned_walls)
         };
 
         // Real hulls only when asked for, or for the selected cell — that is
@@ -154,13 +163,16 @@ pub fn schematic_view(
             let sketch = cell_sketch(world, *coord).unwrap_or_else(|| {
                 hex_sketch(sketch_role(placement.archetype, placement.space, false))
             });
-            let height = sketch.height.unwrap_or(0.9);
+            let height = sketch.height.unwrap_or(0.9) * WALL_FRACTION;
             let mut open = [false; 6];
             for face in HexFace::LATERAL {
                 open[face.index()] = placement.is_open(face);
             }
-            for (a, b) in cell_outline(height, sketch.inset, open) {
+            for (a, b) in floor_ring(CELL_EXTENT) {
                 batch.segment(origin + a, origin + b);
+            }
+            for [a, b, c, d] in wall_bands(height, open) {
+                walls.quad(origin + a, origin + b, origin + c, origin + d);
             }
             // A vertical connection gets a symbol, so a floor change is legible
             // without selecting the cell.
@@ -180,23 +192,32 @@ pub fn schematic_view(
     }
     report.tiles_wired = edges.len();
 
-    for (batch, role) in [
-        (pinned, SchematicRole::Pinned),
-        (volatile, SchematicRole::Volatile),
-        (selected, SchematicRole::Selected),
+    for (batch, walls, role) in [
+        (pinned, pinned_walls, SchematicRole::Pinned),
+        (volatile, volatile_walls, SchematicRole::Volatile),
+        (selected, selected_walls, SchematicRole::Selected),
     ] {
         report.segments += batch.segments();
-        let Some(mesh) = batch.build_ribbons(STROKE, view) else {
-            continue;
-        };
+        report.walls += walls.quads();
         let material = line_material(materials, role);
-        commands.spawn((
-            LabVisual,
-            Mesh3d(meshes.add(mesh)),
-            MeshMaterial3d(material),
-            Transform::IDENTITY,
-            Name::new(role.label()),
-        ));
+        if let Some(mesh) = batch.build() {
+            commands.spawn((
+                LabVisual,
+                Mesh3d(meshes.add(mesh)),
+                MeshMaterial3d(material.clone()),
+                Transform::IDENTITY,
+                Name::new(role.label()),
+            ));
+        }
+        if let Some(mesh) = walls.build() {
+            commands.spawn((
+                LabVisual,
+                Mesh3d(meshes.add(mesh)),
+                MeshMaterial3d(material),
+                Transform::IDENTITY,
+                Name::new("wall"),
+            ));
+        }
     }
     report
 }

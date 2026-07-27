@@ -503,8 +503,9 @@ fn setup(mut commands: Commands, state: Res<LabState>) {
         // them from flat strokes into something that reads as a lit screen.
         Hdr,
         Bloom {
-            intensity: 0.34,
-            low_frequency_boost: 0.8,
+            intensity: 0.62,
+            low_frequency_boost: 1.0,
+            low_frequency_boost_curvature: 0.9,
             ..Bloom::NATURAL
         },
         Projection::Orthographic(OrthographicProjection {
@@ -660,11 +661,9 @@ fn rebuild(
     if let Some((min, max)) = draw::drawn_bounds(&state.world, state.layer) {
         state.base_frame = frame_camera(min, max);
     }
-    let view = state.view_direction();
-
     let report = match state.mode {
         RenderMode::Schematic => {
-            draw::schematic_view(&mut commands, &mut state, &mut meshes, &mut materials, view)
+            draw::schematic_view(&mut commands, &mut state, &mut meshes, &mut materials)
         }
         RenderMode::Solid => draw::solid_view(&mut commands, &state, &mut meshes, &mut materials),
     };
@@ -767,7 +766,7 @@ fn update_status(
     state.status = format!(
         "seed {:#018x}  ({} of {})   {}   {mode}   attempts {}\n\
          green will not rewire    red the solver can rewire    amber selected\n\
-         drawing     {geometry}   {} cells, {} line segments\n\
+         drawing     {geometry}   {} cells, {} lines, {} wall panels\n\
          archetypes  {archetypes}\n\
          composes    {composed}      connects {lateral} lateral | {vertical} vertical\n\
          districts (cells / disjoint regions; a district that is a place has few, large regions):\n\
@@ -781,6 +780,7 @@ fn update_status(
         state.world.last_attempts,
         state.report.cells,
         state.report.segments,
+        state.report.walls,
         district_lines.join("\n"),
         100.0 / state.zoom,
     );
@@ -857,10 +857,12 @@ mod tests {
         };
         assert!(cells > 0, "a layer must draw cells");
         assert!(segments > cells, "each cell contributes several segments");
+        // At most one line mesh and one wall mesh per role. The whole point of
+        // batching is that this count does not grow with the facility.
         assert!(
-            drawn <= 3,
-            "the schematic batches into at most one mesh per role, saw {drawn} entities \
-             for {cells} cells and {segments} segments"
+            drawn <= 2 * 3,
+            "the schematic batches per role, saw {drawn} entities for {cells} cells \
+             and {segments} segments"
         );
     }
 

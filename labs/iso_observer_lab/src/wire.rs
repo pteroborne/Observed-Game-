@@ -42,60 +42,8 @@ impl LineBatch {
         self.points.len() / 2
     }
 
-    /// Consume the batch into camera-facing ribbons of the given world width.
-    ///
-    /// GPU line primitives are one pixel wide and cannot be thickened, so a
-    /// schematic that wants weight has to draw its lines as geometry. Each
-    /// segment becomes a quad turned to face the viewer; the camera here only
-    /// pans and zooms, never orbits, so one shared view direction is exact
-    /// rather than an approximation.
-    #[must_use]
-    pub fn build_ribbons(self, width: f32, view: Vec3) -> Option<Mesh> {
-        if self.points.is_empty() {
-            return None;
-        }
-        let half = width * 0.5;
-        let mut positions: Vec<[f32; 3]> = Vec::with_capacity(self.points.len() * 2);
-        let mut normals: Vec<[f32; 3]> = Vec::with_capacity(self.points.len() * 2);
-        let mut indices: Vec<u32> = Vec::with_capacity(self.points.len() * 3);
-        let facing = (-view).normalize_or_zero().to_array();
-        for pair in self.points.chunks_exact(2) {
-            let (from, to) = (Vec3::from_array(pair[0]), Vec3::from_array(pair[1]));
-            let along = (to - from).normalize_or_zero();
-            if along == Vec3::ZERO {
-                continue;
-            }
-            let mut side = along.cross(view).normalize_or_zero();
-            if side == Vec3::ZERO {
-                // A segment pointing straight at the viewer has no unique side;
-                // any perpendicular reads the same from here.
-                side = along.cross(Vec3::Y).normalize_or_zero();
-            }
-            let side = side * half;
-            #[allow(clippy::cast_possible_truncation)]
-            let base = positions.len() as u32;
-            for corner in [from - side, from + side, to + side, to - side] {
-                positions.push(corner.to_array());
-                normals.push(facing);
-            }
-            indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
-        }
-        if indices.is_empty() {
-            return None;
-        }
-        let mut mesh = Mesh::new(
-            PrimitiveTopology::TriangleList,
-            RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
-        );
-        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-        mesh.insert_indices(Indices::U32(indices));
-        Some(mesh)
-    }
-
     /// Consume the batch into one line-list mesh.
     #[must_use]
-    #[allow(dead_code)]
     pub fn build(self) -> Option<Mesh> {
         if self.points.is_empty() {
             return None;
@@ -117,47 +65,104 @@ impl LineBatch {
     }
 }
 
-/// The cell-local outline of a hex prism `height` tall, with a doorway left
-/// **open** on every face the cell actually opens through.
+/// Accumulated solid surfaces for one colour.
 ///
-/// This is the schematic's core statement, and it is deliberately the inverse of
-/// drawing connections as separate marks: a wall is a line, and a way through is
-/// the absence of one. A reader traces routes by following the gaps, and a cell
-/// sealed on all six faces is unmistakably a dead end.
-///
-/// `open[i]` is indexed by lateral face — edge `i` runs from corner `i` to
-/// corner `i + 1`, which is exactly the boundary of face `i`.
-#[must_use]
-pub fn cell_outline(height: f32, inset: f32, open: [bool; 6]) -> Vec<(Vec3, Vec3)> {
-    /// How much of an opening's edge survives at each end, as a fraction. Small
-    /// enough that the gap reads as a doorway, large enough that the corner
-    /// still anchors the hexagon.
-    const JAMB: f32 = 0.3;
+/// Walls are drawn as low solid bands rather than as full-height wireframe
+/// boxes: a floor plan is read from above, and a waist-high solid says "you
+/// cannot pass here" far faster than a tall transparent cage does.
+#[derive(Default)]
+pub struct SurfaceBatch {
+    positions: Vec<[f32; 3]>,
+    normals: Vec<[f32; 3]>,
+    indices: Vec<u32>,
+}
 
-    let ring = |y: f32| {
-        CORNERS
-            .iter()
-            .map(|&(x, z)| {
-                #[allow(clippy::cast_precision_loss)]
-                Vec3::new(x as f32 * inset, y, z as f32 * inset)
-            })
-            .collect::<Vec<_>>()
-    };
-    let low = ring(0.0);
-    let high = ring(height);
-    let mut out = Vec::with_capacity(24);
-    for index in 0..6 {
-        let next = (index + 1) % 6;
-        for band in [&low, &high] {
-            let (from, to) = (band[index], band[next]);
-            if open[index] {
-                out.push((from, from.lerp(to, JAMB)));
-                out.push((to.lerp(from, JAMB), to));
-            } else {
-                out.push((from, to));
-            }
+impl SurfaceBatch {
+    /// Append a quad wound `a b c d`.
+    pub fn quad(&mut self, a: Vec3, b: Vec3, c: Vec3, d: Vec3) {
+        let normal = (b - a).cross(d - a).normalize_or_zero().to_array();
+        #[allow(clippy::cast_possible_truncation)]
+        let base = self.positions.len() as u32;
+        for corner in [a, b, c, d] {
+            self.positions.push(corner.to_array());
+            self.normals.push(normal);
         }
-        out.push((low[index], high[index]));
+        self.indices
+            .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+
+    pub fn quads(&self) -> usize {
+        self.indices.len() / 6
+    }
+
+    #[must_use]
+    pub fn build(self) -> Option<Mesh> {
+        if self.indices.is_empty() {
+            return None;
+        }
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
+        );
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, self.positions);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals);
+        mesh.insert_indices(Indices::U32(self.indices));
+        Some(mesh)
+    }
+}
+
+/// The cell-local corners at `inset`, in [`CORNERS`] order.
+fn ring(y: f32, inset: f32) -> Vec<Vec3> {
+    CORNERS
+        .iter()
+        .map(|&(x, z)| {
+            #[allow(clippy::cast_precision_loss)]
+            Vec3::new(x as f32 * inset, y, z as f32 * inset)
+        })
+        .collect()
+}
+
+/// The floor outline of a cell at full extent, so neighbouring cells meet and
+/// the lattice reads as one connected surface rather than as scattered tiles.
+#[must_use]
+pub fn floor_ring(inset: f32) -> Vec<(Vec3, Vec3)> {
+    let corners = ring(0.0, inset);
+    (0..6)
+        .map(|index| (corners[index], corners[(index + 1) % 6]))
+        .collect()
+}
+
+/// Solid wall bands, one per face the cell does **not** open through.
+///
+/// A face that opens keeps a jamb at each end and leaves the middle clear, so a
+/// doorway is a real hole in a real wall. Walls sit slightly inside the
+/// footprint: neighbouring cells each own their own wall, which is both true of
+/// the authored tiles and what keeps two coincident quads from fighting.
+#[must_use]
+pub fn wall_bands(height: f32, open: [bool; 6]) -> Vec<[Vec3; 4]> {
+    /// How much of an opening's edge stays walled at each end.
+    const JAMB: f32 = 0.3;
+    /// Pulled off the shared edge so adjacent cells do not co-plane.
+    const WALL_INSET: f32 = 0.965;
+
+    let low = ring(0.0, WALL_INSET);
+    let high = ring(height, WALL_INSET);
+    let mut out = Vec::with_capacity(8);
+    let band = |from: usize, to: usize, start: f32, end: f32, out: &mut Vec<[Vec3; 4]>| {
+        let a = low[from].lerp(low[to], start);
+        let b = low[from].lerp(low[to], end);
+        let c = high[from].lerp(high[to], end);
+        let d = high[from].lerp(high[to], start);
+        out.push([a, b, c, d]);
+    };
+    for (index, opens) in open.iter().enumerate() {
+        let next = (index + 1) % 6;
+        if *opens {
+            band(index, next, 0.0, JAMB, &mut out);
+            band(index, next, 1.0 - JAMB, 1.0, &mut out);
+        } else {
+            band(index, next, 0.0, 1.0, &mut out);
+        }
     }
     out
 }
@@ -198,36 +203,11 @@ pub fn ramp_glyph(height: f32) -> Vec<(Vec3, Vec3)> {
     ]
 }
 
-/// The plain cell-local outline of a hex prism, with no openings marked.
-#[must_use]
-#[allow(dead_code)]
-pub fn hex_shell(height: f32, inset: f32) -> Vec<(Vec3, Vec3)> {
-    let ring = |y: f32| {
-        CORNERS
-            .iter()
-            .map(|&(x, z)| {
-                #[allow(clippy::cast_precision_loss)]
-                Vec3::new(x as f32 * inset, y, z as f32 * inset)
-            })
-            .collect::<Vec<_>>()
-    };
-    let low = ring(0.0);
-    let high = ring(height);
-    let mut out = Vec::with_capacity(18);
-    for index in 0..6 {
-        let next = (index + 1) % 6;
-        out.push((low[index], low[next]));
-        out.push((high[index], high[next]));
-        out.push((low[index], high[index]));
-    }
-    out
-}
-
 /// The *structural* edges of a set of convex hulls, in the hulls' own local
 /// frame.
 ///
 /// The hulls arrive as unordered point clouds, so the geometry comes from
-/// triangulating each one through [`ConvexRenderMesh`] — the same path the solid
+/// triangulating each one through [`ConvexRenderMesh`] â€” the same path the solid
 /// renderer uses. Two filters then turn a triangle soup into a schematic:
 ///
 /// 1. **De-duplicate by position, not by vertex index.** `ConvexRenderMesh`
@@ -340,19 +320,80 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_shell_closes_both_rings_and_stands_them_on_uprights() {
-        let shell = hex_shell(2.0, 1.0);
-        assert_eq!(shell.len(), 18, "six each of low ring, high ring, upright");
-        let uprights = shell
+    fn the_floor_ring_closes_at_full_extent_so_neighbours_meet() {
+        let ring = floor_ring(1.0);
+        assert_eq!(ring.len(), 6);
+        // Every edge must end where the next begins, or the lattice reads as
+        // scattered tiles instead of one connected surface.
+        for index in 0..6 {
+            assert_eq!(ring[index].1, ring[(index + 1) % 6].0);
+        }
+        let reach = ring
             .iter()
-            .filter(|(a, b)| (a.y - b.y).abs() > f32::EPSILON)
-            .count();
-        assert_eq!(uprights, 6);
-        let top = shell
-            .iter()
-            .flat_map(|(a, b)| [a.y, b.y])
+            .flat_map(|(a, b)| [a.x.abs(), b.x.abs()])
             .fold(0.0, f32::max);
-        assert!((top - 2.0).abs() < 1e-6);
+        assert!(
+            (reach - 7.0).abs() < 1e-5,
+            "full extent reaches the flat faces"
+        );
+    }
+
+    #[test]
+    fn a_sealed_face_walls_and_an_open_one_leaves_a_doorway() {
+        let sealed = wall_bands(1.0, [false; 6]);
+        assert_eq!(sealed.len(), 6, "six sealed faces, six solid bands");
+
+        let mut open = [false; 6];
+        open[0] = true;
+        let doored = wall_bands(1.0, open);
+        assert_eq!(
+            doored.len(),
+            7,
+            "an opening splits its face into two jambs, so the count rises by one"
+        );
+        // The doorway is a real hole: the two jambs must not meet.
+        let jamb_a = doored[0];
+        let jamb_b = doored[1];
+        assert!(
+            (jamb_a[1] - jamb_b[0]).length() > 1.0,
+            "the jambs leave a gap wide enough to read as a door"
+        );
+    }
+
+    #[test]
+    fn walls_sit_inside_the_footprint_so_neighbours_do_not_co_plane() {
+        let reach = wall_bands(1.0, [false; 6])
+            .iter()
+            .flat_map(|quad| quad.iter().map(|corner| corner.x.abs()))
+            .fold(0.0, f32::max);
+        let floor = floor_ring(1.0)
+            .iter()
+            .flat_map(|(a, b)| [a.x.abs(), b.x.abs()])
+            .fold(0.0, f32::max);
+        assert!(
+            reach < floor,
+            "a cell owns its own wall, just inside its edge"
+        );
+    }
+
+    #[test]
+    fn a_wall_band_is_only_as_tall_as_it_is_asked_to_be() {
+        let top = wall_bands(2.5, [false; 6])
+            .iter()
+            .flat_map(|quad| quad.iter().map(|corner| corner.y))
+            .fold(f32::MIN, f32::max);
+        assert!((top - 2.5).abs() < 1e-5);
+    }
+
+    #[test]
+    fn a_surface_batch_becomes_one_mesh_of_two_triangles_per_quad() {
+        let mut walls = SurfaceBatch::default();
+        walls.quad(Vec3::ZERO, Vec3::X, Vec3::X + Vec3::Y, Vec3::Y);
+        walls.quad(Vec3::Z, Vec3::X + Vec3::Z, Vec3::X + Vec3::Y, Vec3::Y);
+        assert_eq!(walls.quads(), 2);
+        let mesh = walls.build().expect("a non-empty batch builds");
+        assert_eq!(mesh.primitive_topology(), PrimitiveTopology::TriangleList);
+        assert!(SurfaceBatch::default().build().is_none());
     }
 
     #[test]
