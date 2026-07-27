@@ -42,8 +42,60 @@ impl LineBatch {
         self.points.len() / 2
     }
 
+    /// Consume the batch into camera-facing ribbons of the given world width.
+    ///
+    /// GPU line primitives are one pixel wide and cannot be thickened, so a
+    /// schematic that wants weight has to draw its lines as geometry. Each
+    /// segment becomes a quad turned to face the viewer; the camera here only
+    /// pans and zooms, never orbits, so one shared view direction is exact
+    /// rather than an approximation.
+    #[must_use]
+    pub fn build_ribbons(self, width: f32, view: Vec3) -> Option<Mesh> {
+        if self.points.is_empty() {
+            return None;
+        }
+        let half = width * 0.5;
+        let mut positions: Vec<[f32; 3]> = Vec::with_capacity(self.points.len() * 2);
+        let mut normals: Vec<[f32; 3]> = Vec::with_capacity(self.points.len() * 2);
+        let mut indices: Vec<u32> = Vec::with_capacity(self.points.len() * 3);
+        let facing = (-view).normalize_or_zero().to_array();
+        for pair in self.points.chunks_exact(2) {
+            let (from, to) = (Vec3::from_array(pair[0]), Vec3::from_array(pair[1]));
+            let along = (to - from).normalize_or_zero();
+            if along == Vec3::ZERO {
+                continue;
+            }
+            let mut side = along.cross(view).normalize_or_zero();
+            if side == Vec3::ZERO {
+                // A segment pointing straight at the viewer has no unique side;
+                // any perpendicular reads the same from here.
+                side = along.cross(Vec3::Y).normalize_or_zero();
+            }
+            let side = side * half;
+            #[allow(clippy::cast_possible_truncation)]
+            let base = positions.len() as u32;
+            for corner in [from - side, from + side, to + side, to - side] {
+                positions.push(corner.to_array());
+                normals.push(facing);
+            }
+            indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        }
+        if indices.is_empty() {
+            return None;
+        }
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
+        );
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+        mesh.insert_indices(Indices::U32(indices));
+        Some(mesh)
+    }
+
     /// Consume the batch into one line-list mesh.
     #[must_use]
+    #[allow(dead_code)]
     pub fn build(self) -> Option<Mesh> {
         if self.points.is_empty() {
             return None;
@@ -65,11 +117,90 @@ impl LineBatch {
     }
 }
 
-/// The cell-local outline of a hex prism `height` tall: both rings and the six
-/// uprights. This is the schematic's structural shorthand — it says "a cell is
-/// here and this is how tall it is" without claiming anything about its
-/// interior.
+/// The cell-local outline of a hex prism `height` tall, with a doorway left
+/// **open** on every face the cell actually opens through.
+///
+/// This is the schematic's core statement, and it is deliberately the inverse of
+/// drawing connections as separate marks: a wall is a line, and a way through is
+/// the absence of one. A reader traces routes by following the gaps, and a cell
+/// sealed on all six faces is unmistakably a dead end.
+///
+/// `open[i]` is indexed by lateral face — edge `i` runs from corner `i` to
+/// corner `i + 1`, which is exactly the boundary of face `i`.
 #[must_use]
+pub fn cell_outline(height: f32, inset: f32, open: [bool; 6]) -> Vec<(Vec3, Vec3)> {
+    /// How much of an opening's edge survives at each end, as a fraction. Small
+    /// enough that the gap reads as a doorway, large enough that the corner
+    /// still anchors the hexagon.
+    const JAMB: f32 = 0.3;
+
+    let ring = |y: f32| {
+        CORNERS
+            .iter()
+            .map(|&(x, z)| {
+                #[allow(clippy::cast_precision_loss)]
+                Vec3::new(x as f32 * inset, y, z as f32 * inset)
+            })
+            .collect::<Vec<_>>()
+    };
+    let low = ring(0.0);
+    let high = ring(height);
+    let mut out = Vec::with_capacity(24);
+    for index in 0..6 {
+        let next = (index + 1) % 6;
+        for band in [&low, &high] {
+            let (from, to) = (band[index], band[next]);
+            if open[index] {
+                out.push((from, from.lerp(to, JAMB)));
+                out.push((to.lerp(from, JAMB), to));
+            } else {
+                out.push((from, to));
+            }
+        }
+        out.push((low[index], high[index]));
+    }
+    out
+}
+
+/// A staircase, drawn in profile at the centre of a cell that connects upward.
+///
+/// The schematic convention: you should be able to tell a floor change is
+/// available here without selecting anything or counting hull edges.
+#[must_use]
+pub fn stair_glyph(height: f32) -> Vec<(Vec3, Vec3)> {
+    const STEPS: usize = 4;
+    const RUN: f32 = 1.5;
+    #[allow(clippy::cast_precision_loss)]
+    let span = RUN * STEPS as f32;
+    #[allow(clippy::cast_precision_loss)]
+    let rise = height / STEPS as f32;
+    let mut out = Vec::with_capacity(STEPS * 2);
+    let mut cursor = Vec3::new(-span * 0.5, 0.0, 0.0);
+    for _ in 0..STEPS {
+        let tread = cursor + Vec3::X * RUN;
+        out.push((cursor, tread));
+        let riser = tread + Vec3::Y * rise;
+        out.push((tread, riser));
+        cursor = riser;
+    }
+    out
+}
+
+/// A slope with a chevron at its high end, for a cell that ramps upward.
+#[must_use]
+pub fn ramp_glyph(height: f32) -> Vec<(Vec3, Vec3)> {
+    let low = Vec3::new(-3.0, 0.0, 0.0);
+    let high = Vec3::new(3.0, height, 0.0);
+    vec![
+        (low, high),
+        (high, high + Vec3::new(-1.4, -0.5, 0.9)),
+        (high, high + Vec3::new(-1.4, -0.5, -0.9)),
+    ]
+}
+
+/// The plain cell-local outline of a hex prism, with no openings marked.
+#[must_use]
+#[allow(dead_code)]
 pub fn hex_shell(height: f32, inset: f32) -> Vec<(Vec3, Vec3)> {
     let ring = |y: f32| {
         CORNERS

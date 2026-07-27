@@ -14,12 +14,16 @@
 use bevy::prelude::*;
 use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::{HexArchetype, HexWfcWorld};
-use observed_hex::hex_origin;
+use observed_hex::{HexFace, PortClass, hex_origin};
 use observed_style::{MarkerRole, SchematicRole, hex_sketch, marker, schematic};
 use observed_traversal::ColliderShape;
 
-use crate::wire::{LineBatch, hex_shell};
+use crate::wire::{LineBatch, cell_outline, ramp_glyph, stair_glyph};
 use crate::{LabState, LabVisual, Layer, cell_sketch, sketch_role};
+
+/// World width of a schematic line. Constant in world space, so zooming in
+/// thickens the stroke the way leaning toward a screen would.
+const STROKE: f32 = 0.42;
 
 /// Whether the solver may rewire this cell.
 ///
@@ -57,6 +61,11 @@ fn line_material(
         // A phosphor line is its own light source; shading it would only muddy
         // the read.
         unlit: true,
+        // A ribbon is a flat quad standing in for a line, so it has no
+        // meaningful back face. Culling one would make its visibility depend on
+        // which way the segment happened to run.
+        cull_mode: None,
+        double_sided: true,
         ..default()
     })
 }
@@ -67,12 +76,13 @@ pub fn schematic_view(
     state: &mut LabState,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
+    view: Vec3,
 ) -> DrawReport {
     let mut pinned = LineBatch::default();
     let mut volatile = LineBatch::default();
     let mut selected = LineBatch::default();
     let mut report = DrawReport {
-        real_geometry: matches!(state.layer, Layer::Single(_)) && state.geometry.is_some(),
+        real_geometry: state.detail && state.geometry.is_some(),
         ..DrawReport::default()
     };
 
@@ -107,9 +117,10 @@ pub fn schematic_view(
             &mut pinned
         };
 
-        // Real hulls when one layer is in view, cell shells when all of them
-        // are. The selected cell always gets its real geometry — that is the
-        // "what is actually in there" the inspector exists to answer.
+        // Real hulls only when asked for, or for the selected cell — that is
+        // the "what is actually in there" the inspector exists to answer. The
+        // default is the symbolic outline, which is both far cheaper and far
+        // more readable: construction edges are not information.
         let drew_real = if report.real_geometry || is_selected {
             match geometry.as_ref() {
                 Some(snapshot) => {
@@ -144,8 +155,26 @@ pub fn schematic_view(
                 hex_sketch(sketch_role(placement.archetype, placement.space, false))
             });
             let height = sketch.height.unwrap_or(0.9);
-            for (a, b) in hex_shell(height, sketch.inset) {
+            let mut open = [false; 6];
+            for face in HexFace::LATERAL {
+                open[face.index()] = placement.is_open(face);
+            }
+            for (a, b) in cell_outline(height, sketch.inset, open) {
                 batch.segment(origin + a, origin + b);
+            }
+            // A vertical connection gets a symbol, so a floor change is legible
+            // without selecting the cell.
+            let glyph = match placement.archetype {
+                HexArchetype::Shaft if placement.up != PortClass::Sealed => {
+                    Some(stair_glyph(height))
+                }
+                HexArchetype::RampUp => Some(ramp_glyph(height)),
+                _ => None,
+            };
+            if let Some(glyph) = glyph {
+                for (a, b) in glyph {
+                    batch.segment(origin + a, origin + b);
+                }
             }
         }
     }
@@ -157,7 +186,7 @@ pub fn schematic_view(
         (selected, SchematicRole::Selected),
     ] {
         report.segments += batch.segments();
-        let Some(mesh) = batch.build() else {
+        let Some(mesh) = batch.build_ribbons(STROKE, view) else {
             continue;
         };
         let material = line_material(materials, role);

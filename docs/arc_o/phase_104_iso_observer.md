@@ -110,6 +110,55 @@ reads the framebuffer a frame or more after it is requested. Clearing the
 selection immediately after asking for the inspector shot photographed an empty
 panel, and exiting immediately after the last seed's shot never wrote it at all.
 
+### What the console draws, and why
+
+The first schematic drew every hull edge, which was true and unreadable. It now
+draws **symbols**, and the symbols answer the questions a reader actually has:
+
+- **A wall is a line; a doorway is a gap.** The cell outline breaks on every face
+  the cell opens through, so connectivity is read by following the breaks rather
+  than by drawing separate link marks. It also makes the archetypes legible at a
+  glance: a shaft is a closed hexagon, a corridor is mostly gap, and a dead end
+  is unmistakable.
+- **A vertical connection gets a glyph** — a staircase in profile for a shaft, a
+  slope with a chevron for a ramp — so a floor change does not require selecting
+  the cell.
+- **`G` restores the real authored hulls** when the question is "what is actually
+  in there"; the selected cell always draws them.
+
+Lines are drawn as camera-facing ribbons rather than GPU line primitives, because
+those are one pixel wide and cannot be thickened. The camera only pans and zooms,
+never orbits, so one shared view direction orients every quad exactly. Ribbons
+are two-sided: a flat quad standing in for a line has no meaningful back, and
+culling one would make visibility depend on which way the segment happened to
+run — which is exactly the bug that made the first thickened build render
+nothing at all.
+
+Switching from hull edges to symbols cut a production layer from 370 788
+segments to 13 753, which is what made thickening affordable in the first place.
+
+### The little rectangles
+
+Worth recording, because it was asked and the answer is a finding. On level 3 of
+seed 0:
+
+| archetype | cells | hulls per cell |
+|---|---|---|
+| **shaft** | **306** | 32.5 |
+| corner | 92 | 20.8 |
+| junction | 77 | 28.0 |
+| ramp | 35 | 17.0 |
+| ramp head | 22 | **0** |
+| straight | 16 | 23.5 |
+
+The small repeating rectangles that dominated the first schematic were the
+**stair towers** — 306 of 544 cells on that one floor. The generic switchback's
+plan footprint is a narrow double flight that does not fill its hex, so it reads
+as a rectangle while a walled corridor reads as a full hexagon. Backlog #13 was
+visible in the picture before anyone counted it. Ramp heads draw nothing at all:
+they are the empty upper half of a ramp pair and the projector emits no prefab
+for them.
+
 ## Baseline measurements
 
 All five pinned seeds, production `28 x 20 x 10`, one solve attempt each:
@@ -140,9 +189,12 @@ field of confetti, identically on every seed.
 
 ## Evidence
 
-`docs/evidence/arc_o/phase_104/` — five stacked overviews, one mid-stack level
-slice per seed, and `manifest.json` carrying the full census. The remaining 45
-per-level slices are regenerable and were not committed:
+`docs/evidence/arc_o/phase_104/` — a mid-stack level slice for **each** of the
+five pinned seeds (the primary before/after comparison: district contiguity shows
+on a floor plan, not in a stack), one stacked overview, one inspector frame, and
+`manifest.json` carrying the full census for all five. The glow makes these
+compress poorly, so the rest — the other stacks and inspector frames, and all
+forty-five remaining per-level slices — are regenerable rather than committed:
 
 ```powershell
 $env:OBSERVED2_CAPTURE = "docs/evidence/arc_o/phase_104"; cargo dev-run -p iso_observer_lab

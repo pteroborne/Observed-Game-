@@ -63,6 +63,11 @@ pub(crate) fn capture_progress(
                 std::fs::create_dir_all(&run.dir).expect("capture dir must be creatable");
                 state.layer = Layer::All;
                 state.selected = None;
+                // Evidence frames fit the whole layer. The interactive default
+                // is zoomed well in, which is right for reading a doorway and
+                // wrong for a before/after comparison of a whole floor.
+                state.zoom = 1.0;
+                state.pan = Vec2::ZERO;
                 state.dirty = true;
                 run.armed = true;
                 run.timer = 0.0;
@@ -116,6 +121,9 @@ pub(crate) fn capture_progress(
         Stage::Inspect => {
             if !run.armed {
                 state.layer = Layer::Single(0);
+                // The inspector frame shows the interactive view, close in,
+                // because that is how the panel is actually used.
+                state.zoom = 0.34;
                 // A shaft on the ground floor: the most-placed archetype in the
                 // facility, and the one whose tile identity matters most.
                 state.selected = state

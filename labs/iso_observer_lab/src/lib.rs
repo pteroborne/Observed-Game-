@@ -34,7 +34,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::f32::consts::FRAC_PI_4;
 use std::sync::OnceLock;
 
+use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
+use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
+use bevy::render::view::Hdr;
 use bevy::window::{PresentMode, WindowResolution};
 use observed_authoring::{RoomPrototype, RuntimeHexCatalog, TilePrototype};
 use observed_content::ArchitectureRegister;
@@ -65,6 +68,12 @@ const WINDOW_HEIGHT: f32 = 1000.0;
 /// Only the three forward lateral faces are walked, so each undirected edge is
 /// counted once rather than twice from opposite ends.
 const FORWARD_FACES: [HexFace; 3] = [HexFace::East, HexFace::SouthEast, HexFace::SouthWest];
+/// Default zoom, as a multiple of the fit-everything scale. Well under 1.0
+/// because a fitted production layer is 544 cells across a 1600px window - you
+/// cannot read a doorway at that size, and the doorways are the point.
+const DEFAULT_ZOOM: f32 = 0.34;
+const MIN_ZOOM: f32 = 0.04;
+const MAX_ZOOM: f32 = 2.0;
 
 #[derive(Component)]
 pub(crate) struct LabVisual;
@@ -134,6 +143,15 @@ pub struct LabState {
     pub layer: Layer,
     pub mode: RenderMode,
     pub selected: Option<HexCoord>,
+    /// Draw the real authored hulls instead of the symbolic outline.
+    pub detail: bool,
+    /// Multiplier on the fit-everything camera scale; smaller is closer in.
+    pub zoom: f32,
+    /// Screen-aligned offset from the framed centre, in world units.
+    pub pan: Vec2,
+    /// The fit-everything framing, recomputed on rebuild and then modified by
+    /// zoom and pan every frame - so panning never costs a rebuild.
+    base_frame: (Transform, f32, f32),
     pub dirty: bool,
     pub reset_count: u32,
     pub(crate) edges: EdgeCache,
@@ -196,6 +214,10 @@ impl LabState {
             layer: Layer::Single(0),
             mode: RenderMode::Schematic,
             selected: None,
+            detail: false,
+            zoom: DEFAULT_ZOOM,
+            pan: Vec2::ZERO,
+            base_frame: (Transform::IDENTITY, 1.0, 1_000.0),
             dirty: true,
             reset_count: 0,
             edges: EdgeCache::default(),
@@ -206,12 +228,21 @@ impl LabState {
 
     fn reload(&mut self, seed_index: usize) {
         let carried = self.reset_count;
-        let layer = self.layer;
-        let mode = self.mode;
+        let (layer, mode, detail, zoom, pan) =
+            (self.layer, self.mode, self.detail, self.zoom, self.pan);
         *self = Self::new(seed_index);
         self.reset_count = carried;
         self.layer = layer;
         self.mode = mode;
+        self.detail = detail;
+        self.zoom = zoom;
+        self.pan = pan;
+    }
+
+    /// The direction the fixed isometric camera looks along.
+    #[must_use]
+    pub fn view_direction(&self) -> Vec3 {
+        self.base_frame.0.forward().as_vec3()
     }
 
     /// How many cells of each archetype the current solve placed.
@@ -444,7 +475,14 @@ pub fn run() {
         .add_systems(Startup, setup)
         .add_systems(
             Update,
-            (handle_input, handle_click, rebuild, update_status).chain(),
+            (
+                handle_input,
+                handle_click,
+                rebuild,
+                sync_camera,
+                update_status,
+            )
+                .chain(),
         );
 
     if let Ok(dir) = std::env::var("OBSERVED2_CAPTURE") {
@@ -461,8 +499,16 @@ fn setup(mut commands: Commands, state: Res<LabState>) {
     commands.spawn((
         LabCamera,
         Camera3d::default(),
+        // The phosphor lines run hot on purpose; HDR plus bloom is what turns
+        // them from flat strokes into something that reads as a lit screen.
+        Hdr,
+        Bloom {
+            intensity: 0.34,
+            low_frequency_boost: 0.8,
+            ..Bloom::NATURAL
+        },
         Projection::Orthographic(OrthographicProjection {
-            scale,
+            scale: scale * DEFAULT_ZOOM,
             near: 0.1,
             far,
             ..OrthographicProjection::default_3d()
@@ -560,6 +606,14 @@ fn handle_input(keyboard: Res<ButtonInput<KeyCode>>, mut state: ResMut<LabState>
         };
         state.dirty = true;
     }
+    if keyboard.just_pressed(KeyCode::KeyG) {
+        state.detail = !state.detail;
+        state.dirty = true;
+    }
+    if keyboard.just_pressed(KeyCode::Home) || keyboard.just_pressed(KeyCode::Digit0) {
+        state.zoom = DEFAULT_ZOOM;
+        state.pan = Vec2::ZERO;
+    }
     if keyboard.just_pressed(KeyCode::Escape) && state.selected.is_some() {
         state.selected = None;
         state.dirty = true;
@@ -593,7 +647,6 @@ fn rebuild(
     mut state: ResMut<LabState>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut camera: Query<(&mut Projection, &mut Transform), With<LabCamera>>,
     existing: Query<Entity, With<LabVisual>>,
 ) {
     if !state.dirty {
@@ -604,27 +657,51 @@ fn rebuild(
         commands.entity(entity).despawn();
     }
 
+    if let Some((min, max)) = draw::drawn_bounds(&state.world, state.layer) {
+        state.base_frame = frame_camera(min, max);
+    }
+    let view = state.view_direction();
+
     let report = match state.mode {
         RenderMode::Schematic => {
-            draw::schematic_view(&mut commands, &mut state, &mut meshes, &mut materials)
+            draw::schematic_view(&mut commands, &mut state, &mut meshes, &mut materials, view)
         }
         RenderMode::Solid => draw::solid_view(&mut commands, &state, &mut meshes, &mut materials),
     };
     state.report = report;
+}
 
-    if let (Some((min, max)), Ok((mut projection, mut transform))) = (
-        draw::drawn_bounds(&state.world, state.layer),
-        camera.single_mut(),
-    ) {
-        let (framed, scale, far) = frame_camera(min, max);
-        *transform = framed;
-        *projection = Projection::Orthographic(OrthographicProjection {
-            scale,
-            near: 0.1,
-            far,
-            ..OrthographicProjection::default_3d()
-        });
+/// Zoom and pan are applied to the camera every frame rather than folded into
+/// the rebuild, so dragging around a layer never re-meshes it.
+fn sync_camera(
+    mouse: Res<ButtonInput<MouseButton>>,
+    motion: Res<AccumulatedMouseMotion>,
+    scroll: Res<AccumulatedMouseScroll>,
+    mut state: ResMut<LabState>,
+    mut camera: Query<(&mut Projection, &mut Transform), With<LabCamera>>,
+) {
+    if scroll.delta.y.abs() > f32::EPSILON {
+        state.zoom = (state.zoom * 1.14_f32.powf(-scroll.delta.y)).clamp(MIN_ZOOM, MAX_ZOOM);
     }
+    // Left drag is reserved for selecting a hex, so panning is the other buttons.
+    if mouse.pressed(MouseButton::Right) || mouse.pressed(MouseButton::Middle) {
+        let scale = state.base_frame.1 * state.zoom;
+        state.pan += Vec2::new(-motion.delta.x, motion.delta.y) * scale;
+    }
+
+    let Ok((mut projection, mut transform)) = camera.single_mut() else {
+        return;
+    };
+    let (base, scale, far) = state.base_frame;
+    let offset = base.rotation * Vec3::new(state.pan.x, state.pan.y, 0.0);
+    *transform =
+        Transform::from_translation(base.translation + offset).with_rotation(base.rotation);
+    *projection = Projection::Orthographic(OrthographicProjection {
+        scale: scale * state.zoom,
+        near: 0.1,
+        far,
+        ..OrthographicProjection::default_3d()
+    });
 }
 
 fn update_status(
@@ -678,9 +755,9 @@ fn update_status(
             state.report.tiles_wired
         )
     } else if state.geometry.is_some() {
-        "cell shells (cycle to a single layer for real geometry)".to_string()
+        "symbolic: walls are lines, doorways are gaps  (G for real hulls)".to_string()
     } else {
-        "cell shells (tile catalog unavailable)".to_string()
+        "symbolic (tile catalog unavailable)".to_string()
     };
     let mode = match state.mode {
         RenderMode::Schematic => "schematic",
@@ -695,7 +772,8 @@ fn update_status(
          composes    {composed}      connects {lateral} lateral | {vertical} vertical\n\
          districts (cells / disjoint regions; a district that is a place has few, large regions):\n\
          {}\n\
-         Tab cycle layer   D solid dev view   click a hex   Esc clear   [ ] seed   R resolve",
+         scroll zoom {:.0}%   right-drag pan   Home reset view\n\
+         Tab layer   G hull detail   D solid dev   click a hex   Esc clear   [ ] seed   R resolve",
         state.world.seed,
         state.seed_index + 1,
         PRESET_SEEDS.len(),
@@ -704,6 +782,7 @@ fn update_status(
         state.report.cells,
         state.report.segments,
         district_lines.join("\n"),
+        100.0 / state.zoom,
     );
     **text = state.status.clone();
 }
