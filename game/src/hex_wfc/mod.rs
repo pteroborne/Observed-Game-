@@ -14,8 +14,7 @@ mod perf;
 
 pub(crate) use perf::GPU_PROFILE_ENV;
 pub mod sim;
-mod tacmap;
-mod view;
+pub(crate) mod view;
 
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
@@ -33,7 +32,7 @@ impl Plugin for HexWfcPlugin {
                 sim::setup_runtime,
                 view::setup_view,
                 hud::setup,
-                tacmap::setup,
+                view::map::setup,
                 feedback::setup,
                 audio::setup,
                 entities::setup,
@@ -64,7 +63,7 @@ impl Plugin for HexWfcPlugin {
                 view::sync_camera,
                 view::sync_lighting_and_atmosphere,
                 hud::sync,
-                tacmap::sync,
+                view::map::sync,
                 feedback::sync,
                 audio::sync,
                 entities::sync,
@@ -80,7 +79,7 @@ impl Plugin for HexWfcPlugin {
             (
                 input::release_cursor,
                 view::clear_view,
-                tacmap::cleanup,
+                view::map::cleanup,
                 feedback::cleanup,
                 audio::cleanup,
                 entities::cleanup,
@@ -212,16 +211,20 @@ fn capture_progress(
     request.frame = request.frame.saturating_add(1);
     match request.mode {
         HexWfcCaptureMode::Map => {
-            if request.frame == 900
+            // Late enough that the spectator bot has explored a facility worth
+            // photographing: at frame 900 it has barely left spawn and the map
+            // shows five cells, which proves the fog-of-war contract but makes a
+            // useless visual gate.
+            if request.frame == 2_400
                 && let Some(runtime) = runtime.as_deref_mut()
             {
                 runtime.map_open = true;
             }
-            if request.frame == 950 {
+            if request.frame == 2_460 {
                 commands
                     .spawn(Screenshot::primary_window())
                     .observe(save_to_disk(request.path.clone()));
-            } else if request.frame == 1_020 {
+            } else if request.frame == 2_530 {
                 exit.write(AppExit::Success);
             }
         }

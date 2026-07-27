@@ -8,6 +8,8 @@ use std::time::Instant;
 
 mod assets;
 mod lighting;
+/// The full-screen isometric survivor map, wired by `hex_wfc::mod`.
+pub(crate) mod map;
 mod shell;
 
 use bevy::anti_alias::fxaa::Fxaa;

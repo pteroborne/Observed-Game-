@@ -5063,4 +5063,213 @@ mod hex_wfc_gates {
             "a finished hex match escapes all runners"
         );
     }
+
+    // ---- Phase 105: the full-screen isometric survivor map ----
+    //
+    // The map replaced the corner sketch, and it grew from a lab that renders
+    // ground truth. These gates exist because that lineage is exactly the way
+    // this feature could go wrong: the map must never draw a cell the team has
+    // not discovered, and must never surface a rival.
+
+    use crate::hex_wfc::view::map::{HexMapCamera, HexMapProjection, HexMapVisual};
+
+    /// Drive the app far enough that the team has discovered some, but nowhere
+    /// near all, of the facility, then open the map.
+    fn app_with_open_map_after(ticks: u32) -> App {
+        let mut app = test_app();
+        app.world_mut()
+            .insert_resource(flow::ActiveMatchSeed(flow::MATCH_SEED));
+        app.world_mut()
+            .insert_resource(SpectatorBot::for_seed(flow::MATCH_SEED));
+        go(&mut app, GameState::HexWfc);
+        for _ in 0..ticks {
+            app.world_mut().run_schedule(FixedUpdate);
+        }
+        app.world_mut().resource_mut::<HexWfcRuntime>().map_open = true;
+        app.world_mut().run_schedule(Update);
+        app
+    }
+
+    #[test]
+    fn the_map_draws_no_cell_the_team_has_not_discovered() {
+        let mut app = app_with_open_map_after(120);
+        let (known, placed) = {
+            let runtime = app.world().resource::<HexWfcRuntime>();
+            let known = runtime
+                .match_state
+                .player_map(runtime.local_player)
+                .expect("the local player owns survivor knowledge")
+                .cells
+                .len();
+            (known, runtime.match_state.facility.placements.len())
+        };
+        let drawn = count::<HexMapVisual>(&mut app);
+
+        assert!(known > 0, "the bot must have discovered something by now");
+        assert!(
+            known < placed,
+            "the fixture is only meaningful while most of the facility is undiscovered \
+             ({known} known of {placed} placed)"
+        );
+        // Cells plus at most the three markers: you, the exit, and anchors.
+        assert!(
+            drawn <= known + 3,
+            "the map drew {drawn} solids for {known} known cells — it is reading \
+             the facility, not the survivor's knowledge"
+        );
+        assert!(
+            drawn < placed,
+            "the map drew {drawn} solids against {placed} placed cells — undiscovered \
+             geometry reached the screen"
+        );
+    }
+
+    /// Inspects what was actually drawn, not merely what was read. Every solid
+    /// the map spawned must stand over a hex the local team knows.
+    ///
+    /// The comparison is on plan position `(x, z)`, which is unique per `(q, r)`
+    /// and shared by a column's levels. So this catches the leak that matters —
+    /// drawing into a region the team has never been — and deliberately does not
+    /// try to catch a same-column, wrong-level leak; the count gate in
+    /// `the_map_draws_no_cell_the_team_has_not_discovered` bounds that one.
+    ///
+    /// Note what this does *not* prove. Rival separation is structural: knowledge
+    /// is stored per team and `player_map` resolves through the asking player's
+    /// team, so a rival's discoveries are unreachable from here by construction
+    /// (covered by `observed_match`'s own knowledge tests). It is not asserted
+    /// here because the headless fixture cannot produce it — without the full app
+    /// loop the bots never leave spawn, so both teams know exactly the same cells
+    /// and any rival assertion would pass vacuously.
+    #[test]
+    fn every_solid_the_map_draws_stands_over_a_hex_the_team_knows() {
+        let mut app = app_with_open_map_after(120);
+        let known_plan = {
+            let runtime = app.world().resource::<HexWfcRuntime>();
+            runtime
+                .match_state
+                .player_map(runtime.local_player)
+                .expect("local knowledge")
+                .cells
+                .keys()
+                .map(|cell| observed_hex::hex_origin_plan(*cell))
+                .collect::<std::collections::BTreeSet<_>>()
+        };
+
+        let drawn = {
+            let world = app.world_mut();
+            let mut query = world.query_filtered::<&Transform, With<HexMapVisual>>();
+            query
+                .iter(world)
+                .map(|transform| {
+                    #[allow(clippy::cast_possible_truncation)]
+                    (
+                        transform.translation.x.round() as i32,
+                        transform.translation.z.round() as i32,
+                    )
+                })
+                .collect::<std::collections::BTreeSet<_>>()
+        };
+
+        assert!(!drawn.is_empty(), "the map must have drawn something");
+        let leaked = drawn.difference(&known_plan).collect::<Vec<_>>();
+        assert!(
+            leaked.is_empty(),
+            "the map drew {} solid(s) over hexes the team has never discovered: {:?}",
+            leaked.len(),
+            &leaked[..leaked.len().min(5)]
+        );
+    }
+
+    /// The structural half of the fog-of-war contract: knowledge is team-scoped,
+    /// so the map's source of truth is reachable only for the asking player's own
+    /// team.
+    #[test]
+    fn survivor_knowledge_is_keyed_per_team_not_per_player() {
+        let app = app_with_open_map_after(120);
+        let runtime = app.world().resource::<HexWfcRuntime>();
+        let local_team = runtime.local().team;
+        let local = runtime
+            .match_state
+            .player_map(runtime.local_player)
+            .expect("local knowledge");
+
+        assert!(
+            std::ptr::eq(
+                local,
+                runtime
+                    .match_state
+                    .team_map(local_team)
+                    .expect("the local team owns a map")
+            ),
+            "a player's map must be its team's map, not a private copy"
+        );
+        let rival = runtime
+            .match_state
+            .players
+            .values()
+            .find(|player| player.team != local_team)
+            .expect("the fixture is 2v2");
+        let rival_map = runtime
+            .match_state
+            .player_map(rival.id)
+            .expect("the rival team owns a map");
+        assert!(
+            !std::ptr::eq(local, rival_map),
+            "a rival on another team must resolve to a different knowledge entry"
+        );
+    }
+
+    #[test]
+    fn the_map_never_leaks_past_the_hex_state() {
+        let mut app = app_with_open_map_after(120);
+        assert!(
+            count::<HexMapVisual>(&mut app) > 0,
+            "the map must have drawn something before the leak check is meaningful"
+        );
+        assert!(app.world().contains_resource::<HexMapProjection>());
+
+        go(&mut app, GameState::Results);
+
+        assert_eq!(
+            count::<HexMapVisual>(&mut app),
+            0,
+            "map geometry never leaks past the hex state"
+        );
+        assert_eq!(
+            count::<HexMapCamera>(&mut app),
+            0,
+            "the map camera never leaks past the hex state"
+        );
+        assert!(
+            !app.world().contains_resource::<HexMapProjection>(),
+            "the projection cache never leaks past the hex state"
+        );
+    }
+
+    #[test]
+    fn the_map_camera_is_dormant_until_the_map_is_opened() {
+        let mut app = test_app();
+        app.world_mut()
+            .insert_resource(flow::ActiveMatchSeed(flow::MATCH_SEED));
+        app.world_mut()
+            .insert_resource(SpectatorBot::for_seed(flow::MATCH_SEED));
+        go(&mut app, GameState::HexWfc);
+        app.world_mut().run_schedule(Update);
+
+        let closed = {
+            let world = app.world_mut();
+            let mut query = world.query_filtered::<&Camera, With<HexMapCamera>>();
+            query.single(world).expect("one map camera").is_active
+        };
+        assert!(!closed, "the map camera is off while the map is closed");
+
+        app.world_mut().resource_mut::<HexWfcRuntime>().map_open = true;
+        app.world_mut().run_schedule(Update);
+        let opened = {
+            let world = app.world_mut();
+            let mut query = world.query_filtered::<&Camera, With<HexMapCamera>>();
+            query.single(world).expect("one map camera").is_active
+        };
+        assert!(opened, "opening the map activates its camera");
+    }
 }

@@ -53,7 +53,7 @@ pub(super) fn probe_route_cost(
 
 /// Register a mark between each adjacent pair of the chained hex `Update` systems.
 pub(super) fn configure(app: &mut App) {
-    use crate::hex_wfc::{audio, entities, feedback, hud, input, lantern, sim, tacmap, view};
+    use crate::hex_wfc::{audio, entities, feedback, hud, input, lantern, sim, view};
     app.add_systems(
         Update,
         (
@@ -65,8 +65,8 @@ pub(super) fn configure(app: &mut App) {
             mark("view::sync_camera").after(view::sync_practical_shadow_budget),
             mark("view::sync_lighting_and_atmosphere").after(view::sync_camera),
             mark("hud::sync").after(view::sync_lighting_and_atmosphere),
-            mark("tacmap::sync").after(hud::sync),
-            mark("feedback::sync").after(tacmap::sync),
+            mark("view::map::sync").after(hud::sync),
+            mark("feedback::sync").after(view::map::sync),
             mark("audio::sync").after(feedback::sync),
             mark("entities::sync").after(audio::sync),
             mark("lantern::sync_projection").after(entities::sync),

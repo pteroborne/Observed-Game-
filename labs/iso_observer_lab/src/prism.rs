@@ -1,16 +1,19 @@
 //! The exact quantized-hexagon prism, meshed for the isometric diagram.
 //!
-//! The footprint is [`observed_hex::CORNERS`] verbatim rather than a regular
-//! hexagon. The quantized hexagon is deliberately *not* regular — its east and
-//! west faces sit 7 m out while its north and south vertices reach 8 m — so a
-//! `RegularPolygon` approximation would leave sub-metre gaps between neighbours
-//! and misreport exactly the thing this lab exists to show: whether cells
-//! compose into continuous space.
+//! Corners come from [`observed_hex::prism_hull`], the shared source the game's
+//! map also draws from — the quantized hexagon is deliberately *not* regular, so
+//! a locally re-derived or `RegularPolygon` footprint would leave sub-metre gaps
+//! between neighbours and misreport exactly the thing this lab exists to show:
+//! whether cells compose into continuous space.
+//!
+//! The assembly below is deliberately flat-shaded rather than going through
+//! `ConvexRenderMesh`. A diagram wants hard facets unconditionally, not facets
+//! that happen to survive a crease threshold, and the lab has no other reason to
+//! depend on the traversal crate.
 
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
-use observed_hex::CORNERS;
 
 /// Build a flat-shaded prism over the canonical footprint, `height` metres tall,
 /// with its base at y = 0 and its footprint scaled by `inset`.
@@ -20,11 +23,8 @@ use observed_hex::CORNERS;
 /// stay hairline or genuinely open regions stop reading as continuous.
 #[must_use]
 pub fn hex_prism(height: f32, inset: f32) -> Mesh {
-    #[allow(clippy::cast_precision_loss)]
-    let ring: Vec<Vec2> = CORNERS
-        .iter()
-        .map(|&(x, z)| Vec2::new(x as f32 * inset, z as f32 * inset))
-        .collect();
+    let hull = observed_hex::prism_hull(height, inset);
+    let ring: Vec<Vec2> = hull[..6].iter().map(|p| Vec2::new(p[0], p[2])).collect();
 
     let mut positions: Vec<[f32; 3]> = Vec::with_capacity(6 * 4 + 12);
     let mut normals: Vec<[f32; 3]> = Vec::with_capacity(6 * 4 + 12);

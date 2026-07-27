@@ -20,6 +20,6 @@ pub use coords::{HexCoord, HexGridSize, lateral_distance, travel_distance};
 pub use faces::HexFace;
 pub use metrics::{
     ACROSS_CORNERS, ACROSS_FLATS, CORNERS, TILE_LEVEL_HEIGHT, face_edge, hex_origin,
-    hex_origin_plan,
+    hex_origin_plan, prism_hull,
 };
 pub use ports::{PortClass, PortSignature, ports_compatible};

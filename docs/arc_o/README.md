@@ -110,7 +110,7 @@ Phase-specific as-landed notes and evidence links are added here as each slice i
 ## Phase hand-offs
 
 - [Phase 104 — Arc M Closeout & Isometric Observer Lab](phase_104_iso_observer.md) `[x]`
-- Phase 105 — Full-Screen Isometric Tac Map
+- [Phase 105 — Full-Screen Isometric Tac Map](phase_105_isometric_tac_map.md) `[x]`
 - Phase 106 — Spatial Districts
 - Phase 107 — District Composition Profiles
 - Phase 108 — The `Expanse` Archetype
