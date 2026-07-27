@@ -4309,6 +4309,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "iso_observer_lab"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "observed_content",
+ "observed_facility",
+ "observed_hex",
+ "observed_style",
+ "serde_json",
+]
+
+[[package]]
 name = "itertools"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5571,6 +5583,7 @@ dependencies = [
 name = "observed_server"
 version = "0.1.0"
 dependencies = [
+ "observed_assets",
  "observed_authoring",
  "observed_content",
  "observed_core",
