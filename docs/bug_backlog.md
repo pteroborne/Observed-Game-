@@ -11,6 +11,12 @@ method, measurements, and the hypotheses it rejected are in
 Read that before picking any of them up — several plausible-sounding causes were
 measured and ruled out, and the harness has traps that invalidate naive runs.
 
+Entries 13–17 came out of the 2026-07-26 Arc O planning survey and are structural
+rather than observational: each one was found by reading the solver, the catalog,
+and the projector rather than by playing. They are all scheduled into Arc O
+([arc_o/README.md](arc_o/README.md)) because the arc cannot deliver legible
+districts while any of them stands.
+
 ## Open
 
 ### 5. Bot-POV walkthrough stalls in the observation room
@@ -160,6 +166,87 @@ one per blueprint when a catch resolves. Same redundant-pathfinding pattern as t
 fixes below, and both are candidates for `route_within_cost` bounding or for
 hoisting the shared spawn→exit term. Left alone because after the fixes below they
 no longer show up in the profile — pick this up only if the sim step regresses.
+
+### 13. Every vertical cell in the facility is the same procedural stair
+**Scheduled: Arc O Phase 109** ([arc_o/README.md](arc_o/README.md)).
+**Found 2026-07-26 during the Arc O planning survey.** There are zero authored
+`stair_tower` modules in `assets/tiles/compiled_catalog.ron`, yet
+`placement_tile_archetype` demands `stair_tower` for every `Shaft` placement
+(`crates/observed_facility/src/hex_wfc/variants.rs:197`). `Catalogue::select`
+therefore falls through to the `(archetype, "generic")` lookup
+(`crates/observed_match/src/hex_wfc/geometry.rs:544`) in all ten registers, and the
+generic kit's 66 switchback variants are the only vertical geometry the game has
+ever rendered. The weight table compounds it: of the ~662 live connective-cell
+weight, Shaft is ~258 (39 %) and ramp halves ~240 (36 %), leaving ~24 % flat
+corridor — so the most-walked element is also the least varied. Look at:
+`variants.rs:50-168` (the weights),
+`crates/observed_authoring/src/tile_source/catalog.rs:168-268` (the generic stair
+kit), and the exemption at `game/src/hex_wfc/sim_catalog_tests.rs:27`, which
+excuses `stair_tower` from the "must not use generic fallback" assertion and has
+been hiding this. The acceptance gate is authored stair geometry in at least the
+vertical-identity registers, plus removal of that exemption.
+
+### 14. Architecture registers are assigned as per-cell white noise
+**Scheduled: Arc O Phase 106** ([arc_o/README.md](arc_o/README.md)).
+**Found 2026-07-26 during the Arc O planning survey.** `register_for`
+(`crates/observed_facility/src/hex_wfc/relayout.rs:670`) draws one of the nine
+`BASE_ARCHITECTURE_REGISTERS` per hex from a SplitMix keyed on the coordinate, so
+nine of the ten districts are spatially incoherent. Only `LiminalGrid` is a place:
+`liminal_grid_zones` (`relayout.rs:62`) reserves exactly one 7 x 7 rhombus per
+level. The consequence reaches presentation — `observed_style::architecture()` sets
+ambient, fog range, and key-light behaviour per register, so adjacent cells fight
+each other, and no amount of palette work can make a district read as somewhere a
+player is heading toward. Look at: `relayout.rs:26-83` (register array and zone
+type) and `relayout.rs:641-668` (`architecture_for_cells`, whose room-anchor
+override must be preserved — a room must never straddle registers). Zone selection
+deliberately excludes relayout generation so districts do not drift under mutation;
+any replacement must keep that property and stay seed-stable, because the register
+assignment feeds the LAN frame digest.
+
+### 15. Every room cell of every room role asks for the same archetype
+**Scheduled: Arc O Phase 111** ([arc_o/README.md](arc_o/README.md)).
+**Found 2026-07-26 during the Arc O planning survey.**
+`blueprint_cell_archetype(_role, _cell_index)`
+(`crates/observed_facility/src/hex_wfc/blueprint.rs:79-81`) discards both of its
+parameters and returns `"sanctuary"` unconditionally, so a Guardian Control atrium
+cell, a Decision cell, and a Keystone cell all demand identical geometry. Five
+authored whole-room modules do exist and are correctly plumbed through
+`project_with_rooms`, but they cover only five of the eleven `RoomRole` variants;
+every other stamped role falls back to the per-cell `sanctuary` path
+(`crates/observed_match/src/hex_wfc/geometry.rs:739-765`). Look at: `blueprint.rs`,
+`crates/observed_facility/src/map_spec.rs:18-41` (the role enum), and the
+`RoomCatalogue` contract match at `geometry.rs:638`.
+
+### 16. Authored content is compiled but unreachable from the solver
+**Scheduled: Arc O Phase 111** ([arc_o/README.md](arc_o/README.md)).
+**Found 2026-07-26 during the Arc O planning survey.** Two separate dead paths. (a)
+`silo_core`, `silo_ring`, and `silo_ring_bridge` compile into the catalog but no
+archetype mapping ever names them, so the seven-hex SiloWellshaft composition is
+reachable only from `labs/hex_tile_lab` (`silo_placements`,
+`labs/hex_tile_lab/src/lib.rs:155`). (b) `DecoherenceFork` and `TeleportRelay` have
+blueprints in `blueprint_for_role` but are absent from the stamping pool at
+`crates/observed_facility/src/hex_wfc/constraints.rs:132-143`, so
+`assets/tiles/authored/room_decoherence_fork.map` — the largest authored room at
+four hexes — has never appeared in a match. Decide per item whether to wire it or
+delete it; unreachable authored content silently inflates the catalog and flatters
+the coverage audits.
+
+### 17. Composition tendencies are compiled off after breaking the bot soak
+**Scheduled: Arc O Phase 107** ([arc_o/README.md](arc_o/README.md)).
+**Found 2026-07-26 during the Arc O planning survey.**
+`COMPOSITION_TENDENCIES_ENABLED` is a hardcoded `false`
+(`crates/observed_facility/src/hex_wfc/context.rs:39`), disabling the "verticals
+cluster toward the axis, rooms favour upper levels" weighting that landed in
+`ba1cdac` and was switched off in `8d6e10d` because it broke
+`bot_soak_has_no_stalls`. The dead branch still compiles, so the standing cost is a
+misleading read of `effective_weight` (`context.rs:221`): today the initial solve is
+a pure static-weight lottery with no contextual shaping at all. Reproduce the soak
+failure before re-approaching this — the useful question is whether the tendencies
+starved spawn→exit connectivity or merely made routes longer than the bot's stall
+detector tolerates. Related: `score_layout`'s `archetype_variety` term
+(`crates/observed_facility/src/hex_wfc/score.rs:135`) is a global Shannon entropy
+over seven archetype kinds, and will penalize any deliberate per-district
+specialization that replaces this.
 
 ## Minor / hygiene
 

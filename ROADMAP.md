@@ -10,6 +10,40 @@ This document outlines the current active development goals, completed milestone
 
 ## Active & Upcoming Phases
 
+**Arc O — Legible Districts** `[ ]` (plan and hand-offs: [docs/arc_o/](docs/arc_o/README.md)). Opened 2026-07-26. The facility is hardened and networked but it is not a *place*: architecture registers are drawn per hex rather than per neighbourhood, every vertical cell in every district resolves to one procedural switchback stair, every room cell of every role demands `sanctuary`, and the closed `HexArchetype` enum gives the solver no word for open space. Arc O makes districts contiguous, compositionally distinct, and navigable — built lab-first behind a new isometric observer so every composition change is falsifiable on sight — then promotes that observer into a full-screen tac map, adds an `Expanse` archetype and authored open and vertical kits, binds rooms to districts, and opens the roster to a sixteen-player co-op mode with bots optional. Internet matchmaking, NAT traversal, relays, authentication, PvP combat, new architecture registers beyond the existing ten, arbitrary procedural mesh generation, and any change to the deprecated `GameState::Match` or demoted `GameState::FullWfc` paths remain explicitly out of scope. Closes bug backlog #13–#17.
+
+### Phase 104 — Arc M Closeout & Isometric Observer Lab `[ ]`
+Land the outstanding Arc M working tree (per-district performance fixes, the `game/src/hex_wfc/perf/` split, the backlog edits, and the `docs/evidence/arc_m/` capture set) as reviewed commits, following the Phase 61 and Phase 86 precedent. Then build `iso_observer_lab`: a resettable, headless-capturable lab that solves a `HexWfcWorld` from a seed and renders the whole facility isometrically, level-stacked, tinted by `HexArchetype` and `ArchitectureRegister` with room footprints outlined as single spaces. It reuses `map_observer_lab`'s top-down rig, `observed_hex` lattice mapping, and `observed_style` colours rather than inventing any. Closure is a committed, agent-viewed capture set at five pinned seeds — the before baseline every later phase is measured against.
+
+### Phase 105 — Full-Screen Isometric Tac Map `[ ]`
+Promote the Phase 104 renderer into the game and delete the bottom-right survivor sketch. Tab opens a full-screen isometric view through the existing `toggle_map` intent plumbing, floor browse becomes focus-level within a stacked view, and the map reads `HexPlayerMapKnowledge` exclusively — never world placements — so the traversed/glimpsed/stale/anchored legend and the no-rival-leakage property survive intact. Keeps the signature-gated rebuild, the Phase 50 HUD-free ruling, and the one-way `view/` → `sim/` dependency.
+
+### Phase 106 — Spatial Districts `[ ]`
+Replace the per-hex register lottery with a seeded spatial partition: generalize `LiminalGridZone` into a district zone carrying its own register, and make `register_for` a zone lookup. Districts become contiguous neighbourhoods a player can head toward. Zone selection must continue to exclude relayout generation so districts do not drift under mutation, the room-anchor register override must hold so no room straddles two districts, and the result must stay seed-stable because register assignment feeds the LAN frame digest and the simulation-content hash. Closes backlog #14.
+
+### Phase 107 — District Composition Profiles `[ ]`
+Give each register a composition profile — per-archetype weight multipliers consumed by `effective_weight` through the existing clamped-multiplier path — so districts differ in what the solver builds, not only in how it is lit: Liminal Grid open and junction-heavy with shafts suppressed, Overlit Grid winding on corners and straights, Wellshaft and Megastructure vertical. Requires first reproducing the `bot_soak_has_no_stalls` failure that caused the previous tendency system to be compiled off, and making `score_layout`'s global archetype-variety term per-district so it stops penalizing deliberate specialization. Closes backlog #17.
+
+### Phase 108 — The `Expanse` Archetype `[ ]`
+Add `HexArchetype::Expanse` and an arm at every exhaustive match site, widening the influence-slot and scoreable-kind counts and confirming the variant mask capacity still holds. `Expanse` cells carry high lateral door masks so neighbours merge into one continuous volume, stay topology-mutable so relayout still works inside them, and are backed by an authored wall-free kit — floor slab, optional corner pylons, minimal interior — validated through `tilec` and walked in `hex_tile_lab`. Landed on its own, not bundled with the kit authoring, because the enum change is mechanical but wide.
+
+### Phase 109 — Authored Stair Towers & Vertical Rebalance `[ ]`
+Author `stair_tower` modules so vertical circulation stops being a single procedural shape — at minimum a Wellshaft-scoped tower, a Megastructure-scoped tower, and a neutral one — applying the SiloWellshaft helix lesson that seam edges must stay at constant height. Rebalance the variant weight table so flat corridor dominates outside vertical districts while Phase 107's profiles restore shaft and ramp density where verticality is the identity, verifying multi-level ramp chains still form. Removes the `stair_tower` exemption from the generic-fallback coverage assertion. Closes backlog #13.
+
+### Phase 110 — District-Exclusive Tilesets `[ ]`
+Author per-register kits through the existing `register_scope` mechanism so the geometry itself says where a player is. Two gates: a district-exclusive tile must be provably unreachable from a foreign register through `Catalogue::select`, and the Liminal-Grid-only generic-fallback coverage assertion must extend to every register claiming exclusivity, so missing coverage cannot hide behind the fallback kit. Resolve the missing `liminal_grid` entry in the generated kit's register table.
+
+### Phase 111 — Rooms Belong to Districts `[ ]`
+Make `blueprint_cell_archetype` switch on role and cell index so room roles have distinct geometry, and add a role-to-register table honoured during blueprint stamping so certain rooms appear only in certain districts — the legibility payoff a player reads as knowing what a district holds. Stamping must degrade gracefully when a role's district is small or absent on a seed rather than failing the solve, and must preserve blue-noise spacing and the room-count contract. Wires `DecoherenceFork` into the pool and decides `TeleportRelay`'s fate, and surfaces the room-district binding to the Phase 105 map. Closes backlog #15 and #16.
+
+### Phase 112 — Co-op Mode & the Sixteen-Seat Roster `[ ]`
+Replace the fixed four-command wire frame with a length-prefixed list capped at sixteen, bump the LAN protocol version so old clients are rejected rather than misparsed, and chunk frame bundles by byte budget — a sixteen-seat bundle of the current frame window is roughly 1 808 bytes against a 1 200-byte datagram limit, so today it would simply fail to encode. Lift the 2v2 roster constants, server guard, simulation guard, and two-team lobby to host-configured values. Add a mode selector reaching a single-team co-op configuration, and explicit bot-fill and Guardian toggles in settings, replacing the current implicit rule that every non-local seat is bot-driven. Proven at sixteen seats in `lan_lab` with a clean reset and a real-UDP packet-loss test at the worst-case frame size.
+
+### Phase 113 — Arc Gate `[ ]`
+Hands-on playtest and falsifiable evidence per the standing Arc H rule. Districts read as contiguous places and compose differently; the isometric map is usable and leaks no rival or undiscovered information; vertical circulation varies by district; a sixteen-player co-op match completes over real UDP with bots disabled; before and after isometric captures at the five pinned seeds are committed and viewed. Findings that are not fixed land in the bug backlog as numbered entries rather than being absorbed into the closure phase.
+
+---
+
 **Arc N — Authoritative LAN Race** `[x]` — Completed 2026-07-23. The canonical hex match is now a stable four-seat 2v2 race with shared teammate map knowledge and team completion. A Bevy-free 60 Hz dedicated server owns lobby/countdown/match/post-match state, bot fill/takeover, reconnect reservations, late-join history replay, simulation-content compatibility, and authoritative frame digests. The game adds broadcast discovery, direct IP, listen hosting, team/readiness controls, and one-shot deterministic desync recovery; `lan_lab` and real-UDP integration tests prove the production seam. Internet matchmaking, NAT traversal, relays, authentication, encryption, and server migration remain non-goals. ([docs/lan_integration.md](docs/lan_integration.md))
 
 ### Phase 103 — Dedicated Server & LAN Integration `[x]`
@@ -196,9 +230,13 @@ Run the production Rapier path across the complete procedural corpus: every room
 Playtest defects tracked in [docs/bug_backlog.md](docs/bug_backlog.md). The four
 original defects (#1 rebind, #2 textures/ceiling, #3 thresholds, #4 observation
 rooms) are fixed and were hand-audited in the 2026-07-11 ship-gate playtest.
-Open post-ship findings are all scheduled into Arc I: #5 bot-POV stall and
-#7 audio mix → Phase 67, #6 near-black world captures → Phase 69. New findings
-land in the backlog first, then get scheduled.
+Open findings #5–#7 are scheduled into Arc I: #5 bot-POV stall and #7 audio mix →
+Phase 67, #6 near-black world captures → Phase 69. #8 (hex lighting wash), #9
+(mutation commit stall, partially addressed), #10 (visibility propagation cost),
+#11 (Phase 101 vsync gate), and #12 (Guardian per-player routing) are unscheduled
+performance and polish items from the 2026-07-26 investigation. #13–#17 are the
+structural findings from the Arc O planning survey and are scheduled into Arc O
+Phases 106–111. New findings land in the backlog first, then get scheduled.
 
 ---
 
@@ -211,6 +249,11 @@ Recorded so the horizon is explicit; remaining unstruck items are not scheduled.
 3. **Carried follow-ups from Arcs C/D:** ~~a third hall endpoint so the gantry's understory exit reaches a genuinely different neighbour~~ **scheduled into Arc J Phases 74–76**; the decoherence counter-tool (Phase 38's criterion (d) never triggered it) remains unscheduled.
 4. ~~District architectural language (user idea, 2026-07-11).~~ **Scheduled into Arc I Phase 71** (geometry grammar per district).
 5. ~~Directional light-and-shadow staging (user idea, 2026-07-11).~~ **Scheduled into Arc I Phases 68–70** (lighting_lab → game staging → district identities).
+6. ~~**Co-op mode** (user idea, 2026-07-26).~~ **Scheduled into Arc O Phase 112.** All players on one team with or without bots, an explicit bot-fill toggle rather than the current implicit "every non-local seat is a bot", and a settings-driven roster cap raised from four to sixteen.
+7. ~~**District-exclusive tilesets and district-locked rooms** (user idea, 2026-07-26).~~ **Scheduled into Arc O Phases 110–111.** Author per-register kits through the existing `register_scope` mechanism and bind room roles to districts, so arriving somewhere tells a player what they will find there.
+8. ~~**Full-screen isometric tac map** (user idea, 2026-07-26).~~ **Scheduled into Arc O Phases 104–105.** Tab in and out of a whole-facility isometric view that replaces the corner survivor sketch, built lab-first so the same renderer doubles as the instrument for judging what the WFC composes.
+9. ~~**Per-district composition identities** (user idea, 2026-07-26).~~ **Scheduled into Arc O Phases 107–109.** Districts differ in what the solver builds, not only in palette: Liminal Grid vast and open, Overlit Grid winding, Wellshaft and Megastructure vertical.
+10. **Landmark archetypes beyond `Expanse`** (rotunda, gallery, atrium spine). The closed `HexArchetype` enum is why novel archetypes never reach the game (`docs/tile_authoring.md`); Arc O Phase 108 sets the extension precedent by adding `Expanse`, which makes further landmarks tractable. Unscheduled.
 
 ---
 
