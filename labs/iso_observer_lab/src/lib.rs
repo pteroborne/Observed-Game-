@@ -6,9 +6,8 @@
 //! exists to make a whole solved facility legible at a glance, on two orthogonal
 //! channels:
 //!
-//! - **Colour is the district.** Every cell is tinted by
-//!   [`observed_style::architecture_surface`] for its
-//!   [`ArchitectureRegister`]. The lab never invents a colour.
+//! - **Colour is the district.** Every cell is tinted by its district accent
+//!   from [`observed_style::architecture`]. The lab never invents a colour.
 //! - **Height is the archetype.** Corridors are thin slabs, junctions a little
 //!   thicker, rooms thicker still, ramps a wedge-height block, shafts a column
 //!   reaching for the level above.
@@ -32,7 +31,7 @@ use bevy::window::{PresentMode, WindowResolution};
 use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::{HexArchetype, HexWfcConfig, HexWfcWorld};
 use observed_hex::{HexCoord, TILE_LEVEL_HEIGHT, hex_origin};
-use observed_style::{ArchitectureSurfaceRole, MarkerRole, architecture_surface, marker};
+use observed_style::{MarkerRole, marker};
 
 /// The pinned baseline corpus. Every Arc O phase re-captures these same five
 /// seeds so before/after comparisons are like-for-like; changing this list
@@ -258,11 +257,13 @@ fn world_bounds(state: &LabState) -> (Vec3, Vec3) {
 
 /// Frame the whole facility in an orthographic isometric view.
 ///
-/// Returned as (transform, scale) so the framing maths is testable without a
-/// renderer: `scale` is world units per pixel, which is what
-/// [`OrthographicProjection::default_3d`] consumes.
+/// Returned as (transform, scale, far) so the framing maths is testable without
+/// a renderer. `scale` is world units per pixel, which is what
+/// [`OrthographicProjection::default_3d`] consumes; `far` must be passed
+/// explicitly because the 3D default is 1000 m and a production facility's
+/// diagonal alone exceeds that — leave it and most of the map is clipped away.
 #[must_use]
-pub fn frame_camera(min: Vec3, max: Vec3) -> (Transform, f32) {
+pub fn frame_camera(min: Vec3, max: Vec3) -> (Transform, f32, f32) {
     let rotation = Quat::from_euler(EulerRot::YXZ, FRAC_PI_4, ISO_PITCH, 0.0);
     let centre = (min + max) * 0.5;
     let inverse = rotation.inverse();
@@ -284,10 +285,10 @@ pub fn frame_camera(min: Vec3, max: Vec3) -> (Transform, f32) {
         .max(extent.y * 2.0 / WINDOW_HEIGHT)
         .max(f32::MIN_POSITIVE)
         * 1.08;
-    let distance = (max - min).length().max(1.0) * 2.0;
+    let diagonal = (max - min).length().max(1.0);
     let transform =
-        Transform::from_translation(centre + rotation * Vec3::Z * distance).with_rotation(rotation);
-    (transform, scale)
+        Transform::from_translation(centre + rotation * Vec3::Z * diagonal).with_rotation(rotation);
+    (transform, scale, diagonal * 2.0)
 }
 
 pub fn run() {
@@ -317,12 +318,14 @@ pub fn run() {
 
 fn setup(mut commands: Commands, state: Res<LabState>) {
     let (min, max) = world_bounds(&state);
-    let (transform, scale) = frame_camera(min, max);
+    let (transform, scale, far) = frame_camera(min, max);
     commands.spawn((
         LabCamera,
         Camera3d::default(),
         Projection::Orthographic(OrthographicProjection {
             scale,
+            near: 0.1,
+            far,
             ..OrthographicProjection::default_3d()
         }),
         transform,
@@ -446,10 +449,18 @@ fn rebuild(
         let material = material_cache
             .entry(register as u8)
             .or_insert_with(|| {
-                let treatment = architecture_surface(register, ArchitectureSurfaceRole::Floor);
+                // `architecture_surface(_, Floor)` is register-blind: every base
+                // register falls through to `surface(SurfaceRole::Plain)`, so
+                // using it here paints the whole map one grey. The style crate's
+                // actual per-neighbourhood structural colour is the district
+                // accent — the same channel `PracticalFixture` reads. Note ten
+                // registers collapse onto seven accent families, so colour
+                // separates districts, not registers; the census below carries
+                // the per-register numbers.
+                let accent = observed_style::architecture(register).accent;
                 materials.add(StandardMaterial {
-                    base_color: treatment.base_color,
-                    emissive: treatment.emissive,
+                    base_color: Color::LinearRgba(accent),
+                    emissive: accent * 0.22,
                     perceptual_roughness: 0.92,
                     ..default()
                 })
@@ -534,7 +545,7 @@ fn update_status(mut state: ResMut<LabState>, mut status: Query<&mut Text, With<
         "seed {:#018x}  ({} of {})   view: {view}   {total} placed cells   attempts {}\n\
          colour = district register    height = archetype\n\
          {archetypes}\n\
-         districts (cells / disjoint regions — a district that is a place has few, large regions):\n\
+         districts (cells / disjoint regions; a district that is a place has few, large regions):\n\
          {}\n\
          [ ] seed   Tab stack/slice   PageUp/PageDown level   R resolve",
         state.world.seed,
@@ -621,7 +632,7 @@ mod tests {
     fn the_framing_fits_the_facility_inside_the_viewport() {
         let state = LabState::new(0);
         let (min, max) = world_bounds(&state);
-        let (transform, scale) = frame_camera(min, max);
+        let (transform, scale, _far) = frame_camera(min, max);
         let inverse = transform.rotation.inverse();
         let centre = (min + max) * 0.5;
         for i in 0..8u8 {

@@ -186,6 +186,12 @@ excuses `stair_tower` from the "must not use generic fallback" assertion and has
 been hiding this. The acceptance gate is authored stair geometry in at least the
 vertical-identity registers, plus removal of that exemption.
 
+**Measured 2026-07-26 (Phase 104 baseline, `arc_o/phase_104_iso_observer.md`).**
+The weight estimate above understated it. Across all five pinned seeds, `Shaft`
+is **46.5–47.5 % of every placed cell** — 2 543 to 2 608 of ~5 490 — while flat
+`Straight` corridor is **3.9–4.3 %** and room cells are 14. Nearly half the
+facility is the one procedural switchback.
+
 ### 14. Architecture registers are assigned as per-cell white noise
 **Scheduled: Arc O Phase 106** ([arc_o/README.md](arc_o/README.md)).
 **Found 2026-07-26 during the Arc O planning survey.** `register_for`
@@ -202,6 +208,13 @@ override must be preserved — a room must never straddle registers). Zone selec
 deliberately excludes relayout generation so districts do not drift under mutation;
 any replacement must keep that property and stay seed-stable, because the register
 assignment feeds the LAN frame digest.
+
+**Measured 2026-07-26 (Phase 104 baseline, `arc_o/phase_104_iso_observer.md`).**
+Each of the nine base registers owns 516–585 cells spread across **378–426
+disjoint regions** — a mean region size of **1.38–1.42 cells**, i.e. mostly
+singletons. `LiminalGrid`, the one register with a real zone, averages **47.8–48.1**.
+The isometric slices in that evidence set show it directly: one olive island in a
+field of confetti, identically on every seed.
 
 ### 15. Every room cell of every room role asks for the same archetype
 **Scheduled: Arc O Phase 111** ([arc_o/README.md](arc_o/README.md)).

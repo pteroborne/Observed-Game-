@@ -94,12 +94,22 @@ the catalog, and the projector rather than by playing.
 - **Global variety scoring fights specialization.** `score_layout`'s `archetype_variety` is
   a Shannon entropy over all archetype kinds and will silently penalize exactly what
   Phase 107 produces.
+- **`architecture_surface(register, Floor)` is register-blind.** Every base register falls
+  through to `surface(SurfaceRole::Plain)`; only `LiminalGrid` has its own structural
+  family. The per-neighbourhood colour lives in `architecture(register).accent`. And note
+  the ten registers collapse onto **seven** accent families, because
+  `district_for_architecture` maps them onto six districts plus the LiminalGrid override —
+  so colour alone can never separate all ten. Phase 110 has to decide whether
+  district-exclusive *tilesets* are enough, or whether the style mapping widens too.
+- **The 3D orthographic far plane defaults to 1000 m**, which a production facility's
+  diagonal exceeds on its own. Any whole-facility camera must set it explicitly or it
+  silently clips most of the map away.
 
 Phase-specific as-landed notes and evidence links are added here as each slice is verified.
 
 ## Phase hand-offs
 
-- Phase 104 — Arc M Closeout & Isometric Observer Lab
+- [Phase 104 — Arc M Closeout & Isometric Observer Lab](phase_104_iso_observer.md) `[x]`
 - Phase 105 — Full-Screen Isometric Tac Map
 - Phase 106 — Spatial Districts
 - Phase 107 — District Composition Profiles

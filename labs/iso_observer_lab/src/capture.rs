@@ -55,9 +55,6 @@ pub(crate) fn capture_progress(
         return;
     }
     run.timer += time.delta_secs();
-    if run.manifest.is_empty() && run.seed_index == 0 && !run.armed && run.timer < f32::EPSILON {
-        std::fs::create_dir_all(&run.dir).expect("capture dir must be creatable");
-    }
 
     match run.stage {
         Stage::Overview => {
