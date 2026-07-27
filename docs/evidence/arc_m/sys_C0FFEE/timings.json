@@ -1,0 +1,4650 @@
+{
+  "schema_version": 3,
+  "seed": 12648430,
+  "generation": 16,
+  "grid": [
+    28,
+    20,
+    10
+  ],
+  "vsync_uncapped": true,
+  "pipeline": {
+    "solve_microseconds": 658395,
+    "projection_microseconds": 1338095,
+    "collider_scene_microseconds": 2185520,
+    "cells": 5600,
+    "geometry_pieces": 138319,
+    "colliders": 138319
+  },
+  "view": [
+    {
+      "kind": "startup",
+      "tick": 0,
+      "generation": 0,
+      "microseconds": 494906
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 1073,
+      "generation": 1,
+      "microseconds": 17286
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 1565,
+      "generation": 2,
+      "microseconds": 18189
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 2056,
+      "generation": 3,
+      "microseconds": 17253
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 2570,
+      "generation": 4,
+      "microseconds": 17699
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 3136,
+      "generation": 5,
+      "microseconds": 17301
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 3633,
+      "generation": 6,
+      "microseconds": 17392
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 6124,
+      "generation": 7,
+      "microseconds": 16744
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 6761,
+      "generation": 8,
+      "microseconds": 17188
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 7448,
+      "generation": 9,
+      "microseconds": 15545
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 8069,
+      "generation": 10,
+      "microseconds": 16189
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 8628,
+      "generation": 11,
+      "microseconds": 16246
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 9168,
+      "generation": 12,
+      "microseconds": 16201
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 9882,
+      "generation": 13,
+      "microseconds": 17072
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 10403,
+      "generation": 14,
+      "microseconds": 16204
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 11120,
+      "generation": 15,
+      "microseconds": 16009
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 11710,
+      "generation": 16,
+      "microseconds": 16097
+    }
+  ],
+  "fixed": {
+    "samples": 12000,
+    "minimum_microseconds": 1029,
+    "median_microseconds": 4534,
+    "p95_microseconds": 12702,
+    "maximum_microseconds": 41914,
+    "mean_microseconds": 5501
+  },
+  "frame": {
+    "samples": 12319,
+    "minimum_microseconds": 0,
+    "median_microseconds": 12391,
+    "p95_microseconds": 33319,
+    "maximum_microseconds": 250000,
+    "mean_microseconds": 16235
+  },
+  "by_register": [
+    {
+      "register": "megastructure",
+      "key_shadows_enabled": true,
+      "key_range": 75.0,
+      "key_outer_angle": 0.6,
+      "frame": {
+        "samples": 36,
+        "minimum_microseconds": 81489,
+        "median_microseconds": 120705,
+        "p95_microseconds": 172480,
+        "maximum_microseconds": 179107,
+        "mean_microseconds": 123943
+      },
+      "fixed": {
+        "samples": 273,
+        "minimum_microseconds": 12028,
+        "median_microseconds": 13427,
+        "p95_microseconds": 14692,
+        "maximum_microseconds": 41691,
+        "mean_microseconds": 13370
+      },
+      "median_visible_pieces": 1359,
+      "main_schedule": {
+        "samples": 36,
+        "minimum_microseconds": 79686,
+        "median_microseconds": 108365,
+        "p95_microseconds": 167479,
+        "maximum_microseconds": 168510,
+        "mean_microseconds": 119644
+      }
+    },
+    {
+      "register": "facet_monument",
+      "key_shadows_enabled": true,
+      "key_range": 64.0,
+      "key_outer_angle": 0.9,
+      "frame": {
+        "samples": 138,
+        "minimum_microseconds": 25872,
+        "median_microseconds": 46079,
+        "p95_microseconds": 155026,
+        "maximum_microseconds": 218393,
+        "mean_microseconds": 60337
+      },
+      "fixed": {
+        "samples": 498,
+        "minimum_microseconds": 9185,
+        "median_microseconds": 10802,
+        "p95_microseconds": 13111,
+        "maximum_microseconds": 14290,
+        "mean_microseconds": 10822
+      },
+      "median_visible_pieces": 852,
+      "main_schedule": {
+        "samples": 138,
+        "minimum_microseconds": 23842,
+        "median_microseconds": 44556,
+        "p95_microseconds": 151296,
+        "maximum_microseconds": 217256,
+        "mean_microseconds": 57839
+      }
+    },
+    {
+      "register": "overlit_grid",
+      "key_shadows_enabled": false,
+      "key_range": 45.0,
+      "key_outer_angle": 0.9,
+      "frame": {
+        "samples": 2100,
+        "minimum_microseconds": 8546,
+        "median_microseconds": 19415,
+        "p95_microseconds": 66583,
+        "maximum_microseconds": 185165,
+        "mean_microseconds": 25979
+      },
+      "fixed": {
+        "samples": 3257,
+        "minimum_microseconds": 4424,
+        "median_microseconds": 7284,
+        "p95_microseconds": 12509,
+        "maximum_microseconds": 41914,
+        "mean_microseconds": 8116
+      },
+      "median_visible_pieces": 1694,
+      "main_schedule": {
+        "samples": 2100,
+        "minimum_microseconds": 8843,
+        "median_microseconds": 18369,
+        "p95_microseconds": 64997,
+        "maximum_microseconds": 176292,
+        "mean_microseconds": 24727
+      }
+    },
+    {
+      "register": "infinite_gallery",
+      "key_shadows_enabled": true,
+      "key_range": 30.0,
+      "key_outer_angle": 0.5,
+      "frame": {
+        "samples": 3289,
+        "minimum_microseconds": 7357,
+        "median_microseconds": 13987,
+        "p95_microseconds": 28081,
+        "maximum_microseconds": 60441,
+        "mean_microseconds": 15808
+      },
+      "fixed": {
+        "samples": 3120,
+        "minimum_microseconds": 1673,
+        "median_microseconds": 5222,
+        "p95_microseconds": 7469,
+        "maximum_microseconds": 37016,
+        "mean_microseconds": 5065
+      },
+      "median_visible_pieces": 1987,
+      "main_schedule": {
+        "samples": 3288,
+        "minimum_microseconds": 7444,
+        "median_microseconds": 12645,
+        "p95_microseconds": 27069,
+        "maximum_microseconds": 57321,
+        "mean_microseconds": 14823
+      }
+    },
+    {
+      "register": "institutional",
+      "key_shadows_enabled": true,
+      "key_range": 45.0,
+      "key_outer_angle": 0.85,
+      "frame": {
+        "samples": 1547,
+        "minimum_microseconds": 8089,
+        "median_microseconds": 11741,
+        "p95_microseconds": 13864,
+        "maximum_microseconds": 47832,
+        "mean_microseconds": 11886
+      },
+      "fixed": {
+        "samples": 1103,
+        "minimum_microseconds": 2088,
+        "median_microseconds": 2299,
+        "p95_microseconds": 2511,
+        "maximum_microseconds": 12695,
+        "mean_microseconds": 2336
+      },
+      "median_visible_pieces": 1987,
+      "main_schedule": {
+        "samples": 1547,
+        "minimum_microseconds": 7429,
+        "median_microseconds": 10427,
+        "p95_microseconds": 15505,
+        "maximum_microseconds": 48255,
+        "mean_microseconds": 10756
+      }
+    },
+    {
+      "register": "monolith",
+      "key_shadows_enabled": true,
+      "key_range": 50.0,
+      "key_outer_angle": 0.7,
+      "frame": {
+        "samples": 3198,
+        "minimum_microseconds": 0,
+        "median_microseconds": 11469,
+        "p95_microseconds": 13469,
+        "maximum_microseconds": 250000,
+        "mean_microseconds": 11621
+      },
+      "fixed": {
+        "samples": 2232,
+        "minimum_microseconds": 1874,
+        "median_microseconds": 2373,
+        "p95_microseconds": 3692,
+        "maximum_microseconds": 14853,
+        "mean_microseconds": 2790
+      },
+      "median_visible_pieces": 1605,
+      "main_schedule": {
+        "samples": 3197,
+        "minimum_microseconds": 7098,
+        "median_microseconds": 10266,
+        "p95_microseconds": 14206,
+        "maximum_microseconds": 355521,
+        "mean_microseconds": 10634
+      }
+    },
+    {
+      "register": "thinning",
+      "key_shadows_enabled": true,
+      "key_range": 40.0,
+      "key_outer_angle": 0.6,
+      "frame": {
+        "samples": 2011,
+        "minimum_microseconds": 7466,
+        "median_microseconds": 10738,
+        "p95_microseconds": 13010,
+        "maximum_microseconds": 162764,
+        "mean_microseconds": 12487
+      },
+      "fixed": {
+        "samples": 1517,
+        "minimum_microseconds": 1029,
+        "median_microseconds": 1859,
+        "p95_microseconds": 15396,
+        "maximum_microseconds": 18008,
+        "mean_microseconds": 3913
+      },
+      "median_visible_pieces": 1947,
+      "main_schedule": {
+        "samples": 2011,
+        "minimum_microseconds": 6456,
+        "median_microseconds": 9250,
+        "p95_microseconds": 14757,
+        "maximum_microseconds": 177143,
+        "mean_microseconds": 11588
+      }
+    }
+  ],
+  "gpu_passes": [
+    {
+      "register": "institutional",
+      "pass": "main_opaque_pass_3d",
+      "median_microseconds": 7972.864,
+      "p95_microseconds": 9266.176,
+      "samples": 1547
+    },
+    {
+      "register": "thinning",
+      "pass": "main_opaque_pass_3d",
+      "median_microseconds": 7022.592,
+      "p95_microseconds": 7933.952,
+      "samples": 2011
+    },
+    {
+      "register": "monolith",
+      "pass": "main_opaque_pass_3d",
+      "median_microseconds": 7001.088,
+      "p95_microseconds": 8372.224,
+      "samples": 3195
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "main_opaque_pass_3d",
+      "median_microseconds": 5229.568,
+      "p95_microseconds": 6607.872,
+      "samples": 3289
+    },
+    {
+      "register": "facet_monument",
+      "pass": "main_opaque_pass_3d",
+      "median_microseconds": 5068.8,
+      "p95_microseconds": 6549.504,
+      "samples": 138
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "main_opaque_pass_3d",
+      "median_microseconds": 4447.232,
+      "p95_microseconds": 6692.864,
+      "samples": 2100
+    },
+    {
+      "register": "megastructure",
+      "pass": "main_opaque_pass_3d",
+      "median_microseconds": 4200.448,
+      "p95_microseconds": 5867.52,
+      "samples": 36
+    },
+    {
+      "register": "thinning",
+      "pass": "ssao",
+      "median_microseconds": 988.16,
+      "p95_microseconds": 1465.344,
+      "samples": 2011
+    },
+    {
+      "register": "facet_monument",
+      "pass": "ssao",
+      "median_microseconds": 856.064,
+      "p95_microseconds": 1241.088,
+      "samples": 137
+    },
+    {
+      "register": "megastructure",
+      "pass": "ssao",
+      "median_microseconds": 775.168,
+      "p95_microseconds": 1447.936,
+      "samples": 36
+    },
+    {
+      "register": "institutional",
+      "pass": "ssao",
+      "median_microseconds": 751.616,
+      "p95_microseconds": 1411.072,
+      "samples": 1547
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "ssao",
+      "median_microseconds": 738.304,
+      "p95_microseconds": 1263.616,
+      "samples": 3289
+    },
+    {
+      "register": "monolith",
+      "pass": "ssao",
+      "median_microseconds": 715.776,
+      "p95_microseconds": 1402.88,
+      "samples": 3194
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "ssao",
+      "median_microseconds": 636.928,
+      "p95_microseconds": 1163.264,
+      "samples": 2100
+    },
+    {
+      "register": "facet_monument",
+      "pass": "bloom",
+      "median_microseconds": 440.32,
+      "p95_microseconds": 728.064,
+      "samples": 135
+    },
+    {
+      "register": "megastructure",
+      "pass": "bloom",
+      "median_microseconds": 359.424,
+      "p95_microseconds": 433.152,
+      "samples": 36
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "bloom",
+      "median_microseconds": 358.4,
+      "p95_microseconds": 773.12,
+      "samples": 3289
+    },
+    {
+      "register": "institutional",
+      "pass": "bloom",
+      "median_microseconds": 357.376,
+      "p95_microseconds": 389.12,
+      "samples": 1547
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "bloom",
+      "median_microseconds": 306.176,
+      "p95_microseconds": 455.68,
+      "samples": 2100
+    },
+    {
+      "register": "thinning",
+      "pass": "bloom",
+      "median_microseconds": 302.08,
+      "p95_microseconds": 374.784,
+      "samples": 2011
+    },
+    {
+      "register": "monolith",
+      "pass": "bloom",
+      "median_microseconds": 300.032,
+      "p95_microseconds": 374.784,
+      "samples": 3194
+    },
+    {
+      "register": "facet_monument",
+      "pass": "fxaa",
+      "median_microseconds": 205.824,
+      "p95_microseconds": 222.208,
+      "samples": 135
+    },
+    {
+      "register": "institutional",
+      "pass": "fxaa",
+      "median_microseconds": 168.96,
+      "p95_microseconds": 189.44,
+      "samples": 1547
+    },
+    {
+      "register": "thinning",
+      "pass": "fxaa",
+      "median_microseconds": 160.768,
+      "p95_microseconds": 187.392,
+      "samples": 2011
+    },
+    {
+      "register": "institutional",
+      "pass": "early_mesh_preprocessing",
+      "median_microseconds": 151.552,
+      "p95_microseconds": 834.56,
+      "samples": 1547
+    },
+    {
+      "register": "megastructure",
+      "pass": "fxaa",
+      "median_microseconds": 148.48,
+      "p95_microseconds": 187.392,
+      "samples": 36
+    },
+    {
+      "register": "monolith",
+      "pass": "fxaa",
+      "median_microseconds": 148.48,
+      "p95_microseconds": 188.416,
+      "samples": 3194
+    },
+    {
+      "register": "megastructure",
+      "pass": "early_mesh_preprocessing",
+      "median_microseconds": 145.408,
+      "p95_microseconds": 165.888,
+      "samples": 36
+    },
+    {
+      "register": "monolith",
+      "pass": "early_mesh_preprocessing",
+      "median_microseconds": 143.36,
+      "p95_microseconds": 804.864,
+      "samples": 3195
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "early_mesh_preprocessing",
+      "median_microseconds": 138.24,
+      "p95_microseconds": 155.648,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "fxaa",
+      "median_microseconds": 138.24,
+      "p95_microseconds": 174.08,
+      "samples": 3289
+    },
+    {
+      "register": "thinning",
+      "pass": "early_mesh_preprocessing",
+      "median_microseconds": 138.24,
+      "p95_microseconds": 803.84,
+      "samples": 2011
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "fxaa",
+      "median_microseconds": 137.216,
+      "p95_microseconds": 219.136,
+      "samples": 2100
+    },
+    {
+      "register": "facet_monument",
+      "pass": "early_mesh_preprocessing",
+      "median_microseconds": 132.096,
+      "p95_microseconds": 166.912,
+      "samples": 138
+    },
+    {
+      "register": "thinning",
+      "pass": "early prepass",
+      "median_microseconds": 126.976,
+      "p95_microseconds": 761.856,
+      "samples": 2011
+    },
+    {
+      "register": "institutional",
+      "pass": "early prepass",
+      "median_microseconds": 122.88,
+      "p95_microseconds": 342.016,
+      "samples": 1547
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "early prepass",
+      "median_microseconds": 121.856,
+      "p95_microseconds": 154.624,
+      "samples": 3289
+    },
+    {
+      "register": "facet_monument",
+      "pass": "early prepass",
+      "median_microseconds": 119.808,
+      "p95_microseconds": 150.528,
+      "samples": 138
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "early_mesh_preprocessing",
+      "median_microseconds": 119.808,
+      "p95_microseconds": 171.008,
+      "samples": 2100
+    },
+    {
+      "register": "facet_monument",
+      "pass": "tonemapping",
+      "median_microseconds": 117.76,
+      "p95_microseconds": 122.88,
+      "samples": 135
+    },
+    {
+      "register": "megastructure",
+      "pass": "early prepass",
+      "median_microseconds": 111.616,
+      "p95_microseconds": 157.696,
+      "samples": 36
+    },
+    {
+      "register": "monolith",
+      "pass": "early prepass",
+      "median_microseconds": 108.544,
+      "p95_microseconds": 359.424,
+      "samples": 3195
+    },
+    {
+      "register": "institutional",
+      "pass": "tonemapping",
+      "median_microseconds": 104.448,
+      "p95_microseconds": 107.52,
+      "samples": 1547
+    },
+    {
+      "register": "thinning",
+      "pass": "tonemapping",
+      "median_microseconds": 99.328,
+      "p95_microseconds": 103.424,
+      "samples": 2011
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "tonemapping",
+      "median_microseconds": 98.304,
+      "p95_microseconds": 106.496,
+      "samples": 3289
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "early prepass",
+      "median_microseconds": 98.304,
+      "p95_microseconds": 147.456,
+      "samples": 2100
+    },
+    {
+      "register": "monolith",
+      "pass": "tonemapping",
+      "median_microseconds": 97.28,
+      "p95_microseconds": 103.424,
+      "samples": 3194
+    },
+    {
+      "register": "megastructure",
+      "pass": "tonemapping",
+      "median_microseconds": 96.256,
+      "p95_microseconds": 112.64,
+      "samples": 36
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "tonemapping",
+      "median_microseconds": 86.016,
+      "p95_microseconds": 122.88,
+      "samples": 2100
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_spot_light_0",
+      "median_microseconds": 81.92,
+      "p95_microseconds": 741.376,
+      "samples": 1547
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_spot_light_0",
+      "median_microseconds": 70.656,
+      "p95_microseconds": 422.912,
+      "samples": 2011
+    },
+    {
+      "register": "facet_monument",
+      "pass": "upscaling",
+      "median_microseconds": 67.584,
+      "p95_microseconds": 68.608,
+      "samples": 136
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_spot_light_0",
+      "median_microseconds": 65.536,
+      "p95_microseconds": 330.752,
+      "samples": 3195
+    },
+    {
+      "register": "facet_monument",
+      "pass": "shadow_spot_light_0",
+      "median_microseconds": 58.368,
+      "p95_microseconds": 64.512,
+      "samples": 138
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_spot_light_0",
+      "median_microseconds": 58.368,
+      "p95_microseconds": 86.016,
+      "samples": 3289
+    },
+    {
+      "register": "institutional",
+      "pass": "upscaling",
+      "median_microseconds": 56.32,
+      "p95_microseconds": 58.368,
+      "samples": 1547
+    },
+    {
+      "register": "megastructure",
+      "pass": "upscaling",
+      "median_microseconds": 56.32,
+      "p95_microseconds": 66.56,
+      "samples": 36
+    },
+    {
+      "register": "thinning",
+      "pass": "upscaling",
+      "median_microseconds": 56.32,
+      "p95_microseconds": 58.368,
+      "samples": 2011
+    },
+    {
+      "register": "monolith",
+      "pass": "upscaling",
+      "median_microseconds": 55.296,
+      "p95_microseconds": 57.344,
+      "samples": 3194
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "upscaling",
+      "median_microseconds": 54.272,
+      "p95_microseconds": 57.344,
+      "samples": 3289
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "upscaling",
+      "median_microseconds": 46.08,
+      "p95_microseconds": 66.56,
+      "samples": 2100
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_spot_light_0",
+      "median_microseconds": 30.72,
+      "p95_microseconds": 58.368,
+      "samples": 2100
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_spot_light_0",
+      "median_microseconds": 28.672,
+      "p95_microseconds": 38.912,
+      "samples": 36
+    },
+    {
+      "register": "facet_monument",
+      "pass": "main_indirect_parameters_building",
+      "median_microseconds": 25.6,
+      "p95_microseconds": 32.768,
+      "samples": 138
+    },
+    {
+      "register": "facet_monument",
+      "pass": "early_prepass_indirect_parameters_building",
+      "median_microseconds": 24.576,
+      "p95_microseconds": 26.624,
+      "samples": 138
+    },
+    {
+      "register": "facet_monument",
+      "pass": "shadow_point_light_0_-z",
+      "median_microseconds": 22.528,
+      "p95_microseconds": 26.624,
+      "samples": 138
+    },
+    {
+      "register": "institutional",
+      "pass": "early_prepass_indirect_parameters_building",
+      "median_microseconds": 22.528,
+      "p95_microseconds": 23.552,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "main_indirect_parameters_building",
+      "median_microseconds": 22.528,
+      "p95_microseconds": 24.576,
+      "samples": 1547
+    },
+    {
+      "register": "thinning",
+      "pass": "early_prepass_indirect_parameters_building",
+      "median_microseconds": 22.528,
+      "p95_microseconds": 265.216,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "main_indirect_parameters_building",
+      "median_microseconds": 22.528,
+      "p95_microseconds": 23.552,
+      "samples": 2011
+    },
+    {
+      "register": "facet_monument",
+      "pass": "shadow_point_light_1_-z",
+      "median_microseconds": 20.48,
+      "p95_microseconds": 25.6,
+      "samples": 138
+    },
+    {
+      "register": "megastructure",
+      "pass": "main_indirect_parameters_building",
+      "median_microseconds": 20.48,
+      "p95_microseconds": 35.84,
+      "samples": 36
+    },
+    {
+      "register": "monolith",
+      "pass": "main_indirect_parameters_building",
+      "median_microseconds": 20.48,
+      "p95_microseconds": 153.6,
+      "samples": 3195
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "early_prepass_indirect_parameters_building",
+      "median_microseconds": 19.456,
+      "p95_microseconds": 20.48,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "main_indirect_parameters_building",
+      "median_microseconds": 19.456,
+      "p95_microseconds": 21.504,
+      "samples": 3289
+    },
+    {
+      "register": "megastructure",
+      "pass": "early_prepass_indirect_parameters_building",
+      "median_microseconds": 19.456,
+      "p95_microseconds": 23.552,
+      "samples": 36
+    },
+    {
+      "register": "monolith",
+      "pass": "early_prepass_indirect_parameters_building",
+      "median_microseconds": 19.456,
+      "p95_microseconds": 24.576,
+      "samples": 3195
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_2_-x",
+      "median_microseconds": 18.432,
+      "p95_microseconds": 28.672,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_3_+z",
+      "median_microseconds": 18.432,
+      "p95_microseconds": 23.552,
+      "samples": 1547
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "main_indirect_parameters_building",
+      "median_microseconds": 18.432,
+      "p95_microseconds": 25.6,
+      "samples": 2100
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_0_-z",
+      "median_microseconds": 17.408,
+      "p95_microseconds": 19.456,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_1_+z",
+      "median_microseconds": 17.408,
+      "p95_microseconds": 21.504,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_2_+y",
+      "median_microseconds": 17.408,
+      "p95_microseconds": 19.456,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_2_-y",
+      "median_microseconds": 17.408,
+      "p95_microseconds": 25.6,
+      "samples": 1547
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "early_prepass_indirect_parameters_building",
+      "median_microseconds": 17.408,
+      "p95_microseconds": 23.552,
+      "samples": 2100
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_5_-y",
+      "median_microseconds": 16.384,
+      "p95_microseconds": 22.528,
+      "samples": 3289
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_3_+x",
+      "median_microseconds": 16.384,
+      "p95_microseconds": 19.456,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_3_-y",
+      "median_microseconds": 16.384,
+      "p95_microseconds": 23.552,
+      "samples": 1547
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_0_-z",
+      "median_microseconds": 16.384,
+      "p95_microseconds": 24.576,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_1_-z",
+      "median_microseconds": 16.384,
+      "p95_microseconds": 22.528,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_3_+y",
+      "median_microseconds": 16.384,
+      "p95_microseconds": 24.576,
+      "samples": 36
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_0_-x",
+      "median_microseconds": 16.384,
+      "p95_microseconds": 17.408,
+      "samples": 3195
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_1_+z",
+      "median_microseconds": 16.384,
+      "p95_microseconds": 18.432,
+      "samples": 3195
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_1_-y",
+      "median_microseconds": 16.384,
+      "p95_microseconds": 21.504,
+      "samples": 3195
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_3_+y",
+      "median_microseconds": 16.384,
+      "p95_microseconds": 16.384,
+      "samples": 2011
+    },
+    {
+      "register": "facet_monument",
+      "pass": "shadow_point_light_1_-x",
+      "median_microseconds": 15.36,
+      "p95_microseconds": 17.408,
+      "samples": 138
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_1_+y",
+      "median_microseconds": 15.36,
+      "p95_microseconds": 19.456,
+      "samples": 3289
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_1_-y",
+      "median_microseconds": 15.36,
+      "p95_microseconds": 20.48,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_2_+x",
+      "median_microseconds": 15.36,
+      "p95_microseconds": 18.432,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_3_-z",
+      "median_microseconds": 15.36,
+      "p95_microseconds": 18.432,
+      "samples": 1547
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_2_-z",
+      "median_microseconds": 15.36,
+      "p95_microseconds": 20.48,
+      "samples": 36
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_0_-y",
+      "median_microseconds": 15.36,
+      "p95_microseconds": 22.528,
+      "samples": 3195
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_3_+z",
+      "median_microseconds": 15.36,
+      "p95_microseconds": 20.48,
+      "samples": 3195
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_0_-y",
+      "median_microseconds": 15.36,
+      "p95_microseconds": 20.48,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_0_-z",
+      "median_microseconds": 15.36,
+      "p95_microseconds": 18.432,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_2_+z",
+      "median_microseconds": 15.36,
+      "p95_microseconds": 18.432,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_3_+x",
+      "median_microseconds": 15.36,
+      "p95_microseconds": 17.408,
+      "samples": 2011
+    },
+    {
+      "register": "facet_monument",
+      "pass": "shadow_point_light_1_+x",
+      "median_microseconds": 14.336,
+      "p95_microseconds": 19.456,
+      "samples": 138
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_5_+y",
+      "median_microseconds": 14.336,
+      "p95_microseconds": 17.408,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_5_-z",
+      "median_microseconds": 14.336,
+      "p95_microseconds": 19.456,
+      "samples": 3289
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_0_-x",
+      "median_microseconds": 14.336,
+      "p95_microseconds": 16.384,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_0_-y",
+      "median_microseconds": 14.336,
+      "p95_microseconds": 19.456,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_1_+x",
+      "median_microseconds": 14.336,
+      "p95_microseconds": 19.456,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_2_-z",
+      "median_microseconds": 14.336,
+      "p95_microseconds": 18.432,
+      "samples": 1547
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_0_+z",
+      "median_microseconds": 14.336,
+      "p95_microseconds": 22.528,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_0_-x",
+      "median_microseconds": 14.336,
+      "p95_microseconds": 19.456,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_1_+y",
+      "median_microseconds": 14.336,
+      "p95_microseconds": 19.456,
+      "samples": 36
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_1_-z",
+      "median_microseconds": 14.336,
+      "p95_microseconds": 18.432,
+      "samples": 3195
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_3_-z",
+      "median_microseconds": 14.336,
+      "p95_microseconds": 20.48,
+      "samples": 2100
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_1_-x",
+      "median_microseconds": 14.336,
+      "p95_microseconds": 18.432,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_1_-y",
+      "median_microseconds": 14.336,
+      "p95_microseconds": 21.504,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_2_-y",
+      "median_microseconds": 14.336,
+      "p95_microseconds": 19.456,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_2_-z",
+      "median_microseconds": 14.336,
+      "p95_microseconds": 21.504,
+      "samples": 2011
+    },
+    {
+      "register": "facet_monument",
+      "pass": "shadow_point_light_0_+y",
+      "median_microseconds": 13.312,
+      "p95_microseconds": 18.432,
+      "samples": 138
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_0_+y",
+      "median_microseconds": 13.312,
+      "p95_microseconds": 19.456,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_1_-y",
+      "median_microseconds": 13.312,
+      "p95_microseconds": 19.456,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_1_-z",
+      "median_microseconds": 13.312,
+      "p95_microseconds": 17.408,
+      "samples": 3289
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_1_-x",
+      "median_microseconds": 13.312,
+      "p95_microseconds": 16.384,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_3_+y",
+      "median_microseconds": 13.312,
+      "p95_microseconds": 17.408,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_3_-x",
+      "median_microseconds": 13.312,
+      "p95_microseconds": 19.456,
+      "samples": 1547
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_0_+x",
+      "median_microseconds": 13.312,
+      "p95_microseconds": 19.456,
+      "samples": 36
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_1_+x",
+      "median_microseconds": 13.312,
+      "p95_microseconds": 16.384,
+      "samples": 3195
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_2_-x",
+      "median_microseconds": 13.312,
+      "p95_microseconds": 24.576,
+      "samples": 3195
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_2_-y",
+      "median_microseconds": 13.312,
+      "p95_microseconds": 21.504,
+      "samples": 3195
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_3_+x",
+      "median_microseconds": 13.312,
+      "p95_microseconds": 20.48,
+      "samples": 3195
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_3_+y",
+      "median_microseconds": 13.312,
+      "p95_microseconds": 16.384,
+      "samples": 3195
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_3_-y",
+      "median_microseconds": 13.312,
+      "p95_microseconds": 19.456,
+      "samples": 3195
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_0_-y",
+      "median_microseconds": 13.312,
+      "p95_microseconds": 21.504,
+      "samples": 2100
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_1_+z",
+      "median_microseconds": 13.312,
+      "p95_microseconds": 19.456,
+      "samples": 2100
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_2_-z",
+      "median_microseconds": 13.312,
+      "p95_microseconds": 23.552,
+      "samples": 2100
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_2_+x",
+      "median_microseconds": 13.312,
+      "p95_microseconds": 17.408,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_2_+y",
+      "median_microseconds": 13.312,
+      "p95_microseconds": 18.432,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_2_-x",
+      "median_microseconds": 13.312,
+      "p95_microseconds": 20.48,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_3_-x",
+      "median_microseconds": 13.312,
+      "p95_microseconds": 19.456,
+      "samples": 2011
+    },
+    {
+      "register": "facet_monument",
+      "pass": "shadow_point_light_0_+x",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 14.336,
+      "samples": 138
+    },
+    {
+      "register": "facet_monument",
+      "pass": "shadow_point_light_0_-x",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 14.336,
+      "samples": 138
+    },
+    {
+      "register": "facet_monument",
+      "pass": "shadow_point_light_1_+y",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 19.456,
+      "samples": 138
+    },
+    {
+      "register": "facet_monument",
+      "pass": "shadow_point_light_2_+x",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 16.384,
+      "samples": 138
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_1_+z",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 16.384,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_1_-x",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 22.528,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_5_+x",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 19.456,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_5_+z",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 17.408,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_5_-x",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 17.408,
+      "samples": 3289
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_1_-z",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 16.384,
+      "samples": 1547
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_2_+y",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 16.384,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_3_-x",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 18.432,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_3_-z",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 18.432,
+      "samples": 36
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_0_-z",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 18.432,
+      "samples": 3195
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_2_-z",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 20.48,
+      "samples": 3195
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_3_-x",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 18.432,
+      "samples": 3195
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_3_-z",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 17.408,
+      "samples": 3195
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_0_+x",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 20.48,
+      "samples": 2100
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_0_-x",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 21.504,
+      "samples": 2100
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_0_-z",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 18.432,
+      "samples": 2100
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_2_+y",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 17.408,
+      "samples": 2100
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_2_-y",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 20.48,
+      "samples": 2100
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_3_+y",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 21.504,
+      "samples": 2100
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_0_-x",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 19.456,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_1_+y",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 16.384,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_1_+z",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 16.384,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_1_-z",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 16.384,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_3_+z",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 18.432,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_3_-y",
+      "median_microseconds": 12.288,
+      "p95_microseconds": 18.432,
+      "samples": 2011
+    },
+    {
+      "register": "facet_monument",
+      "pass": "shadow_point_light_2_+y",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 17.408,
+      "samples": 138
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_0_+x",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 15.36,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_0_-y",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 17.408,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_0_-z",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 15.36,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_6_+x",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 20.48,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_6_+y",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 17.408,
+      "samples": 3289
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_0_+x",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 15.36,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_1_+y",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 12.288,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_2_+z",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 17.408,
+      "samples": 1547
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_0_+y",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 16.384,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_0_-y",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 14.336,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_1_+z",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 15.36,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_2_-x",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 14.336,
+      "samples": 36
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_1_+y",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 13.312,
+      "samples": 3195
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_1_-x",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 15.36,
+      "samples": 3195
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_2_+x",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 15.36,
+      "samples": 3195
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_2_+y",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 12.288,
+      "samples": 3195
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_0_+z",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 16.384,
+      "samples": 2100
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_1_-y",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 19.456,
+      "samples": 2100
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_3_+z",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 20.48,
+      "samples": 2100
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_3_-x",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 27.648,
+      "samples": 2100
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_0_+x",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 16.384,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_0_+y",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 14.336,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_0_+z",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 13.312,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_1_+x",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 14.336,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_3_-z",
+      "median_microseconds": 11.264,
+      "p95_microseconds": 19.456,
+      "samples": 2011
+    },
+    {
+      "register": "facet_monument",
+      "pass": "shadow_point_light_0_-y",
+      "median_microseconds": 10.24,
+      "p95_microseconds": 14.336,
+      "samples": 138
+    },
+    {
+      "register": "facet_monument",
+      "pass": "shadow_point_light_1_-y",
+      "median_microseconds": 10.24,
+      "p95_microseconds": 11.264,
+      "samples": 138
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_0_+z",
+      "median_microseconds": 10.24,
+      "p95_microseconds": 14.336,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_0_-x",
+      "median_microseconds": 10.24,
+      "p95_microseconds": 17.408,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_6_-x",
+      "median_microseconds": 10.24,
+      "p95_microseconds": 18.432,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_6_-y",
+      "median_microseconds": 10.24,
+      "p95_microseconds": 23.552,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_6_-z",
+      "median_microseconds": 10.24,
+      "p95_microseconds": 15.36,
+      "samples": 3289
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_0_+z",
+      "median_microseconds": 10.24,
+      "p95_microseconds": 14.336,
+      "samples": 1547
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_1_+x",
+      "median_microseconds": 10.24,
+      "p95_microseconds": 14.336,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_1_-x",
+      "median_microseconds": 10.24,
+      "p95_microseconds": 15.36,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_3_+x",
+      "median_microseconds": 10.24,
+      "p95_microseconds": 13.312,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_3_+z",
+      "median_microseconds": 10.24,
+      "p95_microseconds": 14.336,
+      "samples": 36
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_0_+x",
+      "median_microseconds": 10.24,
+      "p95_microseconds": 13.312,
+      "samples": 3195
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_2_+z",
+      "median_microseconds": 10.24,
+      "p95_microseconds": 13.312,
+      "samples": 3195
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_0_+y",
+      "median_microseconds": 10.24,
+      "p95_microseconds": 17.408,
+      "samples": 2100
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_1_+x",
+      "median_microseconds": 10.24,
+      "p95_microseconds": 14.336,
+      "samples": 2100
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_1_+y",
+      "median_microseconds": 10.24,
+      "p95_microseconds": 16.384,
+      "samples": 2100
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_1_-x",
+      "median_microseconds": 10.24,
+      "p95_microseconds": 16.384,
+      "samples": 2100
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_1_-z",
+      "median_microseconds": 10.24,
+      "p95_microseconds": 16.384,
+      "samples": 2100
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_2_+x",
+      "median_microseconds": 10.24,
+      "p95_microseconds": 17.408,
+      "samples": 2100
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_3_+x",
+      "median_microseconds": 10.24,
+      "p95_microseconds": 16.384,
+      "samples": 2100
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_3_-y",
+      "median_microseconds": 10.24,
+      "p95_microseconds": 21.504,
+      "samples": 2100
+    },
+    {
+      "register": "facet_monument",
+      "pass": "shadow_point_light_2_+z",
+      "median_microseconds": 9.216,
+      "p95_microseconds": 13.312,
+      "samples": 138
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_1_+x",
+      "median_microseconds": 9.216,
+      "p95_microseconds": 14.336,
+      "samples": 3289
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_1_-y",
+      "median_microseconds": 9.216,
+      "p95_microseconds": 10.24,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_2_+x",
+      "median_microseconds": 9.216,
+      "p95_microseconds": 12.288,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_3_-y",
+      "median_microseconds": 9.216,
+      "p95_microseconds": 11.264,
+      "samples": 36
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_0_+z",
+      "median_microseconds": 9.216,
+      "p95_microseconds": 11.264,
+      "samples": 3195
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_2_+z",
+      "median_microseconds": 9.216,
+      "p95_microseconds": 16.384,
+      "samples": 2100
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_2_-x",
+      "median_microseconds": 9.216,
+      "p95_microseconds": 15.36,
+      "samples": 2100
+    },
+    {
+      "register": "facet_monument",
+      "pass": "late_mesh_preprocessing",
+      "median_microseconds": 8.192,
+      "p95_microseconds": 8.192,
+      "samples": 138
+    },
+    {
+      "register": "facet_monument",
+      "pass": "shadow_point_light_1_+z",
+      "median_microseconds": 8.192,
+      "p95_microseconds": 10.24,
+      "samples": 138
+    },
+    {
+      "register": "facet_monument",
+      "pass": "shadow_point_light_2_-z",
+      "median_microseconds": 8.192,
+      "p95_microseconds": 10.24,
+      "samples": 138
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_6_+z",
+      "median_microseconds": 8.192,
+      "p95_microseconds": 15.36,
+      "samples": 3289
+    },
+    {
+      "register": "facet_monument",
+      "pass": "shadow_point_light_2_-x",
+      "median_microseconds": 7.168,
+      "p95_microseconds": 8.192,
+      "samples": 138
+    },
+    {
+      "register": "facet_monument",
+      "pass": "shadow_point_light_2_-y",
+      "median_microseconds": 7.168,
+      "p95_microseconds": 8.192,
+      "samples": 138
+    },
+    {
+      "register": "facet_monument",
+      "pass": "ui",
+      "median_microseconds": 7.168,
+      "p95_microseconds": 8.192,
+      "samples": 138
+    },
+    {
+      "register": "institutional",
+      "pass": "late_mesh_preprocessing",
+      "median_microseconds": 7.168,
+      "p95_microseconds": 8.192,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_0_+y",
+      "median_microseconds": 7.168,
+      "p95_microseconds": 9.216,
+      "samples": 1547
+    },
+    {
+      "register": "megastructure",
+      "pass": "late_mesh_preprocessing",
+      "median_microseconds": 7.168,
+      "p95_microseconds": 9.216,
+      "samples": 36
+    },
+    {
+      "register": "monolith",
+      "pass": "late_mesh_preprocessing",
+      "median_microseconds": 7.168,
+      "p95_microseconds": 8.192,
+      "samples": 3195
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_0_+y",
+      "median_microseconds": 7.168,
+      "p95_microseconds": 11.264,
+      "samples": 3195
+    },
+    {
+      "register": "thinning",
+      "pass": "late_mesh_preprocessing",
+      "median_microseconds": 7.168,
+      "p95_microseconds": 8.192,
+      "samples": 2011
+    },
+    {
+      "register": "facet_monument",
+      "pass": "shadow_point_light_0_+z",
+      "median_microseconds": 6.144,
+      "p95_microseconds": 7.168,
+      "samples": 138
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "late_mesh_preprocessing",
+      "median_microseconds": 6.144,
+      "p95_microseconds": 7.168,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "ui",
+      "median_microseconds": 6.144,
+      "p95_microseconds": 8.192,
+      "samples": 3289
+    },
+    {
+      "register": "institutional",
+      "pass": "ui",
+      "median_microseconds": 6.144,
+      "p95_microseconds": 8.192,
+      "samples": 1547
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_2_+z",
+      "median_microseconds": 6.144,
+      "p95_microseconds": 9.216,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_2_-y",
+      "median_microseconds": 6.144,
+      "p95_microseconds": 7.168,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "ui",
+      "median_microseconds": 6.144,
+      "p95_microseconds": 9.216,
+      "samples": 36
+    },
+    {
+      "register": "monolith",
+      "pass": "ui",
+      "median_microseconds": 6.144,
+      "p95_microseconds": 7.168,
+      "samples": 3195
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "late_mesh_preprocessing",
+      "median_microseconds": 6.144,
+      "p95_microseconds": 8.192,
+      "samples": 2100
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "ui",
+      "median_microseconds": 6.144,
+      "p95_microseconds": 8.192,
+      "samples": 2100
+    },
+    {
+      "register": "thinning",
+      "pass": "ui",
+      "median_microseconds": 6.144,
+      "p95_microseconds": 8.192,
+      "samples": 2011
+    },
+    {
+      "register": "facet_monument",
+      "pass": "main_transparent_pass_3d",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 8.192,
+      "samples": 138
+    },
+    {
+      "register": "facet_monument",
+      "pass": "shadow_point_light_3_+x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 12.288,
+      "samples": 138
+    },
+    {
+      "register": "facet_monument",
+      "pass": "shadow_point_light_3_+y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 11.264,
+      "samples": 138
+    },
+    {
+      "register": "facet_monument",
+      "pass": "shadow_point_light_3_+z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 8.192,
+      "samples": 138
+    },
+    {
+      "register": "facet_monument",
+      "pass": "shadow_point_light_3_-x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 13.312,
+      "samples": 138
+    },
+    {
+      "register": "facet_monument",
+      "pass": "shadow_point_light_3_-y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 8.192,
+      "samples": 138
+    },
+    {
+      "register": "facet_monument",
+      "pass": "shadow_point_light_3_-z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 13.312,
+      "samples": 138
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_10_+x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 1842
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_10_+z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 1842
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_11_+x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 1842
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_11_+y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 1842
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_11_+z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 1842
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_11_-x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 1842
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_11_-y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 1842
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_11_-z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 1842
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_4_+x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 15.36,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_4_+y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 16.384,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_4_+z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 14.336,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_4_-x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 15.36,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_4_-y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 18.432,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_4_-z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 18.432,
+      "samples": 3289
+    },
+    {
+      "register": "institutional",
+      "pass": "main_transparent_pass_3d",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 62.464,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_4_+x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_4_-x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_4_-y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_5_-z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 1547
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_10_+x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 22
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_10_+y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 22
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_10_+z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 22
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_10_-x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 22
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_11_+x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 22
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_11_-x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 22
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_11_-z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 22
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_4_+x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_4_+y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 4.096,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_4_+z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_4_-x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_4_-y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_4_-z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_5_+x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_5_+y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 4.096,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_5_-y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_5_-z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_6_+y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_6_+z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 4.096,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_6_-x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_6_-y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_6_-z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_7_+x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_7_+y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_7_-x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_7_-y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 11.264,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_7_-z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_8_-z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 22
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_9_+z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 22
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_9_-y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 4.096,
+      "samples": 22
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_9_-z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 22
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_4_+x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 3194
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_4_-x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 3194
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_4_-y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 3194
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_5_-z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 3194
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_11_+x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 656
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_11_+y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 656
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_11_+z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 656
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_11_-x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 656
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_11_-y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 656
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_11_-z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 656
+    },
+    {
+      "register": "thinning",
+      "pass": "main_transparent_pass_3d",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 82.944,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_10_+y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 18
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_10_-y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 4.096,
+      "samples": 18
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_11_+y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 4.096,
+      "samples": 17
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_11_+z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 17
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_11_-x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 17
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_11_-y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 17
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_11_-z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 17
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_4_+x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_4_-x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_4_-y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_5_-z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_6_+x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 32
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_6_-x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 32
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_6_-z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 4.096,
+      "samples": 32
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_7_+x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 4.096,
+      "samples": 32
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_7_-z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 32
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_8_+x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 24
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_8_+y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 24
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_8_-y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 24
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_8_-z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 24
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_9_+x",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 24
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_9_+y",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 24
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_9_-z",
+      "median_microseconds": 3.072,
+      "p95_microseconds": 3.072,
+      "samples": 24
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "main_transparent_pass_3d",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_10_+y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1842
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_10_-x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1842
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_10_-y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1842
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_10_-z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1842
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_2_+x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 10.24,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_2_+y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 5.12,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_2_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 9.216,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_2_-x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 13.312,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_2_-y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 12.288,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_2_-z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 12.288,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_3_+x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 14.336,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_3_+y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 9.216,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_3_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 14.336,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_3_-x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 16.384,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_3_-y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 17.408,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_3_-z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 11.264,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_7_+x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_7_+y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_7_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_7_-x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_7_-y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_7_-z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_8_+x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_8_+y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_8_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_8_-x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_8_-y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_8_-z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_9_+x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_9_+y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_9_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_9_-x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_9_-y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "pass": "shadow_point_light_9_-z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 3289
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_4_+y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_4_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_4_-z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_5_+x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_5_+y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_5_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_5_-x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "pass": "shadow_point_light_5_-y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 1547
+    },
+    {
+      "register": "megastructure",
+      "pass": "main_transparent_pass_3d",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_10_-y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 22
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_10_-z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 22
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_11_+y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 22
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_11_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 22
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_11_-y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 22
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_5_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_5_-x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_6_+x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 5.12,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_7_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_8_+x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 4.096,
+      "samples": 22
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_8_+y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 22
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_8_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 4.096,
+      "samples": 22
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_8_-x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 22
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_8_-y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 22
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_9_+x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 22
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_9_+y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 22
+    },
+    {
+      "register": "megastructure",
+      "pass": "shadow_point_light_9_-x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 22
+    },
+    {
+      "register": "monolith",
+      "pass": "main_transparent_pass_3d",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 56.32,
+      "samples": 3195
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_4_+y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 3194
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_4_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 3194
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_4_-z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 3194
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_5_+x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 3194
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_5_+y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 3194
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_5_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 3194
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_5_-x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 3194
+    },
+    {
+      "register": "monolith",
+      "pass": "shadow_point_light_5_-y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 3194
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "main_transparent_pass_3d",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 55.296,
+      "samples": 2100
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_10_+x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 656
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_10_+y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 656
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_10_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 656
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_10_-x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 656
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_10_-y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 656
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_10_-z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 656
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_4_+x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 2096
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_4_+y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 2096
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_4_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 2096
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_4_-x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 2096
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_4_-y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 2096
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_4_-z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 2096
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_5_+x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 2096
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_5_+y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 2096
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_5_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 2096
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_5_-x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 2096
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_5_-y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 2096
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_5_-z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 2096
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_6_+x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1134
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_6_+y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1134
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_6_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1134
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_6_-x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1134
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_6_-y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1134
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_6_-z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1134
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_7_+x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1134
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_7_+y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1134
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_7_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1134
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_7_-x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1134
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_7_-y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1134
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_7_-z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1134
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_8_+x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1130
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_8_+y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1130
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_8_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1130
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_8_-x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1130
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_8_-y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1130
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_8_-z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1130
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_9_+x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1130
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_9_+y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1130
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_9_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1130
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_9_-x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1130
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_9_-y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1130
+    },
+    {
+      "register": "overlit_grid",
+      "pass": "shadow_point_light_9_-z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 1130
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_10_+x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 18
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_10_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 18
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_10_-x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 4.096,
+      "samples": 18
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_10_-z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 18
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_11_+x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 4.096,
+      "samples": 17
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_4_+y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_4_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_4_-z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_5_+x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_5_+y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_5_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_5_-x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_5_-y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 2.048,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_6_+y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 32
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_6_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 32
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_6_-y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 32
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_7_+y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 32
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_7_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 32
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_7_-x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 32
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_7_-y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 32
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_8_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 24
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_8_-x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 24
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_9_+z",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 24
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_9_-x",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 24
+    },
+    {
+      "register": "thinning",
+      "pass": "shadow_point_light_9_-y",
+      "median_microseconds": 2.048,
+      "p95_microseconds": 3.072,
+      "samples": 24
+    }
+  ],
+  "systems": [
+    {
+      "register": "megastructure",
+      "system": "lantern::sync_dynamic",
+      "median_microseconds": 11427,
+      "p95_microseconds": 13189,
+      "samples": 36
+    },
+    {
+      "register": "facet_monument",
+      "system": "lantern::sync_dynamic",
+      "median_microseconds": 8783,
+      "p95_microseconds": 11682,
+      "samples": 138
+    },
+    {
+      "register": "overlit_grid",
+      "system": "lantern::sync_dynamic",
+      "median_microseconds": 5789,
+      "p95_microseconds": 10900,
+      "samples": 2100
+    },
+    {
+      "register": "megastructure",
+      "system": "after_hex_update",
+      "median_microseconds": 4870,
+      "p95_microseconds": 5740,
+      "samples": 36
+    },
+    {
+      "register": "facet_monument",
+      "system": "after_hex_update",
+      "median_microseconds": 4520,
+      "p95_microseconds": 5190,
+      "samples": 138
+    },
+    {
+      "register": "institutional",
+      "system": "after_hex_update",
+      "median_microseconds": 4472,
+      "p95_microseconds": 5335,
+      "samples": 1547
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "after_hex_update",
+      "median_microseconds": 4280,
+      "p95_microseconds": 4998,
+      "samples": 3288
+    },
+    {
+      "register": "monolith",
+      "system": "after_hex_update",
+      "median_microseconds": 4227,
+      "p95_microseconds": 5015,
+      "samples": 3198
+    },
+    {
+      "register": "thinning",
+      "system": "after_hex_update",
+      "median_microseconds": 4219,
+      "p95_microseconds": 5245,
+      "samples": 2011
+    },
+    {
+      "register": "overlit_grid",
+      "system": "after_hex_update",
+      "median_microseconds": 4118,
+      "p95_microseconds": 4998,
+      "samples": 2100
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "lantern::sync_dynamic",
+      "median_microseconds": 3260,
+      "p95_microseconds": 6703,
+      "samples": 3289
+    },
+    {
+      "register": "institutional",
+      "system": "lantern::sync_dynamic",
+      "median_microseconds": 2332,
+      "p95_microseconds": 2489,
+      "samples": 1547
+    },
+    {
+      "register": "monolith",
+      "system": "lantern::sync_dynamic",
+      "median_microseconds": 2269,
+      "p95_microseconds": 3231,
+      "samples": 3198
+    },
+    {
+      "register": "thinning",
+      "system": "lantern::sync_dynamic",
+      "median_microseconds": 1926,
+      "p95_microseconds": 2139,
+      "samples": 2011
+    },
+    {
+      "register": "megastructure",
+      "system": "sim::finish_runtime",
+      "median_microseconds": 77,
+      "p95_microseconds": 105,
+      "samples": 36
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "sim::finish_runtime",
+      "median_microseconds": 73,
+      "p95_microseconds": 91,
+      "samples": 3289
+    },
+    {
+      "register": "overlit_grid",
+      "system": "sim::finish_runtime",
+      "median_microseconds": 66,
+      "p95_microseconds": 101,
+      "samples": 2100
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "view::sync_streamed_cells",
+      "median_microseconds": 63,
+      "p95_microseconds": 96,
+      "samples": 3289
+    },
+    {
+      "register": "megastructure",
+      "system": "view::sync_streamed_cells",
+      "median_microseconds": 63,
+      "p95_microseconds": 103,
+      "samples": 36
+    },
+    {
+      "register": "facet_monument",
+      "system": "view::sync_streamed_cells",
+      "median_microseconds": 60,
+      "p95_microseconds": 99,
+      "samples": 138
+    },
+    {
+      "register": "overlit_grid",
+      "system": "view::sync_streamed_cells",
+      "median_microseconds": 60,
+      "p95_microseconds": 101,
+      "samples": 2100
+    },
+    {
+      "register": "institutional",
+      "system": "view::sync_streamed_cells",
+      "median_microseconds": 59,
+      "p95_microseconds": 86,
+      "samples": 1547
+    },
+    {
+      "register": "thinning",
+      "system": "view::sync_streamed_cells",
+      "median_microseconds": 59,
+      "p95_microseconds": 83,
+      "samples": 2011
+    },
+    {
+      "register": "monolith",
+      "system": "view::sync_streamed_cells",
+      "median_microseconds": 58,
+      "p95_microseconds": 83,
+      "samples": 3198
+    },
+    {
+      "register": "institutional",
+      "system": "sim::finish_runtime",
+      "median_microseconds": 48,
+      "p95_microseconds": 71,
+      "samples": 1547
+    },
+    {
+      "register": "monolith",
+      "system": "sim::finish_runtime",
+      "median_microseconds": 47,
+      "p95_microseconds": 67,
+      "samples": 3198
+    },
+    {
+      "register": "thinning",
+      "system": "sim::finish_runtime",
+      "median_microseconds": 46,
+      "p95_microseconds": 70,
+      "samples": 2011
+    },
+    {
+      "register": "facet_monument",
+      "system": "sim::finish_runtime",
+      "median_microseconds": 38,
+      "p95_microseconds": 72,
+      "samples": 138
+    },
+    {
+      "register": "facet_monument",
+      "system": "audio::sync",
+      "median_microseconds": 36,
+      "p95_microseconds": 101,
+      "samples": 138
+    },
+    {
+      "register": "facet_monument",
+      "system": "view::sync_changed_geometry",
+      "median_microseconds": 33,
+      "p95_microseconds": 112,
+      "samples": 138
+    },
+    {
+      "register": "megastructure",
+      "system": "audio::sync",
+      "median_microseconds": 32,
+      "p95_microseconds": 100,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "system": "view::sync_changed_geometry",
+      "median_microseconds": 32,
+      "p95_microseconds": 103,
+      "samples": 36
+    },
+    {
+      "register": "overlit_grid",
+      "system": "audio::sync",
+      "median_microseconds": 30,
+      "p95_microseconds": 88,
+      "samples": 2100
+    },
+    {
+      "register": "facet_monument",
+      "system": "lantern::sync_projection",
+      "median_microseconds": 29,
+      "p95_microseconds": 79,
+      "samples": 138
+    },
+    {
+      "register": "overlit_grid",
+      "system": "view::sync_changed_geometry",
+      "median_microseconds": 28,
+      "p95_microseconds": 79,
+      "samples": 2100
+    },
+    {
+      "register": "institutional",
+      "system": "audio::sync",
+      "median_microseconds": 27,
+      "p95_microseconds": 82,
+      "samples": 1547
+    },
+    {
+      "register": "megastructure",
+      "system": "lantern::sync_projection",
+      "median_microseconds": 27,
+      "p95_microseconds": 75,
+      "samples": 36
+    },
+    {
+      "register": "thinning",
+      "system": "audio::sync",
+      "median_microseconds": 27,
+      "p95_microseconds": 80,
+      "samples": 2011
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "audio::sync",
+      "median_microseconds": 26,
+      "p95_microseconds": 69,
+      "samples": 3289
+    },
+    {
+      "register": "monolith",
+      "system": "audio::sync",
+      "median_microseconds": 26,
+      "p95_microseconds": 75,
+      "samples": 3198
+    },
+    {
+      "register": "overlit_grid",
+      "system": "lantern::sync_projection",
+      "median_microseconds": 26,
+      "p95_microseconds": 72,
+      "samples": 2100
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "view::sync_changed_geometry",
+      "median_microseconds": 23,
+      "p95_microseconds": 47,
+      "samples": 3289
+    },
+    {
+      "register": "facet_monument",
+      "system": "tacmap::sync",
+      "median_microseconds": 22,
+      "p95_microseconds": 108,
+      "samples": 138
+    },
+    {
+      "register": "megastructure",
+      "system": "tacmap::sync",
+      "median_microseconds": 20,
+      "p95_microseconds": 93,
+      "samples": 36
+    },
+    {
+      "register": "institutional",
+      "system": "view::sync_changed_geometry",
+      "median_microseconds": 19,
+      "p95_microseconds": 52,
+      "samples": 1547
+    },
+    {
+      "register": "overlit_grid",
+      "system": "tacmap::sync",
+      "median_microseconds": 19,
+      "p95_microseconds": 73,
+      "samples": 2100
+    },
+    {
+      "register": "monolith",
+      "system": "view::sync_changed_geometry",
+      "median_microseconds": 17,
+      "p95_microseconds": 45,
+      "samples": 3198
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "tacmap::sync",
+      "median_microseconds": 15,
+      "p95_microseconds": 48,
+      "samples": 3289
+    },
+    {
+      "register": "thinning",
+      "system": "view::sync_changed_geometry",
+      "median_microseconds": 15,
+      "p95_microseconds": 58,
+      "samples": 2011
+    },
+    {
+      "register": "institutional",
+      "system": "tacmap::sync",
+      "median_microseconds": 14,
+      "p95_microseconds": 60,
+      "samples": 1547
+    },
+    {
+      "register": "thinning",
+      "system": "tacmap::sync",
+      "median_microseconds": 14,
+      "p95_microseconds": 59,
+      "samples": 2011
+    },
+    {
+      "register": "institutional",
+      "system": "lantern::sync_projection",
+      "median_microseconds": 13,
+      "p95_microseconds": 58,
+      "samples": 1547
+    },
+    {
+      "register": "monolith",
+      "system": "tacmap::sync",
+      "median_microseconds": 12,
+      "p95_microseconds": 52,
+      "samples": 3198
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "lantern::sync_projection",
+      "median_microseconds": 11,
+      "p95_microseconds": 45,
+      "samples": 3289
+    },
+    {
+      "register": "facet_monument",
+      "system": "input::map_input",
+      "median_microseconds": 10,
+      "p95_microseconds": 26,
+      "samples": 138
+    },
+    {
+      "register": "facet_monument",
+      "system": "feedback::sync",
+      "median_microseconds": 9,
+      "p95_microseconds": 26,
+      "samples": 138
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "input::map_input",
+      "median_microseconds": 9,
+      "p95_microseconds": 19,
+      "samples": 3289
+    },
+    {
+      "register": "megastructure",
+      "system": "feedback::sync",
+      "median_microseconds": 9,
+      "p95_microseconds": 25,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "system": "input::map_input",
+      "median_microseconds": 9,
+      "p95_microseconds": 23,
+      "samples": 36
+    },
+    {
+      "register": "overlit_grid",
+      "system": "input::map_input",
+      "median_microseconds": 9,
+      "p95_microseconds": 25,
+      "samples": 2100
+    },
+    {
+      "register": "institutional",
+      "system": "input::map_input",
+      "median_microseconds": 8,
+      "p95_microseconds": 21,
+      "samples": 1547
+    },
+    {
+      "register": "monolith",
+      "system": "input::map_input",
+      "median_microseconds": 8,
+      "p95_microseconds": 16,
+      "samples": 3198
+    },
+    {
+      "register": "monolith",
+      "system": "lantern::sync_projection",
+      "median_microseconds": 8,
+      "p95_microseconds": 42,
+      "samples": 3198
+    },
+    {
+      "register": "thinning",
+      "system": "input::map_input",
+      "median_microseconds": 8,
+      "p95_microseconds": 22,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "system": "lantern::sync_projection",
+      "median_microseconds": 8,
+      "p95_microseconds": 50,
+      "samples": 2011
+    },
+    {
+      "register": "facet_monument",
+      "system": "entities::sync",
+      "median_microseconds": 7,
+      "p95_microseconds": 21,
+      "samples": 138
+    },
+    {
+      "register": "megastructure",
+      "system": "entities::sync",
+      "median_microseconds": 7,
+      "p95_microseconds": 12,
+      "samples": 36
+    },
+    {
+      "register": "overlit_grid",
+      "system": "entities::sync",
+      "median_microseconds": 7,
+      "p95_microseconds": 18,
+      "samples": 2100
+    },
+    {
+      "register": "overlit_grid",
+      "system": "feedback::sync",
+      "median_microseconds": 7,
+      "p95_microseconds": 21,
+      "samples": 2100
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "entities::sync",
+      "median_microseconds": 6,
+      "p95_microseconds": 11,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "feedback::sync",
+      "median_microseconds": 6,
+      "p95_microseconds": 12,
+      "samples": 3289
+    },
+    {
+      "register": "institutional",
+      "system": "entities::sync",
+      "median_microseconds": 6,
+      "p95_microseconds": 14,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "system": "feedback::sync",
+      "median_microseconds": 6,
+      "p95_microseconds": 15,
+      "samples": 1547
+    },
+    {
+      "register": "monolith",
+      "system": "entities::sync",
+      "median_microseconds": 6,
+      "p95_microseconds": 11,
+      "samples": 3198
+    },
+    {
+      "register": "monolith",
+      "system": "feedback::sync",
+      "median_microseconds": 6,
+      "p95_microseconds": 12,
+      "samples": 3198
+    },
+    {
+      "register": "thinning",
+      "system": "entities::sync",
+      "median_microseconds": 6,
+      "p95_microseconds": 10,
+      "samples": 2011
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "view::sync_lighting_and_atmosphere",
+      "median_microseconds": 5,
+      "p95_microseconds": 10,
+      "samples": 3289
+    },
+    {
+      "register": "thinning",
+      "system": "feedback::sync",
+      "median_microseconds": 5,
+      "p95_microseconds": 11,
+      "samples": 2011
+    },
+    {
+      "register": "facet_monument",
+      "system": "view::sync_camera",
+      "median_microseconds": 4,
+      "p95_microseconds": 20,
+      "samples": 138
+    },
+    {
+      "register": "facet_monument",
+      "system": "view::sync_lighting_and_atmosphere",
+      "median_microseconds": 4,
+      "p95_microseconds": 20,
+      "samples": 138
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "view::sync_camera",
+      "median_microseconds": 4,
+      "p95_microseconds": 10,
+      "samples": 3289
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "view::sync_practical_shadow_budget",
+      "median_microseconds": 4,
+      "p95_microseconds": 11,
+      "samples": 3289
+    },
+    {
+      "register": "institutional",
+      "system": "view::sync_lighting_and_atmosphere",
+      "median_microseconds": 4,
+      "p95_microseconds": 10,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "system": "view::sync_practical_shadow_budget",
+      "median_microseconds": 4,
+      "p95_microseconds": 16,
+      "samples": 1547
+    },
+    {
+      "register": "megastructure",
+      "system": "view::sync_camera",
+      "median_microseconds": 4,
+      "p95_microseconds": 22,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "system": "view::sync_lighting_and_atmosphere",
+      "median_microseconds": 4,
+      "p95_microseconds": 19,
+      "samples": 36
+    },
+    {
+      "register": "monolith",
+      "system": "view::sync_lighting_and_atmosphere",
+      "median_microseconds": 4,
+      "p95_microseconds": 10,
+      "samples": 3198
+    },
+    {
+      "register": "monolith",
+      "system": "view::sync_practical_shadow_budget",
+      "median_microseconds": 4,
+      "p95_microseconds": 16,
+      "samples": 3198
+    },
+    {
+      "register": "overlit_grid",
+      "system": "view::sync_camera",
+      "median_microseconds": 4,
+      "p95_microseconds": 18,
+      "samples": 2100
+    },
+    {
+      "register": "overlit_grid",
+      "system": "view::sync_lighting_and_atmosphere",
+      "median_microseconds": 4,
+      "p95_microseconds": 18,
+      "samples": 2100
+    },
+    {
+      "register": "thinning",
+      "system": "view::sync_lighting_and_atmosphere",
+      "median_microseconds": 4,
+      "p95_microseconds": 9,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "system": "view::sync_practical_shadow_budget",
+      "median_microseconds": 4,
+      "p95_microseconds": 17,
+      "samples": 2011
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "input::mode_hotkeys",
+      "median_microseconds": 3,
+      "p95_microseconds": 7,
+      "samples": 3289
+    },
+    {
+      "register": "institutional",
+      "system": "input::mode_hotkeys",
+      "median_microseconds": 3,
+      "p95_microseconds": 5,
+      "samples": 1547
+    },
+    {
+      "register": "institutional",
+      "system": "view::sync_camera",
+      "median_microseconds": 3,
+      "p95_microseconds": 11,
+      "samples": 1547
+    },
+    {
+      "register": "monolith",
+      "system": "input::mode_hotkeys",
+      "median_microseconds": 3,
+      "p95_microseconds": 6,
+      "samples": 3198
+    },
+    {
+      "register": "monolith",
+      "system": "view::sync_camera",
+      "median_microseconds": 3,
+      "p95_microseconds": 10,
+      "samples": 3198
+    },
+    {
+      "register": "overlit_grid",
+      "system": "view::sync_practical_shadow_budget",
+      "median_microseconds": 3,
+      "p95_microseconds": 18,
+      "samples": 2100
+    },
+    {
+      "register": "thinning",
+      "system": "input::mode_hotkeys",
+      "median_microseconds": 3,
+      "p95_microseconds": 5,
+      "samples": 2011
+    },
+    {
+      "register": "thinning",
+      "system": "view::sync_camera",
+      "median_microseconds": 3,
+      "p95_microseconds": 9,
+      "samples": 2011
+    },
+    {
+      "register": "facet_monument",
+      "system": "hud::sync",
+      "median_microseconds": 2,
+      "p95_microseconds": 17,
+      "samples": 138
+    },
+    {
+      "register": "facet_monument",
+      "system": "input::mode_hotkeys",
+      "median_microseconds": 2,
+      "p95_microseconds": 6,
+      "samples": 138
+    },
+    {
+      "register": "facet_monument",
+      "system": "view::sync_practical_shadow_budget",
+      "median_microseconds": 2,
+      "p95_microseconds": 19,
+      "samples": 138
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "hud::sync",
+      "median_microseconds": 2,
+      "p95_microseconds": 5,
+      "samples": 3289
+    },
+    {
+      "register": "institutional",
+      "system": "hud::sync",
+      "median_microseconds": 2,
+      "p95_microseconds": 5,
+      "samples": 1547
+    },
+    {
+      "register": "megastructure",
+      "system": "hud::sync",
+      "median_microseconds": 2,
+      "p95_microseconds": 6,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "system": "input::mode_hotkeys",
+      "median_microseconds": 2,
+      "p95_microseconds": 6,
+      "samples": 36
+    },
+    {
+      "register": "megastructure",
+      "system": "view::sync_practical_shadow_budget",
+      "median_microseconds": 2,
+      "p95_microseconds": 550,
+      "samples": 36
+    },
+    {
+      "register": "monolith",
+      "system": "hud::sync",
+      "median_microseconds": 2,
+      "p95_microseconds": 6,
+      "samples": 3198
+    },
+    {
+      "register": "overlit_grid",
+      "system": "hud::sync",
+      "median_microseconds": 2,
+      "p95_microseconds": 5,
+      "samples": 2100
+    },
+    {
+      "register": "overlit_grid",
+      "system": "input::mode_hotkeys",
+      "median_microseconds": 2,
+      "p95_microseconds": 6,
+      "samples": 2100
+    },
+    {
+      "register": "thinning",
+      "system": "hud::sync",
+      "median_microseconds": 2,
+      "p95_microseconds": 5,
+      "samples": 2011
+    }
+  ],
+  "streaming_churn_frames": {
+    "samples": 140,
+    "minimum_microseconds": 0,
+    "median_microseconds": 18712,
+    "p95_microseconds": 147982,
+    "maximum_microseconds": 185019,
+    "mean_microseconds": 37070
+  },
+  "streaming_steady_frames": {
+    "samples": 12179,
+    "minimum_microseconds": 7357,
+    "median_microseconds": 12368,
+    "p95_microseconds": 33000,
+    "maximum_microseconds": 250000,
+    "mean_microseconds": 15995
+  },
+  "peak_visible_cells": 76,
+  "commits": [
+    {
+      "tick": 1073,
+      "generation": 1,
+      "fixed_microseconds": 18405,
+      "frame_microseconds": 16709
+    },
+    {
+      "tick": 1565,
+      "generation": 2,
+      "fixed_microseconds": 16292,
+      "frame_microseconds": 15188
+    },
+    {
+      "tick": 2056,
+      "generation": 3,
+      "fixed_microseconds": 14023,
+      "frame_microseconds": 12836
+    },
+    {
+      "tick": 2570,
+      "generation": 4,
+      "fixed_microseconds": 13140,
+      "frame_microseconds": 11850
+    },
+    {
+      "tick": 3136,
+      "generation": 5,
+      "fixed_microseconds": 12529,
+      "frame_microseconds": 9933
+    },
+    {
+      "tick": 3633,
+      "generation": 6,
+      "fixed_microseconds": 12695,
+      "frame_microseconds": 11748
+    },
+    {
+      "tick": 6124,
+      "generation": 7,
+      "fixed_microseconds": 12340,
+      "frame_microseconds": 9820
+    },
+    {
+      "tick": 6757,
+      "generation": 8,
+      "fixed_microseconds": 24518,
+      "frame_microseconds": 71383
+    },
+    {
+      "tick": 7448,
+      "generation": 9,
+      "fixed_microseconds": 16213,
+      "frame_microseconds": 18462
+    },
+    {
+      "tick": 8068,
+      "generation": 10,
+      "fixed_microseconds": 17704,
+      "frame_microseconds": 22366
+    },
+    {
+      "tick": 8628,
+      "generation": 11,
+      "fixed_microseconds": 15301,
+      "frame_microseconds": 18458
+    },
+    {
+      "tick": 9168,
+      "generation": 12,
+      "fixed_microseconds": 12123,
+      "frame_microseconds": 11908
+    },
+    {
+      "tick": 9881,
+      "generation": 13,
+      "fixed_microseconds": 19453,
+      "frame_microseconds": 16002
+    },
+    {
+      "tick": 10403,
+      "generation": 14,
+      "fixed_microseconds": 15697,
+      "frame_microseconds": 25684
+    },
+    {
+      "tick": 11120,
+      "generation": 15,
+      "fixed_microseconds": 13432,
+      "frame_microseconds": 8548
+    },
+    {
+      "tick": 11710,
+      "generation": 16,
+      "fixed_microseconds": 13375,
+      "frame_microseconds": 14345
+    }
+  ],
+  "gate": {
+    "required_commits": 0,
+    "observed_commits": 16,
+    "p95_frame_microseconds": 33319,
+    "maximum_mutation_frame_microseconds": 71383,
+    "passed": true
+  },
+  "notes": [
+    "wall-clock evidence only; never read by simulation",
+    "pipeline probe reproduces the live seed/config and discards its artifacts",
+    "frame samples are Bevy Time deltas and include presentation/present delay",
+    "mutation frame is the next measured frame, which contains prior-frame fixed/update work",
+    "by_register buckets each frame by the register the runner stood in; a Time delta describes the previous frame, so single samples astride a cell crossing land in the neighbouring bucket",
+    "by_register sample counts are whatever the bot's route happened to visit, not a balanced design; compare medians, and treat thin buckets as unmeasured"
+  ]
+}

@@ -5,6 +5,12 @@ fixed in Arc H and hand-audited in the 2026-07-11 ship-gate playtest). Open
 entries are post-ship findings, unscheduled. New findings land here first, then
 get scheduled. Keep entries self-contained enough to hand to an agent cold.
 
+Entries 10–12 came out of the 2026-07-26 per-district FPS investigation; its
+method, measurements, and the hypotheses it rejected are in
+[evidence/arc_m/district_perf/FINDINGS.md](evidence/arc_m/district_perf/FINDINGS.md).
+Read that before picking any of them up — several plausible-sounding causes were
+measured and ruled out, and the harness has traps that invalidate naive runs.
+
 ## Open
 
 ### 5. Bot-POV walkthrough stalls in the observation room
@@ -67,7 +73,7 @@ first player-visible frame already uses the correct `observed_style`-owned hex
 lighting treatment, with no default-rig flash or exposure transition.
 
 ### 9. Hex mutation commit stalls the whole game
-**Unscheduled; candidate centerpiece for the post-Arc-L polish/performance arc.**
+**Unscheduled; partially addressed 2026-07-26 — see below before starting.**
 **Found 2026-07-18 during the Phase 95 closure playtest.** When a relayout
 commits, the whole game visibly freezes while mutation geometry/state is rebuilt
 and synchronized. Phase 93 already advances search attempts deterministically
@@ -81,6 +87,80 @@ results must remain deterministic. The acceptance gate should include measured
 frame-time bounds on a production `28 x 20 x 10` relayout, not merely a smaller
 fixture.
 
+**Progress 2026-07-26 (perf investigation, see #10).** One concrete cause found
+and fixed: `view::spawn_cells` called `derive_trim` over the *whole* facility —
+summarizing all ~109 k projected pieces and sweeping every cell — then discarded
+everything but the handful of changed cells. `derive_trim_for` now scopes that to
+the changed cells plus the lateral neighbours a seam classification needs.
+Measured rebuild median roughly halved (16 651 → 8 455 µs). **Still stalls**: at
+~8.5 ms a commit still overruns the 16.67 ms budget once the rest of the frame is
+added, so mutation frames land at ~31–33 ms. The remaining cost is the respawn
+itself (entity despawn/spawn for the changed cells), which is the amortisation
+work this entry originally asked for.
+
+### 10. Visibility propagation over 109 k entities is the largest frame cost
+**Unscheduled; the top remaining hex performance item.**
+**Found 2026-07-26 during the per-district FPS investigation** (full evidence and
+method: [evidence/arc_m/district_perf/FINDINGS.md](evidence/arc_m/district_perf/FINDINGS.md)).
+After the simulation fixes below, the single biggest cost in the frame is Bevy's
+`PostUpdate` visibility work — `post_update:visibility` measures **3.9 ms**
+(`VisibilityPropagate` + `CheckVisibility` + `MarkNewlyHiddenEntitiesInvisible`),
+against `post_update:transform_propagate` at 0.97 ms and everything else under
+0.1 ms.
+
+This is an **entity-count problem, not an algorithmic one**: a production
+`28 x 20 x 10` facility spawns **109 155 mesh entities** up front, and
+`view::sync_streamed_cells` hides distant cells rather than removing them —
+hiding stops a cell *rendering* but not its children being walked every frame. No
+further micro-optimisation reaches this; it needs fewer entities. Two candidates,
+both real refactors of `game/src/hex_wfc/view/shell.rs`:
+
+- **Merge each cell's hull meshes into one mesh.** ~20× fewer entities (23 hulls
+  per cell on average). Constrains per-piece materials to be uniform within a
+  cell, so it interacts with the role/register tinting `observed_style` owns —
+  check that before committing to it. Probably the bigger win and the lower
+  behavioural risk.
+- **Despawn out-of-stream cells instead of hiding them.** Entity count becomes
+  proportional to the streaming window rather than the facility, which is the
+  architecturally cleaner streaming story — but it moves cost to the streaming
+  boundary, where it needs amortising to avoid recreating the spike that #9's
+  `derive_trim_for` fix just removed.
+
+Measure with the harness described in #11; `post_update:visibility` is reported
+per register in `timings.json`.
+
+### 11. Phase 101 performance gate fails on vsync headroom
+**Unscheduled; low priority — the gate is stricter than the observed experience.**
+**Found 2026-07-26.** `OBSERVED2_CAPTURE_HEX_WFC_PHASE101` fails at p95 ≈ 30 450 µs
+against its ≤ 16 700 µs threshold, and **did not move across three rounds of real
+fixes** (30 488 → 30 368 → 30 454) — so it was never measuring the simulation or
+the rebuild. The gate runs vsync-capped, where the budget is one 16.67 ms refresh
+interval and a miss costs a whole extra one. Uncapped, the same build sits at
+~10.3 ms median / ~12.0 ms p95 — comfortable, but ~75 % of budget, so occasional
+spikes tip over and land at 33 ms. Closing it means finding headroom in what
+remains (#10 is where it is), or deciding the threshold should be measured
+uncapped.
+
+**Harness note for whoever picks this up.** The evidence harness in
+`game/src/hex_wfc/perf.rs` grew several opt-in switches during the investigation,
+all no-ops in normal play:
+`OBSERVED2_CAPTURE_HEX_WFC_TICKS` (default 600 ticks is ~10 s, too short for the
+bot to leave its spawn register), `..._UNCAPPED` (**essential** — vsync otherwise
+pins every register to the same ~16 640 µs median and the data is worthless), and
+`..._GPU` (per-render-pass GPU timings via `RenderDiagnosticsPlugin`). Reports
+carry per-register frame/sim/visible-piece/fixed-step counts and per-`Update`-system
+spans. Two traps: never pool medians across seeds (the same register runs 17 ms in
+one facility and 112 ms in another), and treat thin sample buckets as unmeasured.
+
+### 12. Guardian still routes per player and per blueprint each tick
+**Unscheduled; minor — no longer dominant.**
+**Found 2026-07-26.** `leading_player` runs a full `route_between_cells` per
+active player every tick inside `guardian.step`, and `recovery_destination` runs
+one per blueprint when a catch resolves. Same redundant-pathfinding pattern as the
+fixes below, and both are candidates for `route_within_cost` bounding or for
+hoisting the shared spawn→exit term. Left alone because after the fixes below they
+no longer show up in the profile — pick this up only if the sim step regresses.
+
 ## Minor / hygiene
 
 **Scheduled: Arc H Phase 61 (as-landed notes).**
@@ -89,6 +169,53 @@ fixture.
   "Review fixes" section).
 
 ## Fixed
+
+- ~~FPS collapses to 9 in some hex regions (a fixed-timestep catch-up spiral)~~ —
+  fixed 2026-07-26. Reported as "FPS drops hard in certain lighting districts";
+  the district correlation was incidental. The fixed timestep is 60 Hz (16.67 ms,
+  `game/src/screens.rs`), but one simulation step cost 13.1 ms in some regions
+  versus 2.0 ms elsewhere. The frame then overran, `RunFixedMainLoop` ran catch-up
+  steps (7 observed), each costing another 13.1 ms — stopping only at Bevy's
+  `DEFAULT_MAX_DELTA` of 250 ms, which is exactly the `250000` µs maximum frame
+  time present in every `timings.json`, including ones predating the
+  investigation. **97 % of the expensive step was `guardian.step`**, and inside it
+  `player_sees_guardian` ran a full uncapped A* to ask "is the Guardian within two
+  cells?" *before* the O(1) distance and facing checks — for every player, every
+  tick — which exhausted the whole connected component whenever the Guardian was
+  far or unreachable. Fixes, all semantics-preserving: reorder those guards (the
+  conjuncts are pure, so only evaluation order changes); add
+  `bot_behaviour_and_route` so bots route once per tick instead of twice; add
+  `HexWfcWorld::route_within_cost` and bound the three per-frame callers whose
+  answers saturate (`pressure_for` at 12 000, `player_sees_guardian` at
+  `MAX_CONNECTION_COST`, `lantern_proximity` at its baseline); cache the
+  `lantern_proximity` spawn→exit baseline as `spawn_to_exit_cost`, refreshed only
+  in `commit_mutation`. Result: the cell that opened the investigation went
+  **9 fps → 80 fps**, both seeds now 10.3–10.7 ms median with one fixed step per
+  frame, `lantern::sync_dynamic` 11.4 ms → 1.16 ms. Bound exactness and cache
+  freshness are both covered by tests
+  (`bounded_routing_agrees_with_unbounded_inside_the_bound`,
+  `cached_spawn_to_exit_cost_survives_a_committed_relayout`,
+  `scoped_trim_matches_the_owned_subset_of_the_full_derivation`). Full method and
+  the hypotheses that were measured and *rejected* along the way (key-light
+  shadows, light clustering, draw calls, streaming churn):
+  [evidence/arc_m/district_perf/FINDINGS.md](evidence/arc_m/district_perf/FINDINGS.md).
+
+- ~~Shadow Screen and Institutional key lights emit nothing and cost a shadow map~~
+  — fixed 2026-07-26. Both registers set `key_shadows_enabled` with real intensity
+  and range but inherited `key_inner_angle`/`key_outer_angle` of `0.0` from the
+  keyless `Hollow` district. Bevy builds the shadow projection as
+  `perspective_infinite_reverse_rh(outer_angle * 2.0, ..)`, so a zero outer angle
+  puts `1/tan(0)` = inf into the matrix — and a zero-width cone emits no light at
+  all. Both were paying for a shadow map that lit nothing. Given real cone angles;
+  the palette invariant test now asserts `0 < inner <= outer < PI/2` whenever the
+  key casts, which is the check that would have caught it.
+
+- ~~`sync_streamed_cells` marks every cell dirty every frame~~ — fixed 2026-07-26.
+  It assigned `*visibility` unconditionally; `Mut` deref marks
+  `Changed<Visibility>`, which is exactly the filter Bevy's
+  `visibility_propagate_system` runs on, so the whole ~5 600-cell hierarchy
+  re-propagated to ~109 k children every frame to reach a state it was already in.
+  Now guarded, matching the pattern `sync_practical_shadow_budget` already used.
 
 - ~~Control rebind captures its own activation key~~ — fixed by Arc H Phase 63
   (`control_lab` overlay machinery adopted; capture arms on the activation key's
