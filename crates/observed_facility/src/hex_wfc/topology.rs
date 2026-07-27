@@ -64,12 +64,24 @@ fn is_connection_open(
         return false;
     };
     if face.is_lateral() {
-        a.is_open(face) && b.is_open(face.opposite())
-    } else {
-        let a_class = if face == HexFace::Up { a.up } else { a.down };
-        let b_class = if face == HexFace::Up { b.down } else { b.up };
-        a_class != PortClass::Sealed && a_class == b_class
+        return a.is_open(face) && b.is_open(face.opposite());
     }
+    let a_class = if face == HexFace::Up { a.up } else { a.down };
+    let b_class = if face == HexFace::Up { b.down } else { b.up };
+    if a_class == PortClass::Sealed || a_class != b_class {
+        return false;
+    }
+    // A vertical link between two room cells is a port the facility cannot
+    // actually deliver. Nothing climbs it: the bot's stair handling is gated on
+    // `HexArchetype::Shaft` and its waypoints are tuned to the switchback
+    // tower's own geometry, and a room cell is projected through
+    // `blueprint_cell_archetype`, which returns `sanctuary` for every role and
+    // every cell (bug backlog #15) — so there are no treads inside it either.
+    //
+    // Routing through one promises a climb that cannot happen, which strands
+    // whoever follows the route. Until rooms have real geometry, this is not a
+    // connection.
+    !(a.space == HexSpace::Room && b.space == HexSpace::Room)
 }
 
 fn connection_cost(

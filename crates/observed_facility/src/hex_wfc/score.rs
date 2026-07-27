@@ -126,34 +126,62 @@ fn room_wholeness_score(world: &HexWfcWorld) -> f64 {
     (blueprint_cells as f64 / room_cells as f64).min(1.0)
 }
 
-/// Normalized Shannon entropy of the archetype-frequency distribution over
-/// every live (non-`Void`) placement.
+/// How varied the facility's composition is — measured **within** districts and
+/// then averaged, not globally.
+///
+/// A global entropy over every cell rewards a facility that is uniformly mixed
+/// everywhere, which is exactly the layout Arc O is trying to stop producing.
+/// Since Phase 107 each district deliberately specialises: Liminal Grid is
+/// junction-heavy, Overlit Grid is turns, Wellshaft is vertical. Scored
+/// globally, a facility whose districts are strongly characterised looks *worse*
+/// than mush, so the score would push `generate_best` to pick the mush.
+///
+/// Measuring inside each district and averaging asks the question that still
+/// matters — is any one neighbourhood monotonous — while leaving districts free
+/// to differ from each other.
 fn archetype_variety_score(world: &HexWfcWorld) -> f64 {
-    let mut counts: BTreeMap<HexArchetype, u32> = BTreeMap::new();
-    let mut total = 0u32;
-    for placement in world.placements.values() {
+    let mut per_district: BTreeMap<
+        observed_content::ArchitectureRegister,
+        BTreeMap<HexArchetype, u32>,
+    > = BTreeMap::new();
+    for (coord, placement) in &world.placements {
         if placement.archetype == HexArchetype::Void {
             continue;
         }
-        *counts.entry(placement.archetype).or_insert(0) += 1;
-        total += 1;
+        let Some(register) = world.architecture.get(coord) else {
+            continue;
+        };
+        *per_district
+            .entry(*register)
+            .or_default()
+            .entry(placement.archetype)
+            .or_insert(0) += 1;
     }
-    if total == 0 {
+    if per_district.is_empty() {
         return 0.0;
     }
-    let entropy: f64 = counts
-        .values()
-        .map(|&count| {
-            let p = f64::from(count) / f64::from(total);
-            -p * p.log2()
-        })
-        .sum();
     let max_entropy = f64::from(SCOREABLE_ARCHETYPE_KINDS).log2();
-    if max_entropy > 0.0 {
-        (entropy / max_entropy).clamp(0.0, 1.0)
-    } else {
-        0.0
+    if max_entropy <= 0.0 {
+        return 0.0;
     }
+    let mut sum = 0.0;
+    for counts in per_district.values() {
+        let total: u32 = counts.values().sum();
+        if total == 0 {
+            continue;
+        }
+        let entropy: f64 = counts
+            .values()
+            .map(|&count| {
+                let p = f64::from(count) / f64::from(total);
+                -p * p.log2()
+            })
+            .sum();
+        sum += (entropy / max_entropy).clamp(0.0, 1.0);
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let mean = sum / per_district.len() as f64;
+    mean
 }
 
 /// Evenness of nearest-neighbor spacing between junction/shaft cells: the

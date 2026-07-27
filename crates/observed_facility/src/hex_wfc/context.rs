@@ -2,11 +2,22 @@
 //!
 //! The WFC weighted lottery picks a variant for each collapsing cell in
 //! proportion to that variant's static `weight`. This module scales that weight
-//! by a deterministic factor derived purely from the cell's **position in the
-//! grid** — never from the architecture register or any presentation signal, so
-//! the atmosphere/structure separation (`DistrictPalette` stays atmosphere-only,
-//! per agents.md) is preserved and the register deliberately stays out of
-//! structural identity (see `variants.rs`).
+//! by two deterministic factors: the cell's **position in the grid**, and the
+//! **district** it stands in.
+//!
+//! The second of those is new in Arc O Phase 107 and reverses an earlier rule.
+//! The register used to be kept out of structural identity so that atmosphere
+//! and structure stayed separable. That separation turned out to be the reason
+//! districts were only lighting: a neighbourhood you can name has to be built
+//! differently, not merely lit differently, and no amount of palette work
+//! delivers that. `DistrictPalette` remains atmosphere-only — style still never
+//! decides structure — but the *register*, which is a semantic label the solver
+//! owns, now biases what gets built there.
+//!
+//! This is only possible because Phase 106 made districts spatial. Under the old
+//! per-hex lottery a register was already knowable before the solve, but
+//! weighting by it would have produced noise at cell granularity; weighting by a
+//! contiguous district produces a neighbourhood.
 //!
 //! The bias is a set of *tendencies*, not hard rules: verticals cluster toward
 //! the central axis, atria (rooms) favour the upper levels. Crucially a legal
@@ -19,24 +30,26 @@
 
 use observed_hex::HexCoord;
 
+use observed_content::ArchitectureRegister;
+
 use super::{HexArchetype, HexWfcConfig};
 
-/// Whether the geometry composition tendencies below are actually applied to
-/// the solve.
+/// Whether the geometry composition tendencies below are applied to the solve.
 ///
-/// **Currently `false`, deliberately.** The tendencies are a nice-to-have
-/// aesthetic bias, but applying them shifts every layout, and one of the
-/// resulting layouts stalls all four bots at a known-fragile spot — breaking
-/// `bot_soak_has_no_stalls` (the Arc-K zero-stall invariant, Phase 94 success
-/// criterion 2). Softening the constants only moved the failure around; the
-/// same cell kept stalling, which says the root cause is bot-navigation
-/// fragility rather than the weighting itself. Navigability is a shipping
-/// invariant and composition tendency is not, so the tendency yields until
-/// bot navigation is hardened.
+/// **Re-enabled in Arc O Phase 107**, after the failure that disabled them was
+/// tracked to its actual cause. It was switched off because enabling it made one
+/// layout stall all four bots, and softening the constants only moved the
+/// failure around — correctly read at the time as "the root cause is
+/// navigation, not the weighting".
 ///
-/// The tendency logic and its tests stay live so re-enabling is this one line
-/// plus a re-run of `cargo test -p observed_match hex_wfc::model::tests`.
-const COMPOSITION_TENDENCIES_ENABLED: bool = false;
+/// The specific cause: the tendency shifted exactly one layout in the soak
+/// corpus into routing through a **two-level room's internal vertical link**,
+/// and nothing can climb one. Measured across the 28 routable soak layouts, the
+/// old weighting produced 0 such routes and the tendency produced 1 — the very
+/// seed that stalled. `topology::is_connection_open` no longer treats a
+/// room-to-room vertical port as a connection, so no route promises that climb,
+/// and the soak passes with tendencies on.
+const COMPOSITION_TENDENCIES_ENABLED: bool = true;
 
 /// Weight multiplier at the central axis for vertical archetypes.
 const VERTICAL_CENTER_BOOST: f64 = 1.2;
@@ -212,6 +225,118 @@ impl HexInfluenceField {
     }
 }
 
+/// How strongly a district may bend the static weights. Shared with
+/// [`HexInfluenceField`] so no single input can dominate the lottery or drive a
+/// legal variant out of contention.
+const PROFILE_MIN: f64 = 0.25;
+const PROFILE_MAX: f64 = 4.0;
+
+/// What a district builds, as a multiplier on each archetype's static weight.
+///
+/// These are the identities Arc O set out to deliver, expressed as the only
+/// thing the solver actually understands — relative weight. They are tendencies,
+/// not rules: [`effective_weight`] floors every positive weight at 1, so a
+/// district that suppresses shafts still gets one where the port signatures
+/// demand it, and solvability is untouched.
+///
+/// **No district boosts shafts above baseline, and that is deliberate.** The
+/// facility is already roughly 47 % shaft before any of this applies (backlog
+/// #13), so a profile that added more would work against the arc's own goal and,
+/// worse, put more of the fragile generic switchback on the routes bots follow.
+/// Verticality is therefore expressed by suppressing shafts *less* than the
+/// neighbours do — Wellshaft holds them at baseline while an open district cuts
+/// them to a third — and by ramps, which are genuinely traversable, where a
+/// district wants a built ascent. The relative reading is identical and the
+/// absolute shaft count falls everywhere.
+#[must_use]
+fn district_multiplier(register: ArchitectureRegister, archetype: HexArchetype) -> f64 {
+    use ArchitectureRegister as R;
+    use HexArchetype as A;
+    let value = match register {
+        // Vast and open: junctions and flat runs, verticals pushed down hard.
+        R::LiminalGrid => match archetype {
+            A::Straight => 1.5,
+            A::Corner => 0.9,
+            A::Junction => 2.4,
+            A::RampUp | A::RampHead => 0.6,
+            A::Shaft => 0.3,
+            A::Room => 1.2,
+            A::Void => 1.0,
+        },
+        // Winding: turns and runs, junctions suppressed so a path commits.
+        R::OverlitGrid => match archetype {
+            A::Straight => 1.8,
+            A::Corner => 2.4,
+            A::Junction => 0.45,
+            A::RampUp | A::RampHead => 0.8,
+            A::Shaft => 0.4,
+            A::Room => 1.0,
+            A::Void => 1.0,
+        },
+        // The vertical districts. Wellshaft is shafts; Megastructure climbs on
+        // ramps, so it reads as a built ascent rather than a stack of towers.
+        R::Wellshaft => match archetype {
+            A::Straight => 0.7,
+            A::Corner => 0.8,
+            A::Junction => 0.8,
+            A::RampUp | A::RampHead => 1.6,
+            A::Shaft => 1.0,
+            A::Room => 0.9,
+            A::Void => 1.0,
+        },
+        R::Megastructure => match archetype {
+            A::Straight => 0.8,
+            A::Corner => 0.8,
+            A::Junction => 1.1,
+            A::RampUp | A::RampHead => 2.6,
+            A::Shaft => 0.8,
+            A::Room => 1.0,
+            A::Void => 1.0,
+        },
+        // The remaining registers take mild characters, so the strong four read
+        // as deliberate rather than as the only districts with any identity.
+        R::ShadowScreen => match archetype {
+            A::Corner => 1.4,
+            A::Junction => 0.8,
+            A::Shaft => 0.5,
+            _ => 1.0,
+        },
+        R::Monolith => match archetype {
+            A::Straight => 1.4,
+            A::Junction => 0.8,
+            A::Room => 1.2,
+            A::Shaft => 0.5,
+            _ => 1.0,
+        },
+        R::Institutional => match archetype {
+            A::Straight => 1.2,
+            A::Junction => 1.3,
+            A::Shaft => 0.45,
+            _ => 1.0,
+        },
+        R::FacetMonument => match archetype {
+            A::Corner => 1.5,
+            A::Room => 1.2,
+            A::Shaft => 0.5,
+            _ => 1.0,
+        },
+        R::InfiniteGallery => match archetype {
+            A::Straight => 2.0,
+            A::Corner => 0.7,
+            A::Junction => 0.7,
+            A::Shaft => 0.4,
+            _ => 1.0,
+        },
+        R::Thinning => match archetype {
+            A::Junction => 0.6,
+            A::Room => 0.7,
+            A::Shaft => 0.6,
+            _ => 1.0,
+        },
+    };
+    f64::clamp(value, PROFILE_MIN, PROFILE_MAX)
+}
+
 /// The effective weight for the weighted lottery: the static `weight` scaled by
 /// the geometry [`context_multiplier`] and, when a driven relayout supplies one,
 /// a bounded [`HexInfluenceField`] bias. A zero static weight stays zero (never
@@ -223,6 +348,7 @@ pub(super) fn effective_weight(
     archetype: HexArchetype,
     weight: u32,
     config: HexWfcConfig,
+    district: Option<ArchitectureRegister>,
     influence: Option<&HexInfluenceField>,
 ) -> u64 {
     if weight == 0 {
@@ -233,8 +359,9 @@ pub(super) fn effective_weight(
     } else {
         1.0
     };
+    let profile = district.map_or(1.0, |register| district_multiplier(register, archetype));
     let bias = influence.map_or(1.0, |field| field.multiplier(archetype));
-    let scaled = (f64::from(weight) * geometry * bias).round();
+    let scaled = (f64::from(weight) * geometry * profile * bias).round();
     // `scaled` is finite and >= 0 here (both factors are bounded positive), so
     // the cast is well-defined; floor at 1 to preserve selectability.
     (scaled as u64).max(1)
@@ -289,7 +416,7 @@ mod tests {
                 HexArchetype::Straight,
                 HexArchetype::RampUp,
             ] {
-                let edge = effective_weight(coord(0, 0, level), archetype, 4, cfg, None);
+                let edge = effective_weight(coord(0, 0, level), archetype, 4, cfg, None, None);
                 assert!(
                     edge >= 1,
                     "{archetype:?} @ level {level} zeroed a legal variant"
@@ -301,7 +428,14 @@ mod tests {
     #[test]
     fn zero_weight_stays_zero() {
         assert_eq!(
-            effective_weight(coord(5, 5, 2), HexArchetype::Straight, 0, config(), None),
+            effective_weight(
+                coord(5, 5, 2),
+                HexArchetype::Straight,
+                0,
+                config(),
+                None,
+                None
+            ),
             0
         );
     }
@@ -335,21 +469,91 @@ mod tests {
         );
     }
 
-    /// Pins the deliberate current state: the geometry tendency is authored and
-    /// tested but NOT applied to the solve, because doing so regressed
-    /// `bot_soak_has_no_stalls`. If this test starts failing, the tendency was
-    /// re-enabled — re-run that soak before accepting it.
+    /// Arc O Phase 107 turned the tendencies on and added district profiles, so
+    /// the effective weight is no longer the static one. If this starts failing,
+    /// something has silently neutralised the composition weighting — re-run
+    /// `cargo test -p observed_match hex_wfc::model::tests::bot_soak_has_no_stalls`
+    /// before accepting whatever caused it.
     #[test]
-    fn composition_tendencies_are_not_applied_to_the_solve_yet() {
+    fn composition_weighting_reaches_the_solve() {
         let cfg = config();
-        // A shaft at the axis has a non-neutral *tendency* but a neutral
-        // *effective weight*, so layouts match the pre-tendency solver exactly.
         let center = coord(cfg.cols / 2, cfg.rows / 2, 1);
         assert!(context_multiplier(center, HexArchetype::Shaft, cfg) > 1.0);
-        assert_eq!(
-            effective_weight(center, HexArchetype::Shaft, 10, cfg, None),
-            10
+        assert!(
+            effective_weight(center, HexArchetype::Shaft, 10, cfg, None, None) > 10,
+            "the geometry tendency must reach the weight"
         );
+        // And a district bends it further, in the direction its identity says.
+        let open = effective_weight(
+            center,
+            HexArchetype::Shaft,
+            10,
+            cfg,
+            Some(ArchitectureRegister::LiminalGrid),
+            None,
+        );
+        let vertical = effective_weight(
+            center,
+            HexArchetype::Shaft,
+            10,
+            cfg,
+            Some(ArchitectureRegister::Wellshaft),
+            None,
+        );
+        assert!(
+            open < vertical,
+            "an open district must want fewer shafts than a vertical one ({open} vs {vertical})"
+        );
+    }
+
+    /// No district may drive a legal variant out of contention: solvability is
+    /// not something a composition profile is allowed to trade away.
+    #[test]
+    fn no_district_can_starve_a_legal_variant() {
+        let cfg = config();
+        let center = coord(cfg.cols / 2, cfg.rows / 2, 1);
+        for register in ArchitectureRegister::ALL {
+            for archetype in [
+                HexArchetype::Straight,
+                HexArchetype::Corner,
+                HexArchetype::Junction,
+                HexArchetype::Room,
+                HexArchetype::RampUp,
+                HexArchetype::Shaft,
+            ] {
+                assert!(
+                    effective_weight(center, archetype, 1, cfg, Some(register), None) >= 1,
+                    "{register:?}/{archetype:?} starved a legal variant"
+                );
+                assert!(
+                    effective_weight(center, archetype, 0, cfg, Some(register), None) == 0,
+                    "{register:?}/{archetype:?} revived an illegal variant"
+                );
+            }
+        }
+    }
+
+    /// The profiles are the arc's stated district identities, so they are pinned
+    /// as claims rather than left as constants nobody checks.
+    #[test]
+    fn the_district_profiles_say_what_the_arc_says_they_say() {
+        use ArchitectureRegister as R;
+        use HexArchetype as A;
+        let m = district_multiplier;
+        // Liminal Grid: vast and open.
+        assert!(m(R::LiminalGrid, A::Junction) > m(R::OverlitGrid, A::Junction));
+        assert!(m(R::LiminalGrid, A::Shaft) < 0.5);
+        // Overlit Grid: winding, so turns over branches.
+        assert!(m(R::OverlitGrid, A::Corner) > m(R::OverlitGrid, A::Junction) * 3.0);
+        // The vertical pair, expressed without adding shafts anywhere.
+        assert!(m(R::Wellshaft, A::Shaft) > m(R::LiminalGrid, A::Shaft));
+        assert!(m(R::Megastructure, A::RampUp) > m(R::LiminalGrid, A::RampUp));
+        for register in R::ALL {
+            assert!(
+                m(register, A::Shaft) <= 1.0,
+                "{register:?} boosts shafts above baseline; the facility is already                  half shafts and the generic switchback is the fragile tile"
+            );
+        }
     }
 
     #[test]
@@ -371,14 +575,15 @@ mod tests {
         let c = coord(5, 5, 1);
         let vertical = HexInfluenceField::encourage_verticality();
         // Shaft weight rises under encourage_verticality; a hall is untouched.
-        let shaft_base = effective_weight(c, HexArchetype::Shaft, 10, cfg, None);
-        let shaft_driven = effective_weight(c, HexArchetype::Shaft, 10, cfg, Some(&vertical));
+        let shaft_base = effective_weight(c, HexArchetype::Shaft, 10, cfg, None, None);
+        let shaft_driven = effective_weight(c, HexArchetype::Shaft, 10, cfg, None, Some(&vertical));
         assert!(
             shaft_driven > shaft_base,
             "verticality should raise shaft weight ({shaft_driven} vs {shaft_base})"
         );
-        let hall_base = effective_weight(c, HexArchetype::Straight, 10, cfg, None);
-        let hall_driven = effective_weight(c, HexArchetype::Straight, 10, cfg, Some(&vertical));
+        let hall_base = effective_weight(c, HexArchetype::Straight, 10, cfg, None, None);
+        let hall_driven =
+            effective_weight(c, HexArchetype::Straight, 10, cfg, None, Some(&vertical));
         assert_eq!(hall_base, hall_driven, "verticality must not touch halls");
     }
 
@@ -387,8 +592,8 @@ mod tests {
         let cfg = config();
         let c = coord(5, 5, 3);
         let starve = HexInfluenceField::discourage_recovery_rooms();
-        let base = effective_weight(c, HexArchetype::Room, 10, cfg, None);
-        let driven = effective_weight(c, HexArchetype::Room, 10, cfg, Some(&starve));
+        let base = effective_weight(c, HexArchetype::Room, 10, cfg, None, None);
+        let driven = effective_weight(c, HexArchetype::Room, 10, cfg, None, Some(&starve));
         assert!(driven < base, "recovery rooms should be starved");
         assert!(
             driven >= 1,
@@ -404,8 +609,8 @@ mod tests {
         let extreme = HexInfluenceField::neutral()
             .with_bias(HexArchetype::Shaft, 1_000.0)
             .with_bias(HexArchetype::Room, 0.0);
-        let shaft = effective_weight(c, HexArchetype::Shaft, 10, cfg, Some(&extreme));
-        let room = effective_weight(c, HexArchetype::Room, 10, cfg, Some(&extreme));
+        let shaft = effective_weight(c, HexArchetype::Shaft, 10, cfg, None, Some(&extreme));
+        let room = effective_weight(c, HexArchetype::Room, 10, cfg, None, Some(&extreme));
         // Vertical clamps to <= MAX (4.0) of geometry*static; never explodes.
         let ceiling = (10.0 * INFLUENCE_MAX * VERTICAL_CENTER_BOOST).ceil() as u64;
         assert!(

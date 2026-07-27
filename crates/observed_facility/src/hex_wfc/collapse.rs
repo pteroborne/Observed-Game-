@@ -175,7 +175,7 @@ pub(super) fn collapse_attempt(
     let tables = solver_tables();
     emit(&mut trace, SolveStep::AttemptStart { attempt });
     let mut rng = SplitMix::new(mixed(seed, generation, attempt, 0x4E8C_0FFE_D011_88AA));
-    collapse_attempt_with_blueprints(config, tables, &mut rng, previous, pinned, &[], trace)
+    collapse_attempt_with_blueprints(seed, config, tables, &mut rng, previous, pinned, &[], trace)
 }
 
 /// Collapse only a bounded mutation pocket. Live outside neighbors become
@@ -454,6 +454,7 @@ fn collapse_pocket_domains(
 
 #[allow(clippy::too_many_arguments)]
 fn collapse_attempt_with_blueprints(
+    seed: u64,
     config: HexWfcConfig,
     tables: &SolverTables,
     rng: &mut SplitMix,
@@ -491,7 +492,11 @@ fn collapse_attempt_with_blueprints(
     if !propagate(config, tables, &mut domains, all_cells, &mut trace) {
         return Err("propagation contradiction");
     }
-    if !collapse_domains(config, tables, &mut domains, rng, &mut trace) {
+    // Districts are a pure function of (seed, config), so they are known before
+    // a single cell collapses - which is what lets a district decide what gets
+    // built in it rather than only how it is lit afterwards.
+    let districts = super::relayout::district_sites(seed, config);
+    if !collapse_domains(config, tables, &mut domains, rng, &districts, &mut trace) {
         return Err("collapse contradiction");
     }
     let mut placements = materialize(config, variants, &domains);
@@ -748,6 +753,7 @@ fn collapse_domains(
     tables: &SolverTables,
     domains: &mut [VariantSet],
     rng: &mut SplitMix,
+    districts: &[super::relayout::DistrictSite],
     trace: &mut Option<&mut Vec<SolveStep>>,
 ) -> bool {
     let variants = &tables.variants[..];
@@ -766,10 +772,10 @@ fn collapse_domains(
             .collect();
         let cell = candidates[(rng.next_u64() % candidates.len() as u64) as usize];
 
-        // Geometry-only contextual composition: scale each variant's static
-        // weight by its position in the grid (verticals cluster to the axis,
-        // atria favour upper levels). Never zeroes a legal variant, and draws
-        // the same RNG values in the same order, so determinism is preserved.
+        // Contextual composition: scale each variant's static weight by its
+        // position in the grid and by the district it stands in. Never zeroes a
+        // legal variant, and draws the same RNG values in the same order, so
+        // determinism is preserved.
         let cell_coord = grid.coord(cell);
         let weight_of = |variant: usize| {
             super::context::effective_weight(
@@ -777,6 +783,7 @@ fn collapse_domains(
                 variants[variant].archetype,
                 variants[variant].weight,
                 config,
+                super::relayout::district_of(cell_coord, districts),
                 None,
             )
         };

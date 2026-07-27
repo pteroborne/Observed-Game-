@@ -78,8 +78,11 @@ the catalog, and the projector rather than by playing.
 
 ## Known traps
 
-- **The bot soak.** Composition tendencies were compiled off (`8d6e10d`) because they broke
-  `bot_soak_has_no_stalls`. Reproduce that failure before Phase 107 re-approaches it.
+- ~~**The bot soak.**~~ **Resolved in Phase 107** — the cause was a room-internal vertical
+  link nothing can climb, not the weighting. But the underlying hazard stands: the bot's
+  stair waypoints are hardcoded to the generic switchback's geometry, so any composition
+  change that puts more shafts on routes can stall it (backlog #19). **Phase 109 will hit
+  this**, because authored stair towers have different geometry to those hardcoded targets.
 - **The datagram cliff is not hypothetical.** A sixteen-seat frame bundle at the current
   frame window is roughly 1 808 bytes against a 1 200-byte limit — `encode` returns
   `Oversized`. Chunking is required, not optional.
@@ -122,7 +125,7 @@ Phase-specific as-landed notes and evidence links are added here as each slice i
 - [Phase 104 — Arc M Closeout & Isometric Observer Lab](phase_104_iso_observer.md) `[x]`
 - [Phase 105 — Full-Screen Isometric Tac Map](phase_105_isometric_tac_map.md) `[x]`
 - [Phase 106 — Spatial Districts](phase_106_spatial_districts.md) `[x]`
-- Phase 107 — District Composition Profiles
+- [Phase 107 — District Composition Profiles](phase_107_district_composition.md) `[x]`
 - Phase 108 — The `Expanse` Archetype
 - Phase 109 — Authored Stair Towers & Vertical Rebalance
 - Phase 110 — District-Exclusive Tilesets

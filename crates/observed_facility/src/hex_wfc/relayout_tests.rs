@@ -308,7 +308,14 @@ fn accepted_delta_can_restore_the_exact_previous_world() {
 #[test]
 fn commit_rejects_a_region_that_enters_the_latest_safety_halo() {
     let mut world = HexWfcWorld::generate(0x9304, config()).expect("world");
-    let proposal = candidate(&world, &HexObservationFrame::default());
+    // The fallback candidate is used rather than a collapse one because it
+    // always reports exactly one changed cell. A collapse candidate may now
+    // legitimately report none: since Phase 106 the district lookup no longer
+    // folds the relayout generation in, so a pocket that re-solves to the same
+    // topology genuinely changes nothing.
+    let work = world.begin_relayout(&HexObservationFrame::default());
+    let proposal =
+        fallback_geometry_relayout(&world, work.generation(), work.region(), 1).expect("fallback");
     let changed = *proposal.changed_cells.first().expect("changed cell");
     let mut latest = HexObservationFrame::default();
     latest.visible_cells.insert(changed);

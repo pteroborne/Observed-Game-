@@ -676,6 +676,20 @@ fn architecture_for_cells(
     architecture
 }
 
+/// The district a cell belongs to, for callers holding a prepared site list.
+///
+/// `None` only when the list has no anchor on that cell's level, which cannot
+/// happen for a facility's own sites but keeps the solver honest if it is ever
+/// handed an empty list.
+#[must_use]
+pub fn district_of(coord: HexCoord, sites: &[DistrictSite]) -> Option<ArchitectureRegister> {
+    sites
+        .iter()
+        .filter(|site| site.anchor.level == coord.level)
+        .min_by_key(|site| (lateral_distance(site.anchor, coord), site.register as u8))
+        .map(|site| site.register)
+}
+
 /// The district a cell belongs to: the nearest anchor on its own level.
 ///
 /// Nearest-site ownership is what makes a district contiguous — every cell on
@@ -684,11 +698,7 @@ fn architecture_for_cells(
 /// defined per level, and mixing in a vertical term would let a cell several
 /// floors away win ownership over a neighbour on the same floor.
 fn register_for(coord: HexCoord, sites: &[DistrictSite]) -> ArchitectureRegister {
-    sites
-        .iter()
-        .filter(|site| site.anchor.level == coord.level)
-        .min_by_key(|site| (lateral_distance(site.anchor, coord), site.register as u8))
-        .map_or(ArchitectureRegister::Institutional, |site| site.register)
+    district_of(coord, sites).unwrap_or(ArchitectureRegister::Institutional)
 }
 
 pub(super) fn fallback_geometry_relayout(

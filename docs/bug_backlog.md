@@ -220,22 +220,35 @@ four hexes — has never appeared in a match. Decide per item whether to wire it
 delete it; unreachable authored content silently inflates the catalog and flatters
 the coverage audits.
 
-### 17. Composition tendencies are compiled off after breaking the bot soak
-**Scheduled: Arc O Phase 107** ([arc_o/README.md](arc_o/README.md)).
-**Found 2026-07-26 during the Arc O planning survey.**
-`COMPOSITION_TENDENCIES_ENABLED` is a hardcoded `false`
-(`crates/observed_facility/src/hex_wfc/context.rs:39`), disabling the "verticals
-cluster toward the axis, rooms favour upper levels" weighting that landed in
-`ba1cdac` and was switched off in `8d6e10d` because it broke
-`bot_soak_has_no_stalls`. The dead branch still compiles, so the standing cost is a
-misleading read of `effective_weight` (`context.rs:221`): today the initial solve is
-a pure static-weight lottery with no contextual shaping at all. Reproduce the soak
-failure before re-approaching this — the useful question is whether the tendencies
-starved spawn→exit connectivity or merely made routes longer than the bot's stall
-detector tolerates. Related: `score_layout`'s `archetype_variety` term
-(`crates/observed_facility/src/hex_wfc/score.rs:135`) is a global Shannon entropy
-over seven archetype kinds, and will penalize any deliberate per-district
-specialization that replaces this.
+### 18. A two-level room's internal vertical link is not traversable
+**Scheduled: Arc O Phase 111** ([arc_o/README.md](arc_o/README.md)).
+**Found 2026-07-27 while reproducing the Phase 107 soak failure.** A room
+blueprint that spans two levels (`GuardianControl`) exposes `ShaftOpen` between
+its stacked cells, and nothing can climb it. The bot's stair handling is gated on
+`HexArchetype::Shaft` (`crates/observed_match/src/hex_wfc/model/bot.rs:234,316`)
+and its waypoints are tuned to the generic switchback's own local geometry; the
+room's geometry comes from `blueprint_cell_archetype`, which returns `sanctuary`
+for every role and cell (#15), so there are no treads inside it either.
+Phase 107 stopped the router promising the climb —
+`topology::is_connection_open` no longer treats a room-to-room vertical port as a
+connection — which is a correct guard but not a fix. When #15 gives rooms real
+per-role geometry, a two-level room should get real stairs and this guard should
+be lifted, or the blueprint should stop claiming a vertical port it cannot serve.
+
+### 19. Bots can stall exiting a switchback tower laterally
+**Unscheduled; the standing obstacle to composition work.**
+**Found 2026-07-27 during Phase 107.** With shafts boosted in the vertical
+district profiles, a soak layout stalled all four bots at `(0,1,L0)` — a `Shaft`
+cell they entered and could not leave laterally, at local `(-3.8, 2.6)` against
+lateral-exit targets around `(±3.0, ±5.2)`
+(`crates/observed_match/src/hex_wfc/model/bot.rs:310-330`). The exit waypoints
+are hardcoded to the generic switchback tower's geometry, so any layout that
+routes laterally out of a shaft at an awkward approach angle can trap a bot.
+Phase 107 avoided it by not boosting shafts anywhere — which was the right call
+for other reasons too — but this is the reason composition work keeps tripping
+the soak, and it will bite again in Phase 109 when authored stair towers arrive
+with *different* geometry to the hardcoded targets. Look at:
+`stair_exit_command` and `finish_stair_command`, both of which assume one tile.
 
 ## Minor / hygiene
 
@@ -246,6 +259,17 @@ specialization that replaces this.
 
 ## Fixed
 
+- ~~Composition tendencies are compiled off after breaking the bot soak~~ —
+  fixed 2026-07-27 in Arc O Phase 107
+  ([arc_o/phase_107_district_composition.md](arc_o/phase_107_district_composition.md)).
+  The flag is on and districts now carry per-archetype weight profiles. The
+  failure that disabled it was never the weighting: the tendency shifted exactly
+  one of the 28 routable soak layouts into routing through a two-level room's
+  internal vertical link, which nothing can climb (now #18). Measured, the old
+  weighting produced 0 such routes and the tendency produced 1 — the stalling
+  seed. Guarding the router cleared the soak. Facility-wide shaft share fell from
+  47 % to 31 % as a side effect, and districts now differ by up to 3.3x on an
+  archetype.
 - ~~Architecture registers are assigned as per-cell white noise~~ — fixed
   2026-07-27 in Arc O Phase 106 ([arc_o/phase_106_spatial_districts.md](arc_o/phase_106_spatial_districts.md)).
   `register_for` drew one of nine registers per hex from a SplitMix keyed on the
