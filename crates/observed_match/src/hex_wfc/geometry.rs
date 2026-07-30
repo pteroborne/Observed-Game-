@@ -4,7 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use glam::{Quat, Vec2, Vec3};
 use observed_authoring::{
-    DeckPath, ModuleCellRef, RoomPrototype, StairSpine, TileKey, TileLightKind, TilePrototype,
+    DeckPath, ModuleCellRef, RoomPrototype, RoomSocketKind, StairSpine, TileKey, TileLightKind,
+    TilePrototype,
 };
 use observed_facility::hex_wfc::{
     HexArchetype, HexPlacement, HexRelayoutDelta, HexSpace, HexWfcWorld, PortSignature,
@@ -57,6 +58,18 @@ pub struct HexLightSource {
     pub position: Vec3,
 }
 
+/// One authored gameplay socket projected into facility world space.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HexRoomSocket {
+    pub room_generation_key: u64,
+    pub room_role: RoomRole,
+    pub id: String,
+    pub kind: RoomSocketKind,
+    pub cell: HexCoord,
+    pub position: Vec3,
+    pub yaw_degrees: f32,
+}
+
 impl HexStructurePiece {
     fn collider(&self) -> ColliderSpec {
         ColliderSpec {
@@ -74,6 +87,7 @@ pub struct HexWfcGeometrySnapshot {
     pub generation: u32,
     pub pieces: Vec<HexStructurePiece>,
     pub lights: Vec<HexLightSource>,
+    pub sockets: Vec<HexRoomSocket>,
     /// The walkable line through each cell whose tile has one, in facility
     /// world space. Only vertical circulation carries a climb, so this is a
     /// sparse map rather than a per-cell field.
@@ -102,6 +116,7 @@ pub struct HexWfcGeometrySnapshot {
 struct ProjectedCells {
     pieces: Vec<HexStructurePiece>,
     lights: Vec<HexLightSource>,
+    sockets: Vec<HexRoomSocket>,
     climbs: BTreeMap<HexCoord, StairSpine>,
     decks: BTreeMap<HexCoord, DeckPath>,
 }
@@ -225,6 +240,7 @@ impl HexWfcGeometrySnapshot {
         let ProjectedCells {
             pieces,
             lights,
+            sockets,
             climbs,
             decks,
         } = out;
@@ -238,6 +254,7 @@ impl HexWfcGeometrySnapshot {
             generation: world.generation,
             pieces,
             lights,
+            sockets,
             climbs,
             decks,
             arena,
@@ -325,6 +342,7 @@ impl HexWfcGeometrySnapshot {
         let ProjectedCells {
             pieces: upserted_pieces,
             lights: upserted_lights,
+            sockets: _,
             climbs: upserted_climbs,
             decks: upserted_decks,
         } = upserted;
@@ -805,8 +823,8 @@ fn project_blueprint(
             },
         )?;
         // Boundary stamping seals ports that leave the lattice in simulation.
-        // Authored room prefabs retain the blueprint's full exterior signature;
-        // the arena shell closes those out-of-grid apertures physically.
+        // Authored room prefabs retain the blueprint signature. The arena
+        // shell closes a named threshold physically when it leaves the grid.
         let signature = blueprint.cell_signature(blueprint.cells[index]);
         let tile = tile_for(world, catalogue, coord, archetype, signature)?;
         push_tile(
@@ -934,6 +952,28 @@ fn push_room(
             kind: light.kind,
             position: center + light.position,
         }));
+    out.sockets.extend(room.sockets.iter().map(|socket| {
+        let cell = stamped
+            .cells
+            .iter()
+            .zip(blueprint_for_role(stamped.role).cells.iter())
+            .find_map(|(&absolute, &(q, r, level))| {
+                (i32::from(socket.cell.q) == q
+                    && i32::from(socket.cell.r) == r
+                    && i32::from(socket.cell.level) == level)
+                    .then_some(absolute)
+            })
+            .unwrap_or(stamped.anchor);
+        HexRoomSocket {
+            room_generation_key: stamped.generation_key(),
+            room_role: stamped.role,
+            id: socket.id.clone(),
+            kind: socket.kind,
+            cell,
+            position: center + socket.position,
+            yaw_degrees: socket.yaw_degrees,
+        }
+    }));
     for (index, hull) in room.hulls.iter().enumerate() {
         out.pieces.push(HexStructurePiece {
             id: StableColliderId(

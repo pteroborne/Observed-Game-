@@ -17,7 +17,7 @@
 use bevy::prelude::*;
 use observed_content::ArchitectureRegister;
 use observed_hex::hex_origin;
-use observed_style::{self as style};
+use observed_style::{self as style, HexComposition};
 
 use super::{HexPractical, HexWfcKeyLight};
 use crate::GameState;
@@ -46,6 +46,7 @@ const HEX_KEY_INTENSITY_SCALE: f32 = 0.62;
 pub(super) fn spawn_rig(
     commands: &mut Commands,
     architecture: ArchitectureRegister,
+    composition: HexComposition,
     current: observed_facility::hex_wfc::HexCoord,
     player: &observed_match::hex_wfc::HexPlayerState,
 ) {
@@ -54,14 +55,14 @@ pub(super) fn spawn_rig(
     commands.spawn((
         HexWfcKeyLight,
         DespawnOnExit(GameState::HexWfc),
-        primed_key_light(architecture),
+        primed_key_light(architecture, composition),
         Transform::from_translation(key_translation).with_rotation(key_rotation),
         Name::new("budgeted hex key light"),
     ));
 }
 
-fn primed_key_light(architecture: ArchitectureRegister) -> SpotLight {
-    let palette = style::architecture(architecture);
+fn primed_key_light(architecture: ArchitectureRegister, composition: HexComposition) -> SpotLight {
+    let palette = style::architecture_for_composition(architecture, composition);
     SpotLight {
         color: palette.key_color,
         intensity: palette.key_intensity * HEX_KEY_INTENSITY_SCALE,
@@ -99,9 +100,19 @@ const CHASE_RESPONSE: f32 = 6.0;
 pub(in crate::hex_wfc) fn sync_camera(
     runtime: Res<HexWfcRuntime>,
     spectating: Option<Res<crate::sim::state::SpectatorBot>>,
+    settings: Res<crate::settings::Settings>,
     time: Res<Time>,
     mut camera: Query<&mut Transform, With<GameCam>>,
+    mut projection: Query<&mut Projection, With<GameCam>>,
 ) {
+    if let Ok(mut projection) = projection.single_mut()
+        && let Projection::Perspective(perspective) = &mut *projection
+    {
+        let target = settings.fov_degrees.clamp(50.0, 80.0).to_radians();
+        if (perspective.fov - target).abs() > f32::EPSILON {
+            perspective.fov = target;
+        }
+    }
     let player = runtime.local();
     let Ok(mut transform) = camera.single_mut() else {
         return;
@@ -202,7 +213,8 @@ pub(in crate::hex_wfc) fn sync_lighting_and_atmosphere(
         .get(&current)
         .copied()
         .unwrap_or(observed_content::ArchitectureRegister::ALL[0]);
-    let palette = style::architecture(architecture);
+    let composition = composition_at(&runtime.match_state.facility, current);
+    let palette = style::architecture_for_composition(architecture, composition);
     let t = (time.delta_secs() * BLEND_RATE).clamp(0.0, 1.0);
 
     ambient.color = lerp_color(ambient.color, palette.ambient_color, t);
@@ -238,6 +250,32 @@ pub(in crate::hex_wfc) fn sync_lighting_and_atmosphere(
         light.inner_angle = lerp_f(light.inner_angle, palette.key_inner_angle, t);
         light.outer_angle = lerp_f(light.outer_angle, palette.key_outer_angle, t);
         light.shadows_enabled = palette.key_shadows_enabled;
+    }
+}
+
+pub(super) fn composition_at(
+    world: &observed_facility::hex_wfc::HexWfcWorld,
+    coord: observed_facility::hex_wfc::HexCoord,
+) -> HexComposition {
+    use observed_facility::hex_wfc::HexArchetype;
+
+    if world
+        .blueprints
+        .iter()
+        .any(|blueprint| blueprint.cells.contains(&coord))
+    {
+        return HexComposition::Room;
+    }
+    match world
+        .placements
+        .get(&coord)
+        .map(|placement| placement.archetype)
+    {
+        Some(HexArchetype::Room | HexArchetype::Expanse) => HexComposition::Room,
+        Some(HexArchetype::RampUp | HexArchetype::RampHead | HexArchetype::Shaft) => {
+            HexComposition::Vertical
+        }
+        _ => HexComposition::Hall,
     }
 }
 
@@ -278,8 +316,8 @@ mod tests {
     #[test]
     fn initial_key_values_are_style_owned_targets() {
         for architecture in ArchitectureRegister::ALL {
-            let palette = style::architecture(architecture);
-            let key = primed_key_light(architecture);
+            let palette = style::architecture_for_composition(architecture, HexComposition::Hall);
+            let key = primed_key_light(architecture, HexComposition::Hall);
 
             assert_eq!(key.color, palette.key_color);
             assert_eq!(

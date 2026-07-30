@@ -13,7 +13,21 @@ use observed_hex::hex_origin;
 use player_input::PlayerIntent;
 
 use super::movement::face_plan_dir;
-use super::{FLOOR_SLAB_TOP, HexWfcMatch};
+use super::objectives::HexObjectiveTarget;
+use super::{FLOOR_SLAB_TOP, HexPlayerCommand, HexWfcMatch};
+
+/// One bot's derived route for the current facility generation and objective.
+///
+/// This is presentation/driver acceleration rather than authoritative state: it is
+/// omitted from snapshots and discarded automatically when either the topology or
+/// objective changes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::hex_wfc) struct BotRouteCache {
+    generation: u32,
+    target: HexCoord,
+    from: HexCoord,
+    route: Option<HexRoute>,
+}
 
 /// Most yaw a bot may turn in one 60 Hz tick, in radians.
 ///
@@ -100,14 +114,35 @@ impl HexWfcMatch {
         let Some(player) = self.players.get(&id) else {
             return PlayerIntent::default();
         };
+        if let Some(target) = self.objective_target(id)
+            && target.cell == player.cell
+            && player.position.distance(target.position) > 0.75
+        {
+            return steer_toward(player.yaw, player.position, target.position);
+        }
         let (behaviour, route) = self.bot_behaviour_and_route(id);
+        self.command_for_behaviour(id, behaviour, route.as_ref())
+    }
+
+    fn command_for_behaviour(
+        &self,
+        id: PlayerId,
+        behaviour: BotBehaviour,
+        route: Option<&HexRoute>,
+    ) -> PlayerIntent {
+        let Some(player) = self.players.get(&id) else {
+            return PlayerIntent::default();
+        };
         match behaviour {
             BotBehaviour::Idle => return PlayerIntent::default(),
             BotBehaviour::Explore => return self.explore_command(player),
             BotBehaviour::Seek | BotBehaviour::Recover => {}
         }
         let route = route.expect("Seek/Recover imply a route");
-        let Some(&next) = route.cells.get(1) else {
+        let Some(index) = route.cells.iter().position(|cell| *cell == player.cell) else {
+            return PlayerIntent::default();
+        };
+        let Some(&next) = route.cells.get(index + 1) else {
             return PlayerIntent::default();
         };
         let base = if next.level != player.cell.level {
@@ -144,7 +179,10 @@ impl HexWfcMatch {
         let Some(placement) = self.facility.placements.get(&player.cell) else {
             return PlayerIntent::default();
         };
-        let goal = Vec3::from_array(hex_origin(self.facility.config.exit()));
+        let goal = self.objective_target(player.id).map_or_else(
+            || Vec3::from_array(hex_origin(self.facility.config.exit())),
+            |target| target.position,
+        );
         let grid = self.facility.config.grid();
         let best = HexFace::LATERAL
             .into_iter()
@@ -189,8 +227,73 @@ impl HexWfcMatch {
 
     #[must_use]
     pub(crate) fn bot_objective_cell(&self, id: PlayerId) -> Option<HexCoord> {
-        let player = self.players.get(&id)?;
-        (!player.escaped).then(|| self.facility.config.exit())
+        self.objective_target(id).map(|target| target.cell)
+    }
+
+    /// Complete abstract command used by local bots and the authoritative
+    /// server. Human and bot inputs cross the same intent/action boundary. The
+    /// selected route is retained while the bot advances through it, so normal
+    /// fixed ticks do no graph search at all; a target change, relayout, or
+    /// off-route recovery performs one fresh search.
+    #[must_use]
+    pub fn bot_player_command(&mut self, id: PlayerId) -> HexPlayerCommand {
+        let target = self.objective_target(id);
+        let actions = self.bot_action_buttons_for_target(id, target);
+        let intent = target.map_or_else(PlayerIntent::default, |target| {
+            self.cached_bot_command(id, target)
+        });
+        HexPlayerCommand { intent, actions }
+    }
+
+    fn cached_bot_command(&mut self, id: PlayerId, target: HexObjectiveTarget) -> PlayerIntent {
+        let Some(player) = self.players.get(&id) else {
+            return PlayerIntent::default();
+        };
+        if target.cell == player.cell {
+            return if player.position.distance(target.position) > 0.75 {
+                steer_toward(player.yaw, player.position, target.position)
+            } else {
+                PlayerIntent::default()
+            };
+        }
+        let current = player.cell;
+        let generation = self.facility.generation;
+        let cache_is_usable = self.bot_routes.get(&id).is_some_and(|cache| {
+            cache.generation == generation
+                && cache.target == target.cell
+                && match &cache.route {
+                    Some(route) => route
+                        .cells
+                        .iter()
+                        .position(|cell| *cell == current)
+                        .is_some_and(|index| index + 1 < route.cells.len()),
+                    None => cache.from == current,
+                }
+        });
+        if !cache_is_usable {
+            let route = self.facility.route_between_cells(current, target.cell);
+            self.bot_routes.insert(
+                id,
+                BotRouteCache {
+                    generation,
+                    target: target.cell,
+                    from: current,
+                    route,
+                },
+            );
+        }
+        let route = self
+            .bot_routes
+            .get(&id)
+            .and_then(|cache| cache.route.as_ref());
+        let behaviour = if route.is_none_or(|route| route.cells.len() <= 1) {
+            BotBehaviour::Explore
+        } else if self.stuck_ticks.get(&id).copied().unwrap_or(0) >= STUCK_ENTER_TICKS {
+            BotBehaviour::Recover
+        } else {
+            BotBehaviour::Seek
+        };
+        self.command_for_behaviour(id, behaviour, route)
     }
 
     fn vertical_command(

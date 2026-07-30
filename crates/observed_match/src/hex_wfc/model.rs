@@ -2,14 +2,14 @@
 //! physical stair/ramp walking, threshold-keyed door states, and the
 //! observation frames that pin them — everything Phase 95's game shell drives.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use glam::Vec3;
 use observed_authoring::{RoomPrototype, TilePrototype};
 use observed_core::{CorridorId, PlayerId, RoomId, TeamId};
 use observed_facility::hex_wfc::{
-    HexObservationFrame, HexRelayoutCandidate, HexRelayoutDelta, HexRelayoutWork, HexThresholdKey,
-    HexWfcConfig, HexWfcError, HexWfcWorld, blueprint_for_role,
+    HexObservationFrame, HexRelayoutCandidate, HexRelayoutDelta, HexRelayoutWork, HexRoomQuotas,
+    HexThresholdKey, HexWfcConfig, HexWfcError, HexWfcWorld, blueprint_for_role,
 };
 use observed_hex::{HexCoord, HexFace, hex_origin};
 use observed_traversal::{FpsBody, FpsConfig, rapier_controller::RapierTraversalScene};
@@ -23,6 +23,7 @@ mod guardian;
 mod knowledge;
 mod movement;
 mod mutation;
+mod objectives;
 mod snapshot;
 #[cfg(test)]
 mod tests;
@@ -30,7 +31,8 @@ mod tests;
 pub use equipment::{HexDeployedLantern, HexLanternCache, HexLanternState};
 pub use guardian::{HexGuardianState, HexGuardianStatus};
 pub use knowledge::{HexMapCellKnowledge, HexMapDiscovery, HexPlayerMapKnowledge};
-pub use snapshot::{HexMatchSnapshot, HexPlayerSnapshot};
+pub use objectives::{DUAL_STATION_HOLD_TICKS, HexObjectiveState, KEYSTONES_REQUIRED};
+pub use snapshot::{HexMapCellSnapshot, HexMatchSnapshot, HexPlayerSnapshot, HexTeamSnapshot};
 
 pub(super) const FIXED_DT: f32 = 1.0 / 60.0;
 /// Height of the authored floor surface above a cell's level origin.
@@ -40,7 +42,7 @@ pub(super) const FIXED_DT: f32 = 1.0 / 60.0;
 /// traversal must all agree on this surface or a capsule starts half embedded
 /// in collision.
 pub(super) use observed_hex::FLOOR_SLAB_TOP;
-pub const HEX_INPUT_VERSION: u16 = 4;
+pub const HEX_INPUT_VERSION: u16 = 5;
 
 /// Most players one match may hold. Agrees with `observed_net::lan::MAX_SEATS`
 /// and `observed_progression::session::lan::LAN_MAX_SEATS`; a mismatch shows up
@@ -110,6 +112,11 @@ pub enum HexMatchEventKind {
     /// re-collapse failed, or the candidate no longer projected.
     MutationCancelled,
     LanternCacheCollected,
+    KeystoneCollected,
+    DualStationProgress,
+    DualStationCompleted,
+    MonitorSurveyed,
+    ExitDenied,
     AnchorDeployed,
     AnchorRecovered,
     GuardianCatch,
@@ -141,6 +148,15 @@ pub struct HexTeamState {
     pub members: Vec<PlayerId>,
     pub escaped: bool,
     pub finish_tick: Option<u64>,
+    pub objectives: HexTeamObjectiveState,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct HexTeamObjectiveState {
+    pub keystones: u8,
+    pub dual_station_ticks: u16,
+    pub dual_station_complete: bool,
+    pub dual_station_room: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -221,6 +237,7 @@ pub struct HexWfcMatch {
     pub teams: BTreeMap<TeamId, HexTeamState>,
     pub lanterns: HexLanternState,
     pub guardian: HexGuardianState,
+    pub objectives: HexObjectiveState,
     /// Whether the Guardian hunts this match. See `HexMatchConfig::guardian`.
     pub(super) guardian_active: bool,
     pub map_knowledge: BTreeMap<TeamId, HexPlayerMapKnowledge>,
@@ -268,6 +285,9 @@ pub struct HexWfcMatch {
     /// bounding pass. Excluded from [`HexMatchSnapshot`], which allowlists its fields, so
     /// it cannot affect the digest.
     pub(super) spawn_to_exit_cost: u32,
+    /// Derived bot paths, reusable only while their objective and facility
+    /// generation remain unchanged. Snapshots intentionally omit this cache.
+    pub(super) bot_routes: BTreeMap<PlayerId, bot::BotRouteCache>,
 }
 
 /// The two phases of one relayout cycle: an incremental solve, then a solved
@@ -305,7 +325,17 @@ impl HexWfcMatch {
         {
             return Err(HexMatchError::InvalidRoster);
         }
-        let facility = HexWfcWorld::generate(seed, config.wfc)?;
+        let production_scale =
+            config.wfc.cols >= 28 && config.wfc.rows >= 20 && config.wfc.levels >= 10;
+        let facility = if production_scale {
+            HexWfcWorld::generate_with_room_quotas(
+                seed,
+                config.wfc,
+                HexRoomQuotas::for_team_count(config.teams),
+            )?
+        } else {
+            HexWfcWorld::generate(seed, config.wfc)?
+        };
         let geometry =
             HexWfcGeometrySnapshot::project_with_rooms(&facility, prototypes, room_prototypes)?;
         let physics = geometry.rapier_scene();
@@ -330,6 +360,7 @@ impl HexWfcMatch {
                     members,
                     escaped: false,
                     finish_tick: None,
+                    objectives: HexTeamObjectiveState::default(),
                 },
             );
         }
@@ -370,6 +401,12 @@ impl HexWfcMatch {
             teams,
             lanterns,
             guardian,
+            objectives: HexObjectiveState {
+                enabled: false,
+                keystones_required: objectives::KEYSTONES_REQUIRED,
+                available_keystones: BTreeSet::new(),
+                surveyed_monitors: BTreeSet::new(),
+            },
             guardian_active,
             map_knowledge,
             status: HexMatchStatus::Running,
@@ -388,7 +425,9 @@ impl HexWfcMatch {
             pending_relayout: None,
             next_mutation_tick: mutation::scheduled_mutation_tick(seed, 0),
             spawn_to_exit_cost: 1,
+            bot_routes: BTreeMap::new(),
         };
+        game.objectives = HexObjectiveState::new(&game);
         game.refresh_spawn_to_exit_cost();
         game.observation = game.build_observation();
         game.update_map_knowledge();
@@ -419,6 +458,7 @@ impl HexWfcMatch {
             self.move_player(id, command.intent.sanitized());
             self.step_lantern_actions(id, command.actions);
         }
+        self.step_objectives(frame);
         self.update_stuck_ticks();
         self.recover_fallen_bodies();
         self.observation = self.build_observation();
@@ -454,7 +494,14 @@ impl HexWfcMatch {
             }
         }
         self.lanterns.apply_mutation_pins(&mut frame);
+        frame.landmark_cells.extend(
+            self.facility
+                .blueprints
+                .iter()
+                .flat_map(|blueprint| blueprint.cells.iter().copied()),
+        );
         frame.landmark_cells.insert(self.guardian.cell);
+        frame.objective_cells = self.incomplete_objective_cells();
         frame
     }
 
@@ -591,39 +638,52 @@ impl HexWfcMatch {
 
     fn resolve_escapes(&mut self) {
         let exit = self.facility.config.exit();
-        let mut escaped = Vec::new();
-        for player in self.players.values() {
-            if !player.escaped && player.cell == exit {
-                escaped.push(player.id);
-            }
-        }
-        for id in escaped {
-            self.players.get_mut(&id).expect("player").escaped = true;
-            self.player_escape_order.push(id);
-            self.recent_events.push(HexMatchEvent {
-                tick: self.tick,
-                kind: HexMatchEventKind::PlayerEscaped,
-                player: Some(id),
-                cell: Some(exit),
-            });
-        }
         let finished_teams = self
             .teams
             .iter()
             .filter_map(|(&team, state)| {
                 (!state.escaped
+                    && self.team_authorized_for_exit(team)
                     && state
                         .members
                         .iter()
-                        .all(|player| self.players[player].escaped))
+                        .all(|player| self.players[player].cell == exit))
                 .then_some(team)
             })
             .collect::<Vec<_>>();
         for team in finished_teams {
+            for id in self.teams[&team].members.clone() {
+                self.players.get_mut(&id).expect("player").escaped = true;
+                self.player_escape_order.push(id);
+                self.recent_events.push(HexMatchEvent {
+                    tick: self.tick,
+                    kind: HexMatchEventKind::PlayerEscaped,
+                    player: Some(id),
+                    cell: Some(exit),
+                });
+            }
             let state = self.teams.get_mut(&team).expect("team");
             state.escaped = true;
             state.finish_tick = Some(self.tick);
             self.escape_order.push(team);
+        }
+        if self.objectives.enabled && self.tick.is_multiple_of(60) {
+            for (&team, state) in &self.teams {
+                if !state.escaped
+                    && !self.team_authorized_for_exit(team)
+                    && let Some(&player) = state
+                        .members
+                        .iter()
+                        .find(|player| self.players[player].cell == exit)
+                {
+                    self.recent_events.push(HexMatchEvent {
+                        tick: self.tick,
+                        kind: HexMatchEventKind::ExitDenied,
+                        player: Some(player),
+                        cell: Some(exit),
+                    });
+                }
+            }
         }
         if self.status == HexMatchStatus::Running && self.teams.values().all(|team| team.escaped) {
             self.status = HexMatchStatus::Finished;

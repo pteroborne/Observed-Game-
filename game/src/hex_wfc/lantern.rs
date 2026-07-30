@@ -3,9 +3,11 @@
 //! Every material comes from `observed_style`; geometry communicates state in
 //! addition to colour (cage, core, deployed threshold lock, tall threat body).
 
+use std::collections::BTreeMap;
+
 use bevy::{gltf::GltfAssetLabel, prelude::*};
 use observed_core::{EquipmentId, PlayerId};
-use observed_hex::hex_origin;
+use observed_hex::{HexCoord, hex_origin};
 use observed_style::MarkerRole;
 
 use super::sim::{EYE_OFFSET, HexWfcRuntime};
@@ -23,6 +25,17 @@ pub(super) struct LanternCoreLight(PlayerId);
 
 #[derive(Component)]
 pub(super) struct HexGuardianVisual;
+
+#[derive(Clone, Copy)]
+pub(super) struct LanternSignalSample {
+    seed: u64,
+    generation: u32,
+    player_cell: HexCoord,
+    guardian_cell: HexCoord,
+    inventory: u16,
+    guide: f32,
+    pressure: f32,
+}
 
 #[derive(Resource)]
 pub(super) struct LanternVisualAssets {
@@ -182,6 +195,7 @@ pub(super) fn sync_dynamic(
     mut lanterns: Query<(&LanternVisual, &mut Transform)>,
     mut core_lights: Query<(&LanternCoreLight, &mut PointLight)>,
     mut guardian: Query<&mut Transform, (With<HexGuardianVisual>, Without<LanternVisual>)>,
+    mut signal_cache: Local<BTreeMap<PlayerId, LanternSignalSample>>,
 ) {
     for (visual, mut transform) in &mut lanterns {
         match visual {
@@ -196,10 +210,43 @@ pub(super) fn sync_dynamic(
         }
     }
     for (owner, mut light) in &mut core_lights {
-        let guide = runtime.match_state.lantern_proximity(owner.0);
-        let pressure = runtime.match_state.guardian_pressure(owner.0);
+        let player = &runtime.match_state.players[&owner.0];
+        let inventory = runtime.match_state.lanterns.inventory(owner.0);
+        let seed = runtime.match_state.seed;
+        let generation = runtime.match_state.facility.generation;
+        let guardian_cell = runtime.match_state.guardian.cell;
+        let stale = signal_cache.get(&owner.0).is_none_or(|sample| {
+            sample.seed != seed
+                || sample.generation != generation
+                || sample.player_cell != player.cell
+                || sample.guardian_cell != guardian_cell
+                || sample.inventory != inventory
+        });
+        if stale {
+            signal_cache.insert(
+                owner.0,
+                LanternSignalSample {
+                    seed,
+                    generation,
+                    player_cell: player.cell,
+                    guardian_cell,
+                    inventory,
+                    guide: runtime.match_state.lantern_proximity(owner.0),
+                    pressure: runtime.match_state.guardian_pressure(owner.0),
+                },
+            );
+        }
+        let sample = signal_cache[&owner.0];
+        let pressure = if player.cell == guardian_cell {
+            // Same-cell pressure includes physical distance, not just topology, so it
+            // remains live while the two bodies close on one another. This branch does
+            // no graph search.
+            runtime.match_state.guardian_pressure(owner.0)
+        } else {
+            sample.pressure
+        };
         let pulse = guardian_flicker(runtime.match_state.tick, pressure);
-        let (intensity, range) = carried_light_budget(guide, pulse);
+        let (intensity, range) = carried_light_budget(sample.guide, pulse);
         light.intensity = intensity;
         light.range = range;
     }

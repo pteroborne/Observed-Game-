@@ -12,7 +12,8 @@
 //! - `hall_cap`, `ramp`: the door / exit face index (0..5).
 //! - `hall_corner`: `low_face * 6 + high_face`.
 //! - `hall_junction`: bitmask of open faces (`1 << face_index`).
-//! - rooms: 0 (unique per archetype already).
+//! - rooms: 0 (unique per wing archetype); `room_single` variant 0 is the
+//!   one-threshold room and variant 1 is Start's two-threshold room.
 
 mod catalog;
 mod geometry;

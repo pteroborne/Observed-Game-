@@ -1,7 +1,8 @@
-//! Instances the authoritative hex geometry snapshot: one render mesh per collider
-//! piece, district-tinted by role and source-cell architecture. Tile pieces are grouped
-//! under a per-cell parent so visibility streaming can hide distant cells wholesale; the
-//! outer boundary shell is always visible.
+//! Instances resident portions of the authoritative hex geometry snapshot: one render
+//! mesh per collider piece, district-tinted by role and source-cell architecture. The
+//! simulation owns the complete snapshot; this module keeps only lightweight indices
+//! into it and projects requested cell parents on demand. The outer boundary shell is
+//! small and remains resident for the whole match.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -10,11 +11,11 @@ use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::{HexCoord, HexWfcWorld};
 use observed_hex::hex_origin;
 use observed_match::hex_wfc::{
-    HexLightSource, HexStructurePiece, HexStructureRole, HexTrimPiece, derive_trim, derive_trim_for,
+    HexLightSource, HexStructurePiece, HexStructureRole, HexTrimPiece, derive_trim_for,
 };
 
 use super::assets::HexWfcVisualAssets;
-use super::{HexPractical, HexWfcCell, HexWfcCellFootprint, HexWfcGeometry};
+use super::{HexPractical, HexWfcGeometry};
 use crate::GameState;
 use crate::hex_wfc::sim::HexWfcRuntime;
 
@@ -30,52 +31,98 @@ const PRACTICAL_HEIGHT: f32 = 5.6;
 /// places, preserving the register identity — but every tile stays clearly lit.
 const HALL_RHYTHM_DIM: f32 = 0.7;
 
-pub(super) fn spawn_geometry(
+/// Lightweight, presentation-only lookup into the authoritative geometry vectors.
+///
+/// Keeping indices rather than cloning pieces makes the resident renderer cheap to
+/// construct even for the production-sized facility. A relayout can reorder the
+/// snapshot's packed vectors, so [`HexGeometryCatalog::rebuild`] is called after every
+/// accepted geometry generation before any new resident cell is projected.
+pub(super) struct HexGeometryCatalog {
+    pub(super) generation: u32,
+    pub(super) cells: BTreeMap<HexCoord, CellGeometryIndex>,
+    pub(super) boundary_piece_indices: Vec<usize>,
+}
+
+pub(super) struct CellGeometryIndex {
+    pub(super) footprint: Vec<HexCoord>,
+    pub(super) piece_indices: Vec<usize>,
+    pub(super) light_indices: Vec<usize>,
+}
+
+impl HexGeometryCatalog {
+    pub(super) fn build(runtime: &HexWfcRuntime) -> Self {
+        let world = &runtime.match_state.facility;
+        let geometry = &runtime.match_state.geometry;
+        let mut cells = BTreeMap::<HexCoord, CellGeometryIndex>::new();
+        let mut boundary_piece_indices = Vec::new();
+        for (index, piece) in geometry.pieces.iter().enumerate() {
+            if piece.role == HexStructureRole::Boundary {
+                boundary_piece_indices.push(index);
+                continue;
+            }
+            cells
+                .entry(piece.source_cell)
+                .or_insert_with(|| CellGeometryIndex {
+                    footprint: cell_footprint(world, piece.source_cell),
+                    piece_indices: Vec::new(),
+                    light_indices: Vec::new(),
+                })
+                .piece_indices
+                .push(index);
+        }
+        for (index, light) in geometry.lights.iter().enumerate() {
+            if let Some(cell) = cells.get_mut(&light.source_cell) {
+                cell.light_indices.push(index);
+            }
+        }
+        Self {
+            generation: geometry.generation,
+            cells,
+            boundary_piece_indices,
+        }
+    }
+
+    pub(super) fn rebuild(&mut self, runtime: &HexWfcRuntime) {
+        *self = Self::build(runtime);
+    }
+
+    pub(super) fn contains(&self, coord: HexCoord) -> bool {
+        self.cells.contains_key(&coord)
+    }
+}
+
+/// Result returned to the residency owner after one cell parent is projected. The
+/// entity is a transient presentation handle; the stable key remains [`HexCoord`].
+pub(super) struct SpawnedCell {
+    pub(super) coord: HexCoord,
+    pub(super) entity: Entity,
+    pub(super) child_pieces: usize,
+}
+
+pub(super) fn spawn_boundary(
     commands: &mut Commands,
     assets: &mut HexWfcVisualAssets,
     meshes: &mut Assets<Mesh>,
     runtime: &HexWfcRuntime,
+    catalog: &HexGeometryCatalog,
 ) {
     let world = &runtime.match_state.facility;
     let fallback_arch = *world
         .architecture
         .get(&world.config.spawn())
         .unwrap_or(&ArchitectureRegister::ALL[0]);
-
-    let mut by_cell: BTreeMap<HexCoord, Vec<&HexStructurePiece>> = BTreeMap::new();
-    let mut lights_by_cell: BTreeMap<HexCoord, Vec<&HexLightSource>> = BTreeMap::new();
-    for light in &runtime.match_state.geometry.lights {
-        lights_by_cell
-            .entry(light.source_cell)
-            .or_default()
-            .push(light);
-    }
-    for piece in &runtime.match_state.geometry.pieces {
-        if piece.role == HexStructureRole::Boundary {
-            spawn_piece(commands, assets, meshes, piece, fallback_arch, None, 0);
-        } else {
-            by_cell.entry(piece.source_cell).or_default().push(piece);
+    for (hull_index, &piece_index) in catalog.boundary_piece_indices.iter().enumerate() {
+        if let Some(piece) = runtime.match_state.geometry.pieces.get(piece_index) {
+            spawn_piece(
+                commands,
+                assets,
+                meshes,
+                piece,
+                fallback_arch,
+                None,
+                hull_index,
+            );
         }
-    }
-
-    let trim = derive_trim(&runtime.match_state.geometry);
-    let mut trim_by_cell = group_trim_by_cell(&trim);
-
-    for (coord, pieces) in by_cell {
-        let lights = lights_by_cell.remove(&coord).unwrap_or_default();
-        spawn_cell(
-            commands,
-            assets,
-            meshes,
-            CellProjection {
-                coord,
-                pieces,
-                lights,
-                trim: trim_by_cell.remove(&coord).unwrap_or_default(),
-            },
-            world,
-            fallback_arch,
-        );
     }
 }
 
@@ -116,40 +163,34 @@ pub(super) fn spawn_cells(
     assets: &mut HexWfcVisualAssets,
     meshes: &mut Assets<Mesh>,
     runtime: &HexWfcRuntime,
-    changed: &BTreeSet<HexCoord>,
-) {
+    catalog: &HexGeometryCatalog,
+    requested: &BTreeSet<HexCoord>,
+) -> Vec<SpawnedCell> {
     let world = &runtime.match_state.facility;
     let fallback_arch = *world
         .architecture
         .get(&world.config.spawn())
         .unwrap_or(&ArchitectureRegister::ALL[0]);
-    let mut by_cell: BTreeMap<HexCoord, Vec<&HexStructurePiece>> = BTreeMap::new();
-    let mut lights_by_cell: BTreeMap<HexCoord, Vec<&HexLightSource>> = BTreeMap::new();
-    for light in runtime
-        .match_state
-        .geometry
-        .lights
-        .iter()
-        .filter(|light| changed.contains(&light.source_cell))
-    {
-        lights_by_cell
-            .entry(light.source_cell)
-            .or_default()
-            .push(light);
-    }
-    for piece in runtime.match_state.geometry.pieces.iter().filter(|piece| {
-        piece.role != HexStructureRole::Boundary && changed.contains(&piece.source_cell)
-    }) {
-        by_cell.entry(piece.source_cell).or_default().push(piece);
-    }
-    // Scoped to the changed cells: only their trim is respawned here (the loop below
-    // takes `trim_by_cell` entries for `by_cell` coords and drops the rest), so deriving
-    // it for the whole facility was work thrown away on every relayout commit.
-    let trim = derive_trim_for(&runtime.match_state.geometry, changed);
+    // Trim is derived only for the cells entering residency this frame. In particular,
+    // off-screen relayout cells never pay a presentation rebuild cost.
+    let trim = derive_trim_for(&runtime.match_state.geometry, requested);
     let mut trim_by_cell = group_trim_by_cell(&trim);
-    for (coord, pieces) in by_cell {
-        let lights = lights_by_cell.remove(&coord).unwrap_or_default();
-        spawn_cell(
+    let mut spawned = Vec::with_capacity(requested.len());
+    for &coord in requested {
+        let Some(index) = catalog.cells.get(&coord) else {
+            continue;
+        };
+        let pieces = index
+            .piece_indices
+            .iter()
+            .filter_map(|&piece_index| runtime.match_state.geometry.pieces.get(piece_index))
+            .collect();
+        let lights = index
+            .light_indices
+            .iter()
+            .filter_map(|&light_index| runtime.match_state.geometry.lights.get(light_index))
+            .collect();
+        spawned.push(spawn_cell(
             commands,
             assets,
             meshes,
@@ -157,15 +198,13 @@ pub(super) fn spawn_cells(
                 coord,
                 pieces,
                 lights,
-                // Only the changed cells are rebuilt here, so their trim is
-                // regenerated with them; unchanged cells keep their existing
-                // trim entities.
                 trim: trim_by_cell.remove(&coord).unwrap_or_default(),
             },
             world,
             fallback_arch,
-        );
+        ));
     }
+    spawned
 }
 
 struct CellProjection<'a> {
@@ -182,7 +221,7 @@ fn spawn_cell(
     projection: CellProjection<'_>,
     world: &observed_facility::hex_wfc::HexWfcWorld,
     fallback_arch: ArchitectureRegister,
-) {
+) -> SpawnedCell {
     let CellProjection {
         coord,
         pieces,
@@ -193,11 +232,10 @@ fn spawn_cell(
     let cell_role = pieces
         .first()
         .map_or(HexStructureRole::Hall, |piece| piece.role);
+    let composition = super::lighting::composition_at(world, coord);
     let footprint = cell_footprint(world, coord);
     let cell = commands
         .spawn((
-            HexWfcCell(coord),
-            HexWfcCellFootprint(footprint.clone()),
             HexWfcGeometry,
             DespawnOnExit(GameState::HexWfc),
             Transform::IDENTITY,
@@ -208,7 +246,7 @@ fn spawn_cell(
             )),
         ))
         .id();
-    spawn_cell_practicals(
+    let mut child_pieces = spawn_cell_practicals(
         commands,
         assets,
         meshes,
@@ -218,11 +256,12 @@ fn spawn_cell(
             footprint: &footprint,
             architecture,
             role: cell_role,
+            composition,
             authored_lights: &lights,
         },
     );
     for (index, piece) in pieces.into_iter().enumerate() {
-        spawn_piece(
+        child_pieces += usize::from(spawn_piece(
             commands,
             assets,
             meshes,
@@ -230,10 +269,16 @@ fn spawn_cell(
             architecture,
             Some(cell),
             index,
-        );
+        ));
     }
     for piece in trim {
         spawn_trim(commands, assets, meshes, piece, architecture, cell);
+        child_pieces += 1;
+    }
+    SpawnedCell {
+        coord,
+        entity: cell,
+        child_pieces,
     }
 }
 
@@ -279,6 +324,7 @@ struct PracticalProjection<'a> {
     footprint: &'a [HexCoord],
     architecture: ArchitectureRegister,
     role: HexStructureRole,
+    composition: observed_style::HexComposition,
     authored_lights: &'a [&'a HexLightSource],
 }
 
@@ -287,29 +333,25 @@ fn spawn_cell_practicals(
     assets: &mut HexWfcVisualAssets,
     meshes: &mut Assets<Mesh>,
     projection: PracticalProjection<'_>,
-) {
+) -> usize {
     let PracticalProjection {
         parent,
         coord,
         footprint,
         architecture,
         role,
+        composition,
         authored_lights,
     } = projection;
     if role == HexStructureRole::Boundary {
-        return;
+        return 0;
     }
-    let palette = observed_style::architecture(architecture);
-    let is_place = matches!(
-        role,
-        HexStructureRole::Room | HexStructureRole::Shaft | HexStructureRole::Ramp
-    );
-    let role_scale = match role {
-        HexStructureRole::Shaft => 1.15,
-        HexStructureRole::Room => 1.0,
-        HexStructureRole::Ramp => 0.95,
-        HexStructureRole::Hall => 0.85,
-        HexStructureRole::Boundary => return,
+    let palette = observed_style::architecture_for_composition(architecture, composition);
+    let is_place = composition != observed_style::HexComposition::Hall;
+    let role_scale = match composition {
+        observed_style::HexComposition::Room => 1.0,
+        observed_style::HexComposition::Vertical => 1.05,
+        observed_style::HexComposition::Hall => 0.85,
     };
     let rhythm_dim = if palette.pools_rhythm && !is_place {
         HALL_RHYTHM_DIM
@@ -334,6 +376,7 @@ fn spawn_cell_practicals(
             .collect()
     };
     let per_source_scale = (positions.len() as f32).sqrt().recip().clamp(0.55, 1.0);
+    let mut child_pieces = 0;
     for position in positions {
         if has_authored_lights && matches!(role, HexStructureRole::Room | HexStructureRole::Hall) {
             commands.spawn((
@@ -343,6 +386,7 @@ fn spawn_cell_practicals(
                 ChildOf(parent),
                 Name::new("Authored fluorescent diffuser"),
             ));
+            child_pieces += 1;
         }
         commands.spawn((
             HexPractical(coord),
@@ -361,7 +405,9 @@ fn spawn_cell_practicals(
                 "Authored tile practical"
             }),
         ));
+        child_pieces += 1;
     }
+    child_pieces
 }
 
 fn spawn_piece(
@@ -372,9 +418,9 @@ fn spawn_piece(
     architecture: ArchitectureRegister,
     parent: Option<Entity>,
     hull_index: usize,
-) {
+) -> bool {
     let Some(mesh) = assets.mesh_for(meshes, piece, hull_index) else {
-        return;
+        return false;
     };
     let material = assets.material_for_piece(architecture, piece);
     let mut entity = commands.spawn((
@@ -388,4 +434,5 @@ fn spawn_piece(
     } else {
         entity.insert((HexWfcGeometry, DespawnOnExit(GameState::HexWfc)));
     }
+    true
 }

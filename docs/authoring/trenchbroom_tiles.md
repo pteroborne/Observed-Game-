@@ -57,8 +57,8 @@ does not change in a big-bang migration. Their `.map` geometry is still
 canonical and may be edited safely. New version-2 modules bypass the legacy
 manifest: the game verifies `compiled_catalog.ron`, expands declared rotations
 and register scopes, and adds strict cells directly to WFC selection. Matching
-whole-room modules are selected by role, exact rotated footprint, every external
-port, and named thresholds; one whole-room instance takes precedence over all
+whole-room modules are selected by role, exact rotated footprint, the exact
+named exterior threshold set, and sealed unnamed perimeter faces; one whole-room instance takes precedence over all
 per-cell fallbacks in its footprint. Authored `weight` participates in seeded
 selection. No Rust edit is required after `tilec build`.
 

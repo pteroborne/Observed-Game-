@@ -9,14 +9,15 @@ mod model;
 pub mod trim;
 
 pub use geometry::{
-    HexGeometryDelta, HexGeometryError, HexLightSource, HexStructurePiece, HexStructureRole,
-    HexWfcGeometrySnapshot,
+    HexGeometryDelta, HexGeometryError, HexLightSource, HexRoomSocket, HexStructurePiece,
+    HexStructureRole, HexWfcGeometrySnapshot,
 };
 pub use model::{
-    HEX_INPUT_VERSION, HexActionButtons, HexDeployedLantern, HexDoorState, HexGuardianState,
-    HexGuardianStatus, HexInputFrame, HexLanternCache, HexLanternState, HexMapCellKnowledge,
-    HexMapDiscovery, HexMatchConfig, HexMatchError, HexMatchEvent, HexMatchEventKind,
-    HexMatchSnapshot, HexMatchStatus, HexPlayerCommand, HexPlayerMapKnowledge, HexPlayerSnapshot,
-    HexPlayerState, HexTeamState, HexWfcMatch, MAX_ROSTER,
+    DUAL_STATION_HOLD_TICKS, HEX_INPUT_VERSION, HexActionButtons, HexDeployedLantern, HexDoorState,
+    HexGuardianState, HexGuardianStatus, HexInputFrame, HexLanternCache, HexLanternState,
+    HexMapCellKnowledge, HexMapCellSnapshot, HexMapDiscovery, HexMatchConfig, HexMatchError,
+    HexMatchEvent, HexMatchEventKind, HexMatchSnapshot, HexMatchStatus, HexPlayerCommand,
+    HexPlayerMapKnowledge, HexPlayerSnapshot, HexPlayerState, HexTeamObjectiveState,
+    HexTeamSnapshot, HexTeamState, HexWfcMatch, KEYSTONES_REQUIRED, MAX_ROSTER,
 };
 pub use trim::{HexTrimKind, HexTrimPiece, derive_trim, derive_trim_for};

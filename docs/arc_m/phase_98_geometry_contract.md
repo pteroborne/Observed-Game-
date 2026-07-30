@@ -9,8 +9,8 @@ and collider budgets above 32 hulls per cell or 128 per room. Floor coverage is
 sampled at the centre and six inset corners of every declared solid cell.
 
 Whole-room modules are now production-consumable. Runtime selection requires an
-exact room role, rotated footprint, every external port class, and every named
-threshold. A match projects the selected room once from its anchor and never
+exact room role, rotated footprint, every named exterior threshold, and sealed
+unnamed perimeter faces. A match projects the selected room once from its anchor and never
 also projects the per-cell fallback kit. Incremental mutation replaces the
 whole footprint atomically.
 

@@ -197,34 +197,61 @@ fn blueprint_footprint_cells_match_the_phase_90_alignment() {
             missing.push(format!("{archetype}/{reg}"));
         }
     };
-    // Cell -> internally-sealed faces, straight from the alignment note.
-    let sealed: [(&str, &[HexFace]); 11] = [
-        ("room_double_west", &[HexFace::East]),
-        ("room_double_east", &[HexFace::West]),
-        ("room_double_nw", &[HexFace::SouthEast]),
-        ("room_double_se", &[HexFace::NorthWest]),
-        ("room_tri_a", &[HexFace::East, HexFace::SouthEast]),
-        ("room_tri_b", &[HexFace::West, HexFace::SouthWest]),
-        ("room_tri_c", &[HexFace::NorthWest, HexFace::NorthEast]),
-        ("room_fork_a", &[HexFace::East, HexFace::SouthEast]),
+    // Cell -> open sibling faces plus named exterior thresholds, straight from
+    // the blueprint contract.
+    let openings: [(&str, &[HexFace]); 11] = [
+        ("room_double_west", &[HexFace::East, HexFace::West]),
+        ("room_double_east", &[HexFace::West, HexFace::East]),
+        ("room_double_nw", &[HexFace::SouthEast, HexFace::West]),
+        ("room_double_se", &[HexFace::NorthWest, HexFace::East]),
+        (
+            "room_tri_a",
+            &[HexFace::East, HexFace::SouthEast, HexFace::West],
+        ),
+        (
+            "room_tri_b",
+            &[HexFace::West, HexFace::SouthWest, HexFace::East],
+        ),
+        (
+            "room_tri_c",
+            &[HexFace::NorthWest, HexFace::NorthEast, HexFace::SouthEast],
+        ),
+        (
+            "room_fork_a",
+            &[HexFace::East, HexFace::SouthEast, HexFace::West],
+        ),
         (
             "room_fork_b",
-            &[HexFace::West, HexFace::SouthWest, HexFace::SouthEast],
+            &[
+                HexFace::West,
+                HexFace::SouthWest,
+                HexFace::SouthEast,
+                HexFace::East,
+            ],
         ),
         (
             "room_fork_c",
-            &[HexFace::NorthWest, HexFace::NorthEast, HexFace::East],
+            &[
+                HexFace::NorthWest,
+                HexFace::NorthEast,
+                HexFace::East,
+                HexFace::West,
+            ],
         ),
-        ("room_fork_d", &[HexFace::West, HexFace::NorthWest]),
+        (
+            "room_fork_d",
+            &[HexFace::West, HexFace::NorthWest, HexFace::East],
+        ),
     ];
     for &reg in tile_source::REGISTERS {
-        require("room_single", reg, signature(&doors(&HexFace::LATERAL)));
-        for (archetype, internal) in sealed {
-            let exterior: Vec<HexFace> = HexFace::LATERAL
-                .into_iter()
-                .filter(|face| !internal.contains(face))
-                .collect();
-            require(archetype, reg, signature(&doors(&exterior)));
+        require("room_single", reg, signature(&doors(&[HexFace::West])));
+        require(
+            "room_single",
+            reg,
+            signature(&doors(&[HexFace::West, HexFace::East])),
+        );
+        for (archetype, open) in openings {
+            require(archetype, reg, signature(&doors(open)));
         }
     }
     assert!(missing.is_empty(), "missing blueprint cells: {missing:#?}");

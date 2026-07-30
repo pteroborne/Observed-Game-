@@ -85,8 +85,9 @@ fn traced_and_untraced_solves_agree() {
 }
 
 /// Every stamped world must satisfy the structural invariants: edge symmetry
-/// across all faces, no adjacent open rooms, blueprint footprints disjoint and
-/// spaced by `min_room_distance`, and a spawn→exit route.
+/// across all faces, room↔room openings only inside one blueprint footprint,
+/// blueprint footprints disjoint and spaced by `min_room_distance`, and a
+/// spawn→exit route.
 fn assert_world_valid(world: &HexWfcWorld, seed: u64) {
     let config = world.config;
     let grid = config.grid();
@@ -136,13 +137,19 @@ fn assert_world_valid(world: &HexWfcWorld, seed: u64) {
                             "seed {seed:#x}: asymmetric edge at {:?} {face:?}",
                             placement.coord
                         );
-                        assert!(
-                            !(open
-                                && placement.space == HexSpace::Room
-                                && other.space == HexSpace::Room),
-                            "seed {seed:#x}: adjacent open rooms at {:?}",
-                            placement.coord
-                        );
+                        if open
+                            && placement.space == HexSpace::Room
+                            && other.space == HexSpace::Room
+                        {
+                            assert!(
+                                world.blueprints.iter().any(|blueprint| {
+                                    blueprint.cells.contains(&placement.coord)
+                                        && blueprint.cells.contains(&neighbor)
+                                }),
+                                "seed {seed:#x}: room-room opening outside one footprint at {:?}",
+                                placement.coord
+                            );
+                        }
                     }
                     None => assert!(
                         !open,

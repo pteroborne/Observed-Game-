@@ -556,6 +556,7 @@ mod tests {
             footprint: Vec::new(),
             ports: Vec::new(),
             lights: Vec::new(),
+            sockets: Vec::new(),
             stair_spine: Vec::new(),
             deck_path: Vec::new(),
             structural_hash: String::new(),

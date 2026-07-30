@@ -15,6 +15,7 @@
 //! | footprint width | room / hallway / vertical — rooms fill their hex and meet with no seam, corridors are ribbons |
 //! | link bars | connectivity: one bar per port pair the survivor has seen from both sides |
 //! | cap plate | a cell the survivor is holding: an anchor, or a teammate standing on it |
+//! | literal label | an entered or locally surveyed room's function |
 //!
 //! Signal-tier cells (you, the exit) are recoloured outright so they punch
 //! through the district palette the way the Legibility Contract requires.
@@ -243,6 +244,7 @@ fn legend_text(census: &MapCensus, focus: u8) -> String {
          what can change   {} hallway cells rewire | {} permanent | {} held right now\n\
          rooms and vertical links are permanent; a hallway rewires unless held\n\
          colour = district   width = room/hallway   height = archetype   capped = held by you\n\
+         text = entered or locally surveyed room function\n\
          PageUp/PageDown change floor    Tab close",
         census.traversed,
         census.glimpsed,
@@ -279,6 +281,7 @@ fn signature(runtime: &HexWfcRuntime) -> u64 {
             known.anchored.hash(&mut hasher);
             known.known_ports.0.hash(&mut hasher);
             (known.discovery == HexMapDiscovery::Traversed).hash(&mut hasher);
+            known.room_role.map(|role| role.label()).hash(&mut hasher);
             known.is_stale(world, cell).hash(&mut hasher);
         }
     }

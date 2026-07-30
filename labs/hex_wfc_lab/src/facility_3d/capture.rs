@@ -170,8 +170,12 @@ fn capture_world() -> HexWfcWorld {
         retry_budget: 100,
         min_room_distance: 2,
     };
-    HexWfcWorld::generate(crate::PRESET_SEEDS[0], config)
-        .expect("Phase 92 evidence world must solve")
+    (0..64)
+        .filter_map(|offset| {
+            HexWfcWorld::generate(crate::PRESET_SEEDS[0].wrapping_add(offset), config).ok()
+        })
+        .find(|world| shaft_view(world).is_some())
+        .expect("Phase 92 evidence search must find a full-height shaft")
 }
 
 fn hall_vantage(world: &HexWfcWorld) -> (Vec3, Vec3) {

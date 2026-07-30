@@ -8,6 +8,7 @@ use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::HexWfcWorld;
+use observed_facility::map_spec::RoomRole;
 use observed_hex::{HexCoord, HexFace, PortClass, TILE_LEVEL_HEIGHT, hex_origin, prism_hull};
 use observed_match::hex_wfc::{HexMapDiscovery, HexPlayerMapKnowledge};
 use observed_style::{HexComposition, MarkerRole, hex_link};
@@ -276,7 +277,7 @@ pub(super) fn build(
     }
 
     links(commands, knowledge, world, &mut assets, &mut census);
-    rooms_present(world, knowledge, &mut census);
+    rooms_present(commands, world, knowledge, &mut census);
     census
 }
 
@@ -386,14 +387,60 @@ fn links(
 /// Name the rooms the survivor has actually set foot in or seen part of. A room
 /// is one decision beat, so knowing *which* rooms are on your map is worth more
 /// than knowing how many cells they occupy.
-fn rooms_present(world: &HexWfcWorld, knowledge: &HexPlayerMapKnowledge, census: &mut MapCensus) {
+fn rooms_present(
+    commands: &mut Commands,
+    world: &HexWfcWorld,
+    knowledge: &HexPlayerMapKnowledge,
+    census: &mut MapCensus,
+) {
     for blueprint in &world.blueprints {
-        if blueprint
+        let known_cell = blueprint
             .cells
             .iter()
-            .any(|cell| knowledge.cells.contains_key(cell))
-        {
-            census.rooms.insert(blueprint.role.label().to_string());
-        }
+            .filter_map(|cell| {
+                knowledge
+                    .cells
+                    .get(cell)
+                    .filter(|known| known.room_role == Some(blueprint.role))
+                    .map(|_| *cell)
+            })
+            .min();
+        let Some(cell) = known_cell else { continue };
+        census.rooms.insert(blueprint.role.label().to_string());
+        commands.spawn((
+            HexMapVisual,
+            DespawnOnExit(GameState::HexWfc),
+            Text2d::new(room_label(blueprint.role)),
+            TextFont {
+                font_size: 20.0,
+                ..default()
+            },
+            TextColor(observed_style::marker(MarkerRole::NextRoom).base_color),
+            RenderLayers::layer(MAP_RENDER_LAYER),
+            Transform::from_translation(Vec3::from_array(hex_origin(cell)) + Vec3::Y * 8.0)
+                .with_rotation(Quat::from_euler(
+                    EulerRot::YXZ,
+                    std::f32::consts::FRAC_PI_4,
+                    -0.615_479_7,
+                    0.0,
+                )),
+            Name::new(format!("known {} room label", blueprint.role.label())),
+        ));
+    }
+}
+
+fn room_label(role: RoomRole) -> &'static str {
+    match role {
+        RoomRole::Start => "START",
+        RoomRole::Decision => "DECIDE",
+        RoomRole::DecoherenceFork => "FORK",
+        RoomRole::Keystone => "KEY",
+        RoomRole::DualStation => "SYNC",
+        RoomRole::Monitor => "SURVEY",
+        RoomRole::AnchorCheckpoint => "ANCHOR",
+        RoomRole::GuardianControl => "GUARD",
+        RoomRole::Recovery => "RECOVER",
+        RoomRole::Exit => "EXIT",
+        RoomRole::TeleportRelay => "RELAY",
     }
 }

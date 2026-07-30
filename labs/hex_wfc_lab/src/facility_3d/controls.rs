@@ -12,6 +12,7 @@ pub(super) fn handle_input(
     mode: Res<LabViewMode>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mut motions: MessageReader<MouseMotion>,
+    world: Res<LabState>,
     mut state: ResMut<FacilityState>,
 ) {
     if *mode != LabViewMode::Facility3d {
@@ -22,11 +23,20 @@ pub(super) fn handle_input(
         look += motion.delta;
     }
     state.look = look * 0.06;
-    if keyboard.just_pressed(KeyCode::KeyV) {
+    if keyboard.just_pressed(KeyCode::KeyV) && !super::landmarks::is_production(&state) {
         state.camera_mode = match state.camera_mode {
             CameraMode::Walk => CameraMode::FreeFly,
             CameraMode::FreeFly => CameraMode::Walk,
         };
+    }
+    if keyboard.just_pressed(KeyCode::BracketRight) {
+        super::landmarks::cycle(&world.world, &mut state, true);
+    }
+    if keyboard.just_pressed(KeyCode::BracketLeft) {
+        super::landmarks::cycle(&world.world, &mut state, false);
+    }
+    if keyboard.just_pressed(KeyCode::Home) {
+        super::landmarks::overview(&world.world, &mut state);
     }
     if keyboard.just_pressed(KeyCode::KeyC) {
         state.collider_view = !state.collider_view;
@@ -55,11 +65,17 @@ pub(super) fn handle_input(
             16.0
         };
         state.fly_position += direction.normalize_or_zero() * speed / 60.0;
+        let position = state.fly_position;
+        super::landmarks::track_position(&world.world, &mut state, position);
     }
 }
 
-pub(super) fn step_walk(keyboard: Res<ButtonInput<KeyCode>>, mut state: ResMut<FacilityState>) {
-    if state.camera_mode != CameraMode::Walk {
+pub(super) fn step_walk(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    world: Res<LabState>,
+    mut state: ResMut<FacilityState>,
+) {
+    if state.camera_mode != CameraMode::Walk || super::landmarks::is_production(&state) {
         return;
     }
     let intent = player_intent(&keyboard, state.look);
@@ -76,6 +92,8 @@ pub(super) fn step_walk(keyboard: Res<ButtonInput<KeyCode>>, mut state: ResMut<F
     if !delta.cmplt(safety.safety_half).all() {
         state.body.reset();
     }
+    let position = state.body.position;
+    super::landmarks::track_position(&world.world, &mut state, position);
 }
 
 pub(super) fn reset_world(
@@ -85,10 +103,24 @@ pub(super) fn reset_world(
     mut state: ResMut<FacilityState>,
     mut cancel_relayout: MessageWriter<crate::relayout_demo::CancelRelayout>,
 ) {
-    if *mode == LabViewMode::Facility3d && keyboard.just_pressed(KeyCode::KeyR) {
+    if *mode != LabViewMode::Facility3d {
+        return;
+    }
+    if keyboard.just_pressed(KeyCode::KeyR) {
         let next = world.world.seed.wrapping_add(1);
-        *world = LabState::new(next);
+        *world = world.regenerate(next);
         state.rebuild(&world.world);
+        if world.generation_mode == crate::LabGenerationMode::ProductionCorpus {
+            super::landmarks::overview(&world.world, &mut state);
+        }
+        cancel_relayout.write(Default::default());
+    }
+    if keyboard.just_pressed(KeyCode::KeyP) {
+        *world = world.toggle_generation_mode();
+        state.rebuild(&world.world);
+        if world.generation_mode == crate::LabGenerationMode::ProductionCorpus {
+            super::landmarks::overview(&world.world, &mut state);
+        }
         cancel_relayout.write(Default::default());
     }
 }

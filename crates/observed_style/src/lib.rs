@@ -1309,6 +1309,42 @@ impl HexComposition {
     }
 }
 
+/// Composition-aware atmosphere for the canonical hex facility.
+///
+/// Architecture registers still own hue and character. Composition owns the
+/// tension/release rhythm inside that register: rooms and expanses are bright,
+/// long-sighted places for reading choices; halls retain the register's tense
+/// fog; vertical circulation stays dramatic but cannot become unreadably dark.
+/// Keeping this transform here prevents presentation code from inventing local
+/// light and fog constants.
+#[must_use]
+pub fn architecture_for_composition(
+    register: observed_content::ArchitectureRegister,
+    composition: HexComposition,
+) -> DistrictPalette {
+    let mut palette = architecture(register);
+    match composition {
+        HexComposition::Room => {
+            // Release comes from longer sightlines and continuous local practicals,
+            // not a flat exposure lift. A small bounded fill step preserves black
+            // levels even in registers that already own a bright ambient palette.
+            palette.ambient_brightness =
+                (palette.ambient_brightness + 10.0).min(DISTRICT_MAX_AMBIENT_BRIGHTNESS);
+            palette.fog_start = palette.fog_start.max(20.0);
+            palette.fog_end = palette.fog_end.max(60.0);
+            palette.pools_rhythm = false;
+        }
+        HexComposition::Hall => {}
+        HexComposition::Vertical => {
+            palette.ambient_brightness =
+                (palette.ambient_brightness + 5.0).min(DISTRICT_MAX_AMBIENT_BRIGHTNESS);
+            palette.fog_start = palette.fog_start.max(14.0);
+            palette.fog_end = palette.fog_end.max(45.0);
+        }
+    }
+    palette
+}
+
 /// How one hex is drawn on a map: the height of its slab and how much of its
 /// footprint it fills.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -2159,6 +2195,25 @@ mod tests {
                 ArchitectureSurfaceRole::PracticalFixture
             )
         );
+    }
+
+    #[test]
+    fn hex_room_atmosphere_is_a_bright_release_beat() {
+        for register in observed_content::ArchitectureRegister::ALL {
+            let hall = architecture_for_composition(register, HexComposition::Hall);
+            let room = architecture_for_composition(register, HexComposition::Room);
+            let vertical = architecture_for_composition(register, HexComposition::Vertical);
+
+            assert!(room.ambient_brightness > hall.ambient_brightness);
+            assert!(room.ambient_brightness <= hall.ambient_brightness + 10.0);
+            assert!(room.fog_start >= 20.0);
+            assert!(room.fog_end >= 60.0);
+            assert!(!room.pools_rhythm);
+            assert!(vertical.ambient_brightness > hall.ambient_brightness);
+            assert!(vertical.ambient_brightness <= hall.ambient_brightness + 5.0);
+            assert!(vertical.fog_start >= 14.0);
+            assert!(vertical.fog_end >= 45.0);
+        }
     }
 
     #[test]

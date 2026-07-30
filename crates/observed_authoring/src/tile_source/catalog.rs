@@ -293,42 +293,70 @@ pub(crate) fn library_for(registers: &[&'static str]) -> Vec<GeneratedTile> {
             );
         }
 
-        push(
-            format!("{reg}_room_single.map"),
-            room_single_map(reg),
-            "room_single",
-            reg,
-            0,
-            1,
-            door_ports(&HexFace::LATERAL),
-        );
-        let wings: [(&str, &[HexFace]); 11] = [
-            ("room_double_west", &[HexFace::East]),
-            ("room_double_east", &[HexFace::West]),
-            ("room_double_nw", &[HexFace::SouthEast]),
-            ("room_double_se", &[HexFace::NorthWest]),
-            ("room_tri_a", &[HexFace::East, HexFace::SouthEast]),
-            ("room_tri_b", &[HexFace::West, HexFace::SouthWest]),
-            ("room_tri_c", &[HexFace::NorthWest, HexFace::NorthEast]),
-            ("room_fork_a", &[HexFace::East, HexFace::SouthEast]),
+        for (variant, thresholds) in [
+            (0, &[HexFace::West][..]),
+            (1, &[HexFace::West, HexFace::East][..]),
+        ] {
+            push(
+                format!("{reg}_room_single_v{variant}.map"),
+                room_single_map(reg, variant, thresholds),
+                "room_single",
+                reg,
+                variant,
+                1,
+                door_ports(thresholds),
+            );
+        }
+        let wings: [(&str, &[HexFace], &[HexFace]); 11] = [
+            ("room_double_west", &[HexFace::East], &[HexFace::West]),
+            ("room_double_east", &[HexFace::West], &[HexFace::East]),
+            ("room_double_nw", &[HexFace::SouthEast], &[HexFace::West]),
+            ("room_double_se", &[HexFace::NorthWest], &[HexFace::East]),
+            (
+                "room_tri_a",
+                &[HexFace::East, HexFace::SouthEast],
+                &[HexFace::West],
+            ),
+            (
+                "room_tri_b",
+                &[HexFace::West, HexFace::SouthWest],
+                &[HexFace::East],
+            ),
+            (
+                "room_tri_c",
+                &[HexFace::NorthWest, HexFace::NorthEast],
+                &[HexFace::SouthEast],
+            ),
+            (
+                "room_fork_a",
+                &[HexFace::East, HexFace::SouthEast],
+                &[HexFace::West],
+            ),
             (
                 "room_fork_b",
                 &[HexFace::West, HexFace::SouthWest, HexFace::SouthEast],
+                &[HexFace::East],
             ),
             (
                 "room_fork_c",
                 &[HexFace::NorthWest, HexFace::NorthEast, HexFace::East],
+                &[HexFace::West],
             ),
-            ("room_fork_d", &[HexFace::West, HexFace::NorthWest]),
+            (
+                "room_fork_d",
+                &[HexFace::West, HexFace::NorthWest],
+                &[HexFace::East],
+            ),
         ];
-        for (archetype, open) in wings {
-            let doors: Vec<HexFace> = HexFace::LATERAL
-                .into_iter()
-                .filter(|face| !open.contains(face))
-                .collect();
+        for (archetype, internal, thresholds) in wings {
+            let doors = internal
+                .iter()
+                .chain(thresholds)
+                .copied()
+                .collect::<Vec<_>>();
             push(
                 format!("{reg}_{archetype}.map"),
-                room_wing_map(reg, archetype, open),
+                room_wing_map(reg, archetype, internal, thresholds),
                 archetype,
                 reg,
                 0,
@@ -337,7 +365,7 @@ pub(crate) fn library_for(registers: &[&'static str]) -> Vec<GeneratedTile> {
             );
         }
         let mut lower_ports = vec![("up", "shaft_open")];
-        lower_ports.extend(door_ports(&HexFace::LATERAL));
+        lower_ports.extend(door_ports(&[HexFace::West]));
         push(
             format!("{reg}_room_atrium_lower.map"),
             room_atrium_lower_map(reg),
@@ -348,7 +376,7 @@ pub(crate) fn library_for(registers: &[&'static str]) -> Vec<GeneratedTile> {
             lower_ports,
         );
         let mut upper_ports = vec![("down", "shaft_open")];
-        upper_ports.extend(door_ports(&HexFace::LATERAL));
+        upper_ports.extend(door_ports(&[HexFace::East]));
         push(
             format!("{reg}_room_atrium_upper.map"),
             room_atrium_upper_map(reg),

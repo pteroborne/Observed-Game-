@@ -57,8 +57,10 @@ pub(super) fn catalogue() -> Vec<HexVariant> {
         weight: 4,
     }];
 
-    // 1. Room variants: any lateral door mask, optionally a vertical opening
-    //    for the fixed two-level Guardian Control atrium.
+    // 1. Room variants: any lateral opening mask, optionally a vertical
+    //    opening for the fixed two-level Guardian Control atrium. Stamped
+    //    blueprint cells use matched room↔room openings across their internal
+    //    seams and named doors where the footprint meets a hall.
     for &up in &[PortClass::Sealed, PortClass::ShaftOpen] {
         for &down in &[PortClass::Sealed, PortClass::ShaftOpen] {
             for mask in 0u8..64 {
@@ -315,9 +317,6 @@ pub(super) fn variants_compatible(a: HexVariant, b: HexVariant, face: HexFace) -
         let a_open = a.doors & lateral_bit(face) != 0;
         let b_open = b.doors & lateral_bit(face.opposite()) != 0;
         if a_open != b_open {
-            return false;
-        }
-        if a_open && a.space == HexSpace::Room && b.space == HexSpace::Room {
             return false;
         }
         if a_open && (a.space == HexSpace::Void || b.space == HexSpace::Void) {

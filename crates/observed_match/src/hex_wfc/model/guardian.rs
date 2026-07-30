@@ -8,7 +8,7 @@ use observed_facility::{
     hex_wfc::{HexWfcWorld, MAX_CONNECTION_COST},
     map_spec::RoomRole,
 };
-use observed_hex::{HexCoord, hex_origin};
+use observed_hex::{HexCoord, hex_origin, travel_distance};
 
 use super::{HexLanternState, HexMatchEvent, HexMatchEventKind, HexPlayerState};
 
@@ -154,9 +154,11 @@ fn leading_player(
         .filter(|player| !player.escaped)
         .min_by_key(|player| {
             (
-                world
-                    .route_between_cells(player.cell, world.config.exit())
-                    .map_or(u32::MAX, |route| route.cost_millis),
+                // Target selection runs every fixed tick. Exact A* here made the
+                // Guardian perform one full-facility search per runner even though it
+                // only needs a stable estimate of who is ahead; the route itself is
+                // still resolved when the Guardian takes its infrequent 120-tick step.
+                travel_distance(player.cell, world.config.exit()),
                 player.id,
             )
         })

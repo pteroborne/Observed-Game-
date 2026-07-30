@@ -12,7 +12,7 @@ use crate::map_spec::RoomRole;
 
 use super::blueprint::{self, StampedBlueprint};
 use super::relayout::{DistrictSite, district_of};
-use super::{HexWfcConfig, lateral_bit};
+use super::{HexRoomQuotas, HexWfcConfig, lateral_bit};
 
 /// Every coordinate of the grid in index order.
 pub(super) fn all_coords(config: HexWfcConfig) -> impl Iterator<Item = HexCoord> {
@@ -48,8 +48,9 @@ fn absolute_cells(
     Some(absolute)
 }
 
-/// The boundary-adjusted exterior signature of every stamped blueprint cell:
-/// the blueprint's declared ports with any face that leaves the grid sealed.
+/// The boundary-adjusted signature of every stamped blueprint cell: open
+/// sibling seams plus named exterior thresholds, with any face that leaves the
+/// grid sealed.
 pub(super) fn stamped_signatures(
     config: HexWfcConfig,
     blueprints: &[StampedBlueprint],
@@ -180,6 +181,7 @@ pub(super) fn stamp_blueprints_with_pins(
     rng: &mut SplitMix,
     locked: &[StampedBlueprint],
     districts: &[DistrictSite],
+    room_quotas: Option<HexRoomQuotas>,
 ) -> Vec<StampedBlueprint> {
     // Inclusive, so `max_rooms` is actually reachable. It was
     // `max_rooms - min_rooms`, which for the production 9..=10 contract is 1, so
@@ -188,7 +190,10 @@ pub(super) fn stamp_blueprints_with_pins(
     // could never be reached, which is half of why `DecoherenceFork` had never
     // appeared in a match.
     let span = (config.max_rooms + 1 - config.min_rooms).max(1) as u64;
-    let target = (config.min_rooms + (rng.next_u64() % span) as usize).max(locked.len());
+    let target = room_quotas.map_or_else(
+        || (config.min_rooms + (rng.next_u64() % span) as usize).max(locked.len()),
+        HexRoomQuotas::total_with_start_and_exit,
+    );
 
     let mut pool = vec![
         RoomRole::Decision,
@@ -251,42 +256,63 @@ pub(super) fn stamp_blueprints_with_pins(
         }
     }
 
-    let mut pool_index = 0;
-    while stamped.len() < target && pool_index < pool.len() {
-        let role = pool[pool_index];
-        pool_index += 1;
-        if stamped.iter().any(|blueprint| blueprint.role == role) {
+    let role_targets: Vec<(RoomRole, usize)> = if let Some(quotas) = room_quotas {
+        vec![
+            (RoomRole::GuardianControl, quotas.guardian_control),
+            (RoomRole::DecoherenceFork, quotas.decoherence_fork),
+            (RoomRole::Decision, quotas.decision),
+            (RoomRole::DualStation, quotas.dual_station),
+            (RoomRole::AnchorCheckpoint, quotas.anchor_checkpoint),
+            (RoomRole::Keystone, quotas.keystone),
+            (RoomRole::Monitor, quotas.monitor),
+            (RoomRole::Recovery, quotas.recovery),
+        ]
+    } else {
+        pool.into_iter().map(|role| (role, 1)).collect()
+    };
+    for (role, role_target) in role_targets {
+        if role == RoomRole::GuardianControl && config.levels < 2 {
             continue;
         }
-        // Preferred districts across every candidate first, then anywhere. Two
-        // passes rather than a sort, so a role that cannot be placed in its own
-        // districts still gets the full field rather than a nearly-empty one.
-        let wanted = role_districts(role);
-        let placed = [true, false].into_iter().find_map(|preferred| {
-            if preferred && wanted.is_empty() {
-                return None;
-            }
-            coords.iter().copied().find_map(|anchor| {
-                if preferred
-                    && !district_of(anchor, districts)
-                        .is_some_and(|register| wanted.contains(&register))
-                {
+        while stamped.len() < target
+            && stamped
+                .iter()
+                .filter(|blueprint| blueprint.role == role)
+                .count()
+                < role_target
+        {
+            // Preferred districts across every candidate first, then anywhere. Two
+            // passes rather than a sort, so a role that cannot be placed in its own
+            // districts still gets the full field rather than a nearly-empty one.
+            let wanted = role_districts(role);
+            let placed = [true, false].into_iter().find_map(|preferred| {
+                if preferred && wanted.is_empty() {
                     return None;
                 }
-                stamp_at(role, anchor, true, config, &occupied, &anchors)
-                    .map(|cells| (anchor, cells))
-            })
-        });
-        if let Some((anchor, cells)) = placed {
-            occupied.extend(cells.iter().copied());
-            anchors.push(anchor);
-            stamped.push(StampedBlueprint {
-                id: next_id,
-                role,
-                anchor,
-                cells,
+                coords.iter().copied().find_map(|anchor| {
+                    if preferred
+                        && !district_of(anchor, districts)
+                            .is_some_and(|register| wanted.contains(&register))
+                    {
+                        return None;
+                    }
+                    stamp_at(role, anchor, true, config, &occupied, &anchors)
+                        .map(|cells| (anchor, cells))
+                })
             });
-            next_id = next_id.wrapping_add(1);
+            if let Some((anchor, cells)) = placed {
+                occupied.extend(cells.iter().copied());
+                anchors.push(anchor);
+                stamped.push(StampedBlueprint {
+                    id: next_id,
+                    role,
+                    anchor,
+                    cells,
+                });
+                next_id = next_id.wrapping_add(1);
+            } else {
+                break;
+            }
         }
     }
 

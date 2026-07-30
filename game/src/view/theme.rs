@@ -19,6 +19,64 @@ pub(crate) const BORDER: Color = Color::srgba(0.40, 0.92, 1.0, 0.5);
 /// team signal.
 pub(crate) const WARNING: Color = Color::srgb(1.0, 0.76, 0.30);
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct WidgetVisualState {
+    pub(crate) focused: bool,
+    pub(crate) hovered: bool,
+    pub(crate) pressed: bool,
+    pub(crate) disabled: bool,
+    pub(crate) high_contrast: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct WidgetTreatment {
+    pub(crate) background: Color,
+    pub(crate) border: Color,
+    pub(crate) outline: Color,
+    pub(crate) outline_width: f32,
+}
+
+/// Menu chrome's semantic state mapping. The visible chevron is supplied by the
+/// widget itself; this treatment adds a shape/outline cue so focus never relies on
+/// hue alone.
+pub(crate) fn widget_treatment(state: WidgetVisualState) -> WidgetTreatment {
+    let normal = if state.high_contrast {
+        Color::BLACK
+    } else {
+        Color::srgb(0.07, 0.10, 0.16)
+    };
+    let hovered = if state.high_contrast {
+        Color::srgb(0.08, 0.20, 0.72)
+    } else {
+        Color::srgb(0.09, 0.22, 0.31)
+    };
+    let pressed = if state.high_contrast {
+        Color::srgb(0.0, 0.72, 1.0)
+    } else {
+        Color::srgb(0.12, 0.50, 0.62)
+    };
+    WidgetTreatment {
+        background: if state.disabled {
+            Color::srgb(0.035, 0.045, 0.06)
+        } else if state.pressed {
+            pressed
+        } else if state.hovered {
+            hovered
+        } else {
+            normal
+        },
+        border: if state.focused {
+            Color::WHITE
+        } else if state.disabled {
+            DIM.with_alpha(0.35)
+        } else {
+            BORDER
+        },
+        outline: if state.focused { ACCENT } else { Color::NONE },
+        outline_width: if state.focused { 3.0 } else { 0.0 },
+    }
+}
+
 /// A team's base colour, sourced from `observed_style::team` (Phase 42: team colours
 /// became a style-owned semantic signal — they've been a gameplay signal since rival
 /// frame tints landed). `index` wraps modulo the style crate's own team count.

@@ -2,6 +2,7 @@
 //! [`PlayerIntent`]. The hex match is a spawn→exit traversal race — movement, look,
 //! sprint, ordinary jump, and interaction.
 
+use bevy::ecs::system::SystemParam;
 use bevy::input::gamepad::GamepadButton;
 use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::prelude::*;
@@ -9,27 +10,50 @@ use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow};
 use observed_match::hex_wfc::HexActionButtons;
 use player_input::PlayerIntent;
 
+use super::overlay::{MatchOverlayState, OverlayHotkeys, OverlayRoot, reduce_hotkeys};
 use super::sim::HexWfcIntent;
-use crate::GameState;
+use crate::screens::widgets::UiInputCapture;
 
 const KEY_LOOK_STEP: f32 = 0.035;
+const OVERLAY_TRANSITION_CAPTURE: &str = "hex_overlay_transition";
 
-pub(super) fn map_input(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mouse: Option<Res<AccumulatedMouseMotion>>,
-    gamepads: Query<&Gamepad>,
-    settings: Res<crate::settings::Settings>,
-    mut intent: ResMut<HexWfcIntent>,
-    spectator_bot: Option<Res<crate::sim::state::SpectatorBot>>,
-) {
+#[derive(SystemParam)]
+pub(super) struct HexInputContext<'w, 's> {
+    keyboard: Res<'w, ButtonInput<KeyCode>>,
+    mouse: Option<Res<'w, AccumulatedMouseMotion>>,
+    gamepads: Query<'w, 's, &'static Gamepad>,
+    settings: Res<'w, crate::settings::Settings>,
+    overlay: Res<'w, MatchOverlayState>,
+    capture: Res<'w, UiInputCapture>,
+    onboarding: Option<Res<'w, crate::screens::onboarding::OnboardingState>>,
+    intent: ResMut<'w, HexWfcIntent>,
+    spectator_bot: Option<Res<'w, crate::sim::state::SpectatorBot>>,
+}
+
+pub(super) fn map_input(context: HexInputContext) {
+    let HexInputContext {
+        keyboard,
+        mouse,
+        gamepads,
+        settings,
+        overlay,
+        capture,
+        onboarding,
+        mut intent,
+        spectator_bot,
+    } = context;
     if spectator_bot.is_some() {
-        intent.intent = PlayerIntent::default();
-        intent.actions = HexActionButtons::default();
-        intent.toggle_map = false;
-        intent.browse_map_level = 0;
+        neutralize(&mut intent);
         return;
     }
     let bindings = &settings.bindings;
+    if onboarding.is_some() || capture.is_active() || overlay.captures_local_input() {
+        neutralize(&mut intent);
+        if *overlay == MatchOverlayState::SurvivorMap {
+            intent.browse_map_level = map_level_browse(&keyboard, &gamepads);
+        }
+        return;
+    }
     let axis = |negative: KeyCode, positive: KeyCode| {
         (keyboard.pressed(positive) as i32 - keyboard.pressed(negative) as i32) as f32
     };
@@ -72,10 +96,12 @@ pub(super) fn map_input(
     intent.actions = HexActionButtons {
         interact: keyboard.just_pressed(bindings.interact) || gamepad_intent.interact_pressed,
         deploy_lantern: keyboard.just_pressed(bindings.torch) || gamepad_deploy,
-        recover_lantern: keyboard.just_pressed(KeyCode::KeyR) || gamepad_recover,
+        recover_lantern: keyboard.just_pressed(bindings.recover_lantern) || gamepad_recover,
     };
-    intent.toggle_map |= keyboard.just_pressed(bindings.tac_map);
-    intent.toggle_map |= crate::screens::input::gamepad_map_pressed(&gamepads);
+    intent.browse_map_level = 0;
+}
+
+fn map_level_browse(keyboard: &ButtonInput<KeyCode>, gamepads: &Query<&Gamepad>) -> i8 {
     let keyboard_up =
         keyboard.just_pressed(KeyCode::PageUp) || keyboard.just_pressed(KeyCode::BracketRight);
     let keyboard_down =
@@ -86,32 +112,88 @@ pub(super) fn map_input(
     let gamepad_down = gamepads
         .iter()
         .any(|gamepad| gamepad.just_pressed(GamepadButton::DPadDown));
-    intent.browse_map_level = match (keyboard_up || gamepad_up, keyboard_down || gamepad_down) {
+    match (keyboard_up || gamepad_up, keyboard_down || gamepad_down) {
         (true, false) => 1,
         (false, true) => -1,
         _ => 0,
-    };
+    }
+}
+
+fn neutralize(intent: &mut HexWfcIntent) {
+    intent.intent = PlayerIntent::default();
+    intent.actions = HexActionButtons::default();
+    intent.browse_map_level = 0;
 }
 
 pub(super) fn mode_hotkeys(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut next: ResMut<NextState<GameState>>,
-    runtime: Option<Res<super::sim::HexWfcRuntime>>,
-    mut lan: ResMut<crate::lan::LanRuntime>,
+    gamepads: Query<&Gamepad>,
+    settings: Res<crate::settings::Settings>,
+    mut capture: ResMut<UiInputCapture>,
+    onboarding: Option<Res<crate::screens::onboarding::OnboardingState>>,
+    overlay_roots: Query<(), With<OverlayRoot>>,
+    mut overlay: ResMut<MatchOverlayState>,
 ) {
-    if keyboard.just_pressed(KeyCode::Escape) {
-        if runtime.is_some_and(|runtime| runtime.networked) {
-            lan.leave();
+    // A higher-priority match overlay (for example first-run onboarding) owns
+    // Escape/East while captured. Its semantic widget handles dismissal, and this
+    // press must never leak through into Pause on the same frame.
+    if onboarding.is_some() || capture.is_active() {
+        return;
+    }
+    let hotkeys = OverlayHotkeys {
+        pause: keyboard.just_pressed(settings.bindings.pause)
+            || gamepads
+                .iter()
+                .any(|gamepad| gamepad.just_pressed(GamepadButton::Start)),
+        map: keyboard.just_pressed(settings.bindings.tac_map)
+            || crate::screens::input::gamepad_map_pressed(&gamepads),
+        back: keyboard.just_pressed(KeyCode::Escape)
+            || gamepads
+                .iter()
+                .any(|gamepad| gamepad.just_pressed(GamepadButton::East)),
+    };
+    // Escape/East on a rendered pause page belongs to that page's semantic Back
+    // widget. This guard makes the result independent of whether the shared focus
+    // system happens to run before or after this adapter in Update.
+    if hotkeys.back && !overlay_roots.is_empty() {
+        return;
+    }
+    let next = reduce_hotkeys(*overlay, hotkeys);
+    if next != *overlay {
+        if !matches!(*overlay, MatchOverlayState::Pause(_))
+            && matches!(next, MatchOverlayState::Pause(_))
+        {
+            capture.capture(OVERLAY_TRANSITION_CAPTURE);
         }
-        next.set(GameState::MainMenu);
+        *overlay = next;
+    }
+}
+
+/// Release the one-frame guard used when a pause page is created from the same
+/// input edge that semantic widgets also observe. The owner-qualified release cannot
+/// disturb onboarding or rebind capture.
+pub(super) fn release_overlay_transition_capture(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    gamepads: Query<&Gamepad>,
+    settings: Res<crate::settings::Settings>,
+    mut capture: ResMut<UiInputCapture>,
+) {
+    let opening_edge = keyboard.just_pressed(settings.bindings.pause)
+        || gamepads
+            .iter()
+            .any(|gamepad| gamepad.just_pressed(GamepadButton::Start));
+    if !opening_edge {
+        capture.release(OVERLAY_TRANSITION_CAPTURE);
     }
 }
 
 pub(super) fn grab_cursor(
     mut cursors: Query<&mut CursorOptions, With<PrimaryWindow>>,
     spectator_bot: Option<Res<crate::sim::state::SpectatorBot>>,
+    settings: Res<crate::settings::Settings>,
 ) {
     if spectator_bot.is_none()
+        && !settings.needs_onboarding()
         && let Ok(mut cursor) = cursors.single_mut()
     {
         cursor.grab_mode = CursorGrabMode::Locked;
@@ -123,5 +205,121 @@ pub(super) fn release_cursor(mut cursors: Query<&mut CursorOptions, With<Primary
     if let Ok(mut cursor) = cursors.single_mut() {
         cursor.grab_mode = CursorGrabMode::None;
         cursor.visible = true;
+    }
+}
+
+/// Match cursor ownership is derived from modal state, never from the button that
+/// happened to open or close it. This also repairs ownership after pointer activation.
+pub(super) fn sync_cursor(
+    overlay: Res<MatchOverlayState>,
+    capture: Res<UiInputCapture>,
+    onboarding: Option<Res<crate::screens::onboarding::OnboardingState>>,
+    spectator_bot: Option<Res<crate::sim::state::SpectatorBot>>,
+    mut cursors: Query<&mut CursorOptions, With<PrimaryWindow>>,
+) {
+    let Ok(mut cursor) = cursors.single_mut() else {
+        return;
+    };
+    let grab = *overlay == MatchOverlayState::Playing
+        && !capture.is_active()
+        && onboarding.is_none()
+        && spectator_bot.is_none();
+    cursor.grab_mode = if grab {
+        CursorGrabMode::Locked
+    } else {
+        CursorGrabMode::None
+    };
+    cursor.visible = !grab;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::overlay::PausePage;
+    use super::*;
+
+    #[test]
+    fn pausing_neutralizes_every_held_and_one_shot_input() {
+        let mut app = App::new();
+        let mut keyboard = ButtonInput::<KeyCode>::default();
+        keyboard.press(KeyCode::KeyW);
+        keyboard.press(KeyCode::Space);
+        app.insert_resource(keyboard)
+            .insert_resource(crate::settings::Settings::default())
+            .insert_resource(MatchOverlayState::Pause(PausePage::Root))
+            .insert_resource(UiInputCapture::default())
+            .insert_resource(HexWfcIntent {
+                intent: PlayerIntent {
+                    movement: Vec2::ONE,
+                    look: Vec2::ONE,
+                    jump_pressed: true,
+                    sprint_held: true,
+                    interact_held: true,
+                    ..Default::default()
+                },
+                actions: HexActionButtons {
+                    interact: true,
+                    deploy_lantern: true,
+                    recover_lantern: true,
+                },
+                browse_map_level: 1,
+            })
+            .add_systems(Update, map_input);
+
+        app.update();
+
+        let intent = app.world().resource::<HexWfcIntent>();
+        assert!(intent.intent.is_neutral());
+        assert_eq!(intent.actions, HexActionButtons::default());
+        assert_eq!(intent.browse_map_level, 0);
+    }
+
+    #[test]
+    fn higher_priority_input_capture_consumes_escape_before_pause() {
+        let mut app = App::new();
+        let mut keyboard = ButtonInput::<KeyCode>::default();
+        keyboard.press(KeyCode::Escape);
+        let mut capture = UiInputCapture::default();
+        capture.capture("hex.onboarding.test");
+        app.insert_resource(keyboard)
+            .insert_resource(crate::settings::Settings::default())
+            .insert_resource(MatchOverlayState::Playing)
+            .insert_resource(capture)
+            .add_systems(Update, mode_hotkeys);
+
+        app.update();
+
+        assert_eq!(
+            *app.world().resource::<MatchOverlayState>(),
+            MatchOverlayState::Playing
+        );
+    }
+
+    #[test]
+    fn opening_pause_holds_capture_through_the_triggering_edge() {
+        let mut app = App::new();
+        let mut keyboard = ButtonInput::<KeyCode>::default();
+        keyboard.press(KeyCode::Escape);
+        app.insert_resource(keyboard)
+            .insert_resource(crate::settings::Settings::default())
+            .insert_resource(MatchOverlayState::Playing)
+            .insert_resource(UiInputCapture::default())
+            .add_systems(
+                Update,
+                (mode_hotkeys, release_overlay_transition_capture).chain(),
+            );
+
+        app.update();
+
+        assert_eq!(
+            *app.world().resource::<MatchOverlayState>(),
+            MatchOverlayState::Pause(PausePage::Root)
+        );
+        assert!(app.world().resource::<UiInputCapture>().is_active());
+
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .clear();
+        app.update();
+        assert!(!app.world().resource::<UiInputCapture>().is_active());
     }
 }

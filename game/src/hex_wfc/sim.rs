@@ -2,12 +2,10 @@
 //! pure authoritative hex-facility match.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::OnceLock;
 
-use crate::settings::Settings;
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
-use observed_authoring::{RoomPrototype, RuntimeHexCatalog, TilePrototype};
-use observed_content::ArchitectureRegister;
+use observed_authoring::TilePrototype;
 use observed_core::PlayerId;
 use observed_facility::hex_wfc::{HexCoord, HexWfcConfig};
 use observed_match::hex_wfc::{
@@ -16,6 +14,11 @@ use observed_match::hex_wfc::{
 use player_input::PlayerIntent;
 
 use crate::flow::ActiveMatchSeed;
+
+use super::HexOnboardingGate;
+use super::launch::{HexAuthoringCorpus, HexLaunchError, HexLaunchSpec, HexSeedPolicy, prepare};
+use super::loading::{HexLaunchRequest, PreparedHexLaunchSlot};
+use super::overlay::{MatchOverlayState, SimulationPolicy, simulation_policy};
 
 pub(super) const LOCAL_PLAYER: PlayerId = PlayerId(0);
 /// Camera eye rise above the simulation body centre, in metres.
@@ -26,7 +29,6 @@ pub(super) const EYE_OFFSET: f32 = 0.70;
 pub(super) struct HexWfcIntent {
     pub intent: PlayerIntent,
     pub actions: HexActionButtons,
-    pub toggle_map: bool,
     /// One-shot survivor-map floor browse request (`1` up, `-1` down).
     pub browse_map_level: i8,
 }
@@ -55,20 +57,14 @@ impl HexWfcRuntime {
 }
 
 /// Resolve the workspace tile directory without involving presentation.
+#[cfg(test)]
 fn tile_dir() -> std::path::PathBuf {
-    observed_assets::assets_root().join("tiles")
+    super::launch::tile_dir()
 }
 
 /// Load the same authored-plus-compatibility corpus used by tests and evidence.
 pub(crate) fn load_prototypes() -> Vec<TilePrototype> {
     load_authoring_corpus().cells
-}
-
-#[derive(Clone)]
-struct HexAuthoringCorpus {
-    cells: Vec<TilePrototype>,
-    rooms: Vec<RoomPrototype>,
-    simulation_content_hash: [u8; 32],
 }
 
 pub(crate) fn simulation_content_hash() -> [u8; 32] {
@@ -79,32 +75,19 @@ pub(crate) fn match_from_launch(
     seed: u64,
     config: HexMatchConfig,
     expected_hash: [u8; 32],
-) -> Result<HexWfcMatch, String> {
-    let corpus = load_authoring_corpus();
-    if corpus.simulation_content_hash != expected_hash {
-        return Err("server simulation content does not match this client".to_string());
-    }
-    let mut game = HexWfcMatch::new_with_rooms(seed, config, &corpus.cells, &corpus.rooms)
-        .map_err(|error| format!("construct network match: {error:?}"))?;
-    game.bind_simulation_content_hash(expected_hash);
-    Ok(game)
+) -> Result<HexWfcMatch, HexLaunchError> {
+    prepare(HexLaunchSpec {
+        requested_seed: seed,
+        config,
+        seed_policy: HexSeedPolicy::Exact {
+            expected_content_hash: expected_hash,
+        },
+    })
+    .map(|prepared| prepared.match_state)
 }
 
 fn load_authoring_corpus() -> HexAuthoringCorpus {
-    static CORPUS: OnceLock<HexAuthoringCorpus> = OnceLock::new();
-    CORPUS
-        .get_or_init(|| {
-            let base = tile_dir();
-            let register_slugs = ArchitectureRegister::ALL.map(ArchitectureRegister::slug);
-            let loaded = RuntimeHexCatalog::load(&base, &register_slugs)
-                .expect("committed runtime hex catalog loads");
-            HexAuthoringCorpus {
-                cells: loaded.cells,
-                rooms: loaded.rooms,
-                simulation_content_hash: loaded.simulation_content_hash,
-            }
-        })
-        .clone()
+    super::launch::load_current_corpus().expect("committed runtime hex catalog loads")
 }
 
 /// Tests swap the production 28×20×10 solve for the compact showcase fixture.
@@ -125,15 +108,11 @@ fn is_test_binary() -> bool {
 /// the match to the seats a human occupies rather than leaving bot-shaped bodies
 /// standing in the facility, which is what filling a seat with no driver would
 /// mean.
-fn runtime_config_for(settings: &Settings) -> HexMatchConfig {
-    let mut config = HexMatchConfig {
-        guardian: settings.guardian,
-        ..HexMatchConfig::default()
-    };
-    if !settings.bot_fill {
-        config.teams = 1;
-        config.members_per_team = 1;
-    }
+pub(crate) fn runtime_config_for(play_setup: &crate::play_setup::PlaySetupDraft) -> HexMatchConfig {
+    let validated = play_setup
+        .validate()
+        .expect("persisted play setup is validated before launch");
+    let mut config = validated.local_match_config(HexMatchConfig::default().wfc);
     let relayout_capture = std::env::var("OBSERVED2_CAPTURE_HEX_WFC_RELAYOUT").is_ok();
     let traversal_capture = std::env::var("OBSERVED2_CAPTURE_HEX_WFC_TRAVERSAL").is_ok();
     let playtest = std::env::var("OBSERVED2_HEX_PLAYTEST")
@@ -150,53 +129,91 @@ fn runtime_config_for(settings: &Settings) -> HexMatchConfig {
     config
 }
 
-fn solve_nearby_with_rooms(
-    requested_seed: u64,
-    corpus: &HexAuthoringCorpus,
-    settings: &Settings,
-) -> (HexWfcMatch, u64) {
-    let config = runtime_config_for(settings);
-    (0..64u64)
-        .find_map(|offset| {
-            HexWfcMatch::new_with_rooms(
-                requested_seed.wrapping_add(offset),
-                config,
-                &corpus.cells,
-                &corpus.rooms,
-            )
-            .ok()
-            .map(|game| (game, offset))
-        })
-        .expect("the hex authoring catalog must contain a solvable nearby seed")
-}
-
 pub(super) fn setup_runtime(
     mut commands: Commands,
-    seed: Option<Res<ActiveMatchSeed>>,
+    mut seed: Option<ResMut<ActiveMatchSeed>>,
     mut career: ResMut<crate::flow::Career>,
-    lan: Res<crate::lan::LanRuntime>,
-    settings: Res<Settings>,
+    play_setup: Res<crate::play_setup::PlaySetupDraft>,
+    request: Option<Res<HexLaunchRequest>>,
+    mut prepared_slot: Option<ResMut<PreparedHexLaunchSlot>>,
+    direct_driver: Option<Res<crate::sim::state::SpectatorBot>>,
 ) {
     career.begin_match();
-    let network_launch = lan.client.as_ref().and_then(|client| client.launch);
-    let (match_state, local_player, seed_offset, networked) =
-        if let Some((launch_seed, _, config, content_hash)) = network_launch {
-            let game = match_from_launch(launch_seed, config, content_hash)
-                .expect("a compatible LAN launch constructs locally");
-            let local_player = lan
-                .client
-                .as_ref()
-                .and_then(|client| client.player)
-                .expect("welcomed LAN client has a stable player seat");
-            (game, local_player, 0, true)
-        } else {
-            let requested_seed = seed.as_deref().map_or(0xF011_FAC1_1177, |seed| seed.0);
-            let corpus = load_authoring_corpus();
-            let (mut game, seed_offset) =
-                solve_nearby_with_rooms(requested_seed, &corpus, &settings);
-            game.bind_simulation_content_hash(corpus.simulation_content_hash);
-            (game, LOCAL_PLAYER, seed_offset, false)
-        };
+    let handed_off = prepared_slot
+        .as_deref_mut()
+        .and_then(PreparedHexLaunchSlot::take);
+    let (prepared, local_player, networked, spectator, context, launch_config) = if let Some(
+        prepared,
+    ) = handed_off
+    {
+        let request = request
+            .as_deref()
+            .expect("a prepared hex launch retains its finalized request metadata");
+        (
+            prepared,
+            request.local_player,
+            request.networked,
+            request.spectator,
+            Some(request.context),
+            request.spec.config,
+        )
+    } else {
+        assert!(
+            request.is_none(),
+            "a finalized hex launch request must pass through Loading before HexWfc"
+        );
+        assert!(
+            is_test_binary() || direct_driver.is_some(),
+            "HexWfc entered without a prepared launch; production launches must pass through Loading"
+        );
+        // Regression tests and autonomous evidence captures intentionally enter
+        // HexWfc directly. Keep that private harness path deterministic while all
+        // player-facing launches consume the asynchronous prepared handoff above.
+        let requested_seed = seed.as_deref().map_or(0xF011_FAC1_1177, |seed| seed.0);
+        let config = runtime_config_for(&play_setup);
+        let prepared = prepare(HexLaunchSpec {
+            requested_seed,
+            config,
+            seed_policy: HexSeedPolicy::Nearby,
+        })
+        .expect("the hex authoring catalog must contain a solvable nearby seed");
+        debug_assert_eq!(prepared.requested_seed, requested_seed);
+        debug_assert_eq!(prepared.selected_seed, prepared.match_state.seed);
+        debug_assert_eq!(
+            prepared.simulation_content_hash,
+            prepared.match_state.simulation_content_hash
+        );
+        (
+            prepared,
+            LOCAL_PLAYER,
+            false,
+            direct_driver.is_some(),
+            None,
+            config,
+        )
+    };
+    debug_assert_eq!(prepared.selected_seed, prepared.match_state.seed);
+    debug_assert_eq!(
+        prepared.simulation_content_hash,
+        prepared.match_state.simulation_content_hash
+    );
+    if let Some(seed) = seed.as_deref_mut() {
+        seed.0 = prepared.selected_seed;
+    } else {
+        commands.insert_resource(ActiveMatchSeed(prepared.selected_seed));
+    }
+    if spectator && direct_driver.is_none() {
+        commands.insert_resource(crate::sim::state::SpectatorBot::for_seed(
+            prepared.selected_seed,
+        ));
+    }
+    commands.insert_resource(crate::play_setup::ActivePlaySession::from_launch(
+        launch_config,
+        spectator,
+        networked,
+    ));
+    let seed_offset = prepared.seed_offset;
+    let match_state = prepared.match_state;
     let replay = crate::sim::replay::ReplayTape::new_hex_wfc_for_player(&match_state, local_player);
     let map_level = match_state.players[&local_player].cell.level;
     let presented_revisions = match_state.facility.cell_revisions.clone();
@@ -206,7 +223,16 @@ pub(super) fn setup_runtime(
         pending_visual_cells: BTreeSet::new(),
         presented_revisions,
         status: if seed_offset == 0 {
-            "authoritative hex facility ready".to_string()
+            match context {
+                Some(crate::play_setup::LaunchContext::Local) => {
+                    "local hex facility ready".to_string()
+                }
+                Some(crate::play_setup::LaunchContext::Rematch) => {
+                    "rematch hex facility ready".to_string()
+                }
+                Some(crate::play_setup::LaunchContext::Lan) => "LAN hex facility ready".to_string(),
+                None => "authoritative hex facility ready".to_string(),
+            }
         } else {
             format!("seed advanced by {seed_offset} after solve contradictions")
         },
@@ -218,6 +244,8 @@ pub(super) fn setup_runtime(
     });
     commands.insert_resource(HexWfcIntent::default());
     commands.insert_resource(replay);
+    commands.remove_resource::<PreparedHexLaunchSlot>();
+    commands.remove_resource::<HexLaunchRequest>();
 }
 
 pub(super) fn finish_runtime(
@@ -248,21 +276,21 @@ pub(super) fn cleanup_runtime(mut commands: Commands) {
     commands.remove_resource::<crate::sim::state::SpectatorBot>();
 }
 
+#[derive(SystemParam)]
+pub(super) struct SimulationControl<'w> {
+    overlay: Res<'w, MatchOverlayState>,
+    onboarding: Res<'w, HexOnboardingGate>,
+}
+
 pub(super) fn step_runtime(
     mut intent: ResMut<HexWfcIntent>,
     mut runtime: ResMut<HexWfcRuntime>,
+    control: SimulationControl,
     mut replay: Option<ResMut<crate::sim::replay::ReplayTape>>,
     spectator_bot: Option<Res<crate::sim::state::SpectatorBot>>,
     mut lan: ResMut<crate::lan::LanRuntime>,
     mut next: ResMut<NextState<crate::GameState>>,
 ) {
-    if intent.toggle_map {
-        runtime.map_open = !runtime.map_open;
-        if runtime.map_open {
-            runtime.map_level = runtime.local().cell.level;
-        }
-        intent.toggle_map = false;
-    }
     if runtime.map_open && intent.browse_map_level != 0 {
         let discovered = runtime
             .match_state
@@ -272,16 +300,24 @@ pub(super) fn step_runtime(
         runtime.map_level = browsed_level(&discovered, runtime.map_level, intent.browse_map_level);
     }
     intent.browse_map_level = 0;
-    if runtime.match_state.status == HexMatchStatus::Finished {
-        clear_one_shot_input(&mut intent.intent);
-        intent.actions = HexActionButtons::default();
+    let policy = simulation_policy(
+        *control.overlay,
+        runtime.networked,
+        control.onboarding.active,
+    );
+    if policy == SimulationPolicy::Stop {
+        neutralize_input(&mut intent);
         return;
     }
-    let local_command = if spectator_bot.is_some() {
-        HexPlayerCommand {
-            intent: runtime.match_state.bot_command(runtime.local_player),
-            actions: HexActionButtons::default(),
-        }
+    if runtime.match_state.status == HexMatchStatus::Finished {
+        finish_input_tick(&mut intent, policy);
+        return;
+    }
+    let local_player = runtime.local_player;
+    let local_command = if policy.sends_neutral_input() {
+        HexPlayerCommand::default()
+    } else if spectator_bot.is_some() {
+        runtime.match_state.bot_player_command(local_player)
     } else {
         HexPlayerCommand {
             intent: intent.intent,
@@ -291,8 +327,7 @@ pub(super) fn step_runtime(
     if runtime.networked {
         let Some(client) = lan.client.as_mut() else {
             runtime.status = "LAN server disconnected".to_string();
-            clear_one_shot_input(&mut intent.intent);
-            intent.actions = HexActionButtons::default();
+            finish_input_tick(&mut intent, policy);
             return;
         };
         client.poll();
@@ -333,9 +368,9 @@ pub(super) fn step_runtime(
         }
         if request_resync {
             let launch = client.launch;
-            match launch
-                .and_then(|(seed, _, config, hash)| match_from_launch(seed, config, hash).ok())
-            {
+            match launch.and_then(|launch| {
+                match_from_launch(launch.seed, launch.config, launch.simulation_content_hash).ok()
+            }) {
                 Some(match_state) => {
                     runtime.match_state = match_state;
                     runtime.presented_revisions =
@@ -372,8 +407,7 @@ pub(super) fn step_runtime(
         if let Some(event) = runtime.match_state.recent_events.last() {
             runtime.status = super::cues::cue_for(event.kind).label.to_string();
         }
-        clear_one_shot_input(&mut intent.intent);
-        intent.actions = HexActionButtons::default();
+        finish_input_tick(&mut intent, policy);
         if repeated_desync {
             lan.leave();
             next.set(crate::GameState::MainMenu);
@@ -393,13 +427,9 @@ pub(super) fn step_runtime(
         .collect::<Vec<_>>()
     {
         if id != runtime.local_player {
-            frame.commands.insert(
-                id,
-                HexPlayerCommand {
-                    intent: runtime.match_state.bot_command(id),
-                    actions: HexActionButtons::default(),
-                },
-            );
+            frame
+                .commands
+                .insert(id, runtime.match_state.bot_player_command(id));
         }
     }
     let previous_generation = runtime.match_state.facility.generation;
@@ -413,8 +443,7 @@ pub(super) fn step_runtime(
     if let Some(event) = runtime.match_state.recent_events.last() {
         runtime.status = super::cues::cue_for(event.kind).label.to_string();
     }
-    clear_one_shot_input(&mut intent.intent);
-    intent.actions = HexActionButtons::default();
+    finish_input_tick(&mut intent, policy);
 }
 
 fn record_generation_changes(runtime: &mut HexWfcRuntime, previous_generation: u32) {
@@ -434,6 +463,21 @@ fn record_generation_changes(runtime: &mut HexWfcRuntime, previous_generation: u
 fn clear_one_shot_input(intent: &mut PlayerIntent) {
     intent.look = Vec2::ZERO;
     intent.jump_pressed = false;
+}
+
+fn neutralize_input(intent: &mut HexWfcIntent) {
+    intent.intent = PlayerIntent::default();
+    intent.actions = HexActionButtons::default();
+    intent.browse_map_level = 0;
+}
+
+fn finish_input_tick(intent: &mut HexWfcIntent, policy: SimulationPolicy) {
+    if policy.sends_neutral_input() {
+        intent.intent = PlayerIntent::default();
+    } else {
+        clear_one_shot_input(&mut intent.intent);
+    }
+    intent.actions = HexActionButtons::default();
 }
 
 fn browsed_level(discovered: &BTreeSet<HexCoord>, current: u8, direction: i8) -> u8 {
@@ -473,114 +517,5 @@ fn changed_revisions(
 mod catalog_tests;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn showcase_match(seed: u64) -> HexWfcMatch {
-        let prototypes = load_prototypes();
-        HexWfcMatch::new(seed, HexMatchConfig::default(), &prototypes).expect("showcase solves")
-    }
-
-    #[test]
-    fn map_browsing_visits_only_discovered_levels() {
-        let discovered = BTreeSet::from([
-            HexCoord {
-                q: 1,
-                r: 1,
-                level: 0,
-            },
-            HexCoord {
-                q: 1,
-                r: 1,
-                level: 3,
-            },
-            HexCoord {
-                q: 1,
-                r: 1,
-                level: 7,
-            },
-        ]);
-        assert_eq!(browsed_level(&discovered, 0, 1), 3);
-        assert_eq!(browsed_level(&discovered, 3, 1), 7);
-        assert_eq!(browsed_level(&discovered, 7, 1), 7);
-        assert_eq!(browsed_level(&discovered, 7, -1), 3);
-        assert_eq!(browsed_level(&discovered, 0, -1), 0);
-    }
-
-    #[test]
-    fn presentation_cursor_selects_only_cells_with_new_revisions() {
-        let a = HexCoord {
-            q: 1,
-            r: 1,
-            level: 0,
-        };
-        let b = HexCoord {
-            q: 2,
-            r: 1,
-            level: 0,
-        };
-        let c = HexCoord {
-            q: 3,
-            r: 1,
-            level: 0,
-        };
-        let live = BTreeMap::from([(a, 0), (b, 2), (c, 1)]);
-        let presented = BTreeMap::from([(a, 0), (b, 1), (c, 1)]);
-        assert_eq!(changed_revisions(&live, &presented), vec![(b, 2)]);
-    }
-
-    #[test]
-    fn all_non_local_actors_cross_the_same_command_boundary() {
-        let game = showcase_match(44);
-        assert!(game.players.len() >= 2);
-        assert!(
-            game.players
-                .keys()
-                .filter(|&&id| id != LOCAL_PLAYER)
-                .all(|&id| {
-                    let _intent = game.bot_command(id);
-                    true
-                })
-        );
-    }
-
-    #[test]
-    fn hex_replay_records_the_versioned_simulation() {
-        let mut game = showcase_match(44);
-        game.bind_simulation_content_hash([0x5A; 32]);
-        let local = PlayerId(2);
-        let mut replay = crate::sim::replay::ReplayTape::new_hex_wfc_for_player(&game, local);
-        let commands = game
-            .players
-            .keys()
-            .copied()
-            .map(|id| {
-                (
-                    id,
-                    HexPlayerCommand {
-                        intent: game.bot_command(id),
-                        actions: HexActionButtons::default(),
-                    },
-                )
-            })
-            .collect();
-        game.step(&HexInputFrame {
-            tick: 1,
-            commands,
-            ..Default::default()
-        });
-        replay.record_hex_wfc(&game);
-        assert_eq!(
-            replay.input_version,
-            observed_match::hex_wfc::HEX_INPUT_VERSION
-        );
-        assert_eq!(replay.map_name, "hex_wfc_v2");
-        assert_eq!(replay.simulation_content_hash, [0x5A; 32]);
-        assert_eq!(replay.actors.len(), game.players.len());
-        assert_eq!(replay.samples[0].actors.len(), game.players.len());
-        assert_eq!(
-            replay.samples[0].actors[local.index()].actor,
-            crate::sim::replay::ReplayActorId::LocalPlayer
-        );
-    }
-}
+#[path = "sim_tests.rs"]
+mod tests;

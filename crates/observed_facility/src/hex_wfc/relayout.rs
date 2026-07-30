@@ -551,6 +551,14 @@ impl HexWfcWorld {
                 return Err(HexWfcError::MissingObjectiveRoute(coord));
             }
         }
+        let production_scale =
+            self.config.cols >= 28 && self.config.rows >= 20 && self.config.levels >= 10;
+        if production_scale
+            && super::validate::open_volume_failure(self.config, &self.placements, &self.blueprints)
+                .is_some()
+        {
+            return Err(HexWfcError::OpenVolumeContract);
+        }
         Ok(())
     }
 

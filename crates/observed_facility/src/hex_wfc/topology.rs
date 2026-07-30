@@ -51,7 +51,7 @@ impl PartialOrd for AStarNode {
     }
 }
 
-fn is_connection_open(
+pub(super) fn is_connection_open(
     a: &HexPlacement,
     face: HexFace,
     placements: &BTreeMap<HexCoord, HexPlacement>,

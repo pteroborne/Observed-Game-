@@ -2,9 +2,10 @@
 //!
 //! A blueprint is the solver-side contract for an authored room shape
 //! (Phase 91 authors the geometry against these exact signatures). Interior
-//! faces between footprint cells are sealed; the exterior offers `Door` only
-//! at the named ports, so halls attach to rooms exclusively through ports —
-//! the hex analogue of `full_wfc`'s threshold identity.
+//! faces between footprint cells are open; the exterior offers `Door` only at
+//! the named ports, so the footprint reads and routes as one room while halls
+//! attach exclusively through explicit thresholds — the hex analogue of
+//! `full_wfc`'s threshold identity.
 
 use std::collections::BTreeMap;
 
@@ -32,20 +33,23 @@ pub struct RoomBlueprint {
 }
 
 impl RoomBlueprint {
-    /// The exterior port signature of one footprint cell. Every lateral face
-    /// that does **not** border another footprint cell is a `Door` (rooms
-    /// present their whole exterior to the surrounding halls, so multi-hex
-    /// rooms have several entrances); interior faces between footprint cells
-    /// are `Sealed`; declared vertical ports carry their class. The
-    /// `named_ports` are a labeled subset of these exterior doors, used for
-    /// stable threshold identity — not a restriction of the openings.
+    /// The port signature of one footprint cell. Lateral faces shared with a
+    /// sibling cell are open so the footprint is one continuous room. On the
+    /// perimeter, only declared [`RoomBlueprint::named_ports`] are `Door`;
+    /// every other face is a solid room wall. Declared vertical ports carry
+    /// their class.
     #[must_use]
     pub fn cell_signature(&self, offset: CellOffset) -> PortSignature {
         let mut ports = [PortClass::Sealed; 8];
         for face in HexFace::LATERAL {
             let delta = face.delta();
             let neighbor = (offset.0 + delta.0, offset.1 + delta.1, offset.2 + delta.2);
-            if !self.cells.contains(&neighbor) {
+            if self.cells.contains(&neighbor) {
+                ports[face.index()] = PortClass::Door;
+            }
+        }
+        for &(_, port_cell, face) in &self.named_ports {
+            if port_cell == offset {
                 ports[face.index()] = PortClass::Door;
             }
         }
@@ -270,5 +274,40 @@ pub fn blueprint_for_role(role: RoomRole) -> RoomBlueprint {
             &[],
             &[("port_a", (0, 0, 0), HexFace::West)],
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn room_footprints_open_inside_and_only_named_thresholds_open_outside() {
+        let decision = blueprint_for_role(RoomRole::Decision);
+
+        let anchor = decision.cell_signature((0, 0, 0));
+        assert_eq!(anchor.port(HexFace::East), PortClass::Door);
+        assert_eq!(anchor.port(HexFace::SouthEast), PortClass::Door);
+        assert_eq!(anchor.port(HexFace::West), PortClass::Door);
+        assert_eq!(anchor.port(HexFace::NorthWest), PortClass::Sealed);
+        assert_eq!(anchor.port(HexFace::NorthEast), PortClass::Sealed);
+        assert_eq!(anchor.port(HexFace::SouthWest), PortClass::Sealed);
+
+        for &(name, offset, face) in &decision.named_ports {
+            assert_eq!(
+                decision.cell_signature(offset).port(face),
+                PortClass::Door,
+                "named threshold {name} must be open"
+            );
+            let delta = face.delta();
+            assert!(
+                !decision.cells.contains(&(
+                    offset.0 + delta.0,
+                    offset.1 + delta.1,
+                    offset.2 + delta.2,
+                )),
+                "named threshold {name} must leave the footprint"
+            );
+        }
     }
 }

@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use observed_authoring::RoomSocketKind;
 use observed_authoring::TilePrototype;
 use observed_core::PlayerId;
 use observed_facility::hex_wfc::{HexFace, HexWfcConfig, HexWfcWorld, PortClass};
@@ -101,6 +102,148 @@ fn default_roster_is_two_stable_teams_of_two() {
 }
 
 #[test]
+fn complete_bot_commands_reuse_routes_until_the_facility_changes() {
+    let mut game = showcase_match(44, 3, 1);
+    let player = PlayerId(0);
+
+    let _ = game.bot_player_command(player);
+    let cached = game.bot_routes.clone();
+    assert_eq!(cached.len(), 1, "the first command resolves one route");
+
+    let _ = game.bot_player_command(player);
+    assert_eq!(
+        game.bot_routes, cached,
+        "an unchanged cell, objective, and generation reuse the route"
+    );
+
+    game.facility.generation = game.facility.generation.wrapping_add(1);
+    let _ = game.bot_player_command(player);
+    assert_ne!(
+        game.bot_routes, cached,
+        "a relayout generation invalidates the derived route"
+    );
+}
+
+#[test]
+fn keystones_and_distinct_station_sockets_gate_team_escape() {
+    let mut game = HexWfcMatch::new_with_rooms(
+        44,
+        HexMatchConfig {
+            guardian: false,
+            teams: 1,
+            members_per_team: 2,
+            wfc: showcase_config(4),
+        },
+        &tiles(),
+        rooms(),
+    )
+    .expect("objective showcase");
+    let cells = game
+        .facility
+        .route_between(game.facility.config.spawn(), game.facility.config.exit())
+        .expect("spawn-exit route");
+    let a_cell = cells[0];
+    let b_cell = *cells.get(1).expect("route has a second cell");
+    let point = |cell| glam::Vec3::from_array(observed_hex::hex_origin(cell)) + glam::Vec3::Y;
+    game.geometry.sockets = vec![
+        super::super::geometry::HexRoomSocket {
+            room_generation_key: 10,
+            room_role: observed_facility::map_spec::RoomRole::Keystone,
+            id: "key_a".to_string(),
+            kind: RoomSocketKind::Keystone,
+            cell: a_cell,
+            position: point(a_cell),
+            yaw_degrees: 0.0,
+        },
+        super::super::geometry::HexRoomSocket {
+            room_generation_key: 11,
+            room_role: observed_facility::map_spec::RoomRole::Keystone,
+            id: "key_b".to_string(),
+            kind: RoomSocketKind::Keystone,
+            cell: a_cell,
+            position: point(a_cell),
+            yaw_degrees: 0.0,
+        },
+        super::super::geometry::HexRoomSocket {
+            room_generation_key: 20,
+            room_role: observed_facility::map_spec::RoomRole::DualStation,
+            id: "station_a".to_string(),
+            kind: RoomSocketKind::StationA,
+            cell: a_cell,
+            position: point(a_cell),
+            yaw_degrees: 0.0,
+        },
+        super::super::geometry::HexRoomSocket {
+            room_generation_key: 20,
+            room_role: observed_facility::map_spec::RoomRole::DualStation,
+            id: "station_b".to_string(),
+            kind: RoomSocketKind::StationB,
+            cell: b_cell,
+            position: point(b_cell),
+            yaw_degrees: 180.0,
+        },
+    ];
+    game.objectives = HexObjectiveState::new(&game);
+    assert!(game.objectives.enabled);
+
+    let interact = |commands: &mut BTreeMap<PlayerId, HexPlayerCommand>, player| {
+        commands.insert(
+            player,
+            HexPlayerCommand {
+                actions: HexActionButtons {
+                    interact: true,
+                    ..HexActionButtons::default()
+                },
+                ..HexPlayerCommand::default()
+            },
+        );
+    };
+    game.players.get_mut(&PlayerId(0)).expect("player").cell = a_cell;
+    game.players.get_mut(&PlayerId(0)).expect("player").position = point(a_cell);
+    let mut commands = BTreeMap::new();
+    interact(&mut commands, PlayerId(0));
+    game.step_objectives(&HexInputFrame {
+        commands: commands.clone(),
+        ..HexInputFrame::default()
+    });
+    game.step_objectives(&HexInputFrame {
+        commands: commands.clone(),
+        ..HexInputFrame::default()
+    });
+    let team = observed_core::TeamId(0);
+    assert_eq!(game.teams[&team].objectives.keystones, 2);
+
+    let exit = game.facility.config.exit();
+    for player in [PlayerId(0), PlayerId(1)] {
+        game.players.get_mut(&player).expect("player").cell = exit;
+    }
+    game.resolve_escapes();
+    assert!(
+        !game.teams[&team].escaped,
+        "unfinished station seals the exit"
+    );
+
+    game.players.get_mut(&PlayerId(0)).expect("player").cell = a_cell;
+    game.players.get_mut(&PlayerId(0)).expect("player").position = point(a_cell);
+    game.players.get_mut(&PlayerId(1)).expect("player").cell = b_cell;
+    game.players.get_mut(&PlayerId(1)).expect("player").position = point(b_cell);
+    interact(&mut commands, PlayerId(1));
+    for _ in 0..120 {
+        game.step_objectives(&HexInputFrame {
+            commands: commands.clone(),
+            ..HexInputFrame::default()
+        });
+    }
+    assert!(game.teams[&team].objectives.dual_station_complete);
+
+    for player in [PlayerId(0), PlayerId(1)] {
+        game.players.get_mut(&player).expect("player").cell = exit;
+    }
+    game.resolve_escapes();
+    assert!(game.teams[&team].escaped);
+}
+
+#[test]
 fn a_team_finishes_only_after_both_members_escape() {
     let mut game = HexWfcMatch::new(
         44,
@@ -116,12 +259,17 @@ fn a_team_finishes_only_after_both_members_escape() {
     let exit = game.facility.config.exit();
     game.players.get_mut(&PlayerId(0)).expect("p1").cell = exit;
     game.resolve_escapes();
-    assert!(game.players[&PlayerId(0)].escaped);
+    assert!(
+        !game.players[&PlayerId(0)].escaped,
+        "the first teammate waits at the team exit"
+    );
     assert!(!game.teams[&observed_core::TeamId(0)].escaped);
     assert!(game.escape_order.is_empty());
 
     game.players.get_mut(&PlayerId(1)).expect("p2").cell = exit;
     game.resolve_escapes();
+    assert!(game.players[&PlayerId(0)].escaped);
+    assert!(game.players[&PlayerId(1)].escaped);
     assert!(game.teams[&observed_core::TeamId(0)].escaped);
     assert_eq!(game.escape_order, vec![observed_core::TeamId(0)]);
     assert_eq!(game.status, HexMatchStatus::Finished);
@@ -427,12 +575,12 @@ fn diagnose_bot() {
 /// Pinned headless gate seed (found via `scan_gate_seeds`). Its solved 12×9×5
 /// showcase route crosses two ramp levels and two physical stair towers.
 ///
-/// Re-pinned in Arc O Phase 108: the previous seed's route lost its ramps when
-/// district composition profiles and the `Expanse` archetype changed what the
-/// solver builds. That is expected — the gate asserts the *bot* can walk a route
-/// with both vertical kinds on it, not that one particular seed produces one.
+/// Re-pinned after Arc P's room/open-volume topology changes: the previous seed's
+/// route retained stairs but no longer crossed a ramp. That is expected — the gate
+/// asserts the *bot* can walk a route with both vertical kinds on it, not that one
+/// particular seed produces one.
 /// Any arc that touches weighting should expect to re-run `scan_gate_seeds`.
-const GATE_SEED: u64 = 0xad33_590e_5eac_c7db;
+const GATE_SEED: u64 = 0xd9c1_e6e5_fd29_f054;
 const GATE_LEVELS: u8 = 5;
 
 /// Phase 94 success criterion 1 — the headless gate. On a pinned seed whose

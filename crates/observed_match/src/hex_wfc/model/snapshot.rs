@@ -3,6 +3,7 @@
 //! runs can be proven bit-identical.
 
 use observed_core::{EquipmentId, PlayerId, TeamId};
+use observed_facility::map_spec::RoomRole;
 use observed_hex::HexCoord;
 
 use super::{
@@ -20,6 +21,20 @@ pub struct HexPlayerSnapshot {
     pub escaped: bool,
 }
 
+/// Stable objective and finish record for one team in a deterministic digest.
+pub type HexTeamSnapshot = (TeamId, bool, Option<u64>, u8, u16, bool, Option<u64>);
+
+/// Leak-free survivor-map record included in the deterministic digest.
+pub type HexMapCellSnapshot = (
+    TeamId,
+    HexCoord,
+    HexMapDiscovery,
+    u32,
+    u16,
+    bool,
+    Option<RoomRole>,
+);
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HexMatchSnapshot {
     pub input_version: u16,
@@ -27,11 +42,14 @@ pub struct HexMatchSnapshot {
     pub tick: u64,
     pub generation: u32,
     pub players: Vec<HexPlayerSnapshot>,
-    pub teams: Vec<(TeamId, bool, Option<u64>)>,
+    pub teams: Vec<HexTeamSnapshot>,
+    pub objectives_enabled: bool,
+    pub available_keystones: Vec<u64>,
+    pub surveyed_monitors: Vec<(TeamId, u64)>,
     pub lanterns: Vec<(PlayerId, u16)>,
     pub deployed: Vec<(EquipmentId, PlayerId, HexThresholdKey, HexCoord)>,
     pub guardian: (HexCoord, HexGuardianStatus),
-    pub map_cells: Vec<(TeamId, HexCoord, HexMapDiscovery, u32, u16, bool)>,
+    pub map_cells: Vec<HexMapCellSnapshot>,
     pub status: HexMatchStatus,
     pub digest: u64,
 }
@@ -63,8 +81,26 @@ impl HexWfcMatch {
             teams: self
                 .teams
                 .values()
-                .map(|team| (team.id, team.escaped, team.finish_tick))
+                .map(|team| {
+                    (
+                        team.id,
+                        team.escaped,
+                        team.finish_tick,
+                        team.objectives.keystones,
+                        team.objectives.dual_station_ticks,
+                        team.objectives.dual_station_complete,
+                        team.objectives.dual_station_room,
+                    )
+                })
                 .collect(),
+            objectives_enabled: self.objectives.enabled,
+            available_keystones: self
+                .objectives
+                .available_keystones
+                .iter()
+                .copied()
+                .collect(),
+            surveyed_monitors: self.objectives.surveyed_monitors.iter().copied().collect(),
             lanterns: self
                 .lanterns
                 .carried
@@ -90,6 +126,7 @@ impl HexWfcMatch {
                             known.last_confirmed_revision,
                             known.known_ports.0,
                             known.anchored,
+                            known.room_role,
                         )
                     })
                 })
@@ -127,10 +164,24 @@ fn snapshot_digest(snapshot: &HexMatchSnapshot) -> u64 {
         }
         mix(u64::from(player.escaped));
     }
-    for (team, escaped, finish_tick) in &snapshot.teams {
+    for (team, escaped, finish_tick, keystones, station_ticks, station_complete, station_room) in
+        &snapshot.teams
+    {
         mix(u64::from(team.0));
         mix(u64::from(*escaped));
         mix(finish_tick.unwrap_or(u64::MAX));
+        mix(u64::from(*keystones));
+        mix(u64::from(*station_ticks));
+        mix(u64::from(*station_complete));
+        mix(station_room.unwrap_or(u64::MAX));
+    }
+    mix(u64::from(snapshot.objectives_enabled));
+    for room in &snapshot.available_keystones {
+        mix(*room);
+    }
+    for (team, room) in &snapshot.surveyed_monitors {
+        mix(u64::from(team.0));
+        mix(*room);
     }
     for (player, count) in &snapshot.lanterns {
         mix(u64::from(player.0));
@@ -151,7 +202,7 @@ fn snapshot_digest(snapshot: &HexMatchSnapshot) -> u64 {
         HexGuardianStatus::FrozenByPlayer => 1,
         HexGuardianStatus::FrozenByAnchor => 2,
     });
-    for (player, cell, discovery, revision, ports, anchored) in &snapshot.map_cells {
+    for (player, cell, discovery, revision, ports, anchored, room_role) in &snapshot.map_cells {
         mix(u64::from(player.0));
         mix(pack_cell(*cell));
         mix(match discovery {
@@ -161,8 +212,25 @@ fn snapshot_digest(snapshot: &HexMatchSnapshot) -> u64 {
         mix(u64::from(*revision));
         mix(u64::from(*ports));
         mix(u64::from(*anchored));
+        mix(room_role.map_or(u64::MAX, room_role_code));
     }
     hash
+}
+
+fn room_role_code(role: RoomRole) -> u64 {
+    match role {
+        RoomRole::Start => 0,
+        RoomRole::Exit => 1,
+        RoomRole::Decision => 2,
+        RoomRole::DecoherenceFork => 3,
+        RoomRole::AnchorCheckpoint => 4,
+        RoomRole::TeleportRelay => 5,
+        RoomRole::Keystone => 6,
+        RoomRole::DualStation => 7,
+        RoomRole::GuardianControl => 8,
+        RoomRole::Monitor => 9,
+        RoomRole::Recovery => 10,
+    }
 }
 
 fn pack_cell(cell: HexCoord) -> u64 {

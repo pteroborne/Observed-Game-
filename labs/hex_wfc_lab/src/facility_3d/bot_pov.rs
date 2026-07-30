@@ -141,15 +141,9 @@ pub(crate) fn run(
         if run.game.status == HexMatchStatus::Finished {
             break;
         }
-        let command = run.game.bot_command(PlayerId(0));
+        let command = run.game.bot_player_command(PlayerId(0));
         let tick = run.game.tick;
-        let commands = BTreeMap::from([(
-            PlayerId(0),
-            observed_match::hex_wfc::HexPlayerCommand {
-                intent: command,
-                actions: Default::default(),
-            },
-        )]);
+        let commands = BTreeMap::from([(PlayerId(0), command)]);
         run.game.step(&HexInputFrame {
             version: HEX_INPUT_VERSION,
             tick,

@@ -241,9 +241,9 @@ fn matching_whole_room_module_takes_precedence_over_cell_fallbacks() {
         })
         .expect("start fallback")
         .hulls;
-    let ports = HexFace::LATERAL
+    let ports = [(HexFace::West, "entrance"), (HexFace::East, "exit")]
         .into_iter()
-        .map(|face| observed_authoring::RoomPrototypePort {
+        .map(|(face, name)| observed_authoring::RoomPrototypePort {
             cell: ModuleCellRef {
                 q: 0,
                 r: 0,
@@ -251,11 +251,7 @@ fn matching_whole_room_module_takes_precedence_over_cell_fallbacks() {
             },
             face,
             class: PortClass::Door,
-            name: match face {
-                HexFace::West => "entrance".to_string(),
-                HexFace::East => "exit".to_string(),
-                _ => format!("side_{face:?}"),
-            },
+            name: name.to_string(),
         })
         .collect();
     let room = RoomPrototype {
@@ -273,6 +269,17 @@ fn matching_whole_room_module_takes_precedence_over_cell_fallbacks() {
             level: 0,
         }],
         ports,
+        sockets: vec![observed_authoring::RoomPrototypeSocket {
+            id: "test_socket".to_string(),
+            kind: observed_authoring::RoomSocketKind::Monitor,
+            cell: ModuleCellRef {
+                q: 0,
+                r: 0,
+                level: 0,
+            },
+            position: glam::Vec3::new(1.0, 1.5, -2.0),
+            yaw_degrees: 30.0,
+        }],
         hulls: fallback_hulls,
         lights: Vec::new(),
     };
@@ -290,6 +297,13 @@ fn matching_whole_room_module_takes_precedence_over_cell_fallbacks() {
             .as_ref()
             .is_some_and(|key| key.archetype == "whole_start")
     }));
+    assert_eq!(snapshot.sockets.len(), 1);
+    assert_eq!(snapshot.sockets[0].id, "test_socket");
+    assert_eq!(snapshot.sockets[0].cell, start.anchor);
+    assert_eq!(
+        snapshot.sockets[0].kind,
+        observed_authoring::RoomSocketKind::Monitor
+    );
 }
 
 #[test]
@@ -524,10 +538,9 @@ fn tiny_tetrahedron(offset: f32) -> Vec<Vec3> {
 }
 
 /// A contract-valid whole-room prototype for `role`: footprint mirrors
-/// `blueprint_for_role(role).cells` exactly, and every lateral face that does
-/// not border another footprint cell is authored as `Door` (mirroring
-/// `RoomBlueprint::cell_signature`'s "whole exterior is a door" rule) —
-/// named ports keep their blueprint name, the rest get synthesized names.
+/// `blueprint_for_role(role).cells` exactly and only its named exterior
+/// thresholds are authored as ports. Internal sibling faces are continuous
+/// geometry and therefore do not become module boundary ports.
 fn multi_cell_room_prototype(role: RoomRole, archetype: &str, variant: u16) -> RoomPrototype {
     let blueprint = blueprint_for_role(role);
     let footprint = blueprint
@@ -535,29 +548,18 @@ fn multi_cell_room_prototype(role: RoomRole, archetype: &str, variant: u16) -> R
         .iter()
         .map(|&offset| cell_ref(offset).expect("small test offsets fit ModuleCellRef"))
         .collect();
-    let mut ports = Vec::new();
-    for (index, &offset) in blueprint.cells.iter().enumerate() {
-        for face in HexFace::LATERAL {
-            let (dq, dr, dl) = face.delta();
-            let neighbor = (offset.0 + dq, offset.1 + dr, offset.2 + dl);
-            if blueprint.cells.contains(&neighbor) {
-                continue; // interior face: stays Sealed on both sides.
-            }
-            let cell = cell_ref(offset).expect("small test offsets fit ModuleCellRef");
-            let name = blueprint
-                .named_ports
-                .iter()
-                .find(|&&(_, port_offset, port_face)| port_offset == offset && port_face == face)
-                .map(|&(name, _, _)| name.to_string())
-                .unwrap_or_else(|| format!("aux_{index}_{face:?}"));
-            ports.push(observed_authoring::RoomPrototypePort {
-                cell,
+    let ports = blueprint
+        .named_ports
+        .iter()
+        .map(
+            |&(name, offset, face)| observed_authoring::RoomPrototypePort {
+                cell: cell_ref(offset).expect("small test offsets fit ModuleCellRef"),
                 face,
                 class: PortClass::Door,
-                name,
-            });
-        }
-    }
+                name: name.to_string(),
+            },
+        )
+        .collect();
     RoomPrototype {
         id: format!("test/{archetype}"),
         room_role: blueprint.name.to_string(),
@@ -569,6 +571,7 @@ fn multi_cell_room_prototype(role: RoomRole, archetype: &str, variant: u16) -> R
         weight: 1,
         footprint,
         ports,
+        sockets: Vec::new(),
         hulls: vec![tiny_tetrahedron(0.0)],
         lights: Vec::new(),
     }
@@ -592,16 +595,21 @@ fn multi_cell_world(role: RoomRole, anchor: HexCoord) -> HexWfcWorld {
     let mut placements = BTreeMap::new();
     let mut architecture = BTreeMap::new();
     let mut cell_revisions = BTreeMap::new();
-    for &coord in &cells {
+    for (&coord, &offset) in cells.iter().zip(&blueprint.cells) {
+        let signature = blueprint.cell_signature(offset);
+        let doors = HexFace::LATERAL
+            .into_iter()
+            .filter(|&face| signature.port(face) == PortClass::Door)
+            .fold(0, |mask, face| mask | (1 << face.index()));
         placements.insert(
             coord,
             HexPlacement {
                 coord,
                 space: HexSpace::Room,
                 archetype: HexArchetype::Room,
-                doors: 0,
-                up: PortClass::Sealed,
-                down: PortClass::Sealed,
+                doors,
+                up: signature.port(HexFace::Up),
+                down: signature.port(HexFace::Down),
             },
         );
         architecture.insert(coord, ArchitectureRegister::Institutional);
@@ -630,6 +638,26 @@ fn multi_cell_world(role: RoomRole, anchor: HexCoord) -> HexWfcWorld {
         cell_revisions,
         last_attempts: 1,
     }
+}
+
+#[test]
+fn multi_cell_room_internal_seams_are_traversable() {
+    let anchor = HexCoord {
+        q: 0,
+        r: 0,
+        level: 0,
+    };
+    let world = multi_cell_world(RoomRole::DualStation, anchor);
+    let sibling = HexCoord {
+        q: 1,
+        r: 0,
+        level: 0,
+    };
+
+    assert!(
+        world.route_between(anchor, sibling).is_some(),
+        "one blueprint footprint must route as one continuous room"
+    );
 }
 
 /// Pins the multi-cell selection contract: a valid two-cell `DualStation`
@@ -829,27 +857,29 @@ fn mismatched_room_contracts_fall_back_to_per_cell_tiles_without_panicking() {
     });
     assert_falls_back(extra_cell, "footprint has an extra cell");
 
-    // Clause: `room_contract_matches` only checks faces that leave the
-    // footprint, and every one of those must be authored `Door`. Dropping an
-    // (unnamed) exterior port leaves that face unauthored, which
-    // `room_contract_matches` treats as `Sealed` (its `unwrap_or` default) —
-    // exercising the same branch as an explicitly-authored `Sealed` face.
-    let mut sealed_face = base.clone();
-    let dropped_index = sealed_face
+    // Clause: every unnamed exterior face is sealed. Adding a port to one
+    // reintroduces the tile-grid perimeter that the room contract forbids.
+    let mut unexpected_face = base.clone();
+    unexpected_face
         .ports
-        .iter()
-        .position(|port| {
-            port.cell
-                == ModuleCellRef {
-                    q: 1,
-                    r: 0,
-                    level: 0,
-                }
-                && port.face == HexFace::SouthEast
-        })
-        .expect("aux port exists on the second cell's SouthEast face");
-    sealed_face.ports.remove(dropped_index);
-    assert_falls_back(sealed_face, "exterior face missing/Sealed instead of Door");
+        .push(observed_authoring::RoomPrototypePort {
+            cell: ModuleCellRef {
+                q: 1,
+                r: 0,
+                level: 0,
+            },
+            face: HexFace::SouthEast,
+            class: PortClass::Door,
+            name: "not_a_threshold".to_string(),
+        });
+    assert_falls_back(unexpected_face, "unnamed exterior face opened as Door");
+
+    // Clause: a named threshold cannot be omitted.
+    let mut missing_named_port = base.clone();
+    missing_named_port
+        .ports
+        .retain(|port| port.name != "port_a");
+    assert_falls_back(missing_named_port, "named threshold missing/Sealed");
 
     // Clause: every blueprint `named_port` needs a matching authored port
     // with class `Door` and the same `normalized_role(name)` — renaming the
