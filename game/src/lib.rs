@@ -17,6 +17,7 @@ pub mod map_catalog;
 pub mod map_validation;
 pub mod maze;
 mod navmesh;
+pub mod play_setup;
 pub mod rivals;
 mod screens;
 pub mod settings;
@@ -47,21 +48,24 @@ pub enum GameState {
     #[default]
     Splash,
     MainMenu,
+    /// Preset-first launch hub; advanced match rules are a deliberate second layer.
+    Play,
+    PlayAdvanced,
     Loadout,
     LanBrowser,
     Lobby,
-    /// [DEPRECATED] Legacy place-based match system. Sunsetted in favor of GameState::FullWfc.
+    /// [DEPRECATED] Legacy place-based match system. Sunsetted in favor of `HexWfc`.
     /// Kept only as a regression testing fixture for unit/integration tests.
     Match,
-    /// [DEMOTED] The square-lattice continuous facility. Since Arc L Phase 95 the hex
-    /// facility ([`GameState::HexWfc`]) is the canonical Play flow; `FullWfc` is reachable
-    /// only via the `OBSERVED2_MAP=square` launch override and stays as the byte-for-byte
-    /// regression fixture. Its systems and tests remain green, unchanged.
+    /// [DEMOTED] Square-lattice continuous-facility regression fixture. It is not a
+    /// production menu destination; tests may enter it directly.
     FullWfc,
     /// The canonical Arc L hex-prism facility Play flow.
     HexWfc,
     Results,
     Replay,
+    /// Responsive preparation screen before the canonical facility becomes active.
+    Loading,
     Settings,
 }
 
@@ -75,6 +79,7 @@ impl Plugin for ObservedGamePlugin {
         app.init_state::<GameState>()
             .insert_resource(crate::content::GameContent::committed())
             .init_resource::<crate::flow::ActiveMatchSeed>()
+            .insert_resource(crate::play_setup::load_play_setup())
             .insert_resource(crate::flow::load_career())
             .insert_resource(crate::settings::load_settings())
             .insert_resource(crate::lan::LanRuntime::new())

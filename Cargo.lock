@@ -1213,6 +1213,7 @@ dependencies = [
  "bevy_transform",
  "bevy_ui",
  "bevy_ui_render",
+ "bevy_ui_widgets",
  "bevy_utils",
  "bevy_window",
  "bevy_winit",
@@ -4313,10 +4314,13 @@ name = "iso_observer_lab"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "observed_authoring",
  "observed_content",
  "observed_facility",
  "observed_hex",
+ "observed_match",
  "observed_style",
+ "observed_traversal",
  "serde_json",
 ]
 

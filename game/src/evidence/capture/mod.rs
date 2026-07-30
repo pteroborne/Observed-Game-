@@ -10,6 +10,7 @@
 //! identity transition never re-runs the Match `OnEnter` teardown/setup.
 
 pub(crate) mod bot_pov;
+pub(crate) mod frontend;
 pub(crate) mod scenarios;
 pub(crate) mod tour;
 
@@ -117,6 +118,9 @@ pub(super) fn configure_captures(app: &mut App) {
                 bot_pov::capture_bot_pov_progress
                     .after(crate::screens::place::present_match_camera),
             );
+    } else if let Ok(dir) = std::env::var("OBSERVED2_CAPTURE_FRONTEND") {
+        app.insert_resource(frontend::FrontendCaptureRequest::new(dir))
+            .add_systems(Update, frontend::capture_frontend_progress);
     } else if let Ok(path) = std::env::var("OBSERVED2_CAPTURE_REBIND") {
         app.insert_resource(scenarios::RebindCaptureRequest::new(path))
             .add_systems(Update, scenarios::capture_rebind_progress);

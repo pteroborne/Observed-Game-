@@ -26,26 +26,6 @@ pub const LOCAL_TEAM: TeamId = TeamId(0);
 pub const MATCH_SEED: u64 = 1;
 pub const SEED_OVERRIDE_ENV: &str = "OBSERVED2_SEED";
 
-/// Launch override selecting which facility the Play flow enters. Since Arc L Phase 95
-/// the hex facility is canonical; `OBSERVED2_MAP=square` (or `full_wfc`) demotes back to
-/// the square-lattice regression fixture for a side-by-side comparison. Mirrors the Arc
-/// K map-override precedent.
-pub const MAP_OVERRIDE_ENV: &str = "OBSERVED2_MAP";
-
-/// The `GameState` the menu Play/Rematch/Spectate arms route to. Hex by default; the
-/// `OBSERVED2_MAP=square` override returns the demoted square facility.
-#[must_use]
-pub fn play_target_state() -> crate::GameState {
-    play_target_for_override(std::env::var(MAP_OVERRIDE_ENV).ok().as_deref())
-}
-
-fn play_target_for_override(value: Option<&str>) -> crate::GameState {
-    match value.map(str::trim).map(str::to_ascii_lowercase).as_deref() {
-        Some("square") | Some("full_wfc") | Some("full-wfc") => crate::GameState::FullWfc,
-        _ => crate::GameState::HexWfc,
-    }
-}
-
 #[derive(Resource, Copy, Clone, Debug, PartialEq, Eq)]
 pub struct ActiveMatchSeed(pub u64);
 
@@ -285,8 +265,18 @@ pub fn load_career() -> Career {
         return Career::default();
     }
 
-    let save_text =
-        std::fs::read_to_string(crate::settings::profile_save_path()).unwrap_or_default();
+    let primary_path = crate::settings::profile_save_path();
+    let (save_text, loaded_legacy) = match std::fs::read_to_string(&primary_path) {
+        Ok(text) => (text, false),
+        Err(_) => {
+            #[cfg(test)]
+            let legacy = String::new();
+            #[cfg(not(test))]
+            let legacy = std::fs::read_to_string(crate::settings::legacy_profile_save_path())
+                .unwrap_or_default();
+            (legacy, true)
+        }
+    };
     let first_line = save_text.lines().next().unwrap_or("");
     let profile = Profile::parse(first_line).unwrap_or_default();
 
@@ -317,13 +307,17 @@ pub fn load_career() -> Career {
         }
     }
 
-    Career {
+    let career = Career {
         profile,
         bot_rival_teams,
         bot_ai_teammates,
         bot_guardian,
         ..Career::default()
+    };
+    if loaded_legacy && !save_text.is_empty() {
+        save_profile(&career);
     }
+    career
 }
 
 /// Persist the career's profile to disk (best-effort — a write failure is silently
@@ -420,24 +414,6 @@ mod tests {
         assert_eq!(parse_seed_override("42"), Some(42));
         assert_eq!(parse_seed_override(" 0x2a "), Some(42));
         assert_eq!(parse_seed_override("not-a-seed"), None);
-    }
-
-    #[test]
-    fn hex_is_canonical_and_square_is_an_explicit_regression_override() {
-        assert_eq!(play_target_for_override(None), crate::GameState::HexWfc);
-        assert_eq!(
-            play_target_for_override(Some("square")),
-            crate::GameState::FullWfc
-        );
-        assert_eq!(
-            play_target_for_override(Some(" FULL-WFC ")),
-            crate::GameState::FullWfc
-        );
-        assert_eq!(
-            play_target_for_override(Some("liminal_wfc_v2")),
-            crate::GameState::HexWfc,
-            "legacy map names no longer redirect canonical Play away from hex"
-        );
     }
 
     #[test]

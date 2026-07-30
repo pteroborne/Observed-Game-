@@ -20,6 +20,9 @@ impl Plugin for AssetLabPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<SoundSlot>()
             .init_resource::<AssetStatus>()
+            // `init_resource` keeps a root a caller already inserted, which is how a
+            // test asks for the empty drop-in case.
+            .init_resource::<lab::AssetRoot>()
             .add_systems(Startup, lab::setup_lab)
             .add_systems(
                 Update,
@@ -98,18 +101,33 @@ mod tests {
     use lab::{AssetCam, AssetUiRoot};
     use manifest::manifest;
 
+    /// A root with no drop-ins, so the fallback case stays testable now that the
+    /// workspace ships real assets of its own.
+    fn empty_root() -> std::path::PathBuf {
+        let root = std::env::temp_dir().join("observed2-asset-lab-empty-root");
+        std::fs::create_dir_all(&root).expect("empty drop-in root is creatable");
+        root
+    }
+
     fn test_app() -> App {
         let mut app = App::new();
-        app.add_plugins((
-            MinimalPlugins,
-            AssetPlugin::default(),
-            InputPlugin,
-            GizmoPlugin,
-        ))
-        .init_asset::<Mesh>()
-        .init_asset::<StandardMaterial>()
-        .insert_resource(ClearColor(Color::BLACK))
-        .add_plugins(AssetLabPlugin);
+        app.insert_resource(lab::AssetRoot(empty_root()))
+            .add_plugins((
+                MinimalPlugins,
+                AssetPlugin::default(),
+                InputPlugin,
+                GizmoPlugin,
+            ))
+            .init_asset::<Mesh>()
+            .init_asset::<StandardMaterial>()
+            // The lab loads texture, glTF scene, and audio drop-ins. The headless app
+            // renders and plays nothing, but the asset server still allocates a handle per
+            // slot, and a handle needs its asset type registered.
+            .init_asset::<Image>()
+            .init_asset::<Scene>()
+            .init_asset::<AudioSource>()
+            .insert_resource(ClearColor(Color::BLACK))
+            .add_plugins(AssetLabPlugin);
         app.update();
         app
     }

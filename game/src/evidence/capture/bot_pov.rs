@@ -321,7 +321,7 @@ pub(crate) fn drive_bot_pov_capture(
             request.waypoint = 0;
             request.blocked_ticks = 0;
         } else if in_gantry_understory {
-            info!("BOT_NAV: Fell off the gantry deck — recovering to the bypass exit.");
+            info!("BOT_NAV: Fell off the gantry deck - recovering to the bypass exit.");
             let path = bot::gantry_ground_recovery_route(&tp.config, start, &gap);
             request.route_place = Some(tp.place);
             request.route_jumps = vec![false; path.waypoints.len()];

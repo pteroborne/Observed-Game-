@@ -196,6 +196,119 @@ connection — which is a correct guard but not a fix. When #15 gives rooms real
 per-role geometry, a two-level room should get real stairs and this guard should
 be lifted, or the blueprint should stop claiming a vertical port it cannot serve.
 
+### 20. The played hex facility is murky, samey, and claustrophobic
+
+**Scheduled: Arc P Phases 114 and 118** ([arc_p/README.md](arc_p/README.md)).
+**Found 2026-07-27 during the incomplete Phase 113 run-through.** The semantic
+lighting technically arrives, but already-dark structural materials were locally
+dimmed, room fog retained corridor-scale bounds, and the fixed first-person FOV
+amplified the sense of enclosure. The first correction overcompensated by
+removing the shell attenuation while lifting global ambient; the 2026-07-28
+rebalance restores black levels and makes release come from longer sightlines and
+continuous local practicals. The implementation uses one composition-aware style
+mapping and exposes a saved 50°–80° FOV setting. It remains open until the human
+Phase 118 gate judges the live result.
+
+### 21. `Expanse` cells do not reliably compose into wide-open places
+
+**Scheduled: Arc P Phases 115 and 118** ([arc_p/README.md](arc_p/README.md)).
+**Found 2026-07-27 during the incomplete Phase 113 run-through.** Arc O proved an
+archetype share, not an open-space experience: isolated wall-free cells could
+satisfy the count while the facility still played as uniformly narrow routing.
+Production collapse now reinforces adjacent expanses and rejects any solve where
+an active level lacks a connected seven-cell, three-exit open volume. It also
+rejects any walkable region more than 24 graph edges from an open/decision beat.
+The deterministic gate is landed; the perceptual judgment remains with Phase 118.
+
+### 22. The canonical hex race lacks deliberate intermediate choices
+
+**Scheduled: Arc P Phases 116–118** ([arc_p/README.md](arc_p/README.md)).
+**Found 2026-07-27 during the incomplete Phase 113 run-through.** The facility
+contained semantic room roles but the played match still reduced to following a
+route to the exit. Production now repeats decision roles and exposes typed
+authored mechanism sockets. Teams claim two contested keystones, synchronize two
+operators at one station, and regroup at the exit; monitors are optional local
+surveys and anchors keep their observation-freeze role. Bots, LAN authority,
+snapshots, cues, map knowledge, and world labels use the same model. It remains
+open until Phase 118 establishes that the loop feels like choosing rather than
+running errands.
+
+### 23. Arc P objective routing collapses production FPS
+
+**Fix landed 2026-07-28; awaiting human verification in Phase 118.** The first
+Arc P playthrough fell into the fixed-timestep catch-up ceiling: the profiler
+measured a 250 ms median frame and 32.8 ms median fixed step. Objective selection
+ran exact A* once per candidate, per bot, per tick; after that was removed,
+Guardian leader selection still routed once per runner per tick and lantern
+feedback routed once per lantern per rendered frame. The corrected production
+capture measures 8.55 ms median / 10.40 ms p95 frames uncapped and 0.10 ms median
+fixed steps. Bot paths are derived caches invalidated by objective or facility
+generation; Guardian target ranking uses travel distance; lantern route signals
+cache by player cell, Guardian cell, inventory, and facility generation.
+
+### 24. Arc P room lighting flattens the neon-noir contrast
+
+**Fix landed 2026-07-28; awaiting human verification in Phase 118.** The first
+pass simultaneously removed the hex shell's contrast attenuation and raised
+dark-register room ambient from 40 to at least 110. That made the wider spaces
+read as globally exposed haze rather than light contained inside darkness. The
+shell attenuation is restored, room/vertical ambient lifts are bounded to +10
+and +5 respectively, and the intended release now comes from longer fog
+sightlines and continuous local practical pools. The production evidence was
+recaptured after the correction; the human gate decides whether the balance is
+now right.
+
+### 25. Multi-hex rooms read as clusters of tiles instead of cohesive rooms
+
+**Fix landed 2026-07-28; awaiting human verification in Phase 118.** The Phase
+118 playtest found that room footprints still advertised the cell lattice: the
+solver declared sibling faces `Sealed` while declaring every unnamed perimeter
+face a `Door`. Whole-room geometry visually omitted the internal walls, but the
+topology could not traverse those seams and the outer shell became a near-solid
+run of anonymous doorframes. The contract is now the intended inverse: sibling
+faces are open, only named exterior ports receive framed thresholds, and every
+other perimeter face is a solid wall. Solver compatibility, route validation,
+whole-room modules, and the per-cell fallback kit share that contract. Start and
+Teleport Relay also have whole-room modules, so every blueprint role can take
+the cohesive projection path.
+
+The immediate human recheck still read roughly the same. Phase 118 therefore
+keeps #25 open and adds a production-corpus mode to `hex_wfc_lab`: the previous
+3D lab silently discarded whole-room prototypes and could not diagnose the
+played result faithfully. The new atlas uses production quotas and the runtime
+catalogue, shows the full solved room/hall lattice at low cost, streams exact
+authored hulls around a free-fly camera, and indexes every active production
+room/hall concept for direct comparison.
+
+### 26. Arc Q shipped with a failing suite and a stopped simulation in test
+
+**Fixed 2026-07-30 during the Phase 123 gate.** The Arc P/Q implementation was
+never run against its own gates. Five `observed_game` tests failed, and two of
+them were hiding real regressions rather than stale expectations: `test_app`
+read the developer's own preferences through `load_settings`, so the Arc Q
+onboarding gate set `SimulationPolicy::Stop` and every interactive fixture
+advanced zero ticks — which is what the interactive determinism gate was
+actually reporting when it claimed a digest divergence. Separately the headless
+fork of that gate still drove bots with the pre-Arc-P `bot_command` instead of
+the objective-aware `bot_player_command` production uses. Fixtures are now
+hermetic in settings as well as career, and the fork mirrors `step_runtime`.
+Three labs (`lan_lab`, `hex_room_lab`, `asset_lab`) also no longer compiled or
+passed against changes made in Arcs O and P.
+
+### 27. Every non-ASCII glyph in the UI renders as a blank box
+
+**Fixed 2026-07-30 during the Phase 123 gate.** The game ships no font asset, so
+labels draw with Bevy's embedded default subset, which has no geometric shapes,
+dashes, bullets, or degree sign. The Play hub marked the selected preset with
+`◆`/`◇`, so at 1280×800 **no preset appeared selected at all** — the one thing a
+preset-first hub has to communicate. The Lobby seat legend, the field-of-view
+row, and the Results roster subtitle were tofu for the same reason. Rendered
+strings are now ASCII, and
+`arch_check::rendered_ui_strings_stay_within_the_shipped_font` fails the build on
+any non-ASCII character in a non-test string literal. Reopen this as a real
+typography task only by shipping a font asset that covers the glyphs wanted.
+([arc_q/phase_123_human_ux_gate.md](arc_q/phase_123_human_ux_gate.md))
+
 ## Minor / hygiene
 
 **Scheduled: Arc H Phase 61 (as-landed notes).**

@@ -1,13 +1,16 @@
-use bevy::{app::AppExit, input_focus::InputFocus, prelude::*};
+use bevy::{
+    app::AppExit, ecs::system::SystemParam, input::gamepad::GamepadButton, input_focus::InputFocus,
+    prelude::*, ui::InteractionDisabled, ui_widgets::Activate,
+};
 
 use crate::{
     AppState, LabSettings,
     session::{GameplaySession, SessionResetRequested},
+    widgets::{
+        self, FocusMemory, FocusScope, FocusScopeId, WidgetId, WidgetLabel, WidgetSpec, WidgetText,
+    },
 };
 
-const NORMAL_BUTTON: Color = Color::srgb(0.08, 0.13, 0.20);
-const HOVERED_BUTTON: Color = Color::srgb(0.12, 0.28, 0.40);
-const PRESSED_BUTTON: Color = Color::srgb(0.15, 0.62, 0.74);
 const TEXT: Color = Color::srgb(0.88, 0.94, 1.0);
 const MUTED_TEXT: Color = Color::srgb(0.55, 0.67, 0.78);
 const ACCENT: Color = Color::srgb(0.25, 0.85, 1.0);
@@ -32,7 +35,7 @@ pub(crate) enum MenuAction {
     Quit,
 }
 
-#[derive(Component)]
+#[derive(Component, Clone, Copy)]
 pub(crate) enum SettingsLabel {
     HighContrast,
     Diagnostics,
@@ -46,25 +49,6 @@ pub(crate) struct LoadingTimer(Timer);
 
 #[derive(Component)]
 pub(crate) struct LoadingStatus;
-
-type ButtonVisualQuery<'w, 's> = Query<
-    'w,
-    's,
-    (
-        Entity,
-        &'static Interaction,
-        &'static mut BackgroundColor,
-        &'static mut BorderColor,
-    ),
-    (Changed<Interaction>, With<Button>),
->;
-
-type ButtonActionQuery<'w, 's> = Query<
-    'w,
-    's,
-    (&'static Interaction, &'static MenuAction),
-    (Changed<Interaction>, With<Button>),
->;
 
 pub(crate) fn setup_boot(mut commands: Commands) {
     commands.insert_resource(BootTimer(Timer::from_seconds(0.9, TimerMode::Once)));
@@ -109,7 +93,13 @@ pub(crate) fn setup_main_menu(mut commands: Commands) {
         .spawn(screen_root(AppState::MainMenu))
         .with_children(|parent| {
             parent
-                .spawn(panel_node(px(620), px(590)))
+                .spawn((
+                    panel_node(px(620), px(650)),
+                    widgets::focus_scope(FocusScope::new(
+                        FocusScopeId::MainMenu,
+                        WidgetId::MainStart,
+                    )),
+                ))
                 .with_children(|panel| {
                     spawn_text(panel, "OBSERVED 2", 18.0, ACCENT);
                     spawn_title(panel, "MENU LAB");
@@ -120,10 +110,48 @@ pub(crate) fn setup_main_menu(mut commands: Commands) {
                         MUTED_TEXT,
                     );
                     spawn_spacer(panel, 18.0);
-                    spawn_button(panel, "Start lifecycle run", MenuAction::Start);
-                    spawn_button(panel, "Settings", MenuAction::Settings);
-                    spawn_button(panel, "Controls", MenuAction::Controls);
-                    spawn_button(panel, "Quit", MenuAction::Quit);
+                    widgets::spawn_button(
+                        panel,
+                        WidgetSpec::disabled(
+                            WidgetId::MainContinueUnavailable,
+                            FocusScopeId::MainMenu,
+                            0,
+                            "Continue — no saved session",
+                        ),
+                        MenuAction::Start,
+                    );
+                    spawn_menu_button(
+                        panel,
+                        WidgetId::MainStart,
+                        FocusScopeId::MainMenu,
+                        1,
+                        "Start lifecycle run",
+                        MenuAction::Start,
+                    );
+                    spawn_menu_button(
+                        panel,
+                        WidgetId::MainSettings,
+                        FocusScopeId::MainMenu,
+                        2,
+                        "Settings",
+                        MenuAction::Settings,
+                    );
+                    spawn_menu_button(
+                        panel,
+                        WidgetId::MainControls,
+                        FocusScopeId::MainMenu,
+                        3,
+                        "Controls",
+                        MenuAction::Controls,
+                    );
+                    spawn_menu_button(
+                        panel,
+                        WidgetId::MainQuit,
+                        FocusScopeId::MainMenu,
+                        4,
+                        "Quit",
+                        MenuAction::Quit,
+                    );
                     spawn_spacer(panel, 12.0);
                     spawn_text(
                         panel,
@@ -140,7 +168,13 @@ pub(crate) fn setup_settings(mut commands: Commands, settings: Res<LabSettings>)
         .spawn(screen_root(AppState::Settings))
         .with_children(|parent| {
             parent
-                .spawn(panel_node(px(650), px(520)))
+                .spawn((
+                    panel_node(px(650), px(520)),
+                    widgets::focus_scope(FocusScope::new(
+                        FocusScopeId::Settings,
+                        WidgetId::SettingsHighContrast,
+                    )),
+                ))
                 .with_children(|panel| {
                     spawn_text(panel, "MENU LAB", 16.0, ACCENT);
                     spawn_title(panel, "SETTINGS");
@@ -153,12 +187,16 @@ pub(crate) fn setup_settings(mut commands: Commands, settings: Res<LabSettings>)
                     spawn_spacer(panel, 18.0);
                     spawn_settings_button(
                         panel,
+                        WidgetId::SettingsHighContrast,
+                        0,
                         SettingsLabel::HighContrast,
                         format!("High contrast: {}", on_off(settings.high_contrast)),
                         MenuAction::ToggleHighContrast,
                     );
                     spawn_settings_button(
                         panel,
+                        WidgetId::SettingsDiagnostics,
+                        1,
                         SettingsLabel::Diagnostics,
                         format!(
                             "Lifecycle monitor: {}",
@@ -166,7 +204,14 @@ pub(crate) fn setup_settings(mut commands: Commands, settings: Res<LabSettings>)
                         ),
                         MenuAction::ToggleDiagnostics,
                     );
-                    spawn_button(panel, "Back", MenuAction::BackToMain);
+                    spawn_menu_button(
+                        panel,
+                        WidgetId::SettingsBack,
+                        FocusScopeId::Settings,
+                        2,
+                        "Back",
+                        MenuAction::BackToMain,
+                    );
                 });
         });
 }
@@ -176,15 +221,23 @@ pub(crate) fn setup_controls(mut commands: Commands) {
         .spawn(screen_root(AppState::Controls))
         .with_children(|parent| {
             parent
-                .spawn(panel_node(px(700), px(560)))
+                .spawn((
+                    panel_node(px(700), px(590)),
+                    widgets::focus_scope(FocusScope::new(
+                        FocusScopeId::Controls,
+                        WidgetId::ControlsBack,
+                    )),
+                ))
                 .with_children(|panel| {
                     spawn_text(panel, "MENU LAB", 16.0, ACCENT);
                     spawn_title(panel, "CONTROLS");
                     spawn_spacer(panel, 12.0);
                     for line in [
-                        "Mouse       Activate menu buttons",
+                        "Mouse       Point, focus, and activate",
+                        "Arrow / Tab Navigate ordered controls",
+                        "Enter/Space Activate the focused control",
+                        "D-pad/Stick Navigate • South activate • East back",
                         "Escape      Back / pause / resume",
-                        "Enter       Skip boot or loading",
                         "R           Reset the active gameplay session",
                         "F1          Toggle lifecycle monitor",
                     ] {
@@ -197,7 +250,14 @@ pub(crate) fn setup_controls(mut commands: Commands) {
                         15.0,
                         MUTED_TEXT,
                     );
-                    spawn_button(panel, "Back", MenuAction::BackToMain);
+                    spawn_menu_button(
+                        panel,
+                        WidgetId::ControlsBack,
+                        FocusScopeId::Controls,
+                        0,
+                        "Back",
+                        MenuAction::BackToMain,
+                    );
                 });
         });
 }
@@ -276,6 +336,10 @@ pub(crate) fn setup_gameplay_hud(mut commands: Commands, session: Res<GameplaySe
         .with_children(|parent| {
             parent
                 .spawn((
+                    widgets::focus_scope(FocusScope::new(
+                        FocusScopeId::Gameplay,
+                        WidgetId::GameplayPause,
+                    )),
                     Node {
                         width: px(390),
                         padding: UiRect::all(px(16)),
@@ -305,8 +369,22 @@ pub(crate) fn setup_gameplay_hud(mut commands: Commands, session: Res<GameplaySe
                         14.0,
                         MUTED_TEXT,
                     );
-                    spawn_button(panel, "Pause", MenuAction::Pause);
-                    spawn_button(panel, "Reset session", MenuAction::ResetSession);
+                    spawn_menu_button(
+                        panel,
+                        WidgetId::GameplayPause,
+                        FocusScopeId::Gameplay,
+                        0,
+                        "Pause",
+                        MenuAction::Pause,
+                    );
+                    spawn_menu_button(
+                        panel,
+                        WidgetId::GameplayReset,
+                        FocusScopeId::Gameplay,
+                        1,
+                        "Reset session",
+                        MenuAction::ResetSession,
+                    );
                 });
         });
 }
@@ -328,7 +406,13 @@ pub(crate) fn setup_pause_menu(mut commands: Commands, session: Res<GameplaySess
         ))
         .with_children(|parent| {
             parent
-                .spawn(panel_node(px(570), px(500)))
+                .spawn((
+                    panel_node(px(570), px(500)),
+                    widgets::focus_scope(FocusScope::new(
+                        FocusScopeId::Pause,
+                        WidgetId::PauseResume,
+                    )),
+                ))
                 .with_children(|panel| {
                     spawn_text(panel, "SESSION PRESERVED", 16.0, ACCENT);
                     spawn_title(panel, "PAUSED");
@@ -342,23 +426,45 @@ pub(crate) fn setup_pause_menu(mut commands: Commands, session: Res<GameplaySess
                         MUTED_TEXT,
                     );
                     spawn_spacer(panel, 12.0);
-                    spawn_button(panel, "Resume", MenuAction::Resume);
-                    spawn_button(panel, "Reset and resume", MenuAction::ResetAndResume);
-                    spawn_button(panel, "Return to main menu", MenuAction::ReturnToMain);
+                    spawn_menu_button(
+                        panel,
+                        WidgetId::PauseResume,
+                        FocusScopeId::Pause,
+                        0,
+                        "Resume",
+                        MenuAction::Resume,
+                    );
+                    spawn_menu_button(
+                        panel,
+                        WidgetId::PauseResetAndResume,
+                        FocusScopeId::Pause,
+                        1,
+                        "Reset and resume",
+                        MenuAction::ResetAndResume,
+                    );
+                    spawn_menu_button(
+                        panel,
+                        WidgetId::PauseReturnToMain,
+                        FocusScopeId::Pause,
+                        2,
+                        "Return to main menu",
+                        MenuAction::ReturnToMain,
+                    );
                 });
         });
 }
 
 pub(crate) fn update_settings_labels(
     settings: Res<LabSettings>,
-    mut labels: Query<(&SettingsLabel, &mut Text)>,
+    mut buttons: Query<(&SettingsLabel, &Children, &mut WidgetLabel)>,
+    mut texts: Query<&mut Text, With<WidgetText>>,
 ) {
     if !settings.is_changed() {
         return;
     }
 
-    for (label, mut text) in &mut labels {
-        **text = match label {
+    for (label, children, mut accessibility_label) in &mut buttons {
+        let value = match label {
             SettingsLabel::HighContrast => {
                 format!("High contrast: {}", on_off(settings.high_contrast))
             }
@@ -369,92 +475,84 @@ pub(crate) fn update_settings_labels(
                 )
             }
         };
+        accessibility_label.0.clone_from(&value);
+        for child in children.iter() {
+            if let Ok(mut text) = texts.get_mut(child) {
+                **text = value.clone();
+            }
+        }
     }
 }
 
-pub(crate) fn button_visuals(
-    settings: Res<LabSettings>,
-    mut focus: ResMut<InputFocus>,
-    mut buttons: ButtonVisualQuery,
+#[derive(SystemParam)]
+pub(crate) struct MenuActivationContext<'w, 's> {
+    buttons: Query<
+        'w,
+        's,
+        (
+            &'static MenuAction,
+            &'static WidgetId,
+            Has<InteractionDisabled>,
+        ),
+    >,
+    state: Res<'w, State<AppState>>,
+    focus: ResMut<'w, InputFocus>,
+    focus_memory: ResMut<'w, FocusMemory>,
+    exit: MessageWriter<'w, AppExit>,
+    next_state: ResMut<'w, NextState<AppState>>,
+    settings: ResMut<'w, LabSettings>,
+    clear_color: ResMut<'w, ClearColor>,
+    reset: ResMut<'w, SessionResetRequested>,
+}
+
+pub(crate) fn handle_widget_activation(
+    activation: On<Activate>,
+    mut context: MenuActivationContext,
 ) {
-    for (entity, interaction, mut background, mut border) in &mut buttons {
-        let (normal, hovered, pressed) = if settings.high_contrast {
-            (
-                Color::BLACK,
-                Color::srgb(0.12, 0.25, 0.85),
-                Color::srgb(0.0, 0.8, 1.0),
-            )
-        } else {
-            (NORMAL_BUTTON, HOVERED_BUTTON, PRESSED_BUTTON)
-        };
+    let Ok((action, widget, disabled)) = context.buttons.get(activation.entity) else {
+        return;
+    };
+    if disabled {
+        return;
+    }
 
-        match interaction {
-            Interaction::Pressed => {
-                focus.set(entity);
-                *background = pressed.into();
-                *border = BorderColor::all(Color::WHITE);
-            }
-            Interaction::Hovered => {
-                focus.set(entity);
-                *background = hovered.into();
-                *border = BorderColor::all(ACCENT);
-            }
-            Interaction::None => {
-                focus.clear();
-                *background = normal.into();
-                *border = BorderColor::all(Color::srgba(0.25, 0.65, 0.85, 0.5));
-            }
+    context.focus.set(activation.entity);
+    widgets::remember_activated(&mut context.focus_memory, *context.state.get(), *widget);
+
+    match action {
+        MenuAction::Start => context.next_state.set(AppState::Loading),
+        MenuAction::Settings => context.next_state.set(AppState::Settings),
+        MenuAction::Controls => context.next_state.set(AppState::Controls),
+        MenuAction::BackToMain | MenuAction::ReturnToMain => {
+            context.next_state.set(AppState::MainMenu);
+        }
+        MenuAction::ToggleHighContrast => {
+            context.settings.high_contrast = !context.settings.high_contrast;
+            context.clear_color.0 = if context.settings.high_contrast {
+                Color::BLACK
+            } else {
+                Color::srgb(0.025, 0.035, 0.055)
+            };
+        }
+        MenuAction::ToggleDiagnostics => {
+            context.settings.diagnostics_visible = !context.settings.diagnostics_visible;
+        }
+        MenuAction::Pause => context.next_state.set(AppState::Paused),
+        MenuAction::Resume => context.next_state.set(AppState::Gameplay),
+        MenuAction::ResetSession => context.reset.0 = true,
+        MenuAction::ResetAndResume => {
+            context.reset.0 = true;
+            context.next_state.set(AppState::Gameplay);
+        }
+        MenuAction::Quit => {
+            context.exit.write(AppExit::Success);
         }
     }
 }
 
-pub(crate) fn handle_button_actions(
-    buttons: ButtonActionQuery,
-    mut exit: MessageWriter<AppExit>,
-    mut next_state: ResMut<NextState<AppState>>,
-    mut settings: ResMut<LabSettings>,
-    mut clear_color: ResMut<ClearColor>,
-    mut reset: ResMut<SessionResetRequested>,
-) {
-    for (interaction, action) in &buttons {
-        if *interaction != Interaction::Pressed {
-            continue;
-        }
-
-        match action {
-            MenuAction::Start => next_state.set(AppState::Loading),
-            MenuAction::Settings => next_state.set(AppState::Settings),
-            MenuAction::Controls => next_state.set(AppState::Controls),
-            MenuAction::BackToMain | MenuAction::ReturnToMain => {
-                next_state.set(AppState::MainMenu);
-            }
-            MenuAction::ToggleHighContrast => {
-                settings.high_contrast = !settings.high_contrast;
-                clear_color.0 = if settings.high_contrast {
-                    Color::BLACK
-                } else {
-                    Color::srgb(0.025, 0.035, 0.055)
-                };
-            }
-            MenuAction::ToggleDiagnostics => {
-                settings.diagnostics_visible = !settings.diagnostics_visible;
-            }
-            MenuAction::Pause => next_state.set(AppState::Paused),
-            MenuAction::Resume => next_state.set(AppState::Gameplay),
-            MenuAction::ResetSession => reset.0 = true,
-            MenuAction::ResetAndResume => {
-                reset.0 = true;
-                next_state.set(AppState::Gameplay);
-            }
-            MenuAction::Quit => {
-                exit.write(AppExit::Success);
-            }
-        }
-    }
-}
-
-pub(crate) fn handle_keyboard(
+pub(crate) fn handle_global_input(
     keyboard: Res<ButtonInput<KeyCode>>,
+    gamepads: Query<&Gamepad>,
     state: Res<State<AppState>>,
     mut next_state: ResMut<NextState<AppState>>,
     mut settings: ResMut<LabSettings>,
@@ -470,7 +568,12 @@ pub(crate) fn handle_keyboard(
         reset.0 = true;
     }
 
-    if keyboard.just_pressed(KeyCode::Enter) {
+    let accept = keyboard.just_pressed(KeyCode::Enter)
+        || keyboard.just_pressed(KeyCode::Space)
+        || gamepads
+            .iter()
+            .any(|gamepad| gamepad.just_pressed(GamepadButton::South));
+    if accept {
         match state.get() {
             AppState::Boot => next_state.set(AppState::MainMenu),
             AppState::Loading => next_state.set(AppState::Gameplay),
@@ -478,7 +581,11 @@ pub(crate) fn handle_keyboard(
         }
     }
 
-    if keyboard.just_pressed(KeyCode::Escape) {
+    let back = keyboard.just_pressed(KeyCode::Escape)
+        || gamepads
+            .iter()
+            .any(|gamepad| gamepad.just_pressed(GamepadButton::East));
+    if back {
         match state.get() {
             AppState::Settings | AppState::Controls | AppState::Loading => {
                 next_state.set(AppState::MainMenu);
@@ -552,61 +659,30 @@ fn spawn_spacer(parent: &mut ChildSpawnerCommands, height: f32) {
     });
 }
 
-fn spawn_button(parent: &mut ChildSpawnerCommands, label: &str, action: MenuAction) {
-    parent
-        .spawn((
-            Button,
-            action,
-            Node {
-                width: px(340),
-                height: px(52),
-                margin: UiRect::vertical(px(3)),
-                border: UiRect::all(px(1)),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                ..default()
-            },
-            BackgroundColor(NORMAL_BUTTON),
-            BorderColor::all(Color::srgba(0.25, 0.65, 0.85, 0.5)),
-        ))
-        .with_children(|button| {
-            spawn_text(button, label, 18.0, TEXT);
-        });
+fn spawn_menu_button(
+    parent: &mut ChildSpawnerCommands,
+    id: WidgetId,
+    scope: FocusScopeId,
+    order: u16,
+    label: &str,
+    action: MenuAction,
+) {
+    widgets::spawn_button(parent, WidgetSpec::enabled(id, scope, order, label), action);
 }
 
 fn spawn_settings_button(
     parent: &mut ChildSpawnerCommands,
+    id: WidgetId,
+    order: u16,
     marker: SettingsLabel,
     label: String,
     action: MenuAction,
 ) {
-    parent
-        .spawn((
-            Button,
-            action,
-            Node {
-                width: px(390),
-                height: px(58),
-                margin: UiRect::vertical(px(4)),
-                border: UiRect::all(px(1)),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                ..default()
-            },
-            BackgroundColor(NORMAL_BUTTON),
-            BorderColor::all(Color::srgba(0.25, 0.65, 0.85, 0.5)),
-        ))
-        .with_children(|button| {
-            button.spawn((
-                marker,
-                Text::new(label),
-                TextFont {
-                    font_size: 18.0,
-                    ..default()
-                },
-                TextColor(TEXT),
-            ));
-        });
+    widgets::spawn_button(
+        parent,
+        WidgetSpec::enabled(id, FocusScopeId::Settings, order, label).with_size(390.0, 58.0),
+        (action, marker),
+    );
 }
 
 fn on_off(value: bool) -> &'static str {

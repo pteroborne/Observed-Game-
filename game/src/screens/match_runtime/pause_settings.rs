@@ -20,6 +20,9 @@ const VOLUME_STEP: f32 = 0.1;
 const SENSITIVITY_STEP: f32 = 0.02;
 const SENSITIVITY_MIN: f32 = 0.02;
 const SENSITIVITY_MAX: f32 = 0.6;
+const FOV_STEP_DEGREES: f32 = 5.0;
+const FOV_MIN_DEGREES: f32 = 50.0;
+const FOV_MAX_DEGREES: f32 = 80.0;
 
 /// Whether the in-match pause overlay's settings panel is expanded (toggled with `O`
 /// while paused). Match-scoped in spirit (only meaningful while paused) but kept a
@@ -111,7 +114,7 @@ pub(crate) fn draw_pause_settings(
                 _ => None,
             };
             let label = match capture_prompt {
-                Some(prompt) => format!("{} — {prompt}", row.label(&settings)),
+                Some(prompt) => format!("{} - {prompt}", row.label(&settings)),
                 None => row.label(&settings),
             };
             p.spawn((
@@ -212,6 +215,10 @@ pub(crate) fn pause_settings_adjust(
         SettingsRow::MouseSensitivity => {
             settings.mouse_sensitivity = (settings.mouse_sensitivity + sign * SENSITIVITY_STEP)
                 .clamp(SENSITIVITY_MIN, SENSITIVITY_MAX);
+        }
+        SettingsRow::FieldOfView => {
+            settings.fov_degrees = (settings.fov_degrees + sign * FOV_STEP_DEGREES)
+                .clamp(FOV_MIN_DEGREES, FOV_MAX_DEGREES);
         }
         SettingsRow::HighContrast => settings.high_contrast = !settings.high_contrast,
         SettingsRow::Binding(_) | SettingsRow::Back => return, // inert rows do not play click
