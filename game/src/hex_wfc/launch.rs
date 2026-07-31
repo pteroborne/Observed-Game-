@@ -8,6 +8,7 @@ use std::sync::OnceLock;
 
 use observed_authoring::{RoomPrototype, RuntimeHexCatalog, TilePrototype};
 use observed_content::ArchitectureRegister;
+use observed_facility::hex_wfc::profile::HexCompositionProfile;
 use observed_match::hex_wfc::{HexMatchConfig, HexMatchError, HexWfcMatch};
 
 const NEARBY_SEED_ATTEMPTS: u64 = 64;
@@ -88,6 +89,9 @@ impl std::error::Error for HexLaunchError {}
 pub(super) struct HexAuthoringCorpus {
     pub(super) cells: Vec<TilePrototype>,
     pub(super) rooms: Vec<RoomPrototype>,
+    /// The authored solve controls, loaded and hashed with the tile catalog so
+    /// a peer running a different composition cannot join.
+    pub(super) composition: HexCompositionProfile,
     pub(super) simulation_content_hash: [u8; 32],
 }
 
@@ -115,6 +119,7 @@ pub(super) fn load_current_corpus() -> Result<HexAuthoringCorpus, HexLaunchError
             RuntimeHexCatalog::load(&tile_dir(), &register_slugs).map(|loaded| HexAuthoringCorpus {
                 cells: loaded.cells,
                 rooms: loaded.rooms,
+                composition: loaded.composition,
                 simulation_content_hash: loaded.simulation_content_hash,
             })
         })
@@ -136,11 +141,12 @@ fn prepare_with_corpus(
                     actual: corpus.simulation_content_hash,
                 });
             }
-            let match_state = HexWfcMatch::new_with_rooms(
+            let match_state = HexWfcMatch::new_with_profile(
                 spec.requested_seed,
                 spec.config,
                 &corpus.cells,
                 &corpus.rooms,
+                &corpus.composition,
             )
             .map_err(|error| HexLaunchError::ExactSeedRejected {
                 seed: spec.requested_seed,
@@ -152,11 +158,12 @@ fn prepare_with_corpus(
             let mut last_error = None;
             for seed_offset in 0..NEARBY_SEED_ATTEMPTS {
                 let selected_seed = spec.requested_seed.wrapping_add(seed_offset);
-                match HexWfcMatch::new_with_rooms(
+                match HexWfcMatch::new_with_profile(
                     selected_seed,
                     spec.config,
                     &corpus.cells,
                     &corpus.rooms,
+                    &corpus.composition,
                 ) {
                     Ok(match_state) => {
                         return Ok(finish_preparation(spec, match_state, seed_offset, corpus));
@@ -232,6 +239,42 @@ mod tests {
                 expected: incompatible_hash,
                 actual: corpus.simulation_content_hash,
             }
+        );
+    }
+
+    /// The corpus's composition profile must reach the solve, not merely be
+    /// loaded and hashed. Without this, authoring a profile would change the
+    /// simulation content hash — locking peers out — while building the exact
+    /// same facility, which is the worst of both outcomes.
+    #[test]
+    fn the_corpus_composition_profile_reaches_the_prepared_facility() {
+        let corpus = load_current_corpus().expect("committed authoring corpus loads");
+        assert!(
+            corpus.composition.is_baseline(),
+            "the committed profile is authored; update this test's expectation"
+        );
+        let spec = HexLaunchSpec {
+            requested_seed: 0xF011_FAC1_1177,
+            config: compact_config(),
+            seed_policy: HexSeedPolicy::Nearby,
+        };
+
+        let baseline = prepare_with_corpus(spec, &corpus).expect("baseline prepares");
+
+        // Bias the lottery hard enough that the layout cannot plausibly match,
+        // while staying inside the validated band so solvability is untouched.
+        let mut authored = corpus.clone();
+        authored.composition.archetype_bias = authored
+            .composition
+            .archetype_bias
+            .with(observed_facility::hex_wfc::HexArchetype::Junction, 4.0)
+            .with(observed_facility::hex_wfc::HexArchetype::Corner, 0.25);
+        assert_eq!(authored.composition.validate(), Ok(()));
+        let steered = prepare_with_corpus(spec, &authored).expect("authored profile still solves");
+
+        assert_ne!(
+            baseline.match_state.facility.placements, steered.match_state.facility.placements,
+            "an authored composition profile must change what the solver builds"
         );
     }
 

@@ -24,8 +24,11 @@ sha2 = "0.10"
 # placement frequency, so the facility is a normal dependency with the `wfc`
 # feature — not just the dev-dependency the coverage gate used. Feature
 # unification makes the (additive) `wfc` solver available to the dev gates too.
+# `serde` carries the authored composition profile to and from disk: the solver
+# owns the type and its rules, this crate owns its bytes and its content hash.
 observed_facility = { path = "../observed_facility", default-features = false, features = [
     "wfc",
+    "serde",
 ] }
 
 [dev-dependencies]

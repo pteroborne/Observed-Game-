@@ -25,6 +25,66 @@ $env:OBSERVED2_SCRIPT = "scratch/<name>_view.json"; cargo dev-run -p hex_tile_la
 # then read the output PNG and LOOK at it — falsifiable-evidence rule applies
 ```
 
+## The composition profile
+
+Tiles are *what the solver may build*; the composition profile is *what it tends
+to build*. It lives at `assets/tiles/composition_profile.ron` with a
+`.sha256` sidecar, and it is content in exactly the sense the compiled catalog
+is: generated, committed, never hand-edited, and hashed.
+
+```powershell
+# Create one at the baseline (refuses to clobber an existing profile)
+cargo run -p observed_authoring --bin tilec -- profile-new
+
+# Check it, and see whether it still solves like an unprofiled build
+cargo run -p observed_authoring --bin tilec -- profile-validate
+
+# Show the catalog hash, the profile hash, and the folded simulation hash
+cargo run -p observed_authoring --bin tilec -- profile-hash
+
+# Re-serialize and regenerate the sidecar after an edit
+cargo run -p observed_authoring --bin tilec -- profile-write
+```
+
+What it controls (`crates/observed_facility/src/hex_wfc/profile.rs`):
+
+| Field | Effect |
+| --- | --- |
+| `tendencies` | Position bias: verticals toward the central axis, atria up high. `enabled: false` reverts to a flat lottery. |
+| `archetype_bias` | Global per-archetype weight multiplier. |
+| `district_bias` | Per-register multiplier, stacked *on top of* the built-in district identity table. |
+| `score` | Component weights for candidate scoring. |
+| `search.candidates` | How many layouts to solve and score before keeping one. |
+| `pin_sets` | Authored per-cell constraints. |
+
+Two rules the profile cannot break, both enforced rather than documented:
+
+1. **It can never zero a legal variant.** Multipliers validate into
+   `[0.25, 4.0]` — the same band districts and influence fields use — and
+   `effective_weight` floors any positive weight at 1. Solvability is not
+   something a profile may trade away. To genuinely *forbid* something, use a
+   pin, which is checked; do not drag a slider toward zero, which is not.
+2. **It never changes the RNG draw sequence.** The min-entropy candidate set
+   depends on domain lengths only, so a profile moves only the weights each
+   draw is compared against. The baseline profile therefore reproduces an
+   unprofiled solve byte for byte — pinned by
+   `the_baseline_profile_draws_the_same_rng_sequence`.
+
+   Pins are the deliberate exception: they filter initial domains, so a profile
+   with pins gives a different layout for the same seed.
+
+### Gotchas
+
+- **The profile is in the LAN compatibility hash.** `simulation_content_hash` is
+  now `sha256(domain || catalog_hash || profile_hash)`, so editing the profile
+  locks out any peer that has not taken the same edit. That is deliberate — two
+  peers with different compositions would otherwise solve different facilities
+  and desync — but it means a profile edit is a content change, not a setting.
+- **A missing profile is a hard error, not a silent baseline.** Falling back
+  quietly is the exact failure the content hash exists to catch.
+- Never hand-edit `composition_profile.ron` or its sidecar; `profile-write`
+  regenerates both together.
+
 View script schema (all fields optional; see `labs/hex_tile_lab/src/script_runner.rs`):
 
 ```json

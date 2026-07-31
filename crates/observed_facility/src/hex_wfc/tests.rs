@@ -474,7 +474,14 @@ fn print_placement_digests() {
         ("showcase", showcase, PINNED_3D_SEED, 0, 1),
     ] {
         let digest = match collapse::collapse_attempt(
-            seed, generation, attempt, config, None, &no_pins, None,
+            seed,
+            generation,
+            attempt,
+            config,
+            None,
+            &no_pins,
+            &super::profile::HexCompositionProfile::baseline(),
+            None,
         ) {
             Ok(solved) => fnv1a(&format!("{:?}|{:?}", solved.placements, solved.blueprints)),
             Err(reason) => fnv1a(reason),

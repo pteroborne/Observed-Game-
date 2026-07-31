@@ -14,6 +14,7 @@
 pub mod brush;
 pub mod cad_renderer;
 pub mod catalog;
+pub mod composition;
 pub mod distribution;
 pub mod generator;
 pub mod manifest;
@@ -35,6 +36,10 @@ pub use catalog::{
     RoomPrototypeSocket, RuntimeAuthoringCatalog, audit_district_variations, build_catalog,
     discover_sources, load_runtime_cells, new_module_template, write_catalog_build,
 };
+pub use composition::{
+    COMPOSITION_PROFILE_FILE, COMPOSITION_PROFILE_SHA_FILE, CompositionBuild, CompositionError,
+    fold_simulation_content_hash, load_profile, parse_profile, write_profile_build,
+};
 pub use manifest::{Manifest, ManifestEntry, ManifestError, TileKey};
 pub use source::{
     AuthoredModule, FloorPolicy, ModuleCell, ModuleCellRef, ModuleKind, ModulePort, ModuleSocket,
@@ -49,10 +54,21 @@ pub use tile::{
 /// The exact authored corpus consumed by both interactive and headless hex matches.
 /// Filesystem discovery stays outside the deterministic simulation, while this loader
 /// prevents clients and dedicated servers from assembling subtly different catalogs.
+///
+/// A facility is a pure function of `(seed, config, catalog, composition)`, so
+/// [`Self::simulation_content_hash`] folds the compiled catalog's digest
+/// together with the authored composition profile's. Everything downstream —
+/// `observed_net`'s `Hello`, the dedicated server's join check, replay binding —
+/// consumes only the `[u8; 32]`, so adding the profile to the fold needed no
+/// protocol change at all.
 #[derive(Clone, Debug)]
 pub struct RuntimeHexCatalog {
     pub cells: Vec<TilePrototype>,
     pub rooms: Vec<RoomPrototype>,
+    /// The authored composition the solver must run under. Loaded here rather
+    /// than separately so a caller cannot pair a catalog with a profile that
+    /// was not hashed with it.
+    pub composition: observed_facility::hex_wfc::profile::HexCompositionProfile,
     pub simulation_content_hash: [u8; 32],
 }
 
@@ -79,22 +95,16 @@ impl RuntimeHexCatalog {
             .runtime_catalog(register_slugs)
             .map_err(|error| format!("runtime catalog: {error:?}"))?;
         cells.extend(strict.cells);
+        let composition =
+            composition::load_profile(base).map_err(|error| format!("composition: {error}"))?;
         Ok(Self {
             cells,
             rooms: strict.rooms,
-            simulation_content_hash: decode_sha256(sidecar.trim())?,
+            simulation_content_hash: composition::fold_simulation_content_hash(
+                sidecar.trim(),
+                &composition.content_hash,
+            ),
+            composition: composition.profile,
         })
     }
-}
-
-fn decode_sha256(text: &str) -> Result<[u8; 32], String> {
-    if text.len() != 64 {
-        return Err("compiled catalog hash is not 64 hexadecimal characters".to_string());
-    }
-    let mut hash = [0_u8; 32];
-    for (index, byte) in hash.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(&text[index * 2..index * 2 + 2], 16)
-            .map_err(|_| "compiled catalog hash contains non-hexadecimal text".to_string())?;
-    }
-    Ok(hash)
 }

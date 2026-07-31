@@ -11,6 +11,7 @@ pub mod blueprint;
 mod collapse;
 mod constraints;
 mod context;
+pub mod profile;
 mod relayout;
 #[cfg(test)]
 mod relayout_tests;
@@ -32,6 +33,11 @@ pub use blueprint::{
 };
 pub use context::HexInfluenceField;
 pub use observed_hex::{HexCoord, HexFace, HexGridSize, PortClass, PortSignature};
+pub use profile::{
+    ArchetypeBias, COMPOSITION_PROFILE_VERSION, CompositionTendencies, DistrictBias,
+    HexCompositionProfile, HexPin, PinIntent, PinPortClass, PinSet, ProfileDefect, ScoreWeights,
+    SearchPolicy,
+};
 pub use relayout::{
     DEFAULT_MUTATION_MAX_CELLS, DEFAULT_MUTATION_TARGET_CELLS, DistrictSite, HexMutationRegion,
     HexObservationFrame, HexRelayoutCandidate, HexRelayoutDelta, HexRelayoutProgress,
@@ -45,6 +51,8 @@ pub use variants::{
 
 /// What a collapsed cell is, coarsely.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum HexSpace {
     Void,
     Room,
@@ -53,6 +61,8 @@ pub enum HexSpace {
 
 /// Traversal grammar of a collapsed cell (Phase 88 lateral subset).
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum HexArchetype {
     Void,
     Room,
@@ -309,8 +319,12 @@ pub struct HexWfcWorld {
 
 impl HexWfcWorld {
     /// Solve a fresh world. Deterministic in `(seed, generation)`.
+    ///
+    /// Uses [`HexCompositionProfile::baseline`]; see
+    /// [`Self::generate_with_profile`] for the authored-composition entry point.
     pub fn generate(seed: u64, config: HexWfcConfig) -> Result<HexWfcWorld, HexWfcError> {
-        Self::generate_inner(seed, config, None, None).map(|(world, _)| world)
+        Self::generate_inner(seed, config, None, &HexCompositionProfile::baseline(), None)
+            .map(|(world, _)| world)
     }
 
     /// Solve a production facility with an explicit repeated-role room quota
@@ -320,7 +334,29 @@ impl HexWfcWorld {
         config: HexWfcConfig,
         quotas: HexRoomQuotas,
     ) -> Result<HexWfcWorld, HexWfcError> {
-        Self::generate_inner(seed, config, Some(quotas), None).map(|(world, _)| world)
+        Self::generate_inner(
+            seed,
+            config,
+            Some(quotas),
+            &HexCompositionProfile::baseline(),
+            None,
+        )
+        .map(|(world, _)| world)
+    }
+
+    /// Solve under an authored composition profile.
+    ///
+    /// Deterministic in `(seed, generation, profile)`. The profile bends the
+    /// weighted lottery only — it can neither zero a legal variant nor change
+    /// how many random draws the collapse makes — so a baseline profile is
+    /// byte-identical to [`Self::generate`].
+    pub fn generate_with_profile(
+        seed: u64,
+        config: HexWfcConfig,
+        quotas: Option<HexRoomQuotas>,
+        profile: &HexCompositionProfile,
+    ) -> Result<HexWfcWorld, HexWfcError> {
+        Self::generate_inner(seed, config, quotas, profile, None).map(|(world, _)| world)
     }
 
     /// Solve while recording every step for the lab's animated replay.
@@ -328,8 +364,20 @@ impl HexWfcWorld {
         seed: u64,
         config: HexWfcConfig,
     ) -> Result<(HexWfcWorld, Vec<SolveStep>), HexWfcError> {
+        Self::generate_traced_with_profile(seed, config, &HexCompositionProfile::baseline())
+    }
+
+    /// [`Self::generate_traced`] under an authored composition profile.
+    ///
+    /// The step log is what pins the "same RNG draw sequence" invariant: a
+    /// baseline profile must produce an identical `Vec<SolveStep>`.
+    pub fn generate_traced_with_profile(
+        seed: u64,
+        config: HexWfcConfig,
+        profile: &HexCompositionProfile,
+    ) -> Result<(HexWfcWorld, Vec<SolveStep>), HexWfcError> {
         let mut steps = Vec::new();
-        Self::generate_inner(seed, config, None, Some(&mut steps))
+        Self::generate_inner(seed, config, None, profile, Some(&mut steps))
             .map(|(world, _)| world)
             .map(|world| (world, steps))
     }
@@ -376,6 +424,7 @@ impl HexWfcWorld {
         seed: u64,
         config: HexWfcConfig,
         room_quotas: Option<HexRoomQuotas>,
+        profile: &HexCompositionProfile,
         trace: Option<&mut Vec<SolveStep>>,
     ) -> Result<(HexWfcWorld, u32), HexWfcError> {
         if config.cols < 3 || config.rows < 3 || config.min_rooms < 2 {
@@ -383,7 +432,7 @@ impl HexWfcWorld {
         }
         let generation = 0;
         let (placements, blueprints, attempts) =
-            collapse::collapse(seed, generation, config, room_quotas, trace)?;
+            collapse::collapse(seed, generation, config, room_quotas, profile, trace)?;
         let architecture = relayout::initial_architecture(seed, config, &placements, &blueprints);
         let cell_revisions = placements.keys().copied().map(|coord| (coord, 0)).collect();
         Ok((

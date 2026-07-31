@@ -509,9 +509,15 @@ impl AuthoritativeServer {
         let (mut game, selected_seed) = (0..64u64)
             .find_map(|offset| {
                 let seed = seed.wrapping_add(offset);
-                HexWfcMatch::new_with_rooms(seed, config, &self.catalog.cells, &self.catalog.rooms)
-                    .ok()
-                    .map(|game| (game, seed))
+                HexWfcMatch::new_with_profile(
+                    seed,
+                    config,
+                    &self.catalog.cells,
+                    &self.catalog.rooms,
+                    &self.catalog.composition,
+                )
+                .ok()
+                .map(|game| (game, seed))
             })
             .ok_or("no solvable nearby server seed")?;
         game.bind_simulation_content_hash(self.catalog.simulation_content_hash);

@@ -16,6 +16,12 @@ bevy = ["dep:bevy"]
 # builds against until Phase 46 flips the default. See `src/wfc.rs` and the crate
 # README for the R11 dependency-bar writeup (problem, adapter, fallback, proof).
 wfc = ["dep:ghx_proc_gen"]
+# Serialization for the authored composition profile (`hex_wfc::profile`). Off by
+# default because the solver itself never reads or writes a file: `observed_authoring`
+# owns the RON/hash layer and turns the feature on, exactly as it already does for
+# the compiled tile catalog. Not a dependency-policy event — serde is already a
+# dependency of `observed_content`, `observed_authoring`, and the labs.
+serde = ["dep:serde"]
 
 [dependencies]
 observed_core = { path = "../observed_core" }
@@ -34,3 +40,5 @@ bevy = { version = "0.18.1", default-features = false, features = [
 ], optional = true }
 # Seeded topology generation for the `wfc` feature only; see feature comment above.
 ghx_proc_gen = { version = "0.8.0", optional = true }
+# Composition-profile serialization for the `serde` feature only; see above.
+serde = { version = "1", features = ["derive"], optional = true }

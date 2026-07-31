@@ -475,7 +475,9 @@ pub struct CatalogBuild {
     pub audit: CatalogAudit,
 }
 
-fn sha256(bytes: &[u8]) -> String {
+/// Shared with [`crate::composition`] so both content artifacts are digested by
+/// exactly one implementation.
+pub(crate) fn sha256(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 

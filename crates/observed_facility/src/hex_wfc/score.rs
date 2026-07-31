@@ -11,21 +11,23 @@ use std::collections::BTreeMap;
 
 use observed_hex::{HexCoord, travel_distance};
 
+use super::profile::ScoreWeights;
 use super::{HexArchetype, HexSpace, HexWfcWorld};
 
 /// Fixed component weights folded into [`LayoutScore::total`]. Tuned by feel
 /// rather than derived; kept as named constants so retuning is a one-line
 /// diff instead of a magic-number hunt through `score_layout`.
-const WEIGHT_CONNECTIVITY: f64 = 3.0;
-const WEIGHT_ELEVATION: f64 = 1.5;
-const WEIGHT_ROOM_WHOLENESS: f64 = 2.0;
-const WEIGHT_VARIETY: f64 = 1.5;
-const WEIGHT_RHYTHM: f64 = 1.0;
+pub(super) const WEIGHT_CONNECTIVITY: f64 = 3.0;
+pub(super) const WEIGHT_ELEVATION: f64 = 1.5;
+pub(super) const WEIGHT_ROOM_WHOLENESS: f64 = 2.0;
+pub(super) const WEIGHT_VARIETY: f64 = 1.5;
+pub(super) const WEIGHT_RHYTHM: f64 = 1.0;
 
 /// The traversal-grammar kinds `archetype_variety` distributes probability
 /// mass over (every non-`Void` [`HexArchetype`] variant). Used to normalize
 /// the raw Shannon entropy into a stable `0.0..=1.0` range.
-const SCOREABLE_ARCHETYPE_KINDS: u32 = 8; // Room, Straight, Corner, Junction, RampUp, RampHead, Shaft
+// Room, Straight, Corner, Junction, RampUp, RampHead, Shaft, Expanse
+const SCOREABLE_ARCHETYPE_KINDS: u32 = 8;
 
 /// Breakdown of a solved layout's "interestingness". Every field is a pure
 /// function of [`HexWfcWorld`]'s existing public accessors, so two calls
@@ -55,21 +57,33 @@ pub struct LayoutScore {
     pub total: f64,
 }
 
-/// Score a solved layout. Pure and total-ordering stable: identical worlds
-/// (same seed/config) always yield a bit-identical [`LayoutScore`].
+/// Score a solved layout with the shipped weights. Pure and total-ordering
+/// stable: identical worlds (same seed/config) always yield a bit-identical
+/// [`LayoutScore`].
 #[must_use]
 pub fn score_layout(world: &HexWfcWorld) -> LayoutScore {
+    score_layout_with(world, ScoreWeights::baseline())
+}
+
+/// Score a solved layout with authored component weights.
+///
+/// The five components are unchanged — only how much each counts toward
+/// [`LayoutScore::total`] moves — so a profile retunes what "best" means
+/// without changing what is measured. Passing
+/// [`ScoreWeights::baseline`] is exactly [`score_layout`].
+#[must_use]
+pub fn score_layout_with(world: &HexWfcWorld, weights: ScoreWeights) -> LayoutScore {
     let connectivity = connectivity_score(world);
     let elevation = elevation_score(world);
     let room_wholeness = room_wholeness_score(world);
     let archetype_variety = archetype_variety_score(world);
     let junction_rhythm = junction_rhythm_score(world);
 
-    let total = WEIGHT_CONNECTIVITY * connectivity
-        + WEIGHT_ELEVATION * elevation
-        + WEIGHT_ROOM_WHOLENESS * room_wholeness
-        + WEIGHT_VARIETY * archetype_variety
-        + WEIGHT_RHYTHM * junction_rhythm;
+    let total = weights.connectivity * connectivity
+        + weights.elevation * elevation
+        + weights.room_wholeness * room_wholeness
+        + weights.variety * archetype_variety
+        + weights.rhythm * junction_rhythm;
 
     LayoutScore {
         connectivity,

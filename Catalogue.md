@@ -66,7 +66,7 @@ These crates represent the stable core of the game's simulation layer. They cont
 15. **`observed_hex`** — [source](crates/observed_hex/src/lib.rs)
     - *Purpose:* The single pure source of truth for axial coordinates, eight prism faces, packed port signatures, quantized-hex metrics, grid indexing, and exact lattice-to-world mapping.
 16. **`observed_authoring`** — [source](crates/observed_authoring/src/lib.rs)
-   - *Purpose:* Pure TrenchBroom `.map` import and deterministic `tilec` pipeline: strict cell/whole-room schemas, footprint/port/typed-gameplay-socket/floor/headroom/ramp/complexity contracts, SHA-256 hull catalogues, runtime rotation/register expansion, legacy-manifest compatibility, and brush-to-convex-collider projection.
+   - *Purpose:* Pure TrenchBroom `.map` import and deterministic `tilec` pipeline: strict cell/whole-room schemas, footprint/port/typed-gameplay-socket/floor/headroom/ramp/complexity contracts, SHA-256 hull catalogues, runtime rotation/register expansion, legacy-manifest compatibility, and brush-to-convex-collider projection. Also owns the on-disk authored **composition profile** (`composition.rs`) and the domain-separated fold that makes it part of the simulation content hash — tiles say what the solver *may* build, the profile says what it *tends* to build.
 
 ---
 

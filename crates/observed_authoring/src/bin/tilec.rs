@@ -1,8 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use observed_authoring::{
-    ModuleKind, ModuleSummary, build_catalog, new_module_template, parse_authored_module,
-    write_catalog_build,
+    CompositionBuild, ModuleKind, ModuleSummary, build_catalog, fold_simulation_content_hash,
+    load_profile, new_module_template, parse_authored_module, write_catalog_build,
+    write_profile_build,
 };
 
 fn usage() -> ! {
@@ -13,9 +14,15 @@ fn usage() -> ! {
          tilec audit [source-root]\n\
          tilec audit-seams [source-root]\n\
          tilec audit-distribution [source-root]\n\
+         tilec audit-districts [source-root]\n\
          tilec gen-tower [output-dir]\n\
          tilec render-cad [output.svg]\n\
-         tilec build [source-root] [catalog.ron] [manifest.ron]"
+         tilec build [source-root] [catalog.ron] [manifest.ron]\n\n\
+         Composition profile (the authored solve controls):\n\
+         tilec profile-new [source-root]\n\
+         tilec profile-validate [source-root]\n\
+         tilec profile-hash [source-root]\n\
+         tilec profile-write [source-root]"
     );
     std::process::exit(2);
 }
@@ -260,7 +267,107 @@ fn run() -> Result<(), String> {
                 built.audit.content_hash
             );
         }
+        // The composition profile is content, like the compiled catalog: it is
+        // generated, hashed, committed, and never hand-edited. These four
+        // commands are the whole supported way to touch it from the shell.
+        "profile-new" => {
+            let root = profile_root(&mut args);
+            let path = root.join(observed_authoring::COMPOSITION_PROFILE_FILE);
+            if path.exists() {
+                return Err(format!(
+                    "{} already exists; use profile-write to regenerate it",
+                    path.display()
+                ));
+            }
+            let build = CompositionBuild::baseline().map_err(|error| error.to_string())?;
+            write_profile_build(&build, &root).map_err(|error| error.to_string())?;
+            println!(
+                "created {} at the baseline composition\ncontent hash {}",
+                path.display(),
+                build.content_hash
+            );
+        }
+        "profile-validate" => {
+            let root = profile_root(&mut args);
+            let build = load_profile(&root).map_err(|error| error.to_string())?;
+            let profile = &build.profile;
+            println!(
+                "{} v{} label {:?}\n\
+                 tendencies {}\n\
+                 district biases {}  pin sets {}  pins {}\n\
+                 search candidates {}\n\
+                 content hash {}\n\
+                 {}",
+                observed_authoring::COMPOSITION_PROFILE_FILE,
+                profile.version,
+                profile.label,
+                if profile.tendencies.enabled {
+                    "on"
+                } else {
+                    "off"
+                },
+                profile.district_bias.len(),
+                profile.pin_sets.len(),
+                profile
+                    .pin_sets
+                    .iter()
+                    .map(|set| set.pins.len())
+                    .sum::<usize>(),
+                profile.search.candidates,
+                build.content_hash,
+                if profile.is_baseline() {
+                    "baseline (solves exactly as an unprofiled build)"
+                } else {
+                    "authored (changes what the solver builds)"
+                },
+            );
+        }
+        "profile-hash" => {
+            let root = profile_root(&mut args);
+            let profile = load_profile(&root).map_err(|error| error.to_string())?;
+            let catalog_sidecar = root.join("compiled_catalog.sha256");
+            let catalog_hash = std::fs::read_to_string(&catalog_sidecar)
+                .map_err(|error| format!("{}: {error}", catalog_sidecar.display()))?;
+            let folded = fold_simulation_content_hash(catalog_hash.trim(), &profile.content_hash);
+            let folded_hex: String = folded.iter().map(|byte| format!("{byte:02x}")).collect();
+            println!(
+                "catalog     {}\nprofile     {}\nsimulation  {folded_hex}\n\n\
+                 The simulation hash is what a LAN peer must match to join.",
+                catalog_hash.trim(),
+                profile.content_hash
+            );
+        }
+        "profile-write" => {
+            let root = profile_root(&mut args);
+            let path = root.join(observed_authoring::COMPOSITION_PROFILE_FILE);
+            // Re-serializing what is already there is how a profile edited by
+            // the studio gets its sidecar back in agreement; falling back to the
+            // baseline is how a repository without one gets its first.
+            let build = match std::fs::read_to_string(&path) {
+                Ok(text) => {
+                    let profile = observed_authoring::parse_profile(&text)
+                        .map_err(|error| error.to_string())?;
+                    CompositionBuild::new(profile).map_err(|error| error.to_string())?
+                }
+                Err(_) => CompositionBuild::baseline().map_err(|error| error.to_string())?,
+            };
+            write_profile_build(&build, &root).map_err(|error| error.to_string())?;
+            println!(
+                "wrote {} and its sidecar\ncontent hash {}",
+                path.display(),
+                build.content_hash
+            );
+        }
         _ => usage(),
     }
     Ok(())
+}
+
+/// Every profile command takes the same optional source root.
+fn profile_root(args: &mut impl Iterator<Item = String>) -> PathBuf {
+    let root = PathBuf::from(args.next().unwrap_or_else(|| "assets/tiles".to_string()));
+    if args.next().is_some() {
+        usage();
+    }
+    root
 }

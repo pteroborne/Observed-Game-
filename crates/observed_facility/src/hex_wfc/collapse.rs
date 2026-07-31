@@ -10,6 +10,7 @@ use super::blueprint::StampedBlueprint;
 use super::constraints::{
     all_coords, forced_route_edges, stamp_blueprints_with_pins, stamped_signatures,
 };
+use super::profile::HexCompositionProfile;
 use super::trace::SolveStep;
 use super::validate::layout_failure;
 use super::variants::{HexVariant, catalogue, variants_compatible};
@@ -138,11 +139,16 @@ pub(super) fn collapse(
     generation: u32,
     config: HexWfcConfig,
     room_quotas: Option<HexRoomQuotas>,
+    profile: &HexCompositionProfile,
     mut trace: Option<&mut Vec<SolveStep>>,
 ) -> Result<CollapseOutput, HexWfcError> {
     let mut last_failure: Option<&'static str> = None;
     let no_pins = BTreeSet::new();
-    for attempt in 0..config.retry_budget {
+    let retry_budget = profile
+        .search
+        .retry_budget_override
+        .unwrap_or(config.retry_budget);
+    for attempt in 0..retry_budget {
         let solved = if room_quotas.is_none() {
             collapse_attempt(
                 seed,
@@ -151,6 +157,7 @@ pub(super) fn collapse(
                 config,
                 None,
                 &no_pins,
+                profile,
                 trace.as_deref_mut(),
             )
         } else {
@@ -166,6 +173,7 @@ pub(super) fn collapse(
                 &no_pins,
                 &[],
                 room_quotas,
+                profile,
                 trace.as_deref_mut(),
             )
         };
@@ -175,7 +183,7 @@ pub(super) fn collapse(
         }
     }
     Err(HexWfcError::RetryBudgetExhausted {
-        attempts: config.retry_budget,
+        attempts: retry_budget,
         last_failure,
     })
 }
@@ -183,6 +191,7 @@ pub(super) fn collapse(
 /// Exactly one deterministic `(seed, generation, attempt)` collapse. Relayout
 /// calls this once per simulation tick with the previous placements and the
 /// complete pin set; ordinary generation uses the same path without pins.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn collapse_attempt(
     seed: u64,
     generation: u32,
@@ -190,6 +199,7 @@ pub(super) fn collapse_attempt(
     config: HexWfcConfig,
     previous: Option<&BTreeMap<HexCoord, HexPlacement>>,
     pinned: &BTreeSet<HexCoord>,
+    profile: &HexCompositionProfile,
     mut trace: Option<&mut Vec<SolveStep>>,
 ) -> Result<CollapseAttempt, &'static str> {
     let tables = solver_tables();
@@ -204,6 +214,7 @@ pub(super) fn collapse_attempt(
         pinned,
         &[],
         None,
+        profile,
         trace,
     )
 }
@@ -507,6 +518,7 @@ fn collapse_attempt_with_blueprints(
     pinned: &BTreeSet<HexCoord>,
     locked_blueprints: &[StampedBlueprint],
     room_quotas: Option<HexRoomQuotas>,
+    profile: &HexCompositionProfile,
     mut trace: Option<&mut Vec<SolveStep>>,
 ) -> Result<CollapseAttempt, &'static str> {
     let variants = &tables.variants[..];
@@ -542,7 +554,15 @@ fn collapse_attempt_with_blueprints(
     if !propagate(config, tables, &mut domains, all_cells, &mut trace) {
         return Err("propagation contradiction");
     }
-    if !collapse_domains(config, tables, &mut domains, rng, &districts, &mut trace) {
+    if !collapse_domains(
+        config,
+        tables,
+        &mut domains,
+        rng,
+        &districts,
+        profile,
+        &mut trace,
+    ) {
         return Err("collapse contradiction");
     }
     let mut placements = materialize(config, variants, &domains);
@@ -809,6 +829,7 @@ fn collapse_domains(
     domains: &mut [VariantSet],
     rng: &mut SplitMix,
     districts: &[super::relayout::DistrictSite],
+    profile: &HexCompositionProfile,
     trace: &mut Option<&mut Vec<SolveStep>>,
 ) -> bool {
     let variants = &tables.variants[..];
@@ -849,6 +870,7 @@ fn collapse_domains(
                 config,
                 super::relayout::district_of(cell_coord, districts),
                 None,
+                profile,
             );
             clustered_expanse_weight(base, variants[variant].archetype, adjacent_expanses)
         };

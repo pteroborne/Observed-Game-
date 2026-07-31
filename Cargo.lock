@@ -5494,6 +5494,7 @@ dependencies = [
  "observed_core",
  "observed_hex",
  "observed_observation",
+ "serde",
 ]
 
 [[package]]

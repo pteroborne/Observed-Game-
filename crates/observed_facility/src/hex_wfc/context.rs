@@ -32,6 +32,7 @@ use observed_hex::HexCoord;
 
 use observed_content::ArchitectureRegister;
 
+use super::profile::{CompositionTendencies, HexCompositionProfile};
 use super::{HexArchetype, HexWfcConfig};
 
 /// Whether the geometry composition tendencies below are applied to the solve.
@@ -49,16 +50,22 @@ use super::{HexArchetype, HexWfcConfig};
 /// seed that stalled. `topology::is_connection_open` no longer treats a
 /// room-to-room vertical port as a connection, so no route promises that climb,
 /// and the soak passes with tendencies on.
-const COMPOSITION_TENDENCIES_ENABLED: bool = true;
+///
+/// Since Arc R these five are the *baseline* values only: an authored
+/// [`super::profile::HexCompositionProfile`] supplies the live ones, and
+/// [`super::profile::CompositionTendencies::baseline`] is pinned to these so
+/// "the baseline profile reproduces today" stays a checked claim rather than a
+/// comment.
+pub(super) const COMPOSITION_TENDENCIES_ENABLED: bool = true;
 
 /// Weight multiplier at the central axis for vertical archetypes.
-const VERTICAL_CENTER_BOOST: f64 = 1.2;
+pub(super) const VERTICAL_CENTER_BOOST: f64 = 1.2;
 /// Weight multiplier at the grid edge for vertical archetypes.
-const VERTICAL_EDGE_FALLOFF: f64 = 0.9;
+pub(super) const VERTICAL_EDGE_FALLOFF: f64 = 0.9;
 /// Weight multiplier for rooms at the lowest level.
-const ROOM_LOW_LEVEL: f64 = 0.9;
+pub(super) const ROOM_LOW_LEVEL: f64 = 0.9;
 /// Weight multiplier for rooms at the highest level.
-const ROOM_HIGH_LEVEL: f64 = 1.2;
+pub(super) const ROOM_HIGH_LEVEL: f64 = 1.2;
 
 /// Linear interpolation from `a` (at `t = 0`) to `b` (at `t = 1`).
 fn lerp(a: f64, b: f64, t: f64) -> f64 {
@@ -93,18 +100,22 @@ fn level_fraction(coord: HexCoord, config: HexWfcConfig) -> f64 {
 
 /// The geometry-context weight multiplier for placing `archetype` at `coord`.
 /// Always strictly positive; tendencies only (see module docs).
+///
+/// `tendencies` comes from the authored composition profile; passing
+/// [`CompositionTendencies::baseline`] reproduces the shipped constants.
 #[must_use]
 pub(super) fn context_multiplier(
     coord: HexCoord,
     archetype: HexArchetype,
     config: HexWfcConfig,
+    tendencies: CompositionTendencies,
 ) -> f64 {
     match archetype {
         // Verticals (ramps, shafts) cluster toward the central axis and thin
         // out toward the edges, so the facility grows a legible vertical core.
         HexArchetype::RampUp | HexArchetype::RampHead | HexArchetype::Shaft => lerp(
-            VERTICAL_CENTER_BOOST,
-            VERTICAL_EDGE_FALLOFF,
+            tendencies.vertical_center_boost,
+            tendencies.vertical_edge_falloff,
             radial_fraction(coord, config),
         ),
         // An expanse is flat floor: it wants neither the vertical core nor the
@@ -113,8 +124,8 @@ pub(super) fn context_multiplier(
         // Rooms (the atria) favour the upper levels; heavier connective
         // structure fills the lower ones.
         HexArchetype::Room => lerp(
-            ROOM_LOW_LEVEL,
-            ROOM_HIGH_LEVEL,
+            tendencies.room_low_level,
+            tendencies.room_high_level,
             level_fraction(coord, config),
         ),
         // Halls (straight/corner/junction) and void stay neutral.
@@ -232,8 +243,11 @@ impl HexInfluenceField {
 /// How strongly a district may bend the static weights. Shared with
 /// [`HexInfluenceField`] so no single input can dominate the lottery or drive a
 /// legal variant out of contention.
-const PROFILE_MIN: f64 = 0.25;
-const PROFILE_MAX: f64 = 4.0;
+/// Also the band an authored composition profile is validated into, so a
+/// district table, an influence field, and an authored bias all bend the
+/// lottery by the same bounded amount.
+pub(super) const PROFILE_MIN: f64 = 0.25;
+pub(super) const PROFILE_MAX: f64 = 4.0;
 
 /// What a district builds, as a multiplier on each archetype's static weight.
 ///
@@ -353,7 +367,13 @@ fn district_multiplier(register: ArchitectureRegister, archetype: HexArchetype) 
 /// a bounded [`HexInfluenceField`] bias. A zero static weight stays zero (never
 /// selectable, by design); any positive weight keeps a floor of `1`, so a legal
 /// variant can always still be chosen and solvability is preserved.
+/// The `profile` contributes two further bounded factors: a global
+/// per-archetype bias, and a per-district one that stacks on top of the
+/// register's built-in identity table rather than replacing it. Both are
+/// validated into `[PROFILE_MIN, PROFILE_MAX]`, so no profile can zero a legal
+/// variant and the floor below still holds.
 #[must_use]
+#[allow(clippy::too_many_arguments)]
 pub(super) fn effective_weight(
     coord: HexCoord,
     archetype: HexArchetype,
@@ -361,19 +381,25 @@ pub(super) fn effective_weight(
     config: HexWfcConfig,
     district: Option<ArchitectureRegister>,
     influence: Option<&HexInfluenceField>,
+    composition: &HexCompositionProfile,
 ) -> u64 {
     if weight == 0 {
         return 0;
     }
-    let geometry = if COMPOSITION_TENDENCIES_ENABLED {
-        context_multiplier(coord, archetype, config)
+    let geometry = if composition.tendencies.enabled {
+        context_multiplier(coord, archetype, config, composition.tendencies)
     } else {
         1.0
     };
     let profile = district.map_or(1.0, |register| district_multiplier(register, archetype));
+    let authored_district = district.map_or(1.0, |register| {
+        composition.district_bias_for(register, archetype)
+    });
     let bias = influence.map_or(1.0, |field| field.multiplier(archetype));
-    let scaled = (f64::from(weight) * geometry * profile * bias).round();
-    // `scaled` is finite and >= 0 here (both factors are bounded positive), so
+    let authored = composition.bias_for(archetype);
+    let scaled =
+        (f64::from(weight) * geometry * profile * authored_district * bias * authored).round();
+    // `scaled` is finite and >= 0 here (every factor is bounded positive), so
     // the cast is well-defined; floor at 1 to preserve selectability.
     (scaled as u64).max(1)
 }
@@ -407,6 +433,32 @@ mod tests {
 
     fn coord(q: u16, r: u16, level: u8) -> HexCoord {
         HexCoord { q, r, level }
+    }
+
+    /// The tests below assert the *shipped* composition, so they all run at the
+    /// baseline profile. Authored-profile behaviour gets its own tests at the
+    /// end of this module.
+    fn context_multiplier(coord: HexCoord, archetype: HexArchetype, config: HexWfcConfig) -> f64 {
+        super::context_multiplier(coord, archetype, config, CompositionTendencies::baseline())
+    }
+
+    fn effective_weight(
+        coord: HexCoord,
+        archetype: HexArchetype,
+        weight: u32,
+        config: HexWfcConfig,
+        district: Option<ArchitectureRegister>,
+        influence: Option<&HexInfluenceField>,
+    ) -> u64 {
+        super::effective_weight(
+            coord,
+            archetype,
+            weight,
+            config,
+            district,
+            influence,
+            &HexCompositionProfile::baseline(),
+        )
     }
 
     #[test]
@@ -567,6 +619,91 @@ mod tests {
         }
     }
 
+    /// The claim Slice 0 rests on: routing the solve through a baseline
+    /// profile changes nothing at all. Compares every part of the solved world
+    /// that a match reads — placements, districts, and per-cell revisions.
+    #[test]
+    fn the_baseline_profile_reproduces_generate_byte_for_byte() {
+        use crate::hex_wfc::{HexWfcConfig, HexWfcWorld};
+        let cfg = HexWfcConfig::arc_default();
+        for seed in [
+            0xC047_0000_0000_0000,
+            0xA11C_0000_0000_0000,
+            0xA11C_E000_0000_0005,
+            7,
+            42,
+        ] {
+            let legacy = HexWfcWorld::generate(seed, cfg).expect("baseline solve completes");
+            let profiled = HexWfcWorld::generate_with_profile(
+                seed,
+                cfg,
+                None,
+                &HexCompositionProfile::baseline(),
+            )
+            .expect("profiled solve completes");
+            assert_eq!(legacy.placements, profiled.placements, "seed {seed:#x}");
+            assert_eq!(legacy.architecture, profiled.architecture, "seed {seed:#x}");
+            assert_eq!(
+                legacy.cell_revisions, profiled.cell_revisions,
+                "seed {seed:#x}"
+            );
+            assert_eq!(
+                legacy.last_attempts, profiled.last_attempts,
+                "seed {seed:#x}: the retry budget must be consumed identically"
+            );
+        }
+    }
+
+    /// Invariant 2, pinned directly rather than inferred. The step log records
+    /// every observation and prune in order, so equal logs mean the collapse
+    /// made the same draws in the same sequence — which is what makes a
+    /// profile safe to add to a shipped solver.
+    #[test]
+    fn the_baseline_profile_draws_the_same_rng_sequence() {
+        use crate::hex_wfc::{HexWfcConfig, HexWfcWorld};
+        let cfg = HexWfcConfig::default();
+        for seed in [0xC047_0000_0000_0000, 7, 42] {
+            let (_, legacy) = HexWfcWorld::generate_traced(seed, cfg).expect("traced solve");
+            let (_, profiled) = HexWfcWorld::generate_traced_with_profile(
+                seed,
+                cfg,
+                &HexCompositionProfile::baseline(),
+            )
+            .expect("traced profiled solve");
+            assert_eq!(
+                legacy.len(),
+                profiled.len(),
+                "seed {seed:#x}: step count diverged"
+            );
+            assert_eq!(legacy, profiled, "seed {seed:#x}: draw sequence diverged");
+        }
+    }
+
+    /// A profile that actually bends the lottery must still solve, and still
+    /// solve *reproducibly* — otherwise the tool could author an unshippable
+    /// facility without noticing.
+    #[test]
+    fn an_authored_profile_still_solves_and_stays_deterministic() {
+        use crate::hex_wfc::{HexWfcConfig, HexWfcWorld};
+        let cfg = HexWfcConfig::arc_default();
+        let seed = 0xC047_0000_0000_0000;
+        let mut profile = HexCompositionProfile::baseline();
+        profile.archetype_bias = profile
+            .archetype_bias
+            .with(HexArchetype::Junction, 2.5)
+            .with(HexArchetype::Shaft, 0.4);
+        assert_eq!(profile.validate(), Ok(()));
+
+        let a = HexWfcWorld::generate_with_profile(seed, cfg, None, &profile)
+            .expect("authored profile still solves");
+        let b = HexWfcWorld::generate_with_profile(seed, cfg, None, &profile)
+            .expect("authored profile still solves");
+        assert_eq!(
+            a.placements, b.placements,
+            "same seed and profile must reproduce exactly"
+        );
+    }
+
     #[test]
     fn context_weighted_solve_is_deterministic_and_solves() {
         use crate::hex_wfc::{HexWfcConfig, HexWfcWorld};
@@ -596,6 +733,172 @@ mod tests {
         let hall_driven =
             effective_weight(c, HexArchetype::Straight, 10, cfg, None, Some(&vertical));
         assert_eq!(hall_base, hall_driven, "verticality must not touch halls");
+    }
+
+    /// Invariant 1, against the whole profile band rather than one value: no
+    /// authored bias, at either edge, in any district, may starve a legal
+    /// variant. Solvability is not something a composition profile is allowed
+    /// to trade away.
+    #[test]
+    fn no_authored_profile_can_zero_a_legal_variant() {
+        let cfg = config();
+        let center = coord(cfg.cols / 2, cfg.rows / 2, 1);
+        for edge in [PROFILE_MIN, PROFILE_MAX] {
+            for archetype in [
+                HexArchetype::Room,
+                HexArchetype::Straight,
+                HexArchetype::Corner,
+                HexArchetype::Junction,
+                HexArchetype::RampUp,
+                HexArchetype::RampHead,
+                HexArchetype::Shaft,
+                HexArchetype::Expanse,
+            ] {
+                let mut profile = HexCompositionProfile::baseline();
+                profile.archetype_bias = profile.archetype_bias.with(archetype, edge);
+                profile.district_bias = ArchitectureRegister::ALL
+                    .iter()
+                    .map(|register| crate::hex_wfc::profile::DistrictBias {
+                        register: register.slug().to_string(),
+                        bias: crate::hex_wfc::profile::ArchetypeBias::neutral()
+                            .with(archetype, edge),
+                    })
+                    .collect();
+                assert_eq!(profile.validate(), Ok(()), "{archetype:?} @ {edge}");
+
+                for register in ArchitectureRegister::ALL {
+                    assert!(
+                        super::effective_weight(
+                            center,
+                            archetype,
+                            1,
+                            cfg,
+                            Some(register),
+                            None,
+                            &profile,
+                        ) >= 1,
+                        "{register:?}/{archetype:?} @ {edge} starved a legal variant"
+                    );
+                    assert_eq!(
+                        super::effective_weight(
+                            center,
+                            archetype,
+                            0,
+                            cfg,
+                            Some(register),
+                            None,
+                            &profile,
+                        ),
+                        0,
+                        "{register:?}/{archetype:?} @ {edge} revived an illegal variant"
+                    );
+                }
+            }
+        }
+    }
+
+    /// An authored bias must actually reach the lottery, in the direction the
+    /// author asked for — otherwise the tool would be tuning nothing.
+    #[test]
+    fn an_authored_bias_moves_the_weight_both_ways() {
+        let cfg = config();
+        let c = coord(5, 5, 1);
+        let baseline = HexCompositionProfile::baseline();
+        let base = super::effective_weight(c, HexArchetype::Shaft, 10, cfg, None, None, &baseline);
+
+        let mut raised = HexCompositionProfile::baseline();
+        raised.archetype_bias = raised.archetype_bias.with(HexArchetype::Shaft, 2.0);
+        let up = super::effective_weight(c, HexArchetype::Shaft, 10, cfg, None, None, &raised);
+
+        let mut lowered = HexCompositionProfile::baseline();
+        lowered.archetype_bias = lowered.archetype_bias.with(HexArchetype::Shaft, 0.5);
+        let down = super::effective_weight(c, HexArchetype::Shaft, 10, cfg, None, None, &lowered);
+
+        assert!(up > base, "raising the bias must raise the weight");
+        assert!(down < base, "lowering the bias must lower the weight");
+        assert!(down >= 1, "but never below the solvability floor");
+    }
+
+    /// An authored district bias stacks on the register's identity table
+    /// rather than replacing it — the built-in identity is a floor an author
+    /// bends, not a default they overwrite.
+    #[test]
+    fn an_authored_district_bias_stacks_on_the_identity_table() {
+        let cfg = config();
+        let c = coord(5, 5, 1);
+        let register = ArchitectureRegister::LiminalGrid;
+        let baseline = HexCompositionProfile::baseline();
+        let base = super::effective_weight(
+            c,
+            HexArchetype::Junction,
+            10,
+            cfg,
+            Some(register),
+            None,
+            &baseline,
+        );
+
+        let mut authored = HexCompositionProfile::baseline();
+        authored
+            .district_bias
+            .push(crate::hex_wfc::profile::DistrictBias {
+                register: register.slug().to_string(),
+                bias: crate::hex_wfc::profile::ArchetypeBias::neutral()
+                    .with(HexArchetype::Junction, 2.0),
+            });
+        let stacked = super::effective_weight(
+            c,
+            HexArchetype::Junction,
+            10,
+            cfg,
+            Some(register),
+            None,
+            &authored,
+        );
+
+        assert!(
+            stacked > base,
+            "the authored district bias must stack ({stacked} vs {base})"
+        );
+        // Another district is untouched by a bias scoped to this one.
+        let other = ArchitectureRegister::Wellshaft;
+        assert_eq!(
+            super::effective_weight(
+                c,
+                HexArchetype::Junction,
+                10,
+                cfg,
+                Some(other),
+                None,
+                &authored
+            ),
+            super::effective_weight(
+                c,
+                HexArchetype::Junction,
+                10,
+                cfg,
+                Some(other),
+                None,
+                &baseline
+            ),
+            "a district-scoped bias must not leak into other districts"
+        );
+    }
+
+    /// Turning tendencies off must reproduce the pre-Phase-107 flat lottery,
+    /// so the switch is a real revert rather than an approximation.
+    #[test]
+    fn disabling_tendencies_flattens_the_geometry_factor() {
+        let cfg = config();
+        let center = coord(cfg.cols / 2, cfg.rows / 2, 1);
+        let edge = coord(0, 0, 1);
+        let mut flat = HexCompositionProfile::baseline();
+        flat.tendencies.enabled = false;
+        assert_eq!(
+            super::effective_weight(center, HexArchetype::Shaft, 10, cfg, None, None, &flat),
+            super::effective_weight(edge, HexArchetype::Shaft, 10, cfg, None, None, &flat),
+            "with tendencies off, position must not matter"
+        );
     }
 
     #[test]

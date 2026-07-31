@@ -8,8 +8,9 @@ use glam::Vec3;
 use observed_authoring::{RoomPrototype, TilePrototype};
 use observed_core::{CorridorId, PlayerId, RoomId, TeamId};
 use observed_facility::hex_wfc::{
-    HexObservationFrame, HexRelayoutCandidate, HexRelayoutDelta, HexRelayoutWork, HexRoomQuotas,
-    HexThresholdKey, HexWfcConfig, HexWfcError, HexWfcWorld, blueprint_for_role,
+    HexCompositionProfile, HexObservationFrame, HexRelayoutCandidate, HexRelayoutDelta,
+    HexRelayoutWork, HexRoomQuotas, HexThresholdKey, HexWfcConfig, HexWfcError, HexWfcWorld,
+    blueprint_for_role,
 };
 use observed_hex::{HexCoord, HexFace, hex_origin};
 use observed_traversal::{FpsBody, FpsConfig, rapier_controller::RapierTraversalScene};
@@ -313,6 +314,27 @@ impl HexWfcMatch {
         prototypes: &[TilePrototype],
         room_prototypes: &[RoomPrototype],
     ) -> Result<Self, HexMatchError> {
+        Self::new_with_profile(
+            seed,
+            config,
+            prototypes,
+            room_prototypes,
+            &HexCompositionProfile::baseline(),
+        )
+    }
+
+    /// Build a match under an authored composition profile.
+    ///
+    /// The profile is content, hashed alongside the tile catalog into the
+    /// simulation content hash, so every peer in a session solves the same
+    /// facility. A baseline profile is byte-identical to [`Self::new_with_rooms`].
+    pub fn new_with_profile(
+        seed: u64,
+        config: HexMatchConfig,
+        prototypes: &[TilePrototype],
+        room_prototypes: &[RoomPrototype],
+        composition: &HexCompositionProfile,
+    ) -> Result<Self, HexMatchError> {
         let player_count = config.teams.saturating_mul(config.members_per_team);
         // Sixteen, matching `observed_net::lan::MAX_SEATS`. The old ceiling of 8
         // was below what the wire could carry once frames stopped being a fixed
@@ -327,15 +349,8 @@ impl HexWfcMatch {
         }
         let production_scale =
             config.wfc.cols >= 28 && config.wfc.rows >= 20 && config.wfc.levels >= 10;
-        let facility = if production_scale {
-            HexWfcWorld::generate_with_room_quotas(
-                seed,
-                config.wfc,
-                HexRoomQuotas::for_team_count(config.teams),
-            )?
-        } else {
-            HexWfcWorld::generate(seed, config.wfc)?
-        };
+        let quotas = production_scale.then(|| HexRoomQuotas::for_team_count(config.teams));
+        let facility = HexWfcWorld::generate_with_profile(seed, config.wfc, quotas, composition)?;
         let geometry =
             HexWfcGeometrySnapshot::project_with_rooms(&facility, prototypes, room_prototypes)?;
         let physics = geometry.rapier_scene();
