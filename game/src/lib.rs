@@ -113,6 +113,13 @@ fn setup_camera(mut commands: Commands) {
     commands.spawn((
         Camera3d::default(),
         crate::view::components::GameCam,
+        // Say which camera the UI belongs to rather than letting Bevy infer it. With no
+        // marker, a root node targets the highest-order camera on the primary window and
+        // `is_active` is not part of that choice — so the hex match's order-1 survivor-map
+        // camera silently captured every menu, HUD, and pause overlay while sitting
+        // inactive, and they rendered nowhere. Anything that wants a different camera
+        // (the survivor map's own legend) now has to ask for it by name.
+        bevy::ui::IsDefaultUiCamera,
         Transform::from_xyz(0.0, 2.0, 0.0),
         Name::new("Observed 2 Camera"),
     ));

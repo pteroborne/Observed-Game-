@@ -18,6 +18,7 @@ use bevy::ui_widgets::Activate;
 use bevy::window::PrimaryWindow;
 
 use crate::GameState;
+use crate::hex_wfc::overlay::{MatchOverlayState, PausePage};
 use crate::screens::settings::SettingsPageAction;
 
 /// The Phase 123 baseline viewport.
@@ -32,6 +33,11 @@ struct Shot {
     label: &'static str,
     state: GameState,
     page_action: Option<SettingsPageAction>,
+    /// Modal state to install before the shot. The in-match overlays are not screens, so
+    /// they are reached by setting the match's own modal state rather than a `GameState`.
+    overlay: Option<MatchOverlayState>,
+    /// Extra settle time. A hex match has to prepare and then admit its first cells.
+    extra_settle: f32,
 }
 
 const fn shot(label: &'static str, state: GameState) -> Shot {
@@ -39,6 +45,8 @@ const fn shot(label: &'static str, state: GameState) -> Shot {
         label,
         state,
         page_action: None,
+        overlay: None,
+        extra_settle: 0.0,
     }
 }
 
@@ -53,6 +61,7 @@ fn sweep() -> Vec<Shot> {
             label: "04_settings_controls",
             state: GameState::Settings,
             page_action: Some(SettingsPageAction::OpenBindings),
+            ..shot("", GameState::Settings)
         },
         shot("05_loadout", GameState::Loadout),
         shot("06_lan_browser", GameState::LanBrowser),
@@ -60,6 +69,24 @@ fn sweep() -> Vec<Shot> {
         shot("08_loading", GameState::Loading),
         shot("09_results", GameState::Results),
         shot("10_replay", GameState::Replay),
+        // The in-match views. These are the ones a state sweep cannot reach by naming a
+        // screen, and the ones where an invisible UI camera hid the pause overlay.
+        Shot {
+            extra_settle: 6.0,
+            ..shot("11_match_first_frame", GameState::HexWfc)
+        },
+        Shot {
+            overlay: Some(MatchOverlayState::Pause(PausePage::Root)),
+            ..shot("12_pause_root", GameState::HexWfc)
+        },
+        Shot {
+            overlay: Some(MatchOverlayState::Pause(PausePage::ConfirmLeave)),
+            ..shot("13_pause_confirm_leave", GameState::HexWfc)
+        },
+        Shot {
+            overlay: Some(MatchOverlayState::SurvivorMap),
+            ..shot("14_survivor_map", GameState::HexWfc)
+        },
     ]
 }
 
@@ -164,17 +191,30 @@ pub(super) fn capture_frontend_progress(
             if *state.get() == target {
                 request.phase = Phase::Act;
             } else {
+                // Entering the canonical match without going through Loading is the
+                // private harness path, and it requires a direct driver. It also gives
+                // the shot a body that walks, so the first frame is a real vantage
+                // rather than a spawn-point stare.
+                if target == GameState::HexWfc {
+                    commands.insert_resource(crate::sim::state::SpectatorBot::for_seed(
+                        crate::flow::MATCH_SEED,
+                    ));
+                }
                 next.set(target);
             }
         }
         Phase::Act => {
-            if let Some(wanted) = request.shots[request.index].page_action
+            let shot = &request.shots[request.index];
+            if let Some(wanted) = shot.page_action
                 && let Some((entity, _)) =
                     page_actions.iter().find(|(_, action)| **action == wanted)
             {
                 commands.trigger(Activate { entity });
             }
-            request.next_at = elapsed + SETTLE;
+            if let Some(overlay) = shot.overlay {
+                commands.insert_resource(overlay);
+            }
+            request.next_at = elapsed + SETTLE + shot.extra_settle;
             request.phase = Phase::Settle;
         }
         Phase::Settle if elapsed >= request.next_at => {

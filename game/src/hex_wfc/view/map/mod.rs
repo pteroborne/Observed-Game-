@@ -71,24 +71,26 @@ pub(crate) struct HexMapProjection {
 
 pub(in crate::hex_wfc) fn setup(mut commands: Commands) {
     commands.insert_resource(HexMapProjection::default());
-    commands.spawn((
-        HexMapCamera,
-        DespawnOnExit(GameState::HexWfc),
-        Camera3d::default(),
-        Camera {
-            order: MAP_CAMERA_ORDER,
-            is_active: false,
-            clear_color: Color::srgb(0.008, 0.010, 0.020).into(),
-            ..default()
-        },
-        Projection::Orthographic(OrthographicProjection {
-            scale: 1.0,
-            ..OrthographicProjection::default_3d()
-        }),
-        RenderLayers::layer(MAP_RENDER_LAYER),
-        Transform::default(),
-        Name::new("Hex survivor map camera"),
-    ));
+    let camera = commands
+        .spawn((
+            HexMapCamera,
+            DespawnOnExit(GameState::HexWfc),
+            Camera3d::default(),
+            Camera {
+                order: MAP_CAMERA_ORDER,
+                is_active: false,
+                clear_color: Color::srgb(0.008, 0.010, 0.020).into(),
+                ..default()
+            },
+            Projection::Orthographic(OrthographicProjection {
+                scale: 1.0,
+                ..OrthographicProjection::default_3d()
+            }),
+            RenderLayers::layer(MAP_RENDER_LAYER),
+            Transform::default(),
+            Name::new("Hex survivor map camera"),
+        ))
+        .id();
     // The map carries its own key. Borrowing the world's rig would make the
     // survivor's sketch change brightness with whatever district the runner
     // happens to be standing in, and would leave it unlit wherever the world's
@@ -106,6 +108,9 @@ pub(in crate::hex_wfc) fn setup(mut commands: Commands) {
     ));
     commands.spawn((
         HexMapLegend,
+        // The legend belongs to the map's own camera, which draws over the world with its
+        // own clear colour. On the default UI camera it would be wiped by that clear.
+        UiTargetCamera(camera),
         DespawnOnExit(GameState::HexWfc),
         Visibility::Hidden,
         Text::new(""),

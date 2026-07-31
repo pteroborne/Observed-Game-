@@ -5379,6 +5379,54 @@ mod hex_wfc_gates {
         );
     }
 
+    /// A spawned UI entity is not a *visible* one. Without an explicit
+    /// `IsDefaultUiCamera`, Bevy hands every root node to the highest-order camera
+    /// rendering to the primary window, and `is_active` is not part of that choice — so
+    /// the survivor map's order-1 camera captured the pause overlay, HUD, and every menu
+    /// while sitting inactive, and they drew nowhere. Every existing overlay test passed
+    /// throughout, because they assert entities exist rather than where they render.
+    #[test]
+    fn in_match_ui_targets_the_active_world_camera_not_the_dormant_map_camera() {
+        use crate::hex_wfc::view::map::HexMapCamera;
+        use crate::view::components::GameCam;
+        use bevy::ui::IsDefaultUiCamera;
+
+        let mut app = app_with_open_map_after(1);
+        // The map fixture leaves the map open; close it so this is ordinary play.
+        app.world_mut().resource_mut::<HexWfcRuntime>().map_open = false;
+        app.update();
+
+        let world = app.world_mut();
+        let default_ui_cameras = world
+            .query_filtered::<Entity, (With<Camera>, With<IsDefaultUiCamera>)>()
+            .iter(world)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            default_ui_cameras.len(),
+            1,
+            "exactly one camera must claim the UI; zero means Bevy infers it by order"
+        );
+
+        let world_camera = world
+            .query_filtered::<Entity, With<GameCam>>()
+            .single(world)
+            .expect("the world camera exists in a hex match");
+        assert_eq!(
+            default_ui_cameras[0], world_camera,
+            "the UI must belong to the world camera, not whichever camera sorts last"
+        );
+
+        let map_camera = world
+            .query_filtered::<&Camera, With<HexMapCamera>>()
+            .single(world)
+            .expect("the survivor map camera exists in a hex match");
+        assert!(
+            map_camera.order > 0 && !map_camera.is_active,
+            "this test is only meaningful while the map camera outranks the world camera \
+             and is dormant during play; if that changed, the trap it guards changed too"
+        );
+    }
+
     #[test]
     fn the_map_never_leaks_past_the_hex_state() {
         let mut app = app_with_open_map_after(120);

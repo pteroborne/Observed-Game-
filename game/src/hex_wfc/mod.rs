@@ -12,7 +12,7 @@ mod input;
 mod lantern;
 pub(crate) mod launch;
 pub(crate) mod loading;
-mod overlay;
+pub(crate) mod overlay;
 mod perf;
 
 pub(crate) use perf::GPU_PROFILE_ENV;

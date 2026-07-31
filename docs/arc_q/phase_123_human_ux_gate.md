@@ -45,6 +45,32 @@ At 1280×800, with no clipping, overlap, or horizontal scrolling:
 Disabled controls are legible and explain themselves, and focus is carried by a `>`
 chevron plus an outline, so neither depends on colour.
 
+## The one that only a player could find first
+
+**The pause overlay spawned correctly and rendered nowhere.** Reported from live play:
+Escape paused the match, but no menu appeared.
+
+Nothing was wrong with the overlay. `GameCam` carried no `IsDefaultUiCamera`, and with no
+camera claiming the UI, Bevy hands every root node to the highest-order camera drawing to
+the primary window — `is_active` is **not** part of that choice. The survivor map's camera
+sits at order 1 and is dormant during play, so from the moment the hex match set up its
+map camera it silently captured the pause overlay, the HUD, and the cue banner, and all of
+them drew to an inactive target.
+
+Every overlay test passed throughout, because they assert that entities exist, not where
+they render. `in_match_ui_targets_the_active_world_camera_not_the_dormant_map_camera`
+closes that gap: it asserts exactly one camera claims the UI and that it is the world
+camera, and it fails without the fix. The survivor map's legend now names its camera
+explicitly with `UiTargetCamera`, because the map's own clear would otherwise wipe it.
+
+Making the UI visible immediately exposed a second defect underneath: the cue banner is a
+permanently-spawned node with an opaque plate whose *text* was cleared on expiry, so it
+parked a black bar across the player's sightline whenever it had nothing to say. It now
+carries its own `Visibility`.
+
+The frontend sweep grew four in-match shots (`11`–`14`) so this class of defect is
+photographed rather than inferred.
+
 ## Defects the gate found
 
 **1. The shipped font renders only ASCII, so every non-ASCII glyph was a blank box.**
@@ -99,8 +125,9 @@ The automated pass cannot substitute for these:
       progress view and a genuine cancel/retry are unverified.
 - [ ] Enter offline and LAN pause; confirm offline stops the tick while LAN continues
       neutrally, and that Leave requires the explicit confirmation page.
-- [ ] Onboarding, pause, and the first playable frame at 1280×800 — these are in-match
-      overlays and are not part of the frontend sweep.
+- [ ] Onboarding at 1280×800. Pause, the leave confirmation, the survivor map, and the
+      first playable frame are now captured (shots `11`–`14`); onboarding is not, because
+      the sweep enters the match through the direct harness path.
 - [ ] **Two real LAN processes** with one client's preparation deliberately delayed.
 
 On that last item: the protocol guarantee is already proven over real UDP sockets in

@@ -309,6 +309,24 @@ any non-ASCII character in a non-test string literal. Reopen this as a real
 typography task only by shipping a font asset that covers the glyphs wanted.
 ([arc_q/phase_123_human_ux_gate.md](arc_q/phase_123_human_ux_gate.md))
 
+### 28. The pause overlay renders nowhere in the hex match
+
+**Found in live play 2026-07-31, fixed same day.** Escape paused the match and no
+menu appeared. The overlay was spawning correctly; it had no visible camera to
+spawn onto. `GameCam` claimed no `IsDefaultUiCamera`, so Bevy assigned every UI
+root to the highest-order camera on the primary window — a choice that ignores
+`is_active` — and the survivor map's dormant order-1 camera took the pause
+overlay, the HUD, and the cue banner with it. The world camera now claims the UI
+explicitly and the map legend names the map camera with `UiTargetCamera`.
+
+The whole class was invisible to the suite, which asserts that overlay entities
+exist rather than where they render;
+`in_match_ui_targets_the_active_world_camera_not_the_dormant_map_camera` now
+asserts the target and fails without the fix. Restoring UI visibility exposed a
+second defect immediately: the cue banner's opaque plate stayed drawn when its
+text was cleared, parking a black bar on the sightline, so it now carries its own
+`Visibility`. ([arc_q/phase_123_human_ux_gate.md](arc_q/phase_123_human_ux_gate.md))
+
 ## Minor / hygiene
 
 **Scheduled: Arc H Phase 61 (as-landed notes).**
