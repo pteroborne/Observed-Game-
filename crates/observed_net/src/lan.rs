@@ -13,11 +13,19 @@ use observed_match::hex_wfc::{
 
 use crate::protocol::WireIntent;
 
-pub const LAN_PROTOCOL_VERSION: u16 = 1;
+/// Version 3 adds the generation-scoped preparation barrier and an explicit empty
+/// seat. Older peers must reject it rather than simulate as soon as `Launch` lands.
+pub const LAN_PROTOCOL_VERSION: u16 = 3;
 pub const DEFAULT_LAN_PORT: u16 = 47_624;
 pub const MAX_DATAGRAM: usize = 1_200;
 pub const INPUT_LEAD_TICKS: u64 = 3;
 pub const FRAME_WINDOW: usize = 16;
+/// Hard ceiling on seats in one match, and so on commands in one frame.
+///
+/// A wire-format limit, not a gameplay one: the count is a `u8` and the
+/// per-frame cost is what drives [`frames_per_bundle`]. Raising it means
+/// re-checking that budget, not just this constant.
+pub const MAX_SEATS: usize = 16;
 const MAGIC: [u8; 4] = *b"O2LN";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -92,18 +100,52 @@ impl WireHexCommand {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WireSeatOccupant {
+    Bot,
+    Human,
+    ReservedHuman,
+    SynchronizingHuman,
+    Empty,
+}
+
+impl WireSeatOccupant {
+    const fn encode(self) -> u8 {
+        match self {
+            Self::Bot => 0,
+            Self::Human => 1,
+            Self::ReservedHuman => 2,
+            Self::SynchronizingHuman => 3,
+            Self::Empty => 4,
+        }
+    }
+
+    fn decode(value: u8) -> Result<Self, LanCodecError> {
+        match value {
+            0 => Ok(Self::Bot),
+            1 => Ok(Self::Human),
+            2 => Ok(Self::ReservedHuman),
+            3 => Ok(Self::SynchronizingHuman),
+            4 => Ok(Self::Empty),
+            _ => Err(LanCodecError::InvalidValue),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WireSeat {
     pub player: PlayerId,
     pub team: TeamId,
-    /// 0 bot, 1 connected human, 2 disconnected/reserved human, 3 synchronizing human.
-    pub occupant: u8,
+    pub occupant: WireSeatOccupant,
     pub ready: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WireFrame {
     pub tick: u64,
-    pub commands: [WireHexCommand; 4],
+    /// One command per seat, in seat order. Length-prefixed on the wire and
+    /// capped at [`MAX_SEATS`]; it was a fixed `[WireHexCommand; 4]`, which is
+    /// what pinned the whole stack to 2v2.
+    pub commands: Vec<WireHexCommand>,
     pub digest: u64,
 }
 
@@ -121,6 +163,32 @@ impl WireFrame {
                 .collect(),
         }
     }
+
+    /// Bytes this frame occupies inside a [`LanPacket::FrameBundle`].
+    #[must_use]
+    pub fn wire_len(&self) -> usize {
+        // tick + seat count + commands + digest.
+        8 + 1 + self.commands.len() * WIRE_COMMAND_BYTES + 8
+    }
+}
+
+/// Encoded size of one [`WireHexCommand`]: a [`WireIntent`] plus its action bits.
+const WIRE_COMMAND_BYTES: usize = 5 + 1;
+
+/// How many frames of `seats` commands fit in one datagram alongside the header.
+///
+/// The old code sent [`FRAME_WINDOW`] frames unconditionally, which was fine at
+/// four seats and impossible at sixteen: sixteen frames of sixteen commands is
+/// 1 808 bytes against a 1 200-byte [`MAX_DATAGRAM`], so `encode` did not
+/// degrade — it returned `Oversized` and the bundle never went out. Budgeting by
+/// bytes means the window shrinks as the roster grows instead of the send
+/// failing.
+#[must_use]
+pub fn frames_per_bundle(seats: usize) -> usize {
+    // Envelope, packet tag, and the bundle's own frame count.
+    const OVERHEAD: usize = 12 + 1 + 1;
+    let per_frame = 8 + 1 + seats.max(1) * WIRE_COMMAND_BYTES + 8;
+    ((MAX_DATAGRAM - OVERHEAD) / per_frame).clamp(1, FRAME_WINDOW)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -162,6 +230,8 @@ pub enum LanPacket {
     },
     LobbySnapshot {
         session: u32,
+        match_number: u32,
+        server_tick: u64,
         phase: WirePhase,
         countdown_ticks: u16,
         seats: Vec<WireSeat>,
@@ -193,6 +263,17 @@ pub enum LanPacket {
     /// The client reconstructs the deterministic launch state before applying it.
     Resync {
         token: u64,
+    },
+    /// The client finished deterministic preparation for this exact generation.
+    /// The packet is idempotent and may be retried until `LaunchStart` arrives.
+    LaunchReady {
+        token: u64,
+        match_number: u32,
+    },
+    /// Authoritative permission to enter the match and consume its frames.
+    /// A `Launch` descriptor by itself is never permission to simulate.
+    LaunchStart {
+        match_number: u32,
     },
 }
 
@@ -315,18 +396,22 @@ fn encode_payload(packet: &LanPacket) -> Result<(u8, Vec<u8>), LanCodecError> {
         }
         LanPacket::LobbySnapshot {
             session,
+            match_number,
+            server_tick,
             phase,
             countdown_ticks,
             seats,
         } => {
             put_u32(&mut out, *session);
+            put_u32(&mut out, *match_number);
+            put_u64(&mut out, *server_tick);
             out.push(phase.encode());
             put_u16(&mut out, *countdown_ticks);
             out.push(seats.len() as u8);
             for seat in seats {
                 put_u16(&mut out, seat.player.0);
                 out.push(seat.team.0);
-                out.push(seat.occupant);
+                out.push(seat.occupant.encode());
                 out.push(u8::from(seat.ready));
             }
             6
@@ -356,8 +441,9 @@ fn encode_payload(packet: &LanPacket) -> Result<(u8, Vec<u8>), LanCodecError> {
             out.push(frames.len() as u8);
             for frame in frames {
                 put_u64(&mut out, frame.tick);
-                for command in frame.commands {
-                    encode_command(&mut out, command);
+                out.push(frame.commands.len() as u8);
+                for command in &frame.commands {
+                    encode_command(&mut out, *command);
                 }
                 put_u64(&mut out, frame.digest);
             }
@@ -383,6 +469,18 @@ fn encode_payload(packet: &LanPacket) -> Result<(u8, Vec<u8>), LanCodecError> {
         LanPacket::Resync { token } => {
             put_u64(&mut out, *token);
             13
+        }
+        LanPacket::LaunchReady {
+            token,
+            match_number,
+        } => {
+            put_u64(&mut out, *token);
+            put_u32(&mut out, *match_number);
+            14
+        }
+        LanPacket::LaunchStart { match_number } => {
+            put_u32(&mut out, *match_number);
+            15
         }
     };
     Ok((kind, out))
@@ -432,6 +530,8 @@ fn decode_payload(kind: u8, bytes: &[u8]) -> Result<LanPacket, LanCodecError> {
         }
         6 => {
             let session = cursor.u32()?;
+            let match_number = cursor.u32()?;
+            let server_tick = cursor.u64()?;
             let phase = WirePhase::decode(cursor.u8()?)?;
             let countdown_ticks = cursor.u16()?;
             let count = usize::from(cursor.u8()?);
@@ -440,12 +540,14 @@ fn decode_payload(kind: u8, bytes: &[u8]) -> Result<LanPacket, LanCodecError> {
                 seats.push(WireSeat {
                     player: PlayerId(cursor.u16()?),
                     team: TeamId(cursor.u8()?),
-                    occupant: cursor.u8()?,
+                    occupant: WireSeatOccupant::decode(cursor.u8()?)?,
                     ready: cursor.bool()?,
                 });
             }
             LanPacket::LobbySnapshot {
                 session,
+                match_number,
+                server_tick,
                 phase,
                 countdown_ticks,
                 seats,
@@ -471,9 +573,15 @@ fn decode_payload(kind: u8, bytes: &[u8]) -> Result<LanPacket, LanCodecError> {
             let mut frames = Vec::with_capacity(count);
             for _ in 0..count {
                 let tick = cursor.u64()?;
-                let mut commands = [WireHexCommand::default(); 4];
-                for command in &mut commands {
-                    *command = decode_command(&mut cursor)?;
+                let seats = usize::from(cursor.u8()?);
+                if seats > MAX_SEATS {
+                    // A count past the cap is a malformed or hostile datagram,
+                    // not a bigger match: refuse rather than allocate for it.
+                    return Err(LanCodecError::InvalidValue);
+                }
+                let mut commands = Vec::with_capacity(seats);
+                for _ in 0..seats {
+                    commands.push(decode_command(&mut cursor)?);
                 }
                 frames.push(WireFrame {
                     tick,
@@ -500,6 +608,13 @@ fn decode_payload(kind: u8, bytes: &[u8]) -> Result<LanPacket, LanCodecError> {
         },
         13 => LanPacket::Resync {
             token: cursor.u64()?,
+        },
+        14 => LanPacket::LaunchReady {
+            token: cursor.u64()?,
+            match_number: cursor.u32()?,
+        },
+        15 => LanPacket::LaunchStart {
+            match_number: cursor.u32()?,
         },
         _ => return Err(LanCodecError::InvalidKind),
     };
@@ -538,6 +653,10 @@ fn decode_command(cursor: &mut Cursor<'_>) -> Result<WireHexCommand, LanCodecErr
 fn encode_config(out: &mut Vec<u8>, config: HexMatchConfig) {
     out.push(config.teams);
     out.push(config.members_per_team);
+    // The Guardian flag changes the simulation, so it has to cross the wire.
+    // A host running co-op without a Guardian and a client assuming one would
+    // diverge on the first tick the Guardian would have moved.
+    out.push(u8::from(config.guardian));
     put_u16(out, config.wfc.cols);
     put_u16(out, config.wfc.rows);
     out.push(config.wfc.levels);
@@ -551,6 +670,7 @@ fn decode_config(cursor: &mut Cursor<'_>) -> Result<HexMatchConfig, LanCodecErro
     Ok(HexMatchConfig {
         teams: cursor.u8()?,
         members_per_team: cursor.u8()?,
+        guardian: cursor.u8()? != 0,
         wfc: HexWfcConfig {
             cols: cursor.u16()?,
             rows: cursor.u16()?,
@@ -716,6 +836,31 @@ impl DiscoveryBrowser {
     }
 }
 
+/// Deterministic descriptor for one authoritative LAN match.
+///
+/// The server may repeat this descriptor until it observes client progress.
+/// [`LanClient`] therefore treats `match_number` as a monotonic generation and
+/// only resets its transport state when a genuinely newer generation arrives.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LanLaunch {
+    pub seed: u64,
+    pub match_number: u32,
+    pub config: HexMatchConfig,
+    pub simulation_content_hash: [u8; 32],
+}
+
+/// Latest authoritative lobby projection. The generation travels with the phase
+/// so a delayed `Launch` datagram cannot resurrect a launch the server withdrew.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LanLobby {
+    pub session: u32,
+    pub match_number: u32,
+    pub server_tick: u64,
+    pub phase: WirePhase,
+    pub countdown_ticks: u16,
+    pub seats: Vec<WireSeat>,
+}
+
 /// Nonblocking client endpoint. The game owns simulation construction and applies
 /// authoritative frames returned by [`Self::take_ready_frames`].
 pub struct LanClient {
@@ -729,9 +874,12 @@ pub struct LanClient {
     pub player: Option<PlayerId>,
     pub team: Option<TeamId>,
     pub phase: Option<WirePhase>,
-    pub lobby: Option<(u32, WirePhase, u16, Vec<WireSeat>)>,
-    pub launch: Option<(u64, u32, HexMatchConfig, [u8; 32])>,
+    pub lobby: Option<LanLobby>,
+    pub launch: Option<LanLaunch>,
+    /// The generation for which the server has explicitly opened the barrier.
+    pub launch_started: Option<u32>,
     pub rejection: Option<String>,
+    launch_ready: Option<u32>,
     input_outbox: VecDeque<(u64, WireHexCommand)>,
     frames: BTreeMap<u64, WireFrame>,
     next_frame: u64,
@@ -761,7 +909,9 @@ impl LanClient {
             phase: None,
             lobby: None,
             launch: None,
+            launch_started: None,
             rejection: None,
+            launch_ready: None,
             input_outbox: VecDeque::new(),
             frames: BTreeMap::new(),
             next_frame: 1,
@@ -793,6 +943,14 @@ impl LanClient {
         }
         if self.last_heartbeat.elapsed() >= Duration::from_millis(500) {
             if let Some(token) = self.token {
+                if let Some(match_number) = self.launch_ready
+                    && self.launch_started != Some(match_number)
+                {
+                    let _ = self.send(&LanPacket::LaunchReady {
+                        token,
+                        match_number,
+                    });
+                }
                 let _ = self.send(&LanPacket::Ack {
                     token,
                     through_tick: self.next_frame.saturating_sub(1),
@@ -832,12 +990,20 @@ impl LanClient {
             LanPacket::Reject { reason } => self.rejection = Some(reason),
             LanPacket::LobbySnapshot {
                 session,
+                match_number,
+                server_tick,
                 phase,
                 countdown_ticks,
                 seats,
             } => {
-                self.phase = Some(phase);
-                self.lobby = Some((session, phase, countdown_ticks, seats));
+                self.receive_lobby(LanLobby {
+                    session,
+                    match_number,
+                    server_tick,
+                    phase,
+                    countdown_ticks,
+                    seats,
+                });
             }
             LanPacket::Launch {
                 seed,
@@ -845,10 +1011,15 @@ impl LanClient {
                 config,
                 simulation_content_hash,
             } => {
-                self.launch = Some((seed, match_number, config, simulation_content_hash));
-                self.phase = Some(WirePhase::InMatch);
-                self.next_frame = 1;
-                self.frames.clear();
+                self.receive_launch(LanLaunch {
+                    seed,
+                    match_number,
+                    config,
+                    simulation_content_hash,
+                });
+            }
+            LanPacket::LaunchStart { match_number } => {
+                self.receive_launch_start(match_number);
             }
             LanPacket::FrameBundle { frames } => {
                 for frame in frames {
@@ -858,6 +1029,117 @@ impl LanClient {
             LanPacket::MatchEnded { .. } => self.phase = Some(WirePhase::PostMatch),
             _ => {}
         }
+    }
+
+    fn receive_lobby(&mut self, incoming: LanLobby) {
+        if self.lobby.as_ref().is_some_and(|current| {
+            current.session == incoming.session && current.server_tick > incoming.server_tick
+        }) {
+            return;
+        }
+        self.phase = Some(incoming.phase);
+        if incoming.phase != WirePhase::InMatch
+            && self
+                .launch
+                .is_some_and(|launch| launch.match_number == incoming.match_number)
+        {
+            self.launch_ready = None;
+            self.launch_started = None;
+        }
+        self.lobby = Some(incoming);
+    }
+
+    fn receive_launch(&mut self, incoming: LanLaunch) {
+        match self.launch {
+            Some(current) if incoming.match_number < current.match_number => {
+                // UDP can deliver a delayed launch after a newer match has begun.
+                // Ignoring it keeps both the active descriptor and buffered frames.
+            }
+            Some(current) if incoming.match_number == current.match_number => {
+                if incoming == current {
+                    // Repeated launch packets acknowledge the same match; transport
+                    // progress made while the game prepares must remain intact.
+                    if !self.lobby_withdrew(incoming.match_number) {
+                        self.phase = Some(WirePhase::InMatch);
+                    }
+                } else {
+                    // A generation identifies exactly one deterministic launch. Two
+                    // descriptors for it would construct divergent simulations, so
+                    // reject the contradiction without mutating the accepted state.
+                    self.rejection = Some(format!(
+                        "conflicting launch descriptor for match {}",
+                        incoming.match_number
+                    ));
+                }
+            }
+            None | Some(_) => {
+                if self.lobby_withdrew(incoming.match_number) {
+                    return;
+                }
+                self.launch = Some(incoming);
+                self.launch_ready = None;
+                self.launch_started = None;
+                self.next_frame = 1;
+                self.frames.clear();
+                self.phase = Some(WirePhase::InMatch);
+            }
+        }
+    }
+
+    fn receive_launch_start(&mut self, match_number: u32) {
+        if self.lobby_withdrew(match_number) {
+            return;
+        }
+        let Some(launch) = self.launch else {
+            return;
+        };
+        if match_number == launch.match_number {
+            self.launch_started = Some(match_number);
+        }
+        // An older start is a delayed UDP packet. A newer start cannot be
+        // interpreted safely until its descriptor arrives, so both are ignored.
+    }
+
+    fn lobby_withdrew(&self, match_number: u32) -> bool {
+        self.lobby.as_ref().is_some_and(|lobby| {
+            lobby.match_number >= match_number && lobby.phase != WirePhase::InMatch
+        })
+    }
+
+    /// Publish local preparation for the accepted descriptor. Repeating this call
+    /// is safe; the client also retries it on its transport heartbeat until start.
+    pub fn mark_launch_ready(&mut self, match_number: u32) -> io::Result<()> {
+        if self.lobby_withdrew(match_number) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "launch generation was withdrawn by the server",
+            ));
+        }
+        let launch = self
+            .launch
+            .filter(|launch| launch.match_number == match_number)
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "launch generation is not the accepted descriptor",
+                )
+            })?;
+        let token = self
+            .token
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotConnected, "not welcomed"))?;
+        self.launch_ready = Some(launch.match_number);
+        self.send(&LanPacket::LaunchReady {
+            token,
+            match_number: launch.match_number,
+        })
+    }
+
+    #[must_use]
+    pub fn launch_has_started(&self, match_number: u32) -> bool {
+        self.launch_started == Some(match_number)
+            && self
+                .launch
+                .is_some_and(|launch| launch.match_number == match_number)
     }
 
     pub fn set_ready(&self, ready: bool) -> io::Result<()> {
@@ -992,6 +1274,27 @@ mod tests {
                 token: 9,
                 action: LobbyAction::Ready(true),
             },
+            LanPacket::LobbySnapshot {
+                session: 4,
+                match_number: 2,
+                server_tick: 120,
+                phase: WirePhase::Lobby,
+                countdown_ticks: 0,
+                seats: vec![
+                    WireSeat {
+                        player: PlayerId(0),
+                        team: TeamId(0),
+                        occupant: WireSeatOccupant::Human,
+                        ready: true,
+                    },
+                    WireSeat {
+                        player: PlayerId(1),
+                        team: TeamId(0),
+                        occupant: WireSeatOccupant::Empty,
+                        ready: false,
+                    },
+                ],
+            },
             LanPacket::Launch {
                 seed: 55,
                 match_number: 3,
@@ -1005,7 +1308,7 @@ mod tests {
             LanPacket::FrameBundle {
                 frames: vec![WireFrame {
                     tick: 4,
-                    commands: [command; 4],
+                    commands: vec![command; 4],
                     digest: 88,
                 }],
             },
@@ -1018,6 +1321,11 @@ mod tests {
             },
             LanPacket::Goodbye { token: 9 },
             LanPacket::Resync { token: 9 },
+            LanPacket::LaunchReady {
+                token: 9,
+                match_number: 3,
+            },
+            LanPacket::LaunchStart { match_number: 3 },
         ]
     }
 
@@ -1042,5 +1350,294 @@ mod tests {
             LanPacket::decode(&bytes),
             Err(LanCodecError::UnsupportedVersion)
         );
+    }
+    /// The sixteen-seat worst case fits a datagram, which it did not before.
+    ///
+    /// A frame of sixteen commands is 113 bytes, so the old fixed window of
+    /// `FRAME_WINDOW` frames came to 1 808 against a 1 200-byte limit — `encode`
+    /// returned `Oversized` and the bundle simply never went out. This is the
+    /// exact cliff the phase existed to remove, so it is pinned at the boundary
+    /// rather than at a comfortable size.
+    #[test]
+    fn a_full_sixteen_seat_bundle_fits_one_datagram() {
+        let seats = MAX_SEATS;
+        let per_bundle = frames_per_bundle(seats);
+        assert!(per_bundle >= 1, "a bundle must carry at least one frame");
+        assert!(
+            per_bundle < FRAME_WINDOW,
+            "sixteen seats should shrink the window below the four-seat one"
+        );
+
+        let frame = |tick: u64| WireFrame {
+            tick,
+            commands: vec![
+                WireHexCommand {
+                    intent: WireIntent {
+                        movement_x: i8::MAX,
+                        movement_y: i8::MIN,
+                        look_x: i8::MAX,
+                        look_y: i8::MIN,
+                        // Every defined flag bit; `u8::MAX` would set
+                        // undefined ones and the decoder rightly refuses those.
+                        flags: 0b0001_1111,
+                    },
+                    actions: 0b0000_0111,
+                };
+                seats
+            ],
+            digest: u64::MAX,
+        };
+        let frames: Vec<_> = (0..per_bundle as u64).map(frame).collect();
+        let encoded = LanPacket::FrameBundle {
+            frames: frames.clone(),
+        }
+        .encode()
+        .expect("a budgeted bundle encodes");
+        assert!(
+            encoded.len() <= MAX_DATAGRAM,
+            "{} bytes exceeds the {MAX_DATAGRAM}-byte datagram",
+            encoded.len()
+        );
+        assert_eq!(
+            LanPacket::decode(&encoded).expect("round trip"),
+            LanPacket::FrameBundle { frames }
+        );
+
+        // One frame more than the budget must not fit, or the budget is slack
+        // and this test would keep passing while the cliff crept back.
+        let overflowing: Vec<_> = (0..=per_bundle as u64).map(frame).collect();
+        assert!(
+            LanPacket::FrameBundle {
+                frames: overflowing
+            }
+            .encode()
+            .is_err(),
+            "the budget should be the largest bundle that fits"
+        );
+    }
+
+    /// The wire cap and the simulation's roster guard must be the same number.
+    ///
+    /// They live in different crates and `observed_match` cannot see this one —
+    /// the dependency runs the other way — so the agreement is asserted here,
+    /// where both are visible. Disagreement is invisible until a lobby fills to
+    /// the wire's cap and the match then refuses to start.
+    ///
+    /// `observed_progression`'s `LAN_MAX_SEATS` is the third copy and is not
+    /// reachable from any crate that can also see these two; it pins itself to
+    /// the same literal.
+    #[test]
+    fn the_wire_cap_and_the_roster_guard_agree() {
+        assert_eq!(
+            MAX_SEATS,
+            usize::from(observed_match::hex_wfc::MAX_ROSTER),
+            "observed_net::lan::MAX_SEATS and observed_match MAX_ROSTER disagree"
+        );
+    }
+
+    /// A seat count past the cap is refused rather than allocated for.
+    #[test]
+    fn a_frame_claiming_more_than_the_cap_is_rejected() {
+        let mut bytes = LanPacket::FrameBundle {
+            frames: vec![WireFrame {
+                tick: 1,
+                commands: vec![WireHexCommand::default(); 2],
+                digest: 7,
+            }],
+        }
+        .encode()
+        .expect("encodes");
+        // The seat count sits after the envelope, the frame count and the tick.
+        let seat_count = 12 + 1 + 8;
+        bytes[seat_count] = (MAX_SEATS + 1) as u8;
+        assert!(LanPacket::decode(&bytes).is_err());
+    }
+
+    fn test_client() -> LanClient {
+        let address = SocketAddr::from((Ipv4Addr::LOCALHOST, 47_625));
+        LanClient::connect(address, 7, None, None, [9; 32]).expect("loopback UDP client binds")
+    }
+
+    fn launch(match_number: u32, seed: u64) -> LanLaunch {
+        LanLaunch {
+            seed,
+            match_number,
+            config: HexMatchConfig::default(),
+            simulation_content_hash: [4; 32],
+        }
+    }
+
+    fn launch_packet(launch: LanLaunch) -> LanPacket {
+        LanPacket::Launch {
+            seed: launch.seed,
+            match_number: launch.match_number,
+            config: launch.config,
+            simulation_content_hash: launch.simulation_content_hash,
+        }
+    }
+
+    fn preserve_candidate_transport(client: &mut LanClient, next_frame: u64) -> WireFrame {
+        client.next_frame = next_frame;
+        let frame = WireFrame {
+            tick: next_frame,
+            commands: vec![WireHexCommand::default(); 4],
+            digest: 88,
+        };
+        client.frames.insert(next_frame, frame.clone());
+        frame
+    }
+
+    #[test]
+    fn repeated_identical_launch_preserves_frame_progress() {
+        let mut client = test_client();
+        let launch = launch(3, 55);
+        client.receive(launch_packet(launch));
+        let frame = preserve_candidate_transport(&mut client, 8);
+
+        client.receive(launch_packet(launch));
+
+        assert_eq!(client.launch, Some(launch));
+        assert_eq!(client.next_frame, 8);
+        assert_eq!(client.frames.get(&8), Some(&frame));
+        assert_eq!(client.phase, Some(WirePhase::InMatch));
+        assert_eq!(client.launch_started, None);
+        assert!(client.rejection.is_none());
+    }
+
+    #[test]
+    fn older_launch_is_ignored_without_rewinding_transport() {
+        let mut client = test_client();
+        let current = launch(4, 56);
+        client.receive(launch_packet(current));
+        let frame = preserve_candidate_transport(&mut client, 12);
+
+        client.receive(launch_packet(launch(3, 55)));
+
+        assert_eq!(client.launch, Some(current));
+        assert_eq!(client.next_frame, 12);
+        assert_eq!(client.frames.get(&12), Some(&frame));
+        assert_eq!(client.phase, Some(WirePhase::InMatch));
+        assert!(client.rejection.is_none());
+    }
+
+    #[test]
+    fn conflicting_descriptor_for_current_match_is_rejected_without_mutation() {
+        let mut client = test_client();
+        let current = launch(4, 56);
+        client.receive(launch_packet(current));
+        let frame = preserve_candidate_transport(&mut client, 12);
+
+        client.receive(launch_packet(launch(4, 99)));
+
+        assert_eq!(client.launch, Some(current));
+        assert_eq!(client.next_frame, 12);
+        assert_eq!(client.frames.get(&12), Some(&frame));
+        assert_eq!(client.phase, Some(WirePhase::InMatch));
+        assert_eq!(
+            client.rejection.as_deref(),
+            Some("conflicting launch descriptor for match 4")
+        );
+    }
+
+    #[test]
+    fn newer_launch_resets_transport_exactly_once() {
+        let mut client = test_client();
+        client.receive(launch_packet(launch(3, 55)));
+        preserve_candidate_transport(&mut client, 8);
+        let newer = launch(4, 56);
+
+        client.receive(launch_packet(newer));
+
+        assert_eq!(client.launch, Some(newer));
+        assert_eq!(client.next_frame, 1);
+        assert!(client.frames.is_empty());
+        let frame = preserve_candidate_transport(&mut client, 9);
+
+        client.receive(launch_packet(newer));
+
+        assert_eq!(client.next_frame, 9);
+        assert_eq!(client.frames.get(&9), Some(&frame));
+        assert!(client.rejection.is_none());
+    }
+
+    #[test]
+    fn launch_start_is_accepted_only_for_the_current_descriptor() {
+        let mut client = test_client();
+        client.token = Some(9);
+        client.receive(launch_packet(launch(4, 56)));
+
+        client
+            .mark_launch_ready(4)
+            .expect("accepted generation can publish readiness");
+        assert_eq!(client.launch_ready, Some(4));
+        assert!(!client.launch_has_started(4));
+
+        client.receive(LanPacket::LaunchStart { match_number: 3 });
+        client.receive(LanPacket::LaunchStart { match_number: 5 });
+        assert_eq!(
+            client.launch_started, None,
+            "stale/future starts are ignored"
+        );
+
+        client.receive(LanPacket::LaunchStart { match_number: 4 });
+        assert!(client.launch_has_started(4));
+
+        client.receive(launch_packet(launch(4, 56)));
+        assert!(
+            client.launch_has_started(4),
+            "an idempotent descriptor retry must preserve start"
+        );
+        client.receive(launch_packet(launch(5, 57)));
+        assert_eq!(client.launch_ready, None);
+        assert_eq!(client.launch_started, None);
+    }
+
+    #[test]
+    fn readiness_rejects_a_generation_without_its_descriptor() {
+        let mut client = test_client();
+        client.token = Some(9);
+        client.receive(launch_packet(launch(4, 56)));
+
+        assert_eq!(
+            client
+                .mark_launch_ready(3)
+                .expect_err("stale generation must not be published")
+                .kind(),
+            io::ErrorKind::InvalidInput
+        );
+        assert_eq!(client.launch_ready, None);
+    }
+
+    #[test]
+    fn newer_lobby_snapshot_withdraws_launch_and_stale_packets_cannot_resurrect_it() {
+        let mut client = test_client();
+        client.token = Some(9);
+        let descriptor = launch(4, 56);
+        client.receive(launch_packet(descriptor));
+        client.mark_launch_ready(4).expect("prepared");
+        client.receive(LanPacket::LaunchStart { match_number: 4 });
+        assert!(client.launch_has_started(4));
+
+        let snapshot = |server_tick, phase| LanPacket::LobbySnapshot {
+            session: 2,
+            match_number: 4,
+            server_tick,
+            phase,
+            countdown_ticks: 0,
+            seats: Vec::new(),
+        };
+        client.receive(snapshot(20, WirePhase::Lobby));
+        assert_eq!(client.phase, Some(WirePhase::Lobby));
+        assert!(!client.launch_has_started(4));
+
+        client.receive(snapshot(19, WirePhase::InMatch));
+        client.receive(launch_packet(descriptor));
+        client.receive(LanPacket::LaunchStart { match_number: 4 });
+        assert_eq!(client.phase, Some(WirePhase::Lobby));
+        assert_eq!(
+            client.lobby.as_ref().map(|lobby| lobby.server_tick),
+            Some(20)
+        );
+        assert!(!client.launch_has_started(4));
     }
 }

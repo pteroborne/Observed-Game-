@@ -23,6 +23,9 @@ bevy = { version = "0.18.1", default-features = false, features = [
     # Bloom (the neon glow for the match) lives in bevy_post_process, which `3d`
     # does not pull; DefaultPlugins wires its PostProcessPlugin when enabled.
     "bevy_post_process",
+    # Headless button semantics, activation events, accessibility metadata, and
+    # pointer parity for the shared frontend widget foundation.
+    "experimental_bevy_ui_widgets",
     # Derives serde Serialize/Deserialize on existing bevy types (KeyCode, …) so the
     # Settings resource (Phase 48) can serialize keybindings without inventing a
     # parallel key-name enum. An in-tree feature flip on the existing dependency, not

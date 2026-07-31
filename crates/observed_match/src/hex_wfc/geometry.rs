@@ -3,7 +3,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use glam::{Quat, Vec2, Vec3};
-use observed_authoring::{ModuleCellRef, RoomPrototype, TileKey, TileLightKind, TilePrototype};
+use observed_authoring::{
+    DeckPath, ModuleCellRef, RoomPrototype, RoomSocketKind, StairSpine, TileKey, TileLightKind,
+    TilePrototype,
+};
 use observed_facility::hex_wfc::{
     HexArchetype, HexPlacement, HexRelayoutDelta, HexSpace, HexWfcWorld, PortSignature,
     StampedBlueprint, blueprint_cell_archetype, blueprint_for_role, placement_tile_archetype,
@@ -55,6 +58,18 @@ pub struct HexLightSource {
     pub position: Vec3,
 }
 
+/// One authored gameplay socket projected into facility world space.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HexRoomSocket {
+    pub room_generation_key: u64,
+    pub room_role: RoomRole,
+    pub id: String,
+    pub kind: RoomSocketKind,
+    pub cell: HexCoord,
+    pub position: Vec3,
+    pub yaw_degrees: f32,
+}
+
 impl HexStructurePiece {
     fn collider(&self) -> ColliderSpec {
         ColliderSpec {
@@ -72,6 +87,15 @@ pub struct HexWfcGeometrySnapshot {
     pub generation: u32,
     pub pieces: Vec<HexStructurePiece>,
     pub lights: Vec<HexLightSource>,
+    pub sockets: Vec<HexRoomSocket>,
+    /// The walkable line through each cell whose tile has one, in facility
+    /// world space. Only vertical circulation carries a climb, so this is a
+    /// sparse map rather than a per-cell field.
+    pub climbs: BTreeMap<HexCoord, StairSpine>,
+    /// The walkable floor path for each cell whose tile declares one. Only
+    /// tiles with a hole in the floor need one; everything else is crossable in
+    /// a straight line.
+    pub decks: BTreeMap<HexCoord, DeckPath>,
     pub arena: ArenaSpec,
     /// Ramp heads intentionally emit nothing: their low-cell prefab spans both levels.
     pub ramp_heads: usize,
@@ -79,6 +103,22 @@ pub struct HexWfcGeometrySnapshot {
     pub blueprint_instances: usize,
     piece_indices: BTreeMap<StableColliderId, usize>,
     collider_indices: BTreeMap<StableColliderId, usize>,
+}
+
+/// What one projection pass accumulates: the colliders, the practicals, and the
+/// two navigation lines each cell's tile declares.
+///
+/// One struct rather than four out-parameters. They are produced together by
+/// the same walk, consumed together, and every function in the chain carried
+/// all of them — the parameter lists had grown past the point where the
+/// compiler could tell them apart.
+#[derive(Debug, Default)]
+struct ProjectedCells {
+    pieces: Vec<HexStructurePiece>,
+    lights: Vec<HexLightSource>,
+    sockets: Vec<HexRoomSocket>,
+    climbs: BTreeMap<HexCoord, StairSpine>,
+    decks: BTreeMap<HexCoord, DeckPath>,
 }
 
 /// Bounded geometry projection of one accepted logical relayout.
@@ -90,6 +130,10 @@ pub struct HexGeometryDelta {
     pub removed_piece_ids: BTreeSet<StableColliderId>,
     pub upserted_pieces: Vec<HexStructurePiece>,
     pub upserted_lights: Vec<HexLightSource>,
+    /// Climbs for the changed cells that have one. Cells that lost their climb
+    /// are simply absent, and dropped by `changed_cells` on apply.
+    pub upserted_climbs: BTreeMap<HexCoord, StairSpine>,
+    pub upserted_decks: BTreeMap<HexCoord, DeckPath>,
     pub colliders: ColliderDelta,
     pub ramp_heads: usize,
     pub blueprint_instances: usize,
@@ -144,8 +188,7 @@ impl HexWfcGeometrySnapshot {
         validate_id_capacity(world)?;
         let catalogue = Catalogue::new(prototypes);
         let room_catalogue = RoomCatalogue::new(room_prototypes);
-        let mut pieces = Vec::new();
-        let mut lights = Vec::new();
+        let mut out = ProjectedCells::default();
         let mut consumed_rooms = BTreeSet::new();
 
         // A room footprint is one semantic instance. Its authored component
@@ -158,8 +201,7 @@ impl HexWfcGeometrySnapshot {
                 &catalogue,
                 &room_catalogue,
                 &mut consumed_rooms,
-                &mut pieces,
-                &mut lights,
+                &mut out,
             )?;
         }
 
@@ -189,13 +231,19 @@ impl HexWfcGeometrySnapshot {
                 placement.coord,
                 role,
                 tile,
-                &mut pieces,
-                &mut lights,
+                &mut out,
             )?;
         }
 
-        push_boundary_shell(world, &mut pieces);
-        sort_lights(&mut lights);
+        push_boundary_shell(world, &mut out.pieces);
+        sort_lights(&mut out.lights);
+        let ProjectedCells {
+            pieces,
+            lights,
+            sockets,
+            climbs,
+            decks,
+        } = out;
         let arena = arena_for(world, &pieces);
         arena
             .validate()
@@ -206,6 +254,9 @@ impl HexWfcGeometrySnapshot {
             generation: world.generation,
             pieces,
             lights,
+            sockets,
+            climbs,
+            decks,
             arena,
             ramp_heads,
             blueprint_instances: world.blueprints.len(),
@@ -261,8 +312,7 @@ impl HexWfcGeometrySnapshot {
                 changed_cells.extend(stamped.cells.iter().copied());
             }
         }
-        let mut upserted_pieces = Vec::new();
-        let mut upserted_lights = Vec::new();
+        let mut upserted = ProjectedCells::default();
         let mut projected_rooms = BTreeSet::new();
         for &coord in &changed_cells {
             if let Some(stamped) = world
@@ -272,23 +322,11 @@ impl HexWfcGeometrySnapshot {
                 && let Some(room) = room_for(world, stamped, &room_catalogue)
             {
                 if projected_rooms.insert(stamped.anchor) {
-                    push_room(
-                        world,
-                        stamped,
-                        room,
-                        &mut upserted_pieces,
-                        &mut upserted_lights,
-                    )?;
+                    push_room(world, stamped, room, &mut upserted)?;
                 }
                 continue;
             }
-            project_cell(
-                world,
-                coord,
-                &catalogue,
-                &mut upserted_pieces,
-                &mut upserted_lights,
-            )?;
+            project_cell(world, coord, &catalogue, &mut upserted)?;
         }
         let mut old_colliders = BTreeMap::new();
         for &coord in &changed_cells {
@@ -301,6 +339,13 @@ impl HexWfcGeometrySnapshot {
             }
         }
         let removed_piece_ids = old_colliders.keys().copied().collect::<BTreeSet<_>>();
+        let ProjectedCells {
+            pieces: upserted_pieces,
+            lights: upserted_lights,
+            sockets: _,
+            climbs: upserted_climbs,
+            decks: upserted_decks,
+        } = upserted;
         let new_colliders = upserted_pieces
             .iter()
             .map(|piece| (piece.id, piece.collider()))
@@ -325,6 +370,8 @@ impl HexWfcGeometrySnapshot {
             removed_piece_ids,
             upserted_pieces,
             upserted_lights,
+            upserted_climbs,
+            upserted_decks,
             colliders,
             ramp_heads: self.ramp_heads.saturating_sub(
                 logical
@@ -368,6 +415,22 @@ impl HexWfcGeometrySnapshot {
             .retain(|light| !delta.changed_cells.contains(&light.source_cell));
         self.lights.extend(delta.upserted_lights.iter().cloned());
         sort_lights(&mut self.lights);
+        self.climbs
+            .retain(|coord, _| !delta.changed_cells.contains(coord));
+        self.climbs.extend(
+            delta
+                .upserted_climbs
+                .iter()
+                .map(|(coord, spine)| (*coord, spine.clone())),
+        );
+        self.decks
+            .retain(|coord, _| !delta.changed_cells.contains(coord));
+        self.decks.extend(
+            delta
+                .upserted_decks
+                .iter()
+                .map(|(coord, deck)| (*coord, deck.clone())),
+        );
         self.generation = delta.generation;
         self.ramp_heads = delta.ramp_heads;
         self.blueprint_instances = delta.blueprint_instances;
@@ -456,8 +519,7 @@ fn project_cell(
     world: &HexWfcWorld,
     coord: HexCoord,
     catalogue: &Catalogue<'_>,
-    pieces: &mut Vec<HexStructurePiece>,
-    lights: &mut Vec<HexLightSource>,
+    out: &mut ProjectedCells,
 ) -> Result<(), HexGeometryError> {
     let placement = world
         .placements
@@ -492,8 +554,7 @@ fn project_cell(
             coord,
             HexStructureRole::Room,
             tile,
-            pieces,
-            lights,
+            out,
         );
     }
     let role = role_for(placement);
@@ -501,7 +562,7 @@ fn project_cell(
         return Ok(());
     };
     let tile = tile_for(world, catalogue, coord, archetype, placement.ports())?;
-    push_tile(world, coord, coord, role, tile, pieces, lights)
+    push_tile(world, coord, coord, role, tile, out)
 }
 
 fn validate_id_capacity(world: &HexWfcWorld) -> Result<(), HexGeometryError> {
@@ -701,10 +762,25 @@ fn tile_for<'a>(
     archetype: &'static str,
     signature: PortSignature,
 ) -> Result<&'a TilePrototype, HexGeometryError> {
+    // A stair tower is chosen for the whole column, not the cell.
+    //
+    // A tower's stairwell opening is the hole the flight below arrives through.
+    // Give two cells in one column towers of different shapes and the lower
+    // flight tops out under the upper cell's solid deck: the surfaces union, so
+    // nothing looks broken, but a body climbing meets the underside of the floor
+    // above and stops. Districts are spatial and drift between levels, so a
+    // column crosses district boundaries routinely — picking per cell would make
+    // that the common case rather than the exception. The base cell's register
+    // is the one thing every cell in a column agrees on.
+    let identity = if archetype == "stair_tower" {
+        HexCoord { level: 0, ..coord }
+    } else {
+        coord
+    };
     let register = world
         .architecture
-        .get(&coord)
-        .ok_or(HexGeometryError::MissingArchitecture(coord))?
+        .get(&identity)
+        .ok_or(HexGeometryError::MissingArchitecture(identity))?
         .slug();
     catalogue
         .select(
@@ -727,12 +803,11 @@ fn project_blueprint(
     catalogue: &Catalogue<'_>,
     room_catalogue: &RoomCatalogue<'_>,
     consumed: &mut BTreeSet<HexCoord>,
-    pieces: &mut Vec<HexStructurePiece>,
-    lights: &mut Vec<HexLightSource>,
+    out: &mut ProjectedCells,
 ) -> Result<(), HexGeometryError> {
     let blueprint = blueprint_for_role(stamped.role);
     if let Some(room) = room_for(world, stamped, room_catalogue) {
-        push_room(world, stamped, room, pieces, lights)?;
+        push_room(world, stamped, room, out)?;
         consumed.extend(stamped.cells.iter().copied());
         return Ok(());
     }
@@ -748,8 +823,8 @@ fn project_blueprint(
             },
         )?;
         // Boundary stamping seals ports that leave the lattice in simulation.
-        // Authored room prefabs retain the blueprint's full exterior signature;
-        // the arena shell closes those out-of-grid apertures physically.
+        // Authored room prefabs retain the blueprint signature. The arena
+        // shell closes a named threshold physically when it leaves the grid.
         let signature = blueprint.cell_signature(blueprint.cells[index]);
         let tile = tile_for(world, catalogue, coord, archetype, signature)?;
         push_tile(
@@ -758,8 +833,7 @@ fn project_blueprint(
             coord,
             HexStructureRole::Room,
             tile,
-            pieces,
-            lights,
+            out,
         )?;
         consumed.insert(coord);
     }
@@ -794,8 +868,7 @@ fn push_tile(
     source_cell: HexCoord,
     role: HexStructureRole,
     tile: &TilePrototype,
-    pieces: &mut Vec<HexStructurePiece>,
-    lights: &mut Vec<HexLightSource>,
+    out: &mut ProjectedCells,
 ) -> Result<(), HexGeometryError> {
     if tile.hulls.len() > COLLIDER_STRIDE {
         return Err(HexGeometryError::TooManyHulls {
@@ -808,15 +881,35 @@ fn push_tile(
         * COLLIDER_STRIDE as u64
         + 1;
     let center = Vec3::from_array(hex_origin(source_cell));
-    lights.extend(tile.lights.iter().map(|light| HexLightSource {
-        source_cell,
-        role,
-        tile: tile.key.clone(),
-        kind: light.kind,
-        position: center + light.position,
-    }));
+    // The climb is recorded here, where the cell is resolved to a concrete
+    // tile, so a body follows the line through the tower it is actually
+    // standing in rather than a line assumed to be true of every tower.
+    if !tile.spine.is_empty() {
+        out.climbs.insert(
+            source_cell,
+            StairSpine {
+                nodes: tile.spine.nodes.iter().map(|&node| center + node).collect(),
+            },
+        );
+    }
+    if !tile.deck.is_empty() {
+        out.decks.insert(
+            source_cell,
+            DeckPath {
+                nodes: tile.deck.nodes.iter().map(|&node| center + node).collect(),
+            },
+        );
+    }
+    out.lights
+        .extend(tile.lights.iter().map(|light| HexLightSource {
+            source_cell,
+            role,
+            tile: tile.key.clone(),
+            kind: light.kind,
+            position: center + light.position,
+        }));
     for (index, hull) in tile.hulls.iter().enumerate() {
-        pieces.push(HexStructurePiece {
+        out.pieces.push(HexStructurePiece {
             id: StableColliderId(
                 u32::try_from(base + index as u64).expect("validated collider ID capacity"),
             ),
@@ -838,8 +931,7 @@ fn push_room(
     world: &HexWfcWorld,
     stamped: &StampedBlueprint,
     room: &RoomPrototype,
-    pieces: &mut Vec<HexStructurePiece>,
-    lights: &mut Vec<HexLightSource>,
+    out: &mut ProjectedCells,
 ) -> Result<(), HexGeometryError> {
     if room.hulls.len() > COLLIDER_STRIDE {
         return Err(HexGeometryError::TooManyHulls {
@@ -852,15 +944,38 @@ fn push_room(
         * COLLIDER_STRIDE as u64
         + 1;
     let center = Vec3::from_array(hex_origin(stamped.anchor));
-    lights.extend(room.lights.iter().map(|light| HexLightSource {
-        source_cell: stamped.anchor,
-        role: HexStructureRole::Room,
-        tile: room.key.clone(),
-        kind: light.kind,
-        position: center + light.position,
+    out.lights
+        .extend(room.lights.iter().map(|light| HexLightSource {
+            source_cell: stamped.anchor,
+            role: HexStructureRole::Room,
+            tile: room.key.clone(),
+            kind: light.kind,
+            position: center + light.position,
+        }));
+    out.sockets.extend(room.sockets.iter().map(|socket| {
+        let cell = stamped
+            .cells
+            .iter()
+            .zip(blueprint_for_role(stamped.role).cells.iter())
+            .find_map(|(&absolute, &(q, r, level))| {
+                (i32::from(socket.cell.q) == q
+                    && i32::from(socket.cell.r) == r
+                    && i32::from(socket.cell.level) == level)
+                    .then_some(absolute)
+            })
+            .unwrap_or(stamped.anchor);
+        HexRoomSocket {
+            room_generation_key: stamped.generation_key(),
+            room_role: stamped.role,
+            id: socket.id.clone(),
+            kind: socket.kind,
+            cell,
+            position: center + socket.position,
+            yaw_degrees: socket.yaw_degrees,
+        }
     }));
     for (index, hull) in room.hulls.iter().enumerate() {
-        pieces.push(HexStructurePiece {
+        out.pieces.push(HexStructurePiece {
             id: StableColliderId(
                 u32::try_from(base + index as u64).expect("validated collider ID capacity"),
             ),

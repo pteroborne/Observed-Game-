@@ -2289,7 +2289,7 @@ mod tests {
         .unwrap();
         assert!(
             topo.attach(half_rewire).is_err(),
-            "a socket cannot be attached to two rooms — no one-sided rewire"
+            "a socket cannot be attached to two rooms - no one-sided rewire"
         );
     }
 

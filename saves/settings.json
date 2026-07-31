@@ -3,6 +3,7 @@
   "sfx_volume": 1.0,
   "music_volume": 1.0,
   "mouse_sensitivity": 0.12,
+  "fov_degrees": 80.0,
   "bindings": {
     "move_left": "KeyA",
     "move_right": "KeyD",
@@ -23,5 +24,8 @@
     "pause": "Escape"
   },
   "high_contrast": false,
-  "first_run": false
+  "first_run": false,
+  "bot_fill": true,
+  "guardian": true,
+  "co_op_team_size": 4
 }

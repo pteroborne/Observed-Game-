@@ -203,11 +203,16 @@ fn boundary_start_uses_its_authored_blueprint_signature_and_the_shell_closes_it(
         .filter(|piece| piece.anchor == start.anchor && piece.tile.is_some())
         .collect();
     assert!(!start_pieces.is_empty());
+    // `room_single`, not `sanctuary`. Every room cell of every role used to ask
+    // for the same single-hex shape (bug backlog #15); a Start room is a
+    // single-hex room, so this is the one case where the answer looks the same
+    // and the reason is different.
+    let expected = blueprint_cell_archetype(start.role, 0).expect("start has a cell archetype");
     assert!(start_pieces.iter().all(|piece| {
         piece
             .tile
             .as_ref()
-            .is_some_and(|key| key.archetype == "sanctuary")
+            .is_some_and(|key| key.archetype == expected)
     }));
     assert!(
         snapshot
@@ -229,15 +234,16 @@ fn matching_whole_room_module_takes_precedence_over_cell_fallbacks() {
     let fallback_hulls = tiles()
         .into_iter()
         .find(|tile| {
-            tile.key.archetype == "sanctuary"
+            tile.key.archetype
+                == blueprint_cell_archetype(start.role, 0).expect("start cell archetype")
                 && (tile.key.register == register || tile.key.register == "generic")
                 && tile.signature == blueprint_for_role(start.role).cell_signature((0, 0, 0))
         })
         .expect("start fallback")
         .hulls;
-    let ports = HexFace::LATERAL
+    let ports = [(HexFace::West, "entrance"), (HexFace::East, "exit")]
         .into_iter()
-        .map(|face| observed_authoring::RoomPrototypePort {
+        .map(|(face, name)| observed_authoring::RoomPrototypePort {
             cell: ModuleCellRef {
                 q: 0,
                 r: 0,
@@ -245,11 +251,7 @@ fn matching_whole_room_module_takes_precedence_over_cell_fallbacks() {
             },
             face,
             class: PortClass::Door,
-            name: match face {
-                HexFace::West => "entrance".to_string(),
-                HexFace::East => "exit".to_string(),
-                _ => format!("side_{face:?}"),
-            },
+            name: name.to_string(),
         })
         .collect();
     let room = RoomPrototype {
@@ -267,6 +269,17 @@ fn matching_whole_room_module_takes_precedence_over_cell_fallbacks() {
             level: 0,
         }],
         ports,
+        sockets: vec![observed_authoring::RoomPrototypeSocket {
+            id: "test_socket".to_string(),
+            kind: observed_authoring::RoomSocketKind::Monitor,
+            cell: ModuleCellRef {
+                q: 0,
+                r: 0,
+                level: 0,
+            },
+            position: glam::Vec3::new(1.0, 1.5, -2.0),
+            yaw_degrees: 30.0,
+        }],
         hulls: fallback_hulls,
         lights: Vec::new(),
     };
@@ -284,6 +297,13 @@ fn matching_whole_room_module_takes_precedence_over_cell_fallbacks() {
             .as_ref()
             .is_some_and(|key| key.archetype == "whole_start")
     }));
+    assert_eq!(snapshot.sockets.len(), 1);
+    assert_eq!(snapshot.sockets[0].id, "test_socket");
+    assert_eq!(snapshot.sockets[0].cell, start.anchor);
+    assert_eq!(
+        snapshot.sockets[0].kind,
+        observed_authoring::RoomSocketKind::Monitor
+    );
 }
 
 #[test]
@@ -518,10 +538,9 @@ fn tiny_tetrahedron(offset: f32) -> Vec<Vec3> {
 }
 
 /// A contract-valid whole-room prototype for `role`: footprint mirrors
-/// `blueprint_for_role(role).cells` exactly, and every lateral face that does
-/// not border another footprint cell is authored as `Door` (mirroring
-/// `RoomBlueprint::cell_signature`'s "whole exterior is a door" rule) —
-/// named ports keep their blueprint name, the rest get synthesized names.
+/// `blueprint_for_role(role).cells` exactly and only its named exterior
+/// thresholds are authored as ports. Internal sibling faces are continuous
+/// geometry and therefore do not become module boundary ports.
 fn multi_cell_room_prototype(role: RoomRole, archetype: &str, variant: u16) -> RoomPrototype {
     let blueprint = blueprint_for_role(role);
     let footprint = blueprint
@@ -529,29 +548,18 @@ fn multi_cell_room_prototype(role: RoomRole, archetype: &str, variant: u16) -> R
         .iter()
         .map(|&offset| cell_ref(offset).expect("small test offsets fit ModuleCellRef"))
         .collect();
-    let mut ports = Vec::new();
-    for (index, &offset) in blueprint.cells.iter().enumerate() {
-        for face in HexFace::LATERAL {
-            let (dq, dr, dl) = face.delta();
-            let neighbor = (offset.0 + dq, offset.1 + dr, offset.2 + dl);
-            if blueprint.cells.contains(&neighbor) {
-                continue; // interior face: stays Sealed on both sides.
-            }
-            let cell = cell_ref(offset).expect("small test offsets fit ModuleCellRef");
-            let name = blueprint
-                .named_ports
-                .iter()
-                .find(|&&(_, port_offset, port_face)| port_offset == offset && port_face == face)
-                .map(|&(name, _, _)| name.to_string())
-                .unwrap_or_else(|| format!("aux_{index}_{face:?}"));
-            ports.push(observed_authoring::RoomPrototypePort {
-                cell,
+    let ports = blueprint
+        .named_ports
+        .iter()
+        .map(
+            |&(name, offset, face)| observed_authoring::RoomPrototypePort {
+                cell: cell_ref(offset).expect("small test offsets fit ModuleCellRef"),
                 face,
                 class: PortClass::Door,
-                name,
-            });
-        }
-    }
+                name: name.to_string(),
+            },
+        )
+        .collect();
     RoomPrototype {
         id: format!("test/{archetype}"),
         room_role: blueprint.name.to_string(),
@@ -563,6 +571,7 @@ fn multi_cell_room_prototype(role: RoomRole, archetype: &str, variant: u16) -> R
         weight: 1,
         footprint,
         ports,
+        sockets: Vec::new(),
         hulls: vec![tiny_tetrahedron(0.0)],
         lights: Vec::new(),
     }
@@ -586,16 +595,21 @@ fn multi_cell_world(role: RoomRole, anchor: HexCoord) -> HexWfcWorld {
     let mut placements = BTreeMap::new();
     let mut architecture = BTreeMap::new();
     let mut cell_revisions = BTreeMap::new();
-    for &coord in &cells {
+    for (&coord, &offset) in cells.iter().zip(&blueprint.cells) {
+        let signature = blueprint.cell_signature(offset);
+        let doors = HexFace::LATERAL
+            .into_iter()
+            .filter(|&face| signature.port(face) == PortClass::Door)
+            .fold(0, |mask, face| mask | (1 << face.index()));
         placements.insert(
             coord,
             HexPlacement {
                 coord,
                 space: HexSpace::Room,
                 archetype: HexArchetype::Room,
-                doors: 0,
-                up: PortClass::Sealed,
-                down: PortClass::Sealed,
+                doors,
+                up: signature.port(HexFace::Up),
+                down: signature.port(HexFace::Down),
             },
         );
         architecture.insert(coord, ArchitectureRegister::Institutional);
@@ -624,6 +638,26 @@ fn multi_cell_world(role: RoomRole, anchor: HexCoord) -> HexWfcWorld {
         cell_revisions,
         last_attempts: 1,
     }
+}
+
+#[test]
+fn multi_cell_room_internal_seams_are_traversable() {
+    let anchor = HexCoord {
+        q: 0,
+        r: 0,
+        level: 0,
+    };
+    let world = multi_cell_world(RoomRole::DualStation, anchor);
+    let sibling = HexCoord {
+        q: 1,
+        r: 0,
+        level: 0,
+    };
+
+    assert!(
+        world.route_between(anchor, sibling).is_some(),
+        "one blueprint footprint must route as one continuous room"
+    );
 }
 
 /// Pins the multi-cell selection contract: a valid two-cell `DualStation`
@@ -782,11 +816,20 @@ fn mismatched_room_contracts_fall_back_to_per_cell_tiles_without_panicking() {
             !room_pieces.is_empty(),
             "{case}: fallback must still project"
         );
+        // The per-cell fallback for a two-hex room is now the pair of wing
+        // shapes that actually open toward each other, not one shape twice
+        // (bug backlog #15).
+        let wings: Vec<&str> = (0..2)
+            .map(|index| {
+                blueprint_cell_archetype(RoomRole::DualStation, index)
+                    .expect("dual station cell archetype")
+            })
+            .collect();
         assert!(
             room_pieces.iter().all(|piece| piece
                 .tile
                 .as_ref()
-                .is_some_and(|key| key.archetype == "sanctuary")),
+                .is_some_and(|key| wings.contains(&key.archetype.as_str()))),
             "{case}: rejected candidate must not win, per-cell fallback must be used instead"
         );
         // Fallback covers both footprint cells individually (unlike the
@@ -814,27 +857,29 @@ fn mismatched_room_contracts_fall_back_to_per_cell_tiles_without_panicking() {
     });
     assert_falls_back(extra_cell, "footprint has an extra cell");
 
-    // Clause: `room_contract_matches` only checks faces that leave the
-    // footprint, and every one of those must be authored `Door`. Dropping an
-    // (unnamed) exterior port leaves that face unauthored, which
-    // `room_contract_matches` treats as `Sealed` (its `unwrap_or` default) —
-    // exercising the same branch as an explicitly-authored `Sealed` face.
-    let mut sealed_face = base.clone();
-    let dropped_index = sealed_face
+    // Clause: every unnamed exterior face is sealed. Adding a port to one
+    // reintroduces the tile-grid perimeter that the room contract forbids.
+    let mut unexpected_face = base.clone();
+    unexpected_face
         .ports
-        .iter()
-        .position(|port| {
-            port.cell
-                == ModuleCellRef {
-                    q: 1,
-                    r: 0,
-                    level: 0,
-                }
-                && port.face == HexFace::SouthEast
-        })
-        .expect("aux port exists on the second cell's SouthEast face");
-    sealed_face.ports.remove(dropped_index);
-    assert_falls_back(sealed_face, "exterior face missing/Sealed instead of Door");
+        .push(observed_authoring::RoomPrototypePort {
+            cell: ModuleCellRef {
+                q: 1,
+                r: 0,
+                level: 0,
+            },
+            face: HexFace::SouthEast,
+            class: PortClass::Door,
+            name: "not_a_threshold".to_string(),
+        });
+    assert_falls_back(unexpected_face, "unnamed exterior face opened as Door");
+
+    // Clause: a named threshold cannot be omitted.
+    let mut missing_named_port = base.clone();
+    missing_named_port
+        .ports
+        .retain(|port| port.name != "port_a");
+    assert_falls_back(missing_named_port, "named threshold missing/Sealed");
 
     // Clause: every blueprint `named_port` needs a matching authored port
     // with class `Door` and the same `normalized_role(name)` — renaming the
@@ -887,5 +932,166 @@ fn whole_room_hull_budget_is_shared_across_the_entire_footprint_not_per_cell() {
             coord: anchor,
             hulls: oversized,
         }
+    );
+}
+
+/// A shaft column must use one tower shape all the way up.
+///
+/// A tower's stairwell opening is the hole the flight below arrives through, so
+/// two shapes in one column leave the lower flight topping out under the upper
+/// cell's solid deck. The surfaces union, so nothing reads as broken — a body
+/// simply climbs into the underside of the floor above and stops. Districts
+/// drift between levels, so a column crossing a district boundary is routine
+/// rather than rare, and choosing the tower per cell made this the common case:
+/// measured as a soak stall the moment a second tower shape shipped.
+#[test]
+fn a_shaft_column_uses_one_tower_shape() {
+    let world = HexWfcWorld::generate(SHOWCASE_SEED, HexWfcConfig::arc_default()).expect("solves");
+    let snapshot = HexWfcGeometrySnapshot::project(&world, &tiles()).expect("projects");
+    let mut per_column: BTreeMap<(u16, u16), BTreeSet<String>> = BTreeMap::new();
+    for piece in &snapshot.pieces {
+        let Some(tile) = piece.tile.as_ref() else {
+            continue;
+        };
+        if tile.archetype != "stair_tower" {
+            continue;
+        }
+        per_column
+            .entry((piece.source_cell.q, piece.source_cell.r))
+            .or_default()
+            .insert(tile.register.clone());
+    }
+    assert!(
+        !per_column.is_empty(),
+        "the pinned seed should place stair towers"
+    );
+    for (column, registers) in &per_column {
+        assert_eq!(
+            registers.len(),
+            1,
+            "column {column:?} mixes tower shapes: {registers:?}"
+        );
+    }
+
+    // And the handed districts really are reaching their own towers, or the
+    // check above would pass on a facility that still has only one shape.
+    let shapes: BTreeSet<_> = per_column.values().flatten().cloned().collect();
+    assert!(
+        shapes.len() > 1,
+        "every column drew the same tower, so vertical circulation is still a \
+         monoculture: {shapes:?}"
+    );
+}
+
+/// A district-exclusive tile must be unreachable from a foreign district.
+///
+/// Exclusivity has to be a property of the selector, not a convention about how
+/// tiles are keyed. `Catalogue::select` tries the exact `(archetype, register,
+/// signature)` first and falls back to `generic` — so a tile keyed to Liminal
+/// Grid can only ever be reached by asking for Liminal Grid, and a widened
+/// fallback (or a stray `generic` relabel) would be the way that breaks. This
+/// pins it by asking every other register for every exclusive tile's signature
+/// and checking none of them hands it back.
+#[test]
+fn a_district_exclusive_tile_never_answers_for_another_district() {
+    let tiles = tiles();
+    let catalogue = Catalogue::new(&tiles);
+    let registers: Vec<&str> = ArchitectureRegister::ALL
+        .iter()
+        .map(|register| register.slug())
+        .collect();
+
+    let exclusive: Vec<&TilePrototype> = tiles
+        .iter()
+        .filter(|tile| tile.key.register == ArchitectureRegister::LiminalGrid.slug())
+        .collect();
+    assert!(
+        !exclusive.is_empty(),
+        "Liminal Grid should have tiles of its own to be exclusive about"
+    );
+
+    let mut checked = 0usize;
+    for tile in exclusive {
+        // Only archetypes the solver actually asks for can leak through
+        // selection; `hall_cap` and friends exist in the kit but are never
+        // demanded, so there is nothing to probe.
+        let Some(archetype) = observed_facility::hex_wfc::geometry_demands()
+            .into_iter()
+            .map(|demand| demand.archetype)
+            .find(|candidate| *candidate == tile.key.archetype)
+        else {
+            continue;
+        };
+        for foreign in &registers {
+            if *foreign == tile.key.register {
+                continue;
+            }
+            // Every variation key, not one: selection is weighted, so a single
+            // probe could miss a leak that only shows on some rolls.
+            for variation in 0..16u64 {
+                let picked = catalogue.select(
+                    archetype,
+                    foreign,
+                    tile.signature,
+                    variation.wrapping_mul(0x9E37_79B9_7F4A_7C15),
+                );
+                if let Some(picked) = picked {
+                    assert_ne!(
+                        picked.key.register, tile.key.register,
+                        "{foreign} was handed a {} tile ({archetype}, {:?})",
+                        tile.key.register, tile.signature
+                    );
+                }
+            }
+            checked += 1;
+        }
+    }
+    assert!(
+        checked > 100,
+        "unexpectedly small exclusivity probe: {checked}"
+    );
+}
+
+/// End to end: no cell in a solved facility is built out of another district's
+/// geometry.
+///
+/// The catalog-side gate proves every demand has an exact tile for every
+/// register. This proves the selector actually reaches them on a real solve,
+/// which is the claim a player can see. Before Phase 110 the generated kit was
+/// one institutional library relabelled `generic`, so nine of the ten districts
+/// were built almost entirely from a tenth district's geometry however they were
+/// lit or composed.
+#[test]
+fn every_placed_cell_is_built_from_its_own_district() {
+    let world =
+        HexWfcWorld::generate(SHOWCASE_SEED, HexWfcConfig::arc_default()).expect("world solves");
+    let snapshot = HexWfcGeometrySnapshot::project(&world, &tiles()).expect("projects");
+    let mut foreign: BTreeMap<String, usize> = BTreeMap::new();
+    let mut own = 0usize;
+    for piece in &snapshot.pieces {
+        let Some(tile) = piece.tile.as_ref() else {
+            continue;
+        };
+        // A stair tower is deliberately chosen for the whole column from its
+        // base cell's register (Phase 109), so it need not match the cell it
+        // stands in — only the column, which `a_shaft_column_uses_one_tower_shape`
+        // covers.
+        if tile.archetype == "stair_tower" {
+            continue;
+        }
+        let Some(register) = world.architecture.get(&piece.source_cell) else {
+            continue;
+        };
+        if tile.register == register.slug() {
+            own += 1;
+        } else {
+            *foreign.entry(tile.register.clone()).or_default() += 1;
+        }
+    }
+    assert!(own > 1_000, "unexpectedly small sample: {own}");
+    assert!(
+        foreign.is_empty(),
+        "{} colliders are drawn from another district's kit: {foreign:?}",
+        foreign.values().sum::<usize>()
     );
 }

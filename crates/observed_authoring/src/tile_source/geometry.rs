@@ -438,6 +438,28 @@ pub(crate) fn tile_light(x: f64, y: f64, z: f64) -> String {
     ])
 }
 
+/// One node on a tile's climbable line, at a tile-local TrenchBroom point.
+/// `index` orders the line from the bottom entry to the top exit; the nodes
+/// must be derived from the same constants that build the flights, never
+/// written out by hand, or the line and the surface drift apart.
+pub(crate) fn tile_stair_node(index: u16, x: f64, y: f64, z: f64) -> String {
+    point_entity(&[
+        ("classname", "tile_stair_node"),
+        ("index", &index.to_string()),
+        ("origin", &format!("{} {} {}", fmt(x), fmt(y), fmt(z))),
+    ])
+}
+
+/// One node on a tile's walkable floor path. `index` orders the path; adjacent
+/// nodes must be joined by floor a body can actually cross.
+pub(crate) fn tile_deck_node(index: u16, x: f64, y: f64, z: f64) -> String {
+    point_entity(&[
+        ("classname", "tile_deck_node"),
+        ("index", &index.to_string()),
+        ("origin", &format!("{} {} {}", fmt(x), fmt(y), fmt(z))),
+    ])
+}
+
 pub(crate) fn worldspawn(brushes: &str) -> String {
     format!("{{\n\"classname\" \"worldspawn\"\n{brushes}}}\n")
 }

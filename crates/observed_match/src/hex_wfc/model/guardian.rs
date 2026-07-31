@@ -4,11 +4,18 @@ use std::collections::BTreeMap;
 
 use glam::Vec3;
 use observed_core::PlayerId;
-use observed_facility::{hex_wfc::HexWfcWorld, map_spec::RoomRole};
-use observed_hex::{HexCoord, hex_origin};
+use observed_facility::{
+    hex_wfc::{HexWfcWorld, MAX_CONNECTION_COST},
+    map_spec::RoomRole,
+};
+use observed_hex::{HexCoord, hex_origin, travel_distance};
 
 use super::{HexLanternState, HexMatchEvent, HexMatchEventKind, HexPlayerState};
 
+/// Route cost at which Guardian pressure reaches zero. Doubles as the search bound in
+/// [`HexGuardianState::pressure_for`], since at or past this cost the answer is 0.0
+/// whether or not a route exists.
+const PRESSURE_FALLOFF_COST: u32 = 12_000;
 const MOVE_PERIOD_TICKS: u64 = 120;
 const GUARDIAN_SPEED: f32 = 2.5;
 const CATCH_DISTANCE: f32 = 1.1;
@@ -46,10 +53,16 @@ impl HexGuardianState {
         if player.cell == self.cell {
             return (1.0 - player.position.distance(self.position) / 12.0).clamp(0.55, 1.0);
         }
+        // Bounded at exactly the cost where the formula saturates. `1.0 - cost/PRESSURE_
+        // FALLOFF_COST` is <= 0 for any cost at or above the falloff, and the clamp floors
+        // it at 0.0 — which is also what a missing route yields. So a route priced at or
+        // past the bound is indistinguishable from no route, and searching for one is
+        // wasted work. Presentation calls this every frame, per lantern, and the unbounded
+        // form expanded the whole component whenever the Guardian was far away.
         world
-            .route_between_cells(player.cell, self.cell)
+            .route_within_cost(player.cell, self.cell, PRESSURE_FALLOFF_COST)
             .map_or(0.0, |route| {
-                (1.0 - route.cost_millis as f32 / 12_000.0).clamp(0.0, 0.8)
+                (1.0 - route.cost_millis as f32 / PRESSURE_FALLOFF_COST as f32).clamp(0.0, 0.8)
             })
     }
 
@@ -141,9 +154,11 @@ fn leading_player(
         .filter(|player| !player.escaped)
         .min_by_key(|player| {
             (
-                world
-                    .route_between_cells(player.cell, world.config.exit())
-                    .map_or(u32::MAX, |route| route.cost_millis),
+                // Target selection runs every fixed tick. Exact A* here made the
+                // Guardian perform one full-facility search per runner even though it
+                // only needs a stable estimate of who is ahead; the route itself is
+                // still resolved when the Guardian takes its infrequent 120-tick step.
+                travel_distance(player.cell, world.config.exit()),
                 player.id,
             )
         })
@@ -175,19 +190,33 @@ fn player_sees_guardian(
     if player.escaped {
         return false;
     }
-    let visible_route = world
-        .route_between(player.cell, guardian.cell)
-        .is_some_and(|route| route.len() <= 2);
-    if !visible_route {
-        return false;
-    }
+    // Guard order is load-bearing, not stylistic. Every conjunct is pure, so the result
+    // is identical whichever way round they run — but `route_between` is a full A* over
+    // the facility graph, and when the Guardian is far away or unreachable it exhausts
+    // the entire component (thousands of cells of `BTreeMap` work) before answering. It
+    // used to run FIRST, for every player, every tick. Profiling put `guardian.step` at
+    // 97% of an expensive simulation step, almost all of it here.
+    //
+    // The proximity and facing tests are O(1) and far more selective: a route of two
+    // cells means the Guardian is in this cell or one adjacent to it, which the 14 m
+    // radius already implies. So they now pre-filter, and the graph search runs only for
+    // the handful of ticks where the Guardian is genuinely close and in view.
     let offset = guardian.position - player.position;
     let distance = offset.length();
     if !(0.15..=14.0).contains(&distance) {
         return false;
     }
     let forward = Vec3::new(player.yaw.sin(), 0.0, -player.yaw.cos());
-    forward.dot(offset.normalize_or_zero()) > 0.42
+    if forward.dot(offset.normalize_or_zero()) <= 0.42 {
+        return false;
+    }
+    // Bounded at the dearest single connection: a route of two cells spans one edge, so it
+    // can never cost more than that. If the cheapest route prices above the bound then no
+    // one-edge route exists and the test is false either way, so the bound cannot change
+    // the answer — it only stops the search from crawling the whole component to say so.
+    world
+        .route_within_cost(player.cell, guardian.cell, MAX_CONNECTION_COST)
+        .is_some_and(|route| route.cells.len() <= 2)
 }
 
 #[cfg(test)]

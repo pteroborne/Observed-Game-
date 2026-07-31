@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use observed_authoring::RoomSocketKind;
 use observed_authoring::TilePrototype;
 use observed_core::PlayerId;
 use observed_facility::hex_wfc::{HexFace, HexWfcConfig, HexWfcWorld, PortClass};
@@ -65,6 +66,7 @@ fn showcase_match(seed: u64, levels: u8, players: u8) -> HexWfcMatch {
     HexWfcMatch::new_with_rooms(
         seed,
         HexMatchConfig {
+            guardian: true,
             teams: players,
             members_per_team: 1,
             wfc: showcase_config(levels),
@@ -100,10 +102,153 @@ fn default_roster_is_two_stable_teams_of_two() {
 }
 
 #[test]
+fn complete_bot_commands_reuse_routes_until_the_facility_changes() {
+    let mut game = showcase_match(44, 3, 1);
+    let player = PlayerId(0);
+
+    let _ = game.bot_player_command(player);
+    let cached = game.bot_routes.clone();
+    assert_eq!(cached.len(), 1, "the first command resolves one route");
+
+    let _ = game.bot_player_command(player);
+    assert_eq!(
+        game.bot_routes, cached,
+        "an unchanged cell, objective, and generation reuse the route"
+    );
+
+    game.facility.generation = game.facility.generation.wrapping_add(1);
+    let _ = game.bot_player_command(player);
+    assert_ne!(
+        game.bot_routes, cached,
+        "a relayout generation invalidates the derived route"
+    );
+}
+
+#[test]
+fn keystones_and_distinct_station_sockets_gate_team_escape() {
+    let mut game = HexWfcMatch::new_with_rooms(
+        44,
+        HexMatchConfig {
+            guardian: false,
+            teams: 1,
+            members_per_team: 2,
+            wfc: showcase_config(4),
+        },
+        &tiles(),
+        rooms(),
+    )
+    .expect("objective showcase");
+    let cells = game
+        .facility
+        .route_between(game.facility.config.spawn(), game.facility.config.exit())
+        .expect("spawn-exit route");
+    let a_cell = cells[0];
+    let b_cell = *cells.get(1).expect("route has a second cell");
+    let point = |cell| glam::Vec3::from_array(observed_hex::hex_origin(cell)) + glam::Vec3::Y;
+    game.geometry.sockets = vec![
+        super::super::geometry::HexRoomSocket {
+            room_generation_key: 10,
+            room_role: observed_facility::map_spec::RoomRole::Keystone,
+            id: "key_a".to_string(),
+            kind: RoomSocketKind::Keystone,
+            cell: a_cell,
+            position: point(a_cell),
+            yaw_degrees: 0.0,
+        },
+        super::super::geometry::HexRoomSocket {
+            room_generation_key: 11,
+            room_role: observed_facility::map_spec::RoomRole::Keystone,
+            id: "key_b".to_string(),
+            kind: RoomSocketKind::Keystone,
+            cell: a_cell,
+            position: point(a_cell),
+            yaw_degrees: 0.0,
+        },
+        super::super::geometry::HexRoomSocket {
+            room_generation_key: 20,
+            room_role: observed_facility::map_spec::RoomRole::DualStation,
+            id: "station_a".to_string(),
+            kind: RoomSocketKind::StationA,
+            cell: a_cell,
+            position: point(a_cell),
+            yaw_degrees: 0.0,
+        },
+        super::super::geometry::HexRoomSocket {
+            room_generation_key: 20,
+            room_role: observed_facility::map_spec::RoomRole::DualStation,
+            id: "station_b".to_string(),
+            kind: RoomSocketKind::StationB,
+            cell: b_cell,
+            position: point(b_cell),
+            yaw_degrees: 180.0,
+        },
+    ];
+    game.objectives = HexObjectiveState::new(&game);
+    assert!(game.objectives.enabled);
+
+    let interact = |commands: &mut BTreeMap<PlayerId, HexPlayerCommand>, player| {
+        commands.insert(
+            player,
+            HexPlayerCommand {
+                actions: HexActionButtons {
+                    interact: true,
+                    ..HexActionButtons::default()
+                },
+                ..HexPlayerCommand::default()
+            },
+        );
+    };
+    game.players.get_mut(&PlayerId(0)).expect("player").cell = a_cell;
+    game.players.get_mut(&PlayerId(0)).expect("player").position = point(a_cell);
+    let mut commands = BTreeMap::new();
+    interact(&mut commands, PlayerId(0));
+    game.step_objectives(&HexInputFrame {
+        commands: commands.clone(),
+        ..HexInputFrame::default()
+    });
+    game.step_objectives(&HexInputFrame {
+        commands: commands.clone(),
+        ..HexInputFrame::default()
+    });
+    let team = observed_core::TeamId(0);
+    assert_eq!(game.teams[&team].objectives.keystones, 2);
+
+    let exit = game.facility.config.exit();
+    for player in [PlayerId(0), PlayerId(1)] {
+        game.players.get_mut(&player).expect("player").cell = exit;
+    }
+    game.resolve_escapes();
+    assert!(
+        !game.teams[&team].escaped,
+        "unfinished station seals the exit"
+    );
+
+    game.players.get_mut(&PlayerId(0)).expect("player").cell = a_cell;
+    game.players.get_mut(&PlayerId(0)).expect("player").position = point(a_cell);
+    game.players.get_mut(&PlayerId(1)).expect("player").cell = b_cell;
+    game.players.get_mut(&PlayerId(1)).expect("player").position = point(b_cell);
+    interact(&mut commands, PlayerId(1));
+    for _ in 0..120 {
+        game.step_objectives(&HexInputFrame {
+            commands: commands.clone(),
+            ..HexInputFrame::default()
+        });
+    }
+    assert!(game.teams[&team].objectives.dual_station_complete);
+
+    for player in [PlayerId(0), PlayerId(1)] {
+        game.players.get_mut(&player).expect("player").cell = exit;
+    }
+    game.resolve_escapes();
+    assert!(game.teams[&team].escaped);
+}
+
+#[test]
 fn a_team_finishes_only_after_both_members_escape() {
     let mut game = HexWfcMatch::new(
         44,
         HexMatchConfig {
+            guardian: true,
             teams: 1,
             members_per_team: 2,
             wfc: showcase_config(4),
@@ -114,12 +259,17 @@ fn a_team_finishes_only_after_both_members_escape() {
     let exit = game.facility.config.exit();
     game.players.get_mut(&PlayerId(0)).expect("p1").cell = exit;
     game.resolve_escapes();
-    assert!(game.players[&PlayerId(0)].escaped);
+    assert!(
+        !game.players[&PlayerId(0)].escaped,
+        "the first teammate waits at the team exit"
+    );
     assert!(!game.teams[&observed_core::TeamId(0)].escaped);
     assert!(game.escape_order.is_empty());
 
     game.players.get_mut(&PlayerId(1)).expect("p2").cell = exit;
     game.resolve_escapes();
+    assert!(game.players[&PlayerId(0)].escaped);
+    assert!(game.players[&PlayerId(1)].escaped);
     assert!(game.teams[&observed_core::TeamId(0)].escaped);
     assert_eq!(game.escape_order, vec![observed_core::TeamId(0)]);
     assert_eq!(game.status, HexMatchStatus::Finished);
@@ -130,6 +280,7 @@ fn teammate_observations_share_one_survivor_map() {
     let mut game = HexWfcMatch::new(
         44,
         HexMatchConfig {
+            guardian: true,
             teams: 1,
             members_per_team: 2,
             wfc: showcase_config(4),
@@ -214,6 +365,7 @@ fn scan_mutation_seeds() {
         let Ok(mut game) = HexWfcMatch::new(
             seed,
             HexMatchConfig {
+                guardian: true,
                 teams: 2,
                 members_per_team: 2,
                 wfc: showcase_config(4),
@@ -422,7 +574,13 @@ fn diagnose_bot() {
 
 /// Pinned headless gate seed (found via `scan_gate_seeds`). Its solved 12×9×5
 /// showcase route crosses two ramp levels and two physical stair towers.
-const GATE_SEED: u64 = 0xa11c_0000_0000_0000;
+///
+/// Re-pinned after Arc P's room/open-volume topology changes: the previous seed's
+/// route retained stairs but no longer crossed a ramp. That is expected — the gate
+/// asserts the *bot* can walk a route with both vertical kinds on it, not that one
+/// particular seed produces one.
+/// Any arc that touches weighting should expect to re-run `scan_gate_seeds`.
+const GATE_SEED: u64 = 0xd9c1_e6e5_fd29_f054;
 const GATE_LEVELS: u8 = 5;
 
 /// Phase 94 success criterion 1 — the headless gate. On a pinned seed whose
@@ -544,6 +702,7 @@ fn every_open_blueprint_door_is_two_way_traversable() {
         let Ok(game) = HexWfcMatch::new(
             seed,
             HexMatchConfig {
+                guardian: true,
                 teams: 1,
                 members_per_team: 1,
                 wfc: showcase_config(5),
@@ -657,7 +816,7 @@ fn ordinary_drops_do_not_trigger_recovery_on_the_gate_route() {
 /// same generation timeline and the same final snapshot digest byte-for-byte.
 ///
 /// The fixture's first warned pocket commits on its first scheduled attempt.
-const MUTATION_SEED: u64 = 0x3F2B_ECB9_7F4A_7C15;
+const MUTATION_SEED: u64 = 0x7BBA_F82C_7DDF_743F;
 
 #[test]
 fn observed_relayout_commits_mid_match_deterministically() {
@@ -806,5 +965,213 @@ fn a_bot_with_no_route_explores_instead_of_freezing() {
     assert!(
         intent.movement.length_squared() > 0.0,
         "Explore must emit movement, not freeze the bot"
+    );
+}
+
+/// `spawn_to_exit_cost` is a cache, so the only way it can be wrong is by going stale.
+/// Drive a match until a relayout actually commits and assert it still equals a fresh
+/// computation — before, during, and after the facility changing shape.
+#[test]
+fn cached_spawn_to_exit_cost_survives_a_committed_relayout() {
+    let fresh = |game: &HexWfcMatch| {
+        let config = game.facility.config;
+        game.facility
+            .route_between_cells(config.spawn(), config.exit())
+            .map_or(1, |route| route.cost_millis.max(1))
+    };
+
+    let mut game = HexWfcMatch::new(
+        0xA11C_9500_0000_0000,
+        HexMatchConfig {
+            guardian: true,
+            teams: 2,
+            members_per_team: 2,
+            wfc: showcase_config(4),
+        },
+        &tiles(),
+    )
+    .expect("fixture seed builds");
+    assert_eq!(
+        game.spawn_to_exit_cost,
+        fresh(&game),
+        "cache must be primed at construction"
+    );
+
+    let mut generations = 0u32;
+    for tick in 0..2_400u64 {
+        let commands = game
+            .players
+            .keys()
+            .copied()
+            .filter(|id| !game.players[id].escaped)
+            .map(|id| (id, bot_player_command(&game, id)))
+            .collect();
+        let committed = game
+            .step(&HexInputFrame {
+                version: HEX_INPUT_VERSION,
+                tick,
+                commands,
+            })
+            .iter()
+            .any(|event| event.kind == HexMatchEventKind::MutationCommitted);
+        if committed {
+            generations += 1;
+        }
+        assert_eq!(
+            game.spawn_to_exit_cost,
+            fresh(&game),
+            "cache went stale at tick {tick} (committed this tick: {committed})"
+        );
+        if game.status == HexMatchStatus::Finished {
+            break;
+        }
+    }
+    assert!(
+        generations > 0,
+        "fixture must actually commit a relayout, or this proves nothing"
+    );
+}
+
+/// Sixteen seats actually run, which the simulation refused before Phase 112.
+///
+/// The roster guard was 8, below what the widened wire can carry, so a lobby
+/// could fill to sixteen and the match would then fail to start. The soak proves
+/// bodies at that scale still route; this proves they can exist at all, and that
+/// the guard and the wire agree on where the ceiling is.
+#[test]
+fn a_sixteen_seat_match_runs_and_seventeen_is_refused() {
+    let mut game = HexWfcMatch::new_with_rooms(
+        0xA11C_E3D0_0000_0011,
+        HexMatchConfig {
+            guardian: true,
+            teams: 4,
+            members_per_team: 4,
+            wfc: showcase_config(4),
+        },
+        &tiles(),
+        rooms(),
+    )
+    .expect("sixteen seats is within the roster guard");
+    assert_eq!(game.players.len(), 16);
+    assert_eq!(usize::from(MAX_ROSTER), 16);
+
+    for tick in 0..240 {
+        let commands = game
+            .players
+            .keys()
+            .copied()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|id| (id, bot_player_command(&game, id)))
+            .collect();
+        game.step(&HexInputFrame {
+            version: HEX_INPUT_VERSION,
+            tick,
+            commands,
+        });
+    }
+    assert!(
+        game.players
+            .values()
+            .all(|player| player.position.is_finite()),
+        "sixteen bodies must all stay in the world"
+    );
+
+    assert!(
+        HexWfcMatch::new_with_rooms(
+            0xA11C_E3D0_0000_0011,
+            HexMatchConfig {
+                guardian: true,
+                teams: 17,
+                members_per_team: 1,
+                wfc: showcase_config(4),
+            },
+            &tiles(),
+            rooms(),
+        )
+        .is_err(),
+        "seventeen seats exceeds what the wire can carry and must be refused"
+    );
+}
+
+/// Co-op is one team, and the escape condition is the team's.
+///
+/// The simulation already had the semantics — team completion and shared map
+/// knowledge are keyed by team — so this pins that a single team behaves rather
+/// than adding machinery to make it.
+#[test]
+fn a_single_team_shares_its_map_and_finishes_together() {
+    let game = HexWfcMatch::new_with_rooms(
+        0xA11C_E3D0_0000_0012,
+        HexMatchConfig {
+            guardian: false,
+            teams: 1,
+            members_per_team: 4,
+            wfc: showcase_config(4),
+        },
+        &tiles(),
+        rooms(),
+    )
+    .expect("a single team is a valid roster");
+    assert_eq!(game.players.len(), 4);
+    let teams: std::collections::BTreeSet<_> =
+        game.players.values().map(|player| player.team).collect();
+    assert_eq!(teams.len(), 1, "co-op puts everyone on one team");
+
+    // Everyone reads the same sketch, because knowledge is team-scoped.
+    let first = game.players.keys().next().copied().expect("a player");
+    for id in game.players.keys().copied() {
+        assert_eq!(
+            game.player_map(id).map(|map| map.cells.len()),
+            game.player_map(first).map(|map| map.cells.len()),
+            "teammates must share one map"
+        );
+    }
+}
+
+/// The Guardian toggle actually stops it hunting.
+#[test]
+fn a_match_without_a_guardian_leaves_it_where_it_started() {
+    let build = |guardian: bool| {
+        HexWfcMatch::new_with_rooms(
+            0xA11C_E3D0_0000_0013,
+            HexMatchConfig {
+                guardian,
+                teams: 2,
+                members_per_team: 2,
+                wfc: showcase_config(4),
+            },
+            &tiles(),
+            rooms(),
+        )
+        .expect("match")
+    };
+    let mut off = build(false);
+    let mut on = build(true);
+    let start = off.guardian.cell;
+    for tick in 0..600 {
+        for game in [&mut off, &mut on] {
+            let commands = game
+                .players
+                .keys()
+                .copied()
+                .collect::<Vec<_>>()
+                .into_iter()
+                .map(|id| (id, bot_player_command(game, id)))
+                .collect();
+            game.step(&HexInputFrame {
+                version: HEX_INPUT_VERSION,
+                tick,
+                commands,
+            });
+        }
+    }
+    assert_eq!(
+        off.guardian.cell, start,
+        "a disabled Guardian must not move"
+    );
+    assert_ne!(
+        on.guardian.cell, start,
+        "an enabled Guardian should have hunted, or this test proves nothing"
     );
 }

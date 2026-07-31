@@ -51,9 +51,9 @@ pub(super) fn setup(
                     BorderColor::all(Color::srgba(0.35, 0.9, 1.0, 0.6)),
                 ));
                 let help_text = if is_spectator {
-                    "SPECTATING BOT RUN\nEsc menu\n\nGOAL: traverse the hex facility and reach the exit rhombus"
+                    "SPECTATING BOT RUN\nEsc menu\n\nGOAL: claim 2 keystones, synchronize a team station, regroup at the exit"
                 } else {
-                    "HEX FACILITY RACE\nWASD / stick move | Shift sprint\nMouse / stick look | Space jump\nE collect cache | F deploy lantern at a looked-at threshold | R recover\nTab survivor map | PgUp/PgDn floor | Esc menu\n\nGOAL: walk the ramps and stair towers, reach the exit rhombus"
+                    "HEX FACILITY RACE\nWASD / stick move | Shift sprint\nMouse / stick look | Space jump\nE interact/collect | F deploy lantern at a looked-at threshold | R recover\nTab survivor map | PgUp/PgDn floor | Esc menu\n\nGOAL: claim 2 keystones, synchronize a team station, regroup at the exit"
                 };
                 root.spawn((
                     Text::new(help_text),
@@ -108,10 +108,25 @@ pub(super) fn sync(runtime: Res<HexWfcRuntime>, mut hud: Query<&mut Text, With<H
         .filter(|team| team.escaped)
         .count();
     let total = runtime.match_state.teams.len();
+    let objectives = &runtime.match_state.teams[&player.team].objectives;
+    let station = if objectives.dual_station_complete {
+        "READY".to_string()
+    } else if objectives.dual_station_ticks > 0 {
+        format!(
+            "SYNC {}%",
+            u32::from(objectives.dual_station_ticks) * 100
+                / u32::from(observed_match::hex_wfc::DUAL_STATION_HOLD_TICKS)
+        )
+    } else {
+        "INCOMPLETE".to_string()
+    };
     **text = format!(
-        "GENERATION {}  |  tick {}\nteams escaped {escaped}/{total}\nlanterns {}  |  Guardian {:?}\ncell q{} r{} L{}  |  exit q{} r{} L{}\n{}{}",
+        "GENERATION {}  |  tick {}\nteams escaped {escaped}/{total}\nkeys {}/{}  |  station {}\nlanterns {}  |  Guardian {:?}\ncell q{} r{} L{}  |  exit q{} r{} L{}\n{}{}",
         world.generation,
         runtime.match_state.tick,
+        objectives.keystones,
+        runtime.match_state.objectives.keystones_required,
+        station,
         runtime.match_state.lanterns.inventory(runtime.local_player),
         runtime.match_state.guardian.status,
         player.cell.q,

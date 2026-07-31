@@ -2,12 +2,16 @@
 //!
 //! The authoritative geometry snapshot is the single collision/render source; this
 //! module adds style-owned materials, a bounded lighting/post-process rig, and
-//! visibility streaming by proximity to the runner.
+//! presentation residency streaming by proximity to the runner.
 
+use std::collections::BTreeMap;
 use std::time::Instant;
 
 mod assets;
 mod lighting;
+/// The full-screen isometric survivor map, wired by `hex_wfc::mod`.
+pub(crate) mod map;
+mod residency;
 mod shell;
 
 use bevy::anti_alias::fxaa::Fxaa;
@@ -20,39 +24,63 @@ use bevy::prelude::*;
 use bevy::render::view::Hdr;
 use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::HexCoord;
-use observed_hex::hex_origin;
 
 use self::assets::HexWfcVisualAssets;
 use super::sim::HexWfcRuntime;
+use crate::settings::Settings;
 use crate::view::components::{GameCam, GameSun, MENU_SUN_ILLUMINANCE};
 
-/// Streaming window (metres, plan view) around the runner. Cells farther than this in
-/// the horizontal plane, or more than [`STREAM_LEVELS`] levels away, are hidden.
-const STREAM_RADIUS: f32 = 30.0;
-const STREAM_LEVELS: u8 = 2;
+/// Cells enter presentation residency inside this window. The logical facility and its
+/// pure collision snapshot remain complete regardless of presentation residency.
+const STREAM_ENTER_RADIUS: f32 = 30.0;
+const STREAM_ENTER_LEVELS: u8 = 2;
+/// A larger removal window prevents churn when the runner hovers near the enter edge.
+const STREAM_EXIT_RADIUS: f32 = 42.0;
+const STREAM_EXIT_LEVELS: u8 = 3;
+/// Entry always projects the current cell and its same-level one-ring neighborhood.
+const ENTRY_SAFE_RADIUS: f32 = 15.0;
+const ENTRY_CELL_SPAWN_BUDGET: usize = 24;
+/// Normal play may instantiate at most this many cell parents in one update frame.
+const CELL_SPAWN_BUDGET: usize = 8;
+/// Retiring parents is cheap, but bounding it avoids a hierarchy-despawn cliff after a
+/// teleport or spectator jump.
+const CELL_DESPAWN_BUDGET: usize = 24;
 
-#[derive(Component)]
-pub(super) struct HexWfcCell(pub HexCoord);
-
-/// The full set of grid cells a [`HexWfcCell`]'s fixture group actually
-/// occupies. An ordinary tile's footprint is just its own coordinate. A
-/// whole-room module is different: `push_room` in
-/// `observed_match::hex_wfc::geometry` stamps every hull of the room with
-/// `source_cell = anchor`, so all of a room's pieces are grouped under one
-/// [`HexWfcCell`] keyed by its anchor — `shell::cell_footprint` recovers the
-/// room's true footprint from the solved world's stamped blueprints so this
-/// carries every cell the room occupies, not only its anchor. Streaming keys
-/// off "any cell of the footprint is in range" so a large multi-cell room
-/// stays visible while the player is anywhere inside it. For today's
-/// room-less catalog (and every ordinary tile once rooms exist) this is
-/// always a single-element list equal to the `HexWfcCell` coordinate, so
-/// streaming behavior is unchanged.
-#[derive(Component)]
-pub(super) struct HexWfcCellFootprint(pub Vec<HexCoord>);
-
-/// Every shell entity carries this so a relayout can clear the whole facility at once.
+/// Marks shell entities for presentation diagnostics and state-scoped cleanup.
 #[derive(Component)]
 pub(super) struct HexWfcGeometry;
+
+#[derive(Clone, Copy, Debug)]
+struct ResidentCell {
+    entity: Entity,
+    child_pieces: usize,
+}
+
+/// Presentation-only residency ownership. Stable [`HexCoord`] keys remain the identity;
+/// Bevy entities are transient handles that never enter simulation state.
+#[derive(Resource)]
+pub(super) struct HexPresentationResidency {
+    catalog: shell::HexGeometryCatalog,
+    resident: BTreeMap<HexCoord, ResidentCell>,
+    /// `OnEnter` already consumes the entry-frame budget. The first `Update` therefore
+    /// reports readiness but does not enqueue a second batch in the same rendered frame.
+    defer_incremental_once: bool,
+    capture_unbounded: bool,
+}
+
+/// Honest counters for debug overlays, profiling, and loading/readiness inspection.
+#[derive(Resource, Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct HexPresentationReadiness {
+    pub catalog_cells: usize,
+    pub desired_cells: usize,
+    pub resident_cells: usize,
+    pub pending_cells: usize,
+    pub resident_child_pieces: usize,
+    pub spawned_this_frame: usize,
+    pub despawned_this_frame: usize,
+    pub entry_neighborhood_ready: bool,
+    pub stream_window_ready: bool,
+}
 
 #[derive(Component)]
 pub(super) struct HexWfcKeyLight;
@@ -70,7 +98,9 @@ pub(super) fn setup_view(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     runtime: Res<HexWfcRuntime>,
+    settings: Res<Settings>,
     mut camera: Query<(Entity, &mut Transform), With<GameCam>>,
+    mut projection: Query<&mut Projection, With<GameCam>>,
     mut sun: Query<&mut DirectionalLight, With<GameSun>>,
     mut perf: Option<ResMut<super::perf::HexPerfMetrics>>,
 ) {
@@ -81,8 +111,9 @@ pub(super) fn setup_view(
         .architecture
         .get(&runtime.local().cell)
         .unwrap_or(&ArchitectureRegister::ALL[0]);
-    let palette = observed_style::architecture(architecture);
     let current = runtime.local().cell;
+    let composition = lighting::composition_at(&runtime.match_state.facility, current);
+    let palette = observed_style::architecture_for_composition(architecture, composition);
     if let Ok((camera, mut transform)) = camera.single_mut() {
         lighting::prime_camera(&mut transform, runtime.local());
         commands.entity(camera).insert((
@@ -112,6 +143,11 @@ pub(super) fn setup_view(
             },
         ));
     }
+    if let Ok(mut projection) = projection.single_mut()
+        && let Projection::Perspective(perspective) = &mut *projection
+    {
+        perspective.fov = settings.fov_degrees.clamp(50.0, 80.0).to_radians();
+    }
     for mut light in &mut sun {
         light.illuminance = 0.0;
     }
@@ -121,13 +157,60 @@ pub(super) fn setup_view(
         ..default()
     });
     commands.insert_resource(ClearColor(palette.fog_color));
-    lighting::spawn_rig(&mut commands, architecture, current, runtime.local());
+    lighting::spawn_rig(
+        &mut commands,
+        architecture,
+        composition,
+        current,
+        runtime.local(),
+    );
 
     // Geometry is deliberately enqueued only after the camera, atmosphere, menu sun,
-    // and both semantic lights have their exact initial values. The renderer therefore
-    // cannot observe a shell under the outgoing menu rig.
+    // and both semantic lights have their exact initial values. Entry projects only a
+    // safe local neighborhood; the production-sized logical snapshot remains resident
+    // in simulation without synchronously creating its ~100k presentation pieces.
     let mut assets = HexWfcVisualAssets::load(&asset_server, &mut materials);
-    shell::spawn_geometry(&mut commands, &mut assets, &mut meshes, &runtime);
+    let catalog = shell::HexGeometryCatalog::build(&runtime);
+    shell::spawn_boundary(&mut commands, &mut assets, &mut meshes, &runtime, &catalog);
+    let capture_unbounded = capture_requests_deterministic_residency();
+    let initial_budget = if capture_unbounded {
+        usize::MAX
+    } else {
+        ENTRY_CELL_SPAWN_BUDGET
+    };
+    let initial = initial_spawn_batch(&catalog, runtime.local(), initial_budget);
+    let spawned = shell::spawn_cells(
+        &mut commands,
+        &mut assets,
+        &mut meshes,
+        &runtime,
+        &catalog,
+        &initial,
+    );
+    let resident = spawned
+        .into_iter()
+        .map(|spawned| {
+            (
+                spawned.coord,
+                ResidentCell {
+                    entity: spawned.entity,
+                    child_pieces: spawned.child_pieces,
+                },
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let readiness = presentation_readiness(&catalog, &resident, runtime.local(), 0, 0);
+    debug_assert!(
+        readiness.entry_neighborhood_ready,
+        "entry cell and its same-level one-ring must fit the entry budget"
+    );
+    commands.insert_resource(HexPresentationResidency {
+        catalog,
+        resident,
+        defer_incremental_once: true,
+        capture_unbounded,
+    });
+    commands.insert_resource(readiness);
     commands.insert_resource(assets);
     super::perf::record_view(
         &mut perf,
@@ -137,77 +220,16 @@ pub(super) fn setup_view(
     );
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(super) fn sync_changed_geometry(
-    mut commands: Commands,
-    mut runtime: ResMut<HexWfcRuntime>,
-    mut assets: ResMut<HexWfcVisualAssets>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    existing: Query<(Entity, &HexWfcCell)>,
-    mut perf: Option<ResMut<super::perf::HexPerfMetrics>>,
-) {
-    if runtime.pending_visual_cells.is_empty() {
-        return;
-    }
-    let started = Instant::now();
-    let changed = std::mem::take(&mut runtime.pending_visual_cells);
-    for (entity, cell) in &existing {
-        if changed.contains(&cell.0) {
-            commands.entity(entity).despawn();
-        }
-    }
-    shell::spawn_cells(&mut commands, &mut assets, &mut meshes, &runtime, &changed);
-    super::perf::record_view(
-        &mut perf,
-        super::perf::ViewTimingKind::MutationRebuild,
-        &runtime,
-        started.elapsed(),
-    );
-}
-
-/// Whether `coord` alone is within the streaming window of `focus_position`
-/// / `focus_level`. Pure arithmetic core of [`sync_streamed_cells`], kept
-/// standalone so [`footprint_in_range`] (and its unit tests) can reuse it.
-fn cell_in_stream_range(coord: HexCoord, focus_position: Vec3, focus_level: u8) -> bool {
-    let origin = Vec3::from_array(hex_origin(coord));
-    let plan = Vec2::new(origin.x - focus_position.x, origin.z - focus_position.z).length();
-    let level_gap = coord.level.abs_diff(focus_level);
-    plan <= STREAM_RADIUS && level_gap <= STREAM_LEVELS
-}
-
-/// A cell's fixture group is streamed in when ANY cell of its footprint is
-/// in range — for an ordinary tile the footprint is just its own coordinate
-/// (identical to the old single-point check); for a whole-room module it is
-/// the room's complete stamped footprint, so a large room stays visible
-/// while the player is anywhere inside it rather than popping in/out keyed
-/// to a single anchor cell that might be far from the player.
-fn footprint_in_range(footprint: &[HexCoord], focus_position: Vec3, focus_level: u8) -> bool {
-    footprint
-        .iter()
-        .any(|&coord| cell_in_stream_range(coord, focus_position, focus_level))
-}
-
-pub(super) fn sync_streamed_cells(
-    runtime: Res<HexWfcRuntime>,
-    mut cells: Query<(&HexWfcCellFootprint, &mut Visibility)>,
-) {
-    let focus = runtime.local();
-    for (footprint, mut visibility) in &mut cells {
-        *visibility = if footprint_in_range(&footprint.0, focus.position, focus.cell.level) {
-            Visibility::Inherited
-        } else {
-            Visibility::Hidden
-        };
-    }
-}
-
 pub(super) use lighting::{
     sync_camera, sync_lighting_and_atmosphere, sync_practical_shadow_budget,
 };
+use residency::{initial_spawn_batch, presentation_readiness};
+pub(super) use residency::{sync_changed_geometry, sync_streamed_cells};
 
 pub(super) fn clear_view(
     mut commands: Commands,
     camera: Query<Entity, With<GameCam>>,
+    mut projection: Query<&mut Projection, With<GameCam>>,
     mut sun: Query<&mut DirectionalLight, With<GameSun>>,
 ) {
     if let Ok(camera) = camera.single() {
@@ -224,6 +246,11 @@ pub(super) fn clear_view(
             )>()
             .insert(Msaa::Sample4);
     }
+    if let Ok(mut projection) = projection.single_mut()
+        && let Projection::Perspective(perspective) = &mut *projection
+    {
+        perspective.fov = PerspectiveProjection::default().fov;
+    }
     for mut light in &mut sun {
         light.illuminance = MENU_SUN_ILLUMINANCE;
     }
@@ -234,84 +261,22 @@ pub(super) fn clear_view(
     });
     commands.insert_resource(ClearColor(Color::srgb(0.045, 0.05, 0.065)));
     commands.remove_resource::<HexWfcVisualAssets>();
+    commands.remove_resource::<HexPresentationResidency>();
+    commands.remove_resource::<HexPresentationReadiness>();
+}
+
+fn capture_requests_deterministic_residency() -> bool {
+    [
+        "OBSERVED2_CAPTURE_HEX_WFC_STYLE",
+        "OBSERVED2_CAPTURE_HEX_WFC_RELAYOUT",
+        "OBSERVED2_CAPTURE_HEX_WFC_TRAVERSAL",
+        "OBSERVED2_CAPTURE_HEX_WFC",
+        "OBSERVED2_CAPTURE_HEX_WFC_MAP",
+    ]
+    .into_iter()
+    .any(|name| std::env::var_os(name).is_some())
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn streaming_window_is_bounded() {
-        // A cell directly under the runner is streamed; far plan distance or
-        // level gap is culled.
-        let close = HexCoord {
-            q: 5,
-            r: 5,
-            level: 0,
-        };
-        let focus_position = Vec3::from_array(hex_origin(close));
-        assert!(cell_in_stream_range(close, focus_position, 0));
-
-        let far_plan = HexCoord {
-            q: 45,
-            r: 5,
-            level: 0,
-        };
-        assert!(!cell_in_stream_range(far_plan, focus_position, 0));
-
-        let far_level = HexCoord {
-            q: 5,
-            r: 5,
-            level: 5,
-        };
-        assert!(!cell_in_stream_range(far_level, focus_position, 0));
-    }
-
-    #[test]
-    fn footprint_in_range_is_a_no_op_for_single_cell_footprints() {
-        // An ordinary tile's footprint is always `[coord]`; the ANY-of-footprint
-        // check used for whole-room modules must degrade to exactly the
-        // single-cell check it replaced, near or far.
-        let coord = HexCoord {
-            q: 10,
-            r: 10,
-            level: 1,
-        };
-        let near_focus = Vec3::from_array(hex_origin(coord));
-        assert_eq!(
-            footprint_in_range(&[coord], near_focus, 1),
-            cell_in_stream_range(coord, near_focus, 1)
-        );
-
-        let far_focus = near_focus + Vec3::new(500.0, 0.0, 0.0);
-        assert_eq!(
-            footprint_in_range(&[coord], far_focus, 1),
-            cell_in_stream_range(coord, far_focus, 1)
-        );
-    }
-
-    #[test]
-    fn footprint_in_range_covers_a_whole_room_footprint() {
-        // A whole-room module's single `HexWfcCell` is keyed by its anchor,
-        // which can sit far from the player while another footprint cell is
-        // close — the room must still stream in, which is exactly the bug
-        // this stream fixes (previously only the anchor coordinate was
-        // checked, so a large room could vanish while the player stood in
-        // one of its far corners).
-        let anchor = HexCoord {
-            q: 0,
-            r: 0,
-            level: 0,
-        };
-        let near_cell = HexCoord {
-            q: 5,
-            r: 5,
-            level: 0,
-        };
-        let focus_position = Vec3::from_array(hex_origin(near_cell));
-
-        assert!(!cell_in_stream_range(anchor, focus_position, 0));
-        assert!(cell_in_stream_range(near_cell, focus_position, 0));
-        assert!(footprint_in_range(&[anchor, near_cell], focus_position, 0));
-    }
-}
+#[path = "tests.rs"]
+mod tests;

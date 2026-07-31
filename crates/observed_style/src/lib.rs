@@ -905,6 +905,13 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
             palette.key_shadows_enabled = true;
             palette.key_intensity = 55_000_000.0;
             palette.key_range = 42.0;
+            // Hollow is a keyless district, so its cone angles are zero. A register that
+            // switches the key back ON must state its own: a zero outer angle is a
+            // zero-width cone that emits nothing, and it puts `1/tan(0)` into the shadow
+            // projection. Tight and raking — this is the register whose whole identity is
+            // the cast shadow.
+            palette.key_inner_angle = 0.30;
+            palette.key_outer_angle = 0.58;
             palette.pools_rhythm = true;
         }
         Register::Monolith => {
@@ -928,6 +935,10 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
             palette.key_shadows_enabled = true;
             palette.key_intensity = 65_000_000.0;
             palette.key_range = 45.0;
+            // As for ShadowScreen: Hollow's zero cone would emit nothing. Wide and even,
+            // matching the flat overhead-fluorescent read this register is after.
+            palette.key_inner_angle = 0.45;
+            palette.key_outer_angle = 0.85;
             palette.pools_rhythm = false;
         }
         Register::FacetMonument => {
@@ -1144,6 +1155,250 @@ pub struct DistrictPalette {
     pub key_shadows_enabled: bool,
     /// Spacing mode: pools rhythm (creates dark gaps).
     pub pools_rhythm: bool,
+}
+
+/// The schematic register: a facility diagram as a ship's console would draw it.
+///
+/// This is a deliberately different visual language from the world's neon-noir
+/// surfaces. A schematic is read, not inhabited: it is line work on a dark
+/// screen, and its whole job is to separate what is settled from what is not.
+/// Hue carries that one distinction and nothing else, so the reading survives a
+/// glance and does not compete with the district palette.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SchematicRole {
+    /// Geometry the solver will not rewire. Phosphor green: settled.
+    Pinned,
+    /// Topology the solver may rewire under you. Alert red: provisional.
+    Volatile,
+    /// The cell currently under inspection.
+    Selected,
+    /// Structure that is present but not the subject — off-focus layers, and
+    /// the annotation lines that carry no state of their own.
+    Grid,
+}
+
+impl SchematicRole {
+    pub const ALL: [SchematicRole; 4] = [
+        SchematicRole::Pinned,
+        SchematicRole::Volatile,
+        SchematicRole::Selected,
+        SchematicRole::Grid,
+    ];
+
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Pinned => "will not rewire",
+            Self::Volatile => "can rewire",
+            Self::Selected => "selected",
+            Self::Grid => "off-focus",
+        }
+    }
+}
+
+/// The line colour for a schematic role.
+///
+/// Emission is what carries a schematic — the lines are the light source, and
+/// the surface behind them is nearly black — so these run hot enough to bloom
+/// and sit well above [`SIGNAL_MIN_LUMINANCE`].
+#[must_use]
+pub fn schematic(role: SchematicRole) -> Treatment {
+    let (base, emissive) = match role {
+        SchematicRole::Pinned => (Color::srgb(0.36, 1.0, 0.48), LinearRgba::rgb(0.9, 5.4, 1.5)),
+        SchematicRole::Volatile => (Color::srgb(1.0, 0.29, 0.24), LinearRgba::rgb(6.0, 0.7, 0.5)),
+        SchematicRole::Selected => (Color::srgb(1.0, 0.78, 0.30), LinearRgba::rgb(7.2, 4.4, 1.0)),
+        // Present, legible, and clearly subordinate: an off-focus layer must not
+        // read as competing with the one being examined.
+        SchematicRole::Grid => (
+            Color::srgb(0.16, 0.34, 0.22),
+            LinearRgba::rgb(0.10, 0.42, 0.16),
+        ),
+    };
+    Treatment {
+        base_color: base,
+        emissive,
+        signal: matches!(role, SchematicRole::Selected),
+        edge: Some(base),
+    }
+}
+
+/// The screen a schematic is drawn on: near-black with a faint phosphor cast, so
+/// unlit space still reads as a display rather than as a hole.
+#[must_use]
+pub fn schematic_screen() -> Color {
+    Color::srgb(0.006, 0.020, 0.012)
+}
+
+/// What a hex cell is, for the purpose of *drawing a map of it*.
+///
+/// The isometric map and `iso_observer_lab` both render a solved facility as
+/// solids, and both need the same answers: how tall is this cell's slab, and how
+/// much of its hex does it fill. Those are visual-language decisions, so they
+/// live here rather than being invented twice.
+///
+/// Callers map their own archetype onto this, because the solver's
+/// `HexArchetype` lives in `observed_facility` and this crate stays render-free
+/// and dependency-light. A cell inside a room blueprint maps to [`Self::Room`]
+/// regardless of its archetype — the blueprint is the authority on what composes
+/// a room.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HexSketchRole {
+    /// Nothing is drawn.
+    Void,
+    /// Flat two-door circulation: a straight run or a turn.
+    Corridor,
+    /// Flat circulation with three or more doors.
+    Junction,
+    /// The empty upper half of a ramp pair.
+    RampHead,
+    /// Any cell inside a stamped room footprint.
+    Room,
+    /// The lower, walkable half of a ramp pair.
+    Ramp,
+    /// A vertical shaft.
+    Shaft,
+    /// Open floor with no perimeter walls of its own, meant to merge with its
+    /// neighbours into one volume.
+    Expanse,
+}
+
+impl HexSketchRole {
+    pub const ALL: [HexSketchRole; 8] = [
+        HexSketchRole::Void,
+        HexSketchRole::Corridor,
+        HexSketchRole::Junction,
+        HexSketchRole::RampHead,
+        HexSketchRole::Room,
+        HexSketchRole::Ramp,
+        HexSketchRole::Shaft,
+        HexSketchRole::Expanse,
+    ];
+
+    /// The coarse grouping a reader actually perceives: is this a place, a way
+    /// between places, or the joint that changes floor.
+    #[must_use]
+    pub fn composition(self) -> HexComposition {
+        match self {
+            Self::Room => HexComposition::Room,
+            Self::Ramp | Self::RampHead | Self::Shaft => HexComposition::Vertical,
+            // An expanse is a place, not a way between places: it fills its
+            // hex so a run of them reads as one room-scale volume, which is the
+            // whole reason the archetype exists.
+            Self::Expanse => HexComposition::Room,
+            Self::Void | Self::Corridor | Self::Junction => HexComposition::Hall,
+        }
+    }
+}
+
+/// The three things a hex can be part of, as a map reader perceives it.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HexComposition {
+    Room,
+    Hall,
+    Vertical,
+}
+
+impl HexComposition {
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Room => "room",
+            Self::Hall => "hallway",
+            Self::Vertical => "vertical",
+        }
+    }
+}
+
+/// Composition-aware atmosphere for the canonical hex facility.
+///
+/// Architecture registers still own hue and character. Composition owns the
+/// tension/release rhythm inside that register: rooms and expanses are bright,
+/// long-sighted places for reading choices; halls retain the register's tense
+/// fog; vertical circulation stays dramatic but cannot become unreadably dark.
+/// Keeping this transform here prevents presentation code from inventing local
+/// light and fog constants.
+#[must_use]
+pub fn architecture_for_composition(
+    register: observed_content::ArchitectureRegister,
+    composition: HexComposition,
+) -> DistrictPalette {
+    let mut palette = architecture(register);
+    match composition {
+        HexComposition::Room => {
+            // Release comes from longer sightlines and continuous local practicals,
+            // not a flat exposure lift. A small bounded fill step preserves black
+            // levels even in registers that already own a bright ambient palette.
+            palette.ambient_brightness =
+                (palette.ambient_brightness + 10.0).min(DISTRICT_MAX_AMBIENT_BRIGHTNESS);
+            palette.fog_start = palette.fog_start.max(20.0);
+            palette.fog_end = palette.fog_end.max(60.0);
+            palette.pools_rhythm = false;
+        }
+        HexComposition::Hall => {}
+        HexComposition::Vertical => {
+            palette.ambient_brightness =
+                (palette.ambient_brightness + 5.0).min(DISTRICT_MAX_AMBIENT_BRIGHTNESS);
+            palette.fog_start = palette.fog_start.max(14.0);
+            palette.fog_end = palette.fog_end.max(45.0);
+        }
+    }
+    palette
+}
+
+/// How one hex is drawn on a map: the height of its slab and how much of its
+/// footprint it fills.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HexSketch {
+    /// Slab height in metres, or `None` when the cell draws nothing.
+    pub height: Option<f32>,
+    /// Footprint scale. `1.0` means neighbours meet with no seam, which is what
+    /// makes a multi-cell room read as one space instead of as several tiles.
+    pub inset: f32,
+}
+
+/// The map vocabulary for a hex role.
+///
+/// Two ordered channels, deliberately independent. **Height** rises with how
+/// much a cell interrupts a run: corridor, junction, room, then vertical
+/// circulation tallest. **Width** says what the cell is part of: a room fills its
+/// hex so rooms merge, a corridor is a narrow ribbon strung between things, and a
+/// vertical joint sits between the two.
+#[must_use]
+pub fn hex_sketch(role: HexSketchRole) -> HexSketch {
+    let height = match role {
+        HexSketchRole::Void => None,
+        HexSketchRole::Corridor => Some(0.9),
+        HexSketchRole::Junction => Some(1.5),
+        HexSketchRole::RampHead => Some(0.6),
+        HexSketchRole::Room => Some(2.6),
+        HexSketchRole::Ramp => Some(4.5),
+        // A shaft nearly spans its level, so a stack of them reads as a column.
+        HexSketchRole::Shaft => Some(6.8),
+        // Low and wide: an expanse should read as floor, not as massing.
+        HexSketchRole::Expanse => Some(0.7),
+    };
+    HexSketch {
+        height,
+        inset: match role.composition() {
+            HexComposition::Room => 1.0,
+            HexComposition::Hall => 0.52,
+            HexComposition::Vertical => 0.74,
+        },
+    }
+}
+
+/// The treatment for a drawn connection between two hexes. Connections are
+/// structure, not district: a bar means "you can get from here to there", so it
+/// takes the spine treatment and dims when the survivor's knowledge of either
+/// end is second-hand.
+#[must_use]
+pub fn hex_link(confident: bool) -> Treatment {
+    let treatment = surface(SurfaceRole::Spine);
+    if confident {
+        treatment
+    } else {
+        observed_modulate(treatment, ObservedState::Unobserved)
+    }
 }
 
 /// The atmosphere palette for a district.
@@ -1877,6 +2132,27 @@ mod tests {
             );
             if palette.key_shadows_enabled {
                 assert!(palette.key_intensity > 0.0 && palette.key_range > 0.0);
+                // A shadow-casting key must describe a real cone. Bevy builds the shadow
+                // projection as `perspective_infinite_reverse_rh(outer_angle * 2.0, ..)`,
+                // so a zero outer angle yields `1/tan(0)` = inf in the matrix, and a
+                // zero-width cone emits no light at all — a key that costs a shadow map
+                // and lights nothing. Registers deriving from the keyless Hollow district
+                // inherit zero angles, so this must be asserted, not assumed.
+                assert!(
+                    palette.key_outer_angle > 0.0
+                        && palette.key_outer_angle < std::f32::consts::FRAC_PI_2,
+                    "{} shadow-casting key needs an outer angle in (0, PI/2), got {}",
+                    register.slug(),
+                    palette.key_outer_angle
+                );
+                assert!(
+                    palette.key_inner_angle > 0.0
+                        && palette.key_inner_angle <= palette.key_outer_angle,
+                    "{} shadow-casting key needs 0 < inner <= outer, got {} / {}",
+                    register.slug(),
+                    palette.key_inner_angle,
+                    palette.key_outer_angle
+                );
             }
         }
         assert!(
@@ -1922,6 +2198,25 @@ mod tests {
     }
 
     #[test]
+    fn hex_room_atmosphere_is_a_bright_release_beat() {
+        for register in observed_content::ArchitectureRegister::ALL {
+            let hall = architecture_for_composition(register, HexComposition::Hall);
+            let room = architecture_for_composition(register, HexComposition::Room);
+            let vertical = architecture_for_composition(register, HexComposition::Vertical);
+
+            assert!(room.ambient_brightness > hall.ambient_brightness);
+            assert!(room.ambient_brightness <= hall.ambient_brightness + 10.0);
+            assert!(room.fog_start >= 20.0);
+            assert!(room.fog_end >= 60.0);
+            assert!(!room.pools_rhythm);
+            assert!(vertical.ambient_brightness > hall.ambient_brightness);
+            assert!(vertical.ambient_brightness <= hall.ambient_brightness + 5.0);
+            assert!(vertical.fog_start >= 14.0);
+            assert!(vertical.fog_end >= 45.0);
+        }
+    }
+
+    #[test]
     fn threshold_frames_report_durable_state_not_observation() {
         let treatments: Vec<Treatment> = ThresholdFrameState::ALL
             .iter()
@@ -1941,5 +2236,121 @@ mod tests {
         );
         assert_ne!(treatments[0], treatments[1]);
         assert_ne!(treatments[1], treatments[2]);
+    }
+
+    #[test]
+    fn the_hex_sketch_height_rises_with_how_much_a_cell_interrupts_a_run() {
+        let h = |role| hex_sketch(role).height.expect("draws");
+        assert!(hex_sketch(HexSketchRole::Void).height.is_none());
+        assert!(h(HexSketchRole::Corridor) < h(HexSketchRole::Junction));
+        assert!(h(HexSketchRole::Junction) < h(HexSketchRole::Room));
+        assert!(h(HexSketchRole::Room) < h(HexSketchRole::Shaft));
+        assert!(h(HexSketchRole::RampHead) < h(HexSketchRole::Ramp));
+    }
+
+    #[test]
+    fn only_a_room_fills_its_hex_so_only_rooms_merge() {
+        // This is the channel that makes a multi-cell room read as one space
+        // rather than as several tiles, so the room inset must be exactly 1.0
+        // and every other role must leave a visible seam.
+        assert!((hex_sketch(HexSketchRole::Room).inset - 1.0).abs() < f32::EPSILON);
+        for role in HexSketchRole::ALL {
+            if role.composition() == HexComposition::Room {
+                continue;
+            }
+            assert!(
+                hex_sketch(role).inset < 1.0,
+                "{role:?} must not merge with its neighbours"
+            );
+        }
+    }
+
+    #[test]
+    fn a_hallway_is_the_narrowest_thing_on_the_map() {
+        let hall = hex_sketch(HexSketchRole::Corridor).inset;
+        let vertical = hex_sketch(HexSketchRole::Shaft).inset;
+        let room = hex_sketch(HexSketchRole::Room).inset;
+        assert!(hall < vertical && vertical < room);
+    }
+
+    #[test]
+    fn every_sketch_role_lands_in_exactly_one_composition() {
+        for role in HexSketchRole::ALL {
+            let composition = role.composition();
+            assert!(!composition.label().is_empty());
+        }
+        assert_eq!(HexSketchRole::Room.composition(), HexComposition::Room);
+        assert_eq!(HexSketchRole::Shaft.composition(), HexComposition::Vertical);
+        assert_eq!(HexSketchRole::Corridor.composition(), HexComposition::Hall);
+    }
+
+    #[test]
+    fn a_second_hand_link_reads_below_a_confirmed_one() {
+        let confident = hex_link(true);
+        let hearsay = hex_link(false);
+        assert!(
+            luminance(hearsay.base_color.to_linear()) < luminance(confident.base_color.to_linear()),
+            "a link the survivor has not confirmed from both sides must read dimmer"
+        );
+    }
+
+    #[test]
+    fn the_schematic_separates_settled_from_provisional_by_hue() {
+        let pinned = schematic(SchematicRole::Pinned).base_color.to_linear();
+        let volatile = schematic(SchematicRole::Volatile).base_color.to_linear();
+        // Green vs red is the whole point: the two must not be confusable, and
+        // neither may collapse toward grey.
+        assert!(pinned.green > pinned.red * 2.0, "pinned reads green");
+        assert!(volatile.red > volatile.green * 2.0, "volatile reads red");
+    }
+
+    #[test]
+    fn every_schematic_role_is_a_light_source_and_off_focus_is_subordinate() {
+        for role in SchematicRole::ALL {
+            let treatment = schematic(role);
+            assert!(
+                luminance(treatment.emissive) > 0.0,
+                "{role:?} must emit — the lines are what lights a schematic"
+            );
+            assert!(treatment.edge.is_some(), "{role:?} carries an edge colour");
+            assert!(!role.label().is_empty());
+        }
+        let grid = luminance(schematic(SchematicRole::Grid).emissive);
+        for role in [
+            SchematicRole::Pinned,
+            SchematicRole::Volatile,
+            SchematicRole::Selected,
+        ] {
+            assert!(
+                luminance(schematic(role).emissive) > grid,
+                "{role:?} must read above the off-focus grid"
+            );
+        }
+    }
+
+    #[test]
+    fn the_selected_cell_is_signal_tier_and_the_brightest_thing_drawn() {
+        let selected = schematic(SchematicRole::Selected);
+        assert!(
+            selected.signal,
+            "the inspected cell is a gameplay-critical cue"
+        );
+        let brightest = luminance(selected.emissive);
+        for role in [
+            SchematicRole::Pinned,
+            SchematicRole::Volatile,
+            SchematicRole::Grid,
+        ] {
+            assert!(luminance(schematic(role).emissive) < brightest);
+        }
+    }
+
+    #[test]
+    fn the_schematic_screen_is_dark_enough_for_lines_to_carry() {
+        let screen = schematic_screen().to_linear();
+        assert!(
+            luminance(screen) < ATMOSPHERE_MAX_LUMINANCE,
+            "the screen is background, never a wash"
+        );
     }
 }

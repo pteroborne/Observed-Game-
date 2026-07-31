@@ -214,6 +214,49 @@ pub fn hall_corner_map(register: &str, f1: HexFace, f2: HexFace) -> String {
 /// Junction hall with doors on `open_faces` (3- and 4-way). A central
 /// register-sized waypoint pylon with a base collar makes every junction a
 /// landmark. Variant = bitmask of open faces.
+/// An expanse: open floor whose only walls are on the faces it does not open
+/// through, and with no central pylon at all.
+///
+/// A junction keeps a pylon in the middle because a junction is a place where
+/// ways meet and the eye needs something to read against. An expanse is the
+/// opposite: its whole job is that a run of them merges into one uninterrupted
+/// volume, and a pylon per cell would turn a vast room back into a colonnade of
+/// tiles. Only the perimeter trim survives, so a boundary still reads.
+pub fn expanse_map(register: &str, open_faces: &[HexFace]) -> String {
+    let style = register_style(register);
+    let h = super::geometry::level_units();
+    let variant: u16 = open_faces
+        .iter()
+        .map(|face| 1u16 << face.index())
+        .sum::<u16>();
+    let mut brushes = hex_slab_brush(0.0, FLOOR_TOP);
+    for face in HexFace::LATERAL {
+        if open_faces.contains(&face) {
+            brushes += &door_wall(face, 0.0, h, FLOOR_TOP, DOOR_TOP, style.trim_height);
+        } else {
+            brushes += &wall_brush(face, 0.0, h);
+            brushes += &trim(face, style.trim_height);
+        }
+    }
+    brushes += &hex_slab_brush(h - FLOOR_TOP, h);
+    let names: Vec<&str> = open_faces.iter().map(|&face| face_name(face)).collect();
+    let mut out = format!(
+        "// Expanse, open across {}.
+",
+        names.join(", ")
+    );
+    out += &worldspawn(&brushes);
+    out += &tile_meta("expanse", register, variant, 1);
+    for &face in open_faces {
+        out += &tile_port(face_name(face), "door");
+    }
+    // Two practicals well apart, so a merged run of expanses is lit as one
+    // volume rather than as a string of separately-lit cells.
+    out += &tile_light(-56.0, 0.0, h - 24.0);
+    out += &tile_light(56.0, 0.0, h - 24.0);
+    out
+}
+
 pub fn hall_junction_map(register: &str, open_faces: &[HexFace]) -> String {
     let style = register_style(register);
     let h = super::geometry::level_units();

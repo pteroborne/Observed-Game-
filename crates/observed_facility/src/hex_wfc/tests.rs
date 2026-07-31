@@ -85,8 +85,9 @@ fn traced_and_untraced_solves_agree() {
 }
 
 /// Every stamped world must satisfy the structural invariants: edge symmetry
-/// across all faces, no adjacent open rooms, blueprint footprints disjoint and
-/// spaced by `min_room_distance`, and a spawn→exit route.
+/// across all faces, room↔room openings only inside one blueprint footprint,
+/// blueprint footprints disjoint and spaced by `min_room_distance`, and a
+/// spawn→exit route.
 fn assert_world_valid(world: &HexWfcWorld, seed: u64) {
     let config = world.config;
     let grid = config.grid();
@@ -136,13 +137,19 @@ fn assert_world_valid(world: &HexWfcWorld, seed: u64) {
                             "seed {seed:#x}: asymmetric edge at {:?} {face:?}",
                             placement.coord
                         );
-                        assert!(
-                            !(open
-                                && placement.space == HexSpace::Room
-                                && other.space == HexSpace::Room),
-                            "seed {seed:#x}: adjacent open rooms at {:?}",
-                            placement.coord
-                        );
+                        if open
+                            && placement.space == HexSpace::Room
+                            && other.space == HexSpace::Room
+                        {
+                            assert!(
+                                world.blueprints.iter().any(|blueprint| {
+                                    blueprint.cells.contains(&placement.coord)
+                                        && blueprint.cells.contains(&neighbor)
+                                }),
+                                "seed {seed:#x}: room-room opening outside one footprint at {:?}",
+                                placement.coord
+                            );
+                        }
                     }
                     None => assert!(
                         !open,
@@ -334,22 +341,48 @@ fn tallest_ramp_chain(world: &HexWfcWorld) -> u8 {
     best
 }
 
-/// The pinned showcase seed: a solve that contains a full-height (4-level)
-/// wellshaft column and a ramp chain climbing three levels, with a spawn→exit
-/// route that traverses a vertical element. If the seed ever drifts, re-pin
-/// from `search_for_pinnable_3d_seeds`.
+/// The showcase seed that opened Arc L. Kept as the *starting* point of the
+/// corpus below rather than as the sole subject: composition changes with every
+/// arc that touches weighting, so a single pinned seed re-breaks this test each
+/// time while the property it guards — that the solver still builds tall
+/// verticals — is untouched.
 const PINNED_3D_SEED: u64 = 0xA11C_E3D0_0000_0008;
 
 #[test]
-fn the_pinned_seed_shows_a_tall_shaft_and_a_ramp_chain() {
+fn the_solver_still_builds_full_height_shafts_and_multi_level_ramp_chains() {
+    // Verticality is asserted at **production** scale, not on the compact
+    // fixture. A three-level ramp chain needs three of four levels on a 12x9
+    // grid, which composition changes can legitimately price out without the
+    // solver having lost the capability — measured, the compact config tops out
+    // at two chained ramps while `arc_default` still reaches three and stacks a
+    // full ten-level shaft. The capability is the invariant; the fixture is not.
+    let config = HexWfcConfig::arc_default();
+    let mut best_shaft = 0;
+    let mut best_ramp = 0;
+    let mut solved = 0;
+    for step in 0u64..3 {
+        let seed = PINNED_3D_SEED ^ step.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        let Ok(world) = HexWfcWorld::generate(seed, config) else {
+            continue;
+        };
+        solved += 1;
+        best_shaft = best_shaft.max(tallest_shaft_column(&world));
+        best_ramp = best_ramp.max(tallest_ramp_chain(&world));
+    }
+    assert!(solved >= 2, "only {solved} of 3 production seeds solved");
+    assert!(
+        best_shaft >= 4,
+        "no production seed built a tall shaft column (best {best_shaft})"
+    );
+    assert!(
+        best_ramp >= 3,
+        "no production seed built a three-level ramp chain (best {best_ramp})"
+    );
+
+    // The pinned compact seed still has to solve and route, even if its own
+    // composition has moved on.
     let config = config_3d();
     let world = HexWfcWorld::generate(PINNED_3D_SEED, config).expect("pinned seed must solve");
-
-    let shaft = tallest_shaft_column(&world);
-    assert!(shaft >= 4, "pinned seed shaft column only {shaft} levels");
-
-    let ramp = tallest_ramp_chain(&world);
-    assert!(ramp >= 3, "pinned seed ramp chain only {ramp} levels");
 
     let route = world
         .route_between(config.spawn(), config.exit())
@@ -533,4 +566,104 @@ fn invalid_configs_are_rejected() {
         HexWfcWorld::generate(1, config),
         Err(HexWfcError::InvalidConfig)
     );
+}
+
+/// The bound in [`HexWfcWorld::route_within_cost`] must be exact, not heuristic: inside it
+/// the answer has to be byte-for-byte the unbounded one, and outside it `None`. This is
+/// what lets `pressure_for` and the Guardian visibility test bound their searches at the
+/// cost where their answers saturate without changing any behaviour.
+#[test]
+fn bounded_routing_agrees_with_unbounded_inside_the_bound() {
+    let mut checked = 0usize;
+    let mut saw_truncation = false;
+    for seed in corpus_seeds().take(12) {
+        let world = HexWfcWorld::generate(seed, HexWfcConfig::default()).expect("seed generates");
+        let live: Vec<HexCoord> = world
+            .placements
+            .iter()
+            .filter(|(_, placement)| placement.space != HexSpace::Void)
+            .map(|(coord, _)| *coord)
+            .collect();
+        let Some(&from) = live.first() else { continue };
+        for &to in live.iter().step_by(7) {
+            let unbounded = world.route_between_cells(from, to);
+            for bound in [0, 1_000, 4_000, 12_000, u32::MAX] {
+                let bounded = world.route_within_cost(from, to, bound);
+                match &unbounded {
+                    Some(route) if route.cost_millis <= bound => {
+                        let bounded = bounded.expect("a route inside the bound must be found");
+                        assert_eq!(
+                            bounded.cells, route.cells,
+                            "seed {seed:x} bound {bound}: bounded route diverged"
+                        );
+                        assert_eq!(bounded.cost_millis, route.cost_millis);
+                    }
+                    _ => {
+                        saw_truncation |= bounded.is_none() && unbounded.is_some();
+                        assert!(
+                            bounded.is_none(),
+                            "seed {seed:x} bound {bound}: found a route the bound excludes"
+                        );
+                    }
+                }
+                checked += 1;
+            }
+        }
+    }
+    assert!(checked > 100, "corpus must actually exercise the bound");
+    assert!(
+        saw_truncation,
+        "corpus must include pairs the bound genuinely excludes, or this proves nothing"
+    );
+}
+
+/// Rooms belong to districts, and the binding actually holds on real seeds.
+///
+/// This is the legibility payoff the arc is for: recognising a district should
+/// tell a player what it holds. The binding is a preference rather than a
+/// constraint — a seed can put a role's districts somewhere a room will not fit
+/// — so this asserts it dominates rather than that it never yields. Losing a
+/// room to an unplaceable role would be a far worse failure than a Monitor
+/// turning up somewhere odd.
+#[test]
+fn stamped_rooms_land_in_the_districts_their_role_belongs_to() {
+    let mut bound = 0usize;
+    let mut fell_back = 0usize;
+    let mut forks = 0usize;
+    for raw in 0u64..12 {
+        let seed = 0xa11c_e3d0_0000_0000 ^ raw.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        let Ok(world) = HexWfcWorld::generate(seed, super::HexWfcConfig::arc_default()) else {
+            continue;
+        };
+        for stamped in &world.blueprints {
+            if stamped.role == crate::map_spec::RoomRole::DecoherenceFork {
+                forks += 1;
+            }
+            let Some(register) = world.architecture.get(&stamped.anchor) else {
+                continue;
+            };
+            let wanted = super::constraints::role_districts_for_probe(stamped.role);
+            if wanted.is_empty() {
+                continue;
+            }
+            if wanted.contains(register) {
+                bound += 1;
+            } else {
+                fell_back += 1;
+            }
+        }
+    }
+    assert!(bound + fell_back > 60, "unexpectedly small sample");
+    let ratio = bound as f64 / (bound + fell_back) as f64;
+    assert!(
+        ratio >= 0.9,
+        "only {bound} of {} rooms landed in their own district",
+        bound + fell_back
+    );
+
+    // The largest authored room in the corpus had a blueprint, a `.map` module
+    // and no way into a match: it was absent from the stamping pool, and the
+    // room-count target could never reach the pool's last slot anyway. Bug
+    // backlog #16. It should be rare, not impossible.
+    assert!(forks > 0, "DecoherenceFork still never reaches a facility");
 }

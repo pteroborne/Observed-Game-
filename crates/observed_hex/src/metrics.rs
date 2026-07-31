@@ -21,6 +21,10 @@ pub const ACROSS_CORNERS: f32 = 16.0;
 /// Height of one level (meters) — tall enough for a full-level ramp rise
 /// inside one cell at a walkable slope (rise 8 over run 14, ~29.7 degrees).
 pub const TILE_LEVEL_HEIGHT: f32 = 8.0;
+/// Top of a cell's floor slab above its level's base (meters). Bodies stand on
+/// this, tile geometry is authored against it, and a climb has to arrive on it
+/// — so it is one number here rather than a copy per crate.
+pub const FLOOR_SLAB_TOP: f32 = 0.5;
 
 /// The canonical footprint corners `(x, z)` in meters, counterclockwise in
 /// plan view starting north-east. Edge `i` runs from corner `i` to corner
@@ -52,6 +56,30 @@ pub fn hex_origin(coord: HexCoord) -> [f32; 3] {
     ]
 }
 
+/// The twelve corners of a cell-local hexagonal prism `height` metres tall,
+/// its footprint scaled by `inset`, base on `y = 0`. Bottom ring first, then
+/// top, both in [`CORNERS`] order.
+///
+/// The quantized hexagon is not regular — its east and west faces sit 7 m out
+/// while its north and south vertices reach 8 m — so a regular-polygon
+/// approximation leaves sub-metre gaps between neighbours. Any renderer that
+/// draws a cell as a solid takes its corners from here rather than
+/// re-deriving them, and the result is a convex hull, so a mesh follows from
+/// `observed_traversal::ConvexRenderMesh::from_convex_hull` without repeating
+/// triangulation. `inset` below 1.0 shrinks a cell so neighbours read as
+/// countable tiles in a diagram; it has no meaning for authored geometry.
+#[must_use]
+pub fn prism_hull(height: f32, inset: f32) -> [[f32; 3]; 12] {
+    let mut hull = [[0.0_f32; 3]; 12];
+    for (index, &(x, z)) in CORNERS.iter().enumerate() {
+        #[allow(clippy::cast_precision_loss)]
+        let (x, z) = (x as f32 * inset, z as f32 * inset);
+        hull[index] = [x, 0.0, z];
+        hull[index + 6] = [x, height, z];
+    }
+    hull
+}
+
 /// The two footprint corners bounding a lateral face's edge, in the cell's
 /// local plan frame (meters).
 #[must_use]
@@ -63,7 +91,9 @@ pub const fn face_edge(face: HexFace) -> [(i32, i32); 2] {
 
 #[cfg(test)]
 mod tests {
-    use super::{ACROSS_CORNERS, ACROSS_FLATS, CORNERS, face_edge, hex_origin, hex_origin_plan};
+    use super::{
+        ACROSS_CORNERS, ACROSS_FLATS, CORNERS, face_edge, hex_origin, hex_origin_plan, prism_hull,
+    };
     use crate::coords::{HexCoord, HexGridSize};
     use crate::faces::HexFace;
 
@@ -179,5 +209,30 @@ mod tests {
         };
         let (x, z) = hex_origin_plan(coord);
         assert_eq!(hex_origin(coord), [x as f32, 16.0, z as f32]);
+    }
+
+    #[test]
+    fn the_prism_hull_reproduces_the_quantized_footprint_at_both_heights() {
+        let hull = prism_hull(2.5, 1.0);
+        for (index, &(x, z)) in CORNERS.iter().enumerate() {
+            assert_eq!(hull[index], [x as f32, 0.0, z as f32]);
+            assert_eq!(hull[index + 6], [x as f32, 2.5, z as f32]);
+        }
+        // The footprint is deliberately irregular: flats at 7, corners at 8.
+        let max_x = hull.iter().map(|p| p[0]).fold(f32::MIN, f32::max);
+        let max_z = hull.iter().map(|p| p[2]).fold(f32::MIN, f32::max);
+        assert!((max_x - 7.0).abs() < 1e-6);
+        assert!((max_z - 8.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_prism_inset_scales_the_plan_but_never_the_height() {
+        let hull = prism_hull(4.0, 0.5);
+        let max_x = hull.iter().map(|p| p[0]).fold(f32::MIN, f32::max);
+        let max_y = hull.iter().map(|p| p[1]).fold(f32::MIN, f32::max);
+        let min_y = hull.iter().map(|p| p[1]).fold(f32::MAX, f32::min);
+        assert!((max_x - 3.5).abs() < 1e-6, "plan halves");
+        assert!((max_y - 4.0).abs() < 1e-6, "height is untouched");
+        assert!(min_y.abs() < 1e-6, "the base stays on y = 0");
     }
 }

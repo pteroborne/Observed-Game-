@@ -100,7 +100,7 @@ fn drive(mut runtime: ResMut<LanLabRuntime>) {
         .client
         .lobby
         .as_ref()
-        .map_or(0, |(_, _, _, seats)| seats.len());
+        .map_or(0, |lobby| lobby.seats.len());
     runtime.status = format!(
         "AUTHORITATIVE LAN LAB  [PASS when roster=4]\n\
          real UDP server  {}\n\
@@ -167,7 +167,7 @@ mod tests {
                 .client
                 .lobby
                 .as_ref()
-                .is_some_and(|(_, _, _, seats)| seats.len() == 4)
+                .is_some_and(|lobby| lobby.seats.len() == 4)
             {
                 break;
             }
@@ -178,7 +178,7 @@ mod tests {
                 .client
                 .lobby
                 .as_ref()
-                .is_some_and(|(_, _, _, seats)| seats.len() == 4)
+                .is_some_and(|lobby| lobby.seats.len() == 4)
         );
         drop(first);
 

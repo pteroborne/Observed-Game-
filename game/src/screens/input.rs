@@ -11,7 +11,6 @@ use player_input::PlayerIntent;
 
 const GAMEPAD_DEADZONE: f32 = 0.18;
 const GAMEPAD_LOOK_SCALE: f32 = 2.2;
-const MENU_STICK_THRESHOLD: f32 = 0.55;
 
 /// Map a Steam Deck / standard gamepad into match movement and local item actions.
 ///
@@ -46,10 +45,6 @@ pub(crate) fn gamepad_confirm_pressed(gamepads: &Query<&Gamepad>) -> bool {
     gamepad_just_pressed(gamepads, &[GamepadButton::South, GamepadButton::Start])
 }
 
-pub(crate) fn gamepad_back_pressed(gamepads: &Query<&Gamepad>) -> bool {
-    gamepad_just_pressed(gamepads, &[GamepadButton::East])
-}
-
 pub(crate) fn gamepad_pause_pressed(gamepads: &Query<&Gamepad>) -> bool {
     gamepad_just_pressed(gamepads, &[GamepadButton::Start, GamepadButton::East])
 }
@@ -65,36 +60,10 @@ pub(crate) fn gamepad_map_pressed(gamepads: &Query<&Gamepad>) -> bool {
     )
 }
 
-pub(crate) fn gamepad_menu_axis(gamepads: &Query<&Gamepad>) -> i8 {
-    for gamepad in gamepads {
-        if gamepad.just_pressed(GamepadButton::DPadDown) {
-            return -1;
-        }
-        if gamepad.just_pressed(GamepadButton::DPadUp) {
-            return 1;
-        }
-    }
-    gamepads
-        .iter()
-        .map(|gamepad| stick_direction(gamepad.left_stick().y))
-        .find(|direction| *direction != 0)
-        .unwrap_or(0)
-}
-
 fn gamepad_just_pressed(gamepads: &Query<&Gamepad>, buttons: &[GamepadButton]) -> bool {
     gamepads
         .iter()
         .any(|gamepad| buttons.iter().any(|button| gamepad.just_pressed(*button)))
-}
-
-fn stick_direction(y: f32) -> i8 {
-    if y >= MENU_STICK_THRESHOLD {
-        1
-    } else if y <= -MENU_STICK_THRESHOLD {
-        -1
-    } else {
-        0
-    }
 }
 
 fn apply_deadzone(value: Vec2) -> Vec2 {
@@ -275,12 +244,5 @@ mod tests {
         assert!(item.torch_action, "left shoulder drops or picks the torch");
         assert!(item.pad_action, "Y / North drops or picks a pad");
         assert!(item.activate_pad, "X / West activates a nearby pad link");
-    }
-
-    #[test]
-    fn menu_stick_direction_uses_a_clear_edge_threshold() {
-        assert_eq!(stick_direction(0.2), 0);
-        assert_eq!(stick_direction(0.7), 1);
-        assert_eq!(stick_direction(-0.7), -1);
     }
 }

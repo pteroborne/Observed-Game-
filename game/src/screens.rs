@@ -1,17 +1,14 @@
-//! The assembled game's UX: a Bevy state machine that strings the proven systems
-//! into one cohesive loop — Splash → Main Menu → Loadout → Lobby → Match → Results
-//! → Menu — with a persistent career, a unified visual theme, keyboard/controller navigation,
-//! a first-person 3D match with an in-match HUD and pause, and strict state-scoped
-//! cleanup (every screen's entities despawn on exit, so transitions never leak).
+//! The assembled game's state-scoped frontend: Splash → Main Menu → preset-first Play
+//! Hub → prepared canonical hex match → Results/Replay, with an optional LAN browser
+//! and lobby. Shared semantic widgets provide pointer/keyboard/controller parity,
+//! stable focus, accessible disabled states, and one visual language; each screen owns
+//! its typed actions.
 //!
-//! Each screen reuses a proven model: the **career/profile** ([`crate::flow`] +
-//! `progression_lab`), the **lobby/matchmaking** (`session_lab`), and the **match** —
-//! the live, first-person, networked hybrid match (`net_match_lab`'s `LiveNetMatch`
-//! over `fps_hybrid_match_lab`). The state machine and presentation are the only new
-//! code; the game logic is the labs.
+//! Career/profile state comes from [`crate::flow`], authoritative network state from
+//! [`crate::lan`], and played match logic from [`crate::hex_wfc`]. Presentation reads
+//! those domains and never reconstructs their rules from widget entities.
 //!
-//! This module owns the screen flow itself: the menu-domain components and the two
-//! composition plugins. The shared state it used to host now lives at its real layer —
+//! This module owns the screen composition plugins. Shared state lives at its real layer —
 //! simulation resources in [`crate::sim`], presentation components/theme/assets in
 //! [`crate::view`], spatial constants in [`crate::layout`].
 
@@ -21,72 +18,27 @@ use bevy::prelude::*;
 use crate::GameState;
 use crate::sim::director::MatchDirector;
 use crate::sim::state::SpectatorBot;
-use crate::view::theme::DIM;
 
 pub(crate) mod audio;
 pub(crate) mod hud;
 pub(crate) mod input;
 pub(crate) mod lan;
+pub(crate) mod loading;
 pub(crate) mod loadout;
 pub(crate) mod lobby;
+pub(crate) mod main_menu;
 pub(crate) mod match_runtime;
 pub(crate) mod menu;
 pub(crate) mod onboarding;
 pub(crate) mod place;
+pub(crate) mod play;
 pub(crate) mod replay;
+pub(crate) mod results;
 pub(crate) mod settings;
-
-// --- menu domain -------------------------------------------------------------
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MenuAction {
-    Goto(GameState),
-    StartRun,
-    Rematch,
-    Spectate,
-    HostLan,
-    JoinLan,
-    JoinLanDirect,
-    RefreshLan,
-    ToggleLanReady,
-    RequestLanTeam(observed_core::TeamId),
-    LeaveLan,
-    Equip(u16),
-    QuitApp,
-}
-
-#[derive(Component)]
-pub(crate) struct MenuButton {
-    index: usize,
-    action: MenuAction,
-}
-
-#[derive(Component)]
-pub(crate) struct MenuBanner;
-
-#[derive(Component)]
-pub(crate) struct LoadoutHeader;
-
-#[derive(Resource, Default)]
-pub struct MenuCursor(pub usize);
+pub(crate) mod widgets;
 
 #[derive(Resource)]
 pub struct SplashTimer(pub Timer);
-
-pub(crate) fn menu_button(
-    index: usize,
-    action: MenuAction,
-    label: impl Into<String>,
-) -> impl Bundle {
-    (
-        MenuButton { index, action },
-        Text::new(label.into()),
-        TextFont {
-            font_size: 22.0,
-            ..default()
-        },
-        TextColor(DIM),
-    )
-}
 
 // --- composition -----------------------------------------------------------
 /// The menu flow: every menu-like screen (splash/main-menu/loadout/lobby/results) and
@@ -95,53 +47,74 @@ pub(crate) struct ScreensPlugin;
 
 impl Plugin for ScreensPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<MenuCursor>()
-            .init_resource::<settings::SettingsCursor>()
+        app.add_plugins(widgets::FrontendWidgetsPlugin)
             .init_resource::<settings::SettingsRebind>()
+            .init_resource::<crate::hex_wfc::loading::HexLaunchRequestSequence>()
+            .init_resource::<crate::hex_wfc::loading::HexLoadingState>()
+            .add_observer(lan::activate_browser)
+            .add_observer(lobby::activate)
+            .add_observer(loading::activate)
+            .add_observer(onboarding::activate)
+            .add_observer(settings::activate)
+            .add_observer(loadout::activate)
+            .add_observer(results::activate)
+            .add_observer(replay::activate)
             .add_systems(OnEnter(GameState::Splash), menu::setup_splash)
-            .add_systems(OnEnter(GameState::MainMenu), menu::setup_main_menu)
+            .add_systems(OnExit(GameState::Splash), menu::cleanup_splash)
+            .add_observer(main_menu::activate)
+            .add_observer(play::activate_hub)
+            .add_observer(play::activate_advanced)
+            .add_systems(OnEnter(GameState::MainMenu), main_menu::setup)
+            .add_systems(OnEnter(GameState::Play), play::setup_hub)
+            .add_systems(OnEnter(GameState::PlayAdvanced), play::setup_advanced)
             .add_systems(OnEnter(GameState::LanBrowser), lan::setup_browser)
-            .add_systems(OnEnter(GameState::Loadout), loadout::setup_loadout)
+            .add_systems(
+                OnEnter(GameState::Loading),
+                (crate::hex_wfc::loading::start_loading, loading::setup).chain(),
+            )
+            .add_systems(
+                OnExit(GameState::Loading),
+                crate::hex_wfc::loading::cleanup_loading_worker,
+            )
+            .add_systems(OnEnter(GameState::Loadout), loadout::setup)
             .add_systems(OnEnter(GameState::Lobby), lobby::setup_lobby)
-            .add_systems(OnEnter(GameState::Results), menu::setup_results)
+            .add_systems(OnEnter(GameState::Results), results::setup)
             .add_systems(OnEnter(GameState::Replay), replay::setup_replay)
-            .add_systems(OnEnter(GameState::Settings), settings::setup_settings)
+            .add_systems(OnExit(GameState::Replay), replay::cleanup)
+            .add_systems(OnEnter(GameState::Settings), settings::setup)
+            .add_systems(OnExit(GameState::Settings), settings::cleanup)
+            .add_systems(OnEnter(GameState::HexWfc), onboarding::spawn)
+            .add_systems(OnExit(GameState::HexWfc), onboarding::cleanup)
             .add_systems(
                 Update,
                 (
-                    // Menu navigation is shared across every menu-like screen and is
-                    // inert where there are no buttons (Splash/Match).
-                    menu::menu_navigate.after(InputSystems),
-                    menu::menu_highlight,
-                    menu::menu_activate,
-                    menu::menu_escape,
                     lan::poll_lan,
                     lan::edit_direct_address.run_if(in_state(GameState::LanBrowser)),
                     lan::refresh_browser_text.run_if(in_state(GameState::LanBrowser)),
                     lan::refresh_lobby_text.run_if(in_state(GameState::Lobby)),
                     menu::splash_advance.run_if(in_state(GameState::Splash)),
-                    menu::main_menu_banner.run_if(in_state(GameState::MainMenu)),
-                    loadout::loadout_header.run_if(in_state(GameState::Loadout)),
+                    onboarding::release_capture_after_dismissal,
+                    main_menu::update_banner.run_if(in_state(GameState::MainMenu)),
+                    play::refresh_hub.run_if(in_state(GameState::Play)),
+                    play::refresh_advanced.run_if(in_state(GameState::PlayAdvanced)),
+                    loadout::refresh.run_if(in_state(GameState::Loadout)),
                     lobby::lobby_update_labels.run_if(in_state(GameState::Lobby)),
-                    replay::replay_controls.run_if(in_state(GameState::Replay)),
+                    crate::hex_wfc::loading::poll_loading.run_if(in_state(GameState::Loading)),
+                    loading::refresh.run_if(in_state(GameState::Loading)),
+                    replay::advance_playback.run_if(in_state(GameState::Replay)),
+                    replay::refresh_controls.run_if(in_state(GameState::Replay)),
                     replay::update_replay_info.run_if(in_state(GameState::Replay)),
                     replay::draw_replay_map.run_if(in_state(GameState::Replay)),
+                    audio::play_frontend_feedback,
                 )
                     .chain(),
             )
             .add_systems(
                 Update,
                 (
-                    settings::settings_navigate.after(InputSystems),
-                    settings::settings_highlight,
-                    settings::settings_adjust,
-                    settings::settings_activate,
-                    // Escape runs before the capture so the press that cancels an
-                    // in-flight rebind (capture still active here) never also backs
-                    // out of the screen.
-                    settings::settings_escape,
-                    settings::settings_capture_rebind,
-                    settings::settings_refresh_labels,
+                    settings::adjust_focused.after(InputSystems),
+                    settings::capture_rebind,
+                    settings::refresh_labels,
                 )
                     .chain()
                     .run_if(in_state(GameState::Settings)),
@@ -150,7 +123,7 @@ impl Plugin for ScreensPlugin {
 }
 
 /// [DEPRECATED] Legacy place-based first-person match plugin.
-/// Sunsetted in favor of `full_wfc::FullWfcPlugin`. Kept only as a regression testing fixture.
+/// Sunsetted in favor of `hex_wfc::HexWfcPlugin`. Kept only as a regression testing fixture.
 #[deprecated(
     since = "2.0.0",
     note = "Legacy isolated-place match. Use FullWfcPlugin instead."
@@ -173,7 +146,6 @@ impl Plugin for MatchPlugin {
                     audio::spawn_match_setpieces,
                     match_runtime::input::grab_match_cursor,
                     match_runtime::ambience::apply_match_atmosphere,
-                    onboarding::spawn_onboarding,
                 )
                     .chain(),
             )
@@ -241,7 +213,6 @@ impl Plugin for MatchPlugin {
                     .after(match_runtime::match_pump)
                     .run_if(in_match()),
             )
-            .add_systems(Update, onboarding::drive_onboarding.run_if(in_match()))
             .add_systems(
                 Update,
                 (

@@ -6,10 +6,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use observed_core::SplitMix;
 use observed_hex::{HexCoord, HexFace, HexGridSize, PortClass, PortSignature, lateral_distance};
 
+use observed_content::ArchitectureRegister;
+
 use crate::map_spec::RoomRole;
 
 use super::blueprint::{self, StampedBlueprint};
-use super::{HexWfcConfig, lateral_bit};
+use super::relayout::{DistrictSite, district_of};
+use super::{HexRoomQuotas, HexWfcConfig, lateral_bit};
 
 /// Every coordinate of the grid in index order.
 pub(super) fn all_coords(config: HexWfcConfig) -> impl Iterator<Item = HexCoord> {
@@ -45,8 +48,9 @@ fn absolute_cells(
     Some(absolute)
 }
 
-/// The boundary-adjusted exterior signature of every stamped blueprint cell:
-/// the blueprint's declared ports with any face that leaves the grid sealed.
+/// The boundary-adjusted signature of every stamped blueprint cell: open
+/// sibling seams plus named exterior thresholds, with any face that leaves the
+/// grid sealed.
 pub(super) fn stamped_signatures(
     config: HexWfcConfig,
     blueprints: &[StampedBlueprint],
@@ -121,13 +125,75 @@ fn stamp_at(
 /// Stamp around room blueprints frozen by observation. Locked stamps retain
 /// their exact role, anchor, footprint, and stamp ID; new stamps receive IDs
 /// above the previous maximum so identity is never inferred from vector order.
+/// Which districts a room role belongs in.
+///
+/// This is the legibility payoff the arc is for: a player who recognises a
+/// district should know what it holds, so heading somewhere is a decision rather
+/// than a wander. An empty list means the role goes anywhere.
+///
+/// The binding is a *preference*, not a constraint, and deliberately so. A seed
+/// can put a role's districts in an awkward corner, fill them with other rooms,
+/// or — since districts are one anchor per register per level — leave one barely
+/// represented at the levels a room could fit. Refusing to stamp in that case
+/// would cost the facility a room and could fail the room-count contract
+/// outright, which is a much worse outcome than a Monitor turning up somewhere
+/// unexpected. [`stamp_blueprints_with_pins`] tries the preferred districts
+/// across every candidate coordinate first, and only then falls back.
+#[must_use]
+fn role_districts(role: RoomRole) -> &'static [ArchitectureRegister] {
+    use ArchitectureRegister as R;
+    match role {
+        // Fixed at the spawn and exit coordinates; the district is whatever is
+        // there, and moving them would break the forced route.
+        RoomRole::Start | RoomRole::Exit => &[],
+        // A hub for reading doors and previews wants to be somewhere open, where
+        // the choice is visible before it is taken.
+        RoomRole::Decision => &[R::LiminalGrid, R::InfiniteGallery],
+        // An unstable junction belongs where the architecture is already
+        // uncertain.
+        RoomRole::DecoherenceFork => &[R::ShadowScreen, R::Thinning],
+        // Freezing thresholds is a structural act; put it against structure.
+        RoomRole::AnchorCheckpoint => &[R::Monolith, R::FacetMonument],
+        // A side objective should be somewhere you can describe to a teammate.
+        RoomRole::Keystone => &[R::FacetMonument, R::Wellshaft],
+        // Two operators, industrial scale.
+        RoomRole::DualStation => &[R::Megastructure, R::Institutional],
+        // Redirecting guardian pressure is administration.
+        RoomRole::GuardianControl => &[R::Institutional, R::ShadowScreen],
+        // An information room wants light and sightlines.
+        RoomRole::Monitor => &[R::OverlitGrid, R::InfiniteGallery],
+        // Somewhere to stop. The thinnest, quietest district.
+        RoomRole::Recovery => &[R::Thinning, R::LiminalGrid],
+        // Not stamped in hex matches at all — see the pool below.
+        RoomRole::TeleportRelay => &[],
+    }
+}
+
+/// Exposed for the district-binding test in `super::tests`.
+#[cfg(test)]
+#[must_use]
+pub(super) fn role_districts_for_probe(role: RoomRole) -> &'static [ArchitectureRegister] {
+    role_districts(role)
+}
+
 pub(super) fn stamp_blueprints_with_pins(
     config: HexWfcConfig,
     rng: &mut SplitMix,
     locked: &[StampedBlueprint],
+    districts: &[DistrictSite],
+    room_quotas: Option<HexRoomQuotas>,
 ) -> Vec<StampedBlueprint> {
-    let span = (config.max_rooms - config.min_rooms).max(1) as u64;
-    let target = (config.min_rooms + (rng.next_u64() % span) as usize).max(locked.len());
+    // Inclusive, so `max_rooms` is actually reachable. It was
+    // `max_rooms - min_rooms`, which for the production 9..=10 contract is 1, so
+    // `rng % span` was always 0 and the target was always 9 — the upper bound
+    // had never once been hit. That also meant the last role in the pool below
+    // could never be reached, which is half of why `DecoherenceFork` had never
+    // appeared in a match.
+    let span = (config.max_rooms + 1 - config.min_rooms).max(1) as u64;
+    let target = room_quotas.map_or_else(
+        || (config.min_rooms + (rng.next_u64() % span) as usize).max(locked.len()),
+        HexRoomQuotas::total_with_start_and_exit,
+    );
 
     let mut pool = vec![
         RoomRole::Decision,
@@ -136,11 +202,23 @@ pub(super) fn stamp_blueprints_with_pins(
         RoomRole::Monitor,
         RoomRole::AnchorCheckpoint,
         RoomRole::Recovery,
+        // Four hexes, and the largest authored room in the corpus. It had a
+        // blueprint and a `room_decoherence_fork.map` and was absent from this
+        // pool, so it had never appeared in a match — bug backlog #16. It goes
+        // last because it is the hardest to fit, and a role that cannot be
+        // placed simply yields the slot to the next one.
+        RoomRole::DecoherenceFork,
     ];
     if config.levels >= 2 {
         // The 2-level atrium leads the pool so tall grids always try one.
         pool.insert(0, RoomRole::GuardianControl);
     }
+    // `TeleportRelay` is deliberately absent. Its blueprint exists and the
+    // deprecated `full_wfc` path requires a pair of them, but the hex match has
+    // no teleport-pad mechanic at all — `sync_teleports_to_bodies` reconciles
+    // spawn, setback and escape moves, nothing a player can use. Stamping one
+    // would spend a room slot on a room that does nothing, which is worse than
+    // leaving it out. The blueprint stays because `full_wfc` still names it.
 
     let salt = rng.next_u64();
     let mut coords: Vec<HexCoord> = all_coords(config).collect();
@@ -178,15 +256,51 @@ pub(super) fn stamp_blueprints_with_pins(
         }
     }
 
-    let mut pool_index = 0;
-    while stamped.len() < target && pool_index < pool.len() {
-        let role = pool[pool_index];
-        pool_index += 1;
-        if stamped.iter().any(|blueprint| blueprint.role == role) {
+    let role_targets: Vec<(RoomRole, usize)> = if let Some(quotas) = room_quotas {
+        vec![
+            (RoomRole::GuardianControl, quotas.guardian_control),
+            (RoomRole::DecoherenceFork, quotas.decoherence_fork),
+            (RoomRole::Decision, quotas.decision),
+            (RoomRole::DualStation, quotas.dual_station),
+            (RoomRole::AnchorCheckpoint, quotas.anchor_checkpoint),
+            (RoomRole::Keystone, quotas.keystone),
+            (RoomRole::Monitor, quotas.monitor),
+            (RoomRole::Recovery, quotas.recovery),
+        ]
+    } else {
+        pool.into_iter().map(|role| (role, 1)).collect()
+    };
+    for (role, role_target) in role_targets {
+        if role == RoomRole::GuardianControl && config.levels < 2 {
             continue;
         }
-        for &anchor in &coords {
-            if let Some(cells) = stamp_at(role, anchor, true, config, &occupied, &anchors) {
+        while stamped.len() < target
+            && stamped
+                .iter()
+                .filter(|blueprint| blueprint.role == role)
+                .count()
+                < role_target
+        {
+            // Preferred districts across every candidate first, then anywhere. Two
+            // passes rather than a sort, so a role that cannot be placed in its own
+            // districts still gets the full field rather than a nearly-empty one.
+            let wanted = role_districts(role);
+            let placed = [true, false].into_iter().find_map(|preferred| {
+                if preferred && wanted.is_empty() {
+                    return None;
+                }
+                coords.iter().copied().find_map(|anchor| {
+                    if preferred
+                        && !district_of(anchor, districts)
+                            .is_some_and(|register| wanted.contains(&register))
+                    {
+                        return None;
+                    }
+                    stamp_at(role, anchor, true, config, &occupied, &anchors)
+                        .map(|cells| (anchor, cells))
+                })
+            });
+            if let Some((anchor, cells)) = placed {
                 occupied.extend(cells.iter().copied());
                 anchors.push(anchor);
                 stamped.push(StampedBlueprint {
@@ -196,6 +310,7 @@ pub(super) fn stamp_blueprints_with_pins(
                     cells,
                 });
                 next_id = next_id.wrapping_add(1);
+            } else {
                 break;
             }
         }

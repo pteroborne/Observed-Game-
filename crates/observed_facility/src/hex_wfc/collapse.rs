@@ -13,13 +13,14 @@ use super::constraints::{
 use super::trace::SolveStep;
 use super::validate::layout_failure;
 use super::variants::{HexVariant, catalogue, variants_compatible};
-use super::{HexArchetype, HexPlacement, HexSpace, HexWfcConfig, HexWfcError};
+use super::{HexArchetype, HexPlacement, HexRoomQuotas, HexSpace, HexWfcConfig, HexWfcError};
 
 type CollapseOutput = (BTreeMap<HexCoord, HexPlacement>, Vec<StampedBlueprint>, u32);
 
-/// Fixed-width bitset over catalogue variant indices. The catalogue currently
-/// holds 382 variants; `solver_tables` asserts the capacity still fits.
-const MASK_WORDS: usize = 6;
+/// Fixed-width bitset over catalogue variant indices. The catalogue holds 404
+/// variants since Phase 108 added `Expanse`, which needed one more word — six
+/// gave 384 slots against 382 in use. `solver_tables` asserts the fit.
+const MASK_WORDS: usize = 7;
 /// A cadence event refreshes the architecture register across its full
 /// target-32 pocket, but only this connected structural core is allowed to
 /// change topology. This keeps collision churn bounded independently of
@@ -136,20 +137,39 @@ pub(super) fn collapse(
     seed: u64,
     generation: u32,
     config: HexWfcConfig,
+    room_quotas: Option<HexRoomQuotas>,
     mut trace: Option<&mut Vec<SolveStep>>,
 ) -> Result<CollapseOutput, HexWfcError> {
     let mut last_failure: Option<&'static str> = None;
     let no_pins = BTreeSet::new();
     for attempt in 0..config.retry_budget {
-        match collapse_attempt(
-            seed,
-            generation,
-            attempt,
-            config,
-            None,
-            &no_pins,
-            trace.as_deref_mut(),
-        ) {
+        let solved = if room_quotas.is_none() {
+            collapse_attempt(
+                seed,
+                generation,
+                attempt,
+                config,
+                None,
+                &no_pins,
+                trace.as_deref_mut(),
+            )
+        } else {
+            let tables = solver_tables();
+            emit(&mut trace, SolveStep::AttemptStart { attempt });
+            let mut rng = SplitMix::new(mixed(seed, generation, attempt, 0x4E8C_0FFE_D011_88AA));
+            collapse_attempt_with_blueprints(
+                seed,
+                config,
+                tables,
+                &mut rng,
+                None,
+                &no_pins,
+                &[],
+                room_quotas,
+                trace.as_deref_mut(),
+            )
+        };
+        match solved {
             Ok(solved) => return Ok((solved.placements, solved.blueprints, attempt + 1)),
             Err(reason) => last_failure = Some(reason),
         }
@@ -175,7 +195,17 @@ pub(super) fn collapse_attempt(
     let tables = solver_tables();
     emit(&mut trace, SolveStep::AttemptStart { attempt });
     let mut rng = SplitMix::new(mixed(seed, generation, attempt, 0x4E8C_0FFE_D011_88AA));
-    collapse_attempt_with_blueprints(config, tables, &mut rng, previous, pinned, &[], trace)
+    collapse_attempt_with_blueprints(
+        seed,
+        config,
+        tables,
+        &mut rng,
+        previous,
+        pinned,
+        &[],
+        None,
+        trace,
+    )
 }
 
 /// Collapse only a bounded mutation pocket. Live outside neighbors become
@@ -241,7 +271,7 @@ pub(super) fn collapse_pocket_attempt(
     if !propagate_pocket(tables, region, &mut domains) {
         return Err("pocket propagation contradiction");
     }
-    if !collapse_pocket_domains(tables, region, &mut domains, &mut rng, influence) {
+    if !collapse_pocket_domains(tables, region, &mut domains, &mut rng, influence, previous) {
         return Err("pocket collapse contradiction");
     }
     let placements = domains
@@ -336,14 +366,24 @@ fn select_topology_core(
 fn placement_is_mutable_topology(placement: HexPlacement) -> bool {
     matches!(
         placement.archetype,
-        HexArchetype::Void | HexArchetype::Straight | HexArchetype::Corner | HexArchetype::Junction
+        HexArchetype::Void
+            | HexArchetype::Straight
+            | HexArchetype::Corner
+            | HexArchetype::Junction
+            // Open floor with nothing authored to protect: relayout is free to
+            // reshape an expanse exactly as it reshapes a corridor.
+            | HexArchetype::Expanse
     )
 }
 
 fn variant_is_mutable_topology(variant: HexVariant) -> bool {
     matches!(
         variant.archetype,
-        HexArchetype::Void | HexArchetype::Straight | HexArchetype::Corner | HexArchetype::Junction
+        HexArchetype::Void
+            | HexArchetype::Straight
+            | HexArchetype::Corner
+            | HexArchetype::Junction
+            | HexArchetype::Expanse
     )
 }
 
@@ -406,6 +446,7 @@ fn collapse_pocket_domains(
     domains: &mut BTreeMap<HexCoord, VariantSet>,
     rng: &mut SplitMix,
     influence: Option<&super::context::HexInfluenceField>,
+    previous: &BTreeMap<HexCoord, HexPlacement>,
 ) -> bool {
     loop {
         let Some(min_size) = domains
@@ -426,13 +467,17 @@ fn collapse_pocket_domains(
         // bias (no geometry context). An ordinary relayout (`influence == None`)
         // keeps the exact static-weight lottery, so its output is byte-identical
         // to before this feature, and a `neutral` field matches it too.
-        let weight_of = |variant: usize| match influence {
-            Some(field) => super::context::influenced_weight(
-                tables.variants[variant].archetype,
-                tables.variants[variant].weight,
-                field,
-            ),
-            None => u64::from(tables.variants[variant].weight),
+        let adjacent_expanses = lateral_expanse_neighbors_map(coord, domains, tables, previous);
+        let weight_of = |variant: usize| {
+            let base = match influence {
+                Some(field) => super::context::influenced_weight(
+                    tables.variants[variant].archetype,
+                    tables.variants[variant].weight,
+                    field,
+                ),
+                None => u64::from(tables.variants[variant].weight),
+            };
+            clustered_expanse_weight(base, tables.variants[variant].archetype, adjacent_expanses)
         };
         let total = domain.iter().map(weight_of).sum::<u64>();
         let mut roll = rng.next_u64() % total.max(1);
@@ -454,16 +499,22 @@ fn collapse_pocket_domains(
 
 #[allow(clippy::too_many_arguments)]
 fn collapse_attempt_with_blueprints(
+    seed: u64,
     config: HexWfcConfig,
     tables: &SolverTables,
     rng: &mut SplitMix,
     previous: Option<&BTreeMap<HexCoord, HexPlacement>>,
     pinned: &BTreeSet<HexCoord>,
     locked_blueprints: &[StampedBlueprint],
+    room_quotas: Option<HexRoomQuotas>,
     mut trace: Option<&mut Vec<SolveStep>>,
 ) -> Result<CollapseAttempt, &'static str> {
     let variants = &tables.variants[..];
-    let blueprints = stamp_blueprints_with_pins(config, rng, locked_blueprints);
+    // Districts are a pure function of (seed, config), so they are known before
+    // anything is stamped — which is what lets a room role belong to a district.
+    let districts = super::relayout::district_sites(seed, config);
+    let blueprints =
+        stamp_blueprints_with_pins(config, rng, locked_blueprints, &districts, room_quotas);
     let signatures = stamped_signatures(config, &blueprints);
     let Some((forced_doors, forced_up, forced_down)) =
         forced_route_edges(config, &blueprints, &signatures, rng)
@@ -491,13 +542,22 @@ fn collapse_attempt_with_blueprints(
     if !propagate(config, tables, &mut domains, all_cells, &mut trace) {
         return Err("propagation contradiction");
     }
-    if !collapse_domains(config, tables, &mut domains, rng, &mut trace) {
+    if !collapse_domains(config, tables, &mut domains, rng, &districts, &mut trace) {
         return Err("collapse contradiction");
     }
     let mut placements = materialize(config, variants, &domains);
     prune_disconnected(config, &mut placements);
     if let Some(reason) = layout_failure(config, &placements, &blueprints) {
         return Err(reason);
+    }
+    if let Some(quotas) = room_quotas {
+        if let Some(reason) = super::validate::room_quota_failure(&blueprints, quotas) {
+            return Err(reason);
+        }
+        if let Some(reason) = super::validate::open_volume_failure(config, &placements, &blueprints)
+        {
+            return Err(reason);
+        }
     }
     let rooms = placements
         .values()
@@ -646,7 +706,7 @@ fn initial_domains(
                     }
                     match blueprint_signature {
                         // Blueprint cells collapse to exactly the stamped
-                        // exterior signature.
+                        // sibling-seam and exterior-threshold signature.
                         Some(&signature) => {
                             variant.space == HexSpace::Room
                                 && variant.doors == signature_doors(signature)
@@ -748,6 +808,7 @@ fn collapse_domains(
     tables: &SolverTables,
     domains: &mut [VariantSet],
     rng: &mut SplitMix,
+    districts: &[super::relayout::DistrictSite],
     trace: &mut Option<&mut Vec<SolveStep>>,
 ) -> bool {
     let variants = &tables.variants[..];
@@ -766,19 +827,30 @@ fn collapse_domains(
             .collect();
         let cell = candidates[(rng.next_u64() % candidates.len() as u64) as usize];
 
-        // Geometry-only contextual composition: scale each variant's static
-        // weight by its position in the grid (verticals cluster to the axis,
-        // atria favour upper levels). Never zeroes a legal variant, and draws
-        // the same RNG values in the same order, so determinism is preserved.
+        // Contextual composition: scale each variant's static weight by its
+        // position in the grid and by the district it stands in. Never zeroes a
+        // legal variant, and draws the same RNG values in the same order, so
+        // determinism is preserved.
         let cell_coord = grid.coord(cell);
+        let adjacent_expanses = HexFace::LATERAL
+            .iter()
+            .filter_map(|&face| grid.neighbor(cell_coord, face))
+            .filter(|neighbor| {
+                domains[grid.index(*neighbor)]
+                    .single()
+                    .is_some_and(|variant| variants[variant].archetype == HexArchetype::Expanse)
+            })
+            .count();
         let weight_of = |variant: usize| {
-            super::context::effective_weight(
+            let base = super::context::effective_weight(
                 cell_coord,
                 variants[variant].archetype,
                 variants[variant].weight,
                 config,
+                super::relayout::district_of(cell_coord, districts),
                 None,
-            )
+            );
+            clustered_expanse_weight(base, variants[variant].archetype, adjacent_expanses)
         };
         let total: u64 = domains[cell].iter().map(weight_of).sum();
         let first = domains[cell].iter().next().expect("candidate is non-empty");
@@ -816,6 +888,53 @@ fn collapse_domains(
             return false;
         }
     }
+}
+
+fn clustered_expanse_weight(base: u64, archetype: HexArchetype, adjacent: usize) -> u64 {
+    if archetype != HexArchetype::Expanse {
+        return base;
+    }
+    match adjacent {
+        0 => base,
+        1 => base.saturating_mul(5) / 2,
+        _ => base.saturating_mul(4),
+    }
+}
+
+fn lateral_expanse_neighbors_map(
+    coord: HexCoord,
+    domains: &BTreeMap<HexCoord, VariantSet>,
+    tables: &SolverTables,
+    previous: &BTreeMap<HexCoord, HexPlacement>,
+) -> usize {
+    HexFace::LATERAL
+        .iter()
+        .filter_map(|&face| {
+            let (dq, dr, dl) = face.delta();
+            let q = i32::from(coord.q) + dq;
+            let r = i32::from(coord.r) + dr;
+            let level = i32::from(coord.level) + dl;
+            (q >= 0 && r >= 0 && level >= 0).then_some(HexCoord {
+                q: q as u16,
+                r: r as u16,
+                level: level as u8,
+            })
+        })
+        .filter(|neighbor| {
+            domains.get(neighbor).map_or_else(
+                || {
+                    previous
+                        .get(neighbor)
+                        .is_some_and(|placement| placement.archetype == HexArchetype::Expanse)
+                },
+                |domain| {
+                    domain.single().is_some_and(|variant| {
+                        tables.variants[variant].archetype == HexArchetype::Expanse
+                    })
+                },
+            )
+        })
+        .count()
 }
 
 fn materialize(

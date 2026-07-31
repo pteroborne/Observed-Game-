@@ -17,6 +17,9 @@ use super::{
 const COST_DOOR_LATERAL: u32 = 1_000;
 const COST_RAMP_LEVEL: u32 = 2_000;
 const COST_SHAFT_LEVEL: u32 = 2_500;
+/// The dearest single connection. A route of one edge can never cost more than this, so
+/// it is the exact search bound for "are these two cells adjacent?" questions.
+pub const MAX_CONNECTION_COST: u32 = COST_SHAFT_LEVEL;
 
 /// A weighted route over typed ports.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -48,7 +51,7 @@ impl PartialOrd for AStarNode {
     }
 }
 
-fn is_connection_open(
+pub(super) fn is_connection_open(
     a: &HexPlacement,
     face: HexFace,
     placements: &BTreeMap<HexCoord, HexPlacement>,
@@ -61,12 +64,24 @@ fn is_connection_open(
         return false;
     };
     if face.is_lateral() {
-        a.is_open(face) && b.is_open(face.opposite())
-    } else {
-        let a_class = if face == HexFace::Up { a.up } else { a.down };
-        let b_class = if face == HexFace::Up { b.down } else { b.up };
-        a_class != PortClass::Sealed && a_class == b_class
+        return a.is_open(face) && b.is_open(face.opposite());
     }
+    let a_class = if face == HexFace::Up { a.up } else { a.down };
+    let b_class = if face == HexFace::Up { b.down } else { b.up };
+    if a_class == PortClass::Sealed || a_class != b_class {
+        return false;
+    }
+    // A vertical link between two room cells is a port the facility cannot
+    // actually deliver. Nothing climbs it: the bot's stair handling is gated on
+    // `HexArchetype::Shaft` and its waypoints are tuned to the switchback
+    // tower's own geometry, and a room cell is projected through
+    // `blueprint_cell_archetype`, which returns `sanctuary` for every role and
+    // every cell (bug backlog #15) — so there are no treads inside it either.
+    //
+    // Routing through one promises a climb that cannot happen, which strands
+    // whoever follows the route. Until rooms have real geometry, this is not a
+    // connection.
+    !(a.space == HexSpace::Room && b.space == HexSpace::Room)
 }
 
 fn connection_cost(
@@ -108,6 +123,30 @@ pub(super) fn costed_route_between(
     from: HexCoord,
     to: HexCoord,
 ) -> Option<HexRoute> {
+    costed_route_within(config, placements, from, to, u32::MAX)
+}
+
+/// [`costed_route_between`], abandoned once every remaining candidate would cost more
+/// than `max_cost`.
+///
+/// Unbounded A* over a disconnected or distant pair expands the entire reachable
+/// component before it can answer `None` — thousands of cells of `BTreeMap` work. Callers
+/// that only care about routes up to some threshold (proximity and pressure tests, which
+/// saturate past a known cost) can therefore stop early.
+///
+/// The pruning is exact, not approximate: [`heuristic`] scales `travel_distance` by
+/// `COST_DOOR_LATERAL`, the cheapest edge tier, so it never overestimates. An admissible
+/// heuristic means `f_score = g + h` is a lower bound on any completion through that node,
+/// so discarding `f_score > max_cost` can never discard a route that would have come in
+/// at or under the bound. Within the bound this returns exactly what the unbounded search
+/// returns; past it, `None`.
+pub(super) fn costed_route_within(
+    config: HexWfcConfig,
+    placements: &BTreeMap<HexCoord, HexPlacement>,
+    from: HexCoord,
+    to: HexCoord,
+    max_cost: u32,
+) -> Option<HexRoute> {
     let grid = config.grid();
     if !grid.contains(from) || !grid.contains(to) {
         return None;
@@ -123,7 +162,12 @@ pub(super) fn costed_route_between(
         f_score: heuristic(from, to),
     });
 
-    while let Some(AStarNode { coord, f_score: _ }) = open_set.pop() {
+    while let Some(AStarNode { coord, f_score }) = open_set.pop() {
+        // The heap is a min-heap on an admissible `f_score`, so once the cheapest
+        // remaining candidate is over budget every other one is too.
+        if f_score > max_cost {
+            return None;
+        }
         if coord == to {
             let mut path = vec![to];
             let mut walk = to;
@@ -155,9 +199,12 @@ pub(super) fn costed_route_between(
             let current_next_g = g_score.get(&next).copied().unwrap_or(u32::MAX);
 
             if tentative_g < current_next_g {
+                let f = tentative_g + heuristic(next, to);
+                if f > max_cost {
+                    continue;
+                }
                 previous.insert(next, coord);
                 g_score.insert(next, tentative_g);
-                let f = tentative_g + heuristic(next, to);
                 open_set.push(AStarNode {
                     coord: next,
                     f_score: f,

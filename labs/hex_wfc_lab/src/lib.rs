@@ -2,6 +2,7 @@
 
 mod capture;
 mod facility_3d;
+mod generation;
 mod plan_input;
 mod relayout_demo;
 
@@ -11,11 +12,11 @@ use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResolution};
 use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::blueprint;
-use observed_facility::hex_wfc::{
-    HexSpace, HexWfcConfig, HexWfcWorld, PortClass, SolveStep, lateral_bit,
-};
+use observed_facility::hex_wfc::{HexSpace, HexWfcWorld, PortClass, SolveStep, lateral_bit};
 use observed_hex::{HexCoord, HexFace, hex_origin_plan};
 use observed_style::{ArchitectureSurfaceRole, MarkerRole, SurfaceRole};
+
+pub(crate) use generation::LabGenerationMode;
 
 /// Screen pixels per plan meter.
 const SCALE: f32 = 5.2;
@@ -59,32 +60,21 @@ pub(crate) struct LabState {
     status: String,
     pub(crate) dirty: bool,
     pub(crate) current_level: u8,
+    pub(crate) generation_mode: LabGenerationMode,
 }
 
 impl LabState {
+    #[cfg(test)]
     fn new(seed: u64) -> Self {
-        let config = HexWfcConfig {
-            cols: 12,
-            rows: 9,
-            levels: 4, // accepted Phase 90/P93 plan-view fixture
-            min_rooms: 4,
-            max_rooms: 8,
-            retry_budget: 100,
-            min_room_distance: 2,
-        };
-        let (world, trace) =
-            HexWfcWorld::generate_traced(seed, config).expect("default hex config must solve");
-        Self {
-            world,
-            trace,
-            cursor: 0,
-            playing: true,
-            steps_per_tick: 4,
-            overlay: true,
-            status: "solving from the start — Space pauses".to_string(),
-            dirty: true,
-            current_level: 0,
-        }
+        generation::build(seed, LabGenerationMode::CompactTrace)
+    }
+
+    fn regenerate(&self, seed: u64) -> Self {
+        generation::build(seed, self.generation_mode)
+    }
+
+    fn toggle_generation_mode(&self) -> Self {
+        generation::build(self.world.seed, self.generation_mode.toggled())
     }
 
     fn finished(&self) -> bool {
@@ -101,6 +91,33 @@ impl LabState {
 
     /// Replay the trace prefix into per-cell display state.
     fn cell_views(&self) -> BTreeMap<HexCoord, CellVis> {
+        if self.trace.is_empty() {
+            let mut views = self
+                .world
+                .placements
+                .iter()
+                .map(|(&coord, placement)| {
+                    (
+                        coord,
+                        CellVis {
+                            resolved: Some((
+                                placement.space,
+                                placement.doors,
+                                placement.up,
+                                placement.down,
+                            )),
+                            ..default()
+                        },
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            for blueprint in &self.world.blueprints {
+                for &coord in &blueprint.cells {
+                    views.entry(coord).or_default().role = Some(blueprint.role);
+                }
+            }
+            return views;
+        }
         let mut views: BTreeMap<HexCoord, CellVis> = BTreeMap::new();
         for step in &self.trace[..self.cursor] {
             match *step {
@@ -137,9 +154,14 @@ impl LabState {
 }
 
 pub fn run() {
+    let generation_mode = if std::env::var("OBSERVED2_HEX_PRODUCTION").is_ok() {
+        LabGenerationMode::ProductionCorpus
+    } else {
+        LabGenerationMode::CompactTrace
+    };
     let mut app = App::new();
     app.insert_resource(ClearColor(Color::srgb(0.008, 0.012, 0.024)))
-        .insert_resource(LabState::new(PRESET_SEEDS[0]))
+        .insert_resource(generation::build(PRESET_SEEDS[0], generation_mode))
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Observed 2 - Hex WFC Lab".to_string(),
@@ -171,10 +193,14 @@ pub fn run() {
     app.run();
 }
 
-fn setup(mut commands: Commands, state: Res<LabState>) {
+fn setup(mut commands: Commands, state: Res<LabState>, mode: Res<facility_3d::LabViewMode>) {
     let center = grid_center(&state.world);
     commands.spawn((
         Camera2d,
+        Camera {
+            is_active: *mode == facility_3d::LabViewMode::Plan2d,
+            ..default()
+        },
         Transform::from_translation(center.extend(1000.0)),
         Name::new("Hex WFC lab camera"),
     ));
@@ -186,6 +212,11 @@ fn setup(mut commands: Commands, state: Res<LabState>) {
             ..default()
         },
         TextColor(Color::srgb(0.88, 0.94, 1.0)),
+        if *mode == facility_3d::LabViewMode::Plan2d {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        },
         Node {
             position_type: PositionType::Absolute,
             top: Val::Px(12.0),
@@ -422,18 +453,34 @@ fn update_status(state: Res<LabState>, mut status: Query<&mut Text, With<LabStat
         **text = String::new();
         return;
     }
-    let completed = state
-        .trace
-        .iter()
-        .take(state.cursor)
-        .filter_map(|step| match step {
-            SolveStep::Completed { rooms, halls } => Some(format!("{rooms} rooms / {halls} halls")),
-            _ => None,
-        })
-        .next_back()
-        .unwrap_or_else(|| "solving...".to_string());
+    let completed = if state.trace.is_empty() {
+        format!(
+            "{} rooms / {} walkable cells",
+            state.world.blueprints.len(),
+            state
+                .world
+                .placements
+                .values()
+                .filter(|placement| placement.space != HexSpace::Void)
+                .count()
+        )
+    } else {
+        state
+            .trace
+            .iter()
+            .take(state.cursor)
+            .filter_map(|step| match step {
+                SolveStep::Completed { rooms, halls } => {
+                    Some(format!("{rooms} rooms / {halls} halls"))
+                }
+                _ => None,
+            })
+            .next_back()
+            .unwrap_or_else(|| "solving...".to_string())
+    };
     **text = format!(
-        "HEX WFC / ANIMATED STEP — Arc L Phase 90\nseed {:#018x} | step {}/{} | {} | attempts {}\n{}\nlevel {}/{} (PgUp/PgDn or [/] to slice)\n\nSpace play/pause | N step | +/- speed ({}/tick) | I instant | R next seed | 1-9 presets | F1 overlay\nLegend: classic-yellow resolved cells = Liminal Grid zone/normalized room | gold room | cyan hall | purple/blue ramp | orange shaft | dim uncollapsed | diamonds: spawn, exit, route",
+        "HEX WFC / {}\nseed {:#018x} | step {}/{} | {} | attempts {}\n{}\nlevel {}/{} (PgUp/PgDn or [/] to slice)\n\nP compact/production | Space play/pause | N step | +/- speed ({}/tick) | I instant | R next seed | 1-9 presets | F1 overlay\nLegend: classic-yellow resolved cells = Liminal Grid zone/normalized room | gold room | cyan hall | purple/blue ramp | orange shaft | dim uncollapsed | diamonds: spawn, exit, route",
+        state.generation_mode.label(),
         state.world.seed,
         state.cursor,
         state.trace.len(),

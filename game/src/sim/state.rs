@@ -9,7 +9,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use bevy::prelude::*;
 use observed_core::{RoomId, TeamId};
 use observed_match::teamplay::TeamplayMatch;
-use observed_progression::session::SessionLabWorld;
 use observed_traversal::rapier_controller::RapierTraversalScene;
 use observed_traversal::{ArenaSpec, FpsBody, FpsConfig};
 use player_input::PlayerIntent;
@@ -183,14 +182,6 @@ impl ThresholdTransit {
     pub fn is_valid(&self) -> bool {
         self.destination.is_some() && self.destination_gap.is_some() && self.transform.is_some()
     }
-}
-
-#[derive(Resource)]
-pub struct LobbyRuntime {
-    /// The formed session is retained for the duration of the lobby/match so the
-    /// matchmaking state stays live; the screen renders from it at spawn time.
-    #[allow(dead_code)]
-    pub world: SessionLabWorld,
 }
 
 /// How a rival trace was witnessed. `Seen` (a rival clump physically sharing your room

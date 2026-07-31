@@ -2,19 +2,20 @@
 mod bot_pov;
 mod capture;
 mod controls;
+mod landmarks;
 mod presentation;
 use std::path::{Path, PathBuf};
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow};
-use observed_authoring::{RuntimeHexCatalog, TilePrototype};
+use observed_authoring::{RoomPrototype, RuntimeHexCatalog, TilePrototype};
 use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::{HexArchetype, HexWfcWorld};
 use observed_hex::{HexCoord, HexFace, PortClass, TILE_LEVEL_HEIGHT, face_edge, hex_origin};
 use observed_match::hex_wfc::HexWfcGeometrySnapshot;
 use observed_traversal::rapier_controller::RapierTraversalScene;
-use observed_traversal::{FpsBody, FpsConfig};
+use observed_traversal::{ArenaSpec, FpsBody, FpsConfig};
 
 use crate::LabState;
 
@@ -38,7 +39,9 @@ struct FacilityStatus;
 struct ModePresentation<'w, 's> {
     plan_cameras: Query<'w, 's, &'static mut Camera, (With<Camera2d>, Without<FacilityCamera>)>,
     facility_cameras: Query<'w, 's, &'static mut Camera, With<FacilityCamera>>,
-    status: Query<'w, 's, &'static mut Visibility, With<FacilityStatus>>,
+    plan_status:
+        Query<'w, 's, &'static mut Visibility, (With<crate::LabStatus>, Without<FacilityStatus>)>,
+    facility_status: Query<'w, 's, &'static mut Visibility, With<FacilityStatus>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -53,6 +56,7 @@ struct FacilityState {
     source_generation: u32,
     source_config: observed_facility::hex_wfc::HexWfcConfig,
     prototypes: Vec<TilePrototype>,
+    room_prototypes: Vec<RoomPrototype>,
     snapshot: HexWfcGeometrySnapshot,
     scene: RapierTraversalScene,
     body: FpsBody,
@@ -65,26 +69,38 @@ struct FacilityState {
     collider_view: bool,
     overlay: bool,
     dirty: bool,
+    landmarks: Vec<landmarks::FacilityLandmark>,
+    landmark_index: Option<usize>,
+    stream_focus: HexCoord,
 }
 
 impl FacilityState {
     fn load(world: &HexWfcWorld) -> Self {
-        let prototypes = load_tiles();
-        let snapshot = HexWfcGeometrySnapshot::project(world, &prototypes)
-            .unwrap_or_else(|error| panic!("hex facility projection failed: {error:?}"));
-        let scene = snapshot.rapier_scene();
+        let catalog = load_catalog();
+        let prototypes = catalog.cells;
+        let room_prototypes = catalog.rooms;
+        let snapshot =
+            HexWfcGeometrySnapshot::project_with_rooms(world, &prototypes, &room_prototypes)
+                .unwrap_or_else(|error| panic!("hex facility projection failed: {error:?}"));
+        let production = is_production_world(world);
+        let scene = scene_for_world(&snapshot, production);
         let config = FpsConfig::deliberate_rapier();
         let (spawn, yaw) = spawn_pose(world, &config);
-        Self {
+        let mut state = Self {
             source_seed: world.seed,
             source_generation: world.generation,
             source_config: world.config,
             prototypes,
+            room_prototypes,
             snapshot,
             scene,
             body: FpsBody::spawned(spawn, yaw),
             config,
-            camera_mode: CameraMode::Walk,
+            camera_mode: if production {
+                CameraMode::FreeFly
+            } else {
+                CameraMode::Walk
+            },
             fly_position: spawn + Vec3::Y * 12.0,
             fly_yaw: yaw,
             fly_pitch: -0.25,
@@ -92,13 +108,25 @@ impl FacilityState {
             collider_view: false,
             overlay: true,
             dirty: true,
+            landmarks: landmarks::build(world),
+            landmark_index: None,
+            stream_focus: world.config.spawn(),
+        };
+        if production {
+            landmarks::overview(world, &mut state);
         }
+        state
     }
 
     fn rebuild(&mut self, world: &HexWfcWorld) {
-        self.snapshot = HexWfcGeometrySnapshot::project(world, &self.prototypes)
-            .unwrap_or_else(|error| panic!("hex facility projection failed: {error:?}"));
-        self.scene = self.snapshot.rapier_scene();
+        self.snapshot = HexWfcGeometrySnapshot::project_with_rooms(
+            world,
+            &self.prototypes,
+            &self.room_prototypes,
+        )
+        .unwrap_or_else(|error| panic!("hex facility projection failed: {error:?}"));
+        let production = is_production_world(world);
+        self.scene = scene_for_world(&self.snapshot, production);
         self.source_seed = world.seed;
         self.source_generation = world.generation;
         self.source_config = world.config;
@@ -107,12 +135,25 @@ impl FacilityState {
         self.fly_position = spawn + Vec3::Y * 12.0;
         self.fly_yaw = yaw;
         self.fly_pitch = -0.25;
+        self.camera_mode = if production {
+            CameraMode::FreeFly
+        } else {
+            CameraMode::Walk
+        };
+        self.landmarks = landmarks::build(world);
+        self.landmark_index = None;
+        self.stream_focus = world.config.spawn();
         self.dirty = true;
     }
 }
 
 pub(crate) fn register(app: &mut App) {
-    app.insert_resource(LabViewMode::Plan2d)
+    let initial_mode = if std::env::var("OBSERVED2_HEX_PRODUCTION").is_ok() {
+        LabViewMode::Facility3d
+    } else {
+        LabViewMode::Plan2d
+    };
+    app.insert_resource(initial_mode)
         .add_systems(Startup, setup)
         .add_systems(
             FixedUpdate,
@@ -163,12 +204,29 @@ fn tile_dir() -> PathBuf {
     }
 }
 
-fn load_tiles() -> Vec<TilePrototype> {
+fn load_catalog() -> RuntimeHexCatalog {
     let base = tile_dir();
     let slugs = ArchitectureRegister::ALL.map(ArchitectureRegister::slug);
-    RuntimeHexCatalog::load(&base, &slugs)
-        .expect("canonical runtime tile catalog loads")
-        .cells
+    RuntimeHexCatalog::load(&base, &slugs).expect("canonical runtime tile catalog loads")
+}
+
+fn is_production_world(world: &HexWfcWorld) -> bool {
+    world.config.cols >= 28 && world.config.rows >= 20 && world.config.levels >= 10
+}
+
+fn scene_for_world(snapshot: &HexWfcGeometrySnapshot, production: bool) -> RapierTraversalScene {
+    if !production {
+        return snapshot.rapier_scene();
+    }
+    // Production-corpus mode is a free-fly visual atlas. Avoid constructing a
+    // second, facility-wide Rapier world that cannot be used in this mode.
+    let arena = ArenaSpec {
+        colliders: Vec::new(),
+        floor_y: snapshot.arena.floor_y,
+        safety_center: snapshot.arena.safety_center,
+        safety_half: snapshot.arena.safety_half,
+    };
+    RapierTraversalScene::from_arena_spec(&arena)
 }
 
 fn spawn_pose(world: &HexWfcWorld, config: &FpsConfig) -> (Vec3, f32) {
@@ -190,6 +248,7 @@ fn spawn_pose(world: &HexWfcWorld, config: &FpsConfig) -> (Vec3, f32) {
 
 fn setup(
     mut commands: Commands,
+    mode: Res<LabViewMode>,
     world: Res<LabState>,
     mut cursors: Query<&mut CursorOptions, With<PrimaryWindow>>,
 ) {
@@ -199,7 +258,7 @@ fn setup(
             FacilityCamera,
             Camera3d::default(),
             Camera {
-                is_active: false,
+                is_active: *mode == LabViewMode::Facility3d,
                 ..default()
             },
             Transform::from_translation(state.body.position),
@@ -246,7 +305,11 @@ fn setup(
         },
         TextColor(Color::srgb(0.88, 0.94, 1.0)),
         BackgroundColor(overlay_background),
-        Visibility::Hidden,
+        if *mode == LabViewMode::Facility3d {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        },
         Node {
             position_type: PositionType::Absolute,
             top: Val::Px(12.0),
@@ -295,7 +358,14 @@ fn toggle_mode(
     for mut camera in &mut presentation.facility_cameras {
         camera.is_active = *mode == LabViewMode::Facility3d;
     }
-    for mut visibility in &mut presentation.status {
+    for mut visibility in &mut presentation.plan_status {
+        *visibility = if *mode == LabViewMode::Plan2d {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
+    for mut visibility in &mut presentation.facility_status {
         *visibility = if *mode == LabViewMode::Facility3d {
             Visibility::Visible
         } else {
@@ -333,6 +403,7 @@ fn sync_camera(state: Res<FacilityState>, mut camera: Query<&mut Transform, With
 
 fn update_status(
     mode: Res<LabViewMode>,
+    world: Res<LabState>,
     state: Res<FacilityState>,
     mut status: Query<&mut Text, With<FacilityStatus>>,
 ) {
@@ -347,18 +418,24 @@ fn update_status(
         CameraMode::Walk => state.body.eye(&state.config),
         CameraMode::FreeFly => state.fly_position,
     };
+    let concept_position = state.landmark_index.map_or_else(
+        || format!("overview / {} concepts", state.landmarks.len()),
+        |index| format!("{} / {}", index + 1, state.landmarks.len()),
+    );
     **text = format!(
-        "HEX WFC / 3D FACILITY â€” Arc L Phase 92\nseed {:#018x} | {}x{}x{} | pieces/colliders {} | rooms {} | ramp heads {}\nmode {:?} | eye {:.1?} | grounded {} | collider debug {} | scale 8m/level, {:.0}m floor span\n\nF3 2D/3D | V walk/free-fly | WASD+mouse | E/Q fly vertical | Shift sprint | Space jump | C exact collider facets (alternating light/dark) | R next solve | Backspace respawn | F1 overlay\nLegend: gold room | blue hall | bright cyan ramp | orange wellshaft | dark shell",
+        "HEX WFC / 3D FACILITY ATLAS\n{} | seed {:#018x} | {}x{}x{} | rendered {} / {} pieces | rooms {}\nconcept {}: {} | eye {:.1?} | stream focus {:?} | collider debug {} | {:.0}m vertical span\n\nP compact/production | Home overview | [ / ] previous/next concept | F3 2D/3D | V walk/free-fly (compact) | WASD+mouse | E/Q fly vertical | Shift fast | C collider facets | R next solve | F1 overlay\nLegend: gold room | blue hall | bright cyan ramp | orange wellshaft | dark shell",
+        world.generation_mode.label(),
         state.source_seed,
         state.source_config.cols,
         state.source_config.rows,
         state.source_config.levels,
+        landmarks::rendered_piece_count(&state),
         state.snapshot.pieces.len(),
         state.snapshot.blueprint_instances,
-        state.snapshot.ramp_heads,
-        state.camera_mode,
+        concept_position,
+        landmarks::current_label(&state),
         eye,
-        state.body.grounded,
+        state.stream_focus,
         state.collider_view,
         f32::from(state.source_config.levels.saturating_sub(1)) * TILE_LEVEL_HEIGHT,
     );
@@ -500,8 +577,12 @@ mod tests {
             .commit_relayout(candidate, &observation)
             .expect("commit");
         assert!(synchronize_if_stale(&lab.world, &mut state));
-        let expected = HexWfcGeometrySnapshot::project(&lab.world, &state.prototypes)
-            .expect("fresh projection");
+        let expected = HexWfcGeometrySnapshot::project_with_rooms(
+            &lab.world,
+            &state.prototypes,
+            &state.room_prototypes,
+        )
+        .expect("fresh projection");
         assert_eq!(state.source_generation, lab.world.generation);
         assert_eq!(state.snapshot.pieces, expected.pieces);
         assert_eq!(state.snapshot.arena, expected.arena);

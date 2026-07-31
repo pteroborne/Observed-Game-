@@ -482,6 +482,22 @@ def tile_light(x, y, z):
     ])
 
 
+def tile_socket(socket_id, kind, q=0, r=0, level=0, x=0.0, y=0.0,
+                yaw=0.0):
+    """A typed gameplay socket inside one room footprint cell."""
+    ox, oy = cell_origin(q, r)
+    return point_entity([
+        ("classname", "tile_socket"),
+        ("id", socket_id),
+        ("kind", kind),
+        ("q", str(q)),
+        ("r", str(r)),
+        ("level", str(level)),
+        ("origin", f"{_fmt(ox + x)} {_fmt(oy + y)} {_fmt(level * LEVEL + 24.0)}"),
+        ("yaw", _fmt(yaw)),
+    ])
+
+
 def ceiling_fixture(x=0.0, y=0.0, ceiling=LEVEL, half_x=18.0, half_y=10.0):
     """A recessed housing physically attached to a ceiling plus its source."""
     brush = box(
@@ -1017,20 +1033,24 @@ def register_liminal_tiles(tiles):
 
 # --- whole-room modules (multi-hex) ----------------------------------------
 #
-# A room blueprint is stamped by the solver as N adjacent cells. Authored as N
-# separate single-cell tiles it renders as N sealed rooms with walls at every
-# internal seam; authored as ONE room module it renders as a single continuous
-# space. These builders emit the latter.
+# A room blueprint is stamped by the solver as N adjacent cells. These builders
+# author that footprint as one continuous module: shared lateral faces have no
+# wall geometry and only named perimeter ports become framed thresholds.
 
 def _cell3(cell):
     """Normalize a footprint entry to (q, r, level); 2-tuples are level 0."""
     return cell if len(cell) == 3 else (cell[0], cell[1], 0)
 
 
-def room_shell(cells):
-    """Per-cell floor and ceiling slabs, a door wall on every face that LEAVES
-    the footprint, and nothing at all on lateral faces shared with a sibling
-    cell — so the room reads as one continuous space.
+def _room_port_key(q, r, level, face):
+    """Use the compact level-zero key shape accepted by room definitions."""
+    return (q, r, face) if level == 0 else (q, r, level, face)
+
+
+def room_shell(cells, named):
+    """Per-cell floor and ceiling slabs, no geometry on faces shared with a
+    sibling, framed door walls at named exterior thresholds, and solid walls
+    everywhere else on the perimeter.
 
     Slabs are deliberately unchamfered: a rim bevel on a shared edge would cut
     a visible groove across the middle of the room's floor.
@@ -1051,8 +1071,13 @@ def room_shell(cells):
             if (q + dq, r + dr, level) in footprint:
                 text += f"// open seam to sibling cell: {FACE_NAMES[face]}\n"
                 continue
-            text += f"// Door wall: {FACE_NAMES[face]}\n"
-            text += door_wall(face, 0.0, LEVEL)
+            key = _room_port_key(q, r, level, face)
+            if key in named:
+                text += f"// Named threshold: {named[key]}\n"
+                text += door_wall(face, 0.0, LEVEL)
+            else:
+                text += f"// Solid perimeter wall: {FACE_NAMES[face]}\n"
+                text += wall(face, 0.0, LEVEL)
         ox, oy = cell_origin(q, r)
         brushes += translate(text, ox, oy, level * LEVEL)
     return brushes
@@ -1072,22 +1097,23 @@ def room_fixtures(cells):
     return brushes, lights
 
 
-def room_module(name, room_role, cells, named, archetype="sanctuary", weight=10):
+def room_module(name, room_role, cells, named, sockets=(), archetype="sanctuary", weight=10):
     """A whole-room module matching one `RoomBlueprint`.
 
     `named` maps `(q, r, face)` to the blueprint's port name. Contract enforced
     by `room_contract_matches` (observed_match) and `validate_ports`
     (observed_authoring):
       * footprint must equal the blueprint's cells exactly (no runtime rotation);
-      * EVERY face leaving the footprint is a `Door` — that is what
-        `RoomBlueprint::cell_signature` declares for a room;
+      * faces shared by footprint cells are open continuous spans;
+      * only named exterior faces are `Door`; every other perimeter face is
+        solid;
       * a port on an internal face is a hard error (`PortOnInternalFace`);
       * each blueprint named port must be one of those doors.
     `rotation_policy` is `none` because stamped blueprints are never rotated,
     so a sixfold room would compile five unreachable variants."""
     footprint = {_cell3(cell) for cell in cells}
     levels = max(level for (_, _, level) in footprint) + 1
-    brushes = room_shell(cells)
+    brushes = room_shell(cells, named)
     fixtures, lights = room_fixtures(cells)
     brushes += fixtures
 
@@ -1102,15 +1128,20 @@ def room_module(name, room_role, cells, named, archetype="sanctuary", weight=10)
     for cell in cells:
         q, r, level = _cell3(cell)
         out += tile_cell(q=q, r=r, level=level)
-    for cell in cells:
-        q, r, level = _cell3(cell)
-        for face in range(6):
-            dq, dr = FACE_DELTA[face]
-            if (q + dq, r + dr, level) in footprint:
-                continue
-            key = (q, r, face) if level == 0 else (q, r, level, face)
-            port_name = named.get(key, f"{FACE_NAMES[face]}_q{q}_r{r}_l{level}")
-            out += lateral_port(face, "door", port_name, level=level, q=q, r=r)
+    for key, port_name in named.items():
+        if len(key) == 3:
+            q, r, face = key
+            level = 0
+        else:
+            q, r, level, face = key
+        assert (q, r, level) in footprint, f"{port_name} is not on a room cell"
+        dq, dr = FACE_DELTA[face]
+        assert (q + dq, r + dr, level) not in footprint, (
+            f"{port_name} points into the room footprint"
+        )
+        out += lateral_port(face, "door", port_name, level=level, q=q, r=r)
+    for socket in sockets:
+        out += tile_socket(*socket)
     out += lights
     return out
 
@@ -1121,6 +1152,10 @@ def room_dual_station():
         "room_dual_station", "DualStation",
         [(0, 0), (1, 0)],
         {(0, 0, 3): "port_a", (1, 0, 0): "port_b"},
+        sockets=(
+            ("station_a", "station_a", 0, 0, 0, 24.0, 0.0, 90.0),
+            ("station_b", "station_b", 1, 0, 0, -24.0, 0.0, -90.0),
+        ),
     )
 
 
@@ -1139,6 +1174,7 @@ def room_anchor_checkpoint():
         "room_anchor_checkpoint", "AnchorCheckpoint",
         [(0, 0), (0, 1)],
         {(0, 0, 3): "port_a", (0, 1, 0): "port_b"},
+        sockets=(("lantern_cache", "lantern_cache", 0, 1, 0, 0.0, 0.0, 0.0),),
     )
 
 
@@ -1162,22 +1198,75 @@ def room_guardian_control():
     The blueprint's internal Up/Down ports are `ShaftOpen`, but a port on an
     internal face is a hard validator error and the projector never checks
     internal faces, so each storey is authored as its own clear, walkable room
-    with all six lateral doors. That is what fixes the observed bot trap: the
+    with one named lateral threshold. That is what fixes the observed bot trap: the
     per-cell `sanctuary` fallback filled these cells with interior furniture the
     bot could neither step over (1.3 m vs a 0.45 m step) nor route around."""
     return room_module(
         "room_guardian_control", "GuardianControl",
         [(0, 0, 0), (0, 0, 1)],
         {(0, 0, 3): "lower_port", (0, 0, 1, 0): "upper_port"},
+        sockets=(("guardian_control", "guardian_control", 0, 0, 0, 0.0, 0.0, 0.0),),
+    )
+
+
+def room_start():
+    return room_module(
+        "room_start", "Start", [(0, 0)],
+        {(0, 0, 3): "entrance", (0, 0, 0): "exit"},
+    )
+
+
+def room_teleport_relay():
+    return room_module(
+        "room_teleport_relay", "TeleportRelay", [(0, 0)],
+        {(0, 0, 3): "port_a"},
+    )
+
+
+def room_keystone():
+    return room_module(
+        "room_keystone", "Keystone", [(0, 0)],
+        {(0, 0, 3): "port_a"},
+        sockets=(("keystone", "keystone", 0, 0, 0, 0.0, 0.0, 0.0),),
+    )
+
+
+def room_monitor():
+    return room_module(
+        "room_monitor", "Monitor", [(0, 0)],
+        {(0, 0, 3): "port_a"},
+        sockets=(("monitor", "monitor", 0, 0, 0, 0.0, 0.0, 0.0),),
+    )
+
+
+def room_recovery():
+    return room_module(
+        "room_recovery", "Recovery", [(0, 0)],
+        {(0, 0, 3): "port_a"},
+        sockets=(("recovery", "recovery", 0, 0, 0, 0.0, 0.0, 0.0),),
+    )
+
+
+def room_exit():
+    return room_module(
+        "room_exit", "Exit", [(0, 0)],
+        {(0, 0, 3): "entrance"},
+        sockets=(("exit", "exit", 0, 0, 0, 0.0, 0.0, 0.0),),
     )
 
 
 TILES = {
+    "assets/tiles/authored/room_start.map": room_start,
+    "assets/tiles/authored/room_teleport_relay.map": room_teleport_relay,
     "assets/tiles/authored/room_dual_station.map": room_dual_station,
     "assets/tiles/authored/room_decision.map": room_decision,
     "assets/tiles/authored/room_anchor_checkpoint.map": room_anchor_checkpoint,
     "assets/tiles/authored/room_decoherence_fork.map": room_decoherence_fork,
     "assets/tiles/authored/room_guardian_control.map": room_guardian_control,
+    "assets/tiles/authored/room_keystone.map": room_keystone,
+    "assets/tiles/authored/room_monitor.map": room_monitor,
+    "assets/tiles/authored/room_recovery.map": room_recovery,
+    "assets/tiles/authored/room_exit.map": room_exit,
     "assets/tiles/authored/silo_core.map": silo_core,
     "assets/tiles/authored/silo_ring.map": silo_ring,
     "assets/tiles/authored/silo_ring_bridge.map": silo_ring_bridge,

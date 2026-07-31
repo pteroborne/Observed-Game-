@@ -33,6 +33,13 @@ fn test_app() -> App {
     // Integration tests always start from the shipped all-on population, never
     // from whichever personal profile happens to be present in the workspace.
     app.insert_resource(crate::flow::Career::default());
+    // Likewise for preferences: `load_settings` reads the real user configuration
+    // directory, so a developer's own save would otherwise decide whether onboarding
+    // runs — and an active onboarding gate stops the authoritative tick entirely.
+    // Fixtures represent a returning player; onboarding has its own tests.
+    let mut settings = crate::settings::Settings::default();
+    settings.complete_onboarding();
+    app.insert_resource(settings);
     app
 }
 
@@ -40,6 +47,50 @@ fn count<T: Component>(app: &mut App) -> usize {
     let world = app.world_mut();
     let mut query = world.query_filtered::<Entity, With<T>>();
     query.iter(world).count()
+}
+
+fn focus_settings_row(app: &mut App, row: crate::screens::settings::SettingsRow) {
+    if matches!(row, crate::screens::settings::SettingsRow::Binding(_)) {
+        let row_exists = {
+            let world = app.world_mut();
+            let mut query = world.query::<&crate::screens::settings::SettingsRowText>();
+            query.iter(world).any(|candidate| candidate.0 == row)
+        };
+        if !row_exists {
+            let open_bindings = {
+                let world = app.world_mut();
+                let mut query =
+                    world.query::<(Entity, &crate::screens::settings::SettingsPageAction)>();
+                query.iter(world).find_map(|(entity, action)| {
+                    (*action == crate::screens::settings::SettingsPageAction::OpenBindings)
+                        .then_some(entity)
+                })
+            }
+            .expect("settings controls action exists");
+            app.world_mut().trigger(bevy::ui_widgets::Activate {
+                entity: open_bindings,
+            });
+            app.update();
+        }
+    }
+    let entity = {
+        let world = app.world_mut();
+        let mut query = world.query::<(Entity, &crate::screens::settings::SettingsRowText)>();
+        query
+            .iter(world)
+            .find_map(|(entity, candidate)| (candidate.0 == row).then_some(entity))
+            .expect("settings row exists")
+    };
+    app.world_mut()
+        .resource_mut::<bevy::input_focus::InputFocus>()
+        .set(entity);
+}
+
+fn focused_settings_row(app: &App) -> Option<crate::screens::settings::SettingsRow> {
+    let entity = app.world().resource::<bevy::input_focus::InputFocus>().0?;
+    app.world()
+        .get::<crate::screens::settings::SettingsRowText>(entity)
+        .map(|row| row.0)
 }
 
 fn hud_readout(
@@ -55,7 +106,8 @@ fn hud_readout(
 
 fn result_summary_texts(app: &mut App) -> Vec<String> {
     let world = app.world_mut();
-    let mut query = world.query_filtered::<&Text, With<crate::screens::menu::ResultsSummaryText>>();
+    let mut query =
+        world.query_filtered::<&Text, With<crate::screens::results::ResultsSummaryText>>();
     query.iter(world).map(|text| (**text).to_string()).collect()
 }
 
@@ -1364,7 +1416,7 @@ fn the_tac_map_is_a_survivors_sketch_not_a_blueprint() {
             .routes
             .iter()
             .all(|&(a, b)| a == entrance || b == entrance),
-        "every known connection touches the entrance — nothing beyond the player's eyes"
+        "every known connection touches the entrance - nothing beyond the player's eyes"
     );
     let knowledge = app.world().resource::<crate::sim::state::MapKnowledge>();
     assert_eq!(
@@ -1450,10 +1502,7 @@ fn the_full_career_loop_runs_and_grows_the_persistent_profile() {
     assert_eq!(count::<ScreenRoot>(&mut app), 1);
 
     go(&mut app, GameState::Lobby);
-    assert!(
-        app.world()
-            .contains_resource::<crate::sim::state::LobbyRuntime>()
-    );
+    assert_eq!(count::<ScreenRoot>(&mut app), 1);
 
     go(&mut app, GameState::Match);
     assert!(
@@ -1486,11 +1535,19 @@ fn completed_match_records_a_replay_and_results_can_open_it() {
         );
     }
 
-    app.world_mut().resource_mut::<screens::MenuCursor>().0 = 1;
-    app.world_mut()
-        .resource_mut::<ButtonInput<KeyCode>>()
-        .press(KeyCode::Enter);
-    app.world_mut().run_schedule(Update);
+    let watch_replay = {
+        let world = app.world_mut();
+        let mut actions = world.query::<(Entity, &screens::results::ResultsAction)>();
+        actions
+            .iter(world)
+            .find_map(|(entity, action)| {
+                (*action == screens::results::ResultsAction::WatchReplay).then_some(entity)
+            })
+            .expect("results exposes Watch replay")
+    };
+    app.world_mut().trigger(bevy::ui_widgets::Activate {
+        entity: watch_replay,
+    });
     app.update();
 
     assert_eq!(
@@ -1559,7 +1616,7 @@ fn results_screen_renders_every_outcome_shape() {
                 local_won: false,
             },
             false,
-            "ABSORBED",
+            "PLACED",
             "finished 4th",
         ),
         (
@@ -1597,7 +1654,13 @@ fn results_screen_renders_every_outcome_shape() {
         tape.anchor_uses = 1;
         tape.result = Some(result.clone());
 
-        let story = crate::screens::menu::build_results_story(Some(&result), Some(&tape), solo);
+        let perspective = if solo {
+            crate::screens::results::ResultsPerspective::Solo
+        } else {
+            crate::screens::results::ResultsPerspective::Participant
+        };
+        let story =
+            crate::screens::results::build_results_story(Some(&result), Some(&tape), perspective);
         assert_eq!(story.headline, headline);
         assert_eq!(story.lines.len(), 7, "the summary stays glanceable");
         assert!(story.lines.join("\n").contains(outcome_text));
@@ -1616,6 +1679,16 @@ fn results_screen_renders_every_outcome_shape() {
             .resource_mut::<Career>()
             .record(result.clone());
         app.insert_resource(tape);
+        app.insert_resource(crate::play_setup::ActivePlaySession {
+            kind: if solo {
+                crate::play_setup::ActivePlayKind::Solo
+            } else {
+                crate::play_setup::ActivePlayKind::TeamRace
+            },
+            teams: if solo { 1 } else { 4 },
+            members_per_team: 1,
+            networked: false,
+        });
 
         go(&mut app, GameState::Results);
 
@@ -1641,7 +1714,7 @@ fn results_screen_renders_every_outcome_shape() {
 }
 
 #[test]
-fn results_rematch_launches_hex_wfc_directly_with_a_new_seed() {
+fn results_rematch_prepares_hex_wfc_with_a_new_seed() {
     let mut app = test_app();
     let previous = 99_u64;
     app.insert_resource(flow::ActiveMatchSeed(previous));
@@ -1661,16 +1734,24 @@ fn results_rematch_launches_hex_wfc_directly_with_a_new_seed() {
     }
     go(&mut app, GameState::Results);
 
+    let rematch = {
+        let world = app.world_mut();
+        let mut actions = world.query::<(Entity, &screens::results::ResultsAction)>();
+        actions
+            .iter(world)
+            .find_map(|(entity, action)| {
+                (*action == screens::results::ResultsAction::Rematch).then_some(entity)
+            })
+            .expect("results exposes Rematch")
+    };
     app.world_mut()
-        .resource_mut::<ButtonInput<KeyCode>>()
-        .press(KeyCode::Enter);
-    app.world_mut().run_schedule(Update);
+        .trigger(bevy::ui_widgets::Activate { entity: rematch });
     app.update();
 
     assert_eq!(
         *app.world().resource::<State<GameState>>().get(),
-        GameState::HexWfc,
-        "since Arc L Phase 95 the canonical Play/Rematch flow is the hex facility"
+        GameState::Loading,
+        "rematch uses the same prepared-launch boundary as Play"
     );
     assert_ne!(
         app.world().resource::<flow::ActiveMatchSeed>().0,
@@ -1712,6 +1793,18 @@ fn screens_are_state_scoped_and_never_leak_across_the_loop() {
 }
 
 #[test]
+fn main_menu_requires_explicit_quit_activation() {
+    let mut app = test_app();
+    go(&mut app, GameState::MainMenu);
+    let scope = {
+        let world = app.world_mut();
+        let mut scopes = world.query::<&screens::widgets::FocusScope>();
+        *scopes.single(world).expect("main menu has one focus scope")
+    };
+    assert_eq!(scope.back, None, "Escape/B must not silently activate Quit");
+}
+
+#[test]
 fn equipping_a_cosmetic_from_the_loadout_persists_in_the_career() {
     use observed_progression::progression::catalog;
     let mut app = test_app();
@@ -1724,23 +1817,27 @@ fn equipping_a_cosmetic_from_the_loadout_persists_in_the_career() {
         }
     }
     // Pick an unlocked cosmetic and put the menu cursor on its row.
-    let (index, id) = {
+    let id = {
         let career = app.world().resource::<Career>();
         catalog()
             .iter()
-            .enumerate()
-            .find(|(_, c)| career.profile.is_unlocked(c.id))
-            .map(|(i, c)| (i, c.id))
+            .find(|c| career.profile.is_unlocked(c.id))
+            .map(|c| c.id)
             .expect("at least one cosmetic is unlocked after a few wins")
     };
     go(&mut app, GameState::Loadout);
-    app.world_mut().resource_mut::<screens::MenuCursor>().0 = index;
-    // Press Enter and run only the Update schedule, so the input-clear in
-    // PreUpdate does not wipe the press before `menu_activate` reads it.
+    let equip = {
+        let world = app.world_mut();
+        let mut actions = world.query::<(Entity, &screens::loadout::LoadoutAction)>();
+        actions
+            .iter(world)
+            .find_map(|(entity, action)| {
+                (*action == screens::loadout::LoadoutAction::Equip(id)).then_some(entity)
+            })
+            .expect("unlocked cosmetic exposes an equip action")
+    };
     app.world_mut()
-        .resource_mut::<ButtonInput<KeyCode>>()
-        .press(KeyCode::Enter);
-    app.world_mut().run_schedule(Update);
+        .trigger(bevy::ui_widgets::Activate { entity: equip });
     assert!(
         app.world().resource::<Career>().profile.is_equipped(id),
         "equipping from the loadout updates the persistent profile"
@@ -1751,22 +1848,43 @@ fn equipping_a_cosmetic_from_the_loadout_persists_in_the_career() {
 fn play_launches_the_canonical_hex_wfc_match() {
     let mut app = test_app();
     go(&mut app, GameState::MainMenu);
-    app.world_mut().resource_mut::<screens::MenuCursor>().0 = 0;
+    let play = {
+        let world = app.world_mut();
+        let mut actions = world.query::<(Entity, &screens::main_menu::MainAction)>();
+        actions
+            .iter(world)
+            .find_map(|(entity, action)| {
+                (*action == screens::main_menu::MainAction::Play).then_some(entity)
+            })
+            .expect("main menu exposes Play")
+    };
     app.world_mut()
-        .resource_mut::<ButtonInput<KeyCode>>()
-        .press(KeyCode::Enter);
-    app.world_mut().run_schedule(Update);
+        .trigger(bevy::ui_widgets::Activate { entity: play });
+    app.update();
+
+    let launch = {
+        let world = app.world_mut();
+        let mut actions = world.query::<(Entity, &screens::play::PlayAction)>();
+        actions
+            .iter(world)
+            .find_map(|(entity, action)| {
+                (*action == screens::play::PlayAction::Launch).then_some(entity)
+            })
+            .expect("Play hub exposes Start")
+    };
+    app.world_mut()
+        .trigger(bevy::ui_widgets::Activate { entity: launch });
     app.update();
 
     assert_eq!(
         *app.world().resource::<State<GameState>>().get(),
-        GameState::HexWfc,
-        "since Arc L Phase 95 the default Play flow is the hex facility"
+        GameState::Loading,
+        "Play finalizes an immutable launch before the canonical facility starts"
     );
     assert!(
-        !app.world()
-            .contains_resource::<crate::sim::state::SpectatorBot>(),
-        "the hex race owns its multi-runner command simulation, not the legacy spectator resource"
+        app.world()
+            .contains_resource::<crate::hex_wfc::loading::HexLaunchRequest>(),
+        "the loading boundary owns the finalized canonical launch request"
     );
 }
 
@@ -3671,15 +3789,9 @@ fn settings_screen_is_state_scoped_and_navigable() {
         "the settings screen renders its row list"
     );
 
-    let before = app
-        .world()
-        .resource::<crate::screens::settings::SettingsCursor>()
-        .0;
+    let before = focused_settings_row(&app);
     tap_update(&mut app, KeyCode::ArrowDown);
-    let after = app
-        .world()
-        .resource::<crate::screens::settings::SettingsCursor>()
-        .0;
+    let after = focused_settings_row(&app);
     assert_ne!(before, after, "Down moves the settings cursor");
 
     go(&mut app, GameState::MainMenu);
@@ -3692,9 +3804,66 @@ fn settings_screen_is_state_scoped_and_navigable() {
 }
 
 #[test]
+fn settings_back_is_hierarchical() {
+    use crate::screens::settings::{
+        SettingsPage, SettingsPageAction, SettingsRow, SettingsRowText,
+    };
+
+    let mut app = test_app();
+    go(&mut app, GameState::MainMenu);
+    go(&mut app, GameState::Settings);
+
+    let page_action = |app: &mut App, expected: SettingsPageAction| {
+        let world = app.world_mut();
+        let mut actions = world.query::<(Entity, &SettingsPageAction)>();
+        actions
+            .iter(world)
+            .find_map(|(entity, action)| (*action == expected).then_some(entity))
+            .expect("settings page action exists")
+    };
+    let open = page_action(&mut app, SettingsPageAction::OpenBindings);
+    app.world_mut()
+        .trigger(bevy::ui_widgets::Activate { entity: open });
+    app.update();
+    let bindings_page_is_visible = {
+        let world = app.world_mut();
+        let mut pages =
+            world.query_filtered::<&SettingsPage, With<crate::view::theme::ScreenRoot>>();
+        matches!(pages.single(world), Ok(SettingsPage::Bindings))
+    };
+    assert!(bindings_page_is_visible);
+
+    let controls_back = page_action(&mut app, SettingsPageAction::BackToPreferences);
+    app.world_mut().trigger(bevy::ui_widgets::Activate {
+        entity: controls_back,
+    });
+    app.update();
+    assert_eq!(
+        *app.world().resource::<State<GameState>>().get(),
+        GameState::Settings,
+        "Controls Back returns to preferences before leaving Settings"
+    );
+
+    let main_back = {
+        let world = app.world_mut();
+        let mut rows = world.query::<(Entity, &SettingsRowText)>();
+        rows.iter(world)
+            .find_map(|(entity, row)| (row.0 == SettingsRow::Back).then_some(entity))
+            .expect("preferences Back exists")
+    };
+    app.world_mut()
+        .trigger(bevy::ui_widgets::Activate { entity: main_back });
+    app.update();
+    assert_eq!(
+        *app.world().resource::<State<GameState>>().get(),
+        GameState::MainMenu
+    );
+}
+
+#[test]
 fn interactive_rebind_flow_works_correctly() {
-    use crate::screens::settings::{SettingsCursor, SettingsRebind};
-    use crate::settings::Settings;
+    use crate::screens::settings::{SettingsRebind, SettingsRow};
+    use crate::settings::{BindingSlot, Settings};
 
     let tap_update_clean = |app: &mut App, key: KeyCode| {
         {
@@ -3720,8 +3889,7 @@ fn interactive_rebind_flow_works_correctly() {
         go(&mut app, GameState::MainMenu);
         go(&mut app, GameState::Settings);
 
-        // BindingSlot::MoveLeft is at row index 5
-        app.world_mut().resource_mut::<SettingsCursor>().0 = 5;
+        focus_settings_row(&mut app, SettingsRow::Binding(BindingSlot::MoveLeft));
 
         // Press Enter to start rebind capture (enters WaitingForActivationRelease)
         tap_update_clean(&mut app, KeyCode::Enter);
@@ -3749,8 +3917,7 @@ fn interactive_rebind_flow_works_correctly() {
         go(&mut app, GameState::MainMenu);
         go(&mut app, GameState::Settings);
 
-        // BindingSlot::MoveLeft is at row index 5
-        app.world_mut().resource_mut::<SettingsCursor>().0 = 5;
+        focus_settings_row(&mut app, SettingsRow::Binding(BindingSlot::MoveLeft));
 
         // Press Enter to start rebind capture
         tap_update_clean(&mut app, KeyCode::Enter);
@@ -3774,8 +3941,7 @@ fn interactive_rebind_flow_works_correctly() {
         go(&mut app, GameState::MainMenu);
         go(&mut app, GameState::Settings);
 
-        // BindingSlot::MoveLeft is at row index 5
-        app.world_mut().resource_mut::<SettingsCursor>().0 = 5;
+        focus_settings_row(&mut app, SettingsRow::Binding(BindingSlot::MoveLeft));
 
         // Press Enter to start rebind capture
         tap_update_clean(&mut app, KeyCode::Enter);
@@ -3817,8 +3983,8 @@ fn pause_settings_rebind_flow_works_correctly() {
         app.world_mut().resource_mut::<MatchPaused>().0 = true;
         app.world_mut().resource_mut::<PauseSettingsOpen>().0 = true;
 
-        // BindingSlot::MoveLeft is at row index 5
-        app.world_mut().resource_mut::<PauseSettingsCursor>().0 = 5;
+        // BindingSlot::MoveLeft is at row index 6
+        app.world_mut().resource_mut::<PauseSettingsCursor>().0 = 6;
 
         let tap_update_clean = |app: &mut App, key: KeyCode| {
             {
@@ -3904,45 +4070,15 @@ fn settings_round_trip_through_serde() {
     assert_eq!(settings, loaded);
 }
 
-/// First-run onboarding: on a fresh `Settings` (first_run == true), entering the
-/// Match spawns the onboarding panel; dismissing it (Escape) flips the flag so it
-/// will not show again on a subsequent match with the same `Settings`.
 #[test]
-fn first_run_onboarding_shows_once() {
+fn deprecated_match_never_spawns_canonical_onboarding() {
     let mut app = test_app();
     app.insert_resource(crate::settings::Settings::default());
     go(&mut app, GameState::Match);
     assert_eq!(
         count::<crate::screens::onboarding::OnboardingPanel>(&mut app),
-        1,
-        "a fresh Settings (first_run) shows the onboarding panel on the first match"
-    );
-
-    // Dismiss it explicitly.
-    tap_update(&mut app, KeyCode::Escape);
-    app.world_mut()
-        .resource_mut::<crate::sim::state::MatchPaused>()
-        .0 = false;
-    assert!(
-        !app.world()
-            .resource::<crate::settings::Settings>()
-            .first_run,
-        "dismissing onboarding flips first_run false"
-    );
-    assert_eq!(
-        count::<crate::screens::onboarding::OnboardingPanel>(&mut app),
         0,
-        "the onboarding panel despawns once dismissed"
-    );
-
-    finish_match(&mut app);
-    go(&mut app, GameState::MainMenu);
-    go(&mut app, GameState::Lobby);
-    go(&mut app, GameState::Match);
-    assert_eq!(
-        count::<crate::screens::onboarding::OnboardingPanel>(&mut app),
-        0,
-        "onboarding does not show again once first_run has flipped"
+        "the archived Place fixture cannot present canonical first-run help"
     );
 }
 
@@ -4793,9 +4929,7 @@ mod hex_wfc_gates {
     use super::*;
     use crate::hex_wfc::sim::{HexWfcRuntime, load_prototypes};
     use crate::sim::state::SpectatorBot;
-    use observed_match::hex_wfc::{
-        HexInputFrame, HexMatchConfig, HexMatchStatus, HexPlayerCommand, HexWfcMatch,
-    };
+    use observed_match::hex_wfc::{HexInputFrame, HexMatchConfig, HexMatchStatus, HexWfcMatch};
 
     /// A solvable compact showcase match near `base` (mirrors the adapter's offset
     /// search so a rare contradiction seed cannot flake the test).
@@ -4825,14 +4959,12 @@ mod hex_wfc_gates {
             tick: game.tick + 1,
             ..Default::default()
         };
+        // Mirror `hex_wfc::sim::step_runtime` exactly. The Arc P objective loop drives
+        // bots through `bot_player_command`, which also presses the action buttons a
+        // keystone/station beat needs; the older intent-only `bot_command` would make
+        // this fork diverge from the interactive path on its first tick.
         for id in game.players.keys().copied().collect::<Vec<_>>() {
-            frame.commands.insert(
-                id,
-                HexPlayerCommand {
-                    intent: game.bot_command(id),
-                    actions: Default::default(),
-                },
-            );
+            frame.commands.insert(id, game.bot_player_command(id));
         }
         game.step(&frame);
         game.snapshot().digest
@@ -4949,10 +5081,11 @@ mod hex_wfc_gates {
                 .snapshot()
                 .digest;
             let headless_digest = step_all_bots(&mut headless);
+            let interactive_tick = app.world().resource::<HexWfcRuntime>().match_state.tick;
             assert_eq!(
                 interactive, headless_digest,
-                "interactive tick {} diverged from headless",
-                headless.tick
+                "interactive tick {} (headless tick {}) diverged from headless",
+                interactive_tick, headless.tick
             );
         }
     }
@@ -5062,5 +5195,289 @@ mod hex_wfc_gates {
             game.players.values().all(|player| player.escaped),
             "a finished hex match escapes all runners"
         );
+    }
+
+    // ---- Phase 105: the full-screen isometric survivor map ----
+    //
+    // The map replaced the corner sketch, and it grew from a lab that renders
+    // ground truth. These gates exist because that lineage is exactly the way
+    // this feature could go wrong: the map must never draw a cell the team has
+    // not discovered, and must never surface a rival.
+
+    use crate::hex_wfc::view::map::{HexMapCamera, HexMapCell, HexMapProjection, HexMapVisual};
+
+    /// Drive the app far enough that the team has discovered some, but nowhere
+    /// near all, of the facility, then open the map.
+    fn app_with_open_map_after(ticks: u32) -> App {
+        app_with_open_map_for(ticks, crate::play_setup::PlayPreset::Solo)
+    }
+
+    /// Direct HexWfc entry builds its roster from [`PlaySetupDraft`], whose default is
+    /// now the Solo preset. A test about rival teams has to ask for a multi-team run
+    /// rather than inherit one.
+    fn app_with_open_map_for(ticks: u32, preset: crate::play_setup::PlayPreset) -> App {
+        let mut app = test_app();
+        app.world_mut()
+            .insert_resource(crate::play_setup::PlaySetupDraft::for_preset(preset));
+        app.world_mut()
+            .insert_resource(flow::ActiveMatchSeed(flow::MATCH_SEED));
+        app.world_mut()
+            .insert_resource(SpectatorBot::for_seed(flow::MATCH_SEED));
+        go(&mut app, GameState::HexWfc);
+        for _ in 0..ticks {
+            app.world_mut().run_schedule(FixedUpdate);
+        }
+        app.world_mut().resource_mut::<HexWfcRuntime>().map_open = true;
+        app.world_mut().run_schedule(Update);
+        app
+    }
+
+    #[test]
+    fn the_map_draws_no_cell_the_team_has_not_discovered() {
+        let mut app = app_with_open_map_after(120);
+        let (known, placed) = {
+            let runtime = app.world().resource::<HexWfcRuntime>();
+            let known = runtime
+                .match_state
+                .player_map(runtime.local_player)
+                .expect("the local player owns survivor knowledge")
+                .cells
+                .len();
+            (known, runtime.match_state.facility.placements.len())
+        };
+        let drawn = count::<HexMapCell>(&mut app);
+
+        assert!(known > 0, "the bot must have discovered something by now");
+        assert!(
+            known < placed,
+            "the fixture is only meaningful while most of the facility is undiscovered \
+             ({known} known of {placed} placed)"
+        );
+        // Cells plus at most the three markers: you, the exit, and anchors.
+        assert!(
+            drawn <= known + 3,
+            "the map drew {drawn} solids for {known} known cells — it is reading \
+             the facility, not the survivor's knowledge"
+        );
+        assert!(
+            drawn < placed,
+            "the map drew {drawn} solids against {placed} placed cells — undiscovered \
+             geometry reached the screen"
+        );
+    }
+
+    /// Inspects what was actually drawn, not merely what was read. Every solid
+    /// the map spawned must stand over a hex the local team knows.
+    ///
+    /// The comparison is on plan position `(x, z)`, which is unique per `(q, r)`
+    /// and shared by a column's levels. So this catches the leak that matters —
+    /// drawing into a region the team has never been — and deliberately does not
+    /// try to catch a same-column, wrong-level leak; the count gate in
+    /// `the_map_draws_no_cell_the_team_has_not_discovered` bounds that one.
+    ///
+    /// Note what this does *not* prove. Rival separation is structural: knowledge
+    /// is stored per team and `player_map` resolves through the asking player's
+    /// team, so a rival's discoveries are unreachable from here by construction
+    /// (covered by `observed_match`'s own knowledge tests). It is not asserted
+    /// here because the headless fixture cannot produce it — without the full app
+    /// loop the bots never leave spawn, so both teams know exactly the same cells
+    /// and any rival assertion would pass vacuously.
+    #[test]
+    fn every_solid_the_map_draws_stands_over_a_hex_the_team_knows() {
+        let mut app = app_with_open_map_after(120);
+        let known_plan = {
+            let runtime = app.world().resource::<HexWfcRuntime>();
+            runtime
+                .match_state
+                .player_map(runtime.local_player)
+                .expect("local knowledge")
+                .cells
+                .keys()
+                .map(|cell| observed_hex::hex_origin_plan(*cell))
+                .collect::<std::collections::BTreeSet<_>>()
+        };
+
+        let drawn = {
+            let world = app.world_mut();
+            let mut query = world.query_filtered::<&Transform, With<HexMapCell>>();
+            query
+                .iter(world)
+                .map(|transform| {
+                    #[allow(clippy::cast_possible_truncation)]
+                    (
+                        transform.translation.x.round() as i32,
+                        transform.translation.z.round() as i32,
+                    )
+                })
+                .collect::<std::collections::BTreeSet<_>>()
+        };
+
+        assert!(!drawn.is_empty(), "the map must have drawn something");
+        let leaked = drawn.difference(&known_plan).collect::<Vec<_>>();
+        assert!(
+            leaked.is_empty(),
+            "the map drew {} solid(s) over hexes the team has never discovered: {:?}",
+            leaked.len(),
+            &leaked[..leaked.len().min(5)]
+        );
+    }
+
+    /// The connectivity channel is easy to break silently — a wrong port check
+    /// draws nothing and the map still looks fine, just less useful. This asserts
+    /// the map spawns more than its cells, which it can only do by drawing the
+    /// links between them.
+    #[test]
+    fn the_map_draws_the_connections_between_its_cells() {
+        let mut app = app_with_open_map_after(120);
+        let cells = count::<HexMapCell>(&mut app);
+        let everything = count::<HexMapVisual>(&mut app);
+        assert!(cells > 0, "the map must have drawn cells");
+        assert!(
+            everything > cells,
+            "the map drew {cells} cells and {everything} entities total — the \
+             connection bars are missing, so the sketch is a field of tiles \
+             rather than a graph"
+        );
+    }
+
+    /// The structural half of the fog-of-war contract: knowledge is team-scoped,
+    /// so the map's source of truth is reachable only for the asking player's own
+    /// team.
+    #[test]
+    fn survivor_knowledge_is_keyed_per_team_not_per_player() {
+        let app = app_with_open_map_for(120, crate::play_setup::PlayPreset::TeamRace);
+        let runtime = app.world().resource::<HexWfcRuntime>();
+        let local_team = runtime.local().team;
+        let local = runtime
+            .match_state
+            .player_map(runtime.local_player)
+            .expect("local knowledge");
+
+        assert!(
+            std::ptr::eq(
+                local,
+                runtime
+                    .match_state
+                    .team_map(local_team)
+                    .expect("the local team owns a map")
+            ),
+            "a player's map must be its team's map, not a private copy"
+        );
+        let rival = runtime
+            .match_state
+            .players
+            .values()
+            .find(|player| player.team != local_team)
+            .expect("the Team race preset seats more than one team");
+        let rival_map = runtime
+            .match_state
+            .player_map(rival.id)
+            .expect("the rival team owns a map");
+        assert!(
+            !std::ptr::eq(local, rival_map),
+            "a rival on another team must resolve to a different knowledge entry"
+        );
+    }
+
+    /// A spawned UI entity is not a *visible* one. Without an explicit
+    /// `IsDefaultUiCamera`, Bevy hands every root node to the highest-order camera
+    /// rendering to the primary window, and `is_active` is not part of that choice — so
+    /// the survivor map's order-1 camera captured the pause overlay, HUD, and every menu
+    /// while sitting inactive, and they drew nowhere. Every existing overlay test passed
+    /// throughout, because they assert entities exist rather than where they render.
+    #[test]
+    fn in_match_ui_targets_the_active_world_camera_not_the_dormant_map_camera() {
+        use crate::hex_wfc::view::map::HexMapCamera;
+        use crate::view::components::GameCam;
+        use bevy::ui::IsDefaultUiCamera;
+
+        let mut app = app_with_open_map_after(1);
+        // The map fixture leaves the map open; close it so this is ordinary play.
+        app.world_mut().resource_mut::<HexWfcRuntime>().map_open = false;
+        app.update();
+
+        let world = app.world_mut();
+        let default_ui_cameras = world
+            .query_filtered::<Entity, (With<Camera>, With<IsDefaultUiCamera>)>()
+            .iter(world)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            default_ui_cameras.len(),
+            1,
+            "exactly one camera must claim the UI; zero means Bevy infers it by order"
+        );
+
+        let world_camera = world
+            .query_filtered::<Entity, With<GameCam>>()
+            .single(world)
+            .expect("the world camera exists in a hex match");
+        assert_eq!(
+            default_ui_cameras[0], world_camera,
+            "the UI must belong to the world camera, not whichever camera sorts last"
+        );
+
+        let map_camera = world
+            .query_filtered::<&Camera, With<HexMapCamera>>()
+            .single(world)
+            .expect("the survivor map camera exists in a hex match");
+        assert!(
+            map_camera.order > 0 && !map_camera.is_active,
+            "this test is only meaningful while the map camera outranks the world camera \
+             and is dormant during play; if that changed, the trap it guards changed too"
+        );
+    }
+
+    #[test]
+    fn the_map_never_leaks_past_the_hex_state() {
+        let mut app = app_with_open_map_after(120);
+        assert!(
+            count::<HexMapVisual>(&mut app) > 0,
+            "the map must have drawn something before the leak check is meaningful"
+        );
+        assert!(app.world().contains_resource::<HexMapProjection>());
+
+        go(&mut app, GameState::Results);
+
+        assert_eq!(
+            count::<HexMapVisual>(&mut app),
+            0,
+            "map geometry never leaks past the hex state"
+        );
+        assert_eq!(
+            count::<HexMapCamera>(&mut app),
+            0,
+            "the map camera never leaks past the hex state"
+        );
+        assert!(
+            !app.world().contains_resource::<HexMapProjection>(),
+            "the projection cache never leaks past the hex state"
+        );
+    }
+
+    #[test]
+    fn the_map_camera_is_dormant_until_the_map_is_opened() {
+        let mut app = test_app();
+        app.world_mut()
+            .insert_resource(flow::ActiveMatchSeed(flow::MATCH_SEED));
+        app.world_mut()
+            .insert_resource(SpectatorBot::for_seed(flow::MATCH_SEED));
+        go(&mut app, GameState::HexWfc);
+        app.world_mut().run_schedule(Update);
+
+        let closed = {
+            let world = app.world_mut();
+            let mut query = world.query_filtered::<&Camera, With<HexMapCamera>>();
+            query.single(world).expect("one map camera").is_active
+        };
+        assert!(!closed, "the map camera is off while the map is closed");
+
+        app.world_mut().resource_mut::<HexWfcRuntime>().map_open = true;
+        app.world_mut().run_schedule(Update);
+        let opened = {
+            let world = app.world_mut();
+            let mut query = world.query_filtered::<&Camera, With<HexMapCamera>>();
+            query.single(world).expect("one map camera").is_active
+        };
+        assert!(opened, "opening the map activates its camera");
     }
 }

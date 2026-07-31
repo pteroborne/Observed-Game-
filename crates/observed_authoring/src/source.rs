@@ -62,6 +62,46 @@ pub struct ModulePort {
     pub name: String,
 }
 
+/// Typed gameplay attachment authored inside a whole-room module.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RoomSocketKind {
+    Keystone,
+    StationA,
+    StationB,
+    Monitor,
+    LanternCache,
+    GuardianControl,
+    Recovery,
+    Exit,
+}
+
+impl RoomSocketKind {
+    fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "keystone" => Self::Keystone,
+            "station_a" => Self::StationA,
+            "station_b" => Self::StationB,
+            "monitor" => Self::Monitor,
+            "lantern_cache" => Self::LanternCache,
+            "guardian_control" => Self::GuardianControl,
+            "recovery" => Self::Recovery,
+            "exit" => Self::Exit,
+            _ => return None,
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ModuleSocket {
+    pub id: String,
+    pub kind: RoomSocketKind,
+    pub cell: ModuleCellRef,
+    /// Room-local world-space metres, Y-up.
+    pub position: Vec3,
+    pub yaw_degrees: f32,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct ModuleCellRef {
     pub q: i16,
@@ -83,6 +123,7 @@ pub struct AuthoredModule {
     pub weight: u16,
     pub footprint: Vec<ModuleCell>,
     pub ports: Vec<ModulePort>,
+    pub sockets: Vec<ModuleSocket>,
     pub prototype: TilePrototype,
 }
 
@@ -98,6 +139,14 @@ pub enum SourceError {
     DuplicatePort {
         cell: ModuleCellRef,
         face: HexFace,
+    },
+    DuplicateSocketId(String),
+    SocketCellMissing(ModuleCellRef),
+    SocketContract {
+        room_role: String,
+        kind: RoomSocketKind,
+        expected: usize,
+        actual: usize,
     },
     CellModuleFootprint,
     RoomRoleMissing,
@@ -174,7 +223,11 @@ fn parse_origin(value: &str) -> Option<[f64; 3]> {
     (values.len() == 3).then_some([values[0], values[1], values[2]])
 }
 
-fn cell_ref(entity: &Entity, required_coordinates: bool) -> Result<ModuleCellRef, SourceError> {
+fn entity_cell_ref(
+    entity: &Entity,
+    entity_name: &'static str,
+    required_coordinates: bool,
+) -> Result<ModuleCellRef, SourceError> {
     if !required_coordinates && prop(entity, "q").is_none() {
         return Ok(ModuleCellRef {
             q: 0,
@@ -183,10 +236,18 @@ fn cell_ref(entity: &Entity, required_coordinates: bool) -> Result<ModuleCellRef
         });
     }
     Ok(ModuleCellRef {
-        q: parse_i16(entity, "tile_port", "q")?,
-        r: parse_i16(entity, "tile_port", "r")?,
-        level: parse_i8(entity, "tile_port", "level")?,
+        q: parse_i16(entity, entity_name, "q")?,
+        r: parse_i16(entity, entity_name, "r")?,
+        level: parse_i8(entity, entity_name, "level")?,
     })
+}
+
+fn editor_origin_to_world(origin: [f64; 3]) -> Vec3 {
+    Vec3::new(
+        (origin[0] / UNITS_PER_METER) as f32,
+        (origin[2] / UNITS_PER_METER) as f32,
+        (-origin[1] / UNITS_PER_METER) as f32,
+    )
 }
 
 fn expanded_cells(footprint: &[ModuleCell]) -> BTreeSet<ModuleCellRef> {
@@ -477,9 +538,55 @@ pub fn validate_module(module: &AuthoredModule) -> Result<(), SourceError> {
     }
     validate_connectivity(module)?;
     validate_ports(module)?;
+    validate_sockets(module)?;
     if module.authoring_version >= 2 {
         validate_floor_and_headroom(module)?;
         validate_ramps(module)?;
+    }
+    Ok(())
+}
+
+fn validate_sockets(module: &AuthoredModule) -> Result<(), SourceError> {
+    let footprint = expanded_cells(&module.footprint);
+    let mut ids = BTreeSet::new();
+    for socket in &module.sockets {
+        if !ids.insert(socket.id.as_str()) {
+            return Err(SourceError::DuplicateSocketId(socket.id.clone()));
+        }
+        if !footprint.contains(&socket.cell) {
+            return Err(SourceError::SocketCellMissing(socket.cell));
+        }
+    }
+    if module.authoring_version < 2 || module.kind != ModuleKind::Room {
+        return Ok(());
+    }
+    let Some(role) = module.room_role.as_deref() else {
+        return Ok(());
+    };
+    let required: &[RoomSocketKind] = match role {
+        "Keystone" => &[RoomSocketKind::Keystone],
+        "DualStation" => &[RoomSocketKind::StationA, RoomSocketKind::StationB],
+        "Monitor" => &[RoomSocketKind::Monitor],
+        "AnchorCheckpoint" => &[RoomSocketKind::LanternCache],
+        "GuardianControl" => &[RoomSocketKind::GuardianControl],
+        "Recovery" => &[RoomSocketKind::Recovery],
+        "Exit" => &[RoomSocketKind::Exit],
+        _ => &[],
+    };
+    for &kind in required {
+        let actual = module
+            .sockets
+            .iter()
+            .filter(|socket| socket.kind == kind)
+            .count();
+        if actual != 1 {
+            return Err(SourceError::SocketContract {
+                room_role: role.to_string(),
+                kind,
+                expected: 1,
+                actual,
+            });
+        }
     }
     Ok(())
 }
@@ -635,7 +742,11 @@ pub fn parse_authored_module(text: &str) -> Result<AuthoredModule, SourceError> 
             None => None,
         };
         ports.push(ModulePort {
-            cell: cell_ref(entity, authoring_version >= 2 && kind == ModuleKind::Room)?,
+            cell: entity_cell_ref(
+                entity,
+                "tile_port",
+                authoring_version >= 2 && kind == ModuleKind::Room,
+            )?,
             face,
             class,
             origin,
@@ -643,6 +754,44 @@ pub fn parse_authored_module(text: &str) -> Result<AuthoredModule, SourceError> 
         });
     }
     ports.sort_by_key(|port| (port.cell, port.face));
+
+    let mut sockets = Vec::new();
+    for entity in &map.entities {
+        if prop(entity, "classname").as_deref() != Some("tile_socket") {
+            continue;
+        }
+        let id = required(entity, "tile_socket", "id")?;
+        let kind_name = required(entity, "tile_socket", "kind")?;
+        let socket_kind =
+            RoomSocketKind::parse(&kind_name).ok_or_else(|| SourceError::InvalidProperty {
+                entity: "tile_socket",
+                detail: format!("unknown socket kind {kind_name:?}"),
+            })?;
+        let origin_text = required(entity, "tile_socket", "origin")?;
+        let origin = parse_origin(&origin_text).ok_or_else(|| SourceError::InvalidProperty {
+            entity: "tile_socket",
+            detail: "origin must contain three numbers".to_string(),
+        })?;
+        let yaw_degrees = prop(entity, "yaw")
+            .unwrap_or_else(|| "0".to_string())
+            .parse::<f32>()
+            .map_err(|_| SourceError::InvalidProperty {
+                entity: "tile_socket",
+                detail: "yaw must be a number".to_string(),
+            })?;
+        sockets.push(ModuleSocket {
+            id,
+            kind: socket_kind,
+            cell: entity_cell_ref(
+                entity,
+                "tile_socket",
+                authoring_version >= 2 && kind == ModuleKind::Room,
+            )?,
+            position: editor_origin_to_world(origin),
+            yaw_degrees,
+        });
+    }
+    sockets.sort_by(|a, b| a.id.cmp(&b.id));
 
     let module = AuthoredModule {
         authoring_version,
@@ -655,6 +804,7 @@ pub fn parse_authored_module(text: &str) -> Result<AuthoredModule, SourceError> 
         weight,
         footprint,
         ports,
+        sockets,
         prototype,
     };
     validate_module(&module)?;
@@ -669,6 +819,7 @@ pub struct ModuleSummary {
     pub kind: ModuleKind,
     pub footprint_cells: usize,
     pub ports: usize,
+    pub sockets: usize,
     pub hulls: usize,
     pub lights: usize,
 }
@@ -681,6 +832,7 @@ impl From<&AuthoredModule> for ModuleSummary {
             kind: module.kind,
             footprint_cells: expanded_cells(&module.footprint).len(),
             ports: module.ports.len(),
+            sockets: module.sockets.len(),
             hulls: module.prototype.hulls.len(),
             lights: module.prototype.lights.len(),
         }
@@ -763,5 +915,31 @@ mod tests {
             parse_authored_module(&map),
             Err(SourceError::PortOnInternalFace { .. }) | Err(SourceError::FloorGap(_))
         ));
+    }
+
+    #[test]
+    fn room_socket_contract_requires_both_dual_station_operators() {
+        let cells = "{\n\"classname\" \"tile_cell\"\n\"q\" \"0\"\n\"r\" \"0\"\n\"level\" \"0\"\n\"floor\" \"solid\"\n}\n";
+        let station_a = "{\n\"classname\" \"tile_socket\"\n\"id\" \"station_a\"\n\"kind\" \"station_a\"\n\"q\" \"0\"\n\"r\" \"0\"\n\"level\" \"0\"\n\"origin\" \"-24 0 24\"\n}\n";
+        let station_b = "{\n\"classname\" \"tile_socket\"\n\"id\" \"station_b\"\n\"kind\" \"station_b\"\n\"q\" \"0\"\n\"r\" \"0\"\n\"level\" \"0\"\n\"origin\" \"24 0 24\"\n}\n";
+        let room = |sockets: &str| {
+            strict_map("", cells, "").replace(
+                "\"kind\" \"cell\"",
+                "\"kind\" \"room\"\n\"room_role\" \"DualStation\"",
+            ) + sockets
+        };
+
+        assert!(matches!(
+            parse_authored_module(&room(station_a)),
+            Err(SourceError::SocketContract {
+                kind: RoomSocketKind::StationB,
+                actual: 0,
+                ..
+            })
+        ));
+        let parsed = parse_authored_module(&room(&(station_a.to_string() + station_b)))
+            .expect("complete station socket contract");
+        assert_eq!(parsed.sockets.len(), 2);
+        assert_eq!(ModuleSummary::from(&parsed).sockets, 2);
     }
 }

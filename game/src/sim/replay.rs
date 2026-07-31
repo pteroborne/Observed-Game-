@@ -288,7 +288,7 @@ impl ReplayTape {
         let mut tape = Self {
             seed: game.seed,
             input_version: observed_match::hex_wfc::HEX_INPUT_VERSION,
-            map_name: "hex_wfc_v2".to_string(),
+            map_name: "hex_wfc_v3".to_string(),
             simulation_content_hash: game.simulation_content_hash,
             presentation_content_hash: [0; 32],
             rooms: Vec::new(),

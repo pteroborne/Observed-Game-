@@ -976,6 +976,27 @@ pub(crate) fn play_ui_sound(
     }
 }
 
+/// Translate semantic widget feedback into the existing UI audio bus. Pointer,
+/// keyboard, and controller activation all arrive through the same message path.
+pub(crate) fn play_frontend_feedback(
+    mut commands: Commands,
+    mut feedback: MessageReader<crate::screens::widgets::UiFeedback>,
+    assets: Res<crate::view::components::UiAssets>,
+    settings: Res<Settings>,
+) {
+    for event in feedback.read() {
+        let (sound, cue) = match event {
+            crate::screens::widgets::UiFeedback::FocusMoved => {
+                (&assets.hover, MatchAudioCue::UiHover)
+            }
+            crate::screens::widgets::UiFeedback::Activated => {
+                (&assets.click, MatchAudioCue::UiClick)
+            }
+        };
+        play_ui_sound(&mut commands, None, sound, cue, &settings);
+    }
+}
+
 pub(crate) fn fade_ambience_beds(
     time: Res<Time>,
     tp: Res<TeleportState>,

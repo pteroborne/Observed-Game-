@@ -11,10 +11,10 @@ use sha2::{Digest, Sha256};
 
 use crate::manifest::{Manifest, ManifestEntry, PortDecl, TileKey};
 use crate::source::{
-    AuthoredModule, ModuleCell, ModuleCellRef, ModuleKind, RotationPolicy, SourceError,
-    parse_authored_module,
+    AuthoredModule, ModuleCell, ModuleCellRef, ModuleKind, RoomSocketKind, RotationPolicy,
+    SourceError, parse_authored_module,
 };
-use crate::tile::{TileLight, TileLightKind, TilePrototype};
+use crate::tile::{DeckPath, StairSpine, TileLight, TileLightKind, TilePrototype};
 
 pub const COMPILED_CATALOG_VERSION: u16 = 3;
 
@@ -39,6 +39,15 @@ pub struct CompiledLight {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct CompiledSocket {
+    pub id: String,
+    pub kind: RoomSocketKind,
+    pub cell: ModuleCellRef,
+    pub position: [f32; 3],
+    pub yaw_degrees: f32,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CompiledModule {
     pub id: String,
     pub source_path: String,
@@ -56,6 +65,22 @@ pub struct CompiledModule {
     pub footprint: Vec<ModuleCell>,
     pub ports: Vec<CompiledPort>,
     pub lights: Vec<CompiledLight>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sockets: Vec<CompiledSocket>,
+    /// Climb nodes in tile-local metres, bottom to top.
+    ///
+    /// Skipped when empty, which matters more than it looks: the catalog's
+    /// canonical serialization *is* the simulation content hash, and that hash
+    /// gates LAN compatibility. Writing `stair_spine: []` into every module
+    /// would have moved it for every client without a single module's geometry
+    /// changing. It moves when a module actually declares a climb, and not
+    /// before.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stair_spine: Vec<[f32; 3]>,
+    /// Walkable floor path in tile-local metres. Skipped when empty, for the
+    /// same content-hash reason as `stair_spine`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deck_path: Vec<[f32; 3]>,
     pub structural_hash: String,
     /// Present while the old runtime manifest remains the compatibility seam.
     pub legacy_key: Option<TileKey>,
@@ -70,6 +95,15 @@ pub struct RoomPrototypePort {
     pub name: String,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoomPrototypeSocket {
+    pub id: String,
+    pub kind: RoomSocketKind,
+    pub cell: ModuleCellRef,
+    pub position: Vec3,
+    pub yaw_degrees: f32,
+}
+
 /// Runtime geometry for one whole-room module. Hull points and footprint cells
 /// are already rotated into one accepted orientation around the room anchor.
 #[derive(Clone, Debug, PartialEq)]
@@ -80,6 +114,7 @@ pub struct RoomPrototype {
     pub weight: u16,
     pub footprint: Vec<ModuleCellRef>,
     pub ports: Vec<RoomPrototypePort>,
+    pub sockets: Vec<RoomPrototypeSocket>,
     pub hulls: Vec<Vec<Vec3>>,
     pub lights: Vec<TileLight>,
 }
@@ -102,7 +137,8 @@ pub struct CompiledTileCatalog {
 
 impl CompiledTileCatalog {
     pub fn to_pretty_ron(&self) -> Result<String, CatalogError> {
-        ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default())
+        let config = ron::ser::PrettyConfig::default().new_line("\n".to_owned());
+        ron::ser::to_string_pretty(self, config)
             .map_err(|error| CatalogError::Serialize(error.to_string()))
     }
 
@@ -158,11 +194,34 @@ impl CompiledTileCatalog {
                 }
                 let rotated_hulls = rotate_hulls(hulls, turn);
                 let rotated_lights = rotate_lights(&module.lights, turn);
+                let rotated_spine = StairSpine {
+                    nodes: module
+                        .stair_spine
+                        .iter()
+                        .copied()
+                        .map(Vec3::from_array)
+                        .collect(),
+                }
+                .rotated(turn);
+                let rotated_deck = DeckPath {
+                    nodes: module
+                        .deck_path
+                        .iter()
+                        .copied()
+                        .map(Vec3::from_array)
+                        .collect(),
+                }
+                .rotated(turn);
                 let rotated_ports = module
                     .ports
                     .iter()
                     .map(|port| runtime_port(port, turn))
                     .collect::<Result<Vec<_>, _>>()?;
+                let rotated_sockets = module
+                    .sockets
+                    .iter()
+                    .map(|socket| runtime_socket(socket, turn))
+                    .collect::<Vec<_>>();
                 for register in &registers {
                     let key = TileKey {
                         archetype: module.archetype.clone(),
@@ -201,6 +260,8 @@ impl CompiledTileCatalog {
                                 signature,
                                 hulls: rotated_hulls.clone(),
                                 lights: rotated_lights.clone(),
+                                spine: rotated_spine.clone(),
+                                deck: rotated_deck.clone(),
                             });
                         }
                         ModuleKind::Room => runtime.rooms.push(RoomPrototype {
@@ -213,6 +274,7 @@ impl CompiledTileCatalog {
                             weight: module.weight,
                             footprint: expanded_rotated_footprint(&module.footprint, turn),
                             ports: rotated_ports.clone(),
+                            sockets: rotated_sockets.clone(),
                             hulls: rotated_hulls.clone(),
                             lights: rotated_lights.clone(),
                         }),
@@ -225,6 +287,17 @@ impl CompiledTileCatalog {
             .rooms
             .sort_by(|a, b| (&a.room_role, &a.key, &a.id).cmp(&(&b.room_role, &b.key, &b.id)));
         Ok(runtime)
+    }
+}
+
+fn runtime_socket(socket: &CompiledSocket, turn: u8) -> RoomPrototypeSocket {
+    let rotation = Quat::from_rotation_y(-f32::from(turn) * std::f32::consts::TAU / 6.0);
+    RoomPrototypeSocket {
+        id: socket.id.clone(),
+        kind: socket.kind,
+        cell: rotate_cell(socket.cell, turn),
+        position: rotation * Vec3::from_array(socket.position),
+        yaw_degrees: socket.yaw_degrees - f32::from(turn) * 60.0,
     }
 }
 
@@ -540,6 +613,31 @@ fn compile_module(
             position: light.position.to_array(),
         })
         .collect();
+    let sockets = module
+        .sockets
+        .iter()
+        .map(|socket| CompiledSocket {
+            id: socket.id.clone(),
+            kind: socket.kind,
+            cell: socket.cell,
+            position: socket.position.to_array(),
+            yaw_degrees: socket.yaw_degrees,
+        })
+        .collect();
+    let stair_spine = module
+        .prototype
+        .spine
+        .nodes
+        .iter()
+        .map(Vec3::to_array)
+        .collect();
+    let deck_path = module
+        .prototype
+        .deck
+        .nodes
+        .iter()
+        .map(Vec3::to_array)
+        .collect();
     CompiledModule {
         id: module.id.clone(),
         source_path,
@@ -558,6 +656,9 @@ fn compile_module(
         footprint: module.footprint.clone(),
         ports,
         lights,
+        sockets,
+        stair_spine,
+        deck_path,
         structural_hash,
         legacy_key: (module.authoring_version < 2).then(|| module.prototype.key.clone()),
     }
@@ -853,6 +954,16 @@ mod tests {
         assert_eq!(first.audit.strict_sources, 1);
         assert_eq!(first.audit.compatibility_manifest_entries, 0);
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn canonical_catalog_ron_always_uses_lf_line_endings() {
+        let ron = CompiledTileCatalog::default()
+            .to_pretty_ron()
+            .expect("serialize catalog");
+
+        assert!(ron.contains('\n'));
+        assert!(!ron.contains('\r'));
     }
 
     #[test]

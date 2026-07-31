@@ -12,7 +12,8 @@
 //! - `hall_cap`, `ramp`: the door / exit face index (0..5).
 //! - `hall_corner`: `low_face * 6 + high_face`.
 //! - `hall_junction`: bitmask of open faces (`1 << face_index`).
-//! - rooms: 0 (unique per archetype already).
+//! - rooms: 0 (unique per wing archetype); `room_single` variant 0 is the
+//!   one-threshold room and variant 1 is Start's two-threshold room.
 
 mod catalog;
 mod geometry;
@@ -38,18 +39,39 @@ pub use verticals::{
 /// Production-authored modules may deliberately cover only a curated subset of
 /// signatures. These generated cells preserve the hard topology/geometry
 /// contract underneath that subset without requiring hundreds of derived `.map`
-/// files in the repository. Exact register-authored cells still win selection;
-/// this kit is keyed as `generic` and is used only for missing signatures.
+/// files in the repository.
+///
+/// **One kit per register**, since Arc O Phase 110. It used to be a single
+/// institutional-derived library relabelled `generic`, consulted whenever an
+/// exact register tile was missing — and since only Liminal Grid had authored
+/// modules, "whenever" meant nearly always. Nine of the ten districts were built
+/// entirely out of one district's geometry, which is why they read as one place
+/// however they were lit or composed.
+///
+/// Each register now generates its own library through [`register_style`], so a
+/// district's dado, its junction pylons and its stair towers are its own. The
+/// `generic` copy stays underneath as a net for a register nothing was generated
+/// for, and authored `.map` modules still outrank both.
 pub fn compatibility_cells() -> Result<Vec<crate::TilePrototype>, crate::TileError> {
-    catalog::library_for(&["institutional"])
+    let convert = |source: catalog::GeneratedTile, register: Option<&str>| {
+        let mut tile = crate::parse_tile(&source.text)?;
+        if let Some(register) = register {
+            tile.key.register = register.to_string();
+        }
+        tile.key.archetype = compatibility_archetype(&tile).to_string();
+        Ok(tile)
+    };
+
+    let mut cells = catalog::library_for(&["institutional"])
         .into_iter()
-        .map(|source| {
-            let mut tile = crate::parse_tile(&source.text)?;
-            tile.key.register = "generic".to_string();
-            tile.key.archetype = compatibility_archetype(&tile).to_string();
-            Ok(tile)
-        })
-        .collect()
+        .map(|source| convert(source, Some("generic")))
+        .collect::<Result<Vec<_>, crate::TileError>>()?;
+    for &register in REGISTERS {
+        for source in catalog::library_for(&[register]) {
+            cells.push(convert(source, None)?);
+        }
+    }
+    Ok(cells)
 }
 
 fn compatibility_archetype(tile: &crate::TilePrototype) -> &'static str {
@@ -80,14 +102,47 @@ fn compatibility_archetype(tile: &crate::TilePrototype) -> &'static str {
         }
         "ramp" => "hall_ramp",
         "stair_segment" | "stair_top" | "stair_bottom" | "stair_landing" => "stair_tower",
+        // Room-cell geometry keeps the name it was generated under.
+        //
+        // It used to be flattened to `sanctuary` here, which was the second half
+        // of backlog #15: even once a blueprint asked for `room_tri_b`, the kit
+        // had already relabelled every wing to the same single-hex shape on the
+        // way in, so the demand could not have been met even by accident. The
+        // authored whole-room `.map` modules are a different path and still map
+        // to `sanctuary` below.
+        archetype if ROOM_CELL_ARCHETYPES.contains(&archetype) => ROOM_CELL_ARCHETYPES
+            .iter()
+            .find(|name| **name == archetype)
+            .expect("just matched"),
         archetype if archetype.starts_with("room_") => "sanctuary",
         "hall_straight" => "hall_straight",
         "hall_cap" => "hall_cap",
+        "expanse" => "expanse",
         unexpected => panic!("unmapped compatibility archetype {unexpected}"),
     }
 }
 
 /// The nine architecture registers the library is authored for.
+/// The per-cell room geometry the blueprints ask for, generated in every
+/// register. Kept as a list so [`compatibility_archetype`] can hand each name
+/// straight through with a `'static` lifetime instead of leaking a `String`.
+pub(crate) const ROOM_CELL_ARCHETYPES: &[&str] = &[
+    "room_single",
+    "room_double_west",
+    "room_double_east",
+    "room_double_nw",
+    "room_double_se",
+    "room_tri_a",
+    "room_tri_b",
+    "room_tri_c",
+    "room_fork_a",
+    "room_fork_b",
+    "room_fork_c",
+    "room_fork_d",
+    "room_atrium_lower",
+    "room_atrium_upper",
+];
+
 pub const REGISTERS: &[&str] = &[
     "shadow_screen",
     "monolith",
@@ -98,6 +153,15 @@ pub const REGISTERS: &[&str] = &[
     "wellshaft",
     "infinite_gallery",
     "thinning",
+    // Liminal Grid was absent for the whole of Arc L and Arc M, on the reasoning
+    // that it is the one district authored as `.map` modules and so needs no
+    // generated kit. That held only while the authored corpus covered every
+    // demand the solver could make. It stopped holding the moment `Expanse`
+    // arrived (backlog #20): the district whose identity *is* open space had no
+    // exact tiles for it and fell through to a fallback drawn in another
+    // district's style. A generated kit under authored modules is a floor, not a
+    // replacement — authored tiles outweigh it and still win selection.
+    "liminal_grid",
 ];
 
 /// Register-specific interior parameters, in TB units. `trim_height` is the
@@ -120,6 +184,9 @@ pub(crate) fn register_style(register: &str) -> RegisterStyle {
         "wellshaft" => (20.0, 12.0),
         "infinite_gallery" => (8.0, 10.0),
         "thinning" => (0.0, 8.0),
+        // Vast and open: the lowest trim of any district that has one, and slim
+        // pylons, so nothing in a Liminal hall interrupts the run of the walls.
+        "liminal_grid" => (6.0, 9.0),
         // institutional and the template default: a modest dado rail.
         _ => (12.0, 12.0),
     };

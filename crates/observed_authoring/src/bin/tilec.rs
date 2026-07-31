@@ -69,11 +69,12 @@ fn run() -> Result<(), String> {
             let module = read_module(&path)?;
             let summary = ModuleSummary::from(&module);
             println!(
-                "valid: {} | {:?} | {} footprint cells | {} ports | {} hulls | {} lights | contract {}",
+                "valid: {} | {:?} | {} footprint cells | {} ports | {} sockets | {} hulls | {} lights | contract {}",
                 summary.id,
                 summary.kind,
                 summary.footprint_cells,
                 summary.ports,
+                summary.sockets,
                 summary.hulls,
                 summary.lights,
                 if summary.strict {

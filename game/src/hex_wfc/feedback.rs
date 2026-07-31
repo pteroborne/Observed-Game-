@@ -38,6 +38,10 @@ pub(super) fn setup(mut commands: Commands) {
         },
         BackgroundColor(Color::srgba(0.004, 0.01, 0.024, 0.88)),
         BorderColor::all(Color::NONE),
+        // The banner carries an opaque plate, so clearing its text is not enough to make
+        // it go away — an empty cue would sit on the player's sightline as a black bar.
+        // It starts hidden and is shown only while it has something to say.
+        Visibility::Hidden,
         GlobalZIndex(50),
         Name::new("Hex WFC gameplay cue"),
     ));
@@ -50,9 +54,12 @@ pub(super) fn cleanup(mut commands: Commands) {
 pub(super) fn sync(
     runtime: Res<HexWfcRuntime>,
     mut state: ResMut<FeedbackProjection>,
-    mut banner: Query<(&mut Text, &mut TextColor, &mut BorderColor), With<EventBanner>>,
+    mut banner: Query<
+        (&mut Text, &mut TextColor, &mut BorderColor, &mut Visibility),
+        With<EventBanner>,
+    >,
 ) {
-    let Ok((mut text, mut text_color, mut border)) = banner.single_mut() else {
+    let Ok((mut text, mut text_color, mut border, mut visibility)) = banner.single_mut() else {
         return;
     };
     if state.last_tick != runtime.match_state.tick {
@@ -63,11 +70,13 @@ pub(super) fn sync(
             **text = format!("{}  {}", definition.glyph, definition.label);
             text_color.0 = color;
             *border = BorderColor::all(color);
+            *visibility = Visibility::Visible;
             state.expires_at = runtime.match_state.tick + 120;
         }
     }
     if runtime.match_state.tick > state.expires_at {
         **text = String::new();
         *border = BorderColor::all(Color::NONE);
+        *visibility = Visibility::Hidden;
     }
 }

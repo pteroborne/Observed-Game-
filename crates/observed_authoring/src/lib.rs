@@ -30,17 +30,21 @@ pub const UNITS_PER_METER: f64 = 16.0;
 
 pub use cad_renderer::{DynamicHull, render_cad_blueprint, render_dynamic_cad_blueprint};
 pub use catalog::{
-    CatalogAudit, CatalogBuild, CatalogError, CompiledLight, CompiledModule, CompiledTileCatalog,
-    DistrictAuditGroup, DistrictAuditResult, RoomPrototype, RoomPrototypePort,
-    RuntimeAuthoringCatalog, audit_district_variations, build_catalog, discover_sources,
-    load_runtime_cells, new_module_template, write_catalog_build,
+    CatalogAudit, CatalogBuild, CatalogError, CompiledLight, CompiledModule, CompiledSocket,
+    CompiledTileCatalog, DistrictAuditGroup, DistrictAuditResult, RoomPrototype, RoomPrototypePort,
+    RoomPrototypeSocket, RuntimeAuthoringCatalog, audit_district_variations, build_catalog,
+    discover_sources, load_runtime_cells, new_module_template, write_catalog_build,
 };
 pub use manifest::{Manifest, ManifestEntry, ManifestError, TileKey};
 pub use source::{
-    AuthoredModule, FloorPolicy, ModuleCell, ModuleCellRef, ModuleKind, ModulePort, ModuleSummary,
-    RotationPolicy, SourceError, parse_authored_module, validate_module,
+    AuthoredModule, FloorPolicy, ModuleCell, ModuleCellRef, ModuleKind, ModulePort, ModuleSocket,
+    ModuleSummary, RoomSocketKind, RotationPolicy, SourceError, parse_authored_module,
+    validate_module,
 };
-pub use tile::{TileError, TileLight, TileLightKind, TilePrototype, load_tile, parse_tile};
+pub use tile::{
+    DeckPath, STAIR_SPINE_MIN_SEPARATION, StairSpine, TileError, TileLight, TileLightKind,
+    TilePrototype, load_tile, parse_tile,
+};
 
 /// The exact authored corpus consumed by both interactive and headless hex matches.
 /// Filesystem discovery stays outside the deterministic simulation, while this loader

@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::io;
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
@@ -17,10 +17,12 @@ use observed_match::hex_wfc::{
     HEX_INPUT_VERSION, HexInputFrame, HexMatchConfig, HexMatchStatus, HexPlayerCommand, HexWfcMatch,
 };
 use observed_net::lan::{
-    FRAME_WINDOW, LanPacket, LobbyAction, MAX_DATAGRAM, WireFrame, WireHexCommand, WirePhase,
-    WireSeat,
+    LanPacket, LobbyAction, MAX_DATAGRAM, WireFrame, WireHexCommand, WirePhase, WireSeat,
+    WireSeatOccupant, frames_per_bundle,
 };
-use observed_progression::session::lan::{LAN_RECONNECT_GRACE_TICKS, LAN_ROSTER_SIZE};
+use observed_progression::session::lan::{
+    LAN_DEFAULT_ROSTER, LAN_MAX_SEATS, LAN_RECONNECT_GRACE_TICKS, LanRoster,
+};
 use observed_progression::session::{AccountId, LanPhase, LanSeatOccupant, LanSession, SessionId};
 
 pub const SERVER_HZ: u64 = 60;
@@ -30,7 +32,12 @@ const CLIENT_TIMEOUT: Duration = Duration::from_secs(2);
 pub struct ServerConfig {
     pub bind: SocketAddr,
     pub name: String,
+    /// Teams and seats per team. One team is co-op.
+    pub roster: LanRoster,
     pub min_humans: u8,
+    /// When false, every configured seat must be occupied by a connected human
+    /// before countdown and bot seats are presented as explicitly empty.
+    pub fill_empty_seats: bool,
     pub base_seed: u64,
     pub discovery: bool,
     pub tile_dir: PathBuf,
@@ -42,11 +49,14 @@ impl Default for ServerConfig {
         Self {
             bind: SocketAddr::from((Ipv4Addr::UNSPECIFIED, observed_net::lan::DEFAULT_LAN_PORT)),
             name: "Observed 2 LAN".to_string(),
+            roster: LAN_DEFAULT_ROSTER,
             min_humans: 1,
+            fill_empty_seats: true,
             base_seed: time_seed(),
             discovery: true,
             tile_dir: default_tile_dir(),
             match_config: HexMatchConfig {
+                guardian: true,
                 teams: 2,
                 members_per_team: 2,
                 wfc: HexWfcConfig::arc_default(),
@@ -73,10 +83,32 @@ impl ServerConfig {
                 "--min-humans" => {
                     config.min_humans = args
                         .next()
-                        .ok_or("--min-humans requires 1..4")?
+                        .ok_or("--min-humans requires 1..16")?
                         .parse::<u8>()
-                        .map_err(|_| "--min-humans requires 1..4")?
-                        .clamp(1, LAN_ROSTER_SIZE as u8);
+                        .map_err(|_| "--min-humans requires 1..16")?
+                        .clamp(1, LAN_MAX_SEATS as u8);
+                }
+                "--teams" => {
+                    config.roster.teams = args
+                        .next()
+                        .ok_or("--teams requires 1..16")?
+                        .parse::<u8>()
+                        .map_err(|_| "--teams requires 1..16")?;
+                }
+                "--team-size" => {
+                    config.roster.members_per_team = args
+                        .next()
+                        .ok_or("--team-size requires 1..16")?
+                        .parse::<u8>()
+                        .map_err(|_| "--team-size requires 1..16")?;
+                }
+                "--co-op" => {
+                    let members = args
+                        .next()
+                        .ok_or("--co-op requires a team size of 1..16")?
+                        .parse::<u8>()
+                        .map_err(|_| "--co-op requires a team size of 1..16")?;
+                    config.roster = LanRoster::co_op(members);
                 }
                 "--seed" => {
                     let value = args.next().ok_or("--seed requires an integer")?;
@@ -86,6 +118,8 @@ impl ServerConfig {
                     config.tile_dir = PathBuf::from(args.next().ok_or("--tiles requires a path")?)
                 }
                 "--no-discovery" => config.discovery = false,
+                "--require-full-roster" => config.fill_empty_seats = false,
+                "--no-guardian" => config.match_config.guardian = false,
                 "--help" | "-h" => return Err(help_text().to_string()),
                 unknown => return Err(format!("unknown option {unknown}\n{}", help_text())),
             }
@@ -98,7 +132,7 @@ impl ServerConfig {
 }
 
 pub fn help_text() -> &'static str {
-    "observed_server [--bind 0.0.0.0:47624] [--name TEXT] [--min-humans 1..4] [--seed INTEGER] [--tiles PATH] [--no-discovery]"
+    "observed_server [--bind 0.0.0.0:47624] [--name TEXT] [--min-humans 1..16] [--teams 1..16] [--team-size 1..16] [--require-full-roster] [--seed INTEGER] [--tiles PATH] [--no-discovery]"
 }
 
 fn parse_seed(value: &str) -> Result<u64, String> {
@@ -115,12 +149,7 @@ fn time_seed() -> u64 {
 }
 
 fn default_tile_dir() -> PathBuf {
-    let cwd = PathBuf::from("assets/tiles");
-    if cwd.is_dir() {
-        cwd
-    } else {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/tiles")
-    }
+    observed_assets::assets_root().join("tiles")
 }
 
 #[derive(Clone, Debug)]
@@ -132,6 +161,7 @@ struct ClientConnection {
     last_seen: Instant,
     ack_through: u64,
     synchronizing: bool,
+    launch_ready_for: Option<u32>,
 }
 
 pub struct AuthoritativeServer {
@@ -143,16 +173,26 @@ pub struct AuthoritativeServer {
     inputs: BTreeMap<(PlayerId, u64), WireHexCommand>,
     match_state: Option<HexWfcMatch>,
     launch_config: Option<HexMatchConfig>,
+    launch_started: Option<u32>,
     frames: Vec<WireFrame>,
     server_tick: u64,
     token_cursor: u64,
 }
 
 impl AuthoritativeServer {
-    pub fn bind(config: ServerConfig) -> Result<Self, String> {
-        if config.match_config.teams != 2 || config.match_config.members_per_team != 2 {
-            return Err("the LAN wire format requires a 2v2 match configuration".to_string());
+    pub fn bind(mut config: ServerConfig) -> Result<Self, String> {
+        // The wire format used to require exactly 2v2, because a frame carried a
+        // fixed four commands. It now carries a counted list, so the only limit
+        // left is the cap the count byte and the datagram budget imply.
+        let roster = config.roster.clamped();
+        if !roster.is_valid() {
+            return Err(format!(
+                "a roster of {} teams x {} is not seatable (1..={LAN_MAX_SEATS} seats)",
+                roster.teams, roster.members_per_team
+            ));
         }
+        config.match_config.teams = roster.teams;
+        config.match_config.members_per_team = roster.members_per_team;
         let register_slugs = ArchitectureRegister::ALL.map(ArchitectureRegister::slug);
         let catalog = RuntimeHexCatalog::load(&config.tile_dir, &register_slugs)
             .map_err(|error| format!("load runtime hex catalog: {error}"))?;
@@ -169,15 +209,21 @@ impl AuthoritativeServer {
             .map_err(|error| format!("local address: {error}"))?;
         let session_id =
             SessionId((config.base_seed as u32).rotate_left(7) ^ u32::from(local.port()));
+        let min_humans = if config.fill_empty_seats {
+            config.min_humans
+        } else {
+            roster.seats() as u8
+        };
         Ok(Self {
             socket,
-            session: LanSession::new(session_id, config.min_humans),
+            session: LanSession::with_roster(session_id, min_humans, roster),
             config,
             catalog,
             clients: BTreeMap::new(),
             inputs: BTreeMap::new(),
             match_state: None,
             launch_config: None,
+            launch_started: None,
             frames: Vec::new(),
             server_tick: 0,
             token_cursor: time_seed() | 1,
@@ -225,17 +271,24 @@ impl AuthoritativeServer {
             self.start_match(launch.seed)?;
         }
         if matches!(self.session.phase, LanPhase::InMatch) {
-            self.step_match();
+            if self.launch_started.is_none() && self.launch_barrier_ready() {
+                self.open_launch_barrier();
+            }
+            if self.launch_started == Some(self.session.match_number) {
+                self.step_match();
+            }
         } else if matches!(previous_phase, LanPhase::PostMatch { .. })
             && matches!(self.session.phase, LanPhase::Lobby)
         {
             self.match_state = None;
             self.launch_config = None;
+            self.launch_started = None;
             self.frames.clear();
             self.inputs.clear();
         }
         if self.server_tick.is_multiple_of(15) || self.session.phase != previous_phase {
             self.broadcast_lobby();
+            self.broadcast_launch_progress();
         }
         self.broadcast_frame_windows();
         Ok(())
@@ -324,7 +377,10 @@ impl AuthoritativeServer {
                     && let Some(client) = self.clients.get_mut(&token)
                 {
                     client.ack_through = client.ack_through.max(through_tick.min(live_tick));
-                    if client.ack_through >= live_tick {
+                    if self.launch_started == Some(self.session.match_number)
+                        && live_tick > 0
+                        && client.ack_through >= live_tick
+                    {
                         client.synchronizing = false;
                     }
                 }
@@ -337,6 +393,28 @@ impl AuthoritativeServer {
                     }
                     self.send_launch_to(token);
                     self.broadcast_lobby();
+                }
+            }
+            LanPacket::LaunchReady {
+                token,
+                match_number,
+            } => {
+                if self.validate_client(address, token).is_none() {
+                    return;
+                }
+                if matches!(self.session.phase, LanPhase::InMatch)
+                    && match_number == self.session.match_number
+                    && self.match_state.is_some()
+                {
+                    if let Some(client) = self.clients.get_mut(&token) {
+                        client.launch_ready_for = Some(match_number);
+                    }
+                    if self.launch_started == Some(match_number) {
+                        self.send_launch_start_to(token);
+                    }
+                    self.broadcast_lobby();
+                } else {
+                    self.send_launch_to(token);
                 }
             }
             LanPacket::Goodbye { token } => self.disconnect_token(address, token),
@@ -373,6 +451,7 @@ impl AuthoritativeServer {
                 client.last_seen = Instant::now();
                 client.synchronizing = matches!(self.session.phase, LanPhase::InMatch);
                 client.ack_through = 0;
+                client.launch_ready_for = None;
             }
             self.welcome(address, token, existing.player, phase, live_tick);
             self.send_launch_to(token);
@@ -417,6 +496,7 @@ impl AuthoritativeServer {
                 last_seen: Instant::now(),
                 ack_through: 0,
                 synchronizing: matches!(self.session.phase, LanPhase::InMatch),
+                launch_ready_for: None,
             },
         );
         self.welcome(address, token, player, phase, live_tick);
@@ -438,6 +518,7 @@ impl AuthoritativeServer {
         self.config.base_seed = selected_seed.wrapping_sub(u64::from(self.session.match_number));
         self.match_state = Some(game);
         self.launch_config = Some(config);
+        self.launch_started = None;
         self.frames.clear();
         self.inputs.clear();
         for client in self.clients.values_mut().filter(|client| {
@@ -446,7 +527,8 @@ impl AuthoritativeServer {
                 .is_some()
         }) {
             client.ack_through = 0;
-            client.synchronizing = false;
+            client.synchronizing = true;
+            client.launch_ready_for = None;
         }
         self.broadcast(&LanPacket::Launch {
             seed: selected_seed,
@@ -457,8 +539,40 @@ impl AuthoritativeServer {
         Ok(())
     }
 
+    /// The barrier follows the session's connected humans rather than the set of
+    /// clients present when countdown ended. A join during preparation must prepare;
+    /// a disconnect immediately stops being a reason to hold everyone else.
+    fn launch_barrier_ready(&self) -> bool {
+        let generation = self.session.match_number;
+        self.session
+            .seats
+            .iter()
+            .filter_map(|seat| seat.connected_human())
+            .all(|account| {
+                self.clients.values().any(|client| {
+                    client.account == account && client.launch_ready_for == Some(generation)
+                })
+            })
+    }
+
+    fn open_launch_barrier(&mut self) {
+        let generation = self.session.match_number;
+        if self.match_state.is_none() || self.launch_started == Some(generation) {
+            return;
+        }
+        self.launch_started = Some(generation);
+        for client in self.clients.values_mut() {
+            if client.launch_ready_for == Some(generation) {
+                client.synchronizing = false;
+            }
+        }
+        self.broadcast(&LanPacket::LaunchStart {
+            match_number: generation,
+        });
+    }
+
     fn step_match(&mut self) {
-        let human_controls = (0..LAN_ROSTER_SIZE)
+        let human_controls = (0..self.session.seats.len())
             .map(|index| self.human_controls(PlayerId(index as u16)))
             .collect::<Vec<_>>();
         let Some(game) = self.match_state.as_mut() else {
@@ -468,7 +582,7 @@ impl AuthoritativeServer {
             return;
         }
         let tick = game.tick + 1;
-        let mut wire = [WireHexCommand::default(); 4];
+        let mut wire = vec![WireHexCommand::default(); self.session.seats.len()];
         let mut commands = BTreeMap::new();
         for seat in &self.session.seats {
             let command = if human_controls[seat.player.index()] {
@@ -476,10 +590,7 @@ impl AuthoritativeServer {
                     .remove(&(seat.player, tick))
                     .map_or_else(HexPlayerCommand::default, WireHexCommand::to_command)
             } else {
-                HexPlayerCommand {
-                    intent: game.bot_command(seat.player),
-                    actions: Default::default(),
-                }
+                game.bot_player_command(seat.player)
             };
             wire[seat.player.index()] = WireHexCommand::from_command(command);
             commands.insert(seat.player, command);
@@ -535,6 +646,36 @@ impl AuthoritativeServer {
         );
     }
 
+    fn send_launch_start_to(&self, token: u64) {
+        let generation = self.session.match_number;
+        let Some(client) = self.clients.get(&token) else {
+            return;
+        };
+        if self.launch_started == Some(generation) {
+            let _ = self.send_to(
+                client.address,
+                &LanPacket::LaunchStart {
+                    match_number: generation,
+                },
+            );
+        }
+    }
+
+    fn broadcast_launch_progress(&self) {
+        if !matches!(self.session.phase, LanPhase::InMatch) || self.match_state.is_none() {
+            return;
+        }
+        let generation = self.session.match_number;
+        for client in self.clients.values() {
+            if client.launch_ready_for != Some(generation) {
+                self.send_launch_to(client.token);
+            }
+            if self.launch_started == Some(generation) && client.ack_through == 0 {
+                self.send_launch_start_to(client.token);
+            }
+        }
+    }
+
     fn broadcast_frame_windows(&self) {
         if self.frames.is_empty() {
             return;
@@ -544,13 +685,14 @@ impl AuthoritativeServer {
             // lost datagram cannot strand a welcomed client in the lobby UI.
             if client.ack_through == 0 {
                 self.send_launch_to(client.token);
+                self.send_launch_start_to(client.token);
             }
             let start = client.ack_through.saturating_add(1);
             let frames = self
                 .frames
                 .iter()
                 .filter(|frame| frame.tick >= start)
-                .take(FRAME_WINDOW)
+                .take(frames_per_bundle(self.session.seats.len()))
                 .cloned()
                 .collect::<Vec<_>>();
             if !frames.is_empty() {
@@ -572,10 +714,11 @@ impl AuthoritativeServer {
                 player: seat.player,
                 team: seat.team,
                 occupant: match seat.occupant {
-                    LanSeatOccupant::Bot => 0,
+                    LanSeatOccupant::Bot if self.config.fill_empty_seats => WireSeatOccupant::Bot,
+                    LanSeatOccupant::Bot => WireSeatOccupant::Empty,
                     LanSeatOccupant::Human {
                         connected: false, ..
-                    } => 2,
+                    } => WireSeatOccupant::ReservedHuman,
                     LanSeatOccupant::Human {
                         account,
                         connected: true,
@@ -586,9 +729,9 @@ impl AuthoritativeServer {
                             .values()
                             .any(|client| client.account == account && client.synchronizing)
                         {
-                            3
+                            WireSeatOccupant::SynchronizingHuman
                         } else {
-                            1
+                            WireSeatOccupant::Human
                         }
                     }
                 },
@@ -597,6 +740,8 @@ impl AuthoritativeServer {
             .collect();
         self.broadcast(&LanPacket::LobbySnapshot {
             session: self.session.id.0,
+            match_number: self.session.match_number,
+            server_tick: self.server_tick,
             phase: wire_phase(self.session.phase),
             countdown_ticks,
             seats,
@@ -604,6 +749,7 @@ impl AuthoritativeServer {
     }
 
     fn disconnect_timed_out_clients(&mut self) {
+        let awaiting_launch = self.awaiting_launch_barrier();
         let timed_out = self
             .clients
             .values()
@@ -612,21 +758,77 @@ impl AuthoritativeServer {
             .collect::<Vec<_>>();
         for (token, account) in timed_out {
             self.session.disconnect(account, self.server_tick);
-            if let Some(client) = self.clients.get_mut(&token) {
+            if awaiting_launch && !self.config.fill_empty_seats {
+                self.clients.remove(&token);
+                self.release_account_seat(account);
+            } else if let Some(client) = self.clients.get_mut(&token) {
                 client.synchronizing = true;
+                client.launch_ready_for = None;
                 client.last_seen =
                     Instant::now() + Duration::from_secs(LAN_RECONNECT_GRACE_TICKS / SERVER_HZ);
             }
         }
+        if awaiting_launch && !self.config.fill_empty_seats {
+            self.abort_pending_launch();
+        }
     }
 
     fn disconnect_token(&mut self, address: SocketAddr, token: u64) {
-        if let Some(client) = self.clients.get(&token)
-            && client.address == address
+        let awaiting_launch = self.awaiting_launch_barrier();
+        if self
+            .clients
+            .get(&token)
+            .is_some_and(|client| client.address == address)
+            && let Some(client) = self.clients.remove(&token)
         {
             self.session.disconnect(client.account, self.server_tick);
+            self.release_account_seat(client.account);
+            if awaiting_launch && !self.config.fill_empty_seats {
+                self.abort_pending_launch();
+            }
         }
         self.broadcast_lobby();
+    }
+
+    fn awaiting_launch_barrier(&self) -> bool {
+        matches!(self.session.phase, LanPhase::InMatch)
+            && self.match_state.is_some()
+            && self.launch_started != Some(self.session.match_number)
+    }
+
+    fn release_account_seat(&mut self, account: AccountId) {
+        if let Some(seat) = self.session.seats.iter_mut().find(|seat| {
+            matches!(
+                seat.occupant,
+                LanSeatOccupant::Human {
+                    account: found,
+                    ..
+                } if found == account
+            )
+        }) {
+            seat.occupant = LanSeatOccupant::Bot;
+            seat.ready = false;
+        }
+    }
+
+    fn abort_pending_launch(&mut self) {
+        if !self.awaiting_launch_barrier() {
+            return;
+        }
+        self.session.phase = LanPhase::Lobby;
+        for seat in &mut self.session.seats {
+            seat.ready = false;
+        }
+        for client in self.clients.values_mut() {
+            client.ack_through = 0;
+            client.synchronizing = false;
+            client.launch_ready_for = None;
+        }
+        self.match_state = None;
+        self.launch_config = None;
+        self.launch_started = None;
+        self.frames.clear();
+        self.inputs.clear();
     }
 
     /// Validate a token/address pair, touch its heartbeat, and transparently reclaim
@@ -650,6 +852,7 @@ impl AuthoritativeServer {
         {
             client.ack_through = 0;
             client.synchronizing = matches!(self.session.phase, LanPhase::InMatch);
+            client.launch_ready_for = None;
         }
         Some((account, player))
     }
@@ -758,7 +961,7 @@ impl Drop for ServerHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use observed_net::lan::LanClient;
+    use observed_net::lan::{LanClient, WireSeatOccupant};
 
     #[test]
     fn cli_defaults_and_overrides_are_stable() {
@@ -805,11 +1008,20 @@ mod tests {
 
         client.set_ready(true).expect("ready");
         drive_until(&mut server, &mut client, |client| client.launch.is_some());
+        assert_eq!(
+            server.match_state().map(|game| game.tick),
+            Some(0),
+            "the descriptor must not authorize tick one"
+        );
+        let generation = client.launch.expect("launch descriptor").match_number;
+        client
+            .mark_launch_ready(generation)
+            .expect("prepared client announces readiness");
         let mut received = Vec::new();
         for _ in 0..64 {
             server.fixed_tick().expect("server tick");
             client.poll();
-            received.extend(client.take_ready_frames(FRAME_WINDOW));
+            received.extend(client.take_ready_frames(observed_net::lan::FRAME_WINDOW));
             if !received.is_empty() {
                 break;
             }
@@ -843,13 +1055,119 @@ mod tests {
         for _ in 0..64 {
             server.fixed_tick().expect("server tick");
             client.poll();
-            replayed.extend(client.take_ready_frames(FRAME_WINDOW));
+            replayed.extend(client.take_ready_frames(observed_net::lan::FRAME_WINDOW));
             if !replayed.is_empty() {
                 break;
             }
             thread::yield_now();
         }
         assert_eq!(replayed.first().map(|frame| frame.tick), Some(1));
+    }
+
+    #[test]
+    fn authoritative_tick_one_waits_for_every_connected_human() {
+        let config = ServerConfig {
+            bind: "127.0.0.1:0".parse().expect("loopback address"),
+            discovery: false,
+            min_humans: 2,
+            ..ServerConfig::default()
+        };
+        let mut server = AuthoritativeServer::bind(config).expect("server binds");
+        let hash = server.catalog.simulation_content_hash;
+        let address = server.local_addr().expect("server address");
+        let mut first = LanClient::connect(address, 71, None, None, hash).expect("first binds");
+        let mut second = LanClient::connect(address, 72, None, None, hash).expect("second binds");
+
+        drive_pair_until(&mut server, &mut first, &mut second, |first, second| {
+            first.token.is_some() && second.token.is_some()
+        });
+        first.set_ready(true).expect("first ready");
+        second.set_ready(true).expect("second ready");
+        drive_pair_until(&mut server, &mut first, &mut second, |first, second| {
+            first.launch.is_some() && second.launch.is_some()
+        });
+        let generation = first.launch.expect("first launch").match_number;
+        assert_eq!(
+            second.launch.expect("second launch").match_number,
+            generation
+        );
+        assert_eq!(server.match_state().map(|game| game.tick), Some(0));
+
+        first.mark_launch_ready(generation).expect("first prepared");
+        first
+            .mark_launch_ready(generation)
+            .expect("duplicate preparation is idempotent");
+        for _ in 0..16 {
+            server.fixed_tick().expect("server tick");
+            first.poll();
+            second.poll();
+        }
+        assert_eq!(server.match_state().map(|game| game.tick), Some(0));
+        assert!(!first.launch_has_started(generation));
+
+        second
+            .mark_launch_ready(generation)
+            .expect("second prepared");
+        drive_pair_until(&mut server, &mut first, &mut second, |first, second| {
+            first.launch_has_started(generation) && second.launch_has_started(generation)
+        });
+        assert!(server.match_state().is_some_and(|game| game.tick >= 1));
+    }
+
+    #[test]
+    fn humans_only_roster_exposes_empty_seats_and_aborts_if_a_loader_times_out() {
+        let config = ServerConfig {
+            bind: "127.0.0.1:0".parse().expect("loopback address"),
+            discovery: false,
+            roster: LanRoster::co_op(2),
+            min_humans: 1,
+            fill_empty_seats: false,
+            ..ServerConfig::default()
+        };
+        let mut server = AuthoritativeServer::bind(config).expect("server binds");
+        assert_eq!(server.session.min_humans, 2);
+        let hash = server.catalog.simulation_content_hash;
+        let address = server.local_addr().expect("server address");
+        let mut first = LanClient::connect(address, 81, None, None, hash).expect("first binds");
+        drive_until(&mut server, &mut first, |client| client.lobby.is_some());
+        let seats = &first.lobby.as_ref().expect("roster").seats;
+        assert_eq!(seats.len(), 2);
+        assert_eq!(seats[1].occupant, WireSeatOccupant::Empty);
+
+        first.set_ready(true).expect("first ready");
+        for _ in 0..observed_progression::session::lan::LAN_COUNTDOWN_TICKS + 5 {
+            server.fixed_tick().expect("server tick");
+            first.poll();
+        }
+        assert!(matches!(server.session.phase, LanPhase::Lobby));
+
+        let mut second = LanClient::connect(address, 82, None, None, hash).expect("second binds");
+        drive_pair_until(&mut server, &mut first, &mut second, |first, second| {
+            first.token.is_some() && second.token.is_some()
+        });
+        second.set_ready(true).expect("second ready");
+        drive_pair_until(&mut server, &mut first, &mut second, |first, second| {
+            first.launch.is_some() && second.launch.is_some()
+        });
+        let first_generation = first.launch.expect("launch").match_number;
+        first
+            .mark_launch_ready(first_generation)
+            .expect("first prepared");
+
+        let second_token = second.token.expect("second token");
+        server
+            .clients
+            .get_mut(&second_token)
+            .expect("second connection")
+            .last_seen = Instant::now() - CLIENT_TIMEOUT - Duration::from_millis(1);
+        server.disconnect_timed_out_clients();
+        assert!(matches!(server.session.phase, LanPhase::Lobby));
+        assert!(server.match_state().is_none());
+        assert_eq!(
+            server.session.seats[1].occupant,
+            LanSeatOccupant::Bot,
+            "the timed-out human-only seat is immediately available"
+        );
     }
 
     fn drive_until(
@@ -866,5 +1184,23 @@ mod tests {
             thread::yield_now();
         }
         panic!("loopback condition was not reached");
+    }
+
+    fn drive_pair_until(
+        server: &mut AuthoritativeServer,
+        first: &mut LanClient,
+        second: &mut LanClient,
+        condition: impl Fn(&LanClient, &LanClient) -> bool,
+    ) {
+        for _ in 0..768 {
+            server.fixed_tick().expect("server tick");
+            first.poll();
+            second.poll();
+            if condition(first, second) {
+                return;
+            }
+            thread::yield_now();
+        }
+        panic!("loopback pair condition was not reached");
     }
 }

@@ -33,11 +33,11 @@ pub use blueprint::{
 pub use context::HexInfluenceField;
 pub use observed_hex::{HexCoord, HexFace, HexGridSize, PortClass, PortSignature};
 pub use relayout::{
-    DEFAULT_MUTATION_MAX_CELLS, DEFAULT_MUTATION_TARGET_CELLS, HexMutationRegion,
+    DEFAULT_MUTATION_MAX_CELLS, DEFAULT_MUTATION_TARGET_CELLS, DistrictSite, HexMutationRegion,
     HexObservationFrame, HexRelayoutCandidate, HexRelayoutDelta, HexRelayoutProgress,
-    HexRelayoutWork, HexThresholdKey, LIMINAL_GRID_ZONE_SIZE, LiminalGridZone, liminal_grid_zones,
+    HexRelayoutWork, HexThresholdKey, district_sites,
 };
-pub use topology::HexRoute;
+pub use topology::{HexRoute, MAX_CONNECTION_COST};
 pub use trace::SolveStep;
 pub use variants::{
     HexGeometryDemand, demandable_signatures, geometry_demands, placement_tile_archetype,
@@ -62,6 +62,11 @@ pub enum HexArchetype {
     RampUp,
     RampHead,
     Shaft,
+    /// Open floor with no perimeter walls of its own. Adjacent `Expanse` cells
+    /// leave their shared faces open, so a run of them reads as one continuous
+    /// volume rather than as a row of tiles — the vocabulary the solver was
+    /// missing for a vast space.
+    Expanse,
 }
 
 /// One collapsed cell.
@@ -116,6 +121,57 @@ pub struct HexWfcConfig {
     pub retry_budget: u32,
     /// Minimum lateral hex distance between any two rooms.
     pub min_room_distance: u32,
+}
+
+/// Minimum authored-room distribution for a production match.
+///
+/// The compact lab fixtures keep using [`HexWfcConfig::min_rooms`] and
+/// [`HexWfcConfig::max_rooms`]. The canonical match supplies this explicit
+/// quota so multiple rooms of the same role are intentional and the amount of
+/// contested keystone supply scales with the number of teams.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HexRoomQuotas {
+    pub decision: usize,
+    pub decoherence_fork: usize,
+    pub dual_station: usize,
+    pub monitor: usize,
+    pub anchor_checkpoint: usize,
+    pub recovery: usize,
+    pub guardian_control: usize,
+    pub keystone: usize,
+}
+
+impl HexRoomQuotas {
+    #[must_use]
+    pub const fn for_team_count(team_count: u8) -> Self {
+        let scaled_keystones = (team_count as usize * 5).div_ceil(2);
+        Self {
+            decision: 6,
+            decoherence_fork: 4,
+            dual_station: 3,
+            monitor: 3,
+            anchor_checkpoint: 3,
+            recovery: 3,
+            guardian_control: 1,
+            keystone: if scaled_keystones < 4 {
+                4
+            } else {
+                scaled_keystones
+            },
+        }
+    }
+
+    #[must_use]
+    pub const fn total_with_start_and_exit(self) -> usize {
+        2 + self.decision
+            + self.decoherence_fork
+            + self.dual_station
+            + self.monitor
+            + self.anchor_checkpoint
+            + self.recovery
+            + self.guardian_control
+            + self.keystone
+    }
 }
 
 impl Default for HexWfcConfig {
@@ -191,6 +247,8 @@ pub enum HexWfcError {
     UnsafeChange(HexCoord),
     MissingPlayerRoute(observed_core::PlayerId),
     MissingObjectiveRoute(HexCoord),
+    /// A production relayout would destroy the guaranteed open/decision cadence.
+    OpenVolumeContract,
     NoMutationRegion,
 }
 
@@ -252,7 +310,17 @@ pub struct HexWfcWorld {
 impl HexWfcWorld {
     /// Solve a fresh world. Deterministic in `(seed, generation)`.
     pub fn generate(seed: u64, config: HexWfcConfig) -> Result<HexWfcWorld, HexWfcError> {
-        Self::generate_inner(seed, config, None).map(|(world, _)| world)
+        Self::generate_inner(seed, config, None, None).map(|(world, _)| world)
+    }
+
+    /// Solve a production facility with an explicit repeated-role room quota
+    /// and the open-volume/cadence gate enabled.
+    pub fn generate_with_room_quotas(
+        seed: u64,
+        config: HexWfcConfig,
+        quotas: HexRoomQuotas,
+    ) -> Result<HexWfcWorld, HexWfcError> {
+        Self::generate_inner(seed, config, Some(quotas), None).map(|(world, _)| world)
     }
 
     /// Solve while recording every step for the lab's animated replay.
@@ -261,7 +329,7 @@ impl HexWfcWorld {
         config: HexWfcConfig,
     ) -> Result<(HexWfcWorld, Vec<SolveStep>), HexWfcError> {
         let mut steps = Vec::new();
-        Self::generate_inner(seed, config, Some(&mut steps))
+        Self::generate_inner(seed, config, None, Some(&mut steps))
             .map(|(world, _)| world)
             .map(|world| (world, steps))
     }
@@ -307,6 +375,7 @@ impl HexWfcWorld {
     fn generate_inner(
         seed: u64,
         config: HexWfcConfig,
+        room_quotas: Option<HexRoomQuotas>,
         trace: Option<&mut Vec<SolveStep>>,
     ) -> Result<(HexWfcWorld, u32), HexWfcError> {
         if config.cols < 3 || config.rows < 3 || config.min_rooms < 2 {
@@ -314,7 +383,7 @@ impl HexWfcWorld {
         }
         let generation = 0;
         let (placements, blueprints, attempts) =
-            collapse::collapse(seed, generation, config, trace)?;
+            collapse::collapse(seed, generation, config, room_quotas, trace)?;
         let architecture = relayout::initial_architecture(seed, config, &placements, &blueprints);
         let cell_revisions = placements.keys().copied().map(|coord| (coord, 0)).collect();
         Ok((
@@ -345,6 +414,22 @@ impl HexWfcWorld {
     #[must_use]
     pub fn route_between_cells(&self, from: HexCoord, to: HexCoord) -> Option<HexRoute> {
         topology::costed_route_between(self.config, &self.placements, from, to)
+    }
+
+    /// [`Self::route_between_cells`], abandoned once no route within `max_cost` remains.
+    ///
+    /// For callers whose answer saturates past a known cost, an unbounded search is pure
+    /// waste: it expands the entire reachable component just to report `None` for a pair
+    /// that is far apart or disconnected. Inside the bound this returns exactly what the
+    /// unbounded search returns.
+    #[must_use]
+    pub fn route_within_cost(
+        &self,
+        from: HexCoord,
+        to: HexCoord,
+        max_cost: u32,
+    ) -> Option<HexRoute> {
+        topology::costed_route_within(self.config, &self.placements, from, to, max_cost)
     }
 
     #[must_use]

@@ -29,13 +29,18 @@ pub(super) struct CueDefinition {
 }
 
 #[cfg(test)]
-pub(super) const ALL_EVENTS: [HexMatchEventKind; 10] = [
+pub(super) const ALL_EVENTS: [HexMatchEventKind; 15] = [
     HexMatchEventKind::MutationWarning,
     HexMatchEventKind::MutationCommitted,
     HexMatchEventKind::MutationCancelled,
     HexMatchEventKind::PlayerRecovered,
     HexMatchEventKind::PlayerEscaped,
     HexMatchEventKind::LanternCacheCollected,
+    HexMatchEventKind::KeystoneCollected,
+    HexMatchEventKind::DualStationProgress,
+    HexMatchEventKind::DualStationCompleted,
+    HexMatchEventKind::MonitorSurveyed,
+    HexMatchEventKind::ExitDenied,
     HexMatchEventKind::AnchorDeployed,
     HexMatchEventKind::AnchorRecovered,
     HexMatchEventKind::GuardianCatch,
@@ -72,6 +77,36 @@ pub(super) fn cue_for(kind: HexMatchEventKind) -> CueDefinition {
             "+",
             "LANTERNS RECOVERED",
             MarkerRole::Teammate,
+            HexWfcSound::Recover,
+        ),
+        HexMatchEventKind::KeystoneCollected => cue(
+            "K",
+            "KEYSTONE CLAIMED",
+            MarkerRole::NextRoom,
+            HexWfcSound::Hold,
+        ),
+        HexMatchEventKind::DualStationProgress => cue(
+            "=",
+            "TEAM LINK HOLDING",
+            MarkerRole::Teammate,
+            HexWfcSound::Hold,
+        ),
+        HexMatchEventKind::DualStationCompleted => cue(
+            "#",
+            "TEAM STATION COMPLETE",
+            MarkerRole::Control,
+            HexWfcSound::Complete,
+        ),
+        HexMatchEventKind::MonitorSurveyed => cue(
+            "?",
+            "LOCAL SCHEMATIC SURVEYED",
+            MarkerRole::Control,
+            HexWfcSound::Recover,
+        ),
+        HexMatchEventKind::ExitDenied => cue(
+            "X",
+            "EXIT REQUIRES 2 KEYS + TEAM STATION",
+            MarkerRole::Exit,
             HexWfcSound::Recover,
         ),
         HexMatchEventKind::AnchorDeployed => cue(

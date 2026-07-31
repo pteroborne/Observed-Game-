@@ -57,8 +57,13 @@ fn no_glob_reexports_between_game_modules() {
 fn no_super_glob_imports_outside_test_modules() {
     let mut offenders = Vec::new();
     for (path, text) in each_source() {
-        // `tests.rs` is itself a `#[cfg(test)]` module (declared so in lib.rs).
-        let mut in_test_scope = path.file_name().is_some_and(|f| f == "tests.rs");
+        // A file is test scope when it *is* a test module: `tests.rs`, or the
+        // `<module>_tests.rs` sibling this workspace attaches with `#[cfg(test)]
+        // #[path = "..."]` to keep a large module's tests out of its line budget.
+        let mut in_test_scope = path
+            .file_name()
+            .and_then(|f| f.to_str())
+            .is_some_and(|f| f == "tests.rs" || f.ends_with("_tests.rs"));
         for (i, line) in text.lines().enumerate() {
             if line.contains("#[cfg(test)]") {
                 // Test modules sit at the end of their file by convention, so the
@@ -134,6 +139,84 @@ fn hex_sim_never_imports_presentation() {
     assert!(
         offenders.is_empty(),
         "hex_wfc/sim.rs must stay presentation-free (the view reads sim, never the reverse):\n{}",
+        offenders.join("\n")
+    );
+}
+
+/// Frontend business actions belong to the screen that owns them. A global action
+/// enum or numeric cursor turns every new button into a cross-screen edit and loses
+/// stable focus identity, which is the coupling the semantic widget layer replaced.
+#[test]
+fn frontend_does_not_restore_the_global_dispatcher_or_numeric_cursor() {
+    let screens = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join("screens.rs");
+    let text = fs::read_to_string(&screens).expect("screens composition is readable");
+    for forbidden in ["enum MenuAction", "struct MenuButton", "struct MenuCursor"] {
+        assert!(
+            !text.contains(forbidden),
+            "{forbidden} rebuilds the global menu dispatcher; keep typed actions in each screen"
+        );
+    }
+}
+
+/// The game ships no font asset, so every label is drawn with Bevy's embedded default —
+/// a subset with no geometric shapes, dashes, bullets, or degree sign. A non-ASCII
+/// character in a rendered string is therefore not typography, it is a blank box. The
+/// Phase 123 gate found `◆`/`◇` preset markers, `·` seat separators, and a `°` suffix
+/// all rendering as tofu at 1280×800.
+///
+/// Comments and test scope are exempt: they are read in an editor or a terminal, not
+/// drawn by the font. Log strings are deliberately *not* exempt — the rule stays a
+/// single flat check rather than a macro-name allowlist, and a hyphen costs nothing.
+#[test]
+fn rendered_ui_strings_stay_within_the_shipped_font() {
+    let mut offenders = Vec::new();
+    for (path, text) in each_source() {
+        // Test scope is exempt: an assertion message is printed to a terminal, which
+        // has its own fonts, and is never handed to the text renderer.
+        let is_test_file = path
+            .file_name()
+            .and_then(|f| f.to_str())
+            .is_some_and(|f| f == "tests.rs" || f == "test.rs" || f.ends_with("_tests.rs"));
+        let mut in_test_scope = is_test_file;
+        for (i, line) in text.lines().enumerate() {
+            // Only a *top-level* `#[cfg(test)]` opens test scope. An indented one marks a
+            // single test-only helper mid-file, and treating it as a boundary would blind
+            // the rest of the scan — which is exactly how a `×` in `play_setup.rs` reached
+            // the Results subtitle unnoticed.
+            if line == "#[cfg(test)]" {
+                in_test_scope = true;
+            }
+            let code = line.trim_start();
+            if in_test_scope || code.starts_with("//") {
+                continue;
+            }
+            // Only look between double quotes: a doc link or identifier elsewhere on the
+            // line is never handed to the text renderer.
+            let mut in_literal = false;
+            let mut escaped = false;
+            for character in line.chars() {
+                match character {
+                    _ if escaped => escaped = false,
+                    '\\' if in_literal => escaped = true,
+                    '"' => in_literal = !in_literal,
+                    c if in_literal && !c.is_ascii() => {
+                        offenders.push(format!(
+                            "{}:{}: U+{:04X} {c}",
+                            path.display(),
+                            i + 1,
+                            c as u32
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "the shipped default font renders only ASCII; these draw as blank boxes:\n{}",
         offenders.join("\n")
     );
 }

@@ -10,83 +10,108 @@ mod feedback;
 mod hud;
 mod input;
 mod lantern;
+pub(crate) mod launch;
+pub(crate) mod loading;
+pub(crate) mod overlay;
 mod perf;
+
+pub(crate) use perf::GPU_PROFILE_ENV;
 pub mod sim;
-mod tacmap;
-mod view;
+pub(crate) mod view;
 
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 
 use crate::GameState;
 
+/// Simulation-facing tutorial gate. The onboarding presentation toggles this resource,
+/// while fixed-step logic depends only on this hex-domain seam rather than importing a
+/// screen module.
+#[derive(Resource, Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct HexOnboardingGate {
+    pub(crate) active: bool,
+}
+
 pub(crate) struct HexWfcPlugin;
 
 impl Plugin for HexWfcPlugin {
     fn build(&self, app: &mut App) {
         perf::configure(app);
-        app.add_systems(
-            OnEnter(GameState::HexWfc),
-            (
-                sim::setup_runtime,
-                view::setup_view,
-                hud::setup,
-                tacmap::setup,
-                feedback::setup,
-                audio::setup,
-                entities::setup,
-                lantern::setup,
-                input::grab_cursor,
+        app.init_resource::<overlay::MatchOverlayState>()
+            .init_resource::<HexOnboardingGate>()
+            .add_observer(overlay::activate)
+            .add_systems(
+                OnEnter(GameState::HexWfc),
+                (
+                    sim::setup_runtime,
+                    overlay::reset,
+                    view::setup_view,
+                    hud::setup,
+                    view::map::setup,
+                    feedback::setup,
+                    audio::setup,
+                    entities::setup,
+                    lantern::setup,
+                    input::grab_cursor,
+                )
+                    .chain(),
             )
-                .chain(),
-        )
-        .add_systems(
-            FixedUpdate,
-            (
-                perf::begin_fixed,
-                drive_traversal_capture,
-                sim::step_runtime,
-                perf::end_fixed,
+            .add_systems(
+                FixedUpdate,
+                (
+                    perf::begin_fixed,
+                    drive_traversal_capture,
+                    sim::step_runtime,
+                    perf::end_fixed,
+                )
+                    .chain()
+                    .run_if(in_state(GameState::HexWfc)),
             )
-                .chain()
-                .run_if(in_state(GameState::HexWfc)),
-        )
-        .add_systems(
-            Update,
-            (
-                input::map_input,
-                input::mode_hotkeys,
-                view::sync_changed_geometry,
-                view::sync_streamed_cells,
-                view::sync_practical_shadow_budget,
-                view::sync_camera,
-                view::sync_lighting_and_atmosphere,
-                hud::sync,
-                tacmap::sync,
-                feedback::sync,
-                audio::sync,
-                entities::sync,
-                lantern::sync_projection,
-                lantern::sync_dynamic,
-                sim::finish_runtime,
+            .add_systems(
+                Update,
+                (
+                    (
+                        input::mode_hotkeys,
+                        input::release_overlay_transition_capture,
+                        input::map_input,
+                        overlay::sync_runtime_map,
+                        overlay::rebuild,
+                        input::sync_cursor,
+                        overlay::adjust_focused,
+                        overlay::refresh_setting_labels,
+                    )
+                        .chain(),
+                    view::sync_changed_geometry,
+                    view::sync_streamed_cells,
+                    view::sync_practical_shadow_budget,
+                    view::sync_camera,
+                    view::sync_lighting_and_atmosphere,
+                    hud::sync,
+                    view::map::sync,
+                    feedback::sync,
+                    audio::sync,
+                    entities::sync,
+                    lantern::sync_projection,
+                    lantern::sync_dynamic,
+                    sim::finish_runtime,
+                )
+                    .chain()
+                    .run_if(in_state(GameState::HexWfc)),
             )
-                .chain()
-                .run_if(in_state(GameState::HexWfc)),
-        )
-        .add_systems(
-            OnExit(GameState::HexWfc),
-            (
-                input::release_cursor,
-                view::clear_view,
-                tacmap::cleanup,
-                feedback::cleanup,
-                audio::cleanup,
-                entities::cleanup,
-                lantern::cleanup,
-                sim::cleanup_runtime,
-            )
-                .chain(),
-        );
+            .add_systems(
+                OnExit(GameState::HexWfc),
+                (
+                    input::release_cursor,
+                    view::clear_view,
+                    view::map::cleanup,
+                    feedback::cleanup,
+                    audio::cleanup,
+                    entities::cleanup,
+                    lantern::cleanup,
+                    sim::cleanup_runtime,
+                )
+                    .chain(),
+            );
         let capture = std::env::var("OBSERVED2_CAPTURE_HEX_WFC_STYLE")
             .map(|path| (path, HexWfcCaptureMode::Style))
             .or_else(|_| {
@@ -210,16 +235,20 @@ fn capture_progress(
     request.frame = request.frame.saturating_add(1);
     match request.mode {
         HexWfcCaptureMode::Map => {
-            if request.frame == 900
+            // Late enough that the spectator bot has explored a facility worth
+            // photographing: at frame 900 it has barely left spawn and the map
+            // shows five cells, which proves the fog-of-war contract but makes a
+            // useless visual gate.
+            if request.frame == 7_200
                 && let Some(runtime) = runtime.as_deref_mut()
             {
                 runtime.map_open = true;
             }
-            if request.frame == 950 {
+            if request.frame == 7_260 {
                 commands
                     .spawn(Screenshot::primary_window())
                     .observe(save_to_disk(request.path.clone()));
-            } else if request.frame == 1_020 {
+            } else if request.frame == 7_330 {
                 exit.write(AppExit::Success);
             }
         }
@@ -357,5 +386,8 @@ fn drive_traversal_capture(
             )
             .expect("traversal capture starts with one anchor lantern");
     }
-    intent.intent = runtime.match_state.bot_command(runtime.local_player);
+    let local_player = runtime.local_player;
+    let command = runtime.match_state.bot_player_command(local_player);
+    intent.intent = command.intent;
+    intent.actions = command.actions;
 }

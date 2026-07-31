@@ -1,0 +1,354 @@
+{
+  "schema_version": 3,
+  "seed": 53261,
+  "generation": 15,
+  "grid": [
+    28,
+    20,
+    10
+  ],
+  "vsync_uncapped": true,
+  "pipeline": {
+    "solve_microseconds": 664520,
+    "projection_microseconds": 1351123,
+    "collider_scene_microseconds": 2159972,
+    "cells": 5600,
+    "geometry_pieces": 142750,
+    "colliders": 142750
+  },
+  "view": [
+    {
+      "kind": "startup",
+      "tick": 0,
+      "generation": 0,
+      "microseconds": 493242
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 490,
+      "generation": 1,
+      "microseconds": 18595
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 1816,
+      "generation": 2,
+      "microseconds": 17016
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 2528,
+      "generation": 3,
+      "microseconds": 18156
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 3673,
+      "generation": 4,
+      "microseconds": 18031
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 4195,
+      "generation": 5,
+      "microseconds": 18757
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 4780,
+      "generation": 6,
+      "microseconds": 17830
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 6663,
+      "generation": 7,
+      "microseconds": 18160
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 7372,
+      "generation": 8,
+      "microseconds": 17805
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 7928,
+      "generation": 9,
+      "microseconds": 17532
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 8532,
+      "generation": 10,
+      "microseconds": 17915
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 9104,
+      "generation": 11,
+      "microseconds": 17608
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 9765,
+      "generation": 12,
+      "microseconds": 18069
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 10401,
+      "generation": 13,
+      "microseconds": 17709
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 10892,
+      "generation": 14,
+      "microseconds": 18928
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 11980,
+      "generation": 15,
+      "microseconds": 17372
+    }
+  ],
+  "fixed": {
+    "samples": 12000,
+    "minimum_microseconds": 1137,
+    "median_microseconds": 7120,
+    "p95_microseconds": 15623,
+    "maximum_microseconds": 50063,
+    "mean_microseconds": 7928
+  },
+  "frame": {
+    "samples": 8304,
+    "minimum_microseconds": 0,
+    "median_microseconds": 15308,
+    "p95_microseconds": 70552,
+    "maximum_microseconds": 250000,
+    "mean_microseconds": 24085
+  },
+  "by_register": [
+    {
+      "register": "shadow_screen",
+      "key_shadows_enabled": true,
+      "key_range": 42.0,
+      "key_outer_angle": 0.58,
+      "frame": {
+        "samples": 243,
+        "minimum_microseconds": 35744,
+        "median_microseconds": 47603,
+        "p95_microseconds": 76198,
+        "maximum_microseconds": 91825,
+        "mean_microseconds": 49131
+      }
+    },
+    {
+      "register": "institutional",
+      "key_shadows_enabled": true,
+      "key_range": 45.0,
+      "key_outer_angle": 0.85,
+      "frame": {
+        "samples": 185,
+        "minimum_microseconds": 17158,
+        "median_microseconds": 23674,
+        "p95_microseconds": 33172,
+        "maximum_microseconds": 66396,
+        "mean_microseconds": 25219
+      }
+    },
+    {
+      "register": "thinning",
+      "key_shadows_enabled": true,
+      "key_range": 40.0,
+      "key_outer_angle": 0.6,
+      "frame": {
+        "samples": 1836,
+        "minimum_microseconds": 0,
+        "median_microseconds": 20143,
+        "p95_microseconds": 109751,
+        "maximum_microseconds": 250000,
+        "mean_microseconds": 32035
+      }
+    },
+    {
+      "register": "infinite_gallery",
+      "key_shadows_enabled": true,
+      "key_range": 30.0,
+      "key_outer_angle": 0.5,
+      "frame": {
+        "samples": 757,
+        "minimum_microseconds": 8555,
+        "median_microseconds": 17394,
+        "p95_microseconds": 83103,
+        "maximum_microseconds": 137990,
+        "mean_microseconds": 34475
+      }
+    },
+    {
+      "register": "wellshaft",
+      "key_shadows_enabled": true,
+      "key_range": 50.0,
+      "key_outer_angle": 0.7,
+      "frame": {
+        "samples": 1323,
+        "minimum_microseconds": 8545,
+        "median_microseconds": 15145,
+        "p95_microseconds": 16703,
+        "maximum_microseconds": 48435,
+        "mean_microseconds": 14884
+      }
+    },
+    {
+      "register": "megastructure",
+      "key_shadows_enabled": true,
+      "key_range": 75.0,
+      "key_outer_angle": 0.6,
+      "frame": {
+        "samples": 1968,
+        "minimum_microseconds": 7418,
+        "median_microseconds": 12541,
+        "p95_microseconds": 76371,
+        "maximum_microseconds": 250000,
+        "mean_microseconds": 21311
+      }
+    },
+    {
+      "register": "monolith",
+      "key_shadows_enabled": true,
+      "key_range": 50.0,
+      "key_outer_angle": 0.7,
+      "frame": {
+        "samples": 903,
+        "minimum_microseconds": 7723,
+        "median_microseconds": 12026,
+        "p95_microseconds": 82056,
+        "maximum_microseconds": 109935,
+        "mean_microseconds": 27546
+      }
+    },
+    {
+      "register": "overlit_grid",
+      "key_shadows_enabled": false,
+      "key_range": 45.0,
+      "key_outer_angle": 0.9,
+      "frame": {
+        "samples": 1089,
+        "minimum_microseconds": 7542,
+        "median_microseconds": 11154,
+        "p95_microseconds": 12577,
+        "maximum_microseconds": 27838,
+        "mean_microseconds": 10999
+      }
+    }
+  ],
+  "commits": [
+    {
+      "tick": 480,
+      "generation": 1,
+      "fixed_microseconds": 31261,
+      "frame_microseconds": 250000
+    },
+    {
+      "tick": 1814,
+      "generation": 2,
+      "fixed_microseconds": 20453,
+      "frame_microseconds": 37042
+    },
+    {
+      "tick": 2528,
+      "generation": 3,
+      "fixed_microseconds": 17007,
+      "frame_microseconds": 19693
+    },
+    {
+      "tick": 3673,
+      "generation": 4,
+      "fixed_microseconds": 14843,
+      "frame_microseconds": 14621
+    },
+    {
+      "tick": 4195,
+      "generation": 5,
+      "fixed_microseconds": 13893,
+      "frame_microseconds": 14593
+    },
+    {
+      "tick": 4780,
+      "generation": 6,
+      "fixed_microseconds": 13260,
+      "frame_microseconds": 9179
+    },
+    {
+      "tick": 6662,
+      "generation": 7,
+      "fixed_microseconds": 24376,
+      "frame_microseconds": 134578
+    },
+    {
+      "tick": 7370,
+      "generation": 8,
+      "fixed_microseconds": 23371,
+      "frame_microseconds": 219904
+    },
+    {
+      "tick": 7928,
+      "generation": 9,
+      "fixed_microseconds": 21394,
+      "frame_microseconds": 38202
+    },
+    {
+      "tick": 8530,
+      "generation": 10,
+      "fixed_microseconds": 20940,
+      "frame_microseconds": 104039
+    },
+    {
+      "tick": 9104,
+      "generation": 11,
+      "fixed_microseconds": 19740,
+      "frame_microseconds": 47953
+    },
+    {
+      "tick": 9765,
+      "generation": 12,
+      "fixed_microseconds": 18447,
+      "frame_microseconds": 35806
+    },
+    {
+      "tick": 10401,
+      "generation": 13,
+      "fixed_microseconds": 15756,
+      "frame_microseconds": 18732
+    },
+    {
+      "tick": 10891,
+      "generation": 14,
+      "fixed_microseconds": 18621,
+      "frame_microseconds": 30628
+    },
+    {
+      "tick": 11980,
+      "generation": 15,
+      "fixed_microseconds": 14509,
+      "frame_microseconds": 16434
+    }
+  ],
+  "gate": {
+    "required_commits": 0,
+    "observed_commits": 15,
+    "p95_frame_microseconds": 70552,
+    "maximum_mutation_frame_microseconds": 250000,
+    "passed": true
+  },
+  "notes": [
+    "wall-clock evidence only; never read by simulation",
+    "pipeline probe reproduces the live seed/config and discards its artifacts",
+    "frame samples are Bevy Time deltas and include presentation/present delay",
+    "mutation frame is the next measured frame, which contains prior-frame fixed/update work",
+    "by_register buckets each frame by the register the runner stood in; a Time delta describes the previous frame, so single samples astride a cell crossing land in the neighbouring bucket",
+    "by_register sample counts are whatever the bot's route happened to visit, not a balanced design; compare medians, and treat thin buckets as unmeasured"
+  ]
+}

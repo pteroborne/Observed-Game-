@@ -36,8 +36,13 @@ pub(super) fn handle(
     }
     if keyboard.just_pressed(KeyCode::KeyR) {
         let next = state.world.seed.wrapping_add(1);
-        *state = LabState::new(next);
+        *state = state.regenerate(next);
         state.status = format!("reset to seed {next:#018x}");
+        cancel_relayout.write(Default::default());
+    }
+    if keyboard.just_pressed(KeyCode::KeyP) {
+        *state = state.toggle_generation_mode();
+        state.status = format!("switched to {}", state.generation_mode.label());
         cancel_relayout.write(Default::default());
     }
     if keyboard.just_pressed(KeyCode::F1) {
@@ -58,7 +63,7 @@ pub(super) fn handle(
 
     for (index, key) in PRESET_KEYS.into_iter().enumerate() {
         if keyboard.just_pressed(key) {
-            *state = LabState::new(PRESET_SEEDS[index]);
+            *state = state.regenerate(PRESET_SEEDS[index]);
             state.status = format!("preset seed {}", index + 1);
             // The same seed is still a new world: stale relayout work must die.
             cancel_relayout.write(Default::default());

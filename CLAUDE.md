@@ -9,23 +9,6 @@ Day-to-day working reference and command runbook for agents and developers.
 
 ---
 
-## Workspace Orientation
-```text
-/
-├── agents.md                 # Core design rules and AI/developer constraints
-├── CLAUDE.md                 # Streamlined command cheat sheet (this file)
-├── Catalogue.md              # Crate/lab architecture descriptions and bloated files list
-├── ROADMAP.md                # Completed milestones and active phase details
-├── Cargo.toml                # Workspace manifest listing crates and labs
-├── crates/                   # Promoted production crates (observed_core, observed_doors, etc.)
-├── labs/                     # Independently runnable prototype labs
-├── game/                     # Assembled first-person game entry point
-├── server/                   # Headless/listen authoritative LAN host
-└── docs/                     # Documentation archives, decisions, and evidence
-```
-
----
-
 ## Developer Commands
 
 ### Running Labs
@@ -61,29 +44,7 @@ cargo dev-test
 ```
 *Note: Make sure resetting the lab removes all of its Bevy entities/resources without leaking state.*
 
-### Authoring Hex Tiles
-Full workflow (tileforge primitives, contract cheat sheet, lab preview scripts, gotchas): see [docs/tile_authoring.md](docs/tile_authoring.md).
-```powershell
-python tools/tileforge.py                                                  # regenerate authored .map sources
-cargo run -p observed_authoring --bin tilec -- validate <map>              # contract check
-cargo run -p observed_authoring --bin tilec -- build                       # recompile assets/tiles catalog
-$env:OBSERVED2_SCRIPT = "scratch/<view>.json"; cargo dev-run -p hex_tile_lab   # headless preview capture
-```
-
-### Capture Evidence (Showcase screenshot)
-Renders the lab/showcase, saves a PNG, and exits:
-```powershell
-$env:OBSERVED2_CAPTURE = "docs/evidence/<lab_name>.png"; cargo dev-run -p <lab_name>
-```
-
-### Capture Bot POV walkthrough GIF
-To build interactive loopable GIFs for evidence using FFmpeg:
-1. Run bot POV capture:
-   ```powershell
-   $env:OBSERVED2_CAPTURE_BOT = "docs/evidence/bot_pov"; cargo dev-run -p observed_game
-   ```
-2. Compile frames into an optimized GIF using FFmpeg:
-   ```powershell
-   ffmpeg -y -i docs/evidence/bot_pov/bot_pov_%03d.png -vf "palettegen" docs/evidence/bot_pov/palette.png
-   ffmpeg -y -framerate 10 -i docs/evidence/bot_pov/bot_pov_%03d.png -i docs/evidence/bot_pov/palette.png -filter_complex "[0:v][1:v]paletteuse" docs/evidence/bot_pov/bot_pov.gif
-   ```
+### Authoring Hex Tiles & Capturing Evidence
+Tileforge/tilec workflow, showcase PNG capture, and bot-POV GIF capture: see the
+`capture-evidence` skill ([.claude/skills/capture-evidence/SKILL.md](.claude/skills/capture-evidence/SKILL.md))
+and [docs/tile_authoring.md](docs/tile_authoring.md).

@@ -234,7 +234,7 @@ impl HexWfcVisualAssets {
 }
 
 /// Convert shared engine-independent render data into Bevy's mesh format.
-fn hull_mesh(hull: &[Vec3]) -> Option<Mesh> {
+pub(super) fn hull_mesh(hull: &[Vec3]) -> Option<Mesh> {
     let data = ConvexRenderMesh::from_convex_hull(hull)?;
     Some(
         Mesh::new(

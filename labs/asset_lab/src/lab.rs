@@ -45,6 +45,19 @@ impl AssetStatus {
 #[derive(Resource, Default)]
 pub struct SoundSlot(pub Option<Handle<AudioSource>>);
 
+/// Where the lab looks for drop-ins. The plugin resolves the real root, but tests
+/// insert their own so the empty-drop-in case stays testable in a workspace that now
+/// ships real assets — reading `assets_root()` inline left no seam but the process
+/// environment, which parallel tests cannot safely share.
+#[derive(Resource)]
+pub struct AssetRoot(pub std::path::PathBuf);
+
+impl Default for AssetRoot {
+    fn default() -> Self {
+        Self(assets_root())
+    }
+}
+
 fn find(slots: &[AssetSlot], name: &str) -> AssetSlot {
     *slots.iter().find(|s| s.name == name).expect("slot exists")
 }
@@ -52,6 +65,7 @@ fn find(slots: &[AssetSlot], name: &str) -> AssetSlot {
 pub(crate) fn setup_lab(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    asset_root: Res<AssetRoot>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
@@ -77,7 +91,7 @@ pub(crate) fn setup_lab(
     });
 
     let slots = manifest();
-    let root = assets_root();
+    let root = asset_root.0.clone();
     let present = |name: &str| {
         let slot = find(&slots, name);
         (slot, slot_present(&slot, &root))

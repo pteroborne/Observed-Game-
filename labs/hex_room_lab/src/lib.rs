@@ -878,6 +878,9 @@ mod tests {
             weight: 1,
             footprint,
             ports,
+            // The lab diagnostic validates footprint and port geometry only; gameplay
+            // sockets carry their own contract in `observed_authoring`.
+            sockets: Vec::new(),
             hulls: Vec::new(),
             lights: Vec::new(),
         }

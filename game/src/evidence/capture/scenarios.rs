@@ -491,6 +491,16 @@ pub(super) fn capture_results_progress(
             let _ = career.award();
             career.last_unlocks.clear();
             commands.insert_resource(tape);
+            commands.insert_resource(crate::play_setup::ActivePlaySession {
+                kind: if solo {
+                    crate::play_setup::ActivePlayKind::Solo
+                } else {
+                    crate::play_setup::ActivePlayKind::TeamRace
+                },
+                teams: if solo { 1 } else { 4 },
+                members_per_team: 1,
+                networked: false,
+            });
             next.set(GameState::Results);
             request.next_at = elapsed + 1.5;
             request.phase = 1;
@@ -532,7 +542,9 @@ pub(super) fn capture_results_progress(
 
 const RESULTS_CAPTURE_CASES: usize = 4;
 
-fn staged_results_case(index: usize) -> (&'static str, flow::MatchResult, bool, ReplayTape) {
+pub(super) fn staged_results_case(
+    index: usize,
+) -> (&'static str, flow::MatchResult, bool, ReplayTape) {
     use observed_core::TeamId;
 
     let cases = [

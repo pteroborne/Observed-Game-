@@ -785,7 +785,7 @@ pub(crate) fn spawn_match_hud(commands: &mut Commands, high_contrast: bool, debu
     };
     let legend_rows: Vec<(&str, Color)> = vec![
         ("exit", style::marker(MarkerRole::Exit).base_color),
-        ("keystone — pick up", Color::srgb(1.0, 0.82, 0.3)),
+        ("keystone - pick up", Color::srgb(1.0, 0.82, 0.3)),
         (
             "anchor torch - F drop/pick",
             style::marker(MarkerRole::Control).base_color,
@@ -808,7 +808,7 @@ pub(crate) fn spawn_match_hud(commands: &mut Commands, high_contrast: bool, debu
         ),
         ("locked exit (red door)", Color::srgb(1.0, 0.32, 0.22)),
         (
-            "collapse — threat",
+            "collapse - threat",
             style::marker(MarkerRole::Collapse).base_color,
         ),
         (
@@ -822,7 +822,7 @@ pub(crate) fn spawn_match_hud(commands: &mut Commands, high_contrast: bool, debu
         ("klaxon countdown", style::klaxon().base_color),
         ("rival teams", style::marker(MarkerRole::Rival).base_color),
         (
-            "rival sighting — fades as it ages",
+            "rival sighting - fades as it ages",
             style::marker(MarkerRole::Rival).base_color,
         ),
         (
@@ -830,12 +830,12 @@ pub(crate) fn spawn_match_hud(commands: &mut Commands, high_contrast: bool, debu
             style::marker(MarkerRole::Rival).base_color,
         ),
         (
-            "rival anchor — their torch holds the door",
+            "rival anchor - their torch holds the door",
             style::team(1).base_color,
         ),
         ("mystery corridors", Color::srgb(1.0, 0.32, 0.22)),
         (
-            "gantry edge — jump line",
+            "gantry edge - jump line",
             style::surface(SurfaceRole::GantryEdge).base_color,
         ),
         (
@@ -890,7 +890,7 @@ pub(crate) fn spawn_match_hud(commands: &mut Commands, high_contrast: bool, debu
                     },
                     BackgroundColor(PANEL),
                     BorderColor::all(BORDER),
-                    Text::new("Match starting…"),
+                    Text::new("Match starting..."),
                     TextFont {
                         font_size: 1.0,
                         ..default()

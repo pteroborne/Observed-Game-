@@ -1,12 +1,14 @@
 use glam::{Vec2, Vec3};
-use observed_hex::{HexFace, PortClass, PortSignature, TILE_LEVEL_HEIGHT, face_edge};
+use observed_hex::{
+    FLOOR_SLAB_TOP, HexFace, PortClass, PortSignature, TILE_LEVEL_HEIGHT, face_edge,
+};
 use observed_traversal::rapier_controller::{RapierTraversalScene, step_character};
 use observed_traversal::{FpsBody, FpsConfig};
 use player_input::PlayerIntent;
 
 use crate::CompiledTileCatalog;
 use crate::manifest::Manifest;
-use crate::tile::{TileError, parse_tile};
+use crate::tile::{TileError, TilePrototype, parse_tile};
 use crate::tile_source;
 
 fn signature(ports: &[(HexFace, PortClass)]) -> PortSignature {
@@ -195,34 +197,61 @@ fn blueprint_footprint_cells_match_the_phase_90_alignment() {
             missing.push(format!("{archetype}/{reg}"));
         }
     };
-    // Cell -> internally-sealed faces, straight from the alignment note.
-    let sealed: [(&str, &[HexFace]); 11] = [
-        ("room_double_west", &[HexFace::East]),
-        ("room_double_east", &[HexFace::West]),
-        ("room_double_nw", &[HexFace::SouthEast]),
-        ("room_double_se", &[HexFace::NorthWest]),
-        ("room_tri_a", &[HexFace::East, HexFace::SouthEast]),
-        ("room_tri_b", &[HexFace::West, HexFace::SouthWest]),
-        ("room_tri_c", &[HexFace::NorthWest, HexFace::NorthEast]),
-        ("room_fork_a", &[HexFace::East, HexFace::SouthEast]),
+    // Cell -> open sibling faces plus named exterior thresholds, straight from
+    // the blueprint contract.
+    let openings: [(&str, &[HexFace]); 11] = [
+        ("room_double_west", &[HexFace::East, HexFace::West]),
+        ("room_double_east", &[HexFace::West, HexFace::East]),
+        ("room_double_nw", &[HexFace::SouthEast, HexFace::West]),
+        ("room_double_se", &[HexFace::NorthWest, HexFace::East]),
+        (
+            "room_tri_a",
+            &[HexFace::East, HexFace::SouthEast, HexFace::West],
+        ),
+        (
+            "room_tri_b",
+            &[HexFace::West, HexFace::SouthWest, HexFace::East],
+        ),
+        (
+            "room_tri_c",
+            &[HexFace::NorthWest, HexFace::NorthEast, HexFace::SouthEast],
+        ),
+        (
+            "room_fork_a",
+            &[HexFace::East, HexFace::SouthEast, HexFace::West],
+        ),
         (
             "room_fork_b",
-            &[HexFace::West, HexFace::SouthWest, HexFace::SouthEast],
+            &[
+                HexFace::West,
+                HexFace::SouthWest,
+                HexFace::SouthEast,
+                HexFace::East,
+            ],
         ),
         (
             "room_fork_c",
-            &[HexFace::NorthWest, HexFace::NorthEast, HexFace::East],
+            &[
+                HexFace::NorthWest,
+                HexFace::NorthEast,
+                HexFace::East,
+                HexFace::West,
+            ],
         ),
-        ("room_fork_d", &[HexFace::West, HexFace::NorthWest]),
+        (
+            "room_fork_d",
+            &[HexFace::West, HexFace::NorthWest, HexFace::East],
+        ),
     ];
     for &reg in tile_source::REGISTERS {
-        require("room_single", reg, signature(&doors(&HexFace::LATERAL)));
-        for (archetype, internal) in sealed {
-            let exterior: Vec<HexFace> = HexFace::LATERAL
-                .into_iter()
-                .filter(|face| !internal.contains(face))
-                .collect();
-            require(archetype, reg, signature(&doors(&exterior)));
+        require("room_single", reg, signature(&doors(&[HexFace::West])));
+        require(
+            "room_single",
+            reg,
+            signature(&doors(&[HexFace::West, HexFace::East])),
+        );
+        for (archetype, open) in openings {
+            require(archetype, reg, signature(&doors(open)));
         }
     }
     assert!(missing.is_empty(), "missing blueprint cells: {missing:#?}");
@@ -399,7 +428,6 @@ fn every_liminal_horizontal_variant_is_capsule_traversable_between_entrances() {
 /// geometric coverage at all. These are the contracts whose violation a player
 /// sees as "the pieces don't smoothly connect".
 #[test]
-#[ignore = "known defect: blocked on decoupling the bot's hardcoded stair waypoints"]
 fn the_switchback_stair_lands_flush_on_the_deck_above() {
     let tile = parse_tile(&tile_source::stair_segment_map("megastructure")).expect("stair parses");
     let climb_top = tile
@@ -482,4 +510,249 @@ fn every_switchback_support_meets_the_span_it_carries() {
         checked += 1;
     }
     assert!(checked >= 3, "expected the flight's piers, found {checked}");
+}
+
+/// The spine is the contract that lets vertical circulation be more than one
+/// shape. Every stair tower has to ship a line a body can walk, whatever its
+/// interior looks like, or authoring a second tower produces geometry the
+/// objective bot cannot follow — which is precisely what blocked backlog #13
+/// for an arc.
+#[test]
+fn every_generated_stair_tower_ships_a_followable_spine() {
+    let cells = tile_source::compatibility_cells().expect("generated kit parses");
+    let towers = cells
+        .iter()
+        .filter(|tile| tile.key.archetype.starts_with("stair_"))
+        .collect::<Vec<_>>();
+    assert!(!towers.is_empty(), "the generated kit has stair towers");
+    for tile in towers {
+        let spine = &tile.spine;
+        assert!(
+            !spine.is_empty(),
+            "{} {} ships no climb spine",
+            tile.key.archetype,
+            tile.key.register
+        );
+        assert_eq!(
+            spine.self_crossing(),
+            None,
+            "{} {} doubles back within a body's width of itself, so a follower \
+             cannot tell which stretch it is on",
+            tile.key.archetype,
+            tile.key.register
+        );
+
+        // Both ends stand on flat deck: the bottom on this cell's floor slab and
+        // the top on the deck of the cell above. A spine that starts partway up
+        // a flight strands a body that walks in through a lateral door.
+        let first = spine.nodes.first().expect("checked non-empty");
+        let last = spine.nodes.last().expect("checked non-empty");
+        assert!(
+            (first.y - FLOOR_SLAB_TOP).abs() <= 0.05,
+            "{} {} starts at {:.2} m, off this cell's deck at {FLOOR_SLAB_TOP:.2} m",
+            tile.key.archetype,
+            tile.key.register,
+            first.y
+        );
+        assert!(
+            (last.y - (TILE_LEVEL_HEIGHT + FLOOR_SLAB_TOP)).abs() <= 0.05,
+            "{} {} ends at {:.2} m, off the deck above at {:.2} m",
+            tile.key.archetype,
+            tile.key.register,
+            last.y,
+            TILE_LEVEL_HEIGHT + FLOOR_SLAB_TOP
+        );
+    }
+}
+
+/// A follower walking the spine must never be sent backwards. This is the
+/// property the old hardcoded steering lacked: it chose its target by proximity
+/// to a waypoint, which flips as you walk away from one, so the bot span on the
+/// spot just past the turn and burnt ~31,000 ticks on a single storey.
+#[test]
+fn walking_the_spine_never_sends_a_follower_backwards() {
+    let tile = parse_tile(&tile_source::stair_segment_map("wellshaft")).expect("stair parses");
+    let spine = &tile.spine;
+    let mut highest = 0;
+    // Sample densely along the spine itself, which is the path a body on the
+    // stair actually traces.
+    for segment in 0..spine.nodes.len() - 1 {
+        for step in 0..=40_u32 {
+            let point = spine.nodes[segment].lerp(spine.nodes[segment + 1], step as f32 / 40.0);
+            let (index, _) = spine.locate(point).expect("a spine with nodes locates");
+            assert!(
+                index >= highest,
+                "walking segment {segment} sent the follower back from {highest} to {index}"
+            );
+            highest = index;
+        }
+    }
+    assert_eq!(
+        highest,
+        spine.nodes.len() - 2,
+        "the walk should finish on the last segment"
+    );
+}
+
+/// The floor path is the other half of the tower contract, and the one that
+/// closes bug backlog #19. A tower's deck has a hole in it; without a declared
+/// route around that hole a body crossing to a lateral door walks into the
+/// stairwell or into a pier, which is exactly how the objective bot wedged.
+#[test]
+fn every_generated_stair_tower_ships_a_walkable_deck() {
+    let cells = tile_source::compatibility_cells().expect("generated kit parses");
+    for tile in cells
+        .iter()
+        .filter(|tile| tile.key.archetype.starts_with("stair_"))
+    {
+        let deck = &tile.deck;
+        assert!(
+            !deck.is_empty(),
+            "{} {} ships no deck path",
+            tile.key.archetype,
+            tile.key.register
+        );
+        for node in &deck.nodes {
+            assert!(
+                (node.y - FLOOR_SLAB_TOP).abs() <= 0.05,
+                "{} {} has a deck node at {:.2} m, off the floor slab at {FLOOR_SLAB_TOP:.2} m",
+                tile.key.archetype,
+                tile.key.register,
+                node.y
+            );
+        }
+
+        // The climb has to be reachable from the floor, or the tower is a
+        // staircase nobody can get to the bottom of.
+        let foot = *tile.spine.nodes.first().expect("towers ship a spine");
+        let approach = deck
+            .nodes
+            .iter()
+            .map(|node| (node.x - foot.x).hypot(node.z - foot.z))
+            .fold(f32::MAX, f32::min);
+        assert!(
+            approach <= 2.0,
+            "{} {}: the foot of the climb is {approach:.2} m from the nearest deck node, so a \
+             body crossing the floor has no declared way onto it",
+            tile.key.archetype,
+            tile.key.register
+        );
+    }
+}
+
+/// Drive a capsule up a tower's own declared climb and see whether it arrives.
+///
+/// This is the gate a new tower shape has to pass. Geometry that validates, and
+/// a spine that parses, still prove nothing about whether a body fits between
+/// the treads and the soffit, or can make the turn — and the cost of finding out
+/// from the bot soak instead is an afternoon of bisecting a stalled match.
+fn climb_capsule_up(tile: &TilePrototype) -> Result<f32, String> {
+    let config = FpsConfig::default();
+    let scene = RapierTraversalScene::from_arena_spec(&tile.arena_spec());
+    let foot = tile
+        .spine
+        .nodes
+        .first()
+        .copied()
+        .expect("towers ship a spine");
+    let mut body = FpsBody::spawned(
+        Vec3::new(foot.x, foot.y + config.half_height + 0.05, foot.z),
+        0.0,
+    );
+    for (index, node) in tile.spine.nodes.iter().enumerate().skip(1) {
+        if !drive_capsule_to(&scene, &mut body, Vec2::new(node.x, node.z), &config) {
+            return Err(format!(
+                "stalled short of spine node {index} at {:?}, feet {:.2} m",
+                body.position,
+                body.position.y - config.half_height
+            ));
+        }
+        let feet = body.position.y - config.half_height;
+        if (feet - node.y).abs() > 0.6 {
+            return Err(format!(
+                "reached spine node {index} in plan but at {feet:.2} m, not the {:.2} m the                  climb declares - the body is not on the surface the line describes",
+                node.y
+            ));
+        }
+    }
+    Ok(body.position.y - config.half_height)
+}
+
+#[test]
+fn every_generated_stair_tower_is_physically_climbable() {
+    let cells = tile_source::compatibility_cells().expect("generated kit parses");
+    let mut exercised = 0usize;
+    // The doorless through-segment of each register: the tower stripped to its
+    // climb, which is the part every landing and cap variant shares.
+    for tile in cells.iter().filter(|tile| {
+        tile.key.archetype == "stair_tower"
+            && tile.signature.port(HexFace::Up) == PortClass::ShaftOpen
+            && tile.signature.port(HexFace::Down) == PortClass::ShaftOpen
+            && HexFace::LATERAL
+                .into_iter()
+                .all(|face| tile.signature.port(face) != PortClass::Door)
+    }) {
+        let feet = climb_capsule_up(tile).unwrap_or_else(|error| {
+            panic!("{} {}: {error}", tile.key.archetype, tile.key.register)
+        });
+        let deck_above = TILE_LEVEL_HEIGHT + FLOOR_SLAB_TOP;
+        assert!(
+            (feet - deck_above).abs() <= 0.35,
+            "{} {} climbed to {feet:.2} m, not the deck above at {deck_above:.2} m",
+            tile.key.archetype,
+            tile.key.register
+        );
+        exercised += 1;
+    }
+    assert!(
+        exercised >= 3,
+        "expected the neutral tower and one per handed district: {exercised}"
+    );
+}
+
+/// Closes bug backlog #13's premise. Every `Shaft` cell used to resolve to one
+/// procedural switchback through the `generic` fallback, in all ten registers —
+/// a facility that is a quarter stairs was a quarter of the *same* stair. The
+/// vertical districts now have towers of their own, and they are not copies.
+#[test]
+fn the_vertical_districts_have_towers_of_their_own() {
+    let cells = tile_source::compatibility_cells().expect("generated kit parses");
+    let through = |register: &str| {
+        cells
+            .iter()
+            .find(|tile| {
+                tile.key.archetype == "stair_tower"
+                    && tile.key.register == register
+                    && tile.signature.port(HexFace::Up) == PortClass::ShaftOpen
+                    && tile.signature.port(HexFace::Down) == PortClass::ShaftOpen
+                    && HexFace::LATERAL
+                        .into_iter()
+                        .all(|face| tile.signature.port(face) != PortClass::Door)
+            })
+            .cloned()
+    };
+    let neutral = through("generic").expect("the fallback tower still exists");
+    for register in ["wellshaft", "megastructure"] {
+        let tower = through(register).unwrap_or_else(|| {
+            panic!("{register} has no tower of its own, so it uses the fallback")
+        });
+
+        // Handed, not merely re-keyed: the climb turns the other way, so the
+        // stairwell opening is on the other side of the cell. Re-keying the same
+        // geometry would satisfy a coverage check while changing nothing a
+        // player can see, which is the trap the `generic` fallback set.
+        let mirrored = neutral
+            .spine
+            .nodes
+            .iter()
+            .zip(&tower.spine.nodes)
+            .all(|(a, b)| (a.x + b.x).abs() < 0.01 && (a.y - b.y).abs() < 0.01);
+        assert!(
+            mirrored,
+            "{register}'s tower is not the mirror of the neutral one: {:?} vs {:?}",
+            neutral.spine.nodes, tower.spine.nodes
+        );
+        let turns_the_other_way = neutral.spine.nodes[1].x * tower.spine.nodes[1].x < 0.0;
+        assert!(turns_the_other_way, "{register}'s tower turns the same way");
+    }
 }

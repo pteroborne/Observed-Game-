@@ -1,0 +1,1078 @@
+{
+  "schema_version": 3,
+  "seed": 263960012067191,
+  "generation": 10,
+  "grid": [
+    28,
+    20,
+    10
+  ],
+  "vsync_uncapped": false,
+  "pipeline": {
+    "solve_microseconds": 0,
+    "projection_microseconds": 0,
+    "collider_scene_microseconds": 0,
+    "cells": 0,
+    "geometry_pieces": 0,
+    "colliders": 0
+  },
+  "view": [
+    {
+      "kind": "startup",
+      "tick": 0,
+      "generation": 0,
+      "microseconds": 465587
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 542,
+      "generation": 1,
+      "microseconds": 16651
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 1255,
+      "generation": 2,
+      "microseconds": 17329
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 2546,
+      "generation": 3,
+      "microseconds": 16546
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 3071,
+      "generation": 4,
+      "microseconds": 17106
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 3580,
+      "generation": 5,
+      "microseconds": 16315
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 4153,
+      "generation": 6,
+      "microseconds": 17736
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 5335,
+      "generation": 7,
+      "microseconds": 16256
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 5944,
+      "generation": 8,
+      "microseconds": 16325
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 6582,
+      "generation": 9,
+      "microseconds": 16761
+    },
+    {
+      "kind": "mutation_delta",
+      "tick": 7772,
+      "generation": 10,
+      "microseconds": 16437
+    }
+  ],
+  "fixed": {
+    "samples": 7655,
+    "minimum_microseconds": 472,
+    "median_microseconds": 1762,
+    "p95_microseconds": 2516,
+    "maximum_microseconds": 28454,
+    "mean_microseconds": 1690
+  },
+  "frame": {
+    "samples": 7647,
+    "minimum_microseconds": 8542,
+    "median_microseconds": 15643,
+    "p95_microseconds": 30368,
+    "maximum_microseconds": 48733,
+    "mean_microseconds": 16684
+  },
+  "by_register": [
+    {
+      "register": "wellshaft",
+      "key_shadows_enabled": true,
+      "key_range": 50.0,
+      "key_outer_angle": 0.7,
+      "frame": {
+        "samples": 1003,
+        "minimum_microseconds": 8542,
+        "median_microseconds": 15696,
+        "p95_microseconds": 30133,
+        "maximum_microseconds": 45014,
+        "mean_microseconds": 16674
+      },
+      "fixed": {
+        "samples": 1004,
+        "minimum_microseconds": 2144,
+        "median_microseconds": 2293,
+        "p95_microseconds": 2643,
+        "maximum_microseconds": 12912,
+        "mean_microseconds": 2365
+      },
+      "median_visible_pieces": 1605,
+      "main_schedule": {
+        "samples": 1003,
+        "minimum_microseconds": 8422,
+        "median_microseconds": 13053,
+        "p95_microseconds": 22144,
+        "maximum_microseconds": 43034,
+        "mean_microseconds": 14301
+      },
+      "median_fixed_steps_per_frame": 1,
+      "median_route_microseconds": 258,
+      "median_route_cells": 53
+    },
+    {
+      "register": "infinite_gallery",
+      "key_shadows_enabled": true,
+      "key_range": 30.0,
+      "key_outer_angle": 0.5,
+      "frame": {
+        "samples": 919,
+        "minimum_microseconds": 8881,
+        "median_microseconds": 15655,
+        "p95_microseconds": 30452,
+        "maximum_microseconds": 46114,
+        "mean_microseconds": 16670
+      },
+      "fixed": {
+        "samples": 921,
+        "minimum_microseconds": 472,
+        "median_microseconds": 1220,
+        "p95_microseconds": 1930,
+        "maximum_microseconds": 27424,
+        "mean_microseconds": 1309
+      },
+      "median_visible_pieces": 2530,
+      "main_schedule": {
+        "samples": 919,
+        "minimum_microseconds": 8576,
+        "median_microseconds": 11665,
+        "p95_microseconds": 21038,
+        "maximum_microseconds": 40058,
+        "mean_microseconds": 13572
+      },
+      "median_fixed_steps_per_frame": 1,
+      "median_route_microseconds": 56,
+      "median_route_cells": 36
+    },
+    {
+      "register": "shadow_screen",
+      "key_shadows_enabled": true,
+      "key_range": 42.0,
+      "key_outer_angle": 0.58,
+      "frame": {
+        "samples": 719,
+        "minimum_microseconds": 8550,
+        "median_microseconds": 15654,
+        "p95_microseconds": 30265,
+        "maximum_microseconds": 33069,
+        "mean_microseconds": 16676
+      },
+      "fixed": {
+        "samples": 719,
+        "minimum_microseconds": 1085,
+        "median_microseconds": 2246,
+        "p95_microseconds": 2601,
+        "maximum_microseconds": 7686,
+        "mean_microseconds": 2237
+      },
+      "median_visible_pieces": 2059,
+      "main_schedule": {
+        "samples": 719,
+        "minimum_microseconds": 8780,
+        "median_microseconds": 13043,
+        "p95_microseconds": 22068,
+        "maximum_microseconds": 38042,
+        "mean_microseconds": 14278
+      },
+      "median_fixed_steps_per_frame": 1,
+      "median_route_microseconds": 254,
+      "median_route_cells": 52
+    },
+    {
+      "register": "facet_monument",
+      "key_shadows_enabled": true,
+      "key_range": 64.0,
+      "key_outer_angle": 0.9,
+      "frame": {
+        "samples": 619,
+        "minimum_microseconds": 8543,
+        "median_microseconds": 15641,
+        "p95_microseconds": 30571,
+        "maximum_microseconds": 45434,
+        "mean_microseconds": 16677
+      },
+      "fixed": {
+        "samples": 619,
+        "minimum_microseconds": 2166,
+        "median_microseconds": 2317,
+        "p95_microseconds": 2686,
+        "maximum_microseconds": 12182,
+        "mean_microseconds": 2394
+      },
+      "median_visible_pieces": 1113,
+      "main_schedule": {
+        "samples": 710,
+        "minimum_microseconds": 8660,
+        "median_microseconds": 13143,
+        "p95_microseconds": 22462,
+        "maximum_microseconds": 164208,
+        "mean_microseconds": 14711
+      },
+      "median_fixed_steps_per_frame": 1,
+      "median_route_microseconds": 263,
+      "median_route_cells": 54
+    },
+    {
+      "register": "liminal_grid",
+      "key_shadows_enabled": false,
+      "key_range": 44.0,
+      "key_outer_angle": 0.0,
+      "frame": {
+        "samples": 4113,
+        "minimum_microseconds": 8549,
+        "median_microseconds": 15627,
+        "p95_microseconds": 30451,
+        "maximum_microseconds": 48733,
+        "mean_microseconds": 16693
+      },
+      "fixed": {
+        "samples": 4118,
+        "minimum_microseconds": 733,
+        "median_microseconds": 1254,
+        "p95_microseconds": 2093,
+        "maximum_microseconds": 28454,
+        "mean_microseconds": 1427
+      },
+      "median_visible_pieces": 2640,
+      "main_schedule": {
+        "samples": 4112,
+        "minimum_microseconds": 7740,
+        "median_microseconds": 11740,
+        "p95_microseconds": 20839,
+        "maximum_microseconds": 55016,
+        "mean_microseconds": 13425
+      },
+      "median_fixed_steps_per_frame": 1,
+      "median_route_microseconds": 60,
+      "median_route_cells": 37
+    },
+    {
+      "register": "institutional",
+      "key_shadows_enabled": true,
+      "key_range": 45.0,
+      "key_outer_angle": 0.85,
+      "frame": {
+        "samples": 274,
+        "minimum_microseconds": 8550,
+        "median_microseconds": 15605,
+        "p95_microseconds": 30525,
+        "maximum_microseconds": 40121,
+        "mean_microseconds": 16674
+      },
+      "fixed": {
+        "samples": 274,
+        "minimum_microseconds": 1093,
+        "median_microseconds": 1224,
+        "p95_microseconds": 2465,
+        "maximum_microseconds": 11177,
+        "mean_microseconds": 1428
+      },
+      "median_visible_pieces": 2349,
+      "main_schedule": {
+        "samples": 274,
+        "minimum_microseconds": 8749,
+        "median_microseconds": 12284,
+        "p95_microseconds": 21522,
+        "maximum_microseconds": 41148,
+        "mean_microseconds": 13893
+      },
+      "median_fixed_steps_per_frame": 1,
+      "median_route_microseconds": 254,
+      "median_route_cells": 51
+    }
+  ],
+  "gpu_passes": [],
+  "systems": [
+    {
+      "register": "institutional",
+      "system": "after_hex_update",
+      "median_microseconds": 6278,
+      "p95_microseconds": 7236,
+      "samples": 274
+    },
+    {
+      "register": "shadow_screen",
+      "system": "after_hex_update",
+      "median_microseconds": 5779,
+      "p95_microseconds": 7053,
+      "samples": 719
+    },
+    {
+      "register": "wellshaft",
+      "system": "after_hex_update",
+      "median_microseconds": 5674,
+      "p95_microseconds": 6901,
+      "samples": 1003
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "after_hex_update",
+      "median_microseconds": 5516,
+      "p95_microseconds": 6359,
+      "samples": 919
+    },
+    {
+      "register": "liminal_grid",
+      "system": "after_hex_update",
+      "median_microseconds": 5418,
+      "p95_microseconds": 6369,
+      "samples": 4112
+    },
+    {
+      "register": "facet_monument",
+      "system": "after_hex_update",
+      "median_microseconds": 5334,
+      "p95_microseconds": 6608,
+      "samples": 711
+    },
+    {
+      "register": "facet_monument",
+      "system": "lantern::sync_dynamic",
+      "median_microseconds": 2950,
+      "p95_microseconds": 3808,
+      "samples": 711
+    },
+    {
+      "register": "liminal_grid",
+      "system": "lantern::sync_dynamic",
+      "median_microseconds": 2666,
+      "p95_microseconds": 3411,
+      "samples": 4113
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "lantern::sync_dynamic",
+      "median_microseconds": 2606,
+      "p95_microseconds": 3617,
+      "samples": 919
+    },
+    {
+      "register": "wellshaft",
+      "system": "lantern::sync_dynamic",
+      "median_microseconds": 2406,
+      "p95_microseconds": 2761,
+      "samples": 1003
+    },
+    {
+      "register": "shadow_screen",
+      "system": "lantern::sync_dynamic",
+      "median_microseconds": 2290,
+      "p95_microseconds": 2619,
+      "samples": 719
+    },
+    {
+      "register": "institutional",
+      "system": "lantern::sync_dynamic",
+      "median_microseconds": 2264,
+      "p95_microseconds": 2673,
+      "samples": 274
+    },
+    {
+      "register": "facet_monument",
+      "system": "sim::finish_runtime",
+      "median_microseconds": 270,
+      "p95_microseconds": 354,
+      "samples": 711
+    },
+    {
+      "register": "wellshaft",
+      "system": "sim::finish_runtime",
+      "median_microseconds": 264,
+      "p95_microseconds": 347,
+      "samples": 1003
+    },
+    {
+      "register": "institutional",
+      "system": "sim::finish_runtime",
+      "median_microseconds": 261,
+      "p95_microseconds": 351,
+      "samples": 274
+    },
+    {
+      "register": "shadow_screen",
+      "system": "sim::finish_runtime",
+      "median_microseconds": 261,
+      "p95_microseconds": 357,
+      "samples": 719
+    },
+    {
+      "register": "liminal_grid",
+      "system": "sim::finish_runtime",
+      "median_microseconds": 67,
+      "p95_microseconds": 117,
+      "samples": 4113
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "sim::finish_runtime",
+      "median_microseconds": 63,
+      "p95_microseconds": 108,
+      "samples": 919
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "view::sync_streamed_cells",
+      "median_microseconds": 56,
+      "p95_microseconds": 105,
+      "samples": 919
+    },
+    {
+      "register": "liminal_grid",
+      "system": "view::sync_streamed_cells",
+      "median_microseconds": 56,
+      "p95_microseconds": 98,
+      "samples": 4113
+    },
+    {
+      "register": "institutional",
+      "system": "view::sync_streamed_cells",
+      "median_microseconds": 54,
+      "p95_microseconds": 137,
+      "samples": 274
+    },
+    {
+      "register": "shadow_screen",
+      "system": "view::sync_streamed_cells",
+      "median_microseconds": 54,
+      "p95_microseconds": 103,
+      "samples": 719
+    },
+    {
+      "register": "wellshaft",
+      "system": "view::sync_streamed_cells",
+      "median_microseconds": 54,
+      "p95_microseconds": 98,
+      "samples": 1003
+    },
+    {
+      "register": "facet_monument",
+      "system": "view::sync_streamed_cells",
+      "median_microseconds": 53,
+      "p95_microseconds": 96,
+      "samples": 711
+    },
+    {
+      "register": "shadow_screen",
+      "system": "view::sync_changed_geometry",
+      "median_microseconds": 49,
+      "p95_microseconds": 91,
+      "samples": 719
+    },
+    {
+      "register": "facet_monument",
+      "system": "audio::sync",
+      "median_microseconds": 48,
+      "p95_microseconds": 103,
+      "samples": 711
+    },
+    {
+      "register": "shadow_screen",
+      "system": "audio::sync",
+      "median_microseconds": 48,
+      "p95_microseconds": 104,
+      "samples": 719
+    },
+    {
+      "register": "wellshaft",
+      "system": "audio::sync",
+      "median_microseconds": 48,
+      "p95_microseconds": 97,
+      "samples": 1003
+    },
+    {
+      "register": "wellshaft",
+      "system": "view::sync_changed_geometry",
+      "median_microseconds": 44,
+      "p95_microseconds": 91,
+      "samples": 1003
+    },
+    {
+      "register": "facet_monument",
+      "system": "view::sync_changed_geometry",
+      "median_microseconds": 43,
+      "p95_microseconds": 93,
+      "samples": 711
+    },
+    {
+      "register": "institutional",
+      "system": "audio::sync",
+      "median_microseconds": 43,
+      "p95_microseconds": 100,
+      "samples": 274
+    },
+    {
+      "register": "facet_monument",
+      "system": "tacmap::sync",
+      "median_microseconds": 42,
+      "p95_microseconds": 87,
+      "samples": 711
+    },
+    {
+      "register": "institutional",
+      "system": "view::sync_changed_geometry",
+      "median_microseconds": 42,
+      "p95_microseconds": 105,
+      "samples": 274
+    },
+    {
+      "register": "shadow_screen",
+      "system": "tacmap::sync",
+      "median_microseconds": 42,
+      "p95_microseconds": 85,
+      "samples": 719
+    },
+    {
+      "register": "wellshaft",
+      "system": "tacmap::sync",
+      "median_microseconds": 42,
+      "p95_microseconds": 80,
+      "samples": 1003
+    },
+    {
+      "register": "liminal_grid",
+      "system": "audio::sync",
+      "median_microseconds": 39,
+      "p95_microseconds": 97,
+      "samples": 4113
+    },
+    {
+      "register": "institutional",
+      "system": "tacmap::sync",
+      "median_microseconds": 37,
+      "p95_microseconds": 86,
+      "samples": 274
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "audio::sync",
+      "median_microseconds": 36,
+      "p95_microseconds": 96,
+      "samples": 919
+    },
+    {
+      "register": "liminal_grid",
+      "system": "view::sync_changed_geometry",
+      "median_microseconds": 35,
+      "p95_microseconds": 86,
+      "samples": 4113
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "view::sync_changed_geometry",
+      "median_microseconds": 34,
+      "p95_microseconds": 99,
+      "samples": 919
+    },
+    {
+      "register": "liminal_grid",
+      "system": "tacmap::sync",
+      "median_microseconds": 33,
+      "p95_microseconds": 84,
+      "samples": 4113
+    },
+    {
+      "register": "wellshaft",
+      "system": "lantern::sync_projection",
+      "median_microseconds": 33,
+      "p95_microseconds": 82,
+      "samples": 1003
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "tacmap::sync",
+      "median_microseconds": 32,
+      "p95_microseconds": 81,
+      "samples": 919
+    },
+    {
+      "register": "shadow_screen",
+      "system": "lantern::sync_projection",
+      "median_microseconds": 32,
+      "p95_microseconds": 79,
+      "samples": 719
+    },
+    {
+      "register": "facet_monument",
+      "system": "lantern::sync_projection",
+      "median_microseconds": 31,
+      "p95_microseconds": 82,
+      "samples": 711
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "lantern::sync_projection",
+      "median_microseconds": 28,
+      "p95_microseconds": 80,
+      "samples": 919
+    },
+    {
+      "register": "institutional",
+      "system": "lantern::sync_projection",
+      "median_microseconds": 28,
+      "p95_microseconds": 90,
+      "samples": 274
+    },
+    {
+      "register": "liminal_grid",
+      "system": "lantern::sync_projection",
+      "median_microseconds": 28,
+      "p95_microseconds": 82,
+      "samples": 4113
+    },
+    {
+      "register": "facet_monument",
+      "system": "input::map_input",
+      "median_microseconds": 9,
+      "p95_microseconds": 25,
+      "samples": 711
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "input::map_input",
+      "median_microseconds": 9,
+      "p95_microseconds": 25,
+      "samples": 919
+    },
+    {
+      "register": "institutional",
+      "system": "input::map_input",
+      "median_microseconds": 9,
+      "p95_microseconds": 31,
+      "samples": 274
+    },
+    {
+      "register": "liminal_grid",
+      "system": "input::map_input",
+      "median_microseconds": 9,
+      "p95_microseconds": 24,
+      "samples": 4113
+    },
+    {
+      "register": "shadow_screen",
+      "system": "input::map_input",
+      "median_microseconds": 9,
+      "p95_microseconds": 26,
+      "samples": 719
+    },
+    {
+      "register": "wellshaft",
+      "system": "input::map_input",
+      "median_microseconds": 9,
+      "p95_microseconds": 31,
+      "samples": 1003
+    },
+    {
+      "register": "facet_monument",
+      "system": "feedback::sync",
+      "median_microseconds": 7,
+      "p95_microseconds": 23,
+      "samples": 711
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "feedback::sync",
+      "median_microseconds": 7,
+      "p95_microseconds": 21,
+      "samples": 919
+    },
+    {
+      "register": "institutional",
+      "system": "feedback::sync",
+      "median_microseconds": 7,
+      "p95_microseconds": 21,
+      "samples": 274
+    },
+    {
+      "register": "liminal_grid",
+      "system": "feedback::sync",
+      "median_microseconds": 7,
+      "p95_microseconds": 20,
+      "samples": 4113
+    },
+    {
+      "register": "shadow_screen",
+      "system": "feedback::sync",
+      "median_microseconds": 7,
+      "p95_microseconds": 21,
+      "samples": 719
+    },
+    {
+      "register": "wellshaft",
+      "system": "feedback::sync",
+      "median_microseconds": 7,
+      "p95_microseconds": 21,
+      "samples": 1003
+    },
+    {
+      "register": "facet_monument",
+      "system": "entities::sync",
+      "median_microseconds": 6,
+      "p95_microseconds": 19,
+      "samples": 711
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "entities::sync",
+      "median_microseconds": 6,
+      "p95_microseconds": 20,
+      "samples": 919
+    },
+    {
+      "register": "institutional",
+      "system": "entities::sync",
+      "median_microseconds": 6,
+      "p95_microseconds": 17,
+      "samples": 274
+    },
+    {
+      "register": "liminal_grid",
+      "system": "entities::sync",
+      "median_microseconds": 6,
+      "p95_microseconds": 19,
+      "samples": 4113
+    },
+    {
+      "register": "shadow_screen",
+      "system": "entities::sync",
+      "median_microseconds": 6,
+      "p95_microseconds": 20,
+      "samples": 719
+    },
+    {
+      "register": "wellshaft",
+      "system": "entities::sync",
+      "median_microseconds": 6,
+      "p95_microseconds": 20,
+      "samples": 1003
+    },
+    {
+      "register": "facet_monument",
+      "system": "view::sync_lighting_and_atmosphere",
+      "median_microseconds": 3,
+      "p95_microseconds": 9,
+      "samples": 711
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "view::sync_lighting_and_atmosphere",
+      "median_microseconds": 3,
+      "p95_microseconds": 6,
+      "samples": 919
+    },
+    {
+      "register": "institutional",
+      "system": "view::sync_lighting_and_atmosphere",
+      "median_microseconds": 3,
+      "p95_microseconds": 5,
+      "samples": 274
+    },
+    {
+      "register": "liminal_grid",
+      "system": "view::sync_lighting_and_atmosphere",
+      "median_microseconds": 3,
+      "p95_microseconds": 6,
+      "samples": 4113
+    },
+    {
+      "register": "shadow_screen",
+      "system": "view::sync_lighting_and_atmosphere",
+      "median_microseconds": 3,
+      "p95_microseconds": 7,
+      "samples": 719
+    },
+    {
+      "register": "wellshaft",
+      "system": "view::sync_lighting_and_atmosphere",
+      "median_microseconds": 3,
+      "p95_microseconds": 7,
+      "samples": 1003
+    },
+    {
+      "register": "facet_monument",
+      "system": "input::mode_hotkeys",
+      "median_microseconds": 2,
+      "p95_microseconds": 5,
+      "samples": 711
+    },
+    {
+      "register": "facet_monument",
+      "system": "view::sync_camera",
+      "median_microseconds": 2,
+      "p95_microseconds": 6,
+      "samples": 711
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "input::mode_hotkeys",
+      "median_microseconds": 2,
+      "p95_microseconds": 4,
+      "samples": 919
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "view::sync_camera",
+      "median_microseconds": 2,
+      "p95_microseconds": 5,
+      "samples": 919
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "view::sync_practical_shadow_budget",
+      "median_microseconds": 2,
+      "p95_microseconds": 6,
+      "samples": 919
+    },
+    {
+      "register": "institutional",
+      "system": "input::mode_hotkeys",
+      "median_microseconds": 2,
+      "p95_microseconds": 3,
+      "samples": 274
+    },
+    {
+      "register": "institutional",
+      "system": "view::sync_camera",
+      "median_microseconds": 2,
+      "p95_microseconds": 6,
+      "samples": 274
+    },
+    {
+      "register": "liminal_grid",
+      "system": "input::mode_hotkeys",
+      "median_microseconds": 2,
+      "p95_microseconds": 4,
+      "samples": 4113
+    },
+    {
+      "register": "liminal_grid",
+      "system": "view::sync_camera",
+      "median_microseconds": 2,
+      "p95_microseconds": 5,
+      "samples": 4113
+    },
+    {
+      "register": "liminal_grid",
+      "system": "view::sync_practical_shadow_budget",
+      "median_microseconds": 2,
+      "p95_microseconds": 6,
+      "samples": 4113
+    },
+    {
+      "register": "shadow_screen",
+      "system": "input::mode_hotkeys",
+      "median_microseconds": 2,
+      "p95_microseconds": 5,
+      "samples": 719
+    },
+    {
+      "register": "shadow_screen",
+      "system": "view::sync_camera",
+      "median_microseconds": 2,
+      "p95_microseconds": 6,
+      "samples": 719
+    },
+    {
+      "register": "wellshaft",
+      "system": "input::mode_hotkeys",
+      "median_microseconds": 2,
+      "p95_microseconds": 5,
+      "samples": 1003
+    },
+    {
+      "register": "wellshaft",
+      "system": "view::sync_camera",
+      "median_microseconds": 2,
+      "p95_microseconds": 6,
+      "samples": 1003
+    },
+    {
+      "register": "wellshaft",
+      "system": "view::sync_practical_shadow_budget",
+      "median_microseconds": 2,
+      "p95_microseconds": 6,
+      "samples": 1003
+    },
+    {
+      "register": "facet_monument",
+      "system": "hud::sync",
+      "median_microseconds": 1,
+      "p95_microseconds": 4,
+      "samples": 711
+    },
+    {
+      "register": "facet_monument",
+      "system": "view::sync_practical_shadow_budget",
+      "median_microseconds": 1,
+      "p95_microseconds": 7,
+      "samples": 711
+    },
+    {
+      "register": "infinite_gallery",
+      "system": "hud::sync",
+      "median_microseconds": 1,
+      "p95_microseconds": 3,
+      "samples": 919
+    },
+    {
+      "register": "institutional",
+      "system": "hud::sync",
+      "median_microseconds": 1,
+      "p95_microseconds": 3,
+      "samples": 274
+    },
+    {
+      "register": "institutional",
+      "system": "view::sync_practical_shadow_budget",
+      "median_microseconds": 1,
+      "p95_microseconds": 5,
+      "samples": 274
+    },
+    {
+      "register": "liminal_grid",
+      "system": "hud::sync",
+      "median_microseconds": 1,
+      "p95_microseconds": 3,
+      "samples": 4113
+    },
+    {
+      "register": "shadow_screen",
+      "system": "hud::sync",
+      "median_microseconds": 1,
+      "p95_microseconds": 3,
+      "samples": 719
+    },
+    {
+      "register": "shadow_screen",
+      "system": "view::sync_practical_shadow_budget",
+      "median_microseconds": 1,
+      "p95_microseconds": 6,
+      "samples": 719
+    },
+    {
+      "register": "wellshaft",
+      "system": "hud::sync",
+      "median_microseconds": 1,
+      "p95_microseconds": 5,
+      "samples": 1003
+    }
+  ],
+  "streaming_churn_frames": {
+    "samples": 119,
+    "minimum_microseconds": 10166,
+    "median_microseconds": 15592,
+    "p95_microseconds": 31371,
+    "maximum_microseconds": 33259,
+    "mean_microseconds": 17254
+  },
+  "streaming_steady_frames": {
+    "samples": 7528,
+    "minimum_microseconds": 8542,
+    "median_microseconds": 15643,
+    "p95_microseconds": 30359,
+    "maximum_microseconds": 48733,
+    "mean_microseconds": 16675
+  },
+  "peak_visible_cells": 90,
+  "commits": [
+    {
+      "tick": 542,
+      "generation": 1,
+      "fixed_microseconds": 12182,
+      "frame_microseconds": 15058
+    },
+    {
+      "tick": 1255,
+      "generation": 2,
+      "fixed_microseconds": 12912,
+      "frame_microseconds": 15933
+    },
+    {
+      "tick": 2546,
+      "generation": 3,
+      "fixed_microseconds": 11177,
+      "frame_microseconds": 15558
+    },
+    {
+      "tick": 3071,
+      "generation": 4,
+      "fixed_microseconds": 14027,
+      "frame_microseconds": 16373
+    },
+    {
+      "tick": 3580,
+      "generation": 5,
+      "fixed_microseconds": 11454,
+      "frame_microseconds": 14848
+    },
+    {
+      "tick": 4153,
+      "generation": 6,
+      "fixed_microseconds": 11560,
+      "frame_microseconds": 31207
+    },
+    {
+      "tick": 5335,
+      "generation": 7,
+      "fixed_microseconds": 11028,
+      "frame_microseconds": 15513
+    },
+    {
+      "tick": 5944,
+      "generation": 8,
+      "fixed_microseconds": 11364,
+      "frame_microseconds": 16083
+    },
+    {
+      "tick": 6582,
+      "generation": 9,
+      "fixed_microseconds": 9809,
+      "frame_microseconds": 16337
+    },
+    {
+      "tick": 7772,
+      "generation": 10,
+      "fixed_microseconds": 10346,
+      "frame_microseconds": 32666
+    }
+  ],
+  "gate": {
+    "required_commits": 10,
+    "observed_commits": 10,
+    "p95_frame_microseconds": 30368,
+    "maximum_mutation_frame_microseconds": 32666,
+    "passed": false
+  },
+  "notes": [
+    "wall-clock evidence only; never read by simulation",
+    "pipeline probe reproduces the live seed/config and discards its artifacts",
+    "frame samples are Bevy Time deltas and include presentation/present delay",
+    "mutation frame is the next measured frame, which contains prior-frame fixed/update work",
+    "by_register buckets each frame by the register the runner stood in; a Time delta describes the previous frame, so single samples astride a cell crossing land in the neighbouring bucket",
+    "by_register sample counts are whatever the bot's route happened to visit, not a balanced design; compare medians, and treat thin buckets as unmeasured"
+  ]
+}

@@ -57,8 +57,10 @@ pub(super) fn catalogue() -> Vec<HexVariant> {
         weight: 4,
     }];
 
-    // 1. Room variants: any lateral door mask, optionally a vertical opening
-    //    for the fixed two-level Guardian Control atrium.
+    // 1. Room variants: any lateral opening mask, optionally a vertical
+    //    opening for the fixed two-level Guardian Control atrium. Stamped
+    //    blueprint cells use matched room↔room openings across their internal
+    //    seams and named doors where the footprint meets a hall.
     for &up in &[PortClass::Sealed, PortClass::ShaftOpen] {
         for &down in &[PortClass::Sealed, PortClass::ShaftOpen] {
             for mask in 0u8..64 {
@@ -133,15 +135,43 @@ pub(super) fn catalogue() -> Vec<HexVariant> {
         });
     }
 
-    // 4. Legacy logical well states remain part of the solver's vertical
+    // 4. Open expanse cells. Only masks of four or more doors qualify: the
+    //    archetype exists so neighbouring cells leave their shared faces open
+    //    and merge into one volume, and a cell that seals half its perimeter
+    //    cannot do that. Weight is modest at the alphabet level — the district
+    //    profiles decide where expanses actually belong.
+    for mask in 1u8..64 {
+        if mask.count_ones() < 4 {
+            continue;
+        }
+        variants.push(HexVariant {
+            space: HexSpace::Hall,
+            archetype: HexArchetype::Expanse,
+            doors: mask,
+            up: PortClass::Sealed,
+            down: PortClass::Sealed,
+            weight: 5,
+        });
+    }
+
+    // 5. Legacy logical well states remain part of the solver's vertical
     // alphabet, but presentation resolves them to grounded stair towers.
+    //
+    // Weights here are deliberately low relative to the flat alphabet. The
+    // shaft family is enormous — a doorless through-shaft plus every one- and
+    // two-door mask against three vertical combinations, 190 entries against a
+    // handful for a straight — so equal per-entry weight is not equal weight at
+    // all, and that arithmetic is how the facility ended up 47 % stairs
+    // (backlog #13). Verticality now comes from Phase 107's district profiles,
+    // which raise it where it is the identity, rather than from a baseline that
+    // raises it everywhere.
     variants.push(HexVariant {
         space: HexSpace::Hall,
         archetype: HexArchetype::Shaft,
         doors: 0,
         up: PortClass::ShaftOpen,
         down: PortClass::ShaftOpen,
-        weight: 6,
+        weight: 3,
     });
     for &up in &[PortClass::Sealed, PortClass::ShaftOpen] {
         for &down in &[PortClass::Sealed, PortClass::ShaftOpen] {
@@ -157,7 +187,7 @@ pub(super) fn catalogue() -> Vec<HexVariant> {
                         doors: mask,
                         up,
                         down,
-                        weight: 4,
+                        weight: 2,
                     });
                 }
             }
@@ -195,6 +225,7 @@ pub fn placement_tile_archetype(placement: &HexPlacement) -> Option<&'static str
         HexArchetype::Junction => Some("hall_junction_4way"),
         HexArchetype::RampUp => Some("hall_ramp"),
         HexArchetype::Shaft => Some("stair_tower"),
+        HexArchetype::Expanse => Some("expanse"),
     }
 }
 
@@ -286,9 +317,6 @@ pub(super) fn variants_compatible(a: HexVariant, b: HexVariant, face: HexFace) -
         let a_open = a.doors & lateral_bit(face) != 0;
         let b_open = b.doors & lateral_bit(face.opposite()) != 0;
         if a_open != b_open {
-            return false;
-        }
-        if a_open && a.space == HexSpace::Room && b.space == HexSpace::Room {
             return false;
         }
         if a_open && (a.space == HexSpace::Void || b.space == HexSpace::Void) {

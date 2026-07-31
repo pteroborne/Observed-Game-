@@ -1,0 +1,22 @@
+[package]
+name = "iso_observer_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = ["2d", "3d", "png"] }
+# The authored tile corpus and the projector that resolves a cell to a tile:
+# the schematic draws real geometry, and the inspector names the real tile.
+observed_authoring = { path = "../../crates/observed_authoring" }
+observed_content = { path = "../../crates/observed_content" }
+# hex_wfc is unconditional in observed_facility — no `wfc` feature needed.
+observed_facility = { path = "../../crates/observed_facility" }
+observed_hex = { path = "../../crates/observed_hex" }
+observed_match = { path = "../../crates/observed_match", default-features = false }
+# Colours come from the production style crate, never invented locally.
+observed_style = { path = "../../crates/observed_style" }
+# `ConvexRenderMesh` turns a hull point cloud into edges without repeating
+# triangulation here.
+observed_traversal = { path = "../../crates/observed_traversal", default-features = false }
+serde_json = "1.0"

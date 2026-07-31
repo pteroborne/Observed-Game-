@@ -91,12 +91,9 @@ pub(crate) struct ContentScene {
     pub scale: f32,
 }
 
-/// The workspace `assets/` directory (where `cargo run` resolves Bevy's asset root).
+/// The packaged or development `assets/` directory shared by all runtime loaders.
 pub(crate) fn assets_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("game crate lives directly under the workspace root")
-        .join("assets")
+    observed_assets::assets_root()
 }
 
 pub(crate) fn asset_present(relative: &str) -> bool {

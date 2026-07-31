@@ -83,6 +83,7 @@ members = [
     "labs/hex_wfc_lab",
     "labs/hex_tile_lab",
     "labs/hex_room_lab",
+    "labs/iso_observer_lab",
     "tools/content_baker",
     "server",
     "game",
