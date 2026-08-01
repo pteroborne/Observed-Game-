@@ -274,6 +274,42 @@ fn every_tunable_field_round_trips() {
     }
 }
 
+/// Every control must say what it does. The complaint this answers is "I don't
+/// know what it would do if I adjust the values", and a placeholder would
+/// satisfy the type system while leaving the author exactly where they were.
+#[test]
+fn every_tunable_field_explains_its_consequence() {
+    for field in TUNABLE_FIELDS {
+        let text = field.consequence;
+        assert!(
+            text.len() >= 40,
+            "{} has a stub consequence: {text:?}",
+            field.label
+        );
+        assert!(
+            text.ends_with('.'),
+            "{} reads as a fragment, not a sentence: {text:?}",
+            field.label
+        );
+        // The label is the control's name; repeating it back teaches nothing.
+        assert!(
+            !text.eq_ignore_ascii_case(field.label),
+            "{} just restates its own name",
+            field.label
+        );
+        assert!(text.is_ascii(), "{} is not ASCII: {text:?}", field.label);
+    }
+
+    // Distinct text per field: copy-pasting one line across a category would
+    // pass every check above while telling an author nothing about the control
+    // in front of them.
+    let mut seen: Vec<&str> = TUNABLE_FIELDS.iter().map(|f| f.consequence).collect();
+    seen.sort_unstable();
+    let total = seen.len();
+    seen.dedup();
+    assert_eq!(total, seen.len(), "two tunables share a consequence string");
+}
+
 #[test]
 fn every_profile_scalar_has_a_tunable_entry() {
     let expected = CompositionTendencies::baseline().fields().len()

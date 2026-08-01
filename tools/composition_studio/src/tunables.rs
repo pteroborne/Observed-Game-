@@ -7,6 +7,13 @@ use crate::StudioTab;
 
 /// One editable scalar field inside a [`HexCompositionProfile`].
 pub struct TunableField {
+    /// What moving this actually does to the facility, in one line.
+    ///
+    /// Not documentation - UI copy, shown at rest beside the control. A row of
+    /// numbers tells an author what a value *is* and never what it *means*, and
+    /// `I don't know what it would do` is the reason a control goes untouched.
+    /// A ratchet requires one per field, so a new tunable cannot ship mute.
+    pub consequence: &'static str,
     pub label: &'static str,
     pub category: &'static str,
     pub tab: StudioTab,
@@ -24,6 +31,7 @@ pub const TUNABLE_FIELDS: &[TunableField] = &[
     // --- Tendencies (4) ---
     TunableField {
         label: "vertical_center_boost",
+        consequence: "Higher pulls ramps and shafts toward the middle of the map, growing a legible vertical core instead of scattered climbs.",
         category: "Tendencies",
         tab: StudioTab::Tuning,
         min: PROFILE_MIN,
@@ -34,6 +42,7 @@ pub const TUNABLE_FIELDS: &[TunableField] = &[
     },
     TunableField {
         label: "vertical_edge_falloff",
+        consequence: "Lower thins climbs at the outer rim, so the edge reads as flat perimeter rather than more of the same.",
         category: "Tendencies",
         tab: StudioTab::Tuning,
         min: PROFILE_MIN,
@@ -44,6 +53,7 @@ pub const TUNABLE_FIELDS: &[TunableField] = &[
     },
     TunableField {
         label: "room_low_level",
+        consequence: "Lower pushes rooms off the ground floor, leaving it to connective corridor instead.",
         category: "Tendencies",
         tab: StudioTab::Tuning,
         min: PROFILE_MIN,
@@ -54,6 +64,7 @@ pub const TUNABLE_FIELDS: &[TunableField] = &[
     },
     TunableField {
         label: "room_high_level",
+        consequence: "Higher stacks rooms toward the top floors, so upper levels read as chambers and lower ones as passage.",
         category: "Tendencies",
         tab: StudioTab::Tuning,
         min: PROFILE_MIN,
@@ -65,6 +76,7 @@ pub const TUNABLE_FIELDS: &[TunableField] = &[
     // --- Archetype Biases (9) ---
     TunableField {
         label: "void_bias",
+        consequence: "Higher leaves more of the lattice empty, opening voids the facility wraps around.",
         category: "Archetype Biases",
         tab: StudioTab::Tuning,
         min: PROFILE_MIN,
@@ -75,6 +87,7 @@ pub const TUNABLE_FIELDS: &[TunableField] = &[
     },
     TunableField {
         label: "room_bias",
+        consequence: "Higher builds more room cells overall, at the cost of the corridor that links them.",
         category: "Archetype Biases",
         tab: StudioTab::Tuning,
         min: PROFILE_MIN,
@@ -85,6 +98,7 @@ pub const TUNABLE_FIELDS: &[TunableField] = &[
     },
     TunableField {
         label: "straight_bias",
+        consequence: "Higher favours long runs, so routes read as corridors rather than as a series of turns.",
         category: "Archetype Biases",
         tab: StudioTab::Tuning,
         min: PROFILE_MIN,
@@ -95,6 +109,7 @@ pub const TUNABLE_FIELDS: &[TunableField] = &[
     },
     TunableField {
         label: "corner_bias",
+        consequence: "Higher favours turns, making paths wind and hiding what is ahead.",
         category: "Archetype Biases",
         tab: StudioTab::Tuning,
         min: PROFILE_MIN,
@@ -105,6 +120,7 @@ pub const TUNABLE_FIELDS: &[TunableField] = &[
     },
     TunableField {
         label: "junction_bias",
+        consequence: "Higher makes branching intersections common, so routes fork more and dead ends thin out.",
         category: "Archetype Biases",
         tab: StudioTab::Tuning,
         min: PROFILE_MIN,
@@ -115,6 +131,7 @@ pub const TUNABLE_FIELDS: &[TunableField] = &[
     },
     TunableField {
         label: "ramp_up_bias",
+        consequence: "Higher builds more walkable ascents, which bots can climb, rather than shafts, which they cannot.",
         category: "Archetype Biases",
         tab: StudioTab::Tuning,
         min: PROFILE_MIN,
@@ -125,6 +142,7 @@ pub const TUNABLE_FIELDS: &[TunableField] = &[
     },
     TunableField {
         label: "ramp_head_bias",
+        consequence: "The upper half of a ramp pair. Moves with ramp_up; on its own it mostly shifts where ascents top out.",
         category: "Archetype Biases",
         tab: StudioTab::Tuning,
         min: PROFILE_MIN,
@@ -135,6 +153,7 @@ pub const TUNABLE_FIELDS: &[TunableField] = &[
     },
     TunableField {
         label: "shaft_bias",
+        consequence: "Higher adds vertical shafts. The facility is already shaft-heavy and the generic switchback is the fragile tile, so raising this tends to cost traversal reliability.",
         category: "Archetype Biases",
         tab: StudioTab::Tuning,
         min: PROFILE_MIN,
@@ -145,6 +164,7 @@ pub const TUNABLE_FIELDS: &[TunableField] = &[
     },
     TunableField {
         label: "expanse_bias",
+        consequence: "Higher opens wall-free floor that neighbouring expanses join into, reading as one large volume rather than cells.",
         category: "Archetype Biases",
         tab: StudioTab::Tuning,
         min: PROFILE_MIN,
@@ -156,6 +176,7 @@ pub const TUNABLE_FIELDS: &[TunableField] = &[
     // --- Score Weights (5) ---
     TunableField {
         label: "connectivity_weight",
+        consequence: "Scoring only. Higher prefers layouts where more rooms are reachable from spawn and routes are redundant.",
         category: "Score Weights",
         tab: StudioTab::Tuning,
         min: 0.0,
@@ -166,6 +187,7 @@ pub const TUNABLE_FIELDS: &[TunableField] = &[
     },
     TunableField {
         label: "elevation_weight",
+        consequence: "Scoring only. Higher prefers layouts that use more of the available floors.",
         category: "Score Weights",
         tab: StudioTab::Tuning,
         min: 0.0,
@@ -176,6 +198,7 @@ pub const TUNABLE_FIELDS: &[TunableField] = &[
     },
     TunableField {
         label: "room_wholeness_weight",
+        consequence: "Scoring only. Higher prefers layouts where rooms come from whole stamped blueprints rather than per-cell fallback.",
         category: "Score Weights",
         tab: StudioTab::Tuning,
         min: 0.0,
@@ -186,6 +209,7 @@ pub const TUNABLE_FIELDS: &[TunableField] = &[
     },
     TunableField {
         label: "variety_weight",
+        consequence: "Scoring only. Higher prefers a mixed spread of traversal shapes, and will penalise a deliberately specialised composition.",
         category: "Score Weights",
         tab: StudioTab::Tuning,
         min: 0.0,
@@ -196,6 +220,7 @@ pub const TUNABLE_FIELDS: &[TunableField] = &[
     },
     TunableField {
         label: "rhythm_weight",
+        consequence: "Scoring only. Higher prefers landmarks spaced evenly rather than clumped.",
         category: "Score Weights",
         tab: StudioTab::Tuning,
         min: 0.0,

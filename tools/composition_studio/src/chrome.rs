@@ -123,7 +123,7 @@ pub fn setup_chrome(mut commands: Commands) {
             parent
                 .spawn((
                     Node {
-                        width: Val::Px(640.0),
+                        width: Val::Px(560.0),
                         max_height: Val::Percent(75.0),
                         flex_direction: FlexDirection::Column,
                         padding: UiRect::all(Val::Px(16.0)),
@@ -137,7 +137,7 @@ pub fn setup_chrome(mut commands: Commands) {
                     menu.spawn((
                         Text::new("COMPOSITION STUDIO"),
                         TextFont {
-                            font_size: 16.0,
+                            font_size: 14.0,
                             ..default()
                         },
                         TextColor(schematic(SchematicRole::Selected).base_color),
