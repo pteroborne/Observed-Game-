@@ -788,6 +788,16 @@ pub(super) fn fallback_geometry_relayout(
     })
 }
 
+/// Test-only view of the protection set, so `pins` can assert that an authored
+/// pin is refused as a mutation site without duplicating the rule.
+#[cfg(test)]
+pub(super) fn protected_for_test(
+    world: &HexWfcWorld,
+    observation: &HexObservationFrame,
+) -> BTreeSet<HexCoord> {
+    protected_with_halo(world, observation)
+}
+
 fn protected_with_halo(
     world: &HexWfcWorld,
     observation: &HexObservationFrame,
@@ -798,6 +808,11 @@ fn protected_with_halo(
         &world.blueprints,
         observation,
     );
+    // Authored pins are protected exactly like an observed cell. Relayout is
+    // the one thing that can undo a pin after the solve, and it would do so
+    // silently — the author would watch a cell they placed become something
+    // else mid-match with nothing reported.
+    protected.extend(world.authored_pins.iter().copied());
     let seeds = protected.clone();
     for coord in seeds {
         for face in HexFace::ALL {

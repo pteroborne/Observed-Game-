@@ -11,11 +11,12 @@ pub mod blueprint;
 mod collapse;
 mod constraints;
 mod context;
+pub mod pins;
 pub mod profile;
 mod relayout;
 #[cfg(test)]
 mod relayout_tests;
-mod score;
+pub mod score;
 #[cfg(test)]
 mod tests;
 mod topology;
@@ -23,7 +24,7 @@ mod trace;
 mod validate;
 mod variants;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use observed_content::ArchitectureRegister;
 use observed_core::{CorridorId, RoomId};
@@ -31,8 +32,9 @@ use observed_core::{CorridorId, RoomId};
 pub use blueprint::{
     RoomBlueprint, StampedBlueprint, blueprint_cell_archetype, blueprint_for_role,
 };
-pub use context::HexInfluenceField;
+pub use context::{HexInfluenceField, PROFILE_MAX, PROFILE_MIN};
 pub use observed_hex::{HexCoord, HexFace, HexGridSize, PortClass, PortSignature};
+pub use pins::{PinDiagnostic, PinFailure, diagnose_pins, resolved_pins};
 pub use profile::{
     ArchetypeBias, COMPOSITION_PROFILE_VERSION, CompositionTendencies, DistrictBias,
     HexCompositionProfile, HexPin, PinIntent, PinPortClass, PinSet, ProfileDefect, ScoreWeights,
@@ -43,6 +45,7 @@ pub use relayout::{
     HexObservationFrame, HexRelayoutCandidate, HexRelayoutDelta, HexRelayoutProgress,
     HexRelayoutWork, HexThresholdKey, district_sites,
 };
+pub use score::{LayoutScore, score_layout, score_layout_with};
 pub use topology::{HexRoute, MAX_CONNECTION_COST};
 pub use trace::SolveStep;
 pub use variants::{
@@ -260,6 +263,14 @@ pub enum HexWfcError {
     /// A production relayout would destroy the guaranteed open/decision cadence.
     OpenVolumeContract,
     NoMutationRegion,
+    /// An authored pin can never be satisfied on this lattice.
+    ///
+    /// Raised before the first attempt, so it names the mistake instead of
+    /// surfacing as [`Self::RetryBudgetExhausted`] once the budget runs out.
+    PinContradiction {
+        coord: HexCoord,
+        reason: pins::PinFailure,
+    },
 }
 
 /// Stable room identity projected from a blueprint's generation key.
@@ -315,6 +326,13 @@ pub struct HexWfcWorld {
     pub cell_revisions: BTreeMap<HexCoord, u32>,
     /// Attempts consumed by the accepted solve (1-based).
     pub last_attempts: u32,
+    /// Cells an author pinned in the profile this world was solved under.
+    ///
+    /// Carried on the world because relayout has to know: it rewires cells at
+    /// runtime, and without this it would happily reroll a cell somebody
+    /// deliberately placed, silently erasing authored intent between one tick
+    /// and the next.
+    pub authored_pins: BTreeSet<HexCoord>,
 }
 
 impl HexWfcWorld {
@@ -445,6 +463,7 @@ impl HexWfcWorld {
                 architecture,
                 cell_revisions,
                 last_attempts: attempts,
+                authored_pins: pins::resolved_pins(config, profile).0.into_keys().collect(),
             },
             attempts,
         ))

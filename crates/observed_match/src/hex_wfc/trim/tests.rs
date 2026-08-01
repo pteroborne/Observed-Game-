@@ -81,6 +81,7 @@ fn two_cell_world() -> HexWfcWorld {
         architecture,
         cell_revisions: BTreeMap::new(),
         last_attempts: 1,
+        authored_pins: Default::default(),
     }
 }
 
