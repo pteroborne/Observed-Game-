@@ -255,11 +255,9 @@ fn layer_detail_is_refused_without_a_single_layer() {
         let mut state = app.world_mut().resource_mut::<StudioState>();
         state.layer = crate::Layer::All;
     }
-    // Viewport keys only reach the viewport with the menu closed - that is the
-    // keyboard-ownership rule, not an accident.
-    app.world_mut()
-        .resource_mut::<crate::LabMenuState>()
-        .is_open = false;
+    // Viewport keys only reach the viewport when the viewport owns the
+    // keyboard - that is the ownership rule, not an accident.
+    app.world_mut().resource_mut::<StudioState>().keyboard_owner = crate::KeyboardOwner::Viewport;
     {
         let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
         keys.press(KeyCode::ShiftLeft);

@@ -58,13 +58,18 @@ pub fn handle_chrome_input(
         return;
     }
 
-    // F2 toggles menu open/closed
+    // F2 collapses the panel to give the facility the whole window. It no
+    // longer changes what the keyboard can reach - that is ownership's job.
     if keyboard.just_pressed(KeyCode::F2) {
-        menu_state.is_open = !menu_state.is_open;
+        state.panel_open = !state.panel_open;
+        menu_state.is_open = state.panel_open;
+        state.touch_view();
     }
 
-    if menu_state.is_open {
-        // While menu is open, it OWNS the keyboard. Hotkeys below are gated.
+    // Keys go to whichever region was last clicked. Both stay live, so you
+    // can drag a value and watch the facility answer - which is the entire
+    // reason the panel stopped being modal.
+    if state.keyboard_owner == crate::KeyboardOwner::Panel {
         if keyboard.just_pressed(KeyCode::Tab) {
             if shift {
                 menu_state.prev_tab();

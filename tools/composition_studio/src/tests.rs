@@ -184,16 +184,25 @@ fn reloading_keeps_the_view_you_were_using() {
     assert!(state.solve_dirty, "a reload must re-solve");
 }
 
-/// The `lab_menu` rule: while the menu is open it owns the keyboard. Pinned by
-/// driving the *same* key in both states and asserting the outcomes differ —
-/// asserting only that nothing happened while open would also pass if the key
-/// were unbound entirely.
+/// "A key never means two things at once" — now enforced by **ownership**
+/// rather than by freezing the world.
+///
+/// The panel used to be modal, which made the tool's core loop impossible: you
+/// cannot watch a facility answer an edit while the edit screen has stopped it.
+/// So both regions stay live and keys go to whichever you last clicked.
+///
+/// Pinned by driving the *same* key under both owners and requiring the
+/// outcomes to differ. Asserting only that nothing happened under one owner
+/// would pass just as well if the key were unbound entirely.
 #[test]
-fn menu_open_gates_viewport_hotkeys() {
-    let press_tab = |menu_open: bool| {
+fn the_keyboard_owner_decides_where_a_key_lands() {
+    let press_tab = |owner: crate::KeyboardOwner| {
         let mut app = headless();
-        app.world_mut().resource_mut::<LabMenuState>().is_open = menu_open;
-        app.world_mut().resource_mut::<StudioState>().layer = Layer::All;
+        {
+            let mut state = app.world_mut().resource_mut::<StudioState>();
+            state.keyboard_owner = owner;
+            state.layer = Layer::All;
+        }
         app.update();
         app.world_mut()
             .resource_mut::<ButtonInput<KeyCode>>()
@@ -203,14 +212,43 @@ fn menu_open_gates_viewport_hotkeys() {
     };
 
     assert_eq!(
-        press_tab(true),
+        press_tab(crate::KeyboardOwner::Panel),
         Layer::All,
-        "Tab must not reach the viewport while the menu owns the keyboard"
+        "Tab must not reach the facility while the panel owns the keyboard"
     );
     assert_ne!(
-        press_tab(false),
+        press_tab(crate::KeyboardOwner::Viewport),
         Layer::All,
-        "Tab must cycle the layer once the menu is closed"
+        "Tab must cycle the layer once the facility owns the keyboard"
+    );
+}
+
+/// Docking means the facility is drawn *beside* the panel, so a cursor position
+/// has to be rebased before it can be compared against projected cell centres.
+/// Getting this wrong offsets every pick by the panel width, which reads as
+/// "clicking selects the wrong cell" rather than as a coordinate-space bug.
+#[test]
+fn cursor_positions_are_rebased_into_the_inset_viewport() {
+    let open = StudioState::default();
+    assert!(open.panel_open);
+    assert_eq!(open.viewport_origin(), crate::PANEL_WIDTH);
+    assert!(!open.cursor_in_viewport(Vec2::new(10.0, 300.0)));
+    assert!(open.cursor_in_viewport(Vec2::new(crate::PANEL_WIDTH + 5.0, 300.0)));
+    assert_eq!(
+        open.cursor_to_viewport(Vec2::new(crate::PANEL_WIDTH + 40.0, 300.0)),
+        Vec2::new(40.0, 300.0)
+    );
+
+    // Collapsed, the facility owns the whole window and no rebasing applies.
+    let collapsed = StudioState {
+        panel_open: false,
+        ..StudioState::default()
+    };
+    assert_eq!(collapsed.viewport_origin(), 0.0);
+    assert!(collapsed.cursor_in_viewport(Vec2::new(10.0, 300.0)));
+    assert_eq!(
+        collapsed.cursor_to_viewport(Vec2::new(40.0, 300.0)),
+        Vec2::new(40.0, 300.0)
     );
 }
 

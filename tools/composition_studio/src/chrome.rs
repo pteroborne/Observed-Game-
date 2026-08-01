@@ -111,88 +111,127 @@ pub fn setup_chrome(mut commands: Commands) {
             Node {
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
-                justify_content: JustifyContent::SpaceBetween,
-                flex_direction: FlexDirection::Column,
-                padding: UiRect::all(Val::Px(16.0)),
+                // Row, not column: the panel is a sibling of the viewport area
+                // now, not an overlay floating above it.
+                flex_direction: FlexDirection::Row,
                 ..default()
             },
             Pickable::IGNORE,
         ))
         .with_children(|parent| {
-            // Modal menu panel container
+            // Docked panel: a full-height column on the left. The 3D camera's
+            // viewport is inset by exactly this width, so the panel sits beside
+            // the facility rather than over it and nothing is ever hidden.
             parent
                 .spawn((
                     Node {
-                        width: Val::Px(560.0),
-                        max_height: Val::Percent(75.0),
+                        width: Val::Px(crate::PANEL_WIDTH),
+                        height: Val::Percent(100.0),
                         flex_direction: FlexDirection::Column,
+                        // Content hugs the left edge. Without this the text node
+                        // is content-sized and drifts to the far side of the
+                        // panel, which reads as a rendering fault rather than a
+                        // layout default.
+                        align_items: AlignItems::FlexStart,
                         padding: UiRect::all(Val::Px(16.0)),
-                        margin: UiRect::bottom(Val::Auto),
+                        border: UiRect::right(Val::Px(2.0)),
+                        overflow: Overflow::scroll_y(),
                         ..default()
                     },
                     BackgroundColor(mat_bg),
+                    // Recoloured each frame to show which region owns the
+                    // keyboard, so "where do my keys go" is never a guess.
+                    BorderColor::all(Color::NONE),
                     ChromeMenuRoot,
                 ))
                 .with_children(|menu| {
                     menu.spawn((
+                        // Explicit full width. A `Text` entity's implicit node is
+                        // content-sized, and a content-sized box inside a column
+                        // gets placed by the cross-axis rule rather than pinned to
+                        // the padding edge - which reads as the panel rendering in
+                        // the wrong place. Sizing the box to the panel makes both
+                        // the justification below and the wrap width mean what
+                        // they say.
+                        Node {
+                            width: Val::Percent(100.0),
+                            ..default()
+                        },
                         Text::new("COMPOSITION STUDIO"),
                         TextFont {
                             font_size: 14.0,
                             ..default()
                         },
+                        // Monospace panel content is laid out with spaces; centre
+                        // justification would break every column alignment in it.
+                        TextLayout::new_with_justify(Justify::Left),
                         TextColor(schematic(SchematicRole::Selected).base_color),
                         ChromeMenuText,
                     ));
                 });
 
-            // The action bar sits directly above the status line, bottom-left:
-            // close to where the eye already goes for state, and out of the
-            // way of the layout itself.
+            // The viewport column: everything to the right of the panel. Its
+            // chrome (action bar, status line) sits at the bottom so the
+            // facility itself keeps the whole upper area.
             parent
                 .spawn((
                     Node {
-                        width: Val::Px(430.0),
-                        padding: UiRect::all(Val::Px(12.0)),
-                        margin: UiRect::top(Val::Auto),
+                        flex_grow: 1.0,
+                        height: Val::Percent(100.0),
                         flex_direction: FlexDirection::Column,
+                        justify_content: JustifyContent::FlexEnd,
                         ..default()
                     },
-                    BackgroundColor(mat_bg),
+                    Pickable::IGNORE,
                 ))
-                .with_children(|bar| {
-                    bar.spawn((
-                        Text::new(""),
-                        TextFont {
-                            font_size: 13.0,
-                            ..default()
-                        },
-                        TextColor(schematic(SchematicRole::Pinned).base_color),
-                        ChromeActionText,
-                    ));
-                });
+                .with_children(|column| {
+                    column
+                        .spawn((
+                            Node {
+                                width: Val::Px(430.0),
+                                margin: UiRect::left(Val::Px(16.0)),
+                                padding: UiRect::all(Val::Px(12.0)),
+                                flex_direction: FlexDirection::Column,
+                                ..default()
+                            },
+                            BackgroundColor(mat_bg),
+                        ))
+                        .with_children(|bar| {
+                            bar.spawn((
+                                Text::new(""),
+                                TextFont {
+                                    font_size: 13.0,
+                                    ..default()
+                                },
+                                TextLayout::new_with_justify(Justify::Left),
+                                TextColor(schematic(SchematicRole::Pinned).base_color),
+                                ChromeActionText,
+                            ));
+                        });
 
-            // Status bar at bottom
-            parent
-                .spawn((
-                    Node {
-                        width: Val::Percent(100.0),
-                        height: Val::Px(40.0),
-                        align_items: AlignItems::Center,
-                        padding: UiRect::axes(Val::Px(16.0), Val::Px(8.0)),
-                        ..default()
-                    },
-                    BackgroundColor(mat_bg),
-                ))
-                .with_children(|bar| {
-                    bar.spawn((
-                        Text::new("Status Line"),
-                        TextFont {
-                            font_size: 13.0,
-                            ..default()
-                        },
-                        TextColor(schematic(SchematicRole::Pinned).base_color),
-                        ChromeStatusText,
-                    ));
+                    column
+                        .spawn((
+                            Node {
+                                width: Val::Percent(100.0),
+                                min_height: Val::Px(40.0),
+                                align_items: AlignItems::Center,
+                                padding: UiRect::axes(Val::Px(16.0), Val::Px(8.0)),
+                                ..default()
+                            },
+                            BackgroundColor(mat_bg),
+                        ))
+                        .with_children(|bar| {
+                            bar.spawn((
+                                Text::new("Status Line"),
+                                TextFont {
+                                    font_size: 13.0,
+                                    ..default()
+                                },
+                                TextLayout::new_with_justify(Justify::Left),
+                                TextColor(schematic(SchematicRole::Pinned).base_color),
+                                ChromeStatusText,
+                            ));
+                        });
                 });
         });
 }
@@ -227,7 +266,7 @@ pub fn update_chrome_ui(
             Without<ChromeStatusText>,
         ),
     >,
-    mut root_query: Query<&mut Visibility, With<ChromeMenuRoot>>,
+    mut root_query: Query<(&mut Node, &mut BorderColor), With<ChromeMenuRoot>>,
 ) {
     if let Ok(mut action) = action_query.single_mut() {
         let shift = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
@@ -236,15 +275,24 @@ pub fn update_chrome_ui(
         **action = crate::actionbar::format_action_bar(&state, &menu_state, shift, ctrl);
     }
 
-    if let Ok(mut vis) = root_query.single_mut() {
-        *vis = if menu_state.is_open {
-            Visibility::Inherited
+    if let Ok((mut node, mut border)) = root_query.single_mut() {
+        // `Display::None` rather than `Visibility::Hidden`: a hidden node still
+        // occupies its width, and the camera viewport is inset by that width,
+        // so the facility would keep a blank stripe beside it.
+        node.display = if state.panel_open {
+            Display::Flex
         } else {
-            Visibility::Hidden
+            Display::None
         };
+        // The owned region carries a lit border. Focus that relies on nothing
+        // visible is focus you have to discover by experiment.
+        *border = BorderColor::all(match state.keyboard_owner {
+            crate::KeyboardOwner::Panel => schematic(SchematicRole::Selected).base_color,
+            crate::KeyboardOwner::Viewport => Color::NONE,
+        });
     }
 
-    if menu_state.is_open {
+    if state.panel_open {
         let Ok(mut text) = menu_query.single_mut() else {
             return;
         };

@@ -26,17 +26,26 @@ pub fn update_hover_and_cursor(
         return;
     };
 
-    let hovered = if menu_state.is_open || menu_state.confirm.is_some() {
-        // The panel currently owns input, so nothing in the viewport is
-        // actionable and pretending otherwise would be a lie. Slice 3.6b docks
-        // the panel and removes this branch.
+    // A pending confirmation is the one genuinely modal thing here, because it
+    // is asking a question that must be answered. Everything else stays live:
+    // the panel no longer freezes the facility.
+    let hovered = if menu_state.confirm.is_some() {
         None
     } else {
         (|| {
             let (camera, camera_transform) = camera_query.single().ok()?;
             let cursor = window.cursor_position()?;
+            if !state.cursor_in_viewport(cursor) {
+                return None;
+            }
             let solved = state.solved.as_ref()?;
-            pick::pick(&solved.world, state.layer, camera, camera_transform, cursor)
+            pick::pick(
+                &solved.world,
+                state.layer,
+                camera,
+                camera_transform,
+                state.cursor_to_viewport(cursor),
+            )
         })()
     };
 
@@ -44,6 +53,14 @@ pub fn update_hover_and_cursor(
         state.hovered = hovered;
         // Overlay only: a ring moved, no hull work.
         state.touch_overlay();
+    }
+
+    // Clicking the panel hands it the keyboard, mirroring the viewport side.
+    if mouse.just_pressed(MouseButton::Left)
+        && let Some(cursor) = window.cursor_position()
+        && !state.cursor_in_viewport(cursor)
+    {
+        state.keyboard_owner = crate::KeyboardOwner::Panel;
     }
 
     let inspecting = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
@@ -76,7 +93,7 @@ pub fn handle_viewport_painting(
     menu_state: Res<LabMenuState>,
     mut state: ResMut<StudioState>,
 ) {
-    if menu_state.is_open || menu_state.confirm.is_some() || !mouse.pressed(MouseButton::Left) {
+    if menu_state.confirm.is_some() || !mouse.pressed(MouseButton::Left) {
         return;
     }
     let Ok(window) = windows.single() else {
@@ -88,10 +105,21 @@ pub fn handle_viewport_painting(
     let Some(cursor) = window.cursor_position() else {
         return;
     };
+    if !state.cursor_in_viewport(cursor) {
+        return;
+    }
+
+    // Clicking the facility hands it the keyboard. That is the whole ownership
+    // rule: you talk to what you touched, and both halves stay live.
+    if mouse.just_pressed(MouseButton::Left) {
+        state.keyboard_owner = crate::KeyboardOwner::Viewport;
+    }
+
+    let local = state.cursor_to_viewport(cursor);
     let Some(solved) = state.solved.as_ref() else {
         return;
     };
-    let Some(coord) = pick::pick(&solved.world, state.layer, camera, camera_transform, cursor)
+    let Some(coord) = pick::pick(&solved.world, state.layer, camera, camera_transform, local)
     else {
         return;
     };

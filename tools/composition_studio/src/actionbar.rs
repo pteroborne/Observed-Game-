@@ -42,16 +42,18 @@ pub fn format_action_bar(
              > [Enter]  promote to corpus\n  [Esc]    cancel",
         );
     }
-    if menu.is_open {
-        // Honest about the current modality rather than describing viewport
-        // actions that cannot fire. Slice 3.6b docks the panel and this branch
-        // becomes "panel has keyboard focus" instead.
+    if state.keyboard_owner == crate::KeyboardOwner::Panel {
+        // The panel has the keys, but the facility is still live: you can pan,
+        // zoom and watch it re-solve while you tune. Saying so matters, because
+        // this tool used to freeze the viewport and the habit is to assume it
+        // still does.
         return String::from(
-            "MENU HAS THE KEYBOARD          [F2] close\n\n\
+            "KEYS -> PANEL      click the facility to switch\n\n\
              > [Up/Dn]     select a control\n\
                [Lt/Rt]     adjust it\n\
                [Tab]       next tab\n\
-               [Ctrl+S]    save to working path",
+               [F2]        collapse the panel\n\n\
+               the facility stays live: RMB pan, wheel zoom",
         );
     }
 
@@ -89,7 +91,8 @@ pub fn format_action_bar(
         },
     ];
 
-    let mut out = format!("MODE  {mode}\n      {target}\n\n");
+    let mut out =
+        format!("KEYS -> VIEWPORT   click the panel to switch\n\nMODE  {mode}\n      {target}\n\n");
     for row in rows {
         let mark = if row.active { ACTIVE } else { INACTIVE };
         out.push_str(&format!("{mark} {:<11}{}\n", row.chord, row.action));
@@ -104,7 +107,15 @@ pub fn format_action_bar(
 mod tests {
     use super::*;
 
+    /// Viewport-owned, because the rows under test are the viewport's.
     fn state() -> StudioState {
+        StudioState {
+            keyboard_owner: crate::KeyboardOwner::Viewport,
+            ..StudioState::default()
+        }
+    }
+
+    fn panel_state() -> StudioState {
         StudioState::default()
     }
 
@@ -147,9 +158,13 @@ mod tests {
     /// With the panel modal, describing viewport actions that cannot fire would
     /// be worse than saying nothing.
     #[test]
-    fn an_open_menu_says_so_instead_of_listing_viewport_actions() {
-        let bar = format_action_bar(&state(), &LabMenuState::default(), false, false);
-        assert!(bar.contains("MENU HAS THE KEYBOARD"), "{bar}");
+    fn a_panel_owned_keyboard_says_so_and_says_the_facility_is_still_live() {
+        let bar = format_action_bar(&panel_state(), &LabMenuState::default(), false, false);
+        assert!(bar.contains("KEYS -> PANEL"), "{bar}");
+        assert!(
+            bar.contains("stays live"),
+            "the old tool froze the viewport; this one must say it does not:\n{bar}"
+        );
         assert!(!bar.contains("RMB/MMB"), "{bar}");
     }
 

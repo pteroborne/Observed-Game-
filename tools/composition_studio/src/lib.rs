@@ -26,6 +26,7 @@ pub mod coverage;
 pub mod detail;
 pub mod draw;
 pub mod input;
+pub mod layer;
 pub mod panels;
 pub mod persist;
 pub mod pick;
@@ -56,6 +57,7 @@ use observed_style::schematic_screen;
 
 pub use chrome::{LabMenuState, StudioTab};
 pub use draw::DrawReport;
+pub use layer::Layer;
 pub use viewport::StudioCamera;
 
 /// The same five seeds `iso_observer_lab` pins, so a studio capture and an Arc O
@@ -72,72 +74,35 @@ pub const PRESET_SEEDS: [u64; 5] = [
 /// value through ten steps should cost one solve, not ten.
 pub const SOLVE_DEBOUNCE_SECONDS: f32 = 0.25;
 
-/// Which levels are drawn. The cycle runs `0, 1, … N-1, All` and wraps.
+/// Width of the docked panel, in logical pixels. The 3D camera's viewport is
+/// inset by this, so the panel sits *beside* the facility rather than on top of
+/// it — nothing is ever hidden behind chrome.
+pub const PANEL_WIDTH: f32 = 560.0;
+
+/// Which region the keyboard is talking to.
+///
+/// The studio used to be modal: opening the panel froze the viewport. That is
+/// the right trade in a lab where a stray keypress moves your character, and
+/// the wrong one in a design tool, where the whole loop is *change a value and
+/// watch the facility answer*. You cannot watch something you have frozen.
+///
+/// So the rule "a key never means two things at once" is kept, but enforced by
+/// **ownership** rather than by blocking the world: whichever region you last
+/// clicked receives keys, both stay live, and the owner is drawn with a border
+/// so it is never a guess.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum Layer {
-    Single(u8),
+pub enum KeyboardOwner {
     #[default]
-    All,
+    Panel,
+    Viewport,
 }
 
-impl Layer {
-    /// The single level being drawn, or `None` for all of them.
+impl KeyboardOwner {
     #[must_use]
-    pub fn level(self) -> Option<u8> {
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Single(level) => Some(level),
-            Self::All => None,
-        }
-    }
-
-    /// Whether `level` is drawn at all.
-    ///
-    /// A single-floor view still draws the floor above and below, dimmed, so
-    /// you can see how they relate — a plan with no context above or below
-    /// tells you nothing about vertical connection. Everything further away is
-    /// dropped, which is what keeps a ten-level facility from stacking into an
-    /// unreadable thicket.
-    #[must_use]
-    pub fn draws(self, level: u8) -> bool {
-        match self {
-            Self::All => true,
-            Self::Single(focus) => level.abs_diff(focus) <= 1,
-        }
-    }
-
-    /// Whether `level` is the floor under inspection, as opposed to context.
-    /// Only the focus floor gets solid detail and full-strength line work.
-    #[must_use]
-    pub fn is_focus(self, level: u8) -> bool {
-        match self {
-            Self::All => true,
-            Self::Single(focus) => level == focus,
-        }
-    }
-
-    #[must_use]
-    pub fn next(self, levels: u8) -> Self {
-        match self {
-            Self::Single(level) if level + 1 < levels => Self::Single(level + 1),
-            Self::Single(_) => Self::All,
-            Self::All => Self::Single(0),
-        }
-    }
-
-    #[must_use]
-    pub fn previous(self, levels: u8) -> Self {
-        match self {
-            Self::Single(0) => Self::All,
-            Self::Single(level) => Self::Single(level - 1),
-            Self::All => Self::Single(levels.saturating_sub(1)),
-        }
-    }
-
-    #[must_use]
-    pub fn label(self) -> String {
-        match self {
-            Self::Single(level) => format!("layer {level}"),
-            Self::All => "all layers".to_string(),
+            Self::Panel => "panel",
+            Self::Viewport => "viewport",
         }
     }
 }
@@ -238,6 +203,11 @@ pub struct StudioState {
     /// View azimuth, in 60-degree detents anchored at the historical default.
     pub detent: usize,
     pub detail_report: detail::DetailReport,
+    /// Whether the docked panel is expanded. Collapsing gives the facility the
+    /// whole window; it never changes what the keyboard can reach.
+    pub panel_open: bool,
+    /// Which region receives keys. See [`KeyboardOwner`].
+    pub keyboard_owner: KeyboardOwner,
     /// What left-drag paints.
     pub brush: brush::Brush,
     /// Diagnostics for the current pin set, refreshed on every pin edit.
@@ -349,6 +319,8 @@ impl Default for StudioState {
             cutaway: true,
             detent: 0,
             detail_report: detail::DetailReport::default(),
+            panel_open: true,
+            keyboard_owner: KeyboardOwner::default(),
             brush: brush::Brush::default(),
             pin_diagnostics: Vec::new(),
             status,
@@ -394,6 +366,31 @@ impl StudioState {
     #[must_use]
     pub fn is_unsaved(&self) -> bool {
         self.profile != self.saved
+    }
+
+    /// Where the facility is drawn, in logical window pixels: the whole window
+    /// minus the docked panel.
+    #[must_use]
+    pub fn viewport_origin(&self) -> f32 {
+        if self.panel_open { PANEL_WIDTH } else { 0.0 }
+    }
+
+    /// Whether a window-space cursor position is over the facility.
+    #[must_use]
+    pub fn cursor_in_viewport(&self, cursor: Vec2) -> bool {
+        cursor.x >= self.viewport_origin()
+    }
+
+    /// Convert a window-space cursor position into the camera's viewport space.
+    ///
+    /// The camera's viewport is inset by the panel, and `world_to_viewport`
+    /// returns coordinates relative to *that* rect while `cursor_position` is
+    /// relative to the window. Picking compares the two, so one of them has to
+    /// move — and getting this wrong offsets every pick by the panel width,
+    /// which reads as "clicking selects the wrong cell".
+    #[must_use]
+    pub fn cursor_to_viewport(&self, cursor: Vec2) -> Vec2 {
+        Vec2::new(cursor.x - self.viewport_origin(), cursor.y)
     }
 
     /// Re-check the pin set. Cheap for the isolation checks, and it runs the
@@ -458,6 +455,7 @@ impl Plugin for StudioPlugin {
                     chrome::update_chrome_ui.after(update_studio_solve),
                     viewport_input::handle_viewport_painting,
                     viewport_input::update_hover_and_cursor,
+                    viewport::sync_camera_viewport,
                 ),
             );
 
@@ -518,6 +516,30 @@ fn setup_studio(mut commands: Commands) {
             ..default()
         },
         StudioCamera,
+    ));
+
+    // The chrome gets its own full-window camera, and this is load-bearing.
+    //
+    // Bevy lays UI out inside its target camera's viewport. The studio camera's
+    // viewport is inset by the panel width so the facility renders beside the
+    // panel - so if the UI also targeted it, the entire chrome tree would be
+    // laid out from the panel's far edge and shifted right by exactly its own
+    // width. That presents as "the panel renders in the wrong place", which
+    // reads as a text or alignment fault and sends you looking at justification.
+    //
+    // Splitting the cameras makes the two coordinate spaces independent: the 3D
+    // camera's viewport describes where the *world* draws, and never moves the
+    // chrome. `IsDefaultUiCamera` is claimed exactly once, here - a second
+    // claimant on the same window silently swallows every UI node.
+    commands.spawn((
+        Camera2d,
+        Camera {
+            order: 1,
+            // The 3D pass has already drawn; clearing would erase the facility.
+            clear_color: ClearColorConfig::None,
+            ..default()
+        },
+        bevy::ui::IsDefaultUiCamera,
     ));
 
     chrome::setup_chrome(commands);

@@ -127,3 +127,46 @@ pub fn sync_camera(
         ..OrthographicProjection::default_3d()
     });
 }
+
+/// Inset the 3D camera so the facility renders beside the panel, not under it.
+///
+/// This is what makes the panel *docked* rather than an overlay: with the
+/// viewport inset, no part of the layout is ever hidden behind chrome, and the
+/// framing maths sees the real drawable area instead of the whole window.
+pub fn sync_camera_viewport(
+    windows: Query<&Window>,
+    state: Res<StudioState>,
+    mut camera: Query<&mut Camera, With<StudioCamera>>,
+) {
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let Ok(mut camera) = camera.single_mut() else {
+        return;
+    };
+
+    let scale = window.scale_factor();
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let left = (state.viewport_origin() * scale) as u32;
+    let full = window.physical_size();
+    // A window narrower than the panel would ask for a zero-width viewport,
+    // which Bevy treats as invalid; fall back to the whole window.
+    let viewport = (full.x > left + 32).then(|| bevy::camera::Viewport {
+        physical_position: UVec2::new(left, 0),
+        physical_size: UVec2::new(full.x - left, full.y),
+        ..default()
+    });
+    // Compared field-wise rather than by equality — `Viewport` is not `PartialEq`
+    // — and only assigned on a real change, so the camera is not marked dirty
+    // every frame.
+    let current = camera
+        .viewport
+        .as_ref()
+        .map(|view| (view.physical_position, view.physical_size));
+    let wanted = viewport
+        .as_ref()
+        .map(|view| (view.physical_position, view.physical_size));
+    if current != wanted {
+        camera.viewport = viewport;
+    }
+}
