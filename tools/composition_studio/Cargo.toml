@@ -1,0 +1,32 @@
+[package]
+name = "composition_studio"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "composition-studio"
+path = "src/main.rs"
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = [
+    "2d",
+    "3d",
+    "png",
+    "experimental_bevy_ui_widgets",
+] }
+# The profile type and the solver it drives. `serde` carries the profile;
+# hex_wfc is unconditional, so no `wfc` feature is needed.
+observed_facility = { path = "../../crates/observed_facility", features = ["serde"] }
+# Profile RON/sidecar I/O and the content-hash fold.
+observed_authoring = { path = "../../crates/observed_authoring" }
+observed_content = { path = "../../crates/observed_content" }
+observed_hex = { path = "../../crates/observed_hex" }
+# The projector: the studio must show what a match would actually build.
+observed_match = { path = "../../crates/observed_match", default-features = false }
+# Colours come from the production style crate, never invented locally.
+observed_style = { path = "../../crates/observed_style" }
+# `ConvexRenderMesh` turns a hull point cloud into edges.
+observed_traversal = { path = "../../crates/observed_traversal", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1.0"

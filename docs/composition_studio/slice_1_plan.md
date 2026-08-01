@@ -1,5 +1,10 @@
 # Slice 1 — `composition_studio` shell + solve controls
 
+> **STATUS: COMPLETE 2026-08-01.** 18 studio tests, 1556 workspace tests, clippy
+> clean. Evidence: `docs/evidence/composition_studio/`. The plan below is kept as
+> the record of intent; deviations that turned out to matter are listed at the
+> end under *Delivery notes*.
+
 Detailed, self-contained execution plan. Written 2026-07-31 immediately after
 Slice 0 landed, so a fresh session can resume without re-deriving context.
 
@@ -446,6 +451,48 @@ Manual pass to actually perform:
    serialize and the error is a confusing missing-trait message.
 9. **Production-scale solves are slow.** Do not wire a slider directly to an
    `arc_default()` solve; debounce, and default to the compact config.
+
+---
+
+## 12. Delivery notes — what this plan got wrong
+
+Five things worth carrying into Slice 2, all found by building the thing:
+
+1. **`DEFAULT_ZOOM` must not be copied from `iso_observer_lab`.** That lab opens
+   at `0.34` because it always solves the 28x20x10 production lattice. The studio
+   defaults to the compact config so a tuning edit re-solves in milliseconds, and
+   at that size `0.34` opens *cropped* — the first action becomes "zoom out".
+   The studio uses `1.0`.
+
+2. **One dirty flag is not enough.** Changing the drawn layer or the selection
+   must redraw without re-solving. The state carries `solve_dirty` and
+   `view_dirty` separately; conflating them re-solves the whole facility every
+   time you press Tab.
+
+3. **There is no honest placeholder for a content hash.** A zeroed catalog digest
+   folds into a plausible-looking *wrong* simulation hash, which is worse than a
+   blank because it reads as authoritative. `CatalogHash` is an enum with an
+   `Unavailable(String)` arm for exactly this reason, and `simulation_hash`
+   returns the literal string `unavailable` rather than inventing one.
+
+4. **The ASCII ratchet earned its place immediately.** It caught an em-dash
+   inside the promotion confirmation prompt — a string that renders to screen,
+   where it would have drawn as a blank box. Ratchets must **walk the source
+   tree, not a hand-written file list**: the first version listed files and had
+   already missed two.
+
+5. **A test that watches something which never moves is worse than no test.**
+   Three lifecycle tests passed vacuously in the first pass — `run_solve` never
+   touches zoom/pan, so "the view survived a re-solve" was a tautology, and the
+   default layer is already `All`, so "the menu gated Tab" proved nothing. The
+   fix is to assert a *difference*: drive the same key with the menu open and
+   closed, and require the two outcomes to differ.
+
+Also worth knowing for whoever is next in `catalog.rs`: `.tileignore` matches
+exact relative paths, not directory prefixes, so it cannot exclude an editor
+autosave folder under `assets/tiles/authored/`. A stray `autosave/*.map` breaks
+`tilec audit` and `tilec build` repo-wide. Teaching `ignored_paths` to honour a
+trailing-slash directory prefix is a small, obviously-correct fix.
 
 ---
 

@@ -212,9 +212,17 @@ center, level-0 floor at z = 0, one level = 128 units (8 m).
    composition's own height** (so a 2-level tile keeps its mezzanine but
    loses roof-level decks). Display-only. Cutaway also swaps the district
    key spot for shadowless inspection fills.
-5. **`tilec audit-seams` is currently a hardcoded narrative report** — its
-   "100% GREEN PASSED" does not check your tile. Trust `validate`, the CAD
-   render, and your own captures instead.
+5. **`tilec audit-seams` is real** (since `85fd683`), and worth running. It
+   samples authored brush geometry at every declared port's boundary plane to
+   derive a `FaceSignature` (port class + floor height + headroom), then checks
+   every same-class pair the solver would consider compatible for elevation
+   agreement — the gap `ports_compatible` cannot see, because equal-class
+   matching bonds a `Door` authored one level too high to any other `Door`.
+   Known limitation: vertical faces are reported but not compared, since the
+   shared level grid pins their elevation. *(This entry previously said the
+   command was a hardcoded narrative report. That was true before `85fd683` and
+   has been wrong since; the stale warning was suppressing use of a working
+   tool.)*
 6. **Windows/PS 5.1**: do not bulk-edit `.map`/`.ron` files with
    `Get-Content`/`Set-Content` (BOM-less UTF-8 mangling). tileforge writes
    with explicit UTF-8 + LF.

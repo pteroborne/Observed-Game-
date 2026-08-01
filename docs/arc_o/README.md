@@ -98,8 +98,10 @@ the catalog, and the projector rather than by playing.
   data/math and always compiles (`crates/observed_facility/Cargo.toml`). So Arc O's solver
   work is covered by a plain `cargo dev-test`, but anything that also touches `full_wfc`
   needs `--features wfc` or it is silently unbuilt.
-- **`tilec audit-seams` is a hardcoded narrative report.** Its pass does not check your
-  tile. Trust `validate`, the CAD render, and your own captures.
+- ~~**`tilec audit-seams` is a hardcoded narrative report.**~~ **Corrected:** it has been
+  a real elevation audit since `85fd683` (derived `FaceSignature` per declared port,
+  compared across every same-class pair the solver would bond). Run it. The
+  `composition_studio` COVERAGE tab surfaces the same result on `A`.
 - **Global variety scoring fights specialization.** `score_layout`'s `archetype_variety` is
   a Shannon entropy over all archetype kinds and will silently penalize exactly what
   Phase 107 produces.
