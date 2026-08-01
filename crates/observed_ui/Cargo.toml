@@ -1,0 +1,23 @@
+[package]
+name = "observed_ui"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Focusable, hoverable menu chrome shared between the shipped frontend and the
+# authoring tools. Extracted from `game/src/screens/widgets/` once a second
+# consumer existed: `agents.md` allows generalising only after the prototype
+# works, and this had shipped through Arcs P and Q before it moved.
+#
+# Deliberately Bevy-only — no game state, no simulation types, no `observed_*`
+# dependency. That is what lets a tool use it without pulling the game in, and
+# it is why the extraction was a file move rather than a rewrite.
+[dependencies]
+# `2d` rather than `3d`: this crate draws UI, and `2d` is what pulls
+# `bevy_ui`/`bevy_text`/`bevy_color`. The widget feature adds headless button
+# semantics, activation events, and the accessibility metadata the focus layer
+# attaches.
+bevy = { version = "0.18.1", default-features = false, features = [
+    "2d",
+    "experimental_bevy_ui_widgets",
+] }

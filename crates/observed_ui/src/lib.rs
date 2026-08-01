@@ -1,10 +1,26 @@
-//! Semantic, accessible frontend widgets shared by every production screen.
+//! Semantic, accessible frontend widgets shared by every production screen and
+//! by the authoring tools.
 //!
-//! This layer owns focus and presentation only. Screen modules attach their own small
+//! This layer owns focus and presentation only. Consumers attach their own small
 //! action components, so adding a button never expands a global business dispatcher.
+//!
+//! Extracted from `game/src/screens/widgets/` in Arc R once the composition
+//! studio became a second consumer. It moved as-is: the modules already had no
+//! dependency on game state, which is what made the extraction a file move
+//! rather than a rewrite, and is the property to preserve.
 
-mod focus;
-mod presentation;
+pub mod focus;
+pub mod presentation;
+pub mod theme;
+
+/// Whether chrome draws in its high-contrast variant.
+///
+/// The one thing this crate needs to know about its host's preferences, so it
+/// is a resource the consumer sets rather than a settings type the crate
+/// imports. `game` mirrors its own accessibility setting into this; a tool can
+/// leave it absent and get the default treatment.
+#[derive(bevy::prelude::Resource, Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct HighContrast(pub bool);
 
 use bevy::{
     input_focus::{
@@ -16,45 +32,46 @@ use bevy::{
     ui_widgets::{Activate, Button as HeadlessButton, UiWidgetsPlugins},
 };
 
-pub(crate) use focus::{ActiveFocusScopes, FocusMemory};
+pub use focus::{ActiveFocusScopes, FocusMemory};
+pub use theme::{WidgetTreatment, WidgetVisualState, widget_treatment};
 
 #[derive(Component, Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct WidgetId {
+pub struct WidgetId {
     namespace: &'static str,
     key: u64,
 }
 
 impl WidgetId {
-    pub(crate) const fn named(namespace: &'static str) -> Self {
+    pub const fn named(namespace: &'static str) -> Self {
         Self { namespace, key: 0 }
     }
 
-    pub(crate) const fn keyed(namespace: &'static str, key: u64) -> Self {
+    pub const fn keyed(namespace: &'static str, key: u64) -> Self {
         Self { namespace, key }
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct FocusScopeId(pub(crate) &'static str);
+pub struct FocusScopeId(pub &'static str);
 
 #[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct FocusScope {
-    pub(crate) id: FocusScopeId,
-    pub(crate) default: WidgetId,
-    pub(crate) back: Option<WidgetId>,
-    pub(crate) priority: i16,
+pub struct FocusScope {
+    pub id: FocusScopeId,
+    pub default: WidgetId,
+    pub back: Option<WidgetId>,
+    pub priority: i16,
     /// Number of visual columns used by directional navigation. Tab remains linear.
-    pub(crate) columns: u16,
+    pub columns: u16,
     /// Screens may remember the last focused control; modal/destructive scopes must
     /// reopen on their safe default.
-    pub(crate) restore_focus: bool,
+    pub restore_focus: bool,
 }
 
 impl FocusScope {
     /// Top-level scope with no semantic Back action. This keeps Escape/controller
     /// East from turning an explicit destructive choice (such as Quit) into an
     /// accidental shortcut.
-    pub(crate) const fn root(id: FocusScopeId, default: WidgetId) -> Self {
+    pub const fn root(id: FocusScopeId, default: WidgetId) -> Self {
         Self {
             id,
             default,
@@ -65,7 +82,7 @@ impl FocusScope {
         }
     }
 
-    pub(crate) const fn screen(id: FocusScopeId, default: WidgetId, back: WidgetId) -> Self {
+    pub const fn screen(id: FocusScopeId, default: WidgetId, back: WidgetId) -> Self {
         Self {
             id,
             default,
@@ -76,12 +93,7 @@ impl FocusScope {
         }
     }
 
-    pub(crate) const fn grid(
-        id: FocusScopeId,
-        default: WidgetId,
-        back: WidgetId,
-        columns: u16,
-    ) -> Self {
+    pub const fn grid(id: FocusScopeId, default: WidgetId, back: WidgetId, columns: u16) -> Self {
         Self {
             id,
             default,
@@ -92,7 +104,7 @@ impl FocusScope {
         }
     }
 
-    pub(crate) const fn overlay(
+    pub const fn overlay(
         id: FocusScopeId,
         default: WidgetId,
         back: WidgetId,
@@ -110,59 +122,59 @@ impl FocusScope {
 }
 
 #[derive(Component, Clone, Copy, Debug)]
-pub(crate) struct FocusTarget {
-    pub(crate) scope: FocusScopeId,
-    pub(crate) order: u16,
+pub struct FocusTarget {
+    pub scope: FocusScopeId,
+    pub order: u16,
 }
 
 #[derive(Component, Clone, Debug)]
-pub(crate) struct WidgetLabel(pub(crate) String);
+pub struct WidgetLabel(pub String);
 
 #[derive(Component)]
-pub(crate) struct WidgetText;
+pub struct WidgetText;
 
 #[derive(Component)]
-pub(crate) struct FocusMarker;
+pub struct FocusMarker;
 
 #[derive(Resource, Debug, Default, Eq, PartialEq)]
-pub(crate) struct UiInputCapture {
+pub struct UiInputCapture {
     owner: Option<&'static str>,
 }
 
 impl UiInputCapture {
-    pub(crate) fn capture(&mut self, owner: &'static str) {
+    pub fn capture(&mut self, owner: &'static str) {
         self.owner = Some(owner);
     }
 
-    pub(crate) fn release(&mut self, owner: &'static str) {
+    pub fn release(&mut self, owner: &'static str) {
         if self.owner == Some(owner) {
             self.owner = None;
         }
     }
 
-    pub(crate) const fn is_active(&self) -> bool {
+    pub const fn is_active(&self) -> bool {
         self.owner.is_some()
     }
 }
 
 #[derive(Message, Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum UiFeedback {
+pub enum UiFeedback {
     FocusMoved,
     Activated,
 }
 
-pub(crate) struct WidgetSpec {
-    pub(crate) id: WidgetId,
-    pub(crate) scope: FocusScopeId,
-    pub(crate) order: u16,
-    pub(crate) label: String,
-    pub(crate) width: f32,
-    pub(crate) height: f32,
-    pub(crate) disabled: bool,
+pub struct WidgetSpec {
+    pub id: WidgetId,
+    pub scope: FocusScopeId,
+    pub order: u16,
+    pub label: String,
+    pub width: f32,
+    pub height: f32,
+    pub disabled: bool,
 }
 
 impl WidgetSpec {
-    pub(crate) fn enabled(
+    pub fn enabled(
         id: WidgetId,
         scope: FocusScopeId,
         order: u16,
@@ -179,7 +191,7 @@ impl WidgetSpec {
         }
     }
 
-    pub(crate) fn disabled(
+    pub fn disabled(
         id: WidgetId,
         scope: FocusScopeId,
         order: u16,
@@ -191,14 +203,14 @@ impl WidgetSpec {
         }
     }
 
-    pub(crate) const fn with_size(mut self, width: f32, height: f32) -> Self {
+    pub const fn with_size(mut self, width: f32, height: f32) -> Self {
         self.width = width;
         self.height = height;
         self
     }
 }
 
-pub(crate) fn spawn_button<B: Bundle>(
+pub fn spawn_button<B: Bundle>(
     parent: &mut ChildSpawnerCommands,
     spec: WidgetSpec,
     behavior: B,
@@ -262,25 +274,25 @@ pub(crate) fn spawn_button<B: Bundle>(
                 font_size: 18.0,
                 ..default()
             },
-            TextColor(crate::view::theme::TITLE),
+            TextColor(crate::theme::LABEL),
             TextLayout::new_with_justify(Justify::Center),
         ));
     });
     entity.id()
 }
 
-pub(crate) fn focus_scope(scope: FocusScope) -> impl Bundle {
+pub fn focus_scope(scope: FocusScope) -> impl Bundle {
     (scope, TabGroup::modal())
 }
 
-pub(crate) fn activation_enabled(
+pub fn activation_enabled(
     activation: &On<Activate>,
     disabled: &Query<(), With<InteractionDisabled>>,
 ) -> bool {
     disabled.get(activation.entity).is_err()
 }
 
-pub(crate) struct FrontendWidgetsPlugin;
+pub struct FrontendWidgetsPlugin;
 
 impl Plugin for FrontendWidgetsPlugin {
     fn build(&self, app: &mut App) {
