@@ -239,7 +239,13 @@ impl TileMeshCache {
     }
 }
 
-fn measure(points: &[Vec3]) -> (f32, f32, Vec3) {
+/// A hull's vertical extent and centroid.
+///
+/// Public because the module viewer runs the same cutaway over raw authored
+/// hulls: one classifier, so a module and the facility it lands in cut away
+/// identically.
+#[must_use]
+pub fn measure(points: &[Vec3]) -> (f32, f32, Vec3) {
     let mut min_y = f32::INFINITY;
     let mut max_y = f32::NEG_INFINITY;
     let mut sum = Vec3::ZERO;

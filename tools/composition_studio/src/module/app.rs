@@ -31,6 +31,16 @@ pub struct ModuleState {
     /// selection has to survive their own edit.
     pub step: usize,
     pub param: usize,
+    /// Hide the ceiling and the walls facing the camera.
+    ///
+    /// **On by default**, unlike the facility view. A module is almost
+    /// always a sealed box, and the reason to open one here is to inspect
+    /// its interior - headroom, a ramp surface, a socket. Opening on a
+    /// solid mass would make the first action of every session the same
+    /// keystroke.
+    pub cutaway: bool,
+    /// How many hulls the last rebuild hid, so the panel can say.
+    pub cut_hulls: usize,
 }
 
 impl Default for ModuleState {
@@ -45,6 +55,8 @@ impl Default for ModuleState {
             status: String::from("scanning"),
             step: 0,
             param: 0,
+            cutaway: true,
+            cut_hulls: 0,
         }
     }
 }
@@ -226,6 +238,13 @@ pub fn handle_input(
     }
     if keyboard.just_pressed(KeyCode::Tab) {
         state.select_next_failing();
+    }
+    // `C` is cutaway in the sibling tool too. A key that means one thing in
+    // one studio and another thing in the other is a trap for the person
+    // who uses both.
+    if keyboard.just_pressed(KeyCode::KeyC) {
+        state.cutaway = !state.cutaway;
+        state.dirty = true;
     }
     if keyboard.just_pressed(KeyCode::KeyQ) {
         state.detent = (state.detent + 1) % crate::viewport::AZIMUTH_DETENTS;

@@ -72,7 +72,7 @@ pub fn update_panel(
     }
     if let Ok(mut text) = status.single_mut() {
         **text = format!(
-            "{}  |  [Up/Dn] module  [Tab] next failing  [Q/E] orbit  wheel zoom",
+            "{}  |  [Up/Dn] module  [Tab] next failing  [C] cutaway  [Q/E] orbit  wheel zoom",
             state.status
         );
     }
@@ -115,6 +115,20 @@ pub fn format_panel(state: &ModuleState) -> String {
             prototype.hulls.len(),
             prototype.levels
         ));
+    }
+
+    // Never let hidden geometry read as absent geometry. A cutaway that
+    // says nothing turns "I cut this away" and "this was never authored"
+    // into the same picture.
+    if state.cutaway {
+        lines.push(if state.cut_hulls > 0 {
+            format!(
+                "CUTAWAY on - {} hull(s) hidden  [C] to show all",
+                state.cut_hulls
+            )
+        } else {
+            String::from("CUTAWAY on - nothing to hide at this angle")
+        });
     }
 
     lines.push(String::new());

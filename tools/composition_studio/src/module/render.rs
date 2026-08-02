@@ -49,6 +49,7 @@ pub fn rebuild_module_view(
     }
 
     let detent = state.detent;
+    let cutaway = state.cutaway;
     let Some(diagnosis) = state.current() else {
         return;
     };
@@ -72,11 +73,12 @@ pub fn rebuild_module_view(
         ..default()
     });
 
+    let bearing = crate::viewport::detent_bearing(detent);
+
     // A key light, off the view axis, so the hull faces take different values.
     // Ambient alone renders a module as one flat silhouette - which is exactly
     // what the first capture of this tool showed, and useless for judging
     // geometry.
-    let bearing = crate::viewport::detent_bearing(detent);
     let key_from = Quat::from_rotation_y(crate::draw::KEY_LIGHT_OFFSET)
         * Vec3::new(bearing.x, 0.0, bearing.y)
         + Vec3::Y * 1.15;
@@ -90,8 +92,16 @@ pub fn rebuild_module_view(
         ModuleVisual,
     ));
 
+    let centres = cell_centres(diagnosis);
+
+    let mut cut = 0usize;
     if let Some(prototype) = diagnosis.prototype.as_ref() {
         for (index, hull) in prototype.hulls.iter().enumerate() {
+            let highlighted = diagnosis.highlight == Highlight::Hull(index);
+            if !highlighted && !hull_survives(hull, &centres, bearing, cutaway) {
+                cut += 1;
+                continue;
+            }
             let Some(render) = ConvexRenderMesh::from_convex_hull(hull) else {
                 continue;
             };
@@ -101,7 +111,7 @@ pub fn rebuild_module_view(
             // The one hull a `DegenerateBrush` names is drawn in the alert
             // colour; everything else stays neutral so the marked one is the
             // only thing competing for attention.
-            let material = if diagnosis.highlight == Highlight::Hull(index) {
+            let material = if highlighted {
                 marker.clone()
             } else {
                 body.clone()
@@ -121,9 +131,88 @@ pub fn rebuild_module_view(
         .prototype
         .as_ref()
         .map_or(1, |prototype| prototype.levels.max(1));
-    spawn_cell_outline(&mut commands, &mut meshes, &mut materials, levels);
+    spawn_cell_outline(&mut commands, &mut meshes, &mut materials, levels, &centres);
 
     spawn_highlight(&mut commands, &mut meshes, &marker, diagnosis.highlight);
+    state.cut_hulls = cut;
+}
+
+/// Whether a hull survives the cutaway, measured against the nearest cell.
+///
+/// The classifier is [`crate::detail::survives`] - the same one the facility
+/// view uses - so a module and the facility it lands in cut away identically.
+/// A second rule here would let a module look right in one tool and wrong in
+/// the other.
+///
+/// The nearest-cell part matters for whole-room modules. `survives` judges the
+/// interior-fitting exemption by plan distance from *its cell's* origin, and a
+/// room's hulls all live in one module-local frame, so a pillar in the cell at
+/// `(1, 0)` is 14 m from the module origin and would be culled as a perimeter
+/// wall. Measuring from the closest cell centre restores the per-cell meaning.
+#[must_use]
+pub fn hull_survives(hull: &[Vec3], centres: &[Vec3], bearing: Vec2, cutaway: bool) -> bool {
+    let (min_y, max_y, centroid) = crate::detail::measure(hull);
+    let local = nearest_local(centroid, centres);
+    crate::detail::survives(min_y, max_y, local, bearing, cutaway)
+}
+
+/// `centroid` relative to whichever cell centre it is closest to, in plan.
+#[must_use]
+pub fn nearest_local(centroid: Vec3, centres: &[Vec3]) -> Vec3 {
+    let plan = Vec2::new(centroid.x, centroid.z);
+    centres
+        .iter()
+        .min_by(|a, b| {
+            let da = plan.distance_squared(Vec2::new(a.x, a.z));
+            let db = plan.distance_squared(Vec2::new(b.x, b.z));
+            da.total_cmp(&db)
+        })
+        .map_or(centroid, |centre| {
+            centroid - Vec3::new(centre.x, 0.0, centre.z)
+        })
+}
+
+/// Where this module's cells sit, in module-local metres.
+///
+/// Taken from the validated footprint when there is one, the recipe when there
+/// is not, and the origin as the last resort. The fallback chain matters: the
+/// moment you most want a cutaway is when validation failed, and that is
+/// exactly when `module` is `None`.
+#[must_use]
+pub fn cell_centres(diagnosis: &crate::module::diagnose::Diagnosis) -> Vec<Vec3> {
+    if let Some(module) = diagnosis.module.as_ref() {
+        let centres: Vec<Vec3> = module
+            .footprint
+            .iter()
+            .map(|cell| plan_origin(i32::from(cell.q), i32::from(cell.r)))
+            .collect();
+        if !centres.is_empty() {
+            return centres;
+        }
+    }
+    if let Some(recipe) = diagnosis.recipe.as_ref() {
+        let centres: Vec<Vec3> = recipe
+            .cells
+            .iter()
+            .map(|cell| plan_origin(cell.q, cell.r))
+            .collect();
+        if !centres.is_empty() {
+            return centres;
+        }
+    }
+    vec![Vec3::ZERO]
+}
+
+/// Plan origin of cell `(q, r)` in world metres.
+///
+/// The same lattice `observed_hex::hex_origin_plan` defines, spelled out here
+/// because that function takes a `HexCoord` whose `q`/`r` are `u16` and a
+/// module footprint is `i16` - a room may legitimately sit at a negative
+/// offset from its anchor. Pinned against the canonical version by a test.
+#[must_use]
+pub fn plan_origin(q: i32, r: i32) -> Vec3 {
+    #[allow(clippy::cast_precision_loss)]
+    Vec3::new((q * 14 + r * 7) as f32, 0.0, (r * 12) as f32)
 }
 
 /// The canonical hex prism, as edges. Drawn from `observed_hex::CORNERS` so it
@@ -134,6 +223,7 @@ fn spawn_cell_outline(
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     levels: u8,
+    centres: &[Vec3],
 ) {
     let outline = materials.add(StandardMaterial {
         base_color: schematic(SchematicRole::Grid).base_color.with_alpha(0.5),
@@ -142,22 +232,34 @@ fn spawn_cell_outline(
         ..default()
     });
     let top = TILE_LEVEL_HEIGHT * f32::from(levels);
-    for level in 0..=u32::from(levels) {
-        let y = TILE_LEVEL_HEIGHT * level as f32;
-        for index in 0..CORNERS.len() {
-            let a = CORNERS[index];
-            let b = CORNERS[(index + 1) % CORNERS.len()];
-            spawn_edge(commands, meshes, &outline, plan(a, y), plan(b, y));
+    // One prism per footprint cell. A single hexagon under a two-cell room
+    // draws a boundary half the size of the one the module is judged against,
+    // which is worse than drawing none.
+    for centre in centres {
+        for level in 0..=u32::from(levels) {
+            #[allow(clippy::cast_precision_loss)]
+            let y = TILE_LEVEL_HEIGHT * level as f32;
+            for index in 0..CORNERS.len() {
+                let a = CORNERS[index];
+                let b = CORNERS[(index + 1) % CORNERS.len()];
+                spawn_edge(
+                    commands,
+                    meshes,
+                    &outline,
+                    *centre + plan(a, y),
+                    *centre + plan(b, y),
+                );
+            }
         }
-    }
-    for corner in CORNERS {
-        spawn_edge(
-            commands,
-            meshes,
-            &outline,
-            plan(corner, 0.0),
-            plan(corner, top),
-        );
+        for corner in CORNERS {
+            spawn_edge(
+                commands,
+                meshes,
+                &outline,
+                *centre + plan(corner, 0.0),
+                *centre + plan(corner, top),
+            );
+        }
     }
 }
 
@@ -308,5 +410,92 @@ mod tests {
         assert!((point.x - 7.0).abs() < 1e-6);
         assert!((point.y - 2.5).abs() < 1e-6, "height must be Y");
         assert!((point.z + 4.0).abs() < 1e-6, "plan depth must be Z");
+    }
+
+    /// The plan formula must match the lattice the rest of the repo uses.
+    /// Spelled out locally only because `hex_origin_plan` takes `u16`, so this
+    /// pins the two together for every coordinate both can express.
+    #[test]
+    fn plan_origin_matches_the_canonical_lattice() {
+        use observed_hex::{HexCoord, hex_origin_plan};
+        for (q, r) in [(0, 0), (1, 0), (0, 1), (2, 3), (5, 1)] {
+            let canonical = hex_origin_plan(HexCoord {
+                q: q as u16,
+                r: r as u16,
+                level: 0,
+            });
+            let mine = plan_origin(q, r);
+            #[allow(clippy::cast_precision_loss)]
+            let expected = Vec3::new(canonical.0 as f32, 0.0, canonical.1 as f32);
+            assert_eq!(mine, expected, "cell ({q}, {r}) disagrees with the lattice");
+        }
+    }
+
+    /// With the cutaway off, nothing is hidden. A classifier that dropped a
+    /// hull even when disabled would be invisible until someone noticed a wall
+    /// missing.
+    #[test]
+    fn nothing_is_cut_when_the_cutaway_is_off() {
+        let wall = vec![
+            Vec3::new(7.0, 0.0, -4.0),
+            Vec3::new(7.0, 0.0, 4.0),
+            Vec3::new(7.0, 8.0, 4.0),
+            Vec3::new(6.5, 8.0, -4.0),
+        ];
+        let centres = [Vec3::ZERO];
+        for detent in 0..crate::viewport::AZIMUTH_DETENTS {
+            let bearing = crate::viewport::detent_bearing(detent);
+            assert!(hull_survives(&wall, &centres, bearing, false));
+        }
+    }
+
+    /// The cutaway has to actually cut. A wall on the camera side goes; the
+    /// same wall from the far side stays.
+    #[test]
+    fn a_near_wall_is_cut_and_a_far_wall_is_not() {
+        let east_wall = vec![
+            Vec3::new(7.0, 0.6, -4.0),
+            Vec3::new(7.0, 0.6, 4.0),
+            Vec3::new(7.0, 7.0, 4.0),
+            Vec3::new(6.5, 7.0, -4.0),
+        ];
+        let centres = [Vec3::ZERO];
+        let toward_east = Vec2::new(1.0, 0.0);
+        let toward_west = Vec2::new(-1.0, 0.0);
+        assert!(
+            !hull_survives(&east_wall, &centres, toward_east, true),
+            "a wall between the viewer and the interior must be cut"
+        );
+        assert!(
+            hull_survives(&east_wall, &centres, toward_west, true),
+            "the far wall is what you are looking at through the gap"
+        );
+    }
+
+    /// The per-cell fix: a fitting in a room's second cell is 14 m from the
+    /// module origin, and judged against that origin it reads as perimeter.
+    /// Measured against its own cell it is interior, and stays.
+    #[test]
+    fn a_fitting_in_a_second_cell_is_not_mistaken_for_a_wall() {
+        let cell = plan_origin(1, 0);
+        let pillar: Vec<Vec3> = [
+            (-0.5, 0.6, -0.5),
+            (0.5, 0.6, -0.5),
+            (0.5, 0.6, 0.5),
+            (-0.5, 7.0, 0.5),
+        ]
+        .into_iter()
+        .map(|(x, y, z)| cell + Vec3::new(x, y, z))
+        .collect();
+
+        let bearing = Vec2::new(1.0, 0.0);
+        assert!(
+            !hull_survives(&pillar, &[Vec3::ZERO], bearing, true),
+            "this test is vacuous unless the origin-only measure would cut it"
+        );
+        assert!(
+            hull_survives(&pillar, &[Vec3::ZERO, cell], bearing, true),
+            "measured against its own cell the pillar is an interior fitting"
+        );
     }
 }
