@@ -5,5 +5,7 @@
 //! the same brush math. See [`geometry`] for why that mattered and how the port
 //! is gated.
 
+pub mod entities;
 pub mod geometry;
+pub mod halls;
 pub mod probe;
