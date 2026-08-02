@@ -18,7 +18,7 @@ use crate::draw::StudioVisual;
 use crate::tunables::TUNABLE_FIELDS;
 use crate::{LabMenuState, Layer, PRESET_SEEDS, ProfileOrigin, StudioPlugin, StudioState};
 
-fn headless() -> App {
+pub fn headless() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
         .add_plugins(AssetPlugin::default())

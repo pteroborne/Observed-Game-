@@ -33,6 +33,7 @@ pub mod pick;
 pub mod script;
 pub mod solve;
 pub mod tunables;
+pub mod tuning_widgets;
 pub mod viewport;
 pub mod viewport_input;
 
@@ -42,6 +43,8 @@ pub mod viewport_input;
 pub mod authoring_tests;
 #[cfg(test)]
 pub mod tests;
+#[cfg(test)]
+pub mod widget_tests;
 
 use std::sync::OnceLock;
 
@@ -433,7 +436,17 @@ pub struct StudioPlugin;
 
 impl Plugin for StudioPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(ClearColor(schematic_screen()))
+        // Not part of `DefaultPlugins`: without it the sliders spawn, lay out,
+        // and draw exactly as they should while ignoring every drag.
+        //
+        // `SliderPlugin` alone, not the whole `UiWidgetsPlugins` group. The
+        // group's menu plugin runs `Update` systems against `InputFocus`, a
+        // resource owned by a plugin this tool does not install - which turns
+        // every headless test into a panic. Taking only the widget in use also
+        // keeps the focus story straight: this tool routes the keyboard through
+        // `KeyboardOwner`, and never through Bevy's focus resource.
+        app.add_plugins(bevy::ui_widgets::SliderPlugin)
+            .insert_resource(ClearColor(schematic_screen()))
             .init_resource::<StudioState>()
             .init_resource::<detail::TileMeshCache>()
             .init_resource::<LabMenuState>()
@@ -453,11 +466,13 @@ impl Plugin for StudioPlugin {
                     draw::rebuild_overlay.after(draw::rebuild_visuals),
                     viewport::sync_camera.after(draw::rebuild_visuals),
                     chrome::update_chrome_ui.after(update_studio_solve),
+                    tuning_widgets::sync_tuning_rows.after(update_studio_solve),
                     viewport_input::handle_viewport_painting,
                     viewport_input::update_hover_and_cursor,
                     viewport::sync_camera_viewport,
                 ),
-            );
+            )
+            .add_observer(tuning_widgets::apply_slider_change);
 
         if let Ok(dir) = std::env::var("OBSERVED2_CAPTURE") {
             app.insert_resource(capture::CaptureState {

@@ -168,6 +168,10 @@ pub fn setup_chrome(mut commands: Commands) {
                         TextColor(schematic(SchematicRole::Selected).base_color),
                         ChromeMenuText,
                     ));
+                    // Real controls for the Tuning tab, as siblings after the
+                    // text node: on that tab the text above holds only the
+                    // header and these rows are the body.
+                    crate::tuning_widgets::spawn_tuning_rows(menu);
                 });
 
             // The viewport column: everything to the right of the panel. Its
@@ -333,7 +337,7 @@ pub fn update_chrome_ui(
                 }
                 s
             }
-            StudioTab::Tuning => format_tuning_panel(&state, menu_state.selected_item),
+            StudioTab::Tuning => format_tuning_panel(&state),
             StudioTab::Pins => crate::panels::pins::format_pins_panel(&state),
             StudioTab::Coverage => match state.solved.as_ref() {
                 Some(solved) => crate::panels::coverage::format_coverage_panel(
