@@ -1,0 +1,141 @@
+// A 180-degree perimeter ramp: enter west at deck level, cross the flat centre,
+// climb the outer wall south-about, and land flush on the deck above.
+//
+// Signature-identical to hall_ramp variant 0 (west door + up ramp_open), so the
+// solver can choose between them for the same demand.
+//
+// Heights are TrenchBroom units: 16 = 1 m, one level = 128, and the deck above
+// sits at 136 (LEVEL + the 8-unit floor slab). The climb must finish exactly
+// there - an overshoot reads as a lip and, past the 0.45 m autostep, physically
+// stops a body stepping back onto the flight.
+//
+// Sweep: outer corners 0 -> 1 -> 2 -> 3, three faces, 180 degrees.
+//   corner0 (112, 64)    h = 8
+//   corner1 (112, -64)   h = 50.667
+//   corner2 (0, -128)    h = 93.333
+//   corner3 (-112, -64)  h = 136
+// Run is 3 edges of ~128 units = ~384; rise is 128. Slope 0.33, comfortably
+// under the 0.65 the validator rejects at, and gentler than hall_ramp's 0.57.
+//
+// TWO TRIANGLES PER FACE, not one quad. The radial seams between facets have to
+// be *level* - both the outer and inner end of a seam at the same height - or a
+// body crossing one walks a sideways tilt. Two level radial edges at different
+// heights do not lie on a plane, so a quad cannot do it; `_ring_ramp` in the
+// silo family splits into triangles for exactly this reason.
+//
+// The inner ring is the outer hexagon at 0.55, which keeps the ramp ~50 units
+// (3.1 m) wide and makes adjacent facets share their inner corner exactly.
+(
+  id: "authored/hall_ramp_perimeter",
+  archetype: "hall_ramp",
+  room_role: None,
+  variant: 1,
+  levels: 2,
+  weight: 7,
+  register: "generic",
+  register_scope: "all",
+  rotation_policy: "sixfold",
+  note: "Perimeter ramp: enter west, climb the outer wall, exit one level up.",
+  cells: [
+    // "open", not "ramp". The ramp floor policy requires a surface over the
+    // cell centre spanning most of a level - it assumes a full-width ramp
+    // like hall_ramp variant 0. A perimeter ramp leaves the centre open by
+    // design, so it is structurally the same declaration silo_ring makes.
+    (q: 0, r: 0, level: 0, levels: 2, floor: "open"),
+  ],
+  ports: [
+    (kind: "lateral", face: 3, class: "door", name: "west_entry", level: 0, q: 0, r: 0),
+    (kind: "vertical", face: "up", class: "ramp_open", name: "upper_ramp", level: 0),
+  ],
+  // The climbable line, bottom to top, down the middle of the ramp band.
+  //
+  // Geometry alone does not tell a follower where a climb goes, and this one
+  // goes round a wall - a straight line across the tile finds the open middle
+  // and stops. Without these nodes nothing can walk it, which is exactly what
+  // the switchback cost.
+  //
+  // Node 0 sits on the flat deck at the foot and the last on the landing, so
+  // the ends join the flat circulation either side without a special case.
+  // Heights match the ramp facets: 8, 50.667, 93.333, 136.
+  spine: [
+    (43.4, 24.8, 8.0),        // on the deck, at the foot of the climb
+    (86.8, 49.6, 8.0),        // corner 0, ramp mid-line
+    (86.8, -49.6, 50.667),    // corner 1
+    (0.0, -99.2, 93.333),     // corner 2
+    (-86.8, -49.6, 136.0),    // corner 3, top of the climb
+    (-70.0, 0.0, 136.0),      // onto the landing
+  ],
+  steps: [
+    // Ground slab. The flat centre a body crosses to reach the foot of the climb.
+    (step: "hex_slab", z0: 0.0, z1: 8.0, chamfer_top: 2.0),
+
+    // --- face 0 (east): corner0 h=8 -> corner1 h=50.667 ---
+    (
+      step: "sloped_prism",
+      corners: [(112.0, 64.0), (112.0, -64.0), (61.6, 35.2)],
+      z0: 0.0,
+      top: [(112.0, 64.0, 8.0), (112.0, -64.0, 50.667), (61.6, 35.2, 8.0)],
+    ),
+    (
+      step: "sloped_prism",
+      corners: [(61.6, 35.2), (112.0, -64.0), (61.6, -35.2)],
+      z0: 0.0,
+      top: [(61.6, 35.2, 8.0), (112.0, -64.0, 50.667), (61.6, -35.2, 50.667)],
+    ),
+
+    // --- face 1 (south_east): corner1 h=50.667 -> corner2 h=93.333 ---
+    (
+      step: "sloped_prism",
+      corners: [(112.0, -64.0), (0.0, -128.0), (61.6, -35.2)],
+      z0: 0.0,
+      top: [(112.0, -64.0, 50.667), (0.0, -128.0, 93.333), (61.6, -35.2, 50.667)],
+    ),
+    (
+      step: "sloped_prism",
+      corners: [(61.6, -35.2), (0.0, -128.0), (0.0, -70.4)],
+      z0: 0.0,
+      top: [(61.6, -35.2, 50.667), (0.0, -128.0, 93.333), (0.0, -70.4, 93.333)],
+    ),
+
+    // --- face 2 (south_west): corner2 h=93.333 -> corner3 h=136 ---
+    (
+      step: "sloped_prism",
+      corners: [(0.0, -128.0), (-112.0, -64.0), (0.0, -70.4)],
+      z0: 0.0,
+      top: [(0.0, -128.0, 93.333), (-112.0, -64.0, 136.0), (0.0, -70.4, 93.333)],
+    ),
+    (
+      step: "sloped_prism",
+      corners: [(0.0, -70.4), (-112.0, -64.0), (-61.6, -35.2)],
+      z0: 0.0,
+      top: [(0.0, -70.4, 93.333), (-112.0, -64.0, 136.0), (-61.6, -35.2, 136.0)],
+    ),
+
+    // The landing. Without it the climb tops out at the rim in mid-air, while
+    // the `up` port sits at the cell centre with nothing joining the two. This
+    // spans the ramp's exit seam (corner3 -> inner3, both level at 136) across
+    // to the centre, so a body steps off the flight onto deck and walks to the
+    // opening. Its underside at 128 clears the flat floor by 7.5 m.
+    (
+      step: "prism",
+      corners: [(-112.0, -64.0), (-61.6, -35.2), (0.0, 0.0), (-61.6, 35.2), (-112.0, 64.0)],
+      z0: 128.0,
+      z1: 136.0,
+      chamfer_top: 2.0,
+    ),
+
+    // Envelope. Two levels tall, so the walls run the full 256.
+    (step: "door_wall", face: 3, z0: 0.0, z1: 256.0, sill: 8.0, top: 72.0, splay: 10.0, lintel_bevel: 8.0),
+    (step: "wall", face: 0, z0: 0.0, z1: 256.0),
+    (step: "wall", face: 1, z0: 0.0, z1: 256.0),
+    (step: "wall", face: 2, z0: 0.0, z1: 256.0),
+    (step: "wall", face: 4, z0: 0.0, z1: 256.0),
+    (step: "wall", face: 5, z0: 0.0, z1: 256.0),
+    (step: "hex_slab", z0: 248.0, z1: 256.0, chamfer_bottom: 3.0),
+
+    // Two practicals: one over the foot of the climb, one over the head, so the
+    // route reads as a route rather than a lit room with a dark rim.
+    (step: "wall_fixture", face: 0, along: 0.5, z: 88.0, width: 20.0),
+    (step: "wall_fixture", face: 2, along: 0.5, z: 184.0, width: 20.0),
+  ],
+)

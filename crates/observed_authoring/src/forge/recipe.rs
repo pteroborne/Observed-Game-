@@ -21,8 +21,8 @@
 use serde::{Deserialize, Serialize};
 
 use super::entities::{
-    Meta, MetaKind, ceiling_fixture, lateral_port, tile_cell, vertical_port, wall_fixture,
-    worldspawn,
+    Meta, MetaKind, ceiling_fixture, lateral_port, stair_node, tile_cell, vertical_port,
+    wall_fixture, worldspawn,
 };
 use super::geometry::{
     DOOR_TOP, FLOOR_TOP, LEVEL, P2, P3, band, boxed, door_wall, hex_slab, prism, pylon,
@@ -650,6 +650,14 @@ pub struct Recipe {
     pub ports: Vec<RecipePort>,
     #[serde(default)]
     pub steps: Vec<Step>,
+    /// The climbable line through the module, bottom to top, in TB units.
+    ///
+    /// Geometry alone does not tell a follower where the climb goes - that is
+    /// the whole reason `StairSpine` exists. A tile whose route is not a
+    /// straight line needs one or nothing can walk it, which is what the
+    /// switchback taught at the cost of four stalled bots.
+    #[serde(default)]
+    pub spine: Vec<P3>,
 }
 
 fn default_weight() -> u32 {
@@ -719,6 +727,7 @@ impl Recipe {
             cells: default_cells(),
             ports: Vec::new(),
             steps,
+            spine: Vec::new(),
         }
     }
 
@@ -795,6 +804,10 @@ impl Recipe {
                     level,
                 } => out.push_str(&vertical_port(face, class, name, *level)),
             }
+        }
+        for (index, node) in self.spine.iter().enumerate() {
+            #[allow(clippy::cast_possible_truncation)]
+            out.push_str(&stair_node(index as u16, node.0, node.1, node.2));
         }
         out.push_str(&lights);
         out
@@ -1014,5 +1027,43 @@ mod tests {
         recipe
             .validate()
             .unwrap_or_else(|error| panic!("a declared door must validate: {error:?}"));
+    }
+
+    /// A spine must survive the round trip and reach the importer.
+    ///
+    /// It is a separate entity kind from the geometry, so a recipe that dropped
+    /// it on save would emit a module nothing can climb - and the module would
+    /// still validate, because a missing spine is legal. Exactly the silent
+    /// failure the switchback was.
+    #[test]
+    fn a_spine_round_trips_and_reaches_the_module() {
+        let mut recipe = Recipe::starter("authored/spined");
+        recipe.spine = vec![(40.0, 0.0, 8.0), (60.0, 0.0, 40.0), (80.0, 0.0, 72.0)];
+        let text = recipe.to_ron();
+        assert_eq!(Recipe::parse(&text).expect("parses"), recipe);
+
+        let built = recipe.build();
+        assert_eq!(built.matches("tile_stair_node").count(), 3);
+        assert!(built.contains("\"index\" \"0\""));
+        assert!(built.contains("\"index\" \"2\""));
+
+        let module = crate::parse_authored_module(&built).expect("a spined module validates");
+        assert_eq!(
+            module.prototype.spine.nodes.len(),
+            3,
+            "the spine must survive into the parsed module, not just the text"
+        );
+    }
+
+    /// A descending spine is rejected. The importer checks it; this pins that
+    /// the recipe cannot smuggle one past by emitting nodes out of order.
+    #[test]
+    fn a_spine_that_goes_down_is_refused() {
+        let mut recipe = Recipe::starter("authored/descending");
+        recipe.spine = vec![(40.0, 0.0, 72.0), (60.0, 0.0, 8.0)];
+        assert!(
+            recipe.validate().is_err(),
+            "a climb that descends must not validate"
+        );
     }
 }

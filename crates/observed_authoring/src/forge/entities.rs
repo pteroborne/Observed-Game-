@@ -296,6 +296,21 @@ pub fn tile_socket(socket: &Socket<'_>) -> String {
     ])
 }
 
+/// One node of the climbable line through a tile, in TrenchBroom units.
+///
+/// `index` orders the climb bottom to top; the importer sorts by it and rejects
+/// a repeat. The first node belongs on the lower deck at the foot of the climb
+/// and the last on the deck above, so the ends join the flat circulation either
+/// side without a special case.
+#[must_use]
+pub fn stair_node(index: u16, x: f64, y: f64, z: f64) -> String {
+    point_entity(&[
+        ("classname", String::from("tile_stair_node")),
+        ("index", index.to_string()),
+        ("origin", format!("{} {} {}", fmt(x), fmt(y), fmt(z))),
+    ])
+}
+
 /// A recessed housing physically attached to a ceiling, plus its source.
 ///
 /// Returns `(brush, light)`: the fixture is geometry and the light is an
