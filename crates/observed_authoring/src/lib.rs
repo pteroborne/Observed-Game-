@@ -17,6 +17,7 @@ pub mod catalog;
 pub mod composition;
 pub mod distribution;
 pub mod fgd;
+pub mod forge;
 pub mod generator;
 pub mod manifest;
 pub mod seam_auditor;

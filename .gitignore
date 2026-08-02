@@ -12,3 +12,6 @@ docs/evidence/debug_coercion*/
 docs/evidence/visual_audit_camera_rooms/
 docs/evidence/visual_audit_topdown/
 we-need-to-come-tidy-emerson.md
+
+# Python bytecode from tools/tileforge.py
+__pycache__/
