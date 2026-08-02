@@ -59,6 +59,9 @@ impl HexWfcRuntime {
 /// Resolve the workspace tile directory without involving presentation.
 #[cfg(test)]
 fn tile_dir() -> std::path::PathBuf {
+    // `launch::tile_dir` is `assets_root()/tiles` with a workspace fallback, so
+    // it covers the packaged layout origin/main added *and* still resolves when
+    // the tests run from the source tree.
     super::launch::tile_dir()
 }
 
