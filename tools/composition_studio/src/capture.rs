@@ -4,11 +4,12 @@ use bevy::app::AppExit;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 
-use crate::StudioState;
-
 #[derive(Resource)]
 pub struct CaptureState {
     pub dir: String,
+    /// File stem, so the two binaries in this crate do not overwrite each
+    /// other's evidence.
+    pub name: String,
     pub timer: f32,
     pub step: u8,
 }
@@ -16,7 +17,6 @@ pub struct CaptureState {
 pub fn capture_system(
     time: Res<Time>,
     mut capture: ResMut<CaptureState>,
-    _state: Res<StudioState>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -26,7 +26,7 @@ pub fn capture_system(
         0 => {
             // Settle time 0.8s
             if capture.timer >= 0.8 {
-                let path = format!("{}/studio_capture.png", capture.dir);
+                let path = format!("{}/{}.png", capture.dir, capture.name);
                 std::fs::create_dir_all(&capture.dir).ok();
                 commands
                     .spawn(Screenshot::primary_window())

@@ -299,6 +299,27 @@ impl HullBatch {
     }
 }
 
+/// A Bevy mesh from one convex hull.
+///
+/// `ConvexRenderMesh` carries positions, normals, and indices but no Bevy
+/// dependency - it lives in `observed_traversal`, which the headless simulation
+/// also uses. This is the one place that bridge is crossed, so a renderer never
+/// has to know the attribute names.
+#[must_use]
+pub fn mesh_from(render: &ConvexRenderMesh) -> Option<Mesh> {
+    if render.indices.is_empty() {
+        return None;
+    }
+    let mut mesh = Mesh::new(
+        bevy::mesh::PrimitiveTopology::TriangleList,
+        bevy::asset::RenderAssetUsages::RENDER_WORLD | bevy::asset::RenderAssetUsages::MAIN_WORLD,
+    );
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, render.positions.clone());
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, render.normals.clone());
+    mesh.insert_indices(bevy::mesh::Indices::U32(render.indices.clone()));
+    Some(mesh)
+}
+
 /// Build the cut-away solid geometry for `cells`.
 ///
 /// Returns one batch for the selected cell and one for everything else, so the

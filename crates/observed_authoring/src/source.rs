@@ -274,7 +274,13 @@ fn entity_cell_ref(
     })
 }
 
-fn editor_origin_to_world(origin: [f64; 3]) -> Vec3 {
+/// TrenchBroom Z-up editor units to world-space Y-up metres.
+///
+/// Public because any tool that renders a diagnostic *about* editor data - a
+/// vertex that escaped the footprint, a port origin that missed its face - has
+/// to place it in the same space as the geometry it is pointing at.
+#[must_use]
+pub fn editor_origin_to_world(origin: [f64; 3]) -> Vec3 {
     Vec3::new(
         (origin[0] / UNITS_PER_METER) as f32,
         (origin[2] / UNITS_PER_METER) as f32,

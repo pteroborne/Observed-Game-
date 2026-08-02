@@ -156,6 +156,25 @@ sources; the game's centered fallback is only a defensive legacy path.
   true corners stay crisp. Textures are box-projected per face — no planar
   streaking. Keep deliberate hard edges above ~50 degrees of dihedral.
 
+## Seeing what is wrong (`module-studio`)
+
+```bash
+cargo run -p composition_studio --bin module-studio
+```
+
+Watches `assets/tiles/authored/*.map`, re-validates on save, and draws the
+module with whatever failed lit up **on the geometry that caused it** — the
+offending vertex, cell, face, or hull. `Tab` jumps to the next failing module,
+`Up/Dn` pages, `Q/E` orbits. Pass a directory to point it somewhere else.
+
+The validators were already precise; they just had nowhere to be seen except
+CLI text. Reading `PortOriginMismatch { expected: [112.0, 0.0, 48.0], actual:
+[104.0, 0.0, 48.0] }` and then finding that port in TrenchBroom is a translation
+you should not be doing by hand.
+
+A module that parses but fails validation is still drawn. That is deliberate:
+the geometry is most worth seeing at the moment something is wrong with it.
+
 ## The entity definition (`Observed2.fgd`)
 
 `tools/trenchbroom/Observed2/Observed2.fgd` is **generated** — regenerate it

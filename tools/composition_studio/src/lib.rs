@@ -28,6 +28,7 @@ pub mod draw;
 pub mod field_widgets;
 pub mod input;
 pub mod layer;
+pub mod module;
 pub mod panels;
 pub mod persist;
 pub mod pick;
@@ -481,6 +482,7 @@ impl Plugin for StudioPlugin {
         if let Ok(dir) = std::env::var("OBSERVED2_CAPTURE") {
             app.insert_resource(capture::CaptureState {
                 dir,
+                name: String::from("studio_capture"),
                 timer: 0.0,
                 step: 0,
             })

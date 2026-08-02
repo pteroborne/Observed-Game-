@@ -8,6 +8,12 @@ publish = false
 name = "composition-studio"
 path = "src/main.rs"
 
+# A second binary, not a second crate: chrome, camera framing, and the style
+# crate are common; only the state above them differs.
+[[bin]]
+name = "module-studio"
+path = "src/bin/module_studio.rs"
+
 [dependencies]
 bevy = { version = "0.18.1", default-features = false, features = [
     "2d",
