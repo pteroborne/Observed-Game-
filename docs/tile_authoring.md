@@ -156,6 +156,24 @@ sources; the game's centered fallback is only a defensive legacy path.
   true corners stay crisp. Textures are box-projected per face — no planar
   streaking. Keep deliberate hard edges above ~50 degrees of dihedral.
 
+## The entity definition (`Observed2.fgd`)
+
+`tools/trenchbroom/Observed2/Observed2.fgd` is **generated** — regenerate it
+with `tilec emit-fgd`, never hand-edit it. It is built from the same name tables
+the importer parses with, and a test fails the build if the committed file and
+the generator disagree, so the editor cannot offer a value that will not import
+and cannot omit one that would.
+
+It had drifted before this was true: `tile_socket`, `tile_stair_node`, and
+`tile_deck_node` were fully supported by the importer and absent from the entity
+browser, so a room socket could not be placed from the editor at all. That gap
+is a large part of why `tools/tileforge.py` became the de-facto source of truth
+for authored geometry.
+
+One deliberate narrowing: `tile_socket`'s `yaw` imports as a float, but
+TrenchBroom's property types have no float, so the definition declares it an
+integer. Whole degrees only, which is harmless when faces are 60° apart.
+
 ## The contract (what `tilec validate` enforces)
 
 Units: TrenchBroom Z-up, **16 units = 1 m**. Tile-local origin at the cell

@@ -77,7 +77,39 @@ pub enum RoomSocketKind {
 }
 
 impl RoomSocketKind {
-    fn parse(value: &str) -> Option<Self> {
+    /// Every socket kind, in declaration order.
+    ///
+    /// Exists so the TrenchBroom entity definition can be *generated* from the
+    /// same list the importer parses. A hand-maintained copy in the `.fgd` is
+    /// how `tile_socket` ended up unauthorable in the editor while being fully
+    /// supported here.
+    pub const ALL: [Self; 8] = [
+        Self::Keystone,
+        Self::StationA,
+        Self::StationB,
+        Self::Monitor,
+        Self::LanternCache,
+        Self::GuardianControl,
+        Self::Recovery,
+        Self::Exit,
+    ];
+
+    /// The name this kind is written as in a `.map` file.
+    #[must_use]
+    pub fn slug(self) -> &'static str {
+        match self {
+            Self::Keystone => "keystone",
+            Self::StationA => "station_a",
+            Self::StationB => "station_b",
+            Self::Monitor => "monitor",
+            Self::LanternCache => "lantern_cache",
+            Self::GuardianControl => "guardian_control",
+            Self::Recovery => "recovery",
+            Self::Exit => "exit",
+        }
+    }
+
+    pub(crate) fn parse(value: &str) -> Option<Self> {
         Some(match value {
             "keystone" => Self::Keystone,
             "station_a" => Self::StationA,
@@ -608,16 +640,13 @@ pub fn parse_authored_module(text: &str) -> Result<AuthoredModule, SourceError> 
             entity: "tile_meta",
             detail: "authoring_version must be a u8".to_string(),
         })?;
-    let kind = match prop(meta, "kind").as_deref().unwrap_or("cell") {
-        "cell" => ModuleKind::Cell,
-        "room" => ModuleKind::Room,
-        other => {
-            return Err(SourceError::InvalidProperty {
+    let kind =
+        kind_from_name(prop(meta, "kind").as_deref().unwrap_or("cell")).ok_or_else(|| {
+            SourceError::InvalidProperty {
                 entity: "tile_meta",
-                detail: format!("unknown kind {other:?}"),
-            });
-        }
-    };
+                detail: format!("unknown kind {:?}", prop(meta, "kind").unwrap_or_default()),
+            }
+        })?;
     let room_role = prop(meta, "room_role").filter(|value| !value.is_empty());
     if kind == ModuleKind::Room && room_role.is_none() {
         return Err(SourceError::RoomRoleMissing);
@@ -645,16 +674,14 @@ pub fn parse_authored_module(text: &str) -> Result<AuthoredModule, SourceError> 
         })
         .filter(|scope| !scope.is_empty())
         .unwrap_or_else(|| vec![prototype.key.register.clone()]);
-    let rotation = match prop(meta, "rotation_policy").as_deref().unwrap_or("none") {
-        "none" => RotationPolicy::None,
-        "sixfold" => RotationPolicy::SixFold,
-        other => {
-            return Err(SourceError::InvalidProperty {
-                entity: "tile_meta",
-                detail: format!("unknown rotation_policy {other:?}"),
-            });
-        }
-    };
+    let rotation = rotation_from_name(prop(meta, "rotation_policy").as_deref().unwrap_or("none"))
+        .ok_or_else(|| SourceError::InvalidProperty {
+        entity: "tile_meta",
+        detail: format!(
+            "unknown rotation_policy {:?}",
+            prop(meta, "rotation_policy").unwrap_or_default()
+        ),
+    })?;
     let weight = prop(meta, "weight")
         .unwrap_or_else(|| "1".to_string())
         .parse::<u16>()
@@ -688,14 +715,15 @@ pub fn parse_authored_module(text: &str) -> Result<AuthoredModule, SourceError> 
                 entity: "tile_cell",
                 detail: "levels must be a positive u8".to_string(),
             })?;
-        let floor = match prop(entity, "floor").as_deref().unwrap_or("solid") {
-            "solid" => FloorPolicy::Solid,
-            "ramp" => FloorPolicy::Ramp,
-            "open" => FloorPolicy::Open,
-            other => {
+        let floor = match floor_from_name(prop(entity, "floor").as_deref().unwrap_or("solid")) {
+            Some(policy) => policy,
+            None => {
                 return Err(SourceError::InvalidProperty {
                     entity: "tile_cell",
-                    detail: format!("unknown floor policy {other:?}"),
+                    detail: format!(
+                        "unknown floor policy {:?}",
+                        prop(entity, "floor").unwrap_or_default()
+                    ),
                 });
             }
         };
@@ -809,6 +837,59 @@ pub fn parse_authored_module(text: &str) -> Result<AuthoredModule, SourceError> 
     };
     validate_module(&module)?;
     Ok(module)
+}
+
+/// The `tile_meta` `kind` values the importer accepts.
+///
+/// These three name tables are `pub(crate)` and paired with `*_name` inverses
+/// so [`crate::fgd`] can advertise exactly what the importer accepts - no more,
+/// which would offer the author a value that fails to import, and no less,
+/// which is how three supported entities ended up unauthorable.
+pub(crate) fn kind_from_name(name: &str) -> Option<ModuleKind> {
+    Some(match name {
+        "cell" => ModuleKind::Cell,
+        "room" => ModuleKind::Room,
+        _ => return None,
+    })
+}
+
+pub(crate) fn kind_name(kind: ModuleKind) -> &'static str {
+    match kind {
+        ModuleKind::Cell => "cell",
+        ModuleKind::Room => "room",
+    }
+}
+
+pub(crate) fn rotation_from_name(name: &str) -> Option<RotationPolicy> {
+    Some(match name {
+        "none" => RotationPolicy::None,
+        "sixfold" => RotationPolicy::SixFold,
+        _ => return None,
+    })
+}
+
+pub(crate) fn rotation_name(policy: RotationPolicy) -> &'static str {
+    match policy {
+        RotationPolicy::None => "none",
+        RotationPolicy::SixFold => "sixfold",
+    }
+}
+
+pub(crate) fn floor_from_name(name: &str) -> Option<FloorPolicy> {
+    Some(match name {
+        "solid" => FloorPolicy::Solid,
+        "ramp" => FloorPolicy::Ramp,
+        "open" => FloorPolicy::Open,
+        _ => return None,
+    })
+}
+
+pub(crate) fn floor_name(policy: FloorPolicy) -> &'static str {
+    match policy {
+        FloorPolicy::Solid => "solid",
+        FloorPolicy::Ramp => "ramp",
+        FloorPolicy::Open => "open",
+    }
 }
 
 /// A compact diagnostic summary used by the CLI and tile lab.

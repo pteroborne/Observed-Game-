@@ -17,7 +17,8 @@ fn usage() -> ! {
          tilec audit-districts [source-root]\n\
          tilec gen-tower [output-dir]\n\
          tilec render-cad [output.svg]\n\
-         tilec build [source-root] [catalog.ron] [manifest.ron]\n\n\
+         tilec build [source-root] [catalog.ron] [manifest.ron]\n\
+         tilec emit-fgd [output.fgd]\n\n\
          Composition profile (the authored solve controls):\n\
          tilec profile-new [source-root]\n\
          tilec profile-validate [source-root]\n\
@@ -356,6 +357,30 @@ fn run() -> Result<(), String> {
                 "wrote {} and its sidecar\ncontent hash {}",
                 path.display(),
                 build.content_hash
+            );
+        }
+        "emit-fgd" => {
+            // Defaults to the committed path so the common case is "regenerate
+            // in place"; a explicit path is for diffing before overwriting.
+            let path = PathBuf::from(
+                args.next()
+                    .unwrap_or_else(|| observed_authoring::fgd::FGD_PATH.to_string()),
+            );
+            if args.next().is_some() {
+                usage();
+            }
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+            }
+            let text = observed_authoring::fgd::emit_fgd();
+            // Written as bytes, not via a text writer: Windows would otherwise
+            // translate the LF endings the byte-identity test asserts on.
+            std::fs::write(&path, text.as_bytes()).map_err(|error| error.to_string())?;
+            println!(
+                "wrote {} ({} entities, {} bytes)",
+                path.display(),
+                text.matches("@PointClass").count(),
+                text.len()
             );
         }
         _ => usage(),

@@ -16,6 +16,7 @@ pub mod cad_renderer;
 pub mod catalog;
 pub mod composition;
 pub mod distribution;
+pub mod fgd;
 pub mod generator;
 pub mod manifest;
 pub mod seam_auditor;
