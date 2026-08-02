@@ -23,24 +23,23 @@ type ButtonVisualQuery<'w, 's> = Query<
     With<HeadlessButton>,
 >;
 
-pub(crate) fn update_button_visuals(
-    preferences: Option<Res<crate::settings::Settings>>,
+pub fn update_button_visuals(
+    contrast: Option<Res<crate::HighContrast>>,
     focus: Res<InputFocus>,
     mut buttons: ButtonVisualQuery,
     mut markers: Query<(&ChildOf, &mut Visibility), With<FocusMarker>>,
 ) {
-    let high_contrast = preferences.is_some_and(|preferences| preferences.high_contrast);
+    let high_contrast = contrast.is_some_and(|contrast| contrast.0);
     for (entity, interaction, pressed, disabled, mut background, mut border, mut outline) in
         &mut buttons
     {
-        let treatment =
-            crate::view::theme::widget_treatment(crate::view::theme::WidgetVisualState {
-                focused: focus.0 == Some(entity),
-                hovered: *interaction == Interaction::Hovered,
-                pressed: pressed || *interaction == Interaction::Pressed,
-                disabled,
-                high_contrast,
-            });
+        let treatment = crate::theme::widget_treatment(crate::theme::WidgetVisualState {
+            focused: focus.0 == Some(entity),
+            hovered: *interaction == Interaction::Hovered,
+            pressed: pressed || *interaction == Interaction::Pressed,
+            disabled,
+            high_contrast,
+        });
         *background = treatment.background.into();
         *border = BorderColor::all(treatment.border);
         outline.color = treatment.outline;
@@ -55,7 +54,7 @@ pub(crate) fn update_button_visuals(
     }
 }
 
-pub(crate) fn sync_widget_text(
+pub fn sync_widget_text(
     widgets: Query<(&WidgetLabel, &Children), Changed<WidgetLabel>>,
     mut text: Query<&mut Text, With<WidgetText>>,
 ) {
@@ -68,7 +67,7 @@ pub(crate) fn sync_widget_text(
     }
 }
 
-pub(crate) fn sync_accessibility(
+pub fn sync_accessibility(
     mut widgets: Query<(
         &WidgetLabel,
         Has<InteractionDisabled>,

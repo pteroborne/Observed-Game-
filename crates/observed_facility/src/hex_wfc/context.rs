@@ -246,8 +246,8 @@ impl HexInfluenceField {
 /// Also the band an authored composition profile is validated into, so a
 /// district table, an influence field, and an authored bias all bend the
 /// lottery by the same bounded amount.
-pub(super) const PROFILE_MIN: f64 = 0.25;
-pub(super) const PROFILE_MAX: f64 = 4.0;
+pub const PROFILE_MIN: f64 = 0.25;
+pub const PROFILE_MAX: f64 = 4.0;
 
 /// What a district builds, as a multiplier on each archetype's static weight.
 ///

@@ -11,11 +11,12 @@ pub mod blueprint;
 mod collapse;
 mod constraints;
 mod context;
+pub mod pins;
 pub mod profile;
 mod relayout;
 #[cfg(test)]
 mod relayout_tests;
-mod score;
+pub mod score;
 #[cfg(test)]
 mod tests;
 mod topology;
@@ -23,7 +24,7 @@ mod trace;
 mod validate;
 mod variants;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use observed_content::ArchitectureRegister;
 use observed_core::{CorridorId, RoomId};
@@ -31,8 +32,9 @@ use observed_core::{CorridorId, RoomId};
 pub use blueprint::{
     RoomBlueprint, StampedBlueprint, blueprint_cell_archetype, blueprint_for_role,
 };
-pub use context::HexInfluenceField;
+pub use context::{HexInfluenceField, PROFILE_MAX, PROFILE_MIN};
 pub use observed_hex::{HexCoord, HexFace, HexGridSize, PortClass, PortSignature};
+pub use pins::{PinDiagnostic, PinFailure, diagnose_pins, resolved_pins};
 pub use profile::{
     ArchetypeBias, COMPOSITION_PROFILE_VERSION, CompositionTendencies, DistrictBias,
     HexCompositionProfile, HexPin, PinIntent, PinPortClass, PinSet, ProfileDefect, ScoreWeights,
@@ -43,6 +45,7 @@ pub use relayout::{
     HexObservationFrame, HexRelayoutCandidate, HexRelayoutDelta, HexRelayoutProgress,
     HexRelayoutWork, HexThresholdKey, district_sites,
 };
+pub use score::{LayoutScore, score_layout, score_layout_with};
 pub use topology::{HexRoute, MAX_CONNECTION_COST};
 pub use trace::SolveStep;
 pub use variants::{
@@ -131,6 +134,27 @@ pub struct HexWfcConfig {
     pub retry_budget: u32,
     /// Minimum lateral hex distance between any two rooms.
     pub min_room_distance: u32,
+}
+
+/// What one candidate layout produced in a multi-candidate search.
+///
+/// The whole ladder is returned, losers included, because an author choosing a
+/// candidate count needs to see whether the extra solves are buying anything.
+/// A search that reports only its winner cannot answer "was four candidates
+/// worth four times the solve time" - the spread between best and worst is the
+/// answer, and it is only visible if the losers are kept.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CandidateOutcome {
+    /// Position in the search, where 0 is `seed` itself.
+    pub index: u32,
+    /// The seed this candidate was actually solved at.
+    pub seed: u64,
+    /// `None` when this candidate failed to solve. A failed candidate is
+    /// skipped rather than fatal, so it is recorded rather than dropped: a
+    /// ladder with a hole in it is a solvability signal.
+    pub score: Option<LayoutScore>,
+    /// Whether this candidate won and is the layout being returned.
+    pub winner: bool,
 }
 
 /// Minimum authored-room distribution for a production match.
@@ -260,6 +284,14 @@ pub enum HexWfcError {
     /// A production relayout would destroy the guaranteed open/decision cadence.
     OpenVolumeContract,
     NoMutationRegion,
+    /// An authored pin can never be satisfied on this lattice.
+    ///
+    /// Raised before the first attempt, so it names the mistake instead of
+    /// surfacing as [`Self::RetryBudgetExhausted`] once the budget runs out.
+    PinContradiction {
+        coord: HexCoord,
+        reason: pins::PinFailure,
+    },
 }
 
 /// Stable room identity projected from a blueprint's generation key.
@@ -315,6 +347,13 @@ pub struct HexWfcWorld {
     pub cell_revisions: BTreeMap<HexCoord, u32>,
     /// Attempts consumed by the accepted solve (1-based).
     pub last_attempts: u32,
+    /// Cells an author pinned in the profile this world was solved under.
+    ///
+    /// Carried on the world because relayout has to know: it rewires cells at
+    /// runtime, and without this it would happily reroll a cell somebody
+    /// deliberately placed, silently erasing authored intent between one tick
+    /// and the next.
+    pub authored_pins: BTreeSet<HexCoord>,
 }
 
 impl HexWfcWorld {
@@ -356,7 +395,84 @@ impl HexWfcWorld {
         quotas: Option<HexRoomQuotas>,
         profile: &HexCompositionProfile,
     ) -> Result<HexWfcWorld, HexWfcError> {
-        Self::generate_inner(seed, config, quotas, profile, None).map(|(world, _)| world)
+        Self::generate_searched_with_profile(seed, config, quotas, profile).map(|(world, _)| world)
+    }
+
+    /// Solve `profile.search.candidates` layouts and keep the highest-scoring
+    /// one, returning the whole ladder so an authoring tool can show the losers
+    /// as well as the winner.
+    ///
+    /// **Candidate 0 is `seed` itself**, and the rest are derived. That makes
+    /// raising `candidates` strictly additive: the layout you already had stays
+    /// in the running, and the seed only maps to a different facility when a
+    /// candidate genuinely scored higher. Deriving candidate 0 too - which is
+    /// what this function replaced - meant that merely turning the search on
+    /// discarded the facility you had been tuning, with no way to say "keep it
+    /// unless something beats it".
+    ///
+    /// Ties keep the lower index: candidates are scanned in ascending order and
+    /// the incumbent is only replaced on a **strictly** higher total, so the
+    /// result is stable across repeated calls and a tie prefers `seed` itself.
+    ///
+    /// Candidates that fail to solve are recorded and skipped. Only if every
+    /// candidate fails is the last error returned.
+    ///
+    /// Scoring uses the profile's own [`ScoreWeights`], so what the search
+    /// optimises for is authored content, not a compile-time constant.
+    pub fn generate_searched_with_profile(
+        seed: u64,
+        config: HexWfcConfig,
+        quotas: Option<HexRoomQuotas>,
+        profile: &HexCompositionProfile,
+    ) -> Result<(HexWfcWorld, Vec<CandidateOutcome>), HexWfcError> {
+        let candidates = profile.search.candidates.max(1);
+        let mut outcomes: Vec<CandidateOutcome> = Vec::with_capacity(candidates as usize);
+        let mut best: Option<(HexWfcWorld, f64, usize)> = None;
+        let mut last_err: Option<HexWfcError> = None;
+
+        for index in 0..candidates {
+            let candidate_seed = if index == 0 {
+                seed
+            } else {
+                score::candidate_seed(seed, index)
+            };
+            match Self::generate_inner(candidate_seed, config, quotas, profile, None) {
+                Ok((world, _)) => {
+                    let score = score::score_layout_with(&world, profile.score);
+                    let total = score.total;
+                    outcomes.push(CandidateOutcome {
+                        index,
+                        seed: candidate_seed,
+                        score: Some(score),
+                        winner: false,
+                    });
+                    let better = match &best {
+                        Some((_, best_total, _)) => total > *best_total,
+                        None => true,
+                    };
+                    if better {
+                        best = Some((world, total, outcomes.len() - 1));
+                    }
+                }
+                Err(err) => {
+                    outcomes.push(CandidateOutcome {
+                        index,
+                        seed: candidate_seed,
+                        score: None,
+                        winner: false,
+                    });
+                    last_err = Some(err);
+                }
+            }
+        }
+
+        match best {
+            Some((world, _, at)) => {
+                outcomes[at].winner = true;
+                Ok((world, outcomes))
+            }
+            None => Err(last_err.unwrap_or(HexWfcError::InvalidConfig)),
+        }
     }
 
     /// Solve while recording every step for the lab's animated replay.
@@ -382,42 +498,22 @@ impl HexWfcWorld {
             .map(|world| (world, steps))
     }
 
-    /// Solve `candidates` deterministic candidate layouts from `seed` and
-    /// keep the highest-scoring one (see [`score::score_layout`]). Purely
-    /// additive to [`Self::generate`]: each candidate is an ordinary,
-    /// independent `generate` call at a distinct derived seed, so existing
-    /// single-candidate callers and their behavior are untouched.
+    /// Solve `candidates` layouts from `seed` at the **baseline** profile and
+    /// keep the highest-scoring one.
     ///
-    /// Candidates that fail to solve are skipped. Ties in score keep the
-    /// lowest candidate index (guaranteed by scanning in ascending order and
-    /// only replacing the incumbent on a strictly higher score), so the
-    /// result is identical across repeated calls with the same inputs. If
-    /// every candidate fails, the last observed error is returned.
+    /// A thin wrapper over [`Self::generate_searched_with_profile`], which is
+    /// where the selection rule and its guarantees are documented. Prefer that
+    /// function when a profile is in hand: this one scores with baseline
+    /// weights, so it optimises for something the author may not have asked
+    /// for.
     pub fn generate_best(
         seed: u64,
         config: HexWfcConfig,
         candidates: u32,
     ) -> Result<HexWfcWorld, HexWfcError> {
-        let mut best: Option<(HexWfcWorld, f64)> = None;
-        let mut last_err: Option<HexWfcError> = None;
-        for candidate in 0..candidates.max(1) {
-            let candidate_seed = score::candidate_seed(seed, candidate);
-            match Self::generate(candidate_seed, config) {
-                Ok(world) => {
-                    let total = score::score_layout(&world).total;
-                    let is_better = match &best {
-                        Some((_, best_total)) => total > *best_total,
-                        None => true,
-                    };
-                    if is_better {
-                        best = Some((world, total));
-                    }
-                }
-                Err(err) => last_err = Some(err),
-            }
-        }
-        best.map(|(world, _)| world)
-            .ok_or_else(|| last_err.unwrap_or(HexWfcError::InvalidConfig))
+        let mut profile = HexCompositionProfile::baseline();
+        profile.search.candidates = candidates.max(1);
+        Self::generate_searched_with_profile(seed, config, None, &profile).map(|(world, _)| world)
     }
 
     fn generate_inner(
@@ -445,6 +541,7 @@ impl HexWfcWorld {
                 architecture,
                 cell_revisions,
                 last_attempts: attempts,
+                authored_pins: pins::resolved_pins(config, profile).0.into_keys().collect(),
             },
             attempts,
         ))

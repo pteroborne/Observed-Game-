@@ -16,6 +16,8 @@ pub mod cad_renderer;
 pub mod catalog;
 pub mod composition;
 pub mod distribution;
+pub mod fgd;
+pub mod forge;
 pub mod generator;
 pub mod manifest;
 pub mod seam_auditor;
@@ -43,8 +45,8 @@ pub use composition::{
 pub use manifest::{Manifest, ManifestEntry, ManifestError, TileKey};
 pub use source::{
     AuthoredModule, FloorPolicy, ModuleCell, ModuleCellRef, ModuleKind, ModulePort, ModuleSocket,
-    ModuleSummary, RoomSocketKind, RotationPolicy, SourceError, parse_authored_module,
-    validate_module,
+    ModuleSummary, RoomSocketKind, RotationPolicy, SourceError, editor_origin_to_world,
+    parse_authored_module, validate_module,
 };
 pub use tile::{
     DeckPath, STAIR_SPINE_MIN_SEPARATION, StairSpine, TileError, TileLight, TileLightKind,

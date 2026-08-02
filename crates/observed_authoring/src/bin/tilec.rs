@@ -17,7 +17,12 @@ fn usage() -> ! {
          tilec audit-districts [source-root]\n\
          tilec gen-tower [output-dir]\n\
          tilec render-cad [output.svg]\n\
-         tilec build [source-root] [catalog.ron] [manifest.ron]\n\n\
+         tilec build [source-root] [catalog.ron] [manifest.ron]\n\
+         tilec emit-fgd [output.fgd]\n\
+         tilec gen-tiles [output-dir]\n\n\
+         Parametric recipes (a module described as data, not code):\n\
+         tilec new-recipe <id> [out.recipe.ron]\n\
+         tilec bake-recipe <in.recipe.ron> [out.map]\n\n\
          Composition profile (the authored solve controls):\n\
          tilec profile-new [source-root]\n\
          tilec profile-validate [source-root]\n\
@@ -356,6 +361,116 @@ fn run() -> Result<(), String> {
                 "wrote {} and its sidecar\ncontent hash {}",
                 path.display(),
                 build.content_hash
+            );
+        }
+        "new-recipe" => {
+            let id = args.next().unwrap_or_else(|| usage());
+            let path = PathBuf::from(args.next().unwrap_or_else(|| {
+                format!(
+                    "assets/tiles/authored/{}{}",
+                    observed_authoring::forge::recipe::file_stem(&id),
+                    observed_authoring::forge::recipe::RECIPE_SUFFIX
+                )
+            }));
+            // Never clobber: a recipe is work, and `new` is the command someone
+            // reaches for by reflex.
+            if path.exists() {
+                return Err(format!(
+                    "{} already exists; edit it or pass another path",
+                    path.display()
+                ));
+            }
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+            }
+            let recipe = observed_authoring::forge::recipe::Recipe::starter(&id);
+            recipe.validate().map_err(|error| format!("{error:?}"))?;
+            std::fs::write(&path, recipe.to_ron().as_bytes()).map_err(|error| error.to_string())?;
+            println!(
+                "wrote {}\npreview it live: cargo run -p composition_studio --bin module-studio",
+                path.display()
+            );
+        }
+        "bake-recipe" => {
+            let source = PathBuf::from(args.next().unwrap_or_else(|| usage()));
+            let text = std::fs::read_to_string(&source)
+                .map_err(|error| format!("{}: {error}", source.display()))?;
+            let recipe = observed_authoring::forge::recipe::Recipe::parse(&text)?;
+            // Refuse to bake something the importer would reject. A `.map` that
+            // fails validation in the corpus fails the whole `tilec build`, so
+            // the cheap moment to catch it is here.
+            recipe.validate().map_err(|error| format!("{error:?}"))?;
+            let target = PathBuf::from(args.next().unwrap_or_else(|| {
+                source
+                    .with_file_name(format!(
+                        "{}.map",
+                        observed_authoring::forge::recipe::file_stem(&recipe.id)
+                    ))
+                    .display()
+                    .to_string()
+            }));
+            std::fs::write(&target, recipe.build().as_bytes())
+                .map_err(|error| error.to_string())?;
+            println!(
+                "baked {} -> {} ({} steps)",
+                source.display(),
+                target.display(),
+                recipe.steps.len()
+            );
+        }
+        "gen-tiles" => {
+            let dir = PathBuf::from(
+                args.next()
+                    .unwrap_or_else(|| "assets/tiles/authored".to_string()),
+            );
+            if args.next().is_some() {
+                usage();
+            }
+            std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+            let generated = observed_authoring::forge::generate_all();
+            let mut changed = 0usize;
+            for (name, text) in &generated {
+                let path = dir.join(format!("{name}.map"));
+                // Only rewrite what actually moved. The corpus is committed, and
+                // touching 58 mtimes every run makes the module watcher
+                // re-validate everything for nothing.
+                let current = std::fs::read_to_string(&path).unwrap_or_default();
+                if current.replace("\r\n", "\n") == *text {
+                    continue;
+                }
+                // Written as bytes so Windows does not translate the LF endings
+                // the byte-identity gate asserts on.
+                std::fs::write(&path, text.as_bytes()).map_err(|error| error.to_string())?;
+                changed += 1;
+            }
+            println!(
+                "{} modules generated into {} ({changed} changed)",
+                generated.len(),
+                dir.display()
+            );
+        }
+        "emit-fgd" => {
+            // Defaults to the committed path so the common case is "regenerate
+            // in place"; a explicit path is for diffing before overwriting.
+            let path = PathBuf::from(
+                args.next()
+                    .unwrap_or_else(|| observed_authoring::fgd::FGD_PATH.to_string()),
+            );
+            if args.next().is_some() {
+                usage();
+            }
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+            }
+            let text = observed_authoring::fgd::emit_fgd();
+            // Written as bytes, not via a text writer: Windows would otherwise
+            // translate the LF endings the byte-identity test asserts on.
+            std::fs::write(&path, text.as_bytes()).map_err(|error| error.to_string())?;
+            println!(
+                "wrote {} ({} entities, {} bytes)",
+                path.display(),
+                text.matches("@PointClass").count(),
+                text.len()
             );
         }
         _ => usage(),

@@ -76,6 +76,7 @@ fn oversized_grid_reports_collider_id_capacity_before_projection() {
         architecture: BTreeMap::new(),
         cell_revisions: BTreeMap::new(),
         last_attempts: 1,
+        authored_pins: Default::default(),
     };
     assert!(matches!(
         HexWfcGeometrySnapshot::project(&world, &[]),
@@ -637,6 +638,7 @@ fn multi_cell_world(role: RoomRole, anchor: HexCoord) -> HexWfcWorld {
         architecture,
         cell_revisions,
         last_attempts: 1,
+        authored_pins: Default::default(),
     }
 }
 

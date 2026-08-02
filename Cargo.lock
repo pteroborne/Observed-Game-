@@ -2343,6 +2343,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "composition_studio"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "observed_authoring",
+ "observed_content",
+ "observed_facility",
+ "observed_hex",
+ "observed_match",
+ "observed_style",
+ "observed_traversal",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "concurrent-queue"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5518,6 +5534,7 @@ dependencies = [
  "observed_server",
  "observed_style",
  "observed_traversal",
+ "observed_ui",
  "player_input",
  "rapier3d",
  "serde",
@@ -5615,6 +5632,13 @@ dependencies = [
  "player_input",
  "rapier3d",
  "serde",
+]
+
+[[package]]
+name = "observed_ui"
+version = "0.1.0"
+dependencies = [
+ "bevy",
 ]
 
 [[package]]

@@ -5,6 +5,7 @@ members = [
     "crates/observed_diagnostics",
     "crates/observed_content",
     "crates/observed_style",
+    "crates/observed_ui",
     "crates/observed_assets",
     "crates/observed_observation",
     "crates/observed_doors",
@@ -85,6 +86,7 @@ members = [
     "labs/hex_room_lab",
     "labs/iso_observer_lab",
     "tools/content_baker",
+    "tools/composition_studio",
     "server",
     "game",
 ]

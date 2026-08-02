@@ -12,21 +12,21 @@ use bevy::{
 use super::{FocusScope, FocusScopeId, FocusTarget, UiFeedback, UiInputCapture, WidgetId};
 
 #[derive(Resource, Debug, Default)]
-pub(crate) struct FocusMemory(pub(crate) BTreeMap<FocusScopeId, WidgetId>);
+pub struct FocusMemory(pub BTreeMap<FocusScopeId, WidgetId>);
 
 #[derive(Resource, Debug, Default)]
-pub(crate) struct GamepadNavigationLatch {
+pub struct GamepadNavigationLatch {
     vertical_axis: i8,
     horizontal_axis: i8,
 }
 
 #[derive(Resource, Debug, Default, Eq, PartialEq)]
-pub(crate) struct ActiveFocusScopes {
+pub struct ActiveFocusScopes {
     ordered: Vec<(i16, FocusScopeId)>,
 }
 
 impl ActiveFocusScopes {
-    pub(crate) fn active(&self) -> Option<FocusScopeId> {
+    pub fn active(&self) -> Option<FocusScopeId> {
         self.ordered.last().map(|(_, id)| *id)
     }
 }
@@ -41,10 +41,7 @@ enum FocusStep {
     Right,
 }
 
-pub(crate) fn sync_active_scopes(
-    scopes: Query<&FocusScope>,
-    mut active: ResMut<ActiveFocusScopes>,
-) {
+pub fn sync_active_scopes(scopes: Query<&FocusScope>, mut active: ResMut<ActiveFocusScopes>) {
     let mut ordered = scopes
         .iter()
         .map(|scope| (scope.priority, scope.id))
@@ -56,7 +53,7 @@ pub(crate) fn sync_active_scopes(
     }
 }
 
-pub(crate) fn initialize_focus(
+pub fn initialize_focus(
     active: Res<ActiveFocusScopes>,
     scopes: Query<&FocusScope>,
     targets: Query<(Entity, &WidgetId, &FocusTarget), Without<InteractionDisabled>>,
@@ -104,7 +101,7 @@ type HoveredWidgetQuery<'w, 's> = Query<
     ),
 >;
 
-pub(crate) fn focus_hovered_widget(
+pub fn focus_hovered_widget(
     interactions: HoveredWidgetQuery,
     mut focus: ResMut<InputFocus>,
     mut focus_visible: ResMut<InputFocusVisible>,
@@ -122,7 +119,7 @@ pub(crate) fn focus_hovered_widget(
 }
 
 #[derive(SystemParam)]
-pub(crate) struct FocusNavigationContext<'w, 's> {
+pub struct FocusNavigationContext<'w, 's> {
     keyboard: Res<'w, ButtonInput<KeyCode>>,
     gamepads: Query<'w, 's, &'static Gamepad>,
     latch: ResMut<'w, GamepadNavigationLatch>,
@@ -141,7 +138,7 @@ pub(crate) struct FocusNavigationContext<'w, 's> {
     commands: Commands<'w, 's>,
 }
 
-pub(crate) fn handle_focus_input(mut context: FocusNavigationContext) {
+pub fn handle_focus_input(mut context: FocusNavigationContext) {
     if context.capture.is_active() {
         context.latch.vertical_axis = 0;
         context.latch.horizontal_axis = 0;
@@ -258,7 +255,7 @@ pub(crate) fn handle_focus_input(mut context: FocusNavigationContext) {
     }
 }
 
-pub(crate) fn capture_focus_memory(
+pub fn capture_focus_memory(
     focus: Res<InputFocus>,
     targets: Query<(&WidgetId, &FocusTarget), Without<InteractionDisabled>>,
     mut memory: ResMut<FocusMemory>,
@@ -275,7 +272,7 @@ pub(crate) fn capture_focus_memory(
     memory.0.insert(target.scope, *id);
 }
 
-pub(crate) fn emit_activation_feedback(
+pub fn emit_activation_feedback(
     activation: On<Activate>,
     disabled: Query<(), With<InteractionDisabled>>,
     capture: Res<UiInputCapture>,

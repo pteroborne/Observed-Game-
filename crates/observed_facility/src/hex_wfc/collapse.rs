@@ -10,7 +10,7 @@ use super::blueprint::StampedBlueprint;
 use super::constraints::{
     all_coords, forced_route_edges, stamp_blueprints_with_pins, stamped_signatures,
 };
-use super::profile::HexCompositionProfile;
+use super::profile::{HexCompositionProfile, PinIntent};
 use super::trace::SolveStep;
 use super::validate::layout_failure;
 use super::variants::{HexVariant, catalogue, variants_compatible};
@@ -144,6 +144,19 @@ pub(super) fn collapse(
 ) -> Result<CollapseOutput, HexWfcError> {
     let mut last_failure: Option<&'static str> = None;
     let no_pins = BTreeSet::new();
+
+    // Pin pre-flight, before a single attempt. A pin that can never be
+    // satisfied — a door facing off the lattice, a room painted onto fabric —
+    // would otherwise surface as `RetryBudgetExhausted` a hundred attempts
+    // later, naming the budget instead of the mistake.
+    let (authored, _) = super::pins::resolved_pins(config, profile);
+    if !authored.is_empty()
+        && let Some((coord, reason)) =
+            super::pins::unsatisfiable(config, &authored, &solver_tables().variants)
+    {
+        return Err(HexWfcError::PinContradiction { coord, reason });
+    }
+
     let retry_budget = profile
         .search
         .retry_budget_override
@@ -535,6 +548,10 @@ fn collapse_attempt_with_blueprints(
     };
     emit_blueprints(&blueprints, &forced_doors, &mut trace);
 
+    // Authored pins are part of the profile, so they resolve from it rather
+    // than riding another parameter down the call chain. Resolution is a few
+    // map inserts against a full solve.
+    let (authored, _) = super::pins::resolved_pins(config, profile);
     let mut domains = initial_domains(
         config,
         variants,
@@ -544,9 +561,10 @@ fn collapse_attempt_with_blueprints(
         &signatures,
         previous,
         pinned,
+        &authored,
     );
     if domains.iter().any(VariantSet::is_empty) {
-        return Err("pinned cell contradicts blueprint or forced route");
+        return Err("pinned cell contradicts blueprint, forced route, or an authored pin");
     }
     emit_precollapsed(config, variants, &domains, &signatures, &mut trace);
     // The initial pass seeds every cell; later passes are incremental.
@@ -677,6 +695,7 @@ fn initial_domains(
     signatures: &BTreeMap<HexCoord, PortSignature>,
     previous: Option<&BTreeMap<HexCoord, HexPlacement>>,
     pinned: &BTreeSet<HexCoord>,
+    authored: &BTreeMap<HexCoord, PinIntent>,
 ) -> Vec<VariantSet> {
     let grid = config.grid();
     all_coords(config)
@@ -693,6 +712,18 @@ fn initial_domains(
                 .iter()
                 .enumerate()
                 .filter(|(_, variant)| {
+                    // Authored intent narrows the domain like any other
+                    // constraint here — except where a stamped blueprint
+                    // already fixes the cell. Room footprints and named ports
+                    // are a frozen contract, so the blueprint wins and
+                    // `pins::diagnose_pins` reports the collision rather than
+                    // this emptying the domain and calling it a contradiction.
+                    if blueprint_signature.is_none()
+                        && let Some(intent) = authored.get(&coord)
+                        && !super::pins::pin_admits(intent, variant)
+                    {
+                        return false;
+                    }
                     if pinned.contains(&coord)
                         && previous.is_none_or(|placements| {
                             let locked = placements[&coord];

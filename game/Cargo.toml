@@ -36,6 +36,8 @@ observed_core = { path = "../crates/observed_core" }
 observed_content = { path = "../crates/observed_content" }
 observed_diagnostics = { path = "../crates/observed_diagnostics" }
 observed_style = { path = "../crates/observed_style" }
+# Shared focusable menu chrome, extracted from this crate in Arc R.
+observed_ui = { path = "../crates/observed_ui" }
 observed_assets = { path = "../crates/observed_assets" }
 player_input = { path = "../crates/player_input" }
 observed_progression = { path = "../crates/observed_progression" }
