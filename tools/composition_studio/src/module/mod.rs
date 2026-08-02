@@ -12,4 +12,5 @@ pub mod app;
 pub mod diagnose;
 pub mod panel;
 pub mod render;
+pub mod walk;
 pub mod watch;

@@ -159,6 +159,25 @@ pub fn format_panel(state: &ModuleState) -> String {
         }
     }
 
+    // The walk verdict sits with the validity verdict, because they answer
+    // different questions and a module can pass one and fail the other - which
+    // is the entire reason this probe exists.
+    if let Some(report) = state.walk.as_ref() {
+        let limits = crate::module::walk::Thresholds::default();
+        lines.push(String::new());
+        match report.failure {
+            None => lines.push(format!(
+                "WALK clear - {} samples, {:.1} m climbed",
+                report.path.len(),
+                report.climbed
+            )),
+            Some(failure) => {
+                lines.push(format!("WALK blocked at {:.0}%", report.progress * 100.0));
+                lines.push(failure.describe(&limits));
+            }
+        }
+    }
+
     if let Some(recipe) = diagnosis.recipe.as_ref() {
         lines.push(String::new());
         lines.push(format!("PARAMETRIC  {} step(s)", recipe.steps.len()));

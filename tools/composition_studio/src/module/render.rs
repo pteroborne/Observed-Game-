@@ -50,6 +50,10 @@ pub fn rebuild_module_view(
 
     let detent = state.detent;
     let cutaway = state.cutaway;
+    // Cloned out before the diagnosis is borrowed; the path is a few dozen
+    // points, and the alternative is threading a borrow through the whole
+    // rebuild for nothing.
+    let walk = state.walk.as_ref().map(|w| (w.path.clone(), w.failure));
     let Some(diagnosis) = state.current() else {
         return;
     };
@@ -134,7 +138,60 @@ pub fn rebuild_module_view(
     spawn_cell_outline(&mut commands, &mut meshes, &mut materials, levels, &centres);
 
     spawn_highlight(&mut commands, &mut meshes, &marker, diagnosis.highlight);
+
+    if let Some((path, failure)) = walk {
+        spawn_walk(&mut commands, &mut meshes, &mut materials, &path, failure);
+    }
+
     state.cut_hulls = cut;
+}
+
+/// Draw the walked path, and mark where it stopped.
+///
+/// Lifted clear of the floor so it reads as an annotation over the surface
+/// rather than as geometry lying on it. The path is drawn in the settled
+/// colour and the stopping point in the alert colour - the same pair the
+/// viewport already uses for "this holds" and "this does not".
+fn spawn_walk(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    path: &[Vec3],
+    failure: Option<crate::module::walk::WalkFailure>,
+) {
+    const LIFT: f32 = 0.12;
+    let trail = materials.add(StandardMaterial {
+        base_color: schematic(SchematicRole::Pinned).base_color,
+        emissive: schematic(SchematicRole::Pinned).emissive,
+        unlit: true,
+        ..default()
+    });
+    for pair in path.windows(2) {
+        spawn_edge(
+            commands,
+            meshes,
+            &trail,
+            pair[0] + Vec3::Y * LIFT,
+            pair[1] + Vec3::Y * LIFT,
+        );
+    }
+
+    // A walk that stopped must show *where*. Drawing only the path would make a
+    // route that got 20% along look like a route that finished.
+    if let Some(failure) = failure {
+        let stop = materials.add(StandardMaterial {
+            base_color: schematic(SchematicRole::Volatile).base_color,
+            emissive: schematic(SchematicRole::Volatile).emissive,
+            unlit: true,
+            ..default()
+        });
+        commands.spawn((
+            Mesh3d(meshes.add(Sphere::new(0.30).mesh().ico(2).unwrap())),
+            MeshMaterial3d(stop),
+            Transform::from_translation(failure.at() + Vec3::Y * LIFT),
+            ModuleVisual,
+        ));
+    }
 }
 
 /// Whether a hull survives the cutaway, measured against the nearest cell.
