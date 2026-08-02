@@ -159,6 +159,34 @@ sources; the game's centered fallback is only a defensive legacy path.
   true corners stay crisp. Textures are box-projected per face — no planar
   streaking. Keep deliberate hard edges above ~50 degrees of dihedral.
 
+## Parametric modules (recipes)
+
+A **recipe** is a module described as data instead of code: an ordered list of
+the same primitives, in a `.recipe.ron` beside the `.map` it bakes to. It exists
+because a builder needs a recompile to try an idea, and a recipe does not.
+
+```bash
+cargo run -p observed_authoring --bin tilec -- new-recipe authored/my_module
+cargo run -p composition_studio --bin module-studio        # live preview + validation
+cargo run -p observed_authoring --bin tilec -- bake-recipe assets/tiles/authored/my_module.recipe.ron
+```
+
+`module-studio` watches recipes the same way it watches modules, builds them in
+memory, and diagnoses the result — so a parametric module is judged by exactly
+the same importer as a committed one, while you are still holding the parameter.
+`S/X` picks a step, `A/D` picks a parameter, `Lt/Rt` adjusts it (Shift for 8x).
+**Every adjustment writes the recipe file**; there is no separate save, because
+the file is the document and the watcher is what re-previews it.
+
+The starter recipe is a sealed cell that already validates. A blank page that
+fails the contract teaches you the tool is broken, not your module.
+
+**Recipes are not the corpus.** The 58 committed modules come from Rust
+builders, which are reviewed, diffed, and byte-gated. A recipe is how a *new*
+module is worked out before it earns a builder. The committed corpus is
+deliberately not round-tripped into recipes — that would make it depend on a
+second representation for nothing.
+
 ## Seeing what is wrong (`module-studio`)
 
 ```bash

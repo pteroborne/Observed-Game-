@@ -145,6 +145,40 @@ pub fn format_panel(state: &ModuleState) -> String {
         }
     }
 
+    if let Some(recipe) = diagnosis.recipe.as_ref() {
+        lines.push(String::new());
+        lines.push(format!("PARAMETRIC  {} step(s)", recipe.steps.len()));
+        lines.push(String::from(
+            "[S/X] step   [A/D] parameter   [Lt/Rt] adjust, Shift for 8x",
+        ));
+        // No save key, because there is nothing to save: a nudge writes the
+        // recipe and the watcher re-previews it. Advertising a key that does
+        // nothing is worse than advertising none.
+        lines.push(String::from("every adjustment writes the recipe file"));
+        lines.push(String::new());
+
+        for (index, step) in recipe.steps.iter().enumerate() {
+            let selected = index == state.step;
+            let params = step.params();
+            // Unselected rows carry the label only. The panel is a fixed-width
+            // text node, and a full parameter list per row wraps mid-value into
+            // an unreadable block - which is exactly what the first capture of
+            // this showed.
+            if !selected {
+                lines.push(format!("  {:<16} {} param(s)", step.label(), params.len()));
+                continue;
+            }
+            lines.push(format!("> {:<16} {} param(s)", step.label(), params.len()));
+            for (slot, (name, value)) in params.iter().enumerate() {
+                // The held parameter is bracketed rather than coloured: the
+                // panel is one text node, and a reader scanning for "which one
+                // moves" needs it legible without a colour key.
+                let marker = if slot == state.param { ">" } else { " " };
+                lines.push(format!("    {marker} {name:<14} {value:>9.2}"));
+            }
+        }
+    }
+
     lines.join("\n")
 }
 
@@ -163,6 +197,7 @@ mod tests {
                 summary: None,
                 error: error.map(ToString::to_string),
                 highlight,
+                recipe: None,
             }],
             ..ModuleState::default()
         }
@@ -218,5 +253,49 @@ mod tests {
         ] {
             assert!(text.is_ascii(), "{text:?}");
         }
+    }
+
+    /// A parametric module must show its parameters, and must not advertise a
+    /// key that does nothing. The first cut offered "[Ctrl+S] save" while every
+    /// nudge already wrote the file.
+    #[test]
+    fn a_recipe_panel_shows_its_held_parameter_and_no_dead_keys() {
+        use observed_authoring::forge::recipe::Recipe;
+
+        let mut state = state_with(None, Highlight::Whole);
+        state.diagnoses[0].recipe = Some(Recipe::starter("authored/panel_probe"));
+        state.step = 0;
+        state.param = 2;
+
+        let text = format_panel(&state);
+        assert!(text.contains("PARAMETRIC"), "{text}");
+        assert!(
+            text.contains("chamfer_top"),
+            "the held step must list params"
+        );
+        assert!(
+            !text.contains("Ctrl+S"),
+            "no save key: a nudge already writes the file"
+        );
+        assert!(
+            text.contains("writes the recipe file"),
+            "the save behaviour must be stated: {text}"
+        );
+    }
+
+    /// Only the held step lists its parameters. Every step listing everything
+    /// wraps the fixed-width panel into an unreadable block.
+    #[test]
+    fn unheld_steps_stay_one_line() {
+        use observed_authoring::forge::recipe::Recipe;
+
+        let mut state = state_with(None, Highlight::Whole);
+        state.diagnoses[0].recipe = Some(Recipe::starter("authored/panel_probe"));
+        state.step = 0;
+
+        let text = format_panel(&state);
+        // The starter's second step is a hex_slab too; its params must not show.
+        let listed = text.matches("chamfer_bottom").count();
+        assert_eq!(listed, 1, "only the held step lists parameters: {text}");
     }
 }

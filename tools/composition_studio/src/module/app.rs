@@ -24,6 +24,13 @@ pub struct ModuleState {
     /// found nothing does not cause a re-parse of the whole corpus.
     pub built_from: u64,
     pub status: String,
+    /// Which recipe step is held, and which of its parameters.
+    ///
+    /// Kept on the state rather than derived from the diagnosis, because
+    /// the diagnosis is rebuilt on every file change and the author's
+    /// selection has to survive their own edit.
+    pub step: usize,
+    pub param: usize,
 }
 
 impl Default for ModuleState {
@@ -36,6 +43,8 @@ impl Default for ModuleState {
             detent: 0,
             built_from: 0,
             status: String::from("scanning"),
+            step: 0,
+            param: 0,
         }
     }
 }
@@ -76,11 +85,84 @@ impl ModuleState {
         self.status = String::from("every module validates; nothing to jump to");
     }
 
+    /// Clamp the step/parameter cursor to what the current recipe has.
+    ///
+    /// Called after any change to either, so an edit that removes the last step
+    /// cannot leave the cursor pointing past the end and silently stop
+    /// responding to arrow keys.
+    pub fn clamp_cursor(&mut self) {
+        // The counts are read out before anything is written back, so the
+        // immutable borrow of the diagnosis ends before the cursor moves.
+        let shape: Option<(usize, Vec<usize>)> = self
+            .current()
+            .and_then(|d| d.recipe.as_ref())
+            .map(|recipe| {
+                (
+                    recipe.steps.len(),
+                    recipe.steps.iter().map(|s| s.params().len()).collect(),
+                )
+            });
+        let Some((steps, param_counts)) = shape else {
+            self.step = 0;
+            self.param = 0;
+            return;
+        };
+        if steps == 0 {
+            self.step = 0;
+            self.param = 0;
+            return;
+        }
+        self.step = self.step.min(steps - 1);
+        let count = param_counts[self.step];
+        self.param = if count == 0 {
+            0
+        } else {
+            self.param.min(count - 1)
+        };
+    }
+
+    /// Adjust the held parameter by `delta` and write the recipe back to disk.
+    ///
+    /// Saving on every keystroke is deliberate: the file is the document, the
+    /// watcher is what re-previews it, and an in-memory edit that had to be
+    /// committed separately would let the viewport and the file disagree about
+    /// what the module is. Recipes are small and this is a human-paced loop.
+    pub fn nudge_param(&mut self, delta: f64) {
+        self.clamp_cursor();
+        let (step, param) = (self.step, self.param);
+        let Some(diagnosis) = self.diagnoses.get_mut(self.selected) else {
+            return;
+        };
+        let path = diagnosis.path.clone();
+        let Some(recipe) = diagnosis.recipe.as_mut() else {
+            return;
+        };
+        let Some(target) = recipe.steps.get_mut(step) else {
+            return;
+        };
+        let Some(&(name, value)) = target.params().get(param) else {
+            return;
+        };
+        if !target.set_param(name, value + delta) {
+            return;
+        }
+        let text = recipe.to_ron();
+        let label = format!("{name} -> {:.2}", value + delta);
+        match std::fs::write(&path, text.as_bytes()) {
+            // The watcher picks the write up and re-diagnoses, so the viewport
+            // and the validity verdict both follow within a poll.
+            Ok(()) => self.status = label,
+            Err(error) => self.status = format!("cannot write {}: {error}", path.display()),
+        }
+    }
+
     pub fn select(&mut self, index: usize) {
         if self.diagnoses.is_empty() {
             return;
         }
         self.selected = index % self.diagnoses.len();
+        self.step = 0;
+        self.param = 0;
         self.dirty = true;
     }
 }
@@ -115,6 +197,7 @@ pub fn rebuild_diagnoses(watch: Res<ModuleWatch>, mut state: ResMut<ModuleState>
         state.selected = index;
     }
     state.selected = state.selected.min(state.diagnoses.len().saturating_sub(1));
+    state.clamp_cursor();
 
     let failing = state.failing();
     let total = state.diagnoses.len();
@@ -153,6 +236,38 @@ pub fn handle_input(
             % crate::viewport::AZIMUTH_DETENTS;
         state.dirty = true;
     }
+    // Recipe editing. Deliberately different keys from the module paging
+    // above, so a key never means two things at once - the same rule the
+    // sibling tool enforces with ownership.
+    if state.current().is_some_and(|d| d.is_parametric()) {
+        if keyboard.just_pressed(KeyCode::KeyX) {
+            state.step += 1;
+            state.param = 0;
+            state.clamp_cursor();
+        }
+        if keyboard.just_pressed(KeyCode::KeyS) && !keyboard.pressed(KeyCode::ControlLeft) {
+            state.step = state.step.saturating_sub(1);
+            state.param = 0;
+            state.clamp_cursor();
+        }
+        if keyboard.just_pressed(KeyCode::KeyD) {
+            state.param += 1;
+            state.clamp_cursor();
+        }
+        if keyboard.just_pressed(KeyCode::KeyA) {
+            state.param = state.param.saturating_sub(1);
+            state.clamp_cursor();
+        }
+        let coarse = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
+        let unit = if coarse { 8.0 } else { 1.0 };
+        if keyboard.just_pressed(KeyCode::ArrowRight) {
+            state.nudge_param(unit);
+        }
+        if keyboard.just_pressed(KeyCode::ArrowLeft) {
+            state.nudge_param(-unit);
+        }
+    }
+
     if scroll.delta.y.abs() > f32::EPSILON {
         state.zoom = (state.zoom * 1.14_f32.powf(-scroll.delta.y)).clamp(0.05, 4.0);
     }

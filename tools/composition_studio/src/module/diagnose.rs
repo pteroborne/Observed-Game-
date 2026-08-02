@@ -19,6 +19,7 @@
 use std::path::{Path, PathBuf};
 
 use bevy::prelude::*;
+use observed_authoring::forge::recipe::{RECIPE_SUFFIX, Recipe};
 use observed_authoring::{
     AuthoredModule, ModuleCellRef, ModuleSummary, SourceError, TileError, TilePrototype,
     editor_origin_to_world, parse_authored_module, parse_tile,
@@ -56,6 +57,14 @@ pub struct Diagnosis {
     /// `None` when the module is clean.
     pub error: Option<String>,
     pub highlight: Highlight,
+    /// Present when this came from a `.recipe.ron` rather than a `.map`.
+    ///
+    /// A recipe is previewed by building it in memory and diagnosing the
+    /// result, so everything downstream - renderer, highlight, panel - is
+    /// unchanged. That is the point: a parametric module is judged by exactly
+    /// the same importer as a committed one, while you are still holding the
+    /// parameter.
+    pub recipe: Option<Recipe>,
 }
 
 impl Diagnosis {
@@ -65,12 +74,29 @@ impl Diagnosis {
     }
 
     /// The file's stem, which is what an author calls it.
+    /// `foo.recipe.ron` is `foo`, not `foo.recipe`: the double extension is a
+    /// file-naming convention, not part of the module name, and a list
+    /// showing both `foo` and `foo.recipe` would read as two modules.
     #[must_use]
     pub fn name(&self) -> String {
+        let raw = self
+            .path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_else(|| self.path.display().to_string());
+        if let Some(stem) = raw.strip_suffix(RECIPE_SUFFIX) {
+            return stem.to_string();
+        }
         self.path
             .file_stem()
             .map(|stem| stem.to_string_lossy().to_string())
-            .unwrap_or_else(|| self.path.display().to_string())
+            .unwrap_or(raw)
+    }
+
+    /// Whether this module is parametric, and therefore editable here.
+    #[must_use]
+    pub fn is_parametric(&self) -> bool {
+        self.recipe.is_some()
     }
 }
 
@@ -87,10 +113,46 @@ pub fn diagnose_file(path: &Path) -> Diagnosis {
                 summary: None,
                 error: Some(format!("cannot read: {error}")),
                 highlight: Highlight::Whole,
+                recipe: None,
             };
         }
     };
+    if is_recipe(path) {
+        return diagnose_recipe(path, &text);
+    }
     diagnose_text(path, &text)
+}
+
+/// Whether `path` is a parametric recipe rather than a baked module.
+#[must_use]
+pub fn is_recipe(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.ends_with(RECIPE_SUFFIX))
+}
+
+/// Build a recipe and diagnose what it produced.
+///
+/// A recipe that fails to *parse* has no geometry at all, and says so plainly
+/// rather than reporting a module error about a module that was never built.
+#[must_use]
+pub fn diagnose_recipe(path: &Path, text: &str) -> Diagnosis {
+    match Recipe::parse(text) {
+        Ok(recipe) => {
+            let mut diagnosis = diagnose_text(path, &recipe.build());
+            diagnosis.recipe = Some(recipe);
+            diagnosis
+        }
+        Err(error) => Diagnosis {
+            path: path.to_path_buf(),
+            prototype: None,
+            module: None,
+            summary: None,
+            error: Some(format!("the recipe does not parse:\n{error}")),
+            highlight: Highlight::Whole,
+            recipe: None,
+        },
+    }
 }
 
 /// Diagnose already-read source. Split out so the tests do not need files.
@@ -108,6 +170,7 @@ pub fn diagnose_text(path: &Path, text: &str) -> Diagnosis {
             module: Some(module),
             error: None,
             highlight: Highlight::Whole,
+            recipe: None,
         },
         Err(error) => Diagnosis {
             path: path.to_path_buf(),
@@ -116,6 +179,7 @@ pub fn diagnose_text(path: &Path, text: &str) -> Diagnosis {
             summary: None,
             highlight: source_highlight(&error),
             error: Some(describe(&error)),
+            recipe: None,
         },
     }
 }

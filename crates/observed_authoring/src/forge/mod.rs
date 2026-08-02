@@ -10,6 +10,7 @@ pub mod geometry;
 pub mod halls;
 pub mod liminal;
 pub mod probe;
+pub mod recipe;
 pub mod rooms;
 pub mod silos;
 

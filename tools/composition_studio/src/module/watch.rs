@@ -52,7 +52,12 @@ impl ModuleWatch {
         let mut paths: Vec<PathBuf> = entries
             .filter_map(Result::ok)
             .map(|entry| entry.path())
-            .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("map"))
+            // Recipes sit beside the modules they bake to, and are watched
+            // for the same reason: an edit must show up without a rebuild.
+            .filter(|path| {
+                path.extension().and_then(|ext| ext.to_str()) == Some("map")
+                    || crate::module::diagnose::is_recipe(path)
+            })
             .collect();
         paths.sort();
         paths
@@ -137,13 +142,13 @@ mod tests {
     /// Only `.map` files. The directory also holds TrenchBroom autosaves, and
     /// one of those broke `tilec audit` once already.
     #[test]
-    fn only_map_files_are_watched() {
+    fn only_modules_and_recipes_are_watched() {
         let watch = ModuleWatch::new(corpus());
         for path in watch.scan() {
-            assert_eq!(
-                path.extension().and_then(|ext| ext.to_str()),
-                Some("map"),
-                "{} is not a .map",
+            let is_map = path.extension().and_then(|ext| ext.to_str()) == Some("map");
+            assert!(
+                is_map || crate::module::diagnose::is_recipe(&path),
+                "{} is neither a module nor a recipe",
                 path.display()
             );
         }
