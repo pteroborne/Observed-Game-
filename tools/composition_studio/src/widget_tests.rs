@@ -1,10 +1,11 @@
-//! Tests for the Tuning tab's real slider controls.
+//! Tests for the panel's real slider controls.
 //!
 //! Split from `tests.rs` to keep both under the 600-line review budget.
 
 use bevy::prelude::*;
 
 use crate::StudioState;
+use crate::field_widgets::FieldSlider;
 use crate::tests::headless;
 
 /// Dragging a slider must move the profile, not just the widget.
@@ -16,23 +17,18 @@ use crate::tests::headless;
 /// tool that looks correct and quietly edits nothing.
 #[test]
 fn dragging_a_slider_edits_the_profile_it_points_at() {
-    use crate::tuning_widgets::{TuningSlider, tuning_fields};
-
     let mut app = headless();
     app.update();
 
     let (entity, index) = app
         .world_mut()
-        .query::<(Entity, &TuningSlider)>()
+        .query::<(Entity, &FieldSlider)>()
         .iter(app.world())
         .map(|(entity, slider)| (entity, slider.0))
         .next()
         .expect("the Tuning tab spawned no sliders");
 
-    let field = tuning_fields()
-        .find(|(row, _)| *row == index)
-        .map(|(_, field)| field)
-        .expect("slider row has no matching field");
+    let field = index.field().expect("slider row has no matching field");
 
     let before = (field.get)(&app.world().resource::<StudioState>().profile);
     let wanted = if before > field.min + 0.5 {
@@ -64,22 +60,17 @@ fn dragging_a_slider_edits_the_profile_it_points_at() {
 /// The widget must never be able to author a value the validator would reject.
 #[test]
 fn a_slider_cannot_push_a_field_past_its_own_range() {
-    use crate::tuning_widgets::{TuningSlider, tuning_fields};
-
     let mut app = headless();
     app.update();
 
     let (entity, index) = app
         .world_mut()
-        .query::<(Entity, &TuningSlider)>()
+        .query::<(Entity, &FieldSlider)>()
         .iter(app.world())
         .map(|(entity, slider)| (entity, slider.0))
         .next()
         .expect("the Tuning tab spawned no sliders");
-    let field = tuning_fields()
-        .find(|(row, _)| *row == index)
-        .map(|(_, field)| field)
-        .expect("slider row has no matching field");
+    let field = index.field().expect("slider row has no matching field");
 
     app.world_mut().trigger(bevy::ui_widgets::ValueChange {
         source: entity,

@@ -168,10 +168,10 @@ pub fn setup_chrome(mut commands: Commands) {
                         TextColor(schematic(SchematicRole::Selected).base_color),
                         ChromeMenuText,
                     ));
-                    // Real controls for the Tuning tab, as siblings after the
-                    // text node: on that tab the text above holds only the
-                    // header and these rows are the body.
-                    crate::tuning_widgets::spawn_tuning_rows(menu);
+                    // Real controls for every tab that declares tunables, as
+                    // siblings after the text node: on those tabs the text
+                    // above holds only the header and these rows are the body.
+                    crate::field_widgets::spawn_field_rows(menu);
                 });
 
             // The viewport column: everything to the right of the panel. Its
@@ -322,12 +322,14 @@ pub fn update_chrome_ui(
                     "Working Scale: {}x{}x{}\n",
                     state.config.cols, state.config.rows, state.config.levels
                 ));
-                s.push_str(&format!(
-                    "Search Candidates: {} (Slice 4 ladder)\n\n",
-                    state.profile.search.candidates
-                ));
+                s.push('\n');
 
                 if let Some(solved) = state.solved.as_ref() {
+                    // The ladder first: it explains the score below it, and it
+                    // is empty unless a search actually ran.
+                    s.push_str(&crate::panels::search::format_candidate_ladder(
+                        &solved.candidates,
+                    ));
                     s.push_str(&format_score_breakdown(
                         &solved.score,
                         state.baseline_score.as_ref(),

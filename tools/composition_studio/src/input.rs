@@ -9,7 +9,7 @@
 
 use bevy::prelude::*;
 
-use crate::chrome::{LabMenuState, PendingConfirm, StudioTab};
+use crate::chrome::{LabMenuState, PendingConfirm};
 use crate::persist::{promote_to_corpus, save_working_profile};
 use crate::tunables::{TUNABLE_FIELDS, TunableField};
 fn request_save(state: &mut crate::StudioState, menu: &mut LabMenuState, promote: bool) {
@@ -78,12 +78,15 @@ pub fn handle_chrome_input(
             }
         }
 
+        // Driven by `field.tab`, not by a hardcoded tab. Any tab that declares
+        // fields gets selection and adjustment for free, and a new tunable
+        // cannot land somewhere the keyboard cannot reach it.
         let tab = menu_state.tab();
-        if tab == StudioTab::Tuning {
+        {
             let fields_on_tab: Vec<(usize, &TunableField)> = TUNABLE_FIELDS
                 .iter()
                 .enumerate()
-                .filter(|(_, f)| f.tab == StudioTab::Tuning)
+                .filter(|(_, f)| f.tab == tab)
                 .collect();
 
             let count = fields_on_tab.len();

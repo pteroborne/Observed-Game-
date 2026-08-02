@@ -258,6 +258,7 @@ pub(super) fn candidate_seed(seed: u64, candidate: u32) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::super::HexWfcConfig;
+    use super::super::profile::HexCompositionProfile;
     use super::*;
 
     /// Small-but-solvable config so the determinism tests below stay fast.
@@ -297,17 +298,100 @@ mod tests {
         assert_eq!(first.seed, second.seed);
     }
 
+    /// Candidate 0 is `seed` itself, so raising the candidate count can only
+    /// improve on the layout you already had - never replace it with something
+    /// worse or merely different.
     #[test]
-    fn generate_best_selects_a_score_at_least_as_good_as_the_first_candidate() {
+    fn searching_never_returns_a_layout_worse_than_the_plain_seed() {
         let config = small_config();
+        let plain = HexWfcWorld::generate(99, config).expect("the seed itself must solve");
+        let plain_score = score_layout(&plain);
+
         let best = HexWfcWorld::generate_best(99, config, 4).expect("candidates must solve");
-        let best_score = score_layout(&best);
+        assert!(
+            score_layout(&best).total >= plain_score.total,
+            "search returned a worse layout than solving the seed directly"
+        );
+    }
 
-        let first_candidate_seed = candidate_seed(99, 0);
-        let first_candidate =
-            HexWfcWorld::generate(first_candidate_seed, config).expect("candidate 0 must solve");
-        let first_score = score_layout(&first_candidate);
+    /// The seed a single candidate solves at must be the seed itself, or every
+    /// facility in the repo silently moves the moment this path is taken.
+    #[test]
+    fn one_candidate_is_exactly_a_plain_solve() {
+        let config = small_config();
+        let profile = HexCompositionProfile::baseline();
+        let (searched, ladder) =
+            HexWfcWorld::generate_searched_with_profile(99, config, None, &profile)
+                .expect("must solve");
+        let plain = HexWfcWorld::generate(99, config).expect("must solve");
 
-        assert!(best_score.total >= first_score.total);
+        assert_eq!(profile.search.candidates, 1, "baseline must not search");
+        assert_eq!(searched.placements, plain.placements);
+        assert_eq!(searched.seed, plain.seed);
+        assert_eq!(ladder.len(), 1);
+        assert_eq!(ladder[0].seed, 99, "candidate 0 must be the seed itself");
+    }
+
+    /// The ladder is the tool's whole justification for spending N solves, so
+    /// it must account for every candidate and name exactly one winner.
+    #[test]
+    fn the_ladder_records_every_candidate_and_exactly_one_winner() {
+        let config = small_config();
+        let mut profile = HexCompositionProfile::baseline();
+        profile.search.candidates = 4;
+
+        let (world, ladder) =
+            HexWfcWorld::generate_searched_with_profile(99, config, None, &profile)
+                .expect("must solve");
+
+        assert_eq!(ladder.len(), 4);
+        assert_eq!(ladder.iter().filter(|c| c.winner).count(), 1);
+        for (position, candidate) in ladder.iter().enumerate() {
+            assert_eq!(candidate.index as usize, position, "ladder is out of order");
+        }
+
+        let winner = ladder.iter().find(|c| c.winner).expect("a winner");
+        assert_eq!(
+            winner.seed, world.seed,
+            "the returned world must be the candidate the ladder names"
+        );
+        // The winner is the maximum, and ties resolve to the lower index.
+        let best_total = ladder
+            .iter()
+            .filter_map(|c| c.score.as_ref())
+            .fold(f64::MIN, |acc, s| acc.max(s.total));
+        assert!((winner.score.as_ref().expect("winner scored").total - best_total).abs() < 1e-9);
+    }
+
+    /// The search must optimise for the *authored* weights. Scoring with the
+    /// compile-time defaults instead would still return a plausible layout and
+    /// would silently ignore every score slider in the studio.
+    #[test]
+    fn the_search_scores_with_the_profiles_own_weights() {
+        let config = small_config();
+        let mut profile = HexCompositionProfile::baseline();
+        profile.search.candidates = 3;
+        profile.score.connectivity = profile.score.connectivity * 3.0 + 1.0;
+        profile.score.variety = 0.0;
+
+        let (world, ladder) =
+            HexWfcWorld::generate_searched_with_profile(99, config, None, &profile)
+                .expect("must solve");
+        let winner = ladder
+            .iter()
+            .find(|c| c.winner)
+            .and_then(|c| c.score.as_ref())
+            .expect("a scored winner");
+
+        assert_eq!(
+            *winner,
+            score_layout_with(&world, profile.score),
+            "the ladder must report the authored score"
+        );
+        assert_ne!(
+            winner.total,
+            score_layout(&world).total,
+            "these weights differ from the defaults, so the totals must differ"
+        );
     }
 }

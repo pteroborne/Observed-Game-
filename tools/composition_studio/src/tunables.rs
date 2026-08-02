@@ -1,6 +1,8 @@
 //! Declarative metadata table mapping profile scalars to interactive tunables.
 
-use observed_facility::hex_wfc::profile::{HexCompositionProfile, SCORE_WEIGHT_MAX};
+use observed_facility::hex_wfc::profile::{
+    HexCompositionProfile, MAX_SEARCH_CANDIDATES, SCORE_WEIGHT_MAX,
+};
 use observed_facility::hex_wfc::{HexArchetype, PROFILE_MAX, PROFILE_MIN};
 
 use crate::StudioTab;
@@ -228,5 +230,27 @@ pub const TUNABLE_FIELDS: &[TunableField] = &[
         step: 0.25,
         get: |p| p.score.rhythm,
         set: |p, v| p.score.rhythm = v,
+    },
+    // --- Search (1) ---
+    //
+    // On the Solve tab rather than Tuning, because it is not a bias: it does not
+    // change what the solver tends to build, it changes how many layouts get
+    // built before one is chosen. Sitting it beside the biases would invite
+    // reading it as one.
+    TunableField {
+        label: "search_candidates",
+        consequence: "Solve this many layouts and keep the best-scoring. Candidate 0 is always this seed, so raising this can only improve the score -- but it multiplies solve time, and above 1 the seed no longer names one fixed facility.",
+        category: "Search",
+        tab: StudioTab::Solve,
+        min: 1.0,
+        max: MAX_SEARCH_CANDIDATES as f64,
+        step: 1.0,
+        get: |p| f64::from(p.search.candidates),
+        // Rounded, not truncated: the slider reports a continuous value and
+        // `2.999` must mean three candidates rather than two.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        set: |p, v| {
+            p.search.candidates = v.round().clamp(1.0, f64::from(MAX_SEARCH_CANDIDATES)) as u32;
+        },
     },
 ];

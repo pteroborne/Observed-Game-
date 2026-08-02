@@ -350,13 +350,59 @@ fn every_tunable_field_explains_its_consequence() {
 
 #[test]
 fn every_profile_scalar_has_a_tunable_entry() {
+    // `SearchPolicy::candidates` is the one search scalar with a control.
+    //
+    // `retry_budget_override` deliberately has none, and this is the note that
+    // keeps that a decision rather than an oversight: it is an `Option`, where
+    // *unset* is a distinct and meaningful state, and a slider has no position
+    // that means "unset". Giving it one would force every profile to pin a
+    // retry budget whether the author meant to or not. It stays editable in the
+    // RON.
+    const SEARCH_SCALARS_WITH_CONTROLS: usize = 1;
+
     let expected = CompositionTendencies::baseline().fields().len()
         + ArchetypeBias::neutral().fields().len()
-        + ScoreWeights::baseline().fields().len();
+        + ScoreWeights::baseline().fields().len()
+        + SEARCH_SCALARS_WITH_CONTROLS;
     assert_eq!(
         TUNABLE_FIELDS.len(),
         expected,
         "a new profile scalar must gain a TunableField, or it ships with no UI"
+    );
+}
+
+/// Every tab that declares fields must be reachable and its rows must line up
+/// with what the keyboard selects. A field on a tab the panel never renders is
+/// a control that exists only in the table.
+#[test]
+fn every_tunable_tab_renders_the_fields_it_declares() {
+    use crate::field_widgets::{FieldRef, fields_on, tabs_with_fields};
+
+    let tabs: Vec<_> = tabs_with_fields().collect();
+    assert!(
+        tabs.contains(&crate::StudioTab::Tuning) && tabs.contains(&crate::StudioTab::Solve),
+        "expected both Tuning and Solve to declare fields, got {tabs:?}"
+    );
+
+    let mut counted = 0;
+    for tab in tabs {
+        let on_tab: Vec<_> = fields_on(tab).collect();
+        assert!(!on_tab.is_empty());
+        for (index, field) in &on_tab {
+            let resolved = FieldRef { tab, index: *index }
+                .field()
+                .expect("a listed field must resolve back through its own reference");
+            assert_eq!(
+                resolved.label, field.label,
+                "tab-local index {index} on {tab:?} resolves to the wrong field"
+            );
+            counted += 1;
+        }
+    }
+    assert_eq!(
+        counted,
+        TUNABLE_FIELDS.len(),
+        "a field is declared on no rendered tab, so nothing draws it"
     );
 }
 

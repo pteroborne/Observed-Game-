@@ -25,6 +25,7 @@ pub mod chrome;
 pub mod coverage;
 pub mod detail;
 pub mod draw;
+pub mod field_widgets;
 pub mod input;
 pub mod layer;
 pub mod panels;
@@ -33,7 +34,6 @@ pub mod pick;
 pub mod script;
 pub mod solve;
 pub mod tunables;
-pub mod tuning_widgets;
 pub mod viewport;
 pub mod viewport_input;
 
@@ -121,6 +121,10 @@ pub struct SolveResult {
     pub geometry: Option<HexWfcGeometrySnapshot>,
     /// What this layout asks the catalog for, and whether it is there.
     pub coverage: crate::coverage::CoverageReport,
+    /// Every candidate the search considered, winner included. One entry when
+    /// the profile asks for a single candidate, so the Solve tab never has to
+    /// special-case "no search happened".
+    pub candidates: Vec<observed_facility::hex_wfc::CandidateOutcome>,
 }
 
 /// Where the in-memory profile came from, so the status line can say.
@@ -466,13 +470,13 @@ impl Plugin for StudioPlugin {
                     draw::rebuild_overlay.after(draw::rebuild_visuals),
                     viewport::sync_camera.after(draw::rebuild_visuals),
                     chrome::update_chrome_ui.after(update_studio_solve),
-                    tuning_widgets::sync_tuning_rows.after(update_studio_solve),
+                    field_widgets::sync_field_rows.after(update_studio_solve),
                     viewport_input::handle_viewport_painting,
                     viewport_input::update_hover_and_cursor,
                     viewport::sync_camera_viewport,
                 ),
             )
-            .add_observer(tuning_widgets::apply_slider_change);
+            .add_observer(field_widgets::apply_slider_change);
 
         if let Ok(dir) = std::env::var("OBSERVED2_CAPTURE") {
             app.insert_resource(capture::CaptureState {

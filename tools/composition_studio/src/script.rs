@@ -60,6 +60,10 @@ pub struct StudioScript {
     /// (`shaft`, `junction`, `room`, …).
     #[serde(default)]
     pub archetype_bias: std::collections::BTreeMap<String, f64>,
+    /// Candidate layouts to solve and score. Above 1 the seed no longer names
+    /// one fixed facility, so a capture that sets this is not comparable with
+    /// one that does not.
+    pub candidates: Option<u32>,
     pub output_image: Option<String>,
 }
 
@@ -220,6 +224,12 @@ pub fn script_system(
                     state.status = format!("ERROR: unknown archetype bias {name:?}");
                 }
             }
+        }
+        if let Some(candidates) = script.candidates {
+            state.profile.search.candidates = candidates.clamp(
+                1,
+                observed_facility::hex_wfc::profile::MAX_SEARCH_CANDIDATES,
+            );
         }
         // Solve immediately rather than waiting out the interactive debounce.
         state.solve_dirty = true;
