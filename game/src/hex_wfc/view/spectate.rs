@@ -76,6 +76,22 @@ const _: () = assert!(DETAIL_RADIUS < super::STREAM_EXIT_RADIUS);
 /// Rotate the view by one detent.
 pub(in crate::hex_wfc) const ROTATE_KEY: KeyCode = KeyCode::KeyR;
 
+/// Widen and narrow the detail radius.
+pub(in crate::hex_wfc) const WIDEN_KEY: KeyCode = KeyCode::BracketRight;
+pub(in crate::hex_wfc) const NARROW_KEY: KeyCode = KeyCode::BracketLeft;
+
+/// How many tiles around the followed body the view frames.
+///
+/// Framing the whole facility was the first pass's mistake: 28 x 20 cells in
+/// one screen makes a doorway sub-pixel, so the geometry is there and too small
+/// to read. Following the body at a few tiles is the studio's working distance.
+pub(in crate::hex_wfc) const DEFAULT_TILE_RADIUS: u8 = 5;
+const MIN_TILE_RADIUS: u8 = 2;
+const MAX_TILE_RADIUS: u8 = 24;
+
+/// A hex cell's plan width in metres; `hex_origin` steps by this.
+const TILE_SPAN: f32 = 14.0;
+
 /// The viewport the framing is fitted to.
 ///
 /// The studio fits to its own window; the game fits to a nominal 16:10 and lets
@@ -101,10 +117,25 @@ pub(in crate::hex_wfc) struct SpectatorOverview {
     /// angles. Six steps, one per hex face, so each has one unambiguous set of
     /// near walls - the same reading the studio uses.
     pub detent: usize,
+    /// How many tiles around the body are framed.
+    pub tile_radius: u8,
     /// The facility generation the massing was built from. Relayout changes
     /// placements, so massing built before it is a picture of a facility that
     /// no longer exists.
     pub(in crate::hex_wfc) built_generation: Option<u32>,
+}
+
+/// What the cutaway needs to judge one hull, measured once at spawn.
+///
+/// The studio recomputes this from its own cached hulls. The game already has
+/// the authored geometry resident, so the shared predicate is applied to what
+/// is there rather than meshing it a second time.
+#[derive(Component)]
+pub(in crate::hex_wfc) struct Cutaway {
+    /// Centroid relative to its cell's origin - what the near-wall test reads.
+    pub(in crate::hex_wfc) local: Vec3,
+    pub(in crate::hex_wfc) min_y: f32,
+    pub(in crate::hex_wfc) max_y: f32,
 }
 
 /// The rhombus shell around the facility.
@@ -146,6 +177,12 @@ pub(in crate::hex_wfc) fn hotkeys(
     }
     if keys.just_pressed(ROTATE_KEY) {
         overview.detent = (overview.detent + 1) % observed_style::iso::AZIMUTH_DETENTS;
+    }
+    if keys.just_pressed(WIDEN_KEY) {
+        overview.tile_radius = (overview.tile_radius + 1).min(MAX_TILE_RADIUS);
+    }
+    if keys.just_pressed(NARROW_KEY) {
+        overview.tile_radius = overview.tile_radius.saturating_sub(1).max(MIN_TILE_RADIUS);
     }
 }
 
@@ -262,9 +299,23 @@ pub(in crate::hex_wfc) fn sync_massing(
 pub(in crate::hex_wfc) fn sync_detail_window(
     runtime: Res<HexWfcRuntime>,
     overview: Res<SpectatorOverview>,
+    // Optional: the overview is a view concern and must not be the reason a
+    // headless test has to stand up presentation residency.
+    residency: Option<ResMut<super::HexPresentationResidency>>,
     mut massing: Query<(&Massing, &mut Visibility), Without<BoundaryShell>>,
     mut shell: Query<&mut Visibility, With<BoundaryShell>>,
 ) {
+    // Ask residency to reach out to the edge of what the overview frames: the
+    // authored geometry has to exist there, or the detailed half of the view is
+    // a 30 m island in a 200 m picture. Play keeps its own budget.
+    if let Some(mut residency) = residency {
+        residency.set_reach(if overview.active {
+            super::residency::Reach::out_to(detail_reach(overview.tile_radius))
+        } else {
+            super::residency::Reach::play()
+        });
+    }
+
     // The shell is drawn from inside in play and is in the way from outside.
     let shell_wanted = if overview.active {
         Visibility::Hidden
@@ -285,6 +336,38 @@ pub(in crate::hex_wfc) fn sync_detail_window(
         let origin = Vec3::from_array(hex_origin(cell.cell));
         let near = origin.distance(body.position) <= DETAIL_RADIUS;
         let wanted = if !layer.draws(cell.cell.level) || (layer.is_focus(cell.cell.level) && near) {
+            Visibility::Hidden
+        } else {
+            Visibility::Inherited
+        };
+        if *visibility != wanted {
+            *visibility = wanted;
+        }
+    }
+}
+
+/// Cut away the resident authored geometry so the overview can see inside it.
+///
+/// `observed_style::iso::survives` - the studio's own rule, from the shared
+/// crate - applied to the geometry residency has already spawned. Until this
+/// existed the overview shared the studio's *camera* and none of its
+/// *drawing*, which is why one read as a building and the other as a field of
+/// blocks.
+///
+/// Everything is restored when the overview goes down: these are the same
+/// entities the first-person view walks through.
+pub(in crate::hex_wfc) fn sync_cutaway(
+    overview: Res<SpectatorOverview>,
+    mut hulls: Query<(&Cutaway, &mut Visibility)>,
+) {
+    let bearing = overview
+        .active
+        .then(|| observed_style::iso::detent_bearing(overview.detent));
+    for (hull, mut visibility) in &mut hulls {
+        let cut = bearing.is_some_and(|bearing| {
+            !observed_style::iso::survives(hull.min_y, hull.max_y, hull.local, bearing, true)
+        });
+        let wanted = if cut {
             Visibility::Hidden
         } else {
             Visibility::Inherited
@@ -342,6 +425,51 @@ pub(in crate::hex_wfc) fn framing_fitted(
 ) -> Option<observed_style::iso::IsoFraming> {
     let (min, max) = bounds(world)?;
     Some(observed_style::iso::frame(min, max, detent, width, height))
+}
+
+/// Frame `radius` tiles around `body`, clamped to the facility.
+///
+/// This is what follows the spectator: the box is centred on the body, not on
+/// the building, so walking moves the view.
+#[must_use]
+pub(in crate::hex_wfc) fn framing_around(
+    world: &observed_facility::hex_wfc::HexWfcWorld,
+    body: Vec3,
+    detent: usize,
+    radius: u8,
+    width: f32,
+    height: f32,
+) -> Option<observed_style::iso::IsoFraming> {
+    let (facility_min, facility_max) = bounds(world)?;
+    let span = f32::from(radius) * TILE_SPAN;
+    let reach = Vec3::new(span, TILE_SPAN, span);
+
+    // Zoom from the radius box, position from the facility.
+    //
+    // These are two different questions and answering both from the small box
+    // is what put a hard diagonal clip across the first attempt: the camera
+    // stood one box-diagonal out (156 m) with a far plane of twice that, while
+    // the facility runs 340 m - so the far plane sliced straight through the
+    // massing, and anything behind the camera was cut by the near plane too.
+    // Orthographic scale does not care how far away the camera is, so it can
+    // stand right outside the whole building and still frame a few tiles.
+    let tight = observed_style::iso::frame(body - reach, body + reach, detent, width, height);
+    let reach_all = (facility_max - facility_min).length().max(1.0);
+    Some(observed_style::iso::IsoFraming {
+        // Centred on the body itself, not on a box clamped to the facility -
+        // clamping kept the box the same size but slid its centre to the edge,
+        // which is why the body sat off in a corner of the frame.
+        translation: body + tight.rotation * Vec3::Z * reach_all,
+        rotation: tight.rotation,
+        units_per_pixel: tight.units_per_pixel,
+        far: reach_all * 2.0,
+    })
+}
+
+/// The metric radius a tile radius stands for.
+#[must_use]
+pub(in crate::hex_wfc) fn detail_reach(radius: u8) -> f32 {
+    f32::from(radius) * TILE_SPAN
 }
 
 /// Which floor is under inspection: the one the followed body is standing on.

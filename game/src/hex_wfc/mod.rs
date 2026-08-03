@@ -48,6 +48,7 @@ impl Plugin for HexWfcPlugin {
             .insert_resource(view::spectate::SpectatorOverview {
                 active: overview_detent.is_some(),
                 detent: overview_detent.unwrap_or(0),
+                tile_radius: view::spectate::DEFAULT_TILE_RADIUS,
                 ..Default::default()
             })
             .init_resource::<HexOnboardingGate>()
@@ -99,6 +100,7 @@ impl Plugin for HexWfcPlugin {
                     view::spectate::hotkeys,
                     view::spectate::sync_massing,
                     view::spectate::sync_detail_window,
+                    view::spectate::sync_cutaway,
                     view::sync_camera,
                     view::sync_projection,
                     view::sync_lighting_and_atmosphere,

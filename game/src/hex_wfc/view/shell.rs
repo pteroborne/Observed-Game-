@@ -439,6 +439,41 @@ fn spawn_piece(
     // outside looking in it is a lid over the whole building.
     if piece.role == HexStructureRole::Boundary {
         entity.insert(super::spectate::BoundaryShell);
+    } else {
+        // Measured once, here: the overview's cutaway needs a hull's height
+        // range and its offset within its cell on every rebuild, and computing
+        // it per frame means walking the point cloud again.
+        entity.insert(cutaway_measure(piece));
     }
     true
+}
+
+/// A hull's height range and its centroid within its own cell.
+fn cutaway_measure(piece: &HexStructurePiece) -> super::spectate::Cutaway {
+    let rotation = Quat::from_array(piece.rotation);
+    let (mut min_y, mut max_y) = (f32::INFINITY, f32::NEG_INFINITY);
+    match &piece.shape {
+        observed_traversal::ColliderShape::Cuboid { half } => {
+            // A rotated box's vertical reach is each axis's contribution to Y,
+            // which is exactly the AABB half-height.
+            let reach = (rotation * Vec3::new(half.x, 0.0, 0.0)).y.abs()
+                + (rotation * Vec3::new(0.0, half.y, 0.0)).y.abs()
+                + (rotation * Vec3::new(0.0, 0.0, half.z)).y.abs();
+            min_y = piece.center.y - reach;
+            max_y = piece.center.y + reach;
+        }
+        observed_traversal::ColliderShape::ConvexHull { points } => {
+            for point in points {
+                let y = (rotation * *point).y + piece.center.y;
+                min_y = min_y.min(y);
+                max_y = max_y.max(y);
+            }
+        }
+    }
+    let origin = Vec3::from_array(hex_origin(piece.source_cell));
+    super::spectate::Cutaway {
+        local: piece.center - origin,
+        min_y: min_y - origin.y,
+        max_y: max_y - origin.y,
+    }
 }

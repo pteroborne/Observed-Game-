@@ -69,6 +69,20 @@ pub(super) struct HexPresentationResidency {
     /// reports readiness but does not enqueue a second batch in the same rendered frame.
     defer_incremental_once: bool,
     capture_unbounded: bool,
+    /// How far presentation currently reaches for cells.
+    ///
+    /// Owned here rather than passed in, because it is residency's own policy
+    /// and the spectator overview only *asks* for a wider one. It also keeps
+    /// the streaming system inside its parameter budget.
+    reach: residency::Reach,
+}
+
+impl HexPresentationResidency {
+    /// Set how far presentation reaches. Idempotent, so the overview can call
+    /// it every frame without disturbing the streaming hysteresis.
+    pub(in crate::hex_wfc) fn set_reach(&mut self, reach: residency::Reach) {
+        self.reach = reach;
+    }
 }
 
 /// Honest counters for debug overlays, profiling, and loading/readiness inspection.
@@ -212,6 +226,7 @@ pub(super) fn setup_view(
         resident,
         defer_incremental_once: true,
         capture_unbounded,
+        reach: residency::Reach::play(),
     });
     commands.insert_resource(readiness);
     commands.insert_resource(assets);

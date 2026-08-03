@@ -133,8 +133,34 @@ pub(in crate::hex_wfc) fn sync_camera(
     // ignores `is_active`, so a dormant one would take every overlay with it.
     let overview = overview.filter(|overview| overview.active);
     let iso = overview.as_ref().and_then(|overview| {
-        super::spectate::framing(&runtime.match_state.facility, overview.detent)
+        super::spectate::framing_around(
+            &runtime.match_state.facility,
+            player.position,
+            overview.detent,
+            overview.tile_radius,
+            1600.0,
+            1000.0,
+        )
     });
+    if let Some(iso) = &iso
+        && std::env::var("OBSERVED2_SPECTATE_TRACE").is_ok()
+    {
+        // One line a second while the trace is on. This exists because the
+        // last attempt at this was debugged by reasoning and got it wrong: the
+        // numbers are cheap and the guesses were not.
+        if time.elapsed_secs() as u32 != (time.elapsed_secs() - time.delta_secs()) as u32 {
+            let to_body = iso.translation.distance(player.position);
+            info!(
+                "spectate: body={:?} cam={:?} dist={to_body:.1} upp={:.3} far={:.1} fog={:.1}..{:.1}",
+                player.position,
+                iso.translation,
+                iso.units_per_pixel,
+                iso.far,
+                iso.far * OVERVIEW_FOG_START,
+                iso.far * OVERVIEW_FOG_END,
+            );
+        }
+    }
     let (target_translation, target_rotation, response) = if let Some(iso) = &iso {
         (iso.translation, iso.rotation, super::spectate::response())
     } else {

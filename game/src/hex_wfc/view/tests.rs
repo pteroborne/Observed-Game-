@@ -1,6 +1,6 @@
 //! Tests for hex presentation setup, streaming residency, and teardown (see `mod.rs`).
 
-use super::residency::{cell_in_stream_range, footprint_in_range, plan_residency};
+use super::residency::{Reach, cell_in_stream_range, footprint_in_range, plan_residency};
 use super::*;
 use observed_hex::hex_origin;
 
@@ -194,6 +194,7 @@ fn residency_hysteresis_keeps_a_cell_between_enter_and_exit_radii() {
         focus,
         CELL_SPAWN_BUDGET,
         CELL_DESPAWN_BUDGET,
+        Reach::play(),
     );
     assert!(absent.spawn.is_empty());
 
@@ -204,6 +205,7 @@ fn residency_hysteresis_keeps_a_cell_between_enter_and_exit_radii() {
         focus,
         CELL_SPAWN_BUDGET,
         CELL_DESPAWN_BUDGET,
+        Reach::play(),
     );
     assert!(present.despawn.is_empty());
     assert_eq!(present.desired_cells, 1);
@@ -229,6 +231,7 @@ fn residency_plan_never_exceeds_the_cell_spawn_budget() {
         focus,
         3,
         CELL_DESPAWN_BUDGET,
+        Reach::play(),
     );
     assert_eq!(plan.spawn.len(), 3);
     assert_eq!(plan.pending_cells, 20);
@@ -250,6 +253,7 @@ fn occupied_room_footprint_is_never_retired_even_when_its_anchor_is_far() {
         focus,
         CELL_SPAWN_BUDGET,
         CELL_DESPAWN_BUDGET,
+        Reach::play(),
     );
     assert!(plan.despawn.is_empty());
     assert_eq!(plan.desired_cells, 1);

@@ -12,6 +12,48 @@ use bevy::prelude::*;
 use observed_facility::hex_wfc::HexCoord;
 use observed_hex::hex_origin;
 
+/// How far residency reaches for cells, and how many levels either side.
+///
+/// A field rather than the module constants because the spectator overview
+/// needs a wider one: it frames tiles around the body and the authored geometry
+/// has to exist out to the edge of that frame, or the detailed half of the view
+/// is a 30 m island in a 200 m picture. Play keeps [`Reach::play`] exactly.
+#[derive(Clone, Copy, Debug)]
+pub(in crate::hex_wfc) struct Reach {
+    pub(in crate::hex_wfc) enter_radius: f32,
+    pub(in crate::hex_wfc) enter_levels: u8,
+    pub(in crate::hex_wfc) exit_radius: f32,
+    pub(in crate::hex_wfc) exit_levels: u8,
+}
+
+impl Default for Reach {
+    fn default() -> Self {
+        Self::play()
+    }
+}
+
+impl Reach {
+    /// The shipped play budget, unchanged.
+    pub(in crate::hex_wfc) fn play() -> Self {
+        Self {
+            enter_radius: STREAM_ENTER_RADIUS,
+            enter_levels: STREAM_ENTER_LEVELS,
+            exit_radius: STREAM_EXIT_RADIUS,
+            exit_levels: STREAM_EXIT_LEVELS,
+        }
+    }
+
+    /// Out to `radius` metres, with the hysteresis margin play uses.
+    pub(in crate::hex_wfc) fn out_to(radius: f32) -> Self {
+        let play = Self::play();
+        Self {
+            enter_radius: radius.max(play.enter_radius),
+            exit_radius: radius.max(play.enter_radius) * (play.exit_radius / play.enter_radius),
+            ..play
+        }
+    }
+}
+
 use super::assets::HexWfcVisualAssets;
 use super::{
     CELL_DESPAWN_BUDGET, CELL_SPAWN_BUDGET, ENTRY_SAFE_RADIUS, HexPresentationReadiness,
@@ -156,6 +198,7 @@ pub(super) fn plan_residency(
     focus_cell: HexCoord,
     spawn_budget: usize,
     despawn_budget: usize,
+    reach: Reach,
 ) -> ResidencyPlan {
     let mut spawn_candidates = Vec::new();
     let mut despawn_candidates = Vec::new();
@@ -171,16 +214,16 @@ pub(super) fn plan_residency(
                     &cell.footprint,
                     focus_position,
                     focus_cell.level,
-                    STREAM_EXIT_RADIUS,
-                    STREAM_EXIT_LEVELS,
+                    reach.exit_radius,
+                    reach.exit_levels,
                 )
             } else {
                 footprint_in_range(
                     &cell.footprint,
                     focus_position,
                     focus_cell.level,
-                    STREAM_ENTER_RADIUS,
-                    STREAM_ENTER_LEVELS,
+                    reach.enter_radius,
+                    reach.enter_levels,
                 )
             };
         if wanted {
@@ -264,7 +307,15 @@ pub(super) fn presentation_readiness(
     spawned_this_frame: usize,
     despawned_this_frame: usize,
 ) -> HexPresentationReadiness {
-    let plan = plan_residency(catalog, resident, focus.position, focus.cell, 0, 0);
+    let plan = plan_residency(
+        catalog,
+        resident,
+        focus.position,
+        focus.cell,
+        0,
+        0,
+        Reach::play(),
+    );
     let entry_neighborhood_ready = catalog.cells.iter().all(|(&coord, cell)| {
         let safe = cell.footprint.contains(&focus.cell)
             || footprint_in_range(
@@ -315,6 +366,7 @@ pub(crate) fn sync_streamed_cells(
     } else {
         CELL_SPAWN_BUDGET
     };
+    let reach = residency.reach;
     let plan = plan_residency(
         &residency.catalog,
         &residency.resident,
@@ -322,6 +374,7 @@ pub(crate) fn sync_streamed_cells(
         focus.cell,
         spawn_budget,
         CELL_DESPAWN_BUDGET,
+        reach,
     );
     let mut despawned = 0;
     for coord in plan.despawn {
