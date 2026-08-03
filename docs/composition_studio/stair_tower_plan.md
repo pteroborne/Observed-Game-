@@ -82,47 +82,56 @@ The walk probe can prove a tower climbs before it ever reaches a match:
 corpus-wide test asserts every generated module parses and validates. That is
 the check the switchback never had.
 
-## Blocked: replacing the generated family stalls a spectator
+## Blocked: the bot cannot walk a perimeter climb
 
-Attempted 2026-08-02 and reverted. Recorded here so it is not re-attempted
-blind.
+Attempted twice, 2026-08-02. Recorded so it is not re-derived a third time.
 
-Full replacement needs the door-bearing towers too - the generated family is 63
-variants per register, covering each connectivity with no doors, one door, and
-two. Fifteen authored sources cover the same ground (a door makes the tower
-rotate sixfold, and two doors have only three orbits), and all fifteen validate
-and walk.
+### The diagnostic lied, twice
 
-**But adding them fails
-`hex_spectator_route_is_physically_completable_without_guardian_pressure`.** A
-solo spectator stalls climbing out of a `Shaft` cell with doors on faces 1 and 3.
+`hex_spectator_route_is_physically_completable_without_guardian_pressure`
+printed `first_step` = `spawn_route.cells[1]` **whatever happened** — a constant
+with nothing to do with where the walk failed. Both investigations chased the
+tile it names (`stair_tower` variant 18) before noticing it never changes.
+Fixed in `7b60d53`; it now reports the cell the bot is actually stuck in.
 
-The important detail is *which* tile it stalls on:
+### What is actually wrong
 
-    TileKey { archetype: "stair_tower", register: "infinite_gallery", variant: 18 }
+The stalling tile is `hall_ramp_perimeter_180` — **one of ours**, in the corpus
+since it was authored. Adding the towers only reshuffled `weighted_select` onto
+it. Three faults, each found by fixing the one in front of it:
 
-**Variant 18 is a generated tower, not an authored one.** Authored sources use
-variant 0, and sixfold expansion gives them compiled variants 0-5; the generated
-family is pushed with explicit variants up to 62. So the stalling tile is one of
-the procedural switchbacks.
+1. `vertical_command` consulted the spine only for `ShaftOpen` ports, so every
+   `RampOpen` cell went to `ramp_walk_dir`, which assumes `hall_ramp` variant
+   0's straight shape. Fixed in `7b60d53`.
+2. `finish_stair_command` bailed unless `archetype == Shaft`, so a body part-way
+   up a ramp was never "still climbing". Fixed in `7b60d53`.
+3. **Still open.** The bot now climbs to 7.67 m of the 8.5 m and stops. Whatever
+   is between there and the landing has not been found.
 
-What appears to have happened: `Catalogue::new` collects prototypes into a `Vec`
-per `(archetype, register, signature)` and `select` runs `weighted_select` over
-it. Adding candidates changes which entry a given variation key lands on, so the
-facility now renders a *different* generated tower than before - and that one
-cannot be climbed. Lowering the authored weight to 6 does not help, which is
-consistent with a reshuffle rather than a frequency effect.
+Progress is measurable, which is the useful part: stuck at spawn (never moved
+at all, bit-identically across three catalogs) → 7.0 m → 7.2 m → 7.67 m.
 
-If that reading is right there is a **latent unclimbable variant in the
-generated stair family**, exposed rather than caused by this change, and it
-would be reachable today under any perturbation of the catalog. That is worth
-confirming before anything else: it is a shipped bug, not a blocker of our own
-making.
+### The general hazard
 
-Next step is not more geometry. It is to find which generated variant stalls -
-bisect by adding a single dummy prototype to the bucket to force the same
-reshuffle - and decide whether to fix or remove it. Only then does replacement
-become safe.
+Sharing a port signature is what lets the solver treat two tiles as
+alternatives for one demand. **It is not a promise they are the same shape.**
+Anything that reads geometry from an archetype rather than from the tile breaks
+the moment a second shape appears — and the whole point of an authored family
+is to be that second shape. Worth auditing for before authoring more variety.
 
-The three no-door authored towers (commit `ed48e22`) are unaffected and remain
-in the corpus.
+### The tower family, when it can land
+
+Fifteen sources: five door orbits under sixfold rotation (none; one; two
+adjacent, one apart, opposite) times three vertical connectivities. The sweep
+starts at whichever corner begins the longest door-free run, capped at four
+faces — two opposite doors are the tight case, leaving runs of two, which is
+still 120 degrees at slope 0.50. Base variants from 11, so compiled variants
+start at 66 and clear the generated family's 0..62; overlapping keys are not an
+error but they cost the ability to tell which tower a diagnostic is about,
+which is exactly what was needed here.
+
+All fifteen validate and walk. They are out of the corpus only because the
+perimeter ramps they would stand beside are not bot-traversable yet.
+
+The three no-door authored towers (commit `ed48e22`) remain in the corpus and
+are unaffected: they are `Shaft`, so the bot always followed their spine.
