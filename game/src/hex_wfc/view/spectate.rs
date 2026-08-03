@@ -45,10 +45,8 @@
 //! moves the one camera that already exists.
 
 use bevy::prelude::*;
-use observed_facility::hex_wfc::HexCoord;
 use observed_hex::hex_origin;
 
-use super::map::cell::sketch;
 use crate::hex_wfc::sim::HexWfcRuntime;
 
 /// Toggles the overview while spectating.
@@ -85,9 +83,12 @@ pub(in crate::hex_wfc) const NARROW_KEY: KeyCode = KeyCode::BracketLeft;
 /// Framing the whole facility was the first pass's mistake: 28 x 20 cells in
 /// one screen makes a doorway sub-pixel, so the geometry is there and too small
 /// to read. Following the body at a few tiles is the studio's working distance.
-pub(in crate::hex_wfc) const DEFAULT_TILE_RADIUS: u8 = 5;
+pub(in crate::hex_wfc) const DEFAULT_TILE_RADIUS: u8 = 3;
 const MIN_TILE_RADIUS: u8 = 2;
-const MAX_TILE_RADIUS: u8 = 24;
+/// Re-exported for the sibling test module.
+#[cfg(test)]
+pub(in crate::hex_wfc::view) const MIN_TILE_RADIUS_FOR_TEST: u8 = MIN_TILE_RADIUS;
+const MAX_TILE_RADIUS: u8 = 12;
 
 /// A hex cell's plan width in metres; `hex_origin` steps by this.
 const TILE_SPAN: f32 = 14.0;
@@ -147,15 +148,6 @@ pub(in crate::hex_wfc) struct Cutaway {
 #[derive(Component)]
 pub(in crate::hex_wfc) struct BoundaryShell;
 
-/// One cell's massing prism.
-///
-/// `pub(in ...)` only because the systems that query it are named in the
-/// schedule, which makes their parameter types part of that signature.
-#[derive(Component)]
-pub(in crate::hex_wfc) struct Massing {
-    pub(in crate::hex_wfc) cell: HexCoord,
-}
-
 /// Flip the overview, and cycle the followed body.
 ///
 /// Both gated on `SpectatorBot`: in play these keys must keep whatever meaning
@@ -202,112 +194,21 @@ fn cycle_focus(runtime: &mut HexWfcRuntime) {
     runtime.local_player = bodies[next];
 }
 
-/// Build the massing when the overview comes up; drop it when it goes down.
-pub(in crate::hex_wfc) fn sync_massing(
-    mut commands: Commands,
-    runtime: Res<HexWfcRuntime>,
-    spectating: Option<Res<crate::sim::state::SpectatorBot>>,
-    mut overview: ResMut<SpectatorOverview>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    existing: Query<Entity, With<Massing>>,
-) {
-    let world = &runtime.match_state.facility;
-    let wanted = overview.active && spectating.is_some();
-    let current = overview.built_generation;
-    if wanted && current == Some(world.generation) {
-        return;
-    }
-    for entity in &existing {
-        commands.entity(entity).despawn();
-    }
-    if !wanted {
-        overview.built_generation = None;
-        return;
-    }
-
-    // One mesh per height and one material per district, so 5,600 prisms are a
-    // handful of draw calls rather than 5,600. The map builder caches the same
-    // way and for the same reason.
-    let mut prisms: std::collections::BTreeMap<u32, Handle<Mesh>> =
-        std::collections::BTreeMap::new();
-    let mut tints: std::collections::BTreeMap<u8, Handle<StandardMaterial>> =
-        std::collections::BTreeMap::new();
-
-    for (&cell, placement) in &world.placements {
-        let in_blueprint = world.room_id_at(cell).is_some();
-        let drawn = sketch(placement.archetype, placement.space, in_blueprint);
-        let Some(height) = drawn.height else {
-            continue;
-        };
-        let Some(register) = world.architecture.get(&cell) else {
-            continue;
-        };
-
-        let mesh = prisms
-            .entry(height.to_bits())
-            .or_insert_with(|| {
-                meshes.add(Cuboid::new(drawn.inset * 12.0, height, drawn.inset * 12.0))
-            })
-            .clone();
-        let material = tints
-            .entry(*register as u8)
-            .or_insert_with(|| {
-                // The district's own accent, from the shared palette - the
-                // same one the survivor map tints with. The Legibility
-                // Contract forbids inventing a colour here, and a second
-                // palette would make the overview and the map disagree about
-                // which district you are looking at.
-                let accent = observed_style::architecture(*register).accent;
-                materials.add(StandardMaterial {
-                    base_color: Color::LinearRgba(accent),
-                    emissive: accent * 0.14,
-                    perceptual_roughness: 0.95,
-                    ..default()
-                })
-            })
-            .clone();
-
-        let origin = Vec3::from_array(hex_origin(cell));
-        commands.spawn((
-            Mesh3d(mesh),
-            MeshMaterial3d(material),
-            Transform::from_translation(origin + Vec3::Y * height * 0.5),
-            // Spelled out rather than left to `Mesh3d`'s required components.
-            // This module *drives* visibility, so it owns the component; and
-            // required components come from the render plugins, which a
-            // headless test does not load - relying on them made the window
-            // silently do nothing there.
-            Visibility::Inherited,
-            Massing { cell },
-        ));
-    }
-    overview.built_generation = Some(world.generation);
-}
-
-/// Decide what each prism shows, from the floor the followed body is on.
+/// Ask residency for the reach the overview needs, and hide the shell.
 ///
-/// Three states, in order:
-///
-/// - **Off the layer entirely.** A ten-level facility seen all at once stacks
-///   into a thicket, so only the body's floor and its immediate neighbours are
-///   drawn at all - the same rule the studio reads a plan by.
-/// - **On the focus floor, near the body.** Residency has already spawned the
-///   real authored geometry there, so the prism gets out of its way.
-/// - **Everything else drawn.** Massing, which is what carries the shape of the
-///   building at this distance.
+/// There is deliberately no massing any more. The first pass drew a prism per
+/// cell for everything outside the detail radius, on the theory that "the
+/// entire map" wanted some representation of the parts you are not looking at.
+/// It read as a field of blocks and buried the authored geometry it was meant
+/// to surround. The view is now only what the studio shows: real tiles, cut
+/// away, out to the radius - and nothing at all beyond it.
 pub(in crate::hex_wfc) fn sync_detail_window(
-    runtime: Res<HexWfcRuntime>,
     overview: Res<SpectatorOverview>,
-    // Optional: the overview is a view concern and must not be the reason a
-    // headless test has to stand up presentation residency.
     residency: Option<ResMut<super::HexPresentationResidency>>,
-    mut massing: Query<(&Massing, &mut Visibility), Without<BoundaryShell>>,
     mut shell: Query<&mut Visibility, With<BoundaryShell>>,
 ) {
-    // Ask residency to reach out to the edge of what the overview frames: the
-    // authored geometry has to exist there, or the detailed half of the view is
-    // a 30 m island in a 200 m picture. Play keeps its own budget.
+    // Residency's reach *is* the extent of the view now, so the two cannot
+    // disagree: what is framed is exactly what is resident.
     if let Some(mut residency) = residency {
         residency.set_reach(if overview.active {
             super::residency::Reach::out_to(detail_reach(overview.tile_radius))
@@ -316,30 +217,14 @@ pub(in crate::hex_wfc) fn sync_detail_window(
         });
     }
 
-    // The shell is drawn from inside in play and is in the way from outside.
-    let shell_wanted = if overview.active {
+    // In play the shell is the far wall you never reach; from outside looking
+    // in it is a lid over everything worth seeing.
+    let wanted = if overview.active {
         Visibility::Hidden
     } else {
         Visibility::Inherited
     };
     for mut visibility in &mut shell {
-        if *visibility != shell_wanted {
-            *visibility = shell_wanted;
-        }
-    }
-    if !overview.active {
-        return;
-    }
-    let body = runtime.local();
-    let layer = layer_for(body.cell.level);
-    for (cell, mut visibility) in &mut massing {
-        let origin = Vec3::from_array(hex_origin(cell.cell));
-        let near = origin.distance(body.position) <= DETAIL_RADIUS;
-        let wanted = if !layer.draws(cell.cell.level) || (layer.is_focus(cell.cell.level) && near) {
-            Visibility::Hidden
-        } else {
-            Visibility::Inherited
-        };
         if *visibility != wanted {
             *visibility = wanted;
         }
@@ -472,15 +357,11 @@ pub(in crate::hex_wfc) fn detail_reach(radius: u8) -> f32 {
     f32::from(radius) * TILE_SPAN
 }
 
-/// Which floor is under inspection: the one the followed body is standing on.
-///
-/// This is what "follows the selected player" means at facility scale. The
-/// camera frames the whole building and does not chase; what tracks the body is
-/// the *floor*, so walking up a stair changes which storey is solid.
-#[must_use]
-pub(in crate::hex_wfc) fn layer_for(level: u8) -> observed_style::iso::Layer {
-    observed_style::iso::Layer::Single(level)
-}
+// There is no layer focus here any more. It existed to stop ten levels of
+// *massing* stacking into a thicket; with only the radius drawn there is
+// nothing to thin, and hiding the floor above would cut the top off the very
+// stair the spectator is climbing. `observed_style::iso::Layer` is still the
+// studio's, where a plan view of a whole floor does need it.
 
 /// How fast the camera should ease toward [`framing`].
 #[must_use]
@@ -489,14 +370,7 @@ pub(in crate::hex_wfc) fn response() -> f32 {
 }
 
 /// Drop everything this module owns. Called on leaving the state.
-pub(in crate::hex_wfc) fn clear(
-    mut commands: Commands,
-    mut overview: ResMut<SpectatorOverview>,
-    massing: Query<Entity, With<Massing>>,
-) {
-    for entity in &massing {
-        commands.entity(entity).despawn();
-    }
+pub(in crate::hex_wfc) fn clear(mut overview: ResMut<SpectatorOverview>) {
     overview.active = false;
     overview.built_generation = None;
 }

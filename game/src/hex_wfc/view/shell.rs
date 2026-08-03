@@ -452,27 +452,45 @@ fn spawn_piece(
 fn cutaway_measure(piece: &HexStructurePiece) -> super::spectate::Cutaway {
     let rotation = Quat::from_array(piece.rotation);
     let (mut min_y, mut max_y) = (f32::INFINITY, f32::NEG_INFINITY);
+    // The *hull's own* centroid, not the collider's origin.
+    //
+    // `piece.center` is where the collider is placed, which for a convex hull
+    // is the tile origin - so using it made every hull look like it sat at the
+    // cell centre, `INTERIOR_RADIUS` matched them all, and no near wall was
+    // ever cut. Only ceilings were, which is exactly why the cutaway read as
+    // half-working here and correct in the studio: `detail::measure` averages
+    // the points.
+    let mut centroid = Vec3::ZERO;
     match &piece.shape {
         observed_traversal::ColliderShape::Cuboid { half } => {
             // A rotated box's vertical reach is each axis's contribution to Y,
-            // which is exactly the AABB half-height.
+            // which is exactly the AABB half-height. Its centroid is its centre.
             let reach = (rotation * Vec3::new(half.x, 0.0, 0.0)).y.abs()
                 + (rotation * Vec3::new(0.0, half.y, 0.0)).y.abs()
                 + (rotation * Vec3::new(0.0, 0.0, half.z)).y.abs();
             min_y = piece.center.y - reach;
             max_y = piece.center.y + reach;
+            centroid = piece.center;
         }
         observed_traversal::ColliderShape::ConvexHull { points } => {
+            let mut sum = Vec3::ZERO;
             for point in points {
-                let y = (rotation * *point).y + piece.center.y;
-                min_y = min_y.min(y);
-                max_y = max_y.max(y);
+                let placed = rotation * *point + piece.center;
+                min_y = min_y.min(placed.y);
+                max_y = max_y.max(placed.y);
+                sum += placed;
+            }
+            if !points.is_empty() {
+                #[allow(clippy::cast_precision_loss)]
+                {
+                    centroid = sum / points.len() as f32;
+                }
             }
         }
     }
     let origin = Vec3::from_array(hex_origin(piece.source_cell));
     super::spectate::Cutaway {
-        local: piece.center - origin,
+        local: centroid - origin,
         min_y: min_y - origin.y,
         max_y: max_y - origin.y,
     }

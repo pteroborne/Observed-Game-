@@ -98,7 +98,6 @@ impl Plugin for HexWfcPlugin {
                     view::sync_streamed_cells,
                     view::sync_practical_shadow_budget,
                     view::spectate::hotkeys,
-                    view::spectate::sync_massing,
                     view::spectate::sync_detail_window,
                     view::spectate::sync_cutaway,
                     view::sync_camera,
