@@ -48,7 +48,7 @@ fn faces_from_mask(mask: u8) -> Vec<usize> {
 
 /// Six convex trapezoids around a centred vertical hex aperture.
 #[must_use]
-fn hex_opening_slab(z0: f64, z1: f64) -> String {
+pub(super) fn hex_opening_slab(z0: f64, z1: f64) -> String {
     const OPENING_SCALE: f64 = 0.30;
     let outer = corners();
     let inner: Vec<P2> = outer

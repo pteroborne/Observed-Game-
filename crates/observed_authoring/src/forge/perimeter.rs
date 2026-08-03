@@ -123,7 +123,7 @@ impl Extent {
 /// on a plane, so a quad cannot do it. `_ring_ramp` in the silo family splits
 /// for exactly this reason.
 #[must_use]
-fn flight(extent: Extent) -> String {
+pub(super) fn flight(extent: Extent) -> String {
     let mut out = String::new();
     for step in 0..extent.faces {
         let (o0, o1) = (extent.outer(step), extent.outer(step + 1));
@@ -153,7 +153,7 @@ fn flight(extent: Extent) -> String {
 /// outer and inner, both level at the deck height - across to the centre and
 /// one face beyond, so a body steps off and walks to the opening.
 #[must_use]
-fn landing(extent: Extent) -> String {
+pub(super) fn landing(extent: Extent) -> String {
     let end = extent.faces;
     let plan: Vec<P2> = vec![
         extent.outer(end),
@@ -172,7 +172,7 @@ fn landing(extent: Extent) -> String {
 /// first node sits on the flat deck at the foot and the last on the landing, so
 /// the ends join the flat circulation either side without a special case.
 #[must_use]
-fn spine(extent: Extent) -> String {
+pub(super) fn spine(extent: Extent) -> String {
     let mid = |step: usize| -> P2 {
         let (o, i) = (extent.outer(step), extent.inner(step));
         ((o.0 + i.0) * 0.5, (o.1 + i.1) * 0.5)

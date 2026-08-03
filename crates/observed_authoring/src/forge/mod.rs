@@ -14,6 +14,7 @@ pub mod probe;
 pub mod recipe;
 pub mod rooms;
 pub mod silos;
+pub mod tower;
 
 /// A builder, paired with the file stem it must reproduce.
 pub type Builder = (&'static str, fn() -> String);
@@ -56,6 +57,7 @@ pub fn generate_all() -> Vec<(String, String)> {
         .collect();
     out.extend(liminal::generated());
     out.extend(perimeter::builders());
+    out.extend(tower::builders());
     out.sort_by(|a, b| a.0.cmp(&b.0));
     out
 }
