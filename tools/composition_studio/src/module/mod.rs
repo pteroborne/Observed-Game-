@@ -11,6 +11,8 @@
 pub mod app;
 pub mod diagnose;
 pub mod panel;
+pub mod probe;
 pub mod render;
+pub mod route;
 pub mod walk;
 pub mod watch;

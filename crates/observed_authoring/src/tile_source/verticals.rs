@@ -341,6 +341,13 @@ pub fn stair_landing_map(register: &str, door_face: HexFace) -> String {
     )
 }
 
+/// Spine nodes up to and including the turn landing.
+///
+/// The first is the foot of the low flight, then the three that carry the walk
+/// around the landing; everything after climbs the high flight and leaves
+/// through the ceiling.
+const TURN_LANDING_NODES: usize = 4;
+
 /// Ground-supported stair tower with zero to two lateral access doors and an
 /// exact vertical opening signature for the legacy logical well state.
 pub(crate) fn stair_access_map(
@@ -401,6 +408,21 @@ pub(crate) fn stair_access_map(
     }
     out += &tile_light(-24.0, -30.0, 72.0);
     out += &tile_light(24.0, 30.0, 112.0);
+    // A shaft head is capped at `h - FLOOR_TOP` (7.5 m) but the high flight
+    // climbs to `climb_top` (8.5 m), straight through that lid. A body
+    // following the spine up it meets the underside with 1.70 m of clearance
+    // and cannot pass - it is 1.8 m tall. Every one of the 242 capped towers
+    // in the library did this, which is what "stalled all four soak bots"
+    // was: not a subtle geometry fault, a staircase into a ceiling.
+    //
+    // The climb ends at the turn landing instead. There is nowhere above it
+    // to reach in a capped cell, so leading anything higher only ever ended
+    // in the lid. The flight above the landing stays as structure; it is no
+    // longer offered as a route.
+    let spine: &[[f64; 3]] = match vertical {
+        StairVertical::DownOnly => &spine[..TURN_LANDING_NODES],
+        _ => &spine,
+    };
     for (index, node) in spine.iter().enumerate() {
         out += &tile_stair_node(index as u16, node[0], node[1], node[2]);
     }

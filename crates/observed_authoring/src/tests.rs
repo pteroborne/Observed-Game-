@@ -542,9 +542,9 @@ fn every_generated_stair_tower_ships_a_followable_spine() {
             tile.key.register
         );
 
-        // Both ends stand on flat deck: the bottom on this cell's floor slab and
-        // the top on the deck of the cell above. A spine that starts partway up
-        // a flight strands a body that walks in through a lateral door.
+        // The bottom always stands on this cell's floor slab. A spine that
+        // starts partway up a flight strands a body that walks in through a
+        // lateral door.
         let first = spine.nodes.first().expect("checked non-empty");
         let last = spine.nodes.last().expect("checked non-empty");
         assert!(
@@ -554,14 +554,43 @@ fn every_generated_stair_tower_ships_a_followable_spine() {
             tile.key.register,
             first.y
         );
-        assert!(
-            (last.y - (TILE_LEVEL_HEIGHT + FLOOR_SLAB_TOP)).abs() <= 0.05,
-            "{} {} ends at {:.2} m, off the deck above at {:.2} m",
-            tile.key.archetype,
-            tile.key.register,
-            last.y,
-            TILE_LEVEL_HEIGHT + FLOOR_SLAB_TOP
-        );
+
+        // Where the top ends depends on whether there is anywhere to go.
+        //
+        // A tower that continues upward ends on the deck above, so the climb
+        // joins the next cell's floor without a special case. A *capped* tower
+        // has no up port and a ceiling slab at `h - FLOOR_TOP`; a spine that
+        // climbed to the deck height there would run through that lid, leaving
+        // 1.70 m of clearance for a 1.8 m body. All 242 capped towers in the
+        // library did exactly that, and it is what stalled the soak bots: not
+        // a subtle fault, a staircase into a ceiling. Their climb ends at the
+        // turn landing, which is the highest thing in the cell a body can
+        // actually reach.
+        // From the shipped body, not a number chosen here: a headroom test with
+        // its own idea of how tall a player is proves nothing about the player.
+        let body_height = FpsConfig::default().half_height * 2.0;
+        let climbs_out = tile.signature.port(HexFace::Up) != PortClass::Sealed;
+        if climbs_out {
+            assert!(
+                (last.y - (TILE_LEVEL_HEIGHT + FLOOR_SLAB_TOP)).abs() <= 0.05,
+                "{} {} ends at {:.2} m, off the deck above at {:.2} m",
+                tile.key.archetype,
+                tile.key.register,
+                last.y,
+                TILE_LEVEL_HEIGHT + FLOOR_SLAB_TOP
+            );
+        } else {
+            let lid = TILE_LEVEL_HEIGHT - FLOOR_SLAB_TOP;
+            assert!(
+                last.y + body_height <= lid + 0.05,
+                "{} {} is capped at {lid:.2} m but its climb ends at {:.2} m, \
+                 leaving {:.2} m for a {body_height:.2} m body",
+                tile.key.archetype,
+                tile.key.register,
+                last.y,
+                lid - last.y
+            );
+        }
     }
 }
 

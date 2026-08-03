@@ -20,8 +20,8 @@
 //! modules the game rejects, which is worse than no probe.
 
 use bevy::prelude::*;
-use observed_authoring::{AuthoredModule, TilePrototype};
-use observed_traversal::ConvexRenderMesh;
+
+pub use super::probe::Probe;
 
 /// What a body needs, taken from the shipped traversal profile.
 #[derive(Clone, Copy, Debug)]
@@ -31,7 +31,13 @@ pub struct Thresholds {
     /// Above this the controller slides rather than climbs.
     pub max_slope_degrees: f32,
     /// The importer's own minimum, so the probe and `validate_module` agree.
+    ///
+    /// This is an authoring *standard*, not a physical limit - a body is
+    /// shorter than it. Clearance below it is reported as a pinch; only
+    /// clearance below `body_height` actually stops anything.
     pub min_headroom: f32,
+    /// The shipped capsule, end to end. Below this a body genuinely cannot fit.
+    pub body_height: f32,
     /// How far apart samples are taken along the route, in metres.
     pub sample_spacing: f32,
 }
@@ -45,6 +51,7 @@ impl Default for Thresholds {
             step_height: config.step_height,
             max_slope_degrees: config.maximum_slope_degrees,
             min_headroom: 2.2,
+            body_height: config.half_height * 2.0,
             // Finer than the body radius (0.38 m), so a gap narrower than a
             // body cannot slip between two samples unnoticed.
             sample_spacing: 0.25,
@@ -57,88 +64,15 @@ impl Default for Thresholds {
 /// A body is placed on the surface at the start rather than required to step
 /// up onto it. Kept to about a body's height so the start still cannot be the
 /// roof of an 8 m cell.
-const START_REACH: f32 = 1.8;
+pub(super) const START_REACH: f32 = 1.8;
 
-/// The module's surfaces, triangulated once.
-pub struct Probe {
-    triangles: Vec<[Vec3; 3]>,
-}
-
-impl Probe {
-    #[must_use]
-    pub fn from_prototype(prototype: &TilePrototype) -> Self {
-        let mut triangles = Vec::new();
-        for hull in &prototype.hulls {
-            let Some(mesh) = ConvexRenderMesh::from_convex_hull(hull) else {
-                continue;
-            };
-            for face in mesh.indices.chunks_exact(3) {
-                let point = |index: u32| {
-                    let p = mesh.positions[index as usize];
-                    Vec3::new(p[0], p[1], p[2])
-                };
-                triangles.push([point(face[0]), point(face[1]), point(face[2])]);
-            }
-        }
-        Self { triangles }
-    }
-
-    #[must_use]
-    pub fn triangle_count(&self) -> usize {
-        self.triangles.len()
-    }
-
-    /// The highest surface at `(x, z)` no higher than `ceiling`.
-    ///
-    /// Bounded above rather than taking the global maximum, because the global
-    /// maximum is the roof. Walking is always "what is under my feet, reachable
-    /// from where I am", which is what the bound expresses.
-    #[must_use]
-    pub fn support(&self, x: f32, z: f32, ceiling: f32) -> Option<f32> {
-        let mut best: Option<f32> = None;
-        for tri in &self.triangles {
-            let Some(y) = height_at(tri, x, z) else {
-                continue;
-            };
-            if y <= ceiling && best.is_none_or(|b| y > b) {
-                best = Some(y);
-            }
-        }
-        best
-    }
-
-    /// Clear height above `floor` at `(x, z)`; infinite when nothing is over it.
-    #[must_use]
-    pub fn overhead(&self, x: f32, z: f32, floor: f32) -> f32 {
-        let mut lowest = f32::INFINITY;
-        for tri in &self.triangles {
-            let Some(y) = height_at(tri, x, z) else {
-                continue;
-            };
-            // A surface within a hair of the floor is the floor, not a ceiling.
-            if y > floor + 0.05 && y < lowest {
-                lowest = y;
-            }
-        }
-        lowest - floor
-    }
-}
-
-/// Where `(x, z)` meets a triangle, if it is inside its plan projection.
-fn height_at(tri: &[Vec3; 3], x: f32, z: f32) -> Option<f32> {
-    let (a, b, c) = (tri[0], tri[1], tri[2]);
-    // Barycentric in plan. A degenerate triangle - one seen edge-on - has zero
-    // plan area and no answer here, which is correct: you cannot stand on it.
-    let det = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z);
-    if det.abs() < 1e-6 {
-        return None;
-    }
-    let l1 = ((b.z - c.z) * (x - c.x) + (c.x - b.x) * (z - c.z)) / det;
-    let l2 = ((c.z - a.z) * (x - c.x) + (a.x - c.x) * (z - c.z)) / det;
-    let l3 = 1.0 - l1 - l2;
-    const EDGE: f32 = -1e-4;
-    (l1 >= EDGE && l2 >= EDGE && l3 >= EDGE).then_some(l1 * a.y + l2 * b.y + l3 * c.y)
-}
+/// How much run the sustained-gradient test averages over, in metres.
+///
+/// About one stride, and comfortably more than the 0.76 m body width, so a
+/// single riser cannot fill the window on its own. Shorter and the test starts
+/// reading steps as slopes again; much longer and a genuinely steep flight
+/// hides inside a window that begins on flat floor.
+const SLOPE_WINDOW: f32 = 1.0;
 
 /// Why a walk stopped.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -196,6 +130,11 @@ pub struct WalkReport {
     pub climbed: f32,
     /// How far along the intended route the body got, 0..1.
     pub progress: f32,
+    /// Lowest clearance met and where, whether or not the walk completed.
+    ///
+    /// Below `min_headroom` this is a pinch worth authoring out; below
+    /// `body_height` it is why the walk stopped.
+    pub tightest: Option<(f32, Vec3)>,
 }
 
 impl WalkReport {
@@ -215,6 +154,12 @@ pub fn walk(probe: &Probe, route: &[Vec3], limits: &Thresholds) -> WalkReport {
     let mut path: Vec<Vec3> = Vec::new();
     let mut climbed = 0.0;
     let mut previous: Option<Vec3> = None;
+    // Trailing samples within one stride, for the sustained-gradient test.
+    let mut window: std::collections::VecDeque<(f32, f32)> = std::collections::VecDeque::new();
+    let mut travelled = 0.0f32;
+    // Lowest clearance seen, and where. Reported whether or not the walk
+    // completes, so a sub-standard pinch is visible on a clear walk too.
+    let mut tightest: Option<(f32, Vec3)> = None;
 
     let samples = sample(route, limits.sample_spacing);
     let total = samples.len().max(1);
@@ -230,11 +175,6 @@ pub fn walk(probe: &Probe, route: &[Vec3], limits: &Thresholds) -> WalkReport {
         // fall any distance. Unbounded above would let the probe teleport onto
         // a mezzanine it cannot actually reach.
         //
-        // The *first* sample is bounded too, off the route's own height. It was
-        // unbounded once, which put the body on the roof - and then it walked
-        // the roof end to end and reported every hall traversable. A probe that
-        // fails open is worse than none, because it answers the question wrong
-        // in the reassuring direction.
         // The first sample places the body on whatever surface is there, within
         // a body's height of the route: it has not walked anywhere yet, so
         // reachability does not constrain it. Every later sample is bounded by
@@ -247,6 +187,7 @@ pub fn walk(probe: &Probe, route: &[Vec3], limits: &Thresholds) -> WalkReport {
         let ceiling = previous.map_or(point.y + START_REACH, |p| p.y + limits.step_height);
         let Some(y) = probe.support(point.x, point.z, ceiling) else {
             return WalkReport {
+                tightest,
                 failure: Some(WalkFailure::NoSurface { at: *point }),
                 progress: progress(index),
                 path,
@@ -258,31 +199,70 @@ pub fn walk(probe: &Probe, route: &[Vec3], limits: &Thresholds) -> WalkReport {
         if let Some(prior) = previous {
             let rise = here.y - prior.y;
             let run = (here - prior).xz().length().max(1e-4);
+            // A lip. Autostep lifts a body over this much regardless of how
+            // abrupt it is; beyond it, it is a wall.
             if rise > limits.step_height {
                 return WalkReport {
+                    tightest,
                     failure: Some(WalkFailure::StepTooHigh { at: here, rise }),
                     progress: progress(index),
                     path,
                     climbed,
                 };
             }
-            let degrees = (rise / run).atan().to_degrees();
-            if degrees > limits.max_slope_degrees {
-                return WalkReport {
-                    failure: Some(WalkFailure::TooSteep { at: here, degrees }),
-                    progress: progress(index),
-                    path,
-                    climbed,
-                };
-            }
+            travelled += run;
+            window.push_back((travelled, here.y));
             if rise > 0.0 {
                 climbed += rise;
+            }
+            // Sustained gradient, measured over a stride rather than between
+            // adjacent samples. Per-sample slope cannot tell a step from a
+            // ramp: at 0.25 m spacing any rise over 0.18 m reads as steeper
+            // than 36 degrees, which is every ordinary stair riser. Judging
+            // both with one number rejected all 726 generated stair towers -
+            // correct geometry, wrong instrument.
+            //
+            // Over a stride the two separate cleanly: a single 0.23 m lip
+            // averages to 13 degrees and passes, while a continuous 45 degree
+            // ramp measures 45 over any window and fails. A steep patch
+            // shorter than one stride is deliberately not caught here - that
+            // is exactly the case autostep exists for, and the lip check above
+            // already bounds it.
+            while window
+                .front()
+                .is_some_and(|&(run, _)| travelled - run > SLOPE_WINDOW)
+            {
+                window.pop_front();
+            }
+            if let Some(&(back_run, back_y)) = window.front() {
+                let span = travelled - back_run;
+                if span >= SLOPE_WINDOW {
+                    let degrees = ((here.y - back_y) / span).atan().to_degrees();
+                    if degrees > limits.max_slope_degrees {
+                        return WalkReport {
+                            tightest,
+                            failure: Some(WalkFailure::TooSteep { at: here, degrees }),
+                            progress: progress(index),
+                            path,
+                            climbed,
+                        };
+                    }
+                }
             }
         }
 
         let clearance = probe.overhead(point.x, point.z, y);
-        if clearance < limits.min_headroom {
+        if clearance < tightest.map_or(f32::INFINITY, |(c, _)| c) {
+            tightest = Some((clearance, here));
+        }
+        // Only a ceiling a body cannot fit under stops the walk. 2.2 m is the
+        // importer's authoring standard and the body is 1.8 m: treating the
+        // standard as a blocker reported 242 generated towers as impassable
+        // when they merely pinch. The pinch is still worth seeing, so it is
+        // carried on the report rather than thrown away.
+        if clearance < limits.body_height {
             return WalkReport {
+                tightest,
                 failure: Some(WalkFailure::LowCeiling {
                     at: here,
                     clearance,
@@ -298,6 +278,7 @@ pub fn walk(probe: &Probe, route: &[Vec3], limits: &Thresholds) -> WalkReport {
     }
 
     WalkReport {
+        tightest,
         path,
         failure: None,
         climbed,
@@ -327,101 +308,108 @@ fn sample(route: &[Vec3], spacing: f32) -> Vec<Vec3> {
     out
 }
 
-/// The route a body would take through `module`.
-///
-/// The authored stair spine when there is one - that is what it is *for*, and
-/// walking it checks the spine against the surface underneath, which is the
-/// drift the two were meant to be unable to have. Otherwise the doors are
-/// joined through the cell centre, which is the route through a hall.
-#[must_use]
-pub fn route_for(module: &AuthoredModule, probe: &Probe, limits: &Thresholds) -> Vec<Vec3> {
-    if module.prototype.spine.nodes.len() >= 2 {
-        return module.prototype.spine.nodes.clone();
-    }
-
-    // Just inside each door, so the probe starts on floor rather than in the
-    // door's own threshold geometry.
-    const INSET: f32 = 1.5;
-    let mut doors: Vec<Vec3> = Vec::new();
-    for port in &module.ports {
-        let Some(origin) = port.origin else {
-            continue;
-        };
-        let world = observed_authoring::editor_origin_to_world(origin);
-        let plan = Vec2::new(world.x, world.z);
-        let inward = -plan.normalize_or_zero() * INSET;
-        doors.push(Vec3::new(
-            world.x + inward.x,
-            observed_hex::FLOOR_SLAB_TOP,
-            world.z + inward.y,
-        ));
-    }
-    let waypoint = interior_waypoint(probe, limits);
-    match doors.len() {
-        0 => Vec::new(),
-        // One door: in and back out is not a traversal. Walk to the interior
-        // waypoint, which is where a vertical exit lives and where a dead end
-        // ends.
-        1 => vec![doors[0], waypoint],
-        _ => {
-            let mut route = vec![doors[0], waypoint];
-            route.extend(doors.iter().skip(1).copied());
-            route
-        }
-    }
-}
-
-/// A standable point in the middle of the cell.
-///
-/// The centre first, then a ring around it. Junctions put a **waypoint pylon**
-/// dead centre on purpose, so a route through the centre walks into it - and
-/// reporting that as "this tile is not walkable" would be wrong twice over: the
-/// tile is fine, and a body simply goes round. Trying offsets is not
-/// pathfinding, it is the one thing a body obviously does when the middle is
-/// occupied, and it keeps the probe's failures about geometry rather than about
-/// the naivety of a straight line.
-#[must_use]
-fn interior_waypoint(probe: &Probe, limits: &Thresholds) -> Vec3 {
-    let deck = observed_hex::FLOOR_SLAB_TOP;
-    let standable = |x: f32, z: f32| -> Option<Vec3> {
-        let y = probe.support(x, z, deck + START_REACH)?;
-        (probe.overhead(x, z, y) >= limits.min_headroom).then_some(Vec3::new(x, y, z))
-    };
-    if let Some(centre) = standable(0.0, 0.0) {
-        return centre;
-    }
-    // Six directions at a radius that clears a centre fitting but stays well
-    // inside the walls.
-    const RADIUS: f32 = 3.2;
-    for step in 0..6 {
-        #[allow(clippy::cast_precision_loss)]
-        let angle = std::f32::consts::TAU * step as f32 / 6.0;
-        if let Some(point) = standable(RADIUS * angle.cos(), RADIUS * angle.sin()) {
-            return point;
-        }
-    }
-    Vec3::new(0.0, deck, 0.0)
-}
-
-/// Probe the module in `diagnosis`, if it has geometry and a route.
-///
-/// Runs on whatever parsed, including a module that failed validation - the
-/// moment you most want to know whether a body can get through is when
-/// something else is already wrong with it.
-#[must_use]
-pub fn walk_module(diagnosis: &crate::module::diagnose::Diagnosis) -> Option<WalkReport> {
-    let prototype = diagnosis.prototype.as_ref()?;
-    let module = diagnosis.module.as_ref()?;
-    let limits = Thresholds::default();
-    let probe = Probe::from_prototype(prototype);
-    let route = route_for(module, &probe, &limits);
-    (route.len() >= 2).then(|| walk(&probe, &route, &limits))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use observed_authoring::parse_authored_module;
+    use crate::module::route::{route_for, walk_spine};
+    use observed_authoring::{AuthoredModule, parse_authored_module};
+
+    /// No generated stair tower may strand a body.
+    ///
+    /// The generated library is 726 towers and had never been walked. 242 of
+    /// them - every capped one - ran their climb straight through their own
+    /// ceiling slab, leaving 1.70 m for a 1.8 m body. Nothing caught it: the
+    /// importer does not measure headroom over a flight, and these towers are
+    /// authoring version 1, which skips the strict port checks entirely.
+    ///
+    /// This is the gate that would have. It reports every failure at once
+    /// rather than the first, because a fault in shared geometry is never one
+    /// tower's fault.
+    #[test]
+    fn no_generated_stair_tower_strands_a_body() {
+        let limits = Thresholds::default();
+        let cells = observed_authoring::tile_source::compatibility_cells().expect("library");
+        let towers = cells
+            .iter()
+            .filter(|cell| cell.key.archetype == "stair_tower")
+            .collect::<Vec<_>>();
+        assert!(!towers.is_empty(), "the library ships stair towers");
+
+        let mut stalled = Vec::new();
+        for cell in &towers {
+            let Some(report) = walk_spine(cell, &limits) else {
+                stalled.push(format!(
+                    "  {} v{}: ships no followable spine",
+                    cell.key.register, cell.key.variant
+                ));
+                continue;
+            };
+            if let Some(failure) = report.failure {
+                stalled.push(format!(
+                    "  {} v{}: {}, {:.0}% along",
+                    cell.key.register,
+                    cell.key.variant,
+                    failure.describe(&limits),
+                    report.progress * 100.0
+                ));
+            }
+        }
+        assert!(
+            stalled.is_empty(),
+            "{} of {} generated towers cannot be climbed:
+{}",
+            stalled.len(),
+            towers.len(),
+            stalled.join(
+                "
+"
+            )
+        );
+    }
+
+    /// A stair riser and a sliding ramp must not be judged by one number.
+    ///
+    /// This is the bug that made the probe reject all 726 towers before it
+    /// found the real one: adjacent-sample slope cannot tell them apart,
+    /// because at 0.25 m spacing an ordinary riser is already steeper than the
+    /// slope limit. An instrument that rejects every staircase cannot be used
+    /// to find the broken staircase.
+    #[test]
+    fn a_riser_is_a_step_and_a_long_ramp_is_a_slope() {
+        let limits = Thresholds::default();
+
+        // Flat, one 0.23 m lip, flat. Inside autostep, so: walkable.
+        let stepped = terrace(&[(0.0, 0.0), (2.0, 0.0), (2.0, 0.23), (4.0, 0.23)]);
+        let report = walk(&stepped, &[Vec3::ZERO, Vec3::new(4.0, 0.0, 0.0)], &limits);
+        assert!(
+            report.failure.is_none(),
+            "a 0.23 m riser is one autostep, not a cliff: {:?}",
+            report.failure
+        );
+
+        // A sustained 45 degree ramp. Every single rise is inside autostep, so
+        // only the windowed test can catch this one.
+        let ramped = terrace(&[(0.0, 0.0), (4.0, 4.0)]);
+        let report = walk(&ramped, &[Vec3::ZERO, Vec3::new(4.0, 0.0, 0.0)], &limits);
+        assert!(
+            matches!(report.failure, Some(WalkFailure::TooSteep { .. })),
+            "a sustained 45 degree ramp must not pass as a run of steps: {:?}",
+            report.failure
+        );
+    }
+
+    /// A surface from `(x, height)` breakpoints, spanning z -1..1.
+    fn terrace(profile: &[(f32, f32)]) -> Probe {
+        let mut triangles = Vec::new();
+        for pair in profile.windows(2) {
+            let ((x0, y0), (x1, y1)) = (pair[0], pair[1]);
+            let (a, b) = (Vec3::new(x0, y0, -1.0), Vec3::new(x1, y1, -1.0));
+            let (c, d) = (Vec3::new(x1, y1, 1.0), Vec3::new(x0, y0, 1.0));
+            triangles.push([a, b, c]);
+            triangles.push([a, c, d]);
+        }
+        Probe::from_triangles(triangles)
+    }
 
     fn module(stem: &str) -> AuthoredModule {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

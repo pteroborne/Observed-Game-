@@ -178,7 +178,7 @@ impl ModuleState {
         self.selected = index % self.diagnoses.len();
         self.step = 0;
         self.param = 0;
-        self.walk = self.current().and_then(crate::module::walk::walk_module);
+        self.walk = self.current().and_then(crate::module::route::walk_module);
         self.dirty = true;
     }
 }
@@ -215,7 +215,7 @@ pub fn rebuild_diagnoses(watch: Res<ModuleWatch>, mut state: ResMut<ModuleState>
     state.selected = state.selected.min(state.diagnoses.len().saturating_sub(1));
     state.clamp_cursor();
 
-    state.walk = state.current().and_then(crate::module::walk::walk_module);
+    state.walk = state.current().and_then(crate::module::route::walk_module);
 
     let failing = state.failing();
     let total = state.diagnoses.len();
