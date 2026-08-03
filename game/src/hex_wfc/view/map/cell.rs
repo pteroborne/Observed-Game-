@@ -26,7 +26,7 @@ const GLIMPSED_DIM: f32 = 0.5;
 /// solver's vocabulary onto that one. Blueprint membership wins over archetype,
 /// because the blueprint is the authority on what composes a room.
 #[must_use]
-pub(super) fn sketch_role(
+pub(in crate::hex_wfc::view) fn sketch_role(
     archetype: HexArchetype,
     space: HexSpace,
     in_blueprint: bool,
@@ -48,7 +48,11 @@ pub(super) fn sketch_role(
 
 /// How this cell is drawn: slab height and footprint fill.
 #[must_use]
-pub(super) fn sketch(archetype: HexArchetype, space: HexSpace, in_blueprint: bool) -> HexSketch {
+pub(in crate::hex_wfc::view) fn sketch(
+    archetype: HexArchetype,
+    space: HexSpace,
+    in_blueprint: bool,
+) -> HexSketch {
     hex_sketch(sketch_role(archetype, space, in_blueprint))
 }
 

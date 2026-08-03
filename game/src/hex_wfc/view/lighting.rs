@@ -101,6 +101,7 @@ pub(in crate::hex_wfc) fn sync_camera(
     runtime: Res<HexWfcRuntime>,
     spectating: Option<Res<crate::sim::state::SpectatorBot>>,
     settings: Res<crate::settings::Settings>,
+    overview: Option<Res<super::spectate::SpectatorOverview>>,
     time: Res<Time>,
     mut camera: Query<&mut Transform, With<GameCam>>,
     mut projection: Query<&mut Projection, With<GameCam>>,
@@ -129,16 +130,30 @@ pub(in crate::hex_wfc) fn sync_camera(
     // rather than snap. A bot can still change heading faster than is
     // comfortable to watch from the first person, and this is presentation
     // only — no simulation state is read back or written.
-    let forward = Vec3::new(player.yaw.sin(), 0.0, -player.yaw.cos());
-    let eye = player.position + Vec3::Y * EYE_OFFSET;
-    let target_translation = eye + Vec3::Y * CHASE_RISE - forward * CHASE_BACK;
-    let target_rotation = Quat::from_rotation_y(-player.yaw) * Quat::from_rotation_x(CHASE_PITCH);
+    // Two spectator poses, one camera. The overview is further out and eases
+    // more slowly; the chase is the close read. Which one is a question about
+    // presentation, so it is answered here rather than by spawning a second
+    // camera - Bevy hands UI to the highest-order camera on the window and
+    // ignores `is_active`, so a dormant one would take every overlay with it.
+    let overviewing = overview.is_some_and(|overview| overview.active);
+    let (target_translation, target_rotation, response) = if overviewing {
+        let (eye, rotation) = super::spectate::pose(player.position, player.yaw);
+        (eye, rotation, super::spectate::response())
+    } else {
+        let forward = Vec3::new(player.yaw.sin(), 0.0, -player.yaw.cos());
+        let eye = player.position + Vec3::Y * EYE_OFFSET;
+        (
+            eye + Vec3::Y * CHASE_RISE - forward * CHASE_BACK,
+            Quat::from_rotation_y(-player.yaw) * Quat::from_rotation_x(CHASE_PITCH),
+            CHASE_RESPONSE,
+        )
+    };
     if transform.translation == Vec3::ZERO {
         transform.translation = target_translation;
         transform.rotation = target_rotation;
         return;
     }
-    let t = (CHASE_RESPONSE * time.delta_secs()).clamp(0.0, 1.0);
+    let t = (response * time.delta_secs()).clamp(0.0, 1.0);
     transform.translation = transform.translation.lerp(target_translation, t);
     transform.rotation = transform.rotation.slerp(target_rotation, t);
 }

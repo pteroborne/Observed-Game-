@@ -13,6 +13,7 @@ mod lighting;
 pub(crate) mod map;
 mod residency;
 mod shell;
+pub(in crate::hex_wfc) mod spectate;
 
 use bevy::anti_alias::fxaa::Fxaa;
 use bevy::core_pipeline::prepass::{DepthPrepass, NormalPrepass};

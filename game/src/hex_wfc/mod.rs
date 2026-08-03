@@ -38,6 +38,7 @@ impl Plugin for HexWfcPlugin {
     fn build(&self, app: &mut App) {
         perf::configure(app);
         app.init_resource::<overlay::MatchOverlayState>()
+            .init_resource::<view::spectate::SpectatorOverview>()
             .init_resource::<HexOnboardingGate>()
             .add_observer(overlay::activate)
             .add_systems(
@@ -84,6 +85,9 @@ impl Plugin for HexWfcPlugin {
                     view::sync_changed_geometry,
                     view::sync_streamed_cells,
                     view::sync_practical_shadow_budget,
+                    view::spectate::hotkeys,
+                    view::spectate::sync_massing,
+                    view::spectate::sync_detail_window,
                     view::sync_camera,
                     view::sync_lighting_and_atmosphere,
                     hud::sync,
@@ -103,6 +107,7 @@ impl Plugin for HexWfcPlugin {
                 (
                     input::release_cursor,
                     view::clear_view,
+                    view::spectate::clear,
                     view::map::cleanup,
                     feedback::cleanup,
                     audio::cleanup,

@@ -21,7 +21,7 @@
 //! through the district palette the way the Legibility Contract requires.
 
 mod build;
-mod cell;
+pub(in crate::hex_wfc::view) mod cell;
 
 use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
