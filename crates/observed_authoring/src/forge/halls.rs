@@ -265,30 +265,6 @@ pub fn hall_turn_60_buttressed() -> String {
     out
 }
 
-/// A 180-degree perimeter ramp: enter west, climb the outer wall, exit a level up.
-///
-/// Signature-identical to [`hall_ramp`] variant 0 - west door plus an `up`
-/// `ramp_open` port - so the solver chooses between them for the same demand.
-/// The straight ramp climbs 8 m in 14 m at slope 0.57; this one takes the long
-/// way round at 0.33, which is gentler than anything else in the corpus.
-///
-/// **Built from its recipe, not re-implemented.** The recipe is compiled in and
-/// parsed here, so there is exactly one description of this tile. Hand-porting
-/// it into builder code would recreate the situation the tileforge port existed
-/// to end: two copies of the same geometry, kept in step by hand, with the
-/// committed `.map` depending on both.
-///
-/// # Panics
-/// If the compiled-in recipe does not parse. It is `include_str!`d, so that is
-/// a build-time fact rather than a runtime risk, and the tests exercise it.
-#[must_use]
-pub fn hall_ramp_perimeter() -> String {
-    const SOURCE: &str = include_str!("recipes/hall_ramp_perimeter.recipe.ron");
-    super::recipe::Recipe::parse(SOURCE)
-        .expect("the compiled-in perimeter ramp recipe must parse")
-        .build()
-}
-
 /// Every hall builder, paired with the file it must reproduce.
 ///
 /// The pairing lives here rather than in a central registry so a new hall
@@ -305,7 +281,6 @@ pub fn builders() -> Vec<Builder> {
         ("hall_turn_120", hall_turn_120),
         ("hall_junction_3way", hall_junction_3way),
         ("hall_junction_4way", hall_junction_4way),
-        ("hall_ramp_perimeter", hall_ramp_perimeter),
     ]
 }
 

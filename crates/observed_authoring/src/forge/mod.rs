@@ -9,6 +9,7 @@ pub mod entities;
 pub mod geometry;
 pub mod halls;
 pub mod liminal;
+pub mod perimeter;
 pub mod probe;
 pub mod recipe;
 pub mod rooms;
@@ -54,6 +55,7 @@ pub fn generate_all() -> Vec<(String, String)> {
         .map(|(name, build)| (name.to_string(), build()))
         .collect();
     out.extend(liminal::generated());
+    out.extend(perimeter::builders());
     out.sort_by(|a, b| a.0.cmp(&b.0));
     out
 }
