@@ -119,6 +119,43 @@ Anything that reads geometry from an archetype rather than from the tile breaks
 the moment a second shape appears — and the whole point of an authored family
 is to be that second shape. Worth auditing for before authoring more variety.
 
+### Why the door-bearing family cannot be this shape
+
+Attempted 2026-08-03 and reverted. Fifteen sources, all validating, all
+walking - and **23 of 24 seeds stalled**. Making the arc door-independent made
+it 24 of 24. The shape is wrong, not the parameters.
+
+`tile_for` keys a stair tower on the **base cell's register**, and its comment
+says why: *"give two cells in one column towers of different shapes and the
+lower flight tops out under the upper cell's solid deck"*. But the register is
+the only thing held constant - the signature and `tile_variation_key` are still
+per cell.
+
+The generated switchback survives that because **its flight geometry depends
+only on the register**. `supported_switchback(hand)` takes nothing else;
+`register_tower_hand` is column-constant; doors are only openings cut in the
+walls. Every cell in a column therefore gets an identical climb.
+
+A perimeter helix cannot do both things at once:
+
+- Let the arc dodge the doors, and the climb differs cell to cell within a
+  column. Flights do not line up. 23 of 24.
+- Fix the arc, and doors on swept faces open into the mass of the flight. 24 of
+  24.
+
+The switchback's answer is **inset**: its flights sit at x -80..60, well clear
+of the rim, ringed by a grounded circulation deck that every door opens onto.
+The doors never touch the climb, so the climb never has to know about them.
+
+So a door-bearing authored tower has to be **a different tile, not a variant of
+this one**: the helix pulled in off the wall, with a walkable perimeter ring at
+floor level around it. That also moves the spine's foot, which currently sits
+near the centre - over the stairwell aperture once the helix is inset. Roughly:
+an `outer_scale` on `Extent`, a ring deck, and a spine foot on the ring.
+
+The three no-door towers are unaffected and stay: with no doors there is
+nothing for the arc to dodge, so their shape is already column-constant.
+
 ### The tower family, when it can land
 
 Fifteen sources: five door orbits under sixfold rotation (none; one; two
