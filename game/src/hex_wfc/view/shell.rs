@@ -434,5 +434,11 @@ fn spawn_piece(
     } else {
         entity.insert((HexWfcGeometry, DespawnOnExit(GameState::HexWfc)));
     }
+    // Tagged where the role is already known, so the spectator overview can
+    // drop it: in play the shell is the far wall you never reach, but from
+    // outside looking in it is a lid over the whole building.
+    if piece.role == HexStructureRole::Boundary {
+        entity.insert(super::spectate::BoundaryShell);
+    }
     true
 }

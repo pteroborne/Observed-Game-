@@ -37,8 +37,19 @@ pub(crate) struct HexWfcPlugin;
 impl Plugin for HexWfcPlugin {
     fn build(&self, app: &mut App) {
         perf::configure(app);
+        // Evidence for the spectator overview needs it *up*, and a capture run
+        // has no keyboard. `OBSERVED2_SPECTATE_OVERVIEW=<detent>` opens it at
+        // that bearing, so a still of the iso view is reproducible rather than
+        // dependent on someone holding a key at the right moment.
+        let overview_detent = std::env::var("OBSERVED2_SPECTATE_OVERVIEW")
+            .ok()
+            .map(|value| value.trim().parse::<usize>().unwrap_or(0));
         app.init_resource::<overlay::MatchOverlayState>()
-            .init_resource::<view::spectate::SpectatorOverview>()
+            .insert_resource(view::spectate::SpectatorOverview {
+                active: overview_detent.is_some(),
+                detent: overview_detent.unwrap_or(0),
+                ..Default::default()
+            })
             .init_resource::<HexOnboardingGate>()
             .add_observer(overlay::activate)
             .add_systems(

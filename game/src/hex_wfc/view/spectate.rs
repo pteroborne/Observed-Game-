@@ -104,8 +104,17 @@ pub(in crate::hex_wfc) struct SpectatorOverview {
     /// The facility generation the massing was built from. Relayout changes
     /// placements, so massing built before it is a picture of a facility that
     /// no longer exists.
-    built_generation: Option<u32>,
+    pub(in crate::hex_wfc) built_generation: Option<u32>,
 }
+
+/// The rhombus shell around the facility.
+///
+/// In play it is the far wall you never reach. From outside, looking in, it is
+/// a translucent lid over the whole building - it was the grey slab across the
+/// first overview capture. The overview stands outside the facility, so the
+/// shell is always between the camera and everything worth seeing.
+#[derive(Component)]
+pub(in crate::hex_wfc) struct BoundaryShell;
 
 /// One cell's massing prism.
 ///
@@ -253,8 +262,20 @@ pub(in crate::hex_wfc) fn sync_massing(
 pub(in crate::hex_wfc) fn sync_detail_window(
     runtime: Res<HexWfcRuntime>,
     overview: Res<SpectatorOverview>,
-    mut massing: Query<(&Massing, &mut Visibility)>,
+    mut massing: Query<(&Massing, &mut Visibility), Without<BoundaryShell>>,
+    mut shell: Query<&mut Visibility, With<BoundaryShell>>,
 ) {
+    // The shell is drawn from inside in play and is in the way from outside.
+    let shell_wanted = if overview.active {
+        Visibility::Hidden
+    } else {
+        Visibility::Inherited
+    };
+    for mut visibility in &mut shell {
+        if *visibility != shell_wanted {
+            *visibility = shell_wanted;
+        }
+    }
     if !overview.active {
         return;
     }
@@ -304,14 +325,23 @@ pub(in crate::hex_wfc) fn framing(
     world: &observed_facility::hex_wfc::HexWfcWorld,
     detent: usize,
 ) -> Option<observed_style::iso::IsoFraming> {
+    framing_fitted(world, detent, FRAME_WIDTH, FRAME_HEIGHT)
+}
+
+/// [`framing`] fitted to a specific viewport.
+///
+/// Only `units_per_pixel` depends on the viewport - the camera's position,
+/// rotation and far plane do not - so callers that just need the pose can use
+/// [`framing`] and ignore the size.
+#[must_use]
+pub(in crate::hex_wfc) fn framing_fitted(
+    world: &observed_facility::hex_wfc::HexWfcWorld,
+    detent: usize,
+    width: f32,
+    height: f32,
+) -> Option<observed_style::iso::IsoFraming> {
     let (min, max) = bounds(world)?;
-    Some(observed_style::iso::frame(
-        min,
-        max,
-        detent,
-        FRAME_WIDTH,
-        FRAME_HEIGHT,
-    ))
+    Some(observed_style::iso::frame(min, max, detent, width, height))
 }
 
 /// Which floor is under inspection: the one the followed body is standing on.

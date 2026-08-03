@@ -37,6 +37,12 @@ const BLEND_RATE: f32 = 2.5;
 /// [`super::shell`] now carry the interior read the deleted eye headlamp used to fake.
 const HEX_KEY_INTENSITY_SCALE: f32 = 0.62;
 
+/// Where the overview's fog begins and ends, as fractions of the framing's far
+/// plane. Far enough back that the whole facility is legible, close enough that
+/// depth still reads across it.
+const OVERVIEW_FOG_START: f32 = 0.45;
+const OVERVIEW_FOG_END: f32 = 1.05;
+
 /// Spawn the complete semantic rig at its final treatment for the initial cell.
 ///
 /// Phase 95 spawned a default-white, zero-intensity key and eased it toward the
@@ -160,15 +166,29 @@ pub(in crate::hex_wfc) fn sync_projection(
     runtime: Res<HexWfcRuntime>,
     settings: Res<crate::settings::Settings>,
     overview: Option<Res<super::spectate::SpectatorOverview>>,
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     mut projection: Query<&mut Projection, With<GameCam>>,
 ) {
     let Ok(mut projection) = projection.single_mut() else {
         return;
     };
+    // Fit to the window that is actually there. `ScalingMode::WindowSize`
+    // reads `scale` as world units per *pixel*, so framing against a nominal
+    // viewport just means a wider window shows more world - the facility came
+    // out a third of the frame with empty space around it. Only the scale
+    // depends on the viewport; the camera's position and far plane do not.
+    let (width, height) = windows.single().map_or((1600.0, 1000.0), |window| {
+        (window.width().max(1.0), window.height().max(1.0))
+    });
     let iso = overview
         .filter(|overview| overview.active)
         .and_then(|overview| {
-            super::spectate::framing(&runtime.match_state.facility, overview.detent)
+            super::spectate::framing_fitted(
+                &runtime.match_state.facility,
+                overview.detent,
+                width,
+                height,
+            )
         });
     if let Some(iso) = iso {
         *projection = Projection::Orthographic(OrthographicProjection {
@@ -251,6 +271,7 @@ pub(in crate::hex_wfc) fn sync_practical_shadow_budget(
 pub(in crate::hex_wfc) fn sync_lighting_and_atmosphere(
     time: Res<Time>,
     runtime: Res<HexWfcRuntime>,
+    overview: Option<Res<super::spectate::SpectatorOverview>>,
     mut ambient: ResMut<GlobalAmbientLight>,
     mut clear: ResMut<ClearColor>,
     mut camera: Query<&mut DistanceFog, With<GameCam>>,
@@ -272,11 +293,32 @@ pub(in crate::hex_wfc) fn sync_lighting_and_atmosphere(
     ambient.brightness = lerp_f(ambient.brightness, palette.ambient_brightness, t);
     clear.0 = lerp_color(clear.0, palette.fog_color, t);
 
+    // The overview stands hundreds of metres out; play fog is tuned for 10 to
+    // 28 m. Eased toward the palette from up there, every pixel is 100 percent
+    // fog and the view is a flat sheet of `fog_color` - which is exactly what
+    // "spectate mode seems blank" was. Depth cue and total occlusion are the
+    // same setting at different scales, so the overview gets its own scale
+    // rather than losing the atmosphere entirely.
+    let overview_fog = overview
+        .filter(|overview| overview.active)
+        .and_then(|overview| {
+            super::spectate::framing(&runtime.match_state.facility, overview.detent)
+        })
+        .map(|iso| (iso.far * OVERVIEW_FOG_START, iso.far * OVERVIEW_FOG_END));
     if let Ok(mut fog) = camera.single_mut() {
         fog.color = lerp_color(fog.color, palette.fog_color, t);
         if let bevy::pbr::FogFalloff::Linear { start, end } = &mut fog.falloff {
-            *start = lerp_f(*start, palette.fog_start, t);
-            *end = lerp_f(*end, palette.fog_end, t);
+            let (target_start, target_end) =
+                overview_fog.unwrap_or((palette.fog_start, palette.fog_end));
+            // Snapped, not eased: easing across two orders of magnitude leaves
+            // the view blank for the second it takes to arrive.
+            if overview_fog.is_some() {
+                *start = target_start;
+                *end = target_end;
+            } else {
+                *start = lerp_f(*start, target_start, t);
+                *end = lerp_f(*end, target_end, t);
+            }
         }
     }
 
