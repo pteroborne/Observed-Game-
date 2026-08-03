@@ -14,6 +14,8 @@ pub(crate) mod map;
 mod residency;
 mod shell;
 pub(in crate::hex_wfc) mod spectate;
+#[cfg(test)]
+mod spectate_tests;
 
 use bevy::anti_alias::fxaa::Fxaa;
 use bevy::core_pipeline::prepass::{DepthPrepass, NormalPrepass};
@@ -222,7 +224,7 @@ pub(super) fn setup_view(
 }
 
 pub(super) use lighting::{
-    sync_camera, sync_lighting_and_atmosphere, sync_practical_shadow_budget,
+    sync_camera, sync_lighting_and_atmosphere, sync_practical_shadow_budget, sync_projection,
 };
 use residency::{initial_spawn_batch, presentation_readiness};
 pub(super) use residency::{sync_changed_geometry, sync_streamed_cells};

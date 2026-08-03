@@ -62,7 +62,7 @@ pub(in crate::hex_wfc) const CYCLE_KEY: KeyCode = KeyCode::KeyF;
 /// A little past `STREAM_ENTER_RADIUS` (30 m), so a cell is always resident
 /// before its prism disappears. The other order leaves a hole: massing gone,
 /// geometry not yet spawned, and the body apparently standing on nothing.
-const DETAIL_RADIUS: f32 = 34.0;
+pub(in crate::hex_wfc::view) const DETAIL_RADIUS: f32 = 34.0;
 
 // Compile-time, not a test: these are relationships between constants, so a
 // runtime assertion could only ever restate what the compiler already knows.
@@ -73,25 +73,34 @@ const DETAIL_RADIUS: f32 = 34.0;
 const _: () = assert!(DETAIL_RADIUS > super::STREAM_ENTER_RADIUS);
 const _: () = assert!(DETAIL_RADIUS < super::STREAM_EXIT_RADIUS);
 
-/// Where the camera sits relative to the followed body.
-///
-/// High and back, looking down at about 35 degrees - the same read as the
-/// survivor map and the composition studio, so the three do not each teach a
-/// different sense of which way the facility runs.
-const RISE: f32 = 52.0;
-const BACK: f32 = 44.0;
-const PITCH: f32 = -0.62;
+/// Rotate the view by one detent.
+pub(in crate::hex_wfc) const ROTATE_KEY: KeyCode = KeyCode::KeyR;
 
-/// How fast the camera eases toward the body, per second.
+/// The viewport the framing is fitted to.
 ///
-/// Slower than the chase cam's 6.0: at this distance a snap reads as the whole
-/// facility lurching rather than the camera moving.
-const RESPONSE: f32 = 2.5;
+/// The studio fits to its own window; the game fits to a nominal 16:10 and lets
+/// the aspect fall out of the projection, so the two agree on framing without
+/// the game having to read its window size before the camera exists.
+pub(in crate::hex_wfc::view) const FRAME_WIDTH: f32 = 1600.0;
+pub(in crate::hex_wfc::view) const FRAME_HEIGHT: f32 = 1000.0;
+
+/// How fast the camera eases toward its framing, per second.
+///
+/// Slower than the chase cam's 6.0: at facility scale a snap reads as the whole
+/// building lurching rather than the camera moving.
+pub(in crate::hex_wfc::view) const RESPONSE: f32 = 2.5;
 
 /// Whether the overview is up, and what it has built.
 #[derive(Resource, Default)]
 pub(in crate::hex_wfc) struct SpectatorOverview {
     pub active: bool,
+    /// Which of the six 60-degree bearings the view is read from.
+    ///
+    /// Detents rather than free orbit because the cutaway drops the walls
+    /// facing the camera: orbit freely and walls pop in and out at arbitrary
+    /// angles. Six steps, one per hex face, so each has one unambiguous set of
+    /// near walls - the same reading the studio uses.
+    pub detent: usize,
     /// The facility generation the massing was built from. Relayout changes
     /// placements, so massing built before it is a picture of a facility that
     /// no longer exists.
@@ -104,7 +113,7 @@ pub(in crate::hex_wfc) struct SpectatorOverview {
 /// schedule, which makes their parameter types part of that signature.
 #[derive(Component)]
 pub(in crate::hex_wfc) struct Massing {
-    cell: HexCoord,
+    pub(in crate::hex_wfc) cell: HexCoord,
 }
 
 /// Flip the overview, and cycle the followed body.
@@ -125,6 +134,9 @@ pub(in crate::hex_wfc) fn hotkeys(
     }
     if keys.just_pressed(CYCLE_KEY) {
         cycle_focus(&mut runtime);
+    }
+    if keys.just_pressed(ROTATE_KEY) {
+        overview.detent = (overview.detent + 1) % observed_style::iso::AZIMUTH_DETENTS;
     }
 }
 
@@ -227,7 +239,17 @@ pub(in crate::hex_wfc) fn sync_massing(
     overview.built_generation = Some(world.generation);
 }
 
-/// Hide the massing around the followed body so the real tiles show through.
+/// Decide what each prism shows, from the floor the followed body is on.
+///
+/// Three states, in order:
+///
+/// - **Off the layer entirely.** A ten-level facility seen all at once stacks
+///   into a thicket, so only the body's floor and its immediate neighbours are
+///   drawn at all - the same rule the studio reads a plan by.
+/// - **On the focus floor, near the body.** Residency has already spawned the
+///   real authored geometry there, so the prism gets out of its way.
+/// - **Everything else drawn.** Massing, which is what carries the shape of the
+///   building at this distance.
 pub(in crate::hex_wfc) fn sync_detail_window(
     runtime: Res<HexWfcRuntime>,
     overview: Res<SpectatorOverview>,
@@ -236,11 +258,12 @@ pub(in crate::hex_wfc) fn sync_detail_window(
     if !overview.active {
         return;
     }
-    let body = runtime.local().position;
+    let body = runtime.local();
+    let layer = layer_for(body.cell.level);
     for (cell, mut visibility) in &mut massing {
         let origin = Vec3::from_array(hex_origin(cell.cell));
-        let near = origin.distance(body) <= DETAIL_RADIUS;
-        let wanted = if near {
+        let near = origin.distance(body.position) <= DETAIL_RADIUS;
+        let wanted = if !layer.draws(cell.cell.level) || (layer.is_focus(cell.cell.level) && near) {
             Visibility::Hidden
         } else {
             Visibility::Inherited
@@ -251,19 +274,57 @@ pub(in crate::hex_wfc) fn sync_detail_window(
     }
 }
 
-/// The overview camera pose for a body at `position` facing `yaw`.
+/// The box the facility occupies, from its own placements.
 ///
-/// Returned rather than applied: `sync_camera` owns the one camera, and a
-/// second one here would take the UI with it.
+/// Measured rather than derived from `config.cols/rows/levels` so a facility
+/// with an irregular edge frames to what is actually there.
 #[must_use]
-pub(in crate::hex_wfc) fn pose(position: Vec3, yaw: f32) -> (Vec3, Quat) {
-    let forward = Vec3::new(yaw.sin(), 0.0, -yaw.cos());
-    let eye = position + Vec3::Y * RISE - forward * BACK;
-    let rotation = Quat::from_rotation_y(-yaw) * Quat::from_rotation_x(PITCH);
-    (eye, rotation)
+pub(in crate::hex_wfc::view) fn bounds(
+    world: &observed_facility::hex_wfc::HexWfcWorld,
+) -> Option<(Vec3, Vec3)> {
+    let mut min = Vec3::splat(f32::INFINITY);
+    let mut max = Vec3::splat(f32::NEG_INFINITY);
+    for &cell in world.placements.keys() {
+        let origin = Vec3::from_array(hex_origin(cell));
+        // A cell is about 14 m across and one level tall; padding by that keeps
+        // the rim of the outermost cells inside the frame.
+        min = min.min(origin - Vec3::new(7.0, 0.0, 8.0));
+        max = max.max(origin + Vec3::new(7.0, 8.0, 8.0));
+    }
+    (min.x <= max.x).then_some((min, max))
 }
 
-/// How fast the camera should ease toward [`pose`].
+/// Where the overview camera stands, and how wide it sees.
+///
+/// The whole facility framed orthographically from one of six detents - the
+/// same reading `composition_studio` uses, from the same shared code, so the
+/// tool and the game do not teach two different buildings.
+#[must_use]
+pub(in crate::hex_wfc) fn framing(
+    world: &observed_facility::hex_wfc::HexWfcWorld,
+    detent: usize,
+) -> Option<observed_style::iso::IsoFraming> {
+    let (min, max) = bounds(world)?;
+    Some(observed_style::iso::frame(
+        min,
+        max,
+        detent,
+        FRAME_WIDTH,
+        FRAME_HEIGHT,
+    ))
+}
+
+/// Which floor is under inspection: the one the followed body is standing on.
+///
+/// This is what "follows the selected player" means at facility scale. The
+/// camera frames the whole building and does not chase; what tracks the body is
+/// the *floor*, so walking up a stair changes which storey is solid.
+#[must_use]
+pub(in crate::hex_wfc) fn layer_for(level: u8) -> observed_style::iso::Layer {
+    observed_style::iso::Layer::Single(level)
+}
+
+/// How fast the camera should ease toward [`framing`].
 #[must_use]
 pub(in crate::hex_wfc) fn response() -> f32 {
     RESPONSE
@@ -280,176 +341,4 @@ pub(in crate::hex_wfc) fn clear(
     }
     overview.active = false;
     overview.built_generation = None;
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The camera looks down at the body, not up past it.
-    #[test]
-    fn the_overview_looks_down_on_the_body_it_follows() {
-        let (eye, rotation) = pose(Vec3::ZERO, 0.0);
-        assert!(eye.y > 0.0, "the overview must sit above the body");
-        let looking = rotation * Vec3::NEG_Z;
-        assert!(
-            looking.y < 0.0,
-            "the overview must look downward, got {looking:?}"
-        );
-    }
-
-    /// Cycling must be stable and must terminate: every body, then back.
-    #[test]
-    fn cycling_visits_every_body_and_returns() {
-        // Order comes from the BTreeMap, so this is the order every machine
-        // sees - a capture script driving the key gets the same run.
-        let ids = [0u8, 1, 2];
-        let mut seen = Vec::new();
-        let mut at = 0usize;
-        for _ in 0..ids.len() {
-            seen.push(ids[at]);
-            at = (at + 1) % ids.len();
-        }
-        assert_eq!(
-            seen, ids,
-            "cycling must visit each body once before repeating"
-        );
-        assert_eq!(at, 0, "cycling must return to the first body");
-    }
-
-    /// Every drawable cell gets a prism, and the ones around the body get out
-    /// of the way so the real geometry can be seen.
-    ///
-    /// The unit tests above only check the pose arithmetic. This runs the two
-    /// systems against a real solved facility, which is what catches the
-    /// wiring: a query that matches nothing, a resource never registered, a
-    /// generation guard that rebuilds every frame or never rebuilds at all.
-    #[test]
-    fn the_overview_masses_the_facility_and_opens_a_window_at_the_body() {
-        use crate::hex_wfc::sim::{HexWfcRuntime, load_prototypes};
-        use observed_match::hex_wfc::{HexMatchConfig, HexWfcMatch};
-
-        let protos = load_prototypes();
-        let match_state = (0..64u64)
-            .find_map(|offset| {
-                HexWfcMatch::new(
-                    crate::flow::MATCH_SEED.wrapping_add(offset),
-                    HexMatchConfig {
-                        teams: 1,
-                        members_per_team: 1,
-                        ..Default::default()
-                    },
-                    &protos,
-                )
-                .ok()
-            })
-            .expect("a solvable nearby seed");
-
-        let world = &match_state.facility;
-        let drawable = world
-            .placements
-            .iter()
-            .filter(|(cell, placement)| {
-                let in_blueprint = world.room_id_at(**cell).is_some();
-                sketch(placement.archetype, placement.space, in_blueprint)
-                    .height
-                    .is_some()
-                    && world.architecture.contains_key(*cell)
-            })
-            .count();
-        assert!(drawable > 0, "the fixture facility draws nothing");
-
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins)
-            .init_resource::<Assets<Mesh>>()
-            .init_resource::<Assets<StandardMaterial>>()
-            .init_resource::<SpectatorOverview>()
-            .insert_resource(crate::sim::state::SpectatorBot::for_seed(
-                crate::flow::MATCH_SEED,
-            ))
-            .insert_resource(HexWfcRuntime {
-                local_player: *match_state.players.keys().next().expect("a body"),
-                match_state,
-                pending_visual_cells: Default::default(),
-                presented_revisions: Default::default(),
-                status: String::new(),
-                map_open: false,
-                map_level: 0,
-                results_delay_frames: 0,
-                networked: false,
-                resync_attempts: 0,
-            })
-            .add_systems(Update, (sync_massing, sync_detail_window).chain());
-
-        // Down: nothing is massed.
-        app.update();
-        assert_eq!(
-            app.world_mut()
-                .query::<&Massing>()
-                .iter(app.world())
-                .count(),
-            0,
-            "the overview must cost nothing while it is down"
-        );
-
-        // Up: one prism per drawable cell.
-        app.world_mut().resource_mut::<SpectatorOverview>().active = true;
-        app.update();
-        let massed = app
-            .world_mut()
-            .query::<&Massing>()
-            .iter(app.world())
-            .count();
-        assert_eq!(
-            massed, drawable,
-            "every drawable cell should be massed exactly once"
-        );
-
-        // Rebuilding is guarded: a second frame must not re-spawn the lot.
-        app.update();
-        assert_eq!(
-            app.world_mut()
-                .query::<&Massing>()
-                .iter(app.world())
-                .count(),
-            massed,
-            "massing must not be rebuilt every frame"
-        );
-
-        // The window is open at the body and shut away from it.
-        let body = app.world().resource::<HexWfcRuntime>().local().position;
-        let mut near_hidden = 0;
-        let mut far_visible = 0;
-        let mut query = app.world_mut().query::<(&Massing, &Visibility)>();
-        for (massing, visibility) in query.iter(app.world()) {
-            let origin = Vec3::from_array(hex_origin(massing.cell));
-            if origin.distance(body) <= DETAIL_RADIUS {
-                assert_eq!(
-                    *visibility,
-                    Visibility::Hidden,
-                    "massing at the body must yield to the real geometry"
-                );
-                near_hidden += 1;
-            } else if *visibility == Visibility::Inherited {
-                far_visible += 1;
-            }
-        }
-        assert!(
-            near_hidden > 0,
-            "the body should always have some massing to hide"
-        );
-        assert!(far_visible > 0, "the rest of the facility must still show");
-
-        // Down again: everything goes.
-        app.world_mut().resource_mut::<SpectatorOverview>().active = false;
-        app.update();
-        assert_eq!(
-            app.world_mut()
-                .query::<&Massing>()
-                .iter(app.world())
-                .count(),
-            0,
-            "leaving the overview must not leak massing"
-        );
-    }
 }

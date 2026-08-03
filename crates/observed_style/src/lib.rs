@@ -15,6 +15,8 @@
 //! `style_lab` lab is the visual proof app for these rules; the rules and their
 //! tests live here.
 
+pub mod iso;
+
 use bevy::color::{Color, LinearRgba};
 
 /// Minimum emissive luminance for a signal-tier treatment. Emissive is HDR (values

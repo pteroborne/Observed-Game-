@@ -8,4 +8,8 @@ publish = false
 # Only `bevy::color` (Color / LinearRgba) is needed — this is a pure, render-free
 # data crate, so it takes Bevy with just the `bevy_color` feature (no renderer).
 bevy = { version = "0.18.1", default-features = false, features = ["bevy_color"] }
+# Pure maths for the isometric reading in `iso` - no renderer, so the crate
+# stays the render-free data crate its comment above promises. Bevy's Vec3/Quat
+# *are* glam's, so a caller builds a Transform from these directly.
+glam = "0.30"
 observed_content = { path = "../observed_content" }

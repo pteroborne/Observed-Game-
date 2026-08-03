@@ -100,20 +100,10 @@ const CHASE_RESPONSE: f32 = 6.0;
 pub(in crate::hex_wfc) fn sync_camera(
     runtime: Res<HexWfcRuntime>,
     spectating: Option<Res<crate::sim::state::SpectatorBot>>,
-    settings: Res<crate::settings::Settings>,
     overview: Option<Res<super::spectate::SpectatorOverview>>,
     time: Res<Time>,
     mut camera: Query<&mut Transform, With<GameCam>>,
-    mut projection: Query<&mut Projection, With<GameCam>>,
 ) {
-    if let Ok(mut projection) = projection.single_mut()
-        && let Projection::Perspective(perspective) = &mut *projection
-    {
-        let target = settings.fov_degrees.clamp(50.0, 80.0).to_radians();
-        if (perspective.fov - target).abs() > f32::EPSILON {
-            perspective.fov = target;
-        }
-    }
     let player = runtime.local();
     let Ok(mut transform) = camera.single_mut() else {
         return;
@@ -135,10 +125,12 @@ pub(in crate::hex_wfc) fn sync_camera(
     // presentation, so it is answered here rather than by spawning a second
     // camera - Bevy hands UI to the highest-order camera on the window and
     // ignores `is_active`, so a dormant one would take every overlay with it.
-    let overviewing = overview.is_some_and(|overview| overview.active);
-    let (target_translation, target_rotation, response) = if overviewing {
-        let (eye, rotation) = super::spectate::pose(player.position, player.yaw);
-        (eye, rotation, super::spectate::response())
+    let overview = overview.filter(|overview| overview.active);
+    let iso = overview.as_ref().and_then(|overview| {
+        super::spectate::framing(&runtime.match_state.facility, overview.detent)
+    });
+    let (target_translation, target_rotation, response) = if let Some(iso) = &iso {
+        (iso.translation, iso.rotation, super::spectate::response())
     } else {
         let forward = Vec3::new(player.yaw.sin(), 0.0, -player.yaw.cos());
         let eye = player.position + Vec3::Y * EYE_OFFSET;
@@ -156,6 +148,50 @@ pub(in crate::hex_wfc) fn sync_camera(
     let t = (response * time.delta_secs()).clamp(0.0, 1.0);
     transform.translation = transform.translation.lerp(target_translation, t);
     transform.rotation = transform.rotation.slerp(target_rotation, t);
+}
+
+/// Perspective for play, orthographic for the overview.
+///
+/// An isometric read has to be orthographic: under perspective the far side of
+/// the facility shrinks, parallel corridors converge, and the cutaway's whole
+/// premise - that a wall's plan azimuth tells you whether it is in your way -
+/// stops holding.
+pub(in crate::hex_wfc) fn sync_projection(
+    runtime: Res<HexWfcRuntime>,
+    settings: Res<crate::settings::Settings>,
+    overview: Option<Res<super::spectate::SpectatorOverview>>,
+    mut projection: Query<&mut Projection, With<GameCam>>,
+) {
+    let Ok(mut projection) = projection.single_mut() else {
+        return;
+    };
+    let iso = overview
+        .filter(|overview| overview.active)
+        .and_then(|overview| {
+            super::spectate::framing(&runtime.match_state.facility, overview.detent)
+        });
+    if let Some(iso) = iso {
+        *projection = Projection::Orthographic(OrthographicProjection {
+            scale: iso.units_per_pixel,
+            near: 0.1,
+            far: iso.far,
+            ..OrthographicProjection::default_3d()
+        });
+        return;
+    }
+    if let Projection::Perspective(perspective) = &mut *projection {
+        let target = settings.fov_degrees.clamp(50.0, 80.0).to_radians();
+        if (perspective.fov - target).abs() > f32::EPSILON {
+            perspective.fov = target;
+        }
+    } else {
+        // Coming back from the overview: restore the play projection at the
+        // player's chosen field of view rather than leaving them orthographic.
+        *projection = Projection::Perspective(PerspectiveProjection {
+            fov: settings.fov_degrees.clamp(50.0, 80.0).to_radians(),
+            ..default()
+        });
+    }
 }
 
 /// Enable shadows on the [`HexPractical`] downlights nearest the runner and disable the

@@ -89,6 +89,7 @@ impl Plugin for HexWfcPlugin {
                     view::spectate::sync_massing,
                     view::spectate::sync_detail_window,
                     view::sync_camera,
+                    view::sync_projection,
                     view::sync_lighting_and_atmosphere,
                     hud::sync,
                     view::map::sync,

@@ -5620,6 +5620,7 @@ name = "observed_style"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "glam 0.30.10",
  "observed_content",
 ]
 

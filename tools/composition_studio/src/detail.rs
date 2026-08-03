@@ -41,21 +41,9 @@ use observed_traversal::{ColliderShape, ConvexRenderMesh};
 use observed_content::ArchitectureRegister;
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Hulls whose top is at or below this are floor, and are never cut away.
-/// `observed_hex::FLOOR_SLAB_TOP` is 0.5 m; the margin covers chamfers.
-const FLOOR_TOP: f32 = 0.75;
-
-/// A hull that starts above head clearance is roofing, not structure.
-/// Matches `observed_authoring::source::MIN_HEADROOM_METERS`.
-const HEAD_CLEARANCE: f32 = 2.2;
-
-/// Beyond this plan radius a hull is perimeter rather than furnishing.
-/// tileforge's `SAFE_INTERIOR_RADIUS` is 104 TrenchBroom units = 6.5 m.
-const INTERIOR_RADIUS: f32 = 6.5;
-
-/// How much of the field of view counts as "between the camera and the
-/// interior". 90 degrees selects exactly three of six hex walls.
-const NEAR_ARC_COS: f32 = 0.0;
+// The cutaway rule and its thresholds live in `observed_style::iso`, shared
+// with the game's spectator overview: two surfaces cutting away differently
+// would show the same facility as two buildings.
 
 /// Which cells draw their real geometry.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -138,30 +126,10 @@ pub fn focus_set(world: &HexWfcWorld, selected: Option<HexCoord>) -> BTreeSet<He
     set
 }
 
-/// Whether a hull survives the cutaway.
-///
-/// `bearing` is the direction from the scene toward the camera, in the plan
-/// (XZ) plane, normalized. `local` is the hull's centroid relative to its
-/// cell's origin.
+/// Whether a hull survives the cutaway. See `observed_style::iso::survives`.
 #[must_use]
 pub fn survives(min_y: f32, max_y: f32, local: Vec3, bearing: Vec2, cutaway: bool) -> bool {
-    if !cutaway {
-        return true;
-    }
-    // 1. Floor. Checked first so nothing below can drop it.
-    if max_y <= FLOOR_TOP {
-        return true;
-    }
-    // 2. Ceiling. Min-Y, so a full-height pillar is structure, not roofing.
-    if min_y >= HEAD_CLEARANCE {
-        return false;
-    }
-    // 3. Near walls. Interior fittings are never perimeter, so they stay.
-    let plan = Vec2::new(local.x, local.z);
-    if plan.length() < INTERIOR_RADIUS {
-        return true;
-    }
-    plan.normalize_or_zero().dot(bearing) <= NEAR_ARC_COS
+    observed_style::iso::survives(min_y, max_y, local, bearing, cutaway)
 }
 
 /// One hull, triangulated once and measured once.
