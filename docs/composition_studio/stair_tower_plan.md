@@ -81,3 +81,48 @@ The walk probe can prove a tower climbs before it ever reaches a match:
 `module-studio` reports `WALK clear — N samples, 8.0 m climbed`, and the
 corpus-wide test asserts every generated module parses and validates. That is
 the check the switchback never had.
+
+## Blocked: replacing the generated family stalls a spectator
+
+Attempted 2026-08-02 and reverted. Recorded here so it is not re-attempted
+blind.
+
+Full replacement needs the door-bearing towers too - the generated family is 63
+variants per register, covering each connectivity with no doors, one door, and
+two. Fifteen authored sources cover the same ground (a door makes the tower
+rotate sixfold, and two doors have only three orbits), and all fifteen validate
+and walk.
+
+**But adding them fails
+`hex_spectator_route_is_physically_completable_without_guardian_pressure`.** A
+solo spectator stalls climbing out of a `Shaft` cell with doors on faces 1 and 3.
+
+The important detail is *which* tile it stalls on:
+
+    TileKey { archetype: "stair_tower", register: "infinite_gallery", variant: 18 }
+
+**Variant 18 is a generated tower, not an authored one.** Authored sources use
+variant 0, and sixfold expansion gives them compiled variants 0-5; the generated
+family is pushed with explicit variants up to 62. So the stalling tile is one of
+the procedural switchbacks.
+
+What appears to have happened: `Catalogue::new` collects prototypes into a `Vec`
+per `(archetype, register, signature)` and `select` runs `weighted_select` over
+it. Adding candidates changes which entry a given variation key lands on, so the
+facility now renders a *different* generated tower than before - and that one
+cannot be climbed. Lowering the authored weight to 6 does not help, which is
+consistent with a reshuffle rather than a frequency effect.
+
+If that reading is right there is a **latent unclimbable variant in the
+generated stair family**, exposed rather than caused by this change, and it
+would be reachable today under any perturbation of the catalog. That is worth
+confirming before anything else: it is a shipped bug, not a blocker of our own
+making.
+
+Next step is not more geometry. It is to find which generated variant stalls -
+bisect by adding a single dummy prototype to the bucket to force the same
+reshuffle - and decide whether to fix or remove it. Only then does replacement
+become safe.
+
+The three no-door authored towers (commit `ed48e22`) are unaffected and remain
+in the corpus.
