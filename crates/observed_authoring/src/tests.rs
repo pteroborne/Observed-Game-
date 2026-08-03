@@ -785,3 +785,210 @@ fn the_vertical_districts_have_towers_of_their_own() {
         assert!(turns_the_other_way, "{register}'s tower turns the same way");
     }
 }
+
+/// Walk a body up a tile's own stair spine with the production controller,
+/// steering perfectly, and report how far it rose and where it gave up.
+///
+/// The Phase 89 gate drives a constant forward intent, which only works on a
+/// climb that runs in a straight line. A perimeter climb turns, so a body has
+/// to be steered along the spine - which is exactly what the objective bot
+/// does. Steering perfectly here separates the two questions: whether the
+/// geometry can be climbed at all, and whether the bot aims correctly.
+fn walk_spine_and_measure_rise(map: &str) -> (f32, f32, Vec3) {
+    let tile = crate::parse_authored_module(map)
+        .expect("module parses")
+        .prototype;
+    let nodes = tile.spine.nodes.clone();
+    assert!(nodes.len() >= 2, "this tile has no spine to walk");
+    let arena = tile.arena_spec();
+    arena.validate().expect("arena is valid");
+    let scene = RapierTraversalScene::from_arena_spec(&arena);
+    let config = FpsConfig::default();
+
+    let start_feet = nodes[0];
+    let mut body = FpsBody::spawned(start_feet + Vec3::Y * config.half_height, 0.0);
+    let mut target = 1usize;
+    let mut max_feet = start_feet.y;
+    let mut stuck_at = start_feet;
+
+    for _ in 0..3_000 {
+        let feet = body.position - Vec3::Y * config.half_height;
+        // Advance to the next node once this one is underfoot, measured in
+        // plan: a node above the body is still ahead of it, not reached.
+        while target < nodes.len() - 1
+            && Vec2::new(nodes[target].x - feet.x, nodes[target].z - feet.z).length() < 0.6
+        {
+            target += 1;
+        }
+        let to = nodes[target] - feet;
+        // The controller reads movement in body space, so face the target and
+        // walk straight at it. This is `walk_toward` without the bot around it.
+        body.yaw = to.x.atan2(-to.z);
+        let intent = PlayerIntent {
+            movement: Vec2::new(0.0, 1.0),
+            ..PlayerIntent::default()
+        };
+        step_character(&scene, &mut body, intent, &config, 1.0 / 60.0);
+        let feet = body.position - Vec3::Y * config.half_height;
+        if feet.y > max_feet {
+            max_feet = feet.y;
+            stuck_at = feet;
+        }
+    }
+    (
+        max_feet - start_feet.y,
+        nodes[nodes.len() - 1].y - start_feet.y,
+        stuck_at,
+    )
+}
+
+/// The same walk, but choosing the target the way the objective bot does.
+///
+/// `StairSpine::target` calls `locate`, which picks the nearest leg **in plan**
+/// and hands back that leg's far end. Comparing this against the sequential
+/// walk isolates the steering rule from the geometry: if the geometry climbs
+/// and this does not, the rule is what is broken.
+fn walk_spine_as_the_bot_does(map: &str) -> (f32, f32, Vec3) {
+    let tile = crate::parse_authored_module(map)
+        .expect("module parses")
+        .prototype;
+    let spine = tile.spine.clone();
+    let deck = tile.deck.clone();
+    let nodes = &spine.nodes;
+    let arena = tile.arena_spec();
+    let scene = RapierTraversalScene::from_arena_spec(&arena);
+    let config = FpsConfig::default();
+
+    // Start where a body actually arrives - just inside a lateral door - not
+    // on the spine. Starting on the spine is what made the first version of
+    // this harness pass everything: it never exercised the approach, which is
+    // the half that fails. A body that walks in through a door is 6 m from the
+    // foot of a wrapped climb, well past `CLIMB_CAPTURE_RADIUS`.
+    let floor = nodes[0].y;
+    let entrance = HexFace::LATERAL
+        .into_iter()
+        .find(|&face| tile.signature.port(face) == PortClass::Door);
+    let start_feet = match entrance {
+        Some(face) => {
+            let [a, b] = face_edge(face);
+            let mid = Vec2::new((a.0 + b.0) as f32 * 0.5, (a.1 + b.1) as f32 * 0.5);
+            let dir = mid.normalize();
+            Vec3::new(dir.x * 6.3, floor, dir.y * 6.3)
+        }
+        // A tower has no lateral door: a body arrives through the floor
+        // aperture, carried by the flight below, and lands on the climb.
+        None => nodes[0],
+    };
+    let wanted = nodes[nodes.len() - 1].y - floor;
+
+    let mut body = FpsBody::spawned(start_feet + Vec3::Y * config.half_height, 0.0);
+    let mut max_feet = floor;
+    let mut best = start_feet;
+
+    // `CLIMB_CAPTURE_RADIUS` from the bot, which is not public here.
+    const CAPTURE: f32 = 1.6;
+    for _ in 0..6_000 {
+        let feet = body.position - Vec3::Y * config.half_height;
+        // Exactly `climb_command`: off the climb, walk the deck path toward the
+        // spine's entry; otherwise follow the spine.
+        let off = spine
+            .distance(feet)
+            .is_some_and(|distance| distance > CAPTURE);
+        let target = if off && !deck.is_empty() {
+            deck.step_toward(feet, nodes[0])
+                .or_else(|| spine.target(feet, true))
+        } else {
+            spine.target(feet, true)
+        };
+        let Some(target) = target else { break };
+        let to = target - feet;
+        body.yaw = to.x.atan2(-to.z);
+        let intent = PlayerIntent {
+            movement: Vec2::new(0.0, 1.0),
+            ..PlayerIntent::default()
+        };
+        step_character(&scene, &mut body, intent, &config, 1.0 / 60.0);
+        let feet = body.position - Vec3::Y * config.half_height;
+        if feet.y > max_feet {
+            max_feet = feet.y;
+            best = feet;
+        }
+    }
+    (max_feet - floor, wanted, best)
+}
+
+/// Every authored climb must be walkable by the production controller when it
+/// is steered along its own spine.
+///
+/// The perimeter ramps shipped without this and none of them can be finished:
+/// the objective bot drove a spectator into a wall for a whole match. A spine
+/// that cannot be walked is worse than no spine, because everything downstream
+/// trusts it.
+#[test]
+fn every_authored_spine_can_be_walked_by_the_controller() {
+    let mut failures = Vec::new();
+    let mut walked = 0;
+    // `generate_all`, not `builders`: the latter is only halls, silos, and
+    // rooms, and every climb in the corpus lives in the three it leaves out.
+    for (stem, text) in crate::forge::generate_all() {
+        let module = crate::parse_authored_module(&text)
+            .unwrap_or_else(|error| panic!("{stem} does not validate: {error:?}"));
+        if module.prototype.spine.nodes.len() < 2 {
+            continue;
+        }
+        walked += 1;
+        let (rise, wanted, stuck) = walk_spine_and_measure_rise(&text);
+        if rise < wanted - 0.6 {
+            failures.push(format!(
+                "  {stem}: rose {rise:.2} m of {wanted:.2} m, stopped at {stuck:?}"
+            ));
+        }
+    }
+    // A survey that silently walks nothing passes for the wrong reason. This
+    // test did exactly that on its first run: it used `parse_tile`, which
+    // rejects authoring version 2, so every module fell through the `continue`
+    // and it reported success having walked none of them.
+    assert!(
+        walked >= 3,
+        "expected the authored climbs to be walked, found {walked}"
+    );
+    assert!(
+        failures.is_empty(),
+        "{} of {walked} authored climbs cannot be finished:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
+/// The bot's own targeting rule must finish every climb the geometry allows.
+///
+/// `every_authored_spine_can_be_walked_by_the_controller` proves the geometry
+/// climbs when steered node by node. This proves the rule the bot actually
+/// uses gets the same result - and it is the pair that matters, because a
+/// climbable tile the bot cannot climb is a stalled match either way.
+#[test]
+fn the_bots_targeting_rule_finishes_every_authored_climb() {
+    let mut failures = Vec::new();
+    let mut walked = 0;
+    for (stem, text) in crate::forge::generate_all() {
+        let module = crate::parse_authored_module(&text)
+            .unwrap_or_else(|error| panic!("{stem} does not validate: {error:?}"));
+        if module.prototype.spine.nodes.len() < 2 {
+            continue;
+        }
+        walked += 1;
+        let (rise, wanted, stuck) = walk_spine_as_the_bot_does(&text);
+        if rise < wanted - 0.6 {
+            failures.push(format!(
+                "  {stem}: rose {rise:.2} m of {wanted:.2} m, stopped at {stuck:?}"
+            ));
+        }
+    }
+    assert!(walked >= 3, "expected climbs to walk, found {walked}");
+    assert!(
+        failures.is_empty(),
+        "{} of {walked} climbs defeat the bot's targeting rule:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}

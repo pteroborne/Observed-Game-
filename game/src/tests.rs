@@ -5053,6 +5053,105 @@ mod hex_wfc_gates {
         );
     }
 
+    /// Sweep the spectator gate across many seeds.
+    ///
+    /// The gate runs one seed, so a stall that needs a particular facility
+    /// hides until something reshuffles tile selection - which is exactly how
+    /// the perimeter-ramp stall surfaced: not from a change to the ramp, but
+    /// from adding towers elsewhere in the catalog. One seed proves one
+    /// facility.
+    #[test]
+    #[ignore = "diagnostic"]
+    fn survey_spectator_routes_across_seeds() {
+        let mut stalls = Vec::new();
+        for seed in 0..24u64 {
+            let base = MATCH_SEED.wrapping_add(seed.wrapping_mul(1_000_003));
+            let mut game = solvable_showcase_with_players(base, 1);
+            let mut finished = false;
+            for _ in 0..36_000 {
+                step_all_bots(&mut game);
+                if game.status == HexMatchStatus::Finished {
+                    finished = true;
+                    break;
+                }
+            }
+            if !finished {
+                let player = game.players.values().next().expect("runner").clone();
+                let tiles = game
+                    .geometry
+                    .pieces
+                    .iter()
+                    .filter(|piece| piece.source_cell == player.cell)
+                    .filter_map(|piece| piece.tile.as_ref())
+                    .collect::<std::collections::BTreeSet<_>>();
+                stalls.push(format!(
+                    "  seed {base}: stuck in {:?} at {:?}, tiles={:?}",
+                    game.facility.placements.get(&player.cell),
+                    player.position,
+                    tiles
+                ));
+            }
+        }
+        println!("{} of 24 seeds stall:", stalls.len());
+        for line in &stalls {
+            println!("{line}");
+        }
+    }
+
+    /// Follow one stalling bot for a whole match.
+    ///
+    /// Sampling a single tick is how the first version of this misread the
+    /// bot as frozen when it was walking at full speed - 0.026 m a tick is
+    /// 1.56 m/s. What matters is whether it makes *progress*, not whether it
+    /// moves.
+    #[test]
+    #[ignore = "diagnostic"]
+    fn trace_the_stalling_spectator() {
+        let mut game = solvable_showcase_with_players(10_000_031, 1);
+        let mut visits: std::collections::BTreeMap<observed_hex::HexCoord, u32> =
+            std::collections::BTreeMap::new();
+        let mut highest = f32::MIN;
+        let mut previous_cell = observed_hex::HexCoord {
+            q: 0,
+            r: 0,
+            level: 0,
+        };
+        let mut transitions = 0;
+        for tick in 0..36_000 {
+            step_all_bots(&mut game);
+            if game.status == HexMatchStatus::Finished {
+                println!("finished at tick {tick}");
+                return;
+            }
+            let player = game.players.values().next().expect("runner");
+            *visits.entry(player.cell).or_default() += 1;
+            highest = highest.max(player.position.y);
+            if player.cell != previous_cell && tick > 2_000 && transitions < 14 {
+                transitions += 1;
+                println!(
+                    "tick {tick}: {previous_cell:?} -> {:?} at feet {:.2}",
+                    player.cell,
+                    player.position.y - 0.9
+                );
+            }
+            previous_cell = player.cell;
+        }
+        let player = game.players.values().next().expect("runner");
+        println!(
+            "never finished. highest={highest:.2}, final={:?}",
+            player.cell
+        );
+        println!("cells visited, by ticks spent:");
+        let mut ranked: Vec<_> = visits.into_iter().collect();
+        ranked.sort_by_key(|&(_, count)| std::cmp::Reverse(count));
+        for (cell, count) in ranked.iter().take(8) {
+            println!(
+                "  {cell:?}: {count} ticks, {:?}",
+                game.facility.placements.get(cell).map(|p| p.archetype)
+            );
+        }
+    }
+
     /// Gate 2 (headless): same seed + inputs must produce a byte-identical
     /// per-tick digest sequence.
     #[test]

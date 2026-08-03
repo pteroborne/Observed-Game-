@@ -2,27 +2,38 @@
 //!
 //! `hall_ramp` variant 0 drives a single solid mass straight across the hex,
 //! climbing 8 m in 14 m at slope 0.57 - near the 0.65 the validator rejects at.
-//! Going round the wall instead buys run: three faces is 0.33, four is 0.25.
-//! Gentler climbs are more walkable, and a body sees the room turn around it
-//! rather than a ramp filling it.
+//! Going round the wall instead buys run: two faces is 0.50, and a body sees the
+//! room turn around it rather than a ramp filling it.
 //!
-//! **A family, not a tile.** Every variant here shares hall_ramp variant 0's
-//! signature - a west door plus an `up` `ramp_open` port - so the solver picks
-//! freely between them for the same demand. That is the variety: one demand,
-//! several shapes.
+//! **A family, not a tile.** This shares the straight ramp's signature - one
+//! lateral door plus an `up` `ramp_open` port - so the solver picks freely
+//! between them for the same demand. Sixfold rotation covers all six exit
+//! directions from one source; compiled variants land at 6..11, clear of the
+//! generated family's 0..5.
 //!
-//! The 180-degree member was worked out as a `.recipe.ron` first, which is what
-//! recipes are for. It moved here the moment it became a family: a recipe is one
-//! static description, and three extents built from one would be three copies of
-//! the same arithmetic - the exact thing the tileforge port existed to end.
+//! ## What a `hall_ramp` owes the cell above it
 //!
-//! ## Why the sweep starts at corner 4
+//! The prefab spans two levels and **`ramp_head` is geometry-free**: the upper
+//! cell is a real cell the facility routes through, and every scrap of floor and
+//! wall it has comes from here. Two things follow, both of which this module
+//! shipped without, and together they trapped any bot routed over a perimeter
+//! ramp:
 //!
-//! The ramp occupies the faces it sweeps, so a door on a swept face opens into
-//! solid mass. Starting at corner 4 means faces 4, 5, 0, 1, 2 are consumed in
-//! that order and **face 3 - west - is the last to go**, so every extent from
-//! two faces to four leaves the entry clear. Starting at corner 0 would have
-//! capped the family at three faces.
+//! - **A deck across the upper level.** A landing wedge is enough to reach the
+//!   `up` port at the centre and nothing else. A body that stepped off it walked
+//!   into open air and fell 8 m back onto the spiral, then climbed again - 30,731
+//!   ticks of one match spent going round. The stall was a loop, not a snag.
+//! - **A door out of the upper level**, on the face opposite the entry, exactly
+//!   as `ramp_map` emits. Without it the head cell is sealed and a body that
+//!   reaches the top has nowhere to go.
+//!
+//! ## Why there is only one extent
+//!
+//! Entry and exit are opposite faces, so the climb has to fit between them: the
+//! two free runs are two faces each. 180 and 240 degree members existed here
+//! and could not have worked - they swept the face the upper door needs. The
+//! gentler slope was never available; it only looked available because nothing
+//! checked that a body could leave.
 
 use super::GENERATED_NOTE;
 use super::entities::{
@@ -32,12 +43,15 @@ use super::geometry::{
     DOOR_TOP, FLOOR_TOP, LEVEL, P2, P3, corners, door_wall, hex_slab, prism, sloped_prism, wall,
 };
 
-/// Where the sweep begins. See the module docs: this is what keeps the west
-/// door clear at every extent.
+/// Where the sweep begins: the run between the two doors.
 const SWEEP_START: usize = 4;
 
-/// The entry face. Also hall_ramp variant 0's, so the signatures match.
+/// The entry face, at level 0. Also the straight ramp's, so the signatures match.
 const ENTRY_FACE: usize = 3;
+
+/// The exit face, at level 1. Opposite the entry, as `ramp_map` has it - the
+/// head cell has no geometry of its own, so this is its only way out.
+const EXIT_FACE: usize = (ENTRY_FACE + 3) % 6;
 
 /// Inner ring as a fraction of the outer hexagon.
 ///
@@ -56,31 +70,22 @@ const DECK_ABOVE: f64 = LEVEL + FLOOR_TOP;
 pub struct Extent {
     /// How many 60-degree faces the climb sweeps.
     pub faces: usize,
-    /// Its slot in `hall_ramp`'s variant space. 0 is the straight ramp.
+    /// Its authored variant slot. Sixfold rotation compiles this to
+    /// `6n..6n+5`, so 1 lands at 6..11 - clear of the generated 0..5.
     pub variant: i32,
 }
 
-/// Every extent, gentlest last.
+/// The family. One member: see the module docs on why there is only one.
 ///
-/// Two faces is 120 degrees at slope 0.50, three is 180 at 0.33, four is 240 at
-/// 0.25. One face would be 0.99 - steeper than the validator's 0.65 and far
-/// past the controller's 36-degree slide - and five would consume the entry.
+/// Two faces is 120 degrees at slope 0.50 - gentler than the straight ramp's
+/// 0.57 and well under the controller's 36-degree slide. One face would be
+/// 0.99, and anything wider sweeps a face a door needs.
 #[must_use]
-pub fn extents() -> [Extent; 3] {
-    [
-        Extent {
-            faces: 2,
-            variant: 1,
-        },
-        Extent {
-            faces: 3,
-            variant: 2,
-        },
-        Extent {
-            faces: 4,
-            variant: 3,
-        },
-    ]
+pub fn extents() -> [Extent; 1] {
+    [Extent {
+        faces: 2,
+        variant: 1,
+    }]
 }
 
 impl Extent {
@@ -165,6 +170,46 @@ pub(super) fn landing(extent: Extent) -> String {
     prism(&plan, LEVEL, DECK_ABOVE, None, 2.0, 0.0)
 }
 
+/// The floor of the upper level: everything the climb does not sweep.
+///
+/// A `hall_ramp` prefab spans two levels, and the upper one is a real cell the
+/// facility routes *through* — a body arrives at the top and then walks on to a
+/// lateral neighbour. The wedge `landing` provides is enough to reach the `up`
+/// port at the centre and nothing else, so a body that stepped off it toward
+/// any other face walked into open air and fell 8 m back onto the spiral. It
+/// then climbed again, and again: 30,731 ticks of one match spent going round,
+/// which is what "the spectator stalled" turned out to mean. Not stuck —
+/// looping.
+///
+/// The swept band is deliberately left open, because that is the stairwell: a
+/// deck over it would be a lid on the climb, which is the same fault the
+/// generated capped towers shipped with.
+///
+/// Emitted as the inner hexagon plus one quad per unswept face rather than as
+/// one polygon, because a hexagon with a bite out of its rim is not convex and
+/// a brush must be.
+#[must_use]
+pub(super) fn upper_deck(extent: Extent) -> String {
+    let mut out = prism(
+        &(0..6).map(|c| extent.inner(c)).collect::<Vec<P2>>(),
+        LEVEL,
+        DECK_ABOVE,
+        None,
+        2.0,
+        0.0,
+    );
+    for step in extent.faces..6 {
+        let plan = vec![
+            extent.outer(step),
+            extent.outer(step + 1),
+            extent.inner(step + 1),
+            extent.inner(step),
+        ];
+        out.push_str(&prism(&plan, LEVEL, DECK_ABOVE, None, 2.0, 0.0));
+    }
+    out
+}
+
 /// The climbable line, down the middle of the band.
 ///
 /// Geometry does not tell a follower where a climb goes, and this one goes round
@@ -209,13 +254,24 @@ pub fn perimeter_ramp(extent: Extent) -> String {
         extent.faces * 60
     ));
     brushes.push_str(&flight(extent));
-    brushes.push_str("// Landing at the head of the climb\n");
-    brushes.push_str(&landing(extent));
+    brushes.push_str("// Upper deck: the floor of the level above, stairwell left open\n");
+    brushes.push_str(&upper_deck(extent));
 
     brushes.push_str("// Envelope: two levels, so the walls run the full height\n");
     for face in 0..6 {
         if face == ENTRY_FACE {
             brushes.push_str(&door_wall(face, 0.0, top, FLOOR_TOP, DOOR_TOP, 10.0, 8.0));
+        } else if face == EXIT_FACE {
+            // The way out of the head cell, which has no geometry of its own.
+            brushes.push_str(&door_wall(
+                face,
+                0.0,
+                top,
+                FLOOR_TOP + LEVEL,
+                DOOR_TOP + LEVEL,
+                10.0,
+                8.0,
+            ));
         } else {
             brushes.push_str(&wall(face, 0.0, top));
         }
@@ -275,6 +331,57 @@ pub fn builders() -> Vec<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `hall_ramp` owes its head cell a floor and a way out, because
+    /// `ramp_head` has no geometry of its own.
+    ///
+    /// Without the deck a body steps off the landing into open air and falls
+    /// back onto the spiral; without the upper door it reaches the top of a
+    /// sealed room. Both shipped, and together they turned every facility that
+    /// placed a perimeter ramp on a route into an unfinishable match.
+    #[test]
+    fn the_head_cell_gets_a_floor_and_a_way_out() {
+        for extent in extents() {
+            let text = perimeter_ramp(extent);
+            let deck = upper_deck(extent);
+            assert!(
+                text.contains(&deck) && !deck.is_empty(),
+                "{} ships no upper deck",
+                extent.stem()
+            );
+            // The deck must reach every face the climb does not sweep, or the
+            // parts of the upper level it does not cover are a fall.
+            let brushes = deck.matches("( ").count();
+            assert!(
+                brushes > 0 && deck.len() > landing(extent).len(),
+                "{} upper deck is no larger than the old landing wedge",
+                extent.stem()
+            );
+            // And the door out, on the face opposite the entry.
+            let swept: Vec<usize> = (0..extent.faces).map(|s| (SWEEP_START + s) % 6).collect();
+            assert!(
+                !swept.contains(&EXIT_FACE),
+                "{} sweeps {swept:?}, burying the upper door on face {EXIT_FACE}",
+                extent.stem()
+            );
+        }
+    }
+
+    /// The climb must leave both doors clear. The entry is at level 0 and the
+    /// exit at level 1, but a swept face is solid at every height.
+    #[test]
+    fn neither_door_opens_into_the_climb() {
+        for extent in extents() {
+            let swept: Vec<usize> = (0..extent.faces).map(|s| (SWEEP_START + s) % 6).collect();
+            for door in [ENTRY_FACE, EXIT_FACE] {
+                assert!(
+                    !swept.contains(&door),
+                    "{} sweeps {swept:?}, which buries the door on face {door}",
+                    extent.stem()
+                );
+            }
+        }
+    }
 
     /// Every extent must climb exactly one level and land on the deck above.
     /// Short is a gap, proud is a lip the autostep cannot get back over.
