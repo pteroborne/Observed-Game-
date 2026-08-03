@@ -306,7 +306,28 @@ impl HexWfcMatch {
         let up = next.level > cell.level;
         let placement = &self.facility.placements[&cell];
         let class = if up { placement.up } else { placement.down };
-        if class == PortClass::ShaftOpen {
+        // A spine describes a climb; where one exists it is authoritative,
+        // whatever the port class.
+        //
+        // This used to key on `ShaftOpen` alone, so only towers were followed
+        // and every `RampOpen` cell went to `ramp_walk_dir` instead. That
+        // function assumes the shape of `hall_ramp` variant 0 - one straight
+        // mass rising from the open door to the face opposite - and simply
+        // steers at that face. The authored perimeter ramps share variant 0's
+        // *signature* and not its shape: they climb around the wall and leave
+        // the middle open. A body spawned on one was aimed at the far wall and
+        // held there for all 36,000 steps of a match, never moving.
+        //
+        // Sharing a signature is what lets the solver treat two tiles as
+        // alternatives. It is not a promise that they are the same shape, and
+        // anything that reads geometry from an archetype rather than from the
+        // tile will break the moment a second shape appears.
+        let has_spine = self
+            .geometry
+            .climbs
+            .get(&cell)
+            .is_some_and(|spine| !spine.is_empty());
+        if class == PortClass::ShaftOpen || has_spine {
             let feet = position.y - self.traversal_config.half_height;
             let floor = hex_origin(cell)[1] + FLOOR_SLAB_TOP;
             let base = if up && feet < floor - 0.15 && cell.level > 0 {
@@ -382,10 +403,7 @@ impl HexWfcMatch {
         yaw: f32,
         position: Vec3,
     ) -> Option<PlayerIntent> {
-        let placement = self.facility.placements.get(&cell)?;
-        if placement.archetype != HexArchetype::Shaft {
-            return None;
-        }
+        self.facility.placements.get(&cell)?;
         let feet = position.y - self.traversal_config.half_height;
         let origin = Vec3::from_array(hex_origin(cell));
         let floor = origin.y + FLOOR_SLAB_TOP;
@@ -394,6 +412,26 @@ impl HexWfcMatch {
             level: cell.level - 1,
             ..cell
         });
+        // Any cell with a climb, not only a `Shaft`.
+        //
+        // This used to test the archetype, which meant a body part-way up a
+        // *ramp* was never recognised as still climbing: height rounding moved
+        // its logical cell to the level above, this returned `None`, and the
+        // lateral steering for the next cell took over while its feet were
+        // still more than a metre below the deck. It walked into the wall and
+        // stayed there. Towers were fine because they are `Shaft`.
+        //
+        // A climb is a climb. What decides this is whether there is a spine to
+        // still be on, which is the same thing `climb_command` needs anyway.
+        let climbing = |at: HexCoord| {
+            self.geometry
+                .climbs
+                .get(&at)
+                .is_some_and(|spine| !spine.is_empty())
+        };
+        if !climbing(cell) && !below.is_some_and(climbing) {
+            return None;
+        }
         // Below this cell's deck means still climbing out of the one underneath.
         //
         // There used to be a second clause here — a box measured off the

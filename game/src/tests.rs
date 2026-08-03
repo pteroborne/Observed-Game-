@@ -5026,21 +5026,30 @@ mod hex_wfc_gates {
                 return;
             }
         }
-        panic!(
-            "solo spectator stalled on a logical route; player={:?}; route={:?}; \
-             first_step={:?}; first_step_tiles={:?}",
-            game.players.values().next().expect("runner"),
-            game.facility.route_between_cells(
-                game.players.values().next().expect("runner").cell,
-                game.facility.config.exit()
-            ),
-            game.facility.placements[&first_step],
+        // Report the cell the bot is *actually* stuck in, not a fixed cell from
+        // the route. This used to print `first_step` - `spawn_route.cells[1]` -
+        // whatever happened, which names the same tile every time and has
+        // nothing to do with where the walk failed. Two separate investigations
+        // chased that tile before noticing it was constant.
+        let player = game.players.values().next().expect("runner").clone();
+        let tiles_at = |cell| {
             game.geometry
                 .pieces
                 .iter()
-                .filter(|piece| piece.source_cell == first_step)
+                .filter(|piece| piece.source_cell == cell)
                 .filter_map(|piece| piece.tile.as_ref())
-                .collect::<Vec<_>>()
+                .collect::<std::collections::BTreeSet<_>>()
+        };
+        panic!(
+            "solo spectator stalled on a logical route; player={player:?}; \
+             route={:?}; stalled_in={:?}; stalled_in_tiles={:?}; \
+             first_step={:?}; first_step_tiles={:?}",
+            game.facility
+                .route_between_cells(player.cell, game.facility.config.exit()),
+            game.facility.placements.get(&player.cell),
+            tiles_at(player.cell),
+            game.facility.placements[&first_step],
+            tiles_at(first_step),
         );
     }
 
