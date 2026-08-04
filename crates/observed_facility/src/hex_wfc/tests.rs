@@ -674,3 +674,62 @@ fn stamped_rooms_land_in_the_districts_their_role_belongs_to() {
     // backlog #16. It should be rare, not impossible.
     assert!(forks > 0, "DecoherenceFork still never reaches a facility");
 }
+
+/// Does a shaft column place a tower at every level, or every other one?
+///
+/// This decides what `levels: 2` means on a stair tower, and with it where its
+/// `up` port belongs. Counting the solver's own placements rather than checking
+/// an assumption: if consecutive levels in one column are both `Shaft`, then
+/// every cell gets its own tower and each tower climbs exactly one level, so
+/// `levels: 2` is a reservation for the flight to poke into the cell above.
+#[test]
+#[ignore = "diagnostic"]
+fn survey_how_shaft_columns_stack() {
+    use std::collections::BTreeMap;
+
+    let config = HexWfcConfig::arc_default();
+    let world = HexWfcWorld::generate(0x5EED_C0DE, config).expect("must solve");
+
+    // Group shaft cells by plan column.
+    let mut columns: BTreeMap<(u16, u16), Vec<u8>> = BTreeMap::new();
+    for (coord, placement) in &world.placements {
+        if placement.archetype == HexArchetype::Shaft {
+            columns
+                .entry((coord.q, coord.r))
+                .or_default()
+                .push(coord.level);
+        }
+    }
+
+    let mut adjacent = 0;
+    let mut gapped = 0;
+    let mut tallest = 0;
+    for levels in columns.values() {
+        let mut levels = levels.clone();
+        levels.sort_unstable();
+        tallest = tallest.max(levels.len());
+        for pair in levels.windows(2) {
+            if pair[1] - pair[0] == 1 {
+                adjacent += 1;
+            } else {
+                gapped += 1;
+            }
+        }
+    }
+    println!(
+        "shaft columns={} tallest={tallest} adjacent_pairs={adjacent} gapped_pairs={gapped}",
+        columns.len()
+    );
+
+    // And what the ports say: a Through shaft claims open above and below.
+    let mut through = 0;
+    for placement in world.placements.values() {
+        if placement.archetype == HexArchetype::Shaft
+            && placement.up == PortClass::ShaftOpen
+            && placement.down == PortClass::ShaftOpen
+        {
+            through += 1;
+        }
+    }
+    println!("through shafts (open above and below)={through}");
+}

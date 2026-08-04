@@ -347,12 +347,25 @@ fn validate_ports(module: &AuthoredModule) -> Result<(), SourceError> {
                 face: port.face,
             });
         }
-        let prefab_ramp_handoff = module.kind == ModuleKind::Cell
+        // A two-level prefab hands off upward through what is, on its own
+        // footprint, an internal face. That is not a mistake: the cell occupies
+        // one level of the lattice and reserves the one above so its climb can
+        // land flush on the deck there, half a metre past its own top.
+        //
+        // This exemption used to name `RampOpen` alone, because the ramp prefab
+        // was the only two-level tile when it was written. A stair tower is the
+        // other one and is in precisely the same position - a shaft column
+        // places a tower at every level, so each climbs exactly one - but its
+        // handoff is `ShaftOpen` and was rejected. The generated towers declare
+        // the same port and pass only because `authoring_version 1` skips these
+        // checks, which is the same exemption that let their capped variants
+        // ship a staircase into a ceiling.
+        let prefab_vertical_handoff = module.kind == ModuleKind::Cell
             && port.face == HexFace::Up
-            && port.class == PortClass::RampOpen;
+            && matches!(port.class, PortClass::RampOpen | PortClass::ShaftOpen);
         if module.authoring_version >= 2
             && cells.contains(&neighbor(port.cell, port.face))
-            && !prefab_ramp_handoff
+            && !prefab_vertical_handoff
         {
             return Err(SourceError::PortOnInternalFace {
                 cell: port.cell,

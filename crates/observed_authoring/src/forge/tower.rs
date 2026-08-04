@@ -186,14 +186,22 @@ pub fn stair_tower(vertical: Vertical) -> String {
     );
     // "open": the walk surface is a helix round the rim, not a floor over the
     // centre, and the centre is a shaft. The same declaration silo_ring makes.
+    // The footprint occupies **one** level; `Meta`'s `levels: 2` reserves the
+    // space above it for the flight to poke into.
+    //
+    // These are different claims and conflating them is what put the `up` port
+    // in the wrong place. A footprint spanning two levels makes the cell's
+    // level-0 Up face *internal* - it faces the tile's own upper half - so the
+    // strict checks reject a port there and it was moved to level 1, at 16 m,
+    // which the climb never reaches. But a shaft column places a tower at every
+    // level (543 adjacent placements against 23 gapped, in a 10-level column),
+    // so each tower climbs exactly one level and connects at 8 m.
     out.push_str(&tile_cell(0, 0, 0, 2, "open"));
     if vertical.open_above() {
-        // Level 1, not 0. The cell spans two levels, so its level-0 Up face is
-        // *internal* - it faces the tile's own upper half - and a port there is
-        // PortOnInternalFace. The generated towers declare level 0 and get away
-        // with it only because they are authoring_version 1, which skips the
-        // strict port checks entirely.
-        out.push_str(&vertical_port("up", "shaft_open", "up_shaft", 1));
+        // Level 0: the top of the single level this cell occupies, 8 m, which
+        // is where the climb tops out and where the tower above begins. The
+        // generated towers connect here too.
+        out.push_str(&vertical_port("up", "shaft_open", "up_shaft", 0));
     }
     if vertical.open_below() {
         out.push_str(&vertical_port("down", "shaft_open", "down_shaft", 0));
@@ -325,6 +333,52 @@ mod tests {
             "an unplayed shape should not dominate the bucket"
         );
         assert!(stair_tower(Vertical::Through).contains(&format!("\"weight\" \"{WEIGHT}\"")));
+    }
+
+    /// A climb must reach the port it advertises.
+    ///
+    /// This is the test whose absence let the tower ship with its `up` port at
+    /// 16 m and its climb topping out at 8.5 m. Everything else was green: it
+    /// validated, the production controller walked its spine, the whole gate
+    /// passed. Nothing asked whether the two ends met, so a body would have
+    /// climbed to the top and found the connection seven metres overhead.
+    #[test]
+    fn the_climb_reaches_the_port_it_advertises() {
+        for vertical in verticals() {
+            let text = stair_tower(vertical);
+            if !vertical.open_above() {
+                continue;
+            }
+            let module = crate::parse_authored_module(&text)
+                .unwrap_or_else(|error| panic!("{}: {error:?}", vertical.stem()));
+            let top = module
+                .prototype
+                .spine
+                .nodes
+                .last()
+                .copied()
+                .expect("a tower ships a spine");
+            let port = module
+                .ports
+                .iter()
+                .find(|port| port.face == observed_hex::HexFace::Up)
+                .expect("an open-above tower declares an up port");
+            let origin = port.origin.expect("a vertical port carries an origin");
+            let port_y = origin[2] / 16.0;
+            // The port marks the lattice boundary; the climb lands on the
+            // *deck* above it, one floor slab higher. That is the flush
+            // contract - short of it is a gap, proud of it is a lip the
+            // autostep cannot get back over - so the two are a slab apart by
+            // design, and any other gap is the bug this test exists for.
+            let deck = port_y + f64::from(observed_hex::FLOOR_SLAB_TOP);
+            let step = f64::from(observed_traversal::FpsConfig::default().step_height);
+            assert!(
+                (f64::from(top.y) - deck).abs() <= step,
+                "{}: climb tops at {:.2} m but its up port puts the deck above at {deck:.2} m",
+                vertical.stem(),
+                top.y
+            );
+        }
     }
 
     /// Every tower must survive the importer it is written for.

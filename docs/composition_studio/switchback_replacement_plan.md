@@ -139,44 +139,39 @@ Only after the replacement passes §2, and in this order:
 
 ---
 
-## 5b. Open question that blocks slice B: where the `up` port sits
+## 5b. Settled: `levels: 2` is a reservation, and the exemption was too narrow
 
-Found while starting slice B, and it means **slice A has a latent defect**.
+**Reading 1 confirmed by counting the solver's own output.** In a production
+solve: 257 shaft columns, the tallest 10 levels, **543 adjacent placements
+against 23 gapped**. A shaft column places a tower at *every* level, so each
+tower climbs exactly one, and `levels: 2` is a reservation letting the flight
+poke half a metre into the cell above to land flush.
 
-A tower declares `levels: 2`. The generated one emits `tile_port("up",
-"shaft_open")` with no level at all - level 0, so the connection sits at the
-one-level boundary, 8 m - and its climb tops out at 8.5 m. Those meet.
+So the `up` port belongs at the one-level boundary, 8 m - where the generated
+tower puts it - and the authored tower's level-1 port at 16 m was wrong.
 
-The authored tower puts the `up` port at **level 1**, so its origin is 16 m,
-while its climb still tops out at 8.5 m. **They do not meet.** It was moved
-there because `authoring_version 2` rejects an up port on a two-level cell's
-level-0 Up face as `PortOnInternalFace`; the generated tower gets away with
-level 0 only because version 1 skips the strict port checks.
+Moving it back exposed the real fault, which was not in the tower at all:
 
-Nothing currently catches this. The tower validates, the controller walks its
-spine, and the full gate is green - because no test asks whether the climb
-actually reaches the port it advertises.
+```rust
+let prefab_ramp_handoff = module.kind == ModuleKind::Cell
+    && port.face == HexFace::Up
+    && port.class == PortClass::RampOpen;      // <- RampOpen alone
+```
 
-Three readings, and they lead to different geometry:
+A two-level prefab handing off upward does so through what is, on its own
+footprint, an internal face. `source.rs` exempts that - but only for
+`RampOpen`, because the ramp prefab was the only two-level tile when the
+exemption was written. **A stair tower is the other one**, in precisely the same
+position, and its `ShaftOpen` handoff was rejected. The generated towers declare
+the same port and pass only because `authoring_version 1` skips these checks -
+the same exemption that let their capped variants ship a staircase into a
+ceiling. The rule now covers both classes.
 
-1. **`levels: 2` is a reservation.** The tile occupies one lattice level and
-   claims a second so the flight may poke 0.5 m into it - which is what the
-   switchback's comment says: *"the upper flight intersects the first metre of
-   the cell above"*. Then the port belongs at 8 m and the strict check is the
-   thing that is wrong for this shape.
-2. **`levels: 2` means two storeys.** Then the climb must actually reach 16 m,
-   which needs a two-turn helix - eight faces rather than four. The slope stays
-   0.43 because the run doubles with the rise, so this is buildable.
-3. **The port origin is only an adjacency marker** and its height is not read
-   physically. Then nothing is broken and the port height is cosmetic.
-
-Reading 3 is the one to test first, because it is cheapest to falsify:
-`expected_port_origin` validates origins, which suggests they are meaningful.
-
-**Do not build slice B until this is settled.** Guessing here is how the last
-attempt spent itself: it passed every test it had and failed 23 of 24 seeds.
-The check that would settle it is a bot climbing a two-cell shaft column in the
-iso spectator view, watching whether it makes the transition between towers.
+The gap that let this ship is closed by `the_climb_reaches_the_port_it_
+advertises`. Writing it first was worth it twice over: it failed on the real
+bug, and then failed again on my own wrong expectation - I asserted the climb
+should meet the port, when the contract is that it lands one floor slab *above*
+it, on the deck. The port marks the boundary; the deck is where a body stands.
 
 ## 6. Slices
 
