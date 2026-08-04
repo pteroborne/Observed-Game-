@@ -381,6 +381,47 @@ mod tests {
         }
     }
 
+    /// A capped tower's lid must clear its climb by a body's height.
+    ///
+    /// This is the generated family's fault, stated as a test. Its shaft heads
+    /// capped at `h - FLOOR_TOP` (7.5 m) while the flight kept climbing to 8.5,
+    /// straight through the lid: 1.70 m of clearance for a 1.8 m body, on all
+    /// 242 capped towers in the library. Nothing caught it, because the
+    /// importer does not measure headroom over a flight and those tiles are
+    /// authoring version 1.
+    ///
+    /// Here the cap sits at the top of the reserved two-level envelope and the
+    /// climb ends one level below it, so the margin is large - but "large by
+    /// accident" is what the generated family had until someone moved a
+    /// constant.
+    #[test]
+    fn a_capped_tower_clears_its_climb_by_a_body() {
+        let body = f64::from(observed_traversal::FpsConfig::default().half_height) * 2.0;
+        for vertical in verticals() {
+            if vertical.open_above() {
+                continue;
+            }
+            let module = crate::parse_authored_module(&stair_tower(vertical))
+                .unwrap_or_else(|error| panic!("{}: {error:?}", vertical.stem()));
+            let top = module
+                .prototype
+                .spine
+                .nodes
+                .last()
+                .copied()
+                .expect("a tower ships a spine");
+            // The lid's underside, in metres: the envelope's top less the slab.
+            let lid = (2.0 * LEVEL - FLOOR_TOP) / 16.0;
+            assert!(
+                lid - f64::from(top.y) >= body,
+                "{}: climb ends at {:.2} m under a lid at {lid:.2} m, leaving {:.2} m for a                  {body:.2} m body",
+                vertical.stem(),
+                top.y,
+                lid - f64::from(top.y)
+            );
+        }
+    }
+
     /// Every tower must survive the importer it is written for.
     #[test]
     fn every_tower_parses_and_validates() {
