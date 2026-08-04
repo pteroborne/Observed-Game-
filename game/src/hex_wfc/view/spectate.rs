@@ -448,11 +448,18 @@ pub(in crate::hex_wfc) fn framing_around(
     // stand right outside the whole building and still frame a few tiles.
     let tight = observed_style::iso::frame(body - reach, body + reach, detent, width, height);
     let reach_all = (facility_max - facility_min).length().max(1.0);
+    // Aim a little above the body, not at its feet.
+    //
+    // Residency reaches upward as well as outward - the body's own level and
+    // the ones above it - so the geometry around a body standing on a floor
+    // sits mostly *above* that floor. Aiming at the feet puts all of it in the
+    // top half of the frame. Half a cell up is where the mass actually is.
+    let aim = body + Vec3::Y * TILE_SPAN * 0.5;
     Some(observed_style::iso::IsoFraming {
-        // Centred on the body itself, not on a box clamped to the facility -
-        // clamping kept the box the same size but slid its centre to the edge,
-        // which is why the body sat off in a corner of the frame.
-        translation: body + tight.rotation * Vec3::Z * reach_all,
+        // Centred on the body, not on a box clamped to the facility - clamping
+        // kept the box the same size but slid its centre to the edge, which is
+        // why the body sat off in a corner of the frame.
+        translation: aim + tight.rotation * Vec3::Z * reach_all,
         rotation: tight.rotation,
         units_per_pixel: tight.units_per_pixel,
         far: reach_all * 2.0,
