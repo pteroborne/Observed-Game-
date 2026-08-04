@@ -15,6 +15,24 @@ applies the cutaway to them. The overview draws massing prisms and never calls
 `survives`. That is the whole of why the studio reads as a building and this
 reads as a field of blocks - same camera, different renderer.
 
+## Known artifact: fixtures left hanging by the cutaway
+
+Thin stubs float above the plan. They are not from the storey above - the level
+filter assigns each hull to one storey by its midpoint, and they survive that -
+they are fixtures on *this* storey whose ceilings the cutaway removed, leaving
+them attached to nothing.
+
+That is inherent to a cutaway rather than a bug in the filter: `survives` drops
+a hull whose lowest point clears head height, so a lintel or a light housing
+hung just under a ceiling goes with it, while one hung a little lower stays and
+is left in mid-air. The studio has the same rule and would show the same thing
+given the same fixtures.
+
+Two directions if it becomes worth fixing: cull anything whose *support* was
+culled (needs a parent relationship the pieces do not currently carry), or
+lower `HEAD_CLEARANCE` for the game's fixtures specifically. Neither is
+obviously right, and the plan reads well enough with them.
+
 ## Solved: position and scale must frame the same box
 
 The overview came out a thumbnail of geometry in an empty frame, and the cause

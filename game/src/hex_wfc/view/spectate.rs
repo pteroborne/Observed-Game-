@@ -137,6 +137,9 @@ pub(in crate::hex_wfc) struct Cutaway {
     pub(in crate::hex_wfc) local: Vec3,
     pub(in crate::hex_wfc) min_y: f32,
     pub(in crate::hex_wfc) max_y: f32,
+    /// Its cell's floor height, so the cell-local range above can be put back
+    /// into world space for the level test.
+    pub(in crate::hex_wfc) origin_y: f32,
 }
 
 /// The overview's own key light.
@@ -302,16 +305,38 @@ pub(in crate::hex_wfc) fn sync_key_light(
 /// Everything is restored when the overview goes down: these are the same
 /// entities the first-person view walks through.
 pub(in crate::hex_wfc) fn sync_cutaway(
+    runtime: Res<HexWfcRuntime>,
     overview: Res<SpectatorOverview>,
     mut hulls: Query<(&Cutaway, &mut Visibility)>,
 ) {
     let bearing = overview
         .active
         .then(|| observed_style::iso::detent_bearing(overview.detent));
+    // The storey the followed body is standing on, as a world height band.
+    //
+    // A hull belongs to the storey its *middle* is in, not to every storey it
+    // touches.
+    //
+    // Filtering by height rather than by `source_cell.level` is what keeps a
+    // two-level tile honest: a ramp belongs to the level its base cell names,
+    // but half of it stands in the level above, and a body up there needs to
+    // see the half it is standing on. Mere overlap was too generous though -
+    // a wall on the floor above that dips a few centimetres into this one was
+    // kept whole, which left thin stubs hanging in the air over the plan. The
+    // midpoint puts each hull in exactly one storey.
+    let band = overview.active.then(|| {
+        let floor = f32::from(runtime.local().cell.level) * observed_hex::TILE_LEVEL_HEIGHT;
+        (floor, floor + observed_hex::TILE_LEVEL_HEIGHT)
+    });
     for (hull, mut visibility) in &mut hulls {
-        let cut = bearing.is_some_and(|bearing| {
-            !observed_style::iso::survives(hull.min_y, hull.max_y, hull.local, bearing, true)
+        let off_level = band.is_some_and(|(low, high)| {
+            let middle = (hull.min_y + hull.max_y) * 0.5 + hull.origin_y;
+            middle < low || middle >= high
         });
+        let cut = off_level
+            || bearing.is_some_and(|bearing| {
+                !observed_style::iso::survives(hull.min_y, hull.max_y, hull.local, bearing, true)
+            });
         let wanted = if cut {
             Visibility::Hidden
         } else {
