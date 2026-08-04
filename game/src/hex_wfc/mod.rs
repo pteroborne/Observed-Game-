@@ -100,6 +100,7 @@ impl Plugin for HexWfcPlugin {
                     view::spectate::hotkeys,
                     view::spectate::sync_detail_window,
                     view::spectate::sync_cutaway,
+                    view::spectate::sync_key_light,
                     view::sync_camera,
                     view::sync_projection,
                     view::sync_lighting_and_atmosphere,

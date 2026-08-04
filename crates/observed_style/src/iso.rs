@@ -92,6 +92,31 @@ pub fn frame(min: Vec3, max: Vec3, detent: usize, width: f32, height: f32) -> Is
     }
 }
 
+/// How to light an isometric cutaway.
+///
+/// A cutaway is mostly interiors, and an interior lit the way play lights it -
+/// a tight pool over the body's own cell - is a black hole with one bright
+/// spot. These are the values the composition studio arrived at, shared for the
+/// same reason the cutaway rule is: the game's spectator overview is looking at
+/// the same building the same way, and two answers to "how bright is an
+/// interior" would make it two buildings again.
+pub mod light {
+    /// Key strength. Deliberately modest: a surface pass bright enough to drown
+    /// an overlay is worse than one that reads on its own.
+    pub const KEY_ILLUMINANCE: f32 = 2_600.0;
+
+    /// Fill, so a cut-open interior is shaded rather than a black hole. Low
+    /// enough to stay atmosphere rather than becoming signal.
+    pub const AMBIENT_BRIGHTNESS: f32 = 260.0;
+
+    /// How far the key sits off the view axis, in radians (~40 degrees).
+    ///
+    /// Head-on light flattens: a wall face and the floor it stands on return
+    /// the same value. Off-axis is what gives them different values, which is
+    /// the whole point of lighting a cutaway.
+    pub const KEY_OFFSET: f32 = 0.7;
+}
+
 /// Which floors are drawn.
 ///
 /// The cycle runs `0, 1, ... N-1, All` and wraps.

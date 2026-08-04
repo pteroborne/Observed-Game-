@@ -139,6 +139,17 @@ pub(in crate::hex_wfc) struct Cutaway {
     pub(in crate::hex_wfc) max_y: f32,
 }
 
+/// The overview's own key light.
+///
+/// Play stages a tight pool over the runner's cell, which is right for a body
+/// inside a corridor and useless from outside: the cutaway opens a dozen tiles
+/// and one of them is lit. This is the studio's answer instead - a directional
+/// key aimed off the view bearing, so a wall face and the floor it stands on
+/// return different values. Head-on light flattens exactly the thing a cutaway
+/// exists to show.
+#[derive(Component)]
+pub(in crate::hex_wfc) struct OverviewKey;
+
 /// The rhombus shell around the facility.
 ///
 /// In play it is the far wall you never reach. From outside, looking in, it is
@@ -228,6 +239,55 @@ pub(in crate::hex_wfc) fn sync_detail_window(
         if *visibility != wanted {
             *visibility = wanted;
         }
+    }
+}
+
+/// Light what the overview is looking at.
+///
+/// Spawned and despawned with the overview, and re-aimed when the detent turns,
+/// so contrast is equivalent at all six stops rather than one stop happening to
+/// look flat. Play's rig is left entirely alone: it is still there underneath,
+/// lighting the body's cell, and this is added over it.
+pub(in crate::hex_wfc) fn sync_key_light(
+    mut commands: Commands,
+    runtime: Res<HexWfcRuntime>,
+    overview: Res<SpectatorOverview>,
+    existing: Query<(Entity, &mut Transform), With<OverviewKey>>,
+) {
+    let Some(bearing) = overview
+        .active
+        .then(|| observed_style::iso::detent_bearing(overview.detent))
+    else {
+        for (entity, _) in &existing {
+            commands.entity(entity).despawn();
+        }
+        return;
+    };
+
+    // Off the view axis, and above. Aimed at the body so the lit region tracks
+    // whatever the camera is framing.
+    let offset = Quat::from_rotation_y(observed_style::iso::light::KEY_OFFSET)
+        * Vec3::new(bearing.x, 0.0, bearing.y);
+    let body = runtime.local().position;
+    let from = body + (offset + Vec3::Y * 1.15).normalize_or_zero() * 40.0;
+    let aimed = Transform::from_translation(from).looking_at(body, Vec3::Y);
+
+    let mut placed = false;
+    for (_, mut transform) in existing {
+        *transform = aimed;
+        placed = true;
+    }
+    if !placed {
+        commands.spawn((
+            DirectionalLight {
+                illuminance: observed_style::iso::light::KEY_ILLUMINANCE,
+                shadows_enabled: false,
+                ..default()
+            },
+            aimed,
+            OverviewKey,
+            DespawnOnExit(crate::GameState::HexWfc),
+        ));
     }
 }
 

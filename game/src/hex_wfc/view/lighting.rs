@@ -314,9 +314,18 @@ pub(in crate::hex_wfc) fn sync_lighting_and_atmosphere(
     let composition = composition_at(&runtime.match_state.facility, current);
     let palette = style::architecture_for_composition(architecture, composition);
     let t = (time.delta_secs() * BLEND_RATE).clamp(0.0, 1.0);
+    let overview_active = overview.as_ref().is_some_and(|overview| overview.active);
 
     ambient.color = lerp_color(ambient.color, palette.ambient_color, t);
-    ambient.brightness = lerp_f(ambient.brightness, palette.ambient_brightness, t);
+    // A cut-open interior needs fill or it is a black hole with one bright
+    // spot. Play's ambient is tuned for a body standing inside a lit pool; the
+    // overview is looking at a dozen opened tiles at once, so it takes the
+    // studio's fill - the same view of the same building, so the same answer.
+    ambient.brightness = if overview_active {
+        observed_style::iso::light::AMBIENT_BRIGHTNESS
+    } else {
+        lerp_f(ambient.brightness, palette.ambient_brightness, t)
+    };
     clear.0 = lerp_color(clear.0, palette.fog_color, t);
 
     // The overview stands hundreds of metres out; play fog is tuned for 10 to

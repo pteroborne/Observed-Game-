@@ -51,21 +51,13 @@ const WALL_FRACTION: f32 = 1.0 / 3.0;
 /// rather than by shrinking a hex away from its neighbours.
 const CELL_EXTENT: f32 = 1.0;
 
-/// How far the key light sits off the view axis, in radians (~40 degrees).
-///
-/// Head-on light flattens: a wall face and the floor it stands on return the
-/// same value. Off-axis is what gives them different values, which is the whole
-/// point of lighting a cutaway.
-pub const KEY_LIGHT_OFFSET: f32 = 0.7;
+/// Re-exported: the lighting of an isometric cutaway is shared with the
+/// game's spectator overview, which looks at the same building the same way.
+pub use observed_style::iso::light::KEY_OFFSET as KEY_LIGHT_OFFSET;
 
-/// Key light strength. Deliberately modest: the schematic's emissive lines run
-/// hot so they bloom, and a bright surface pass would drown the topology
-/// overlay that sits on top of it.
-pub const KEY_ILLUMINANCE: f32 = 2_600.0;
+pub use observed_style::iso::light::KEY_ILLUMINANCE;
 
-/// Fill, so a cut-open interior is shaded rather than a black hole. Low enough
-/// to stay atmosphere rather than becoming signal.
-pub const AMBIENT_BRIGHTNESS: f32 = 260.0;
+pub use observed_style::iso::light::AMBIENT_BRIGHTNESS;
 
 /// Component tag for the geometry pass: schematic lines and detail hulls.
 #[derive(Component)]
