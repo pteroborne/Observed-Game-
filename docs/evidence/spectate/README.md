@@ -46,28 +46,34 @@ so the camera and the zoom disagreed and the view came out a thumbnail. The
 whole-facility framing helpers are deleted - with one writer there is no third
 call site, and with no function there is nothing to call by mistake.
 
-## Partly solved: the floating stubs were partly the light fixtures
+## Solved: three spawners, and only one of them was tagged
 
-A practical spawns **two** entities: a visible diffuser mesh and the point light
-beside it. Only the light carried `HexPractical`, and the mesh carried nothing -
-no storey tag and no `Cutaway`. So diffusers drew on every storey at once
-whatever the cutaway said, and a ceiling-mounted one whose ceiling had been cut
-is a thin bright stub hanging in the air.
+The floating verticals over the floor plan were **decorative geometry the
+filters could not see**. Presentation spawns more than one entity per authored
+thing, and the storey filter and the cutaway only ever applied to entities
+carrying `Cutaway` or `HexPractical`:
 
-They are geometry, so they now get what geometry gets: the storey filter and the
-cutaway, measured as a point because a diffuser is small next to the tests being
-applied to it. That removed a good half of the stubs.
+| spawner | what it draws | was tagged |
+|---|---|---|
+| `spawn_piece` | authored hulls | yes |
+| practical | the point light | `HexPractical` only |
+| practical | the **diffuser mesh** beside it | **no** |
+| `spawn_trim` | **seam trim** - lintels, thresholds | **no** |
 
-**A cluster at the far side remains, and is not fixtures.** Earlier work
-(`5ffe59e`) established by two independent tests that those are low geometry on
-the body's own storey - narrow wall segments and jambs left standing when the
-cutaway removed what stood beside them. `survives` keeps far walls and drops
-near ones, and a jamb whose neighbours went reads as a post in mid-air.
+Both untagged spawners draw exactly where a cutaway does its work: a diffuser
+is mounted on a ceiling, a lintel sits at head height on a face. Remove the
+ceiling and the wall and they are left standing in the air. Both now take the
+storey filter and the cutaway, measured as points - each is small next to the
+tests being applied to it, and its height is what decides them.
 
-Two directions, neither obviously right: cull a hull whose neighbours in the
-same cell were culled (needs adjacency the pieces do not carry), or widen
-`INTERIOR_RADIUS` so narrow perimeter fittings count as interior and stay with
-the floor.
+**A caution about how this was nearly missed.** An earlier pass concluded, from
+`trace_cutaway` reporting `from_other_level=0` and from halving the storey band,
+that the stubs were low geometry on the body's own storey. Both tests were
+sound and both were blind: `trace_cutaway` iterates `Query<&Cutaway>`, so it
+could not see the very entities that lacked the component. An instrument built
+from the filter cannot audit what the filter never touched. The reliable check
+was enumerating the spawners - `grep Mesh3d` over the view - not measuring the
+ones already accounted for.
 
 ## Solved: position and scale must frame the same box
 
