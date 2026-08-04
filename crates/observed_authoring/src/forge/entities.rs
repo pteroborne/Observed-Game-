@@ -311,6 +311,23 @@ pub fn stair_node(index: u16, x: f64, y: f64, z: f64) -> String {
     ])
 }
 
+/// One node of the flat walkable path across a cell's floor.
+///
+/// The spine says where a climb goes; this says how a body *reaches* it. The
+/// objective bot consults the deck whenever it is off the climb, and without
+/// one it is steered straight at the spine through whatever stands between.
+///
+/// The importer rejects a path of two nodes: two points are a straight line,
+/// which is the case that needs no path at all.
+#[must_use]
+pub fn deck_node(index: u16, x: f64, y: f64, z: f64) -> String {
+    point_entity(&[
+        ("classname", String::from("tile_deck_node")),
+        ("index", index.to_string()),
+        ("origin", format!("{} {} {}", fmt(x), fmt(y), fmt(z))),
+    ])
+}
+
 /// A recessed housing physically attached to a ceiling, plus its source.
 ///
 /// Returns `(brush, light)`: the fixture is geometry and the light is an

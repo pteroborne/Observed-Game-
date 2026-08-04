@@ -33,17 +33,37 @@
 //! fallback; no column can be stranded.
 
 use super::GENERATED_NOTE;
-use super::entities::{Meta, tile_cell, vertical_port, wall_fixture, worldspawn};
-use super::geometry::{FLOOR_TOP, LEVEL, hex_slab, wall};
+use super::entities::{Meta, deck_node, tile_cell, vertical_port, wall_fixture, worldspawn};
+use super::geometry::{FLOOR_TOP, LEVEL, corners, hex_slab, wall};
 use super::liminal::hex_opening_slab;
 use super::perimeter::{Extent, flight, landing, spine};
 
-/// How far the climb sweeps. Four faces is 240 degrees at slope 0.25 - the
-/// gentlest thing in the corpus, and unmistakably not a switchback.
+/// How far the climb sweeps. Fixed, and that is the point.
 ///
-/// A tower has no door to keep clear, so unlike the perimeter ramps the extent
-/// is free: it is chosen for the walk, not forced by the envelope.
+/// A tower's climb geometry may depend on the register and on nothing else.
+/// `tile_for` pins a column's *register* but leaves the signature and the
+/// variation key per cell, so two cells in one column can differ by their
+/// doors. If the sweep were chosen from the doors their flights would not line
+/// up: a previous attempt did exactly that and stalled 23 of 24 seeds, and
+/// forcing the sweep to ignore the doors instead put doors into the mass of the
+/// flight and stalled 24 of 24.
+///
+/// Fixing the sweep is half the answer. The other half is [`OUTER_SCALE`].
 const SWEEP: usize = 4;
+
+/// How far out the climb reaches, as a fraction of the hexagon.
+///
+/// **This is what lets the sweep be fixed.** Pulled in off the wall, the climb
+/// leaves a walkable ring at the rim that every door opens onto, so a door
+/// never meets the flight and the flight never has to know where the doors are.
+/// It is the switchback's own answer: its flights sit at x -80..60, well clear
+/// of the rim, ringed by a grounded circulation deck, which is why it tolerates
+/// any door pattern with one geometry.
+///
+/// At 0.75 the ring is 1.88 m wide and the band 2.53 m, against a body 0.76 m
+/// across. The climb runs 298 units for its 128 of rise: a slope of 0.43 at 23
+/// degrees, inside the validator's 0.65 and the controller's 36.
+const OUTER_SCALE: f64 = 0.75;
 
 /// Weight against the generated switchback in the same bucket.
 ///
@@ -100,6 +120,7 @@ pub fn stair_tower(vertical: Vertical) -> String {
     let extent = Extent {
         faces: SWEEP,
         variant: 0,
+        outer_scale: OUTER_SCALE,
     };
     let top = 2.0 * LEVEL;
 
@@ -178,7 +199,42 @@ pub fn stair_tower(vertical: Vertical) -> String {
         out.push_str(&vertical_port("down", "shaft_open", "down_shaft", 0));
     }
     out.push_str(&spine(extent));
+    out.push_str(&ring_deck(extent));
     out.push_str(&lights);
+    out
+}
+
+/// The flat route round the ring, from the rim to the foot of the climb.
+///
+/// The bot measures its distance to the spine and, when it is off the climb,
+/// walks this path toward the spine's first node. **With no deck path it is
+/// steered straight at the spine instead**, through whatever stands between.
+/// The last authored tower family shipped no deck at all;
+/// `every_generated_stair_tower_ships_a_walkable_deck` never caught it because
+/// it filters on the generated archetype names.
+///
+/// Nodes sit on the ring, outside the climb, at floor height - which is what
+/// that test requires of every node. Three of them, because the importer
+/// rejects two as a straight line needing no path, and a route round a ring
+/// genuinely bends.
+#[must_use]
+fn ring_deck(extent: Extent) -> String {
+    // Midway between the climb's outer edge and the wall: the walkable part of
+    // the ring, clear of both.
+    let ring = (OUTER_SCALE + 1.0) * 0.5;
+    let at = |face: usize| -> (f64, f64) {
+        let (a, b) = (corners()[face % 6], corners()[(face + 1) % 6]);
+        ((a.0 + b.0) * 0.5 * ring, (a.1 + b.1) * 0.5 * ring)
+    };
+
+    // Round the rim to the face the climb starts on, then in to its foot.
+    let start = extent.start_face();
+    let mut out = String::new();
+    for (index, face) in [start + 3, start + 4, start + 5, start].iter().enumerate() {
+        let (x, y) = at(*face);
+        #[allow(clippy::cast_possible_truncation)]
+        out.push_str(&deck_node(index as u16, x, y, FLOOR_TOP));
+    }
     out
 }
 

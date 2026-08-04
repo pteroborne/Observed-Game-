@@ -73,6 +73,13 @@ pub struct Extent {
     /// Its authored variant slot. Sixfold rotation compiles this to
     /// `6n..6n+5`, so 1 lands at 6..11 - clear of the generated 0..5.
     pub variant: i32,
+    /// How far out the climb reaches, as a fraction of the hexagon.
+    ///
+    /// `1.0` hugs the wall, which is what a perimeter ramp wants: it has one
+    /// fixed entry and the climb may consume every other face. A tower cannot,
+    /// because its doors can be anywhere - so it pulls the climb in and leaves
+    /// the rim as a walkable ring the doors open onto. Same fan, smaller radius.
+    pub outer_scale: f64,
 }
 
 /// The family. One member: see the module docs on why there is only one.
@@ -85,10 +92,19 @@ pub fn extents() -> [Extent; 1] {
     [Extent {
         faces: 2,
         variant: 1,
+        // A perimeter ramp is defined by hugging the wall.
+        outer_scale: 1.0,
     }]
 }
 
 impl Extent {
+    /// The face index the sweep begins at. A tower needs it to route its deck
+    /// round to the foot of the climb.
+    #[must_use]
+    pub fn start_face(self) -> usize {
+        SWEEP_START
+    }
+
     #[must_use]
     pub fn stem(self) -> String {
         format!("hall_ramp_perimeter_{}", self.faces * 60)
@@ -109,7 +125,8 @@ impl Extent {
     /// Outer corner index `step` along the sweep.
     #[must_use]
     fn outer(self, step: usize) -> P2 {
-        corners()[(SWEEP_START + step) % 6]
+        let c = corners()[(SWEEP_START + step) % 6];
+        (c.0 * self.outer_scale, c.1 * self.outer_scale)
     }
 
     /// The matching point on the inner ring.
