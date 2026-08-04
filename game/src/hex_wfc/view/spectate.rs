@@ -323,6 +323,54 @@ pub(in crate::hex_wfc) fn sync_cutaway(
     }
 }
 
+/// Count why each hull survived or did not, once a second under the trace.
+///
+/// `survives` answers yes or no; when nearly everything says no, the useful
+/// question is *which test* is saying it. Floors are supposed to survive
+/// unconditionally, so a large floor-culled count is the whole answer.
+pub(in crate::hex_wfc) fn trace_cutaway(
+    time: Res<Time>,
+    overview: Res<SpectatorOverview>,
+    hulls: Query<&Cutaway>,
+) {
+    if !overview.active || std::env::var("OBSERVED2_SPECTATE_TRACE").is_err() {
+        return;
+    }
+    if time.elapsed_secs() as u32 == (time.elapsed_secs() - time.delta_secs()) as u32 {
+        return;
+    }
+    // The same thresholds `iso::survives` uses, restated here only to attribute
+    // its answer; it is the authority, this is the microscope.
+    const FLOOR_TOP: f32 = 0.75;
+    const HEAD_CLEARANCE: f32 = 2.2;
+    const INTERIOR_RADIUS: f32 = 6.5;
+    let bearing = observed_style::iso::detent_bearing(overview.detent);
+    let (mut floor, mut ceiling, mut interior, mut near, mut far) = (0, 0, 0, 0, 0);
+    let (mut lowest, mut highest) = (f32::INFINITY, f32::NEG_INFINITY);
+    for hull in &hulls {
+        lowest = lowest.min(hull.min_y);
+        highest = highest.max(hull.max_y);
+        if hull.max_y <= FLOOR_TOP {
+            floor += 1;
+        } else if hull.min_y >= HEAD_CLEARANCE {
+            ceiling += 1;
+        } else if Vec2::new(hull.local.x, hull.local.z).length() < INTERIOR_RADIUS {
+            interior += 1;
+        } else if Vec2::new(hull.local.x, hull.local.z)
+            .normalize_or_zero()
+            .dot(bearing)
+            > 0.0
+        {
+            near += 1;
+        } else {
+            far += 1;
+        }
+    }
+    info!(
+        "cutaway: floor={floor} ceiling={ceiling} interior={interior} near={near} far={far}          min_y={lowest:.2} max_y={highest:.2}"
+    );
+}
+
 /// The box the facility occupies, from its own placements.
 ///
 /// Measured rather than derived from `config.cols/rows/levels` so a facility

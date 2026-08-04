@@ -15,35 +15,28 @@ applies the cutaway to them. The overview draws massing prisms and never calls
 `survives`. That is the whole of why the studio reads as a building and this
 reads as a field of blocks - same camera, different renderer.
 
-## Open: the cutaway culls almost everything
+## Solved: position and scale must frame the same box
 
-The overview draws only real authored geometry inside `tile_radius`, cut away
-with `iso::survives`, and it comes out nearly empty. **The scattered practicals
-are the tell**: those are lights belonging to cells that *are* resident, spread
-across the frame, while almost none of their hulls draw. So residency is
-delivering and the cutaway is eating the result.
+The overview came out a thumbnail of geometry in an empty frame, and the cause
+was not the cutaway, the lighting, or residency - all three were working.
 
-Ruled out already:
+`sync_camera` framed with `framing_around` (a radius box on the body) while
+`sync_projection` still framed with `framing_fitted` (the whole facility). So
+the camera followed the body and the *zoom* stayed set for all 340 m of
+building. Position and scale have to answer about the same box or they disagree
+about what is being looked at.
 
-- **Not lighting.** The overview now takes the studio's fill (ambient 260 vs
-  play's ~80) and its bearing-derived directional key. Barely changed the
-  image. `GlobalAmbientLight` is the right lever - no camera-level
-  `AmbientLight` in this project - so the darkness is a symptom, not the cause.
-- **Not the framing.** `OBSERVED2_SPECTATE_TRACE=1` confirms the camera stands
-  outside the facility, the far plane clears it, and the orthographic scale
-  fits the radius box.
+Attribution is what found it, after two wrong guesses. `trace_cutaway` counts
+`survives` outcomes by test, and reported floor=176 kept, ceiling=168 cut,
+interior=147 kept, near=183 cut, far=171 kept - **58 percent surviving**, with
+`min_y=0.00 max_y=16.00`. That refuted "the cutaway is culling everything" and
+"the cell-local conversion is wrong by whole levels" in one line, and left the
+framing as the only thing it could be.
 
-**Prime suspect, untested: the cell-local conversion in `cutaway_measure`.** It
-makes a hull's height range cell-local by subtracting
-`hex_origin(piece.source_cell).y`. Every cell's floor slab should therefore land
-at 0.0..0.5 and survive test 1 unconditionally - and floors are visibly *not*
-surviving. If a piece's `source_cell` is a room anchor on a different level than
-the piece itself, that subtraction is wrong by whole 8 m levels, which would
-push floors above `HEAD_CLEARANCE` and cull them **as ceilings**.
+The scattered dots in earlier captures were facility-wide markers, not cells
+without geometry - a red herring that cost one of the wrong guesses.
 
-Cheapest way to confirm: count `survives` outcomes by test - floor / ceiling /
-near-wall / kept - over one frame. If floors are being culled as ceilings, that
-is the bug, and it is one line.
+Result: `overview_tiles_cutaway.png`.
 
 ## Attempted and reverted: follow the body at a tile radius
 

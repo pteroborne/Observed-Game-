@@ -209,9 +209,17 @@ pub(in crate::hex_wfc) fn sync_projection(
     let iso = overview
         .filter(|overview| overview.active)
         .and_then(|overview| {
-            super::spectate::framing_fitted(
+            // `framing_around`, matching `sync_camera`. This called
+            // `framing_fitted` - the whole facility - so the camera followed
+            // the body while the *zoom* stayed set for all 340 m of building,
+            // which is why the resident geometry came out a thumbnail in an
+            // empty frame. Position and scale have to answer about the same
+            // box or they disagree about what is being looked at.
+            super::spectate::framing_around(
                 &runtime.match_state.facility,
+                runtime.local().position,
                 overview.detent,
+                overview.tile_radius,
                 width,
                 height,
             )
