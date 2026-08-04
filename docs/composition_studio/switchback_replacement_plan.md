@@ -139,6 +139,45 @@ Only after the replacement passes §2, and in this order:
 
 ---
 
+## 5b. Open question that blocks slice B: where the `up` port sits
+
+Found while starting slice B, and it means **slice A has a latent defect**.
+
+A tower declares `levels: 2`. The generated one emits `tile_port("up",
+"shaft_open")` with no level at all - level 0, so the connection sits at the
+one-level boundary, 8 m - and its climb tops out at 8.5 m. Those meet.
+
+The authored tower puts the `up` port at **level 1**, so its origin is 16 m,
+while its climb still tops out at 8.5 m. **They do not meet.** It was moved
+there because `authoring_version 2` rejects an up port on a two-level cell's
+level-0 Up face as `PortOnInternalFace`; the generated tower gets away with
+level 0 only because version 1 skips the strict port checks.
+
+Nothing currently catches this. The tower validates, the controller walks its
+spine, and the full gate is green - because no test asks whether the climb
+actually reaches the port it advertises.
+
+Three readings, and they lead to different geometry:
+
+1. **`levels: 2` is a reservation.** The tile occupies one lattice level and
+   claims a second so the flight may poke 0.5 m into it - which is what the
+   switchback's comment says: *"the upper flight intersects the first metre of
+   the cell above"*. Then the port belongs at 8 m and the strict check is the
+   thing that is wrong for this shape.
+2. **`levels: 2` means two storeys.** Then the climb must actually reach 16 m,
+   which needs a two-turn helix - eight faces rather than four. The slope stays
+   0.43 because the run doubles with the rise, so this is buildable.
+3. **The port origin is only an adjacency marker** and its height is not read
+   physically. Then nothing is broken and the port height is cosmetic.
+
+Reading 3 is the one to test first, because it is cheapest to falsify:
+`expected_port_origin` validates origins, which suggests they are meaningful.
+
+**Do not build slice B until this is settled.** Guessing here is how the last
+attempt spent itself: it passed every test it had and failed 23 of 24 seeds.
+The check that would settle it is a bot climbing a two-cell shaft column in the
+iso spectator view, watching whether it makes the transition between towers.
+
 ## 6. Slices
 
 Each ships and is verifiable alone.
