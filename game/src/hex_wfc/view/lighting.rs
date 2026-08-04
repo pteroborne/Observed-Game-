@@ -109,6 +109,7 @@ pub(in crate::hex_wfc) fn sync_camera(
     overview: Option<Res<super::spectate::SpectatorOverview>>,
     time: Res<Time>,
     mut camera: Query<&mut Transform, With<GameCam>>,
+    mut was_overviewing: Local<bool>,
 ) {
     let player = runtime.local();
     let Ok(mut transform) = camera.single_mut() else {
@@ -132,6 +133,7 @@ pub(in crate::hex_wfc) fn sync_camera(
     // camera - Bevy hands UI to the highest-order camera on the window and
     // ignores `is_active`, so a dormant one would take every overlay with it.
     let overview = overview.filter(|overview| overview.active);
+    let overviewing = overview.is_some();
     let iso = overview.as_ref().and_then(|overview| {
         super::spectate::framing_around(
             &runtime.match_state.facility,
@@ -172,7 +174,15 @@ pub(in crate::hex_wfc) fn sync_camera(
             CHASE_RESPONSE,
         )
     };
-    if transform.translation == Vec3::ZERO {
+    // Snap on the way in and out of the overview, ease within it.
+    //
+    // Easing is right for following a body and for turning a detent, and wrong
+    // for the mode change: the play pose and the overview pose are hundreds of
+    // metres apart, so at 2.5 per second the camera is still ~50 m short a
+    // second later - which reads as the whole facility sitting off-centre.
+    let switched = *was_overviewing != overviewing;
+    *was_overviewing = overviewing;
+    if switched || transform.translation == Vec3::ZERO {
         transform.translation = target_translation;
         transform.rotation = target_rotation;
         return;
