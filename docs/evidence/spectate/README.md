@@ -1,8 +1,20 @@
 # Spectator overview
 
-`O` opens it while spectating, `F` cycles the followed body, `R` rotates a
-detent. `OBSERVED2_SPECTATE_OVERVIEW=<detent>` opens it for capture, because a
-capture run has no keyboard.
+| key | does |
+|---|---|
+| `O` | toggle the overview (spectating only) |
+| `F` | cycle which body is followed |
+| `R` | rotate one detent - six, 60 degrees apart |
+| `[` / `]` | narrow / widen the tile radius, 2..12, default 3 |
+
+`OBSERVED2_SPECTATE_OVERVIEW=<detent>` opens it for capture, because a capture
+run has no keyboard. `OBSERVED2_SPECTATE_TRACE=1` logs the framing and a
+breakdown of what the cutaway kept and why.
+
+The view snaps to the *centre of the body's tile* rather than tracking the body
+itself: following a walking body slides the whole facility under a fixed camera,
+which is unreadable at this scale. Snapped, the view holds still while the body
+crosses a tile and steps once when the body does.
 
 ## What is shared with the studio, and what is not
 

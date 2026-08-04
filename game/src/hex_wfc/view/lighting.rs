@@ -137,7 +137,7 @@ pub(in crate::hex_wfc) fn sync_camera(
     let iso = overview.as_ref().and_then(|overview| {
         super::spectate::framing_around(
             &runtime.match_state.facility,
-            player.position,
+            super::spectate::tile_centre(player.cell),
             overview.detent,
             overview.tile_radius,
             1600.0,
@@ -227,7 +227,7 @@ pub(in crate::hex_wfc) fn sync_projection(
             // box or they disagree about what is being looked at.
             super::spectate::framing_around(
                 &runtime.match_state.facility,
-                runtime.local().position,
+                super::spectate::tile_centre(runtime.local().cell),
                 overview.detent,
                 overview.tile_radius,
                 width,

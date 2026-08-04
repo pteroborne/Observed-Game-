@@ -328,10 +328,7 @@ pub(in crate::hex_wfc) fn sync_cutaway(
     // a wall on the floor above that dips a few centimetres into this one was
     // kept whole, which left thin stubs hanging in the air over the plan. The
     // midpoint puts each hull in exactly one storey.
-    let band = overview.active.then(|| {
-        let floor = f32::from(runtime.local().cell.level) * observed_hex::TILE_LEVEL_HEIGHT;
-        (floor, floor + observed_hex::TILE_LEVEL_HEIGHT)
-    });
+    let band = overview.active.then(|| storey(runtime.local().cell.level));
     for (hull, mut visibility) in &mut hulls {
         let off_level = band.is_some_and(|(low, high)| {
             let middle = (hull.min_y + hull.max_y) * 0.5 + hull.origin_y;
@@ -422,6 +419,57 @@ pub(in crate::hex_wfc) fn trace_cutaway(
     info!(
         "cutaway: floor={floor} ceiling={ceiling} interior={interior} near={near} far={far}          min_y={lowest:.2} max_y={highest:.2} | drawn={drawn}          from_other_level={from_other_level} high_in_band={high_in_band} body_level={body_level}"
     );
+}
+
+/// Hide the practicals that belong to storeys the overview is not drawing.
+///
+/// Lights were never filtered, only hulls, so every resident cell's practicals
+/// kept burning whatever storey they were on - and with their geometry hidden
+/// they read as lights floating in the dark outside the building. They are
+/// judged by world height against the same band the hulls use, not by their
+/// cell: a two-level tile's upper practical carries the *base* cell, so a
+/// by-cell test would leave exactly the ghosts it was meant to remove.
+pub(in crate::hex_wfc) fn sync_practicals(
+    runtime: Res<HexWfcRuntime>,
+    overview: Res<SpectatorOverview>,
+    mut practicals: Query<(&GlobalTransform, &mut Visibility), With<super::HexPractical>>,
+) {
+    let band = overview.active.then(|| storey(runtime.local().cell.level));
+    for (transform, mut visibility) in &mut practicals {
+        let wanted = match band {
+            Some((low, high)) => {
+                let y = transform.translation().y;
+                if y >= low && y < high {
+                    Visibility::Inherited
+                } else {
+                    Visibility::Hidden
+                }
+            }
+            None => Visibility::Inherited,
+        };
+        if *visibility != wanted {
+            *visibility = wanted;
+        }
+    }
+}
+
+/// The centre of a cell, in world space.
+///
+/// The overview frames *this* rather than the body's own position. Following a
+/// walking body means the whole facility slides continuously under a fixed
+/// camera, which is unreadable at this scale and unpleasant to watch; snapping
+/// to the tile means the view holds still while the body crosses it and steps
+/// once when the body does.
+#[must_use]
+pub(in crate::hex_wfc) fn tile_centre(cell: observed_facility::hex_wfc::HexCoord) -> Vec3 {
+    Vec3::from_array(hex_origin(cell))
+}
+
+/// The world height band a storey occupies.
+#[must_use]
+pub(in crate::hex_wfc) fn storey(level: u8) -> (f32, f32) {
+    let floor = f32::from(level) * observed_hex::TILE_LEVEL_HEIGHT;
+    (floor, floor + observed_hex::TILE_LEVEL_HEIGHT)
 }
 
 /// The box the facility occupies, from its own placements.
