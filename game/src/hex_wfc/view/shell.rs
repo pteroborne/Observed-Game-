@@ -379,10 +379,31 @@ fn spawn_cell_practicals(
     let mut child_pieces = 0;
     for position in positions {
         if has_authored_lights && matches!(role, HexStructureRole::Room | HexStructureRole::Hall) {
+            // A diffuser is geometry, so it gets the same two treatments the
+            // rest of the geometry gets: the storey filter and the cutaway.
+            //
+            // It used to get neither. The light beside it carried
+            // `HexPractical` and the mesh carried nothing, so it drew on every
+            // storey at once whatever the cutaway said - and a ceiling-mounted
+            // diffuser whose ceiling had been cut away is a thin bright stub
+            // hanging in the air. That is what the "floating fixtures" over the
+            // overview's floor plan were.
+            let origin = Vec3::from_array(hex_origin(coord));
+            let at = position + Vec3::Y * 0.18;
             commands.spawn((
                 Mesh3d(assets.fixture_mesh(meshes)),
                 MeshMaterial3d(assets.register(architecture).fixture()),
-                Transform::from_translation(position + Vec3::Y * 0.18),
+                Transform::from_translation(at),
+                HexPractical(coord),
+                // Measured as a point: a diffuser is small next to the tests
+                // being applied to it, and its height is what decides them.
+                super::spectate::Cutaway {
+                    local: at - origin,
+                    min_y: at.y - origin.y,
+                    max_y: at.y - origin.y,
+                    origin_y: origin.y,
+                    cell_level: coord.level,
+                },
                 ChildOf(parent),
                 Name::new("Authored fluorescent diffuser"),
             ));

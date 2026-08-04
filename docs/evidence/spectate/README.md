@@ -46,33 +46,28 @@ so the camera and the zoom disagreed and the view came out a thumbnail. The
 whole-facility framing helpers are deleted - with one writer there is no third
 call site, and with no function there is nothing to call by mistake.
 
-## Known artifact: thin verticals left standing by the cutaway
+## Partly solved: the floating stubs were partly the light fixtures
 
-Thin vertical stubs stand above the plan at its far side. The natural reading is
-that they are bleeding through from the floor above. **They are not**, and it is
-worth recording how that was settled, because the natural reading is wrong.
+A practical spawns **two** entities: a visible diffuser mesh and the point light
+beside it. Only the light carried `HexPractical`, and the mesh carried nothing -
+no storey tag and no `Cutaway`. So diffusers drew on every storey at once
+whatever the cutaway said, and a ceiling-mounted one whose ceiling had been cut
+is a thin bright stub hanging in the air.
 
-Two independent tests, both against the floor-above hypothesis:
+They are geometry, so they now get what geometry gets: the storey filter and the
+cutaway, measured as a point because a diffuser is small next to the tests being
+applied to it. That removed a good half of the stubs.
 
-1. `trace_cutaway` reports `from_other_level=0` - of the 160 hulls drawn, none
-   comes from a cell on another level. On its own this is not conclusive: a
-   two-level tile's upper half carries its *base* cell's level, so the metric is
-   blind to exactly the case being proposed.
-2. Halving the band to the bottom 4 m of the storey does not remove them. If
-   they were upper-half or ceiling geometry they would have gone. More of them
-   became visible instead, as the walls in front were culled.
+**A cluster at the far side remains, and is not fixtures.** Earlier work
+(`5ffe59e`) established by two independent tests that those are low geometry on
+the body's own storey - narrow wall segments and jambs left standing when the
+cutaway removed what stood beside them. `survives` keeps far walls and drops
+near ones, and a jamb whose neighbours went reads as a post in mid-air.
 
-So they are low geometry on the body's own storey - narrow wall segments and
-door jambs at the far side, left standing when the cutaway removed what stood
-beside them. `survives` keeps far walls and drops near ones, and a jamb whose
-neighbours went reads as a post in mid-air.
-
-That is inherent to a cutaway rather than a bug in the level filter, and the
-studio's rule would do the same given the same geometry. Two directions if it
-becomes worth fixing: cull a hull whose neighbours in the same cell were culled
-(needs adjacency the pieces do not carry), or widen `INTERIOR_RADIUS` so narrow
-perimeter fittings count as interior and stay with the floor. Neither is
-obviously right.
+Two directions, neither obviously right: cull a hull whose neighbours in the
+same cell were culled (needs adjacency the pieces do not carry), or widen
+`INTERIOR_RADIUS` so narrow perimeter fittings count as interior and stay with
+the floor.
 
 ## Solved: position and scale must frame the same box
 
