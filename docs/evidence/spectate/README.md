@@ -15,23 +15,33 @@ applies the cutaway to them. The overview draws massing prisms and never calls
 `survives`. That is the whole of why the studio reads as a building and this
 reads as a field of blocks - same camera, different renderer.
 
-## Known artifact: fixtures left hanging by the cutaway
+## Known artifact: thin verticals left standing by the cutaway
 
-Thin stubs float above the plan. They are not from the storey above - the level
-filter assigns each hull to one storey by its midpoint, and they survive that -
-they are fixtures on *this* storey whose ceilings the cutaway removed, leaving
-them attached to nothing.
+Thin vertical stubs stand above the plan at its far side. The natural reading is
+that they are bleeding through from the floor above. **They are not**, and it is
+worth recording how that was settled, because the natural reading is wrong.
 
-That is inherent to a cutaway rather than a bug in the filter: `survives` drops
-a hull whose lowest point clears head height, so a lintel or a light housing
-hung just under a ceiling goes with it, while one hung a little lower stays and
-is left in mid-air. The studio has the same rule and would show the same thing
-given the same fixtures.
+Two independent tests, both against the floor-above hypothesis:
 
-Two directions if it becomes worth fixing: cull anything whose *support* was
-culled (needs a parent relationship the pieces do not currently carry), or
-lower `HEAD_CLEARANCE` for the game's fixtures specifically. Neither is
-obviously right, and the plan reads well enough with them.
+1. `trace_cutaway` reports `from_other_level=0` - of the 160 hulls drawn, none
+   comes from a cell on another level. On its own this is not conclusive: a
+   two-level tile's upper half carries its *base* cell's level, so the metric is
+   blind to exactly the case being proposed.
+2. Halving the band to the bottom 4 m of the storey does not remove them. If
+   they were upper-half or ceiling geometry they would have gone. More of them
+   became visible instead, as the walls in front were culled.
+
+So they are low geometry on the body's own storey - narrow wall segments and
+door jambs at the far side, left standing when the cutaway removed what stood
+beside them. `survives` keeps far walls and drops near ones, and a jamb whose
+neighbours went reads as a post in mid-air.
+
+That is inherent to a cutaway rather than a bug in the level filter, and the
+studio's rule would do the same given the same geometry. Two directions if it
+becomes worth fixing: cull a hull whose neighbours in the same cell were culled
+(needs adjacency the pieces do not carry), or widen `INTERIOR_RADIUS` so narrow
+perimeter fittings count as interior and stay with the floor. Neither is
+obviously right.
 
 ## Solved: position and scale must frame the same box
 

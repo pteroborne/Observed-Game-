@@ -140,6 +140,10 @@ pub(in crate::hex_wfc) struct Cutaway {
     /// Its cell's floor height, so the cell-local range above can be put back
     /// into world space for the level test.
     pub(in crate::hex_wfc) origin_y: f32,
+    /// The level its source cell names. Diagnostic only - the level filter
+    /// works in world height, deliberately - but it is what tells you whether
+    /// a hull that renders on this storey came from a cell on another one.
+    pub(in crate::hex_wfc) cell_level: u8,
 }
 
 /// The overview's own key light.
@@ -355,6 +359,7 @@ pub(in crate::hex_wfc) fn sync_cutaway(
 /// unconditionally, so a large floor-culled count is the whole answer.
 pub(in crate::hex_wfc) fn trace_cutaway(
     time: Res<Time>,
+    runtime: Res<HexWfcRuntime>,
     overview: Res<SpectatorOverview>,
     hulls: Query<&Cutaway>,
 ) {
@@ -372,6 +377,29 @@ pub(in crate::hex_wfc) fn trace_cutaway(
     let bearing = observed_style::iso::detent_bearing(overview.detent);
     let (mut floor, mut ceiling, mut interior, mut near, mut far) = (0, 0, 0, 0, 0);
     let (mut lowest, mut highest) = (f32::INFINITY, f32::NEG_INFINITY);
+    // Where the things that actually render come from, by storey and by height.
+    let body_level = runtime.local().cell.level;
+    let floor_y = f32::from(body_level) * observed_hex::TILE_LEVEL_HEIGHT;
+    let mut from_other_level = 0;
+    let mut high_in_band = 0;
+    let mut drawn = 0;
+    for hull in &hulls {
+        let middle = (hull.min_y + hull.max_y) * 0.5 + hull.origin_y;
+        let on_storey = middle >= floor_y && middle < floor_y + observed_hex::TILE_LEVEL_HEIGHT;
+        if on_storey
+            && observed_style::iso::survives(hull.min_y, hull.max_y, hull.local, bearing, true)
+        {
+            drawn += 1;
+            if hull.cell_level != body_level {
+                from_other_level += 1;
+            }
+            // Anything sitting in the top third of the storey is what reads as
+            // "floating above the plan".
+            if middle - floor_y > observed_hex::TILE_LEVEL_HEIGHT * 0.66 {
+                high_in_band += 1;
+            }
+        }
+    }
     for hull in &hulls {
         lowest = lowest.min(hull.min_y);
         highest = highest.max(hull.max_y);
@@ -392,7 +420,7 @@ pub(in crate::hex_wfc) fn trace_cutaway(
         }
     }
     info!(
-        "cutaway: floor={floor} ceiling={ceiling} interior={interior} near={near} far={far}          min_y={lowest:.2} max_y={highest:.2}"
+        "cutaway: floor={floor} ceiling={ceiling} interior={interior} near={near} far={far}          min_y={lowest:.2} max_y={highest:.2} | drawn={drawn}          from_other_level={from_other_level} high_in_band={high_in_band} body_level={body_level}"
     );
 }
 

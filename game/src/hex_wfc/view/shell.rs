@@ -494,5 +494,6 @@ fn cutaway_measure(piece: &HexStructurePiece) -> super::spectate::Cutaway {
         min_y: min_y - origin.y,
         max_y: max_y - origin.y,
         origin_y: origin.y,
+        cell_level: piece.source_cell.level,
     }
 }
