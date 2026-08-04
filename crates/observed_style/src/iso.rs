@@ -54,6 +54,7 @@ pub fn detent_bearing(detent: usize) -> Vec2 {
 }
 
 /// Where an orthographic isometric camera stands to frame a box.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct IsoFraming {
     pub translation: Vec3,
     pub rotation: Quat,

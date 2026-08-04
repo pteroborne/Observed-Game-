@@ -27,6 +27,25 @@ applies the cutaway to them. The overview draws massing prisms and never calls
 `survives`. That is the whole of why the studio reads as a building and this
 reads as a field of blocks - same camera, different renderer.
 
+## Where the code lives
+
+- **`view/camera.rs`** - where you look *from*. The play eye pose, the
+  spectator chase, the overview's isometric framing, the orthographic
+  projection, and the fog scale that follows the framing.
+- **`view/spectate.rs`** - what you *see*. The overview's state and keys, the
+  cutaway over the resident geometry, the storey filter, the practicals, and
+  the overview key light.
+- **`view/lighting.rs`** - the district light rig. It used to own the camera as
+  well, for no better reason than that both touch `GameCam`.
+
+**`OverviewFrame` has one writer and three readers.** `sync_frame` computes the
+framing once; the camera pose, the orthographic scale and the fog range read
+it. They each used to derive it, which is exactly how they drifted: two were
+moved to frame the body's tile while the third still framed the whole facility,
+so the camera and the zoom disagreed and the view came out a thumbnail. The
+whole-facility framing helpers are deleted - with one writer there is no third
+call site, and with no function there is nothing to call by mistake.
+
 ## Known artifact: thin verticals left standing by the cutaway
 
 Thin vertical stubs stand above the plan at its far side. The natural reading is

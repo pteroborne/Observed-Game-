@@ -8,6 +8,8 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 mod assets;
+pub(in crate::hex_wfc) mod camera;
+pub(in crate::hex_wfc) use camera::{sync_camera, sync_projection};
 mod lighting;
 /// The full-screen isometric survivor map, wired by `hex_wfc::mod`.
 pub(crate) mod map;
@@ -132,7 +134,7 @@ pub(super) fn setup_view(
     let composition = lighting::composition_at(&runtime.match_state.facility, current);
     let palette = observed_style::architecture_for_composition(architecture, composition);
     if let Ok((camera, mut transform)) = camera.single_mut() {
-        lighting::prime_camera(&mut transform, runtime.local());
+        camera::prime_camera(&mut transform, runtime.local());
         commands.entity(camera).insert((
             Hdr,
             Bloom {
@@ -238,9 +240,7 @@ pub(super) fn setup_view(
     );
 }
 
-pub(super) use lighting::{
-    sync_camera, sync_lighting_and_atmosphere, sync_practical_shadow_budget, sync_projection,
-};
+pub(super) use lighting::{sync_lighting_and_atmosphere, sync_practical_shadow_budget};
 use residency::{initial_spawn_batch, presentation_readiness};
 pub(super) use residency::{sync_changed_geometry, sync_streamed_cells};
 

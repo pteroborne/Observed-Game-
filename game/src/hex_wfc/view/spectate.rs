@@ -45,7 +45,6 @@
 //! moves the one camera that already exists.
 
 use bevy::prelude::*;
-use observed_hex::hex_origin;
 
 use crate::hex_wfc::sim::HexWfcRuntime;
 
@@ -85,27 +84,7 @@ pub(in crate::hex_wfc) const NARROW_KEY: KeyCode = KeyCode::BracketLeft;
 /// to read. Following the body at a few tiles is the studio's working distance.
 pub(in crate::hex_wfc) const DEFAULT_TILE_RADIUS: u8 = 3;
 const MIN_TILE_RADIUS: u8 = 2;
-/// Re-exported for the sibling test module.
-#[cfg(test)]
-pub(in crate::hex_wfc::view) const MIN_TILE_RADIUS_FOR_TEST: u8 = MIN_TILE_RADIUS;
 const MAX_TILE_RADIUS: u8 = 12;
-
-/// A hex cell's plan width in metres; `hex_origin` steps by this.
-const TILE_SPAN: f32 = 14.0;
-
-/// The viewport the framing is fitted to.
-///
-/// The studio fits to its own window; the game fits to a nominal 16:10 and lets
-/// the aspect fall out of the projection, so the two agree on framing without
-/// the game having to read its window size before the camera exists.
-pub(in crate::hex_wfc::view) const FRAME_WIDTH: f32 = 1600.0;
-pub(in crate::hex_wfc::view) const FRAME_HEIGHT: f32 = 1000.0;
-
-/// How fast the camera eases toward its framing, per second.
-///
-/// Slower than the chase cam's 6.0: at facility scale a snap reads as the whole
-/// building lurching rather than the camera moving.
-pub(in crate::hex_wfc::view) const RESPONSE: f32 = 2.5;
 
 /// Whether the overview is up, and what it has built.
 #[derive(Resource, Default)]
@@ -229,7 +208,7 @@ pub(in crate::hex_wfc) fn sync_detail_window(
     // disagree: what is framed is exactly what is resident.
     if let Some(mut residency) = residency {
         residency.set_reach(if overview.active {
-            super::residency::Reach::out_to(detail_reach(overview.tile_radius))
+            super::residency::Reach::out_to(super::camera::detail_reach(overview.tile_radius))
         } else {
             super::residency::Reach::play()
         });
@@ -328,7 +307,9 @@ pub(in crate::hex_wfc) fn sync_cutaway(
     // a wall on the floor above that dips a few centimetres into this one was
     // kept whole, which left thin stubs hanging in the air over the plan. The
     // midpoint puts each hull in exactly one storey.
-    let band = overview.active.then(|| storey(runtime.local().cell.level));
+    let band = overview
+        .active
+        .then(|| super::camera::storey(runtime.local().cell.level));
     for (hull, mut visibility) in &mut hulls {
         let off_level = band.is_some_and(|(low, high)| {
             let middle = (hull.min_y + hull.max_y) * 0.5 + hull.origin_y;
@@ -434,7 +415,9 @@ pub(in crate::hex_wfc) fn sync_practicals(
     overview: Res<SpectatorOverview>,
     mut practicals: Query<(&GlobalTransform, &mut Visibility), With<super::HexPractical>>,
 ) {
-    let band = overview.active.then(|| storey(runtime.local().cell.level));
+    let band = overview
+        .active
+        .then(|| super::camera::storey(runtime.local().cell.level));
     for (transform, mut visibility) in &mut practicals {
         let wanted = match band {
             Some((low, high)) => {
@@ -453,137 +436,11 @@ pub(in crate::hex_wfc) fn sync_practicals(
     }
 }
 
-/// The centre of a cell, in world space.
-///
-/// The overview frames *this* rather than the body's own position. Following a
-/// walking body means the whole facility slides continuously under a fixed
-/// camera, which is unreadable at this scale and unpleasant to watch; snapping
-/// to the tile means the view holds still while the body crosses it and steps
-/// once when the body does.
-#[must_use]
-pub(in crate::hex_wfc) fn tile_centre(cell: observed_facility::hex_wfc::HexCoord) -> Vec3 {
-    Vec3::from_array(hex_origin(cell))
-}
-
-/// The world height band a storey occupies.
-#[must_use]
-pub(in crate::hex_wfc) fn storey(level: u8) -> (f32, f32) {
-    let floor = f32::from(level) * observed_hex::TILE_LEVEL_HEIGHT;
-    (floor, floor + observed_hex::TILE_LEVEL_HEIGHT)
-}
-
-/// The box the facility occupies, from its own placements.
-///
-/// Measured rather than derived from `config.cols/rows/levels` so a facility
-/// with an irregular edge frames to what is actually there.
-#[must_use]
-pub(in crate::hex_wfc::view) fn bounds(
-    world: &observed_facility::hex_wfc::HexWfcWorld,
-) -> Option<(Vec3, Vec3)> {
-    let mut min = Vec3::splat(f32::INFINITY);
-    let mut max = Vec3::splat(f32::NEG_INFINITY);
-    for &cell in world.placements.keys() {
-        let origin = Vec3::from_array(hex_origin(cell));
-        // A cell is about 14 m across and one level tall; padding by that keeps
-        // the rim of the outermost cells inside the frame.
-        min = min.min(origin - Vec3::new(7.0, 0.0, 8.0));
-        max = max.max(origin + Vec3::new(7.0, 8.0, 8.0));
-    }
-    (min.x <= max.x).then_some((min, max))
-}
-
-/// Where the overview camera stands, and how wide it sees.
-///
-/// The whole facility framed orthographically from one of six detents - the
-/// same reading `composition_studio` uses, from the same shared code, so the
-/// tool and the game do not teach two different buildings.
-#[must_use]
-pub(in crate::hex_wfc) fn framing(
-    world: &observed_facility::hex_wfc::HexWfcWorld,
-    detent: usize,
-) -> Option<observed_style::iso::IsoFraming> {
-    framing_fitted(world, detent, FRAME_WIDTH, FRAME_HEIGHT)
-}
-
-/// [`framing`] fitted to a specific viewport.
-///
-/// Only `units_per_pixel` depends on the viewport - the camera's position,
-/// rotation and far plane do not - so callers that just need the pose can use
-/// [`framing`] and ignore the size.
-#[must_use]
-pub(in crate::hex_wfc) fn framing_fitted(
-    world: &observed_facility::hex_wfc::HexWfcWorld,
-    detent: usize,
-    width: f32,
-    height: f32,
-) -> Option<observed_style::iso::IsoFraming> {
-    let (min, max) = bounds(world)?;
-    Some(observed_style::iso::frame(min, max, detent, width, height))
-}
-
-/// Frame `radius` tiles around `body`, clamped to the facility.
-///
-/// This is what follows the spectator: the box is centred on the body, not on
-/// the building, so walking moves the view.
-#[must_use]
-pub(in crate::hex_wfc) fn framing_around(
-    world: &observed_facility::hex_wfc::HexWfcWorld,
-    body: Vec3,
-    detent: usize,
-    radius: u8,
-    width: f32,
-    height: f32,
-) -> Option<observed_style::iso::IsoFraming> {
-    let (facility_min, facility_max) = bounds(world)?;
-    let span = f32::from(radius) * TILE_SPAN;
-    let reach = Vec3::new(span, TILE_SPAN, span);
-
-    // Zoom from the radius box, position from the facility.
-    //
-    // These are two different questions and answering both from the small box
-    // is what put a hard diagonal clip across the first attempt: the camera
-    // stood one box-diagonal out (156 m) with a far plane of twice that, while
-    // the facility runs 340 m - so the far plane sliced straight through the
-    // massing, and anything behind the camera was cut by the near plane too.
-    // Orthographic scale does not care how far away the camera is, so it can
-    // stand right outside the whole building and still frame a few tiles.
-    let tight = observed_style::iso::frame(body - reach, body + reach, detent, width, height);
-    let reach_all = (facility_max - facility_min).length().max(1.0);
-    // Aim a little above the body, not at its feet.
-    //
-    // Residency reaches upward as well as outward - the body's own level and
-    // the ones above it - so the geometry around a body standing on a floor
-    // sits mostly *above* that floor. Aiming at the feet puts all of it in the
-    // top half of the frame. Half a cell up is where the mass actually is.
-    let aim = body + Vec3::Y * TILE_SPAN * 0.5;
-    Some(observed_style::iso::IsoFraming {
-        // Centred on the body, not on a box clamped to the facility - clamping
-        // kept the box the same size but slid its centre to the edge, which is
-        // why the body sat off in a corner of the frame.
-        translation: aim + tight.rotation * Vec3::Z * reach_all,
-        rotation: tight.rotation,
-        units_per_pixel: tight.units_per_pixel,
-        far: reach_all * 2.0,
-    })
-}
-
-/// The metric radius a tile radius stands for.
-#[must_use]
-pub(in crate::hex_wfc) fn detail_reach(radius: u8) -> f32 {
-    f32::from(radius) * TILE_SPAN
-}
-
 // There is no layer focus here any more. It existed to stop ten levels of
 // *massing* stacking into a thicket; with only the radius drawn there is
 // nothing to thin, and hiding the floor above would cut the top off the very
 // stair the spectator is climbing. `observed_style::iso::Layer` is still the
 // studio's, where a plan view of a whole floor does need it.
-
-/// How fast the camera should ease toward [`framing`].
-#[must_use]
-pub(in crate::hex_wfc) fn response() -> f32 {
-    RESPONSE
-}
 
 /// Drop everything this module owns. Called on leaving the state.
 pub(in crate::hex_wfc) fn clear(mut overview: ResMut<SpectatorOverview>) {

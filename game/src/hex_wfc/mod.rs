@@ -52,6 +52,7 @@ impl Plugin for HexWfcPlugin {
                 ..Default::default()
             })
             .init_resource::<HexOnboardingGate>()
+            .init_resource::<view::camera::OverviewFrame>()
             .add_observer(overlay::activate)
             .add_systems(
                 OnEnter(GameState::HexWfc),
@@ -101,6 +102,7 @@ impl Plugin for HexWfcPlugin {
                     // flat tuple had reached Bevy's 21-system limit.
                     (
                         view::spectate::hotkeys,
+                        view::camera::sync_frame,
                         view::spectate::sync_detail_window,
                         view::spectate::sync_cutaway,
                         view::spectate::sync_practicals,
