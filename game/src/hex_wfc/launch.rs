@@ -4,12 +4,10 @@
 //! boundary. That keeps match construction independent from Bevy resources and
 //! makes the same operation safe to move onto a loading worker later.
 
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
-use observed_authoring::{RoomPrototype, RuntimeHexCatalog, TilePrototype};
 use observed_content::ArchitectureRegister;
-use observed_facility::hex_wfc::profile::HexCompositionProfile;
-use observed_match::hex_wfc::{HexMatchConfig, HexMatchError, HexWfcMatch};
+use observed_match::hex_wfc::{HexMatchConfig, HexMatchContent, HexMatchError, HexWfcMatch};
 
 const NEARBY_SEED_ATTEMPTS: u64 = 64;
 
@@ -85,21 +83,11 @@ impl std::fmt::Display for HexLaunchError {
 
 impl std::error::Error for HexLaunchError {}
 
-#[derive(Clone)]
-pub(super) struct HexAuthoringCorpus {
-    pub(super) cells: Vec<TilePrototype>,
-    pub(super) rooms: Vec<RoomPrototype>,
-    /// The authored solve controls, loaded and hashed with the tile catalog so
-    /// a peer running a different composition cannot join.
-    pub(super) composition: HexCompositionProfile,
-    pub(super) simulation_content_hash: [u8; 32],
-}
-
 /// Load the current committed corpus and construct the exact simulation described by
 /// `spec`. This function reads no settings or other mutable application resources.
 pub(crate) fn prepare(spec: HexLaunchSpec) -> Result<PreparedHexLaunch, HexLaunchError> {
-    let corpus = load_current_corpus()?;
-    prepare_with_corpus(spec, &corpus)
+    let content = load_current_content()?;
+    prepare_with_content(spec, &content)
 }
 
 pub(super) fn tile_dir() -> std::path::PathBuf {
@@ -111,62 +99,50 @@ pub(super) fn tile_dir() -> std::path::PathBuf {
     }
 }
 
-pub(super) fn load_current_corpus() -> Result<HexAuthoringCorpus, HexLaunchError> {
-    static CORPUS: OnceLock<Result<HexAuthoringCorpus, String>> = OnceLock::new();
-    CORPUS
+pub(super) fn load_current_content() -> Result<Arc<HexMatchContent>, HexLaunchError> {
+    static CONTENT: OnceLock<Result<Arc<HexMatchContent>, String>> = OnceLock::new();
+    CONTENT
         .get_or_init(|| {
             let register_slugs = ArchitectureRegister::ALL.map(ArchitectureRegister::slug);
-            RuntimeHexCatalog::load(&tile_dir(), &register_slugs).map(|loaded| HexAuthoringCorpus {
-                cells: loaded.cells,
-                rooms: loaded.rooms,
-                composition: loaded.composition,
-                simulation_content_hash: loaded.simulation_content_hash,
-            })
+            HexMatchContent::load(&tile_dir(), &register_slugs).map(Arc::new)
         })
         .clone()
         .map_err(HexLaunchError::CatalogLoad)
 }
 
-fn prepare_with_corpus(
+fn prepare_with_content(
     spec: HexLaunchSpec,
-    corpus: &HexAuthoringCorpus,
+    content: &Arc<HexMatchContent>,
 ) -> Result<PreparedHexLaunch, HexLaunchError> {
     match spec.seed_policy {
         HexSeedPolicy::Exact {
             expected_content_hash,
         } => {
-            if corpus.simulation_content_hash != expected_content_hash {
+            if content.simulation_content_hash() != expected_content_hash {
                 return Err(HexLaunchError::ContentHashMismatch {
                     expected: expected_content_hash,
-                    actual: corpus.simulation_content_hash,
+                    actual: content.simulation_content_hash(),
                 });
             }
-            let match_state = HexWfcMatch::new_with_profile(
+            let match_state = HexWfcMatch::new_with_content(
                 spec.requested_seed,
                 spec.config,
-                &corpus.cells,
-                &corpus.rooms,
-                &corpus.composition,
+                Arc::clone(content),
             )
             .map_err(|error| HexLaunchError::ExactSeedRejected {
                 seed: spec.requested_seed,
                 error,
             })?;
-            Ok(finish_preparation(spec, match_state, 0, corpus))
+            Ok(finish_preparation(spec, match_state, 0, content))
         }
         HexSeedPolicy::Nearby => {
             let mut last_error = None;
             for seed_offset in 0..NEARBY_SEED_ATTEMPTS {
                 let selected_seed = spec.requested_seed.wrapping_add(seed_offset);
-                match HexWfcMatch::new_with_profile(
-                    selected_seed,
-                    spec.config,
-                    &corpus.cells,
-                    &corpus.rooms,
-                    &corpus.composition,
-                ) {
+                match HexWfcMatch::new_with_content(selected_seed, spec.config, Arc::clone(content))
+                {
                     Ok(match_state) => {
-                        return Ok(finish_preparation(spec, match_state, seed_offset, corpus));
+                        return Ok(finish_preparation(spec, match_state, seed_offset, content));
                     }
                     Err(error) => last_error = Some(error),
                 }
@@ -182,22 +158,26 @@ fn prepare_with_corpus(
 
 fn finish_preparation(
     spec: HexLaunchSpec,
-    mut match_state: HexWfcMatch,
+    match_state: HexWfcMatch,
     seed_offset: u64,
-    corpus: &HexAuthoringCorpus,
+    content: &HexMatchContent,
 ) -> PreparedHexLaunch {
-    match_state.bind_simulation_content_hash(corpus.simulation_content_hash);
+    debug_assert_eq!(
+        match_state.simulation_content_hash,
+        content.simulation_content_hash()
+    );
     PreparedHexLaunch {
         match_state,
         requested_seed: spec.requested_seed,
         selected_seed: spec.requested_seed.wrapping_add(seed_offset),
         seed_offset,
-        simulation_content_hash: corpus.simulation_content_hash,
+        simulation_content_hash: content.simulation_content_hash(),
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use observed_authoring::RuntimeHexCatalog;
     use observed_facility::hex_wfc::HexWfcConfig;
 
     use super::*;
@@ -221,8 +201,8 @@ mod tests {
 
     #[test]
     fn exact_launch_rejects_a_different_simulation_content_hash() {
-        let corpus = load_current_corpus().expect("committed authoring corpus loads");
-        let mut incompatible_hash = corpus.simulation_content_hash;
+        let content = load_current_content().expect("committed authoring corpus loads");
+        let mut incompatible_hash = content.simulation_content_hash();
         incompatible_hash[0] ^= 0xFF;
         let error = prepare(HexLaunchSpec {
             requested_seed: 44,
@@ -237,7 +217,7 @@ mod tests {
             error,
             HexLaunchError::ContentHashMismatch {
                 expected: incompatible_hash,
-                actual: corpus.simulation_content_hash,
+                actual: content.simulation_content_hash(),
             }
         );
     }
@@ -248,9 +228,9 @@ mod tests {
     /// same facility, which is the worst of both outcomes.
     #[test]
     fn the_corpus_composition_profile_reaches_the_prepared_facility() {
-        let corpus = load_current_corpus().expect("committed authoring corpus loads");
+        let content = load_current_content().expect("committed authoring corpus loads");
         assert!(
-            corpus.composition.is_baseline(),
+            content.composition().is_baseline(),
             "the committed profile is authored; update this test's expectation"
         );
         let spec = HexLaunchSpec {
@@ -259,18 +239,24 @@ mod tests {
             seed_policy: HexSeedPolicy::Nearby,
         };
 
-        let baseline = prepare_with_corpus(spec, &corpus).expect("baseline prepares");
+        let baseline = prepare_with_content(spec, &content).expect("baseline prepares");
 
         // Bias the lottery hard enough that the layout cannot plausibly match,
         // while staying inside the validated band so solvability is untouched.
-        let mut authored = corpus.clone();
-        authored.composition.archetype_bias = authored
+        let mut authored_catalog = RuntimeHexCatalog {
+            cells: content.cells().to_vec(),
+            rooms: content.rooms().to_vec(),
+            composition: content.composition().clone(),
+            simulation_content_hash: content.simulation_content_hash(),
+        };
+        authored_catalog.composition.archetype_bias = authored_catalog
             .composition
             .archetype_bias
             .with(observed_facility::hex_wfc::HexArchetype::Junction, 4.0)
             .with(observed_facility::hex_wfc::HexArchetype::Corner, 0.25);
-        assert_eq!(authored.composition.validate(), Ok(()));
-        let steered = prepare_with_corpus(spec, &authored).expect("authored profile still solves");
+        assert_eq!(authored_catalog.composition.validate(), Ok(()));
+        let authored = Arc::new(HexMatchContent::from_runtime_catalog(authored_catalog));
+        let steered = prepare_with_content(spec, &authored).expect("authored profile still solves");
 
         assert_ne!(
             baseline.match_state.facility.placements, steered.match_state.facility.placements,
@@ -280,7 +266,7 @@ mod tests {
 
     #[test]
     fn nearby_launch_matches_the_former_selection_loop_and_snapshot() {
-        let corpus = load_current_corpus().expect("committed authoring corpus loads");
+        let content = load_current_content().expect("committed authoring corpus loads");
         let spec = HexLaunchSpec {
             requested_seed: 0xF011_FAC1_1177,
             config: compact_config(),
@@ -291,17 +277,17 @@ mod tests {
                 HexWfcMatch::new_with_rooms(
                     spec.requested_seed.wrapping_add(seed_offset),
                     spec.config,
-                    &corpus.cells,
-                    &corpus.rooms,
+                    content.cells(),
+                    content.rooms(),
                 )
                 .ok()
                 .map(|match_state| (match_state, seed_offset))
             })
             .expect("compact corpus has a solvable nearby seed");
-        former_match.bind_simulation_content_hash(corpus.simulation_content_hash);
+        former_match.bind_simulation_content_hash(content.simulation_content_hash());
 
-        let first = prepare_with_corpus(spec, &corpus).expect("first prepared launch");
-        let second = prepare_with_corpus(spec, &corpus).expect("second prepared launch");
+        let first = prepare_with_content(spec, &content).expect("first prepared launch");
+        let second = prepare_with_content(spec, &content).expect("second prepared launch");
 
         assert_eq!(first.requested_seed, spec.requested_seed);
         assert_eq!(first.seed_offset, former_offset);
@@ -311,9 +297,13 @@ mod tests {
         );
         assert_eq!(
             first.simulation_content_hash,
-            corpus.simulation_content_hash
+            content.simulation_content_hash()
         );
         assert_eq!(first.match_state.snapshot(), former_match.snapshot());
+        assert_eq!(
+            first.match_state.geometry, former_match.geometry,
+            "content ownership must not change selected tiles or stable collider IDs"
+        );
         assert_eq!(first.match_state.snapshot(), second.match_state.snapshot());
     }
 }

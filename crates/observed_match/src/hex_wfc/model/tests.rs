@@ -19,7 +19,7 @@ fn tiles() -> Vec<TilePrototype> {
 /// trapped bots. `tiles()` deliberately keeps the compatibility hall kit while
 /// adding only the strict authored towers; rooms come from the real catalog.
 fn rooms() -> &'static [observed_authoring::RoomPrototype] {
-    &crate::hex_wfc::test_catalog().rooms
+    crate::hex_wfc::compatibility_test_content().rooms()
 }
 
 fn showcase_config(levels: u8) -> HexWfcConfig {
@@ -71,6 +71,19 @@ fn default_roster_is_two_stable_teams_of_two() {
     );
     assert_eq!(game.players[&PlayerId(1)].team, observed_core::TeamId(0));
     assert_eq!(game.players[&PlayerId(2)].team, observed_core::TeamId(1));
+}
+
+#[test]
+fn match_retains_the_shared_immutable_content_value() {
+    let content = std::sync::Arc::clone(crate::hex_wfc::compatibility_test_content());
+    let game = HexWfcMatch::new_with_content(44, HexMatchConfig::default(), content.clone())
+        .expect("default showcase match");
+
+    assert!(std::ptr::eq(game.content(), content.as_ref()));
+    assert_eq!(
+        game.simulation_content_hash,
+        content.simulation_content_hash()
+    );
 }
 
 #[test]

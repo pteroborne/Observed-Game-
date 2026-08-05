@@ -16,7 +16,7 @@ use player_input::PlayerIntent;
 use crate::flow::ActiveMatchSeed;
 
 use super::HexOnboardingGate;
-use super::launch::{HexAuthoringCorpus, HexLaunchError, HexLaunchSpec, HexSeedPolicy, prepare};
+use super::launch::{HexLaunchError, HexLaunchSpec, HexSeedPolicy, prepare};
 use super::loading::{HexLaunchRequest, PreparedHexLaunchSlot};
 use super::overlay::{MatchOverlayState, SimulationPolicy, simulation_policy};
 
@@ -67,11 +67,11 @@ fn tile_dir() -> std::path::PathBuf {
 
 /// Load the same authored-plus-compatibility corpus used by tests and evidence.
 pub(crate) fn load_prototypes() -> Vec<TilePrototype> {
-    load_authoring_corpus().cells
+    load_authoring_corpus().cells().to_vec()
 }
 
 pub(crate) fn simulation_content_hash() -> [u8; 32] {
-    load_authoring_corpus().simulation_content_hash
+    load_authoring_corpus().simulation_content_hash()
 }
 
 pub(crate) fn match_from_launch(
@@ -89,8 +89,8 @@ pub(crate) fn match_from_launch(
     .map(|prepared| prepared.match_state)
 }
 
-fn load_authoring_corpus() -> HexAuthoringCorpus {
-    super::launch::load_current_corpus().expect("committed runtime hex catalog loads")
+fn load_authoring_corpus() -> std::sync::Arc<observed_match::hex_wfc::HexMatchContent> {
+    super::launch::load_current_content().expect("committed runtime hex catalog loads")
 }
 
 /// Tests swap the production 28×20×10 solve for the compact showcase fixture.

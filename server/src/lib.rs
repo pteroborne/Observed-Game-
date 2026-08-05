@@ -9,12 +9,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use observed_authoring::RuntimeHexCatalog;
 use observed_content::ArchitectureRegister;
 use observed_core::{PlayerId, TeamId};
 use observed_facility::hex_wfc::HexWfcConfig;
 use observed_match::hex_wfc::{
-    HEX_INPUT_VERSION, HexInputFrame, HexMatchConfig, HexMatchStatus, HexPlayerCommand, HexWfcMatch,
+    HEX_INPUT_VERSION, HexInputFrame, HexMatchConfig, HexMatchContent, HexMatchStatus,
+    HexPlayerCommand, HexWfcMatch,
 };
 use observed_net::lan::{
     LanPacket, LobbyAction, MAX_DATAGRAM, WireFrame, WireHexCommand, WirePhase, WireSeat,
@@ -167,7 +167,7 @@ struct ClientConnection {
 pub struct AuthoritativeServer {
     socket: UdpSocket,
     pub config: ServerConfig,
-    catalog: RuntimeHexCatalog,
+    content: Arc<HexMatchContent>,
     pub session: LanSession,
     clients: BTreeMap<u64, ClientConnection>,
     inputs: BTreeMap<(PlayerId, u64), WireHexCommand>,
@@ -194,8 +194,10 @@ impl AuthoritativeServer {
         config.match_config.teams = roster.teams;
         config.match_config.members_per_team = roster.members_per_team;
         let register_slugs = ArchitectureRegister::ALL.map(ArchitectureRegister::slug);
-        let catalog = RuntimeHexCatalog::load(&config.tile_dir, &register_slugs)
-            .map_err(|error| format!("load runtime hex catalog: {error}"))?;
+        let content = Arc::new(
+            HexMatchContent::load(&config.tile_dir, &register_slugs)
+                .map_err(|error| format!("load runtime hex catalog: {error}"))?,
+        );
         let socket = UdpSocket::bind(config.bind)
             .map_err(|error| format!("bind {}: {error}", config.bind))?;
         socket
@@ -218,7 +220,7 @@ impl AuthoritativeServer {
             socket,
             session: LanSession::with_roster(session_id, min_humans, roster),
             config,
-            catalog,
+            content,
             clients: BTreeMap::new(),
             inputs: BTreeMap::new(),
             match_state: None,
@@ -435,7 +437,7 @@ impl AuthoritativeServer {
             self.reject(address, "hex input version mismatch");
             return;
         }
-        if simulation_content_hash != self.catalog.simulation_content_hash {
+        if simulation_content_hash != self.content.simulation_content_hash() {
             self.reject(address, "simulation content mismatch");
             return;
         }
@@ -506,21 +508,14 @@ impl AuthoritativeServer {
 
     fn start_match(&mut self, seed: u64) -> Result<(), String> {
         let config = self.config.match_config;
-        let (mut game, selected_seed) = (0..64u64)
+        let (game, selected_seed) = (0..64u64)
             .find_map(|offset| {
                 let seed = seed.wrapping_add(offset);
-                HexWfcMatch::new_with_profile(
-                    seed,
-                    config,
-                    &self.catalog.cells,
-                    &self.catalog.rooms,
-                    &self.catalog.composition,
-                )
-                .ok()
-                .map(|game| (game, seed))
+                HexWfcMatch::new_with_content(seed, config, Arc::clone(&self.content))
+                    .ok()
+                    .map(|game| (game, seed))
             })
             .ok_or("no solvable nearby server seed")?;
-        game.bind_simulation_content_hash(self.catalog.simulation_content_hash);
         self.config.base_seed = selected_seed.wrapping_sub(u64::from(self.session.match_number));
         self.match_state = Some(game);
         self.launch_config = Some(config);
@@ -540,7 +535,7 @@ impl AuthoritativeServer {
             seed: selected_seed,
             match_number: self.session.match_number,
             config,
-            simulation_content_hash: self.catalog.simulation_content_hash,
+            simulation_content_hash: self.content.simulation_content_hash(),
         });
         Ok(())
     }
@@ -647,7 +642,7 @@ impl AuthoritativeServer {
                 seed: game.seed,
                 match_number: self.session.match_number,
                 config,
-                simulation_content_hash: self.catalog.simulation_content_hash,
+                simulation_content_hash: self.content.simulation_content_hash(),
             },
         );
     }
@@ -1000,7 +995,7 @@ mod tests {
             ..ServerConfig::default()
         };
         let mut server = AuthoritativeServer::bind(config).expect("server binds");
-        let hash = server.catalog.simulation_content_hash;
+        let hash = server.content.simulation_content_hash();
         let address = server.local_addr().expect("server address");
         let mut client = LanClient::connect(address, 77, None, None, hash).expect("client binds");
 
@@ -1079,7 +1074,7 @@ mod tests {
             ..ServerConfig::default()
         };
         let mut server = AuthoritativeServer::bind(config).expect("server binds");
-        let hash = server.catalog.simulation_content_hash;
+        let hash = server.content.simulation_content_hash();
         let address = server.local_addr().expect("server address");
         let mut first = LanClient::connect(address, 71, None, None, hash).expect("first binds");
         let mut second = LanClient::connect(address, 72, None, None, hash).expect("second binds");
@@ -1132,7 +1127,7 @@ mod tests {
         };
         let mut server = AuthoritativeServer::bind(config).expect("server binds");
         assert_eq!(server.session.min_humans, 2);
-        let hash = server.catalog.simulation_content_hash;
+        let hash = server.content.simulation_content_hash();
         let address = server.local_addr().expect("server address");
         let mut first = LanClient::connect(address, 81, None, None, hash).expect("first binds");
         drive_until(&mut server, &mut first, |client| client.lobby.is_some());

@@ -3,6 +3,7 @@
 //! observation frames that pin them — everything Phase 95's game shell drives.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use glam::Vec3;
 use observed_authoring::{RoomPrototype, TilePrototype};
@@ -14,6 +15,8 @@ use observed_facility::hex_wfc::{
 };
 use observed_hex::{HexCoord, HexFace, hex_origin};
 use observed_traversal::{FpsBody, FpsConfig, rapier_controller::RapierTraversalScene};
+
+use super::content::HexMatchContent;
 use player_input::PlayerIntent;
 
 use super::geometry::{HexGeometryError, HexWfcGeometrySnapshot};
@@ -256,6 +259,9 @@ pub struct HexWfcMatch {
     pub observation: HexObservationFrame,
     pub(super) bodies: BTreeMap<PlayerId, FpsBody>,
     pub(super) physics: RapierTraversalScene,
+    /// Temporary Copy cache for existing movement/bot consumers. Its sole
+    /// source is [`Self::content`]; TR-3 moves those consumers onto the named
+    /// traversal profile and removes this mirror.
     pub(super) traversal_config: FpsConfig,
     /// Consecutive ticks each non-escaped player's body has failed to make net
     /// progress (wedged against geometry). The objective bot reads this to
@@ -266,11 +272,9 @@ pub struct HexWfcMatch {
     /// The last position from which a player made clear net progress; the
     /// reference the stuck tracker measures displacement against.
     pub(super) progress_anchor: BTreeMap<PlayerId, Vec3>,
-    /// Authored tile corpus retained so a committed relayout can re-project the
-    /// collision geometry mid-match. Same prototypes the initial solve used.
-    pub(super) prototypes: Vec<TilePrototype>,
-    /// Validated whole-room modules, selected before the per-cell fallback kit.
-    pub(super) room_prototypes: Vec<RoomPrototype>,
+    /// Immutable content retained so relayout uses the same catalog,
+    /// composition, movement profile, and network identity as initial solve.
+    pub(super) content: Arc<HexMatchContent>,
     /// In-flight observation-safe relayout, if any. `None` between cycles.
     pub(super) pending_relayout: Option<PendingRelayout>,
     /// The deterministic tick at which the next relayout commits. The paired
@@ -335,6 +339,23 @@ impl HexWfcMatch {
         room_prototypes: &[RoomPrototype],
         composition: &HexCompositionProfile,
     ) -> Result<Self, HexMatchError> {
+        Self::new_with_content(
+            seed,
+            config,
+            Arc::new(HexMatchContent::compatibility(
+                prototypes,
+                room_prototypes,
+                composition,
+            )),
+        )
+    }
+
+    /// Build a match from one immutable, host-loaded content value.
+    pub fn new_with_content(
+        seed: u64,
+        config: HexMatchConfig,
+        content: Arc<HexMatchContent>,
+    ) -> Result<Self, HexMatchError> {
         let player_count = config.teams.saturating_mul(config.members_per_team);
         // Sixteen, matching `observed_net::lan::MAX_SEATS`. The old ceiling of 8
         // was below what the wire could carry once frames stopped being a fixed
@@ -350,12 +371,15 @@ impl HexWfcMatch {
         let production_scale =
             config.wfc.cols >= 28 && config.wfc.rows >= 20 && config.wfc.levels >= 10;
         let quotas = production_scale.then(|| HexRoomQuotas::for_team_count(config.teams));
-        let facility = HexWfcWorld::generate_with_profile(seed, config.wfc, quotas, composition)?;
-        let geometry =
-            HexWfcGeometrySnapshot::project_with_rooms(&facility, prototypes, room_prototypes)?;
+        let facility =
+            HexWfcWorld::generate_with_profile(seed, config.wfc, quotas, content.composition())?;
+        let geometry = HexWfcGeometrySnapshot::project_with_rooms(
+            &facility,
+            content.cells(),
+            content.rooms(),
+        )?;
         let physics = geometry.rapier_scene();
-        let mut traversal_config = FpsConfig::deliberate_rapier();
-        traversal_config.look_step = 1.0;
+        let traversal_config = content.traversal_config();
         let spawn = facility.config.spawn();
         let spawn_yaw = initial_spawn_yaw(&facility);
         let spawn_origin = Vec3::from_array(hex_origin(spawn));
@@ -408,7 +432,7 @@ impl HexWfcMatch {
             .collect();
         let mut game = Self {
             seed,
-            simulation_content_hash: [0; 32],
+            simulation_content_hash: content.simulation_content_hash(),
             tick: 0,
             facility,
             geometry,
@@ -435,8 +459,7 @@ impl HexWfcMatch {
             traversal_config,
             stuck_ticks: BTreeMap::new(),
             progress_anchor: BTreeMap::new(),
-            prototypes: prototypes.to_vec(),
-            room_prototypes: room_prototypes.to_vec(),
+            content,
             pending_relayout: None,
             next_mutation_tick: mutation::scheduled_mutation_tick(seed, 0),
             spawn_to_exit_cost: 1,
@@ -449,6 +472,16 @@ impl HexWfcMatch {
         Ok(game)
     }
 
+    /// The immutable authored/runtime input this match retains for relayout.
+    #[must_use]
+    pub fn content(&self) -> &HexMatchContent {
+        &self.content
+    }
+
+    /// Compatibility adapter for slice-built tests that supply an artificial
+    /// identity after construction. Production constructors receive their hash
+    /// through [`HexMatchContent`] and do not call this method.
+    ///
     /// Bind the compiled authoring catalogue before the first input frame.
     /// Keeping filesystem discovery in the host preserves the pure simulation
     /// boundary while making content mismatch part of authoritative state.

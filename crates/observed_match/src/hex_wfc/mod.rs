@@ -4,10 +4,12 @@
 //! Rapier controller. The square [`crate::full_wfc`] projection remains a
 //! separate regression fixture until the Arc L integration cutover.
 
+mod content;
 mod geometry;
 mod model;
 pub mod trim;
 
+pub use content::HexMatchContent;
 pub use geometry::{
     HexGeometryDelta, HexGeometryError, HexLightSource, HexRoomSocket, HexStructurePiece,
     HexStructureRole, HexWfcGeometrySnapshot,
@@ -48,15 +50,31 @@ fn test_catalog() -> &'static observed_authoring::RuntimeHexCatalog {
 }
 
 #[cfg(test)]
+fn compatibility_test_content() -> &'static std::sync::Arc<HexMatchContent> {
+    static CONTENT: std::sync::OnceLock<std::sync::Arc<HexMatchContent>> =
+        std::sync::OnceLock::new();
+    CONTENT.get_or_init(|| {
+        let mut cells = observed_authoring::tile_source::compatibility_cells()
+            .expect("compatibility tiles generate");
+        cells.extend(
+            test_catalog()
+                .cells
+                .iter()
+                .filter(|tile| tile.key.archetype == "stair_tower")
+                .cloned(),
+        );
+        std::sync::Arc::new(HexMatchContent::from_runtime_catalog(
+            observed_authoring::RuntimeHexCatalog {
+                cells,
+                rooms: test_catalog().rooms.clone(),
+                composition: observed_facility::hex_wfc::HexCompositionProfile::baseline(),
+                simulation_content_hash: [0; 32],
+            },
+        ))
+    })
+}
+
+#[cfg(test)]
 fn test_tiles() -> Vec<observed_authoring::TilePrototype> {
-    let mut cells = observed_authoring::tile_source::compatibility_cells()
-        .expect("compatibility tiles generate");
-    cells.extend(
-        test_catalog()
-            .cells
-            .iter()
-            .filter(|tile| tile.key.archetype == "stair_tower")
-            .cloned(),
-    );
-    cells
+    compatibility_test_content().cells().to_vec()
 }
