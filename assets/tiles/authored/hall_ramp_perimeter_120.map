@@ -317,7 +317,7 @@
 {
 "classname" "tile_stair_node"
 "index" "4"
-"origin" "39.0600 22.3200 136"
+"origin" "40.5459 23.1691 136"
 }
 {
 "classname" "tile_light"

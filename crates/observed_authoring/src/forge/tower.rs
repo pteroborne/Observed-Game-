@@ -21,22 +21,21 @@
 //! authored tower declares the runtime name directly. The four source names are
 //! not the authoring interface.
 //!
-//! ## Why this is an addition, not a replacement
+//! ## Why the replacement was atomic
 //!
-//! `tile_for` picks a tower per *column*, from the base cell's register, because
-//! mixing tower shapes within a column tops a lower flight out under the upper
-//! cell's solid deck and stops a body climbing. That makes partial coverage the
-//! dangerous case - and it does not arise here. `Catalogue::new` keys
-//! `(archetype, register, signature)` to a `Vec`, and `select` runs
-//! `weighted_select` over it, so this tower joins the same bucket as the
-//! generated one and is chosen by weight. Every signature keeps a complete
-//! fallback; no column can be stranded.
+//! `Catalogue::new` keys candidates by `(archetype, register, signature)`, and
+//! a shaft column's cells have different signatures as their doors and end caps
+//! change. The generated switchback and this helix therefore could not coexist:
+//! even a column-constant variation key could select one family below and the
+//! other above, putting the lower landing under solid floor. The authored
+//! family covers all 66 signatures, so removing the switchback in the same
+//! change leaves every demand served by one column-compatible shape.
 
 use super::GENERATED_NOTE;
 use super::entities::{
     Meta, deck_node, lateral_port, tile_cell, vertical_port, wall_fixture, worldspawn,
 };
-use super::geometry::{DOOR_TOP, FLOOR_TOP, LEVEL, corners, door_wall, hex_slab, wall};
+use super::geometry::{DOOR_TOP, FLOOR_TOP, LEVEL, WALL, corners, door_wall, hex_slab, wall};
 use super::perimeter::{Extent, landing, pierced_floor, spine, thin_flight};
 
 /// How far the climb sweeps. Fixed, and that is the point.
@@ -66,12 +65,25 @@ const SWEEP: usize = 4;
 /// degrees, inside the validator's 0.65 and the controller's 36.
 const OUTER_SCALE: f64 = 0.75;
 
-/// Weight against the generated switchback in the same bucket.
+/// Where the ring path runs, as a fraction of the hexagon: midway between the
+/// climb's outer edge and the inside face of the wall.
 ///
-/// Deliberately not overwhelming. This is the first authored tower and it has
-/// never been played; giving it a modest share means a facility mixes the two
-/// rather than betting every shaft on geometry no human has walked. Raise it
-/// once it has been.
+/// Derived rather than picked, because the band is narrow. `WALL` is measured
+/// against the apothem, which is 112 units, so the wall's inner surface is that
+/// fraction in from the rim - and the same fraction serves the corners to
+/// within a third of a percent, the hexagon being close enough to regular.
+///
+/// It matters that a node sits in the *middle* of the band. At 0.875 - halfway
+/// between the climb and the rim, ignoring the wall - a node stands 0.025 m
+/// nearer the wall than a 0.4 m body can reach, which the controller quietly
+/// absorbed by pushing the body off its own path.
+const RING: f64 = (OUTER_SCALE + (1.0 - WALL / 112.0)) * 0.5;
+
+/// Positive catalogue weight carried by every member of the family.
+///
+/// Each signature currently has one tower candidate, so the exact value is
+/// inert. Keeping the original authored value avoids changing selection if a
+/// second column-compatible treatment is introduced later.
 const WEIGHT: u32 = 6;
 
 /// Every door pattern a tower can be asked for: none, each single face, and
@@ -139,8 +151,8 @@ pub fn towers() -> Vec<Tower> {
     out
 }
 
-/// How a tower connects vertically. This is what decides its port signature,
-/// and with it which generated tower it stands beside.
+/// How a tower connects vertically. This decides the vertical part of its port
+/// signature and therefore which solver demand it satisfies.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Vertical {
     /// Open above and below - the through-tower, the common case.
@@ -189,7 +201,15 @@ pub fn stair_tower(tower: &Tower, variant: i32) -> String {
         variant: 0,
         outer_scale: OUTER_SCALE,
     };
-    let top = 2.0 * LEVEL;
+    // **One level, not two.** `levels: 2` is a reservation letting the flight
+    // poke half a metre into the cell above to land flush; it is not a claim on
+    // that cell's space. A shaft column places a tower at *every* level, so an
+    // envelope two levels tall puts each tower's upper half inside its
+    // neighbour - and a wall there seals the doorway the tower above just cut.
+    // Measured: all 108 exits stopped 0.4 m short of their own doors, pressed
+    // against the wall of the tower below. The generated family used one level
+    // here and was right to.
+    let top = LEVEL;
 
     let mut brushes = String::new();
     // The floor is an aperture where a flight arrives through it - the hole
@@ -203,10 +223,18 @@ pub fn stair_tower(tower: &Tower, variant: i32) -> String {
         brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 2.0, 0.0));
     }
 
-    brushes.push_str("// Helical flight, 240 degrees, two triangles per face\n");
-    brushes.push_str(&thin_flight(extent));
-    brushes.push_str("// Landing at the head of the climb\n");
-    brushes.push_str(&landing(extent));
+    // **A shaft head has no staircase.** Nothing climbs out of one - it
+    // declares no `up` port - so a flight inside it only ever ended at the lid.
+    // That is the generated family's worst fault stated as geometry rather than
+    // as a margin: all 242 of its capped towers ran a switchback into a ceiling
+    // with 1.70 m of clearance for a 1.8 m body. The body that matters in a
+    // shaft head arrives from *below*, onto this floor, and leaves by a door.
+    if vertical.open_above() {
+        brushes.push_str("// Helical flight, 240 degrees, two triangles per face\n");
+        brushes.push_str(&thin_flight(extent));
+        brushes.push_str("// Landing at the head of the climb\n");
+        brushes.push_str(&landing(extent));
+    }
 
     brushes.push_str(
         "// Envelope: doors where the shaft is entered, wall elsewhere
@@ -222,17 +250,19 @@ pub fn stair_tower(tower: &Tower, variant: i32) -> String {
         }
     }
 
-    // No cap when the climb continues. A perimeter helix cannot run under a
-    // solid deck at all: with 2.2 m of headroom a body reaches 5.3 m of the 8 m
-    // it needs, so a capped through-tower would be unclimbable rather than
-    // merely enclosed.
+    // No cap when the climb continues: a lid over a helix is a lid on the
+    // stairwell, and the climb needs the whole level to reach the deck above.
     if !vertical.open_above() {
         brushes.push_str("// Capped: nothing climbs out of the top of this one\n");
         brushes.push_str(&hex_slab(top - FLOOR_TOP, top, 0.0, 3.0));
     }
 
     let mut lights = String::new();
-    for (face, z) in [(4usize, 88.0), (2usize, 184.0)] {
+    // Both practicals inside this cell. The upper one used to sit at 184 units
+    // - 11.5 m, a level and a half up - which was only ever legal because the
+    // envelope reached into the cell above. `wall_fixture` spans `z` either
+    // side by 8, so a ceiling at 128 puts the highest legal centre at 120.
+    for (face, z) in [(4usize, 48.0), (2usize, 104.0)] {
         let (fixture, source) = wall_fixture(face, 0.5, z, 20.0);
         brushes.push_str(&fixture);
         lights.push_str(&source);
@@ -311,55 +341,75 @@ pub fn stair_tower(tower: &Tower, variant: i32) -> String {
             0,
         ));
     }
-    out.push_str(&spine(extent));
+    // A spine is the line through a climb, so a tower with no climb ships none
+    // and `climb_command` declines it. Its deck still serves, which is the
+    // whole of what a shaft head needs: arrive, cross, leave.
+    if vertical.open_above() {
+        out.push_str(&spine(extent));
+    }
     out.push_str(&ring_deck(extent));
     out.push_str(&lights);
     out
 }
 
-/// The flat route round the ring, from the rim to the foot of the climb.
+/// The flat route across a tower's floor: the two ends of the climb, and the
+/// ring that joins every door to them.
 ///
 /// The bot measures its distance to the spine and, when it is off the climb,
-/// walks this path toward the spine's first node. **With no deck path it is
-/// steered straight at the spine instead**, through whatever stands between.
-/// The last authored tower family shipped no deck at all;
-/// `every_generated_stair_tower_ships_a_walkable_deck` never caught it because
-/// it filters on the generated archetype names.
+/// walks this path toward the spine's first node; crossing a tower to a lateral
+/// door it walks the same path toward the doorway. **With no deck path it is
+/// steered straight at its goal**, through whatever stands between.
 ///
-/// ## A node on every face, and the last one at the foot
+/// Four things this has to get right, every one of them learned from a body
+/// that stopped rather than from reading the geometry.
 ///
-/// Both of those were learned from bodies rather than argued, by
-/// `a_tower_climbs_from_every_face_a_door_could_be_on`. The first version
-/// covered four faces and ended on the rim, and two of the six starts walked
-/// into the side of the flight and stayed there. `DeckPath::step_toward` hands
-/// back the goal itself once the body and the goal are nearest the same leg, so
-/// wherever the path runs out, the rest of the way is a straight line - and a
-/// straight line from the rim to the foot crosses the climb.
+/// - **It ends at [`Extent::foot`]**, the point the spine starts at, so it
+///   reaches the climb instead of stopping a ring's width short of it.
+///   `DeckPath::step_toward` hands back the goal itself once body and goal are
+///   nearest the same leg, so wherever the path runs out the rest of the way is
+///   a straight line - and a straight line from the rim to the foot crosses the
+///   flight. Two of six door approaches walked into it.
+/// - **It starts at [`Extent::head`]**, where the tower *below* sets a body
+///   down. Nothing in a single tile stands there, so no single-tile test could
+///   want it, and a body arriving from below was handed a leg at whichever ring
+///   node happened to be nearest - across the stairwell. That was the spectator
+///   stalling at the head of a shaft with all three levels climbed.
+/// - **Head and foot are adjacent**, both inside the inner hexagon, which is
+///   solid on every tower. Continuing up a shaft is the commonest move there
+///   is, and putting the ring between them would send a body all the way round
+///   the tower at every level.
+/// - **The ring turns at its corners.** A chord between two face midpoints
+///   passes nearer the centre than either end - at this radius, 0.87 m inside
+///   the climb's outer edge - so a ring drawn corner to corner cuts through the
+///   stairwell twice per lap. With the floor solid that was survivable; with
+///   [`pierced_floor`](super::perimeter::pierced_floor) opening the arrival band
+///   it is a fall.
 ///
-/// - **The last node is [`Extent::foot`]**, the same point the spine starts at,
-///   so the path reaches the climb instead of stopping a ring's width short of
-///   it. That leg comes off the face at `start + 5`, which the sweep does not
-///   cover, so it runs over open floor.
-/// - **Every face carries a node**, or a body entering on an uncovered one is
-///   handed a leg across the cell and cuts the chord through the stairwell.
-///
-/// The ring is a polyline and not a loop, so one face - the climb's own,
-/// `start` - is at the far end and walks the long way round. That is the price
-/// of a single ordered path, and it is paid in walking rather than in stalling.
+/// The ring is a polyline and not a loop, so one face is at the far end and
+/// walks the long way round. That is the price of a single ordered path, and it
+/// is paid in walking rather than in stalling.
 #[must_use]
 fn ring_deck(extent: Extent) -> String {
-    // Midway between the climb's outer edge and the wall: the walkable part of
-    // the ring, clear of both.
-    let ring = (OUTER_SCALE + 1.0) * 0.5;
-    let at = |face: usize| -> (f64, f64) {
+    let start = extent.start_face();
+    let at_face = |face: usize| -> (f64, f64) {
         let (a, b) = (corners()[face % 6], corners()[(face + 1) % 6]);
-        ((a.0 + b.0) * 0.5 * ring, (a.1 + b.1) * 0.5 * ring)
+        ((a.0 + b.0) * 0.5 * RING, (a.1 + b.1) * 0.5 * RING)
+    };
+    let at_corner = |corner: usize| -> (f64, f64) {
+        let c = corners()[corner % 6];
+        (c.0 * RING, c.1 * RING)
     };
 
-    // Round the whole rim, away from the climb's own face, then in to its foot.
-    let start = extent.start_face();
-    let mut plan: Vec<(f64, f64)> = (0..6).map(|step| at(start + step)).collect();
-    plan.push(extent.foot());
+    // Where the climb leaves a body, then where it takes one on, then out
+    // through the one face the sweep never covers and round the whole rim.
+    let mut plan = vec![extent.head(), extent.foot()];
+    for step in 0..6 {
+        plan.push(at_face(start + 5 + step));
+        if step < 5 {
+            // The corner shared by this face and the next.
+            plan.push(at_corner(start + step));
+        }
+    }
 
     let mut out = String::new();
     for (index, (x, y)) in plan.into_iter().enumerate() {
@@ -387,8 +437,8 @@ pub fn builders() -> Vec<(String, String)> {
 mod tests {
     use super::*;
 
-    /// The signatures must match the generated towers they stand beside, or
-    /// they land in a different bucket and are never selected.
+    /// The signatures must match the solver demand or the tower lands in a
+    /// different bucket and is never selected.
     #[test]
     fn each_vertical_declares_the_ports_its_connectivity_implies() {
         for vertical in verticals() {
@@ -481,10 +531,10 @@ mod tests {
         );
     }
 
-    /// Every tower carries a spine. Without one a follower has no line to walk
-    /// and the tower is exactly the trap the switchback was.
+    /// Every tower that climbs carries a spine. A shaft head deliberately has
+    /// neither an up port nor a staircase to describe.
     #[test]
-    fn every_tower_carries_a_spine() {
+    fn only_the_towers_that_climb_carry_a_spine() {
         for vertical in verticals() {
             let nodes = stair_tower(
                 &Tower {
@@ -495,32 +545,21 @@ mod tests {
             )
             .matches("\"classname\" \"tile_stair_node\"")
             .count();
-            assert!(
-                nodes >= SWEEP + 3,
-                "{:?} has only {nodes} spine nodes",
-                vertical
-            );
+            if vertical.open_above() {
+                assert!(
+                    nodes >= SWEEP + 3,
+                    "{vertical:?} has only {nodes} spine nodes"
+                );
+            } else {
+                // A spine is the line through a climb. A shaft head has no
+                // climb, so a spine in one is a line to nowhere - and the bot
+                // follows spines.
+                assert_eq!(
+                    nodes, 0,
+                    "{vertical:?} is a shaft head and should not climb"
+                );
+            }
         }
-    }
-
-    /// The authored tower must not crowd out the generated one before anyone
-    /// has walked it.
-    #[test]
-    fn the_authored_tower_takes_a_modest_share() {
-        assert!(
-            (1..=10).contains(&WEIGHT),
-            "an unplayed shape should not dominate the bucket"
-        );
-        assert!(
-            stair_tower(
-                &Tower {
-                    vertical: Vertical::Through,
-                    doors: Vec::new()
-                },
-                FIRST_VARIANT
-            )
-            .contains(&format!("\"weight\" \"{WEIGHT}\""))
-        );
     }
 
     /// A climb must reach the port it advertises.
@@ -587,75 +626,64 @@ mod tests {
         }
     }
 
-    /// A capped tower's lid must clear its climb by a body's height.
+    /// A shaft head ships no staircase at all.
     ///
-    /// This is the generated family's fault, stated as a test. Its shaft heads
-    /// capped at `h - FLOOR_TOP` (7.5 m) while the flight kept climbing to 8.5,
-    /// straight through the lid: 1.70 m of clearance for a 1.8 m body, on all
-    /// 242 capped towers in the library. Nothing caught it, because the
-    /// importer does not measure headroom over a flight and those tiles are
-    /// authoring version 1.
+    /// Stronger than the contract this replaces, and simpler. The generated
+    /// family capped its heads at `h - FLOOR_TOP` (7.5 m) while the flight kept
+    /// climbing to 8.5, straight through the lid: 1.70 m of clearance for a
+    /// 1.8 m body, on all 242 capped towers in the library. The first authored
+    /// answer was to hold the lid a body's height above the climb, which worked
+    /// only by giving the tower a two-level envelope - and that envelope turned
+    /// out to seal the doors of the tower standing on it.
     ///
-    /// Here the cap sits at the top of the reserved two-level envelope and the
-    /// climb ends one level below it, so the margin is large - but "large by
-    /// accident" is what the generated family had until someone moved a
-    /// constant.
+    /// Nothing climbs out of a shaft head; it declares no `up` port. A flight
+    /// inside one is a route that can only end at the ceiling, so the honest
+    /// fix is not to build it. What a body does in a shaft head is arrive from
+    /// below, cross the floor and leave by a door, and the deck serves that.
     #[test]
-    fn a_capped_tower_clears_its_climb_by_a_body() {
-        let body = f64::from(observed_traversal::FpsConfig::default().half_height) * 2.0;
-        for vertical in verticals() {
-            if vertical.open_above() {
+    fn a_shaft_head_ships_no_staircase() {
+        for tower in towers() {
+            if tower.vertical.open_above() {
                 continue;
             }
-            let module = crate::parse_authored_module(&stair_tower(
-                &Tower {
-                    vertical,
-                    doors: Vec::new(),
-                },
-                FIRST_VARIANT,
-            ))
-            .unwrap_or_else(|error| {
-                panic!(
-                    "{}: {error:?}",
-                    Tower {
-                        vertical,
-                        doors: Vec::new()
-                    }
-                    .stem()
-                )
-            });
-            let top = module
-                .prototype
-                .spine
-                .nodes
-                .last()
-                .copied()
-                .expect("a tower ships a spine");
-            // The lid's underside, in metres: the envelope's top less the slab.
-            let lid = (2.0 * LEVEL - FLOOR_TOP) / 16.0;
+            let text = stair_tower(&tower, FIRST_VARIANT);
+            let module = crate::parse_authored_module(&text)
+                .unwrap_or_else(|error| panic!("{}: {error:?}", tower.stem()));
             assert!(
-                lid - f64::from(top.y) >= body,
-                "{}: climb ends at {:.2} m under a lid at {lid:.2} m, leaving {:.2} m for a                  {body:.2} m body",
-                Tower {
-                    vertical,
-                    doors: Vec::new()
-                }
-                .stem(),
-                top.y,
-                lid - f64::from(top.y)
+                module.prototype.spine.nodes.is_empty(),
+                "{}: a shaft head carries a spine to nowhere",
+                tower.stem()
             );
+            assert!(
+                text.contains("Capped"),
+                "{}: a shaft head must close",
+                tower.stem()
+            );
+            // And every hull stays inside this cell: the lid is its own
+            // ceiling, not a floor hanging in the one above.
+            let ceiling = f64::from(observed_hex::TILE_LEVEL_HEIGHT);
+            for hull in &module.prototype.hulls {
+                for point in hull {
+                    assert!(
+                        f64::from(point.y) <= ceiling + 1e-3,
+                        "{}: a hull reaches {:.2} m, past this cell's {ceiling:.2} m",
+                        tower.stem(),
+                        point.y
+                    );
+                }
+            }
         }
     }
 
-    /// The ring must touch every face and end where the climb starts.
+    /// The deck must join both ends of the climb and touch every face.
     ///
-    /// `a_tower_climbs_from_every_face_a_door_could_be_on` is the test that
-    /// found both of these, but it finds them by walking eighteen bodies
-    /// through Rapier and reporting where they stopped. This states the same
-    /// two properties as shape, so breaking one fails here first and says which
-    /// it was.
+    /// `a_tower_climbs_from_every_face_a_door_could_be_on` and
+    /// `a_tower_can_be_left_by_every_door_it_carries` are what found each of
+    /// these, but they find them by walking bodies through Rapier and reporting
+    /// where they stopped. This states the properties as shape, so breaking one
+    /// fails here first and says which it was.
     #[test]
-    fn the_ring_deck_touches_every_face_and_ends_at_the_foot() {
+    fn the_deck_joins_both_ends_of_the_climb_and_every_face() {
         let extent = Extent {
             faces: SWEEP,
             variant: 0,
@@ -667,30 +695,58 @@ mod tests {
             let deck = &module.prototype.deck.nodes;
             assert_eq!(
                 deck.len(),
-                7,
-                "{}: a ring is six faces and the run in to the foot",
+                13,
+                "{}: head, foot, and a ring of six faces turning at five corners",
                 tower.stem()
             );
+
+            // Both ends of the climb, adjacent and in order: a body continuing
+            // up a shaft crosses between them in one leg, not a lap.
+            let plan = |point: glam::Vec3| (f64::from(point.x), f64::from(point.z));
+            let (hx, hy) = extent.head();
+            let (fx, fy) = extent.foot();
+            // A tenth of a millimetre, not an epsilon: these have been through
+            // the `.map`, which emits four decimal places of TB units.
+            let near =
+                |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).abs() < 1e-4 && (a.1 - b.1).abs() < 1e-4;
+            assert!(
+                near(plan(deck[0]), (hx / 16.0, -hy / 16.0)),
+                "{}: the deck does not start where the climb sets a body down",
+                tower.stem()
+            );
+            assert!(
+                near(plan(deck[1]), (fx / 16.0, -fy / 16.0)),
+                "{}: the deck does not reach the foot of the climb",
+                tower.stem()
+            );
+            // A shaft head has no spine to agree with; it is where a climb
+            // ends, not where one starts.
+            if let Some(&first) = module.prototype.spine.nodes.first() {
+                assert!(
+                    near(plan(deck[1]), plan(first)),
+                    "{}: the deck's foot and the spine's have drifted apart",
+                    tower.stem()
+                );
+            }
+
             // One node per face, classified by which face's sector it stands
             // in - the bearing it points along, not a distance to a position
-            // this test recomputed. Six distinct sectors means no face is
-            // skipped, and a skipped face is a leg across the stairwell.
-            let mut sectors: Vec<usize> = deck[..6]
-                .iter()
-                .map(|node| {
-                    (0..6)
-                        .max_by(|&a, &b| {
-                            let toward = |face: usize| {
-                                let (u, v) = (corners()[face], corners()[(face + 1) % 6]);
-                                // TB y is the negated world z, as everywhere.
-                                let (mx, mz) = ((u.0 + v.0) * 0.5, -(u.1 + v.1) * 0.5);
-                                f64::from(node.x) * mx + f64::from(node.z) * mz
-                            };
-                            toward(a).total_cmp(&toward(b))
-                        })
-                        .expect("six faces")
-                })
-                .collect();
+            // this test recomputed. A skipped face is a leg across the
+            // stairwell.
+            let sector = |node: glam::Vec3| {
+                (0..6)
+                    .max_by(|&a, &b| {
+                        let toward = |face: usize| {
+                            let (u, v) = (corners()[face], corners()[(face + 1) % 6]);
+                            // TB y is the negated world z, as everywhere.
+                            let (mx, mz) = ((u.0 + v.0) * 0.5, -(u.1 + v.1) * 0.5);
+                            f64::from(node.x) * mx + f64::from(node.z) * mz
+                        };
+                        toward(a).total_cmp(&toward(b))
+                    })
+                    .expect("six faces")
+            };
+            let mut sectors: Vec<usize> = deck[2..].iter().copied().map(sector).collect();
             sectors.sort_unstable();
             sectors.dedup();
             assert_eq!(
@@ -699,35 +755,38 @@ mod tests {
                 "{}: the ring misses a face - its nodes lie in sectors {sectors:?}",
                 tower.stem()
             );
-            // And the last node is the spine's first, so the path reaches the
-            // climb rather than stopping a ring's width short of it.
-            let foot = module
-                .prototype
-                .spine
-                .nodes
-                .first()
-                .copied()
-                .expect("a tower ships a spine");
-            let last = *deck.last().expect("checked non-empty above");
-            assert!(
-                last.distance(foot) < 1e-3,
-                "{}: the deck ends at {last:?}, but the climb starts at {foot:?}",
-                tower.stem()
-            );
-            // Stated against the source of both, so the two cannot be brought
-            // back into agreement by editing one of them to a literal.
+
+            // And every leg of the ring stays clear of the climb. A chord
+            // between two face midpoints dips nearer the centre than either
+            // end, which is how a ring drawn corner to corner cuts through the
+            // stairwell twice a lap.
             //
-            // A tenth of a millimetre, not an epsilon: these coordinates have
-            // been through the `.map`, which emits four decimal places of TB
-            // units, so a foot that is not a round number comes back up to
-            // 3 micrometres off.
-            let (fx, fy) = extent.foot();
-            assert!(
-                (f64::from(foot.x) - fx / 16.0).abs() < 1e-4
-                    && (f64::from(foot.z) + fy / 16.0).abs() < 1e-4,
-                "{}: the climb does not start at Extent::foot",
-                tower.stem()
-            );
+            // Against the climb's *hexagon*, not a circle around it: the outer
+            // edge runs from 5.25 m at a face to 6.05 m at a corner, and
+            // comparing a leg against either number alone is wrong at the other
+            // end. A point is outside a convex hexagon exactly when it is
+            // beyond one of its six edges.
+            let apothem = f64::from(observed_hex::ACROSS_FLATS) * 0.5 * OUTER_SCALE;
+            let outside = |p: (f64, f64)| {
+                (0..6).any(|face| {
+                    let (u, v) = (corners()[face], corners()[(face + 1) % 6]);
+                    let (mx, mz) = ((u.0 + v.0) * 0.5, -(u.1 + v.1) * 0.5);
+                    let len = mx.hypot(mz);
+                    (p.0 * mx + p.1 * mz) / len > apothem
+                })
+            };
+            for pair in deck[2..].windows(2) {
+                let (a, b) = (plan(pair[0]), plan(pair[1]));
+                for sample in 0..=32 {
+                    let t = f64::from(sample) / 32.0;
+                    let p = (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t);
+                    assert!(
+                        outside(p),
+                        "{}: a ring leg from {a:?} to {b:?} passes through the climb at {p:?}",
+                        tower.stem()
+                    );
+                }
+            }
         }
     }
 
@@ -744,7 +803,7 @@ mod tests {
     /// forge states a distance and stays out of the controller's business; this
     /// is where the two have to agree.
     #[test]
-    fn a_foot_stands_clear_of_the_stairwell() {
+    fn interior_waypoints_stand_clear_of_the_stairwell() {
         let radius = f64::from(observed_traversal::FpsConfig::default().radius);
         // The aperture is concentric and hexagonal, so its nearest point to
         // anything outside it is a corner.
@@ -759,34 +818,22 @@ mod tests {
             }
             let module = crate::parse_authored_module(&stair_tower(&tower, FIRST_VARIANT))
                 .unwrap_or_else(|error| panic!("{}: {error:?}", tower.stem()));
-            let foot = module
-                .prototype
-                .spine
-                .nodes
-                .first()
-                .copied()
-                .expect("a tower ships a spine");
-            let stood_at = f64::from(foot.x).hypot(f64::from(foot.z));
-            assert!(
-                stood_at - lip >= radius,
-                "{}: the climb is joined {stood_at:.2} m out against a {lip:.2} m aperture, \
-                 leaving {:.2} m for a {radius:.2} m body",
-                tower.stem(),
-                stood_at - lip
-            );
-            // And the deck ends there, so the same clearance carries the body
-            // that walks in as well as the one that starts on the climb.
-            let last = *module
-                .prototype
-                .deck
-                .nodes
-                .last()
-                .expect("a tower ships a deck");
-            assert!(
-                last.distance(foot) < 1e-3,
-                "{}: the deck no longer ends at the foot",
-                tower.stem()
-            );
+            // Both interior points the deck sends a body to, taken from the
+            // deck itself: a shaft head has no spine to ask, and still stands a
+            // body on this floor.
+            for (what, node) in [
+                ("the climb is joined", module.prototype.deck.nodes[1]),
+                ("a body is set down", module.prototype.deck.nodes[0]),
+            ] {
+                let stood_at = f64::from(node.x).hypot(f64::from(node.z));
+                assert!(
+                    stood_at - lip >= radius,
+                    "{}: {what} {stood_at:.2} m out against a {lip:.2} m aperture, \
+                     leaving {:.2} m for a {radius:.2} m body",
+                    tower.stem(),
+                    stood_at - lip
+                );
+            }
         }
     }
 

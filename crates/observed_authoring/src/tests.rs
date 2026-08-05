@@ -6,7 +6,7 @@ use player_input::PlayerIntent;
 
 use crate::CompiledTileCatalog;
 use crate::manifest::Manifest;
-use crate::tile::{TileError, parse_tile};
+use crate::tile::{DeckPath, TileError, parse_tile};
 use crate::tile_source;
 
 fn signature(ports: &[(HexFace, PortClass)]) -> PortSignature {
@@ -19,6 +19,30 @@ fn signature(ports: &[(HexFace, PortClass)]) -> PortSignature {
 
 fn doors(faces: &[HexFace]) -> Vec<(HexFace, PortClass)> {
     faces.iter().map(|&face| (face, PortClass::Door)).collect()
+}
+
+/// A stateless deck follower must commit through a corner once the body has
+/// reached it. Otherwise the nearest-leg query can keep choosing the leg just
+/// completed and repeatedly return the shared node as its next target.
+#[test]
+fn deck_paths_capture_a_reached_corner_in_both_directions() {
+    let path = DeckPath {
+        nodes: vec![
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(1.0, 0.0, 2.0),
+            Vec3::new(3.0, 0.0, 2.0),
+        ],
+    };
+
+    assert_eq!(
+        path.step_toward(Vec3::new(0.85, 0.0, 0.05), Vec3::new(3.0, 0.0, 2.0)),
+        Some(Vec3::new(1.0, 0.0, 2.0))
+    );
+    assert_eq!(
+        path.step_toward(Vec3::new(1.15, 0.0, 1.95), Vec3::ZERO),
+        Some(Vec3::new(1.0, 0.0, 0.0))
+    );
 }
 
 #[test]
@@ -804,10 +828,12 @@ fn a_tower_can_be_left_by_every_door_it_carries() {
         });
         let config = FpsConfig::default();
 
-        // Where the tower below sets a body down: the plan position its climb
-        // ends at, on this tile's floor.
-        let top = *tile.spine.nodes.last().expect("a tower ships a spine");
-        let arrival = Vec3::new(top.x, tile.spine.nodes[0].y, top.z) + lift;
+        // Where the tower below sets a body down. Taken from the deck's own
+        // first node rather than from the spine: that node *is* `Extent::head`
+        // by construction, pinned by
+        // `the_deck_joins_both_ends_of_the_climb_and_every_face`, and a shaft
+        // head - which is exactly where this stalled - has no spine to ask.
+        let arrival = tile.deck.nodes[0] + lift;
 
         for door in doors {
             walked += 1;
@@ -849,7 +875,21 @@ fn a_tower_can_be_left_by_every_door_it_carries() {
             }
             if !reached {
                 let feet = body.position - Vec3::Y * config.half_height;
-                failures.push(format!("  {stem} to {door:?}: gave up at {feet:?}"));
+                // Which node it got to matters more than where it is. A body
+                // that gives up standing on a deck node has been handed the
+                // node it is already on; one that gives up between them is
+                // against something.
+                let (node, away) = tile
+                    .deck
+                    .nodes
+                    .iter()
+                    .enumerate()
+                    .map(|(index, n)| (index, Vec2::new(n.x - feet.x, n.z - feet.z).length()))
+                    .min_by(|a, b| a.1.total_cmp(&b.1))
+                    .expect("a tower ships a deck");
+                failures.push(format!(
+                    "  {stem} to {door:?}: gave up at {feet:?}, {away:.2} m from deck node {node}"
+                ));
             }
         }
     }
@@ -1008,14 +1048,14 @@ fn a_tower_climbs_from_every_face_a_door_could_be_on() {
     let mut failures = Vec::new();
     let mut walked = 0;
     for (stem, text) in crate::forge::tower::builders() {
-        let floor = crate::parse_authored_module(&text)
+        let tile = crate::parse_authored_module(&text)
             .unwrap_or_else(|error| panic!("{stem} does not validate: {error:?}"))
-            .prototype
-            .spine
-            .nodes
-            .first()
-            .expect("a tower ships a spine")
-            .y;
+            .prototype;
+        // A shaft head has no climb to reach - it is where a climb ends.
+        let Some(first) = tile.spine.nodes.first() else {
+            continue;
+        };
+        let floor = first.y;
         for face in HexFace::LATERAL {
             walked += 1;
             let walk = walk_from_as_the_bot_does(&text, just_inside(face, floor));

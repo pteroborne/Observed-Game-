@@ -8,7 +8,7 @@ use observed_hex::PortClass;
 use super::*;
 
 fn tiles() -> Vec<TilePrototype> {
-    observed_authoring::tile_source::compatibility_cells().expect("compatibility tiles")
+    crate::hex_wfc::test_tiles()
 }
 
 /// A hand-built two-cell world: `A` at `(5, 5, 0)` is a plain E/W hall, `B`
@@ -24,9 +24,9 @@ fn tiles() -> Vec<TilePrototype> {
 /// Both cells are put on different [`ArchitectureRegister`]s too, but that
 /// alone would not be visible to `derive_trim`: [`HexStructurePiece::tile`]
 /// carries the *selected geometry-catalogue* register (here always
-/// `"generic"`, since [`tiles`] only supplies the register-agnostic
-/// compatibility kit), not `HexWfcWorld::architecture` directly. The role
-/// difference is what a compatibility-only catalogue can actually exercise.
+/// `"generic"`, since these two cells use the register-agnostic compatibility
+/// hall kit), not `HexWfcWorld::architecture` directly. The role difference is
+/// what this fixture can actually exercise.
 fn two_cell_world() -> HexWfcWorld {
     let a = observed_hex::HexCoord {
         q: 5,

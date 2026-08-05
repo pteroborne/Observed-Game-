@@ -167,16 +167,36 @@ impl Extent {
         self.height(step) - FLOOR_TOP >= FLOOR_TOP + HEADROOM
     }
 
-    /// Whether the tile above must leave its floor open at the `step`th radial
-    /// seam, because the climb passing under it is too close to that floor for
-    /// a body to fit between the two.
+    /// Whether the tile above must leave its floor open at `seam`, on the facet
+    /// between `facet` and `facet + 1`, because the climb passing under it is
+    /// too close to that floor for a body to fit between the two.
     ///
-    /// Beyond the sweep there is no climb, so nothing to make room for -
-    /// [`Self::height`] extrapolates happily past the end and would otherwise
-    /// report the unswept faces as needing a hole in them.
+    /// Asked per **facet**, not per seam, and the difference is a face. A seam
+    /// is shared by the facet either side of it, and the last seam of the sweep
+    /// is also the first of the facet past its end - which carries no climb at
+    /// all. Judging by the seam alone opened a hole over a face nothing climbs,
+    /// costing a whole face of solid floor that the circulation then has to
+    /// route around.
     #[must_use]
-    fn arrives_through(self, step: usize) -> bool {
-        step <= self.faces && LEVEL - self.height(step) < HEADROOM
+    fn arrives_through(self, seam: usize, facet: usize) -> bool {
+        facet < self.faces && LEVEL - self.height(seam) < HEADROOM
+    }
+
+    /// Where the climb sets a body down, in plan: the spine's last node.
+    ///
+    /// Public for the same reason [`Self::foot`] is, and for a case that only
+    /// exists in a column. A tower's deck has to serve the body the tower
+    /// *below* delivers, and that body stands here - on this tile's floor, at
+    /// the plan position this tile's own climb ends at, because every tower in
+    /// a register is the same shape. Nothing in a single tile puts a body at
+    /// this point, which is why no deck ever led anywhere from it. Like the
+    /// foot, it must also stand a whole body clear of the conventional shaft
+    /// aperture: a deck waypoint is a place the controller is asked to occupy,
+    /// not merely a direction marker.
+    #[must_use]
+    pub fn head(self) -> P2 {
+        let m = self.mid(self.faces);
+        self.clear_aperture((m.0 * 0.45, m.1 * 0.45), self.faces)
     }
 
     /// Down the middle of the band at the `step`th radial seam.
@@ -213,9 +233,14 @@ impl Extent {
     pub fn foot(self) -> P2 {
         let m = self.mid(0);
         let nominal = (m.0 * 0.5, m.1 * 0.5);
-        // The foot lies on the sweep's start corner ray, and the nearest part of
-        // a concentric hexagonal hole to a point on a corner ray is its corner.
-        let corner = corners()[SWEEP_START % 6];
+        self.clear_aperture(nominal, 0)
+    }
+
+    /// Push a point on one of the sweep's corner rays clear of the concentric
+    /// shaft aperture while preserving its direction.
+    #[must_use]
+    fn clear_aperture(self, nominal: P2, step: usize) -> P2 {
+        let corner = corners()[(SWEEP_START + step) % 6];
         let clear = SHAFT_APERTURE_SCALE * corner.0.hypot(corner.1) + APERTURE_CLEARANCE;
         let radius = nominal.0.hypot(nominal.1);
         if radius >= clear {
@@ -361,11 +386,11 @@ pub(super) fn pierced_floor(extent: Extent, z0: f64, z1: f64) -> String {
         0.0,
     );
     for step in 0..6 {
-        let inward = |at: usize| {
-            if extent.arrives_through(at) {
-                extent.outer(at)
+        let inward = |seam: usize| {
+            if extent.arrives_through(seam, step) {
+                extent.outer(seam)
             } else {
-                extent.inner(at)
+                extent.inner(seam)
             }
         };
         let plan = vec![rim(step), rim(step + 1), inward(step + 1), inward(step)];
@@ -431,8 +456,8 @@ pub(super) fn spine(extent: Extent) -> String {
         nodes.push((point.0, point.1, extent.height(step)));
     }
     // Off the flight and onto the landing, toward the opening at the centre.
-    let head = extent.mid(extent.faces);
-    nodes.push((head.0 * 0.45, head.1 * 0.45, DECK_ABOVE));
+    let head = extent.head();
+    nodes.push((head.0, head.1, DECK_ABOVE));
 
     let mut out = String::new();
     for (index, node) in nodes.iter().enumerate() {

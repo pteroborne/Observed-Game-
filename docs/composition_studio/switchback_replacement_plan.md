@@ -390,3 +390,29 @@ deleting anything.
   compatibility. Expected, and worth landing alone.
 - **The 24-seed sweep is the gate that matters.** One seed proves one facility;
   the last attempt passed its own unit tests and failed 23 of 24 seeds.
+
+---
+
+## 8. Implemented resolution
+
+The replacement is now atomic. The generated switchback family is gone and 66
+unrotated authored helix sources cover every tower signature. The final stacked
+geometry also differs from the early slices above in several measured ways:
+
+- a tower owns a one-level envelope even though its climb reserves space above;
+- a shaft head has no staircase or spine into its cap;
+- a pierced floor opens only the high arrival facets and keeps the circulation
+  deck solid;
+- the deck joins the delivered head, the next climb's foot, every face, and the
+  ring corners; both interior waypoints clear the stairwell by a body radius.
+
+Two follower bugs were part of the same failure. `DeckPath` now captures a
+reached corner before choosing the next leg, and climb handoff is decided from
+the authored `StairSpine` terminal rather than a height threshold that a body
+on the sloped final tread can cross repeatedly. Match test fixtures retain their
+stable compatibility halls but add the strict authored towers, matching the
+atomic catalog boundary.
+
+Final gates: all authoring and match tests pass, the canonical spectator route
+completes, and `survey_spectator_routes_across_seeds` reports **0 of 24** seeds
+stalled.

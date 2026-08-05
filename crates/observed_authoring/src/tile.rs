@@ -8,7 +8,7 @@
 
 use std::ffi::CString;
 
-use glam::{Quat, Vec3};
+use glam::{Quat, Vec2, Vec3};
 use observed_hex::{HexFace, PortClass, PortSignature, TILE_LEVEL_HEIGHT, face_edge};
 use observed_traversal::{ArenaSpec, ColliderShape, ColliderSpec, StableColliderId};
 use quake_map::{Entity, QuakeMap};
@@ -316,6 +316,16 @@ pub struct DeckPath {
 }
 
 impl DeckPath {
+    /// How close a follower may come to a waypoint before it commits to the
+    /// next leg.
+    ///
+    /// The follower is deliberately stateless, so a capsule negotiating a
+    /// corner can otherwise keep locating itself on the leg it just walked and
+    /// target the shared endpoint forever. A quarter metre is smaller than the
+    /// production capsule radius and only cuts the inside of a turn by that
+    /// amount; authored deck paths must already leave a whole body clear.
+    const WAYPOINT_CAPTURE_RADIUS: f32 = 0.25;
+
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.nodes.len() < 2
@@ -357,11 +367,37 @@ impl DeckPath {
         let here = self.locate(from)?;
         let there = self.locate(goal)?;
         Some(match here.cmp(&there) {
-            std::cmp::Ordering::Less => self.nodes[here + 1],
-            std::cmp::Ordering::Greater => self.nodes[here],
+            std::cmp::Ordering::Less => {
+                let waypoint = here + 1;
+                if plan_distance(from, self.nodes[waypoint]) <= Self::WAYPOINT_CAPTURE_RADIUS {
+                    if waypoint >= there {
+                        goal
+                    } else {
+                        self.nodes[waypoint + 1]
+                    }
+                } else {
+                    self.nodes[waypoint]
+                }
+            }
+            std::cmp::Ordering::Greater => {
+                let waypoint = here;
+                if plan_distance(from, self.nodes[waypoint]) <= Self::WAYPOINT_CAPTURE_RADIUS {
+                    if waypoint.saturating_sub(1) <= there {
+                        goal
+                    } else {
+                        self.nodes[waypoint - 1]
+                    }
+                } else {
+                    self.nodes[waypoint]
+                }
+            }
             std::cmp::Ordering::Equal => goal,
         })
     }
+}
+
+fn plan_distance(a: Vec3, b: Vec3) -> f32 {
+    Vec2::new(a.x - b.x, a.z - b.z).length()
 }
 
 /// A validated, world-space tile ready for placement.
