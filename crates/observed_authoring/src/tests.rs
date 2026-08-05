@@ -1,14 +1,12 @@
 use glam::{Vec2, Vec3};
-use observed_hex::{
-    FLOOR_SLAB_TOP, HexFace, PortClass, PortSignature, TILE_LEVEL_HEIGHT, face_edge,
-};
+use observed_hex::{HexFace, PortClass, PortSignature, TILE_LEVEL_HEIGHT, face_edge};
 use observed_traversal::rapier_controller::{RapierTraversalScene, step_character};
-use observed_traversal::{FpsBody, FpsConfig};
+use observed_traversal::{ArenaSpec, FpsBody, FpsConfig};
 use player_input::PlayerIntent;
 
 use crate::CompiledTileCatalog;
 use crate::manifest::Manifest;
-use crate::tile::{TileError, TilePrototype, parse_tile};
+use crate::tile::{DeckPath, TileError, parse_tile};
 use crate::tile_source;
 
 fn signature(ports: &[(HexFace, PortClass)]) -> PortSignature {
@@ -21,6 +19,30 @@ fn signature(ports: &[(HexFace, PortClass)]) -> PortSignature {
 
 fn doors(faces: &[HexFace]) -> Vec<(HexFace, PortClass)> {
     faces.iter().map(|&face| (face, PortClass::Door)).collect()
+}
+
+/// A stateless deck follower must commit through a corner once the body has
+/// reached it. Otherwise the nearest-leg query can keep choosing the leg just
+/// completed and repeatedly return the shared node as its next target.
+#[test]
+fn deck_paths_capture_a_reached_corner_in_both_directions() {
+    let path = DeckPath {
+        nodes: vec![
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(1.0, 0.0, 2.0),
+            Vec3::new(3.0, 0.0, 2.0),
+        ],
+    };
+
+    assert_eq!(
+        path.step_toward(Vec3::new(0.85, 0.0, 0.05), Vec3::new(3.0, 0.0, 2.0)),
+        Some(Vec3::new(1.0, 0.0, 2.0))
+    );
+    assert_eq!(
+        path.step_toward(Vec3::new(1.15, 0.0, 1.95), Vec3::ZERO),
+        Some(Vec3::new(1.0, 0.0, 0.0))
+    );
 }
 
 #[test]
@@ -423,369 +445,6 @@ fn every_liminal_horizontal_variant_is_capsule_traversable_between_entrances() {
     );
 }
 
-/// The switchback stair is what every `Shaft` cell renders (`stair_tower`), so
-/// it is the most-walked vertical element in the facility - and it had no
-/// geometric coverage at all. These are the contracts whose violation a player
-/// sees as "the pieces don't smoothly connect".
-#[test]
-fn the_switchback_stair_lands_flush_on_the_deck_above() {
-    let tile = parse_tile(&tile_source::stair_segment_map("megastructure")).expect("stair parses");
-    let climb_top = tile
-        .hulls
-        .iter()
-        .flatten()
-        .fold(f32::MIN, |top, point| top.max(point.y));
-    // The flight is the tallest thing in the cell; it must finish exactly on the
-    // deck of the cell above, never proud of it. It used to top out at 9.00 m -
-    // 0.50 m above that deck - which reads as a lip at every level junction and,
-    // since autostep only lifts `FpsConfig::step_height` (0.45 m), physically
-    // stopped a body stepping from the upper deck back onto the flight.
-    let deck_above = TILE_LEVEL_HEIGHT + 0.5;
-    assert!(
-        (climb_top - deck_above).abs() <= 0.02,
-        "switchback tops out at {climb_top:.2} m but the deck above is at {deck_above:.2} m; \
-         an overshoot beyond {:.2} m cannot be stepped back onto",
-        FpsConfig::default().step_height
-    );
-}
-
-/// Every span carried by a support must actually rest on it. The pier heights
-/// were once hand-tuned constants that drifted out of step with the flight above
-/// them and stopped 0.23 m to 0.40 m short, leaving the staircase visibly
-/// floating. They are now derived from the flight, and this pins that.
-#[test]
-fn every_switchback_support_meets_the_span_it_carries() {
-    let tile = parse_tile(&tile_source::stair_segment_map("megastructure")).expect("stair parses");
-    let bbox = |hull: &Vec<glam::Vec3>| {
-        hull.iter()
-            .fold(([f32::MAX; 3], [f32::MIN; 3]), |(min, max), p| {
-                (
-                    [min[0].min(p.x), min[1].min(p.y), min[2].min(p.z)],
-                    [max[0].max(p.x), max[1].max(p.y), max[2].max(p.z)],
-                )
-            })
-    };
-    // The lower flight: the one broad sloped deck rising off the cell floor.
-    let flight = tile
-        .hulls
-        .iter()
-        .find(|hull| {
-            let (min, max) = bbox(hull);
-            min[1] <= 0.01 && max[0] - min[0] >= 7.0 && max[1] - min[1] >= 3.0
-        })
-        .expect("lower flight");
-    let (fmin, fmax) = bbox(flight);
-    // Its underside is planar and varies only along x, so sample the lowest
-    // vertex at each end and interpolate. A bounding box will not do: the box's
-    // floor is the flight's low end, not its height above any given pier.
-    let lowest_near = |x: f32| {
-        flight
-            .iter()
-            .filter(|p| (p.x - x).abs() <= 0.05)
-            .fold(f32::MAX, |low, p| low.min(p.y))
-    };
-    let (west, east) = (lowest_near(fmin[0]), lowest_near(fmax[0]));
-    let underside_at = |x: f32| west + (x - fmin[0]) / (fmax[0] - fmin[0]) * (east - west);
-
-    let mut checked = 0;
-    for hull in &tile.hulls {
-        let (min, max) = bbox(hull);
-        let footprint = (max[0] - min[0]) * (max[2] - min[2]);
-        // A pier: a slim column standing on the cell floor under the flight.
-        if min[1] > 0.01 || footprint > 1.5 || max[1] <= 0.6 || max[1] >= fmax[1] {
-            continue;
-        }
-        let centre = (min[0] + max[0]) * 0.5;
-        if centre < fmin[0] || centre > fmax[0] {
-            continue;
-        }
-        let expected = underside_at(centre);
-        assert!(
-            (max[1] - expected).abs() <= 0.06,
-            "pier at x={centre:.2} tops at {:.2} m but the flight's underside there \
-             is {expected:.2} m: a {:.2} m discrepancy leaves it visibly unsupported",
-            max[1],
-            (max[1] - expected).abs()
-        );
-        checked += 1;
-    }
-    assert!(checked >= 3, "expected the flight's piers, found {checked}");
-}
-
-/// The spine is the contract that lets vertical circulation be more than one
-/// shape. Every stair tower has to ship a line a body can walk, whatever its
-/// interior looks like, or authoring a second tower produces geometry the
-/// objective bot cannot follow — which is precisely what blocked backlog #13
-/// for an arc.
-#[test]
-fn every_generated_stair_tower_ships_a_followable_spine() {
-    let cells = tile_source::compatibility_cells().expect("generated kit parses");
-    let towers = cells
-        .iter()
-        .filter(|tile| tile.key.archetype.starts_with("stair_"))
-        .collect::<Vec<_>>();
-    assert!(!towers.is_empty(), "the generated kit has stair towers");
-    for tile in towers {
-        let spine = &tile.spine;
-        assert!(
-            !spine.is_empty(),
-            "{} {} ships no climb spine",
-            tile.key.archetype,
-            tile.key.register
-        );
-        assert_eq!(
-            spine.self_crossing(),
-            None,
-            "{} {} doubles back within a body's width of itself, so a follower \
-             cannot tell which stretch it is on",
-            tile.key.archetype,
-            tile.key.register
-        );
-
-        // The bottom always stands on this cell's floor slab. A spine that
-        // starts partway up a flight strands a body that walks in through a
-        // lateral door.
-        let first = spine.nodes.first().expect("checked non-empty");
-        let last = spine.nodes.last().expect("checked non-empty");
-        assert!(
-            (first.y - FLOOR_SLAB_TOP).abs() <= 0.05,
-            "{} {} starts at {:.2} m, off this cell's deck at {FLOOR_SLAB_TOP:.2} m",
-            tile.key.archetype,
-            tile.key.register,
-            first.y
-        );
-
-        // Where the top ends depends on whether there is anywhere to go.
-        //
-        // A tower that continues upward ends on the deck above, so the climb
-        // joins the next cell's floor without a special case. A *capped* tower
-        // has no up port and a ceiling slab at `h - FLOOR_TOP`; a spine that
-        // climbed to the deck height there would run through that lid, leaving
-        // 1.70 m of clearance for a 1.8 m body. All 242 capped towers in the
-        // library did exactly that, and it is what stalled the soak bots: not
-        // a subtle fault, a staircase into a ceiling. Their climb ends at the
-        // turn landing, which is the highest thing in the cell a body can
-        // actually reach.
-        // From the shipped body, not a number chosen here: a headroom test with
-        // its own idea of how tall a player is proves nothing about the player.
-        let body_height = FpsConfig::default().half_height * 2.0;
-        let climbs_out = tile.signature.port(HexFace::Up) != PortClass::Sealed;
-        if climbs_out {
-            assert!(
-                (last.y - (TILE_LEVEL_HEIGHT + FLOOR_SLAB_TOP)).abs() <= 0.05,
-                "{} {} ends at {:.2} m, off the deck above at {:.2} m",
-                tile.key.archetype,
-                tile.key.register,
-                last.y,
-                TILE_LEVEL_HEIGHT + FLOOR_SLAB_TOP
-            );
-        } else {
-            let lid = TILE_LEVEL_HEIGHT - FLOOR_SLAB_TOP;
-            assert!(
-                last.y + body_height <= lid + 0.05,
-                "{} {} is capped at {lid:.2} m but its climb ends at {:.2} m, \
-                 leaving {:.2} m for a {body_height:.2} m body",
-                tile.key.archetype,
-                tile.key.register,
-                last.y,
-                lid - last.y
-            );
-        }
-    }
-}
-
-/// A follower walking the spine must never be sent backwards. This is the
-/// property the old hardcoded steering lacked: it chose its target by proximity
-/// to a waypoint, which flips as you walk away from one, so the bot span on the
-/// spot just past the turn and burnt ~31,000 ticks on a single storey.
-#[test]
-fn walking_the_spine_never_sends_a_follower_backwards() {
-    let tile = parse_tile(&tile_source::stair_segment_map("wellshaft")).expect("stair parses");
-    let spine = &tile.spine;
-    let mut highest = 0;
-    // Sample densely along the spine itself, which is the path a body on the
-    // stair actually traces.
-    for segment in 0..spine.nodes.len() - 1 {
-        for step in 0..=40_u32 {
-            let point = spine.nodes[segment].lerp(spine.nodes[segment + 1], step as f32 / 40.0);
-            let (index, _) = spine.locate(point).expect("a spine with nodes locates");
-            assert!(
-                index >= highest,
-                "walking segment {segment} sent the follower back from {highest} to {index}"
-            );
-            highest = index;
-        }
-    }
-    assert_eq!(
-        highest,
-        spine.nodes.len() - 2,
-        "the walk should finish on the last segment"
-    );
-}
-
-/// The floor path is the other half of the tower contract, and the one that
-/// closes bug backlog #19. A tower's deck has a hole in it; without a declared
-/// route around that hole a body crossing to a lateral door walks into the
-/// stairwell or into a pier, which is exactly how the objective bot wedged.
-#[test]
-fn every_generated_stair_tower_ships_a_walkable_deck() {
-    let cells = tile_source::compatibility_cells().expect("generated kit parses");
-    for tile in cells
-        .iter()
-        .filter(|tile| tile.key.archetype.starts_with("stair_"))
-    {
-        let deck = &tile.deck;
-        assert!(
-            !deck.is_empty(),
-            "{} {} ships no deck path",
-            tile.key.archetype,
-            tile.key.register
-        );
-        for node in &deck.nodes {
-            assert!(
-                (node.y - FLOOR_SLAB_TOP).abs() <= 0.05,
-                "{} {} has a deck node at {:.2} m, off the floor slab at {FLOOR_SLAB_TOP:.2} m",
-                tile.key.archetype,
-                tile.key.register,
-                node.y
-            );
-        }
-
-        // The climb has to be reachable from the floor, or the tower is a
-        // staircase nobody can get to the bottom of.
-        let foot = *tile.spine.nodes.first().expect("towers ship a spine");
-        let approach = deck
-            .nodes
-            .iter()
-            .map(|node| (node.x - foot.x).hypot(node.z - foot.z))
-            .fold(f32::MAX, f32::min);
-        assert!(
-            approach <= 2.0,
-            "{} {}: the foot of the climb is {approach:.2} m from the nearest deck node, so a \
-             body crossing the floor has no declared way onto it",
-            tile.key.archetype,
-            tile.key.register
-        );
-    }
-}
-
-/// Drive a capsule up a tower's own declared climb and see whether it arrives.
-///
-/// This is the gate a new tower shape has to pass. Geometry that validates, and
-/// a spine that parses, still prove nothing about whether a body fits between
-/// the treads and the soffit, or can make the turn — and the cost of finding out
-/// from the bot soak instead is an afternoon of bisecting a stalled match.
-fn climb_capsule_up(tile: &TilePrototype) -> Result<f32, String> {
-    let config = FpsConfig::default();
-    let scene = RapierTraversalScene::from_arena_spec(&tile.arena_spec());
-    let foot = tile
-        .spine
-        .nodes
-        .first()
-        .copied()
-        .expect("towers ship a spine");
-    let mut body = FpsBody::spawned(
-        Vec3::new(foot.x, foot.y + config.half_height + 0.05, foot.z),
-        0.0,
-    );
-    for (index, node) in tile.spine.nodes.iter().enumerate().skip(1) {
-        if !drive_capsule_to(&scene, &mut body, Vec2::new(node.x, node.z), &config) {
-            return Err(format!(
-                "stalled short of spine node {index} at {:?}, feet {:.2} m",
-                body.position,
-                body.position.y - config.half_height
-            ));
-        }
-        let feet = body.position.y - config.half_height;
-        if (feet - node.y).abs() > 0.6 {
-            return Err(format!(
-                "reached spine node {index} in plan but at {feet:.2} m, not the {:.2} m the                  climb declares - the body is not on the surface the line describes",
-                node.y
-            ));
-        }
-    }
-    Ok(body.position.y - config.half_height)
-}
-
-#[test]
-fn every_generated_stair_tower_is_physically_climbable() {
-    let cells = tile_source::compatibility_cells().expect("generated kit parses");
-    let mut exercised = 0usize;
-    // The doorless through-segment of each register: the tower stripped to its
-    // climb, which is the part every landing and cap variant shares.
-    for tile in cells.iter().filter(|tile| {
-        tile.key.archetype == "stair_tower"
-            && tile.signature.port(HexFace::Up) == PortClass::ShaftOpen
-            && tile.signature.port(HexFace::Down) == PortClass::ShaftOpen
-            && HexFace::LATERAL
-                .into_iter()
-                .all(|face| tile.signature.port(face) != PortClass::Door)
-    }) {
-        let feet = climb_capsule_up(tile).unwrap_or_else(|error| {
-            panic!("{} {}: {error}", tile.key.archetype, tile.key.register)
-        });
-        let deck_above = TILE_LEVEL_HEIGHT + FLOOR_SLAB_TOP;
-        assert!(
-            (feet - deck_above).abs() <= 0.35,
-            "{} {} climbed to {feet:.2} m, not the deck above at {deck_above:.2} m",
-            tile.key.archetype,
-            tile.key.register
-        );
-        exercised += 1;
-    }
-    assert!(
-        exercised >= 3,
-        "expected the neutral tower and one per handed district: {exercised}"
-    );
-}
-
-/// Closes bug backlog #13's premise. Every `Shaft` cell used to resolve to one
-/// procedural switchback through the `generic` fallback, in all ten registers —
-/// a facility that is a quarter stairs was a quarter of the *same* stair. The
-/// vertical districts now have towers of their own, and they are not copies.
-#[test]
-fn the_vertical_districts_have_towers_of_their_own() {
-    let cells = tile_source::compatibility_cells().expect("generated kit parses");
-    let through = |register: &str| {
-        cells
-            .iter()
-            .find(|tile| {
-                tile.key.archetype == "stair_tower"
-                    && tile.key.register == register
-                    && tile.signature.port(HexFace::Up) == PortClass::ShaftOpen
-                    && tile.signature.port(HexFace::Down) == PortClass::ShaftOpen
-                    && HexFace::LATERAL
-                        .into_iter()
-                        .all(|face| tile.signature.port(face) != PortClass::Door)
-            })
-            .cloned()
-    };
-    let neutral = through("generic").expect("the fallback tower still exists");
-    for register in ["wellshaft", "megastructure"] {
-        let tower = through(register).unwrap_or_else(|| {
-            panic!("{register} has no tower of its own, so it uses the fallback")
-        });
-
-        // Handed, not merely re-keyed: the climb turns the other way, so the
-        // stairwell opening is on the other side of the cell. Re-keying the same
-        // geometry would satisfy a coverage check while changing nothing a
-        // player can see, which is the trap the `generic` fallback set.
-        let mirrored = neutral
-            .spine
-            .nodes
-            .iter()
-            .zip(&tower.spine.nodes)
-            .all(|(a, b)| (a.x + b.x).abs() < 0.01 && (a.y - b.y).abs() < 0.01);
-        assert!(
-            mirrored,
-            "{register}'s tower is not the mirror of the neutral one: {:?} vs {:?}",
-            neutral.spine.nodes, tower.spine.nodes
-        );
-        let turns_the_other_way = neutral.spine.nodes[1].x * tower.spine.nodes[1].x < 0.0;
-        assert!(turns_the_other_way, "{register}'s tower turns the same way");
-    }
-}
-
 /// Walk a body up a tile's own stair spine with the production controller,
 /// steering perfectly, and report how far it rose and where it gave up.
 ///
@@ -975,6 +634,320 @@ fn walk_from_as_the_bot_does(map: &str, start_feet: Vec3) -> Walk {
     }
 }
 
+/// Climb a **stack** of two towers, the way a shaft column actually stands.
+///
+/// A tower is never placed alone. `tile_for` pins a column's register precisely
+/// because towers sit on top of each other, and the solve that stalls the
+/// spectator routes a body up three of them. Every harness above builds a
+/// single-tile arena, so nothing has ever asked what the tile above does to the
+/// climb below it - and a tower's envelope is two levels tall while it occupies
+/// one, so in a column each tower's upper half is inside its neighbour.
+///
+/// `lower` is walked from its own foot; the return is measured against the
+/// lower tower's climb alone, so a body that finishes has left the lower cell.
+fn climb_a_stacked_column(lower: &str, upper: &str) -> Walk {
+    climb_a_stacked_column_turned(lower, upper, 0)
+}
+
+/// The same stack, with the upper tower rotated `turn` sixths.
+///
+/// Rotation is not decoration here. Doors are authored as orbit
+/// representatives and the compiler turns them through six positions to reach
+/// every arrangement - which turns the **climb** with them, because the climb
+/// is in the same brushes. `tile_for` pins a column's register but takes the
+/// variation key per cell, so nothing stops one cell of a shaft drawing turn 1
+/// and the next drawing turn 4, with their climbs pointing different ways.
+fn climb_a_stacked_column_turned(lower: &str, upper: &str, turn: u8) -> Walk {
+    let below = crate::parse_authored_module(lower)
+        .expect("lower module parses")
+        .prototype;
+    let above = crate::parse_authored_module(upper)
+        .expect("upper module parses")
+        .prototype;
+
+    // One arena holding both tiles, the upper one raised by a level. The ids
+    // must not collide or the second set silently replaces the first.
+    let lift = Vec3::Y * TILE_LEVEL_HEIGHT;
+    let mut colliders = below.collider_specs(0, Vec3::ZERO);
+    #[allow(clippy::cast_possible_truncation)]
+    let next = colliders.len() as u32;
+    // The same rotation the compiler applies, so a turned tile here is a tile
+    // the catalog can really produce.
+    let spin = glam::Quat::from_rotation_y(-f32::from(turn) * std::f32::consts::TAU / 6.0);
+    colliders.extend(above.collider_specs_with_transform(next, lift, spin));
+    let height = TILE_LEVEL_HEIGHT * 3.0;
+    let arena = ArenaSpec {
+        colliders,
+        floor_y: 0.0,
+        safety_center: Vec3::new(0.0, height * 0.5, 0.0),
+        safety_half: Vec3::new(24.0, height + 12.0, 24.0),
+    };
+    let scene = RapierTraversalScene::from_arena_spec(&arena);
+    let config = FpsConfig::default();
+
+    let spine = below.spine.clone();
+    let deck = below.deck.clone();
+    let nodes = &spine.nodes;
+    let floor = nodes[0].y;
+    let wanted = nodes[nodes.len() - 1].y - floor;
+
+    let start_feet = nodes[0];
+    let mut body = FpsBody::spawned(start_feet + Vec3::Y * config.half_height, 0.0);
+    let mut max_feet = floor;
+    let mut highest = start_feet;
+    let mut ended = start_feet;
+
+    const CAPTURE: f32 = 1.6;
+    for _ in 0..6_000 {
+        let feet = body.position - Vec3::Y * config.half_height;
+        let off = spine
+            .distance(feet)
+            .is_some_and(|distance| distance > CAPTURE);
+        let target = if off && !deck.is_empty() {
+            deck.step_toward(feet, nodes[0])
+                .or_else(|| spine.target(feet, true))
+        } else {
+            spine.target(feet, true)
+        };
+        let Some(target) = target else { break };
+        let to = target - feet;
+        body.yaw = to.x.atan2(-to.z);
+        let intent = PlayerIntent {
+            movement: Vec2::new(0.0, 1.0),
+            ..PlayerIntent::default()
+        };
+        step_character(&scene, &mut body, intent, &config, 1.0 / 60.0);
+        ended = body.position - Vec3::Y * config.half_height;
+        if ended.y > max_feet {
+            max_feet = ended.y;
+            highest = ended;
+        }
+    }
+    Walk {
+        rise: max_feet - floor,
+        wanted,
+        highest,
+        ended,
+    }
+}
+
+/// A tower must still climb with another tower standing on it.
+///
+/// The spectator gate stalls a body at 6.19 m of an 8 m climb in a `Bottom`
+/// tower with two doors, and every single-tile harness passes that same tower
+/// from all six faces. The difference between the two is the tile overhead, so
+/// this is where the difference gets measured.
+#[test]
+fn a_tower_climbs_with_another_standing_on_it() {
+    let towers = crate::forge::tower::builders();
+    let mut failures = Vec::new();
+    let mut walked = 0;
+    for (lower_stem, lower) in &towers {
+        // Only a tower that opens upward has a neighbour above it.
+        if !lower.contains("\"name\" \"up_shaft\"") {
+            continue;
+        }
+        for (upper_stem, upper) in &towers {
+            // And only one that opens downward can stand on it.
+            if !upper.contains("\"name\" \"down_shaft\"") {
+                continue;
+            }
+            walked += 1;
+            let walk = climb_a_stacked_column(lower, upper);
+            if !walk.finished() {
+                failures.push(format!(
+                    "  {lower_stem} under {upper_stem}: rose {:.2} m of {:.2} m, stopped at {:?}",
+                    walk.rise,
+                    walk.wanted,
+                    walk.gave_up()
+                ));
+            }
+        }
+    }
+    assert!(walked >= 9, "expected stacked pairs, walked {walked}");
+    assert!(
+        failures.is_empty(),
+        "{} of {walked} stacked columns cannot be climbed:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
+/// A body that has finished the climb must be able to **leave** by any door
+/// the tower carries.
+///
+/// The mirror of `a_tower_climbs_from_every_face_a_door_could_be_on`, and the
+/// half that outlasted it. With the climbing fixed, the spectator gate stalled
+/// at the *head* of the shaft: a body standing on the level-3 floor of a capped
+/// tower, three levels climbed, unable to get out. `Bot::stair_lateral_command`
+/// crosses a tower by `DeckPath::step_toward(feet, door)`, so the deck has to
+/// lead from where the climb leaves a body to each of its doors - which is a
+/// different question from leading a body inward to the foot, and was never
+/// asked.
+///
+/// The body starts where the tower below sets it down: the plan position the
+/// climb ends at, on this tile's floor.
+#[test]
+fn a_tower_can_be_left_by_every_door_it_carries() {
+    // A plain through tower underneath, so the hole this one's floor leaves for
+    // an arriving climb is filled by the climb that is supposed to be in it.
+    let carrier = crate::forge::tower::builders()
+        .into_iter()
+        .find(|(stem, _)| stem == "stair_tower_helix_solid")
+        .expect("the doorless through tower")
+        .1;
+    let below = crate::parse_authored_module(&carrier)
+        .expect("the carrier validates")
+        .prototype;
+
+    let mut failures = Vec::new();
+    let mut walked = 0;
+    for (stem, text) in crate::forge::tower::builders() {
+        let tile = crate::parse_authored_module(&text)
+            .unwrap_or_else(|error| panic!("{stem} does not validate: {error:?}"))
+            .prototype;
+        let doors: Vec<HexFace> = HexFace::LATERAL
+            .into_iter()
+            .filter(|&face| tile.signature.port(face) == PortClass::Door)
+            .collect();
+        if doors.is_empty() {
+            continue;
+        }
+
+        let lift = Vec3::Y * TILE_LEVEL_HEIGHT;
+        let mut colliders = below.collider_specs(0, Vec3::ZERO);
+        #[allow(clippy::cast_possible_truncation)]
+        let next = colliders.len() as u32;
+        colliders.extend(tile.collider_specs(next, lift));
+        let height = TILE_LEVEL_HEIGHT * 3.0;
+        let scene = RapierTraversalScene::from_arena_spec(&ArenaSpec {
+            colliders,
+            floor_y: 0.0,
+            safety_center: Vec3::new(0.0, height * 0.5, 0.0),
+            safety_half: Vec3::new(24.0, height + 12.0, 24.0),
+        });
+        let config = FpsConfig::default();
+
+        // Where the tower below sets a body down. Taken from the deck's own
+        // first node rather than from the spine: that node *is* `Extent::head`
+        // by construction, pinned by
+        // `the_deck_joins_both_ends_of_the_climb_and_every_face`, and a shaft
+        // head - which is exactly where this stalled - has no spine to ask.
+        let arrival = tile.deck.nodes[0] + lift;
+
+        for door in doors {
+            walked += 1;
+            let [a, b] = face_edge(door);
+            let plan = Vec2::new((a.0 + b.0) as f32 * 0.5, (a.1 + b.1) as f32 * 0.5);
+            let target = Vec3::new(plan.x, arrival.y, plan.y);
+            let outward = plan.normalize();
+
+            // Driven, not hopped. `step_toward` hands back the leg's far end,
+            // and a body standing *exactly* on a node ties `locate` back to the
+            // leg it has just finished - so stepping node to node stalls on the
+            // tie where a body walking through it does not. Only simulating
+            // tells those apart; the first version of this test could not, and
+            // reported 18 failures that were its own.
+            let mut body = FpsBody::spawned(arrival + Vec3::Y * config.half_height, 0.0);
+            let mut reached = false;
+            for _ in 0..3_000 {
+                let feet = body.position - Vec3::Y * config.half_height;
+                // At the aperture the bot stops consulting this deck.
+                if Vec2::new(feet.x, feet.z).dot(outward) >= plan.length() - 0.6 {
+                    reached = true;
+                    break;
+                }
+                let Some(step) = tile.deck.step_toward(feet, target) else {
+                    break;
+                };
+                let to = step - feet;
+                body.yaw = to.x.atan2(-to.z);
+                step_character(
+                    &scene,
+                    &mut body,
+                    PlayerIntent {
+                        movement: Vec2::new(0.0, 1.0),
+                        ..PlayerIntent::default()
+                    },
+                    &config,
+                    1.0 / 60.0,
+                );
+            }
+            if !reached {
+                let feet = body.position - Vec3::Y * config.half_height;
+                // Which node it got to matters more than where it is. A body
+                // that gives up standing on a deck node has been handed the
+                // node it is already on; one that gives up between them is
+                // against something.
+                let (node, away) = tile
+                    .deck
+                    .nodes
+                    .iter()
+                    .enumerate()
+                    .map(|(index, n)| (index, Vec2::new(n.x - feet.x, n.z - feet.z).length()))
+                    .min_by(|a, b| a.1.total_cmp(&b.1))
+                    .expect("a tower ships a deck");
+                failures.push(format!(
+                    "  {stem} to {door:?}: gave up at {feet:?}, {away:.2} m from deck node {node}"
+                ));
+            }
+        }
+    }
+    assert!(walked >= 60, "expected doors to leave by, tried {walked}");
+    assert!(
+        failures.is_empty(),
+        "{} of {walked} exits are not reachable across the deck:
+{}",
+        failures.len(),
+        failures.join(
+            "
+"
+        )
+    );
+}
+
+/// **No tower may be rotated**, and the reason is measured here rather than
+/// asserted.
+///
+/// Authoring one door orbit and letting the compiler turn it into the rest is
+/// the obvious economy, and it is what the replacement first did. It cannot
+/// work: the doors and the flight are the same brushes, so the turn takes the
+/// *climb* with it. `tile_for` pins a column's register but takes the variation
+/// key per cell, so one cell of a shaft can draw turn 1 and the next turn 4 -
+/// and then the lower flight tops out under the upper cell's solid deck, word
+/// for word the failure `tile_for`'s own comment warns about. What that comment
+/// gets wrong is assuming the register is enough to prevent it.
+///
+/// So this asserts the prohibition, and then earns it: it stacks a tower under
+/// a **hand-rotated** copy of itself, which is what the catalog would have
+/// produced, and reports how many turns stop the climb. If a future change made
+/// the climb rotation-proof, the second half would fall silent and the first
+/// half would be safe to relax - and until then, "we chose not to rotate" is a
+/// claim with a number behind it.
+#[test]
+fn no_tower_is_ever_turned_and_here_is_why() {
+    for (stem, text) in crate::forge::tower::builders() {
+        assert!(
+            text.contains("\"rotation_policy\" \"none\""),
+            "{stem} is rotatable, and a turned tower is a different climb"
+        );
+    }
+
+    let towers = crate::forge::tower::builders();
+    let (_, lower) = towers
+        .iter()
+        .find(|(stem, _)| stem == "stair_tower_helix_solid")
+        .expect("the doorless through tower");
+    let defeated = (1..6u8)
+        .filter(|&turn| !climb_a_stacked_column_turned(lower, lower, turn).finished())
+        .count();
+    assert!(
+        defeated > 0,
+        "rotation no longer breaks a stacked climb, so the prohibition above is \
+         costing 66 authored sources for nothing - re-price it"
+    );
+}
+
 /// Every authored climb must be walkable by the production controller when it
 /// is steered along its own spine.
 ///
@@ -1075,14 +1048,14 @@ fn a_tower_climbs_from_every_face_a_door_could_be_on() {
     let mut failures = Vec::new();
     let mut walked = 0;
     for (stem, text) in crate::forge::tower::builders() {
-        let floor = crate::parse_authored_module(&text)
+        let tile = crate::parse_authored_module(&text)
             .unwrap_or_else(|error| panic!("{stem} does not validate: {error:?}"))
-            .prototype
-            .spine
-            .nodes
-            .first()
-            .expect("a tower ships a spine")
-            .y;
+            .prototype;
+        // A shaft head has no climb to reach - it is where a climb ends.
+        let Some(first) = tile.spine.nodes.first() else {
+            continue;
+        };
+        let floor = first.y;
         for face in HexFace::LATERAL {
             walked += 1;
             let walk = walk_from_as_the_bot_does(&text, just_inside(face, floor));
@@ -1104,3 +1077,23 @@ fn a_tower_climbs_from_every_face_a_door_could_be_on() {
         failures.join("\n")
     );
 }
+// The four `*_generated_stair_tower_*` tests and
+// `the_vertical_districts_have_towers_of_their_own` retired with their subject:
+// there is no generated stair tower any more. Their contracts did not retire
+// with them - they moved to the authored family, which is where the geometry
+// now is:
+//
+//   followable spine      -> forge::tower::every_tower_carries_a_spine
+//                            forge::tower::the_climb_reaches_the_port_it_advertises
+//   physically climbable  -> every_authored_spine_can_be_walked_by_the_controller
+//                            the_bots_targeting_rule_finishes_every_authored_climb
+//   walkable deck         -> forge::tower emits `ring_deck`; the importer's
+//                            `DeckPathTooShort` rejects a path that is not one
+//   capped clears its lid -> forge::tower::a_capped_tower_clears_its_climb_by_a_body
+//
+// **Per-register handedness is not carried over, and that is a real loss.** The
+// switchback mirrored itself per register so districts stacked their towers
+// differently; the authored family has one shape everywhere. It is deferred
+// rather than dropped - `Extent` would need a hand, mirroring `outer` about
+// x = 0 - and it is deliberately not smuggled into the replacement, because a
+// handed pair is two climb shapes and this change is about proving one.

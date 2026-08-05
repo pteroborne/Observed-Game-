@@ -11,10 +11,7 @@ use super::halls::{
     expanse_map, hall_cap_map, hall_corner_map, hall_junction_map, hall_straight_map,
 };
 use super::rooms::{room_atrium_lower_map, room_atrium_upper_map, room_single_map, room_wing_map};
-use super::verticals::{
-    StairVertical, ramp_map, stair_access_map, stair_bottom_cap_map, stair_landing_map,
-    stair_segment_map, stair_top_cap_map,
-};
+use super::verticals::ramp_map;
 use super::{REGISTERS, face_name};
 
 pub(crate) struct GeneratedTile {
@@ -165,109 +162,13 @@ pub(crate) fn library_for(registers: &[&'static str]) -> Vec<GeneratedTile> {
                 ports,
             );
         }
-        // Ground-supported stair-tower family. Source archetypes stay unique
-        // for manifest keys; runtime compatibility maps them to `stair_tower`.
-        push(
-            format!("{reg}_stair_segment.map"),
-            stair_segment_map(reg),
-            "stair_segment",
-            reg,
-            0,
-            2,
-            vec![("up", "shaft_open"), ("down", "shaft_open")],
-        );
-        push(
-            format!("{reg}_stair_top.map"),
-            stair_top_cap_map(reg),
-            "stair_top",
-            reg,
-            0,
-            2,
-            vec![("down", "shaft_open")],
-        );
-        push(
-            format!("{reg}_stair_bottom.map"),
-            stair_bottom_cap_map(reg),
-            "stair_bottom",
-            reg,
-            0,
-            2,
-            vec![("up", "shaft_open")],
-        );
-        for (i, face) in HexFace::LATERAL.into_iter().enumerate() {
-            let mut ports = vec![("up", "shaft_open"), ("down", "shaft_open")];
-            ports.extend(door_ports(&[face]));
-            push(
-                format!("{reg}_stair_landing_{i}.map"),
-                stair_landing_map(reg, face),
-                "stair_landing",
-                reg,
-                i as u16,
-                2,
-                ports,
-            );
-        }
-        let mut stair_variant = 6u16;
-        for vertical in [StairVertical::UpOnly, StairVertical::DownOnly] {
-            for face in HexFace::LATERAL {
-                let faces = [face];
-                let mut ports = match vertical {
-                    StairVertical::UpOnly => vec![("up", "shaft_open")],
-                    StairVertical::DownOnly => vec![("down", "shaft_open")],
-                    StairVertical::Through => unreachable!(),
-                };
-                ports.extend(door_ports(&faces));
-                push(
-                    format!("{reg}_stair_landing_{stair_variant}.map"),
-                    stair_access_map(reg, &faces, vertical, stair_variant),
-                    "stair_landing",
-                    reg,
-                    stair_variant,
-                    2,
-                    ports,
-                );
-                stair_variant += 1;
-            }
-            for i in 0..6 {
-                for j in (i + 1)..6 {
-                    let faces = [HexFace::LATERAL[i], HexFace::LATERAL[j]];
-                    let mut ports = match vertical {
-                        StairVertical::UpOnly => vec![("up", "shaft_open")],
-                        StairVertical::DownOnly => vec![("down", "shaft_open")],
-                        StairVertical::Through => unreachable!(),
-                    };
-                    ports.extend(door_ports(&faces));
-                    push(
-                        format!("{reg}_stair_landing_{stair_variant}.map"),
-                        stair_access_map(reg, &faces, vertical, stair_variant),
-                        "stair_landing",
-                        reg,
-                        stair_variant,
-                        2,
-                        ports,
-                    );
-                    stair_variant += 1;
-                }
-            }
-        }
-        for i in 0..6 {
-            for j in (i + 1)..6 {
-                let faces = [HexFace::LATERAL[i], HexFace::LATERAL[j]];
-                let mut ports = vec![("up", "shaft_open"), ("down", "shaft_open")];
-                ports.extend(door_ports(&faces));
-                push(
-                    format!("{reg}_stair_landing_{stair_variant}.map"),
-                    stair_access_map(reg, &faces, StairVertical::Through, stair_variant),
-                    "stair_landing",
-                    reg,
-                    stair_variant,
-                    2,
-                    ports,
-                );
-                stair_variant += 1;
-            }
-        }
-        debug_assert_eq!(stair_variant, 63);
+        // The stair-tower family is authored now - see `forge::tower`. It
+        // used to be enumerated here as 66 variants per register: three
+        // doorless, eighteen with one door, forty-five with two. The authored
+        // family covers the same demand from fifteen sources under sixfold
+        // rotation, and had to replace it in one change rather than stand
+        // beside it - a shaft column draws its tile per cell, so two families
+        // sharing the bucket let one column mix two climb shapes.
         // Rooms: single and blueprint strip / triangle / diamond cells.
         // Expanses: open floor with walls only where a face is sealed, so a
         // run of them merges into one volume. Geometry is the junction's —

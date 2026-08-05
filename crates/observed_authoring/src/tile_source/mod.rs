@@ -30,9 +30,7 @@ pub use halls::{hall_cap_map, hall_corner_map, hall_junction_map, hall_straight_
 pub use rooms::{
     room_atrium_lower_map, room_atrium_upper_map, room_double_map, room_single_map, room_wing_map,
 };
-pub use verticals::{
-    ramp_map, stair_bottom_cap_map, stair_landing_map, stair_segment_map, stair_top_cap_map,
-};
+pub use verticals::ramp_map;
 
 /// One complete, generic collision kit for the canonical WFC alphabet.
 ///

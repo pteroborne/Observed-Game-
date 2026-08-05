@@ -8,46 +8,18 @@ use observed_facility::hex_wfc::{HexFace, HexWfcConfig, HexWfcWorld, PortClass};
 use super::*;
 
 fn tiles() -> Vec<TilePrototype> {
-    observed_authoring::tile_source::compatibility_cells().expect("compatibility tiles")
+    crate::hex_wfc::test_tiles()
 }
-
-/// Every architecture register the catalog may scope a module to.
-const REGISTER_SLUGS: [&str; 10] = [
-    "shadow_screen",
-    "monolith",
-    "overlit_grid",
-    "institutional",
-    "facet_monument",
-    "megastructure",
-    "wellshaft",
-    "infinite_gallery",
-    "thinning",
-    "liminal_grid",
-];
 
 /// The committed catalog's whole-room modules.
 ///
 /// Bot tests used to run with **no** room prototypes, so every multi-hex room
 /// fragmented into per-cell fallback tiles — geometry the game never ships, and
 /// whose interior furniture (1.3 m tall, against a 0.45 m autostep) physically
-/// trapped bots. `tiles()` deliberately stays the compatibility cell kit so hall
-/// geometry is unchanged; only the rooms come from the real catalog.
+/// trapped bots. `tiles()` deliberately keeps the compatibility hall kit while
+/// adding only the strict authored towers; rooms come from the real catalog.
 fn rooms() -> &'static [observed_authoring::RoomPrototype] {
-    static ROOMS: std::sync::OnceLock<Vec<observed_authoring::RoomPrototype>> =
-        std::sync::OnceLock::new();
-    ROOMS.get_or_init(|| {
-        // Mirrors `tile_dir()` in `game/src/hex_wfc/sim.rs`: prefer a
-        // CWD-relative path, else resolve from this crate's manifest.
-        let cwd_relative = std::path::PathBuf::from("assets/tiles");
-        let base = if cwd_relative.exists() {
-            cwd_relative
-        } else {
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tiles")
-        };
-        observed_authoring::RuntimeHexCatalog::load(&base, &REGISTER_SLUGS)
-            .expect("committed runtime hex catalog loads")
-            .rooms
-    })
+    &crate::hex_wfc::test_catalog().rooms
 }
 
 fn showcase_config(levels: u8) -> HexWfcConfig {

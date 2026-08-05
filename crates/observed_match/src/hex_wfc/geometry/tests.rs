@@ -14,7 +14,7 @@ use super::*;
 const SHOWCASE_SEED: u64 = 0xA11C_E3D0_0000_0008;
 
 fn tiles() -> Vec<TilePrototype> {
-    observed_authoring::tile_source::compatibility_cells().expect("compatibility tiles")
+    crate::hex_wfc::test_tiles()
 }
 
 fn showcase() -> HexWfcWorld {

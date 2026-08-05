@@ -311,61 +311,16 @@ fn sample(route: &[Vec3], spacing: f32) -> Vec<Vec3> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::module::route::{route_for, walk_spine};
+    use crate::module::route::route_for;
     use observed_authoring::{AuthoredModule, parse_authored_module};
 
-    /// No generated stair tower may strand a body.
-    ///
-    /// The generated library is 726 towers and had never been walked. 242 of
-    /// them - every capped one - ran their climb straight through their own
-    /// ceiling slab, leaving 1.70 m for a 1.8 m body. Nothing caught it: the
-    /// importer does not measure headroom over a flight, and these towers are
-    /// authoring version 1, which skips the strict port checks entirely.
-    ///
-    /// This is the gate that would have. It reports every failure at once
-    /// rather than the first, because a fault in shared geometry is never one
-    /// tower's fault.
-    #[test]
-    fn no_generated_stair_tower_strands_a_body() {
-        let limits = Thresholds::default();
-        let cells = observed_authoring::tile_source::compatibility_cells().expect("library");
-        let towers = cells
-            .iter()
-            .filter(|cell| cell.key.archetype == "stair_tower")
-            .collect::<Vec<_>>();
-        assert!(!towers.is_empty(), "the library ships stair towers");
-
-        let mut stalled = Vec::new();
-        for cell in &towers {
-            let Some(report) = walk_spine(cell, &limits) else {
-                stalled.push(format!(
-                    "  {} v{}: ships no followable spine",
-                    cell.key.register, cell.key.variant
-                ));
-                continue;
-            };
-            if let Some(failure) = report.failure {
-                stalled.push(format!(
-                    "  {} v{}: {}, {:.0}% along",
-                    cell.key.register,
-                    cell.key.variant,
-                    failure.describe(&limits),
-                    report.progress * 100.0
-                ));
-            }
-        }
-        assert!(
-            stalled.is_empty(),
-            "{} of {} generated towers cannot be climbed:
-{}",
-            stalled.len(),
-            towers.len(),
-            stalled.join(
-                "
-"
-            )
-        );
-    }
+    // `no_generated_stair_tower_strands_a_body` retired with its subject: the
+    // generated stair towers are gone, replaced by `forge::tower`. It was worth
+    // having - it found 242 capped towers running a staircase through their own
+    // ceiling - and its contract lives on over the authored family, in
+    // `observed_authoring`'s `every_authored_spine_can_be_walked_by_the_
+    // controller` and `the_bots_targeting_rule_finishes_every_authored_climb`,
+    // which walk with the production controller rather than a geometric probe.
 
     /// A stair riser and a sliding ramp must not be judged by one number.
     ///
