@@ -526,8 +526,13 @@ fn diagnose_bot() {
         "final cell={:?} pos=({:.1},{:.1},{:.1})",
         p.cell, p.position.x, p.position.y, p.position.z
     );
-    let body_min_y = p.position.y - game.traversal_config.half_height;
-    let body_max_y = p.position.y + game.traversal_config.half_height;
+    let half_height = game
+        .content()
+        .traversal_profile()
+        .requirements()
+        .capsule_half_height;
+    let body_min_y = p.position.y - half_height;
+    let body_max_y = p.position.y + half_height;
     for piece in &game.geometry.pieces {
         let observed_traversal::ColliderShape::ConvexHull { points } = &piece.shape else {
             continue;
@@ -636,8 +641,13 @@ fn perimeter_tower_local_intent_and_body_trace_is_pinned() {
     let mut traced_ticks = 0u64;
     let mut completion = None;
     let id = PlayerId(0);
+    let half_height = game
+        .content()
+        .traversal_profile()
+        .requirements()
+        .capsule_half_height;
     for tick in 0..40_000u64 {
-        let feet = game.bodies[&id].position - Vec3::Y * game.traversal_config.half_height;
+        let feet = game.bodies[&id].position - Vec3::Y * half_height;
         let touching = tower_cells.keys().copied().find(|cell| {
             game.geometry.climbs.get(cell).is_some_and(|spine| {
                 !spine.is_empty()
@@ -680,7 +690,7 @@ fn perimeter_tower_local_intent_and_body_trace_is_pinned() {
                 mix_trace(&mut trace, u64::from(bits));
             }
             mix_trace(&mut trace, u64::from(body.grounded));
-            let feet = body.position - Vec3::Y * game.traversal_config.half_height;
+            let feet = body.position - Vec3::Y * half_height;
             let cell = traced_tower.expect("touching sets the tower");
             if game.geometry.climbs[&cell].has_arrived(feet) {
                 completion = Some(tick + 1);

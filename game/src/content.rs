@@ -71,7 +71,13 @@ impl GameContent {
     }
 
     pub fn traversal_config(&self) -> FpsConfig {
-        config_from_profile(self.manifest.traversal)
+        // The compatibility DTO predates controller integration substeps, so
+        // supply the shipped value explicitly rather than implying it was
+        // serialized in the manifest.
+        config_from_compatibility_profile(
+            self.manifest.traversal,
+            FpsConfig::deliberate_rapier().substep,
+        )
     }
 }
 
@@ -196,7 +202,7 @@ impl ContentCollisionCatalog {
     }
 }
 
-fn config_from_profile(profile: TraversalProfile) -> FpsConfig {
+fn config_from_compatibility_profile(profile: TraversalProfile, substep: f32) -> FpsConfig {
     FpsConfig {
         walk_speed: profile.walk_speed,
         run_speed: profile.run_speed,
@@ -212,7 +218,7 @@ fn config_from_profile(profile: TraversalProfile) -> FpsConfig {
         eye_height: profile.eye_height,
         look_step: profile.look_step,
         pitch_limit: profile.pitch_limit,
-        substep: FpsConfig::default().substep,
+        substep,
         step_height: profile.step_height,
         controller_offset: profile.controller_offset,
         minimum_step_width: profile.minimum_step_width,
@@ -239,6 +245,11 @@ mod tests {
             assert!(content.collision_catalog.contains_bake(short_id));
         }
         assert_eq!(content.traversal_config(), FpsConfig::deliberate_rapier());
+        assert_eq!(
+            content.traversal_config().substep,
+            FpsConfig::deliberate_rapier().substep,
+            "the compatibility DTO's missing substep is supplied explicitly"
+        );
     }
 
     #[test]

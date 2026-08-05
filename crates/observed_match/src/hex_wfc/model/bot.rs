@@ -10,7 +10,7 @@ use observed_facility::hex_wfc::{
 };
 use observed_hex::hex_origin;
 use observed_traversal::{
-    DeckHandoff, FollowTarget, FollowerConfig, FollowerPose, TraversalDirection, follow_stateless,
+    DeckHandoff, FollowTarget, FollowerPose, TraversalDirection, follow_stateless,
 };
 use player_input::PlayerIntent;
 
@@ -325,7 +325,12 @@ impl HexWfcMatch {
             .get(&cell)
             .is_some_and(|spine| !spine.is_empty());
         if class == PortClass::ShaftOpen || has_spine {
-            let feet = position.y - self.traversal_config.half_height;
+            let feet = position.y
+                - self
+                    .content
+                    .traversal_profile()
+                    .requirements()
+                    .capsule_half_height;
             let feet_point = Vec3::new(position.x, feet, position.z);
             // Height rounding changes the logical cell while the body is still
             // on the last stretch of a climb. Pick the spine by contact with
@@ -355,7 +360,7 @@ impl HexWfcMatch {
                             TraversalDirection::Reverse
                         },
                     },
-                    &FollowerConfig::default(),
+                    self.content.traversal_profile(),
                 )
                 .is_on_unfinished_climb()
             };
@@ -420,7 +425,7 @@ impl HexWfcMatch {
                     TraversalDirection::Reverse
                 },
             },
-            &FollowerConfig::default(),
+            self.content.traversal_profile(),
         )
         .intent
     }
@@ -434,7 +439,8 @@ impl HexWfcMatch {
         position: Vec3,
     ) -> Option<PlayerIntent> {
         self.facility.placements.get(&cell)?;
-        let feet = position.y - self.traversal_config.half_height;
+        let requirements = self.content.traversal_profile().requirements();
+        let feet = position.y - requirements.capsule_half_height;
         let floor = hex_origin(cell)[1] + FLOOR_SLAB_TOP;
         let feet_point = Vec3::new(position.x, feet, position.z);
         let below = (cell.level > 0).then(|| HexCoord {
@@ -475,7 +481,7 @@ impl HexWfcMatch {
                     approach: self.geometry.decks.get(&at),
                     direction,
                 },
-                &FollowerConfig::default(),
+                self.content.traversal_profile(),
             )
             .is_on_unfinished_climb()
         };
@@ -490,7 +496,7 @@ impl HexWfcMatch {
         // Descending stays height-gated. A lateral walker on the deck can pass
         // near this tower's spine foot; proximity alone would pull it backward
         // down a climb it never intended to take.
-        } else if feet > floor + self.traversal_config.step_height
+        } else if feet > floor + requirements.step_height
             && unfinished(cell, TraversalDirection::Reverse)
         {
             self.climb_command(cell, yaw, feet_point, false)
@@ -571,7 +577,12 @@ impl HexWfcMatch {
         let outward = face_plan_dir(face);
         let feet = Vec3::new(
             position.x,
-            position.y - self.traversal_config.half_height,
+            position.y
+                - self
+                    .content
+                    .traversal_profile()
+                    .requirements()
+                    .capsule_half_height,
             position.z,
         );
         follow_stateless(
@@ -585,7 +596,7 @@ impl HexWfcMatch {
                     destination: Vec3::from_array(hex_origin(next)),
                 }),
             },
-            &FollowerConfig::default(),
+            self.content.traversal_profile(),
         )
         .intent
     }

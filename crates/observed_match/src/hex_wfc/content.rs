@@ -9,12 +9,12 @@ use std::path::Path;
 
 use observed_authoring::{RoomPrototype, RuntimeHexCatalog, TilePrototype};
 use observed_facility::hex_wfc::profile::HexCompositionProfile;
-use observed_traversal::FpsConfig;
+use observed_traversal::{FpsConfig, TraversalRuntimeProfile};
 
 #[derive(Clone, Debug)]
 pub struct HexMatchContent {
     catalog: RuntimeHexCatalog,
-    traversal_config: FpsConfig,
+    traversal_profile: TraversalRuntimeProfile,
 }
 
 impl HexMatchContent {
@@ -27,13 +27,9 @@ impl HexMatchContent {
     /// Consume an already-loaded catalog without cloning its authored corpus.
     #[must_use]
     pub fn from_runtime_catalog(catalog: RuntimeHexCatalog) -> Self {
-        let mut traversal_config = FpsConfig::deliberate_rapier();
-        // Bot look commands are already expressed as radians in the hex match.
-        // Preserve that shipped boundary until TR-3 gives it a named profile.
-        traversal_config.look_step = 1.0;
         Self {
             catalog,
-            traversal_config,
+            traversal_profile: TraversalRuntimeProfile::canonical_hex(),
         }
     }
 
@@ -68,7 +64,12 @@ impl HexMatchContent {
 
     #[must_use]
     pub fn traversal_config(&self) -> FpsConfig {
-        self.traversal_config
+        self.traversal_profile.controller()
+    }
+
+    #[must_use]
+    pub fn traversal_profile(&self) -> &TraversalRuntimeProfile {
+        &self.traversal_profile
     }
 
     #[must_use]
@@ -88,6 +89,10 @@ mod tests {
         expected.look_step = 1.0;
 
         assert_eq!(content.traversal_config(), expected);
+        assert_eq!(
+            content.traversal_profile(),
+            &TraversalRuntimeProfile::canonical_hex()
+        );
         assert_eq!(content.simulation_content_hash(), [0; 32]);
     }
 }

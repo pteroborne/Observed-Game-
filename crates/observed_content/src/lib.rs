@@ -105,6 +105,13 @@ pub struct ContentManifest {
     pub assets: Vec<AssetDefinition>,
 }
 
+/// Serialized compatibility DTO for the original authored content manifest.
+///
+/// It predates the complete runtime profile and intentionally remains readable
+/// without a schema migration. In particular it has no controller `substep`,
+/// follower tuning, or guide-contract version; a runtime consumer must supply
+/// those values explicitly rather than treating this DTO as a full simulation
+/// identity.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TraversalProfile {
@@ -1102,5 +1109,19 @@ mod tests {
         assert_eq!(profile.walk_speed, 5.5);
         assert_eq!(profile.run_speed, 8.5);
         assert_eq!(profile.jump_speed, 7.0);
+    }
+
+    #[test]
+    fn traversal_profile_dto_remains_readable_and_explicitly_omits_substep() {
+        let profile = TraversalProfile::deliberate_rapier();
+        let json = serde_json::to_string(&profile).expect("compatibility DTO serializes");
+        let reparsed: TraversalProfile =
+            serde_json::from_str(&json).expect("compatibility DTO remains readable");
+
+        assert_eq!(reparsed, profile);
+        assert!(
+            !json.contains("substep"),
+            "the legacy DTO must not silently claim a controller integration value"
+        );
     }
 }

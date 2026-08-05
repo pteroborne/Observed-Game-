@@ -24,6 +24,7 @@ pub mod follower;
 pub mod gantry;
 pub mod guide;
 pub mod plan_hull;
+pub mod profile;
 pub mod rapier_controller;
 pub mod render_mesh;
 mod world;
@@ -34,6 +35,9 @@ pub use follower::{
 };
 pub use guide::{DeckPath, STAIR_SPINE_MIN_SEPARATION, StairSpine};
 pub use plan_hull::{plan_convex_hull, point_in_convex_plan_hull, segment_crosses_convex_hull};
+pub use profile::{
+    TRAVERSAL_GUIDE_CONTRACT_VERSION, TraversalRequirements, TraversalRuntimeProfile,
+};
 pub use render_mesh::ConvexRenderMesh;
 pub use world::{
     ArenaSpec, ArenaSpecError, ColliderDelta, ColliderDeltaError, ColliderShape, ColliderSpec,
