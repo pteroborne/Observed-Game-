@@ -20,12 +20,19 @@ use std::f32::consts::TAU;
 use glam::Vec3;
 use player_input::PlayerIntent;
 
+pub mod follower;
 pub mod gantry;
+pub mod guide;
 pub mod plan_hull;
 pub mod rapier_controller;
 pub mod render_mesh;
 mod world;
 
+pub use follower::{
+    DeckHandoff, FollowDecision, FollowState, FollowTarget, FollowerConfig, FollowerPose,
+    TraversalDirection, follow_stateless,
+};
+pub use guide::{DeckPath, STAIR_SPINE_MIN_SEPARATION, StairSpine};
 pub use plan_hull::{plan_convex_hull, point_in_convex_plan_hull, segment_crosses_convex_hull};
 pub use render_mesh::ConvexRenderMesh;
 pub use world::{

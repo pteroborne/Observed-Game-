@@ -1,12 +1,15 @@
 use glam::{Vec2, Vec3};
 use observed_hex::{HexFace, PortClass, PortSignature, TILE_LEVEL_HEIGHT, face_edge};
 use observed_traversal::rapier_controller::{RapierTraversalScene, step_character};
-use observed_traversal::{ArenaSpec, FpsBody, FpsConfig};
+use observed_traversal::{
+    ArenaSpec, FollowTarget, FollowerConfig, FollowerPose, FpsBody, FpsConfig, TraversalDirection,
+    follow_stateless,
+};
 use player_input::PlayerIntent;
 
 use crate::CompiledTileCatalog;
 use crate::manifest::Manifest;
-use crate::tile::{DeckPath, TileError, parse_tile};
+use crate::tile::{TileError, parse_tile};
 use crate::tile_source;
 
 fn signature(ports: &[(HexFace, PortClass)]) -> PortSignature {
@@ -19,30 +22,6 @@ fn signature(ports: &[(HexFace, PortClass)]) -> PortSignature {
 
 fn doors(faces: &[HexFace]) -> Vec<(HexFace, PortClass)> {
     faces.iter().map(|&face| (face, PortClass::Door)).collect()
-}
-
-/// A stateless deck follower must commit through a corner once the body has
-/// reached it. Otherwise the nearest-leg query can keep choosing the leg just
-/// completed and repeatedly return the shared node as its next target.
-#[test]
-fn deck_paths_capture_a_reached_corner_in_both_directions() {
-    let path = DeckPath {
-        nodes: vec![
-            Vec3::new(0.0, 0.0, 0.0),
-            Vec3::new(1.0, 0.0, 0.0),
-            Vec3::new(1.0, 0.0, 2.0),
-            Vec3::new(3.0, 0.0, 2.0),
-        ],
-    };
-
-    assert_eq!(
-        path.step_toward(Vec3::new(0.85, 0.0, 0.05), Vec3::new(3.0, 0.0, 2.0)),
-        Some(Vec3::new(1.0, 0.0, 2.0))
-    );
-    assert_eq!(
-        path.step_toward(Vec3::new(1.15, 0.0, 1.95), Vec3::ZERO),
-        Some(Vec3::new(1.0, 0.0, 0.0))
-    );
 }
 
 #[test]
@@ -572,12 +551,29 @@ impl Walk {
     }
 }
 
+fn shared_climb_target(
+    spine: &crate::StairSpine,
+    deck: &crate::DeckPath,
+    feet: Vec3,
+) -> Option<Vec3> {
+    follow_stateless(
+        FollowerPose { feet, yaw: 0.0 },
+        FollowTarget::Climb {
+            spine,
+            approach: Some(deck),
+            direction: TraversalDirection::Forward,
+        },
+        &FollowerConfig::default(),
+    )
+    .target
+}
+
 /// The bot's steering rule, run against the production controller from an
 /// arbitrary standing start.
 ///
-/// One copy, deliberately. The rule is three lines lifted from
-/// `Bot::climb_command`, and the value of a harness that claims to reproduce it
-/// is exactly zero once a second copy is free to drift from the first.
+/// Target selection comes from the production follower. This harness applies
+/// the target as an immediate yaw because its job is to audit authored
+/// collision, not to duplicate the match controller profile.
 fn walk_from_as_the_bot_does(map: &str, start_feet: Vec3) -> Walk {
     let tile = crate::parse_authored_module(map)
         .expect("module parses")
@@ -597,21 +593,9 @@ fn walk_from_as_the_bot_does(map: &str, start_feet: Vec3) -> Walk {
     let mut highest = start_feet;
     let mut ended = start_feet;
 
-    // `CLIMB_CAPTURE_RADIUS` from the bot, which is not public here.
-    const CAPTURE: f32 = 1.6;
     for _ in 0..6_000 {
         let feet = body.position - Vec3::Y * config.half_height;
-        // Exactly `climb_command`: off the climb, walk the deck path toward the
-        // spine's entry; otherwise follow the spine.
-        let off = spine
-            .distance(feet)
-            .is_some_and(|distance| distance > CAPTURE);
-        let target = if off && !deck.is_empty() {
-            deck.step_toward(feet, nodes[0])
-                .or_else(|| spine.target(feet, true))
-        } else {
-            spine.target(feet, true)
-        };
+        let target = shared_climb_target(&spine, &deck, feet);
         let Some(target) = target else { break };
         let to = target - feet;
         body.yaw = to.x.atan2(-to.z);
@@ -697,18 +681,9 @@ fn climb_a_stacked_column_turned(lower: &str, upper: &str, turn: u8) -> Walk {
     let mut highest = start_feet;
     let mut ended = start_feet;
 
-    const CAPTURE: f32 = 1.6;
     for _ in 0..6_000 {
         let feet = body.position - Vec3::Y * config.half_height;
-        let off = spine
-            .distance(feet)
-            .is_some_and(|distance| distance > CAPTURE);
-        let target = if off && !deck.is_empty() {
-            deck.step_toward(feet, nodes[0])
-                .or_else(|| spine.target(feet, true))
-        } else {
-            spine.target(feet, true)
-        };
+        let target = shared_climb_target(&spine, &deck, feet);
         let Some(target) = target else { break };
         let to = target - feet;
         body.yaw = to.x.atan2(-to.z);
@@ -857,7 +832,20 @@ fn a_tower_can_be_left_by_every_door_it_carries() {
                     reached = true;
                     break;
                 }
-                let Some(step) = tile.deck.step_toward(feet, target) else {
+                let Some(step) = follow_stateless(
+                    FollowerPose {
+                        feet,
+                        yaw: body.yaw,
+                    },
+                    FollowTarget::Deck {
+                        path: &tile.deck,
+                        goal: target,
+                        handoff: None,
+                    },
+                    &FollowerConfig::default(),
+                )
+                .target
+                else {
                     break;
                 };
                 let to = step - feet;
