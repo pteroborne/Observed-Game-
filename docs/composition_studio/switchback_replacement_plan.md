@@ -173,6 +173,41 @@ bug, and then failed again on my own wrong expectation - I asserted the climb
 should meet the port, when the contract is that it lands one floor slab *above*
 it, on the deck. The port marks the boundary; the deck is where a body stands.
 
+## 5c. Slice C attempted and reverted: doors still break the spectator gates
+
+Built and reverted. The tree is green at slice B; this is what was learned.
+
+The implementation did what the design says: five door orbits times three
+connectivities, doors cut as `door_wall` openings onto the ring, **the climb
+untouched** - no `arc()`, a fixed sweep at a fixed `OUTER_SCALE`. All 10 tower
+unit tests passed, including the new invariant.
+
+**And `hex_spectator_physically_leaves_spawn` and
+`hex_spectator_route_is_physically_completable_without_guardian_pressure` both
+failed.**
+
+What this rules out, and what it does not:
+
+- **Not the column-constancy invariant.** `towers_differing_only_in_doors_share_
+  one_climb` passes, and it is not vacuous: reintroducing the exact failure of
+  the previous attempt - deriving `outer_scale` from the door count - fails it
+  immediately. The climb is genuinely identical across all five orbits.
+- **So the cause is something the doors bring that is not the flight.** The
+  candidates, none yet tested: the ring deck is still door-independent and may
+  not lead a body from a *door* to the foot; the doors' aprons may not meet the
+  ring; the sixfold rotation now compiles 90 prototypes into buckets that were
+  holding 3, which reshuffles `weighted_select` across the whole stair family
+  the way adding towers did before.
+
+The last one is worth suspecting first, because it has already happened twice in
+this work: adding candidates to a bucket changes which *generated* tower renders
+elsewhere, and the failure surfaces far from the change. The way to tell them
+apart is the 24-seed sweep with the authored weight at zero - if seeds still
+stall with the authored towers present but never selected, the reshuffle is the
+cause and the doors are innocent.
+
+**Do not retry slice C by adjusting geometry.** Run that experiment first.
+
 ## 6. Slices
 
 Each ships and is verifiable alone.
