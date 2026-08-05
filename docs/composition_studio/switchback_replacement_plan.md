@@ -208,6 +208,56 @@ cause and the doors are innocent.
 
 **Do not retry slice C by adjusting geometry.** Run that experiment first.
 
+## 5d. The real invariant: a column can mix authored and generated towers
+
+The experiment that settles it needed no doors at all. Slice B's three towers
+were switched from `rotation_policy: "none"` to `"sixfold"` - **the same
+prototypes, 3 becoming 18** - so the bucket reshuffles exactly as adding doors
+would, with no new geometry whatsoever.
+
+Result: both named spectator gates pass, and **1 of 24 seeds stalls**, on
+
+    TileKey { archetype: "stair_tower", register: "liminal_grid", variant: 4 }
+
+Variant 4 is **generated** - authored towers compile to 66 and up. And
+`no_generated_stair_tower_strands_a_body` passes, so that tower is perfectly
+walkable on its own.
+
+### Why
+
+`tile_for` pins a column's **register**. It does not pin the *tile*:
+
+```rust
+catalogue.select(archetype, register, signature, world.tile_variation_key(coord))
+```
+
+`tile_variation_key` is **per cell**. So within one shaft column, one cell can
+draw an authored tower and the next a generated one - and their climbs are
+entirely different shapes, so the lower flight tops out under the upper cell's
+deck and a body climbing stops dead. This is precisely the failure
+`tile_for`'s own comment describes; the comment assumes the register is enough
+to prevent it, which was true while every tower in a register had the same
+shape.
+
+### What this changes
+
+**Slice E is wrong.** "Raise the authored weight, then remove the generated
+family" cannot work: any weight strictly between none and total lets a column
+mix the two. The authored family and the switchback cannot coexist in the same
+bucket at all.
+
+The replacement must be **atomic** - author the full 66-signature demand and
+delete the generated enumeration in one change - or the mixing must be made
+impossible first, by extending `tile_for` to resolve the *tile* per column
+rather than only the register.
+
+The second is smaller than it sounds and is worth pricing first: `tile_for`
+already computes a column identity (`HexCoord { level: 0, ..coord }`) for the
+register lookup, and passing that same identity as the variation key for
+`stair_tower` would make the whole column draw one tile. That would also retire
+the "climb depends only on the register" invariant, since the climb would then
+depend on the column - which is what the geometry actually needs.
+
 ## 6. Slices
 
 Each ships and is verifiable alone.
