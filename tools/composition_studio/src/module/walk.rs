@@ -7,51 +7,42 @@
 //! match to find out.
 //!
 //! Geometric, not physical. No Rapier, no timestep, no controller: the probe
-//! samples the authored hulls directly and applies the same thresholds the
-//! character config carries. That trade is deliberate. A physics walk is higher
-//! fidelity but non-deterministic, slow, and impossible to run as a test over
-//! all 58 modules; this runs in milliseconds, gives the same answer every time,
-//! and can gate the whole corpus. It will not catch everything a real body
-//! meets - it is a floor, not a ceiling, and the honest claim is "this cannot be
-//! walked" rather than "this walks fine".
+//! samples the authored hulls directly and applies the same requirements the
+//! canonical runtime profile carries. That trade is deliberate. The production
+//! Rapier controller is deterministic, but running it is slower and requires a
+//! declared guide and start state; this preflight runs in milliseconds over the
+//! whole corpus. It will not catch everything a real body meets - it is a floor,
+//! not a ceiling, and the honest claim is "this cannot be walked" rather than
+//! "this walks fine".
 //!
-//! Thresholds come from `FpsConfig::default()` and the importer, never from
-//! numbers invented here: a probe with its own idea of a step height would pass
-//! modules the game rejects, which is worse than no probe.
+//! Physical thresholds come from [`observed_traversal::TraversalRequirements`].
+//! The importer's 2.2 m headroom standard stays separate because it is an
+//! authoring-quality target, not the capsule's physical height.
 
 use bevy::prelude::*;
+use observed_traversal::{TraversalRequirements, TraversalRuntimeProfile};
 
 pub use super::probe::Probe;
 
-/// What a body needs, taken from the shipped traversal profile.
-#[derive(Clone, Copy, Debug)]
+/// The importer's deliberate clearance target, distinct from body headroom.
+pub const AUTHORING_HEADROOM_STANDARD_METERS: f32 = 2.2;
+
+/// Advisory preflight settings around the shipped traversal requirements.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Thresholds {
-    /// Autostep. A rise beyond this is a wall, not a step.
-    pub step_height: f32,
-    /// Above this the controller slides rather than climbs.
-    pub max_slope_degrees: f32,
-    /// The importer's own minimum, so the probe and `validate_module` agree.
-    ///
-    /// This is an authoring *standard*, not a physical limit - a body is
-    /// shorter than it. Clearance below it is reported as a pinch; only
-    /// clearance below `body_height` actually stops anything.
-    pub min_headroom: f32,
-    /// The shipped capsule, end to end. Below this a body genuinely cannot fit.
-    pub body_height: f32,
+    /// Physical thresholds derived as one value from the canonical controller.
+    pub requirements: TraversalRequirements,
+    /// Clearance below this remains a visible authoring pinch, not a blocker.
+    pub authoring_headroom_standard: f32,
     /// How far apart samples are taken along the route, in metres.
     pub sample_spacing: f32,
 }
 
-impl Default for Thresholds {
-    fn default() -> Self {
-        // The builder's defaults are the shipped values; there is no free
-        // `Default` on the profile itself.
-        let config = observed_content::TraversalProfile::builder().build();
+impl From<TraversalRequirements> for Thresholds {
+    fn from(requirements: TraversalRequirements) -> Self {
         Self {
-            step_height: config.step_height,
-            max_slope_degrees: config.maximum_slope_degrees,
-            min_headroom: 2.2,
-            body_height: config.half_height * 2.0,
+            requirements,
+            authoring_headroom_standard: AUTHORING_HEADROOM_STANDARD_METERS,
             // Finer than the body radius (0.38 m), so a gap narrower than a
             // body cannot slip between two samples unnoticed.
             sample_spacing: 0.25,
@@ -59,12 +50,13 @@ impl Default for Thresholds {
     }
 }
 
-/// How far above the route's own height the *first* sample may find floor.
-///
-/// A body is placed on the surface at the start rather than required to step
-/// up onto it. Kept to about a body's height so the start still cannot be the
-/// roof of an 8 m cell.
-pub(super) const START_REACH: f32 = 1.8;
+impl Default for Thresholds {
+    fn default() -> Self {
+        TraversalRuntimeProfile::canonical_hex()
+            .requirements()
+            .into()
+    }
+}
 
 /// How much run the sustained-gradient test averages over, in metres.
 ///
@@ -107,15 +99,15 @@ impl WalkFailure {
             }
             Self::StepTooHigh { rise, .. } => format!(
                 "a {rise:.2} m rise; autostep only lifts {:.2} m",
-                limits.step_height
+                limits.requirements.step_height
             ),
             Self::TooSteep { degrees, .. } => format!(
                 "{degrees:.0} degrees; the controller slides above {:.0}",
-                limits.max_slope_degrees
+                limits.requirements.maximum_slope_degrees
             ),
             Self::LowCeiling { clearance, .. } => format!(
-                "{clearance:.2} m of headroom; {:.2} m is the minimum",
-                limits.min_headroom
+                "{clearance:.2} m of headroom; {:.2} m is the physical minimum",
+                limits.requirements.required_headroom
             ),
         }
     }
@@ -132,8 +124,8 @@ pub struct WalkReport {
     pub progress: f32,
     /// Lowest clearance met and where, whether or not the walk completed.
     ///
-    /// Below `min_headroom` this is a pinch worth authoring out; below
-    /// `body_height` it is why the walk stopped.
+    /// Below `authoring_headroom_standard` this is a pinch worth authoring out;
+    /// below `requirements.required_headroom` it is why the walk stopped.
     pub tightest: Option<(f32, Vec3)>,
 }
 
@@ -184,7 +176,9 @@ pub fn walk(probe: &Probe, route: &[Vec3], limits: &Thresholds) -> WalkReport {
         // walked the roof end to end and reported every hall traversable. A
         // probe that fails open is worse than none: it answers wrong in the
         // reassuring direction.
-        let ceiling = previous.map_or(point.y + START_REACH, |p| p.y + limits.step_height);
+        let ceiling = previous.map_or(point.y + limits.requirements.required_headroom, |p| {
+            p.y + limits.requirements.step_height
+        });
         let Some(y) = probe.support(point.x, point.z, ceiling) else {
             return WalkReport {
                 tightest,
@@ -201,7 +195,7 @@ pub fn walk(probe: &Probe, route: &[Vec3], limits: &Thresholds) -> WalkReport {
             let run = (here - prior).xz().length().max(1e-4);
             // A lip. Autostep lifts a body over this much regardless of how
             // abrupt it is; beyond it, it is a wall.
-            if rise > limits.step_height {
+            if rise > limits.requirements.step_height {
                 return WalkReport {
                     tightest,
                     failure: Some(WalkFailure::StepTooHigh { at: here, rise }),
@@ -238,7 +232,7 @@ pub fn walk(probe: &Probe, route: &[Vec3], limits: &Thresholds) -> WalkReport {
                 let span = travelled - back_run;
                 if span >= SLOPE_WINDOW {
                     let degrees = ((here.y - back_y) / span).atan().to_degrees();
-                    if degrees > limits.max_slope_degrees {
+                    if degrees > limits.requirements.maximum_slope_degrees {
                         return WalkReport {
                             tightest,
                             failure: Some(WalkFailure::TooSteep { at: here, degrees }),
@@ -260,7 +254,7 @@ pub fn walk(probe: &Probe, route: &[Vec3], limits: &Thresholds) -> WalkReport {
         // standard as a blocker reported 242 generated towers as impassable
         // when they merely pinch. The pinch is still worth seeing, so it is
         // carried on the report rather than thrown away.
-        if clearance < limits.body_height {
+        if clearance < limits.requirements.required_headroom {
             return WalkReport {
                 tightest,
                 failure: Some(WalkFailure::LowCeiling {
@@ -519,19 +513,53 @@ mod tests {
         );
     }
 
-    /// Thresholds come from the shipped config, not from numbers chosen here.
-    /// A probe with its own idea of a step height passes what the game rejects.
+    /// Physical thresholds come from the one canonical runtime profile.
     #[test]
-    fn thresholds_track_the_character_config() {
+    fn thresholds_use_canonical_runtime_requirements() {
         let limits = Thresholds::default();
-        // The builder's defaults are the shipped values; there is no free
-        // `Default` on the profile itself.
-        let config = observed_content::TraversalProfile::builder().build();
-        assert_eq!(limits.step_height, config.step_height);
-        assert_eq!(limits.max_slope_degrees, config.maximum_slope_degrees);
+        let requirements = TraversalRuntimeProfile::canonical_hex().requirements();
+        assert_eq!(limits.requirements, requirements);
         assert!(
-            limits.sample_spacing < config.radius,
+            limits.sample_spacing < requirements.capsule_radius,
             "samples must be finer than a body is wide, or a gap can hide between them"
         );
+    }
+
+    /// The importer's comfort/readability contract is intentionally stricter
+    /// than the capsule's physical fit and must not be folded into the profile.
+    #[test]
+    fn authoring_headroom_standard_stays_separate_from_physical_headroom() {
+        let limits = Thresholds::default();
+        assert_eq!(limits.authoring_headroom_standard, 2.2);
+        assert_eq!(limits.requirements.required_headroom, 1.8);
+        assert!(limits.authoring_headroom_standard > limits.requirements.required_headroom);
+
+        let failure = WalkFailure::LowCeiling {
+            at: Vec3::ZERO,
+            clearance: 1.7,
+        };
+        let description = failure.describe(&limits);
+        assert!(description.contains("1.80 m is the physical minimum"));
+        assert!(!description.contains("2.20 m is the physical minimum"));
+    }
+
+    #[test]
+    fn an_authoring_pinch_does_not_become_a_physical_blocker() {
+        let quad = |y: f32| {
+            let a = Vec3::new(-1.0, y, -1.0);
+            let b = Vec3::new(4.0, y, -1.0);
+            let c = Vec3::new(4.0, y, 1.0);
+            let d = Vec3::new(-1.0, y, 1.0);
+            [[a, b, c], [a, c, d]]
+        };
+        let probe =
+            Probe::from_triangles(quad(0.0).into_iter().chain(quad(2.0)).collect::<Vec<_>>());
+        let limits = Thresholds::default();
+        let report = walk(&probe, &[Vec3::ZERO, Vec3::new(3.0, 0.0, 0.0)], &limits);
+
+        assert!(report.is_clear(), "{:#?}", report.failure);
+        assert_eq!(report.tightest.map(|(clearance, _)| clearance), Some(2.0));
+        assert!(2.0 < limits.authoring_headroom_standard);
+        assert!(2.0 >= limits.requirements.required_headroom);
     }
 }

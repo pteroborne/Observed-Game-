@@ -6,6 +6,7 @@ use bevy::prelude::*;
 use observed_style::schematic_screen;
 
 use crate::module::diagnose::{Diagnosis, diagnose_file};
+use crate::module::rapier_audit::{RapierAuditState, audit_projected_guide, projected_guide};
 use crate::module::watch::{ModuleWatch, default_dir, poll_watch};
 use crate::viewport::{ISO_PITCH, StudioCamera, detent_yaw};
 
@@ -43,6 +44,10 @@ pub struct ModuleState {
     pub cut_hulls: usize,
     /// The last walk through the selected module, if it has a route.
     pub walk: Option<crate::module::walk::WalkReport>,
+    /// Identity-projected compatibility guide for the standalone module.
+    pub guide: Option<observed_match::hex_wfc::ProjectedTraversalGuide>,
+    /// Explicit state of the optional production follower/Rapier audit.
+    pub rapier_audit: RapierAuditState,
 }
 
 impl Default for ModuleState {
@@ -60,6 +65,8 @@ impl Default for ModuleState {
             cutaway: true,
             cut_hulls: 0,
             walk: None,
+            guide: None,
+            rapier_audit: RapierAuditState::Off,
         }
     }
 }
@@ -93,6 +100,7 @@ impl ModuleState {
             let index = (self.selected + step) % count;
             if !self.diagnoses[index].is_clean() {
                 self.selected = index;
+                self.refresh_selected_evidence();
                 self.dirty = true;
                 return;
             }
@@ -178,7 +186,49 @@ impl ModuleState {
         self.selected = index % self.diagnoses.len();
         self.step = 0;
         self.param = 0;
-        self.walk = self.current().and_then(crate::module::route::walk_module);
+        self.refresh_selected_evidence();
+        self.dirty = true;
+    }
+
+    /// Recompute every diagnostic projection owned by the selected module.
+    ///
+    /// Keeping this as one operation prevents a watcher rebuild or selection
+    /// change from showing a guide/audit that belongs to the previous module.
+    pub fn refresh_selected_evidence(&mut self) {
+        let audit_enabled = self.rapier_audit.is_enabled();
+        let (walk, guide, audit) = if let Some(diagnosis) = self.current() {
+            let walk = crate::module::route::walk_module(diagnosis);
+            let guide = diagnosis.prototype.as_ref().and_then(projected_guide);
+            let audit = audit_enabled.then(|| {
+                diagnosis.prototype.as_ref().zip(guide.as_ref()).map_or(
+                    RapierAuditState::NotApplicable,
+                    |(prototype, guide)| {
+                        RapierAuditState::Complete(audit_projected_guide(prototype, guide))
+                    },
+                )
+            });
+            (walk, guide, audit)
+        } else {
+            (
+                None,
+                None,
+                audit_enabled.then_some(RapierAuditState::NotApplicable),
+            )
+        };
+        self.walk = walk;
+        self.guide = guide;
+        if let Some(audit) = audit {
+            self.rapier_audit = audit;
+        }
+    }
+
+    pub fn toggle_rapier_audit(&mut self) {
+        self.rapier_audit = if self.rapier_audit.is_enabled() {
+            RapierAuditState::Off
+        } else {
+            RapierAuditState::NotApplicable
+        };
+        self.refresh_selected_evidence();
         self.dirty = true;
     }
 }
@@ -215,7 +265,7 @@ pub fn rebuild_diagnoses(watch: Res<ModuleWatch>, mut state: ResMut<ModuleState>
     state.selected = state.selected.min(state.diagnoses.len().saturating_sub(1));
     state.clamp_cursor();
 
-    state.walk = state.current().and_then(crate::module::route::walk_module);
+    state.refresh_selected_evidence();
 
     let failing = state.failing();
     let total = state.diagnoses.len();
@@ -244,6 +294,9 @@ pub fn handle_input(
     }
     if keyboard.just_pressed(KeyCode::Tab) {
         state.select_next_failing();
+    }
+    if keyboard.just_pressed(KeyCode::KeyR) {
+        state.toggle_rapier_audit();
     }
     // `C` is cutaway in the sibling tool too. A key that means one thing in
     // one studio and another thing in the other is a trap for the person
@@ -331,9 +384,13 @@ impl Default for ModuleStudioPlugin {
 
 impl Plugin for ModuleStudioPlugin {
     fn build(&self, app: &mut App) {
+        let mut initial_state = ModuleState::default();
+        if std::env::var("OBSERVED2_MODULE_RAPIER").is_ok_and(|value| value != "0") {
+            initial_state.rapier_audit = RapierAuditState::NotApplicable;
+        }
         app.insert_resource(ClearColor(schematic_screen()))
             .insert_resource(ModuleWatch::new(self.dir.clone()))
-            .init_resource::<ModuleState>()
+            .insert_resource(initial_state)
             .init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<bevy::input::mouse::AccumulatedMouseScroll>()
             .init_asset::<Mesh>()
@@ -425,4 +482,55 @@ fn setup_camera(mut commands: Commands) {
         },
         bevy::ui::IsDefaultUiCamera,
     ));
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+
+    fn diagnosis(stem: &str) -> Diagnosis {
+        diagnose_file(
+            &Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../assets/tiles/authored")
+                .join(format!("{stem}.map")),
+        )
+    }
+
+    #[test]
+    fn rapier_toggle_has_explicit_off_and_not_applicable_states() {
+        let mut state = ModuleState::default();
+        state.toggle_rapier_audit();
+        assert_eq!(state.rapier_audit, RapierAuditState::NotApplicable);
+        state.toggle_rapier_audit();
+        assert_eq!(state.rapier_audit, RapierAuditState::Off);
+    }
+
+    #[test]
+    fn selection_refreshes_an_enabled_audit_without_inventing_flat_routes() {
+        let mut state = ModuleState {
+            diagnoses: vec![
+                diagnosis("hall_ramp_perimeter_120"),
+                diagnosis("hall_straight"),
+            ],
+            rapier_audit: RapierAuditState::NotApplicable,
+            ..ModuleState::default()
+        };
+
+        state.refresh_selected_evidence();
+        assert!(matches!(
+            state.rapier_audit,
+            RapierAuditState::Complete(ref report) if report.passed()
+        ));
+        assert!(state.guide.is_some());
+
+        state.select(1);
+        assert_eq!(state.rapier_audit, RapierAuditState::NotApplicable);
+        assert!(state.guide.is_none());
+        assert!(
+            state.walk.is_some(),
+            "flat modules retain advisory preflight"
+        );
+    }
 }
