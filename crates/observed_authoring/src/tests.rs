@@ -848,16 +848,11 @@ fn walk_spine_and_measure_rise(map: &str) -> (f32, f32, Vec3) {
 /// and hands back that leg's far end. Comparing this against the sequential
 /// walk isolates the steering rule from the geometry: if the geometry climbs
 /// and this does not, the rule is what is broken.
-fn walk_spine_as_the_bot_does(map: &str) -> (f32, f32, Vec3) {
+fn walk_spine_as_the_bot_does(map: &str) -> Walk {
     let tile = crate::parse_authored_module(map)
         .expect("module parses")
         .prototype;
-    let spine = tile.spine.clone();
-    let deck = tile.deck.clone();
-    let nodes = &spine.nodes;
-    let arena = tile.arena_spec();
-    let scene = RapierTraversalScene::from_arena_spec(&arena);
-    let config = FpsConfig::default();
+    let nodes = &tile.spine.nodes;
 
     // Start where a body actually arrives - just inside a lateral door - not
     // on the spine. Starting on the spine is what made the first version of
@@ -869,21 +864,79 @@ fn walk_spine_as_the_bot_does(map: &str) -> (f32, f32, Vec3) {
         .into_iter()
         .find(|&face| tile.signature.port(face) == PortClass::Door);
     let start_feet = match entrance {
-        Some(face) => {
-            let [a, b] = face_edge(face);
-            let mid = Vec2::new((a.0 + b.0) as f32 * 0.5, (a.1 + b.1) as f32 * 0.5);
-            let dir = mid.normalize();
-            Vec3::new(dir.x * 6.3, floor, dir.y * 6.3)
-        }
+        Some(face) => just_inside(face, floor),
         // A tower has no lateral door: a body arrives through the floor
         // aperture, carried by the flight below, and lands on the climb.
         None => nodes[0],
     };
+    walk_from_as_the_bot_does(map, start_feet)
+}
+
+/// Where a body stands the moment it is through the door on `face`, at floor
+/// height: on the face-midpoint bearing, 0.7 m clear of the wall.
+fn just_inside(face: HexFace, floor: f32) -> Vec3 {
+    let [a, b] = face_edge(face);
+    let mid = Vec2::new((a.0 + b.0) as f32 * 0.5, (a.1 + b.1) as f32 * 0.5);
+    let dir = mid.normalize();
+    Vec3::new(dir.x * 6.3, floor, dir.y * 6.3)
+}
+
+/// What one steered walk did.
+///
+/// `highest` and `ended` are both here because either alone misreports half the
+/// failures. A body that climbs and then stalls gives up at its highest point;
+/// a body that never leaves the floor has a highest point of "wherever it stood
+/// on the tick its feet first settled", which is its start, and reporting that
+/// as where it stopped points the reader at the wrong end of the tile.
+struct Walk {
+    rise: f32,
+    wanted: f32,
+    highest: Vec3,
+    ended: Vec3,
+}
+
+impl Walk {
+    /// Whether the body finished the climb, allowing the residual a walker
+    /// leaves when it stops steering at its target.
+    fn finished(&self) -> bool {
+        self.rise >= self.wanted - 0.6
+    }
+
+    /// Where it gave up: the top of the climb it managed, or - if it never
+    /// climbed at all - where it came to rest.
+    fn gave_up(&self) -> Vec3 {
+        if self.rise > 0.6 {
+            self.highest
+        } else {
+            self.ended
+        }
+    }
+}
+
+/// The bot's steering rule, run against the production controller from an
+/// arbitrary standing start.
+///
+/// One copy, deliberately. The rule is three lines lifted from
+/// `Bot::climb_command`, and the value of a harness that claims to reproduce it
+/// is exactly zero once a second copy is free to drift from the first.
+fn walk_from_as_the_bot_does(map: &str, start_feet: Vec3) -> Walk {
+    let tile = crate::parse_authored_module(map)
+        .expect("module parses")
+        .prototype;
+    let spine = tile.spine.clone();
+    let deck = tile.deck.clone();
+    let nodes = &spine.nodes;
+    let arena = tile.arena_spec();
+    let scene = RapierTraversalScene::from_arena_spec(&arena);
+    let config = FpsConfig::default();
+
+    let floor = nodes[0].y;
     let wanted = nodes[nodes.len() - 1].y - floor;
 
     let mut body = FpsBody::spawned(start_feet + Vec3::Y * config.half_height, 0.0);
     let mut max_feet = floor;
-    let mut best = start_feet;
+    let mut highest = start_feet;
+    let mut ended = start_feet;
 
     // `CLIMB_CAPTURE_RADIUS` from the bot, which is not public here.
     const CAPTURE: f32 = 1.6;
@@ -908,13 +961,18 @@ fn walk_spine_as_the_bot_does(map: &str) -> (f32, f32, Vec3) {
             ..PlayerIntent::default()
         };
         step_character(&scene, &mut body, intent, &config, 1.0 / 60.0);
-        let feet = body.position - Vec3::Y * config.half_height;
-        if feet.y > max_feet {
-            max_feet = feet.y;
-            best = feet;
+        ended = body.position - Vec3::Y * config.half_height;
+        if ended.y > max_feet {
+            max_feet = ended.y;
+            highest = ended;
         }
     }
-    (max_feet - floor, wanted, best)
+    Walk {
+        rise: max_feet - floor,
+        wanted,
+        highest,
+        ended,
+    }
 }
 
 /// Every authored climb must be walkable by the production controller when it
@@ -977,10 +1035,13 @@ fn the_bots_targeting_rule_finishes_every_authored_climb() {
             continue;
         }
         walked += 1;
-        let (rise, wanted, stuck) = walk_spine_as_the_bot_does(&text);
-        if rise < wanted - 0.6 {
+        let walk = walk_spine_as_the_bot_does(&text);
+        if !walk.finished() {
             failures.push(format!(
-                "  {stem}: rose {rise:.2} m of {wanted:.2} m, stopped at {stuck:?}"
+                "  {stem}: rose {:.2} m of {:.2} m, stopped at {:?}",
+                walk.rise,
+                walk.wanted,
+                walk.gave_up()
             ));
         }
     }
@@ -988,6 +1049,57 @@ fn the_bots_targeting_rule_finishes_every_authored_climb() {
     assert!(
         failures.is_empty(),
         "{} of {walked} climbs defeat the bot's targeting rule:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
+/// A body that comes in through a door must find the foot of the climb from
+/// **whichever** face that door is on.
+///
+/// This is the half of the tower nothing has tested. The two harnesses above
+/// start a doorless tile's body on the spine - `walk_spine_as_the_bot_does`
+/// says so in as many words - so the ring deck, the whole reason the climb is
+/// inset, has never been walked. It is also the first of the three candidates
+/// recorded when slice C was reverted: the ring is door-independent, and a
+/// door-independent path may simply not lead from a *door* to the foot.
+///
+/// Doors are not authored yet, so this asks the question the geometry can
+/// already answer: a body is placed just inside each of the six faces in turn -
+/// where a door on that face would put it - and steered by the bot's own rule.
+/// The climb is fixed and door-blind by construction, so a face that fails here
+/// fails for slice C too, and it fails before the doors exist rather than as a
+/// stalled spectator three layers downstream.
+#[test]
+fn a_tower_climbs_from_every_face_a_door_could_be_on() {
+    let mut failures = Vec::new();
+    let mut walked = 0;
+    for (stem, text) in crate::forge::tower::builders() {
+        let floor = crate::parse_authored_module(&text)
+            .unwrap_or_else(|error| panic!("{stem} does not validate: {error:?}"))
+            .prototype
+            .spine
+            .nodes
+            .first()
+            .expect("a tower ships a spine")
+            .y;
+        for face in HexFace::LATERAL {
+            walked += 1;
+            let walk = walk_from_as_the_bot_does(&text, just_inside(face, floor));
+            if !walk.finished() {
+                failures.push(format!(
+                    "  {stem} from {face:?}: rose {:.2} m of {:.2} m, stopped at {:?}",
+                    walk.rise,
+                    walk.wanted,
+                    walk.gave_up()
+                ));
+            }
+        }
+    }
+    assert!(walked >= 18, "expected 6 faces per tower, walked {walked}");
+    assert!(
+        failures.is_empty(),
+        "{} of {walked} door-to-climb approaches fail:\n{}",
         failures.len(),
         failures.join("\n")
     );

@@ -294,6 +294,58 @@ So: author the full 66-signature demand, delete the generated enumeration, and
 land both in one change. There is no testable intermediate state, which is
 unwelcome but is what the measurements say. The 24-seed sweep is the gate.
 
+## 5f. Candidate 1 tested: the ring deck did not lead a body in from a door
+
+The first of §5c's three candidates, run as an experiment rather than argued.
+**It was a real fault**, independent of the bucket reshuffle in §5d, and it
+would have shipped with slice C.
+
+`a_tower_climbs_from_every_face_a_door_could_be_on` places a body just inside
+each of the six faces in turn - where a door on that face would put it - and
+steers it with the bot's own rule against the production controller. Doors do
+not exist yet, but the climb is fixed and door-blind by construction, so a face
+that fails without a door fails with one.
+
+**6 of 18 approaches failed**, the same two faces on all three towers: the
+climb's own face (`start`) and the next one round (`start + 1`). Both bodies
+came to rest 0.41 m outside the flight's outer edge - one capsule radius -
+pinned against the side of the climb.
+
+Two causes, both in `ring_deck`:
+
+- **The path ended on the rim and never ran in to the foot**, though its own
+  comment said "then in to its foot". `DeckPath::step_toward` returns the goal
+  itself once the body and the goal are nearest the same leg, so wherever the
+  path stops, the rest of the way is a straight line - and a straight line from
+  the rim to the foot crosses the flight.
+- **Two of the six faces carried no node**, so a body entering on one was
+  handed a leg across the cell and cut the chord through the stairwell.
+
+The fix is a full six-face ring, ordered away from the climb's own face, ending
+at `Extent::foot()` - the same point `spine()` starts from, so the two ends of
+the route come from one place instead of two calculations that can drift. The
+inward leg comes off `start + 5`, which the sweep does not cover, so it runs
+over open floor. A polyline is not a loop, so one face - the climb's own - walks
+the long way round; that is paid in walking rather than in stalling.
+
+### Why nothing caught it
+
+`walk_spine_as_the_bot_does` starts a body just inside a lateral door - but only
+for tiles that *have* one. A tower has none, so it fell to the `None` arm and
+started the body **on the spine**, which is the exact mistake that harness's own
+comment warns about ("Starting on the spine is what made the first version of
+this harness pass everything: it never exercised the approach"). The ring deck,
+the whole reason the climb is inset, had never been walked by anything.
+
+### Left standing: the foot sits 7.6 cm inside the floor aperture
+
+Found while measuring, not fixed. The spine's first node is at 0.2906 of the
+corner ray; `hex_opening_slab` cuts the floor at 0.30. The capsule is 0.38 m in
+radius so the lip carries it and nothing falls - but this is a margin that holds
+by accident, which is the shape of fault slice B called out in the generated
+family. It wants an assertion, and probably a foot moved outboard of the
+aperture, before the doors land.
+
 ## 6. Slices
 
 Each ships and is verifiable alone.

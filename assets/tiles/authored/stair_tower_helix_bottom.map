@@ -234,22 +234,37 @@
 {
 "classname" "tile_deck_node"
 "index" "0"
-"origin" "49 -84 8"
+"origin" "-49 84 8"
 }
 {
 "classname" "tile_deck_node"
 "index" "1"
-"origin" "-49 -84 8"
+"origin" "49 84 8"
 }
 {
 "classname" "tile_deck_node"
 "index" "2"
-"origin" "-98 0 8"
+"origin" "98 0 8"
 }
 {
 "classname" "tile_deck_node"
 "index" "3"
-"origin" "-49 84 8"
+"origin" "49 -84 8"
+}
+{
+"classname" "tile_deck_node"
+"index" "4"
+"origin" "-49 -84 8"
+}
+{
+"classname" "tile_deck_node"
+"index" "5"
+"origin" "-98 0 8"
+}
+{
+"classname" "tile_deck_node"
+"index" "6"
+"origin" "-32.5500 18.6000 8"
 }
 {
 "classname" "tile_light"

@@ -221,10 +221,26 @@ pub fn stair_tower(vertical: Vertical) -> String {
 /// `every_generated_stair_tower_ships_a_walkable_deck` never caught it because
 /// it filters on the generated archetype names.
 ///
-/// Nodes sit on the ring, outside the climb, at floor height - which is what
-/// that test requires of every node. Three of them, because the importer
-/// rejects two as a straight line needing no path, and a route round a ring
-/// genuinely bends.
+/// ## A node on every face, and the last one at the foot
+///
+/// Both of those were learned from bodies rather than argued, by
+/// `a_tower_climbs_from_every_face_a_door_could_be_on`. The first version
+/// covered four faces and ended on the rim, and two of the six starts walked
+/// into the side of the flight and stayed there. `DeckPath::step_toward` hands
+/// back the goal itself once the body and the goal are nearest the same leg, so
+/// wherever the path runs out, the rest of the way is a straight line - and a
+/// straight line from the rim to the foot crosses the climb.
+///
+/// - **The last node is [`Extent::foot`]**, the same point the spine starts at,
+///   so the path reaches the climb instead of stopping a ring's width short of
+///   it. That leg comes off the face at `start + 5`, which the sweep does not
+///   cover, so it runs over open floor.
+/// - **Every face carries a node**, or a body entering on an uncovered one is
+///   handed a leg across the cell and cuts the chord through the stairwell.
+///
+/// The ring is a polyline and not a loop, so one face - the climb's own,
+/// `start` - is at the far end and walks the long way round. That is the price
+/// of a single ordered path, and it is paid in walking rather than in stalling.
 #[must_use]
 fn ring_deck(extent: Extent) -> String {
     // Midway between the climb's outer edge and the wall: the walkable part of
@@ -235,11 +251,13 @@ fn ring_deck(extent: Extent) -> String {
         ((a.0 + b.0) * 0.5 * ring, (a.1 + b.1) * 0.5 * ring)
     };
 
-    // Round the rim to the face the climb starts on, then in to its foot.
+    // Round the whole rim, away from the climb's own face, then in to its foot.
     let start = extent.start_face();
+    let mut plan: Vec<(f64, f64)> = (0..6).map(|step| at(start + step)).collect();
+    plan.push(extent.foot());
+
     let mut out = String::new();
-    for (index, face) in [start + 3, start + 4, start + 5, start].iter().enumerate() {
-        let (x, y) = at(*face);
+    for (index, (x, y)) in plan.into_iter().enumerate() {
         #[allow(clippy::cast_possible_truncation)]
         out.push_str(&deck_node(index as u16, x, y, FLOOR_TOP));
     }
@@ -418,6 +436,85 @@ mod tests {
                 vertical.stem(),
                 top.y,
                 lid - f64::from(top.y)
+            );
+        }
+    }
+
+    /// The ring must touch every face and end where the climb starts.
+    ///
+    /// `a_tower_climbs_from_every_face_a_door_could_be_on` is the test that
+    /// found both of these, but it finds them by walking eighteen bodies
+    /// through Rapier and reporting where they stopped. This states the same
+    /// two properties as shape, so breaking one fails here first and says which
+    /// it was.
+    #[test]
+    fn the_ring_deck_touches_every_face_and_ends_at_the_foot() {
+        let extent = Extent {
+            faces: SWEEP,
+            variant: 0,
+            outer_scale: OUTER_SCALE,
+        };
+        for vertical in verticals() {
+            let module = crate::parse_authored_module(&stair_tower(vertical))
+                .unwrap_or_else(|error| panic!("{}: {error:?}", vertical.stem()));
+            let deck = &module.prototype.deck.nodes;
+            assert_eq!(
+                deck.len(),
+                7,
+                "{}: a ring is six faces and the run in to the foot",
+                vertical.stem()
+            );
+            // One node per face, classified by which face's sector it stands
+            // in - the bearing it points along, not a distance to a position
+            // this test recomputed. Six distinct sectors means no face is
+            // skipped, and a skipped face is a leg across the stairwell.
+            let mut sectors: Vec<usize> = deck[..6]
+                .iter()
+                .map(|node| {
+                    (0..6)
+                        .max_by(|&a, &b| {
+                            let toward = |face: usize| {
+                                let (u, v) = (corners()[face], corners()[(face + 1) % 6]);
+                                // TB y is the negated world z, as everywhere.
+                                let (mx, mz) = ((u.0 + v.0) * 0.5, -(u.1 + v.1) * 0.5);
+                                f64::from(node.x) * mx + f64::from(node.z) * mz
+                            };
+                            toward(a).total_cmp(&toward(b))
+                        })
+                        .expect("six faces")
+                })
+                .collect();
+            sectors.sort_unstable();
+            sectors.dedup();
+            assert_eq!(
+                sectors.len(),
+                6,
+                "{}: the ring misses a face - its nodes lie in sectors {sectors:?}",
+                vertical.stem()
+            );
+            // And the last node is the spine's first, so the path reaches the
+            // climb rather than stopping a ring's width short of it.
+            let foot = module
+                .prototype
+                .spine
+                .nodes
+                .first()
+                .copied()
+                .expect("a tower ships a spine");
+            let last = *deck.last().expect("checked non-empty above");
+            assert!(
+                last.distance(foot) < 1e-3,
+                "{}: the deck ends at {last:?}, but the climb starts at {foot:?}",
+                vertical.stem()
+            );
+            // Stated against the source of both, so the two cannot be brought
+            // back into agreement by editing one of them to a literal.
+            let (fx, fy) = extent.foot();
+            assert!(
+                (f64::from(foot.x) - fx / 16.0).abs() < 1e-6
+                    && (f64::from(foot.z) + fy / 16.0).abs() < 1e-6,
+                "{}: the climb does not start at Extent::foot",
+                vertical.stem()
             );
         }
     }

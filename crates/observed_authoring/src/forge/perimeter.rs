@@ -135,6 +135,28 @@ impl Extent {
         let c = self.outer(step);
         (c.0 * INNER, c.1 * INNER)
     }
+
+    /// Down the middle of the band at the `step`th radial seam.
+    #[must_use]
+    fn mid(self, step: usize) -> P2 {
+        let (o, i) = (self.outer(step), self.inner(step));
+        ((o.0 + i.0) * 0.5, (o.1 + i.1) * 0.5)
+    }
+
+    /// Where a body joins the climb from the floor: the spine's first node, in
+    /// plan.
+    ///
+    /// Public because a tower's ring deck has to **end** here. Deriving the two
+    /// ends of the route separately is how a deck comes to stop short of the
+    /// climb it exists to reach, and that is what shipped: the ring ran round to
+    /// the climb's own face and then stayed on the rim, so the last leg was
+    /// `DeckPath::step_toward`'s straight-at-the-goal case and a body on that
+    /// face was steered radially into the side of the flight.
+    #[must_use]
+    pub fn foot(self) -> P2 {
+        let m = self.mid(0);
+        (m.0 * 0.5, m.1 * 0.5)
+    }
 }
 
 /// The climb, as triangles.
@@ -235,21 +257,16 @@ pub(super) fn upper_deck(extent: Extent) -> String {
 /// the ends join the flat circulation either side without a special case.
 #[must_use]
 pub(super) fn spine(extent: Extent) -> String {
-    let mid = |step: usize| -> P2 {
-        let (o, i) = (extent.outer(step), extent.inner(step));
-        ((o.0 + i.0) * 0.5, (o.1 + i.1) * 0.5)
-    };
-
     let mut nodes: Vec<P3> = Vec::new();
     // On the deck, short of the ramp, so a body joins the climb from the floor.
-    let foot = mid(0);
-    nodes.push((foot.0 * 0.5, foot.1 * 0.5, FLOOR_TOP));
+    let foot = extent.foot();
+    nodes.push((foot.0, foot.1, FLOOR_TOP));
     for step in 0..=extent.faces {
-        let point = mid(step);
+        let point = extent.mid(step);
         nodes.push((point.0, point.1, extent.height(step)));
     }
     // Off the flight and onto the landing, toward the opening at the centre.
-    let head = mid(extent.faces);
+    let head = extent.mid(extent.faces);
     nodes.push((head.0 * 0.45, head.1 * 0.45, DECK_ABOVE));
 
     let mut out = String::new();
