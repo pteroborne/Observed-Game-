@@ -4,12 +4,14 @@
 use std::f32::consts::PI;
 
 use glam::{Vec2, Vec3};
-use observed_authoring::StairSpine;
 use observed_core::PlayerId;
 use observed_facility::hex_wfc::{
     HexArchetype, HexCoord, HexFace, HexPlacement, HexRoute, HexSpace, PortClass,
 };
 use observed_hex::hex_origin;
+use observed_traversal::{
+    DeckHandoff, FollowTarget, FollowerConfig, FollowerPose, TraversalDirection, follow_stateless,
+};
 use player_input::PlayerIntent;
 
 use super::movement::face_plan_dir;
@@ -42,11 +44,6 @@ pub(in crate::hex_wfc) struct BotRouteCache {
 /// Bot-side on purpose: `step_character` is shared with human look input, so
 /// clamping there would slow the player's mouse.
 const MAX_TURN_PER_TICK: f32 = 0.08;
-/// How near a body's feet must be to a climb to count as standing on it, in
-/// metres. A flight is 2.25 m wide, so half of that plus a margin covers a body
-/// anywhere on the treads while staying far short of the far side of a tower.
-const CLIMB_CAPTURE_RADIUS: f32 = 1.6;
-
 const STUCK_ENTER_TICKS: u16 = 45;
 const STUCK_SWEEP_TICKS: u16 = 24;
 const UNSTICK_STRAFE: f32 = 0.9;
@@ -341,10 +338,26 @@ impl HexWfcMatch {
             // `StairSpine::{has_arrived, has_descended}` exist precisely to
             // make this handoff shape-independent.
             let unfinished = |at: HexCoord, climbing_up: bool| {
-                self.geometry
-                    .climbs
-                    .get(&at)
-                    .is_some_and(|spine| on_unfinished_climb(spine, feet_point, climbing_up))
+                let Some(spine) = self.geometry.climbs.get(&at) else {
+                    return false;
+                };
+                follow_stateless(
+                    FollowerPose {
+                        feet: feet_point,
+                        yaw,
+                    },
+                    FollowTarget::Climb {
+                        spine,
+                        approach: self.geometry.decks.get(&at),
+                        direction: if climbing_up {
+                            TraversalDirection::Forward
+                        } else {
+                            TraversalDirection::Reverse
+                        },
+                    },
+                    &FollowerConfig::default(),
+                )
+                .is_on_unfinished_climb()
             };
             let base = if up {
                 let below = (cell.level > 0).then(|| HexCoord {
@@ -393,24 +406,23 @@ impl HexWfcMatch {
         up: bool,
     ) -> Option<PlayerIntent> {
         let spine = self.geometry.climbs.get(&cell)?;
-        if spine.is_empty() {
-            return None;
-        }
-        let entry = if up {
-            *spine.nodes.first()?
-        } else {
-            *spine.nodes.last()?
-        };
-        let off_the_climb = spine
-            .distance(feet_point)
-            .is_some_and(|distance| distance > CLIMB_CAPTURE_RADIUS);
-        if off_the_climb
-            && let Some(deck) = self.geometry.decks.get(&cell)
-            && let Some(target) = deck.step_toward(feet_point, entry)
-        {
-            return Some(walk_toward(yaw, feet_point, target));
-        }
-        spine_command(spine, yaw, feet_point, up)
+        follow_stateless(
+            FollowerPose {
+                feet: feet_point,
+                yaw,
+            },
+            FollowTarget::Climb {
+                spine,
+                approach: self.geometry.decks.get(&cell),
+                direction: if up {
+                    TraversalDirection::Forward
+                } else {
+                    TraversalDirection::Reverse
+                },
+            },
+            &FollowerConfig::default(),
+        )
+        .intent
     }
 
     /// Continue a stair flight after height rounding has changed the logical
@@ -449,27 +461,37 @@ impl HexWfcMatch {
         if !climbing(cell) && !below.is_some_and(climbing) {
             return None;
         }
+        let unfinished = |at: HexCoord, direction: TraversalDirection| {
+            let Some(spine) = self.geometry.climbs.get(&at) else {
+                return false;
+            };
+            follow_stateless(
+                FollowerPose {
+                    feet: feet_point,
+                    yaw,
+                },
+                FollowTarget::Climb {
+                    spine,
+                    approach: self.geometry.decks.get(&at),
+                    direction,
+                },
+                &FollowerConfig::default(),
+            )
+            .is_on_unfinished_climb()
+        };
         // A logical level transition happens before the body reaches the
         // authored terminal node. Finish whichever spine is still underfoot;
         // height cannot decide this on a sloped terminal tread, where ordinary
         // controller motion crosses the same threshold every few ticks.
         if let Some(below) = below
-            && self
-                .geometry
-                .climbs
-                .get(&below)
-                .is_some_and(|spine| on_unfinished_climb(spine, feet_point, true))
+            && unfinished(below, TraversalDirection::Forward)
         {
             self.climb_command(below, yaw, feet_point, true)
         // Descending stays height-gated. A lateral walker on the deck can pass
         // near this tower's spine foot; proximity alone would pull it backward
         // down a climb it never intended to take.
         } else if feet > floor + self.traversal_config.step_height
-            && self
-                .geometry
-                .climbs
-                .get(&cell)
-                .is_some_and(|spine| on_unfinished_climb(spine, feet_point, false))
+            && unfinished(cell, TraversalDirection::Reverse)
         {
             self.climb_command(cell, yaw, feet_point, false)
         } else {
@@ -547,75 +569,26 @@ impl HexWfcMatch {
         // Once through the aperture the deck no longer applies: this cell's path
         // cannot describe the neighbour's floor.
         let outward = face_plan_dir(face);
-        if Vec2::new(position.x - door.x, position.z - door.z).dot(outward) > 0.0 {
-            return Some(walk_toward(
-                yaw,
-                position,
-                Vec3::from_array(hex_origin(next)),
-            ));
-        }
         let feet = Vec3::new(
             position.x,
             position.y - self.traversal_config.half_height,
             position.z,
         );
-        deck.step_toward(feet, door)
-            .map(|target| walk_toward(yaw, position, target))
+        follow_stateless(
+            FollowerPose { feet, yaw },
+            FollowTarget::Deck {
+                path: deck,
+                goal: door,
+                handoff: Some(DeckHandoff {
+                    threshold: door,
+                    outward,
+                    destination: Vec3::from_array(hex_origin(next)),
+                }),
+            },
+            &FollowerConfig::default(),
+        )
+        .intent
     }
-}
-
-/// Walk the climb the tile itself ships, in whichever direction is wanted.
-///
-/// This used to be a ladder of hardcoded rise thresholds and named tread points
-/// measured off the one generated switchback. That made the staircase and the
-/// steering a single unit: the geometry could not be fixed without stranding the
-/// bot, and a second tower shape could not be authored at all. The tile now
-/// carries its own line (`StairSpine`), so this function no longer knows or
-/// cares what the tower looks like inside.
-///
-/// The hand-over rule from the old code is kept, because it was the hard part.
-/// A target chosen by proximity to a waypoint is not monotonic along a path —
-/// walking away from the landing onto the upper flight grows that distance back
-/// past any threshold, so the target flipped between the landing and the
-/// flight's top every few ticks and the bot span on the spot in a ~30 cm band of
-/// rise, burning ~31,000 ticks on one storey. `StairSpine::locate` picks the
-/// nearest *segment* instead, whose distance falls and rises exactly once as you
-/// walk it, and the authoring gate rejects any spine whose stretches come within
-/// a body's width of each other so that choice is never ambiguous.
-fn spine_command(spine: &StairSpine, yaw: f32, position: Vec3, up: bool) -> Option<PlayerIntent> {
-    if spine.is_empty() {
-        return None;
-    }
-    let target = spine.target(position, up)?;
-    Some(walk_toward(yaw, position, target))
-}
-
-/// Whether a body has reached or moved beyond the terminal end of a climb.
-///
-/// The radius check recognizes arrival. The segment parameter makes that
-/// recognition directional and therefore sticky without storing bot-only
-/// state: after walking off the terminal node onto the deck, the nearest point
-/// on the final segment remains its clamped endpoint. Without this second half,
-/// leaving the radius makes the bot reacquire the climb it just finished.
-fn has_passed_climb_terminal(spine: &StairSpine, point: Vec3, up: bool) -> bool {
-    if up {
-        spine.has_arrived(point)
-            || spine
-                .locate(point)
-                .is_some_and(|(index, t)| index + 2 == spine.nodes.len() && t >= 1.0 - f32::EPSILON)
-    } else {
-        spine.has_descended(point)
-            || spine
-                .locate(point)
-                .is_some_and(|(index, t)| index == 0 && t <= f32::EPSILON)
-    }
-}
-
-fn on_unfinished_climb(spine: &StairSpine, point: Vec3, up: bool) -> bool {
-    spine
-        .distance(point)
-        .is_some_and(|distance| distance <= CLIMB_CAPTURE_RADIUS)
-        && !has_passed_climb_terminal(spine, point, up)
 }
 
 /// Plan heading that walks a two-cell ramp in the requested direction.
@@ -638,10 +611,6 @@ fn steer_toward(yaw: f32, position: Vec3, target: Vec3) -> PlayerIntent {
     steer_toward_with_speed(yaw, position, target, true, 1.0)
 }
 
-fn walk_toward(yaw: f32, position: Vec3, target: Vec3) -> PlayerIntent {
-    steer_toward_with_speed(yaw, position, target, false, 0.35)
-}
-
 fn steer_toward_with_speed(
     yaw: f32,
     position: Vec3,
@@ -662,36 +631,4 @@ fn steer_toward_with_speed(
 
 fn wrap_angle(angle: f32) -> f32 {
     (angle + PI).rem_euclid(PI * 2.0) - PI
-}
-
-#[cfg(test)]
-mod endpoint_tests {
-    use super::*;
-
-    #[test]
-    fn passing_a_climb_endpoint_keeps_the_handoff_committed() {
-        let spine = StairSpine {
-            nodes: vec![
-                Vec3::new(0.0, 0.0, 0.0),
-                Vec3::new(0.0, 1.0, 1.0),
-                Vec3::new(0.0, 2.0, 2.0),
-            ],
-        };
-
-        assert!(!has_passed_climb_terminal(
-            &spine,
-            Vec3::new(0.0, 1.0, 1.0),
-            true
-        ));
-        assert!(has_passed_climb_terminal(
-            &spine,
-            Vec3::new(0.0, 2.0, 2.7),
-            true
-        ));
-        assert!(has_passed_climb_terminal(
-            &spine,
-            Vec3::new(0.0, 0.0, -0.7),
-            false
-        ));
-    }
 }
