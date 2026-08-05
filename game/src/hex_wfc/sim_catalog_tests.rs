@@ -32,7 +32,7 @@ fn every_district_covers_every_wfc_geometry_demand_with_its_own_geometry() {
         for register in ArchitectureRegister::ALL {
             let slug = register.slug();
             let exact = corpus
-                .cells
+                .cells()
                 .iter()
                 .filter(|tile| {
                     tile.key.archetype == demand.archetype
@@ -67,7 +67,7 @@ fn every_district_covers_every_wfc_geometry_demand_with_its_own_geometry() {
         // authored corpus does not cover — it already would have, twice — and a
         // stale exclusion is indistinguishable from a real gap.
         let liminal = corpus
-            .cells
+            .cells()
             .iter()
             .filter(|tile| {
                 tile.key.archetype == demand.archetype

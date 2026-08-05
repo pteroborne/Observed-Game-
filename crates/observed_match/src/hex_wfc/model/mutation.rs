@@ -72,8 +72,8 @@ impl HexWfcMatch {
         let geometry = match self.geometry.project_delta_with_rooms(
             &self.facility,
             &logical,
-            &self.prototypes,
-            &self.room_prototypes,
+            self.content.cells(),
+            self.content.rooms(),
         ) {
             Ok(delta) => delta,
             Err(_) => {

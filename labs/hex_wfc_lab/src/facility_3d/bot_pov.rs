@@ -58,7 +58,7 @@ pub(crate) fn setup(mut commands: Commands, mut facility: ResMut<FacilityState>)
     let Ok(dir) = std::env::var("OBSERVED2_HEX_BOT_POV") else {
         return;
     };
-    let game = HexWfcMatch::new(
+    let game = HexWfcMatch::new_with_content(
         GATE_SEED,
         HexMatchConfig {
             guardian: true,
@@ -66,7 +66,7 @@ pub(crate) fn setup(mut commands: Commands, mut facility: ResMut<FacilityState>)
             members_per_team: 1,
             wfc: gate_config(),
         },
-        &facility.prototypes,
+        std::sync::Arc::clone(&facility.content),
     )
     .expect("Phase 94 gate match must build");
     facility.rebuild(&game.facility);

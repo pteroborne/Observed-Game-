@@ -5,15 +5,15 @@ mod controls;
 mod landmarks;
 mod presentation;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow};
-use observed_authoring::{RoomPrototype, RuntimeHexCatalog, TilePrototype};
 use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::{HexArchetype, HexWfcWorld};
 use observed_hex::{HexCoord, HexFace, PortClass, TILE_LEVEL_HEIGHT, face_edge, hex_origin};
-use observed_match::hex_wfc::HexWfcGeometrySnapshot;
+use observed_match::hex_wfc::{HexMatchContent, HexWfcGeometrySnapshot};
 use observed_traversal::rapier_controller::RapierTraversalScene;
 use observed_traversal::{ArenaSpec, FpsBody, FpsConfig};
 
@@ -55,8 +55,7 @@ struct FacilityState {
     source_seed: u64,
     source_generation: u32,
     source_config: observed_facility::hex_wfc::HexWfcConfig,
-    prototypes: Vec<TilePrototype>,
-    room_prototypes: Vec<RoomPrototype>,
+    content: Arc<HexMatchContent>,
     snapshot: HexWfcGeometrySnapshot,
     scene: RapierTraversalScene,
     body: FpsBody,
@@ -76,22 +75,19 @@ struct FacilityState {
 
 impl FacilityState {
     fn load(world: &HexWfcWorld) -> Self {
-        let catalog = load_catalog();
-        let prototypes = catalog.cells;
-        let room_prototypes = catalog.rooms;
+        let content = load_content();
         let snapshot =
-            HexWfcGeometrySnapshot::project_with_rooms(world, &prototypes, &room_prototypes)
+            HexWfcGeometrySnapshot::project_with_rooms(world, content.cells(), content.rooms())
                 .unwrap_or_else(|error| panic!("hex facility projection failed: {error:?}"));
         let production = is_production_world(world);
         let scene = scene_for_world(&snapshot, production);
-        let config = FpsConfig::deliberate_rapier();
+        let config = content.traversal_config();
         let (spawn, yaw) = spawn_pose(world, &config);
         let mut state = Self {
             source_seed: world.seed,
             source_generation: world.generation,
             source_config: world.config,
-            prototypes,
-            room_prototypes,
+            content,
             snapshot,
             scene,
             body: FpsBody::spawned(spawn, yaw),
@@ -121,8 +117,8 @@ impl FacilityState {
     fn rebuild(&mut self, world: &HexWfcWorld) {
         self.snapshot = HexWfcGeometrySnapshot::project_with_rooms(
             world,
-            &self.prototypes,
-            &self.room_prototypes,
+            self.content.cells(),
+            self.content.rooms(),
         )
         .unwrap_or_else(|error| panic!("hex facility projection failed: {error:?}"));
         let production = is_production_world(world);
@@ -204,10 +200,10 @@ fn tile_dir() -> PathBuf {
     }
 }
 
-fn load_catalog() -> RuntimeHexCatalog {
+fn load_content() -> Arc<HexMatchContent> {
     let base = tile_dir();
     let slugs = ArchitectureRegister::ALL.map(ArchitectureRegister::slug);
-    RuntimeHexCatalog::load(&base, &slugs).expect("canonical runtime tile catalog loads")
+    Arc::new(HexMatchContent::load(&base, &slugs).expect("canonical runtime tile catalog loads"))
 }
 
 fn is_production_world(world: &HexWfcWorld) -> bool {
@@ -579,8 +575,8 @@ mod tests {
         assert!(synchronize_if_stale(&lab.world, &mut state));
         let expected = HexWfcGeometrySnapshot::project_with_rooms(
             &lab.world,
-            &state.prototypes,
-            &state.room_prototypes,
+            state.content.cells(),
+            state.content.rooms(),
         )
         .expect("fresh projection");
         assert_eq!(state.source_generation, lab.world.generation);
