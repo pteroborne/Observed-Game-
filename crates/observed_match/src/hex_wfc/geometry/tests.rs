@@ -56,6 +56,158 @@ fn variation_modulo_keeps_the_full_portable_u64_key() {
     assert_eq!(variation_index(key, 7), (key % 7) as usize);
 }
 
+fn selection_digest(selections: &BTreeMap<HexCoord, TileKey>) -> u64 {
+    let mut digest = 0xcbf2_9ce4_8422_2325u64;
+    let mut mix = |byte: u8| {
+        digest ^= u64::from(byte);
+        digest = digest.wrapping_mul(0x0000_0100_0000_01b3);
+    };
+    for (coord, key) in selections {
+        for byte in coord.q.to_le_bytes() {
+            mix(byte);
+        }
+        for byte in coord.r.to_le_bytes() {
+            mix(byte);
+        }
+        mix(coord.level);
+        for value in [&key.archetype, &key.register] {
+            for &byte in value.as_bytes() {
+                mix(byte);
+            }
+            mix(0xff);
+        }
+        for byte in key.variant.to_le_bytes() {
+            mix(byte);
+        }
+    }
+    digest
+}
+
+fn port_signature(ports: &[(HexFace, PortClass)]) -> PortSignature {
+    let mut values = [PortClass::Sealed; 8];
+    for &(face, class) in ports {
+        values[face.index()] = class;
+    }
+    PortSignature::try_from_ports(values).expect("test signature is valid")
+}
+
+fn selected_tiles(snapshot: &HexWfcGeometrySnapshot) -> BTreeMap<HexCoord, TileKey> {
+    let mut selections = BTreeMap::new();
+    for piece in &snapshot.pieces {
+        let Some(tile) = &piece.tile else {
+            continue;
+        };
+        if let Some(previous) = selections.insert(piece.source_cell, tile.clone()) {
+            assert_eq!(
+                previous, *tile,
+                "one resolved cell projected pieces from multiple tile keys"
+            );
+        }
+    }
+    selections
+}
+
+/// The real committed corpus must keep selecting the same concrete modules on
+/// both the canonical spectator seed and the seed that exposed the perimeter
+/// tower stall. This pins the pre-refactor bucket ordering before selection is
+/// moved behind a catalog object and later changed deliberately in TR-9.
+#[test]
+fn production_catalog_selection_is_pinned_for_spectator_seeds() {
+    let catalog = crate::hex_wfc::test_catalog();
+    let cases = [
+        (
+            1u64,
+            384usize,
+            0x53ff_3253_1fe8_f9f8u64,
+            60usize,
+            0xbb47_d739_344b_7354u64,
+        ),
+        (
+            10_000_031u64,
+            384usize,
+            0x68eb_78fd_363f_2172u64,
+            72usize,
+            0x8cce_4f17_090b_9f2bu64,
+        ),
+    ];
+    for (seed, expected_count, expected_digest, expected_tower_count, expected_tower_digest) in
+        cases
+    {
+        let world = HexWfcWorld::generate_with_profile(
+            seed,
+            HexWfcConfig {
+                levels: 4,
+                ..HexWfcConfig::default()
+            },
+            None,
+            &catalog.composition,
+        )
+        .expect("pinned spectator seed solves");
+        let snapshot =
+            HexWfcGeometrySnapshot::project_with_rooms(&world, &catalog.cells, &catalog.rooms)
+                .expect("production corpus projects");
+        let selections = selected_tiles(&snapshot);
+        let digest = selection_digest(&selections);
+        let towers = selections
+            .iter()
+            .filter(|(_, tile)| tile.archetype == "stair_tower")
+            .map(|(coord, tile)| (*coord, tile.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let tower_digest = selection_digest(&towers);
+        eprintln!(
+            "seed={seed} count={} digest={digest:#018x} tower_count={} tower_digest={tower_digest:#018x}",
+            selections.len(),
+            towers.len()
+        );
+        assert_eq!(selections.len(), expected_count);
+        assert_eq!(digest, expected_digest);
+        assert_eq!(towers.len(), expected_tower_count);
+        assert_eq!(tower_digest, expected_tower_digest);
+    }
+}
+
+/// Selection is local to one `(archetype, register, signature)` bucket. The
+/// same variation key therefore cannot promise that two signatures choose
+/// members of one implicit family: the buckets can contain different members.
+#[test]
+fn identical_variation_keys_do_not_guarantee_family_coherence() {
+    let mut first_a = tiles().into_iter().next().expect("fixture tile");
+    first_a.key.archetype = "family_probe".to_string();
+    first_a.key.register = "generic".to_string();
+    first_a.key.variant = 10;
+    first_a.signature = port_signature(&[]);
+    let mut second_a = first_a.clone();
+    second_a.key.variant = 20;
+
+    let mut first_b = first_a.clone();
+    first_b.key.variant = 20;
+    first_b.signature = port_signature(&[(HexFace::Up, PortClass::ShaftOpen)]);
+    let mut second_b = first_b.clone();
+    second_b.key.variant = 30;
+
+    let prototypes = [first_a, second_a, first_b, second_b];
+    let catalogue = Catalogue::new(&prototypes);
+    let variation = 0;
+    let lower = catalogue
+        .select("family_probe", "monolith", port_signature(&[]), variation)
+        .expect("generic fallback answers the first signature");
+    let upper = catalogue
+        .select(
+            "family_probe",
+            "monolith",
+            port_signature(&[(HexFace::Up, PortClass::ShaftOpen)]),
+            variation,
+        )
+        .expect("generic fallback answers the second signature");
+
+    assert_eq!(lower.key.variant, 10, "generic fallback keeps bucket order");
+    assert_eq!(upper.key.variant, 20, "same key is applied independently");
+    assert_ne!(
+        lower.key.variant, upper.key.variant,
+        "an identical variation key is not an assembly-family contract"
+    );
+}
+
 #[test]
 fn oversized_grid_reports_collider_id_capacity_before_projection() {
     let config = HexWfcConfig {
