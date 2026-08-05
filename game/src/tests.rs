@@ -5,6 +5,9 @@ use crate::view::theme::ScreenRoot;
 use bevy::{asset::AssetPlugin, gizmos::GizmoPlugin, input::InputPlugin, state::app::StatesPlugin};
 use observed_match::hybrid::LocalAction;
 
+#[path = "tests/hex_wfc_survey.rs"]
+mod hex_wfc_survey;
+
 fn test_app() -> App {
     let mut app = App::new();
     app.add_plugins((
@@ -5010,92 +5013,6 @@ mod hex_wfc_gates {
             game.players.values().next().expect("runner"),
             game.facility.placements[&next]
         );
-    }
-
-    #[test]
-    fn hex_spectator_route_is_physically_completable_without_guardian_pressure() {
-        let mut game = solvable_showcase_with_players(flow::MATCH_SEED, 1);
-        let spawn_route = game
-            .facility
-            .route_between_cells(game.facility.config.spawn(), game.facility.config.exit())
-            .expect("spawn route");
-        let first_step = spawn_route.cells[1];
-        for _ in 0..36_000 {
-            step_all_bots(&mut game);
-            if game.status == HexMatchStatus::Finished {
-                return;
-            }
-        }
-        // Report the cell the bot is *actually* stuck in, not a fixed cell from
-        // the route. This used to print `first_step` - `spawn_route.cells[1]` -
-        // whatever happened, which names the same tile every time and has
-        // nothing to do with where the walk failed. Two separate investigations
-        // chased that tile before noticing it was constant.
-        let player = game.players.values().next().expect("runner").clone();
-        let tiles_at = |cell| {
-            game.geometry
-                .pieces
-                .iter()
-                .filter(|piece| piece.source_cell == cell)
-                .filter_map(|piece| piece.tile.as_ref())
-                .collect::<std::collections::BTreeSet<_>>()
-        };
-        panic!(
-            "solo spectator stalled on a logical route; player={player:?}; \
-             route={:?}; stalled_in={:?}; stalled_in_tiles={:?}; \
-             first_step={:?}; first_step_tiles={:?}",
-            game.facility
-                .route_between_cells(player.cell, game.facility.config.exit()),
-            game.facility.placements.get(&player.cell),
-            tiles_at(player.cell),
-            game.facility.placements[&first_step],
-            tiles_at(first_step),
-        );
-    }
-
-    /// Sweep the spectator gate across many seeds.
-    ///
-    /// The gate runs one seed, so a stall that needs a particular facility
-    /// hides until something reshuffles tile selection - which is exactly how
-    /// the perimeter-ramp stall surfaced: not from a change to the ramp, but
-    /// from adding towers elsewhere in the catalog. One seed proves one
-    /// facility.
-    #[test]
-    #[ignore = "diagnostic"]
-    fn survey_spectator_routes_across_seeds() {
-        let mut stalls = Vec::new();
-        for seed in 0..24u64 {
-            let base = MATCH_SEED.wrapping_add(seed.wrapping_mul(1_000_003));
-            let mut game = solvable_showcase_with_players(base, 1);
-            let mut finished = false;
-            for _ in 0..36_000 {
-                step_all_bots(&mut game);
-                if game.status == HexMatchStatus::Finished {
-                    finished = true;
-                    break;
-                }
-            }
-            if !finished {
-                let player = game.players.values().next().expect("runner").clone();
-                let tiles = game
-                    .geometry
-                    .pieces
-                    .iter()
-                    .filter(|piece| piece.source_cell == player.cell)
-                    .filter_map(|piece| piece.tile.as_ref())
-                    .collect::<std::collections::BTreeSet<_>>();
-                stalls.push(format!(
-                    "  seed {base}: stuck in {:?} at {:?}, tiles={:?}",
-                    game.facility.placements.get(&player.cell),
-                    player.position,
-                    tiles
-                ));
-            }
-        }
-        println!("{} of 24 seeds stall:", stalls.len());
-        for line in &stalls {
-            println!("{line}");
-        }
     }
 
     /// Follow one stalling bot for a whole match.
