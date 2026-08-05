@@ -49,11 +49,15 @@ fn faces_from_mask(mask: u8) -> Vec<usize> {
 /// Six convex trapezoids around a centred vertical hex aperture.
 #[must_use]
 pub(super) fn hex_opening_slab(z0: f64, z1: f64) -> String {
-    const OPENING_SCALE: f64 = 0.30;
     let outer = corners();
     let inner: Vec<P2> = outer
         .iter()
-        .map(|(x, y)| (x * OPENING_SCALE, y * OPENING_SCALE))
+        .map(|(x, y)| {
+            (
+                x * super::geometry::SHAFT_APERTURE_SCALE,
+                y * super::geometry::SHAFT_APERTURE_SCALE,
+            )
+        })
         .collect();
     let mut brushes = String::new();
     for face in 0..6 {

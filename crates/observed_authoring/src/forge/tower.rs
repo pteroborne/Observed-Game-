@@ -509,11 +509,75 @@ mod tests {
             );
             // Stated against the source of both, so the two cannot be brought
             // back into agreement by editing one of them to a literal.
+            //
+            // A tenth of a millimetre, not an epsilon: these coordinates have
+            // been through the `.map`, which emits four decimal places of TB
+            // units, so a foot that is not a round number comes back up to
+            // 3 micrometres off.
             let (fx, fy) = extent.foot();
             assert!(
-                (f64::from(foot.x) - fx / 16.0).abs() < 1e-6
-                    && (f64::from(foot.z) + fy / 16.0).abs() < 1e-6,
+                (f64::from(foot.x) - fx / 16.0).abs() < 1e-4
+                    && (f64::from(foot.z) + fy / 16.0).abs() < 1e-4,
                 "{}: the climb does not start at Extent::foot",
+                vertical.stem()
+            );
+        }
+    }
+
+    /// Nothing a body is sent to may stand over the hole in the floor.
+    ///
+    /// The tower's floor is an aperture where a flight arrives through it, and
+    /// an inset climb drags the foot of its spine in toward that aperture. The
+    /// foot landed 7.6 cm inside the lip. A 0.4 m capsule is carried by the lip
+    /// so nothing fell and nothing went red - the same "large by accident"
+    /// margin `a_capped_tower_clears_its_climb_by_a_body` was written for, in a
+    /// different place.
+    ///
+    /// Held against `FpsConfig`, which owns the number that decides it. The
+    /// forge states a distance and stays out of the controller's business; this
+    /// is where the two have to agree.
+    #[test]
+    fn a_foot_stands_clear_of_the_stairwell() {
+        let radius = f64::from(observed_traversal::FpsConfig::default().radius);
+        // The aperture is concentric and hexagonal, so its nearest point to
+        // anything outside it is a corner.
+        let lip = super::super::geometry::SHAFT_APERTURE_SCALE * {
+            let (x, y) = corners()[0];
+            x.hypot(y)
+        } / 16.0;
+        for vertical in verticals() {
+            if !vertical.open_below() {
+                // A solid floor has no hole to clear.
+                continue;
+            }
+            let module = crate::parse_authored_module(&stair_tower(vertical))
+                .unwrap_or_else(|error| panic!("{}: {error:?}", vertical.stem()));
+            let foot = module
+                .prototype
+                .spine
+                .nodes
+                .first()
+                .copied()
+                .expect("a tower ships a spine");
+            let stood_at = f64::from(foot.x).hypot(f64::from(foot.z));
+            assert!(
+                stood_at - lip >= radius,
+                "{}: the climb is joined {stood_at:.2} m out against a {lip:.2} m aperture, \
+                 leaving {:.2} m for a {radius:.2} m body",
+                vertical.stem(),
+                stood_at - lip
+            );
+            // And the deck ends there, so the same clearance carries the body
+            // that walks in as well as the one that starts on the climb.
+            let last = *module
+                .prototype
+                .deck
+                .nodes
+                .last()
+                .expect("a tower ships a deck");
+            assert!(
+                last.distance(foot) < 1e-3,
+                "{}: the deck no longer ends at the foot",
                 vertical.stem()
             );
         }

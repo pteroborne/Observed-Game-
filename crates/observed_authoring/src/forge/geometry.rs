@@ -36,6 +36,14 @@ pub const DOOR_HALF_WIDTH: f64 = 36.0;
 pub const DOOR_TOP: f64 = 72.0;
 pub const SAFE_INTERIOR_RADIUS: f64 = 104.0;
 
+/// The stairwell aperture cut in a floor slab, as a fraction of the hexagon.
+///
+/// Shared rather than private to the slab that cuts it, because it is a **hole**
+/// and every foothold near it has to clear it. `Extent::foot` is the caller that
+/// needs it: a climb pulled in off the wall drags the foot of its spine in with
+/// it, and the tower's landed 7.6 cm inside this lip.
+pub const SHAFT_APERTURE_SCALE: f64 = 0.30;
+
 /// Plan corners in metres, matching `observed_hex::CORNERS`.
 pub const CORNERS_PLAN: [(i32, i32); 6] = [(7, -4), (7, 4), (0, 8), (-7, 4), (-7, -4), (0, -8)];
 

@@ -40,7 +40,8 @@ use super::entities::{
     Meta, lateral_port, stair_node, tile_cell, vertical_port, wall_fixture, worldspawn,
 };
 use super::geometry::{
-    DOOR_TOP, FLOOR_TOP, LEVEL, P2, P3, corners, door_wall, hex_slab, prism, sloped_prism, wall,
+    DOOR_TOP, FLOOR_TOP, LEVEL, P2, P3, SHAFT_APERTURE_SCALE, corners, door_wall, hex_slab, prism,
+    sloped_prism, wall,
 };
 
 /// Where the sweep begins: the run between the two doors.
@@ -64,6 +65,15 @@ const INNER: f64 = 0.55;
 /// floor slab. Short of it is a gap; proud of it is a lip that, past the
 /// autostep, stops a body walking back onto the flight.
 const DECK_ABOVE: f64 = LEVEL + FLOOR_TOP;
+
+/// How far a foothold must stand clear of the stairwell aperture, in TB units.
+///
+/// 0.5 m, against a controller capsule of 0.4. Stated here as a distance rather
+/// than read from `FpsConfig`, because this file emits brushes and has no
+/// business knowing the character controller; `a_foot_stands_clear_of_the_
+/// stairwell` holds the two together from the test side, where the coupling
+/// belongs.
+const APERTURE_CLEARANCE: f64 = 8.0;
 
 /// One member of the family.
 #[derive(Clone, Copy, Debug)]
@@ -152,10 +162,34 @@ impl Extent {
     /// the climb's own face and then stayed on the rim, so the last leg was
     /// `DeckPath::step_toward`'s straight-at-the-goal case and a body on that
     /// face was steered radially into the side of the flight.
+    ///
+    /// Half way in from the band toward the centre, so a body stands on the
+    /// floor rather than on the first tread - **but never inside the stairwell
+    /// aperture**, which is a hole. Those two want opposite things, and the
+    /// clamp is which one wins.
+    ///
+    /// The clamp is not hypothetical and it is not the ramp's problem. At
+    /// `outer_scale` 1.0 the halfway point is already well clear and nothing
+    /// moves. The tower pulls its whole climb in to 0.75 and drags the foot in
+    /// with it, to 0.2906 of the corner against an aperture lip at
+    /// [`SHAFT_APERTURE_SCALE`] - **7.6 cm inside the hole**. A 0.4 m capsule is
+    /// carried by that lip, so nothing fell and every test stayed green, which
+    /// is precisely the kind of margin that holds until someone moves a
+    /// constant. It is now a distance rather than a coincidence.
     #[must_use]
     pub fn foot(self) -> P2 {
         let m = self.mid(0);
-        (m.0 * 0.5, m.1 * 0.5)
+        let nominal = (m.0 * 0.5, m.1 * 0.5);
+        // The foot lies on the sweep's start corner ray, and the nearest part of
+        // a concentric hexagonal hole to a point on a corner ray is its corner.
+        let corner = corners()[SWEEP_START % 6];
+        let clear = SHAFT_APERTURE_SCALE * corner.0.hypot(corner.1) + APERTURE_CLEARANCE;
+        let radius = nominal.0.hypot(nominal.1);
+        if radius >= clear {
+            return nominal;
+        }
+        let out = clear / radius;
+        (nominal.0 * out, nominal.1 * out)
     }
 }
 
