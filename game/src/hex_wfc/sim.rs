@@ -9,7 +9,8 @@ use observed_authoring::TilePrototype;
 use observed_core::PlayerId;
 use observed_facility::hex_wfc::{HexCoord, HexWfcConfig};
 use observed_match::hex_wfc::{
-    HexActionButtons, HexInputFrame, HexMatchConfig, HexMatchStatus, HexPlayerCommand, HexWfcMatch,
+    HexActionButtons, HexBotDriver, HexInputFrame, HexMatchConfig, HexMatchStatus,
+    HexPlayerCommand, HexWfcMatch,
 };
 use player_input::PlayerIntent;
 
@@ -36,6 +37,7 @@ pub(super) struct HexWfcIntent {
 #[derive(Resource)]
 pub struct HexWfcRuntime {
     pub match_state: HexWfcMatch,
+    pub bot_driver: HexBotDriver,
     pub local_player: PlayerId,
     /// Cells whose visuals must be (re)spawned after entry or relayout.
     pub pending_visual_cells: BTreeSet<HexCoord>,
@@ -222,6 +224,7 @@ pub(super) fn setup_runtime(
     let presented_revisions = match_state.facility.cell_revisions.clone();
     commands.insert_resource(HexWfcRuntime {
         match_state,
+        bot_driver: HexBotDriver::new(),
         local_player,
         pending_visual_cells: BTreeSet::new(),
         presented_revisions,
@@ -318,10 +321,15 @@ pub(super) fn step_runtime(
     }
     let local_player = runtime.local_player;
     let local_command = if policy.sends_neutral_input() {
+        runtime.bot_driver.clear_player(local_player);
         HexPlayerCommand::default()
     } else if spectator_bot.is_some() {
-        runtime.match_state.bot_player_command(local_player)
+        let runtime = &mut *runtime;
+        runtime
+            .bot_driver
+            .command(&runtime.match_state, local_player)
     } else {
+        runtime.bot_driver.clear_player(local_player);
         HexPlayerCommand {
             intent: intent.intent,
             actions: intent.actions,
@@ -376,6 +384,7 @@ pub(super) fn step_runtime(
             }) {
                 Some(match_state) => {
                     runtime.match_state = match_state;
+                    runtime.bot_driver.reset();
                     runtime.presented_revisions =
                         runtime.match_state.facility.cell_revisions.clone();
                     runtime.pending_visual_cells = runtime
@@ -430,9 +439,11 @@ pub(super) fn step_runtime(
         .collect::<Vec<_>>()
     {
         if id != runtime.local_player {
-            frame
-                .commands
-                .insert(id, runtime.match_state.bot_player_command(id));
+            let command = {
+                let runtime = &mut *runtime;
+                runtime.bot_driver.command(&runtime.match_state, id)
+            };
+            frame.commands.insert(id, command);
         }
     }
     let previous_generation = runtime.match_state.facility.generation;

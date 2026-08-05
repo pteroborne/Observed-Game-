@@ -15,12 +15,13 @@ pub use geometry::{
     HexStructureRole, HexWfcGeometrySnapshot, ProjectedTraversalGuide,
 };
 pub use model::{
-    DUAL_STATION_HOLD_TICKS, HEX_INPUT_VERSION, HexActionButtons, HexDeployedLantern, HexDoorState,
-    HexGuardianState, HexGuardianStatus, HexInputFrame, HexLanternCache, HexLanternState,
-    HexMapCellKnowledge, HexMapCellSnapshot, HexMapDiscovery, HexMatchConfig, HexMatchError,
-    HexMatchEvent, HexMatchEventKind, HexMatchSnapshot, HexMatchStatus, HexPlayerCommand,
-    HexPlayerMapKnowledge, HexPlayerSnapshot, HexPlayerState, HexTeamObjectiveState,
-    HexTeamSnapshot, HexTeamState, HexWfcMatch, KEYSTONES_REQUIRED, MAX_ROSTER,
+    DUAL_STATION_HOLD_TICKS, HEX_INPUT_VERSION, HexActionButtons, HexBotDriver, HexDeployedLantern,
+    HexDoorState, HexGuardianState, HexGuardianStatus, HexInputFrame, HexLanternCache,
+    HexLanternState, HexMapCellKnowledge, HexMapCellSnapshot, HexMapDiscovery, HexMatchConfig,
+    HexMatchError, HexMatchEvent, HexMatchEventKind, HexMatchSnapshot, HexMatchStatus,
+    HexPlayerCommand, HexPlayerMapKnowledge, HexPlayerSnapshot, HexPlayerState,
+    HexTeamObjectiveState, HexTeamSnapshot, HexTeamState, HexWfcMatch, KEYSTONES_REQUIRED,
+    MAX_ROSTER, ModuleInstanceId, TraversalCursor, TraversalLease,
 };
 pub use trim::{HexTrimKind, HexTrimPiece, derive_trim, derive_trim_for};
 

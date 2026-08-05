@@ -67,6 +67,7 @@ fn offline_pause_stops_the_authoritative_system_tick() {
         .init_state::<crate::GameState>()
         .insert_resource(HexWfcRuntime {
             match_state: game,
+            bot_driver: HexBotDriver::new(),
             local_player,
             pending_visual_cells: BTreeSet::new(),
             presented_revisions,
@@ -146,13 +147,14 @@ fn all_non_local_actors_cross_the_same_command_boundary() {
 #[test]
 fn hex_replay_records_the_versioned_simulation() {
     let mut game = showcase_match(44);
+    let mut driver = HexBotDriver::new();
     game.bind_simulation_content_hash([0x5A; 32]);
     let local = PlayerId(2);
     let mut replay = crate::sim::replay::ReplayTape::new_hex_wfc_for_player(&game, local);
     let players = game.players.keys().copied().collect::<Vec<_>>();
     let commands = players
         .into_iter()
-        .map(|id| (id, game.bot_player_command(id)))
+        .map(|id| (id, driver.command(&game, id)))
         .collect();
     game.step(&HexInputFrame {
         tick: 1,

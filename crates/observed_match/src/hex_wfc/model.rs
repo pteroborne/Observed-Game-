@@ -32,6 +32,7 @@ mod snapshot;
 #[cfg(test)]
 mod tests;
 
+pub use bot::{HexBotDriver, ModuleInstanceId, TraversalCursor, TraversalLease};
 pub use equipment::{HexDeployedLantern, HexLanternCache, HexLanternState};
 pub use guardian::{HexGuardianState, HexGuardianStatus};
 pub use knowledge::{HexMapCellKnowledge, HexMapDiscovery, HexPlayerMapKnowledge};
@@ -264,6 +265,12 @@ pub struct HexWfcMatch {
     /// trigger a sideways unstick sweep; real net motion resets it. Measured
     /// against [`Self::progress_anchor`] so a body jittering
     /// in place still counts as stuck.
+    ///
+    /// Compatibility seam: unlike route selection and traversal leases, this
+    /// watch is still updated by the authoritative movement step. Snapshots
+    /// allowlist their fields and omit both maps, so replay/digest identity is
+    /// unchanged; moving the watch beside [`HexBotDriver`] is the next derived-
+    /// state extraction and is intentionally outside this focused packet.
     pub(super) stuck_ticks: BTreeMap<PlayerId, u16>,
     /// The last position from which a player made clear net progress; the
     /// reference the stuck tracker measures displacement against.
@@ -286,9 +293,6 @@ pub struct HexWfcMatch {
     /// bounding pass. Excluded from [`HexMatchSnapshot`], which allowlists its fields, so
     /// it cannot affect the digest.
     pub(super) spawn_to_exit_cost: u32,
-    /// Derived bot paths, reusable only while their objective and facility
-    /// generation remain unchanged. Snapshots intentionally omit this cache.
-    pub(super) bot_routes: BTreeMap<PlayerId, bot::BotRouteCache>,
 }
 
 /// The two phases of one relayout cycle: an incremental solve, then a solved
@@ -458,7 +462,6 @@ impl HexWfcMatch {
             pending_relayout: None,
             next_mutation_tick: mutation::scheduled_mutation_tick(seed, 0),
             spawn_to_exit_cost: 1,
-            bot_routes: BTreeMap::new(),
         };
         game.objectives = HexObjectiveState::new(&game);
         game.refresh_spawn_to_exit_cost();

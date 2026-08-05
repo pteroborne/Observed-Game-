@@ -14,7 +14,7 @@ use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use observed_core::PlayerId;
 use observed_facility::hex_wfc::HexWfcConfig;
 use observed_match::hex_wfc::{
-    HEX_INPUT_VERSION, HexInputFrame, HexMatchConfig, HexMatchStatus, HexWfcMatch,
+    HEX_INPUT_VERSION, HexBotDriver, HexInputFrame, HexMatchConfig, HexMatchStatus, HexWfcMatch,
 };
 
 use super::{CameraMode, FacilityCamera, FacilityState, FacilityStatus, LabViewMode};
@@ -46,6 +46,7 @@ pub(crate) fn gate_config() -> HexWfcConfig {
 pub(crate) struct BotPovRun {
     dir: String,
     game: HexWfcMatch,
+    driver: HexBotDriver,
     frame: u32,
     shot: u32,
     warmed: bool,
@@ -76,6 +77,7 @@ pub(crate) fn setup(mut commands: Commands, mut facility: ResMut<FacilityState>)
     commands.insert_resource(BotPovRun {
         dir,
         game,
+        driver: HexBotDriver::new(),
         frame: 0,
         shot: 0,
         warmed: false,
@@ -141,7 +143,10 @@ pub(crate) fn run(
         if run.game.status == HexMatchStatus::Finished {
             break;
         }
-        let command = run.game.bot_player_command(PlayerId(0));
+        let command = {
+            let run = &mut *run;
+            run.driver.command(&run.game, PlayerId(0))
+        };
         let tick = run.game.tick;
         let commands = BTreeMap::from([(PlayerId(0), command)]);
         run.game.step(&HexInputFrame {
