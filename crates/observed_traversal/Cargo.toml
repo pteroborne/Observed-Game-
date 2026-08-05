@@ -19,4 +19,5 @@ player_input = { path = "../player_input", default-features = false }
 glam = "0.30"
 serde = { version = "1", features = ["derive"] }
 rapier3d = { version = "0.34", features = ["enhanced-determinism"] }
+sha2 = "0.10"
 bevy = { version = "0.18.1", default-features = false, optional = true }

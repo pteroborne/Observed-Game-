@@ -10,6 +10,7 @@ use glam::{Vec2, Vec3};
 use player_input::PlayerIntent;
 
 use crate::guide::{DeckPath, StairSpine};
+use crate::profile::TraversalRuntimeProfile;
 
 /// The exact tuning of the pre-extraction hex bot follower.
 ///
@@ -122,19 +123,21 @@ impl FollowDecision {
 pub fn follow_stateless(
     pose: FollowerPose,
     target: FollowTarget<'_>,
-    config: &FollowerConfig,
+    profile: &TraversalRuntimeProfile,
 ) -> FollowDecision {
+    let config = profile.follower();
+    let look_step = profile.controller().look_step;
     match target {
         FollowTarget::Climb {
             spine,
             approach,
             direction,
-        } => follow_climb(pose, spine, approach, direction, config),
+        } => follow_climb(pose, spine, approach, direction, config, look_step),
         FollowTarget::Deck {
             path,
             goal,
             handoff,
-        } => follow_deck(pose, path, goal, handoff, config),
+        } => follow_deck(pose, path, goal, handoff, config, look_step),
     }
 }
 
@@ -143,7 +146,8 @@ fn follow_climb(
     spine: &StairSpine,
     approach: Option<&DeckPath>,
     direction: TraversalDirection,
-    config: &FollowerConfig,
+    config: FollowerConfig,
+    look_step: f32,
 ) -> FollowDecision {
     if spine.is_empty() {
         return FollowDecision::unavailable();
@@ -179,7 +183,7 @@ fn follow_climb(
     FollowDecision {
         state,
         target: Some(target),
-        intent: Some(walk_toward(pose, target, config)),
+        intent: Some(walk_toward(pose, target, config, look_step)),
     }
 }
 
@@ -188,7 +192,8 @@ fn follow_deck(
     path: &DeckPath,
     goal: Vec3,
     handoff: Option<DeckHandoff>,
-    config: &FollowerConfig,
+    config: FollowerConfig,
+    look_step: f32,
 ) -> FollowDecision {
     if let Some(handoff) = handoff
         && Vec2::new(
@@ -201,7 +206,7 @@ fn follow_deck(
         return FollowDecision {
             state: FollowState::PastDeckHandoff,
             target: Some(handoff.destination),
-            intent: Some(walk_toward(pose, handoff.destination, config)),
+            intent: Some(walk_toward(pose, handoff.destination, config, look_step)),
         };
     }
     let Some(target) = path.step_toward(pose.feet, goal) else {
@@ -210,7 +215,7 @@ fn follow_deck(
     FollowDecision {
         state: FollowState::FollowingDeck,
         target: Some(target),
-        intent: Some(walk_toward(pose, target, config)),
+        intent: Some(walk_toward(pose, target, config, look_step)),
     }
 }
 
@@ -234,11 +239,18 @@ fn has_passed_climb_terminal(spine: &StairSpine, point: Vec3, forward: bool) -> 
     }
 }
 
-fn walk_toward(pose: FollowerPose, target: Vec3, config: &FollowerConfig) -> PlayerIntent {
+fn walk_toward(
+    pose: FollowerPose,
+    target: Vec3,
+    config: FollowerConfig,
+    look_step: f32,
+) -> PlayerIntent {
     let direction = target - pose.feet;
     let desired_yaw = direction.x.atan2(-direction.z);
-    let look = wrap_angle(desired_yaw - pose.yaw)
+    let applied_turn = wrap_angle(desired_yaw - pose.yaw)
         .clamp(-config.max_turn_per_tick, config.max_turn_per_tick);
+    debug_assert!(look_step.is_finite() && look_step > 0.0);
+    let look = applied_turn / look_step;
     PlayerIntent {
         movement: Vec2::Y * config.movement_scale,
         look: Vec2::new(look, 0.0),
@@ -253,6 +265,7 @@ fn wrap_angle(angle: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::FpsConfig;
 
     fn spine() -> StairSpine {
         StairSpine {
@@ -267,7 +280,7 @@ mod tests {
     #[test]
     fn passing_a_climb_endpoint_keeps_the_handoff_committed() {
         let spine = spine();
-        let config = FollowerConfig::default();
+        let profile = TraversalRuntimeProfile::canonical_hex();
         for (feet, direction) in [
             (Vec3::new(0.0, 2.0, 2.7), TraversalDirection::Forward),
             (Vec3::new(0.0, 0.0, -0.7), TraversalDirection::Reverse),
@@ -279,7 +292,7 @@ mod tests {
                     approach: None,
                     direction,
                 },
-                &config,
+                &profile,
             );
             assert_eq!(decision.state, FollowState::PassedClimbTerminal);
             assert!(!decision.is_on_unfinished_climb());
@@ -296,7 +309,7 @@ mod tests {
                 approach: None,
                 direction: TraversalDirection::Forward,
             },
-            &config,
+            &profile,
         );
         assert_eq!(decision.state, FollowState::FollowingClimb);
         assert!(decision.is_on_unfinished_climb());
@@ -312,7 +325,7 @@ mod tests {
                 Vec3::new(0.0, 0.0, 0.0),
             ],
         };
-        let config = FollowerConfig::default();
+        let profile = TraversalRuntimeProfile::canonical_hex();
         let approach = follow_stateless(
             FollowerPose {
                 feet: Vec3::new(-3.0, 0.0, 0.0),
@@ -323,7 +336,7 @@ mod tests {
                 approach: Some(&deck),
                 direction: TraversalDirection::Forward,
             },
-            &config,
+            &profile,
         );
         assert_eq!(approach.state, FollowState::ApproachingClimb);
         assert_eq!(approach.target, Some(Vec3::new(-1.0, 0.0, 0.0)));
@@ -346,9 +359,35 @@ mod tests {
                     destination: Vec3::new(6.0, 0.0, 0.0),
                 }),
             },
-            &config,
+            &profile,
         );
         assert_eq!(handoff.state, FollowState::PastDeckHandoff);
         assert_eq!(handoff.target, Some(Vec3::new(6.0, 0.0, 0.0)));
+    }
+
+    #[test]
+    fn look_intent_scales_through_the_controller_look_step() {
+        let mut controller = FpsConfig::deliberate_rapier();
+        controller.look_step = 0.5;
+        let profile = TraversalRuntimeProfile::from_controller(controller);
+        let deck = DeckPath {
+            nodes: vec![Vec3::ZERO, Vec3::X],
+        };
+        let decision = follow_stateless(
+            FollowerPose {
+                feet: Vec3::ZERO,
+                yaw: 0.0,
+            },
+            FollowTarget::Deck {
+                path: &deck,
+                goal: Vec3::X,
+                handoff: None,
+            },
+            &profile,
+        );
+        let intent = decision.intent.expect("deck intent");
+
+        assert_eq!(intent.look.x, 0.08 / controller.look_step);
+        assert_eq!(intent.look.x * controller.look_step, 0.08);
     }
 }

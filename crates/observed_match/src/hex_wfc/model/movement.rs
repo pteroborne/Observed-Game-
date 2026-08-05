@@ -48,11 +48,12 @@ impl HexWfcMatch {
         if self.players[&id].escaped {
             return;
         }
+        let config = self.content.traversal_profile().controller();
         step_character(
             &self.physics,
             self.bodies.get_mut(&id).expect("body"),
             intent,
-            &self.traversal_config,
+            &config,
             FIXED_DT,
         );
         self.sync_player_from_body(id);
@@ -63,13 +64,14 @@ impl HexWfcMatch {
     /// a body partway up a ramp or stair resolves to one level and stays there.
     pub(super) fn sync_player_from_body(&mut self, id: PlayerId) {
         let body = self.bodies[&id];
+        let half_height = self
+            .content
+            .traversal_profile()
+            .requirements()
+            .capsule_half_height;
         let top_level = f32::from(self.facility.config.levels.saturating_sub(1));
         let current_level = self.players[&id].cell.level;
-        let level = resolve_level(
-            body.position.y - self.traversal_config.half_height,
-            current_level,
-            top_level,
-        );
+        let level = resolve_level(body.position.y - half_height, current_level, top_level);
         let candidate =
             horizontal_cell(self.facility.config, body.position, level).filter(|cell| {
                 self.facility
@@ -102,7 +104,11 @@ impl HexWfcMatch {
     /// falls between levels remain gameplay and are never converted to motion.
     pub(super) fn recover_fallen_bodies(&mut self) {
         let floor_y = self.geometry.arena.floor_y;
-        let half_height = self.traversal_config.half_height;
+        let half_height = self
+            .content
+            .traversal_profile()
+            .requirements()
+            .capsule_half_height;
         let tick = self.tick;
         let mut recovered = Vec::new();
         for player in self.players.values() {

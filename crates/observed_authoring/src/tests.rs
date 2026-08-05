@@ -2,8 +2,8 @@ use glam::{Vec2, Vec3};
 use observed_hex::{HexFace, PortClass, PortSignature, TILE_LEVEL_HEIGHT, face_edge};
 use observed_traversal::rapier_controller::{RapierTraversalScene, step_character};
 use observed_traversal::{
-    ArenaSpec, FollowTarget, FollowerConfig, FollowerPose, FpsBody, FpsConfig, TraversalDirection,
-    follow_stateless,
+    ArenaSpec, FollowTarget, FollowerPose, FpsBody, FpsConfig, TraversalDirection,
+    TraversalRuntimeProfile, follow_stateless,
 };
 use player_input::PlayerIntent;
 
@@ -555,6 +555,7 @@ fn shared_climb_target(
     spine: &crate::StairSpine,
     deck: &crate::DeckPath,
     feet: Vec3,
+    profile: &TraversalRuntimeProfile,
 ) -> Option<Vec3> {
     follow_stateless(
         FollowerPose { feet, yaw: 0.0 },
@@ -563,7 +564,7 @@ fn shared_climb_target(
             approach: Some(deck),
             direction: TraversalDirection::Forward,
         },
-        &FollowerConfig::default(),
+        profile,
     )
     .target
 }
@@ -584,6 +585,7 @@ fn walk_from_as_the_bot_does(map: &str, start_feet: Vec3) -> Walk {
     let arena = tile.arena_spec();
     let scene = RapierTraversalScene::from_arena_spec(&arena);
     let config = FpsConfig::default();
+    let profile = TraversalRuntimeProfile::from_controller(config);
 
     let floor = nodes[0].y;
     let wanted = nodes[nodes.len() - 1].y - floor;
@@ -595,7 +597,7 @@ fn walk_from_as_the_bot_does(map: &str, start_feet: Vec3) -> Walk {
 
     for _ in 0..6_000 {
         let feet = body.position - Vec3::Y * config.half_height;
-        let target = shared_climb_target(&spine, &deck, feet);
+        let target = shared_climb_target(&spine, &deck, feet, &profile);
         let Some(target) = target else { break };
         let to = target - feet;
         body.yaw = to.x.atan2(-to.z);
@@ -668,6 +670,7 @@ fn climb_a_stacked_column_turned(lower: &str, upper: &str, turn: u8) -> Walk {
     };
     let scene = RapierTraversalScene::from_arena_spec(&arena);
     let config = FpsConfig::default();
+    let profile = TraversalRuntimeProfile::from_controller(config);
 
     let spine = below.spine.clone();
     let deck = below.deck.clone();
@@ -683,7 +686,7 @@ fn climb_a_stacked_column_turned(lower: &str, upper: &str, turn: u8) -> Walk {
 
     for _ in 0..6_000 {
         let feet = body.position - Vec3::Y * config.half_height;
-        let target = shared_climb_target(&spine, &deck, feet);
+        let target = shared_climb_target(&spine, &deck, feet, &profile);
         let Some(target) = target else { break };
         let to = target - feet;
         body.yaw = to.x.atan2(-to.z);
@@ -802,6 +805,7 @@ fn a_tower_can_be_left_by_every_door_it_carries() {
             safety_half: Vec3::new(24.0, height + 12.0, 24.0),
         });
         let config = FpsConfig::default();
+        let profile = TraversalRuntimeProfile::from_controller(config);
 
         // Where the tower below sets a body down. Taken from the deck's own
         // first node rather than from the spine: that node *is* `Extent::head`
@@ -842,7 +846,7 @@ fn a_tower_can_be_left_by_every_door_it_carries() {
                         goal: target,
                         handoff: None,
                     },
-                    &FollowerConfig::default(),
+                    &profile,
                 )
                 .target
                 else {

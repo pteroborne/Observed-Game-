@@ -259,10 +259,6 @@ pub struct HexWfcMatch {
     pub observation: HexObservationFrame,
     pub(super) bodies: BTreeMap<PlayerId, FpsBody>,
     pub(super) physics: RapierTraversalScene,
-    /// Temporary Copy cache for existing movement/bot consumers. Its sole
-    /// source is [`Self::content`]; TR-3 moves those consumers onto the named
-    /// traversal profile and removes this mirror.
-    pub(super) traversal_config: FpsConfig,
     /// Consecutive ticks each non-escaped player's body has failed to make net
     /// progress (wedged against geometry). The objective bot reads this to
     /// trigger a sideways unstick sweep; real net motion resets it. Measured
@@ -456,7 +452,6 @@ impl HexWfcMatch {
             observation: HexObservationFrame::default(),
             bodies,
             physics,
-            traversal_config,
             stuck_ticks: BTreeMap::new(),
             progress_anchor: BTreeMap::new(),
             content,
