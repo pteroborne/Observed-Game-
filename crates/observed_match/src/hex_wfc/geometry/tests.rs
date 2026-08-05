@@ -51,6 +51,75 @@ fn identical_world_and_manifest_project_identically() {
 }
 
 #[test]
+fn projected_guides_are_the_only_source_of_climb_and_deck_compatibility_maps() {
+    let world = showcase();
+    let snapshot = HexWfcGeometrySnapshot::project(&world, &tiles()).expect("projection");
+    let (climbs, decks) = compatibility_guide_maps(&snapshot.guides);
+
+    assert_eq!(snapshot.climbs, climbs);
+    assert_eq!(snapshot.decks, decks);
+    assert!(
+        snapshot
+            .guides
+            .iter()
+            .all(|(coord, guide)| *coord == guide.source_cell),
+        "a projected guide is keyed by its resolved source cell"
+    );
+    assert!(
+        snapshot
+            .guides
+            .values()
+            .any(|guide| guide.climb.is_some() && guide.deck.is_some()),
+        "the fixture must exercise one atomic climb-plus-deck module guide"
+    );
+}
+
+#[test]
+fn guide_delta_replaces_and_removes_climb_and_deck_atomically() {
+    let world = showcase();
+    let snapshot = HexWfcGeometrySnapshot::project(&world, &tiles()).expect("projection");
+    let (&coord, original) = snapshot
+        .guides
+        .iter()
+        .find(|(_, guide)| guide.climb.is_some() && guide.deck.is_some())
+        .expect("fixture has a climb-plus-deck guide");
+    let changed = BTreeSet::from([coord]);
+    let replacement = ProjectedTraversalGuide {
+        source_cell: coord,
+        climb: original.climb.clone(),
+        deck: None,
+    };
+    let mut guides = snapshot.guides.clone();
+    let mut climbs = snapshot.climbs.clone();
+    let mut decks = snapshot.decks.clone();
+
+    apply_guide_delta(
+        &mut guides,
+        &mut climbs,
+        &mut decks,
+        &changed,
+        &BTreeMap::from([(coord, replacement.clone())]),
+    );
+    assert_eq!(guides.get(&coord), Some(&replacement));
+    assert_eq!(climbs.get(&coord), replacement.climb.as_ref());
+    assert!(
+        !decks.contains_key(&coord),
+        "the replaced module's old deck cannot survive its guide"
+    );
+
+    apply_guide_delta(
+        &mut guides,
+        &mut climbs,
+        &mut decks,
+        &changed,
+        &BTreeMap::new(),
+    );
+    assert!(!guides.contains_key(&coord));
+    assert!(!climbs.contains_key(&coord));
+    assert!(!decks.contains_key(&coord));
+}
+
+#[test]
 fn variation_modulo_keeps_the_full_portable_u64_key() {
     let key = u64::from(u32::MAX) + 17;
     assert_eq!(variation_index(key, 7), (key % 7) as usize);
@@ -542,6 +611,12 @@ fn bounded_delta_matches_full_projection_and_preserves_pinned_pieces() {
         .map(|collider| (collider.id, collider))
         .collect::<BTreeMap<_, _>>();
     assert_eq!(incremental_colliders, after_colliders);
+    assert_eq!(
+        incremental.guides, after.guides,
+        "bounded relayout must replace complete module guides"
+    );
+    assert_eq!(incremental.climbs, after.climbs);
+    assert_eq!(incremental.decks, after.decks);
     assert_eq!(incremental.ramp_heads, after.ramp_heads);
     assert_eq!(incremental.blueprint_instances, after.blueprint_instances);
     assert_eq!(scene.collider_count(), after.arena.colliders.len());

@@ -12,7 +12,7 @@ pub mod trim;
 pub use content::HexMatchContent;
 pub use geometry::{
     HexGeometryDelta, HexGeometryError, HexLightSource, HexRoomSocket, HexStructurePiece,
-    HexStructureRole, HexWfcGeometrySnapshot,
+    HexStructureRole, HexWfcGeometrySnapshot, ProjectedTraversalGuide,
 };
 pub use model::{
     DUAL_STATION_HOLD_TICKS, HEX_INPUT_VERSION, HexActionButtons, HexDeployedLantern, HexDoorState,

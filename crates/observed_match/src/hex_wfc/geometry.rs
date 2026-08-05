@@ -82,19 +82,31 @@ impl HexStructurePiece {
     }
 }
 
+/// The navigation annotations projected with one resolved module cell.
+///
+/// A climb and its landing/deck path describe one physical instance. Keeping
+/// them in one value prevents a bounded relayout from retaining half of the
+/// old module while installing half of the replacement.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProjectedTraversalGuide {
+    pub source_cell: HexCoord,
+    pub climb: Option<StairSpine>,
+    pub deck: Option<DeckPath>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct HexWfcGeometrySnapshot {
     pub generation: u32,
     pub pieces: Vec<HexStructurePiece>,
     pub lights: Vec<HexLightSource>,
     pub sockets: Vec<HexRoomSocket>,
-    /// The walkable line through each cell whose tile has one, in facility
-    /// world space. Only vertical circulation carries a climb, so this is a
-    /// sparse map rather than a per-cell field.
+    /// Authoritative navigation annotations, replaced as one resolved-module
+    /// value during bounded relayout.
+    pub guides: BTreeMap<HexCoord, ProjectedTraversalGuide>,
+    /// Compatibility mirror derived solely from [`Self::guides`]. Kept while
+    /// the existing bot adapter reads the old map directly.
     pub climbs: BTreeMap<HexCoord, StairSpine>,
-    /// The walkable floor path for each cell whose tile declares one. Only
-    /// tiles with a hole in the floor need one; everything else is crossable in
-    /// a straight line.
+    /// Compatibility mirror derived solely from [`Self::guides`].
     pub decks: BTreeMap<HexCoord, DeckPath>,
     pub arena: ArenaSpec,
     /// Ramp heads intentionally emit nothing: their low-cell prefab spans both levels.
@@ -105,8 +117,8 @@ pub struct HexWfcGeometrySnapshot {
     collider_indices: BTreeMap<StableColliderId, usize>,
 }
 
-/// What one projection pass accumulates: the colliders, the practicals, and the
-/// two navigation lines each cell's tile declares.
+/// What one projection pass accumulates: the colliders, practicals, and one
+/// atomic navigation guide for each annotated resolved cell.
 ///
 /// One struct rather than four out-parameters. They are produced together by
 /// the same walk, consumed together, and every function in the chain carried
@@ -117,8 +129,7 @@ struct ProjectedCells {
     pieces: Vec<HexStructurePiece>,
     lights: Vec<HexLightSource>,
     sockets: Vec<HexRoomSocket>,
-    climbs: BTreeMap<HexCoord, StairSpine>,
-    decks: BTreeMap<HexCoord, DeckPath>,
+    guides: BTreeMap<HexCoord, ProjectedTraversalGuide>,
 }
 
 /// Bounded geometry projection of one accepted logical relayout.
@@ -130,10 +141,9 @@ pub struct HexGeometryDelta {
     pub removed_piece_ids: BTreeSet<StableColliderId>,
     pub upserted_pieces: Vec<HexStructurePiece>,
     pub upserted_lights: Vec<HexLightSource>,
-    /// Climbs for the changed cells that have one. Cells that lost their climb
-    /// are simply absent, and dropped by `changed_cells` on apply.
-    pub upserted_climbs: BTreeMap<HexCoord, StairSpine>,
-    pub upserted_decks: BTreeMap<HexCoord, DeckPath>,
+    /// Complete guides for changed cells that retain navigation annotations.
+    /// Cells absent here lose the whole prior guide on apply.
+    pub upserted_guides: BTreeMap<HexCoord, ProjectedTraversalGuide>,
     pub colliders: ColliderDelta,
     pub ramp_heads: usize,
     pub blueprint_instances: usize,
@@ -241,9 +251,9 @@ impl HexWfcGeometrySnapshot {
             pieces,
             lights,
             sockets,
-            climbs,
-            decks,
+            guides,
         } = out;
+        let (climbs, decks) = compatibility_guide_maps(&guides);
         let arena = arena_for(world, &pieces);
         arena
             .validate()
@@ -255,6 +265,7 @@ impl HexWfcGeometrySnapshot {
             pieces,
             lights,
             sockets,
+            guides,
             climbs,
             decks,
             arena,
@@ -343,8 +354,7 @@ impl HexWfcGeometrySnapshot {
             pieces: upserted_pieces,
             lights: upserted_lights,
             sockets: _,
-            climbs: upserted_climbs,
-            decks: upserted_decks,
+            guides: upserted_guides,
         } = upserted;
         let new_colliders = upserted_pieces
             .iter()
@@ -370,8 +380,7 @@ impl HexWfcGeometrySnapshot {
             removed_piece_ids,
             upserted_pieces,
             upserted_lights,
-            upserted_climbs,
-            upserted_decks,
+            upserted_guides,
             colliders,
             ramp_heads: self.ramp_heads.saturating_sub(
                 logical
@@ -415,27 +424,48 @@ impl HexWfcGeometrySnapshot {
             .retain(|light| !delta.changed_cells.contains(&light.source_cell));
         self.lights.extend(delta.upserted_lights.iter().cloned());
         sort_lights(&mut self.lights);
-        self.climbs
-            .retain(|coord, _| !delta.changed_cells.contains(coord));
-        self.climbs.extend(
-            delta
-                .upserted_climbs
-                .iter()
-                .map(|(coord, spine)| (*coord, spine.clone())),
-        );
-        self.decks
-            .retain(|coord, _| !delta.changed_cells.contains(coord));
-        self.decks.extend(
-            delta
-                .upserted_decks
-                .iter()
-                .map(|(coord, deck)| (*coord, deck.clone())),
+        apply_guide_delta(
+            &mut self.guides,
+            &mut self.climbs,
+            &mut self.decks,
+            &delta.changed_cells,
+            &delta.upserted_guides,
         );
         self.generation = delta.generation;
         self.ramp_heads = delta.ramp_heads;
         self.blueprint_instances = delta.blueprint_instances;
         Ok(())
     }
+}
+
+fn apply_guide_delta(
+    guides: &mut BTreeMap<HexCoord, ProjectedTraversalGuide>,
+    climbs: &mut BTreeMap<HexCoord, StairSpine>,
+    decks: &mut BTreeMap<HexCoord, DeckPath>,
+    changed_cells: &BTreeSet<HexCoord>,
+    upserted_guides: &BTreeMap<HexCoord, ProjectedTraversalGuide>,
+) {
+    guides.retain(|coord, _| !changed_cells.contains(coord));
+    guides.extend(
+        upserted_guides
+            .iter()
+            .map(|(coord, guide)| (*coord, guide.clone())),
+    );
+    (*climbs, *decks) = compatibility_guide_maps(guides);
+}
+
+fn compatibility_guide_maps(
+    guides: &BTreeMap<HexCoord, ProjectedTraversalGuide>,
+) -> (BTreeMap<HexCoord, StairSpine>, BTreeMap<HexCoord, DeckPath>) {
+    let climbs = guides
+        .iter()
+        .filter_map(|(&coord, guide)| guide.climb.clone().map(|climb| (coord, climb)))
+        .collect();
+    let decks = guides
+        .iter()
+        .filter_map(|(&coord, guide)| guide.deck.clone().map(|deck| (coord, deck)))
+        .collect();
+    (climbs, decks)
 }
 
 fn stable_indices<T>(
@@ -881,22 +911,21 @@ fn push_tile(
         * COLLIDER_STRIDE as u64
         + 1;
     let center = Vec3::from_array(hex_origin(source_cell));
-    // The climb is recorded here, where the cell is resolved to a concrete
-    // tile, so a body follows the line through the tower it is actually
-    // standing in rather than a line assumed to be true of every tower.
-    if !tile.spine.is_empty() {
-        out.climbs.insert(
+    // Navigation is recorded here, where the cell resolves to one concrete
+    // tile, so collision and both annotations always describe the same module.
+    let climb = (!tile.spine.is_empty()).then(|| StairSpine {
+        nodes: tile.spine.nodes.iter().map(|&node| center + node).collect(),
+    });
+    let deck = (!tile.deck.is_empty()).then(|| DeckPath {
+        nodes: tile.deck.nodes.iter().map(|&node| center + node).collect(),
+    });
+    if climb.is_some() || deck.is_some() {
+        out.guides.insert(
             source_cell,
-            StairSpine {
-                nodes: tile.spine.nodes.iter().map(|&node| center + node).collect(),
-            },
-        );
-    }
-    if !tile.deck.is_empty() {
-        out.decks.insert(
-            source_cell,
-            DeckPath {
-                nodes: tile.deck.nodes.iter().map(|&node| center + node).collect(),
+            ProjectedTraversalGuide {
+                source_cell,
+                climb,
+                deck,
             },
         );
     }
