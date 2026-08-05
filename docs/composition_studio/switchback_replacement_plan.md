@@ -208,6 +208,27 @@ cause and the doors are innocent.
 
 **Do not retry slice C by adjusting geometry.** Run that experiment first.
 
+> **Correction, measured 2026-08-04.** §5d and §5e below both rest on a stall
+> that was *already there*. Running the 24-seed sweep at `4e6cdfc` - the tree
+> §5d itself calls "green at slice B", towers at `rotation_policy: "none"`, no
+> experiment applied - gives **1 of 24 stalling, same seed, same cell, same
+> `variant: 4`**. So the sixfold experiment changed nothing measurable, and
+> §5e's "identical result" is identical because both runs reproduced a
+> pre-existing failure rather than because the column-constant key made no
+> difference.
+>
+> What survives: variant 4 is generated, and a generated tower stalls a bot on
+> that seed. What does not: the inference that authored/generated *mixing*
+> caused it, and with it both "measured arguments" for atomic replacement being
+> forced. The hazard `tile_for` describes is real, but it was never the thing
+> these runs measured.
+>
+> The real mechanism turned out to be **rotation**, found on
+> `arc-r/switchback-atomic-2`: doors and flight are the same brushes, so
+> sixfold rotation turns the climb, and a column can draw turn 1 at one level
+> and turn 4 at the next. 4 of 6 turns of the tile above stop the climb below.
+> That is what `variant 127` - base 21, turn 1 - was. See §5g.
+
 ## 5d. The real invariant: a column can mix authored and generated towers
 
 The experiment that settles it needed no doors at all. Slice B's three towers
@@ -345,6 +366,41 @@ radius so the lip carries it and nothing falls - but this is a margin that holds
 by accident, which is the shape of fault slice B called out in the generated
 family. It wants an assertion, and probably a foot moved outboard of the
 aperture, before the doors land.
+
+## 5g. The atomic replacement exists, on a branch, three faults further on
+
+`arc-r/switchback-atomic` had already done the removal and left one gate red,
+naming the ring deck as its likeliest cause. §5f's fix was that cause, and
+rebasing onto it changed nothing - but it let the next faults become visible.
+The work is on **`arc-r/switchback-atomic-2`**, still red, at `79f200b`.
+
+The instrument that found all three: `a_tower_climbs_with_another_standing_on_it`.
+Every harness in the crate builds a **single-tile** arena, and a tower is never
+placed alone. Stacked, 100 of 100 pairs stopped at feet 6.19 m of an 8 m climb -
+a 1.8 m body under something at 8.0 m, and the exact height the spectator gate
+had been reporting all along.
+
+| fault | what it was |
+|---|---|
+| the aperture is in the wrong place | `hex_opening_slab` cuts 0.30 of the hexagon. The switchback climbed near the middle; an **inset helix arrives in the annulus**, so it runs under a solid slab. `pierced_floor` opens the floor where the climb actually reaches it - and only there, since opening the whole band leaves the ring 1.25 m wide and bodies clip the lip. |
+| the flight is a solid mass | down to its own floor, which is the ceiling of the tower below. `thin_flight` carries the high treads clear - the switchback said so itself: *"thin flights preserve headroom when cells stack"*. Low treads stay solid; a tread 2 m up is only somewhere to get wedged, and 14 of 90 door approaches proved it. |
+| **sixfold rotation turns the climb** | the big one, and the answer to §5d. All 22 door patterns are now authored outright at `rotation_policy: "none"` - 66 sources, not 15. That is the price of the invariant, not a failure to be clever. |
+
+With those, a body climbs all three levels of the failing seed's shaft.
+
+**Open front: the deck and the pierced floor disagree.** A body that finishes a
+climb stands in the inner hexagon, and `DeckPath::step_toward` sends it at
+whichever ring node is nearest - straight across the annulus, which is now open
+on the faces the climb arrives over, so it falls.
+`a_tower_can_be_left_by_every_door_it_carries` states the contract and is red on
+all 108. The ring is solid the whole way round, so a route exists; the path does
+not describe it. This is a **deck-path shape** problem, not a geometry one, and
+it is the thing to resume on.
+
+Two traps worth not re-learning: a pierced tower cannot be tested alone - it has
+no floor under the hole, and bodies fall at a tell-tale `y` of 0.06 - and
+`step_toward` cannot be walked node to node, because a body standing exactly on
+a node ties `locate` back to the leg it just finished.
 
 ## 6. Slices
 
