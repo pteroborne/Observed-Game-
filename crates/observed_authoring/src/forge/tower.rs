@@ -33,8 +33,10 @@
 //! fallback; no column can be stranded.
 
 use super::GENERATED_NOTE;
-use super::entities::{Meta, deck_node, tile_cell, vertical_port, wall_fixture, worldspawn};
-use super::geometry::{FLOOR_TOP, LEVEL, corners, hex_slab, wall};
+use super::entities::{
+    Meta, deck_node, lateral_port, tile_cell, vertical_port, wall_fixture, worldspawn,
+};
+use super::geometry::{DOOR_TOP, FLOOR_TOP, LEVEL, corners, door_wall, hex_slab, wall};
 use super::liminal::hex_opening_slab;
 use super::perimeter::{Extent, flight, landing, spine};
 
@@ -73,6 +75,56 @@ const OUTER_SCALE: f64 = 0.75;
 /// once it has been.
 const WEIGHT: u32 = 6;
 
+/// The door patterns, one per orbit under sixfold rotation.
+///
+/// Rotating these through six turns reaches every arrangement of up to two
+/// doors the solver asks for: none; one; and two doors adjacent, one apart, or
+/// opposite. Five orbits times three connectivities is the whole 66-signature
+/// demand, not a sample of it.
+const DOOR_ORBITS: [&[usize]; 5] = [&[], &[0], &[0, 1], &[0, 2], &[0, 3]];
+
+/// First variant slot. Nothing shares this archetype now, but keeping the
+/// authored family off 0..62 keeps a `TileKey` in a diagnostic unambiguous
+/// against any catalog still carrying the old numbers.
+const FIRST_VARIANT: i32 = 11;
+
+/// One authored tower: a connectivity and a door pattern.
+///
+/// The climb is in neither field, which is the design. See [`OUTER_SCALE`].
+#[derive(Clone, Copy, Debug)]
+pub struct Tower {
+    pub vertical: Vertical,
+    pub doors: &'static [usize],
+}
+
+impl Tower {
+    #[must_use]
+    fn stem(self) -> String {
+        let doors = if self.doors.is_empty() {
+            String::from("solid")
+        } else {
+            self.doors
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("")
+        };
+        format!("stair_tower_helix_{doors}{}", self.vertical.label())
+    }
+}
+
+/// Every tower: each connectivity in each door orbit.
+#[must_use]
+pub fn towers() -> Vec<Tower> {
+    let mut out = Vec::new();
+    for doors in DOOR_ORBITS {
+        for vertical in verticals() {
+            out.push(Tower { vertical, doors });
+        }
+    }
+    out
+}
+
 /// How a tower connects vertically. This is what decides its port signature,
 /// and with it which generated tower it stands beside.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -87,11 +139,11 @@ pub enum Vertical {
 
 impl Vertical {
     #[must_use]
-    fn stem(self) -> &'static str {
+    pub(super) fn label(self) -> &'static str {
         match self {
-            Self::Through => "stair_tower_helix",
-            Self::Bottom => "stair_tower_helix_bottom",
-            Self::Top => "stair_tower_helix_top",
+            Self::Through => "",
+            Self::Bottom => "_bottom",
+            Self::Top => "_top",
         }
     }
 
@@ -116,7 +168,8 @@ pub fn verticals() -> [Vertical; 3] {
 
 /// One helical stair tower.
 #[must_use]
-pub fn stair_tower(vertical: Vertical) -> String {
+pub fn stair_tower(tower: Tower, variant: i32) -> String {
+    let vertical = tower.vertical;
     let extent = Extent {
         faces: SWEEP,
         variant: 0,
@@ -141,9 +194,18 @@ pub fn stair_tower(vertical: Vertical) -> String {
     brushes.push_str("// Landing at the head of the climb\n");
     brushes.push_str(&landing(extent));
 
-    brushes.push_str("// Sealed envelope: a tower connects vertically only\n");
+    brushes.push_str(
+        "// Envelope: doors where the shaft is entered, wall elsewhere
+",
+    );
     for face in 0..6 {
-        brushes.push_str(&wall(face, 0.0, top));
+        if tower.doors.contains(&face) {
+            // A door opens onto the ring, never onto the flight - which is the
+            // whole reason the climb can be fixed. See `OUTER_SCALE`.
+            brushes.push_str(&door_wall(face, 0.0, top, FLOOR_TOP, DOOR_TOP, 10.0, 8.0));
+        } else {
+            brushes.push_str(&wall(face, 0.0, top));
+        }
     }
 
     // No cap when the climb continues. A perimeter helix cannot run under a
@@ -170,20 +232,24 @@ pub fn stair_tower(vertical: Vertical) -> String {
     out.push_str(&worldspawn(&brushes));
     // `stair_tower` directly: the compatibility rewrite that turns
     // `stair_segment` into this name runs only over the generated library.
-    out.push_str(
-        &Meta::cell(
-            &format!("authored/{}", vertical.stem()),
+    out.push_str(&{
+        let meta = Meta::cell(
+            &format!("authored/{}", tower.stem()),
             "stair_tower",
-            0,
+            variant,
             2,
             WEIGHT,
         )
-        .with_register_scope("all")
-        // A tower has no lateral door, so every rotation of it is the same
-        // tower. Sixfold would compile five identical variants.
-        .with_rotation_policy("none")
-        .emit(),
-    );
+        .with_register_scope("all");
+        // A door has to be able to face any way, so a tower carrying one is
+        // authored once and turned. A bare column has no feature to orient.
+        if tower.doors.is_empty() {
+            meta.with_rotation_policy("none")
+        } else {
+            meta.with_rotation_policy("sixfold")
+        }
+        .emit()
+    });
     // "open": the walk surface is a helix round the rim, not a floor over the
     // centre, and the centre is a shaft. The same declaration silo_ring makes.
     // The footprint occupies **one** level; `Meta`'s `levels: 2` reserves the
@@ -205,6 +271,16 @@ pub fn stair_tower(vertical: Vertical) -> String {
     }
     if vertical.open_below() {
         out.push_str(&vertical_port("down", "shaft_open", "down_shaft", 0));
+    }
+    for &face in tower.doors {
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("door_{face}"),
+            0,
+            0,
+            0,
+        ));
     }
     out.push_str(&spine(extent));
     out.push_str(&ring_deck(extent));
@@ -267,9 +343,14 @@ fn ring_deck(extent: Extent) -> String {
 /// Every tower, paired with the file it must reproduce.
 #[must_use]
 pub fn builders() -> Vec<(String, String)> {
-    verticals()
+    towers()
         .into_iter()
-        .map(|vertical| (vertical.stem().to_string(), stair_tower(vertical)))
+        .enumerate()
+        .map(|(index, tower)| {
+            #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+            let variant = FIRST_VARIANT + index as i32;
+            (tower.stem(), stair_tower(tower, variant))
+        })
         .collect()
 }
 
@@ -282,7 +363,13 @@ mod tests {
     #[test]
     fn each_vertical_declares_the_ports_its_connectivity_implies() {
         for vertical in verticals() {
-            let text = stair_tower(vertical);
+            let text = stair_tower(
+                Tower {
+                    vertical,
+                    doors: &[],
+                },
+                FIRST_VARIANT,
+            );
             assert_eq!(
                 text.contains("\"name\" \"up_shaft\""),
                 vertical.open_above(),
@@ -309,21 +396,60 @@ mod tests {
     /// is not what `Headroom` measures.
     #[test]
     fn a_tower_that_climbs_out_is_not_capped() {
-        let through = stair_tower(Vertical::Through);
+        let through = stair_tower(
+            Tower {
+                vertical: Vertical::Through,
+                doors: &[],
+            },
+            FIRST_VARIANT,
+        );
         assert!(
             !through.contains("Capped"),
             "a through tower must stay open"
         );
-        let top = stair_tower(Vertical::Top);
+        let top = stair_tower(
+            Tower {
+                vertical: Vertical::Top,
+                doors: &[],
+            },
+            FIRST_VARIANT,
+        );
         assert!(top.contains("Capped"), "a shaft head must close");
     }
 
     /// The floor is a hole exactly when a flight arrives through it.
     #[test]
     fn the_floor_opens_only_where_a_flight_arrives() {
-        assert!(stair_tower(Vertical::Bottom).contains("Solid floor"));
-        assert!(stair_tower(Vertical::Through).contains("Aperture floor"));
-        assert!(stair_tower(Vertical::Top).contains("Aperture floor"));
+        assert!(
+            stair_tower(
+                Tower {
+                    vertical: Vertical::Bottom,
+                    doors: &[]
+                },
+                FIRST_VARIANT
+            )
+            .contains("Solid floor")
+        );
+        assert!(
+            stair_tower(
+                Tower {
+                    vertical: Vertical::Through,
+                    doors: &[]
+                },
+                FIRST_VARIANT
+            )
+            .contains("Aperture floor")
+        );
+        assert!(
+            stair_tower(
+                Tower {
+                    vertical: Vertical::Top,
+                    doors: &[]
+                },
+                FIRST_VARIANT
+            )
+            .contains("Aperture floor")
+        );
     }
 
     /// Every tower carries a spine. Without one a follower has no line to walk
@@ -331,9 +457,15 @@ mod tests {
     #[test]
     fn every_tower_carries_a_spine() {
         for vertical in verticals() {
-            let nodes = stair_tower(vertical)
-                .matches("\"classname\" \"tile_stair_node\"")
-                .count();
+            let nodes = stair_tower(
+                Tower {
+                    vertical,
+                    doors: &[],
+                },
+                FIRST_VARIANT,
+            )
+            .matches("\"classname\" \"tile_stair_node\"")
+            .count();
             assert!(
                 nodes >= SWEEP + 3,
                 "{:?} has only {nodes} spine nodes",
@@ -350,7 +482,16 @@ mod tests {
             (1..=10).contains(&WEIGHT),
             "an unplayed shape should not dominate the bucket"
         );
-        assert!(stair_tower(Vertical::Through).contains(&format!("\"weight\" \"{WEIGHT}\"")));
+        assert!(
+            stair_tower(
+                Tower {
+                    vertical: Vertical::Through,
+                    doors: &[]
+                },
+                FIRST_VARIANT
+            )
+            .contains(&format!("\"weight\" \"{WEIGHT}\""))
+        );
     }
 
     /// A climb must reach the port it advertises.
@@ -363,12 +504,26 @@ mod tests {
     #[test]
     fn the_climb_reaches_the_port_it_advertises() {
         for vertical in verticals() {
-            let text = stair_tower(vertical);
+            let text = stair_tower(
+                Tower {
+                    vertical,
+                    doors: &[],
+                },
+                FIRST_VARIANT,
+            );
             if !vertical.open_above() {
                 continue;
             }
-            let module = crate::parse_authored_module(&text)
-                .unwrap_or_else(|error| panic!("{}: {error:?}", vertical.stem()));
+            let module = crate::parse_authored_module(&text).unwrap_or_else(|error| {
+                panic!(
+                    "{}: {error:?}",
+                    Tower {
+                        vertical,
+                        doors: &[]
+                    }
+                    .stem()
+                )
+            });
             let top = module
                 .prototype
                 .spine
@@ -393,7 +548,11 @@ mod tests {
             assert!(
                 (f64::from(top.y) - deck).abs() <= step,
                 "{}: climb tops at {:.2} m but its up port puts the deck above at {deck:.2} m",
-                vertical.stem(),
+                Tower {
+                    vertical,
+                    doors: &[]
+                }
+                .stem(),
                 top.y
             );
         }
@@ -419,8 +578,23 @@ mod tests {
             if vertical.open_above() {
                 continue;
             }
-            let module = crate::parse_authored_module(&stair_tower(vertical))
-                .unwrap_or_else(|error| panic!("{}: {error:?}", vertical.stem()));
+            let module = crate::parse_authored_module(&stair_tower(
+                Tower {
+                    vertical,
+                    doors: &[],
+                },
+                FIRST_VARIANT,
+            ))
+            .unwrap_or_else(|error| {
+                panic!(
+                    "{}: {error:?}",
+                    Tower {
+                        vertical,
+                        doors: &[]
+                    }
+                    .stem()
+                )
+            });
             let top = module
                 .prototype
                 .spine
@@ -433,7 +607,11 @@ mod tests {
             assert!(
                 lid - f64::from(top.y) >= body,
                 "{}: climb ends at {:.2} m under a lid at {lid:.2} m, leaving {:.2} m for a                  {body:.2} m body",
-                vertical.stem(),
+                Tower {
+                    vertical,
+                    doors: &[]
+                }
+                .stem(),
                 top.y,
                 lid - f64::from(top.y)
             );
