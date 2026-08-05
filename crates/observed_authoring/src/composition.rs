@@ -451,6 +451,47 @@ mod tests {
         assert_eq!(catalog.composition, profile.profile);
     }
 
+    /// Arc S starts by pinning the exact content identity that LAN/replay
+    /// compatibility and deterministic selection currently consume. A future
+    /// Contract-Hat migration may intentionally move these values, but a
+    /// behavior-preserving extraction must not.
+    #[test]
+    fn committed_arc_s_catalog_identity_is_pinned() {
+        const CATALOG_HASH: &str =
+            "74ead7a606ab1a1b226f47c2bc84b0fffdb06eb61b2706f1b87dfcab3bb2b8cd";
+        const PROFILE_HASH: &str =
+            "99e682b1f1348f9a7f8d2d10024a2d08b11dec0a917f51e41eb7801b5db84c2f";
+        const SIMULATION_HASH: &str =
+            "9937ed51534eeb27b020924541ef38114456fa52fe18ce09d683ea26aeeccec7";
+
+        let root = committed_tiles();
+        let compiled_text =
+            std::fs::read_to_string(root.join("compiled_catalog.ron")).expect("catalog reads");
+        let compiled =
+            crate::CompiledTileCatalog::from_ron(&compiled_text).expect("catalog parses");
+        let tower_modules = compiled
+            .modules
+            .iter()
+            .filter(|module| module.archetype == "stair_tower")
+            .collect::<Vec<_>>();
+        assert_eq!(compiled.simulation_content_hash, CATALOG_HASH);
+        assert_eq!(compiled.modules.len(), 125, "committed strict source count");
+        assert_eq!(tower_modules.len(), 66, "one source per tower signature");
+        assert!(
+            tower_modules
+                .iter()
+                .all(|module| { module.register_scope == ["all"] && module.rotations == [0] })
+        );
+
+        let profile = load_profile(&root).expect("profile loads");
+        assert_eq!(profile.content_hash, PROFILE_HASH);
+        let simulation = fold_simulation_content_hash(CATALOG_HASH, PROFILE_HASH)
+            .into_iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        assert_eq!(simulation, SIMULATION_HASH);
+    }
+
     #[test]
     fn a_missing_profile_is_an_error_not_a_silent_baseline() {
         let dir = std::env::temp_dir().join("observed2_composition_missing");

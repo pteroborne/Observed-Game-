@@ -582,6 +582,139 @@ fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
         second.snapshot().digest,
         "identical inputs must yield identical final snapshot digests"
     );
+    eprintln!(
+        "headless gate completion_tick={a} digest={:#018x}",
+        first.snapshot().digest
+    );
+    assert_eq!(a, 5_596, "Arc S pins the pre-refactor completion tick");
+    assert_eq!(
+        first.snapshot().digest,
+        0x4420_9934_6f7e_b43e,
+        "Arc S pins the pre-refactor final snapshot digest"
+    );
+}
+
+fn mix_trace(digest: &mut u64, value: u64) {
+    *digest ^= value;
+    *digest = digest.wrapping_mul(0x0000_0100_0000_01b3);
+}
+
+/// Pin the current shape-specific bot follower against a real projected
+/// perimeter tower and the production Rapier controller. TR-1 can run the
+/// extracted follower against this exact intent/body trace before deleting
+/// the current `climb_command` implementation.
+#[test]
+fn perimeter_tower_local_intent_and_body_trace_is_pinned() {
+    let mut game = showcase_match(GATE_SEED, GATE_LEVELS, 1);
+    let tower_cells = game
+        .geometry
+        .pieces
+        .iter()
+        .filter_map(|piece| {
+            piece
+                .tile
+                .as_ref()
+                .filter(|tile| tile.archetype == "stair_tower")
+                .map(|tile| (piece.source_cell, tile.clone()))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut trace = 0xcbf2_9ce4_8422_2325u64;
+    let mut traced_tower = None;
+    let mut traced_ticks = 0u64;
+    let mut completion = None;
+    let id = PlayerId(0);
+    for tick in 0..40_000u64 {
+        let feet = game.bodies[&id].position - Vec3::Y * game.traversal_config.half_height;
+        let touching = tower_cells.keys().copied().find(|cell| {
+            game.geometry.climbs.get(cell).is_some_and(|spine| {
+                !spine.is_empty()
+                    && spine.distance(feet).is_some_and(|distance| distance <= 1.6)
+                    && !spine.has_arrived(feet)
+            })
+        });
+        let command = game.bot_player_command(id);
+        if let Some(cell) = touching {
+            traced_tower.get_or_insert(cell);
+            if traced_tower == Some(cell) {
+                traced_ticks += 1;
+                for bits in [
+                    command.intent.movement.x.to_bits(),
+                    command.intent.movement.y.to_bits(),
+                    command.intent.look.x.to_bits(),
+                    command.intent.look.y.to_bits(),
+                ] {
+                    mix_trace(&mut trace, u64::from(bits));
+                }
+                mix_trace(&mut trace, u64::from(command.intent.sprint_held));
+            }
+        }
+        game.step(&HexInputFrame {
+            version: HEX_INPUT_VERSION,
+            tick,
+            commands: [(id, command)].into_iter().collect(),
+        });
+        if touching.is_some_and(|cell| traced_tower == Some(cell)) {
+            let body = game.bodies[&id];
+            for bits in [
+                body.position.x.to_bits(),
+                body.position.y.to_bits(),
+                body.position.z.to_bits(),
+                body.velocity.x.to_bits(),
+                body.velocity.y.to_bits(),
+                body.velocity.z.to_bits(),
+                body.yaw.to_bits(),
+            ] {
+                mix_trace(&mut trace, u64::from(bits));
+            }
+            mix_trace(&mut trace, u64::from(body.grounded));
+            let feet = body.position - Vec3::Y * game.traversal_config.half_height;
+            let cell = traced_tower.expect("touching sets the tower");
+            if game.geometry.climbs[&cell].has_arrived(feet) {
+                completion = Some(tick + 1);
+                break;
+            }
+        }
+    }
+    let cell = traced_tower.expect("gate bot reaches a perimeter tower");
+    let tile = tower_cells[&cell].clone();
+    let body = game.bodies[&id];
+    eprintln!(
+        "tower cell={cell:?} tile={tile:?} completion={completion:?} traced_ticks={traced_ticks} trace={trace:#018x} body={body:?}"
+    );
+    assert_eq!(
+        cell,
+        HexCoord {
+            q: 1,
+            r: 0,
+            level: 0
+        }
+    );
+    assert_eq!(tile.archetype, "stair_tower");
+    assert_eq!(tile.register, "megastructure");
+    assert_eq!(tile.variant, 360);
+    assert_eq!(completion, Some(1_066));
+    assert_eq!(traced_ticks, 963);
+    assert_eq!(trace, 0xe735_8686_ec18_23c9);
+    assert_eq!(
+        [
+            body.position.x.to_bits(),
+            body.position.y.to_bits(),
+            body.position.z.to_bits(),
+            body.velocity.x.to_bits(),
+            body.velocity.y.to_bits(),
+            body.velocity.z.to_bits(),
+            body.yaw.to_bits(),
+        ],
+        [
+            1_096_658_774,
+            1_091_998_222,
+            1_079_880_670,
+            1_053_620_645,
+            0,
+            3_217_529_714,
+            1_048_619_496,
+        ]
+    );
 }
 
 /// Keep the Guardian out of geometry/pathfinding soaks. Its competitive
