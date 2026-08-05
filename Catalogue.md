@@ -58,7 +58,7 @@ These crates represent the stable core of the game's simulation layer. They cont
 11. **`observed_style`** — [README](crates/observed_style/README.md)
     - *Purpose:* The semantic visual design system (neon-noir district palettes, emissive intensities, signaling tiers, Outline overlay rules, and accessibility legend mappings).
 12. **`observed_traversal`** — [README](crates/observed_traversal/README.md)
-    - *Purpose:* Fixed-timestep traversal behind a pure `ArenaSpec`/`TraversalWorld` boundary. The assembled game uses the deterministic raw-Rapier KCC exclusively; the legacy backend tag remains only for replay/network compatibility fixtures.
+    - *Purpose:* Fixed-timestep traversal behind a pure `ArenaSpec`/`TraversalWorld` boundary, plus the canonical runtime profile, shared local follower, and deterministic module-local graph/cursor vocabulary. The assembled game uses the deterministic raw-Rapier KCC exclusively; the legacy backend tag remains only for replay/network compatibility fixtures.
 13. **`observed_assets`** — [README](crates/observed_assets/README.md)
     - *Purpose:* Local directory asset-slot index maps, avoiding hardcoded string paths in simulation presentation.
 14. **`observed_diagnostics`** — [README](crates/observed_diagnostics/README.md)
@@ -66,7 +66,7 @@ These crates represent the stable core of the game's simulation layer. They cont
 15. **`observed_hex`** — [source](crates/observed_hex/src/lib.rs)
     - *Purpose:* The single pure source of truth for axial coordinates, eight prism faces, packed port signatures, quantized-hex metrics, grid indexing, and exact lattice-to-world mapping.
 16. **`observed_authoring`** — [source](crates/observed_authoring/src/lib.rs)
-   - *Purpose:* Pure TrenchBroom `.map` import and deterministic `tilec` pipeline: strict cell/whole-room schemas, footprint/port/typed-gameplay-socket/floor/headroom/ramp/complexity contracts, SHA-256 hull catalogues, runtime rotation/register expansion, legacy-manifest compatibility, and brush-to-convex-collider projection. Also owns the on-disk authored **composition profile** (`composition.rs`) and the domain-separated fold that makes it part of the simulation content hash — tiles say what the solver *may* build, the profile says what it *tends* to build.
+   - *Purpose:* Pure TrenchBroom `.map` import and deterministic `tilec` pipeline: strict cell/whole-room schemas, explicit spatial/family/interface/traversal module contracts, SHA-256 hull catalogues, runtime rotation/register expansion, legacy-manifest compatibility, and brush-to-convex-collider projection. Also owns the on-disk authored **composition profile** (`composition.rs`) and the domain-separated fold that makes it part of the simulation content hash — tiles say what the solver *may* build, the profile says what it *tends* to build.
 
 ---
 

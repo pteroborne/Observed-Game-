@@ -1,12 +1,37 @@
 # Refactor Arc S — Traversal Contracts and Module Assembly
 
-**Status:** proposed
+**Status:** executing — Waves 0-3 complete; Wave 4 ready for parallel execution
 
 **Planning baseline:** `main@911b046` (`Merge branch 'arc-r/switchback-atomic-2'`)
 
 **Trigger:** the switchback-to-perimeter-ramp replacement succeeded, but only after
 failures escaped isolated tile validation and appeared as multi-seed spectator-bot
 stalls in assembled facilities.
+
+## Execution status
+
+The integration branch is `refactor/traversal-contract-integration`. Completed work:
+
+| Wave | Packets | Integration evidence |
+|---|---|---|
+| 0 | TR-0, TR-0G | Baselines pinned and production seed surveys promoted to assertions (`5053ca2`, `2f7bf65`). |
+| 1 | TR-1, TR-2 | Shared stateless follower and immutable `HexMatchContent` merged (`03cbe42`, `3008da7`). |
+| 2 | TR-3, TR-4, TR-5 | Canonical runtime profile, external stateful bot driver, and atomic projected guides merged (`7265b50`, `1eac79f`, `97169dc`). |
+| 3 | TR-6, TR-7 | Studio's canonical Rapier audit and the reviewed shared serialized contract seam merged (`41c4bfa`, `4330f07`). |
+
+TR-7 intentionally moves the runtime-profile identity from v1
+`15ee7875d369...` to v2 `29e48ecf1d20...`. V1 omitted effective Rapier
+character-controller values that were hard-coded at the call site. V2 names the
+physics that actually runs; controller inputs, completion ticks, and body/replay
+digests remain unchanged. This hash is not yet folded into catalog, snapshot, or LAN
+identity. TR-10 owns that later compatibility boundary.
+
+Compiled catalog v3 remains byte-compatible and rejects embedded contracts. Catalog
+v4 requires complete, canonical contracts but deliberately fails runtime expansion
+until the TR-8 adapters exist. Certificate DTO fields and canonical certificate
+serialization are owned by TR-8C, after its real runner proves the necessary stacked
+pair and failure-trace data; TR-7 provides only the shared guide and interface hash
+value objects needed for that work.
 
 ## Decision
 
