@@ -285,7 +285,8 @@ pub fn describe(error: &SourceError) -> String {
             Some("move the port to its face-edge midpoint".to_string())
         }
         SourceError::Headroom { meters, .. } => Some(format!(
-            "{meters:.2} m of headroom; the contract needs 2.20 m"
+            "{meters:.2} m of headroom; the authoring contract needs {:.2} m",
+            crate::module::walk::AUTHORING_HEADROOM_STANDARD_METERS
         )),
         SourceError::RampTooSteep { slope, .. } => {
             Some(format!("slope {slope:.2} is above what a body can walk"))

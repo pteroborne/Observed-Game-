@@ -54,6 +54,8 @@ pub fn rebuild_module_view(
     // points, and the alternative is threading a borrow through the whole
     // rebuild for nothing.
     let walk = state.walk.as_ref().map(|w| (w.path.clone(), w.failure));
+    let guide = state.guide.clone();
+    let rapier_audit = state.rapier_audit.clone();
     let Some(diagnosis) = state.current() else {
         return;
     };
@@ -142,6 +144,13 @@ pub fn rebuild_module_view(
     if let Some((path, failure)) = walk {
         spawn_walk(&mut commands, &mut meshes, &mut materials, &path, failure);
     }
+    super::traversal_render::spawn_traversal_evidence(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        guide.as_ref(),
+        &rapier_audit,
+    );
 
     state.cut_hulls = cut;
 }
@@ -150,8 +159,8 @@ pub fn rebuild_module_view(
 ///
 /// Lifted clear of the floor so it reads as an annotation over the surface
 /// rather than as geometry lying on it. The path is drawn in the settled
-/// colour and the stopping point in the alert colour - the same pair the
-/// viewport already uses for "this holds" and "this does not".
+/// grid colour because it is advisory; the authoritative guide and physical
+/// trace receive stronger semantic roles below.
 fn spawn_walk(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -161,8 +170,8 @@ fn spawn_walk(
 ) {
     const LIFT: f32 = 0.12;
     let trail = materials.add(StandardMaterial {
-        base_color: schematic(SchematicRole::Pinned).base_color,
-        emissive: schematic(SchematicRole::Pinned).emissive,
+        base_color: schematic(SchematicRole::Grid).base_color,
+        emissive: schematic(SchematicRole::Grid).emissive,
         unlit: true,
         ..default()
     });
@@ -401,7 +410,7 @@ pub fn lateral_edge(face: HexFace) -> Option<[(i32, i32); 2]> {
 
 /// A thin box standing in for a line. Bevy has no thick-line primitive, and a
 /// gizmo would not survive a screenshot capture.
-fn spawn_edge(
+pub(super) fn spawn_edge(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     material: &Handle<StandardMaterial>,

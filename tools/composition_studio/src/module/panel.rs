@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use observed_style::{SchematicRole, schematic, schematic_screen};
 
 use crate::module::app::ModuleState;
+use crate::module::rapier_audit::RapierAuditState;
 
 #[derive(Component)]
 pub struct ModulePanelText;
@@ -72,7 +73,7 @@ pub fn update_panel(
     }
     if let Ok(mut text) = status.single_mut() {
         **text = format!(
-            "{}  |  [Up/Dn] module  [Tab] next failing  [C] cutaway  [Q/E] orbit  wheel zoom",
+            "{}  |  [Up/Dn] module  [Tab] next failing  [R] Rapier audit  [C] cutaway  [Q/E] orbit  wheel zoom",
             state.status
         );
     }
@@ -159,6 +160,19 @@ pub fn format_panel(state: &ModuleState) -> String {
         }
     }
 
+    if let Some(guide) = state.guide.as_ref() {
+        let climbs = guide.climb.as_ref().map_or(0, |spine| spine.nodes.len());
+        let decks = guide.deck.as_ref().map_or(0, |deck| deck.nodes.len());
+        lines.push(format!(
+            "GUIDE  climb {climbs} node(s)  deck {decks} node(s)"
+        ));
+    } else {
+        lines.push(String::from("GUIDE  no declared climb/deck"));
+    }
+    lines.push(String::from(
+        "LEGEND  selected=guide  pinned=Rapier trace  grid=preflight  volatile=failure",
+    ));
+
     // The walk verdict sits with the validity verdict, because they answer
     // different questions and a module can pass one and fail the other - which
     // is the entire reason this probe exists.
@@ -167,13 +181,57 @@ pub fn format_panel(state: &ModuleState) -> String {
         lines.push(String::new());
         match report.failure {
             None => lines.push(format!(
-                "WALK clear - {} samples, {:.1} m climbed",
+                "PREFLIGHT clear - {} samples, {:.1} m climbed",
                 report.path.len(),
                 report.climbed
             )),
             Some(failure) => {
-                lines.push(format!("WALK blocked at {:.0}%", report.progress * 100.0));
+                lines.push(format!(
+                    "PREFLIGHT blocked at {:.0}%",
+                    report.progress * 100.0
+                ));
                 lines.push(failure.describe(&limits));
+            }
+        }
+        if let Some((clearance, _)) = report.tightest
+            && clearance < limits.authoring_headroom_standard
+        {
+            lines.push(format!(
+                "AUTHORING PINCH  {clearance:.2} m < {:.2} m standard",
+                limits.authoring_headroom_standard
+            ));
+        }
+    }
+
+    lines.push(String::new());
+    match &state.rapier_audit {
+        RapierAuditState::Off => lines.push(String::from("RAPIER off  [R] run selected module")),
+        RapierAuditState::NotApplicable => lines.push(String::from(
+            "RAPIER not applicable - no declared climb/deck guide",
+        )),
+        RapierAuditState::Complete(report) => {
+            lines.push(format!(
+                "RAPIER {}  profile {}",
+                if report.passed() { "PASS" } else { "FAIL" },
+                report.profile_hash_prefix()
+            ));
+            for leg in &report.legs {
+                let label = format!("{:?} {:?}", leg.kind, leg.direction);
+                if let Some(failure) = leg.failure {
+                    lines.push(format!(
+                        "  {label}: {failure:?} at tick {} ({:?}) [{:.2}, {:.2}, {:.2}]",
+                        leg.ticks,
+                        leg.final_state,
+                        leg.final_feet.x,
+                        leg.final_feet.y,
+                        leg.final_feet.z
+                    ));
+                } else {
+                    lines.push(format!(
+                        "  {label}: pass at tick {} ({:?})",
+                        leg.ticks, leg.final_state
+                    ));
+                }
             }
         }
     }
@@ -219,6 +277,10 @@ pub fn format_panel(state: &ModuleState) -> String {
 mod tests {
     use super::*;
     use crate::module::diagnose::{Diagnosis, Highlight};
+    use crate::module::rapier_audit::{
+        GuideLegKind, RapierAuditFailure, RapierAuditReport, RapierLegReport,
+    };
+    use observed_traversal::{FollowState, TraversalDirection};
     use std::path::PathBuf;
 
     fn state_with(error: Option<&str>, highlight: Highlight) -> ModuleState {
@@ -286,6 +348,43 @@ mod tests {
         ] {
             assert!(text.is_ascii(), "{text:?}");
         }
+    }
+
+    #[test]
+    fn panel_keeps_preflight_and_rapier_verdicts_distinct() {
+        let mut state = state_with(None, Highlight::Whole);
+        state.walk = Some(crate::module::walk::WalkReport {
+            path: vec![Vec3::ZERO, Vec3::X],
+            failure: None,
+            climbed: 0.0,
+            progress: 1.0,
+            tightest: Some((2.0, Vec3::ZERO)),
+        });
+        state.rapier_audit = RapierAuditState::Complete(RapierAuditReport {
+            profile_hash: [0xabu8; 32],
+            legs: vec![RapierLegReport {
+                kind: GuideLegKind::Climb,
+                direction: TraversalDirection::Forward,
+                ticks: 90,
+                final_state: FollowState::FollowingClimb,
+                final_feet: Vec3::ZERO,
+                last_target: Some(Vec3::X),
+                trace: vec![Vec3::ZERO],
+                failure: Some(RapierAuditFailure::TimedOut),
+            }],
+        });
+
+        let text = format_panel(&state);
+        assert!(text.contains("PREFLIGHT clear"), "{text}");
+        assert!(text.contains("AUTHORING PINCH  2.00 m < 2.20 m"), "{text}");
+        assert!(text.contains("RAPIER FAIL"), "{text}");
+        assert!(text.contains("TimedOut at tick 90"), "{text}");
+        assert!(text.contains("selected=guide"), "{text}");
+        assert!(
+            !text.contains("cursor"),
+            "stateless state is not a graph cursor"
+        );
+        assert!(!text.contains("binding"), "no binding contract exists yet");
     }
 
     /// A parametric module must show its parameters, and must not advertise a

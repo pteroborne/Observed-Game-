@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use observed_authoring::{AuthoredModule, TilePrototype};
 
 use super::probe::Probe;
-use super::walk::{START_REACH, Thresholds, WalkReport, walk};
+use super::walk::{Thresholds, WalkReport, walk};
 
 /// The route a body would take through `module`.
 ///
@@ -67,8 +67,9 @@ pub fn route_for(module: &AuthoredModule, probe: &Probe, limits: &Thresholds) ->
 fn interior_waypoint(probe: &Probe, limits: &Thresholds) -> Vec3 {
     let deck = observed_hex::FLOOR_SLAB_TOP;
     let standable = |x: f32, z: f32| -> Option<Vec3> {
-        let y = probe.support(x, z, deck + START_REACH)?;
-        (probe.overhead(x, z, y) >= limits.min_headroom).then_some(Vec3::new(x, y, z))
+        let y = probe.support(x, z, deck + limits.requirements.required_headroom)?;
+        (probe.overhead(x, z, y) >= limits.authoring_headroom_standard)
+            .then_some(Vec3::new(x, y, z))
     };
     if let Some(centre) = standable(0.0, 0.0) {
         return centre;
