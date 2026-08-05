@@ -258,6 +258,42 @@ register lookup, and passing that same identity as the variation key for
 the "climb depends only on the register" invariant, since the climb would then
 depend on the column - which is what the geometry actually needs.
 
+## 5e. A column-constant variation key is not enough
+
+Tried and reverted. `tile_for` was changed to key `select` on the column
+identity it already computes for the register lookup, instead of on the cell:
+
+```rust
+world.tile_variation_key(identity)   // was: (coord)
+```
+
+Run against the same experiment - slice B's towers at `sixfold`, 3 prototypes
+becoming 18 - and the result was **identical**: the same seed, the same cell,
+the same generated `variant: 4`.
+
+The reason, which should have been seen before implementing it: **a column's
+cells do not share a signature.** One has no doors, the next has one, the next
+two. `select` is keyed `(archetype, register, signature)`, so those cells look
+up **different buckets**, and a column-constant key just indexes different
+`Vec`s holding different candidates. Making the *draw* column-constant does not
+make the *family* column-constant.
+
+Fixing it properly means the family has to be chosen per column and the tile
+picked within it - a real change to `Catalogue`'s shape, not a key swap.
+
+### Where that leaves the plan
+
+Atomic replacement (§5d option 1) is the reliable path, and this is the second
+measured argument for it. The two families cannot coexist in the bucket, and the
+cheap ways to make them coexist do not work:
+
+- weight tuning: any weight short of total lets a column mix
+- column-constant key: different signatures, different buckets
+
+So: author the full 66-signature demand, delete the generated enumeration, and
+land both in one change. There is no testable intermediate state, which is
+unwelcome but is what the measurements say. The 24-seed sweep is the gate.
+
 ## 6. Slices
 
 Each ships and is verifiable alone.
