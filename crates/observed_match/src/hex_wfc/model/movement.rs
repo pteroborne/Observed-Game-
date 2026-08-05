@@ -6,7 +6,7 @@ use glam::{Vec2, Vec3};
 use observed_core::PlayerId;
 use observed_facility::hex_wfc::{HexCoord, HexFace, HexSpace, HexWfcConfig};
 use observed_hex::{TILE_LEVEL_HEIGHT, hex_origin};
-use observed_traversal::rapier_controller::step_character;
+use observed_traversal::rapier_controller::step_character_with_settings;
 use player_input::PlayerIntent;
 
 use super::{FIXED_DT, FLOOR_SLAB_TOP, HexMatchEvent, HexMatchEventKind, HexWfcMatch};
@@ -48,15 +48,25 @@ impl HexWfcMatch {
         if self.players[&id].escaped {
             return;
         }
-        let config = self.content.traversal_profile().controller();
-        step_character(
+        let profile = self.content.traversal_profile();
+        let config = profile.controller();
+        let step = step_character_with_settings(
             &self.physics,
             self.bodies.get_mut(&id).expect("body"),
             intent,
             &config,
+            profile.rapier(),
             FIXED_DT,
         );
         self.sync_player_from_body(id);
+        if step.recovered {
+            self.recent_events.push(HexMatchEvent {
+                tick: self.tick,
+                kind: HexMatchEventKind::PlayerRecovered,
+                player: Some(id),
+                cell: Some(self.players[&id].cell),
+            });
+        }
     }
 
     /// Project the Rapier body back onto the lattice. Logical level follows the

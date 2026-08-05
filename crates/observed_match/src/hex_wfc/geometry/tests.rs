@@ -59,11 +59,20 @@ fn projected_guides_are_the_only_source_of_climb_and_deck_compatibility_maps() {
     assert_eq!(snapshot.climbs, climbs);
     assert_eq!(snapshot.decks, decks);
     assert!(
-        snapshot
-            .guides
-            .iter()
-            .all(|(coord, guide)| *coord == guide.source_cell),
-        "a projected guide is keyed by its resolved source cell"
+        snapshot.guides.iter().all(|(coord, guide)| {
+            *coord == guide.source_cell
+                && guide.instance.source_cell == *coord
+                && guide.revision
+                    == HexModuleRevision::single(
+                        *coord,
+                        world
+                            .cell_revision(*coord)
+                            .expect("projected cell revision"),
+                    )
+                && guide.source_cells == [*coord]
+                && guide.graph.is_none()
+        }),
+        "legacy guides carry exact instance-local identity without inventing a v4 graph"
     );
     assert!(
         snapshot
@@ -85,6 +94,10 @@ fn guide_delta_replaces_and_removes_climb_and_deck_atomically() {
         .expect("fixture has a climb-plus-deck guide");
     let changed = BTreeSet::from([coord]);
     let replacement = ProjectedTraversalGuide {
+        instance: original.instance,
+        revision: original.revision.clone(),
+        source_cells: original.source_cells.clone(),
+        graph: None,
         source_cell: coord,
         climb: original.climb.clone(),
         deck: None,
@@ -504,6 +517,7 @@ fn matching_whole_room_module_takes_precedence_over_cell_fallbacks() {
         }],
         hulls: fallback_hulls,
         lights: Vec::new(),
+        contract: None,
     };
     let snapshot = HexWfcGeometrySnapshot::project_with_rooms(&world, &tiles(), &[room])
         .expect("whole-room projection");
@@ -802,6 +816,7 @@ fn multi_cell_room_prototype(role: RoomRole, archetype: &str, variant: u16) -> R
         sockets: Vec::new(),
         hulls: vec![tiny_tetrahedron(0.0)],
         lights: Vec::new(),
+        contract: None,
     }
 }
 

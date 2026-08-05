@@ -14,8 +14,8 @@ use observed_facility::hex_wfc::{
 use observed_facility::map_spec::RoomRole;
 use observed_hex::{CORNERS, HexCoord, HexFace, PortClass, TILE_LEVEL_HEIGHT, hex_origin};
 use observed_traversal::{
-    ArenaSpec, ColliderDelta, ColliderShape, ColliderSpec, StableColliderId,
-    rapier_controller::RapierTraversalScene,
+    ArenaSpec, ColliderDelta, ColliderShape, ColliderSpec, StableColliderId, TraversalCursor,
+    TraversalGuide, TraversalNodeId, rapier_controller::RapierTraversalScene,
 };
 
 const COLLIDER_STRIDE: usize = 128;
@@ -87,8 +87,86 @@ impl HexStructurePiece {
 /// A climb and its landing/deck path describe one physical instance. Keeping
 /// them in one value prevents a bounded relayout from retaining half of the
 /// old module while installing half of the replacement.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HexModuleInstanceId {
+    /// Stable anchor for this resolved module instance.
+    pub source_cell: HexCoord,
+}
+
+/// Exact local-revision vector for every logical cell owned by one resolved
+/// module. Sorting makes the token independent of footprint iteration order;
+/// retaining every pair avoids hash collisions and detects a changed
+/// non-anchor cell in a whole-room or vertical assembly.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HexModuleRevision {
+    cells: Vec<(HexCoord, u32)>,
+}
+
+impl HexModuleRevision {
+    #[must_use]
+    pub fn single(cell: HexCoord, revision: u32) -> Self {
+        Self {
+            cells: vec![(cell, revision)],
+        }
+    }
+
+    fn for_cells(world: &HexWfcWorld, cells: &[HexCoord]) -> Option<Self> {
+        let mut revisions = cells
+            .iter()
+            .copied()
+            .map(|cell| Some((cell, world.cell_revision(cell)?)))
+            .collect::<Option<Vec<_>>>()?;
+        revisions.sort_by_key(|(cell, _)| *cell);
+        revisions.dedup_by_key(|(cell, _)| *cell);
+        (!revisions.is_empty()).then_some(Self { cells: revisions })
+    }
+
+    #[must_use]
+    pub fn cells(&self) -> &[(HexCoord, u32)] {
+        &self.cells
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ProjectedPort {
+    pub cell: HexCoord,
+    pub face: HexFace,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProjectedTraversalGraph {
+    pub guide: TraversalGuide,
+    pub port_bindings: BTreeMap<ProjectedPort, TraversalNodeId>,
+}
+
+/// One graph leg leased from an exact resolved module revision.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HexTraversalLease {
+    pub instance: HexModuleInstanceId,
+    pub revision: HexModuleRevision,
+    pub entry: TraversalNodeId,
+    pub exit: TraversalNodeId,
+}
+
+/// Non-authoritative local graph progress retained by an input driver.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HexTraversalCursor {
+    pub lease: HexTraversalLease,
+    pub local: TraversalCursor,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ProjectedTraversalGuide {
+    pub instance: HexModuleInstanceId,
+    /// Instance-local revision. An unrelated facility relayout does not change
+    /// it, while replacement of this exact instance does.
+    pub revision: HexModuleRevision,
+    /// All logical cells owned by the resolved instance. Compatibility cell
+    /// modules contain one entry; whole-room graphs may own several.
+    pub source_cells: Vec<HexCoord>,
+    /// V4 module-local graph and exact external-port bindings. Legacy v1/v2
+    /// annotations keep this absent through the compatibility window.
+    pub graph: Option<ProjectedTraversalGraph>,
     pub source_cell: HexCoord,
     pub climb: Option<StairSpine>,
     pub deck: Option<DeckPath>,
@@ -923,6 +1001,11 @@ fn push_tile(
         out.guides.insert(
             source_cell,
             ProjectedTraversalGuide {
+                instance: HexModuleInstanceId { source_cell },
+                revision: HexModuleRevision::for_cells(world, &[source_cell])
+                    .expect("resolved module cells have local revisions"),
+                source_cells: vec![source_cell],
+                graph: None,
                 source_cell,
                 climb,
                 deck,

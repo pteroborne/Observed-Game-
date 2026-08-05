@@ -9,8 +9,8 @@
 use bevy::prelude::*;
 use observed_authoring::TilePrototype;
 use observed_hex::HexCoord;
-use observed_match::hex_wfc::ProjectedTraversalGuide;
-use observed_traversal::rapier_controller::{RapierTraversalScene, step_character};
+use observed_match::hex_wfc::{HexModuleInstanceId, HexModuleRevision, ProjectedTraversalGuide};
+use observed_traversal::rapier_controller::{RapierTraversalScene, step_character_with_settings};
 use observed_traversal::{
     DeckHandoff, FIXED_DT, FollowState, FollowTarget, FollowerPose, FpsBody, TraversalDirection,
     TraversalRuntimeProfile, follow_stateless,
@@ -101,6 +101,27 @@ pub fn projected_guide(prototype: &TilePrototype) -> Option<ProjectedTraversalGu
     let climb = (!prototype.spine.is_empty()).then(|| prototype.spine.clone());
     let deck = (!prototype.deck.is_empty()).then(|| prototype.deck.clone());
     (climb.is_some() || deck.is_some()).then_some(ProjectedTraversalGuide {
+        instance: HexModuleInstanceId {
+            source_cell: HexCoord {
+                q: 0,
+                r: 0,
+                level: 0,
+            },
+        },
+        revision: HexModuleRevision::single(
+            HexCoord {
+                q: 0,
+                r: 0,
+                level: 0,
+            },
+            0,
+        ),
+        source_cells: vec![HexCoord {
+            q: 0,
+            r: 0,
+            level: 0,
+        }],
+        graph: None,
         source_cell: HexCoord {
             q: 0,
             r: 0,
@@ -267,7 +288,14 @@ fn run_leg(
             );
         };
 
-        step_character(scene, &mut body, intent, &config, FIXED_DT);
+        let step = step_character_with_settings(
+            scene,
+            &mut body,
+            intent,
+            &config,
+            profile.rapier(),
+            FIXED_DT,
+        );
         let feet = body.position - Vec3::Y * config.half_height;
         if tick % TRACE_EVERY_TICKS == 0 {
             trace.push(feet);
@@ -288,7 +316,7 @@ fn run_leg(
         // `step_character` resets a body that leaves the scene safety volume.
         // Treat that exact reset as a failed audit and stop immediately; an
         // audit never turns recovery into apparent traversal progress.
-        if body == pristine {
+        if step.recovered {
             push_final_trace(&mut trace, feet);
             return leg_report(
                 kind,

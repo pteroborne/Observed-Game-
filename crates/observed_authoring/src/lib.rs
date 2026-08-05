@@ -15,6 +15,7 @@ pub mod brush;
 pub mod cad_renderer;
 pub mod catalog;
 pub mod composition;
+pub mod contract;
 pub mod distribution;
 pub mod fgd;
 pub mod forge;
@@ -29,18 +30,28 @@ pub mod tile_source;
 
 /// TrenchBroom units per world meter. Integer so every canonical hex corner
 /// lands on an integer editor coordinate (7 m -> 112 units, 8 m -> 128).
-pub const UNITS_PER_METER: f64 = 16.0;
+pub const QUANTIZED_UNITS_PER_METER: i32 = 16;
+pub const UNITS_PER_METER: f64 = QUANTIZED_UNITS_PER_METER as f64;
 
 pub use cad_renderer::{DynamicHull, render_cad_blueprint, render_dynamic_cad_blueprint};
 pub use catalog::{
-    CatalogAudit, CatalogBuild, CatalogError, CompiledLight, CompiledModule, CompiledSocket,
-    CompiledTileCatalog, DistrictAuditGroup, DistrictAuditResult, RoomPrototype, RoomPrototypePort,
-    RoomPrototypeSocket, RuntimeAuthoringCatalog, audit_district_variations, build_catalog,
-    discover_sources, load_runtime_cells, new_module_template, write_catalog_build,
+    CONTRACT_CATALOG_VERSION, CatalogAudit, CatalogBuild, CatalogError, CompiledLight,
+    CompiledModule, CompiledSocket, CompiledTileCatalog, DistrictAuditGroup, DistrictAuditResult,
+    RoomPrototype, RoomPrototypePort, RoomPrototypeSocket, RuntimeAuthoringCatalog,
+    audit_district_variations, build_catalog, discover_sources, load_runtime_cells,
+    new_module_template, write_catalog_build,
 };
 pub use composition::{
     COMPOSITION_PROFILE_FILE, COMPOSITION_PROFILE_SHA_FILE, CompositionBuild, CompositionError,
     fold_simulation_content_hash, load_profile, parse_profile, write_profile_build,
+};
+pub use contract::{
+    AssemblyContract, AssemblyScope, AssemblyVariantId, ClearanceVolume, ContractDiagnostic,
+    DiagnosticLocation, FACE_LOCAL_SCALE, FaceLocalBox, FaceLocalDirection, FaceLocalPoint,
+    GeometryEnvelope, InterfaceFingerprint, InterfaceProfile, LateralFaceFrame, LogicalCell,
+    LogicalFootprint, ModuleContract, ModuleFamilyId, ModuleInterface, ModuleSpatialContract,
+    ModuleTraversalContract, QuantizedAperture, QuantizedBox, QuantizedDirection, QuantizedPoint,
+    QuantizedPose, RuntimeModuleContract, VerticalFaceFrame,
 };
 pub use manifest::{Manifest, ManifestEntry, ManifestError, TileKey};
 pub use source::{

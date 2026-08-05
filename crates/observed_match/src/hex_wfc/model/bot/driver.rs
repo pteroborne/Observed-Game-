@@ -468,6 +468,47 @@ mod tests {
     }
 
     #[test]
+    fn controller_recovery_emits_once_and_revokes_the_stale_lease() {
+        let (mut game, mut driver, id, _source, _to, _first) = leased_fixture();
+        assert!(driver.cursor(id).is_some(), "fixture begins with a lease");
+        assert!(driver.has_cached_route(id), "fixture begins with a route");
+
+        // Keep the body's valid spawn but put both authoritative views beyond
+        // the collision scene's safety volume. Matching positions prevent the
+        // teleport reconciler from replacing the body before the KCC sees it.
+        let outside = Vec3::splat(1_000_000.0);
+        game.players.get_mut(&id).expect("player").position = outside;
+        game.bodies.get_mut(&id).expect("body").position = outside;
+        let events = game
+            .step(&HexInputFrame {
+                version: HEX_INPUT_VERSION,
+                tick: game.tick + 1,
+                commands: BTreeMap::new(),
+            })
+            .to_vec();
+
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| {
+                    event.kind == HexMatchEventKind::PlayerRecovered && event.player == Some(id)
+                })
+                .count(),
+            1,
+            "the controller reset must be reported exactly once"
+        );
+        driver.invalidate_from_match(&game, id, game.objective_target(id));
+        assert!(
+            driver.cursor(id).is_none(),
+            "recovery revokes the old lease"
+        );
+        assert!(
+            !driver.has_cached_route(id),
+            "recovery revokes the old route cache"
+        );
+    }
+
+    #[test]
     fn displacement_escape_and_target_changes_revoke_only_the_affected_cursor() {
         for kind in [
             HexMatchEventKind::PlayerRecovered,

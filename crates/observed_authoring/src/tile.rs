@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::UNITS_PER_METER;
 use crate::brush::brush_vertices;
+use crate::contract::RuntimeModuleContract;
 use crate::manifest::TileKey;
 
 /// On-boundary tolerance for the footprint check, in TrenchBroom units.
@@ -121,6 +122,9 @@ pub struct TilePrototype {
     /// The walkable line around this tile's floor, empty where a straight line
     /// across the cell is always fine.
     pub deck: DeckPath,
+    /// Expanded v4 traversal/spatial contract. V1/v2 and compiled-v3 content
+    /// leave this absent until the contract compiler/runtime adapter lands.
+    pub contract: Option<RuntimeModuleContract>,
 }
 
 impl TilePrototype {
@@ -582,6 +586,7 @@ pub fn parse_tile(text: &str) -> Result<TilePrototype, TileError> {
         lights,
         spine,
         deck,
+        contract: None,
     })
 }
 

@@ -15,6 +15,7 @@ use quake_map::{Entity, QuakeMap};
 use serde::{Deserialize, Serialize};
 
 use crate::UNITS_PER_METER;
+use crate::contract::ModuleContract;
 use crate::tile::{
     TileError, TilePrototype, class_from_name, face_from_name, parse_tile, prop, required,
 };
@@ -156,6 +157,9 @@ pub struct AuthoredModule {
     pub footprint: Vec<ModuleCell>,
     pub ports: Vec<ModulePort>,
     pub sockets: Vec<ModuleSocket>,
+    /// Complete v3 module contract. Legacy v1/v2 sources deliberately leave
+    /// this absent and continue through the compatibility adapter.
+    pub contract: Option<ModuleContract>,
     pub prototype: TilePrototype,
 }
 
@@ -659,6 +663,14 @@ pub fn parse_authored_module(text: &str) -> Result<AuthoredModule, SourceError> 
             entity: "tile_meta",
             detail: "authoring_version must be a u8".to_string(),
         })?;
+    if !matches!(authoring_version, 1 | 2) {
+        return Err(SourceError::InvalidProperty {
+            entity: "tile_meta",
+            detail: format!(
+                "authoring_version {authoring_version} is not enabled; supported versions are 1 and 2"
+            ),
+        });
+    }
     let kind =
         kind_from_name(prop(meta, "kind").as_deref().unwrap_or("cell")).ok_or_else(|| {
             SourceError::InvalidProperty {
@@ -852,6 +864,7 @@ pub fn parse_authored_module(text: &str) -> Result<AuthoredModule, SourceError> 
         footprint,
         ports,
         sockets,
+        contract: None,
         prototype,
     };
     validate_module(&module)?;

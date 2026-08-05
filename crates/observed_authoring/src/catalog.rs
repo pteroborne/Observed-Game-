@@ -9,6 +9,7 @@ use observed_hex::{HexFace, PortClass, PortSignature};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::contract::{ContractDiagnostic, ModuleContract, RuntimeModuleContract};
 use crate::manifest::{Manifest, ManifestEntry, PortDecl, TileKey};
 use crate::source::{
     AuthoredModule, ModuleCell, ModuleCellRef, ModuleKind, RoomSocketKind, RotationPolicy,
@@ -17,6 +18,8 @@ use crate::source::{
 use crate::tile::{DeckPath, StairSpine, TileLight, TileLightKind, TilePrototype};
 
 pub const COMPILED_CATALOG_VERSION: u16 = 3;
+/// First catalog version that requires complete module contracts.
+pub const CONTRACT_CATALOG_VERSION: u16 = 4;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CompiledHullSet {
@@ -84,6 +87,8 @@ pub struct CompiledModule {
     pub structural_hash: String,
     /// Present while the old runtime manifest remains the compatibility seam.
     pub legacy_key: Option<TileKey>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract: Option<ModuleContract>,
 }
 
 /// One exact external connection on a compiled whole-room module.
@@ -117,6 +122,7 @@ pub struct RoomPrototype {
     pub sockets: Vec<RoomPrototypeSocket>,
     pub hulls: Vec<Vec<Vec3>>,
     pub lights: Vec<TileLight>,
+    pub contract: Option<RuntimeModuleContract>,
 }
 
 /// Strict v2 modules projected into the runtime forms consumed by WFC geometry.
@@ -143,7 +149,52 @@ impl CompiledTileCatalog {
     }
 
     pub fn from_ron(text: &str) -> Result<Self, CatalogError> {
-        ron::from_str(text).map_err(|error| CatalogError::Serialize(error.to_string()))
+        let catalog: Self =
+            ron::from_str(text).map_err(|error| CatalogError::Serialize(error.to_string()))?;
+        if !matches!(
+            catalog.version,
+            COMPILED_CATALOG_VERSION | CONTRACT_CATALOG_VERSION
+        ) {
+            return Err(CatalogError::UnsupportedVersion(catalog.version));
+        }
+        if catalog.version == COMPILED_CATALOG_VERSION
+            && let Some(module) = catalog
+                .modules
+                .iter()
+                .find(|module| module.contract.is_some())
+        {
+            return Err(CatalogError::UnexpectedContractInV3(module.id.clone()));
+        }
+        if catalog.version == CONTRACT_CATALOG_VERSION
+            && catalog
+                .modules
+                .iter()
+                .any(|module| module.contract.is_none())
+        {
+            return Err(CatalogError::IncompleteContractCatalog);
+        }
+        if catalog.version == CONTRACT_CATALOG_VERSION {
+            for module in &catalog.modules {
+                let contract = module.contract.as_ref().expect("v4 completeness checked");
+                if contract.clone().canonicalized() != *contract {
+                    return Err(CatalogError::InvalidContract {
+                        module: module.id.clone(),
+                        diagnostic: ContractDiagnostic::whole(
+                            "noncanonical_contract_order",
+                            "v4 contract vectors are not in canonical order",
+                        ),
+                    });
+                }
+                contract
+                    .validate()
+                    .map_err(|diagnostic| CatalogError::InvalidContract {
+                        module: module.id.clone(),
+                        diagnostic,
+                    })?;
+                validate_compiled_contract(module, contract)?;
+            }
+        }
+        Ok(catalog)
     }
 
     pub fn verify_hash(&self) -> Result<(), CatalogError> {
@@ -166,6 +217,20 @@ impl CompiledTileCatalog {
         &self,
         architecture_registers: &[&str],
     ) -> Result<RuntimeAuthoringCatalog, CatalogError> {
+        if !matches!(
+            self.version,
+            COMPILED_CATALOG_VERSION | CONTRACT_CATALOG_VERSION
+        ) {
+            return Err(CatalogError::UnsupportedVersion(self.version));
+        }
+        if self.version == COMPILED_CATALOG_VERSION
+            && let Some(module) = self.modules.iter().find(|module| module.contract.is_some())
+        {
+            return Err(CatalogError::UnexpectedContractInV3(module.id.clone()));
+        }
+        if self.version == CONTRACT_CATALOG_VERSION {
+            return Err(CatalogError::ContractRuntimeUnavailable);
+        }
         self.verify_hash()?;
         let hull_sets = self
             .hull_sets
@@ -262,6 +327,7 @@ impl CompiledTileCatalog {
                                 lights: rotated_lights.clone(),
                                 spine: rotated_spine.clone(),
                                 deck: rotated_deck.clone(),
+                                contract: None,
                             });
                         }
                         ModuleKind::Room => runtime.rooms.push(RoomPrototype {
@@ -277,6 +343,7 @@ impl CompiledTileCatalog {
                             sockets: rotated_sockets.clone(),
                             hulls: rotated_hulls.clone(),
                             lights: rotated_lights.clone(),
+                            contract: None,
                         }),
                     }
                 }
@@ -324,6 +391,14 @@ pub enum CatalogError {
         paths: Vec<PathBuf>,
     },
     Serialize(String),
+    UnsupportedVersion(u16),
+    UnexpectedContractInV3(String),
+    IncompleteContractCatalog,
+    ContractRuntimeUnavailable,
+    InvalidContract {
+        module: String,
+        diagnostic: ContractDiagnostic,
+    },
     HashMismatch {
         expected: String,
         actual: String,
@@ -418,6 +493,100 @@ fn class_from_compiled_name(name: &str) -> Option<PortClass> {
     ]
     .into_iter()
     .find(|&class| class_name(class) == name)
+}
+
+fn validate_compiled_contract(
+    module: &CompiledModule,
+    contract: &ModuleContract,
+) -> Result<(), CatalogError> {
+    let compiled_footprint = module
+        .footprint
+        .iter()
+        .flat_map(|cell| {
+            (0..cell.levels).map(move |level| {
+                (
+                    ModuleCellRef {
+                        q: cell.q,
+                        r: cell.r,
+                        level: cell.level.saturating_add_unsigned(level),
+                    },
+                    cell.floor,
+                )
+            })
+        })
+        .collect::<BTreeMap<_, _>>();
+    let contract_footprint = contract
+        .spatial
+        .logical_footprint
+        .cells
+        .iter()
+        .map(|cell| (cell.cell, cell.floor))
+        .collect::<BTreeMap<_, _>>();
+    if compiled_footprint != contract_footprint {
+        return Err(CatalogError::InvalidContract {
+            module: module.id.clone(),
+            diagnostic: ContractDiagnostic::whole(
+                "compiled_logical_footprint_mismatch",
+                "compiled and contract logical footprints differ",
+            ),
+        });
+    }
+    let interfaces = contract
+        .interfaces
+        .iter()
+        .map(|interface| (interface.port.as_str(), interface))
+        .collect::<BTreeMap<_, _>>();
+    let mut compiled_names = BTreeSet::new();
+    for port in &module.ports {
+        if port.name.trim().is_empty() || !compiled_names.insert(port.name.as_str()) {
+            return Err(CatalogError::InvalidContract {
+                module: module.id.clone(),
+                diagnostic: ContractDiagnostic::whole(
+                    "invalid_compiled_port_name",
+                    format!(
+                        "compiled port names must be unique and nonempty: {:?}",
+                        port.name
+                    ),
+                ),
+            });
+        }
+        let Some(interface) = interfaces.get(port.name.as_str()) else {
+            return Err(CatalogError::InvalidContract {
+                module: module.id.clone(),
+                diagnostic: ContractDiagnostic::whole(
+                    "compiled_port_unbound",
+                    format!("compiled port {:?} has no interface contract", port.name),
+                ),
+            });
+        };
+        let face = face_from_compiled_name(&port.face);
+        let class = class_from_compiled_name(&port.class);
+        if interface.cell != port.cell
+            || face != Some(interface.profile.face)
+            || class != Some(interface.profile.class)
+        {
+            return Err(CatalogError::InvalidContract {
+                module: module.id.clone(),
+                diagnostic: ContractDiagnostic::whole(
+                    "compiled_port_interface_mismatch",
+                    format!(
+                        "compiled port {:?} does not match its cell/face/class interface",
+                        port.name
+                    ),
+                ),
+            });
+        }
+    }
+    if compiled_names != interfaces.keys().copied().collect::<BTreeSet<_>>() {
+        return Err(CatalogError::InvalidContract {
+            module: module.id.clone(),
+            diagnostic: ContractDiagnostic::whole(
+                "interface_without_compiled_port",
+                "interface and compiled-port name sets differ",
+            ),
+        });
+    }
+    Ok(())
 }
 
 fn rotate_hulls(hulls: &[Vec<[f32; 3]>], turn: u8) -> Vec<Vec<Vec3>> {
@@ -663,6 +832,7 @@ fn compile_module(
         deck_path,
         structural_hash,
         legacy_key: (module.authoring_version < 2).then(|| module.prototype.key.clone()),
+        contract: module.contract.clone(),
     }
 }
 
@@ -953,9 +1123,102 @@ mod tests {
         let second = build_catalog(&root).expect("rebuild");
         assert_eq!(first.catalog, second.catalog);
         first.catalog.verify_hash().expect("content hash");
+        assert!(
+            first
+                .catalog
+                .modules
+                .iter()
+                .all(|module| module.contract.is_none())
+        );
+        assert!(
+            !first.catalog.to_pretty_ron().unwrap().contains("contract:"),
+            "v2 sources must preserve byte-compatible catalog-v3 serialization"
+        );
         assert_eq!(first.audit.strict_sources, 1);
         assert_eq!(first.audit.compatibility_manifest_entries, 0);
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn catalog_reader_fails_closed_on_unknown_or_incomplete_contract_versions() {
+        let unsupported = CompiledTileCatalog {
+            version: 99,
+            ..Default::default()
+        }
+        .to_pretty_ron()
+        .unwrap();
+        assert!(matches!(
+            CompiledTileCatalog::from_ron(&unsupported),
+            Err(CatalogError::UnsupportedVersion(99))
+        ));
+        assert!(matches!(
+            CompiledTileCatalog {
+                version: 99,
+                ..Default::default()
+            }
+            .runtime_catalog(&[]),
+            Err(CatalogError::UnsupportedVersion(99))
+        ));
+
+        let root = temp_dir("incomplete_v4");
+        std::fs::write(
+            root.join("module.map"),
+            new_module_template("test/incomplete-v4", ModuleKind::Cell),
+        )
+        .expect("write map");
+        let mut catalog = build_catalog(&root).expect("build").catalog;
+        let module_id = catalog.modules[0].id.clone();
+        catalog.modules[0].contract = Some(ModuleContract {
+            spatial: crate::ModuleSpatialContract {
+                logical_footprint: crate::LogicalFootprint { cells: Vec::new() },
+                geometry_envelope: crate::GeometryEnvelope {
+                    bounds: crate::QuantizedBox {
+                        min: crate::QuantizedPoint { x: 0, y: 0, z: 0 },
+                        max: crate::QuantizedPoint { x: 1, y: 1, z: 1 },
+                    },
+                },
+                clearance_volumes: Vec::new(),
+            },
+            assembly: crate::AssemblyContract {
+                family: crate::ModuleFamilyId("hostile/downgrade".to_string()),
+                scope: crate::AssemblyScope::Cell,
+                family_weight: 1,
+            },
+            traversal: crate::ModuleTraversalContract {
+                nodes: Vec::new(),
+                edges: Vec::new(),
+                port_bindings: BTreeMap::new(),
+            },
+            interfaces: Vec::new(),
+        });
+        assert!(matches!(
+            catalog.runtime_catalog(&[]),
+            Err(CatalogError::UnexpectedContractInV3(id)) if id == module_id
+        ));
+        catalog.modules[0].contract = None;
+        catalog.version = CONTRACT_CATALOG_VERSION;
+        assert!(matches!(
+            CompiledTileCatalog::from_ron(&catalog.to_pretty_ron().unwrap()),
+            Err(CatalogError::IncompleteContractCatalog)
+        ));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn authoring_v3_fails_closed_until_the_contract_compiler_lands() {
+        for version in [3, 4] {
+            let text = new_module_template("test/future", ModuleKind::Cell).replace(
+                "\"authoring_version\" \"2\"",
+                &format!("\"authoring_version\" \"{version}\""),
+            );
+            assert!(matches!(
+                parse_authored_module(&text),
+                Err(SourceError::InvalidProperty {
+                    entity: "tile_meta",
+                    ..
+                })
+            ));
+        }
     }
 
     #[test]

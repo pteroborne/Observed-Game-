@@ -13,7 +13,9 @@ use player_input::PlayerIntent;
 use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
 use rapier3d::prelude::*;
 
-use super::{Aabb3, FpsArena, FpsBody, FpsConfig, FpsStep, approach, clamp_len};
+use super::{
+    Aabb3, FpsArena, FpsBody, FpsConfig, FpsStep, RapierKinematicSettings, approach, clamp_len,
+};
 
 /// A semantic, engine-independent structural collider. Rendering, navigation, and
 /// Rapier scene construction should project from the same list of these primitives;
@@ -322,6 +324,27 @@ pub fn step_character(
     config: &FpsConfig,
     dt: f32,
 ) -> FpsStep {
+    step_character_with_settings(
+        scene,
+        body,
+        intent,
+        config,
+        RapierKinematicSettings::shipped(config),
+        dt,
+    )
+}
+
+/// Advance a character with an explicitly identified Rapier controller
+/// contract. Runtime profiles and certification use this entrypoint so every
+/// effective physical value participates in their shared identity.
+pub fn step_character_with_settings(
+    scene: &RapierTraversalScene,
+    body: &mut FpsBody,
+    intent: PlayerIntent,
+    config: &FpsConfig,
+    rapier: RapierKinematicSettings,
+    dt: f32,
+) -> FpsStep {
     let mut intent = intent;
     if intent.movement.length_squared() > 1.0 {
         intent.movement = intent.movement.normalize_or_zero();
@@ -367,15 +390,15 @@ pub fn step_character(
     let segment_half = (config.half_height - radius).max(0.01);
     let capsule = Capsule::new_y(segment_half, radius);
     let controller = KinematicCharacterController {
-        offset: CharacterLength::Absolute(0.01),
+        offset: CharacterLength::Absolute(rapier.controller_offset),
         autostep: Some(CharacterAutostep {
             max_height: CharacterLength::Absolute(config.step_height),
-            min_width: CharacterLength::Absolute(config.radius * 1.25),
+            min_width: CharacterLength::Absolute(rapier.minimum_step_width),
             include_dynamic_bodies: true,
         }),
-        snap_to_ground: (!report.jumped).then_some(CharacterLength::Absolute(0.08)),
-        max_slope_climb_angle: 50.0_f32.to_radians(),
-        min_slope_slide_angle: 52.0_f32.to_radians(),
+        snap_to_ground: (!report.jumped).then_some(CharacterLength::Absolute(rapier.ground_snap)),
+        max_slope_climb_angle: rapier.maximum_slope_degrees.to_radians(),
+        min_slope_slide_angle: rapier.minimum_slope_slide_degrees.to_radians(),
         ..Default::default()
     };
     let active = |handle: ColliderHandle, collider: &Collider| {
@@ -420,6 +443,7 @@ pub fn step_character(
     {
         let (spawn, yaw) = (body.spawn, body.spawn_yaw);
         *body = FpsBody::spawned(spawn, yaw);
+        report.recovered = true;
     }
     report
 }
@@ -453,6 +477,58 @@ mod tests {
             step_character(&b_scene, &mut b, intent, &config, super::super::FIXED_DT);
             assert_eq!(a, b, "Rapier controller diverged at tick {tick}");
         }
+    }
+
+    #[test]
+    fn explicit_shipped_settings_preserve_the_compatibility_controller() {
+        let arena = FpsArena::authored();
+        let scene = RapierTraversalScene::from_arena(&arena);
+        let config = FpsConfig::deliberate_rapier();
+        let spawn = Vec3::new(0.0, config.half_height, 15.0);
+        let mut compatibility = FpsBody::spawned(spawn, 0.0);
+        let mut explicit = compatibility;
+        for tick in 0..240 {
+            let mut intent = forward();
+            intent.jump_pressed = tick == 80;
+            let old = step_character(
+                &scene,
+                &mut compatibility,
+                intent,
+                &config,
+                super::super::FIXED_DT,
+            );
+            let new = step_character_with_settings(
+                &scene,
+                &mut explicit,
+                intent,
+                &config,
+                RapierKinematicSettings::shipped(&config),
+                super::super::FIXED_DT,
+            );
+            assert_eq!(old, new, "step report changed at tick {tick}");
+            assert_eq!(compatibility, explicit, "body changed at tick {tick}");
+        }
+    }
+
+    #[test]
+    fn leaving_the_safety_volume_reports_recovery_explicitly() {
+        let arena = FpsArena::authored();
+        let scene = RapierTraversalScene::from_arena(&arena);
+        let config = FpsConfig::default();
+        let spawn = Vec3::new(0.0, config.half_height, 0.0);
+        let mut body = FpsBody::spawned(spawn, 0.0);
+        body.position.x = arena.floor_half + 100.0;
+
+        let step = step_character(
+            &scene,
+            &mut body,
+            PlayerIntent::default(),
+            &config,
+            super::super::FIXED_DT,
+        );
+
+        assert!(step.recovered);
+        assert_eq!(body, FpsBody::spawned(spawn, 0.0));
     }
 
     #[test]

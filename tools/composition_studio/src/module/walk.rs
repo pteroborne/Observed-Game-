@@ -336,13 +336,14 @@ mod tests {
             report.failure
         );
 
-        // A sustained 45 degree ramp. Every single rise is inside autostep, so
-        // only the windowed test can catch this one.
-        let ramped = terrace(&[(0.0, 0.0), (4.0, 4.0)]);
+        // A sustained 55 degree ramp, beyond the shipped Rapier controller's
+        // effective 50 degree climb limit. Every single rise is inside
+        // autostep, so only the windowed test can catch this one.
+        let ramped = terrace(&[(0.0, 0.0), (4.0, 5.713)]);
         let report = walk(&ramped, &[Vec3::ZERO, Vec3::new(4.0, 0.0, 0.0)], &limits);
         assert!(
             matches!(report.failure, Some(WalkFailure::TooSteep { .. })),
-            "a sustained 45 degree ramp must not pass as a run of steps: {:?}",
+            "a sustained 55 degree ramp must not pass as a run of steps: {:?}",
             report.failure
         );
     }

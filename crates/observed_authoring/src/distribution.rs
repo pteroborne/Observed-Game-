@@ -561,6 +561,7 @@ mod tests {
             deck_path: Vec::new(),
             structural_hash: String::new(),
             legacy_key: None,
+            contract: None,
         };
 
         let samples = samples_from_modules(std::slice::from_ref(&module));

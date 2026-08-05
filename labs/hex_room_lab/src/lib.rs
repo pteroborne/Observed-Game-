@@ -883,6 +883,7 @@ mod tests {
             sockets: Vec::new(),
             hulls: Vec::new(),
             lights: Vec::new(),
+            contract: None,
         }
     }
 

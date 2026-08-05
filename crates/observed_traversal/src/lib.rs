@@ -22,6 +22,7 @@ use player_input::PlayerIntent;
 
 pub mod follower;
 pub mod gantry;
+pub mod graph;
 pub mod guide;
 pub mod plan_hull;
 pub mod profile;
@@ -33,10 +34,16 @@ pub use follower::{
     DeckHandoff, FollowDecision, FollowState, FollowTarget, FollowerConfig, FollowerPose,
     TraversalDirection, follow_stateless,
 };
+pub use graph::{
+    GraphFollowDecision, GraphFollowState, TraversalCursor, TraversalEdge, TraversalEdgeId,
+    TraversalGuide, TraversalGuideError, TraversalGuideHash, TraversalMode, TraversalNode,
+    TraversalNodeId,
+};
 pub use guide::{DeckPath, STAIR_SPINE_MIN_SEPARATION, StairSpine};
 pub use plan_hull::{plan_convex_hull, point_in_convex_plan_hull, segment_crosses_convex_hull};
 pub use profile::{
-    TRAVERSAL_GUIDE_CONTRACT_VERSION, TraversalRequirements, TraversalRuntimeProfile,
+    RapierKinematicSettings, TRAVERSAL_GUIDE_CONTRACT_VERSION, TraversalRequirements,
+    TraversalRuntimeProfile,
 };
 pub use render_mesh::ConvexRenderMesh;
 pub use world::{
@@ -251,6 +258,10 @@ impl FpsBody {
 pub struct FpsStep {
     pub jumped: bool,
     pub landed: bool,
+    /// The controller restored the body's configured spawn after it crossed
+    /// the scene safety boundary. Certification treats this as failure rather
+    /// than mistaking the reset for traversal progress.
+    pub recovered: bool,
 }
 
 /// Advance the body one fixed step from an intent. Pure and deterministic.
@@ -323,6 +334,7 @@ pub fn step_body(
     {
         let (spawn, yaw) = (body.spawn, body.spawn_yaw);
         *body = FpsBody::spawned(spawn, yaw);
+        report.recovered = true;
     }
 
     report

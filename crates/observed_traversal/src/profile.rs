@@ -9,7 +9,7 @@ use crate::{FollowerConfig, FpsConfig};
 /// interpretation changes, not merely when authored nodes change.
 pub const TRAVERSAL_GUIDE_CONTRACT_VERSION: u16 = 1;
 
-const PROFILE_HASH_VERSION: u16 = 1;
+const PROFILE_HASH_VERSION: u16 = 2;
 const PROFILE_HASH_DOMAIN: &[u8] = b"observed2.traversal-runtime-profile";
 
 /// Physical clearance requirements derived from the controller body.
@@ -26,21 +26,57 @@ pub struct TraversalRequirements {
     pub controller_offset: f32,
     pub minimum_step_width: f32,
     pub maximum_slope_degrees: f32,
+    pub minimum_slope_slide_degrees: f32,
     pub ground_snap: f32,
 }
 
 impl From<&FpsConfig> for TraversalRequirements {
     fn from(config: &FpsConfig) -> Self {
+        Self::from_runtime(config, RapierKinematicSettings::shipped(config))
+    }
+}
+
+impl TraversalRequirements {
+    fn from_runtime(config: &FpsConfig, rapier: RapierKinematicSettings) -> Self {
         Self {
             capsule_radius: config.radius,
             capsule_half_height: config.half_height,
             required_headroom: config.half_height * 2.0,
             eye_height: config.eye_height,
             step_height: config.step_height,
-            controller_offset: config.controller_offset,
-            minimum_step_width: config.minimum_step_width,
-            maximum_slope_degrees: config.maximum_slope_degrees,
-            ground_snap: config.ground_snap,
+            controller_offset: rapier.controller_offset,
+            minimum_step_width: rapier.minimum_step_width,
+            maximum_slope_degrees: rapier.maximum_slope_degrees,
+            minimum_slope_slide_degrees: rapier.minimum_slope_slide_degrees,
+            ground_snap: rapier.ground_snap,
+        }
+    }
+}
+
+/// Effective Rapier character-controller values shipped by the game.
+///
+/// These values were historically literals inside `step_character`, while
+/// similarly named compatibility DTO fields carried different numbers. Making
+/// the effective values explicit lets profile hashes and certificates identify
+/// the physics that actually ran without changing that physics.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RapierKinematicSettings {
+    pub controller_offset: f32,
+    pub minimum_step_width: f32,
+    pub maximum_slope_degrees: f32,
+    pub minimum_slope_slide_degrees: f32,
+    pub ground_snap: f32,
+}
+
+impl RapierKinematicSettings {
+    #[must_use]
+    pub fn shipped(config: &FpsConfig) -> Self {
+        Self {
+            controller_offset: 0.01,
+            minimum_step_width: config.radius * 1.25,
+            maximum_slope_degrees: 50.0,
+            minimum_slope_slide_degrees: 52.0,
+            ground_snap: 0.08,
         }
     }
 }
@@ -52,6 +88,7 @@ impl From<&FpsConfig> for TraversalRequirements {
 #[derive(Clone, Debug, PartialEq)]
 pub struct TraversalRuntimeProfile {
     controller: FpsConfig,
+    rapier: RapierKinematicSettings,
     follower: FollowerConfig,
     requirements: TraversalRequirements,
     guide_contract_version: u16,
@@ -91,10 +128,23 @@ impl TraversalRuntimeProfile {
         follower: FollowerConfig,
         guide_contract_version: u16,
     ) -> Self {
-        let requirements = TraversalRequirements::from(&controller);
-        let profile_hash = canonical_profile_hash(controller, follower, guide_contract_version);
+        let rapier = RapierKinematicSettings::shipped(&controller);
+        Self::new_with_rapier(controller, rapier, follower, guide_contract_version)
+    }
+
+    #[must_use]
+    pub fn new_with_rapier(
+        controller: FpsConfig,
+        rapier: RapierKinematicSettings,
+        follower: FollowerConfig,
+        guide_contract_version: u16,
+    ) -> Self {
+        let requirements = TraversalRequirements::from_runtime(&controller, rapier);
+        let profile_hash =
+            canonical_profile_hash(controller, rapier, follower, guide_contract_version);
         Self {
             controller,
+            rapier,
             follower,
             requirements,
             guide_contract_version,
@@ -105,6 +155,11 @@ impl TraversalRuntimeProfile {
     #[must_use]
     pub fn controller(&self) -> FpsConfig {
         self.controller
+    }
+
+    #[must_use]
+    pub fn rapier(&self) -> RapierKinematicSettings {
+        self.rapier
     }
 
     #[must_use]
@@ -133,6 +188,7 @@ impl TraversalRuntimeProfile {
 
 fn canonical_profile_hash(
     controller: FpsConfig,
+    rapier: RapierKinematicSettings,
     follower: FollowerConfig,
     guide_contract_version: u16,
 ) -> [u8; 32] {
@@ -163,6 +219,11 @@ fn canonical_profile_hash(
         follower.max_turn_per_tick,
         follower.climb_capture_radius,
         follower.movement_scale,
+        rapier.controller_offset,
+        rapier.minimum_step_width,
+        rapier.maximum_slope_degrees,
+        rapier.minimum_slope_slide_degrees,
+        rapier.ground_snap,
     ] {
         hash.update(value.to_bits().to_le_bytes());
     }
@@ -181,6 +242,10 @@ mod tests {
         controller.look_step = 1.0;
 
         assert_eq!(profile.controller(), controller);
+        assert_eq!(
+            profile.rapier(),
+            RapierKinematicSettings::shipped(&controller)
+        );
         assert_eq!(profile.follower(), FollowerConfig::default());
         assert_eq!(
             profile.requirements(),
@@ -198,7 +263,7 @@ mod tests {
             .collect::<String>();
         assert_eq!(
             hash,
-            "15ee7875d369fefc3db8e2286eeecf4efa0b0f603ce82b74f1a8396d188395f0"
+            "29e48ecf1d206cd58a23a5f6e4db63ddff55aa2e99820f1425e8b1ce0d8415e6"
         );
     }
 
@@ -206,6 +271,7 @@ mod tests {
     fn canonical_hash_covers_every_controller_and_follower_field() {
         let base = TraversalRuntimeProfile::canonical_hex();
         let controller = base.controller();
+        let rapier = base.rapier();
         let follower = base.follower();
         let expected = base.profile_hash();
 
@@ -253,6 +319,29 @@ mod tests {
         changed_controller_field!(minimum_step_width);
         changed_controller_field!(maximum_slope_degrees);
         changed_controller_field!(ground_snap);
+
+        macro_rules! changed_rapier_field {
+            ($field:ident) => {{
+                let mut changed = rapier;
+                changed.$field = f32::from_bits(changed.$field.to_bits().wrapping_add(1));
+                assert_ne!(
+                    canonical_profile_hash(
+                        controller,
+                        changed,
+                        follower,
+                        TRAVERSAL_GUIDE_CONTRACT_VERSION
+                    ),
+                    expected,
+                    "effective Rapier field `{}` must participate in the hash",
+                    stringify!($field)
+                );
+            }};
+        }
+        changed_rapier_field!(controller_offset);
+        changed_rapier_field!(minimum_step_width);
+        changed_rapier_field!(maximum_slope_degrees);
+        changed_rapier_field!(minimum_slope_slide_degrees);
+        changed_rapier_field!(ground_snap);
 
         macro_rules! changed_follower_field {
             ($field:ident) => {{
