@@ -1,7 +1,7 @@
 use glam::{Vec2, Vec3};
 use observed_hex::{HexFace, PortClass, PortSignature, TILE_LEVEL_HEIGHT, face_edge};
 use observed_traversal::rapier_controller::{RapierTraversalScene, step_character};
-use observed_traversal::{FpsBody, FpsConfig};
+use observed_traversal::{ArenaSpec, FpsBody, FpsConfig};
 use player_input::PlayerIntent;
 
 use crate::CompiledTileCatalog;
@@ -608,6 +608,304 @@ fn walk_from_as_the_bot_does(map: &str, start_feet: Vec3) -> Walk {
         highest,
         ended,
     }
+}
+
+/// Climb a **stack** of two towers, the way a shaft column actually stands.
+///
+/// A tower is never placed alone. `tile_for` pins a column's register precisely
+/// because towers sit on top of each other, and the solve that stalls the
+/// spectator routes a body up three of them. Every harness above builds a
+/// single-tile arena, so nothing has ever asked what the tile above does to the
+/// climb below it - and a tower's envelope is two levels tall while it occupies
+/// one, so in a column each tower's upper half is inside its neighbour.
+///
+/// `lower` is walked from its own foot; the return is measured against the
+/// lower tower's climb alone, so a body that finishes has left the lower cell.
+fn climb_a_stacked_column(lower: &str, upper: &str) -> Walk {
+    climb_a_stacked_column_turned(lower, upper, 0)
+}
+
+/// The same stack, with the upper tower rotated `turn` sixths.
+///
+/// Rotation is not decoration here. Doors are authored as orbit
+/// representatives and the compiler turns them through six positions to reach
+/// every arrangement - which turns the **climb** with them, because the climb
+/// is in the same brushes. `tile_for` pins a column's register but takes the
+/// variation key per cell, so nothing stops one cell of a shaft drawing turn 1
+/// and the next drawing turn 4, with their climbs pointing different ways.
+fn climb_a_stacked_column_turned(lower: &str, upper: &str, turn: u8) -> Walk {
+    let below = crate::parse_authored_module(lower)
+        .expect("lower module parses")
+        .prototype;
+    let above = crate::parse_authored_module(upper)
+        .expect("upper module parses")
+        .prototype;
+
+    // One arena holding both tiles, the upper one raised by a level. The ids
+    // must not collide or the second set silently replaces the first.
+    let lift = Vec3::Y * TILE_LEVEL_HEIGHT;
+    let mut colliders = below.collider_specs(0, Vec3::ZERO);
+    #[allow(clippy::cast_possible_truncation)]
+    let next = colliders.len() as u32;
+    // The same rotation the compiler applies, so a turned tile here is a tile
+    // the catalog can really produce.
+    let spin = glam::Quat::from_rotation_y(-f32::from(turn) * std::f32::consts::TAU / 6.0);
+    colliders.extend(above.collider_specs_with_transform(next, lift, spin));
+    let height = TILE_LEVEL_HEIGHT * 3.0;
+    let arena = ArenaSpec {
+        colliders,
+        floor_y: 0.0,
+        safety_center: Vec3::new(0.0, height * 0.5, 0.0),
+        safety_half: Vec3::new(24.0, height + 12.0, 24.0),
+    };
+    let scene = RapierTraversalScene::from_arena_spec(&arena);
+    let config = FpsConfig::default();
+
+    let spine = below.spine.clone();
+    let deck = below.deck.clone();
+    let nodes = &spine.nodes;
+    let floor = nodes[0].y;
+    let wanted = nodes[nodes.len() - 1].y - floor;
+
+    let start_feet = nodes[0];
+    let mut body = FpsBody::spawned(start_feet + Vec3::Y * config.half_height, 0.0);
+    let mut max_feet = floor;
+    let mut highest = start_feet;
+    let mut ended = start_feet;
+
+    const CAPTURE: f32 = 1.6;
+    for _ in 0..6_000 {
+        let feet = body.position - Vec3::Y * config.half_height;
+        let off = spine
+            .distance(feet)
+            .is_some_and(|distance| distance > CAPTURE);
+        let target = if off && !deck.is_empty() {
+            deck.step_toward(feet, nodes[0])
+                .or_else(|| spine.target(feet, true))
+        } else {
+            spine.target(feet, true)
+        };
+        let Some(target) = target else { break };
+        let to = target - feet;
+        body.yaw = to.x.atan2(-to.z);
+        let intent = PlayerIntent {
+            movement: Vec2::new(0.0, 1.0),
+            ..PlayerIntent::default()
+        };
+        step_character(&scene, &mut body, intent, &config, 1.0 / 60.0);
+        ended = body.position - Vec3::Y * config.half_height;
+        if ended.y > max_feet {
+            max_feet = ended.y;
+            highest = ended;
+        }
+    }
+    Walk {
+        rise: max_feet - floor,
+        wanted,
+        highest,
+        ended,
+    }
+}
+
+/// A tower must still climb with another tower standing on it.
+///
+/// The spectator gate stalls a body at 6.19 m of an 8 m climb in a `Bottom`
+/// tower with two doors, and every single-tile harness passes that same tower
+/// from all six faces. The difference between the two is the tile overhead, so
+/// this is where the difference gets measured.
+#[test]
+fn a_tower_climbs_with_another_standing_on_it() {
+    let towers = crate::forge::tower::builders();
+    let mut failures = Vec::new();
+    let mut walked = 0;
+    for (lower_stem, lower) in &towers {
+        // Only a tower that opens upward has a neighbour above it.
+        if !lower.contains("\"name\" \"up_shaft\"") {
+            continue;
+        }
+        for (upper_stem, upper) in &towers {
+            // And only one that opens downward can stand on it.
+            if !upper.contains("\"name\" \"down_shaft\"") {
+                continue;
+            }
+            walked += 1;
+            let walk = climb_a_stacked_column(lower, upper);
+            if !walk.finished() {
+                failures.push(format!(
+                    "  {lower_stem} under {upper_stem}: rose {:.2} m of {:.2} m, stopped at {:?}",
+                    walk.rise,
+                    walk.wanted,
+                    walk.gave_up()
+                ));
+            }
+        }
+    }
+    assert!(walked >= 9, "expected stacked pairs, walked {walked}");
+    assert!(
+        failures.is_empty(),
+        "{} of {walked} stacked columns cannot be climbed:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
+/// A body that has finished the climb must be able to **leave** by any door
+/// the tower carries.
+///
+/// The mirror of `a_tower_climbs_from_every_face_a_door_could_be_on`, and the
+/// half that outlasted it. With the climbing fixed, the spectator gate stalled
+/// at the *head* of the shaft: a body standing on the level-3 floor of a capped
+/// tower, three levels climbed, unable to get out. `Bot::stair_lateral_command`
+/// crosses a tower by `DeckPath::step_toward(feet, door)`, so the deck has to
+/// lead from where the climb leaves a body to each of its doors - which is a
+/// different question from leading a body inward to the foot, and was never
+/// asked.
+///
+/// The body starts where the tower below sets it down: the plan position the
+/// climb ends at, on this tile's floor.
+#[test]
+fn a_tower_can_be_left_by_every_door_it_carries() {
+    // A plain through tower underneath, so the hole this one's floor leaves for
+    // an arriving climb is filled by the climb that is supposed to be in it.
+    let carrier = crate::forge::tower::builders()
+        .into_iter()
+        .find(|(stem, _)| stem == "stair_tower_helix_solid")
+        .expect("the doorless through tower")
+        .1;
+    let below = crate::parse_authored_module(&carrier)
+        .expect("the carrier validates")
+        .prototype;
+
+    let mut failures = Vec::new();
+    let mut walked = 0;
+    for (stem, text) in crate::forge::tower::builders() {
+        let tile = crate::parse_authored_module(&text)
+            .unwrap_or_else(|error| panic!("{stem} does not validate: {error:?}"))
+            .prototype;
+        let doors: Vec<HexFace> = HexFace::LATERAL
+            .into_iter()
+            .filter(|&face| tile.signature.port(face) == PortClass::Door)
+            .collect();
+        if doors.is_empty() {
+            continue;
+        }
+
+        let lift = Vec3::Y * TILE_LEVEL_HEIGHT;
+        let mut colliders = below.collider_specs(0, Vec3::ZERO);
+        #[allow(clippy::cast_possible_truncation)]
+        let next = colliders.len() as u32;
+        colliders.extend(tile.collider_specs(next, lift));
+        let height = TILE_LEVEL_HEIGHT * 3.0;
+        let scene = RapierTraversalScene::from_arena_spec(&ArenaSpec {
+            colliders,
+            floor_y: 0.0,
+            safety_center: Vec3::new(0.0, height * 0.5, 0.0),
+            safety_half: Vec3::new(24.0, height + 12.0, 24.0),
+        });
+        let config = FpsConfig::default();
+
+        // Where the tower below sets a body down: the plan position its climb
+        // ends at, on this tile's floor.
+        let top = *tile.spine.nodes.last().expect("a tower ships a spine");
+        let arrival = Vec3::new(top.x, tile.spine.nodes[0].y, top.z) + lift;
+
+        for door in doors {
+            walked += 1;
+            let [a, b] = face_edge(door);
+            let plan = Vec2::new((a.0 + b.0) as f32 * 0.5, (a.1 + b.1) as f32 * 0.5);
+            let target = Vec3::new(plan.x, arrival.y, plan.y);
+            let outward = plan.normalize();
+
+            // Driven, not hopped. `step_toward` hands back the leg's far end,
+            // and a body standing *exactly* on a node ties `locate` back to the
+            // leg it has just finished - so stepping node to node stalls on the
+            // tie where a body walking through it does not. Only simulating
+            // tells those apart; the first version of this test could not, and
+            // reported 18 failures that were its own.
+            let mut body = FpsBody::spawned(arrival + Vec3::Y * config.half_height, 0.0);
+            let mut reached = false;
+            for _ in 0..3_000 {
+                let feet = body.position - Vec3::Y * config.half_height;
+                // At the aperture the bot stops consulting this deck.
+                if Vec2::new(feet.x, feet.z).dot(outward) >= plan.length() - 0.6 {
+                    reached = true;
+                    break;
+                }
+                let Some(step) = tile.deck.step_toward(feet, target) else {
+                    break;
+                };
+                let to = step - feet;
+                body.yaw = to.x.atan2(-to.z);
+                step_character(
+                    &scene,
+                    &mut body,
+                    PlayerIntent {
+                        movement: Vec2::new(0.0, 1.0),
+                        ..PlayerIntent::default()
+                    },
+                    &config,
+                    1.0 / 60.0,
+                );
+            }
+            if !reached {
+                let feet = body.position - Vec3::Y * config.half_height;
+                failures.push(format!("  {stem} to {door:?}: gave up at {feet:?}"));
+            }
+        }
+    }
+    assert!(walked >= 60, "expected doors to leave by, tried {walked}");
+    assert!(
+        failures.is_empty(),
+        "{} of {walked} exits are not reachable across the deck:
+{}",
+        failures.len(),
+        failures.join(
+            "
+"
+        )
+    );
+}
+
+/// **No tower may be rotated**, and the reason is measured here rather than
+/// asserted.
+///
+/// Authoring one door orbit and letting the compiler turn it into the rest is
+/// the obvious economy, and it is what the replacement first did. It cannot
+/// work: the doors and the flight are the same brushes, so the turn takes the
+/// *climb* with it. `tile_for` pins a column's register but takes the variation
+/// key per cell, so one cell of a shaft can draw turn 1 and the next turn 4 -
+/// and then the lower flight tops out under the upper cell's solid deck, word
+/// for word the failure `tile_for`'s own comment warns about. What that comment
+/// gets wrong is assuming the register is enough to prevent it.
+///
+/// So this asserts the prohibition, and then earns it: it stacks a tower under
+/// a **hand-rotated** copy of itself, which is what the catalog would have
+/// produced, and reports how many turns stop the climb. If a future change made
+/// the climb rotation-proof, the second half would fall silent and the first
+/// half would be safe to relax - and until then, "we chose not to rotate" is a
+/// claim with a number behind it.
+#[test]
+fn no_tower_is_ever_turned_and_here_is_why() {
+    for (stem, text) in crate::forge::tower::builders() {
+        assert!(
+            text.contains("\"rotation_policy\" \"none\""),
+            "{stem} is rotatable, and a turned tower is a different climb"
+        );
+    }
+
+    let towers = crate::forge::tower::builders();
+    let (_, lower) = towers
+        .iter()
+        .find(|(stem, _)| stem == "stair_tower_helix_solid")
+        .expect("the doorless through tower");
+    let defeated = (1..6u8)
+        .filter(|&turn| !climb_a_stacked_column_turned(lower, lower, turn).finished())
+        .count();
+    assert!(
+        defeated > 0,
+        "rotation no longer breaks a stacked climb, so the prohibition above is \
+         costing 66 authored sources for nothing - re-price it"
+    );
 }
 
 /// Every authored climb must be walkable by the production controller when it

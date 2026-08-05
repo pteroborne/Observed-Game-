@@ -37,8 +37,7 @@ use super::entities::{
     Meta, deck_node, lateral_port, tile_cell, vertical_port, wall_fixture, worldspawn,
 };
 use super::geometry::{DOOR_TOP, FLOOR_TOP, LEVEL, corners, door_wall, hex_slab, wall};
-use super::liminal::hex_opening_slab;
-use super::perimeter::{Extent, flight, landing, spine};
+use super::perimeter::{Extent, landing, pierced_floor, spine, thin_flight};
 
 /// How far the climb sweeps. Fixed, and that is the point.
 ///
@@ -75,13 +74,25 @@ const OUTER_SCALE: f64 = 0.75;
 /// once it has been.
 const WEIGHT: u32 = 6;
 
-/// The door patterns, one per orbit under sixfold rotation.
+/// Every door pattern a tower can be asked for: none, each single face, and
+/// each unordered pair. 1 + 6 + 15 = 22, and 22 times three connectivities is
+/// the 66-signature demand the generated family enumerated by hand.
 ///
-/// Rotating these through six turns reaches every arrangement of up to two
-/// doors the solver asks for: none; one; and two doors adjacent, one apart, or
-/// opposite. Five orbits times three connectivities is the whole 66-signature
-/// demand, not a sample of it.
-const DOOR_ORBITS: [&[usize]; 5] = [&[], &[0], &[0, 1], &[0, 2], &[0, 3]];
+/// Enumerated rather than turned. See the `rotation_policy` in [`stair_tower`]
+/// for why the compiler's sixfold expansion cannot stand in for this.
+#[must_use]
+fn door_patterns() -> Vec<Vec<usize>> {
+    let mut out = vec![Vec::new()];
+    for face in 0..6 {
+        out.push(vec![face]);
+    }
+    for first in 0..6 {
+        for second in (first + 1)..6 {
+            out.push(vec![first, second]);
+        }
+    }
+    out
+}
 
 /// First variant slot. Nothing shares this archetype now, but keeping the
 /// authored family off 0..62 keeps a `TileKey` in a diagnostic unambiguous
@@ -91,15 +102,15 @@ const FIRST_VARIANT: i32 = 11;
 /// One authored tower: a connectivity and a door pattern.
 ///
 /// The climb is in neither field, which is the design. See [`OUTER_SCALE`].
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Tower {
     pub vertical: Vertical,
-    pub doors: &'static [usize],
+    pub doors: Vec<usize>,
 }
 
 impl Tower {
     #[must_use]
-    fn stem(self) -> String {
+    fn stem(&self) -> String {
         let doors = if self.doors.is_empty() {
             String::from("solid")
         } else {
@@ -113,13 +124,16 @@ impl Tower {
     }
 }
 
-/// Every tower: each connectivity in each door orbit.
+/// Every tower: each connectivity in each door pattern.
 #[must_use]
 pub fn towers() -> Vec<Tower> {
     let mut out = Vec::new();
-    for doors in DOOR_ORBITS {
+    for doors in door_patterns() {
         for vertical in verticals() {
-            out.push(Tower { vertical, doors });
+            out.push(Tower {
+                vertical,
+                doors: doors.clone(),
+            });
         }
     }
     out
@@ -168,7 +182,7 @@ pub fn verticals() -> [Vertical; 3] {
 
 /// One helical stair tower.
 #[must_use]
-pub fn stair_tower(tower: Tower, variant: i32) -> String {
+pub fn stair_tower(tower: &Tower, variant: i32) -> String {
     let vertical = tower.vertical;
     let extent = Extent {
         faces: SWEEP,
@@ -183,14 +197,14 @@ pub fn stair_tower(tower: Tower, variant: i32) -> String {
     // flight below arrives through") - and solid where the shaft bottoms out.
     if vertical.open_below() {
         brushes.push_str("// Aperture floor: the flight below arrives through it\n");
-        brushes.push_str(&hex_opening_slab(0.0, FLOOR_TOP));
+        brushes.push_str(&pierced_floor(extent, 0.0, FLOOR_TOP));
     } else {
         brushes.push_str("// Solid floor: the shaft bottoms out here\n");
         brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 2.0, 0.0));
     }
 
     brushes.push_str("// Helical flight, 240 degrees, two triangles per face\n");
-    brushes.push_str(&flight(extent));
+    brushes.push_str(&thin_flight(extent));
     brushes.push_str("// Landing at the head of the climb\n");
     brushes.push_str(&landing(extent));
 
@@ -240,15 +254,30 @@ pub fn stair_tower(tower: Tower, variant: i32) -> String {
             2,
             WEIGHT,
         )
-        .with_register_scope("all");
-        // A door has to be able to face any way, so a tower carrying one is
-        // authored once and turned. A bare column has no feature to orient.
-        if tower.doors.is_empty() {
-            meta.with_rotation_policy("none")
-        } else {
-            meta.with_rotation_policy("sixfold")
-        }
-        .emit()
+        .with_register_scope("all")
+        // **Never turned**, and this is the load-bearing decision in the
+        // whole family.
+        //
+        // Authoring one door orbit and letting the compiler turn it into
+        // the other five is the obvious economy, and it cannot work here,
+        // because the rotation takes the *climb* with it - the doors and
+        // the flight are the same brushes. `tile_for` pins a column's
+        // register but takes the variation key per cell, so nothing stops
+        // one cell of a shaft drawing turn 1 and the next turn 4, and then
+        // the lower flight tops out under the upper cell's solid deck.
+        // That is word for word the failure `tile_for`'s own comment
+        // warns about; what the comment gets wrong is assuming the
+        // register is enough to prevent it.
+        //
+        // Measured, with the orbits turned: 4 of 6 rotations of the tile
+        // above stop the climb below at 6.19 m of 8, and one seed of the
+        // spectator sweep stalled on `variant 127` - base 21, **turn 1**.
+        //
+        // So every door pattern is authored outright and the climb faces
+        // one way everywhere. It costs 66 sources instead of 15, which is
+        // the price of the invariant rather than a failure to be clever.
+        .with_rotation_policy("none");
+        meta.emit()
     });
     // "open": the walk surface is a helix round the rim, not a floor over the
     // centre, and the centre is a shaft. The same declaration silo_ring makes.
@@ -272,7 +301,7 @@ pub fn stair_tower(tower: Tower, variant: i32) -> String {
     if vertical.open_below() {
         out.push_str(&vertical_port("down", "shaft_open", "down_shaft", 0));
     }
-    for &face in tower.doors {
+    for &face in &tower.doors {
         out.push_str(&lateral_port(
             face,
             "door",
@@ -349,7 +378,7 @@ pub fn builders() -> Vec<(String, String)> {
         .map(|(index, tower)| {
             #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
             let variant = FIRST_VARIANT + index as i32;
-            (tower.stem(), stair_tower(tower, variant))
+            (tower.stem(), stair_tower(&tower, variant))
         })
         .collect()
 }
@@ -364,9 +393,9 @@ mod tests {
     fn each_vertical_declares_the_ports_its_connectivity_implies() {
         for vertical in verticals() {
             let text = stair_tower(
-                Tower {
+                &Tower {
                     vertical,
-                    doors: &[],
+                    doors: Vec::new(),
                 },
                 FIRST_VARIANT,
             );
@@ -397,9 +426,9 @@ mod tests {
     #[test]
     fn a_tower_that_climbs_out_is_not_capped() {
         let through = stair_tower(
-            Tower {
+            &Tower {
                 vertical: Vertical::Through,
-                doors: &[],
+                doors: Vec::new(),
             },
             FIRST_VARIANT,
         );
@@ -408,9 +437,9 @@ mod tests {
             "a through tower must stay open"
         );
         let top = stair_tower(
-            Tower {
+            &Tower {
                 vertical: Vertical::Top,
-                doors: &[],
+                doors: Vec::new(),
             },
             FIRST_VARIANT,
         );
@@ -422,9 +451,9 @@ mod tests {
     fn the_floor_opens_only_where_a_flight_arrives() {
         assert!(
             stair_tower(
-                Tower {
+                &Tower {
                     vertical: Vertical::Bottom,
-                    doors: &[]
+                    doors: Vec::new()
                 },
                 FIRST_VARIANT
             )
@@ -432,9 +461,9 @@ mod tests {
         );
         assert!(
             stair_tower(
-                Tower {
+                &Tower {
                     vertical: Vertical::Through,
-                    doors: &[]
+                    doors: Vec::new()
                 },
                 FIRST_VARIANT
             )
@@ -442,9 +471,9 @@ mod tests {
         );
         assert!(
             stair_tower(
-                Tower {
+                &Tower {
                     vertical: Vertical::Top,
-                    doors: &[]
+                    doors: Vec::new()
                 },
                 FIRST_VARIANT
             )
@@ -458,9 +487,9 @@ mod tests {
     fn every_tower_carries_a_spine() {
         for vertical in verticals() {
             let nodes = stair_tower(
-                Tower {
+                &Tower {
                     vertical,
-                    doors: &[],
+                    doors: Vec::new(),
                 },
                 FIRST_VARIANT,
             )
@@ -484,9 +513,9 @@ mod tests {
         );
         assert!(
             stair_tower(
-                Tower {
+                &Tower {
                     vertical: Vertical::Through,
-                    doors: &[]
+                    doors: Vec::new()
                 },
                 FIRST_VARIANT
             )
@@ -505,9 +534,9 @@ mod tests {
     fn the_climb_reaches_the_port_it_advertises() {
         for vertical in verticals() {
             let text = stair_tower(
-                Tower {
+                &Tower {
                     vertical,
-                    doors: &[],
+                    doors: Vec::new(),
                 },
                 FIRST_VARIANT,
             );
@@ -519,7 +548,7 @@ mod tests {
                     "{}: {error:?}",
                     Tower {
                         vertical,
-                        doors: &[]
+                        doors: Vec::new()
                     }
                     .stem()
                 )
@@ -550,7 +579,7 @@ mod tests {
                 "{}: climb tops at {:.2} m but its up port puts the deck above at {deck:.2} m",
                 Tower {
                     vertical,
-                    doors: &[]
+                    doors: Vec::new()
                 }
                 .stem(),
                 top.y
@@ -579,9 +608,9 @@ mod tests {
                 continue;
             }
             let module = crate::parse_authored_module(&stair_tower(
-                Tower {
+                &Tower {
                     vertical,
-                    doors: &[],
+                    doors: Vec::new(),
                 },
                 FIRST_VARIANT,
             ))
@@ -590,7 +619,7 @@ mod tests {
                     "{}: {error:?}",
                     Tower {
                         vertical,
-                        doors: &[]
+                        doors: Vec::new()
                     }
                     .stem()
                 )
@@ -609,7 +638,7 @@ mod tests {
                 "{}: climb ends at {:.2} m under a lid at {lid:.2} m, leaving {:.2} m for a                  {body:.2} m body",
                 Tower {
                     vertical,
-                    doors: &[]
+                    doors: Vec::new()
                 }
                 .stem(),
                 top.y,
@@ -632,15 +661,15 @@ mod tests {
             variant: 0,
             outer_scale: OUTER_SCALE,
         };
-        for vertical in verticals() {
-            let module = crate::parse_authored_module(&stair_tower(vertical))
-                .unwrap_or_else(|error| panic!("{}: {error:?}", vertical.stem()));
+        for tower in towers() {
+            let module = crate::parse_authored_module(&stair_tower(&tower, FIRST_VARIANT))
+                .unwrap_or_else(|error| panic!("{}: {error:?}", tower.stem()));
             let deck = &module.prototype.deck.nodes;
             assert_eq!(
                 deck.len(),
                 7,
                 "{}: a ring is six faces and the run in to the foot",
-                vertical.stem()
+                tower.stem()
             );
             // One node per face, classified by which face's sector it stands
             // in - the bearing it points along, not a distance to a position
@@ -668,7 +697,7 @@ mod tests {
                 sectors.len(),
                 6,
                 "{}: the ring misses a face - its nodes lie in sectors {sectors:?}",
-                vertical.stem()
+                tower.stem()
             );
             // And the last node is the spine's first, so the path reaches the
             // climb rather than stopping a ring's width short of it.
@@ -683,7 +712,7 @@ mod tests {
             assert!(
                 last.distance(foot) < 1e-3,
                 "{}: the deck ends at {last:?}, but the climb starts at {foot:?}",
-                vertical.stem()
+                tower.stem()
             );
             // Stated against the source of both, so the two cannot be brought
             // back into agreement by editing one of them to a literal.
@@ -697,7 +726,7 @@ mod tests {
                 (f64::from(foot.x) - fx / 16.0).abs() < 1e-4
                     && (f64::from(foot.z) + fy / 16.0).abs() < 1e-4,
                 "{}: the climb does not start at Extent::foot",
-                vertical.stem()
+                tower.stem()
             );
         }
     }
@@ -723,13 +752,13 @@ mod tests {
             let (x, y) = corners()[0];
             x.hypot(y)
         } / 16.0;
-        for vertical in verticals() {
-            if !vertical.open_below() {
+        for tower in towers() {
+            if !tower.vertical.open_below() {
                 // A solid floor has no hole to clear.
                 continue;
             }
-            let module = crate::parse_authored_module(&stair_tower(vertical))
-                .unwrap_or_else(|error| panic!("{}: {error:?}", vertical.stem()));
+            let module = crate::parse_authored_module(&stair_tower(&tower, FIRST_VARIANT))
+                .unwrap_or_else(|error| panic!("{}: {error:?}", tower.stem()));
             let foot = module
                 .prototype
                 .spine
@@ -742,7 +771,7 @@ mod tests {
                 stood_at - lip >= radius,
                 "{}: the climb is joined {stood_at:.2} m out against a {lip:.2} m aperture, \
                  leaving {:.2} m for a {radius:.2} m body",
-                vertical.stem(),
+                tower.stem(),
                 stood_at - lip
             );
             // And the deck ends there, so the same clearance carries the body
@@ -756,7 +785,7 @@ mod tests {
             assert!(
                 last.distance(foot) < 1e-3,
                 "{}: the deck no longer ends at the foot",
-                vertical.stem()
+                tower.stem()
             );
         }
     }
