@@ -13,8 +13,8 @@ use observed_content::ArchitectureRegister;
 use observed_core::{PlayerId, TeamId};
 use observed_facility::hex_wfc::HexWfcConfig;
 use observed_match::hex_wfc::{
-    HEX_INPUT_VERSION, HexInputFrame, HexMatchConfig, HexMatchContent, HexMatchStatus,
-    HexPlayerCommand, HexWfcMatch,
+    HEX_INPUT_VERSION, HexBotDriver, HexInputFrame, HexMatchConfig, HexMatchContent,
+    HexMatchStatus, HexPlayerCommand, HexWfcMatch,
 };
 use observed_net::lan::{
     LanPacket, LobbyAction, MAX_DATAGRAM, WireFrame, WireHexCommand, WirePhase, WireSeat,
@@ -172,6 +172,7 @@ pub struct AuthoritativeServer {
     clients: BTreeMap<u64, ClientConnection>,
     inputs: BTreeMap<(PlayerId, u64), WireHexCommand>,
     match_state: Option<HexWfcMatch>,
+    bot_driver: HexBotDriver,
     launch_config: Option<HexMatchConfig>,
     launch_started: Option<u32>,
     frames: Vec<WireFrame>,
@@ -224,6 +225,7 @@ impl AuthoritativeServer {
             clients: BTreeMap::new(),
             inputs: BTreeMap::new(),
             match_state: None,
+            bot_driver: HexBotDriver::new(),
             launch_config: None,
             launch_started: None,
             frames: Vec::new(),
@@ -518,6 +520,7 @@ impl AuthoritativeServer {
             .ok_or("no solvable nearby server seed")?;
         self.config.base_seed = selected_seed.wrapping_sub(u64::from(self.session.match_number));
         self.match_state = Some(game);
+        self.bot_driver.reset();
         self.launch_config = Some(config);
         self.launch_started = None;
         self.frames.clear();
@@ -587,11 +590,12 @@ impl AuthoritativeServer {
         let mut commands = BTreeMap::new();
         for seat in &self.session.seats {
             let command = if human_controls[seat.player.index()] {
+                self.bot_driver.clear_player(seat.player);
                 self.inputs
                     .remove(&(seat.player, tick))
                     .map_or_else(HexPlayerCommand::default, WireHexCommand::to_command)
             } else {
-                game.bot_player_command(seat.player)
+                self.bot_driver.command(game, seat.player)
             };
             wire[seat.player.index()] = WireHexCommand::from_command(command);
             commands.insert(seat.player, command);

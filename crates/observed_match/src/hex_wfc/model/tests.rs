@@ -49,9 +49,13 @@ fn showcase_match(seed: u64, levels: u8, players: u8) -> HexWfcMatch {
     .expect("showcase match")
 }
 
-fn bot_player_command(game: &HexWfcMatch, id: PlayerId) -> HexPlayerCommand {
+fn bot_player_command(
+    driver: &mut HexBotDriver,
+    game: &HexWfcMatch,
+    id: PlayerId,
+) -> HexPlayerCommand {
     HexPlayerCommand {
-        intent: game.bot_command(id),
+        intent: driver.command(game, id).intent,
         actions: HexActionButtons::default(),
     }
 }
@@ -89,22 +93,25 @@ fn match_retains_the_shared_immutable_content_value() {
 #[test]
 fn complete_bot_commands_reuse_routes_until_the_facility_changes() {
     let mut game = showcase_match(44, 3, 1);
+    let mut driver = HexBotDriver::new();
     let player = PlayerId(0);
 
-    let _ = game.bot_player_command(player);
-    let cached = game.bot_routes.clone();
-    assert_eq!(cached.len(), 1, "the first command resolves one route");
+    let _ = driver.command(&game, player);
+    assert!(driver.has_cached_route(player));
+    let cached_generation = driver.cached_route_generation(player);
 
-    let _ = game.bot_player_command(player);
+    let _ = driver.command(&game, player);
     assert_eq!(
-        game.bot_routes, cached,
+        driver.cached_route_generation(player),
+        cached_generation,
         "an unchanged cell, objective, and generation reuse the route"
     );
 
     game.facility.generation = game.facility.generation.wrapping_add(1);
-    let _ = game.bot_player_command(player);
-    assert_ne!(
-        game.bot_routes, cached,
+    let _ = driver.command(&game, player);
+    assert_eq!(
+        driver.cached_route_generation(player),
+        Some(game.facility.generation),
         "a relayout generation invalidates the derived route"
     );
 }
@@ -322,13 +329,14 @@ fn route_vertical_profile(world: &HexWfcWorld) -> (u32, u32) {
 }
 
 fn run_bot_to_exit(game: &mut HexWfcMatch, max_ticks: u64) -> Option<u64> {
+    let mut driver = HexBotDriver::new();
     for tick in 0..max_ticks {
         let commands = game
             .players
             .keys()
             .copied()
             .filter(|id| !game.players[id].escaped)
-            .map(|id| (id, bot_player_command(game, id)))
+            .map(|id| (id, bot_player_command(&mut driver, game, id)))
             .collect();
         game.step(&HexInputFrame {
             version: HEX_INPUT_VERSION,
@@ -362,13 +370,14 @@ fn scan_mutation_seeds() {
         let mut warned = None;
         let mut committed = None;
         let mut cancelled = 0u32;
+        let mut driver = HexBotDriver::new();
         for tick in 0..2_400u64 {
             let commands = game
                 .players
                 .keys()
                 .copied()
                 .filter(|id| !game.players[id].escaped)
-                .map(|id| (id, bot_player_command(&game, id)))
+                .map(|id| (id, bot_player_command(&mut driver, &game, id)))
                 .collect();
             let events = game
                 .step(&HexInputFrame {
@@ -470,6 +479,7 @@ fn diagnose_bot() {
         pin_guardian_for_path_soak(&mut game);
     }
     let mut last_cell = game.players[&focus].cell;
+    let mut driver = HexBotDriver::new();
     for tick in 0..max_ticks {
         let cmd = game.bot_command(focus);
         let commands = game
@@ -477,7 +487,7 @@ fn diagnose_bot() {
             .keys()
             .copied()
             .filter(|id| !game.players[id].escaped)
-            .map(|id| (id, bot_player_command(&game, id)))
+            .map(|id| (id, bot_player_command(&mut driver, &game, id)))
             .collect();
         game.step(&HexInputFrame {
             version: HEX_INPUT_VERSION,
@@ -641,6 +651,7 @@ fn perimeter_tower_local_intent_and_body_trace_is_pinned() {
     let mut traced_ticks = 0u64;
     let mut completion = None;
     let id = PlayerId(0);
+    let mut driver = HexBotDriver::new();
     let half_height = game
         .content()
         .traversal_profile()
@@ -655,7 +666,7 @@ fn perimeter_tower_local_intent_and_body_trace_is_pinned() {
                     && !spine.has_arrived(feet)
             })
         });
-        let command = game.bot_player_command(id);
+        let command = driver.command(&game, id);
         if let Some(cell) = touching {
             traced_tower.get_or_insert(cell);
             if traced_tower == Some(cell) {
@@ -906,13 +917,14 @@ fn movement_is_deterministic_on_a_scripted_input_sequence() {
 fn ordinary_drops_do_not_trigger_recovery_on_the_gate_route() {
     let mut game = showcase_match(GATE_SEED, GATE_LEVELS, 1);
     let mut recoveries = 0;
+    let mut driver = HexBotDriver::new();
     for tick in 0..40_000u64 {
         let commands = game
             .players
             .keys()
             .copied()
             .filter(|id| !game.players[id].escaped)
-            .map(|id| (id, bot_player_command(&game, id)))
+            .map(|id| (id, bot_player_command(&mut driver, &game, id)))
             .collect();
         let events = game.step(&HexInputFrame {
             version: HEX_INPUT_VERSION,
@@ -954,13 +966,14 @@ fn observed_relayout_commits_mid_match_deterministically() {
         let mut committed = Vec::new();
         let mut generations = Vec::new();
         let mut warned = false;
+        let mut driver = HexBotDriver::new();
         for tick in 0..first_commit + 30 {
             let commands = game
                 .players
                 .keys()
                 .copied()
                 .filter(|id| !game.players[id].escaped)
-                .map(|id| (id, bot_player_command(&game, id)))
+                .map(|id| (id, bot_player_command(&mut driver, &game, id)))
                 .collect();
             let events = game
                 .step(&HexInputFrame {
@@ -1126,13 +1139,14 @@ fn cached_spawn_to_exit_cost_survives_a_committed_relayout() {
     );
 
     let mut generations = 0u32;
+    let mut driver = HexBotDriver::new();
     for tick in 0..2_400u64 {
         let commands = game
             .players
             .keys()
             .copied()
             .filter(|id| !game.players[id].escaped)
-            .map(|id| (id, bot_player_command(&game, id)))
+            .map(|id| (id, bot_player_command(&mut driver, &game, id)))
             .collect();
         let committed = game
             .step(&HexInputFrame {
@@ -1183,6 +1197,7 @@ fn a_sixteen_seat_match_runs_and_seventeen_is_refused() {
     assert_eq!(game.players.len(), 16);
     assert_eq!(usize::from(MAX_ROSTER), 16);
 
+    let mut driver = HexBotDriver::new();
     for tick in 0..240 {
         let commands = game
             .players
@@ -1190,7 +1205,7 @@ fn a_sixteen_seat_match_runs_and_seventeen_is_refused() {
             .copied()
             .collect::<Vec<_>>()
             .into_iter()
-            .map(|id| (id, bot_player_command(&game, id)))
+            .map(|id| (id, bot_player_command(&mut driver, &game, id)))
             .collect();
         game.step(&HexInputFrame {
             version: HEX_INPUT_VERSION,
@@ -1276,16 +1291,18 @@ fn a_match_without_a_guardian_leaves_it_where_it_started() {
     };
     let mut off = build(false);
     let mut on = build(true);
+    let mut off_driver = HexBotDriver::new();
+    let mut on_driver = HexBotDriver::new();
     let start = off.guardian.cell;
     for tick in 0..600 {
-        for game in [&mut off, &mut on] {
+        for (game, driver) in [(&mut off, &mut off_driver), (&mut on, &mut on_driver)] {
             let commands = game
                 .players
                 .keys()
                 .copied()
                 .collect::<Vec<_>>()
                 .into_iter()
-                .map(|id| (id, bot_player_command(game, id)))
+                .map(|id| (id, bot_player_command(driver, game, id)))
                 .collect();
             game.step(&HexInputFrame {
                 version: HEX_INPUT_VERSION,

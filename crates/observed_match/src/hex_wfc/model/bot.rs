@@ -15,21 +15,10 @@ use observed_traversal::{
 use player_input::PlayerIntent;
 
 use super::movement::face_plan_dir;
-use super::objectives::HexObjectiveTarget;
 use super::{FLOOR_SLAB_TOP, HexPlayerCommand, HexWfcMatch};
 
-/// One bot's derived route for the current facility generation and objective.
-///
-/// This is presentation/driver acceleration rather than authoritative state: it is
-/// omitted from snapshots and discarded automatically when either the topology or
-/// objective changes.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::hex_wfc) struct BotRouteCache {
-    generation: u32,
-    target: HexCoord,
-    from: HexCoord,
-    route: Option<HexRoute>,
-}
+mod driver;
+pub use driver::{HexBotDriver, ModuleInstanceId, TraversalCursor, TraversalLease};
 
 /// Most yaw a bot may turn in one 60 Hz tick, in radians.
 ///
@@ -108,57 +97,7 @@ impl HexWfcMatch {
     /// The abstract command the objective bot issues for `id` this tick.
     #[must_use]
     pub fn bot_command(&self, id: PlayerId) -> PlayerIntent {
-        let Some(player) = self.players.get(&id) else {
-            return PlayerIntent::default();
-        };
-        if let Some(target) = self.objective_target(id)
-            && target.cell == player.cell
-            && player.position.distance(target.position) > 0.75
-        {
-            return steer_toward(player.yaw, player.position, target.position);
-        }
-        let (behaviour, route) = self.bot_behaviour_and_route(id);
-        self.command_for_behaviour(id, behaviour, route.as_ref())
-    }
-
-    fn command_for_behaviour(
-        &self,
-        id: PlayerId,
-        behaviour: BotBehaviour,
-        route: Option<&HexRoute>,
-    ) -> PlayerIntent {
-        let Some(player) = self.players.get(&id) else {
-            return PlayerIntent::default();
-        };
-        match behaviour {
-            BotBehaviour::Idle => return PlayerIntent::default(),
-            BotBehaviour::Explore => return self.explore_command(player),
-            BotBehaviour::Seek | BotBehaviour::Recover => {}
-        }
-        let route = route.expect("Seek/Recover imply a route");
-        let Some(index) = route.cells.iter().position(|cell| *cell == player.cell) else {
-            return PlayerIntent::default();
-        };
-        let Some(&next) = route.cells.get(index + 1) else {
-            return PlayerIntent::default();
-        };
-        let base = if next.level != player.cell.level {
-            self.vertical_command(player.cell, player.yaw, player.position, next)
-        } else if let Some(command) =
-            self.finish_stair_command(player.cell, player.yaw, player.position)
-        {
-            command
-        } else if let Some(command) =
-            self.stair_lateral_command(player.cell, next, player.yaw, player.position)
-        {
-            command
-        } else {
-            let target = self
-                .lateral_waypoint(player.cell, next, player.position)
-                .unwrap_or_else(|| Vec3::from_array(hex_origin(next)));
-            steer_toward(player.yaw, player.position, target)
-        };
-        self.apply_unstick(id, base)
+        HexBotDriver::new().command(self, id).intent
     }
 
     /// Fallback when no route to the objective exists.
@@ -227,70 +166,78 @@ impl HexWfcMatch {
         self.objective_target(id).map(|target| target.cell)
     }
 
-    /// Complete abstract command used by local bots and the authoritative
-    /// server. Human and bot inputs cross the same intent/action boundary. The
-    /// selected route is retained while the bot advances through it, so normal
-    /// fixed ticks do no graph search at all; a target change, relayout, or
-    /// off-route recovery performs one fresh search.
+    /// Compatibility adapter for intent-only callers that do not retain a bot
+    /// driver. Production hosts should own a [`HexBotDriver`] beside the match
+    /// so route caches and traversal leases survive between ticks.
     #[must_use]
-    pub fn bot_player_command(&mut self, id: PlayerId) -> HexPlayerCommand {
-        let target = self.objective_target(id);
-        let actions = self.bot_action_buttons_for_target(id, target);
-        let intent = target.map_or_else(PlayerIntent::default, |target| {
-            self.cached_bot_command(id, target)
-        });
-        HexPlayerCommand { intent, actions }
+    pub fn bot_player_command(&self, id: PlayerId) -> HexPlayerCommand {
+        HexBotDriver::new().command(self, id)
     }
 
-    fn cached_bot_command(&mut self, id: PlayerId, target: HexObjectiveTarget) -> PlayerIntent {
-        let Some(player) = self.players.get(&id) else {
-            return PlayerIntent::default();
+    /// Select the stable projected guide for a vertical route transition.
+    fn traversal_lease(
+        &self,
+        player: &super::HexPlayerState,
+        next: HexCoord,
+        objective: HexCoord,
+    ) -> Option<TraversalLease> {
+        let up = next.level > player.cell.level;
+        let feet = player.position.y
+            - self
+                .content
+                .traversal_profile()
+                .requirements()
+                .capsule_half_height;
+        let pose = FollowerPose {
+            feet: Vec3::new(player.position.x, feet, player.position.z),
+            yaw: player.yaw,
         };
-        if target.cell == player.cell {
-            return if player.position.distance(target.position) > 0.75 {
-                steer_toward(player.yaw, player.position, target.position)
-            } else {
-                PlayerIntent::default()
-            };
-        }
-        let current = player.cell;
-        let generation = self.facility.generation;
-        let cache_is_usable = self.bot_routes.get(&id).is_some_and(|cache| {
-            cache.generation == generation
-                && cache.target == target.cell
-                && match &cache.route {
-                    Some(route) => route
-                        .cells
-                        .iter()
-                        .position(|cell| *cell == current)
-                        .is_some_and(|index| index + 1 < route.cells.len()),
-                    None => cache.from == current,
-                }
-        });
-        if !cache_is_usable {
-            let route = self.facility.route_between_cells(current, target.cell);
-            self.bot_routes.insert(
-                id,
-                BotRouteCache {
-                    generation,
-                    target: target.cell,
-                    from: current,
-                    route,
-                },
-            );
-        }
-        let route = self
-            .bot_routes
-            .get(&id)
-            .and_then(|cache| cache.route.as_ref());
-        let behaviour = if route.is_none_or(|route| route.cells.len() <= 1) {
-            BotBehaviour::Explore
-        } else if self.stuck_ticks.get(&id).copied().unwrap_or(0) >= STUCK_ENTER_TICKS {
-            BotBehaviour::Recover
+        let direction = if up {
+            TraversalDirection::Forward
         } else {
-            BotBehaviour::Seek
+            TraversalDirection::Reverse
         };
-        self.command_for_behaviour(id, behaviour, route)
+        let unfinished = |at: HexCoord, direction| {
+            let guide = self.geometry.guides.get(&at)?;
+            let spine = guide.climb.as_ref()?;
+            follow_stateless(
+                pose,
+                FollowTarget::Climb {
+                    spine,
+                    approach: guide.deck.as_ref(),
+                    direction,
+                },
+                self.content.traversal_profile(),
+            )
+            .is_on_unfinished_climb()
+            .then_some(())
+        };
+        let source_cell = if up {
+            let below = (player.cell.level > 0).then(|| HexCoord {
+                level: player.cell.level - 1,
+                ..player.cell
+            });
+            below
+                .filter(|&below| unfinished(below, TraversalDirection::Forward).is_some())
+                .unwrap_or(player.cell)
+        } else if unfinished(player.cell, TraversalDirection::Reverse).is_some() {
+            player.cell
+        } else {
+            next
+        };
+        self.geometry
+            .guides
+            .get(&source_cell)?
+            .climb
+            .as_ref()
+            .filter(|spine| !spine.is_empty())?;
+        Some(TraversalLease {
+            instance: ModuleInstanceId { source_cell },
+            route_from: player.cell,
+            route_to: next,
+            objective,
+            direction,
+        })
     }
 
     fn vertical_command(

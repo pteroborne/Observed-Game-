@@ -4932,7 +4932,9 @@ mod hex_wfc_gates {
     use super::*;
     use crate::hex_wfc::sim::{HexWfcRuntime, load_prototypes};
     use crate::sim::state::SpectatorBot;
-    use observed_match::hex_wfc::{HexInputFrame, HexMatchConfig, HexMatchStatus, HexWfcMatch};
+    use observed_match::hex_wfc::{
+        HexBotDriver, HexInputFrame, HexMatchConfig, HexMatchStatus, HexWfcMatch,
+    };
 
     /// A solvable compact showcase match near `base` (mirrors the adapter's offset
     /// search so a rare contradiction seed cannot flake the test).
@@ -4956,18 +4958,18 @@ mod hex_wfc_gates {
     }
 
     /// Step a match one tick the same way `sim::step_runtime` does: every actor crosses
-    /// the `bot_command` boundary. Returns the post-step snapshot digest.
-    fn step_all_bots(game: &mut HexWfcMatch) -> u64 {
+    /// the retained bot-driver boundary. Returns the post-step snapshot digest.
+    fn step_all_bots(game: &mut HexWfcMatch, driver: &mut HexBotDriver) -> u64 {
         let mut frame = HexInputFrame {
             tick: game.tick + 1,
             ..Default::default()
         };
         // Mirror `hex_wfc::sim::step_runtime` exactly. The Arc P objective loop drives
-        // bots through `bot_player_command`, which also presses the action buttons a
+        // bots through the complete driver command, which also presses the action buttons a
         // keystone/station beat needs; the older intent-only `bot_command` would make
         // this fork diverge from the interactive path on its first tick.
         for id in game.players.keys().copied().collect::<Vec<_>>() {
-            frame.commands.insert(id, game.bot_player_command(id));
+            frame.commands.insert(id, driver.command(game, id));
         }
         game.step(&frame);
         game.snapshot().digest
@@ -4975,8 +4977,9 @@ mod hex_wfc_gates {
 
     fn headless_digests(mut game: HexWfcMatch, ticks: usize) -> Vec<u64> {
         let mut out = vec![game.snapshot().digest];
+        let mut driver = HexBotDriver::new();
         for _ in 0..ticks {
-            out.push(step_all_bots(&mut game));
+            out.push(step_all_bots(&mut game, &mut driver));
         }
         out
     }
@@ -4993,8 +4996,9 @@ mod hex_wfc_gates {
             .route_between_cells(spawn, game.facility.config.exit())
             .expect("spawn has a logical route to exit");
         let next = route.cells[1];
+        let mut driver = HexBotDriver::new();
         for _ in 0..2_400 {
-            step_all_bots(&mut game);
+            step_all_bots(&mut game, &mut driver);
             if game.players.values().next().expect("runner").cell != spawn {
                 return;
             }
@@ -5034,8 +5038,9 @@ mod hex_wfc_gates {
             level: 0,
         };
         let mut transitions = 0;
+        let mut driver = HexBotDriver::new();
         for tick in 0..36_000 {
-            step_all_bots(&mut game);
+            step_all_bots(&mut game, &mut driver);
             if game.status == HexMatchStatus::Finished {
                 println!("finished at tick {tick}");
                 return;
@@ -5097,6 +5102,7 @@ mod hex_wfc_gates {
         // Fork the authoritative state right after setup; step the fork headlessly and
         // the app through the real FixedUpdate schedule, comparing every tick.
         let mut headless = app.world().resource::<HexWfcRuntime>().match_state.clone();
+        let mut headless_driver = HexBotDriver::new();
         for _ in 0..300 {
             app.world_mut().run_schedule(FixedUpdate);
             let interactive = app
@@ -5105,7 +5111,7 @@ mod hex_wfc_gates {
                 .match_state
                 .snapshot()
                 .digest;
-            let headless_digest = step_all_bots(&mut headless);
+            let headless_digest = step_all_bots(&mut headless, &mut headless_driver);
             let interactive_tick = app.world().resource::<HexWfcRuntime>().match_state.tick;
             assert_eq!(
                 interactive, headless_digest,
@@ -5142,6 +5148,7 @@ mod hex_wfc_gates {
         // Fork the authoritative state right after setup; both halves then step under the
         // identical all-bots command regime.
         let mut headless = app.world().resource::<HexWfcRuntime>().match_state.clone();
+        let mut headless_driver = HexBotDriver::new();
         assert_eq!(
             headless.facility.generation, 0,
             "the facility must start at generation 0"
@@ -5153,7 +5160,7 @@ mod hex_wfc_gates {
             let runtime = app.world().resource::<HexWfcRuntime>();
             let interactive = runtime.match_state.snapshot().digest;
             let interactive_generation = runtime.match_state.facility.generation;
-            let headless_digest = step_all_bots(&mut headless);
+            let headless_digest = step_all_bots(&mut headless, &mut headless_driver);
             assert_eq!(
                 interactive, headless_digest,
                 "interactive tick {} diverged from headless (generation {})",
@@ -5184,6 +5191,7 @@ mod hex_wfc_gates {
     #[ignore = "36k-tick soak; run explicitly"]
     fn hex_full_match_soak() {
         let mut game = solvable_showcase(flow::MATCH_SEED);
+        let mut driver = HexBotDriver::new();
         let mut last_progress_tick = 0u64;
         let mut last_positions: std::collections::BTreeMap<_, _> = game
             .players
@@ -5191,7 +5199,7 @@ mod hex_wfc_gates {
             .map(|(id, player)| (*id, player.cell))
             .collect();
         for _ in 0..36_000 {
-            step_all_bots(&mut game);
+            step_all_bots(&mut game, &mut driver);
             let positions: std::collections::BTreeMap<_, _> = game
                 .players
                 .iter()

@@ -245,12 +245,13 @@ fn autostart_capture(
         _ => {}
     }
     // Capture always runs autonomously: the objective bot drives the runner so evidence
-    // shows real traversal (ramps, stairs, the exit) rather than a frozen spawn.
-    if capture.mode != HexWfcCaptureMode::Traversal {
-        commands.insert_resource(crate::sim::state::SpectatorBot::for_seed(
-            crate::flow::MATCH_SEED,
-        ));
-    }
+    // shows real traversal (ramps, stairs, the exit) rather than a frozen spawn. Traversal
+    // mode also preloads its intent in `drive_traversal_capture`; the retained driver is
+    // same-tick idempotent, and this resource keeps `step_runtime` on the same bot control
+    // path instead of clearing the freshly acquired traversal cursor as human input.
+    commands.insert_resource(crate::sim::state::SpectatorBot::for_seed(
+        crate::flow::MATCH_SEED,
+    ));
     next.set(GameState::HexWfc);
 }
 
@@ -415,7 +416,12 @@ fn drive_traversal_capture(
             .expect("traversal capture starts with one anchor lantern");
     }
     let local_player = runtime.local_player;
-    let command = runtime.match_state.bot_player_command(local_player);
+    let command = {
+        let runtime = &mut *runtime;
+        runtime
+            .bot_driver
+            .command(&runtime.match_state, local_player)
+    };
     intent.intent = command.intent;
     intent.actions = command.actions;
 }

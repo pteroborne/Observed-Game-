@@ -10,7 +10,8 @@ use std::fmt::Write as _;
 use bevy::prelude::{Vec2, Vec3};
 use observed_hex::HexCoord;
 use observed_match::hex_wfc::{
-    HexInputFrame, HexMatchConfig, HexMatchEventKind, HexMatchStatus, HexPlayerState, HexWfcMatch,
+    HexBotDriver, HexInputFrame, HexMatchConfig, HexMatchEventKind, HexMatchStatus, HexPlayerState,
+    HexWfcMatch,
 };
 use observed_traversal::FpsConfig;
 
@@ -115,9 +116,10 @@ fn run_spectator_seed_with_budget(
     let mut progress_anchor = player.position;
     let mut last_cell = player.cell;
     let mut last_progress_tick = 0;
+    let mut driver = HexBotDriver::new();
 
     for _ in 0..tick_budget {
-        step_all_bots(&mut game);
+        step_all_bots(&mut game, &mut driver);
         let player = game.players.values().next().expect("solo runner");
         if player.cell != last_cell || player.position.distance_squared(progress_anchor) >= 0.25 {
             last_progress_tick = game.tick;
@@ -160,13 +162,13 @@ fn run_spectator_seed_with_budget(
     ))
 }
 
-fn step_all_bots(game: &mut HexWfcMatch) {
+fn step_all_bots(game: &mut HexWfcMatch, driver: &mut HexBotDriver) {
     let mut frame = HexInputFrame {
         tick: game.tick + 1,
         ..Default::default()
     };
     for id in game.players.keys().copied().collect::<Vec<_>>() {
-        frame.commands.insert(id, game.bot_player_command(id));
+        frame.commands.insert(id, driver.command(game, id));
     }
     game.step(&frame);
 }
