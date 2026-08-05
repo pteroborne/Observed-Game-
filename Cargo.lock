@@ -5633,6 +5633,7 @@ dependencies = [
  "player_input",
  "rapier3d",
  "serde",
+ "sha2",
 ]
 
 [[package]]
