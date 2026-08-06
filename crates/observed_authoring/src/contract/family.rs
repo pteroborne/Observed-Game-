@@ -65,3 +65,22 @@ impl AssemblyVariantId {
         Ok(())
     }
 }
+
+/// The assembly identity carried by one expanded runtime prototype.
+///
+/// Runtime selection reads only this: which family the prototype belongs to,
+/// which turn it was expanded into, how wide the assembly it belongs to is, and
+/// the weight that chooses that family once. Everything a selector needs in
+/// order to refuse to mix two families inside one assembly is here, so the
+/// choice never has to be inferred from an archetype name.
+///
+/// `variant.rotation` is the turn already applied to the prototype's hulls,
+/// lights, spine, deck, ports, and sockets.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeAssembly {
+    pub variant: AssemblyVariantId,
+    pub scope: AssemblyScope,
+    /// Chooses the family once per assembly. Member weight only chooses among
+    /// interface-equivalent members inside the chosen variant.
+    pub family_weight: u16,
+}

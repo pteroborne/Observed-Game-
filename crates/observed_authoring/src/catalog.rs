@@ -10,7 +10,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::compiler::{AssemblyFamilyIndex, FamilyDiagnostic};
-use crate::contract::{ContractDiagnostic, ModuleContract, RuntimeModuleContract};
+use crate::contract::{
+    AssemblyVariantId, ContractDiagnostic, ModuleContract, RuntimeAssembly, RuntimeModuleContract,
+};
 use crate::manifest::{Manifest, ManifestEntry, PortDecl, TileKey};
 use crate::source::{
     AuthoredModule, ModuleCell, ModuleCellRef, ModuleKind, RoomSocketKind, RotationPolicy,
@@ -123,7 +125,11 @@ pub struct RoomPrototype {
     pub sockets: Vec<RoomPrototypeSocket>,
     pub hulls: Vec<Vec<Vec3>>,
     pub lights: Vec<TileLight>,
+    /// Module-local and unrotated. See [`RuntimeModuleContract`].
     pub contract: Option<RuntimeModuleContract>,
+    /// Family identity for family-aware selection; `None` for compatibility
+    /// content.
+    pub assembly: Option<RuntimeAssembly>,
 }
 
 /// Strict v2 modules projected into the runtime forms consumed by WFC geometry.
@@ -244,6 +250,12 @@ impl CompiledTileCatalog {
     /// Expand strict modules into deterministic runtime variants. Legacy v1
     /// modules remain supplied by `manifest.ron`, avoiding duplicate entries
     /// while the committed corpus is migrated incrementally.
+    ///
+    /// A version-4 catalog is expanded against the *exact* register set the
+    /// runtime asked for, not the registers the corpus happens to declare:
+    /// `all`-scoped families expand into those registers, so family coverage
+    /// has to be proved against them or a district could reach a variant that
+    /// answers only some of its signatures.
     pub fn runtime_catalog(
         &self,
         architecture_registers: &[&str],
@@ -260,7 +272,15 @@ impl CompiledTileCatalog {
             return Err(CatalogError::UnexpectedContractInV3(module.id.clone()));
         }
         if self.version == CONTRACT_CATALOG_VERSION {
-            return Err(CatalogError::ContractRuntimeUnavailable);
+            let demanded = if architecture_registers.is_empty() {
+                self.declared_registers()
+            } else {
+                architecture_registers
+                    .iter()
+                    .map(|&name| name.to_string())
+                    .collect()
+            };
+            self.family_index(&demanded)?;
         }
         self.verify_hash()?;
         let hull_sets = self
@@ -281,6 +301,11 @@ impl CompiledTileCatalog {
                     structural_hash: module.structural_hash.clone(),
                 })?;
             let registers = expanded_registers(&module.register_scope, architecture_registers);
+            let runtime_contract = module
+                .contract
+                .as_ref()
+                .map(|contract| runtime_contract(&module.id, contract))
+                .transpose()?;
             for &turn in &module.rotations {
                 if turn >= 6 {
                     return Err(CatalogError::InvalidRotation {
@@ -288,6 +313,18 @@ impl CompiledTileCatalog {
                         turn,
                     });
                 }
+                // Family and scope are rotation-invariant; the turn is what
+                // makes this one assembly *variant*. A selector that has both
+                // can refuse to mix families without consulting an archetype
+                // name, which is the whole point of the value.
+                let assembly = module.contract.as_ref().map(|contract| RuntimeAssembly {
+                    variant: AssemblyVariantId {
+                        family: contract.assembly.family.clone(),
+                        rotation: turn,
+                    },
+                    scope: contract.assembly.scope,
+                    family_weight: contract.assembly.family_weight,
+                });
                 let rotated_hulls = rotate_hulls(hulls, turn);
                 let rotated_lights = rotate_lights(&module.lights, turn);
                 let rotated_spine = StairSpine {
@@ -358,7 +395,8 @@ impl CompiledTileCatalog {
                                 lights: rotated_lights.clone(),
                                 spine: rotated_spine.clone(),
                                 deck: rotated_deck.clone(),
-                                contract: None,
+                                contract: runtime_contract.clone(),
+                                assembly: assembly.clone(),
                             });
                         }
                         ModuleKind::Room => runtime.rooms.push(RoomPrototype {
@@ -374,7 +412,8 @@ impl CompiledTileCatalog {
                             sockets: rotated_sockets.clone(),
                             hulls: rotated_hulls.clone(),
                             lights: rotated_lights.clone(),
-                            contract: None,
+                            contract: runtime_contract.clone(),
+                            assembly: assembly.clone(),
                         }),
                     }
                 }
@@ -386,6 +425,65 @@ impl CompiledTileCatalog {
             .sort_by(|a, b| (&a.room_role, &a.key, &a.id).cmp(&(&b.room_role, &b.key, &b.id)));
         Ok(runtime)
     }
+}
+
+/// Expand one serialized contract into the validated in-memory form runtime
+/// prototypes carry.
+///
+/// The graph is projected out of integer authoring units into module-local
+/// metres here and nowhere else, so every consumer sees the same line the
+/// compiler proved. Nothing is rotated: see [`RuntimeModuleContract`].
+fn runtime_contract(
+    module: &str,
+    contract: &ModuleContract,
+) -> Result<RuntimeModuleContract, CatalogError> {
+    let nodes = contract
+        .traversal
+        .nodes
+        .iter()
+        .map(|node| observed_traversal::TraversalNode {
+            id: node.id,
+            position: dequantize_point(node.position).to_array(),
+        })
+        .collect::<Vec<_>>();
+    let edges = contract
+        .traversal
+        .edges
+        .iter()
+        .map(|edge| observed_traversal::TraversalEdge {
+            id: edge.id,
+            from: edge.from,
+            to: edge.to,
+            mode: edge.mode,
+        })
+        .collect::<Vec<_>>();
+    let guide = observed_traversal::TraversalGuide::try_new(nodes, edges).map_err(|error| {
+        CatalogError::InvalidContract {
+            module: module.to_string(),
+            diagnostic: ContractDiagnostic::whole(
+                "unbuildable_runtime_guide",
+                format!("compiled traversal graph does not form a guide: {error}"),
+            ),
+        }
+    })?;
+    Ok(RuntimeModuleContract {
+        spatial: contract.spatial.clone(),
+        assembly: contract.assembly.clone(),
+        interfaces: contract.interfaces.clone(),
+        guide,
+        port_bindings: contract.traversal.port_bindings.clone(),
+    })
+}
+
+/// The inverse of `compiler::spatial::quantize_world`: editor Z-up integers to
+/// module-local Y-up metres.
+fn dequantize_point(point: crate::contract::QuantizedPoint) -> Vec3 {
+    let scale = crate::UNITS_PER_METER as f32;
+    Vec3::new(
+        point.x as f32 / scale,
+        point.z as f32 / scale,
+        -(point.y as f32) / scale,
+    )
 }
 
 fn runtime_socket(socket: &CompiledSocket, turn: u8) -> RoomPrototypeSocket {
@@ -432,7 +530,6 @@ pub enum CatalogError {
         contracted: String,
         compatibility: String,
     },
-    ContractRuntimeUnavailable,
     InvalidContract {
         module: String,
         diagnostic: ContractDiagnostic,
@@ -1509,5 +1606,138 @@ mod tests {
             floor: FloorPolicy::Open,
         };
         assert_eq!(cell.floor, FloorPolicy::Open);
+    }
+
+    /// One synthetic contracted tower, with its own family, member variant, and
+    /// climb reach. Two members that share a `climb_top` are interface
+    /// equivalent and may be chosen between; two families with different
+    /// `climb_top` values present different vertical guides and may not.
+    #[cfg(test)]
+    fn tower_member(id: &str, family: &str, variant: u16, climb_top: i32) -> String {
+        crate::compiler::fixtures::contracted_tower(id, family, climb_top)
+            .replace("\"variant\" \"0\"", &format!("\"variant\" \"{variant}\""))
+    }
+
+    #[cfg(test)]
+    fn two_tower_families() -> Vec<(String, String)> {
+        [
+            ("a0", "test/tower-a", 0, 124),
+            ("a1", "test/tower-a", 1, 124),
+            ("b0", "test/tower-b", 2, 120),
+            ("b1", "test/tower-b", 3, 120),
+        ]
+        .into_iter()
+        .map(|(stem, family, variant, climb_top)| {
+            (
+                format!("{stem}.map"),
+                tower_member(&format!("test/{stem}"), family, variant, climb_top),
+            )
+        })
+        .collect()
+    }
+
+    /// The TR-9 acceptance corpus at the authoring layer: two complete tower
+    /// families compile to catalog v4, expand for a real register set, and
+    /// arrive at the runtime carrying the assembly variant that selection uses
+    /// to keep them apart. Before TR-9 this expansion returned an error on
+    /// purpose, because there was nothing that could consume the result safely.
+    #[test]
+    fn two_complete_tower_families_expand_into_runtime_prototypes() {
+        let root = temp_dir("two_tower_families");
+        for (file, text) in two_tower_families() {
+            std::fs::write(root.join(file), text).expect("write source");
+        }
+        let built = build_catalog(&root).expect("two complete families compile");
+        assert_eq!(built.catalog.version, CONTRACT_CATALOG_VERSION);
+
+        let runtime = built
+            .catalog
+            .runtime_catalog(&["institutional", "monolith"])
+            .expect("version-4 runtime expansion");
+        // Four members, one rotation each (`rotation_policy: none`), expanded
+        // across two registers by `register_scope: all`.
+        assert_eq!(runtime.cells.len(), 8);
+        assert!(runtime.rooms.is_empty());
+
+        let mut by_family: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for tile in &runtime.cells {
+            let assembly = tile.assembly.as_ref().expect("a v4 cell carries a family");
+            assert_eq!(assembly.variant.rotation, 0);
+            assert_eq!(assembly.scope, crate::AssemblyScope::VerticalColumn);
+            assert_eq!(assembly.family_weight, 2);
+            assert_eq!(tile.key.archetype, "stair_tower");
+            let contract = tile.contract.as_ref().expect("a v4 cell carries a contract");
+            assert_eq!(contract.assembly.family, assembly.variant.family);
+            assert!(
+                !contract.guide.nodes().is_empty(),
+                "the compiled traversal graph must survive expansion"
+            );
+            by_family
+                .entry(assembly.variant.family.0.clone())
+                .or_default()
+                .insert(tile.key.register.clone());
+        }
+        assert_eq!(
+            by_family.keys().cloned().collect::<Vec<_>>(),
+            ["test/tower-a", "test/tower-b"]
+        );
+        for registers in by_family.values() {
+            assert_eq!(
+                registers.iter().cloned().collect::<Vec<_>>(),
+                ["institutional", "monolith"]
+            );
+        }
+
+        // The two families really are distinguishable geometry: their climbs
+        // reach different heights, which is what makes mixing them a fault
+        // rather than a cosmetic difference.
+        let top_of = |family: &str| {
+            runtime
+                .cells
+                .iter()
+                .find(|tile| {
+                    tile.assembly
+                        .as_ref()
+                        .is_some_and(|assembly| assembly.variant.family.0 == family)
+                })
+                .and_then(|tile| tile.spine.nodes.last().copied())
+                .expect("each family climbs")
+        };
+        assert_ne!(top_of("test/tower-a"), top_of("test/tower-b"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// Expansion is proved against the registers the runtime asked for, not
+    /// the ones the corpus declared. An `all`-scoped family that cannot answer
+    /// a demanded register's signatures has to fail here, before a district
+    /// reaches a variant with a hole in it.
+    #[test]
+    fn version_4_expansion_proves_family_coverage_for_the_demanded_registers() {
+        let root = temp_dir("incomplete_family_expansion");
+        std::fs::write(
+            root.join("a.map"),
+            crate::compiler::fixtures::contracted_cell_facing("test/a-east", "test/a", "east"),
+        )
+        .expect("write a-east");
+        std::fs::write(
+            root.join("b.map"),
+            crate::compiler::fixtures::contracted_cell_facing("test/a-west", "test/a", "west"),
+        )
+        .expect("write a-west");
+        // `test/b` answers only one of the two signatures `test/a` answers, so
+        // any register it is expanded into leaves selection a hole it could
+        // only fill by mixing families.
+        std::fs::write(
+            root.join("c.map"),
+            crate::compiler::fixtures::contracted_cell_facing("test/b-east", "test/b", "east"),
+        )
+        .expect("write b-east");
+        let built = build_catalog(&root);
+        assert!(
+            matches!(built, Err(CatalogError::InvalidFamily(ref diagnostic))
+                if diagnostic.code == "incomplete_signature_coverage"),
+            "an incomplete family must not reach the runtime: {built:?}"
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 }

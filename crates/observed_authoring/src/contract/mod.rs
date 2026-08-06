@@ -11,7 +11,9 @@ mod traversal;
 
 use serde::{Deserialize, Serialize};
 
-pub use family::{AssemblyContract, AssemblyScope, AssemblyVariantId, ModuleFamilyId};
+pub use family::{
+    AssemblyContract, AssemblyScope, AssemblyVariantId, ModuleFamilyId, RuntimeAssembly,
+};
 pub use interface::{
     FACE_LOCAL_SCALE, FaceLocalBox, FaceLocalDirection, FaceLocalPoint, InterfaceFingerprint,
     InterfaceProfile, LateralFaceFrame, ModuleInterface, QuantizedAperture, QuantizedDirection,
@@ -136,6 +138,17 @@ impl ModuleContract {
 ///
 /// It is intentionally not serialized: catalog v4 serializes [`ModuleContract`]
 /// in integer authoring units and expansion produces this value once.
+///
+/// **This value is module-local and unrotated.** The prototype that carries it
+/// has already had its clockwise turn baked into hulls, lights, spine, deck,
+/// ports, and sockets; the contract has not. A consumer that projects
+/// interfaces, clearance volumes, or graph nodes into facility space must apply
+/// `TilePrototype::assembly`'s `variant.rotation` itself. TR-9 needs the family
+/// identity, which is rotation-invariant, and deliberately did not invent a
+/// rotation for the quantized boxes and face-local frames — an axis-aligned
+/// authoring box has no exact 60-degree image, so rotating it here would have
+/// silently widened every clearance volume. TR-10 owns that projection along
+/// with the migration that produces the first rotated contracted module.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeModuleContract {
     pub spatial: ModuleSpatialContract,
