@@ -18,6 +18,7 @@ use super::movement::face_plan_dir;
 use super::{FLOOR_SLAB_TOP, HexPlayerCommand, HexWfcMatch};
 
 mod driver;
+mod leg;
 pub use driver::{HexBotDriver, ModuleInstanceId, TraversalCursor, TraversalLease};
 
 /// Most yaw a bot may turn in one 60 Hz tick, in radians.

@@ -7,12 +7,15 @@ use observed_core::PlayerId;
 use observed_facility::hex_wfc::{HexCoord, HexRoute};
 use observed_hex::hex_origin;
 use observed_traversal::{
-    FollowState, FollowTarget, FollowerPose, TraversalDirection, follow_stateless,
+    FollowState, FollowTarget, FollowerPose, GraphFollowState, TraversalDirection, follow_stateless,
 };
 use player_input::PlayerIntent;
 
+use crate::hex_wfc::HexTraversalCursor;
+
 use super::super::objectives::HexObjectiveTarget;
 use super::super::{HexMatchEventKind, HexPlayerCommand, HexWfcMatch};
+use super::leg::{self, ExternalTransition};
 use super::{BotBehaviour, STUCK_ENTER_TICKS, steer_toward};
 
 /// Stable identity for one projected traversal module.
@@ -47,6 +50,16 @@ pub struct TraversalCursor {
     pub state: FollowState,
 }
 
+/// One held graph leg and the objective it was committed to.
+///
+/// The objective lives here rather than in [`HexTraversalLease`] because a lease
+/// is a contract about a module, not about why a bot wanted to cross it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct GraphLeg {
+    objective: HexCoord,
+    cursor: HexTraversalCursor,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct BotRouteCache {
     generation: u32,
@@ -64,6 +77,10 @@ struct BotRouteCache {
 pub struct HexBotDriver {
     routes: BTreeMap<PlayerId, BotRouteCache>,
     cursors: BTreeMap<PlayerId, TraversalCursor>,
+    /// Graph legs held over modules that ship their own traversal graph. Held
+    /// under exactly the same invalidation rules as the compatibility cursors,
+    /// so there is one answer to "may this bot still be mid-leg?".
+    legs: BTreeMap<PlayerId, GraphLeg>,
 }
 
 impl HexBotDriver {
@@ -77,17 +94,25 @@ impl HexBotDriver {
     pub fn reset(&mut self) {
         self.routes.clear();
         self.cursors.clear();
+        self.legs.clear();
     }
 
     /// Forget one bot's local state after a seat/driver ownership change.
     pub fn clear_player(&mut self, id: PlayerId) {
         self.routes.remove(&id);
         self.cursors.remove(&id);
+        self.legs.remove(&id);
     }
 
     #[must_use]
     pub fn cursor(&self, id: PlayerId) -> Option<&TraversalCursor> {
         self.cursors.get(&id)
+    }
+
+    /// The graph leg this bot is executing, if its module ships a graph.
+    #[must_use]
+    pub fn leg(&self, id: PlayerId) -> Option<&HexTraversalCursor> {
+        self.legs.get(&id).map(|leg| &leg.cursor)
     }
 
     #[cfg(test)]
@@ -148,6 +173,13 @@ impl HexBotDriver {
             self.cursors.remove(&id);
         }
         if self
+            .legs
+            .get(&id)
+            .is_some_and(|leg| Some(leg.objective) != objective)
+        {
+            self.legs.remove(&id);
+        }
+        if self
             .routes
             .get(&id)
             .is_some_and(|cache| Some(cache.target) != objective)
@@ -160,6 +192,15 @@ impl HexBotDriver {
                 !delta
                     .changed_cells
                     .contains(&cursor.lease.instance.source_cell)
+            });
+            // A graph leg names the exact module revision it was taken against,
+            // so `leg::follow` rejects a replaced module on its own. Dropping
+            // the obviously dead ones here keeps the two cursor maps invalidated
+            // by the same rule rather than by two different ones.
+            self.legs.retain(|_, leg| {
+                !delta
+                    .changed_cells
+                    .contains(&leg.cursor.lease.instance.source_cell)
             });
         }
     }
@@ -174,8 +215,13 @@ impl HexBotDriver {
             return PlayerIntent::default();
         };
 
-        // The lease precedes logical-cell shortcuts. Height rounding can report
-        // the upper cell while the body is still on the final sloped tread.
+        // A held leg precedes every logical-cell shortcut below. Height rounding
+        // can report the upper cell while the body is still on the final sloped
+        // tread; neither a graph cursor nor a compatibility lease may be
+        // reinterpreted from that.
+        if let Some(intent) = self.follow_leg(game, id) {
+            return game.apply_unstick(id, intent);
+        }
         if let Some(intent) = self.follow_cursor(game, id) {
             return game.apply_unstick(id, intent);
         }
@@ -247,6 +293,19 @@ impl HexBotDriver {
         let Some(&next) = route.cells.get(index + 1) else {
             return PlayerIntent::default();
         };
+
+        // The only question the facility planner is asked: which external port
+        // comes next. A module that ships its own traversal graph answers the
+        // rest by acquiring the matching local leg — no branch on archetype,
+        // port class, or authored shape, which is the property a new
+        // graph-shaped fixture relies on.
+        if let Some(transition) = ExternalTransition::between(game, player.cell, next)
+            && leg::ships_a_graph(game, transition.from)
+            && let Some(intent) = self.acquire_leg(game, id, objective, transition)
+        {
+            return game.apply_unstick(id, intent);
+        }
+
         let base = if next.level != player.cell.level {
             if let Some(lease) = game.traversal_lease(player, next, objective) {
                 self.cursors.insert(
@@ -277,6 +336,46 @@ impl HexBotDriver {
             steer_toward(player.yaw, player.position, target)
         };
         game.apply_unstick(id, base)
+    }
+
+    /// Take the local leg that crosses this module toward the requested port,
+    /// then execute its first tick.
+    ///
+    /// Re-acquisition is idempotent while a leg is already held: the held
+    /// cursor answers first, so asking again on the same tick — or after the
+    /// body's logical cell has moved on — cannot rewind the edge under it.
+    fn acquire_leg(
+        &mut self,
+        game: &HexWfcMatch,
+        id: PlayerId,
+        objective: HexCoord,
+        transition: ExternalTransition,
+    ) -> Option<PlayerIntent> {
+        if self.legs.contains_key(&id) {
+            return self.follow_leg(game, id);
+        }
+        let player = game.players.get(&id)?;
+        let pose = leg::pose(game, player.position, player.yaw);
+        let cursor = leg::acquire(game, pose.feet, transition)?;
+        self.legs.insert(id, GraphLeg { objective, cursor });
+        self.follow_leg(game, id)
+    }
+
+    /// Advance a held graph leg. Anything other than continued following —
+    /// arrival, leaving the graph, or a replaced module — releases the leg and
+    /// hands the tick back to the caller.
+    fn follow_leg(&mut self, game: &HexWfcMatch, id: PlayerId) -> Option<PlayerIntent> {
+        let mut held = self.legs.get(&id)?.clone();
+        let player = game.players.get(&id)?;
+        let pose = leg::pose(game, player.position, player.yaw);
+        let decision = leg::follow(game, &mut held.cursor, pose);
+        if decision.state == GraphFollowState::Following {
+            self.legs.insert(id, held);
+            decision.intent
+        } else {
+            self.legs.remove(&id);
+            None
+        }
     }
 
     fn follow_cursor(&mut self, game: &HexWfcMatch, id: PlayerId) -> Option<PlayerIntent> {
@@ -552,6 +651,292 @@ mod tests {
         game.geometry.guides.remove(&source);
         assert_eq!(driver.follow_cursor(&game, id), None);
         assert!(driver.cursor(id).is_none());
+    }
+
+    /// Stand a bot in the first cell of a lateral route step and give that cell
+    /// a module graph it did not have before.
+    ///
+    /// The cell is an ordinary hall: no spine, no deck, no `Shaft` archetype.
+    /// If crossing it still works, the runtime read the graph and nothing else.
+    fn graph_module_fixture() -> (HexWfcMatch, HexBotDriver, PlayerId, HexCoord, HexCoord) {
+        use observed_hex::HexFace;
+        use observed_traversal::{TraversalGuideBuilder, TraversalMode};
+
+        use crate::hex_wfc::{
+            HexModuleInstanceId, HexModuleRevision, ProjectedPort, ProjectedTraversalGraph,
+            ProjectedTraversalGuide,
+        };
+
+        let mut game = HexWfcMatch::new_with_content(
+            GATE_SEED,
+            HexMatchConfig {
+                guardian: false,
+                teams: 1,
+                members_per_team: 1,
+                wfc: gate_config(),
+            },
+            Arc::clone(crate::hex_wfc::compatibility_test_content()),
+        )
+        .expect("gate fixture builds");
+        game.objectives.enabled = false;
+        let id = PlayerId(0);
+        let objective = game
+            .objective_target(id)
+            .expect("the gate fixture has an objective")
+            .cell;
+        let route = game
+            .facility
+            .route_between_cells(game.players[&id].cell, objective)
+            .expect("the gate spawn reaches its objective");
+        let (from, to, face) = route
+            .cells
+            .windows(2)
+            .find_map(|pair| {
+                let face = HexFace::LATERAL.into_iter().find(|&face| {
+                    game.facility.config.grid().neighbor(pair[0], face) == Some(pair[1])
+                })?;
+                (!game.geometry.guides.contains_key(&pair[0])).then_some((pair[0], pair[1], face))
+            })
+            .expect("the gate route crosses an unannotated cell laterally");
+
+        let origin = Vec3::from_array(hex_origin(from));
+        let half_height = game
+            .content()
+            .traversal_profile()
+            .requirements()
+            .capsule_half_height;
+        let feet = Vec3::new(origin.x, origin.y + 0.5, origin.z);
+        let toward = (Vec3::from_array(hex_origin(to)) - origin).normalize_or_zero();
+
+        let mut builder = TraversalGuideBuilder::new();
+        let entry = builder.node(feet);
+        let middle = builder.node(feet + toward * 2.0);
+        let exit = builder.node(feet + toward * 4.0);
+        builder.connect(entry, middle, TraversalMode::Walk);
+        // Deliberately a climb edge across a flat hall. A graph declares its own
+        // modes; the runtime must not sanity-check them against an archetype.
+        builder.connect(middle, exit, TraversalMode::Climb);
+        let guide = builder.build().expect("fixture graph is valid");
+
+        game.geometry.guides.insert(
+            from,
+            ProjectedTraversalGuide {
+                instance: HexModuleInstanceId { source_cell: from },
+                revision: HexModuleRevision::single(
+                    from,
+                    game.facility.cell_revision(from).expect("resolved cell"),
+                ),
+                source_cells: vec![from],
+                graph: Some(ProjectedTraversalGraph {
+                    guide,
+                    port_bindings: BTreeMap::from([(ProjectedPort { cell: from, face }, exit)]),
+                }),
+                source_cell: from,
+                climb: None,
+                deck: None,
+            },
+        );
+
+        let player = game.players.get_mut(&id).expect("solo player");
+        player.cell = from;
+        player.position = feet + Vec3::Y * half_height;
+        player.yaw = 0.0;
+
+        (game, HexBotDriver::new(), id, from, to)
+    }
+
+    #[test]
+    fn a_graph_shaped_module_is_crossed_without_any_bot_branch() {
+        use observed_traversal::{TraversalEdgeId, TraversalMode, follow_graph};
+
+        let (game, mut driver, id, from, _to) = graph_module_fixture();
+        let command = driver.command(&game, id);
+
+        let held = driver.leg(id).expect("the graph module is leased").clone();
+        assert_eq!(held.lease.instance.source_cell, from);
+        assert_eq!(held.local.edge, TraversalEdgeId(0));
+        assert!(
+            driver.cursor(id).is_none(),
+            "a graph module must not also take a compatibility lease"
+        );
+
+        // The command is exactly what the shared follower produces for this
+        // graph. No archetype, port class, or shape rule contributed anything.
+        let projected = game.geometry.guides[&from]
+            .graph
+            .as_ref()
+            .expect("fixture graph");
+        assert_eq!(
+            projected.guide.edges()[1].mode,
+            TraversalMode::Climb,
+            "the fixture must exercise a mode the cell's archetype cannot imply"
+        );
+        let mut expected_cursor = held.local;
+        let player = &game.players[&id];
+        let expected = follow_graph(
+            leg::pose(&game, player.position, player.yaw),
+            &projected.guide,
+            &mut expected_cursor,
+            held.lease.exit,
+            game.content().traversal_profile(),
+        );
+        assert_eq!(
+            Some(command.intent),
+            expected.intent,
+            "the runtime must emit the production follower's intent verbatim"
+        );
+    }
+
+    #[test]
+    fn changing_the_logical_cell_mid_leg_cannot_change_the_edge_being_followed() {
+        let (mut game, mut driver, id, from, to) = graph_module_fixture();
+        let first = driver.command(&game, id);
+        let committed = driver.leg(id).expect("leased").clone();
+
+        // Same tick, asked again: idempotent.
+        assert_eq!(driver.command(&game, id), first);
+        assert_eq!(driver.leg(id), Some(&committed));
+
+        // Height rounding reports the destination cell while the body has not
+        // moved. A route re-read here would pick a different module entirely;
+        // the held cursor must answer first and keep the same edge.
+        game.players.get_mut(&id).expect("player").cell = to;
+        assert_eq!(driver.command(&game, id), first);
+        assert_eq!(driver.leg(id), Some(&committed));
+
+        // Even a logical cell that is nowhere near the route cannot rewind it.
+        game.players.get_mut(&id).expect("player").cell = HexCoord {
+            q: from.q.saturating_add(50),
+            ..from
+        };
+        assert_eq!(driver.command(&game, id), first);
+        assert_eq!(
+            driver.leg(id).expect("leased").local,
+            committed.local,
+            "only reaching a node may advance the cursor"
+        );
+    }
+
+    #[test]
+    fn replacing_the_leased_module_releases_the_graph_leg() {
+        use crate::hex_wfc::HexModuleRevision;
+
+        let (mut game, mut driver, id, from, _to) = graph_module_fixture();
+        let _ = driver.command(&game, id);
+        let stale = driver.leg(id).expect("leased").lease.revision.clone();
+
+        // The projection replaces this exact module: same instance, new
+        // revision. The lease names the revision it was taken against, so the
+        // held leg is released rather than followed over stale geometry.
+        let replaced = HexModuleRevision::single(from, 0xDEAD_BEEF);
+        game.geometry
+            .guides
+            .get_mut(&from)
+            .expect("fixture guide")
+            .revision = replaced.clone();
+        assert_ne!(stale, replaced);
+        assert_eq!(driver.follow_leg(&game, id), None);
+        assert!(
+            driver.leg(id).is_none(),
+            "a replaced module revokes the leg"
+        );
+
+        // The next full command may take a fresh leg, but only against the
+        // revision that is actually projected now.
+        let _ = driver.command(&game, id);
+        assert_eq!(
+            driver.leg(id).expect("re-leased").lease.revision,
+            replaced,
+            "re-acquisition must name the live revision"
+        );
+    }
+
+    #[test]
+    fn displacement_and_escape_clear_a_held_graph_leg_too() {
+        for kind in [
+            HexMatchEventKind::PlayerRecovered,
+            HexMatchEventKind::GuardianCatch,
+            HexMatchEventKind::PlayerEscaped,
+        ] {
+            let (mut game, mut driver, id, _from, _to) = graph_module_fixture();
+            let _ = driver.command(&game, id);
+            assert!(driver.leg(id).is_some(), "{kind:?} fixture begins leased");
+
+            game.recent_events = vec![HexMatchEvent {
+                tick: game.tick,
+                kind,
+                player: Some(id),
+                cell: Some(game.players[&id].cell),
+            }];
+            driver.invalidate_from_match(&game, id, game.objective_target(id));
+            assert!(
+                driver.leg(id).is_none(),
+                "{kind:?} must revoke the graph leg"
+            );
+        }
+
+        // A changed objective revokes the leg even though no event fired: the
+        // module is still fine, but the reason for crossing it is gone.
+        let (game, mut driver, id, _from, _to) = graph_module_fixture();
+        let _ = driver.command(&game, id);
+        driver.legs.get_mut(&id).expect("leased").objective.q += 1;
+        driver.invalidate_from_match(&game, id, game.objective_target(id));
+        assert!(driver.leg(id).is_none(), "a new objective revokes the leg");
+    }
+
+    #[test]
+    fn legacy_cells_present_an_adapter_graph_so_migration_can_be_partial() {
+        use observed_hex::HexFace;
+        use observed_traversal::TraversalMode;
+
+        use super::super::super::bot::leg::{ExternalTransition, ResolvedModuleGraph};
+
+        let (game, _driver, id, from, to) = graph_module_fixture();
+        let transition = ExternalTransition::between(&game, from, to).expect("lateral transition");
+
+        // A neighbouring cell that ships nothing at all still resolves to a
+        // graph, so a half-migrated facility has one runtime path rather than
+        // two. Ports bind to the cell's own open doorways.
+        let unannotated = game
+            .facility
+            .placements
+            .keys()
+            .copied()
+            .find(|cell| {
+                *cell != from
+                    && !game.geometry.guides.contains_key(cell)
+                    && HexFace::LATERAL
+                        .into_iter()
+                        .filter(|&face| game.facility.placements[cell].is_open(face))
+                        .count()
+                        >= 2
+            })
+            .expect("the gate corpus contains a plain two-door cell");
+        let adapter = ResolvedModuleGraph::resolve(&game, unannotated).expect("adapter graph");
+        assert_eq!(adapter.instance.source_cell, unannotated);
+        assert!(
+            adapter.graph.port_bindings.len() >= 2,
+            "every open doorway binds to a node"
+        );
+        assert!(
+            adapter
+                .graph
+                .guide
+                .edges()
+                .iter()
+                .all(|edge| edge.mode == TraversalMode::Walk),
+            "a flat cell declares only walk edges"
+        );
+        for (port, node) in &adapter.graph.port_bindings {
+            assert_eq!(port.cell, unannotated);
+            assert!(adapter.graph.guide.node(*node).is_some());
+        }
+
+        // And the transition the planner produced is the one the module binds.
+        assert_eq!(transition.from, from);
+        assert_eq!(transition.to, to);
+        assert!(transition.face.is_lateral());
+        let _ = id;
     }
 
     #[test]

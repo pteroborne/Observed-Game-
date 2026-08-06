@@ -32,12 +32,13 @@ mod world;
 
 pub use follower::{
     DeckHandoff, FollowDecision, FollowState, FollowTarget, FollowerConfig, FollowerPose,
-    TraversalDirection, follow_stateless,
+    TraversalDirection, follow_graph, follow_stateless,
 };
 pub use graph::{
-    GraphFollowDecision, GraphFollowState, TraversalCursor, TraversalEdge, TraversalEdgeId,
-    TraversalGuide, TraversalGuideError, TraversalGuideHash, TraversalMode, TraversalNode,
-    TraversalNodeId,
+    CompatibilityGraph, GRAPH_NODE_CAPTURE_RADIUS, GRAPH_TIE_BREAK_RULE, GraphFollowDecision,
+    GraphFollowState, TraversalCursor, TraversalEdge, TraversalEdgeId, TraversalGuide,
+    TraversalGuideBuilder, TraversalGuideError, TraversalGuideHash, TraversalMode, TraversalNode,
+    TraversalNodeId, compile_compatibility_graph,
 };
 pub use guide::{DeckPath, STAIR_SPINE_MIN_SEPARATION, StairSpine};
 pub use plan_hull::{plan_convex_hull, point_in_convex_plan_hull, segment_crosses_convex_hull};
