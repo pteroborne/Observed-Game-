@@ -21,8 +21,8 @@ use std::path::{Path, PathBuf};
 use bevy::prelude::*;
 use observed_authoring::forge::recipe::{RECIPE_SUFFIX, Recipe};
 use observed_authoring::{
-    AuthoredModule, ModuleCellRef, ModuleSummary, SourceError, TileError, TilePrototype,
-    editor_origin_to_world, parse_authored_module, parse_tile,
+    AuthoredModule, DiagnosticLocation, ModuleCellRef, ModuleSummary, SourceError, TileError,
+    TilePrototype, editor_origin_to_world, parse_authored_module, parse_tile,
 };
 use observed_hex::HexFace;
 
@@ -211,6 +211,18 @@ pub fn source_highlight(error: &SourceError) -> Highlight {
         | SourceError::PortOriginMismatch { cell, face, .. } => Highlight::Face {
             cell: *cell,
             face: *face,
+        },
+
+        // A contract fault carries its own location, because the compiler knows
+        // where it looked. Forwarding it rather than collapsing the whole
+        // variant to `Whole` is the difference between "this module is wrong"
+        // and "this face is wrong", which is the entire point of this function.
+        // A guide node has no drawable place here - resolving its id needs the
+        // guide, which this layer does not hold - so it honestly falls back.
+        SourceError::Contract(diagnostic) => match diagnostic.location {
+            DiagnosticLocation::Cell(cell) => Highlight::Cell(cell),
+            DiagnosticLocation::Face(cell, face) => Highlight::Face { cell, face },
+            DiagnosticLocation::Whole | DiagnosticLocation::GuideNode(_) => Highlight::Whole,
         },
 
         // Property- or whole-module-shaped: nothing to point at.

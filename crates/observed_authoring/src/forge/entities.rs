@@ -8,6 +8,8 @@
 use super::geometry::{
     FACE_NAMES, LEVEL, WALL, cell_origin, edge, face_mid, fmt, lerp, offset_inward, prism,
 };
+use crate::contract::AssemblyScope;
+use crate::source::assembly_scope_name;
 
 /// The register scope every originally-authored module carries.
 pub const ORIGINAL_REGISTER_SCOPE: &str = "shadow_screen,monolith,overlit_grid,institutional,\
@@ -45,6 +47,40 @@ pub enum MetaKind {
     Room { role: String },
 }
 
+/// The assembly identity a version-3 source declares.
+///
+/// Optional on [`Meta`] and absent by default, so every module the forge
+/// already generates keeps emitting byte-identical version-2 text. Setting it
+/// is what opts a source into the contract compiler.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AssemblyMeta {
+    pub family: String,
+    pub scope: AssemblyScope,
+    pub family_weight: u16,
+}
+
+impl AssemblyMeta {
+    /// A family chosen per lattice cell.
+    #[must_use]
+    pub fn cell(family: &str, family_weight: u16) -> Self {
+        Self {
+            family: family.to_string(),
+            scope: AssemblyScope::Cell,
+            family_weight,
+        }
+    }
+
+    /// A family chosen once for a whole vertical column. Rotation and register
+    /// fallback are resolved with it, for every member.
+    #[must_use]
+    pub fn column(family: &str, family_weight: u16) -> Self {
+        Self {
+            scope: AssemblyScope::VerticalColumn,
+            ..Self::cell(family, family_weight)
+        }
+    }
+}
+
 /// Everything `tile_meta` needs. A struct rather than eleven positional
 /// arguments, with `Default` carrying the same defaults the Python has.
 #[derive(Clone, Debug)]
@@ -58,6 +94,8 @@ pub struct Meta {
     pub register_scope: String,
     pub rotation_policy: String,
     pub kind: MetaKind,
+    /// Absent for a compatibility source; present for a version-3 one.
+    pub assembly: Option<AssemblyMeta>,
 }
 
 impl Meta {
@@ -74,6 +112,7 @@ impl Meta {
             register_scope: ORIGINAL_REGISTER_SCOPE.to_string(),
             rotation_policy: String::from("sixfold"),
             kind: MetaKind::Cell,
+            assembly: None,
         }
     }
 
@@ -105,13 +144,31 @@ impl Meta {
         self
     }
 
+    /// Declare the assembly identity, promoting this source to version 3.
+    #[must_use]
+    pub fn with_assembly(mut self, assembly: AssemblyMeta) -> Self {
+        self.assembly = Some(assembly);
+        self
+    }
+
     /// Emit. `room_role` is inserted at index 5, exactly where the Python puts
     /// it - between `archetype` and `register`.
+    ///
+    /// The version-3 keys are appended after `weight` rather than woven in, so
+    /// declaring an assembly cannot move a single byte of the committed
+    /// version-2 corpus.
     #[must_use]
     pub fn emit(&self) -> String {
         let mut props: Vec<(&str, String)> = vec![
             ("classname", String::from("tile_meta")),
-            ("authoring_version", String::from("2")),
+            (
+                "authoring_version",
+                if self.assembly.is_some() {
+                    crate::CONTRACT_AUTHORING_VERSION.to_string()
+                } else {
+                    String::from("2")
+                },
+            ),
             ("id", self.id.clone()),
             (
                 "kind",
@@ -130,6 +187,16 @@ impl Meta {
         ];
         if let MetaKind::Room { role } = &self.kind {
             props.insert(5, ("room_role", role.clone()));
+        }
+        if let Some(assembly) = &self.assembly {
+            props.extend([
+                ("family", assembly.family.clone()),
+                (
+                    "assembly_scope",
+                    assembly_scope_name(assembly.scope).to_string(),
+                ),
+                ("family_weight", assembly.family_weight.to_string()),
+            ]);
         }
         point_entity(&props)
     }
@@ -386,6 +453,66 @@ mod tests {
                 "weight",
             ]
         );
+    }
+
+    /// Declaring an assembly promotes the source to version 3 and appends the
+    /// three contract keys after `weight`. Every key before them keeps its
+    /// committed position, so the existing corpus cannot move.
+    #[test]
+    fn an_assembly_declaration_appends_the_version_3_keys_without_moving_any_other() {
+        let plain = Meta::cell("hall/cap", "hall_cap", 0, 1, 1);
+        let contracted = plain
+            .clone()
+            .with_assembly(AssemblyMeta::column("perimeter/tower", 4));
+        let keys = |text: &str| -> Vec<String> {
+            text.lines()
+                .filter_map(|line| line.split('"').nth(1))
+                .map(str::to_string)
+                .collect()
+        };
+        let plain_keys = keys(&plain.emit());
+        let contracted_keys = keys(&contracted.emit());
+
+        assert!(plain.emit().contains("\"authoring_version\" \"2\""));
+        assert!(contracted.emit().contains("\"authoring_version\" \"3\""));
+        assert_eq!(contracted_keys[..plain_keys.len()], plain_keys[..]);
+        assert_eq!(
+            contracted_keys[plain_keys.len()..],
+            ["family", "assembly_scope", "family_weight"]
+        );
+        assert!(
+            contracted
+                .emit()
+                .contains("\"assembly_scope\" \"vertical_column\"")
+        );
+        assert!(contracted.emit().contains("\"family_weight\" \"4\""));
+    }
+
+    /// The forge and the importer have to agree, or an author gets a source
+    /// the compiler refuses. This walks a forged version-3 module all the way
+    /// through to a compiled contract.
+    #[test]
+    fn a_forged_version_3_module_imports_as_a_complete_contract() {
+        let text = format!(
+            "{}{}{}{}{}",
+            worldspawn(&crate::tile_source::hex_slab_brush(0.0, 8.0)),
+            Meta::cell("test/forged", "hall_cap", 0, 1, 1)
+                .with_register_scope("all")
+                .with_rotation_policy("none")
+                .with_assembly(AssemblyMeta::cell("test/forged-family", 5))
+                .emit(),
+            tile_cell_default(),
+            lateral_port(0, "door", "east_threshold", 0, 0, 0),
+            tile_light(48.0, 0.0, 4.0),
+        );
+        let module = crate::source::parse_authored_module(&text)
+            .unwrap_or_else(|error| panic!("forged v3 module must import: {error:?}"));
+        let contract = module
+            .contract
+            .expect("a forged v3 module carries a contract");
+        assert_eq!(contract.assembly.family.0, "test/forged-family");
+        assert_eq!(contract.assembly.family_weight, 5);
+        assert_eq!(contract.interfaces.len(), 1);
     }
 
     /// `room_role` goes between `archetype` and `register`, which is where the

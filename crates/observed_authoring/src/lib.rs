@@ -15,6 +15,7 @@ pub mod brush;
 pub mod cad_renderer;
 pub mod catalog;
 pub mod certification;
+pub mod compiler;
 pub mod composition;
 pub mod contract;
 pub mod distribution;
@@ -49,6 +50,10 @@ pub use certification::{
     TraversalCertificateHash, certify_catalog, certify_catalog_selection, certify_compiled_module,
     certify_runtime_prototype,
 };
+pub use compiler::{
+    AssemblyFamilyIndex, FamilyDiagnostic, FamilyEntry, FamilyMember, compile_module_contract,
+    compile_spatial_contract,
+};
 pub use composition::{
     COMPOSITION_PROFILE_FILE, COMPOSITION_PROFILE_SHA_FILE, CompositionBuild, CompositionError,
     fold_simulation_content_hash, load_profile, parse_profile, write_profile_build,
@@ -63,9 +68,9 @@ pub use contract::{
 };
 pub use manifest::{Manifest, ManifestEntry, ManifestError, TileKey};
 pub use source::{
-    AuthoredModule, FloorPolicy, ModuleCell, ModuleCellRef, ModuleKind, ModulePort, ModuleSocket,
-    ModuleSummary, RoomSocketKind, RotationPolicy, SourceError, editor_origin_to_world,
-    parse_authored_module, validate_module,
+    AuthoredModule, CONTRACT_AUTHORING_VERSION, FloorPolicy, ModuleCell, ModuleCellRef, ModuleKind,
+    ModulePort, ModuleSocket, ModuleSummary, RoomSocketKind, RotationPolicy, SourceError,
+    editor_origin_to_world, parse_authored_module, validate_module,
 };
 pub use tile::{
     DeckPath, STAIR_SPINE_MIN_SEPARATION, StairSpine, TileError, TileLight, TileLightKind,

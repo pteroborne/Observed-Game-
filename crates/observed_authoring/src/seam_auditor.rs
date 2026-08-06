@@ -13,18 +13,23 @@
 //! headroom), then checks every pair of same-class boundaries the solver
 //! would consider compatible for elevation agreement.
 //!
-//! Known limitation: vertical faces (`Up`/`Down`, the only faces
-//! `RampOpen`/`ShaftOpen` may sit on) are reported but not compared — their
+//! Sampled *elevation* stays a lateral-only measure. A vertical face's
 //! elevation is pinned by the shared level grid rather than independently
-//! authored, so a naive comparison across un-placed sources would flag every
-//! correctly authored pair as a false mismatch (see `audit_seams`).
+//! authored, so comparing sampled heights across un-placed sources flags every
+//! correctly authored pair. What is comparable there is the compiled interface
+//! fingerprint — landing, aperture, clearance, and guide terminal in the
+//! normalized connection frame. A version-3 module carries one on every face,
+//! vertical included, so this auditor now compares vertical interfaces inside a
+//! family instead of declining to look at them. Compatibility sources with no
+//! contract are still reported as uncompared, with the reason.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use observed_hex::{HexFace, PortClass, TILE_LEVEL_HEIGHT, face_edge, ports_compatible};
 
-use crate::catalog::CompiledPort;
+use crate::catalog::{CompiledModule, CompiledPort};
+use crate::contract::{InterfaceFingerprint, ModuleFamilyId};
 use crate::source::ModuleCellRef;
 use crate::tile::{class_from_name, face_from_name, face_name};
 
@@ -53,6 +58,12 @@ pub struct FaceSignature {
     pub floor_height: f32,
     /// Vertical clearance (meters) authored at the boundary.
     pub headroom: f32,
+    /// The compiled interface fingerprint, when the owning module carries a
+    /// version-3 contract. This is the only comparable measure on a vertical
+    /// face, and a strictly stronger one on a lateral face: it also covers the
+    /// aperture, the clearance, and the guide terminal, none of which a
+    /// floor/headroom sample can see.
+    pub fingerprint: Option<InterfaceFingerprint>,
 }
 
 /// Whether two boundary signatures may seamlessly meet. The WFC solver joins
@@ -66,10 +77,23 @@ pub fn faces_compatible(a: &FaceSignature, b: &FaceSignature) -> bool {
         && (a.headroom - b.headroom).abs() <= ELEVATION_EPSILON
 }
 
+/// Whether two vertical interfaces of the same face may stand in for one
+/// another. Only the compiled fingerprint answers this: two `Up` shafts in one
+/// family have to present the same landing, aperture, clearance, and guide
+/// terminal, or a column that selected either could not stack on the other.
+#[must_use]
+pub fn vertical_faces_interchangeable(a: &FaceSignature, b: &FaceSignature) -> bool {
+    match (a.fingerprint, b.fingerprint) {
+        (Some(left), Some(right)) => ports_compatible(a.class, b.class) && left == right,
+        _ => false,
+    }
+}
+
 /// One located boundary: which module/face it came from, and its signature.
 #[derive(Clone, Debug)]
 struct LocatedSignature {
     module_id: String,
+    family: Option<ModuleFamilyId>,
     face: HexFace,
     signature: FaceSignature,
 }
@@ -124,6 +148,7 @@ fn sample_face_signature(
     class: PortClass,
     cell: ModuleCellRef,
     face: HexFace,
+    fingerprint: Option<InterfaceFingerprint>,
 ) -> Option<FaceSignature> {
     let origin = cell_origin(cell);
     if face.is_lateral() {
@@ -159,6 +184,7 @@ fn sample_face_signature(
             class,
             floor_height: floor,
             headroom,
+            fingerprint,
         })
     } else {
         let plane_y = match face {
@@ -170,8 +196,22 @@ fn sample_face_signature(
             class,
             floor_height: plane_y,
             headroom: TILE_LEVEL_HEIGHT,
+            fingerprint,
         })
     }
+}
+
+/// The compiled interface fingerprint for one declared port, when the module
+/// carries a version-3 contract. Looked up by the port's stable name, which is
+/// the same key the contract binds its traversal terminal with.
+fn port_fingerprint(module: &CompiledModule, port: &CompiledPort) -> Option<InterfaceFingerprint> {
+    module
+        .contract
+        .as_ref()?
+        .interfaces
+        .iter()
+        .find(|interface| interface.port == port.name)
+        .map(|interface| interface.profile.fingerprint())
 }
 
 /// Resolve one compiled port's face/class strings into the typed vocabulary,
@@ -220,9 +260,14 @@ pub fn audit_seams(root: &Path) -> Result<SeamAuditReport, String> {
                     continue;
                 }
             };
-            match sample_face_signature(hulls, class, port.cell, face) {
+            let fingerprint = port_fingerprint(module, port);
+            match sample_face_signature(hulls, class, port.cell, face, fingerprint) {
                 Some(signature) => located.push(LocatedSignature {
                     module_id: module.id.clone(),
+                    family: module
+                        .contract
+                        .as_ref()
+                        .map(|contract| contract.assembly.family.clone()),
                     face,
                     signature,
                 }),
@@ -269,19 +314,22 @@ pub fn audit_seams(root: &Path) -> Result<SeamAuditReport, String> {
             entries.len() * entries.len().saturating_sub(1) / 2
         ));
         // Vertical faces (`Up`/`Down`, the only faces `RampOpen`/`ShaftOpen`
-        // may sit on) are excluded from elevation comparison. Their
-        // signature's `floor_height` is a formula over the port's *authored*
-        // cell level, not its solve-time world level — a `Down` port is
-        // always exactly one `TILE_LEVEL_HEIGHT` "below" an `Up` port of
-        // matching class by construction, since that is precisely the
-        // contract the WFC grid already guarantees (Up meets the Down of
-        // whatever gets placed one level above). Comparing them here would
-        // manufacture a guaranteed false mismatch on every correctly
-        // authored pair, not catch a real one.
+        // may sit on) are excluded from *elevation* comparison. Their
+        // signature's `floor_height` is a formula over the port's authored
+        // cell level, not its solve-time world level: a `Down` port sits
+        // exactly one `TILE_LEVEL_HEIGHT` below a matching `Up` port by
+        // construction, since that is precisely the contract the WFC grid
+        // already guarantees. Comparing those heights manufactures a
+        // guaranteed false mismatch on every correctly authored pair.
+        //
+        // Their compiled interface fingerprints are another matter. Two
+        // members of one family have to present the same vertical interface,
+        // or a column that picked either could not stack on the other, and
+        // that is a real fault this auditor used to decline to look for.
         if entries.iter().all(|entry| entry.face.is_vertical()) {
-            report.push_str(
-                "  (vertical faces: elevation is pinned by the shared level grid, not independently authorable — not compared)\n",
-            );
+            let (agreed, faults) = audit_vertical_family_interfaces(entries, &mut report);
+            valid_seams += agreed;
+            mismatched_seams += faults;
             continue;
         }
         for i in 0..entries.len() {
@@ -334,6 +382,54 @@ pub fn audit_seams(root: &Path) -> Result<SeamAuditReport, String> {
     })
 }
 
+/// Compare vertical interfaces family by family. Cross-family variation is
+/// legitimate - two tower families are allowed to be different shapes - so only
+/// disagreement *inside* one family is a fault, and a module with no compiled
+/// contract is reported as uncompared rather than silently passed.
+fn audit_vertical_family_interfaces(
+    entries: &[&LocatedSignature],
+    report: &mut String,
+) -> (usize, usize) {
+    let mut by_family: BTreeMap<(ModuleFamilyId, HexFace), Vec<&LocatedSignature>> =
+        BTreeMap::new();
+    let mut uncontracted = BTreeSet::new();
+    for entry in entries {
+        match entry.family.clone() {
+            Some(family) => by_family
+                .entry((family, entry.face))
+                .or_default()
+                .push(entry),
+            None => {
+                uncontracted.insert(entry.module_id.clone());
+            }
+        }
+    }
+    if !uncontracted.is_empty() {
+        report.push_str(&format!(
+            "  (vertical: {} compatibility source(s) carry no compiled interface contract, not compared: {:?})\n",
+            uncontracted.len(),
+            uncontracted
+        ));
+    }
+
+    let mut agreed = 0usize;
+    let mut faults = 0usize;
+    for ((family, face), members) in &by_family {
+        for pair in members.windows(2) {
+            if vertical_faces_interchangeable(&pair[0].signature, &pair[1].signature) {
+                agreed += 1;
+            } else {
+                faults += 1;
+                report.push_str(&format!(
+                    "  MISMATCH: family {:?} {face:?}: {} and {} present different vertical interfaces\n",
+                    family.0, pair[0].module_id, pair[1].module_id,
+                ));
+            }
+        }
+    }
+    (agreed, faults)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -343,6 +439,7 @@ mod tests {
             class,
             floor_height,
             headroom,
+            fingerprint: None,
         }
     }
 
@@ -455,6 +552,60 @@ mod tests {
         let report = audit_seams(&root).expect("audit runs");
         assert_eq!(report.mismatched_seams, 0, "{}", report.report);
         assert!(report.valid_seams >= 1, "{}", report.report);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// A legacy shaft source: one `Up` port, no contract, so the auditor has
+    /// nothing but the level grid to go on.
+    fn shaft_slab_map(archetype: &str, variant: u16) -> String {
+        format!(
+            "{{\n\"classname\" \"worldspawn\"\n{}\n}}\n{{\n\"classname\" \"tile_meta\"\n\"archetype\" \"{archetype}\"\n\"register\" \"institutional\"\n\"variant\" \"{variant}\"\n\"levels\" \"1\"\n}}\n{{\n\"classname\" \"tile_port\"\n\"face\" \"up\"\n\"class\" \"shaft_open\"\n}}\n",
+            crate::tile_source::hex_slab_brush(0.0, 8.0),
+        )
+    }
+
+    /// The vertical half of the audit. Before the contract compiler these were
+    /// printed and skipped; now two shaft columns in one family are actually
+    /// compared, through the compiled interface fingerprint rather than
+    /// through an elevation the level grid already pins.
+    #[test]
+    fn audit_seams_compares_vertical_interfaces_once_a_family_declares_them() {
+        let root = temp_dir("vertical_family");
+        write_module(
+            &root,
+            "one.map",
+            &crate::compiler::fixtures::contracted_tower("test/one", "test/tower", 124),
+        );
+        write_module(
+            &root,
+            "two.map",
+            &crate::compiler::fixtures::contracted_tower("test/two", "test/tower", 124),
+        );
+        let report = audit_seams(&root).expect("audit runs");
+        assert_eq!(report.mismatched_seams, 0, "{}", report.report);
+        assert!(report.valid_seams >= 2, "{}", report.report);
+        assert!(
+            !report.report.contains("not compared"),
+            "a contracted vertical interface must not be skipped: {}",
+            report.report
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// A compatibility source has no compiled interface, so the auditor says
+    /// so instead of counting an unchecked boundary as a passing one.
+    #[test]
+    fn audit_seams_reports_uncontracted_vertical_faces_as_uncompared() {
+        let root = temp_dir("vertical_legacy");
+        write_module(&root, "a.map", &shaft_slab_map("test_shaft_a", 0));
+        write_module(&root, "b.map", &shaft_slab_map("test_shaft_b", 1));
+        let report = audit_seams(&root).expect("audit runs");
+        assert_eq!(report.mismatched_seams, 0, "{}", report.report);
+        assert!(
+            report.report.contains("no compiled interface contract"),
+            "{}",
+            report.report
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 

@@ -18,6 +18,20 @@
 //! Emitted with the generated header and LF endings, and committed, so the
 //! working copy is diffable and `committed_fgd_matches_generated_fgd` can fail
 //! the moment the two disagree.
+//!
+//! # Outstanding: the version-3 `tile_meta` keys
+//!
+//! [`crate::source`] now imports `family`, `assembly_scope`, and
+//! `family_weight`, and `source::assembly_scope_from_name`/`assembly_scope_name`
+//! are the paired tables this generator would build the `assembly_scope` choice
+//! list from. They are deliberately **not** offered here yet: adding them
+//! changes [`emit_fgd`]'s output, and the committed `.fgd` is a generated
+//! artifact that only the catalog publisher regenerates. Adding the properties
+//! and running `tilec emit-fgd` are one step, not two - doing the first alone
+//! red-lights `committed_fgd_matches_generated_fgd`. Until both happen a
+//! version-3 module is authorable through [`crate::forge`] but not from
+//! TrenchBroom's entity browser, which is precisely the drift this module
+//! exists to prevent, so it should not be left standing.
 
 use observed_hex::{HexFace, PortClass};
 
