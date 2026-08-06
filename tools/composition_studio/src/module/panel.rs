@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use observed_style::{SchematicRole, schematic, schematic_screen};
 
 use crate::module::app::ModuleState;
+use crate::module::certify;
 use crate::module::rapier_audit::RapierAuditState;
 
 #[derive(Component)]
@@ -235,6 +236,8 @@ pub fn format_panel(state: &ModuleState) -> String {
             }
         }
     }
+
+    lines.push(certify::summary(&state.certification));
 
     if let Some(recipe) = diagnosis.recipe.as_ref() {
         lines.push(String::new());

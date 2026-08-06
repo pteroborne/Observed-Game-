@@ -1,10 +1,11 @@
 use std::path::{Path, PathBuf};
 
 use observed_authoring::{
-    CompositionBuild, ModuleKind, ModuleSummary, build_catalog, fold_simulation_content_hash,
-    load_profile, new_module_template, parse_authored_module, write_catalog_build,
-    write_profile_build,
+    CompositionBuild, CorpusCertificationReport, ModuleKind, ModuleSummary, build_catalog,
+    certify_catalog, certify_catalog_selection, fold_simulation_content_hash, load_profile,
+    new_module_template, parse_authored_module, write_catalog_build, write_profile_build,
 };
+use observed_traversal::TraversalRuntimeProfile;
 
 fn usage() -> ! {
     eprintln!(
@@ -20,6 +21,9 @@ fn usage() -> ! {
          tilec build [source-root] [catalog.ron] [manifest.ron]\n\
          tilec emit-fgd [output.fgd]\n\
          tilec gen-tiles [output-dir]\n\n\
+         Traversal certification (the production follower, profile, and Rapier):\n\
+         tilec certify <module-id|family|archetype> [source-root]\n\
+         tilec certify-corpus [source-root] [certificate.ron]\n\n\
          Parametric recipes (a module described as data, not code):\n\
          tilec new-recipe <id> [out.recipe.ron]\n\
          tilec bake-recipe <in.recipe.ron> [out.map]\n\n\
@@ -449,6 +453,42 @@ fn run() -> Result<(), String> {
                 dir.display()
             );
         }
+        // The fast command: one module, family, or archetype. Compiles the
+        // corpus in memory and writes nothing.
+        "certify" => {
+            let selector = args.next().unwrap_or_else(|| usage());
+            let root = PathBuf::from(args.next().unwrap_or_else(|| "assets/tiles".to_string()));
+            if args.next().is_some() {
+                usage();
+            }
+            let built = build_catalog(&root).map_err(|error| error.to_string())?;
+            let report = certify_catalog_selection(
+                &built.catalog,
+                &selector,
+                &TraversalRuntimeProfile::canonical_hex(),
+            );
+            print_certification(&report, &selector)?;
+        }
+        // The integration command. A certificate is generated content, so it
+        // is only written when a path is named explicitly; the catalog
+        // publisher owns committing one.
+        "certify-corpus" => {
+            let root = PathBuf::from(args.next().unwrap_or_else(|| "assets/tiles".to_string()));
+            let output = args.next().map(PathBuf::from);
+            if args.next().is_some() {
+                usage();
+            }
+            let built = build_catalog(&root).map_err(|error| error.to_string())?;
+            let report = certify_catalog(&built.catalog, &TraversalRuntimeProfile::canonical_hex());
+            let verdict = print_certification(&report, &root.display().to_string());
+            if let Some(path) = output {
+                let text = report.to_pretty_ron()?;
+                std::fs::write(&path, text.as_bytes())
+                    .map_err(|error| format!("{}: {error}", path.display()))?;
+                println!("wrote {}", path.display());
+            }
+            verdict?;
+        }
         "emit-fgd" => {
             // Defaults to the committed path so the common case is "regenerate
             // in place"; a explicit path is for diffing before overwriting.
@@ -476,6 +516,58 @@ fn run() -> Result<(), String> {
         _ => usage(),
     }
     Ok(())
+}
+
+/// Print one certification report and say whether it passed.
+///
+/// The tally is printed unconditionally so a clean run can never be read as
+/// evidence that anything was actually walked: a corpus of pre-contract
+/// modules reports zero contract certificates, and that is the honest answer
+/// until the v3 compiler publishes them.
+fn print_certification(report: &CorpusCertificationReport, scope: &str) -> Result<(), String> {
+    let (contract, compatibility, not_applicable) = report.tally();
+    let profile_hex: String = report.profile_hash[..6]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    let columns = report
+        .vertical_cases
+        .iter()
+        .filter(|case| case.cells > 2)
+        .count();
+    println!(
+        "{scope}: {} modules ({contract} contract, {compatibility} compatibility, {not_applicable} no traversal)\n\
+         vertical interface classes: {} certified ({columns} representative column{})\n\
+         runtime profile {profile_hex}",
+        report.modules.len(),
+        report.vertical_cases.len() - columns,
+        if columns == 1 { "" } else { "s" }
+    );
+
+    let mut failures = report.failures.clone();
+    for module in &report.modules {
+        failures.extend(module.failures.iter().cloned());
+    }
+    if failures.is_empty() {
+        println!("certified: no traversal fault found");
+        return Ok(());
+    }
+    for failure in &failures {
+        println!(
+            "\nFAILED {} [{:?}] at stage {} tick {}\n  {}",
+            failure.module_id, failure.kind, failure.stage, failure.tick, failure.message
+        );
+        if let (Some(entry), Some(exit)) = (&failure.entry, &failure.exit) {
+            println!("  pair {entry:?} -> {exit:?}");
+        }
+        if let Some(feet) = failure.last_feet {
+            println!("  last feet {feet:?} target {:?}", failure.last_target);
+        }
+    }
+    Err(format!(
+        "{} traversal certification failures",
+        failures.len()
+    ))
 }
 
 /// Every profile command takes the same optional source root.

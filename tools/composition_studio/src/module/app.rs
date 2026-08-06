@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use bevy::prelude::*;
 use observed_style::schematic_screen;
 
+use crate::module::certify::{CertificationState, certify_selected};
 use crate::module::diagnose::{Diagnosis, diagnose_file};
 use crate::module::rapier_audit::{RapierAuditState, audit_projected_guide, projected_guide};
 use crate::module::watch::{ModuleWatch, default_dir, poll_watch};
@@ -48,6 +49,13 @@ pub struct ModuleState {
     pub guide: Option<observed_match::hex_wfc::ProjectedTraversalGuide>,
     /// Explicit state of the optional production follower/Rapier audit.
     pub rapier_audit: RapierAuditState,
+    /// Explicit state of the optional authoritative certification run.
+    ///
+    /// Separate from `rapier_audit` because they answer different questions:
+    /// the audit says a projected guide carried a body, certification also
+    /// names the profile, guide, and digests that make the result comparable
+    /// to what `tilec` proved.
+    pub certification: CertificationState,
 }
 
 impl Default for ModuleState {
@@ -67,6 +75,7 @@ impl Default for ModuleState {
             walk: None,
             guide: None,
             rapier_audit: RapierAuditState::Off,
+            certification: CertificationState::Off,
         }
     }
 }
@@ -220,6 +229,21 @@ impl ModuleState {
         if let Some(audit) = audit {
             self.rapier_audit = audit;
         }
+        if self.certification.is_enabled() {
+            self.certification = self
+                .current()
+                .map_or(CertificationState::NotApplicable, certify_selected);
+        }
+    }
+
+    pub fn toggle_certification(&mut self) {
+        self.certification = if self.certification.is_enabled() {
+            CertificationState::Off
+        } else {
+            CertificationState::NotApplicable
+        };
+        self.refresh_selected_evidence();
+        self.dirty = true;
     }
 
     pub fn toggle_rapier_audit(&mut self) {
@@ -297,6 +321,10 @@ pub fn handle_input(
     }
     if keyboard.just_pressed(KeyCode::KeyR) {
         state.toggle_rapier_audit();
+    }
+    // `C` is already cutaway, and stays cutaway; certification takes `K`.
+    if keyboard.just_pressed(KeyCode::KeyK) {
+        state.toggle_certification();
     }
     // `C` is cutaway in the sibling tool too. A key that means one thing in
     // one studio and another thing in the other is a trap for the person

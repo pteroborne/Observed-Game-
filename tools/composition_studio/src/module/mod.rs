@@ -9,6 +9,7 @@
 //! it is.
 
 pub mod app;
+pub mod certify;
 pub mod diagnose;
 pub mod panel;
 pub mod probe;
