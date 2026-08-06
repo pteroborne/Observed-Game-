@@ -15,10 +15,16 @@ use quake_map::{Entity, QuakeMap};
 use serde::{Deserialize, Serialize};
 
 use crate::UNITS_PER_METER;
+use crate::contract::{AssemblyContract, AssemblyScope, ContractDiagnostic, ModuleFamilyId};
 use crate::contract::ModuleContract;
 use crate::tile::{
     TileError, TilePrototype, class_from_name, face_from_name, parse_tile, prop, required,
 };
+
+/// The highest `authoring_version` the importer compiles. Version 3 is the
+/// first that carries a complete [`ModuleContract`]; 1 and 2 remain readable
+/// compatibility sources and deliberately compile without one.
+pub const CONTRACT_AUTHORING_VERSION: u8 = 3;
 
 const PORT_EPSILON_UNITS: f64 = 1.0;
 const MIN_HEADROOM_METERS: f32 = 2.2;
@@ -216,6 +222,14 @@ pub enum SourceError {
         cell: ModuleCellRef,
         slope: f32,
     },
+    /// A version-3 source declared a contract the compiler could not prove.
+    Contract(ContractDiagnostic),
+}
+
+impl From<ContractDiagnostic> for SourceError {
+    fn from(value: ContractDiagnostic) -> Self {
+        Self::Contract(value)
+    }
 }
 
 impl fmt::Display for SourceError {
@@ -663,11 +677,11 @@ pub fn parse_authored_module(text: &str) -> Result<AuthoredModule, SourceError> 
             entity: "tile_meta",
             detail: "authoring_version must be a u8".to_string(),
         })?;
-    if !matches!(authoring_version, 1 | 2) {
+    if !matches!(authoring_version, 1..=CONTRACT_AUTHORING_VERSION) || authoring_version == 0 {
         return Err(SourceError::InvalidProperty {
             entity: "tile_meta",
             detail: format!(
-                "authoring_version {authoring_version} is not enabled; supported versions are 1 and 2"
+                "authoring_version {authoring_version} is not enabled; supported versions are 1..={CONTRACT_AUTHORING_VERSION}"
             ),
         });
     }
@@ -722,6 +736,7 @@ pub fn parse_authored_module(text: &str) -> Result<AuthoredModule, SourceError> 
             entity: "tile_meta",
             detail: "weight must be in 1..=1000".to_string(),
         })?;
+    let assembly = parse_assembly(meta, authoring_version)?;
 
     let mut footprint = Vec::new();
     let mut footprint_refs = BTreeSet::new();
@@ -852,7 +867,7 @@ pub fn parse_authored_module(text: &str) -> Result<AuthoredModule, SourceError> 
     }
     sockets.sort_by(|a, b| a.id.cmp(&b.id));
 
-    let module = AuthoredModule {
+    let mut module = AuthoredModule {
         authoring_version,
         id,
         kind,
@@ -868,7 +883,75 @@ pub fn parse_authored_module(text: &str) -> Result<AuthoredModule, SourceError> 
         prototype,
     };
     validate_module(&module)?;
+    if let Some(assembly) = assembly {
+        module.contract = Some(crate::compiler::compile_module_contract(&module, assembly)?);
+    }
     Ok(module)
+}
+
+/// Parse the assembly identity a version-3 source must declare. Version 1 and
+/// 2 sources may not declare one: a partially contracted module is exactly the
+/// ambiguity the explicit schema exists to remove.
+fn parse_assembly(
+    meta: &Entity,
+    authoring_version: u8,
+) -> Result<Option<AssemblyContract>, SourceError> {
+    let family = prop(meta, "family").filter(|value| !value.trim().is_empty());
+    let declared = family.is_some()
+        || prop(meta, "assembly_scope").is_some()
+        || prop(meta, "family_weight").is_some();
+    if authoring_version < CONTRACT_AUTHORING_VERSION {
+        if declared {
+            return Err(SourceError::InvalidProperty {
+                entity: "tile_meta",
+                detail: format!(
+                    "family, assembly_scope, and family_weight require authoring_version {CONTRACT_AUTHORING_VERSION}"
+                ),
+            });
+        }
+        return Ok(None);
+    }
+    let family = family.ok_or(SourceError::InvalidProperty {
+        entity: "tile_meta",
+        detail: "authoring_version 3 requires a nonempty family".to_string(),
+    })?;
+    let scope_name = prop(meta, "assembly_scope").unwrap_or_else(|| {
+        assembly_scope_name(AssemblyScope::Cell).to_string()
+    });
+    let scope =
+        assembly_scope_from_name(&scope_name).ok_or_else(|| SourceError::InvalidProperty {
+            entity: "tile_meta",
+            detail: format!("unknown assembly_scope {scope_name:?}"),
+        })?;
+    let family_weight = prop(meta, "family_weight")
+        .unwrap_or_else(|| "1".to_string())
+        .parse::<u16>()
+        .ok()
+        .filter(|weight| (1..=1000).contains(weight))
+        .ok_or(SourceError::InvalidProperty {
+            entity: "tile_meta",
+            detail: "family_weight must be in 1..=1000".to_string(),
+        })?;
+    Ok(Some(AssemblyContract {
+        family: ModuleFamilyId(family),
+        scope,
+        family_weight,
+    }))
+}
+
+pub(crate) fn assembly_scope_from_name(name: &str) -> Option<AssemblyScope> {
+    Some(match name {
+        "cell" => AssemblyScope::Cell,
+        "vertical_column" => AssemblyScope::VerticalColumn,
+        _ => return None,
+    })
+}
+
+pub(crate) fn assembly_scope_name(scope: AssemblyScope) -> &'static str {
+    match scope {
+        AssemblyScope::Cell => "cell",
+        AssemblyScope::VerticalColumn => "vertical_column",
+    }
 }
 
 /// The `tile_meta` `kind` values the importer accepts.

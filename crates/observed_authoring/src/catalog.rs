@@ -9,6 +9,7 @@ use observed_hex::{HexFace, PortClass, PortSignature};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::compiler::{AssemblyFamilyIndex, FamilyDiagnostic};
 use crate::contract::{ContractDiagnostic, ModuleContract, RuntimeModuleContract};
 use crate::manifest::{Manifest, ManifestEntry, PortDecl, TileKey};
 use crate::source::{
@@ -193,8 +194,41 @@ impl CompiledTileCatalog {
                     })?;
                 validate_compiled_contract(module, contract)?;
             }
+            catalog.family_index(&catalog.declared_registers())?;
         }
         Ok(catalog)
+    }
+
+    /// Every architecture register the contracted modules name explicitly.
+    /// A family that declares `all` answers whatever the runtime demands; one
+    /// that names exact registers has to cover this set.
+    #[must_use]
+    pub fn declared_registers(&self) -> Vec<String> {
+        let mut registers = self
+            .modules
+            .iter()
+            .filter(|module| module.contract.is_some())
+            .flat_map(|module| module.register_scope.iter())
+            .filter(|scope| scope.as_str() != "all")
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        if registers.is_empty() {
+            registers.push("generic".to_string());
+        }
+        registers
+    }
+
+    /// Compile the family index and prove its coverage. Only contract-bearing
+    /// modules participate; a pure compatibility catalog yields an empty index
+    /// rather than an error.
+    pub fn family_index(&self, registers: &[String]) -> Result<AssemblyFamilyIndex, CatalogError> {
+        let borrowed = registers
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        AssemblyFamilyIndex::build(&self.modules, &borrowed).map_err(CatalogError::InvalidFamily)
     }
 
     pub fn verify_hash(&self) -> Result<(), CatalogError> {
@@ -394,11 +428,19 @@ pub enum CatalogError {
     UnsupportedVersion(u16),
     UnexpectedContractInV3(String),
     IncompleteContractCatalog,
+    /// One build mixed contracted and uncontracted sources. Catalog v3 refuses
+    /// the contracts and v4 refuses their absence, so the corpus has to move as
+    /// a whole rather than half-migrate into an unloadable artifact.
+    MixedContractCorpus {
+        contracted: String,
+        compatibility: String,
+    },
     ContractRuntimeUnavailable,
     InvalidContract {
         module: String,
         diagnostic: ContractDiagnostic,
     },
+    InvalidFamily(Box<FamilyDiagnostic>),
     HashMismatch {
         expected: String,
         actual: String,
@@ -478,13 +520,13 @@ fn runtime_port(port: &CompiledPort, turn: u8) -> Result<RoomPrototypePort, Cata
     })
 }
 
-fn face_from_compiled_name(name: &str) -> Option<HexFace> {
+pub(crate) fn face_from_compiled_name(name: &str) -> Option<HexFace> {
     HexFace::ALL
         .into_iter()
         .find(|&face| face_name(face) == name)
 }
 
-fn class_from_compiled_name(name: &str) -> Option<PortClass> {
+pub(crate) fn class_from_compiled_name(name: &str) -> Option<PortClass> {
     [
         PortClass::Sealed,
         PortClass::Door,
@@ -881,12 +923,27 @@ pub fn build_catalog(root: &Path) -> Result<CatalogBuild, CatalogError> {
     modules.sort_by(|a, b| a.id.cmp(&b.id));
     manifest_entries.sort_by(|a, b| a.key.cmp(&b.key));
     let hull_sets: Vec<_> = hull_sets.into_values().collect();
+    let contracted = modules.iter().find(|module| module.contract.is_some());
+    let compatibility = modules.iter().find(|module| module.contract.is_none());
+    let version = match (contracted, compatibility) {
+        (Some(contracted), Some(compatibility)) => {
+            return Err(CatalogError::MixedContractCorpus {
+                contracted: contracted.id.clone(),
+                compatibility: compatibility.id.clone(),
+            });
+        }
+        (Some(_), None) => CONTRACT_CATALOG_VERSION,
+        _ => COMPILED_CATALOG_VERSION,
+    };
     let mut catalog = CompiledTileCatalog {
-        version: COMPILED_CATALOG_VERSION,
+        version,
         simulation_content_hash: String::new(),
         hull_sets,
         modules,
     };
+    if version == CONTRACT_CATALOG_VERSION {
+        catalog.family_index(&catalog.declared_registers())?;
+    }
     let canonical = catalog.to_pretty_ron()?;
     catalog.simulation_content_hash = sha256(canonical.as_bytes());
     let audit = CatalogAudit {
