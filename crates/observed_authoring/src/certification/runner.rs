@@ -155,8 +155,14 @@ pub(crate) fn walk_route(
                 u8::from(intent.climb_pressed),
             ]);
 
-            let step =
-                step_character_with_settings(scene, &mut body, intent, &controller, rapier, FIXED_DT);
+            let step = step_character_with_settings(
+                scene,
+                &mut body,
+                intent,
+                &controller,
+                rapier,
+                FIXED_DT,
+            );
             if step.recovered {
                 return Err(fault(
                     CertificationFailureKind::Recovered,
@@ -179,7 +185,9 @@ pub(crate) fn walk_route(
             if leg_ticks >= MAX_TICKS_PER_LEG {
                 return Err(fault(
                     CertificationFailureKind::TimedOut,
-                    format!("leg {index} did not reach its destination in {MAX_TICKS_PER_LEG} ticks"),
+                    format!(
+                        "leg {index} did not reach its destination in {MAX_TICKS_PER_LEG} ticks"
+                    ),
                     total_ticks,
                     body.position - Vec3::Y * half_height,
                     last_target,
@@ -410,7 +418,10 @@ pub fn certify_compiled_module(
             failures: vec![CertificationFailure::module(
                 &module.id,
                 CertificationFailureKind::InvalidStructuralHash,
-                format!("structural hash {:?} is not 32 hex bytes", module.structural_hash),
+                format!(
+                    "structural hash {:?} is not 32 hex bytes",
+                    module.structural_hash
+                ),
             )],
         };
     };
@@ -465,18 +476,14 @@ pub fn certify_compiled_module(
             if *entry_face == HexFace::Down || *exit_face == HexFace::Down {
                 continue;
             }
-            let legs = match plan_route(
-                &contract.traversal,
-                entry,
-                exit,
-                GuidePlacement::identity(),
-            ) {
-                Ok(legs) => legs,
-                Err(error) => {
-                    failures.push(route_failure(&module.id, entry, exit, error));
-                    continue;
-                }
-            };
+            let legs =
+                match plan_route(&contract.traversal, entry, exit, GuidePlacement::identity()) {
+                    Ok(legs) => legs,
+                    Err(error) => {
+                        failures.push(route_failure(&module.id, entry, exit, error));
+                        continue;
+                    }
+                };
             let start = leg_start(&legs);
             match walk_route_repeatably(&scene, profile, start, &legs, None) {
                 Ok(result) => pairs.push(CertifiedPortPair {

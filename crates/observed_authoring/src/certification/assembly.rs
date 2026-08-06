@@ -21,7 +21,10 @@ use super::model::{
     CorpusCertificationReport, TRAVERSAL_CERTIFICATE_VERSION,
 };
 use super::route::{GuidePlacement, Leg, plan_route};
-use super::runner::{certify_compiled_module, certify_runtime_prototype, leg_start, walk_failure, walk_route_repeatably};
+use super::runner::{
+    certify_compiled_module, certify_runtime_prototype, leg_start, walk_failure,
+    walk_route_repeatably,
+};
 use super::scene::{PlacedModule, certification_scene, hulls_from_compiled};
 use crate::catalog::{CompiledModule, CompiledTileCatalog};
 use crate::contract::{InterfaceFingerprint, ModuleContract, ModuleInterface};
@@ -30,7 +33,10 @@ use crate::tile::TilePrototype;
 /// The number of stacked cells in the representative vertical column.
 const REPRESENTATIVE_COLUMN_CELLS: u8 = 3;
 
-fn hull_set<'a>(catalog: &'a CompiledTileCatalog, module: &CompiledModule) -> Option<&'a [Vec<[f32; 3]>]> {
+fn hull_set<'a>(
+    catalog: &'a CompiledTileCatalog,
+    module: &CompiledModule,
+) -> Option<&'a [Vec<[f32; 3]>]> {
     catalog
         .hull_sets
         .iter()
@@ -57,6 +63,11 @@ fn side_port(contract: &ModuleContract, avoid: &str) -> Option<String> {
         .map(|interface| interface.port.clone())
 }
 
+/// Ticks walked, plus the intent and body digests that make the run
+/// identifiable. Boxed failures keep the `Result` small enough to pass by
+/// value through the corpus loop.
+type ColumnEvidence = (u32, [u8; 32], [u8; 32]);
+
 /// One member of a stacked column, already resolved to hulls and a route.
 struct ColumnMember<'a> {
     module: &'a CompiledModule,
@@ -69,7 +80,7 @@ struct ColumnMember<'a> {
 fn walk_column(
     members: &[ColumnMember<'_>],
     profile: &TraversalRuntimeProfile,
-) -> Result<(u32, [u8; 32], [u8; 32]), CertificationFailure> {
+) -> Result<ColumnEvidence, Box<CertificationFailure>> {
     let placed = members
         .iter()
         .enumerate()
@@ -111,20 +122,20 @@ fn walk_column(
                 failure.entry = Some(member.entry.clone());
                 failure.exit = Some(member.exit.clone());
                 failure.stage = "stacked_route".to_string();
-                return Err(failure);
+                return Err(Box::new(failure));
             }
         }
     }
     let start = leg_start(&legs);
     match walk_route_repeatably(&scene, profile, start, &legs, None) {
         Ok(result) => Ok((result.ticks, result.intent_digest, result.body_digest)),
-        Err(fault) => Err(walk_failure(
+        Err(fault) => Err(Box::new(walk_failure(
             &members[0].module.id,
             Some(members[0].entry.clone()),
             members.last().map(|member| member.exit.clone()),
             "stacked_column",
             fault,
-        )),
+        ))),
     }
 }
 
@@ -258,14 +269,19 @@ fn certify_selected(
                 .certificate
                 .as_ref()
                 .map(|certificate| certificate.module_id.clone())
-                .or_else(|| report.failures.first().map(|failure| failure.module_id.clone()))
+                .or_else(|| {
+                    report
+                        .failures
+                        .first()
+                        .map(|failure| failure.module_id.clone())
+                })
                 .unwrap_or_default()
         };
         id(a).cmp(&id(b))
     });
-    report
-        .vertical_cases
-        .sort_by(|a, b| (a.fingerprint, a.cells, &a.lower).cmp(&(b.fingerprint, b.cells, &b.lower)));
+    report.vertical_cases.sort_by(|a, b| {
+        (a.fingerprint, a.cells, &a.lower).cmp(&(b.fingerprint, b.cells, &b.lower))
+    });
     report
 }
 
@@ -386,7 +402,7 @@ fn certify_vertical_assemblies(
                     body_digest,
                 });
             }
-            Err(failure) => report.failures.push(failure),
+            Err(failure) => report.failures.push(*failure),
         }
 
         // A three-cell column needs one module that both carries and stands on
@@ -452,18 +468,20 @@ fn certify_vertical_assemblies(
         },
     ];
     match walk_column(&column, profile) {
-        Ok((ticks, intent_digest, body_digest)) => report.vertical_cases.push(CertifiedVerticalCase {
-            family: class.family.clone(),
-            fingerprint: class.fingerprint,
-            lower: middle.id.clone(),
-            upper: middle.id.clone(),
-            members: members_of(class),
-            cells: REPRESENTATIVE_COLUMN_CELLS,
-            ticks,
-            intent_digest,
-            body_digest,
-        }),
-        Err(failure) => report.failures.push(failure),
+        Ok((ticks, intent_digest, body_digest)) => {
+            report.vertical_cases.push(CertifiedVerticalCase {
+                family: class.family.clone(),
+                fingerprint: class.fingerprint,
+                lower: middle.id.clone(),
+                upper: middle.id.clone(),
+                members: members_of(class),
+                cells: REPRESENTATIVE_COLUMN_CELLS,
+                ticks,
+                intent_digest,
+                body_digest,
+            })
+        }
+        Err(failure) => report.failures.push(*failure),
     }
 }
 

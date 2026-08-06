@@ -10,7 +10,9 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use glam::{Quat, Vec3};
-use observed_traversal::{DeckPath, StairSpine, TraversalDirection, TraversalMode, TraversalNodeId};
+use observed_traversal::{
+    DeckPath, StairSpine, TraversalDirection, TraversalMode, TraversalNodeId,
+};
 
 use crate::contract::{ModuleTraversalContract, QuantizedPoint};
 use crate::source::editor_origin_to_world;

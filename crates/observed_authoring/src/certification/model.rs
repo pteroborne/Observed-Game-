@@ -7,9 +7,7 @@ use crate::InterfaceFingerprint;
 pub const TRAVERSAL_CERTIFICATE_VERSION: u16 = 1;
 const CERTIFICATE_HASH_DOMAIN: &[u8] = b"observed2.traversal-certificate";
 
-#[derive(
-    Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
-)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
 pub struct TraversalCertificateHash(pub [u8; 32]);
 
@@ -79,12 +77,12 @@ impl TraversalCertificate {
                 .interfaces
                 .windows(2)
                 .all(|pair| pair[0].port < pair[1].port)
-            && self.directed_pairs.windows(2).all(|pair| {
-                (&pair[0].entry, &pair[0].exit) < (&pair[1].entry, &pair[1].exit)
-            })
+            && self
+                .directed_pairs
+                .windows(2)
+                .all(|pair| (&pair[0].entry, &pair[0].exit) < (&pair[1].entry, &pair[1].exit))
     }
 
-    #[must_use]
     pub fn to_pretty_ron(&self) -> Result<String, String> {
         ron::ser::to_string_pretty(
             self,
@@ -223,7 +221,6 @@ impl CertificationReport {
                 || self.authority == CertificationAuthority::NotApplicable)
     }
 
-    #[must_use]
     pub fn to_pretty_ron(&self) -> Result<String, String> {
         ron::ser::to_string_pretty(
             self,
@@ -291,7 +288,6 @@ impl CorpusCertificationReport {
         )
     }
 
-    #[must_use]
     pub fn to_pretty_ron(&self) -> Result<String, String> {
         ron::ser::to_string_pretty(
             self,

@@ -15,8 +15,8 @@ use observed_hex::HexFace;
 use super::model::{CertificationFailure, CertificationFailureKind};
 use crate::QUANTIZED_UNITS_PER_METER;
 use crate::contract::{
-    FaceLocalBox, FaceLocalPoint, LateralFaceFrame, ModuleContract, ModuleInterface, QuantizedPoint,
-    VerticalFaceFrame,
+    FaceLocalBox, FaceLocalPoint, LateralFaceFrame, ModuleContract, ModuleInterface,
+    QuantizedPoint, VerticalFaceFrame,
 };
 use crate::source::ModuleCellRef;
 
