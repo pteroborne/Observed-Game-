@@ -497,3 +497,300 @@ fn compile_family(
         variants,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::super::fixtures;
+    use super::*;
+    use crate::catalog::{CONTRACT_CATALOG_VERSION, CatalogError, build_catalog};
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "observed2_family_{name}_{}_{}",
+            std::process::id(),
+            nonce
+        ));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).expect("temp dir");
+        path
+    }
+
+    /// Build a synthetic corpus of version-3 sources and index its families.
+    fn index_of(
+        name: &str,
+        sources: &[(&str, String)],
+    ) -> Result<AssemblyFamilyIndex, CatalogError> {
+        let root = temp_dir(name);
+        for (file, text) in sources {
+            std::fs::write(root.join(file), text).expect("write source");
+        }
+        let result = build_catalog(&root).and_then(|built| {
+            assert_eq!(built.catalog.version, CONTRACT_CATALOG_VERSION);
+            built
+                .catalog
+                .family_index(&built.catalog.declared_registers())
+        });
+        let _ = std::fs::remove_dir_all(root);
+        result
+    }
+
+    fn family_fault(result: Result<AssemblyFamilyIndex, CatalogError>) -> FamilyDiagnostic {
+        match result {
+            Err(CatalogError::InvalidFamily(diagnostic)) => *diagnostic,
+            Ok(_) => panic!("expected a family diagnostic, the corpus compiled"),
+            Err(other) => panic!("expected a family diagnostic, got {other:?}"),
+        }
+    }
+
+    /// The complete case. Two families answer the same archetype, register and
+    /// rotation, and each covers every signature the other does.
+    #[test]
+    fn two_complete_families_index_by_assembly_variant() {
+        let index = index_of(
+            "complete",
+            &[
+                (
+                    "a_east.map",
+                    fixtures::contracted_cell_facing("test/a-east", "test/a", "east"),
+                ),
+                (
+                    "a_west.map",
+                    fixtures::contracted_cell_facing("test/a-west", "test/a", "west"),
+                ),
+                (
+                    "b_east.map",
+                    fixtures::contracted_cell_facing("test/b-east", "test/b", "east"),
+                ),
+                (
+                    "b_west.map",
+                    fixtures::contracted_cell_facing("test/b-west", "test/b", "west"),
+                ),
+            ],
+        )
+        .expect("two complete families compile");
+
+        assert_eq!(index.len(), 2);
+        let key = ("hall_cap".to_string(), "generic".to_string(), 0);
+        for family in ["test/a", "test/b"] {
+            let entry = index
+                .get(&ModuleFamilyId(family.to_string()))
+                .unwrap_or_else(|| panic!("{family} indexed"));
+            assert_eq!(entry.scope, AssemblyScope::Cell);
+            assert_eq!(entry.family_weight, 3);
+            assert_eq!(entry.rotations, [0]);
+            assert_eq!(entry.registers, ["generic"]);
+            assert_eq!(entry.signatures(&key), ["east=door", "west=door"]);
+            assert_eq!(entry.members(&key, "east=door").len(), 1);
+        }
+        // Rotation belongs to the variant identity, so an unaccepted turn
+        // resolves to nothing rather than silently falling back to turn 0.
+        assert!(
+            index
+                .variant(&AssemblyVariantId {
+                    family: ModuleFamilyId("test/a".to_string()),
+                    rotation: 3,
+                })
+                .is_none()
+        );
+        assert!(
+            index
+                .variant(&AssemblyVariantId {
+                    family: ModuleFamilyId("test/a".to_string()),
+                    rotation: 0,
+                })
+                .is_some()
+        );
+    }
+
+    /// The incomplete case. `test/b` cannot answer a signature `test/a` can for
+    /// the same variant, and the runtime's only escape would be to mix them.
+    #[test]
+    fn an_incomplete_family_names_its_missing_signature_exactly() {
+        let fault = family_fault(index_of(
+            "incomplete",
+            &[
+                (
+                    "a_east.map",
+                    fixtures::contracted_cell_facing("test/a-east", "test/a", "east"),
+                ),
+                (
+                    "a_west.map",
+                    fixtures::contracted_cell_facing("test/a-west", "test/a", "west"),
+                ),
+                (
+                    "b_east.map",
+                    fixtures::contracted_cell_facing("test/b-east", "test/b", "east"),
+                ),
+            ],
+        ));
+
+        assert_eq!(fault.code, "incomplete_signature_coverage");
+        assert_eq!(fault.family, ModuleFamilyId("test/b".to_string()));
+        assert_eq!(fault.archetype.as_deref(), Some("hall_cap"));
+        assert_eq!(fault.register.as_deref(), Some("generic"));
+        assert_eq!(fault.rotation, Some(0));
+        assert_eq!(fault.signature.as_deref(), Some("west=door"));
+        assert_eq!(fault.modules, ["test/b-east"]);
+        let rendered = fault.to_string();
+        for fragment in [
+            "incomplete_signature_coverage",
+            "family \"test/b\"",
+            "archetype hall_cap",
+            "register generic",
+            "rotation 0",
+            "signature west=door",
+        ] {
+            assert!(rendered.contains(fragment), "{rendered}");
+        }
+    }
+
+    /// The mismatched case. Two members of one vertical column present
+    /// different `Up` interfaces, so a column that picked either could not
+    /// stack on the other.
+    #[test]
+    fn a_mismatched_vertical_fingerprint_is_rejected_with_its_variant() {
+        let fault = family_fault(index_of(
+            "mismatched",
+            &[
+                (
+                    "tall.map",
+                    fixtures::contracted_tower("test/tall", "test/tower", 124),
+                ),
+                (
+                    "short.map",
+                    fixtures::contracted_tower("test/short", "test/tower", 120),
+                ),
+            ],
+        ));
+
+        assert_eq!(fault.code, "mismatched_vertical_fingerprint");
+        assert_eq!(fault.family, ModuleFamilyId("test/tower".to_string()));
+        assert_eq!(fault.archetype.as_deref(), Some("stair_tower"));
+        assert_eq!(fault.register.as_deref(), Some("generic"));
+        assert_eq!(fault.rotation, Some(0));
+        assert_eq!(
+            fault.signature.as_deref(),
+            Some("up=shaft_open,down=shaft_open")
+        );
+        assert_eq!(fault.modules, ["test/short", "test/tall"]);
+        assert!(fault.to_string().contains("Up"), "{fault}");
+    }
+
+    #[test]
+    fn a_family_resolves_scope_weight_rotation_and_fallback_exactly_once() {
+        let cell = |id: &str, family: &str| fixtures::contracted_cell_facing(id, family, "east");
+
+        let scope = family_fault(index_of(
+            "mixed_scope",
+            &[
+                ("a.map", cell("test/a", "test/mixed")),
+                (
+                    "b.map",
+                    cell("test/b", "test/mixed").replace(
+                        "\"family_weight\"",
+                        "\"assembly_scope\" \"vertical_column\"\n\"family_weight\"",
+                    ),
+                ),
+            ],
+        ));
+        assert_eq!(scope.code, "mixed_assembly_scope");
+        assert_eq!(scope.modules, ["test/a", "test/b"]);
+
+        let weight = family_fault(index_of(
+            "mixed_weight",
+            &[
+                ("a.map", cell("test/a", "test/mixed")),
+                (
+                    "b.map",
+                    cell("test/b", "test/mixed")
+                        .replace("\"family_weight\" \"3\"", "\"family_weight\" \"9\""),
+                ),
+            ],
+        ));
+        assert_eq!(weight.code, "mixed_family_weight");
+        assert!(weight.message.contains('9'), "{weight}");
+
+        let rotation = family_fault(index_of(
+            "mixed_rotation",
+            &[
+                ("a.map", cell("test/a", "test/mixed")),
+                (
+                    "b.map",
+                    cell("test/b", "test/mixed").replace(
+                        "\"rotation_policy\" \"none\"",
+                        "\"rotation_policy\" \"sixfold\"",
+                    ),
+                ),
+            ],
+        ));
+        assert_eq!(rotation.code, "mixed_assembly_rotations");
+
+        let fallback = family_fault(index_of(
+            "mixed_fallback",
+            &[
+                ("a.map", cell("test/a", "test/mixed")),
+                (
+                    "b.map",
+                    cell("test/b", "test/mixed")
+                        .replace("\"register_scope\" \"all\"", "\"register_scope\" \"monolith\""),
+                ),
+            ],
+        ));
+        assert_eq!(fallback.code, "mixed_register_fallback");
+        assert_eq!(fallback.register.as_deref(), Some("monolith"));
+    }
+
+    /// A version-1/2 corpus keeps compiling to catalog v3 with no families at
+    /// all, which is what leaves the committed content hash where it was.
+    #[test]
+    fn a_compatibility_corpus_indexes_no_families() {
+        let root = temp_dir("compatibility");
+        std::fs::write(
+            root.join("module.map"),
+            crate::catalog::new_module_template("test/compat", crate::ModuleKind::Cell),
+        )
+        .expect("write map");
+        let built = build_catalog(&root).expect("build");
+        assert_eq!(
+            built.catalog.version,
+            crate::catalog::COMPILED_CATALOG_VERSION
+        );
+        assert!(
+            built
+                .catalog
+                .family_index(&built.catalog.declared_registers())
+                .expect("index")
+                .is_empty()
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// Catalog v3 refuses contracts and v4 refuses their absence, so a corpus
+    /// migrates whole rather than into an artifact neither reader accepts.
+    #[test]
+    fn a_half_migrated_corpus_is_refused_by_name() {
+        let root = temp_dir("half_migrated");
+        std::fs::write(
+            root.join("legacy.map"),
+            crate::catalog::new_module_template("test/legacy", crate::ModuleKind::Cell),
+        )
+        .expect("write legacy");
+        std::fs::write(
+            root.join("contracted.map"),
+            fixtures::contracted_cell_facing("test/contracted", "test/a", "east"),
+        )
+        .expect("write contracted");
+        assert!(matches!(
+            build_catalog(&root),
+            Err(CatalogError::MixedContractCorpus { contracted, compatibility })
+                if contracted == "test/contracted" && compatibility == "test/legacy"
+        ));
+        let _ = std::fs::remove_dir_all(root);
+    }
+}

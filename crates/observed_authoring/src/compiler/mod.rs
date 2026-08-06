@@ -71,6 +71,24 @@ pub(crate) mod fixtures {
         )
     }
 
+    /// The same cell with its single door moved to another face, and rotation
+    /// pinned off so one source is exactly one signature.
+    pub(crate) fn contracted_cell_facing(id: &str, family: &str, face: &str) -> String {
+        let origin = match face {
+            "east" => "112 0 48",
+            "west" => "-112 0 48",
+            other => panic!("fixture supports east/west, not {other:?}"),
+        };
+        contracted_cell(id, family)
+            .replace("\"rotation_policy\" \"sixfold\"", "\"rotation_policy\" \"none\"")
+            .replace("\"face\" \"east\"", &format!("\"face\" \"{face}\""))
+            .replace(
+                "\"name\" \"east_threshold\"",
+                &format!("\"name\" \"{face}_threshold\""),
+            )
+            .replace("\"origin\" \"112 0 48\"", &format!("\"origin\" \"{origin}\""))
+    }
+
     /// A one-level shaft column: an open floor, a west wall, a vertical climb,
     /// and both vertical handoffs. `climb_top` is the editor Z the authored
     /// spine actually reaches, which is what a stacked pair has to agree on.

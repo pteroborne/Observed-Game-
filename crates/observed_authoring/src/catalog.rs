@@ -1261,21 +1261,63 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
+    /// Version 3 is compiled now, but only as a *complete* contract: a source
+    /// that claims the version without an assembly identity is still a fault,
+    /// and version 4 remains unopened.
     #[test]
-    fn authoring_v3_fails_closed_until_the_contract_compiler_lands() {
-        for version in [3, 4] {
+    fn authoring_versions_past_the_contract_compiler_still_fail_closed() {
+        for version in [0, 4, 5] {
             let text = new_module_template("test/future", ModuleKind::Cell).replace(
                 "\"authoring_version\" \"2\"",
                 &format!("\"authoring_version\" \"{version}\""),
             );
-            assert!(matches!(
-                parse_authored_module(&text),
-                Err(SourceError::InvalidProperty {
-                    entity: "tile_meta",
-                    ..
-                })
-            ));
+            assert!(
+                matches!(
+                    parse_authored_module(&text),
+                    Err(SourceError::InvalidProperty {
+                        entity: "tile_meta",
+                        ..
+                    })
+                ),
+                "authoring_version {version} must not import"
+            );
         }
+        let anonymous = new_module_template("test/anonymous", ModuleKind::Cell)
+            .replace("\"authoring_version\" \"2\"", "\"authoring_version\" \"3\"");
+        assert!(matches!(
+            parse_authored_module(&anonymous),
+            Err(SourceError::InvalidProperty {
+                entity: "tile_meta",
+                ..
+            })
+        ));
+    }
+
+    /// The compatibility promise. A version-1/2 corpus compiles to exactly the
+    /// catalog-v3 bytes it did before the contract compiler existed, so the
+    /// committed simulation content hash cannot move underneath LAN clients.
+    #[test]
+    fn compatibility_sources_keep_their_contract_free_catalog_v3_serialization() {
+        let root = temp_dir("v1_v2_unchanged");
+        std::fs::write(
+            root.join("module.map"),
+            new_module_template("test/compat", ModuleKind::Cell),
+        )
+        .expect("write map");
+        let built = build_catalog(&root).expect("build");
+        assert_eq!(built.catalog.version, COMPILED_CATALOG_VERSION);
+        assert!(
+            built
+                .catalog
+                .modules
+                .iter()
+                .all(|module| module.contract.is_none())
+        );
+        let text = built.catalog.to_pretty_ron().expect("serialize");
+        assert!(!text.contains("contract:"), "{text}");
+        assert!(!text.contains("family"), "{text}");
+        built.catalog.verify_hash().expect("content hash");
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
