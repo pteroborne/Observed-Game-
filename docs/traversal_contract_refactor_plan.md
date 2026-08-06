@@ -18,6 +18,33 @@ The integration branch is `refactor/traversal-contract-integration`. Completed w
 | 1 | TR-1, TR-2 | Shared stateless follower and immutable `HexMatchContent` merged (`03cbe42`, `3008da7`). |
 | 2 | TR-3, TR-4, TR-5 | Canonical runtime profile, external stateful bot driver, and atomic projected guides merged (`7265b50`, `1eac79f`, `97169dc`). |
 | 3 | TR-6, TR-7 | Studio's canonical Rapier audit and the reviewed shared serialized contract seam merged (`41c4bfa`, `4330f07`). |
+| 4 | TR-8B | Module-local graphs and the runtime cursor merged (`6c59e86`). TR-8A and TR-8C still in flight. |
+
+### Wave 4 integration notes
+
+**TR-8B is additive and inert.** Nothing in the committed corpus populates
+`ProjectedTraversalGuide.graph` — the single projection site in
+`geometry.rs::push_tile` still passes `graph: None` — so the legacy adapters are
+implemented and tested but reachable only from tests. Production intents, the
+selection digest, the perimeter-tower intent/body trace, and the catalog hash
+are unchanged, and the pin tests passed without being edited. Populating the
+field belongs to whoever owns `geometry.rs` next; it is not a leftover.
+
+**Two seam questions were escalated rather than decided by the worker, and both
+were escalated correctly.**
+
+*Objective on the lease — declined.* `HexTraversalLease` carries no objective, so
+the driver keeps one in a local `GraphLeg` wrapper. That stays. An objective is a
+match/AI concept and the ownership table already says `observed_traversal` does
+not own objectives; putting one on the lease would leak match semantics into the
+traversal crate to save a wrapper. TR-9 should not revisit this without a reason
+that is not convenience.
+
+*Graph-follower turning constants.* The graph's capture radius is a graph
+constant rather than a `FollowerConfig` field, because `FollowerConfig` is hashed
+into the frozen profile identity `29e48ecf…` and adding a field there would have
+moved it silently. Correct call; noted here so it is not mistaken for an
+oversight later.
 
 TR-7 intentionally moves the runtime-profile identity from v1
 `15ee7875d369...` to v2 `29e48ecf1d20...`. V1 omitted effective Rapier
@@ -842,6 +869,25 @@ Contract Hat changes land at deliberate boundaries:
 1. Authoring v3/catalog v4 and regenerated sources.
 2. Family-aware deterministic selection.
 3. Traversal-profile/certificate hash folding.
+4. **Switching production onto graph legs — an intent-trace boundary.**
+
+Boundary 4 was discovered by TR-8B and is a correction to this plan. TR-8B's
+packet description says to remove shape inference from `vertical_command` /
+`climb_command` / `finish_stair_command` "once graph parity passes", which
+assumed parity was reachable. It is not, by construction: compatibility lateral
+steering emits `movement 1.0` with `sprint_held: true`, while the graph
+follower's `walk_toward` emits `movement 0.35` without it. Those are different
+intents because the two paths were written to different intentions, not because
+one has drifted from the other.
+
+So the removal is not a refactor that can be finished quietly under the
+Refactoring Hat. It changes emitted `PlayerIntent` and therefore body digests,
+completion ticks, and snapshots, and it needs the same treatment as the other
+three: its own commit, before/after traces, a replay/LAN compatibility note, and
+complete seed evidence. Until that lands, the old steering functions stay and
+the graph path stays unreachable in production. Whoever takes it should decide
+deliberately which of the two intents is *right* — the sprint-held value is not
+obviously correct merely because it is current.
 
 Each boundary gets its own commit, before/after hashes, replay/LAN compatibility note,
 and complete seed evidence. Generated files are never hand-edited.
