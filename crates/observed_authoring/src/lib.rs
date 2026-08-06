@@ -14,6 +14,7 @@
 pub mod brush;
 pub mod cad_renderer;
 pub mod catalog;
+pub mod certification;
 pub mod composition;
 pub mod contract;
 pub mod distribution;
@@ -40,6 +41,13 @@ pub use catalog::{
     RoomPrototype, RoomPrototypePort, RoomPrototypeSocket, RuntimeAuthoringCatalog,
     audit_district_variations, build_catalog, discover_sources, load_runtime_cells,
     new_module_template, write_catalog_build,
+};
+pub use certification::{
+    CertificationAuthority, CertificationFailure, CertificationFailureKind, CertificationReport,
+    CertifiedInterface, CertifiedPortPair, CertifiedVerticalCase, CorpusCertificationReport,
+    FailureTracePoint, TRAVERSAL_CERTIFICATE_VERSION, TraversalCertificate,
+    TraversalCertificateHash, certify_catalog, certify_catalog_selection, certify_compiled_module,
+    certify_runtime_prototype,
 };
 pub use composition::{
     COMPOSITION_PROFILE_FILE, COMPOSITION_PROFILE_SHA_FILE, CompositionBuild, CompositionError,
