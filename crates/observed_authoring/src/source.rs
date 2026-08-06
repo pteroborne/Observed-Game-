@@ -15,8 +15,8 @@ use quake_map::{Entity, QuakeMap};
 use serde::{Deserialize, Serialize};
 
 use crate::UNITS_PER_METER;
-use crate::contract::{AssemblyContract, AssemblyScope, ContractDiagnostic, ModuleFamilyId};
 use crate::contract::ModuleContract;
+use crate::contract::{AssemblyContract, AssemblyScope, ContractDiagnostic, ModuleFamilyId};
 use crate::tile::{
     TileError, TilePrototype, class_from_name, face_from_name, parse_tile, prop, required,
 };
@@ -915,9 +915,8 @@ fn parse_assembly(
         entity: "tile_meta",
         detail: "authoring_version 3 requires a nonempty family".to_string(),
     })?;
-    let scope_name = prop(meta, "assembly_scope").unwrap_or_else(|| {
-        assembly_scope_name(AssemblyScope::Cell).to_string()
-    });
+    let scope_name = prop(meta, "assembly_scope")
+        .unwrap_or_else(|| assembly_scope_name(AssemblyScope::Cell).to_string());
     let scope =
         assembly_scope_from_name(&scope_name).ok_or_else(|| SourceError::InvalidProperty {
             entity: "tile_meta",

@@ -224,10 +224,7 @@ impl CompiledTileCatalog {
     /// modules participate; a pure compatibility catalog yields an empty index
     /// rather than an error.
     pub fn family_index(&self, registers: &[String]) -> Result<AssemblyFamilyIndex, CatalogError> {
-        let borrowed = registers
-            .iter()
-            .map(String::as_str)
-            .collect::<Vec<_>>();
+        let borrowed = registers.iter().map(String::as_str).collect::<Vec<_>>();
         AssemblyFamilyIndex::build(&self.modules, &borrowed).map_err(CatalogError::InvalidFamily)
     }
 

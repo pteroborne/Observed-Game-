@@ -203,9 +203,10 @@ impl AssemblyFamilyIndex {
                         .iter()
                         .map(|(module, _)| module.id.clone())
                         .collect(),
-                    message: "another family answers this signature for the same assembly variant; \
+                    message:
+                        "another family answers this signature for the same assembly variant; \
                               filling the hole would mix families inside one assembly"
-                        .to_string(),
+                            .to_string(),
                 }));
             }
         }
@@ -308,7 +309,9 @@ fn compile_family(
             register: None,
             rotation: None,
             signature: None,
-            modules: module.map(|module| vec![module.id.clone()]).unwrap_or_default(),
+            modules: module
+                .map(|module| vec![module.id.clone()])
+                .unwrap_or_default(),
             message,
         })
     };
@@ -324,7 +327,9 @@ fn compile_family(
             rotation: turn,
         }
         .validate()
-        .map_err(|diagnostic| fault("invalid_assembly_rotation", Some(first), diagnostic.message))?;
+        .map_err(|diagnostic| {
+            fault("invalid_assembly_rotation", Some(first), diagnostic.message)
+        })?;
     }
 
     for (module, contract) in members {
@@ -737,8 +742,10 @@ mod tests {
                 ("a.map", cell("test/a", "test/mixed")),
                 (
                     "b.map",
-                    cell("test/b", "test/mixed")
-                        .replace("\"register_scope\" \"all\"", "\"register_scope\" \"monolith\""),
+                    cell("test/b", "test/mixed").replace(
+                        "\"register_scope\" \"all\"",
+                        "\"register_scope\" \"monolith\"",
+                    ),
                 ),
             ],
         ));

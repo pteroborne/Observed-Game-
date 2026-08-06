@@ -80,13 +80,19 @@ pub(crate) mod fixtures {
             other => panic!("fixture supports east/west, not {other:?}"),
         };
         contracted_cell(id, family)
-            .replace("\"rotation_policy\" \"sixfold\"", "\"rotation_policy\" \"none\"")
+            .replace(
+                "\"rotation_policy\" \"sixfold\"",
+                "\"rotation_policy\" \"none\"",
+            )
             .replace("\"face\" \"east\"", &format!("\"face\" \"{face}\""))
             .replace(
                 "\"name\" \"east_threshold\"",
                 &format!("\"name\" \"{face}_threshold\""),
             )
-            .replace("\"origin\" \"112 0 48\"", &format!("\"origin\" \"{origin}\""))
+            .replace(
+                "\"origin\" \"112 0 48\"",
+                &format!("\"origin\" \"{origin}\""),
+            )
     }
 
     /// A one-level shaft column: an open floor, a west wall, a vertical climb,
@@ -187,14 +193,21 @@ mod tests {
             profile.clearance.max.v - profile.clearance.min.v,
             i64::from(CLEARANCE_HEIGHT_UNITS) * VERTICAL_LOCAL_SCALE
         );
-        assert_eq!(profile.clearance.max.inward, INTERFACE_CLEARANCE_DEPTH_LOCAL);
-        assert_eq!(profile.guide_terminal.position.v, profile.landing.position.v);
+        assert_eq!(
+            profile.clearance.max.inward,
+            INTERFACE_CLEARANCE_DEPTH_LOCAL
+        );
+        assert_eq!(
+            profile.guide_terminal.position.v,
+            profile.landing.position.v
+        );
     }
 
     #[test]
     fn a_vertical_interface_carries_the_same_quantized_profile_as_a_lateral_one() {
-        let module = parse_authored_module(&fixtures::contracted_tower("test/tower", "test/t", 124))
-            .expect("contracted tower parses");
+        let module =
+            parse_authored_module(&fixtures::contracted_tower("test/tower", "test/t", 124))
+                .expect("contracted tower parses");
         let contract = module.contract.as_ref().expect("contract");
         let interface = |face| {
             contract
@@ -212,7 +225,10 @@ mod tests {
         // reach is what the guide terminal records.
         assert_eq!(up.landing.position.inward, 0);
         assert_eq!(up.guide_terminal.position.inward, 4 * VERTICAL_LOCAL_SCALE);
-        assert_eq!(down.guide_terminal.position.inward, 8 * VERTICAL_LOCAL_SCALE);
+        assert_eq!(
+            down.guide_terminal.position.inward,
+            8 * VERTICAL_LOCAL_SCALE
+        );
         assert_ne!(up.fingerprint(), down.fingerprint());
 
         let shorter =

@@ -340,9 +340,18 @@ fn compile_interface(
     } else {
         let mut corners = Vec::with_capacity(4);
         for (dx, dy) in [
-            (-VERTICAL_CLEARANCE_HALF_UNITS, -VERTICAL_CLEARANCE_HALF_UNITS),
-            (VERTICAL_CLEARANCE_HALF_UNITS, -VERTICAL_CLEARANCE_HALF_UNITS),
-            (-VERTICAL_CLEARANCE_HALF_UNITS, VERTICAL_CLEARANCE_HALF_UNITS),
+            (
+                -VERTICAL_CLEARANCE_HALF_UNITS,
+                -VERTICAL_CLEARANCE_HALF_UNITS,
+            ),
+            (
+                VERTICAL_CLEARANCE_HALF_UNITS,
+                -VERTICAL_CLEARANCE_HALF_UNITS,
+            ),
+            (
+                -VERTICAL_CLEARANCE_HALF_UNITS,
+                VERTICAL_CLEARANCE_HALF_UNITS,
+            ),
             (VERTICAL_CLEARANCE_HALF_UNITS, VERTICAL_CLEARANCE_HALF_UNITS),
         ] {
             corners.push(frame.project(QuantizedPoint {
@@ -383,16 +392,15 @@ fn compile_interface(
         }
     };
 
-    let terminal_id =
-        guide
-            .port_bindings
-            .get(&port.name)
-            .copied()
-            .ok_or_else(|| ContractDiagnostic {
-                code: "interface_unbound".to_string(),
-                location: DiagnosticLocation::Face(port.cell, port.face),
-                message: format!("port {:?} has no compiled guide terminal", port.name),
-            })?;
+    let terminal_id = guide
+        .port_bindings
+        .get(&port.name)
+        .copied()
+        .ok_or_else(|| ContractDiagnostic {
+            code: "interface_unbound".to_string(),
+            location: DiagnosticLocation::Face(port.cell, port.face),
+            message: format!("port {:?} has no compiled guide terminal", port.name),
+        })?;
     let terminal = guide
         .nodes
         .iter()

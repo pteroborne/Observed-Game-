@@ -390,7 +390,8 @@ fn audit_vertical_family_interfaces(
     entries: &[&LocatedSignature],
     report: &mut String,
 ) -> (usize, usize) {
-    let mut by_family: BTreeMap<(ModuleFamilyId, HexFace), Vec<&LocatedSignature>> = BTreeMap::new();
+    let mut by_family: BTreeMap<(ModuleFamilyId, HexFace), Vec<&LocatedSignature>> =
+        BTreeMap::new();
     let mut uncontracted = BTreeSet::new();
     for entry in entries {
         match entry.family.clone() {
@@ -596,16 +597,8 @@ mod tests {
     #[test]
     fn audit_seams_reports_uncontracted_vertical_faces_as_uncompared() {
         let root = temp_dir("vertical_legacy");
-        write_module(
-            &root,
-            "a.map",
-            &shaft_slab_map("test_shaft_a", 0),
-        );
-        write_module(
-            &root,
-            "b.map",
-            &shaft_slab_map("test_shaft_b", 1),
-        );
+        write_module(&root, "a.map", &shaft_slab_map("test_shaft_a", 0));
+        write_module(&root, "b.map", &shaft_slab_map("test_shaft_b", 1));
         let report = audit_seams(&root).expect("audit runs");
         assert_eq!(report.mismatched_seams, 0, "{}", report.report);
         assert!(

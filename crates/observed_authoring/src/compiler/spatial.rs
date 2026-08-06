@@ -88,7 +88,7 @@ impl QuantizedHull {
     /// hull's plan outline. Exact integer arithmetic, boundary inclusive.
     pub(crate) fn covers_plan_point(&self, point: (i32, i32)) -> bool {
         match self.plan.len() {
-            0 | 1 | 2 => false,
+            0..=2 => false,
             _ => self
                 .plan
                 .iter()
@@ -577,6 +577,57 @@ mod tests {
         );
     }
 
+    /// The cell editor-space origin and the frame reference plane are a
+    /// cross-packet convention, not this module's private choice: certification
+    /// projects a bound guide node into the face frame the same way, and a
+    /// second convention would fail every contracted module for a reason that
+    /// has nothing to do with its geometry. Spelled out here as the exact
+    /// integer relation both sides must keep.
+    #[test]
+    fn the_cell_origin_and_frame_planes_match_the_shared_projection_convention() {
+        for cell in [
+            ModuleCellRef {
+                q: 0,
+                r: 0,
+                level: 0,
+            },
+            ModuleCellRef {
+                q: 2,
+                r: -3,
+                level: 1,
+            },
+            ModuleCellRef {
+                q: -1,
+                r: 4,
+                level: -2,
+            },
+        ] {
+            let (x, y) = cell_plan_origin(cell);
+            assert_eq!(
+                x,
+                (i32::from(cell.q) * 14 + i32::from(cell.r) * 7) * QUANTIZED_UNITS_PER_METER
+            );
+            assert_eq!(y, -(i32::from(cell.r) * 12) * QUANTIZED_UNITS_PER_METER);
+            // The same exact integer relation as `observed_hex::hex_origin_plan`.
+            // It is spelled out rather than delegated because a module cell is
+            // signed and a facility coordinate is not, so only the
+            // non-negative cells can be cross-checked against it directly.
+            if let (Ok(q), Ok(r)) = (u16::try_from(cell.q), u16::try_from(cell.r)) {
+                let plan = observed_hex::hex_origin_plan(observed_hex::HexCoord { q, r, level: 0 });
+                assert_eq!(x, plan.0 * QUANTIZED_UNITS_PER_METER);
+                assert_eq!(y, -plan.1 * QUANTIZED_UNITS_PER_METER);
+            }
+
+            let origin_z = cell_level_z(cell);
+            assert_eq!(origin_z, i32::from(cell.level) * UNITS_PER_LEVEL);
+            assert_eq!(
+                vertical_plane_z(cell, HexFace::Up),
+                origin_z + UNITS_PER_LEVEL
+            );
+            assert_eq!(vertical_plane_z(cell, HexFace::Down), origin_z);
+        }
+    }
+
     #[test]
     fn every_face_yields_integral_tangent_and_inward_steps() {
         for face in HexFace::LATERAL {
@@ -599,7 +650,11 @@ mod tests {
     fn the_editor_grid_round_trips_exactly_and_rejects_off_grid_points() {
         assert_eq!(
             quantize_world(Vec3::new(7.0, 0.5, -4.0)).unwrap(),
-            QuantizedPoint { x: 112, y: 64, z: 8 }
+            QuantizedPoint {
+                x: 112,
+                y: 64,
+                z: 8
+            }
         );
         assert!(quantize_world(Vec3::new(0.01, 0.0, 0.0)).is_err());
     }
