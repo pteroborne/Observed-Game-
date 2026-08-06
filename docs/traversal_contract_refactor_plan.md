@@ -920,9 +920,42 @@ Refactoring Hat. It changes emitted `PlayerIntent` and therefore body digests,
 completion ticks, and snapshots, and it needs the same treatment as the other
 three: its own commit, before/after traces, a replay/LAN compatibility note, and
 complete seed evidence. Until that lands, the old steering functions stay and
-the graph path stays unreachable in production. Whoever takes it should decide
-deliberately which of the two intents is *right* — the sprint-held value is not
-obviously correct merely because it is current.
+the graph path stays unreachable in production.
+
+#### Correction: "which intent is right" was the wrong question
+
+I first recorded this as a choice between the two intents. Measured, it is not a
+choice, because **both already ship, on different legs**:
+
+| leg | path | movement | sprint | target speed |
+|---|---|---|---|---|
+| climb | `follow_stateless` → `walk_toward`, `FollowerConfig::default()` | 0.35 | false | 0.35 × walk 4.6 = **1.61 m/s** |
+| lateral | `steer_toward` in `model/bot.rs` | 1.0 | true | 1.0 × run 7.0 = **7.0 m/s** |
+
+Both are correct for what they do. A body should not take a stair at 7 m/s, and
+should not cross a hall at 1.6. The graph follower is not emitting a *rival*
+tuning — it is emitting the **climb** tuning uniformly, to every edge, because
+`walk_toward` reads `config.movement_scale` and never looks at the edge.
+
+`TraversalEdge` already carries `TraversalMode::{Walk, Climb}`. The follower has
+the information and does not use it. If tuning is selected per edge mode — Climb
+edges keeping 0.35/no-sprint, Walk edges taking 1.0/sprint — the emitted intents
+should match the current ones exactly, because the only other term, `look`, is
+already identical: the compatibility path clamps an applied yaw delta, and
+`walk_toward` divides the same clamped delta by a `look_step` the hex profile
+pins to `1.0`.
+
+**So boundary 4 may not be a boundary at all.** It plausibly reduces to a plain
+behaviour-preserving refactor plus a per-mode tuning pair on `FollowerConfig`.
+That must be *proved*, not assumed — the pinned intent/body trace and completion
+tick are exactly the instruments, and anything that still differs after the
+split is the real boundary and should be reported as such. Treat this as a
+promising lead that removes a blocker from TR-10's critical path, not as a
+settled result.
+
+Related smell, cheap to fix while in there: `steer_toward_with_speed` takes
+`sprint` and `movement_scale` and has exactly one caller, which always passes
+`(true, 1.0)`. Those parameters are where the per-mode pair wants to live.
 
 Each boundary gets its own commit, before/after hashes, replay/LAN compatibility note,
 and complete seed evidence. Generated files are never hand-edited.
