@@ -9,7 +9,11 @@ use std::f32::consts::PI;
 use glam::{Vec2, Vec3};
 use player_input::PlayerIntent;
 
-use crate::guide::{DeckPath, StairSpine};
+use crate::graph::{
+    GRAPH_NODE_CAPTURE_RADIUS, GraphFollowDecision, GraphFollowState, TraversalCursor,
+    TraversalGuide, TraversalNodeId,
+};
+use crate::guide::{DeckPath, StairSpine, climb_metric};
 use crate::profile::TraversalRuntimeProfile;
 
 /// The exact tuning of the pre-extraction hex bot follower.
@@ -138,6 +142,90 @@ pub fn follow_stateless(
             goal,
             handoff,
         } => follow_deck(pose, path, goal, handoff, config, look_step),
+    }
+}
+
+/// Follow a leased graph cursor without mutating a character body. The only
+/// output crossing into simulation is [`PlayerIntent`]; local edge progress is
+/// retained by the caller-owned cursor.
+///
+/// The cursor is the whole point. Nothing here reads an archetype, a port
+/// class, or a logical cell, so the caller may re-derive the body's logical
+/// cell as often as it likes without the edge under the body changing: only
+/// reaching a node advances it, and it advances only along the route to `exit`.
+#[must_use]
+pub fn follow_graph(
+    pose: FollowerPose,
+    guide: &TraversalGuide,
+    cursor: &mut TraversalCursor,
+    exit: TraversalNodeId,
+    profile: &TraversalRuntimeProfile,
+) -> GraphFollowDecision {
+    let Some(mut target_id) = guide.cursor_target(*cursor) else {
+        return GraphFollowDecision {
+            state: GraphFollowState::InvalidCursor,
+            target: None,
+            intent: None,
+        };
+    };
+    let Some(mut target) = guide
+        .node(target_id)
+        .map(|node| Vec3::from_array(node.position))
+    else {
+        return GraphFollowDecision {
+            state: GraphFollowState::InvalidCursor,
+            target: None,
+            intent: None,
+        };
+    };
+
+    while climb_metric(pose.feet).distance(climb_metric(target)) <= GRAPH_NODE_CAPTURE_RADIUS {
+        if target_id == exit {
+            return GraphFollowDecision {
+                state: GraphFollowState::Arrived,
+                target: Some(target.to_array()),
+                intent: None,
+            };
+        }
+        let Some(next) = guide.next_cursor(*cursor, exit) else {
+            return GraphFollowDecision {
+                state: GraphFollowState::OffGuide,
+                target: Some(target.to_array()),
+                intent: None,
+            };
+        };
+        *cursor = next;
+        let Some(next_target_id) = guide.cursor_target(*cursor) else {
+            return GraphFollowDecision {
+                state: GraphFollowState::InvalidCursor,
+                target: None,
+                intent: None,
+            };
+        };
+        target_id = next_target_id;
+        let Some(next_target) = guide
+            .node(target_id)
+            .map(|node| Vec3::from_array(node.position))
+        else {
+            return GraphFollowDecision {
+                state: GraphFollowState::InvalidCursor,
+                target: None,
+                intent: None,
+            };
+        };
+        target = next_target;
+    }
+
+    let config = profile.follower();
+    GraphFollowDecision {
+        state: GraphFollowState::Following,
+        target: Some(target.to_array()),
+        intent: Some(walk_toward(
+            pose,
+            target,
+            config,
+            profile.controller().look_step,
+        )),
     }
 }
 
@@ -389,5 +477,62 @@ mod tests {
 
         assert_eq!(intent.look.x, 0.08 / controller.look_step);
         assert_eq!(intent.look.x * controller.look_step, 0.08);
+    }
+
+    #[test]
+    fn graph_follower_advances_edges_and_emits_only_abstract_intent() {
+        use crate::graph::{
+            TraversalEdge, TraversalEdgeId, TraversalMode, TraversalNode, TraversalNodeId,
+        };
+
+        let guide = TraversalGuide::try_new(
+            vec![
+                TraversalNode {
+                    id: TraversalNodeId(0),
+                    position: [0.0, 0.0, 0.0],
+                },
+                TraversalNode {
+                    id: TraversalNodeId(1),
+                    position: [1.0, 0.0, 0.0],
+                },
+                TraversalNode {
+                    id: TraversalNodeId(2),
+                    position: [2.0, 0.0, 0.0],
+                },
+            ],
+            vec![
+                TraversalEdge {
+                    id: TraversalEdgeId(0),
+                    from: TraversalNodeId(0),
+                    to: TraversalNodeId(1),
+                    mode: TraversalMode::Walk,
+                },
+                TraversalEdge {
+                    id: TraversalEdgeId(1),
+                    from: TraversalNodeId(1),
+                    to: TraversalNodeId(2),
+                    mode: TraversalMode::Walk,
+                },
+            ],
+        )
+        .unwrap();
+        let mut cursor = guide
+            .cursor_between(TraversalNodeId(0), TraversalNodeId(2))
+            .unwrap();
+        let decision = follow_graph(
+            FollowerPose {
+                feet: Vec3::new(1.0, 0.0, 0.0),
+                yaw: 0.0,
+            },
+            &guide,
+            &mut cursor,
+            TraversalNodeId(2),
+            &TraversalRuntimeProfile::canonical_hex(),
+        );
+
+        assert_eq!(cursor.edge, TraversalEdgeId(1));
+        assert_eq!(decision.state, GraphFollowState::Following);
+        assert_eq!(decision.target, Some([2.0, 0.0, 0.0]));
+        assert!(decision.intent.is_some());
     }
 }

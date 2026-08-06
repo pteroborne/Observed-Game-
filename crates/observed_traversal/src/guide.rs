@@ -15,7 +15,7 @@ const CLIMB_VERTICAL_WEIGHT: f32 = 3.0;
 /// weighted metric. Shorter than the flat stub at either end, so it can only
 /// trigger on deck, and comfortably longer than the residual a walker leaves
 /// when it stops steering at its target.
-const ARRIVAL_RADIUS: f32 = 0.6;
+pub(crate) const ARRIVAL_RADIUS: f32 = 0.6;
 
 /// The walkable line through a tile's vertical circulation, in tile-local world
 /// metres, ordered from the bottom entry to the top exit.
@@ -168,7 +168,7 @@ fn plan_segment_distance(a: Vec3, b: Vec3, point: Vec3) -> f32 {
 
 /// Rescale so height dominates lateral distance when judging which stretch of a
 /// climb a body is standing on. See [`StairSpine::locate`].
-fn climb_metric(point: Vec3) -> Vec3 {
+pub(crate) fn climb_metric(point: Vec3) -> Vec3 {
     Vec3::new(point.x, point.y * CLIMB_VERTICAL_WEIGHT, point.z)
 }
 
