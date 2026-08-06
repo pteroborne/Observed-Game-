@@ -1,6 +1,6 @@
 # Refactor Arc S — Traversal Contracts and Module Assembly
 
-**Status:** executing — Waves 0-3 complete; Wave 4 ready for parallel execution
+**Status:** executing — Waves 0-4 complete; TR-9 next (serial)
 
 **Planning baseline:** `main@911b046` (`Merge branch 'arc-r/switchback-atomic-2'`)
 
@@ -18,7 +18,7 @@ The integration branch is `refactor/traversal-contract-integration`. Completed w
 | 1 | TR-1, TR-2 | Shared stateless follower and immutable `HexMatchContent` merged (`03cbe42`, `3008da7`). |
 | 2 | TR-3, TR-4, TR-5 | Canonical runtime profile, external stateful bot driver, and atomic projected guides merged (`7265b50`, `1eac79f`, `97169dc`). |
 | 3 | TR-6, TR-7 | Studio's canonical Rapier audit and the reviewed shared serialized contract seam merged (`41c4bfa`, `4330f07`). |
-| 4 | TR-8B | Module-local graphs and the runtime cursor merged (`6c59e86`). TR-8A and TR-8C still in flight. |
+| 4 | TR-8A, TR-8B, TR-8C | All three merged (`6c59e86`, `d9d2720`, `4fdb616`). Union gate: fmt clean, `dev-clippy` clean, `dev-test` 1823 passed / 0 failed, asserting 24-seed survey passes, `git diff --check` clean, catalog `74ead7a6…` and profile `99e682b1…` unmoved, no generated artifact touched. |
 
 ### Wave 4 integration notes
 
@@ -45,6 +45,41 @@ constant rather than a `FollowerConfig` field, because `FollowerConfig` is hashe
 into the frozen profile identity `29e48ecf…` and adding a field there would have
 moved it silently. Correct call; noted here so it is not mistaken for an
 oversight later.
+
+### What wave 4 does *not* yet prove
+
+Three gaps, all disclosed by their own packets rather than found later. None is
+a defect; each is a reason TR-9 and TR-10 cannot be treated as tidying.
+
+1. **Contract-authority certification has never run against a real tile.** The
+   committed corpus has no v3 contracts, so `tilec certify-corpus` reports 0
+   contract / 67 compatibility / 58 no-traversal. The corruption gate is genuine
+   but its evidence is a synthetic fixture. TR-10's migration is what turns
+   certification from a mechanism into a measurement.
+2. **The compiler's thresholds are unproven against authored geometry.**
+   `CLEARANCE_HEIGHT_UNITS = 36` and the ±8-unit channel were chosen against
+   fixtures. Expect to tune them at migration, and expect the first real run to
+   fail loudly - that is the point of it.
+3. **Clearance obstruction is tested along the clearance axis**, by exact
+   point-in-plan-convex-hull, not by full solid intersection. It catches a
+   blocked doorway or a capped shaft; an obstruction sitting *beside* the axis
+   passes. Recorded in `compiler/spatial.rs`.
+
+### Two operational notes for later waves
+
+**The FGD is behind the schema.** `tile_meta` gained three v3 properties that
+the TrenchBroom definition does not list, so a v3 module is authorable from the
+forge but not from the entity browser. Updating `fgd.rs` alone red-lights
+`committed_fgd_matches_generated_fgd`, because the `.fgd` is publisher-owned;
+schema and regeneration land together, in TR-10.
+
+**A stale shared target artifact imitates a merge conflict.** Merging TR-8A
+produced four convincing `unresolved import` errors in TR-8B's `bot/leg.rs`,
+visible only through `composition_studio`. The symbols existed, were ungated,
+and `observed_match` compiled clean standalone; the cause was a partial artifact
+left by a concurrent-link collision during parallel execution.
+`cargo clean -p <crate>` clears it. Do not spend the diagnosis time twice, and do
+not let it be recorded as a cross-packet incompatibility.
 
 TR-7 intentionally moves the runtime-profile identity from v1
 `15ee7875d369...` to v2 `29e48ecf1d20...`. V1 omitted effective Rapier
