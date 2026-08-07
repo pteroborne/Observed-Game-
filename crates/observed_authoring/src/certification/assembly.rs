@@ -329,6 +329,7 @@ fn compatibility_report(
                 .collect(),
         },
         contract: None,
+        assembly: None,
     };
     certify_runtime_prototype(&module.id, &prototype, profile)
 }

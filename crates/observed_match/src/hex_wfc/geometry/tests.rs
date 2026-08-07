@@ -248,9 +248,15 @@ fn production_catalog_selection_is_pinned_for_spectator_seeds() {
     }
 }
 
-/// Selection is local to one `(archetype, register, signature)` bucket. The
-/// same variation key therefore cannot promise that two signatures choose
-/// members of one implicit family: the buckets can contain different members.
+/// Compatibility content still has no family, and this is what that costs.
+///
+/// Selection over uncontracted prototypes is local to one
+/// `(archetype, register, signature)` bucket, so the same variation key cannot
+/// promise that two signatures choose members of one implicit family: the
+/// buckets can contain different members. That is not a defect in the selector
+/// — it is the reason a family has to be *declared*, and it is precisely the
+/// gap `two_declared_families_never_mix_inside_one_column` closes for
+/// contracted content. It stays pinned until TR-10 migrates the corpus.
 #[test]
 fn identical_variation_keys_do_not_guarantee_family_coherence() {
     let mut first_a = tiles().into_iter().next().expect("fixture tile");
@@ -268,10 +274,17 @@ fn identical_variation_keys_do_not_guarantee_family_coherence() {
     second_b.key.variant = 30;
 
     let prototypes = [first_a, second_a, first_b, second_b];
-    let catalogue = Catalogue::new(&prototypes);
+    let catalogue = HexTileCatalogue::new(&prototypes);
     let variation = 0;
     let lower = catalogue
-        .select("family_probe", "monolith", port_signature(&[]), variation)
+        .select(
+            "family_probe",
+            "monolith",
+            port_signature(&[]),
+            variation,
+            variation,
+        )
+        .expect("no family is involved")
         .expect("generic fallback answers the first signature");
     let upper = catalogue
         .select(
@@ -279,7 +292,9 @@ fn identical_variation_keys_do_not_guarantee_family_coherence() {
             "monolith",
             port_signature(&[(HexFace::Up, PortClass::ShaftOpen)]),
             variation,
+            variation,
         )
+        .expect("no family is involved")
         .expect("generic fallback answers the second signature");
 
     assert_eq!(lower.key.variant, 10, "generic fallback keeps bucket order");
@@ -518,6 +533,7 @@ fn matching_whole_room_module_takes_precedence_over_cell_fallbacks() {
         hulls: fallback_hulls,
         lights: Vec::new(),
         contract: None,
+        assembly: None,
     };
     let snapshot = HexWfcGeometrySnapshot::project_with_rooms(&world, &tiles(), &[room])
         .expect("whole-room projection");
@@ -817,6 +833,7 @@ fn multi_cell_room_prototype(role: RoomRole, archetype: &str, variant: u16) -> R
         hulls: vec![tiny_tetrahedron(0.0)],
         lights: Vec::new(),
         contract: None,
+        assembly: None,
     }
 }
 
@@ -1230,8 +1247,8 @@ fn a_shaft_column_uses_one_tower_shape() {
 /// A district-exclusive tile must be unreachable from a foreign district.
 ///
 /// Exclusivity has to be a property of the selector, not a convention about how
-/// tiles are keyed. `Catalogue::select` tries the exact `(archetype, register,
-/// signature)` first and falls back to `generic` — so a tile keyed to Liminal
+/// tiles are keyed. `HexTileCatalogue::select` tries the exact `(archetype,
+/// register, signature)` first and falls back to `generic` — so a tile keyed to Liminal
 /// Grid can only ever be reached by asking for Liminal Grid, and a widened
 /// fallback (or a stray `generic` relabel) would be the way that breaks. This
 /// pins it by asking every other register for every exclusive tile's signature
@@ -1239,7 +1256,7 @@ fn a_shaft_column_uses_one_tower_shape() {
 #[test]
 fn a_district_exclusive_tile_never_answers_for_another_district() {
     let tiles = tiles();
-    let catalogue = Catalogue::new(&tiles);
+    let catalogue = HexTileCatalogue::new(&tiles);
     let registers: Vec<&str> = ArchitectureRegister::ALL
         .iter()
         .map(|register| register.slug())
@@ -1273,12 +1290,10 @@ fn a_district_exclusive_tile_never_answers_for_another_district() {
             // Every variation key, not one: selection is weighted, so a single
             // probe could miss a leak that only shows on some rolls.
             for variation in 0..16u64 {
-                let picked = catalogue.select(
-                    archetype,
-                    foreign,
-                    tile.signature,
-                    variation.wrapping_mul(0x9E37_79B9_7F4A_7C15),
-                );
+                let key = variation.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+                let picked = catalogue
+                    .select(archetype, foreign, tile.signature, key, key)
+                    .unwrap_or(None);
                 if let Some(picked) = picked {
                     assert_ne!(
                         picked.key.register, tile.key.register,
@@ -1337,5 +1352,373 @@ fn every_placed_cell_is_built_from_its_own_district() {
         foreign.is_empty(),
         "{} colliders are drawn from another district's kit: {foreign:?}",
         foreign.values().sum::<usize>()
+    );
+}
+
+// ------------------------------------------------- TR-9 acceptance: two families
+
+/// Two declared tower families, distinguishable by their climbs.
+const TOWER_FAMILIES: [(&str, f32); 2] = [("test/tower-a", 7.75), ("test/tower-b", 7.50)];
+/// Two turns each. A turn belongs to the assembly variant, so a column drawing
+/// one turn at one level and another at the next is exactly the fault under
+/// test, not a cosmetic difference.
+const TOWER_ROTATIONS: [u8; 2] = [0, 3];
+
+/// Decode which assembly variant a projected tower came from. The variant
+/// number carries it because `TileKey` is what a projected piece reports.
+fn tower_variant(variant: u16) -> (usize, u8) {
+    let packed = variant / 256;
+    (usize::from(packed / 6), (packed % 6) as u8)
+}
+
+/// The runtime shape a second complete tower family expands into.
+///
+/// `observed_authoring`'s `two_complete_tower_families_expand_into_runtime_prototypes`
+/// proves the same thing one layer down, through the real contract compiler.
+/// Here the point is what selection does with the result, so the kit is built
+/// directly against every `stair_tower` signature the solver can demand: each
+/// family answers all of them, at every turn it accepts, which is what makes it
+/// *complete*. Both families are `generic`, so every district reaches both and
+/// register fallback cannot hide a mix.
+///
+/// The match layer reads only `TilePrototype::assembly`. No bot or match
+/// conditional knows any of these names, and adding one would mean the
+/// selection design had failed.
+fn two_family_tower_kit() -> Vec<TilePrototype> {
+    let template = tiles()
+        .into_iter()
+        .find(|tile| tile.key.archetype == "stair_tower")
+        .expect("the committed corpus ships towers to model");
+    let signatures = observed_facility::hex_wfc::geometry_demands()
+        .into_iter()
+        .filter(|demand| demand.archetype == "stair_tower")
+        .map(|demand| demand.signature)
+        .collect::<Vec<_>>();
+    assert!(
+        signatures.len() > 8,
+        "the tower demand set should be substantial: {}",
+        signatures.len()
+    );
+
+    let mut kit = Vec::new();
+    for (family_index, (family, climb_top)) in TOWER_FAMILIES.into_iter().enumerate() {
+        for (rotation_index, rotation) in TOWER_ROTATIONS.into_iter().enumerate() {
+            for (signature_index, &signature) in signatures.iter().enumerate() {
+                let packed = family_index * 6 + rotation_index;
+                let mut tile = template.clone();
+                tile.key.register = "generic".to_string();
+                tile.key.variant = u16::try_from(packed * 256 + signature_index)
+                    .expect("the synthetic kit fits a variant");
+                tile.signature = signature;
+                tile.weight = 1;
+                // The climbs really do reach different heights, so mixing two
+                // families in one column would leave a flight short of the deck
+                // above it rather than merely looking different.
+                tile.spine = StairSpine {
+                    nodes: vec![
+                        Vec3::new(0.0, 0.5, 0.0),
+                        Vec3::new(0.0, climb_top - f32::from(rotation) * 0.05, 0.0),
+                    ],
+                };
+                tile.contract = None;
+                tile.assembly = Some(observed_authoring::RuntimeAssembly {
+                    variant: observed_authoring::AssemblyVariantId {
+                        family: ModuleFamilyId(family.to_string()),
+                        rotation,
+                    },
+                    scope: AssemblyScope::VerticalColumn,
+                    family_weight: 1,
+                });
+                kit.push(tile);
+            }
+        }
+    }
+    kit
+}
+
+/// Every prototype except the committed towers, which the two declared families
+/// replace wholesale.
+fn tiles_with_two_tower_families() -> Vec<TilePrototype> {
+    let mut prototypes = tiles()
+        .into_iter()
+        .filter(|tile| tile.key.archetype != "stair_tower")
+        .collect::<Vec<_>>();
+    prototypes.extend(two_family_tower_kit());
+    prototypes
+}
+
+/// Which assembly variant each column drew, keyed by its plan cell.
+fn tower_variants_by_column(
+    snapshot: &HexWfcGeometrySnapshot,
+) -> BTreeMap<(u16, u16), BTreeSet<(usize, u8)>> {
+    let mut per_column: BTreeMap<(u16, u16), BTreeSet<(usize, u8)>> = BTreeMap::new();
+    for piece in &snapshot.pieces {
+        let Some(tile) = piece.tile.as_ref() else {
+            continue;
+        };
+        if tile.archetype != "stair_tower" {
+            continue;
+        }
+        per_column
+            .entry((piece.source_cell.q, piece.source_cell.r))
+            .or_default()
+            .insert(tower_variant(tile.variant));
+    }
+    per_column
+}
+
+/// **The TR-9 exit criterion.** Two complete families never mix within a
+/// column, across seeds, door signatures, end caps, and registers.
+///
+/// This is the fault that forced an entire authored stair family to be replaced
+/// atomically. A column drew turn 1 at one level and turn 4 at the next, and the
+/// lower flight topped out under the upper cell's solid deck: the surfaces
+/// union, so nothing reads as broken, and a body simply climbs into the
+/// underside of the floor above and stops. `AssemblyVariantId` exists so that
+/// cannot recur, and this asserts it on real solved facilities rather than on a
+/// unit fixture.
+#[test]
+fn two_declared_families_never_mix_inside_one_column() {
+    let prototypes = tiles_with_two_tower_families();
+    let mut drawn = BTreeSet::new();
+    let mut columns = 0usize;
+    let mut signature_variety = 0usize;
+
+    for seed in [
+        1u64,
+        10_000_031,
+        SHOWCASE_SEED,
+        0x0BAD_C0DE_0000_0001,
+        0x5EED_5EED_5EED_5EED,
+    ] {
+        let world = HexWfcWorld::generate(
+            seed,
+            HexWfcConfig {
+                levels: 4,
+                ..HexWfcConfig::default()
+            },
+        )
+        .expect("seed solves");
+        let snapshot =
+            HexWfcGeometrySnapshot::project(&world, &prototypes).expect("two families project");
+
+        for (column, variants) in tower_variants_by_column(&snapshot) {
+            assert_eq!(
+                variants.len(),
+                1,
+                "seed {seed:#x} column {column:?} mixes assembly variants: {variants:?}"
+            );
+            drawn.extend(variants);
+            columns += 1;
+        }
+
+        // The columns really are being asked different questions at different
+        // levels: end caps, through cells, and varying door counts. Without this
+        // the assertion above could pass on a facility whose towers all
+        // presented one signature.
+        let mut per_column_signatures: BTreeMap<(u16, u16), BTreeSet<u16>> = BTreeMap::new();
+        for piece in &snapshot.pieces {
+            if let Some(tile) = piece.tile.as_ref()
+                && tile.archetype == "stair_tower"
+            {
+                per_column_signatures
+                    .entry((piece.source_cell.q, piece.source_cell.r))
+                    .or_default()
+                    .insert(tile.variant % 256);
+            }
+        }
+        signature_variety += per_column_signatures
+            .values()
+            .filter(|signatures| signatures.len() > 1)
+            .count();
+    }
+
+    assert!(columns > 50, "unexpectedly small sample: {columns} columns");
+    assert!(
+        signature_variety > 0,
+        "no column drew two different tower signatures, so signature-invariance \
+         of the family choice was never actually exercised"
+    );
+    assert_eq!(
+        drawn.len(),
+        TOWER_FAMILIES.len() * TOWER_ROTATIONS.len(),
+        "every declared family and turn should be reachable, or the facility \
+         only ever proved one of them coherent: {drawn:?}"
+    );
+}
+
+/// A bounded relayout keeps the column's assembly identity.
+///
+/// Family and turn are drawn from the column's base cell, and a relayout does
+/// not move that cell's variation key, so replacing part of a column reinstalls
+/// the same family. Losing this would reintroduce the fault mid-match, where it
+/// is hardest to see.
+#[test]
+fn a_relayout_reinstalls_the_same_assembly_variant() {
+    let prototypes = tiles_with_two_tower_families();
+    let mut world = showcase();
+    world.config.retry_budget = 1;
+    let before = HexWfcGeometrySnapshot::project(&world, &prototypes).expect("before");
+    let before_columns = tower_variants_by_column(&before);
+    assert!(!before_columns.is_empty(), "the seed should place towers");
+
+    let mut frame = HexObservationFrame::default();
+    let room = world
+        .blueprints
+        .iter()
+        .find(|blueprint| blueprint.anchor != world.config.spawn())
+        .expect("non-start room");
+    frame.visible_cells.insert(room.cells[0]);
+    if let Some(shaft) = world
+        .placements
+        .values()
+        .find(|placement| placement.archetype == HexArchetype::Shaft)
+    {
+        frame.visible_cells.insert(shaft.coord);
+    }
+    frame.objective_cells.insert(world.config.spawn());
+    let work = world.begin_relayout(&frame);
+    let candidate = match world.advance_relayout(work).expect("advance") {
+        HexRelayoutProgress::Ready(candidate) => candidate,
+        HexRelayoutProgress::Pending(_) => panic!("retry budget one must finish"),
+    };
+    world
+        .commit_relayout_delta(candidate, &frame)
+        .expect("commit");
+
+    let after = HexWfcGeometrySnapshot::project(&world, &prototypes).expect("after");
+    for (column, variants) in tower_variants_by_column(&after) {
+        assert_eq!(
+            variants.len(),
+            1,
+            "column {column:?} mixes assembly variants after relayout: {variants:?}"
+        );
+        if let Some(previous) = before_columns.get(&column) {
+            assert_eq!(
+                *previous, variants,
+                "column {column:?} changed assembly variant across a relayout"
+            );
+        }
+    }
+}
+
+/// A hole in one assembly variant is reported as one, not filled from a sibling
+/// family and not blamed on a missing tile.
+///
+/// Borrowing a member from the other family is the single escape hatch that
+/// would make the exit criterion above unprovable, so the selector has to refuse
+/// it out loud even though a perfectly good member exists one family over.
+#[test]
+fn a_variant_with_a_hole_is_named_rather_than_filled_from_a_sibling() {
+    let complete = two_family_tower_kit();
+    let hole = complete[0].signature;
+    let prototypes = tiles()
+        .into_iter()
+        .filter(|tile| tile.key.archetype != "stair_tower")
+        .chain(complete.into_iter().filter(|tile| {
+            // `test/tower-a` at turn 0 loses exactly one signature. Every other
+            // family and turn still answers it.
+            tower_variant(tile.key.variant) != (0, 0) || tile.signature != hole
+        }))
+        .collect::<Vec<_>>();
+
+    let catalogue = HexTileCatalogue::new(&prototypes);
+    assert_eq!(
+        catalogue.supply("stair_tower", "monolith", hole),
+        HexTileSupply::Missing,
+        "coverage has to see the hole the projector would fall into"
+    );
+
+    // Probe the selector directly: whether one particular seed happens to demand
+    // the missing signature from that exact variant is not the point being
+    // pinned. Some assembly draw lands on it, and that draw must refuse.
+    let key = (0..64u64)
+        .map(|probe| probe.wrapping_mul(0x9E37_79B9_7F4A_7C15))
+        .find(|&key| {
+            catalogue
+                .select("stair_tower", "monolith", hole, key, 0)
+                .is_err()
+        })
+        .expect("some assembly draw must land on the variant with the hole");
+    let error = catalogue
+        .select("stair_tower", "monolith", hole, key, 0)
+        .expect_err("the incomplete variant must refuse");
+    assert_eq!(error.family, ModuleFamilyId("test/tower-a".to_string()));
+    assert_eq!(error.rotation, 0);
+    assert_eq!(error.register, "generic");
+
+    // And a sibling family answers that very signature, so the refusal is a
+    // deliberate choice rather than an absence of geometry.
+    let sibling = (0..64u64)
+        .map(|probe| probe.wrapping_mul(0x9E37_79B9_7F4A_7C15))
+        .filter_map(|key| {
+            catalogue
+                .select("stair_tower", "monolith", hole, key, 0)
+                .ok()
+                .flatten()
+        })
+        .next()
+        .expect("another family answers the signature that was refused");
+    assert_ne!(tower_variant(sibling.key.variant), (0, 0));
+}
+
+/// The column rule survived losing its name.
+///
+/// `"stair_tower"` no longer appears anywhere in selection; assembly width is
+/// now declared, or for compatibility content read from the geometry. This
+/// asserts the *answer*, not the mechanism: a tower cell whose own district
+/// differs from its column base's still resolves against the base, and an
+/// ordinary hall still answers for itself. The crossing counter matters — on a
+/// facility where no column ever left its district the two rules would be
+/// indistinguishable and this would pass on nothing.
+#[test]
+fn a_towers_register_still_comes_from_its_column_base() {
+    let tiles = tiles();
+    let catalogue = HexTileCatalogue::new(&tiles);
+    let mut crossings = 0usize;
+    let mut halls = 0usize;
+
+    for seed in [1u64, 10_000_031, SHOWCASE_SEED] {
+        let world = HexWfcWorld::generate(
+            seed,
+            HexWfcConfig {
+                levels: 4,
+                ..HexWfcConfig::default()
+            },
+        )
+        .expect("seed solves");
+        for (coord, placement) in &world.placements {
+            let Some(archetype) = observed_facility::hex_wfc::placement_tile_archetype(placement)
+            else {
+                continue;
+            };
+            let Some(resolved) = catalogue.assembly_register(&world, *coord, archetype) else {
+                continue;
+            };
+            let own = world
+                .architecture
+                .get(coord)
+                .map(|register| register.slug().to_string());
+            if placement.archetype == HexArchetype::Shaft {
+                let base = world
+                    .architecture
+                    .get(&HexCoord { level: 0, ..*coord })
+                    .map(|register| register.slug().to_string());
+                assert_eq!(Some(resolved), base, "a tower follows its column");
+                if own != base {
+                    crossings += 1;
+                }
+            } else {
+                assert_eq!(Some(resolved), own, "an ordinary cell answers for itself");
+                halls += 1;
+            }
+        }
+    }
+
+    assert!(halls > 100, "unexpectedly small hall sample: {halls}");
+    assert!(
+        crossings > 0,
+        "no tower column crossed a district boundary, so resolving at the column \
+         base was never distinguishable from resolving per cell"
     );
 }

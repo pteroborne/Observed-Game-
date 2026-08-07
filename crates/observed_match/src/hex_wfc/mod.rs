@@ -12,8 +12,9 @@ pub mod trim;
 pub use content::HexMatchContent;
 pub use geometry::{
     HexGeometryDelta, HexGeometryError, HexLightSource, HexModuleInstanceId, HexModuleRevision,
-    HexRoomSocket, HexStructurePiece, HexStructureRole, HexTraversalCursor, HexTraversalLease,
-    HexWfcGeometrySnapshot, ProjectedPort, ProjectedTraversalGraph, ProjectedTraversalGuide,
+    HexRoomSocket, HexStructurePiece, HexStructureRole, HexTileCatalogue, HexTileSupply,
+    HexTraversalCursor, HexTraversalLease, HexWfcGeometrySnapshot, ProjectedPort,
+    ProjectedTraversalGraph, ProjectedTraversalGuide,
 };
 pub use model::{
     DUAL_STATION_HOLD_TICKS, HEX_INPUT_VERSION, HexActionButtons, HexBotDriver, HexDeployedLantern,

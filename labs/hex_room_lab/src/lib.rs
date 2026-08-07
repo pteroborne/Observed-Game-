@@ -884,6 +884,7 @@ mod tests {
             hulls: Vec::new(),
             lights: Vec::new(),
             contract: None,
+            assembly: None,
         }
     }
 

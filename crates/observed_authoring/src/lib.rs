@@ -64,7 +64,7 @@ pub use contract::{
     GeometryEnvelope, InterfaceFingerprint, InterfaceProfile, LateralFaceFrame, LogicalCell,
     LogicalFootprint, ModuleContract, ModuleFamilyId, ModuleInterface, ModuleSpatialContract,
     ModuleTraversalContract, QuantizedAperture, QuantizedBox, QuantizedDirection, QuantizedPoint,
-    QuantizedPose, RuntimeModuleContract, VerticalFaceFrame,
+    QuantizedPose, RuntimeAssembly, RuntimeModuleContract, VerticalFaceFrame,
 };
 pub use manifest::{Manifest, ManifestEntry, ManifestError, TileKey};
 pub use source::{

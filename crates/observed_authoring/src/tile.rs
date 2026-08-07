@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::UNITS_PER_METER;
 use crate::brush::brush_vertices;
-use crate::contract::RuntimeModuleContract;
+use crate::contract::{RuntimeAssembly, RuntimeModuleContract};
 use crate::manifest::TileKey;
 
 /// On-boundary tolerance for the footprint check, in TrenchBroom units.
@@ -122,9 +122,13 @@ pub struct TilePrototype {
     /// The walkable line around this tile's floor, empty where a straight line
     /// across the cell is always fine.
     pub deck: DeckPath,
-    /// Expanded v4 traversal/spatial contract. V1/v2 and compiled-v3 content
-    /// leave this absent until the contract compiler/runtime adapter lands.
+    /// Expanded v4 traversal/spatial contract, module-local and unrotated. See
+    /// [`RuntimeModuleContract`]. V1/v2 and compiled-v3 content leave it absent.
     pub contract: Option<RuntimeModuleContract>,
+    /// Family identity for family-aware selection. `None` for compatibility
+    /// content: authoring v1/v2 and compiled catalog v3 declare no family, so
+    /// those prototypes keep the flat `(archetype, register, signature)` path.
+    pub assembly: Option<RuntimeAssembly>,
 }
 
 impl TilePrototype {
@@ -587,6 +591,7 @@ pub fn parse_tile(text: &str) -> Result<TilePrototype, TileError> {
         spine,
         deck,
         contract: None,
+        assembly: None,
     })
 }
 
