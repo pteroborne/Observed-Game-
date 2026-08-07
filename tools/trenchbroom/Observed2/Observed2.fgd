@@ -21,6 +21,12 @@
         "sixfold" : "All six 60-degree rotations"
     ]
     weight(integer) : "Deterministic WFC weight (1..1000)" : 1
+    family(string) : "Assembly family; blank for a compatibility module" : ""
+    assembly_scope(choices) : "What the family is chosen for" : "cell" = [
+        "cell" : "Chosen per lattice cell"
+        "vertical_column" : "Chosen once for a whole shaft column"
+    ]
+    family_weight(integer) : "Chooses the family once per assembly (1..1000)" : 1
 ]
 
 @PointClass color(80 255 150) size(-6 -6 -6, 6 6 6) = tile_cell : "Occupied hex/level footprint" [

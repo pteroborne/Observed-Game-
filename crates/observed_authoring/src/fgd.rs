@@ -19,24 +19,30 @@
 //! working copy is diffable and `committed_fgd_matches_generated_fgd` can fail
 //! the moment the two disagree.
 //!
-//! # Outstanding: the version-3 `tile_meta` keys
+//! # The version-3 `tile_meta` keys
 //!
-//! [`crate::source`] now imports `family`, `assembly_scope`, and
-//! `family_weight`, and `source::assembly_scope_from_name`/`assembly_scope_name`
-//! are the paired tables this generator would build the `assembly_scope` choice
-//! list from. They are deliberately **not** offered here yet: adding them
-//! changes [`emit_fgd`]'s output, and the committed `.fgd` is a generated
-//! artifact that only the catalog publisher regenerates. Adding the properties
-//! and running `tilec emit-fgd` are one step, not two - doing the first alone
-//! red-lights `committed_fgd_matches_generated_fgd`. Until both happen a
-//! version-3 module is authorable through [`crate::forge`] but not from
-//! TrenchBroom's entity browser, which is precisely the drift this module
-//! exists to prevent, so it should not be left standing.
+//! `family`, `assembly_scope` and `family_weight` are offered, so a contracted
+//! module can be authored in the editor rather than only through
+//! [`crate::forge`]. `assembly_scope`'s choice list is built from
+//! `source::assembly_scope_name`, the same table the importer parses with, so
+//! it cannot drift from what will actually load.
+//!
+//! All three are optional and default to neutral values, because they are
+//! optional in the importer: a source with no `family` compiles as version 1/2
+//! and carries no contract. An author placing an ordinary tile should not have
+//! to answer a question about assemblies.
+//!
+//! Leaving them out was not harmless. This module exists because the editor
+//! could not place `tile_socket`, and that gap is a large part of why the
+//! Python generator became the de-facto source of truth. Repeating it for the
+//! contract keys would have made hand-authored version-3 tiles impossible in
+//! exactly the editor the pipeline is named for.
 
 use observed_hex::{HexFace, PortClass};
 
+use crate::contract::AssemblyScope;
 use crate::source::RoomSocketKind;
-use crate::source::{floor_name, kind_name, rotation_name};
+use crate::source::{assembly_scope_name, floor_name, kind_name, rotation_name};
 use crate::tile::{class_name, face_name};
 use crate::{FloorPolicy, ModuleKind, RotationPolicy};
 
@@ -167,6 +173,13 @@ fn rotation_label(policy: RotationPolicy) -> &'static str {
     }
 }
 
+fn assembly_scope_label(scope: AssemblyScope) -> &'static str {
+    match scope {
+        AssemblyScope::Cell => "Chosen per lattice cell",
+        AssemblyScope::VerticalColumn => "Chosen once for a whole shaft column",
+    }
+}
+
 fn socket_label(kind: RoomSocketKind) -> &'static str {
     match kind {
         RoomSocketKind::Keystone => "Contested keystone",
@@ -261,6 +274,36 @@ fn entities() -> Vec<Entity> {
                     "weight",
                     "integer",
                     "Deterministic WFC weight (1..1000)",
+                    "1",
+                ),
+                // The version-3 assembly keys. Optional in the importer - a
+                // source without `family` compiles as version 1/2 and carries
+                // no contract - so they are offered with empty/neutral defaults
+                // rather than forced on every module an author places.
+                Property::scalar(
+                    "family",
+                    "string",
+                    "Assembly family; blank for a compatibility module",
+                    "",
+                ),
+                Property::choices(
+                    "assembly_scope",
+                    "What the family is chosen for",
+                    assembly_scope_name(AssemblyScope::Cell),
+                    [AssemblyScope::Cell, AssemblyScope::VerticalColumn]
+                        .into_iter()
+                        .map(|scope| {
+                            (
+                                assembly_scope_name(scope).to_string(),
+                                assembly_scope_label(scope),
+                            )
+                        })
+                        .collect(),
+                ),
+                Property::scalar(
+                    "family_weight",
+                    "integer",
+                    "Chooses the family once per assembly (1..1000)",
                     "1",
                 ),
             ],
