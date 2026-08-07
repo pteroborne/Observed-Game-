@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use glam::{Quat, Vec2, Vec3};
 use observed_authoring::{
-    DeckPath, ModuleCellRef, RoomPrototype, RoomSocketKind, StairSpine, TileKey, TileLightKind,
-    TilePrototype,
+    AssemblyScope, DeckPath, ModuleCellRef, ModuleFamilyId, RoomPrototype, RoomSocketKind,
+    StairSpine, TileKey, TileLightKind, TilePrototype,
 };
 use observed_facility::hex_wfc::{
     HexArchetype, HexPlacement, HexRelayoutDelta, HexSpace, HexWfcWorld, PortSignature,
@@ -236,6 +236,22 @@ pub enum HexGeometryError {
         register: String,
         signature: PortSignature,
     },
+    /// The assembly resolved to one family and one turn, and that variant has
+    /// no member for the demanded signature.
+    ///
+    /// This is deliberately not a `MissingTile`, and deliberately not a retry
+    /// with a different family: the escape hatch of borrowing a member from a
+    /// sibling family is the exact fault the family index exists to prevent.
+    /// A corpus that reaches this has a hole in one variant, and the diagnostic
+    /// names the variant so it can be authored shut.
+    AssemblyMemberMissing {
+        coord: HexCoord,
+        archetype: &'static str,
+        register: String,
+        family: String,
+        rotation: u8,
+        signature: PortSignature,
+    },
     BlueprintCellMissing(HexCoord),
     BlueprintArchetypeMissing {
         role: RoomRole,
@@ -274,7 +290,7 @@ impl HexWfcGeometrySnapshot {
         room_prototypes: &[RoomPrototype],
     ) -> Result<Self, HexGeometryError> {
         validate_id_capacity(world)?;
-        let catalogue = Catalogue::new(prototypes);
+        let catalogue = HexTileCatalogue::new(prototypes);
         let room_catalogue = RoomCatalogue::new(room_prototypes);
         let mut out = ProjectedCells::default();
         let mut consumed_rooms = BTreeSet::new();
@@ -388,7 +404,7 @@ impl HexWfcGeometrySnapshot {
             });
         }
         validate_id_capacity(world)?;
-        let catalogue = Catalogue::new(prototypes);
+        let catalogue = HexTileCatalogue::new(prototypes);
         let room_catalogue = RoomCatalogue::new(room_prototypes);
         let mut changed_cells = logical.changed_cells.clone();
         for stamped in &world.blueprints {
@@ -626,7 +642,7 @@ fn collider_ids_for_cell(
 fn project_cell(
     world: &HexWfcWorld,
     coord: HexCoord,
-    catalogue: &Catalogue<'_>,
+    catalogue: &HexTileCatalogue<'_>,
     out: &mut ProjectedCells,
 ) -> Result<(), HexGeometryError> {
     let placement = world
@@ -687,45 +703,353 @@ fn validate_id_capacity(world: &HexWfcWorld) -> Result<(), HexGeometryError> {
     Ok(())
 }
 
-struct Catalogue<'a> {
-    by_key: BTreeMap<(&'a str, &'a str, PortSignature), Vec<&'a TilePrototype>>,
+/// One candidate family for an `(archetype, register)`, resolved once.
+#[derive(Clone, Debug)]
+struct FamilyOption<'a> {
+    family: &'a ModuleFamilyId,
+    /// Chooses the family once per assembly.
+    family_weight: u16,
+    /// Turns this family accepts, ascending. Rotation belongs to the assembly
+    /// variant; expanding it per signature member is the fault this whole
+    /// packet exists to make impossible.
+    rotations: Vec<u8>,
 }
 
-impl<'a> Catalogue<'a> {
-    fn new(prototypes: &'a [TilePrototype]) -> Self {
-        let mut by_key: BTreeMap<_, Vec<_>> = BTreeMap::new();
+/// Which register an assembly resolved against. Resolved once, before the
+/// family is chosen, so one assembly cannot draw its lower cells from a
+/// district kit and its upper cells from the shared one.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RegisterFallback {
+    /// The district asked for has geometry of its own here.
+    Exact,
+    /// Only the shared `generic` kit answers.
+    Generic,
+}
+
+impl RegisterFallback {
+    fn resolve(self, register: &str) -> &str {
+        match self {
+            Self::Exact => register,
+            Self::Generic => "generic",
+        }
+    }
+}
+
+/// How a demanded `(archetype, register, signature)` is answered.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HexTileSupply {
+    /// Geometry authored for exactly this register answers it.
+    Exact,
+    /// Only the shared `generic` kit answers it.
+    GenericFallback,
+    /// Nothing answers it. A match placing this cell fails to load.
+    Missing,
+}
+
+/// Why a family-aware selection could not be completed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct AssemblyMiss {
+    register: String,
+    family: ModuleFamilyId,
+    rotation: u8,
+}
+
+/// The production tile selector.
+///
+/// Selection is **family first**. For one assembly — one cell, or one whole
+/// vertical column — the register fallback, the family, and the rotation are
+/// chosen exactly once, from the assembly's own identity. Only then is a member
+/// chosen inside that assembly variant, and only among members the compiler
+/// proved interface equivalent. A variant that cannot answer a demanded
+/// signature is a loud failure, never a quiet swap to a different family:
+/// filling that hole by mixing is the fault that forced an entire authored
+/// stair family to be replaced atomically, when a column drew one turn at one
+/// level and another at the next and the lower flight topped out under the
+/// upper cell's solid deck.
+///
+/// Compatibility content — authoring v1/v2 and compiled catalog v3 — declares
+/// no family at all. It keeps the flat `(archetype, register, signature)` path
+/// unchanged, so the committed corpus selects exactly what it selected before.
+pub struct HexTileCatalogue<'a> {
+    /// Compatibility prototypes, keyed as they always were.
+    flat: BTreeMap<(&'a str, &'a str, PortSignature), Vec<&'a TilePrototype>>,
+    /// Contracted prototypes, keyed by the assembly variant that owns them.
+    members: BTreeMap<
+        (&'a str, &'a str, &'a ModuleFamilyId, u8, PortSignature),
+        Vec<&'a TilePrototype>,
+    >,
+    /// Candidate families per archetype then register, ordered by family ID.
+    families: BTreeMap<&'a str, BTreeMap<&'a str, Vec<FamilyOption<'a>>>>,
+    /// Assembly scope per archetype.
+    scopes: BTreeMap<&'a str, AssemblyScope>,
+}
+
+impl<'a> HexTileCatalogue<'a> {
+    #[must_use]
+    pub fn new(prototypes: &'a [TilePrototype]) -> Self {
+        let mut flat: BTreeMap<_, Vec<_>> = BTreeMap::new();
+        let mut members: BTreeMap<_, Vec<_>> = BTreeMap::new();
+        let mut families: BTreeMap<
+            &'a str,
+            BTreeMap<&'a str, BTreeMap<&'a ModuleFamilyId, FamilyOption<'a>>>,
+        > = BTreeMap::new();
+        let mut scopes: BTreeMap<&'a str, AssemblyScope> = BTreeMap::new();
+
         for prototype in prototypes {
-            by_key
+            let archetype = prototype.key.archetype.as_str();
+            let register = prototype.key.register.as_str();
+            let Some(assembly) = prototype.assembly.as_ref() else {
+                flat.entry((archetype, register, prototype.signature))
+                    .or_default()
+                    .push(prototype);
+                widen_scope(&mut scopes, archetype, compatibility_scope(prototype));
+                continue;
+            };
+            widen_scope(&mut scopes, archetype, assembly.scope);
+            members
                 .entry((
-                    prototype.key.archetype.as_str(),
-                    prototype.key.register.as_str(),
+                    archetype,
+                    register,
+                    &assembly.variant.family,
+                    assembly.variant.rotation,
                     prototype.signature,
                 ))
                 .or_default()
                 .push(prototype);
+            let option = families
+                .entry(archetype)
+                .or_default()
+                .entry(register)
+                .or_default()
+                .entry(&assembly.variant.family)
+                .or_insert_with(|| FamilyOption {
+                    family: &assembly.variant.family,
+                    family_weight: assembly.family_weight,
+                    rotations: Vec::new(),
+                });
+            if !option.rotations.contains(&assembly.variant.rotation) {
+                option.rotations.push(assembly.variant.rotation);
+            }
         }
-        for candidates in by_key.values_mut() {
+
+        for candidates in flat.values_mut().chain(members.values_mut()) {
             candidates.sort_by(|a, b| a.key.cmp(&b.key));
         }
-        Self { by_key }
+        let families = families
+            .into_iter()
+            .map(|(archetype, by_register)| {
+                let by_register = by_register
+                    .into_iter()
+                    .map(|(register, by_family)| {
+                        let mut options = by_family.into_values().collect::<Vec<_>>();
+                        for option in &mut options {
+                            option.rotations.sort_unstable();
+                        }
+                        (register, options)
+                    })
+                    .collect();
+                (archetype, by_register)
+            })
+            .collect();
+        Self {
+            flat,
+            members,
+            families,
+            scopes,
+        }
     }
 
-    fn select(
+    /// How wide the assembly this archetype belongs to is.
+    #[must_use]
+    fn scope(&self, archetype: &str) -> AssemblyScope {
+        self.scopes
+            .get(archetype)
+            .copied()
+            .unwrap_or(AssemblyScope::Cell)
+    }
+
+    /// The cell whose architecture register and variation key govern the whole
+    /// assembly `coord` belongs to.
+    ///
+    /// A `VerticalColumn` resolves at level 0, so every cell of one column
+    /// agrees on one family and one turn. Districts are spatial and drift
+    /// between levels, so a column crossing a district boundary is routine;
+    /// resolving per cell would make disagreement the common case rather than
+    /// the exception.
+    #[must_use]
+    pub fn assembly_identity(&self, archetype: &str, coord: HexCoord) -> HexCoord {
+        match self.scope(archetype) {
+            AssemblyScope::Cell => coord,
+            AssemblyScope::VerticalColumn => HexCoord { level: 0, ..coord },
+        }
+    }
+
+    /// The register a cell's assembly resolves against, from the world's own
+    /// per-cell architecture map.
+    #[must_use]
+    pub fn assembly_register(
         &self,
-        archetype: &'static str,
+        world: &HexWfcWorld,
+        coord: HexCoord,
+        archetype: &str,
+    ) -> Option<String> {
+        world
+            .architecture
+            .get(&self.assembly_identity(archetype, coord))
+            .map(|register| register.slug().to_string())
+    }
+
+    /// The family candidates for one assembly, after register fallback: exact
+    /// register first, then the shared `generic` kit, then nothing.
+    fn family_options(
+        &self,
+        archetype: &str,
+        register: &str,
+    ) -> Option<(RegisterFallback, &[FamilyOption<'a>])> {
+        let by_register = self.families.get(archetype)?;
+        if let Some(options) = by_register.get(register) {
+            return Some((RegisterFallback::Exact, options.as_slice()));
+        }
+        by_register
+            .get("generic")
+            .map(|options| (RegisterFallback::Generic, options.as_slice()))
+    }
+
+    /// Whether this catalogue answers a demand, in exactly the order
+    /// [`Self::select`] resolves it. Coverage reporting consumes this rather
+    /// than reproducing the rule.
+    #[must_use]
+    pub fn supply(
+        &self,
+        archetype: &str,
         register: &str,
         signature: PortSignature,
-        variation: u64,
-    ) -> Option<&'a TilePrototype> {
-        let exact = self
-            .by_key
-            .get(&(archetype, register, signature))
-            .or_else(|| self.by_key.get(&(archetype, "generic", signature)));
-        if let Some(candidates) = exact {
-            return weighted_select(candidates, variation, |candidate| candidate.weight);
+    ) -> HexTileSupply {
+        if let Some((fallback, options)) = self.family_options(archetype, register) {
+            let resolved = fallback.resolve(register);
+            // Family and rotation are chosen before the signature is consulted,
+            // so a demand is only covered when *every* variant the assembly
+            // could draw answers it. Anything less is a hole the runtime
+            // refuses to fill by mixing families, and it has to be reported.
+            let covered = options.iter().all(|option| {
+                option.rotations.iter().all(|&rotation| {
+                    self.members
+                        .contains_key(&(archetype, resolved, option.family, rotation, signature))
+                })
+            });
+            return match (covered, fallback) {
+                (false, _) => HexTileSupply::Missing,
+                (true, RegisterFallback::Exact) => HexTileSupply::Exact,
+                (true, RegisterFallback::Generic) => HexTileSupply::GenericFallback,
+            };
         }
-        None
+        if self.flat.contains_key(&(archetype, register, signature)) {
+            HexTileSupply::Exact
+        } else if self.flat.contains_key(&(archetype, "generic", signature)) {
+            HexTileSupply::GenericFallback
+        } else {
+            HexTileSupply::Missing
+        }
     }
+
+    /// Select one concrete module.
+    ///
+    /// `assembly_variation` is drawn from the assembly identity and chooses the
+    /// family and the turn; `member_variation` is drawn from the individual
+    /// cell and chooses only among interface-equivalent members inside that one
+    /// assembly variant.
+    fn select(
+        &self,
+        archetype: &str,
+        register: &str,
+        signature: PortSignature,
+        assembly_variation: u64,
+        member_variation: u64,
+    ) -> Result<Option<&'a TilePrototype>, AssemblyMiss> {
+        if let Some((fallback, options)) = self.family_options(archetype, register) {
+            let resolved = fallback.resolve(register);
+            let Some(option) =
+                weighted_select_by(options, respin(assembly_variation, FAMILY_DOMAIN), |option| {
+                    option.family_weight
+                })
+            else {
+                return Ok(None);
+            };
+            let rotation = option.rotations[(respin(assembly_variation, ROTATION_DOMAIN)
+                % option.rotations.len() as u64)
+                as usize];
+            let Some(candidates) =
+                self.members
+                    .get(&(archetype, resolved, option.family, rotation, signature))
+            else {
+                return Err(AssemblyMiss {
+                    register: resolved.to_string(),
+                    family: option.family.clone(),
+                    rotation,
+                });
+            };
+            return Ok(weighted_select(candidates, member_variation, |candidate| {
+                candidate.weight
+            }));
+        }
+        let exact = self
+            .flat
+            .get(&(archetype, register, signature))
+            .or_else(|| self.flat.get(&(archetype, "generic", signature)));
+        Ok(exact.and_then(|candidates| {
+            weighted_select(candidates, member_variation, |candidate| candidate.weight)
+        }))
+    }
+}
+
+/// Compatibility content declares no family, so its assembly width has to be
+/// read from the geometry instead of from an archetype name.
+///
+/// An open vertical shaft is the hole the flight below arrives through: cells
+/// that present one stack into a single physical climb and must agree all the
+/// way up. That is precisely what the retired `"stair_tower"` string meant, and
+/// unlike the string it stays true for any tower an author draws next. A ramp's
+/// `RampOpen` is not a shaft — the two-level ramp prefab owns both of its cells
+/// already — so ramps stay per-cell, as they are today.
+fn compatibility_scope(prototype: &TilePrototype) -> AssemblyScope {
+    let open = [HexFace::Up, HexFace::Down]
+        .into_iter()
+        .any(|face| prototype.signature.port(face) == PortClass::ShaftOpen);
+    if open {
+        AssemblyScope::VerticalColumn
+    } else {
+        AssemblyScope::Cell
+    }
+}
+
+/// One archetype resolves against one assembly. If sources disagree, the wider
+/// assembly wins: a column that agrees is also a cell that agrees, so widening
+/// can only over-constrain, never under-constrain.
+fn widen_scope<'a>(
+    scopes: &mut BTreeMap<&'a str, AssemblyScope>,
+    archetype: &'a str,
+    scope: AssemblyScope,
+) {
+    let entry = scopes.entry(archetype).or_insert(scope);
+    if scope == AssemblyScope::VerticalColumn {
+        *entry = AssemblyScope::VerticalColumn;
+    }
+}
+
+/// Domain separators so the family draw and the turn draw are independent.
+/// Reusing one key for both would tie a family to a turn forever.
+const FAMILY_DOMAIN: u64 = 1;
+const ROTATION_DOMAIN: u64 = 2;
+
+/// SplitMix64 finalizer over a domain-separated key. Deterministic, portable,
+/// and dependent only on values the facility already derives from its seed.
+fn respin(key: u64, domain: u64) -> u64 {
+    let mut value = key ^ domain.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    value ^= value >> 30;
+    value = value.wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    value ^= value >> 27;
+    value = value.wrapping_mul(0x94D0_49BB_1331_11EB);
+    value ^ (value >> 31)
 }
 
 struct RoomCatalogue<'a> {
@@ -771,6 +1095,16 @@ fn weighted_select<'a, T>(
     variation: u64,
     weight: impl Fn(&T) -> u16,
 ) -> Option<&'a T> {
+    weighted_select_by(candidates, variation, |candidate| weight(candidate)).copied()
+}
+
+/// Weighted choice over owned candidates. Identical rule to
+/// [`weighted_select`]; the family draw picks from a list it owns.
+fn weighted_select_by<T>(
+    candidates: &[T],
+    variation: u64,
+    weight: impl Fn(&T) -> u16,
+) -> Option<&T> {
     let total = candidates
         .iter()
         .map(|candidate| u64::from(weight(candidate)))
@@ -779,7 +1113,7 @@ fn weighted_select<'a, T>(
         return None;
     }
     let mut slot = variation % total;
-    for &candidate in candidates {
+    for candidate in candidates {
         let candidate_weight = u64::from(weight(candidate));
         if slot < candidate_weight {
             return Some(candidate);
@@ -863,52 +1197,54 @@ fn variation_index(key: u64, candidate_count: usize) -> usize {
     (key % candidate_count as u64) as usize
 }
 
+/// Resolve one cell to one concrete module.
+///
+/// Everything that has to agree across an assembly — register fallback, family,
+/// rotation — is drawn from the assembly's own identity, so every cell of one
+/// column reaches the same answer. Only the member is drawn from the cell, and
+/// members inside one variant are interface equivalent by construction.
 fn tile_for<'a>(
     world: &HexWfcWorld,
-    catalogue: &Catalogue<'a>,
+    catalogue: &HexTileCatalogue<'a>,
     coord: HexCoord,
     archetype: &'static str,
     signature: PortSignature,
 ) -> Result<&'a TilePrototype, HexGeometryError> {
-    // A stair tower is chosen for the whole column, not the cell.
-    //
-    // A tower's stairwell opening is the hole the flight below arrives through.
-    // Give two cells in one column towers of different shapes and the lower
-    // flight tops out under the upper cell's solid deck: the surfaces union, so
-    // nothing looks broken, but a body climbing meets the underside of the floor
-    // above and stops. Districts are spatial and drift between levels, so a
-    // column crosses district boundaries routinely — picking per cell would make
-    // that the common case rather than the exception. The base cell's register
-    // is the one thing every cell in a column agrees on.
-    let identity = if archetype == "stair_tower" {
-        HexCoord { level: 0, ..coord }
-    } else {
-        coord
-    };
+    let identity = catalogue.assembly_identity(archetype, coord);
     let register = world
         .architecture
         .get(&identity)
         .ok_or(HexGeometryError::MissingArchitecture(identity))?
         .slug();
-    catalogue
-        .select(
-            archetype,
-            register,
-            signature,
-            world.tile_variation_key(coord),
-        )
-        .ok_or_else(|| HexGeometryError::MissingTile {
+    match catalogue.select(
+        archetype,
+        register,
+        signature,
+        world.tile_variation_key(identity),
+        world.tile_variation_key(coord),
+    ) {
+        Ok(Some(tile)) => Ok(tile),
+        Ok(None) => Err(HexGeometryError::MissingTile {
             coord,
             archetype,
             register: register.to_string(),
             signature,
-        })
+        }),
+        Err(miss) => Err(HexGeometryError::AssemblyMemberMissing {
+            coord,
+            archetype,
+            register: miss.register,
+            family: miss.family.0,
+            rotation: miss.rotation,
+            signature,
+        }),
+    }
 }
 
 fn project_blueprint(
     world: &HexWfcWorld,
     stamped: &StampedBlueprint,
-    catalogue: &Catalogue<'_>,
+    catalogue: &HexTileCatalogue<'_>,
     room_catalogue: &RoomCatalogue<'_>,
     consumed: &mut BTreeSet<HexCoord>,
     out: &mut ProjectedCells,
