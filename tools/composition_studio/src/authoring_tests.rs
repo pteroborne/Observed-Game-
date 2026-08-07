@@ -434,12 +434,13 @@ fn the_tile_mesh_cache_is_reused_across_cells_and_rebuilds() {
 
 // -------------------------------------------------------------------- coverage
 
-/// The coverage report reproduces the projector's selection rule on purpose, so
-/// the two must never disagree: if coverage says every demand is met, the real
-/// projector has to accept the layout, and vice versa.
+/// The coverage report now *calls* the projector's selector instead of
+/// restating its rule, so the two must never disagree: if coverage says every
+/// demand is met, the real projector has to accept the layout, and vice versa.
 ///
-/// This is the test that keeps the mirror honest. Without it, a coverage panel
-/// could confidently contradict the thing it predicts.
+/// This is the test that kept the old hand-written mirror honest. It stays,
+/// because it is still the end-to-end claim — that coverage predicts loading —
+/// and because it is what would catch the panel being rewired to a stale index.
 #[test]
 fn coverage_agrees_with_the_projector() {
     use crate::coverage::ProjectorVerdict;

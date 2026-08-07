@@ -1661,3 +1661,64 @@ fn a_variant_with_a_hole_is_named_rather_than_filled_from_a_sibling() {
         .expect("another family answers the signature that was refused");
     assert_ne!(tower_variant(sibling.key.variant), (0, 0));
 }
+
+/// The column rule survived losing its name.
+///
+/// `"stair_tower"` no longer appears anywhere in selection; assembly width is
+/// now declared, or for compatibility content read from the geometry. This
+/// asserts the *answer*, not the mechanism: a tower cell whose own district
+/// differs from its column base's still resolves against the base, and an
+/// ordinary hall still answers for itself. The crossing counter matters — on a
+/// facility where no column ever left its district the two rules would be
+/// indistinguishable and this would pass on nothing.
+#[test]
+fn a_towers_register_still_comes_from_its_column_base() {
+    let tiles = tiles();
+    let catalogue = HexTileCatalogue::new(&tiles);
+    let mut crossings = 0usize;
+    let mut halls = 0usize;
+
+    for seed in [1u64, 10_000_031, SHOWCASE_SEED] {
+        let world = HexWfcWorld::generate(
+            seed,
+            HexWfcConfig {
+                levels: 4,
+                ..HexWfcConfig::default()
+            },
+        )
+        .expect("seed solves");
+        for (coord, placement) in &world.placements {
+            let Some(archetype) = observed_facility::hex_wfc::placement_tile_archetype(placement)
+            else {
+                continue;
+            };
+            let Some(resolved) = catalogue.assembly_register(&world, *coord, archetype) else {
+                continue;
+            };
+            let own = world
+                .architecture
+                .get(coord)
+                .map(|register| register.slug().to_string());
+            if placement.archetype == HexArchetype::Shaft {
+                let base = world
+                    .architecture
+                    .get(&HexCoord { level: 0, ..*coord })
+                    .map(|register| register.slug().to_string());
+                assert_eq!(Some(resolved), base, "a tower follows its column");
+                if own != base {
+                    crossings += 1;
+                }
+            } else {
+                assert_eq!(Some(resolved), own, "an ordinary cell answers for itself");
+                halls += 1;
+            }
+        }
+    }
+
+    assert!(halls > 100, "unexpectedly small hall sample: {halls}");
+    assert!(
+        crossings > 0,
+        "no tower column crossed a district boundary, so resolving at the column \
+         base was never distinguishable from resolving per cell"
+    );
+}

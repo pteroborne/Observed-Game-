@@ -4,19 +4,19 @@
 //! catalog has no geometry for. That failure is cheap to prevent and expensive
 //! to discover, so this module answers it while an author is still tuning.
 //!
-//! # Why this mirrors the projector instead of inventing a rule
+//! # Why this calls the projector's selector instead of restating its rule
 //!
-//! [`observed_match::hex_wfc::geometry`] resolves a cell to a tile by a specific
-//! rule: the register comes from `world.architecture`, except for `stair_tower`
-//! which resolves at level 0 so a whole column agrees; then the lookup is exact
-//! `(archetype, register, signature)`, falling back to
-//! `(archetype, "generic", signature)`, and failing otherwise.
+//! This module used to reproduce the projector's selection rule by hand,
+//! including its `stair_tower` special case, so that coverage and projection
+//! would agree. Restating a rule is a poor way to agree with it: the copy has to
+//! be found and changed every time the original moves, and the failure mode is a
+//! coverage panel that confidently contradicts the thing it predicts.
 //!
-//! [`resolve`] reproduces that rule deliberately, because a coverage report that
-//! reasoned differently from the projector would confidently disagree with the
-//! thing it is predicting. To keep the mirror honest, [`CoverageReport::build`]
-//! also records what the *real* projector returned, and a test asserts the two
-//! never disagree.
+//! It now asks [`observed_match::hex_wfc::HexTileCatalogue`] — the production
+//! selector itself — both halves of the question: which register a cell's
+//! assembly resolves against, and whether a demand is answered. There is no
+//! second rule left to drift. [`CoverageReport::build`] still records what the
+//! *real* projector returned, and a test still asserts the two never disagree.
 
 use std::collections::BTreeMap;
 
@@ -24,28 +24,26 @@ use observed_authoring::{RoomPrototype, TilePrototype};
 use observed_facility::hex_wfc::{
     HexCoord, HexWfcWorld, PortSignature, blueprint_for_role, placement_tile_archetype,
 };
-use observed_match::hex_wfc::{HexGeometryError, HexWfcGeometrySnapshot};
+use observed_match::hex_wfc::{
+    HexGeometryError, HexTileCatalogue, HexTileSupply, HexWfcGeometrySnapshot,
+};
 
 /// How a demanded `(archetype, register, signature)` is satisfied.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Supply {
-    /// A tile authored for exactly this register.
-    Exact,
-    /// Only the shared `generic` kit covers it. Legal, but the district has no
-    /// geometry of its own here.
-    GenericFallback,
-    /// Nothing covers it. A match placing this cell fails to load.
-    Missing,
-}
+///
+/// The projector's own verdict, not a local restatement of it: `Exact` means
+/// geometry authored for this register answers the demand, `GenericFallback`
+/// means only the shared kit does, and `Missing` means a match placing this cell
+/// fails to load.
+pub type Supply = HexTileSupply;
 
-impl Supply {
-    #[must_use]
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Exact => "ok",
-            Self::GenericFallback => "generic",
-            Self::Missing => "MISSING",
-        }
+/// Panel text for one supply verdict. Presentation only — the classification
+/// itself belongs to the selector.
+#[must_use]
+pub fn supply_label(supply: Supply) -> &'static str {
+    match supply {
+        Supply::Exact => "ok",
+        Supply::GenericFallback => "generic",
+        Supply::Missing => "MISSING",
     }
 }
 
@@ -119,55 +117,6 @@ pub struct CoverageReport {
     pub verdict: Option<ProjectorVerdict>,
 }
 
-/// The projector's lookup index, rebuilt here so coverage and projection agree.
-struct SupplyIndex<'a> {
-    by_key: BTreeMap<(&'a str, &'a str, PortSignature), Vec<&'a TilePrototype>>,
-}
-
-impl<'a> SupplyIndex<'a> {
-    fn new(prototypes: &'a [TilePrototype]) -> Self {
-        let mut by_key: BTreeMap<_, Vec<_>> = BTreeMap::new();
-        for prototype in prototypes {
-            by_key
-                .entry((
-                    prototype.key.archetype.as_str(),
-                    prototype.key.register.as_str(),
-                    prototype.signature,
-                ))
-                .or_default()
-                .push(prototype);
-        }
-        Self { by_key }
-    }
-
-    /// Exact register, then the shared `generic` kit — the projector's order.
-    fn resolve(&self, archetype: &str, register: &str, signature: PortSignature) -> Supply {
-        if self.by_key.contains_key(&(archetype, register, signature)) {
-            Supply::Exact
-        } else if self.by_key.contains_key(&(archetype, "generic", signature)) {
-            Supply::GenericFallback
-        } else {
-            Supply::Missing
-        }
-    }
-}
-
-/// The register a cell resolves against.
-///
-/// `stair_tower` resolves at level 0 so an entire column agrees on one tower
-/// shape; picking per cell would let a flight top out under the deck above.
-fn register_for(world: &HexWfcWorld, coord: HexCoord, archetype: &str) -> Option<String> {
-    let identity = if archetype == "stair_tower" {
-        HexCoord { level: 0, ..coord }
-    } else {
-        coord
-    };
-    world
-        .architecture
-        .get(&identity)
-        .map(|register| register.slug().to_string())
-}
-
 impl CoverageReport {
     /// Build the report for a solved layout against a corpus.
     #[must_use]
@@ -178,7 +127,7 @@ impl CoverageReport {
         projected: Option<&HexWfcGeometrySnapshot>,
         projection_error: Option<&HexGeometryError>,
     ) -> Self {
-        let index = SupplyIndex::new(cells);
+        let catalogue = HexTileCatalogue::new(cells);
         let mut grouped: BTreeMap<(&'static str, String, PortSignature), (Supply, u32, HexCoord)> =
             BTreeMap::new();
 
@@ -188,11 +137,14 @@ impl CoverageReport {
             let Some(archetype) = placement_tile_archetype(placement) else {
                 continue;
             };
-            let Some(register) = register_for(world, *coord, archetype) else {
+            // The register comes from the cell's *assembly*, which for a
+            // vertical column is its base cell — the selector answers that, so
+            // this cannot drift from what the projector will do.
+            let Some(register) = catalogue.assembly_register(world, *coord, archetype) else {
                 continue;
             };
             let signature = placement_signature(placement);
-            let supply = index.resolve(archetype, &register, signature);
+            let supply = catalogue.supply(archetype, &register, signature);
             let entry = grouped
                 .entry((archetype, register, signature))
                 .or_insert((supply, 0, *coord));
