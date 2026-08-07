@@ -1,6 +1,6 @@
 # Refactor Arc S — Traversal Contracts and Module Assembly
 
-**Status:** executing — Waves 0-4 complete; TR-9 next (serial)
+**Status:** executing — Waves 0-5 complete; TR-10 is the last packet
 
 **Planning baseline:** `main@911b046` (`Merge branch 'arc-r/switchback-atomic-2'`)
 
@@ -19,6 +19,40 @@ The integration branch is `refactor/traversal-contract-integration`. Completed w
 | 2 | TR-3, TR-4, TR-5 | Canonical runtime profile, external stateful bot driver, and atomic projected guides merged (`7265b50`, `1eac79f`, `97169dc`). |
 | 3 | TR-6, TR-7 | Studio's canonical Rapier audit and the reviewed shared serialized contract seam merged (`41c4bfa`, `4330f07`). |
 | 4 | TR-8A, TR-8B, TR-8C | All three merged (`6c59e86`, `d9d2720`, `4fdb616`). Union gate: fmt clean, `dev-clippy` clean, `dev-test` 1823 passed / 0 failed, asserting 24-seed survey passes, `git diff --check` clean, catalog `74ead7a6…` and profile `99e682b1…` unmoved, no generated artifact touched. |
+| 5 | TR-9 | Family-first selection merged (`2a218b2`). Union gate: fmt clean, `dev-clippy` clean, `dev-test` 1829 passed / 0 failed, asserting 24-seed survey passes, `diff --check` clean. Every pin holds unedited - catalog, profile, simulation `9937ed51…`, both spectator selection digests, the intent/body trace, the headless completion tick. No generated artifact touched. |
+
+### Wave 5 integration notes
+
+The `"stair_tower"` string special case is **gone** from both match projection
+and Composition Traversal Studio, and the Studio's coverage now calls the
+production selector rather than copying it. Assembly width comes from
+`AssemblyContract::scope` for contracted content; for compatibility content it
+is read from the geometry — an archetype presenting `ShaftOpen` on `Up` or
+`Down` is a `VerticalColumn`. That reproduces the deleted string's answer
+exactly on the committed corpus and stays true for the next tower an author
+draws, which the string never would have.
+
+**The packet's real question was answered by an empty diff.** The acceptance
+fixture — a second complete tower family with a distinct aperture — required no
+new match or bot conditional, and no file under `observed_traversal/**` or the
+bot's steering appears in the change at all. That is the whole point of Arc S
+stated as a measurement.
+
+**And the coverage it does not have.** Two families never mix under any
+condition TR-9 could construct: five seeds, all ten districts, every tower
+signature, end caps, and a committed relayout. But that is a synthetic kit.
+Nothing in the committed corpus declares a family, so the family path has **zero
+production coverage** until TR-10 migrates the corpus. The green board measures
+the mechanism, not the content.
+
+**TR-10 inherits one undecided rule**, documented at `family_options`: once a
+family exists for an archetype it is authoritative for that assembly, and
+compatibility prototypes of the same archetype are not consulted — even one
+sitting at the exact register while the family answers only `generic`. The
+alternative lets a column take a compatibility cell at one level and a family
+member at the next, which is the original fault wearing a different hat. Inert
+today; real the moment a migrated `hall_straight` coexists with the generated
+compatibility kit.
 
 ### Wave 4 integration notes
 
