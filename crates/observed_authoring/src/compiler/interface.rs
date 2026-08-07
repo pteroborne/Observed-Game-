@@ -133,12 +133,12 @@ pub fn compile_guide(module: &AuthoredModule) -> Result<CompiledGuide, ContractD
 
     let mut deck = Vec::new();
     for node in &module.prototype.deck.nodes {
-        let position = quantize_world(*node)?;
+        let position = quantize_world(*node);
         deck.push(push_node(&mut nodes, position));
     }
     let mut spine = Vec::new();
     for node in &module.prototype.spine.nodes {
-        let position = quantize_world(*node)?;
+        let position = quantize_world(*node);
         spine.push(push_node(&mut nodes, position));
     }
     let mut interior: Vec<TraversalNodeId> = deck.iter().chain(&spine).copied().collect();

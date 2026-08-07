@@ -862,13 +862,43 @@ every chamfer. It is "relax an over-strict check to what its purpose needs":
 round outward for the envelope, round to nearest for the measurements, and keep
 determinism where fingerprints are compared.
 
-Recommended, not yet implemented. It touches fingerprint semantics, so it wants
-its own slice with certification re-run against it rather than being folded into
-a migration commit — which is exactly the mistake that would make a failure
-impossible to attribute.
+**Implemented** as its own slice. `quantize_world` rounds deterministically
+instead of refusing, `quantize_world_outward` brackets a point for the one
+caller that must *contain* rather than approximate, and the test that asserted
+the old strictness now asserts the new contract against `hall_cap`'s real
+chamfer point. 178 passed.
 
-The tower declaration was reverted after measuring; the tree is green at 178
-passed and no generated artifact has moved.
+#### 3. The vertical interface assumes the handoff is at the cell centre
+
+With quantization out of the way, declaring the tower family reached a
+*geometric* diagnostic, which is the first one that is really about the tower:
+
+```
+clearance_obstructed: hull 0 blocks the axis of clearance volume "port/down_shaft"
+```
+
+It is correct. A vertical port's landing is placed at `cell_origin`, and its
+clearance is a column of `±VERTICAL_CLEARANCE_HALF_UNITS` about that origin. So
+the contract states that a shaft hands off **through the middle of the cell**.
+
+That was true of the switchback, which climbed near the centre. It is false of
+the inset helix, and deliberately so: the helix arrives in the annulus, and its
+floor is *solid* at the centre because the inner hexagon is what carries
+`Extent::foot` and `Extent::head`. `hull 0` is that inner hexagon, and it blocks
+a centred column exactly as the compiler says.
+
+This is the same class of fault as the `"stair_tower"` string TR-9 deleted: a
+shape assumed by the framework rather than declared by the module. The fix is
+for the vertical landing, aperture and clearance to be **derived from where the
+floor is actually open**, not from the cell origin — which is what
+`InterfaceProfile`'s `landing` and `aperture` fields exist to carry.
+
+Not implemented. It changes what a vertical fingerprint *is*, so it must land
+with certification re-run against it, and it is the natural first slice of the
+migration rather than a preflight fix.
+
+The tower declaration was reverted after each measurement; the tree is green at
+178 passed and no generated artifact has moved.
 
 ### TR-10 — Migrate, publish, and remove adapters
 

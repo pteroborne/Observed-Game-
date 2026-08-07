@@ -1,10 +1,15 @@
 //! Exact spatial compilation: logical footprint, geometry envelope, and the
 //! clearance volumes a body has to be able to occupy at every declared port.
 //!
-//! Everything here works in integer TrenchBroom units (Z-up). Authored hull
-//! vertices are multiples of 1/16 m by construction, so the conversion back to
-//! editor units is exact rather than tolerance-sensitive — the whole point of
-//! quantizing the contract instead of formatting floats.
+//! Everything here works in integer TrenchBroom units (Z-up), which is the
+//! point: a contract compared as integers cannot drift the way formatted floats
+//! do.
+//!
+//! What the integers are *not* is a claim that the authored geometry is on the
+//! grid. Chamfers and splayed reveals are irrational against the quantized
+//! hexagon and appear off-grid throughout the corpus. Quantization here rounds
+//! deterministically rather than refusing, and bounds round outward. See
+//! [`quantize_world`].
 
 use glam::Vec3;
 use observed_hex::{HexFace, face_edge};
@@ -140,30 +145,84 @@ fn plan_hull(points: &[(i32, i32)]) -> Vec<(i32, i32)> {
     lower
 }
 
-/// World-space Y-up metres to exact editor Z-up units.
+/// World-space Y-up metres to editor Z-up units, rounded to the nearest.
 ///
-/// Authored geometry only ever reaches world space by dividing integer editor
-/// units by 16, a power of two, so the round trip is exact. A value that is not
-/// on the quantized grid is a real authoring fault, not float noise.
-pub fn quantize_world(point: Vec3) -> Result<QuantizedPoint, ContractDiagnostic> {
-    let axis = |value: f32, name: &str| -> Result<i32, ContractDiagnostic> {
+/// **This used to refuse anything off the 1/16 m grid**, on the stated reasoning
+/// that authored geometry only ever reaches world space by dividing integer
+/// editor units by 16, so an off-grid value is a real authoring fault rather
+/// than float noise.
+///
+/// That is false for this corpus, and not marginally. Chamfers and splayed door
+/// reveals go through `offset_inward`, which normalises by `hypot` — irrational
+/// against the quantized hexagon's 7:4 corners. `hall_cap`, one of the plainest
+/// tiles in the kit, carries plane points like `(54.5116, -93.3953)`. Fractional
+/// geometry is not a fault here; it is the chamfer that gives the kit its shape,
+/// and refusing it would have meant re-authoring the visual language rather than
+/// migrating it.
+///
+/// Nothing that consumes this needs exactness. Every caller computes a bound or
+/// a measurement over vertices — an envelope, a clearance hull, a landing
+/// height, a headroom — and none compares two values for equality. Even the
+/// interface fingerprints do not need exact *input*: they need to be
+/// *comparable*, and rounding to nearest is already deterministic, so identical
+/// authored geometry yields identical fingerprints whether or not its vertices
+/// were integral.
+///
+/// What is genuinely given up: a brush nudged slightly off-grid by mistake is
+/// now absorbed instead of reported. That check could not have caught it anyway
+/// while the corpus is legitimately off-grid everywhere, and footprint
+/// validation still rejects geometry that leaves its cell.
+///
+/// For a bound that must *contain* its input rather than approximate it, use
+/// [`quantize_world_outward`].
+#[must_use]
+pub fn quantize_world(point: Vec3) -> QuantizedPoint {
+    let axis = |value: f32| -> i32 {
         let scaled = f64::from(value) * f64::from(QUANTIZED_UNITS_PER_METER);
-        let rounded = scaled.round();
-        if (scaled - rounded).abs() > 1.0e-2 || rounded.abs() > f64::from(i32::MAX) {
-            return Err(ContractDiagnostic::whole(
-                "nonquantized_geometry",
-                format!(
-                    "authored {name} {value} is not on the 1/{QUANTIZED_UNITS_PER_METER} m editor grid"
-                ),
-            ));
-        }
-        Ok(rounded as i32)
+        scaled
+            .round()
+            .clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32
     };
-    Ok(QuantizedPoint {
-        x: axis(point.x, "x")?,
-        y: axis(-point.z, "y")?,
-        z: axis(point.y, "z")?,
-    })
+    QuantizedPoint {
+        x: axis(point.x),
+        y: axis(-point.z),
+        z: axis(point.y),
+    }
+}
+
+/// The smallest integer box containing `point`, as its low and high corners.
+///
+/// An envelope is a bound, so rounding its input to nearest is wrong in the one
+/// direction that matters: it can exclude by up to half a unit the very vertex
+/// it was asked to contain. Including both corners costs at most 1/16 m of slack
+/// and cannot under-report.
+#[must_use]
+pub fn quantize_world_outward(point: Vec3) -> (QuantizedPoint, QuantizedPoint) {
+    let axis = |value: f32| -> (i32, i32) {
+        let scaled = f64::from(value) * f64::from(QUANTIZED_UNITS_PER_METER);
+        let low = scaled
+            .floor()
+            .clamp(f64::from(i32::MIN), f64::from(i32::MAX));
+        let high = scaled
+            .ceil()
+            .clamp(f64::from(i32::MIN), f64::from(i32::MAX));
+        (low as i32, high as i32)
+    };
+    let (x0, x1) = axis(point.x);
+    let (y0, y1) = axis(-point.z);
+    let (z0, z1) = axis(point.y);
+    (
+        QuantizedPoint {
+            x: x0,
+            y: y0,
+            z: z0,
+        },
+        QuantizedPoint {
+            x: x1,
+            y: y1,
+            z: z1,
+        },
+    )
 }
 
 /// Plan origin of one module cell in editor units.
@@ -251,7 +310,7 @@ pub(crate) fn quantized_hulls(
             let points = hull
                 .iter()
                 .map(|&point| quantize_world(point))
-                .collect::<Result<Vec<_>, _>>()?;
+                .collect::<Vec<_>>();
             let mut iter = points.iter().copied();
             let first = iter.next().ok_or_else(|| {
                 ContractDiagnostic::whole(
@@ -308,7 +367,7 @@ fn lateral_landing_z(
     let mut best: Option<i32> = None;
     for hull in &module.prototype.hulls {
         for &vertex in hull {
-            let point = quantize_world(vertex)?;
+            let point = quantize_world(vertex);
             if !near_edge(point, a, b) {
                 continue;
             }
@@ -344,7 +403,7 @@ fn lateral_headroom(
     let mut lowest: Option<i32> = None;
     for hull in &module.prototype.hulls {
         for &vertex in hull {
-            let point = quantize_world(vertex)?;
+            let point = quantize_world(vertex);
             if !near_edge(point, a, b) || point.z <= landing + 1 || point.z > ceiling {
                 continue;
             }
@@ -455,13 +514,20 @@ pub fn compile_spatial_contract(
         Some(extent) => extent.include(point),
         None => envelope = Some(Extent::around(point)),
     };
+    // Outward, because this is the one place the value has to *contain* what it
+    // measures rather than approximate it.
+    let mut include_containing = |point: Vec3| {
+        let (low, high) = quantize_world_outward(point);
+        include(low);
+        include(high);
+    };
     for hull in &module.prototype.hulls {
         for &vertex in hull {
-            include(quantize_world(vertex)?);
+            include_containing(vertex);
         }
     }
     for light in &module.prototype.lights {
-        include(quantize_world(light.position)?);
+        include_containing(light.position);
     }
     for node in module
         .prototype
@@ -470,7 +536,7 @@ pub fn compile_spatial_contract(
         .iter()
         .chain(&module.prototype.deck.nodes)
     {
-        include(quantize_world(*node)?);
+        include_containing(*node);
     }
     let envelope = envelope.ok_or_else(|| {
         ContractDiagnostic::whole(
@@ -647,16 +713,33 @@ mod tests {
     }
 
     #[test]
-    fn the_editor_grid_round_trips_exactly_and_rejects_off_grid_points() {
+    fn the_editor_grid_round_trips_exactly_and_rounds_the_chamfers_it_must_accept() {
+        // On-grid geometry is still exact, which is most of the corpus.
         assert_eq!(
-            quantize_world(Vec3::new(7.0, 0.5, -4.0)).unwrap(),
+            quantize_world(Vec3::new(7.0, 0.5, -4.0)),
             QuantizedPoint {
                 x: 112,
                 y: 64,
                 z: 8
             }
         );
-        assert!(quantize_world(Vec3::new(0.01, 0.0, 0.0)).is_err());
+
+        // Off-grid geometry is accepted and rounded, because chamfers produce
+        // it everywhere. `hall_cap`'s own plane point, in world metres.
+        let chamfer = Vec3::new(54.5116 / 16.0, 0.5, -(-93.3953) / 16.0);
+        let quantized = quantize_world(chamfer);
+        assert_eq!(quantized.x, 55);
+        assert_eq!(quantized.y, -93);
+
+        // Deterministic, which is the property fingerprints actually rely on:
+        // the same authored geometry must always quantize the same way.
+        assert_eq!(quantize_world(chamfer), quantized);
+
+        // And a bound must contain what it bounds, so the outward form brackets
+        // the point instead of approximating it.
+        let (low, high) = quantize_world_outward(chamfer);
+        assert!(low.x <= 54 && high.x >= 55, "{low:?}..{high:?}");
+        assert!(low.y <= -94 && high.y >= -93, "{low:?}..{high:?}");
     }
 
     #[test]
