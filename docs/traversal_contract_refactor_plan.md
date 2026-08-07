@@ -819,21 +819,56 @@ Measured, in TB units against corner 4 `(-112, 64)`:
 `INNER = 0.5` puts both flights on the grid — tower `(-42, 24)`, ramp
 `(-56, 32)`. `RING` needs its own treatment.
 
-This is not a one-line fix and should not be treated as one. `INNER` sets the
-flight's inner edge, so moving it moves `mid`, and therefore the spine, the
-`foot`, and the `head` — the whole climb. Every tower walk gate has to
-re-verify: the 90 door approaches, the 100 stacked columns, the 108 exits, the
-rotation prohibition. It also moves committed `.map` bytes for the perimeter
-ramp, which shares `INNER`. That is all acceptable inside TR-10, which
-regenerates the corpus anyway, but it is a geometry change wearing a schema
-change's clothes, and it wants its own slice with its own evidence.
+**And then measuring further changed the answer.** `INNER` is not the problem;
+it is one instance of a corpus-wide one. Scanning every committed `.map` for
+fractional coordinates in brush plane points and entity origins finds them in
+halls, liminal cells, ramps, silos and towers alike. From `hall_cap`, one of the
+plainest tiles in the kit:
 
-**Sequencing that follows from this:** quantize the forge's geometry *first*, as
-a v2 change with the existing gates proving the climb still works, and only then
-declare families and promote to v3. Doing it the other way round means debugging
-a geometry regression and a schema migration at the same time.
+```
+( 112 -64 5 ) ( 0 -128 5 ) ( 54.5116 -93.3953 8 )
+```
 
-The declaration was reverted after measuring; the tree is green at 178 passed.
+That is **chamfer** geometry. `offset_inward` normalises by `hypot`, which is
+irrational against the quantized hexagon's 7:4 corners, so every chamfered edge
+and splayed door reveal in the corpus is off-grid by construction.
+
+So `quantize_world`'s own premise is false for this corpus:
+
+> Authored geometry only ever reaches world space by dividing integer editor
+> units by 16, a power of two, so the round trip is exact. A value that is not
+> on the quantized grid is a real authoring fault, not float noise.
+
+It is not an authoring fault. It is the chamfer that gives the kit its shape.
+
+**What the four call sites actually need.** None of them compares two values for
+equality; every one is a bound or a measurement over hull vertices:
+
+| site | what it computes | needs |
+|---|---|---|
+| `spatial.rs` envelope | a bounding box | to **contain** — round outward |
+| `spatial.rs` quantized hulls | clearance obstruction tests | containment, not exactness |
+| `spatial.rs` landing / headroom | min/max of vertices near a port edge | deterministic rounding |
+| `interface.rs` guide terminals | fingerprint components | deterministic rounding |
+
+Even the fingerprint case does not require exact input. Fingerprints must be
+*comparable*, and rounding to nearest is already deterministic: identical
+authored geometry yields identical fingerprints whether or not the vertices were
+integral. Refusing off-grid input buys nothing that rounding does not.
+
+**This changes what TR-10 costs.** It is not "migrate 125 modules onto the
+grid" — that would mean re-authoring the kit's visual language and deleting
+every chamfer. It is "relax an over-strict check to what its purpose needs":
+round outward for the envelope, round to nearest for the measurements, and keep
+determinism where fingerprints are compared.
+
+Recommended, not yet implemented. It touches fingerprint semantics, so it wants
+its own slice with certification re-run against it rather than being folded into
+a migration commit — which is exactly the mistake that would make a failure
+impossible to attribute.
+
+The tower declaration was reverted after measuring; the tree is green at 178
+passed and no generated artifact has moved.
 
 ### TR-10 — Migrate, publish, and remove adapters
 
