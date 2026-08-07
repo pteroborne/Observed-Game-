@@ -899,6 +899,19 @@ impl<'a> HexTileCatalogue<'a> {
 
     /// The family candidates for one assembly, after register fallback: exact
     /// register first, then the shared `generic` kit, then nothing.
+    ///
+    /// Returning `Some` makes the family path authoritative for this assembly:
+    /// compatibility prototypes of the same archetype are not consulted, even
+    /// when one sits at the exact register and the family only answers
+    /// `generic`. That is deliberate. A column that took a compatibility cell at
+    /// one level and a family member at the next would be mixing two kinds of
+    /// geometry inside one assembly, which is the fault in a different costume.
+    ///
+    /// It has no effect on the committed corpus, which declares no families at
+    /// all. It is a real question for TR-10: once contracted modules and the
+    /// generated compatibility kit share an archetype, the compatibility copies
+    /// at exact registers become unreachable for that archetype, and that has to
+    /// be an intended part of the migration rather than a surprise.
     fn family_options(
         &self,
         archetype: &str,
