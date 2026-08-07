@@ -897,6 +897,41 @@ Not implemented. It changes what a vertical fingerprint *is*, so it must land
 with certification re-run against it, and it is the natural first slice of the
 migration rather than a preflight fix.
 
+##### What working out the replacement revealed, before writing any of it
+
+The obvious move — derive the landing from the module's own guide terminal — is
+wrong in a way worth recording, because it looks right.
+
+A vertical interface is met by **two** modules, and their fingerprints have to
+agree: the lower module's `Up` is the upper module's `Down`. So the question is
+not "where does this module's guide end" but "where does a body cross this
+plane", and those are different points:
+
+- the lower tower's climb ends at `Extent::head` and hands the body across;
+- the upper tower's climb *begins* at `Extent::foot`, somewhere else entirely,
+  after the body has walked the ring.
+
+Deriving each side from its own spine terminal would give `head` for the lower
+`Up` and `foot` for the upper `Down` — two different plan positions for one
+physical seam, so the fingerprints would never match and every stacked pair
+would be refused. The crossing happens at `head` for **both** sides.
+
+That points at the real choice, which is a design decision and not a derivation:
+
+- **Derive from geometry** — find where the floor is actually open at the plane
+  and place the clearance there. `QuantizedHull::covers_plan_point` already
+  exists for it. Principled, but it has to pick *one* opening and a box inside
+  it, and a heuristic that picks the wrong opening fails silently.
+- **Declare it** — the module says where its vertical handoff is, because only
+  the author knows which opening is the route. `InterfaceProfile.aperture` and
+  `guide_terminal` already exist to carry exactly this, and it matches how the
+  rest of Arc S resolved the same tension: TR-9 deleted `"stair_tower"` because
+  a shape inferred by the framework should be declared by the module.
+
+The second is more in keeping with the arc, costs authoring syntax, and cannot
+guess wrong. Whoever takes it should decide deliberately rather than reaching
+for the derivation because it needs no schema change.
+
 The tower declaration was reverted after each measurement; the tree is green at
 178 passed and no generated artifact has moved.
 
