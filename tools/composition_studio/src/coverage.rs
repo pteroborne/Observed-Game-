@@ -36,17 +36,6 @@ use observed_match::hex_wfc::{
 /// fails to load.
 pub type Supply = HexTileSupply;
 
-/// Panel text for one supply verdict. Presentation only — the classification
-/// itself belongs to the selector.
-#[must_use]
-pub fn supply_label(supply: Supply) -> &'static str {
-    match supply {
-        Supply::Exact => "ok",
-        Supply::GenericFallback => "generic",
-        Supply::Missing => "MISSING",
-    }
-}
-
 /// One distinct thing the live layout asks the catalog for.
 #[derive(Clone, Debug)]
 pub struct DemandRow {
