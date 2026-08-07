@@ -938,7 +938,9 @@ Contract Hat changes land at deliberate boundaries:
 1. Authoring v3/catalog v4 and regenerated sources.
 2. Family-aware deterministic selection.
 3. Traversal-profile/certificate hash folding.
-4. **Switching production onto graph legs — an intent-trace boundary.**
+4. ~~Switching production onto graph legs — an intent-trace boundary.~~
+   **Struck.** Measured: both sides always emitted the same module-local
+   tuning. See below.
 
 Boundary 4 was discovered by TR-8B and is a correction to this plan. TR-8B's
 packet description says to remove shape inference from `vertical_command` /
@@ -979,17 +981,37 @@ already identical: the compatibility path clamps an applied yaw delta, and
 `walk_toward` divides the same clamped delta by a `look_step` the hex profile
 pins to `1.0`.
 
-**So boundary 4 may not be a boundary at all.** It plausibly reduces to a plain
-behaviour-preserving refactor plus a per-mode tuning pair on `FollowerConfig`.
-That must be *proved*, not assumed — the pinned intent/body trace and completion
-tick are exactly the instruments, and anything that still differs after the
-split is the real boundary and should be reported as such. Treat this as a
-promising lead that removes a blocker from TR-10's critical path, not as a
-settled result.
+#### Settled by measurement: boundary 4 does not exist for TR-10's removal
 
-Related smell, cheap to fix while in there: `steer_toward_with_speed` takes
-`sprint` and `movement_scale` and has exactly one caller, which always passes
-`(true, 1.0)`. Those parameters are where the per-mode pair wants to live.
+`a_compiled_climb_graph_emits_what_the_spine_it_came_from_emits`
+(`observed_traversal/src/follower.rs`) compiles a graph from a spine, follows it
+and the spine side by side at nine poses along the climb, and asserts the
+emitted `movement` and `sprint_held` are equal at each. They are.
+
+The correction above was still one step short. The two tunings are not "climb"
+against "lateral" — they are **module-local against cell-to-cell**:
+
+| what | path | movement | sprint | speed |
+|---|---|---|---|---|
+| module-local, climbs **and decks** | `follow_stateless` → `walk_toward` | 0.35 | false | 1.61 m/s |
+| cell-to-cell hop | `steer_toward` | 1.0 | true | 7.0 m/s |
+
+Everything the graph currently models is module-local, and module-local
+traversal already runs at 0.35 today for decks as well as climbs. So for the
+three functions TR-10 actually deletes — `vertical_command`, `climb_command`,
+`finish_stair_command` — **both sides were always the same tuning**. There is no
+intent change to justify, no trace to move, and no boundary to schedule.
+Boundary 4 is struck from the list above.
+
+What is *not* settled, and must not be smuggled in with it: whether cell-to-cell
+movement should later become graph legs. That would put a `Walk` edge where
+1.0/sprint is used today and slow production by 4.35x. It is a real intent
+change needing its own evidence, and `TraversalEdge` already carries
+`TraversalMode` to tell the two apart when someone wants it. The test asserts
+the module-local tuning by *value*, so that change cannot arrive silently.
+
+Related smell if that day comes: `steer_toward_with_speed` takes `sprint` and
+`movement_scale` and has exactly one caller, always `(true, 1.0)`.
 
 Each boundary gets its own commit, before/after hashes, replay/LAN compatibility note,
 and complete seed evidence. Generated files are never hand-edited.

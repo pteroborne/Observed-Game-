@@ -535,4 +535,96 @@ mod tests {
         assert_eq!(decision.target, Some([2.0, 0.0, 0.0]));
         assert!(decision.intent.is_some());
     }
+
+    /// Following a compiled graph up a climb emits the **same intent** as
+    /// following the spine it was compiled from.
+    ///
+    /// This measures the thing the plan calls contract boundary 4, and it is
+    /// worth being precise about what it does and does not settle.
+    ///
+    /// The boundary was raised because the graph follower emits `movement 0.35`
+    /// without sprint while *lateral* steering emits `1.0` with it - 1.61 m/s
+    /// against 7.0. Both of those do ship. But they are not two answers to one
+    /// question: a lateral hop between cells is not a graph leg. Everything the
+    /// graph currently models is module-local, and module-local traversal
+    /// already goes through this very function at 0.35, for climbs and decks
+    /// alike. So for the three functions TR-10 actually deletes -
+    /// `vertical_command`, `climb_command`, `finish_stair_command` - both sides
+    /// were always the same tuning, and this asserts it rather than assuming
+    /// it.
+    ///
+    /// What this does **not** settle: whether cell-to-cell movement should
+    /// later become graph legs. That would put a `Walk` edge where 1.0/sprint
+    /// is used today, and *that* is a real intent change needing its own
+    /// evidence. `TraversalEdge` already carries the mode to tell them apart.
+    #[test]
+    fn a_compiled_climb_graph_emits_what_the_spine_it_came_from_emits() {
+        let spine = spine();
+        let graph = crate::graph::compile_compatibility_graph(None, Some(&spine))
+            .expect("a spine compiles to a graph");
+        let guide = &graph.guide;
+        let profile = TraversalRuntimeProfile::canonical_hex();
+
+        let entry = *guide.nodes().first().expect("a compiled graph has nodes");
+        let exit = *guide.nodes().last().expect("a compiled graph has nodes");
+        let mut cursor = guide
+            .cursor_between(entry.id, exit.id)
+            .expect("entry and exit are joined");
+
+        // Sample along the climb rather than at one pose: a single point can
+        // agree by luck, and the question is whether the two paths agree while
+        // a body is actually moving through the shape.
+        let mut compared = 0;
+        for step in 0..=8u8 {
+            let t = f32::from(step) / 8.0;
+            let along = spine.nodes[0].lerp(spine.nodes[spine.nodes.len() - 1], t);
+            let pose = FollowerPose {
+                feet: along,
+                yaw: 0.4,
+            };
+
+            let compatibility = follow_stateless(
+                pose,
+                FollowTarget::Climb {
+                    spine: &spine,
+                    approach: None,
+                    direction: TraversalDirection::Forward,
+                },
+                &profile,
+            );
+            let mut probe = cursor;
+            let graphed = follow_graph(pose, guide, &mut probe, exit.id, &profile);
+
+            let (Some(old), Some(new)) = (compatibility.intent, graphed.intent) else {
+                continue;
+            };
+            assert_eq!(
+                old.movement, new.movement,
+                "step {step}: movement diverges - this is the boundary-4 claim, and it \
+                 would mean the graph is not module-local after all"
+            );
+            assert_eq!(
+                old.sprint_held, new.sprint_held,
+                "step {step}: sprint diverges"
+            );
+            compared += 1;
+        }
+        // A loop that skips every sample agrees with itself about nothing.
+        assert!(
+            compared >= 6,
+            "only {compared} poses actually produced two intents to compare"
+        );
+
+        // And the tuning is the module-local one, not the lateral one. Stated
+        // as a value so that changing `FollowerConfig` cannot quietly move
+        // production speed while both sides keep agreeing with each other.
+        let pose = FollowerPose {
+            feet: spine.nodes[0],
+            yaw: 0.0,
+        };
+        let decision = follow_graph(pose, guide, &mut cursor, exit.id, &profile);
+        let intent = decision.intent.expect("a fresh cursor steers");
+        assert_eq!(intent.movement.y, profile.follower().movement_scale);
+        assert!(!intent.sprint_held);
+    }
 }
