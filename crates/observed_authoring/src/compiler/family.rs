@@ -463,15 +463,20 @@ fn compile_family(
                     modules: vec![module.id.clone()],
                     message: String::new(),
                 };
+                // A member that declares no interface on this face is a **cap**
+                // on that side, and a column needs caps: a shaft foot has a
+                // solid floor and therefore no `Down`, a shaft head is lidded
+                // and therefore no `Up`. Requiring both of every member makes a
+                // complete tower family impossible to express, which is exactly
+                // what the first migration attempt hit.
+                //
+                // What must hold is narrower and is still enforced below: every
+                // member that *does* present a face must agree with the rest of
+                // the family about it, because that fingerprint is what a
+                // neighbour will meet. Whether a family can stack at all - that
+                // some member presents each face - is checked after the loop.
                 let Some(fingerprint) = vertical_fingerprint(contract, face) else {
-                    return Err(Box::new(FamilyDiagnostic {
-                        code: "missing_vertical_interface",
-                        message: format!(
-                            "a vertical-column member declares both vertical interfaces; \
-                             {face:?} is absent"
-                        ),
-                        ..coordinates
-                    }));
+                    continue;
                 };
                 match expected.get(&face) {
                     None => {
@@ -490,6 +495,29 @@ fn compile_family(
                     }
                     Some(_) => {}
                 }
+            }
+        }
+        // A column that presents no `Up` anywhere cannot be climbed out of, and
+        // one with no `Down` cannot be arrived at. Caps are legitimate members;
+        // a family made only of caps is not a column.
+        for face in [HexFace::Up, HexFace::Down] {
+            if !expected.contains_key(&face) {
+                return Err(Box::new(FamilyDiagnostic {
+                    code: "column_never_presents_interface",
+                    family: family.clone(),
+                    archetype: None,
+                    register: answered.iter().next().cloned(),
+                    rotation: rotations.first().copied(),
+                    signature: None,
+                    modules: members
+                        .iter()
+                        .map(|(module, _)| module.id.clone())
+                        .collect(),
+                    message: format!(
+                        "no member of this vertical column presents a {face:?} interface, \
+                         so nothing can stack on it"
+                    ),
+                }));
             }
         }
     }
@@ -658,6 +686,63 @@ mod tests {
     /// The mismatched case. Two members of one vertical column present
     /// different `Up` interfaces, so a column that picked either could not
     /// stack on the other.
+    #[test]
+    fn a_column_family_may_carry_caps_that_close_one_end() {
+        // A shaft foot has a solid floor and so presents no `Down`; a shaft
+        // head is lidded and presents no `Up`. This is the shape of every real
+        // tower family, and the first version of the rule rejected it by
+        // demanding both faces of every member - which nothing caught, because
+        // `missing_vertical_interface` shipped with no test at all.
+        let index = index_of(
+            "capped-column",
+            &[
+                (
+                    "through.map",
+                    fixtures::contracted_tower("test/through", "test/tower", 124),
+                ),
+                (
+                    "foot.map",
+                    fixtures::contracted_tower_cap("test/foot", "test/tower", "up"),
+                ),
+                (
+                    "head.map",
+                    fixtures::contracted_tower_cap("test/head", "test/tower", "down"),
+                ),
+            ],
+        )
+        .expect("a column of a through cell and two caps is a legal family");
+
+        let family = index
+            .families
+            .get(&ModuleFamilyId("test/tower".to_string()))
+            .expect("the tower family is indexed");
+        assert_eq!(family.scope, AssemblyScope::VerticalColumn);
+    }
+
+    #[test]
+    fn a_column_that_presents_no_interface_at_all_cannot_stack() {
+        // Caps are legitimate members; a family of nothing but caps is not a
+        // column. Both of these close their `Up`, so nothing can ever be
+        // stacked on this family.
+        let fault = family_fault(index_of(
+            "all-caps",
+            &[
+                (
+                    "head.map",
+                    fixtures::contracted_tower_cap("test/head", "test/tower", "down"),
+                ),
+                (
+                    "head2.map",
+                    fixtures::contracted_tower_cap("test/head2", "test/tower", "down"),
+                ),
+            ],
+        ));
+
+        assert_eq!(fault.code, "column_never_presents_interface");
+        assert_eq!(fault.family, ModuleFamilyId("test/tower".to_string()));
+        assert!(fault.to_string().contains("Up"), "{fault}");
+    }
+
     #[test]
     fn a_mismatched_vertical_fingerprint_is_rejected_with_its_variant() {
         let fault = family_fault(index_of(

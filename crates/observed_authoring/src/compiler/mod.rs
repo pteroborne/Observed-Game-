@@ -121,6 +121,34 @@ pub(crate) mod fixtures {
             crate::tile_source::box_brush_text([-112, -64, 0], [-96, 64, 128]),
         )
     }
+
+    /// A tower that caps one end of the shaft: it presents exactly one vertical
+    /// interface, because that is what a cap *is*.
+    ///
+    /// `open` is the face it still offers - `Up` for a shaft foot with a solid
+    /// floor, `Down` for a lidded shaft head. A column family needs both kinds
+    /// and neither can present the face it closes, which is why a rule
+    /// demanding both of every member cannot describe a real tower family.
+    pub(crate) fn contracted_tower_cap(id: &str, family: &str, open: &str) -> String {
+        let boundary = if open == "up" { 128 } else { 0 };
+        format!(
+            "{{\n\"classname\" \"worldspawn\"\n{}\n}}\n\
+             {{\n\"classname\" \"tile_meta\"\n\"authoring_version\" \"3\"\n\"id\" \"{id}\"\n\
+             \"kind\" \"cell\"\n\"archetype\" \"stair_tower\"\n\"register\" \"generic\"\n\
+             \"register_scope\" \"all\"\n\"variant\" \"1\"\n\"levels\" \"1\"\n\
+             \"rotation_policy\" \"none\"\n\"weight\" \"1\"\n\"family\" \"{family}\"\n\
+             \"assembly_scope\" \"vertical_column\"\n\"family_weight\" \"2\"\n}}\n\
+             {{\n\"classname\" \"tile_cell\"\n\"q\" \"0\"\n\"r\" \"0\"\n\"level\" \"0\"\n\
+             \"levels\" \"1\"\n\"floor\" \"open\"\n}}\n\
+             {{\n\"classname\" \"tile_port\"\n\"q\" \"0\"\n\"r\" \"0\"\n\"level\" \"0\"\n\
+             \"face\" \"{open}\"\n\"class\" \"shaft_open\"\n\"name\" \"{open}_shaft\"\n\
+             \"origin\" \"0 0 {boundary}\"\n}}\n\
+             {{\n\"classname\" \"tile_stair_node\"\n\"index\" \"0\"\n\"origin\" \"0 0 8\"\n}}\n\
+             {{\n\"classname\" \"tile_stair_node\"\n\"index\" \"1\"\n\"origin\" \"0 0 124\"\n}}\n\
+             {{\n\"classname\" \"tile_light\"\n\"kind\" \"practical\"\n\"origin\" \"0 0 96\"\n}}\n",
+            crate::tile_source::box_brush_text([-112, -64, 0], [-96, 64, 128]),
+        )
+    }
 }
 
 #[cfg(test)]
