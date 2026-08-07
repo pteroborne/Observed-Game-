@@ -248,9 +248,15 @@ fn production_catalog_selection_is_pinned_for_spectator_seeds() {
     }
 }
 
-/// Selection is local to one `(archetype, register, signature)` bucket. The
-/// same variation key therefore cannot promise that two signatures choose
-/// members of one implicit family: the buckets can contain different members.
+/// Compatibility content still has no family, and this is what that costs.
+///
+/// Selection over uncontracted prototypes is local to one
+/// `(archetype, register, signature)` bucket, so the same variation key cannot
+/// promise that two signatures choose members of one implicit family: the
+/// buckets can contain different members. That is not a defect in the selector
+/// — it is the reason a family has to be *declared*, and it is precisely the
+/// gap `two_declared_families_never_mix_inside_one_column` closes for
+/// contracted content. It stays pinned until TR-10 migrates the corpus.
 #[test]
 fn identical_variation_keys_do_not_guarantee_family_coherence() {
     let mut first_a = tiles().into_iter().next().expect("fixture tile");
@@ -268,10 +274,17 @@ fn identical_variation_keys_do_not_guarantee_family_coherence() {
     second_b.key.variant = 30;
 
     let prototypes = [first_a, second_a, first_b, second_b];
-    let catalogue = Catalogue::new(&prototypes);
+    let catalogue = HexTileCatalogue::new(&prototypes);
     let variation = 0;
     let lower = catalogue
-        .select("family_probe", "monolith", port_signature(&[]), variation)
+        .select(
+            "family_probe",
+            "monolith",
+            port_signature(&[]),
+            variation,
+            variation,
+        )
+        .expect("no family is involved")
         .expect("generic fallback answers the first signature");
     let upper = catalogue
         .select(
@@ -279,7 +292,9 @@ fn identical_variation_keys_do_not_guarantee_family_coherence() {
             "monolith",
             port_signature(&[(HexFace::Up, PortClass::ShaftOpen)]),
             variation,
+            variation,
         )
+        .expect("no family is involved")
         .expect("generic fallback answers the second signature");
 
     assert_eq!(lower.key.variant, 10, "generic fallback keeps bucket order");
@@ -518,6 +533,7 @@ fn matching_whole_room_module_takes_precedence_over_cell_fallbacks() {
         hulls: fallback_hulls,
         lights: Vec::new(),
         contract: None,
+        assembly: None,
     };
     let snapshot = HexWfcGeometrySnapshot::project_with_rooms(&world, &tiles(), &[room])
         .expect("whole-room projection");
@@ -817,6 +833,7 @@ fn multi_cell_room_prototype(role: RoomRole, archetype: &str, variant: u16) -> R
         hulls: vec![tiny_tetrahedron(0.0)],
         lights: Vec::new(),
         contract: None,
+        assembly: None,
     }
 }
 
@@ -1230,8 +1247,8 @@ fn a_shaft_column_uses_one_tower_shape() {
 /// A district-exclusive tile must be unreachable from a foreign district.
 ///
 /// Exclusivity has to be a property of the selector, not a convention about how
-/// tiles are keyed. `Catalogue::select` tries the exact `(archetype, register,
-/// signature)` first and falls back to `generic` — so a tile keyed to Liminal
+/// tiles are keyed. `HexTileCatalogue::select` tries the exact `(archetype,
+/// register, signature)` first and falls back to `generic` — so a tile keyed to Liminal
 /// Grid can only ever be reached by asking for Liminal Grid, and a widened
 /// fallback (or a stray `generic` relabel) would be the way that breaks. This
 /// pins it by asking every other register for every exclusive tile's signature
@@ -1239,7 +1256,7 @@ fn a_shaft_column_uses_one_tower_shape() {
 #[test]
 fn a_district_exclusive_tile_never_answers_for_another_district() {
     let tiles = tiles();
-    let catalogue = Catalogue::new(&tiles);
+    let catalogue = HexTileCatalogue::new(&tiles);
     let registers: Vec<&str> = ArchitectureRegister::ALL
         .iter()
         .map(|register| register.slug())
@@ -1273,12 +1290,10 @@ fn a_district_exclusive_tile_never_answers_for_another_district() {
             // Every variation key, not one: selection is weighted, so a single
             // probe could miss a leak that only shows on some rolls.
             for variation in 0..16u64 {
-                let picked = catalogue.select(
-                    archetype,
-                    foreign,
-                    tile.signature,
-                    variation.wrapping_mul(0x9E37_79B9_7F4A_7C15),
-                );
+                let key = variation.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+                let picked = catalogue
+                    .select(archetype, foreign, tile.signature, key, key)
+                    .unwrap_or(None);
                 if let Some(picked) = picked {
                     assert_ne!(
                         picked.key.register, tile.key.register,
