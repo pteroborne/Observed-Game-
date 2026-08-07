@@ -785,6 +785,56 @@ this packet.
 **Exit:** two complete families never mix within a column across seeds, door
 signatures, caps, registers, or relayouts.
 
+### TR-10 preflight — what first contact actually said
+
+Two things were measured before any source was migrated. Both are recorded here
+because they change the shape of the packet.
+
+**1. A vertical column is allowed to have ends.** The family compiler required
+both vertical interfaces of every `VerticalColumn` member, which makes a real
+tower family inexpressible — a shaft foot has a solid floor and no `Down`, a
+shaft head is lidded and has no `Up`. Fixed in `e43b76d`: a member that presents
+a face must agree with the family about it; a member that presents none is a cap.
+`column_never_presents_interface` replaces the old rule for the case that
+actually matters — a family where *nobody* offers a face cannot be stacked.
+Worth knowing: the old `missing_vertical_interface` had **no test anywhere**,
+which is how the over-strictness survived TR-8A's review and mine.
+
+**2. The authored corpus is not on the editor grid, and v3 requires it.**
+Declaring the tower family promoted its 66 sources to v3, and the contract
+compiler immediately refused them:
+
+```
+nonquantized_geometry: authored x -2.8875 is not on the 1/16 m editor grid
+```
+
+Measured, in TB units against corner 4 `(-112, 64)`:
+
+| value | today | on grid? |
+|---|---|---|
+| flight inner edge, tower (`outer 0.75 × INNER 0.55`) | `(-46.2, 26.4)` | **no, both axes** |
+| flight inner edge, ramp (`outer 1.0 × INNER 0.55`) | `(-61.6, 35.2)` | **no, both axes** |
+| ring corner node (`RING`) | `(-94.0, 53.714…)` | x yes, **y no** |
+
+`INNER = 0.5` puts both flights on the grid — tower `(-42, 24)`, ramp
+`(-56, 32)`. `RING` needs its own treatment.
+
+This is not a one-line fix and should not be treated as one. `INNER` sets the
+flight's inner edge, so moving it moves `mid`, and therefore the spine, the
+`foot`, and the `head` — the whole climb. Every tower walk gate has to
+re-verify: the 90 door approaches, the 100 stacked columns, the 108 exits, the
+rotation prohibition. It also moves committed `.map` bytes for the perimeter
+ramp, which shares `INNER`. That is all acceptable inside TR-10, which
+regenerates the corpus anyway, but it is a geometry change wearing a schema
+change's clothes, and it wants its own slice with its own evidence.
+
+**Sequencing that follows from this:** quantize the forge's geometry *first*, as
+a v2 change with the existing gates proving the climb still works, and only then
+declare families and promote to v3. Doing it the other way round means debugging
+a geometry regression and a schema migration at the same time.
+
+The declaration was reverted after measuring; the tree is green at 178 passed.
+
 ### TR-10 — Migrate, publish, and remove adapters
 
 **Hat:** Contract cleanup. **Owner:** integrator and sole catalog publisher.
