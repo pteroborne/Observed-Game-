@@ -774,10 +774,8 @@ pub struct HexTileCatalogue<'a> {
     /// Compatibility prototypes, keyed as they always were.
     flat: BTreeMap<(&'a str, &'a str, PortSignature), Vec<&'a TilePrototype>>,
     /// Contracted prototypes, keyed by the assembly variant that owns them.
-    members: BTreeMap<
-        (&'a str, &'a str, &'a ModuleFamilyId, u8, PortSignature),
-        Vec<&'a TilePrototype>,
-    >,
+    members:
+        BTreeMap<(&'a str, &'a str, &'a ModuleFamilyId, u8, PortSignature), Vec<&'a TilePrototype>>,
     /// Candidate families per archetype then register, ordered by family ID.
     families: BTreeMap<&'a str, BTreeMap<&'a str, Vec<FamilyOption<'a>>>>,
     /// Assembly scope per archetype.
@@ -933,8 +931,13 @@ impl<'a> HexTileCatalogue<'a> {
             // refuses to fill by mixing families, and it has to be reported.
             let covered = options.iter().all(|option| {
                 option.rotations.iter().all(|&rotation| {
-                    self.members
-                        .contains_key(&(archetype, resolved, option.family, rotation, signature))
+                    self.members.contains_key(&(
+                        archetype,
+                        resolved,
+                        option.family,
+                        rotation,
+                        signature,
+                    ))
                 })
             });
             return match (covered, fallback) {
@@ -968,11 +971,11 @@ impl<'a> HexTileCatalogue<'a> {
     ) -> Result<Option<&'a TilePrototype>, AssemblyMiss> {
         if let Some((fallback, options)) = self.family_options(archetype, register) {
             let resolved = fallback.resolve(register);
-            let Some(option) =
-                weighted_select_by(options, respin(assembly_variation, FAMILY_DOMAIN), |option| {
-                    option.family_weight
-                })
-            else {
+            let Some(option) = weighted_select_by(
+                options,
+                respin(assembly_variation, FAMILY_DOMAIN),
+                |option| option.family_weight,
+            ) else {
                 return Ok(None);
             };
             let rotation = option.rotations[(respin(assembly_variation, ROTATION_DOMAIN)

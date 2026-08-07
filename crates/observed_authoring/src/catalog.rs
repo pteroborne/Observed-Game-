@@ -1666,7 +1666,10 @@ mod tests {
             assert_eq!(assembly.scope, crate::AssemblyScope::VerticalColumn);
             assert_eq!(assembly.family_weight, 2);
             assert_eq!(tile.key.archetype, "stair_tower");
-            let contract = tile.contract.as_ref().expect("a v4 cell carries a contract");
+            let contract = tile
+                .contract
+                .as_ref()
+                .expect("a v4 cell carries a contract");
             assert_eq!(contract.assembly.family, assembly.variant.family);
             assert!(
                 !contract.guide.nodes().is_empty(),
