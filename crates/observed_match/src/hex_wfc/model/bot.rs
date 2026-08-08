@@ -5,7 +5,7 @@ use std::f32::consts::PI;
 
 use glam::{Vec2, Vec3};
 use observed_core::PlayerId;
-use observed_facility::hex_wfc::{HexCoord, HexFace, HexRoute, HexSpace};
+use observed_facility::hex_wfc::{HexArchetype, HexCoord, HexFace, HexRoute, HexSpace};
 use observed_hex::hex_origin;
 use observed_traversal::{DeckHandoff, FollowTarget, FollowerPose, follow_stateless};
 use player_input::PlayerIntent;
@@ -169,6 +169,53 @@ impl HexWfcMatch {
     #[must_use]
     pub fn bot_player_command(&self, id: PlayerId) -> HexPlayerCommand {
         HexBotDriver::new().command(self, id)
+    }
+
+    /// Steer up or down a ramp that ships no traversal annotation at all.
+    ///
+    /// The last archetype-derived steering in the bot, and it survives TR-11
+    /// for a measured reason rather than an unexamined one. A procedural
+    /// `hall_ramp` projects neither spine nor deck, so no guide is recorded for
+    /// its cell and there is no contract data for a leg to execute. The legacy
+    /// cell adapter cannot stand in either: a ramp's vertical ports are not
+    /// lateral doorways, and the gate corpus's ramps open on **one** face, so
+    /// there is no second doorway node to raise a climb edge toward.
+    ///
+    /// Deleting this without authoring a spine on the ramp kit does not move
+    /// the inference into data — it removes the only thing that walks a body up
+    /// a ramp. Measured: the headless gate stops completing and all four soak
+    /// bots stall at the foot of `hall_ramp` variant 0.
+    ///
+    /// Authoring that spine retires this function and nothing else does. Until
+    /// then it stays deliberately minimal — a heading, no state, no lease — so
+    /// that it competes with nothing.
+    fn unannotated_ramp_command(
+        &self,
+        cell: HexCoord,
+        yaw: f32,
+        position: Vec3,
+        next: HexCoord,
+    ) -> PlayerIntent {
+        let placement = &self.facility.placements[&cell];
+        let Some(open) = HexFace::LATERAL
+            .into_iter()
+            .find(|&face| placement.is_open(face))
+        else {
+            return steer_toward(yaw, position, Vec3::from_array(hex_origin(cell)));
+        };
+        // A `RampUp` rises from the face it opens on toward the face opposite;
+        // a `RampHead` is the upper half and rises toward its own open face.
+        let rise = match placement.archetype {
+            HexArchetype::RampUp => open.opposite(),
+            _ => open,
+        };
+        let up = next.level > cell.level;
+        let dir = face_plan_dir(if up { rise } else { rise.opposite() });
+        steer_toward(
+            yaw,
+            position,
+            position + Vec3::new(dir.x, 0.0, dir.y) * 12.0,
+        )
     }
 
     /// Waypoint for an ordinary lateral hop: steer at the shared doorway until

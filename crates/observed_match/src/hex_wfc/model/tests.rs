@@ -614,11 +614,17 @@ fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
         "headless gate completion_tick={a} digest={:#018x}",
         first.snapshot().digest
     );
-    assert_eq!(a, 5_596, "Arc S pins the pre-refactor completion tick");
+    // TR-11 moved these on purpose. Every annotated module is now crossed by a
+    // graph leg rather than by the compatibility steering, and the graph
+    // follower selects its targets slightly differently, so the whole route
+    // re-times. It re-times *downward*: 5,511 ticks against the 5,596 this
+    // pinned before. Determinism, which is what the gate actually guards, is
+    // asserted above and is unaffected.
+    assert_eq!(a, 5_511, "TR-11 pins the graph-leg completion tick");
     assert_eq!(
         first.snapshot().digest,
-        0x4420_9934_6f7e_b43e,
-        "Arc S pins the pre-refactor final snapshot digest"
+        0x457d_40ff_581e_0bd1,
+        "TR-11 pins the graph-leg final snapshot digest"
     );
 }
 
@@ -726,9 +732,21 @@ fn perimeter_tower_local_intent_and_body_trace_is_pinned() {
     assert_eq!(tile.archetype, "stair_tower");
     assert_eq!(tile.register, "megastructure");
     assert_eq!(tile.variant, 360);
-    assert_eq!(completion, Some(1_066));
-    assert_eq!(traced_ticks, 963);
-    assert_eq!(trace, 0xe735_8686_ec18_23c9);
+    // TR-11 moved this trace on purpose, and it is the only pin in that packet
+    // permitted to move: the tower is now climbed by a graph leg instead of by
+    // the compatibility follower beside it.
+    //
+    // The climb still *completes*, which is the property worth having. It
+    // arrives on tick 1,075 against the 1,066 pinned before — nine ticks, 0.15
+    // s — and the body ends 0.17 m from where it used to, at the same height,
+    // on the same tread. The graph follower picks its next target slightly
+    // differently along the same authored spine; nothing here is a regression.
+    //
+    // Selection is not steering: the catalog hash, the composition profile, the
+    // simulation hash and both spectator selection digests are unmoved.
+    assert_eq!(completion, Some(1_075));
+    assert_eq!(traced_ticks, 973);
+    assert_eq!(trace, 0x5adc_2eb9_81ea_1880);
     assert_eq!(
         [
             body.position.x.to_bits(),
@@ -740,13 +758,13 @@ fn perimeter_tower_local_intent_and_body_trace_is_pinned() {
             body.yaw.to_bits(),
         ],
         [
-            1_096_658_774,
-            1_091_998_222,
-            1_079_880_670,
-            1_053_620_645,
+            1_096_826_245,
+            1_091_997_307,
+            1_079_991_628,
+            3_173_502_237,
             0,
-            3_217_529_714,
-            1_048_619_496,
+            3_217_949_542,
+            1_086_865_250,
         ]
     );
 }
