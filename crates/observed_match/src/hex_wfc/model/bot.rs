@@ -505,9 +505,17 @@ impl HexWfcMatch {
         yaw: f32,
         position: Vec3,
     ) -> Option<PlayerIntent> {
-        if self.facility.placements.get(&cell)?.archetype != HexArchetype::Shaft {
-            return None;
-        }
+        // No archetype test. What decides whether this crossing needs a
+        // declared route is whether the tile **ships one**, and the next line
+        // asks exactly that.
+        //
+        // The gate here gated on `Shaft`, which is the same inference
+        // `finish_stair_command` already had removed from it next door: it used
+        // to test the archetype, and a body part-way up a *ramp* was therefore
+        // never recognised as still climbing. A deck is a deck. Only towers
+        // author one today and every tower is a `Shaft`, so this changes no
+        // behaviour on the committed corpus - it stops the next decked tile
+        // that is not called `Shaft` from being silently ignored.
         let deck = self.geometry.decks.get(&cell)?;
         let face = HexFace::LATERAL
             .into_iter()
