@@ -455,10 +455,21 @@ mod tests {
     /// compatibility and deterministic selection currently consume. A future
     /// Contract-Hat migration may intentionally move these values, but a
     /// behavior-preserving extraction must not.
+    ///
+    /// **Moved once, deliberately, 2026-08-08 (TR-10).** `hall_ramp` gained a
+    /// traversal spine, which is content: the module changed, so its source
+    /// hash changed and the catalog's did with it. The diff is 25 insertions
+    /// and **zero deletions** in one `.map` — the ramp mass is byte-identical,
+    /// so nothing about the geometry moved, only the annotation that says how
+    /// to walk it. The profile hash is untouched, because the solve controls
+    /// did not change.
+    ///
+    /// This gates LAN and replay compatibility: a client on the old catalog and
+    /// one on this catalog will not play together, by design.
     #[test]
     fn committed_arc_s_catalog_identity_is_pinned() {
         const CATALOG_HASH: &str =
-            "74ead7a606ab1a1b226f47c2bc84b0fffdb06eb61b2706f1b87dfcab3bb2b8cd";
+            "803639ea23959701f28884eb022575b684f28343679a4e2f04ad5741cb5eeae0";
         const PROFILE_HASH: &str =
             "99e682b1f1348f9a7f8d2d10024a2d08b11dec0a917f51e41eb7801b5db84c2f";
         const SIMULATION_HASH: &str =

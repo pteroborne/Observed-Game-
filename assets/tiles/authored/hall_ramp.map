@@ -211,6 +211,31 @@
 "origin" "0 0 128"
 }
 {
+"classname" "tile_stair_node"
+"index" "0"
+"origin" "-112 0 8"
+}
+{
+"classname" "tile_stair_node"
+"index" "1"
+"origin" "-56 0 40"
+}
+{
+"classname" "tile_stair_node"
+"index" "2"
+"origin" "0 0 72"
+}
+{
+"classname" "tile_stair_node"
+"index" "3"
+"origin" "56 0 104"
+}
+{
+"classname" "tile_stair_node"
+"index" "4"
+"origin" "112 0 136"
+}
+{
 "classname" "tile_light"
 "kind" "practical"
 "origin" "-69.7249 -62.8187 88"

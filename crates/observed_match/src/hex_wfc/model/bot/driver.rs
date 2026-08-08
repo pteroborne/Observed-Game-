@@ -247,13 +247,10 @@ impl HexBotDriver {
             return game.apply_unstick(id, intent);
         }
 
-        // Everything a module declares is executed above. What is left is the
-        // one shape the corpus still describes only by its name: an
-        // unannotated ramp, which no leg can cross because it ships nothing to
-        // cross it by.
-        let base = if next.level != player.cell.level {
-            game.unannotated_ramp_command(player.cell, player.yaw, player.position, next)
-        } else if let Some(command) =
+        // Everything a module declares is executed above; nothing below reads a
+        // shape. A vertical step is always a module's own business now, so what
+        // is left here is flat circulation between cells.
+        let base = if let Some(command) =
             game.stair_lateral_command(player.cell, next, player.yaw, player.position)
         {
             command

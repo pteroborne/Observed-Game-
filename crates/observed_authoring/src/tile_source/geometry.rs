@@ -337,6 +337,20 @@ pub(crate) fn tile_port(face: &str, class: &str) -> String {
     point_entity(&[("classname", "tile_port"), ("face", face), ("class", class)])
 }
 
+/// One node of the climbable line through a compatibility tile.
+///
+/// The strict authored path has had this since Arc O; the generated kit did
+/// not, which is why a generated ramp projected no traversal annotation at all
+/// and had to be walked by inferring a heading from its archetype. `index`
+/// orders the climb bottom to top and the importer rejects a repeat.
+pub(crate) fn tile_stair_node(index: u16, x: f64, y: f64, z: f64) -> String {
+    point_entity(&[
+        ("classname", "tile_stair_node"),
+        ("index", &index.to_string()),
+        ("origin", &format!("{} {} {}", fmt(x), fmt(y), fmt(z))),
+    ])
+}
+
 /// A presentation-owned practical light at a tile-local TrenchBroom point.
 /// Geometry generators choose placement; the shared style layer chooses its
 /// colour, energy, and legibility treatment at runtime.

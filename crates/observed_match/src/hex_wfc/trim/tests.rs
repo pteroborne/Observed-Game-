@@ -79,7 +79,15 @@ fn two_cell_world() -> HexWfcWorld {
         placements,
         blueprints: Vec::new(),
         architecture,
-        cell_revisions: BTreeMap::new(),
+        // A solved world always carries a revision per resolved cell, and the
+        // projection relies on it: a tile that ships a spine or a deck records
+        // a `ProjectedTraversalGuide`, which names the exact revision it was
+        // built from. This fixture left the map empty and got away with it only
+        // while neither of its two tiles carried an annotation. Cell `B` is a
+        // ramp, and once the generated ramp gained a spine the omission became
+        // a panic — in the projector, not here, which is the wrong place to
+        // learn that a hand-built world is incomplete.
+        cell_revisions: BTreeMap::from([(a, 1), (b, 1)]),
         last_attempts: 1,
         authored_pins: Default::default(),
     }

@@ -614,17 +614,27 @@ fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
         "headless gate completion_tick={a} digest={:#018x}",
         first.snapshot().digest
     );
-    // TR-11 moved these on purpose. Every annotated module is now crossed by a
-    // graph leg rather than by the compatibility steering, and the graph
-    // follower selects its targets slightly differently, so the whole route
-    // re-times. It re-times *downward*: 5,511 ticks against the 5,596 this
-    // pinned before. Determinism, which is what the gate actually guards, is
-    // asserted above and is unaffected.
-    assert_eq!(a, 5_511, "TR-11 pins the graph-leg completion tick");
+    // Moved twice on purpose, both times by putting a shape on its own declared
+    // route instead of on an inferred one.
+    //
+    // TR-11 (5,596 -> 5,511) put every *annotated* module on a graph leg.
+    // TR-10's ramp spine (5,511 -> 6,589) annotated the last shape that had
+    // none, and that direction is the expensive one: a ramp used to be walked
+    // by `ramp_walk_dir` at full movement with sprint held, and a declared
+    // climb is followed at the profile's climb tuning — 1.61 m/s against 7.0.
+    // The 1,078 ticks are that 4.35x, and they buy consistency: the authored
+    // perimeter ramps have always been followed at this speed, because they
+    // have always shipped a spine. Whether a *ramp* should be tuned like a
+    // staircase is a real question, and a separate one — `StairSpine` carries
+    // no mode, so answering it is schema work.
+    //
+    // Determinism, which is what this gate actually guards, is asserted above
+    // and is unaffected by either move.
+    assert_eq!(a, 6_589, "TR-10 pins the declared-ramp completion tick");
     assert_eq!(
         first.snapshot().digest,
-        0x457d_40ff_581e_0bd1,
-        "TR-11 pins the graph-leg final snapshot digest"
+        0x02dd_ea8d_c8d2_ac4a,
+        "TR-10 pins the declared-ramp final snapshot digest"
     );
 }
 

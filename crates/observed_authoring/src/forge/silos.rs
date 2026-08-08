@@ -12,8 +12,8 @@
 //! the footprint declares `floor="open"`.
 
 use super::entities::{
-    Meta, PORT_SHORT, ceiling_fixture, lateral_port, tile_cell, tile_cell_default, vertical_port,
-    wall_fixture, worldspawn,
+    Meta, PORT_SHORT, ceiling_fixture, lateral_port, stair_node, tile_cell, tile_cell_default,
+    vertical_port, wall_fixture, worldspawn,
 };
 use super::geometry::{
     DOOR_TOP, FLOOR_TOP, LEVEL, P2, corners, door_wall, door_wall_default, hex_slab, prism, pylon,
@@ -177,6 +177,52 @@ pub fn room_grounded_hub() -> String {
     out
 }
 
+/// The ramp's west sill, at the west doorway, flush with the floor slab.
+const RAMP_WEST: f64 = -112.0;
+/// The ramp's east sill, one full level up at the east door's high sill.
+const RAMP_EAST: f64 = 112.0;
+
+/// The height of the ramp's walk surface at plan `x`.
+///
+/// One expression, used by both the mass and the climbable line through it. A
+/// spine measured separately from the geometry it describes is how a follower
+/// comes to walk through a wall — the whole reason `stair_tower`'s piers were
+/// re-derived from their flight's gradient rather than written down beside it.
+#[must_use]
+fn ramp_height(x: f64) -> f64 {
+    FLOOR_TOP + (x - RAMP_WEST) / (RAMP_EAST - RAMP_WEST) * LEVEL
+}
+
+/// The climbable line across a `hall_ramp`, west sill to east.
+///
+/// Variant 0 is one solid slope along x with no variation across y, so the line
+/// is the centreline and nothing more; there is no wall to go round and no deck
+/// to cross first, which is why this ships a spine and no `DeckPath`.
+///
+/// Five nodes, matching the perimeter flight's density over a comparable run.
+/// The first sits at the west doorway, where the slope is flush with the floor
+/// slab, and the last on the east sill — which for this shape is the *only*
+/// plan position where a body stands on the deck above, because the mass
+/// reaches full height exactly at the cell's east edge.
+///
+/// Until this existed the ramp projected no traversal annotation at all, so it
+/// recorded no guide, could not be executed as a graph leg, and the objective
+/// bot walked it by inferring a heading from the `RampUp` archetype — the last
+/// piece of shotgun surgery in the match layer.
+#[must_use]
+fn ramp_spine() -> String {
+    const NODES: usize = 5;
+    let mut out = String::new();
+    for index in 0..NODES {
+        #[allow(clippy::cast_precision_loss)]
+        let t = index as f64 / (NODES - 1) as f64;
+        let x = RAMP_WEST + (RAMP_EAST - RAMP_WEST) * t;
+        #[allow(clippy::cast_possible_truncation)]
+        out.push_str(&stair_node(index as u16, x, 0.0, ramp_height(x)));
+    }
+    out
+}
+
 /// A ground-supported two-level ramp: enter west, exit east one level up.
 #[must_use]
 pub fn hall_ramp() -> String {
@@ -188,9 +234,9 @@ pub fn hall_ramp() -> String {
         &corners(),
         0.0,
         [
-            (-112.0, -64.0, FLOOR_TOP),
-            (-112.0, 64.0, FLOOR_TOP),
-            (112.0, -64.0, LEVEL + FLOOR_TOP),
+            (RAMP_WEST, -64.0, ramp_height(RAMP_WEST)),
+            (RAMP_WEST, 64.0, ramp_height(RAMP_WEST)),
+            (RAMP_EAST, -64.0, ramp_height(RAMP_EAST)),
         ],
         None,
     ));
@@ -231,6 +277,7 @@ pub fn hall_ramp() -> String {
     out.push_str(&tile_cell(0, 0, 0, 2, "ramp"));
     out.push_str(&lateral_port(3, "door", "west_entry", 0, 0, 0));
     out.push_str(&vertical_port("up", "ramp_open", "upper_ramp", 0));
+    out.push_str(&ramp_spine());
     out.push_str(&lights);
     out
 }
