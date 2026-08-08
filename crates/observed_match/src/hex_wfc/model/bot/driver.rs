@@ -247,10 +247,13 @@ impl HexBotDriver {
             return game.apply_unstick(id, intent);
         }
 
-        // Everything a module declares is executed above; nothing below reads a
-        // shape. A vertical step is always a module's own business now, so what
-        // is left here is flat circulation between cells.
-        let base = if let Some(command) =
+        // Everything a module declares is executed above. A vertical step that
+        // gets here is one whose leg released before the body actually changed
+        // cell — the last metre of a ramp — and it needs a heading, not a
+        // waypoint in the air above the neighbour's centre.
+        let base = if next.level != player.cell.level {
+            game.finish_vertical_crossing(player.cell, player.yaw, player.position, next)
+        } else if let Some(command) =
             game.stair_lateral_command(player.cell, next, player.yaw, player.position)
         {
             command

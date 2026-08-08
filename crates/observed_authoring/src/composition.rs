@@ -472,8 +472,10 @@ mod tests {
             "803639ea23959701f28884eb022575b684f28343679a4e2f04ad5741cb5eeae0";
         const PROFILE_HASH: &str =
             "99e682b1f1348f9a7f8d2d10024a2d08b11dec0a917f51e41eb7801b5db84c2f";
+        // Folds the catalog and the profile, so the ramp spine moves it too.
+        // The profile side is unchanged; this is the catalog change arriving.
         const SIMULATION_HASH: &str =
-            "9937ed51534eeb27b020924541ef38114456fa52fe18ce09d683ea26aeeccec7";
+            "5f89f4966192b2632f15a59ddcc2075929685b7bafef11d48d30278dc53834e0";
 
         let root = committed_tiles();
         let compiled_text =

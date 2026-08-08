@@ -5,7 +5,7 @@ use std::f32::consts::PI;
 
 use glam::{Vec2, Vec3};
 use observed_core::PlayerId;
-use observed_facility::hex_wfc::{HexCoord, HexFace, HexRoute, HexSpace};
+use observed_facility::hex_wfc::{HexArchetype, HexCoord, HexFace, HexRoute, HexSpace};
 use observed_hex::hex_origin;
 use observed_traversal::{DeckHandoff, FollowTarget, FollowerPose, follow_stateless};
 use player_input::PlayerIntent;
@@ -169,6 +169,52 @@ impl HexWfcMatch {
     #[must_use]
     pub fn bot_player_command(&self, id: PlayerId) -> HexPlayerCommand {
         HexBotDriver::new().command(self, id)
+    }
+
+    /// Finish a vertical crossing a graph leg released short of.
+    ///
+    /// Both ramp kits now declare a spine, so a ramp *is* crossed as a graph
+    /// leg — but the leg ends at the spine's head, and on a ramp the head sits
+    /// on the cell's far edge, because that is the only plan position where the
+    /// mass has reached the deck above. A body released there has not yet
+    /// changed logical cell, and with nothing to steer it the route falls back
+    /// to the neighbour's centre: a point in mid-air above the cell it is
+    /// trying to enter. Measured on survey seed 15000046 — the body climbed
+    /// 1.6 m, slid back, re-acquired the leg and repeated, tracing a 3 m loop
+    /// for all 60,000 ticks.
+    ///
+    /// So this is no longer shape *inference* — the module's own climb is what
+    /// gets followed — but it is still a shape *reading*, and it is what makes
+    /// the last metre of a vertical crossing survive the handoff. It retires
+    /// when a vertical leg can hand off across the level plane on its own,
+    /// which is the vertical-interface packet's job.
+    fn finish_vertical_crossing(
+        &self,
+        cell: HexCoord,
+        yaw: f32,
+        position: Vec3,
+        next: HexCoord,
+    ) -> PlayerIntent {
+        let placement = &self.facility.placements[&cell];
+        let Some(open) = HexFace::LATERAL
+            .into_iter()
+            .find(|&face| placement.is_open(face))
+        else {
+            return steer_toward(yaw, position, Vec3::from_array(hex_origin(cell)));
+        };
+        // A `RampUp` rises from the face it opens on toward the face opposite;
+        // a `RampHead` is the upper half and rises toward its own open face.
+        let rise = match placement.archetype {
+            HexArchetype::RampUp => open.opposite(),
+            _ => open,
+        };
+        let up = next.level > cell.level;
+        let dir = face_plan_dir(if up { rise } else { rise.opposite() });
+        steer_toward(
+            yaw,
+            position,
+            position + Vec3::new(dir.x, 0.0, dir.y) * 12.0,
+        )
     }
 
     /// Waypoint for an ordinary lateral hop: steer at the shared doorway until
