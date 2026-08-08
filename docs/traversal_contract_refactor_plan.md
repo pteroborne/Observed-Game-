@@ -1,6 +1,15 @@
 # Refactor Arc S — Traversal Contracts and Module Assembly
 
-**Status:** executing — Waves 0-5 complete; TR-10 is the last packet
+**Status:** executing — Waves 0-6 complete. **The smell is retired as a code
+problem**; what remains of TR-10 is content debt and one publishing pass.
+
+Since wave 6 the arc is no longer blocked on runtime structure. TR-11 put the
+runtime on graph legs and deleted the compatibility steering, so the only
+`HexArchetype` reads left in the match layer are `leg.rs`'s two named legacy
+adapters and one documented content-debt fallback. TR-10's remaining bullets —
+the v3 corpus migration, regeneration, the profile/hash fold, and the last
+adapter — are gated on **authoring**, not on more refactoring. See
+[§ What TR-10 still needs](#what-tr-10-still-needs).
 
 **Planning baseline:** `main@911b046` (`Merge branch 'arc-r/switchback-atomic-2'`)
 
@@ -20,6 +29,49 @@ The integration branch is `refactor/traversal-contract-integration`. Completed w
 | 3 | TR-6, TR-7 | Studio's canonical Rapier audit and the reviewed shared serialized contract seam merged (`41c4bfa`, `4330f07`). |
 | 4 | TR-8A, TR-8B, TR-8C | All three merged (`6c59e86`, `d9d2720`, `4fdb616`). Union gate: fmt clean, `dev-clippy` clean, `dev-test` 1823 passed / 0 failed, asserting 24-seed survey passes, `git diff --check` clean, catalog `74ead7a6…` and profile `99e682b1…` unmoved, no generated artifact touched. |
 | 5 | TR-9 | Family-first selection merged (`2a218b2`). Union gate: fmt clean, `dev-clippy` clean, `dev-test` 1829 passed / 0 failed, asserting 24-seed survey passes, `diff --check` clean. Every pin holds unedited - catalog, profile, simulation `9937ed51…`, both spectator selection digests, the intent/body trace, the headless completion tick. No generated artifact touched. |
+| 6 | TR-11 | Compatibility steering retired (`5e892c4`, `324dc34`, `091f1a9`); record in [`traversal_last_mile_plan.md`](traversal_last_mile_plan.md) §9. Union gate: fmt clean, `dev-clippy` clean, `dev-test` 1832 passed / 0 failed, 24-seed survey 0 stalls, `diff --check` clean. Net -493/+142 lines. **Two pins moved on purpose** - the sanctioned intent-trace boundary: tower completion 1066→1075 and the headless gate 5596→**5511** (it re-times *downward*). Catalog, profile, simulation hash and both selection digests hold unedited; no generated artifact touched. |
+
+### Wave 6 integration notes
+
+**Two entries on TR-10's deletion list could not be deleted, and the reason is
+the same for both: legs do not reach every case the compatibility steering
+served.** Found by running the deletion, not by reading it.
+
+`ramp_walk_dir` is the one that matters. A procedural `hall_ramp` projects
+**neither spine nor deck**, so its cell records no guide and there is nothing
+for a leg to execute; `legacy_cell_adapter` cannot substitute, because a ramp's
+vertical ports are not lateral doorways and the corpus's ramps open on one face.
+Deleting it does not move the inference into data — it removes the only thing
+that walks a body up a ramp. The headless gate stopped completing and all four
+soak bots stalled at `(2,0,2)`. It survives as `unannotated_ramp_command`,
+carrying its own retirement condition.
+
+**So the last fragment of the smell is not a steering problem. It is content
+debt**: the ramp kit ships no traversal annotation, and authoring one is the
+only thing that retires the function. `stair_lateral_command` stays for the same
+class of reason — deleting it moved the gate off its pin.
+
+**A probe that lied.** `stair_lateral_command` was first measured as "never
+fires" by an `eprintln` in the driver. That reading was wrong: `cargo test`
+prints a test's captured output only when it *fails*, so a probe inside a
+passing test is invisible. The gate caught it. Probe with `--nocapture`, or
+probe something you expect to fail.
+
+## What TR-10 still needs
+
+TR-11 closed TR-10's "old archetype steering" bullet. The rest, in dependency
+order — note that **nothing here is blocked on runtime refactoring**:
+
+| # | Item | State |
+|---|---|---|
+| 1 | **The vertical interface's clearance model** | **Blocking.** `ClearanceVolume` is `{id, bounds}` — a box that must stay *empty*, which models a handoff through open air. A stair is not that: a body crosses by standing on a surface at the seam. `InterfaceProfile` exists but carries lateral faces only. Its own packet, and it gates (2). |
+| 2 | Migrate the tower/ramp Forge sources to authoring v3 | Blocked on (1). Preflight is done: the family compiler accepts caps (`e43b76d`), `quantize_world` accepts the chamfer's fractional geometry, and a vertical port may declare where the shaft crosses (`10a8353`). |
+| 3 | **Author a traversal spine on the ramp kit** | Open, and independent of (1). This is what retires `unannotated_ramp_command` and makes the `HexArchetype::` grep come back clean. Content work in the forge. |
+| 4 | Regenerate `.map`, FGD, catalog, manifest, certificates, sidecar hashes | Publisher-only, once, after (2) and (3). |
+| 5 | Fold traversal-profile/certificate identity into the simulation content hash | Open. Runtime profile v2 `29e48ecf…` is still deliberately outside catalog/snapshot/LAN. Call out the compatibility boundary when it lands. |
+| 6 | Remove the last compatibility adapter | Exactly **one** production caller remains: `stair_lateral_command` reading `geometry.decks` (`model/bot.rs`). Everything else reading `climbs`/`decks` is test code. Falls out of (3). |
+| 7 | Update `Catalogue.md`, authoring docs, this status table | Open. |
+| 8 | Full automated **and manual** gates | Exit: no compatibility adapter has a production caller; the committed corpus rebuilds byte-for-byte; Spectate AI completes the production seed matrix. |
 
 ### Wave 5 integration notes
 
