@@ -459,9 +459,24 @@ pub(crate) fn port_geometry(
         })
     } else {
         let plane = vertical_plane_z(port.cell, port.face);
+        // Where the author says a body crosses, not where the cell happens to
+        // be centred. `validate_ports` fixes only the height of a vertical
+        // port and leaves its plan position free precisely so this can be a
+        // declaration; assuming the centre is what refused the inset helix,
+        // whose floor is solid there by design.
+        let declared = port
+            .origin
+            .map_or((cell_origin.0, cell_origin.1), |origin| {
+                let point = quantize_world(Vec3::new(
+                    (origin[0] / f64::from(QUANTIZED_UNITS_PER_METER)) as f32,
+                    (origin[2] / f64::from(QUANTIZED_UNITS_PER_METER)) as f32,
+                    -(origin[1] / f64::from(QUANTIZED_UNITS_PER_METER)) as f32,
+                ));
+                (point.x, point.y)
+            });
         let landing = QuantizedPoint {
-            x: cell_origin.0,
-            y: cell_origin.1,
+            x: declared.0,
+            y: declared.1,
             z: plane,
         };
         Ok(PortGeometry {
@@ -474,13 +489,13 @@ pub(crate) fn port_geometry(
                 id,
                 bounds: QuantizedBox {
                     min: QuantizedPoint {
-                        x: cell_origin.0 - VERTICAL_CLEARANCE_HALF_UNITS,
-                        y: cell_origin.1 - VERTICAL_CLEARANCE_HALF_UNITS,
+                        x: declared.0 - VERTICAL_CLEARANCE_HALF_UNITS,
+                        y: declared.1 - VERTICAL_CLEARANCE_HALF_UNITS,
                         z: plane - VERTICAL_CLEARANCE_DEPTH_UNITS,
                     },
                     max: QuantizedPoint {
-                        x: cell_origin.0 + VERTICAL_CLEARANCE_HALF_UNITS,
-                        y: cell_origin.1 + VERTICAL_CLEARANCE_HALF_UNITS,
+                        x: declared.0 + VERTICAL_CLEARANCE_HALF_UNITS,
+                        y: declared.1 + VERTICAL_CLEARANCE_HALF_UNITS,
                         z: plane + VERTICAL_CLEARANCE_DEPTH_UNITS,
                     },
                 },

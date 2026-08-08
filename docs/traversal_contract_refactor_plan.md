@@ -911,6 +911,47 @@ Not implemented. It changes what a vertical fingerprint *is*, so it must land
 with certification re-run against it, and it is the natural first slice of the
 migration rather than a preflight fix.
 
+##### Half fixed, and the other half is a model problem
+
+The declaration mechanism is **in**: a vertical port's plan position is now free
+(`validate_ports` pins only its height, and rejects a crossing further than
+`SAFE_INTERIOR_RADIUS_UNITS` from its own cell), `spatial.rs` places the landing
+and clearance at the declared point rather than the cell centre, and
+`forge::vertical_port_at` lets a module say where its shaft crosses. All of it
+is inert on the committed corpus, which still declares centred crossings, so
+nothing moved: 178 passed, no generated artifact touched.
+
+Declaring the crossing at `Extent::crossing` — the plan point where the climb
+passes `LEVEL`, out in the annulus, not at `foot` or `head`, which are inside
+the solid inner hexagon where a body *stands* — **fixes `down_shaft`**. It is
+the right declaration and it is symmetric: the lower module's `Up` and the upper
+module's `Down` are the same physical place because every tower in a family is
+one shape.
+
+`up_shaft` still fails, against the **landing**, and that one is not a
+coordinate mistake:
+
+```
+clearance_obstructed: hull 14 blocks the axis of clearance volume "port/up_shaft"
+```
+
+A `ClearanceVolume` is a box straddling the level plane that collision geometry
+must not enter. That models a handoff **through open air** — a hole you fall or
+climb through. A stair is not that. A body crosses the seam by *standing on a
+surface that is itself at the seam*: the flight tops out at `LEVEL`, the landing
+occupies `LEVEL..DECK_ABOVE`, and both are exactly where the model demands
+emptiness.
+
+So the remaining work is not to move the box. It is that a vertical interface
+needs to distinguish **passing through an opening** from **walking up a
+surface**, and require headroom over the surface in the second case rather than
+a clear column through it. `InterfaceProfile` already carries `landing` and
+`headroom` separately from `aperture`, which suggests the distinction was
+anticipated; nothing consumes it that way yet.
+
+Stopped here deliberately rather than reshaping the clearance model at the end
+of a long pass. The mechanism that was needed either way is landed and green.
+
 ##### What working out the replacement revealed, before writing any of it
 
 The obvious move — derive the landing from the module's own guide terminal — is

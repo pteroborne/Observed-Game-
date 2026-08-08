@@ -223,6 +223,26 @@ pub fn tile_cell_default() -> String {
 /// An up/down port at the exact cell-centre origin the validator demands.
 #[must_use]
 pub fn vertical_port(face_name: &str, class: &str, name: &str, level: i32) -> String {
+    vertical_port_at(face_name, class, name, level, (0.0, 0.0))
+}
+
+/// A vertical port that declares **where** in the cell a body crosses the level
+/// plane, in TB plan units relative to the cell centre.
+///
+/// The plan position is a real declaration, not decoration: it places the
+/// interface's landing and the clearance column the compiler checks. A centred
+/// crossing is right for a shaft that opens through the middle and wrong for an
+/// inset helix, whose floor is solid at the centre and whose climb arrives in
+/// the annulus. Only the height is fixed, because that is the seam two stacked
+/// modules share.
+#[must_use]
+pub fn vertical_port_at(
+    face_name: &str,
+    class: &str,
+    name: &str,
+    level: i32,
+    plan: (f64, f64),
+) -> String {
     let z = if face_name == "up" {
         f64::from(level + 1) * LEVEL
     } else {
@@ -236,7 +256,10 @@ pub fn vertical_port(face_name: &str, class: &str, name: &str, level: i32) -> St
         ("face", face_name.to_string()),
         ("class", class.to_string()),
         ("name", name.to_string()),
-        ("origin", format!("0 0 {}", fmt(z))),
+        (
+            "origin",
+            format!("{} {} {}", fmt(plan.0), fmt(plan.1), fmt(z)),
+        ),
     ])
 }
 

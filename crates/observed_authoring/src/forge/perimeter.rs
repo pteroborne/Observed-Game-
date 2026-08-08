@@ -182,6 +182,38 @@ impl Extent {
         facet < self.faces && LEVEL - self.height(seam) < HEADROOM
     }
 
+    /// Where the climb crosses the level plane, in plan.
+    ///
+    /// **This is the vertical interface's declaration, and it is neither
+    /// [`Self::foot`] nor [`Self::head`].** Those are where a body *stands* -
+    /// both sit inside the inner hexagon, on solid floor, which is exactly what
+    /// makes them useless as a crossing: a clearance column there is blocked by
+    /// the floor that holds the body up.
+    ///
+    /// A body crosses the seam on the flight, out in the annulus, at whatever
+    /// point the climb happens to be passing `LEVEL`. Declaring that point is
+    /// what lets a stacked pair agree: the lower module's `Up` and the upper
+    /// module's `Down` are the same physical place, because every tower in a
+    /// family is the same shape.
+    #[must_use]
+    pub fn crossing(self) -> P2 {
+        for step in 0..self.faces {
+            let (low, high) = (self.height(step), self.height(step + 1));
+            if LEVEL < low || LEVEL > high {
+                continue;
+            }
+            let t = if (high - low).abs() < f64::EPSILON {
+                0.0
+            } else {
+                (LEVEL - low) / (high - low)
+            };
+            let (a, b) = (self.mid(step), self.mid(step + 1));
+            return (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t);
+        }
+        // A climb that never reaches the plane hands off at its head.
+        self.head()
+    }
+
     /// Where the climb sets a body down, in plan: the spine's last node.
     ///
     /// Public for the same reason [`Self::foot`] is, and for a case that only

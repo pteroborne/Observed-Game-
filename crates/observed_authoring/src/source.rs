@@ -27,6 +27,15 @@ use crate::tile::{
 pub const CONTRACT_AUTHORING_VERSION: u8 = 3;
 
 const PORT_EPSILON_UNITS: f64 = 1.0;
+
+/// How far from a cell's centre a declared vertical crossing may sit, in editor
+/// units.
+///
+/// The quantized hexagon is not perfectly regular, so this is the radius that
+/// stays inside it from every bearing — the same 104 the generated kit uses for
+/// its own interior safety. A crossing further out than this names a point in a
+/// neighbouring cell.
+const SAFE_INTERIOR_RADIUS_UNITS: f64 = 104.0;
 const MIN_HEADROOM_METERS: f32 = 2.2;
 const CELL_HULL_BUDGET: usize = 32;
 const ROOM_HULL_BUDGET: usize = 128;
@@ -396,10 +405,29 @@ fn validate_ports(module: &AuthoredModule) -> Result<(), SourceError> {
                 face: port.face,
             })?;
             let expected = expected_port_origin(port.cell, port.face);
-            if actual
+            // A **vertical** port's plan position is a declaration, not a
+            // formality: it says where in the cell a body crosses the level
+            // plane. Only its height is fixed, because that is the seam two
+            // stacked modules share.
+            //
+            // Pinning the plan position to the cell centre - which this did -
+            // asserts that every shaft hands off through the middle. That was
+            // true of the procedural switchback and is false of the inset
+            // helix, whose floor is deliberately solid at the centre and whose
+            // climb arrives in the annulus. The compiler then refused the tower
+            // with `clearance_obstructed`, correctly, against an assumption
+            // nothing had ever stated out loud.
+            //
+            // Lateral ports keep the exact check. Their origin is the shared
+            // face-edge midpoint and there is nothing for an author to choose.
+            let axes: &[usize] = if port.face.is_lateral() {
+                &[0, 1, 2]
+            } else {
+                &[2]
+            };
+            if axes
                 .iter()
-                .zip(expected)
-                .any(|(a, b)| (a - b).abs() > PORT_EPSILON_UNITS)
+                .any(|&axis| (actual[axis] - expected[axis]).abs() > PORT_EPSILON_UNITS)
             {
                 return Err(SourceError::PortOriginMismatch {
                     cell: port.cell,
@@ -407,6 +435,20 @@ fn validate_ports(module: &AuthoredModule) -> Result<(), SourceError> {
                     expected,
                     actual,
                 });
+            }
+            // A declared crossing still has to be inside the cell it belongs
+            // to, or it names a point in a neighbour.
+            if !port.face.is_lateral() {
+                let centre = expected_port_origin(port.cell, port.face);
+                let (dx, dy) = (actual[0] - centre[0], actual[1] - centre[1]);
+                if dx.hypot(dy) > SAFE_INTERIOR_RADIUS_UNITS {
+                    return Err(SourceError::PortOriginMismatch {
+                        cell: port.cell,
+                        face: port.face,
+                        expected,
+                        actual,
+                    });
+                }
             }
         }
     }
