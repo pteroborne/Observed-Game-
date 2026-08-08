@@ -6,9 +6,7 @@ use glam::Vec3;
 use observed_core::PlayerId;
 use observed_facility::hex_wfc::{HexCoord, HexRoute};
 use observed_hex::hex_origin;
-use observed_traversal::{
-    FollowState, FollowTarget, FollowerPose, GraphFollowState, TraversalDirection, follow_stateless,
-};
+use observed_traversal::GraphFollowState;
 use player_input::PlayerIntent;
 
 use crate::hex_wfc::HexTraversalCursor;
@@ -17,38 +15,6 @@ use super::super::objectives::HexObjectiveTarget;
 use super::super::{HexMatchEventKind, HexPlayerCommand, HexWfcMatch};
 use super::leg::{self, ExternalTransition};
 use super::{BotBehaviour, STUCK_ENTER_TICKS, steer_toward};
-
-/// Stable identity for one projected traversal module.
-///
-/// A facility-wide generation is deliberately not part of the identity: a
-/// bounded relayout elsewhere must not revoke a bot's local traversal lease.
-/// The projection replaces the guide at `source_cell` atomically when that
-/// module itself changes.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct ModuleInstanceId {
-    pub source_cell: HexCoord,
-}
-
-/// The route transition a bot committed to when it entered an authored climb.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct TraversalLease {
-    pub instance: ModuleInstanceId,
-    pub route_from: HexCoord,
-    pub route_to: HexCoord,
-    pub objective: HexCoord,
-    pub direction: TraversalDirection,
-}
-
-/// Stateful local progress through a leased traversal guide.
-///
-/// `state` is diagnostic; the lease direction is the important retained fact.
-/// Logical-cell height rounding may change the route cell before the capsule
-/// reaches the authored terminal, but it cannot reverse this direction.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct TraversalCursor {
-    pub lease: TraversalLease,
-    pub state: FollowState,
-}
 
 /// One held graph leg and the objective it was committed to.
 ///
@@ -72,13 +38,11 @@ struct BotRouteCache {
 ///
 /// The match remains replay/snapshot authoritative. Hosts own one driver next
 /// to a match and may discard it on reconstruction: cached routes are derived,
-/// while a traversal cursor is reacquired from stable logical geometry.
+/// while a graph leg is reacquired from stable logical geometry.
 #[derive(Clone, Debug, Default)]
 pub struct HexBotDriver {
     routes: BTreeMap<PlayerId, BotRouteCache>,
-    cursors: BTreeMap<PlayerId, TraversalCursor>,
-    /// Graph legs held over modules that ship their own traversal graph. Held
-    /// under exactly the same invalidation rules as the compatibility cursors,
+    /// Graph legs held over the module a bot is currently crossing. One map,
     /// so there is one answer to "may this bot still be mid-leg?".
     legs: BTreeMap<PlayerId, GraphLeg>,
 }
@@ -93,23 +57,16 @@ impl HexBotDriver {
     /// during resynchronization or starts a rematch.
     pub fn reset(&mut self) {
         self.routes.clear();
-        self.cursors.clear();
         self.legs.clear();
     }
 
     /// Forget one bot's local state after a seat/driver ownership change.
     pub fn clear_player(&mut self, id: PlayerId) {
         self.routes.remove(&id);
-        self.cursors.remove(&id);
         self.legs.remove(&id);
     }
 
-    #[must_use]
-    pub fn cursor(&self, id: PlayerId) -> Option<&TraversalCursor> {
-        self.cursors.get(&id)
-    }
-
-    /// The graph leg this bot is executing, if its module ships a graph.
+    /// The graph leg this bot is executing across its current module.
     #[must_use]
     pub fn leg(&self, id: PlayerId) -> Option<&HexTraversalCursor> {
         self.legs.get(&id).map(|leg| &leg.cursor)
@@ -166,13 +123,6 @@ impl HexBotDriver {
 
         let objective = target.map(|target| target.cell);
         if self
-            .cursors
-            .get(&id)
-            .is_some_and(|cursor| Some(cursor.lease.objective) != objective)
-        {
-            self.cursors.remove(&id);
-        }
-        if self
             .legs
             .get(&id)
             .is_some_and(|leg| Some(leg.objective) != objective)
@@ -188,15 +138,10 @@ impl HexBotDriver {
         }
 
         if let Some(delta) = &game.last_relayout_delta {
-            self.cursors.retain(|_, cursor| {
-                !delta
-                    .changed_cells
-                    .contains(&cursor.lease.instance.source_cell)
-            });
             // A graph leg names the exact module revision it was taken against,
             // so `leg::follow` rejects a replaced module on its own. Dropping
-            // the obviously dead ones here keeps the two cursor maps invalidated
-            // by the same rule rather than by two different ones.
+            // the obviously dead ones here keeps invalidation scoped to the
+            // module that actually changed rather than to the whole facility.
             self.legs.retain(|_, leg| {
                 !delta
                     .changed_cells
@@ -217,12 +162,8 @@ impl HexBotDriver {
 
         // A held leg precedes every logical-cell shortcut below. Height rounding
         // can report the upper cell while the body is still on the final sloped
-        // tread; neither a graph cursor nor a compatibility lease may be
-        // reinterpreted from that.
+        // tread; a leg may not be reinterpreted from that.
         if let Some(intent) = self.follow_leg(game, id) {
-            return game.apply_unstick(id, intent);
-        }
-        if let Some(intent) = self.follow_cursor(game, id) {
             return game.apply_unstick(id, intent);
         }
 
@@ -306,26 +247,7 @@ impl HexBotDriver {
             return game.apply_unstick(id, intent);
         }
 
-        let base = if next.level != player.cell.level {
-            if let Some(lease) = game.traversal_lease(player, next, objective) {
-                self.cursors.insert(
-                    id,
-                    TraversalCursor {
-                        lease,
-                        state: FollowState::Unavailable,
-                    },
-                );
-                self.follow_cursor(game, id).unwrap_or_else(|| {
-                    game.vertical_command(player.cell, player.yaw, player.position, next)
-                })
-            } else {
-                game.vertical_command(player.cell, player.yaw, player.position, next)
-            }
-        } else if let Some(command) =
-            game.finish_stair_command(player.cell, player.yaw, player.position)
-        {
-            command
-        } else if let Some(command) =
+        let base = if let Some(command) =
             game.stair_lateral_command(player.cell, next, player.yaw, player.position)
         {
             command
@@ -377,50 +299,6 @@ impl HexBotDriver {
             None
         }
     }
-
-    fn follow_cursor(&mut self, game: &HexWfcMatch, id: PlayerId) -> Option<PlayerIntent> {
-        let lease = self.cursors.get(&id)?.lease;
-        let Some(guide) = game.geometry.guides.get(&lease.instance.source_cell) else {
-            self.cursors.remove(&id);
-            return None;
-        };
-        let Some(spine) = guide.climb.as_ref() else {
-            self.cursors.remove(&id);
-            return None;
-        };
-        let player = game.players.get(&id)?;
-        let feet = player.position.y
-            - game
-                .content
-                .traversal_profile()
-                .requirements()
-                .capsule_half_height;
-        let decision = follow_stateless(
-            FollowerPose {
-                feet: Vec3::new(player.position.x, feet, player.position.z),
-                yaw: player.yaw,
-            },
-            FollowTarget::Climb {
-                spine,
-                approach: guide.deck.as_ref(),
-                direction: lease.direction,
-            },
-            game.content.traversal_profile(),
-        );
-        match decision.state {
-            FollowState::PassedClimbTerminal | FollowState::Unavailable => {
-                self.cursors.remove(&id);
-                None
-            }
-            state => {
-                self.cursors
-                    .get_mut(&id)
-                    .expect("cursor remains while following")
-                    .state = state;
-                decision.intent
-            }
-        }
-    }
 }
 
 #[cfg(test)]
@@ -429,10 +307,12 @@ mod tests {
     use std::sync::Arc;
 
     use observed_facility::hex_wfc::{HexMutationRegion, HexRelayoutDelta, HexWfcConfig};
+    use observed_hex::HexFace;
 
+    use super::super::leg::ResolvedModuleGraph;
     use super::*;
     use crate::hex_wfc::{
-        HEX_INPUT_VERSION, HexInputFrame, HexMatchConfig, HexMatchEvent, HexWfcMatch,
+        HEX_INPUT_VERSION, HexInputFrame, HexMatchConfig, HexMatchEvent, HexWfcMatch, ProjectedPort,
     };
 
     const GATE_SEED: u64 = 0xa11c_0000_0000_0000;
@@ -492,13 +372,25 @@ mod tests {
         player.position = feet + Vec3::Y * half_height;
 
         let id = PlayerId(0);
-        let compatibility = game.bot_player_command(id);
+        let stateless = game.bot_player_command(id);
         let mut driver = HexBotDriver::new();
         let first = driver.command(&game, id);
-        assert_eq!(first, compatibility, "first-tick extraction must be exact");
-        assert!(
-            driver.cursor(id).is_some(),
-            "the fixture must acquire a lease"
+        assert_eq!(first, stateless, "first-tick extraction must be exact");
+        // "Ascending" is the fact these tests retain across every perturbation
+        // below, so say it in the terms the leg is actually expressed in: the
+        // leased exit is the module's `Up` port, not its `Down` one.
+        assert_eq!(
+            Some(driver.leg(id).expect("the fixture must acquire a leg").lease.exit),
+            ResolvedModuleGraph::resolve(&game, from)
+                .expect("the leased module resolves")
+                .graph
+                .port_bindings
+                .get(&ProjectedPort {
+                    cell: from,
+                    face: HexFace::Up,
+                })
+                .copied(),
+            "the fixture must lease the ascending leg"
         );
         (game, driver, id, from, to, first)
     }
@@ -529,19 +421,20 @@ mod tests {
     #[test]
     fn same_tick_and_logical_level_perturbation_retain_the_committed_direction() {
         let (mut game, mut driver, id, _from, to, first) = leased_fixture();
-        let initial = *driver.cursor(id).expect("cursor");
+        let initial = driver.leg(id).expect("leg").clone();
 
         assert_eq!(driver.command(&game, id), first);
-        assert_eq!(driver.cursor(id), Some(&initial));
+        assert_eq!(driver.leg(id), Some(&initial));
 
         // The body has not moved, but height rounding reports the destination
-        // logical level early. The retained lease must emit the same local
+        // logical level early. The retained leg must emit the same local
         // command instead of reinterpreting the route in reverse.
         game.players.get_mut(&id).expect("player").cell = to;
         assert_eq!(driver.command(&game, id), first);
         assert_eq!(
-            driver.cursor(id).expect("cursor retained").lease.direction,
-            TraversalDirection::Forward
+            driver.leg(id).expect("leg retained").lease,
+            initial.lease,
+            "the committed module and its ascending exit must survive the rounding"
         );
     }
 
@@ -556,20 +449,17 @@ mod tests {
         game.last_relayout_delta =
             Some(delta(BTreeSet::from([unrelated]), game.facility.generation));
         let _ = driver.command(&game, id);
-        assert!(
-            driver.cursor(id).is_some(),
-            "unrelated relayout keeps lease"
-        );
+        assert!(driver.leg(id).is_some(), "unrelated relayout keeps lease");
 
         game.last_relayout_delta = Some(delta(BTreeSet::from([source]), game.facility.generation));
         driver.invalidate_from_match(&game, id, game.objective_target(id));
-        assert!(driver.cursor(id).is_none(), "source relayout revokes lease");
+        assert!(driver.leg(id).is_none(), "source relayout revokes lease");
     }
 
     #[test]
     fn controller_recovery_emits_once_and_revokes_the_stale_lease() {
         let (mut game, mut driver, id, _source, _to, _first) = leased_fixture();
-        assert!(driver.cursor(id).is_some(), "fixture begins with a lease");
+        assert!(driver.leg(id).is_some(), "fixture begins with a lease");
         assert!(driver.has_cached_route(id), "fixture begins with a route");
 
         // Keep the body's valid spawn but put both authoritative views beyond
@@ -597,10 +487,7 @@ mod tests {
             "the controller reset must be reported exactly once"
         );
         driver.invalidate_from_match(&game, id, game.objective_target(id));
-        assert!(
-            driver.cursor(id).is_none(),
-            "recovery revokes the old lease"
-        );
+        assert!(driver.leg(id).is_none(), "recovery revokes the old lease");
         assert!(
             !driver.has_cached_route(id),
             "recovery revokes the old route cache"
@@ -608,7 +495,7 @@ mod tests {
     }
 
     #[test]
-    fn displacement_escape_and_target_changes_revoke_only_the_affected_cursor() {
+    fn displacement_escape_and_target_changes_revoke_only_the_affected_leg() {
         for kind in [
             HexMatchEventKind::PlayerRecovered,
             HexMatchEventKind::GuardianCatch,
@@ -616,9 +503,8 @@ mod tests {
         ] {
             let (mut game, mut driver, id, _source, _to, _first) = leased_fixture();
             let other = PlayerId(1);
-            driver
-                .cursors
-                .insert(other, *driver.cursor(id).expect("cursor"));
+            let held = driver.legs[&id].clone();
+            driver.legs.insert(other, held);
             game.recent_events = vec![HexMatchEvent {
                 tick: game.tick,
                 kind,
@@ -626,31 +512,22 @@ mod tests {
                 cell: Some(game.players[&id].cell),
             }];
             driver.invalidate_from_match(&game, id, game.objective_target(id));
-            assert!(driver.cursor(id).is_none(), "{kind:?} revokes affected bot");
-            assert!(
-                driver.cursor(other).is_some(),
-                "{kind:?} preserves other bot"
-            );
+            assert!(driver.leg(id).is_none(), "{kind:?} revokes affected bot");
+            assert!(driver.leg(other).is_some(), "{kind:?} preserves other bot");
         }
 
         let (game, mut driver, id, _source, _to, _first) = leased_fixture();
-        driver
-            .cursors
-            .get_mut(&id)
-            .expect("cursor")
-            .lease
-            .objective
-            .q += 1;
+        driver.legs.get_mut(&id).expect("leg").objective.q += 1;
         driver.invalidate_from_match(&game, id, game.objective_target(id));
-        assert!(driver.cursor(id).is_none(), "target change revokes lease");
+        assert!(driver.leg(id).is_none(), "target change revokes lease");
     }
 
     #[test]
-    fn disappearing_projected_guide_clears_a_stale_cursor() {
+    fn disappearing_projected_guide_clears_a_stale_leg() {
         let (mut game, mut driver, id, source, _to, _first) = leased_fixture();
         game.geometry.guides.remove(&source);
-        assert_eq!(driver.follow_cursor(&game, id), None);
-        assert!(driver.cursor(id).is_none());
+        assert_eq!(driver.follow_leg(&game, id), None);
+        assert!(driver.leg(id).is_none());
     }
 
     /// Stand a bot in the first cell of a lateral route step and give that cell
@@ -755,10 +632,10 @@ mod tests {
         let held = driver.leg(id).expect("the graph module is leased").clone();
         assert_eq!(held.lease.instance.source_cell, from);
         assert_eq!(held.local.edge, TraversalEdgeId(0));
-        assert!(
-            driver.cursor(id).is_none(),
-            "a graph module must not also take a compatibility lease"
-        );
+        // This used to also assert `driver.cursor(id).is_none()` — that the
+        // graph path was taken *instead of* the compatibility one. There is no
+        // longer a compatibility cursor to take, so the claim is now carried by
+        // the driver's shape rather than by an assertion.
 
         // The command is exactly what the shared follower produces for this
         // graph. No archetype, port class, or shape rule contributed anything.
@@ -945,10 +822,7 @@ mod tests {
         let mut replay = live.clone();
         let mut frames = Vec::new();
         let mut expected = Vec::new();
-        assert!(
-            driver.cursor(id).is_some(),
-            "test must exercise a real cursor"
-        );
+        assert!(driver.leg(id).is_some(), "test must exercise a real leg");
 
         for _ in 0..4 {
             let frame = HexInputFrame {

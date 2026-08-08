@@ -23,7 +23,7 @@ pub use model::{
     HexMatchError, HexMatchEvent, HexMatchEventKind, HexMatchSnapshot, HexMatchStatus,
     HexPlayerCommand, HexPlayerMapKnowledge, HexPlayerSnapshot, HexPlayerState,
     HexTeamObjectiveState, HexTeamSnapshot, HexTeamState, HexWfcMatch, KEYSTONES_REQUIRED,
-    MAX_ROSTER, ModuleInstanceId, TraversalCursor, TraversalLease,
+    MAX_ROSTER,
 };
 pub use trim::{HexTrimKind, HexTrimPiece, derive_trim, derive_trim_for};
 

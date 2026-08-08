@@ -276,22 +276,18 @@ fn ramp_faces(
     Some((node_at(rise.opposite())?, node_at(rise)?))
 }
 
-/// Whether the module at `cell` ships its own traversal graph.
+/// Whether the module at `cell` presents a traversal graph.
 ///
-/// The single switch that decides whether a leg is executed as a graph or by
-/// the compatibility steering beside it. It is deliberately a property of the
-/// content rather than a flag: authoring a graph is what migrates a module, and
-/// nothing else has to change on that day.
+/// The single switch that decides whether a leg is executed as a graph. Any
+/// annotated module qualifies, because [`ResolvedModuleGraph::resolve`] compiles
+/// the compatibility spine and deck into the same graph when the module ships no
+/// authored one — a guide is only recorded where a climb or a deck exists, so
+/// the compile cannot fail for anything this admits.
 ///
-/// The compatibility followers emit a different `PlayerIntent` from the graph
-/// follower by construction — lateral steering sprints at full movement while
-/// the follower walks at its configured scale — so widening this gate is an
-/// intentional intent-trace boundary, not a refactor.
+/// It is deliberately a property of the content rather than a flag: authoring a
+/// graph replaces what a module presents here without changing this line.
 pub(super) fn ships_a_graph(game: &HexWfcMatch, cell: HexCoord) -> bool {
-    game.geometry
-        .guides
-        .get(&cell)
-        .is_some_and(|guide| guide.graph.is_some())
+    game.geometry.guides.contains_key(&cell)
 }
 
 /// The follower pose of one player's feet.

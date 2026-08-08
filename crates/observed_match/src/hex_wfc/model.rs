@@ -32,7 +32,7 @@ mod snapshot;
 #[cfg(test)]
 mod tests;
 
-pub use bot::{HexBotDriver, ModuleInstanceId, TraversalCursor, TraversalLease};
+pub use bot::HexBotDriver;
 pub use equipment::{HexDeployedLantern, HexLanternCache, HexLanternState};
 pub use guardian::{HexGuardianState, HexGuardianStatus};
 pub use knowledge::{HexMapCellKnowledge, HexMapDiscovery, HexPlayerMapKnowledge};
