@@ -66,12 +66,56 @@ order — note that **nothing here is blocked on runtime refactoring**:
 |---|---|---|
 | 1 | **The vertical interface's clearance model** | **Blocking.** `ClearanceVolume` is `{id, bounds}` — a box that must stay *empty*, which models a handoff through open air. A stair is not that: a body crosses by standing on a surface at the seam. `InterfaceProfile` exists but carries lateral faces only. Its own packet, and it gates (2). |
 | 2 | Migrate the tower/ramp Forge sources to authoring v3 | Blocked on (1). Preflight is done: the family compiler accepts caps (`e43b76d`), `quantize_world` accepts the chamfer's fractional geometry, and a vertical port may declare where the shaft crosses (`10a8353`). |
-| 3 | **Author a traversal spine on the ramp kit** | Open, and independent of (1). This is what retires `unannotated_ramp_command` and makes the `HexArchetype::` grep come back clean. Content work in the forge. |
+| 3 | **Author a traversal spine on the ramp kit** | **Done 2026-08-08** (`c9c427e`, `b15c537`) — and it did **not** retire the archetype read. See below. |
 | 4 | Regenerate `.map`, FGD, catalog, manifest, certificates, sidecar hashes | Publisher-only, once, after (2) and (3). |
 | 5 | Fold traversal-profile/certificate identity into the simulation content hash | Open. Runtime profile v2 `29e48ecf…` is still deliberately outside catalog/snapshot/LAN. Call out the compatibility boundary when it lands. |
 | 6 | Remove the last compatibility adapter | Exactly **one** production caller remains: `stair_lateral_command` reading `geometry.decks` (`model/bot.rs`). Everything else reading `climbs`/`decks` is test code. Falls out of (3). |
 | 7 | Update `Catalogue.md`, authoring docs, this status table | Open. |
 | 8 | Full automated **and manual** gates | Exit: no compatibility adapter has a production caller; the committed corpus rebuilds byte-for-byte; Spectate AI completes the production seed matrix. |
+
+### The ramp spine landed, and it moved the blocker rather than removing it
+
+The gap was one annotation in two places, not one: `forge::silos::hall_ramp`
+builds the authored corpus the game loads, and `tile_source::verticals::ramp_map`
+builds the compatibility kit every match test loads. Neither shipped a spine, so
+neither recorded a guide. Both now emit the centreline between the two door
+midpoints, derived from the same sills the sloped mass is built from. The
+authored diff is **25 insertions, 0 deletions** in one `.map` — the mass is
+byte-identical, only the annotation moved.
+
+**Content identity moved once, deliberately.** Catalog `74ead7a6…` →
+`803639ea…`, simulation `9937ed51…` → `5f89f496…`; the profile hash is
+untouched. This gates LAN and replay compatibility.
+
+**It cost 19.6% and did not buy the retirement.** The headless gate moved
+5,511 → 6,589 ticks: a ramp used to be walked at full movement with sprint held,
+and a *declared* climb is followed at 1.61 m/s. That buys consistency with the
+authored perimeter ramps, which have always been followed at this speed because
+they have always had a spine.
+
+**And the archetype read survives, for a reason worth writing down.** Deleting
+it looked safe — the gate and the soak reported *identical* values with it
+present and gone. The 24-seed survey disagreed: seed 15000046 stalled, and not
+for want of time (still stalled at a 60,000-tick budget). The trace was a closed
+3 m loop, climbing 1.6 m and sliding back, forever.
+
+**A ramp's spine ends at the cell's far edge**, because that is the only plan
+position where the mass has reached the deck above. A body released at the head
+has not yet changed logical cell, so the route fell back to the neighbour's
+centre — for a vertical step, a point in mid-air above the cell it is entering.
+It walked at that, slid down, re-acquired the leg, repeated.
+
+So `unannotated_ramp_command` returns as `finish_vertical_crossing`. The module's
+own declared climb is now followed for the whole ramp bar its last metre, which
+is a real improvement, but the exit criterion is not met while the function
+exists. **It retires when a vertical leg can hand off across the level plane on
+its own — which is item (1), the vertical-interface packet.** That item is now
+the single blocker for both (2) and (3)'s completion.
+
+**Method note, twice earned this arc.** A narrow green board is not evidence of
+deadness. `stair_lateral_command` and `unannotated_ramp_command` were both read
+as dead from the gate and the soak alone, and the wider gate refuted both. Delete
+against the widest gate you have, not the fastest one.
 
 ### Wave 5 integration notes
 
