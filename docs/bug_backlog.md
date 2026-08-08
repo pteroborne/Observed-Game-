@@ -183,6 +183,14 @@ atrium shipping a `StairSpine` would simply be climbed — and the atrium now ha
 geometry of its own (`room_atrium_lower` / `room_atrium_upper`) to hang a stair
 on rather than two copies of a single-hex room.
 
+**Updated 2026-08-08 (Arc S TR-11).** The mechanism named above no longer exists
+— `vertical_command` is deleted — but the conclusion is unchanged and now
+stronger. Any cell whose tile declares a spine or a deck records a projected
+guide, and the runtime compiles that into a module-local traversal graph and
+crosses it as a graph leg. So an atrium shipping a `StairSpine` is climbed with
+no wiring at all. **This is purely a geometry task**, and the paragraph below
+still states it exactly.
+
 What remains is the stair, and it is the size of Phase 109's tower work. The
 lower cell declares doors on all six faces and is one level tall, so a flight
 cannot run along a wall without blocking a door, and cannot reach the upper
@@ -280,6 +288,15 @@ catalogue, shows the full solved room/hall lattice at low cost, streams exact
 authored hulls around a free-fly camera, and indexes every active production
 room/hall concept for direct comparison.
 
+## Minor / hygiene
+
+**Scheduled: Arc H Phase 61 (as-landed notes).**
+
+- Phase 54/55 docs never got "As landed" notes (56 has one; 56 also has a
+  "Review fixes" section).
+
+## Fixed
+
 ### 26. Arc Q shipped with a failing suite and a stopped simulation in test
 
 **Fixed 2026-07-30 during the Phase 123 gate.** The Arc P/Q implementation was
@@ -326,15 +343,6 @@ asserts the target and fails without the fix. Restoring UI visibility exposed a
 second defect immediately: the cue banner's opaque plate stayed drawn when its
 text was cleared, parking a black bar on the sightline, so it now carries its own
 `Visibility`. ([arc_q/phase_123_human_ux_gate.md](arc_q/phase_123_human_ux_gate.md))
-
-## Minor / hygiene
-
-**Scheduled: Arc H Phase 61 (as-landed notes).**
-
-- Phase 54/55 docs never got "As landed" notes (56 has one; 56 also has a
-  "Review fixes" section).
-
-## Fixed
 
 - ~~Every room cell of every room role asks for the same archetype~~ — fixed
   2026-07-27 in Arc O Phase 111

@@ -10,6 +10,48 @@ This document outlines the current active development goals, completed milestone
 
 ## Active & Upcoming Phases
 
+> **Where things actually stand (2026-08-08).** Three arcs are open — Q, P and O
+> — and **every one of them is open on a human gate, not on code**: Phase 123's
+> hands-on traversal and LAN barrier, Phase 118's choice gate, Phase 113's
+> sixteen-seat co-op run. No engineering phase is scheduled. Since Arc Q opened,
+> three further bodies of work landed without ever appearing here — Arc R, the
+> Composition Studio, and Refactor Arc S — and they are recorded below now. Arc S
+> is the only open code arc, and what remains of it is **content authoring**
+> rather than refactoring.
+
+**Refactor Arc S — Traversal Contracts and Module Assembly** `[ ]` (plan and
+execution record: [docs/traversal_contract_refactor_plan.md](docs/traversal_contract_refactor_plan.md)).
+Opened 2026-08-02 from the Arc R post-mortem. The switchback replacement
+succeeded, but only after failures escaped isolated tile validation and surfaced
+as multi-seed spectator-bot stalls in *assembled* facilities — a **shotgun
+surgery** smell, with one concept (physical module traversability) fragmented
+across authoring, catalog selection, projection, match AI, movement sync, tools
+and tests. Run as a parallel multi-worktree fan-out, three workers plus an
+integrator, on `refactor/traversal-contract-integration`.
+
+**Waves 0–6 complete.** A module now declares its own traversability — quantized
+interface fingerprints, family-first assembly selection, one module-local
+traversal graph — and the runtime executes it without ever asking what a tile is
+called. TR-11 (2026-08-08) put every annotated module on graph legs and deleted
+the compatibility steering: net −493/+142 lines, `dev-test` 1832, the 24-seed
+survey at zero stalls, and only the two sanctioned intent-trace pins moved.
+
+**The smell is retired as a code problem.** What is left of TR-10 is content debt
+and one publishing pass, and none of it is blocked on more refactoring:
+
+- **The vertical interface's clearance model.** `ClearanceVolume` is a box that
+  must stay *empty*, which models a handoff through open air; a stair is a body
+  standing on a surface at the seam. Its own packet, and it gates the v3
+  migration.
+- **A traversal spine on the ramp kit.** A procedural `hall_ramp` projects
+  neither spine nor deck, so `unannotated_ramp_command` is still the only thing
+  that walks a body up one. Authoring the spine is what retires it — and with it
+  the last archetype read in the match layer.
+- Then: migrate the tower/ramp sources to authoring v3, regenerate the corpus
+  once, fold the traversal-profile identity into the simulation content hash,
+  drop the last compatibility adapter (`stair_lateral_command`), and run the
+  full automated **and manual** gates.
+
 **Arc Q — Clear Intent** `[ ]` (contract and gate: [docs/arc_q/](docs/arc_q/README.md)). Opened 2026-07-29 as a focused overhaul of the assembled game's player-facing menus. The front end now uses shared semantic widgets with pointer/keyboard/controller parity, stable focus and accessible disabled states; a preset-first Play hub keeps custom match rules separate from per-user preferences; loading is cancellable, retryable, asynchronous, and honest; canonical onboarding and pause have explicit input/simulation policy; LAN launch uses a ready/start barrier; and the production facility admits presentation under a bounded residency budget. The deprecated isolated-Place and demoted square-WFC paths remain regression-only. Closure requires the 1280×800 human UX gate and a two-process LAN barrier check.
 
 ### Phase 119 — Semantic Widget Foundation `[x]`
@@ -77,6 +119,34 @@ Replace the fixed four-command wire frame with a length-prefixed list capped at 
 Hands-on playtest and falsifiable evidence per the standing Arc H rule. Districts read as contiguous places and compose differently; the isometric map is usable and leaks no rival or undiscovered information; vertical circulation varies by district; a sixteen-player co-op match completes over real UDP with bots disabled; before and after isometric captures at the five pinned seeds are committed and viewed. Findings that are not fixed land in the bug backlog as numbered entries rather than being absorbed into the closure phase.
 
 ---
+
+**Composition Studio** `[x]` (arc plan and slice records: [docs/composition_studio/](docs/composition_studio/)).
+Planned 2026-07-31, complete. A first-class WFC composition and controller editor,
+built because the facility's composition was tuned by editing weight tables and
+re-running a solve blind. Seven slices, all landed on `main`: an authorable
+composition profile folded into the content hash (Slice 0); the studio shell and
+solve controls (1, `efa658e`); coverage and unmet-demand diagnostics (2); layout
+pinning and painting — the moment an author says "a shaft goes *here*" and the
+artifact remembers (3); the UX pass that made the panel docked and non-modal and
+extracted the shared `observed_ui` crate (3.6a/3.6b); multi-candidate scoring, so
+the profile can ask for a search and see what it bought (4, `a0fc9d3`); live
+module authoring, previewed and validated against the geometry that caused each
+failure, with a body walked through a module to say where it stops (5, `f7d8848`,
+`19c4e7f`, `3ef9f77`); and the `tileforge.py` port to Rust, byte-exact, then
+deleting the Python (6, `cd10da2`, `e5e38b6`). **The tile-authoring path is now
+entirely in-workspace** — the Python generator is gone and `crates/observed_authoring/src/forge/`
+is the source of truth. This is the tool Arc S's remaining content work needs.
+
+**Arc R — Vertical Circulation, Authored** `[x]` — Completed 2026-08-01, merged
+to `main` as `911b046` (plan: [docs/composition_studio/switchback_replacement_plan.md](docs/composition_studio/switchback_replacement_plan.md)).
+Removed `tile_source::verticals`' procedural switchback outright and authored the
+facility's vertical circulation as an inset helix with a ring deck. Two earlier
+attempts had failed for structural reasons; the replacement was landed
+atomically because a column may otherwise mix authored and generated towers. Five
+measured faults, of which the durable one is that **sixfold rotation turns the
+climb** — which is why the tower family can never be rotated. Its post-mortem
+opened Arc S: the faults escaped isolated tile validation and only appeared in
+assembled facilities.
 
 **Arc N — Authoritative LAN Race** `[x]` — Completed 2026-07-23. The canonical hex match is now a stable four-seat 2v2 race with shared teammate map knowledge and team completion. A Bevy-free 60 Hz dedicated server owns lobby/countdown/match/post-match state, bot fill/takeover, reconnect reservations, late-join history replay, simulation-content compatibility, and authoritative frame digests. The game adds broadcast discovery, direct IP, listen hosting, team/readiness controls, and one-shot deterministic desync recovery; `lan_lab` and real-UDP integration tests prove the production seam. Internet matchmaking, NAT traversal, relays, authentication, encryption, and server migration remain non-goals. ([docs/lan_integration.md](docs/lan_integration.md))
 
@@ -271,6 +341,14 @@ Phase 67, #6 near-black world captures → Phase 69. #8 (hex lighting wash), #9
 performance and polish items from the 2026-07-26 investigation. #13–#17 are the
 structural findings from the Arc O planning survey and are scheduled into Arc O
 Phases 106–111. New findings land in the backlog first, then get scheduled.
+
+**Updated 2026-08-08.** #26–#28 were filed under *Open* while their own entries
+recorded them fixed during the Phase 123 gate; they are now under *Fixed*. #18
+(a two-level room's internal vertical link) is **unblocked and unscheduled** — it
+was waiting on room geometry and on the bot, and both arrived: an atrium that
+ships a `StairSpine` is now crossed as a graph leg with no wiring, so all that
+remains is authoring the stair. #20–#25 are Arc P findings awaiting the Phase 118
+human gate.
 
 ---
 
