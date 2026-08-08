@@ -500,6 +500,51 @@ Certification covers:
 - doorway-to-deck, deck-to-climb, climb-to-deck, and deck-to-door handoffs;
 - no out-of-world recovery and deterministic intent/body digests.
 
+## The last mile of the smell, measured
+
+Most of the shotgun surgery is gone and live in production: no test copies the
+bot's rule, the Studio calls the production selector, the survey asserts,
+projection carries one `guides` map (`climbs`/`decks` are labelled compatibility
+mirrors derived from it), the `"stair_tower"` string is deleted, `HexMatchContent`
+is the one content object, and `stair_lateral_command` no longer gates on an
+archetype before reading a tile's declared deck.
+
+What remains is `ramp_walk_dir` and the three archetype-steering functions. Both
+dissolve the same way — put the runtime on graph legs — and **the switch is one
+line**, measured rather than estimated:
+
+`leg::ships_a_graph` requires `guide.graph.is_some()`, which nothing sets. But
+`ResolvedModuleGraph::resolve` already compiles the compatibility spine and deck
+into the same graph when that field is empty. Widening the gate to
+`guides.contains_key(&cell)` therefore puts every annotated module on graph legs
+without touching projection at all.
+
+Tried, and the result is good news wearing an alarming hat:
+
+- **The climb still completes.** The pinned perimeter-tower trace finishes at
+  tick 1075 against 1066 — nine ticks, 0.15 s slower, body arrives. The graph
+  follower picks targets slightly differently; nothing breaks.
+- **Eight tests fail, and only two are the boundary.** The completion tick and
+  snapshot digest legitimately move; that is the documented intent-trace change.
+- **The other six are the compatibility cursor path going dead.** They assert on
+  `driver.cursor(id)`, and with legs taking the route first, no cursor is ever
+  created. The revocation ratchets themselves are intact — `legs` is cleared,
+  removed and retained beside `cursors` at every invalidation site.
+
+So the remaining work is not "make legs work". It is **deleting the mechanism
+they replaced**: `cursors`, `TraversalCursor`, `TraversalLease`, `follow_cursor`,
+`traversal_lease`, `vertical_command`, `finish_stair_command` and
+`ramp_walk_dir`. Every production caller is in one function,
+`driver.rs::cached_bot_command`. The six ratchet tests move to the leg, and one
+of them — `a_graph_shaped_module_is_crossed_without_any_bot_branch` — must keep
+naming `cursor` explicitly, because its claim is that the graph path is used
+*instead of* the compatibility one.
+
+Reverted rather than left half-applied. One caution learned doing it: a blanket
+rewrite of `cursor(id)` to a mechanism-agnostic accessor silently inverted that
+last test's meaning. It failed loudly, but a ratchet weakened by a bulk edit is
+exactly the failure this arc exists to prevent — re-point those six by hand.
+
 ## Ratchet invariants
 
 These become tests before old code is deleted:
