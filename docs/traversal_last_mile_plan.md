@@ -1,7 +1,11 @@
 # TR-11 — Retire the compatibility steering
 
-**Status:** ready to execute. **Hat:** Contract (this packet deliberately moves
-two pinned values). **Owner:** one agent. **Serial** — it changes emitted intents.
+**Status:** DONE, `324dc34`..`5e892c4` on `refactor/traversal-contract-integration`.
+See §9 for what the execution found — the packet is complete except for one
+symbol on §4's deletion list, which is kept for a measured reason.
+
+**Hat:** Contract (this packet deliberately moves two pinned values).
+**Owner:** one agent. **Serial** — it changes emitted intents.
 
 **Base SHA:** `6ca9cfb` on `refactor/traversal-contract-integration`.
 Tree is clean and green: `cargo dev-test` 1832 passed, clippy clean.
@@ -208,3 +212,111 @@ git diff --check:
 Be honest about anything incomplete. A truthful partial result is worth more
 than a green board here: this packet moves a pinned trace on purpose, and the
 integrator has to be able to trust which movements were intended.
+
+---
+
+## 9. What execution found
+
+```
+Packet:       TR-11
+Base SHA:     6ca9cfb  (executed from 14b2d28, which adds only this document)
+Commits:      5e892c4  the switch, the deletions, the six re-pointed tests
+              324dc34  the ramp finding, and both Group A pins
+Generated artifacts: none. No .map, catalog, manifest, FGD, .sha256 or
+              certificate was written; `tilec` was not run.
+git status --short: clean.   git diff --check: clean.
+```
+
+### §2 and §3 were exactly right
+
+Widening the gate produced **exactly the predicted eight failures**, in the
+three named groups, with the tower completing at tick **1075** against the
+pinned 1066 — the number §3 predicted, to the tick. The six Group B tests were
+moved one at a time. Their ratchet invariants are unchanged; "ascending", which
+used to be `TraversalDirection::Forward`, is now stated in the terms a leg is
+expressed in — the leased exit is the module's `Up` port, asserted once in the
+shared fixture.
+
+Group C lost its one assertion. `driver.cursor(id).is_none()` cannot survive
+§4, which deletes `cursor()`: once there is no compatibility lease to take, the
+claim "the graph path is used instead of it" has nothing left to name. The
+test's remaining substance — the crossing works, the intent is the production
+follower's verbatim, a `Climb` edge runs across a flat hall — is untouched, and
+a comment records what the assertion used to say.
+
+### §4 assumed legs reach every case. Two do not.
+
+The deletion list was written without running it, and it over-reaches by two
+entries. Both were found by measurement, not by reading.
+
+**`ramp_walk_dir` must stay, and it is not a tuning problem.** A procedural
+`hall_ramp` projects **neither spine nor deck**, so no guide is recorded for its
+cell and there is no contract data for a leg to execute. `legacy_cell_adapter`
+cannot stand in either: a ramp's vertical ports are not lateral doorways, and
+the gate corpus's ramps open on **one** face, so `ramp_faces` has no second
+doorway node to raise a climb edge toward. Deleting the function does not move
+the inference into data — it removes the only thing that walks a body up a ramp.
+Measured: the headless gate stopped completing at all, and all four soak bots
+stalled at `(2,0,2)`, `hall_ramp` variant 0, `RampUp`, one door, `up:
+RampOpen`. It survives as `unannotated_ramp_command` — a heading, no state, no
+lease — carrying its own reason and its retirement condition.
+
+**Authoring a spine on the ramp kit is what retires it.** Nothing else does, and
+that is the single next step for this smell.
+
+**`stair_lateral_command` stays too** — §4 left the decision to measurement, and
+the answer is that legs do **not** reach every case it serves. Deleting it moved
+the headless gate's completion tick off its pin. (First measured as "never
+fires" via an `eprintln` probe; that reading was wrong, because `cargo test`
+captures output from *passing* tests and only prints it for failing ones. The
+gate caught the mistake. Do not probe a passing test without `--nocapture`.)
+
+So the exit criterion holds in leg execution but not absolutely:
+`grep -rn "HexArchetype::" crates/observed_match/src/hex_wfc/model/` returns
+`leg.rs`'s two named legacy adapters **and** `bot.rs`'s
+`unannotated_ramp_command`. That third hit is content debt with a name, not
+steering that escaped the refactor.
+
+### Everything else on the list was genuinely dead
+
+`HexBotDriver::{cursors, cursor, follow_cursor}`, `TraversalCursor`,
+`TraversalLease`, `ModuleInstanceId` (and both re-exports), `traversal_lease`,
+the climb half of `vertical_command`, `climb_command` and `finish_stair_command`
+are gone. Their removal moved **no** measurement: the gate and the tower report
+the same values with them deleted as with them present. `bot.rs` no longer
+imports `observed_traversal` at all — every follow now goes through `leg.rs`.
+
+Net: **-493 / +142** lines of code.
+
+### Pins
+
+| | before | after |
+|---|---|---|
+| tower completion tick | 1066 | **1075** |
+| tower traced ticks | 963 | **973** |
+| tower intent/body trace | `0xe7358686ec1823c9` | **`0x5adc2eb981ea1880`** |
+| tower body position | (13.855, 9.411, 3.464) | **(14.015, 9.410, 3.490)** |
+| gate completion tick | 5596 | **5511** |
+| gate snapshot digest | `0x44209934 6f7eb43e` | **`0x457d40ff581e0bd1`** |
+
+The tower climb still completes; the body ends 0.17 m from where it did, at the
+same height, on the same tread. The gate re-times *downward*. Both are the
+sanctioned intent-trace boundary and no other pin moved — `compiled_catalog`
+`74ead7a6…`, `composition_profile` `99e682b1…` and the simulation hash
+`9937ed51…` are unchanged and their tests passed unedited, because selection is
+not steering.
+
+### Gates
+
+```
+cargo test -p observed_traversal                        72 passed / 0 failed
+cargo test -p observed_match hex_wfc                     77 passed / 0 failed
+cargo test -p observed_authoring                        178 passed / 0 failed
+survey_spectator_routes_across_seeds --ignored           0 of 24 seeds stalled
+cargo fmt --all                                          clean
+cargo dev-clippy                                         clean
+cargo dev-test                                         1832 passed / 0 failed
+git diff --check                                         clean
+```
+
+`dev-test` is 1832, matching the base SHA exactly.
