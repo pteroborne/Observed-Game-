@@ -11,6 +11,9 @@ pub mod blueprint;
 mod collapse;
 mod constraints;
 mod context;
+pub mod neighborhood;
+#[cfg(test)]
+mod neighborhood_tests;
 pub mod pins;
 pub mod profile;
 mod relayout;
@@ -33,6 +36,9 @@ pub use blueprint::{
     RoomBlueprint, StampedBlueprint, blueprint_cell_archetype, blueprint_for_role,
 };
 pub use context::{HexInfluenceField, PROFILE_MAX, PROFILE_MIN};
+pub use neighborhood::{
+    FaceDomain, NeighborCandidate, Neighborhood, NeighborhoodError, neighborhood,
+};
 pub use observed_hex::{HexCoord, HexFace, HexGridSize, PortClass, PortSignature};
 pub use pins::{PinDiagnostic, PinFailure, diagnose_pins, resolved_pins};
 pub use profile::{

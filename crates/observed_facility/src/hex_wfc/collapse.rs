@@ -29,10 +29,10 @@ const MASK_WORDS: usize = 7;
 const POCKET_TOPOLOGY_CELLS: usize = 4;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct VariantSet([u64; MASK_WORDS]);
+pub(super) struct VariantSet([u64; MASK_WORDS]);
 
 impl VariantSet {
-    const EMPTY: Self = Self([0; MASK_WORDS]);
+    pub(super) const EMPTY: Self = Self([0; MASK_WORDS]);
 
     fn only(index: usize) -> Self {
         let mut set = Self::EMPTY;
@@ -40,15 +40,15 @@ impl VariantSet {
         set
     }
 
-    fn insert(&mut self, index: usize) {
+    pub(super) fn insert(&mut self, index: usize) {
         self.0[index / 64] |= 1 << (index % 64);
     }
 
-    fn is_empty(&self) -> bool {
+    pub(super) fn is_empty(&self) -> bool {
         self.0.iter().all(|&word| word == 0)
     }
 
-    fn len(&self) -> usize {
+    pub(super) fn len(&self) -> usize {
         self.0.iter().map(|word| word.count_ones() as usize).sum()
     }
 
@@ -57,14 +57,14 @@ impl VariantSet {
         (self.len() == 1).then(|| self.iter().next().expect("len is 1"))
     }
 
-    fn union_with(&mut self, other: &Self) {
+    pub(super) fn union_with(&mut self, other: &Self) {
         for (word, extra) in self.0.iter_mut().zip(&other.0) {
             *word |= extra;
         }
     }
 
     /// Intersect in place; returns whether the set shrank.
-    fn intersect_with(&mut self, other: &Self) -> bool {
+    pub(super) fn intersect_with(&mut self, other: &Self) -> bool {
         let mut changed = false;
         for (word, allowed) in self.0.iter_mut().zip(&other.0) {
             let next = *word & allowed;
@@ -76,7 +76,7 @@ impl VariantSet {
 
     /// Member variant indices in ascending order — the same order the old
     /// `Vec<usize>` domains kept, so RNG-weighted picks are unchanged.
-    fn iter(&self) -> impl Iterator<Item = usize> + '_ {
+    pub(super) fn iter(&self) -> impl Iterator<Item = usize> + '_ {
         self.0.iter().enumerate().flat_map(|(word_index, &bits)| {
             let mut bits = bits;
             std::iter::from_fn(move || {
@@ -94,19 +94,19 @@ impl VariantSet {
 /// The variant catalogue plus, for every `(variant, face)`, the bitmask of
 /// neighbor variants compatible across that face. Built once per process:
 /// the catalogue is a deterministic constant.
-struct SolverTables {
-    variants: Vec<HexVariant>,
+pub(super) struct SolverTables {
+    pub(super) variants: Vec<HexVariant>,
     /// Indexed `variant * 8 + face.index()`.
     compat: Vec<VariantSet>,
 }
 
 impl SolverTables {
-    fn compat(&self, variant: usize, face: HexFace) -> &VariantSet {
+    pub(super) fn compat(&self, variant: usize, face: HexFace) -> &VariantSet {
         &self.compat[variant * 8 + face.index()]
     }
 }
 
-fn solver_tables() -> &'static SolverTables {
+pub(super) fn solver_tables() -> &'static SolverTables {
     static TABLES: OnceLock<SolverTables> = OnceLock::new();
     TABLES.get_or_init(|| {
         let variants = catalogue();
@@ -411,7 +411,19 @@ fn variant_is_mutable_topology(variant: HexVariant) -> bool {
     )
 }
 
-fn placement_variant(placement: HexPlacement) -> HexVariant {
+/// The catalogue index of the variant a placement corresponds to.
+///
+/// Every placement the solver produces came out of the catalogue, so `None`
+/// means the placement was invented somewhere else — worth refusing rather
+/// than approximating.
+pub(super) fn variant_index(tables: &SolverTables, placement: HexPlacement) -> Option<usize> {
+    tables
+        .variants
+        .iter()
+        .position(|&variant| variant_matches(variant, placement))
+}
+
+pub(super) fn placement_variant(placement: HexPlacement) -> HexVariant {
     HexVariant {
         space: placement.space,
         archetype: placement.archetype,
@@ -422,7 +434,53 @@ fn placement_variant(placement: HexPlacement) -> HexVariant {
     }
 }
 
-fn variant_matches(variant: HexVariant, placement: HexPlacement) -> bool {
+/// The seed-specific constraints one attempt of a solve ran under.
+///
+/// Blueprint stamping and the forced spawn→exit route are drawn from the
+/// attempt's own RNG, so they are not recoverable from a solved world by
+/// inspection. [`replay_constraints`] re-derives them by walking the same RNG
+/// the same way — and its caller checks the replayed blueprints against the
+/// world's own before believing a word of it.
+pub(super) struct AttemptConstraints {
+    pub(super) blueprints: Vec<StampedBlueprint>,
+    pub(super) signatures: BTreeMap<HexCoord, PortSignature>,
+    pub(super) forced_doors: BTreeMap<HexCoord, u8>,
+    pub(super) forced_up: BTreeMap<HexCoord, PortClass>,
+    pub(super) forced_down: BTreeMap<HexCoord, PortClass>,
+}
+
+/// Re-derive the constraints of one attempt, exactly as `collapse` produced
+/// them.
+///
+/// This is a replay, not a reconstruction: it seeds the same `SplitMix` from
+/// the same `(seed, generation, attempt)` and draws from it in the same order,
+/// so a matching `attempt` yields byte-identical blueprints and route. A
+/// mismatched one yields a *different valid-looking* answer, which is why the
+/// caller must verify the blueprints against the world rather than trusting
+/// the attempt number it was given.
+pub(super) fn replay_constraints(
+    seed: u64,
+    generation: u32,
+    attempt: u32,
+    config: HexWfcConfig,
+    room_quotas: Option<HexRoomQuotas>,
+) -> Option<AttemptConstraints> {
+    let mut rng = SplitMix::new(mixed(seed, generation, attempt, 0x4E8C_0FFE_D011_88AA));
+    let districts = super::relayout::district_sites(seed, config);
+    let blueprints = stamp_blueprints_with_pins(config, &mut rng, &[], &districts, room_quotas);
+    let signatures = stamped_signatures(config, &blueprints);
+    let (forced_doors, forced_up, forced_down) =
+        forced_route_edges(config, &blueprints, &signatures, &mut rng)?;
+    Some(AttemptConstraints {
+        blueprints,
+        signatures,
+        forced_doors,
+        forced_up,
+        forced_down,
+    })
+}
+
+pub(super) fn variant_matches(variant: HexVariant, placement: HexPlacement) -> bool {
     variant.space == placement.space
         && variant.archetype == placement.archetype
         && variant.doors == placement.doors
@@ -697,84 +755,110 @@ fn initial_domains(
     pinned: &BTreeSet<HexCoord>,
     authored: &BTreeMap<HexCoord, PinIntent>,
 ) -> Vec<VariantSet> {
-    let grid = config.grid();
     all_coords(config)
         .map(|coord| {
-            let required_doors = forced_doors.get(&coord).copied().unwrap_or(0);
-            let required_up = forced_up.get(&coord).copied().unwrap_or(PortClass::Sealed);
-            let required_down = forced_down
-                .get(&coord)
-                .copied()
-                .unwrap_or(PortClass::Sealed);
-            let blueprint_signature = signatures.get(&coord);
-
-            variants
-                .iter()
-                .enumerate()
-                .filter(|(_, variant)| {
-                    // Authored intent narrows the domain like any other
-                    // constraint here — except where a stamped blueprint
-                    // already fixes the cell. Room footprints and named ports
-                    // are a frozen contract, so the blueprint wins and
-                    // `pins::diagnose_pins` reports the collision rather than
-                    // this emptying the domain and calling it a contradiction.
-                    if blueprint_signature.is_none()
-                        && let Some(intent) = authored.get(&coord)
-                        && !super::pins::pin_admits(intent, variant)
-                    {
-                        return false;
-                    }
-                    if pinned.contains(&coord)
-                        && previous.is_none_or(|placements| {
-                            let locked = placements[&coord];
-                            variant.space != locked.space
-                                || variant.archetype != locked.archetype
-                                || variant.doors != locked.doors
-                                || variant.up != locked.up
-                                || variant.down != locked.down
-                        })
-                    {
-                        return false;
-                    }
-                    // No opening may face the lattice boundary.
-                    if HexFace::ALL.iter().any(|&face| {
-                        grid.neighbor(coord, face).is_none()
-                            && ((face.is_lateral()
-                                && variant.doors & super::lateral_bit(face) != 0)
-                                || (face == HexFace::Up && variant.up != PortClass::Sealed)
-                                || (face == HexFace::Down && variant.down != PortClass::Sealed))
-                    }) {
-                        return false;
-                    }
-                    if variant.doors & required_doors != required_doors {
-                        return false;
-                    }
-                    if required_up != PortClass::Sealed && variant.up != required_up {
-                        return false;
-                    }
-                    if required_down != PortClass::Sealed && variant.down != required_down {
-                        return false;
-                    }
-                    match blueprint_signature {
-                        // Blueprint cells collapse to exactly the stamped
-                        // sibling-seam and exterior-threshold signature.
-                        Some(&signature) => {
-                            variant.space == HexSpace::Room
-                                && variant.doors == signature_doors(signature)
-                                && variant.up == signature.port(HexFace::Up)
-                                && variant.down == signature.port(HexFace::Down)
-                        }
-                        // Rooms exist only inside blueprint footprints;
-                        // everything else is connective fabric.
-                        None => variant.space != HexSpace::Room,
-                    }
-                })
-                .fold(VariantSet::EMPTY, |mut domain, (index, _)| {
-                    domain.insert(index);
-                    domain
-                })
+            let is_pinned = pinned.contains(&coord);
+            let locked_to = if is_pinned {
+                previous.map(|placements| placements[&coord])
+            } else {
+                None
+            };
+            initial_domain_for(
+                config,
+                variants,
+                coord,
+                forced_doors.get(&coord).copied().unwrap_or(0),
+                forced_up.get(&coord).copied().unwrap_or(PortClass::Sealed),
+                forced_down
+                    .get(&coord)
+                    .copied()
+                    .unwrap_or(PortClass::Sealed),
+                signatures.get(&coord).copied(),
+                locked_to,
+                is_pinned,
+                authored.get(&coord),
+            )
         })
         .collect()
+}
+
+/// One cell's starting domain, before any propagation.
+///
+/// Split out of [`initial_domains`] because the neighbourhood query re-opens a
+/// single cell with the rest of a solved facility held fixed, and it has to
+/// start from *this* rule rather than from a second copy of it. A re-opened
+/// cell whose starting domain was slightly wider than the solver's would show
+/// an author variety the game will never produce, which is the one failure
+/// mode a preview of the solver must not have.
+#[allow(clippy::too_many_arguments)] // Solver constraints are separate typed values by face class.
+pub(super) fn initial_domain_for(
+    config: HexWfcConfig,
+    variants: &[HexVariant],
+    coord: HexCoord,
+    required_doors: u8,
+    required_up: PortClass,
+    required_down: PortClass,
+    blueprint_signature: Option<PortSignature>,
+    locked_to: Option<HexPlacement>,
+    pinned: bool,
+    authored: Option<&PinIntent>,
+) -> VariantSet {
+    let grid = config.grid();
+    variants
+        .iter()
+        .enumerate()
+        .filter(|(_, variant)| {
+            // Authored intent narrows the domain like any other constraint
+            // here — except where a stamped blueprint already fixes the cell.
+            // Room footprints and named ports are a frozen contract, so the
+            // blueprint wins and `pins::diagnose_pins` reports the collision
+            // rather than this emptying the domain and calling it a
+            // contradiction.
+            if blueprint_signature.is_none()
+                && let Some(intent) = authored
+                && !super::pins::pin_admits(intent, variant)
+            {
+                return false;
+            }
+            if pinned && locked_to.is_none_or(|locked| !variant_matches(**variant, locked)) {
+                return false;
+            }
+            // No opening may face the lattice boundary.
+            if HexFace::ALL.iter().any(|&face| {
+                grid.neighbor(coord, face).is_none()
+                    && ((face.is_lateral() && variant.doors & super::lateral_bit(face) != 0)
+                        || (face == HexFace::Up && variant.up != PortClass::Sealed)
+                        || (face == HexFace::Down && variant.down != PortClass::Sealed))
+            }) {
+                return false;
+            }
+            if variant.doors & required_doors != required_doors {
+                return false;
+            }
+            if required_up != PortClass::Sealed && variant.up != required_up {
+                return false;
+            }
+            if required_down != PortClass::Sealed && variant.down != required_down {
+                return false;
+            }
+            match blueprint_signature {
+                // Blueprint cells collapse to exactly the stamped sibling-seam
+                // and exterior-threshold signature.
+                Some(signature) => {
+                    variant.space == HexSpace::Room
+                        && variant.doors == signature_doors(signature)
+                        && variant.up == signature.port(HexFace::Up)
+                        && variant.down == signature.port(HexFace::Down)
+                }
+                // Rooms exist only inside blueprint footprints; everything else
+                // is connective fabric.
+                None => variant.space != HexSpace::Room,
+            }
+        })
+        .fold(VariantSet::EMPTY, |mut domain, (index, _)| {
+            domain.insert(index);
+            domain
+        })
 }
 
 /// AC-3 style arc consistency over all eight faces: retain only variants with
