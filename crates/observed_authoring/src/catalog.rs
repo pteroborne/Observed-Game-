@@ -577,25 +577,9 @@ fn expanded_registers(scope: &[String], architecture_registers: &[&str]) -> Vec<
     }
 }
 
-fn rotate_cell(cell: ModuleCellRef, turn: u8) -> ModuleCellRef {
-    let mut q = cell.q;
-    let mut r = cell.r;
-    for _ in 0..turn {
-        (q, r) = (-r, q.saturating_add(r));
-    }
-    ModuleCellRef {
-        q,
-        r,
-        level: cell.level,
-    }
-}
-
-fn rotate_face(face: HexFace, turn: u8) -> HexFace {
-    if face.is_vertical() {
-        return face;
-    }
-    HexFace::LATERAL[(face.index() + usize::from(turn)) % 6]
-}
+// The turn primitives live in `crate::rotation`, public so a tool previewing a
+// turned module uses this transform rather than a second copy of it.
+use crate::rotation::{rotate_cell, rotate_face};
 
 fn runtime_port(port: &CompiledPort, turn: u8) -> Result<RoomPrototypePort, CatalogError> {
     let face =
@@ -725,20 +709,18 @@ fn validate_compiled_contract(
     Ok(())
 }
 
+/// Compiled hulls arrive as raw `[f32; 3]`; the transform itself is
+/// [`crate::rotation::rotate_hulls`].
 fn rotate_hulls(hulls: &[Vec<[f32; 3]>], turn: u8) -> Vec<Vec<Vec3>> {
-    let rotation = Quat::from_rotation_y(-f32::from(turn) * std::f32::consts::TAU / 6.0);
-    hulls
+    let owned: Vec<Vec<Vec3>> = hulls
         .iter()
-        .map(|hull| {
-            hull.iter()
-                .map(|point| rotation * Vec3::from_array(*point))
-                .collect()
-        })
-        .collect()
+        .map(|hull| hull.iter().copied().map(Vec3::from_array).collect())
+        .collect();
+    crate::rotation::rotate_hulls(&owned, turn)
 }
 
 fn rotate_lights(lights: &[CompiledLight], turn: u8) -> Vec<TileLight> {
-    let rotation = Quat::from_rotation_y(-f32::from(turn) * std::f32::consts::TAU / 6.0);
+    let rotation = crate::rotation::turn_quat(turn);
     lights
         .iter()
         .map(|light| TileLight {

@@ -23,6 +23,7 @@ pub mod fgd;
 pub mod forge;
 pub mod generator;
 pub mod manifest;
+pub mod rotation;
 pub mod seam_auditor;
 pub mod source;
 #[cfg(test)]
