@@ -689,6 +689,48 @@ fn project_cell(
     push_tile(world, coord, coord, role, tile, out)
 }
 
+/// Project the authored geometry one cell *would* have if it held `placement`,
+/// without solving anything.
+///
+/// This is the geometry half of `observed_facility`'s neighbourhood query: that
+/// answers "what could have stood here", and an author needs to *look* at the
+/// answer, not read a signature. Feeding a hypothetical placement through the
+/// production projector — rather than approximating it — means the preview
+/// shows the same hulls a match would load, including the same family, turn,
+/// and member, because the variation keys come from the cell's own coordinate
+/// and are unchanged by the hypothesis.
+///
+/// The clone is the price of asking a `&HexWfcWorld` function about a world
+/// that does not exist. It is deliberately paid here, once, where its cost is
+/// documented, rather than left to every caller: a placements map is cheap
+/// beside triangulating the hulls that come back, and this runs when an author
+/// presses a key, not per frame.
+///
+/// A `Room` placement still resolves through the stamped blueprint that owns
+/// its cell, so hypothesising a room into open fabric returns
+/// [`HexGeometryError::BlueprintCellMissing`]. That case cannot arise from a
+/// neighbourhood domain, which excludes rooms outside a footprint exactly as
+/// the solver does.
+///
+/// # Errors
+///
+/// Whatever the projector says about this cell — most usefully
+/// [`HexGeometryError::MissingTile`], which is this candidate reporting that
+/// the corpus could not build it.
+pub fn project_hypothetical_cell(
+    world: &HexWfcWorld,
+    coord: HexCoord,
+    placement: HexPlacement,
+    prototypes: &[TilePrototype],
+) -> Result<Vec<HexStructurePiece>, HexGeometryError> {
+    let mut hypothetical = world.clone();
+    hypothetical.placements.insert(coord, placement);
+    let catalogue = HexTileCatalogue::new(prototypes);
+    let mut out = ProjectedCells::default();
+    project_cell(&hypothetical, coord, &catalogue, &mut out)?;
+    Ok(out.pieces)
+}
+
 fn validate_id_capacity(world: &HexWfcWorld) -> Result<(), HexGeometryError> {
     let cells = u64::from(world.config.cols)
         * u64::from(world.config.rows)
