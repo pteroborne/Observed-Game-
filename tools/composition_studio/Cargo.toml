@@ -27,6 +27,9 @@ observed_facility = { path = "../../crates/observed_facility", features = ["serd
 # Profile RON/sidecar I/O and the content-hash fold.
 observed_authoring = { path = "../../crates/observed_authoring" }
 observed_content = { path = "../../crates/observed_content" }
+# The house RNG. A roll of the neighbour ring uses the same `SplitMix` the
+# solver draws from, so a rolled combination is reproducible the same way.
+observed_core = { path = "../../crates/observed_core" }
 observed_hex = { path = "../../crates/observed_hex" }
 # The projector: the studio must show what a match would actually build.
 observed_match = { path = "../../crates/observed_match", default-features = false }

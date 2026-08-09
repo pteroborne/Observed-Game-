@@ -1,10 +1,11 @@
 //! Headless driver: describe a view in JSON, get a deterministic screenshot.
 //!
 //! Mirrors `labs/hex_tile_lab/src/script_runner.rs` so the evidence workflow is
-//! the same one the tile lab already uses: configure at `t >= 0.1`, shoot at
-//! `t >= 0.8`, exit at `t >= 1.6`. The gap between shooting and exiting is
-//! load-bearing — `save_to_disk` writes on a *later* frame, so quitting sooner
-//! loses the PNG.
+//! the same one the tile lab already uses: configure at `t >= 0.1`, settle at
+//! `t >= 0.6`, shoot at `t >= 0.9`, exit at `t >= 1.7`. Both gaps are
+//! load-bearing — a post-solve edit needs a frame to redraw before it can be
+//! photographed, and `save_to_disk` writes on a *later* frame, so quitting
+//! sooner loses the PNG.
 //!
 //! ```json
 //! {
@@ -33,6 +34,10 @@ use crate::{LabMenuState, Layer, StudioState, StudioTab};
 #[serde(deny_unknown_fields)]
 pub struct StudioScript {
     pub seed_index: Option<usize>,
+    /// How many floors the working facility has. One is the historical default
+    /// and the only scale at which a cell has no up or down neighbour, so a
+    /// capture of a vertical neighbourhood has to set this.
+    pub levels: Option<u8>,
     /// A level index, or omit for all levels.
     pub layer: Option<u8>,
     pub zoom: Option<f32>,
@@ -44,10 +49,15 @@ pub struct StudioScript {
     pub tab: Option<String>,
     /// Run the whole-catalog seam audit before shooting. Slow; off by default.
     pub audit_seams: Option<bool>,
-    /// `"focus"`, `"layer"`, or omit for the schematic.
+    /// `"focus"`, `"layer"`, `"neighbours"`, or omit for the schematic.
     pub detail: Option<String>,
     /// Cell to select, as `[q, r, level]` — the focus set is built from it.
     pub select: Option<[u16; 3]>,
+    /// Neighbourhood mode only: roll this many consistent rings before
+    /// shooting, so the capture shows alternatives (red) rather than the
+    /// all-green ring the mode opens on. Applied after the solve, because the
+    /// ring does not exist until there is a facility to re-open.
+    pub ring_rolls: Option<u32>,
     /// View azimuth detent, `0..6`. Detent 0 is the historical camera.
     pub detent: Option<usize>,
     /// Cut away the ceiling and near walls. Defaults on in detail mode.
@@ -142,6 +152,12 @@ pub fn script_system(
             state.seed_index = index;
             state.invalidate_baseline();
         }
+        // Before `layer` and `select`, both of which `set_levels` clears —
+        // a script that named a floor and then had the scale wipe it would
+        // photograph the wrong view, which this runner exists to refuse.
+        if let Some(levels) = script.levels {
+            state.set_levels(levels, 0.0);
+        }
         state.layer = script.layer.map_or(Layer::All, Layer::Single);
         if let Some(zoom) = script.zoom {
             state.zoom = zoom;
@@ -207,6 +223,7 @@ pub fn script_system(
             state.detail_mode = match mode.to_ascii_lowercase().as_str() {
                 "focus" => crate::detail::DetailMode::Focus,
                 "layer" => crate::detail::DetailMode::Layer,
+                "neighbours" | "neighbors" => crate::detail::DetailMode::Neighborhood,
                 "off" => crate::detail::DetailMode::Off,
                 other => {
                     state.status = format!("ERROR: unknown detail mode {other:?}");
@@ -237,7 +254,28 @@ pub fn script_system(
         run.phase = 1;
     }
 
-    if run.phase == 1 && run.timer >= 0.8 {
+    // A neighbourhood exists only once there is a solved facility, so a
+    // scripted roll gets its own phase after the solve — and, more to the
+    // point, a whole phase *before* the shot, so the redraw it asks for has
+    // landed. Rolling in the shooting frame would photograph the ring as it was
+    // before the roll, which is the exact class of quietly-wrong capture this
+    // runner exists to refuse.
+    if run.phase == 1 && run.timer >= 0.6 {
+        if let Some(rolls) = run.script.ring_rolls
+            && state.detail_mode == crate::detail::DetailMode::Neighborhood
+        {
+            let profile = state.profile.clone();
+            if let Some(world) = state.solved.as_ref().map(|solved| solved.world.clone()) {
+                for _ in 0..rolls {
+                    state.neighbors.roll_ring(&world, &profile);
+                }
+                state.touch_view();
+            }
+        }
+        run.phase = 2;
+    }
+
+    if run.phase == 2 && run.timer >= 0.9 {
         if let Some(path) = run.script.output_image.clone() {
             if let Some(parent) = std::path::Path::new(&path).parent() {
                 let _ = std::fs::create_dir_all(parent);
@@ -246,12 +284,12 @@ pub fn script_system(
                 .spawn(Screenshot::primary_window())
                 .observe(save_to_disk(path));
         }
-        run.phase = 2;
+        run.phase = 3;
     }
 
-    // `save_to_disk` writes on a later frame; exiting at 0.8 would lose it.
-    if run.phase == 2 && run.timer >= 1.6 {
-        run.phase = 3;
+    // `save_to_disk` writes on a later frame; exiting at 0.9 would lose it.
+    if run.phase == 3 && run.timer >= 1.7 {
+        run.phase = 4;
         exit.write(AppExit::Success);
     }
 }

@@ -66,29 +66,90 @@ pub fn setup_panel(mut commands: Commands) {
 #[allow(clippy::type_complexity)]
 pub fn update_panel(
     state: Res<ModuleState>,
+    view: Res<crate::module::neighbor_view::NeighbourView>,
     mut panel: Query<&mut Text, (With<ModulePanelText>, Without<ModuleStatusText>)>,
     mut status: Query<&mut Text, (With<ModuleStatusText>, Without<ModulePanelText>)>,
 ) {
     if let Ok(mut text) = panel.single_mut() {
-        **text = format_panel(&state);
+        // In the ring mode the neighbours block replaces the diagnostic tail
+        // rather than being appended to it. The panel does not scroll, so
+        // appending would push the answer off the bottom of the screen.
+        **text = if view.on {
+            format!(
+                "{}\n{}",
+                format_header(&state),
+                crate::module::neighbor_panel::format_neighbours(&view)
+            )
+        } else {
+            format_panel(&state)
+        };
     }
     if let Ok(mut text) = status.single_mut() {
-        **text = format!(
-            "{}  |  [Up/Dn] module  [Tab] next failing  [R] Rapier audit  [C] cutaway  [Q/E] orbit  wheel zoom",
-            state.status
-        );
+        let keys = if view.on {
+            "[N] neighbours off  [1-9] cell  [,/.] cycle  [Space] roll  [Shift+Space] reset  [Q/E] orbit"
+        } else {
+            "[Up/Dn] module  [Tab] next failing  [N] neighbours  [R] Rapier audit  [C] cutaway  [Q/E] orbit"
+        };
+        let summary = if view.on {
+            format!("  |  {}", crate::module::neighbor_panel::headline(&view))
+        } else {
+            String::new()
+        };
+        **text = format!("{}{summary}  |  {keys}", state.status);
     }
+}
+
+/// Shown when the watched directory holds nothing to look at.
+const EMPTY_CORPUS: &str = "MODULE STUDIO\n\nNo authored modules found.\n\n\
+     Run from the repo root, or pass a directory:\n\
+     cargo run -p composition_studio --bin module-studio -- <dir>";
+
+/// Name, shape and verdict: the part of the panel that is true in every mode.
+///
+/// Split out because the neighbour ring **replaces** the diagnostic tail rather
+/// than appending to it - the panel does not scroll, so a mode that appended
+/// would push its own answer off the bottom - but it must never replace this.
+/// Which module you are looking at and whether it validates are the two facts
+/// no view of it may drop.
+#[must_use]
+pub fn format_header(state: &ModuleState) -> String {
+    let Some(diagnosis) = state.current() else {
+        return String::from(EMPTY_CORPUS);
+    };
+    let mut lines = vec![
+        String::from("MODULE STUDIO"),
+        String::new(),
+        format!(
+            "{}  ({} of {})",
+            diagnosis.name(),
+            state.selected + 1,
+            state.diagnoses.len()
+        ),
+    ];
+    if let Some(summary) = diagnosis.summary.as_ref() {
+        lines.push(format!(
+            "{:?}  {} cell(s)  {} port(s)  {} socket(s)  {} hull(s)",
+            summary.kind, summary.footprint_cells, summary.ports, summary.sockets, summary.hulls
+        ));
+    } else if let Some(prototype) = diagnosis.prototype.as_ref() {
+        lines.push(format!(
+            "{} hull(s)  {} level(s)  (unvalidated: counts from geometry only)",
+            prototype.hulls.len(),
+            prototype.levels
+        ));
+    }
+    lines.push(match diagnosis.error.as_ref() {
+        Some(_) => String::from("INVALID"),
+        None => String::from("VALID"),
+    });
+    lines.join("\n")
 }
 
 /// The panel body. Pure so it can be asserted on without an app.
 #[must_use]
 pub fn format_panel(state: &ModuleState) -> String {
     let Some(diagnosis) = state.current() else {
-        return String::from(
-            "MODULE STUDIO\n\nNo authored modules found.\n\n\
-             Run from the repo root, or pass a directory:\n\
-             cargo run -p composition_studio --bin module-studio -- <dir>",
-        );
+        return String::from(EMPTY_CORPUS);
     };
 
     let mut lines = vec![

@@ -30,16 +30,18 @@ pub enum StudioTab {
     Tuning,
     Pins,
     Coverage,
+    Neighbours,
     Districts,
     Diagnostics,
 }
 
 impl StudioTab {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Solve,
         Self::Tuning,
         Self::Pins,
         Self::Coverage,
+        Self::Neighbours,
         Self::Districts,
         Self::Diagnostics,
     ];
@@ -50,6 +52,7 @@ impl StudioTab {
             Self::Tuning => "TUNING",
             Self::Pins => "PINS",
             Self::Coverage => "COVERAGE",
+            Self::Neighbours => "NEIGHBOURS",
             Self::Districts => "DISTRICTS",
             Self::Diagnostics => "DIAGNOSTICS",
         }
@@ -97,6 +100,16 @@ impl LabMenuState {
     pub fn prev_tab(&mut self) {
         self.active_tab = (self.active_tab + StudioTab::ALL.len() - 1) % StudioTab::ALL.len();
         self.selected_item = 0;
+    }
+
+    /// Jump to a named tab, for a key that opens a view and its readout
+    /// together. Leaving the panel on TUNING while the viewport switched to
+    /// something else is how a mode gets called broken.
+    pub fn set_tab(&mut self, tab: StudioTab) {
+        if let Some(index) = StudioTab::ALL.iter().position(|entry| *entry == tab) {
+            self.active_tab = index;
+            self.selected_item = 0;
+        }
     }
 }
 
@@ -348,6 +361,9 @@ pub fn update_chrome_ui(
                 ),
                 None => String::from("No solve result available."),
             },
+            StudioTab::Neighbours => {
+                crate::panels::neighbors::format_neighbors_panel(&state.neighbors)
+            }
             StudioTab::Districts => {
                 let mut s = String::new();
                 s.push_str("DISTRICT BIAS OVERRIDES:\n\n");
@@ -405,7 +421,23 @@ pub fn update_chrome_ui(
         let sim = simulation_hash(&state, &state.profile);
         // Naming the mode is not optional: the same two colours answer two
         // different questions, so the legend has to travel with the view.
-        let compare = if state.show_baseline_compare {
+        let compare = if state.detail_mode == crate::detail::DetailMode::Neighborhood {
+            // The schematic has stepped back to Grid here, so the only green
+            // and red on screen are the ring's. Saying so is the same rule the
+            // other two modes follow: the legend travels with the view.
+            let report = &state.neighbors.report;
+            format!(
+                " | NEIGHBOURS (green = as solved, red = alternative): \
+                 {} of {} cage(s) altered{}",
+                report.altered,
+                report.ring_cells,
+                if report.unbuildable > 0 {
+                    format!(", {} WITH NO GEOMETRY", report.unbuildable)
+                } else {
+                    String::new()
+                }
+            )
+        } else if state.show_baseline_compare {
             format!(
                 " | COMPARE (red = moved): {} of {} differ",
                 state.report.changed, state.report.cells

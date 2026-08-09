@@ -2349,6 +2349,7 @@ dependencies = [
  "bevy",
  "observed_authoring",
  "observed_content",
+ "observed_core",
  "observed_facility",
  "observed_hex",
  "observed_match",

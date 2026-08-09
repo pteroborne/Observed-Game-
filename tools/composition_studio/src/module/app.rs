@@ -302,87 +302,11 @@ pub fn rebuild_diagnoses(watch: Res<ModuleWatch>, mut state: ResMut<ModuleState>
     };
 }
 
-/// Keys: page modules, jump to the next failure, orbit, zoom.
-pub fn handle_input(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mut state: ResMut<ModuleState>,
-    scroll: Res<bevy::input::mouse::AccumulatedMouseScroll>,
-) {
-    if keyboard.just_pressed(KeyCode::BracketRight) || keyboard.just_pressed(KeyCode::ArrowDown) {
-        let next = state.selected + 1;
-        state.select(next);
-    }
-    if keyboard.just_pressed(KeyCode::BracketLeft) || keyboard.just_pressed(KeyCode::ArrowUp) {
-        let next = state.selected + state.diagnoses.len().saturating_sub(1);
-        state.select(next);
-    }
-    if keyboard.just_pressed(KeyCode::Tab) {
-        state.select_next_failing();
-    }
-    if keyboard.just_pressed(KeyCode::KeyR) {
-        state.toggle_rapier_audit();
-    }
-    // `C` is already cutaway, and stays cutaway; certification takes `K`.
-    if keyboard.just_pressed(KeyCode::KeyK) {
-        state.toggle_certification();
-    }
-    // `C` is cutaway in the sibling tool too. A key that means one thing in
-    // one studio and another thing in the other is a trap for the person
-    // who uses both.
-    if keyboard.just_pressed(KeyCode::KeyC) {
-        state.cutaway = !state.cutaway;
-        state.dirty = true;
-    }
-    if keyboard.just_pressed(KeyCode::KeyQ) {
-        state.detent = (state.detent + 1) % crate::viewport::AZIMUTH_DETENTS;
-        state.dirty = true;
-    }
-    if keyboard.just_pressed(KeyCode::KeyE) {
-        state.detent = (state.detent + crate::viewport::AZIMUTH_DETENTS - 1)
-            % crate::viewport::AZIMUTH_DETENTS;
-        state.dirty = true;
-    }
-    // Recipe editing. Deliberately different keys from the module paging
-    // above, so a key never means two things at once - the same rule the
-    // sibling tool enforces with ownership.
-    if state.current().is_some_and(|d| d.is_parametric()) {
-        if keyboard.just_pressed(KeyCode::KeyX) {
-            state.step += 1;
-            state.param = 0;
-            state.clamp_cursor();
-        }
-        if keyboard.just_pressed(KeyCode::KeyS) && !keyboard.pressed(KeyCode::ControlLeft) {
-            state.step = state.step.saturating_sub(1);
-            state.param = 0;
-            state.clamp_cursor();
-        }
-        if keyboard.just_pressed(KeyCode::KeyD) {
-            state.param += 1;
-            state.clamp_cursor();
-        }
-        if keyboard.just_pressed(KeyCode::KeyA) {
-            state.param = state.param.saturating_sub(1);
-            state.clamp_cursor();
-        }
-        let coarse = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
-        let unit = if coarse { 8.0 } else { 1.0 };
-        if keyboard.just_pressed(KeyCode::ArrowRight) {
-            state.nudge_param(unit);
-        }
-        if keyboard.just_pressed(KeyCode::ArrowLeft) {
-            state.nudge_param(-unit);
-        }
-    }
-
-    if scroll.delta.y.abs() > f32::EPSILON {
-        state.zoom = (state.zoom * 1.14_f32.powf(-scroll.delta.y)).clamp(0.05, 4.0);
-    }
-}
-
 /// Frame the module. One cell is 16 m across corners, so the framing is fixed
 /// rather than fitted - paging between modules should not make the camera jump.
 pub fn sync_camera(
     state: Res<ModuleState>,
+    view: Res<super::neighbor_view::NeighbourView>,
     mut camera: Query<(&mut Projection, &mut Transform), With<StudioCamera>>,
 ) {
     let Ok((mut projection, mut transform)) = camera.single_mut() else {
@@ -393,7 +317,9 @@ pub fn sync_camera(
     *transform =
         Transform::from_translation(centre + rotation * Vec3::Z * 80.0).with_rotation(rotation);
     *projection = Projection::Orthographic(OrthographicProjection {
-        scale: 0.030 * state.zoom,
+        // The ring spans three cells where the plain view spans one, so the
+        // mode pulls the camera back. Zoom still multiplies on top.
+        scale: 0.030 * state.zoom * super::neighbor_view::ring_scale(&view),
         near: 0.1,
         far: 400.0,
         ..OrthographicProjection::default_3d()
@@ -416,9 +342,21 @@ impl Plugin for ModuleStudioPlugin {
         if std::env::var("OBSERVED2_MODULE_RAPIER").is_ok_and(|value| value != "0") {
             initial_state.rapier_audit = RapierAuditState::NotApplicable;
         }
+        // Opening straight into the ring, so a headless capture can photograph
+        // the mode. Without this there is no way to produce evidence for it.
+        let ring_open =
+            std::env::var("OBSERVED2_MODULE_NEIGHBOURS").is_ok_and(|value| value != "0");
+        if ring_open {
+            // The same default `neighbor_view::toggle` applies on the
+            // interactive path, so a capture photographs the mode as an author
+            // meets it rather than a variant only the env hook can produce.
+            initial_state.cutaway = false;
+        }
+        let neighbours = super::neighbor_view::NeighbourView::opened(ring_open);
         app.insert_resource(ClearColor(schematic_screen()))
             .insert_resource(ModuleWatch::new(self.dir.clone()))
             .insert_resource(initial_state)
+            .insert_resource(neighbours)
             .init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<bevy::input::mouse::AccumulatedMouseScroll>()
             .init_asset::<Mesh>()
@@ -429,9 +367,13 @@ impl Plugin for ModuleStudioPlugin {
                 (
                     poll_watch,
                     rebuild_diagnoses.after(poll_watch),
-                    handle_input.after(rebuild_diagnoses),
-                    super::render::rebuild_module_view.after(handle_input),
-                    sync_camera.after(handle_input),
+                    super::input::handle_input.after(rebuild_diagnoses),
+                    // Between the input and the draw, so a watcher reparse and
+                    // a keyboard selection both reach the ring in the same
+                    // frame they reach the centre.
+                    super::neighbor_view::refresh_ring.after(super::input::handle_input),
+                    super::render::rebuild_module_view.after(super::neighbor_view::refresh_ring),
+                    sync_camera.after(super::input::handle_input),
                     super::panel::update_panel.after(rebuild_diagnoses),
                 ),
             );
@@ -455,7 +397,54 @@ impl Plugin for ModuleStudioPlugin {
             app.insert_resource(OpenOn(name))
                 .add_systems(Update, select_requested_module);
         }
+
+        // Roll the ring before the shot. Without it every capture photographs
+        // the heaviest candidate on every face, which for this corpus is the
+        // same module six times - true, and useless as a picture of variety.
+        if let Some(rolls) = std::env::var("OBSERVED2_MODULE_ROLL")
+            .ok()
+            .and_then(|value| value.parse::<u32>().ok())
+        {
+            app.insert_resource(RollOnOpen(rolls)).add_systems(
+                Update,
+                roll_requested_ring.after(super::neighbor_view::refresh_ring),
+            );
+        }
     }
+}
+
+/// How many times to roll the ring once it exists.
+#[derive(Resource)]
+pub struct RollOnOpen(pub u32);
+
+fn roll_requested_ring(
+    rolls: Res<RollOnOpen>,
+    open_on: Option<Res<OpenOn>>,
+    mut state: ResMut<ModuleState>,
+    mut view: ResMut<super::neighbor_view::NeighbourView>,
+    mut done: Local<bool>,
+) {
+    // The ring has to exist first, which takes a diagnose pass and a refresh.
+    if *done || !view.on || view.ring.cells.is_empty() {
+        return;
+    }
+    // And it has to be the *requested* module's ring. Rolling the ring of
+    // whatever happened to be selected first, before `select_requested_module`
+    // moved to the module the capture asked for, hands the roll to a ring that
+    // `refresh_ring` is about to discard - which presents as a status line
+    // claiming a roll over a picture that plainly did not move.
+    if let Some(open_on) = open_on.as_ref()
+        && state
+            .current()
+            .is_none_or(|current| current.name() != open_on.0)
+    {
+        return;
+    }
+    *done = true;
+    for _ in 0..rolls.0 {
+        state.status = view.roll();
+    }
+    state.dirty = true;
 }
 
 /// A module to select once the corpus has been diagnosed.

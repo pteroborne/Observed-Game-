@@ -179,6 +179,20 @@ pub fn handle_chrome_input(
         state.touch_view();
     }
 
+    // How many floors the working facility has. Not a view control: it changes
+    // the facility, so it re-solves. It exists because two of a cell's eight
+    // faces are up and down, and on a one-level lattice they cannot be asked
+    // about at all.
+    if keyboard.just_pressed(KeyCode::KeyL) {
+        let levels = state.config.levels;
+        let next = if shift {
+            levels.saturating_sub(1)
+        } else {
+            levels.saturating_add(1)
+        };
+        state.set_levels(next, now);
+    }
+
     if keyboard.just_pressed(KeyCode::Home) || keyboard.just_pressed(KeyCode::Digit0) {
         state.zoom = crate::viewport::DEFAULT_ZOOM;
         state.pan = Vec2::ZERO;
@@ -221,6 +235,28 @@ pub fn handle_chrome_input(
         };
         state.touch_view();
     }
+    // The neighbourhood explorer. Entering it re-runs the query, because the
+    // whole mode is meaningless without one and the alternative is a first
+    // frame that draws nothing and looks broken.
+    if keyboard.just_pressed(KeyCode::KeyN) {
+        use crate::detail::DetailMode;
+        state.detail_mode = if state.detail_mode == DetailMode::Neighborhood {
+            DetailMode::Off
+        } else {
+            DetailMode::Neighborhood
+        };
+        if state.detail_mode == DetailMode::Neighborhood {
+            crate::neighbors::refresh(&mut state);
+            menu_state.set_tab(crate::StudioTab::Neighbours);
+            state.status = crate::panels::neighbors::headline(&state.neighbors);
+        }
+        state.touch_view();
+    }
+
+    if state.detail_mode == crate::detail::DetailMode::Neighborhood {
+        handle_neighbor_keys(&keyboard, &mut state, shift);
+    }
+
     if keyboard.just_pressed(KeyCode::KeyC) {
         state.cutaway = !state.cutaway;
         state.touch_view();
@@ -265,6 +301,91 @@ pub fn handle_chrome_input(
     // than automatic. Running it per solve would make tuning unusable.
     if keyboard.just_pressed(KeyCode::KeyA) {
         run_seam_audit(&mut state);
+    }
+}
+
+/// Keys that only mean something while the neighbourhood explorer is open.
+///
+/// Deliberately arrow keys and `Space` rather than more letters: in this mode
+/// the viewport is a list of six-to-eight faces with a cursor on one of them,
+/// and arrows are what a list cursor answers to. They are free here because the
+/// panel's own arrow handling returns before this point — ownership, not
+/// mode-switching, is what keeps a key meaning one thing.
+fn handle_neighbor_keys(
+    keyboard: &ButtonInput<KeyCode>,
+    state: &mut crate::StudioState,
+    shift: bool,
+) {
+    let mut moved = false;
+    if let Some(hood) = state.neighbors.hood.as_ref() {
+        let faces = hood.faces.len().max(1);
+        if keyboard.just_pressed(KeyCode::ArrowDown) {
+            state.neighbors.cursor = (state.neighbors.cursor + 1) % faces;
+            moved = true;
+        }
+        if keyboard.just_pressed(KeyCode::ArrowUp) {
+            state.neighbors.cursor = (state.neighbors.cursor + faces - 1) % faces;
+            moved = true;
+        }
+    }
+    // Jump straight to a face. Six lateral, then up and down, in the same
+    // `HexFace::ALL` order the panel lists them, so the digit beside a row is
+    // the digit that selects it.
+    for (index, key) in [
+        KeyCode::Digit1,
+        KeyCode::Digit2,
+        KeyCode::Digit3,
+        KeyCode::Digit4,
+        KeyCode::Digit5,
+        KeyCode::Digit6,
+        KeyCode::Digit7,
+        KeyCode::Digit8,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if keyboard.just_pressed(key)
+            && let Some(hood) = state.neighbors.hood.as_ref()
+            && index < hood.faces.len()
+        {
+            state.neighbors.cursor = index;
+            moved = true;
+        }
+    }
+    if moved && let Some(face) = state.neighbors.selected_face() {
+        state.status = format!(
+            "{:?}: {} option(s) here, {} if only this tile mattered",
+            face.face,
+            face.candidates.len(),
+            face.from_centre
+        );
+    }
+
+    let delta = i32::from(keyboard.just_pressed(KeyCode::ArrowRight))
+        - i32::from(keyboard.just_pressed(KeyCode::ArrowLeft));
+    if delta != 0 {
+        if let Some(note) = state.neighbors.step_candidate(delta as isize) {
+            state.status = note;
+        }
+        state.touch_view();
+    }
+
+    if keyboard.just_pressed(KeyCode::Space) {
+        if shift {
+            state.neighbors.reset_to_solved();
+            state.status = String::from("showing the ring exactly as this seed solved it");
+        } else {
+            let profile = state.profile.clone();
+            let rolled = state
+                .solved
+                .as_ref()
+                .map(|solved| solved.world.clone())
+                .map(|world| state.neighbors.roll_ring(&world, &profile));
+            if let Some(note) = rolled {
+                state.status = note;
+            }
+        }
+        state.touch_view();
     }
 }
 

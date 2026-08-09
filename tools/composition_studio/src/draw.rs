@@ -135,13 +135,16 @@ pub struct DrawReport {
 }
 
 /// One colour's worth of accumulated line work.
+///
+/// `pub(crate)` because the neighbourhood explorer accumulates its wireframe
+/// the same way: one mesh per colour, however many hulls it outlines.
 #[derive(Default)]
-struct LineBatch {
+pub(crate) struct LineBatch {
     points: Vec<[f32; 3]>,
 }
 
 impl LineBatch {
-    fn segment(&mut self, from: Vec3, to: Vec3) {
+    pub(crate) fn segment(&mut self, from: Vec3, to: Vec3) {
         self.points.push(from.to_array());
         self.points.push(to.to_array());
     }
@@ -150,7 +153,7 @@ impl LineBatch {
         self.points.is_empty()
     }
 
-    fn into_mesh(self) -> Option<Mesh> {
+    pub(crate) fn into_mesh(self) -> Option<Mesh> {
         if self.points.is_empty() {
             return None;
         }
@@ -289,6 +292,10 @@ fn emit_detail(
     let cells = match state.detail_mode {
         DetailMode::Off => return crate::detail::DetailReport::default(),
         DetailMode::Focus => crate::detail::focus_set(&solved.world, state.selected),
+        // Only the centre is solid here. Its ring is drawn as wireframe by
+        // `neighbors::emit`, which is the whole point of the mode: solid is what
+        // is settled, and everything touching it is still a question.
+        DetailMode::Neighborhood => state.selected.into_iter().collect(),
         DetailMode::Layer => {
             // Solid geometry is drawn for the *focus* floor only. The floors
             // above and below stay dim wireframe, which is what makes stacked
@@ -375,7 +382,7 @@ fn emit_detail(
     report
 }
 
-fn unlit(treatment: Treatment) -> StandardMaterial {
+pub(crate) fn unlit(treatment: Treatment) -> StandardMaterial {
     StandardMaterial {
         base_color: treatment.base_color,
         emissive: treatment.emissive,
@@ -426,6 +433,9 @@ pub fn rebuild_visuals(
         &mut cache,
     );
     state.detail_report = detail_report;
+    let neighbor_report =
+        crate::neighbors::emit(&mut commands, &state, &mut meshes, &mut materials);
+    state.neighbors.report = neighbor_report;
     let pinned = crate::brush::pinned_coords(&state.profile);
     let Some(solved) = state.solved.as_ref() else {
         state.report = DrawReport::default();
@@ -501,7 +511,19 @@ pub fn rebuild_visuals(
         for face in HexFace::LATERAL {
             open[face.index()] = placement.is_open(face);
         }
-        let target = if hold { &mut walls } else { &mut changed_walls };
+        // In the neighbourhood explorer the schematic steps back to `Grid`.
+        // Its green/red answers "is this cell pinned"; the mode's green/red
+        // answers "is this neighbour showing what was solved". Two unrelated
+        // questions in one pair of colours is the Legibility Contract's exact
+        // failure case, and with a hundred cells of pin-mode red on screen the
+        // half-dozen cages that carry the answer simply vanish into it.
+        let target = if state.detail_mode == crate::detail::DetailMode::Neighborhood {
+            &mut grid
+        } else if hold {
+            &mut walls
+        } else {
+            &mut changed_walls
+        };
         for (a, b) in wall_edges(height, open) {
             target.segment(origin + a, origin + b);
         }

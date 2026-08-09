@@ -64,6 +64,13 @@ pub enum DetailMode {
     /// thousand hulls, heavy but drawable; ten floors is over a hundred
     /// thousand, and the top one would hide the rest anyway.
     Layer,
+    /// The selected cell solid, its whole ring as wireframe.
+    ///
+    /// The other two modes answer "what did the solver build". This one answers
+    /// "what could it have built", and the split between solid and wireframe
+    /// *is* the answer: the centre is locked in, everything touching it is a
+    /// possibility you can page through. See [`crate::neighbors`].
+    Neighborhood,
 }
 
 impl DetailMode {
@@ -73,6 +80,7 @@ impl DetailMode {
             Self::Off => "schematic",
             Self::Focus => "detail: focus",
             Self::Layer => "detail: layer",
+            Self::Neighborhood => "detail: neighbours",
         }
     }
 }

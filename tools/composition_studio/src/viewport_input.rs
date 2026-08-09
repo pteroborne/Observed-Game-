@@ -127,6 +127,14 @@ pub fn handle_viewport_painting(
     if state.selected != Some(coord) {
         state.selected = Some(coord);
         state.touch_overlay();
+        // The neighbourhood is *of* the selection, so it follows the click.
+        // Only when the mode is open: the query is cheap but not free, and it
+        // has no business running on every click in the ordinary schematic.
+        if state.detail_mode == crate::detail::DetailMode::Neighborhood {
+            crate::neighbors::refresh(&mut state);
+            state.status = crate::panels::neighbors::headline(&state.neighbors);
+            state.touch_view();
+        }
     }
 
     // Shift inspects without committing an edit, so an author can read a cell

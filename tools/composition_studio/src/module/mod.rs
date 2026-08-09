@@ -11,6 +11,14 @@
 pub mod app;
 pub mod certify;
 pub mod diagnose;
+pub mod highlight;
+pub mod input;
+pub mod neighbor_panel;
+pub mod neighbor_render;
+#[cfg(test)]
+mod neighbor_tests;
+pub mod neighbor_view;
+pub mod neighbors;
 pub mod panel;
 pub mod probe;
 pub mod rapier_audit;
