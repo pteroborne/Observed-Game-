@@ -143,6 +143,23 @@ features — treat as a stretch goal.
 
 ---
 
+## Open slot: the teleport plate
+
+`models/pad.glb` **(slot exists)** — the floor plate a player drops to link two
+places. Absent, it renders as a procedural disc with an emissive core, which is
+readable but generic.
+
+- **Wants:** a floor-mounted plate, platform ring, or hatch cover roughly 1.5 m
+  across, modelled flat with its origin at the floor. It is seen from above at
+  walking distance, so silhouette matters far more than surface detail.
+- **Do not bake in a colour that reads as state.** Link state is carried by an
+  emissive core the game spawns on top of whatever mesh is here — a plate that
+  is already glowing green will contradict it.
+- **Recommended:** Kenney's Space Kit platform pieces, or Quaternius sci-fi props.
+- **Source:** https://kenney.nl/assets, https://quaternius.com
+
+---
+
 ## Suggested order to source
 
 If you grab a handful first, these give the most visible jump: **#1 ceiling**,

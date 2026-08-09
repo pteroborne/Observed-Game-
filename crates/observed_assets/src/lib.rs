@@ -159,6 +159,12 @@ pub const HAZARD: AssetSlot = AssetSlot {
     path: "models/hazard.glb",
     hint: "warning beacon for collapsing rooms",
 };
+pub const PAD: AssetSlot = AssetSlot {
+    name: "pad",
+    kind: AssetKind::Model,
+    path: "models/pad.glb",
+    hint: "floor-mounted teleport plate, platform ring, or hatch cover",
+};
 pub const LANTERN: AssetSlot = AssetSlot {
     name: "lantern",
     kind: AssetKind::Model,
@@ -479,6 +485,7 @@ pub const SLOTS: &[AssetSlot] = &[
     DECOR_CONSOLE,
     HAZARD,
     LANTERN,
+    PAD,
     FOOTSTEP,
     REROUTE,
     ESCAPE,
@@ -733,6 +740,7 @@ mod tests {
         assert_eq!(slot("runner_stand").path, RUNNER_STAND.path);
         assert_eq!(slot("control_device").path, CONTROL_DEVICE.path);
         assert_eq!(slot("lantern").path, LANTERN.path);
+        assert_eq!(slot("pad").path, PAD.path);
         assert_eq!(slot("keystone_card").path, KEYSTONE_CARD.path);
         assert_eq!(slot("keystone_core").path, KEYSTONE_CORE.path);
         assert_eq!(slot("exit_access_card").path, EXIT_ACCESS_CARD.path);
