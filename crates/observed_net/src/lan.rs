@@ -67,6 +67,12 @@ impl WireHexCommand {
     const INTERACT: u8 = 1;
     const DEPLOY: u8 = 1 << 1;
     const RECOVER: u8 = 1 << 2;
+    const DEPLOY_PAD: u8 = 1 << 3;
+    /// Every bit this build understands. The decoder rejects anything outside
+    /// it, so this must be derived from the flags rather than written out as a
+    /// literal: a hand-maintained mask silently rejects the newest action, and
+    /// the symptom is a button that works locally and does nothing over LAN.
+    const KNOWN_ACTIONS: u8 = Self::INTERACT | Self::DEPLOY | Self::RECOVER | Self::DEPLOY_PAD;
 
     #[must_use]
     pub fn from_command(command: HexPlayerCommand) -> Self {
@@ -79,6 +85,9 @@ impl WireHexCommand {
         }
         if command.actions.recover_lantern {
             actions |= Self::RECOVER;
+        }
+        if command.actions.deploy_pad {
+            actions |= Self::DEPLOY_PAD;
         }
         Self {
             intent: WireIntent::from_player_intent(command.intent.sanitized()),
@@ -94,6 +103,7 @@ impl WireHexCommand {
                 interact: self.actions & Self::INTERACT != 0,
                 deploy_lantern: self.actions & Self::DEPLOY != 0,
                 recover_lantern: self.actions & Self::RECOVER != 0,
+                deploy_pad: self.actions & Self::DEPLOY_PAD != 0,
             },
         }
     }
@@ -644,7 +654,7 @@ fn decode_command(cursor: &mut Cursor<'_>) -> Result<WireHexCommand, LanCodecErr
         },
         actions: cursor.u8()?,
     };
-    if command.actions & !0b111 != 0 {
+    if command.actions & !WireHexCommand::KNOWN_ACTIONS != 0 {
         return Err(LanCodecError::InvalidValue);
     }
     Ok(command)
@@ -1245,6 +1255,9 @@ mod tests {
                 interact: true,
                 deploy_lantern: false,
                 recover_lantern: true,
+                // Set so the round trip proves the pad bit survives the wire; a
+                // default here would let an unencoded field pass silently.
+                deploy_pad: true,
             },
         });
         vec![
@@ -1335,6 +1348,56 @@ mod tests {
             assert_eq!(
                 LanPacket::decode(&packet.encode().expect("encode")),
                 Ok(packet)
+            );
+        }
+    }
+
+    /// Each action button, alone and together, through encode and decode.
+    ///
+    /// The decoder rejects unknown action bits, so adding a button to
+    /// `HexActionButtons` and the encoder while leaving the accepted mask behind
+    /// produces a control that works in single-player and is silently dropped on
+    /// the wire. That is precisely what happened when `deploy_pad` was added.
+    #[test]
+    fn every_action_button_survives_the_wire() {
+        let buttons = [
+            HexActionButtons {
+                interact: true,
+                ..Default::default()
+            },
+            HexActionButtons {
+                deploy_lantern: true,
+                ..Default::default()
+            },
+            HexActionButtons {
+                recover_lantern: true,
+                ..Default::default()
+            },
+            HexActionButtons {
+                deploy_pad: true,
+                ..Default::default()
+            },
+            HexActionButtons {
+                interact: true,
+                deploy_lantern: true,
+                recover_lantern: true,
+                deploy_pad: true,
+            },
+        ];
+        for actions in buttons {
+            let wire = WireHexCommand::from_command(HexPlayerCommand {
+                intent: PlayerIntent::default(),
+                actions,
+            });
+            assert_eq!(
+                wire.actions & !WireHexCommand::KNOWN_ACTIONS,
+                0,
+                "the encoder emitted a bit the decoder will reject: {actions:?}"
+            );
+            assert_eq!(
+                wire.to_command().actions,
+                actions,
+                "round trip lost a button"
             );
         }
     }
