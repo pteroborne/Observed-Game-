@@ -46,7 +46,7 @@ pub use profile::{
     RapierKinematicSettings, TRAVERSAL_GUIDE_CONTRACT_VERSION, TraversalRequirements,
     TraversalRuntimeProfile,
 };
-pub use render_mesh::ConvexRenderMesh;
+pub use render_mesh::{ConvexRenderMesh, structural_edges};
 pub use world::{
     ArenaSpec, ArenaSpecError, ColliderDelta, ColliderDeltaError, ColliderShape, ColliderSpec,
     StableColliderId,

@@ -10,7 +10,6 @@ use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use observed_hex::CORNERS;
-use observed_traversal::ConvexRenderMesh;
 use std::collections::BTreeMap;
 
 /// One colour's worth of accumulated line work.
@@ -206,85 +205,14 @@ pub fn ramp_glyph(height: f32) -> Vec<(Vec3, Vec3)> {
 /// The *structural* edges of a set of convex hulls, in the hulls' own local
 /// frame.
 ///
-/// The hulls arrive as unordered point clouds, so the geometry comes from
-/// triangulating each one through [`ConvexRenderMesh`] â€” the same path the solid
-/// renderer uses. Two filters then turn a triangle soup into a schematic:
-///
-/// 1. **De-duplicate by position, not by vertex index.** `ConvexRenderMesh`
-///    duplicates vertices per face so flat shading works, so neighbouring
-///    triangles never share an index even where they share an edge.
-/// 2. **Drop coplanar diagonals.** An edge whose two adjacent triangles face the
-///    same way is an artifact of triangulating a flat face, not an edge of the
-///    solid. Keeping them draws every rectangular face with a diagonal through
-///    it, which is what turns a clean prism into a web.
-///
-/// Degenerate hulls (a coplanar sliver, say) contribute nothing rather than
-/// failing the draw.
+/// The rule moved to [`observed_traversal::structural_edges`] when the
+/// composition studio started drawing uncollapsed cells as wireframe: two
+/// surfaces filtering triangulation diagonals differently would disagree about
+/// the shape of the same tile. This name stays because it is what the lab's
+/// prose calls it.
 #[must_use]
 pub fn hull_edges(hulls: &[Vec<Vec3>]) -> Vec<(Vec3, Vec3)> {
-    /// Millimetre quantization: fine enough to keep genuinely distinct corners
-    /// apart, coarse enough that the same corner reached from two faces agrees.
-    fn key(point: [f32; 3]) -> [i32; 3] {
-        #[allow(clippy::cast_possible_truncation)]
-        [
-            (point[0] * 1000.0).round() as i32,
-            (point[1] * 1000.0).round() as i32,
-            (point[2] * 1000.0).round() as i32,
-        ]
-    }
-
-    /// Above this, two adjacent faces are the same plane and their shared edge
-    /// is a triangulation diagonal.
-    const COPLANAR_DOT: f32 = 0.999;
-
-    /// Quantized endpoints, so an edge reached from two faces hashes the same.
-    type EdgeKey = ([i32; 3], [i32; 3]);
-    /// The edge's real endpoints, plus the normal of every face sharing it.
-    type EdgeFaces = ((Vec3, Vec3), Vec<Vec3>);
-
-    let mut edges = Vec::new();
-    for hull in hulls {
-        let Some(mesh) = ConvexRenderMesh::from_convex_hull(hull) else {
-            continue;
-        };
-        // edge -> (endpoints, the normals of the faces that share it)
-        let mut found: BTreeMap<EdgeKey, EdgeFaces> = BTreeMap::new();
-        for triangle in mesh.indices.chunks_exact(3) {
-            let corner = |index: u32| Vec3::from_array(mesh.positions[index as usize]);
-            let (a, b, c) = (
-                corner(triangle[0]),
-                corner(triangle[1]),
-                corner(triangle[2]),
-            );
-            let normal = (b - a).cross(c - a).normalize_or_zero();
-            for (from, to) in [(a, b), (b, c), (c, a)] {
-                let (low, high) = (key(from.to_array()), key(to.to_array()));
-                if low == high {
-                    continue;
-                }
-                let ordered = if low <= high {
-                    (low, high)
-                } else {
-                    (high, low)
-                };
-                found
-                    .entry(ordered)
-                    .or_insert_with(|| ((from, to), Vec::new()))
-                    .1
-                    .push(normal);
-            }
-        }
-        for ((from, to), normals) in found.into_values() {
-            let structural = normals.len() < 2
-                || normals
-                    .windows(2)
-                    .any(|pair| pair[0].dot(pair[1]).abs() < COPLANAR_DOT);
-            if structural {
-                edges.push((from, to));
-            }
-        }
-    }
-    edges
+    observed_traversal::structural_edges(hulls)
 }
 
 /// Local-frame line work per authored tile, computed once and instanced by
