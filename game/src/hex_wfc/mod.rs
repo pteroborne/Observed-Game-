@@ -122,6 +122,7 @@ impl Plugin for HexWfcPlugin {
                     entities::sync,
                     lantern::sync_projection,
                     lantern::sync_dynamic,
+                    lantern::sync_anchor_ghost,
                     pad::sync_projection,
                     pad::sync_dynamic,
                     sim::finish_runtime,

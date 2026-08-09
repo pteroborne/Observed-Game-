@@ -181,7 +181,51 @@ impl HexLanternState {
     }
 }
 
+/// Where a lantern would land, and the threshold it would lock.
+///
+/// Returned by [`HexWfcMatch::deployable_threshold`] so presentation can show
+/// an author-visible marker at exactly the spot the lantern will occupy.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HexAnchorSite {
+    pub threshold: HexThresholdKey,
+    pub cell: HexCoord,
+    pub position: Vec3,
+}
+
 impl HexWfcMatch {
+    /// The anchor this player could place right now, or `None`.
+    ///
+    /// This *is* the deploy precondition rather than a description of it —
+    /// [`Self::step_lantern_actions`] places the lantern by calling this and
+    /// using what it returns. A separate predicate would eventually disagree
+    /// with the rule, and the failure mode of that disagreement is the worst
+    /// one available here: a marker inviting a press that does nothing, on a
+    /// mechanic players already struggle to find.
+    ///
+    /// Every clause is a real condition of placement: an escaped body places
+    /// nothing, an empty hand places nothing, the look has to land on a
+    /// blueprint port, and the door there has to be open.
+    #[must_use]
+    pub fn deployable_threshold(&self, player: PlayerId) -> Option<HexAnchorSite> {
+        let state = self.players.get(&player)?;
+        if state.escaped || self.lanterns.inventory(player) == 0 {
+            return None;
+        }
+        let threshold = self.looked_at_threshold(state)?;
+        let door = self
+            .door_states()
+            .into_iter()
+            .find(|door| door.key == threshold && door.open)?;
+        let world_origin = Vec3::from_array(hex_origin(door.room_cell));
+        let [a, b] = face_edge(door.face);
+        let edge_mid = Vec3::new((a.0 + b.0) as f32 * 0.5, 1.1, (a.1 + b.1) as f32 * 0.5);
+        Some(HexAnchorSite {
+            threshold,
+            cell: door.room_cell,
+            position: world_origin + edge_mid,
+        })
+    }
+
     pub(super) fn step_lantern_actions(&mut self, player: PlayerId, actions: HexActionButtons) {
         if self.players[&player].escaped {
             return;
@@ -189,28 +233,18 @@ impl HexWfcMatch {
         let cell = self.players[&player].cell;
         let position = self.players[&player].position;
         if actions.deploy_lantern {
-            let threshold = self.looked_at_threshold(&self.players[&player]);
-            if let Some(threshold) = threshold
-                && let Some(door) = self
-                    .door_states()
-                    .into_iter()
-                    .find(|door| door.key == threshold && door.open)
-            {
-                let world_origin = Vec3::from_array(hex_origin(door.room_cell));
-                let [a, b] = face_edge(door.face);
-                let edge_mid = Vec3::new((a.0 + b.0) as f32 * 0.5, 1.1, (a.1 + b.1) as f32 * 0.5);
-                if self
+            if let Some(site) = self.deployable_threshold(player)
+                && self
                     .lanterns
-                    .deploy(player, threshold, door.room_cell, world_origin + edge_mid)
+                    .deploy(player, site.threshold, site.cell, site.position)
                     .is_some()
-                {
-                    self.recent_events.push(HexMatchEvent {
-                        tick: self.tick,
-                        kind: HexMatchEventKind::AnchorDeployed,
-                        player: Some(player),
-                        cell: Some(door.room_cell),
-                    });
-                }
+            {
+                self.recent_events.push(HexMatchEvent {
+                    tick: self.tick,
+                    kind: HexMatchEventKind::AnchorDeployed,
+                    player: Some(player),
+                    cell: Some(site.cell),
+                });
             }
         } else if actions.recover_lantern {
             if self

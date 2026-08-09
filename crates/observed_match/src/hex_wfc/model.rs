@@ -36,7 +36,7 @@ mod snapshot;
 mod tests;
 
 pub use bot::HexBotDriver;
-pub use equipment::{HexDeployedLantern, HexLanternCache, HexLanternState};
+pub use equipment::{HexAnchorSite, HexDeployedLantern, HexLanternCache, HexLanternState};
 pub use guardian::{HexGuardianState, HexGuardianStatus};
 pub use knowledge::{HexMapCellKnowledge, HexMapDiscovery, HexPlayerMapKnowledge};
 pub use objectives::{DUAL_STATION_HOLD_TICKS, HexObjectiveState, KEYSTONES_REQUIRED};

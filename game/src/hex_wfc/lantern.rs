@@ -23,6 +23,18 @@ pub(super) enum LanternVisual {
 #[derive(Component)]
 pub(super) struct LanternCoreLight(PlayerId);
 
+/// The bead marking where a lantern would hang if the player pressed deploy.
+///
+/// The anchor was the least discoverable thing in the match: it needs an open
+/// threshold, aimed at, from inside a room, and it fails silently everywhere
+/// else — so a whole playtest went by without anyone finding it. This is the
+/// smallest honest fix. It is a world-space object rather than HUD text, it
+/// appears only where the press would actually work, and it is positioned by
+/// the simulation's own [`HexAnchorSite`], so it cannot promise a placement the
+/// rule would refuse.
+#[derive(Component)]
+pub(super) struct AnchorGhost;
+
 #[derive(Component)]
 pub(super) struct HexGuardianVisual;
 
@@ -89,6 +101,18 @@ pub(super) fn setup(
         held_cage: scaled_signal_material(&mut materials, MarkerRole::Control, 0.35),
         threat: signal_material(&mut materials, MarkerRole::Collapse),
     };
+    // One persistent marker, moved and hidden rather than respawned: it changes
+    // every time the player turns their head, and spawn/despawn churn at look
+    // rate is exactly the cost a Deck should not pay for a hint.
+    commands.spawn((
+        AnchorGhost,
+        DespawnOnExit(GameState::HexWfc),
+        Mesh3d(assets.core.clone()),
+        MeshMaterial3d(assets.held_cage.clone()),
+        Transform::from_scale(Vec3::splat(0.55)),
+        Visibility::Hidden,
+        Name::new("Anchor site marker"),
+    ));
     commands.insert_resource(assets);
     commands.insert_resource(LanternProjection::default());
 }
@@ -188,6 +212,33 @@ pub(super) fn sync_projection(
                 Transform::from_translation(Vec3::Y * 0.8),
             ));
         });
+}
+
+/// Show the bead exactly while the press would work, and nowhere else.
+///
+/// The breathing scale is the whole invitation: a static bead in a facility
+/// full of emissive fittings reads as more scenery, and this has to read as
+/// something the player can act on.
+pub(super) fn sync_anchor_ghost(
+    runtime: Res<HexWfcRuntime>,
+    mut ghost: Query<(&mut Transform, &mut Visibility), With<AnchorGhost>>,
+) {
+    let Ok((mut transform, mut visibility)) = ghost.single_mut() else {
+        return;
+    };
+    let Some(site) = runtime
+        .match_state
+        .deployable_threshold(runtime.local_player)
+    else {
+        *visibility = Visibility::Hidden;
+        return;
+    };
+    *visibility = Visibility::Visible;
+    transform.translation = site.position;
+    let breath = (runtime.match_state.tick as f32 * 0.09)
+        .sin()
+        .mul_add(0.06, 0.55);
+    transform.scale = Vec3::splat(breath);
 }
 
 pub(super) fn sync_dynamic(

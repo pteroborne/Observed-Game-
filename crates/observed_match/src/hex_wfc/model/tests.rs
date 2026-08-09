@@ -1430,3 +1430,56 @@ fn an_arriving_body_does_not_bounce_back_on_the_next_tick() {
         "the re-arm window is what stops an infinite A-B-A loop"
     );
 }
+
+/// The marker is only honest if it is the rule. These pin the two directions of
+/// that agreement, because the failure they guard against — a hint inviting a
+/// press that does nothing — is worse on this mechanic than no hint at all.
+#[test]
+fn an_empty_hand_offers_no_anchor_site() {
+    let mut game = showcase_match(GATE_SEED, GATE_LEVELS, 1);
+    let player = PlayerId(0);
+    // Spend the starting lantern without caring where it went.
+    game.lanterns.carried.insert(player, 0);
+    assert!(
+        game.deployable_threshold(player).is_none(),
+        "a player carrying nothing must not be shown a placement"
+    );
+}
+
+#[test]
+fn an_offered_anchor_site_is_one_deploy_actually_takes() {
+    let mut game = showcase_match(GATE_SEED, GATE_LEVELS, 1);
+    let player = PlayerId(0);
+    // Sweep the player's aim until the query offers a site, then press.
+    let mut found = None;
+    for step in 0..720 {
+        game.players.get_mut(&player).expect("player").yaw =
+            step as f32 * std::f32::consts::TAU / 720.0;
+        if let Some(site) = game.deployable_threshold(player) {
+            found = Some(site);
+            break;
+        }
+    }
+    let site = found.expect("a full yaw sweep from spawn finds a deployable threshold");
+
+    let before = game.lanterns.inventory(player);
+    game.step_lantern_actions(
+        player,
+        HexActionButtons {
+            deploy_lantern: true,
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        game.lanterns.inventory(player),
+        before - 1,
+        "a site the query offered must be one the press consumes"
+    );
+    assert!(
+        game.lanterns
+            .deployed
+            .values()
+            .any(|lantern| lantern.threshold == site.threshold),
+        "and the lantern must land on the threshold the marker named"
+    );
+}

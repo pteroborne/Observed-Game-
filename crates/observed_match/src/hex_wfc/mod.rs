@@ -17,13 +17,14 @@ pub use geometry::{
     ProjectedTraversalGraph, ProjectedTraversalGuide, project_hypothetical_cell,
 };
 pub use model::{
-    DUAL_STATION_HOLD_TICKS, HEX_INPUT_VERSION, HexActionButtons, HexBotDriver, HexDeployedLantern,
-    HexDeployedPad, HexDoorState, HexGuardianState, HexGuardianStatus, HexInputFrame,
-    HexLanternCache, HexLanternState, HexMapCellKnowledge, HexMapCellSnapshot, HexMapDiscovery,
-    HexMatchConfig, HexMatchError, HexMatchEvent, HexMatchEventKind, HexMatchSnapshot,
-    HexMatchStatus, HexPadState, HexPlayerCommand, HexPlayerMapKnowledge, HexPlayerSnapshot,
-    HexPlayerState, HexTeamObjectiveState, HexTeamSnapshot, HexTeamState, HexWfcMatch,
-    KEYSTONES_REQUIRED, MAX_ROSTER, PAD_CONTACT_RADIUS, PAD_REARM_TICKS, PADS_PER_PLAYER,
+    DUAL_STATION_HOLD_TICKS, HEX_INPUT_VERSION, HexActionButtons, HexAnchorSite, HexBotDriver,
+    HexDeployedLantern, HexDeployedPad, HexDoorState, HexGuardianState, HexGuardianStatus,
+    HexInputFrame, HexLanternCache, HexLanternState, HexMapCellKnowledge, HexMapCellSnapshot,
+    HexMapDiscovery, HexMatchConfig, HexMatchError, HexMatchEvent, HexMatchEventKind,
+    HexMatchSnapshot, HexMatchStatus, HexPadState, HexPlayerCommand, HexPlayerMapKnowledge,
+    HexPlayerSnapshot, HexPlayerState, HexTeamObjectiveState, HexTeamSnapshot, HexTeamState,
+    HexWfcMatch, KEYSTONES_REQUIRED, MAX_ROSTER, PAD_CONTACT_RADIUS, PAD_REARM_TICKS,
+    PADS_PER_PLAYER,
 };
 pub use trim::{HexTrimKind, HexTrimPiece, derive_trim, derive_trim_for};
 
