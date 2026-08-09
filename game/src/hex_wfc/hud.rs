@@ -53,7 +53,7 @@ pub(super) fn setup(
                 let help_text = if is_spectator {
                     "SPECTATING BOT RUN\nEsc menu\n\nGOAL: claim 2 keystones, synchronize a team station, regroup at the exit"
                 } else {
-                    "HEX FACILITY RACE\nWASD / stick move | Shift sprint\nMouse / stick look | Space jump\nE interact/collect | F deploy lantern at a looked-at threshold | R recover\nTab survivor map | PgUp/PgDn floor | Esc menu\n\nGOAL: claim 2 keystones, synchronize a team station, regroup at the exit"
+                    "HEX FACILITY RACE\nWASD / stick move | Shift sprint\nMouse / stick look | Space jump\nE interact/collect | F deploy lantern at a looked-at threshold | R recover\nC / Y drop a teleport plate - two of them link, step on either\nTab survivor map | PgUp/PgDn floor | Esc menu\n\nGOAL: claim 2 keystones, synchronize a team station, regroup at the exit"
                 };
                 root.spawn((
                     Text::new(help_text),

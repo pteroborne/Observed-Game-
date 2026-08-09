@@ -13,6 +13,7 @@ mod lantern;
 pub(crate) mod launch;
 pub(crate) mod loading;
 pub(crate) mod overlay;
+mod pad;
 mod perf;
 
 pub(crate) use perf::GPU_PROFILE_ENV;
@@ -66,6 +67,7 @@ impl Plugin for HexWfcPlugin {
                     audio::setup,
                     entities::setup,
                     lantern::setup,
+                    pad::setup,
                     input::grab_cursor,
                 )
                     .chain(),
@@ -120,6 +122,8 @@ impl Plugin for HexWfcPlugin {
                     entities::sync,
                     lantern::sync_projection,
                     lantern::sync_dynamic,
+                    pad::sync_projection,
+                    pad::sync_dynamic,
                     sim::finish_runtime,
                 )
                     .chain()
@@ -136,6 +140,7 @@ impl Plugin for HexWfcPlugin {
                     audio::cleanup,
                     entities::cleanup,
                     lantern::cleanup,
+                    pad::cleanup,
                     sim::cleanup_runtime,
                 )
                     .chain(),

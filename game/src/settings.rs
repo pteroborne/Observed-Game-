@@ -38,9 +38,11 @@ pub struct KeyBindings {
     pub interact: KeyCode,
     pub torch: KeyCode,
     pub recover_lantern: KeyCode,
-    /// Retained for the demoted square-WFC and isolated-Place regression fixtures;
-    /// canonical Controls intentionally does not advertise it.
+    /// Places a teleport plate underfoot in the hex match. Was retained only for
+    /// the demoted square-WFC fixtures until pads returned as a hex tool.
     pub pad: KeyCode,
+    /// Retained for the demoted square-WFC and isolated-Place regression fixtures.
+    /// The hex pad fires on contact, so it has no activate button to bind.
     pub activate_pad: KeyCode,
     pub tac_map: KeyCode,
     pub pause: KeyCode,

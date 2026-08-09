@@ -66,6 +66,7 @@ pub(super) fn map_input(context: HexInputContext) {
     let mut gamepad_intent = PlayerIntent::default();
     let mut gamepad_deploy = false;
     let mut gamepad_recover = false;
+    let mut gamepad_pad = false;
     for gamepad in &gamepads {
         let (command, items) = crate::screens::input::read_gamepad_match(gamepad);
         gamepad_intent.movement += command.movement;
@@ -74,6 +75,10 @@ pub(super) fn map_input(context: HexInputContext) {
         gamepad_intent.sprint_held |= command.sprint_held;
         gamepad_intent.interact_held |= command.interact_held;
         gamepad_deploy |= items.torch_action;
+        // `items.pad_action` was already produced by the shared reader and
+        // dropped on the floor here; a pad fires on contact, so `activate_pad`
+        // stays unread on purpose.
+        gamepad_pad |= items.pad_action;
         gamepad_recover |= gamepad.just_pressed(GamepadButton::East);
     }
     intent.intent = PlayerIntent {
@@ -97,6 +102,7 @@ pub(super) fn map_input(context: HexInputContext) {
         interact: keyboard.just_pressed(bindings.interact) || gamepad_intent.interact_pressed,
         deploy_lantern: keyboard.just_pressed(bindings.torch) || gamepad_deploy,
         recover_lantern: keyboard.just_pressed(bindings.recover_lantern) || gamepad_recover,
+        deploy_pad: keyboard.just_pressed(bindings.pad) || gamepad_pad,
     };
     intent.browse_map_level = 0;
 }
@@ -260,6 +266,7 @@ mod tests {
                     interact: true,
                     deploy_lantern: true,
                     recover_lantern: true,
+                    deploy_pad: true,
                 },
                 browse_map_level: 1,
             })

@@ -90,6 +90,7 @@ fn offline_pause_stops_the_authoritative_system_tick() {
                 interact: true,
                 deploy_lantern: true,
                 recover_lantern: true,
+                deploy_pad: true,
             },
             browse_map_level: 1,
         })

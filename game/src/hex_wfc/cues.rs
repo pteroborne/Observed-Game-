@@ -29,7 +29,7 @@ pub(super) struct CueDefinition {
 }
 
 #[cfg(test)]
-pub(super) const ALL_EVENTS: [HexMatchEventKind; 15] = [
+pub(super) const ALL_EVENTS: [HexMatchEventKind; 17] = [
     HexMatchEventKind::MutationWarning,
     HexMatchEventKind::MutationCommitted,
     HexMatchEventKind::MutationCancelled,
@@ -43,6 +43,8 @@ pub(super) const ALL_EVENTS: [HexMatchEventKind; 15] = [
     HexMatchEventKind::ExitDenied,
     HexMatchEventKind::AnchorDeployed,
     HexMatchEventKind::AnchorRecovered,
+    HexMatchEventKind::PadDeployed,
+    HexMatchEventKind::PadTraversed,
     HexMatchEventKind::GuardianCatch,
     HexMatchEventKind::MatchFinished,
 ];
@@ -114,6 +116,17 @@ pub(super) fn cue_for(kind: HexMatchEventKind) -> CueDefinition {
             "THRESHOLD ANCHORED",
             MarkerRole::Control,
             HexWfcSound::Hold,
+        ),
+        HexMatchEventKind::PadDeployed => {
+            cue("o", "PLATE SET", MarkerRole::Control, HexWfcSound::Hold)
+        }
+        // Arrival is the loud half of a jump: the departure is behind you and the
+        // room you land in is the thing you need to reorient in.
+        HexMatchEventKind::PadTraversed => cue(
+            "@",
+            "PLATE LINK",
+            MarkerRole::NextRoom,
+            HexWfcSound::Reroute,
         ),
         HexMatchEventKind::AnchorRecovered => cue(
             "^",
