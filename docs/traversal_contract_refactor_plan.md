@@ -117,6 +117,39 @@ deadness. `stair_lateral_command` and `unannotated_ramp_command` were both read
 as dead from the gate and the soak alone, and the wider gate refuted both. Delete
 against the widest gate you have, not the fastest one.
 
+### One attempt at the handoff, and what it ruled out
+
+Attempted 2026-08-08 and **reverted**; nothing from it is in the tree. Recorded
+because both hypotheses were wrong in instructive ways, and seed **15000046** is
+now a cheap, sharp gate for the next attempt.
+
+**Hypothesis 1 — the leg releases on top of the seam.** A `GraphHandoff`
+(threshold plane, outward normal, destination) was added beside `DeckHandoff`,
+with a `GraphFollowState::HandingOff` that keeps the leg engaged, and
+`leg.rs` deriving both halves from geometry alone — the plane from the port's
+level, the heading from the final edge's own direction. It is a defensible
+mechanism and it **changed nothing**: the stalled trace came back byte-identical.
+
+The reason is the useful part. **The body never reaches the exit node.** The ramp
+top is at 24.5 m and the body peaks at ~22.5 m, so a handoff *at* the exit can
+never fire. Whatever is wrong happens on the way up, not at the top — which also
+means the loop is not the release-and-refall story the earlier commit message
+told. That story explained the symptom and named the wrong cause.
+
+**Hypothesis 2 — climb tuning is too slow to hold a ramp.** Refuted hard: making
+the graph follower emit full movement with sprint stalled **24 of 24** seeds. The
+0.35/no-sprint tuning is right, and there is no global speed that is right for
+both stairs and ramps.
+
+**What is now known.** The ramp is 8 m over 14 m, **29.7°**, against
+`FpsConfig::maximum_slope_degrees` of 36 — so the body can physically walk it and
+this is a *steering* failure, not a slope failure. The trace is a closed ~3 m
+plan loop with y cycling 20.9↔22.5, which is a turning oscillation: a bot that
+always wants to turn, circles. The next attempt should instrument the emitted
+intent and the follower's chosen target per tick on that seed, rather than
+reasoning from the trace — both attempts above were lost to plausible stories
+about a loop that only the targets can actually explain.
+
 ### Wave 5 integration notes
 
 The `"stair_tower"` string special case is **gone** from both match projection
