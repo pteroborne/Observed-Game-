@@ -28,6 +28,9 @@ mod knowledge;
 mod movement;
 mod mutation;
 mod objectives;
+mod pad;
+#[cfg(test)]
+mod pad_tests;
 mod snapshot;
 #[cfg(test)]
 mod tests;
@@ -37,6 +40,7 @@ pub use equipment::{HexDeployedLantern, HexLanternCache, HexLanternState};
 pub use guardian::{HexGuardianState, HexGuardianStatus};
 pub use knowledge::{HexMapCellKnowledge, HexMapDiscovery, HexPlayerMapKnowledge};
 pub use objectives::{DUAL_STATION_HOLD_TICKS, HexObjectiveState, KEYSTONES_REQUIRED};
+pub use pad::{HexDeployedPad, HexPadState, PAD_CONTACT_RADIUS, PAD_REARM_TICKS, PADS_PER_PLAYER};
 pub use snapshot::{HexMapCellSnapshot, HexMatchSnapshot, HexPlayerSnapshot, HexTeamSnapshot};
 
 pub(super) const FIXED_DT: f32 = 1.0 / 60.0;
@@ -47,7 +51,10 @@ pub(super) const FIXED_DT: f32 = 1.0 / 60.0;
 /// traversal must all agree on this surface or a capsule starts half embedded
 /// in collision.
 pub(super) use observed_hex::FLOOR_SLAB_TOP;
-pub const HEX_INPUT_VERSION: u16 = 5;
+/// Bumped to 6 when `deploy_pad` joined [`HexActionButtons`]. The handshake
+/// compares this, so a peer built before teleport plates is refused outright
+/// rather than connecting and then disagreeing about a bit it never sends.
+pub const HEX_INPUT_VERSION: u16 = 6;
 
 /// Most players one match may hold. Agrees with `observed_net::lan::MAX_SEATS`
 /// and `observed_progression::session::lan::LAN_MAX_SEATS`; a mismatch shows up
@@ -67,6 +74,10 @@ pub struct HexActionButtons {
     pub interact: bool,
     pub deploy_lantern: bool,
     pub recover_lantern: bool,
+    /// Place a teleport plate underfoot. There is no matching "activate": a pad
+    /// fires on contact, so the only button it needs is the one that puts it
+    /// down. See [`pad`].
+    pub deploy_pad: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -124,6 +135,10 @@ pub enum HexMatchEventKind {
     ExitDenied,
     AnchorDeployed,
     AnchorRecovered,
+    /// A teleport plate was set down.
+    PadDeployed,
+    /// A body stood on one plate and was moved to its team's other plate.
+    PadTraversed,
     GuardianCatch,
     MatchFinished,
 }
@@ -241,6 +256,7 @@ pub struct HexWfcMatch {
     pub players: BTreeMap<PlayerId, HexPlayerState>,
     pub teams: BTreeMap<TeamId, HexTeamState>,
     pub lanterns: HexLanternState,
+    pub pads: HexPadState,
     pub guardian: HexGuardianState,
     pub objectives: HexObjectiveState,
     /// Whether the Guardian hunts this match. See `HexMatchConfig::guardian`.
@@ -423,6 +439,7 @@ impl HexWfcMatch {
             bodies.insert(id, FpsBody::spawned(position, spawn_yaw));
         }
         let lanterns = HexLanternState::new(players.keys().copied(), &facility);
+        let pads = HexPadState::new(players.keys().copied());
         let guardian = HexGuardianState::new(&facility);
         let guardian_active = config.guardian;
         let map_knowledge = teams
@@ -439,6 +456,7 @@ impl HexWfcMatch {
             players,
             teams,
             lanterns,
+            pads,
             guardian,
             objectives: HexObjectiveState {
                 enabled: false,
@@ -503,7 +521,12 @@ impl HexWfcMatch {
             let command = frame.commands.get(&id).copied().unwrap_or_default();
             self.move_player(id, command.intent.sanitized());
             self.step_lantern_actions(id, command.actions);
+            self.step_pad_actions(id, command.actions);
         }
+        // After every body has moved, so contact is judged where a player ended
+        // the tick; the `sync_teleports_to_bodies` below carries any jump into
+        // the physics body.
+        self.step_pad_contacts();
         self.step_objectives(frame);
         self.update_stuck_ticks();
         self.recover_fallen_bodies();

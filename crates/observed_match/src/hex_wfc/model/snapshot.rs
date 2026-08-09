@@ -48,6 +48,16 @@ pub struct HexMatchSnapshot {
     pub surveyed_monitors: Vec<(TeamId, u64)>,
     pub lanterns: Vec<(PlayerId, u16)>,
     pub deployed: Vec<(EquipmentId, PlayerId, HexThresholdKey, HexCoord)>,
+    /// Carried teleport plates per player.
+    pub pads: Vec<(PlayerId, u16)>,
+    /// Placed plates. The position is quantized to millimetres for the same
+    /// reason a player's is: a link's destination must compare exactly across
+    /// machines, and a raw `f32` triple does not.
+    pub deployed_pads: Vec<(EquipmentId, PlayerId, TeamId, HexCoord, [i32; 3])>,
+    /// Players currently immune to pad contact, and for how many more ticks.
+    /// Omitting this would let two peers agree on where every pad is and still
+    /// disagree about whether the next step fires one.
+    pub pad_suppression: Vec<(PlayerId, u16)>,
     pub guardian: (HexCoord, HexGuardianStatus),
     pub map_cells: Vec<HexMapCellSnapshot>,
     pub status: HexMatchStatus,
@@ -112,6 +122,36 @@ impl HexWfcMatch {
                 .deployed
                 .values()
                 .map(|lantern| (lantern.id, lantern.owner, lantern.threshold, lantern.cell))
+                .collect(),
+            pads: self
+                .pads
+                .carried
+                .iter()
+                .map(|(&player, &count)| (player, count))
+                .collect(),
+            deployed_pads: self
+                .pads
+                .deployed
+                .values()
+                .map(|pad| {
+                    (
+                        pad.id,
+                        pad.owner,
+                        pad.team,
+                        pad.cell,
+                        [
+                            (pad.position.x * 1_000.0).round() as i32,
+                            (pad.position.y * 1_000.0).round() as i32,
+                            (pad.position.z * 1_000.0).round() as i32,
+                        ],
+                    )
+                })
+                .collect(),
+            pad_suppression: self
+                .pads
+                .suppressed
+                .iter()
+                .map(|(&player, &remaining)| (player, remaining))
                 .collect(),
             guardian: (self.guardian.cell, self.guardian.status),
             map_cells: self
@@ -195,6 +235,23 @@ fn snapshot_digest(snapshot: &HexMatchSnapshot) -> u64 {
             mix(u64::from(byte));
         }
         mix(pack_cell(*cell));
+    }
+    for (player, count) in &snapshot.pads {
+        mix(u64::from(player.0));
+        mix(u64::from(*count));
+    }
+    for (id, owner, team, cell, millimeters) in &snapshot.deployed_pads {
+        mix(u64::from(id.0));
+        mix(u64::from(owner.0));
+        mix(u64::from(team.0));
+        mix(pack_cell(*cell));
+        for axis in millimeters {
+            mix(*axis as u64);
+        }
+    }
+    for (player, remaining) in &snapshot.pad_suppression {
+        mix(u64::from(player.0));
+        mix(u64::from(*remaining));
     }
     mix(pack_cell(snapshot.guardian.0));
     mix(match snapshot.guardian.1 {

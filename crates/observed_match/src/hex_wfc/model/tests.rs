@@ -631,9 +631,14 @@ fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
     // Determinism, which is what this gate actually guards, is asserted above
     // and is unaffected by either move.
     assert_eq!(a, 6_589, "TR-10 pins the declared-ramp completion tick");
+    // Teleport plates moved this digest (0x02dd_ea8d_c8d2_ac4a -> below) without
+    // moving the tick above, and that pairing is the proof it was a
+    // representation change and not a behavioural one: the snapshot now folds
+    // carried plates, placed plates and the re-arm clock, while this bot never
+    // presses the button, so its route is tick-for-tick what it was.
     assert_eq!(
         first.snapshot().digest,
-        0x02dd_ea8d_c8d2_ac4a,
+        0x2c61_8b5d_b4af_d843,
         "TR-10 pins the declared-ramp final snapshot digest"
     );
 }
@@ -1346,5 +1351,82 @@ fn a_match_without_a_guardian_leaves_it_where_it_started() {
     assert_ne!(
         on.guardian.cell, start,
         "an enabled Guardian should have hunted, or this test proves nothing"
+    );
+}
+
+/// The state machine is covered in `pad_tests`; this covers the wiring, which is
+/// the part that breaks silently — a contact pass that never runs, or runs
+/// before bodies have moved, looks exactly like a pad that simply does nothing.
+#[test]
+fn standing_on_a_linked_plate_moves_the_body_to_its_partner() {
+    let mut game = showcase_match(GATE_SEED, GATE_LEVELS, 1);
+    let player = PlayerId(0);
+    let team = game.players[&player].team;
+    let origin = game.players[&player].position;
+    let far = origin + Vec3::new(40.0, 0.0, 24.0);
+    let far_cell = HexCoord {
+        q: game.players[&player].cell.q.wrapping_add(3),
+        r: game.players[&player].cell.r,
+        level: game.players[&player].cell.level,
+    };
+
+    let here = game.players[&player].cell;
+    game.pads
+        .deploy(player, team, here, origin)
+        .expect("plate under the player");
+    game.pads
+        .deploy(player, team, far_cell, far)
+        .expect("partner plate");
+    // Deploying suppresses the placer on purpose; clear it so this test is about
+    // contact rather than about the re-arm window.
+    game.pads.suppressed.clear();
+
+    game.recent_events.clear();
+    game.step_pad_contacts();
+
+    assert_eq!(
+        game.players[&player].cell, far_cell,
+        "contact should move the body to the partner plate"
+    );
+    assert_eq!(game.players[&player].position, far);
+    assert!(
+        game.pads.is_suppressed(player),
+        "arrival lands on a plate, so the traveller must be suppressed or bounce"
+    );
+    assert!(
+        game.recent_events
+            .iter()
+            .any(|event| event.kind == HexMatchEventKind::PadTraversed),
+        "a jump is an authoritative event"
+    );
+}
+
+/// The bounce this mechanic would otherwise have: arriving on a plate is contact.
+#[test]
+fn an_arriving_body_does_not_bounce_back_on_the_next_tick() {
+    let mut game = showcase_match(GATE_SEED, GATE_LEVELS, 1);
+    let player = PlayerId(0);
+    let team = game.players[&player].team;
+    let origin = game.players[&player].position;
+    let here = game.players[&player].cell;
+    let far = origin + Vec3::new(40.0, 0.0, 24.0);
+    let far_cell = HexCoord {
+        q: here.q.wrapping_add(3),
+        r: here.r,
+        level: here.level,
+    };
+    game.pads.deploy(player, team, here, origin).expect("plate");
+    game.pads
+        .deploy(player, team, far_cell, far)
+        .expect("partner");
+    game.pads.suppressed.clear();
+
+    game.step_pad_contacts();
+    let landed = game.players[&player].position;
+    game.step_pad_contacts();
+
+    assert_eq!(
+        game.players[&player].position, landed,
+        "the re-arm window is what stops an infinite A-B-A loop"
     );
 }
