@@ -479,10 +479,17 @@ impl MarkAssets {
         // console would draw it ... read, not inhabited", which is exactly what
         // a section datum is - it is not a thing in the building, it is the
         // instrument laid over it. `Selected` is "the cell currently under
-        // inspection", said twice: once in plan as the cut ring, once in section
-        // as the lit rung. `Grid` is, verbatim, "the annotation lines that carry
-        // no state of their own", which is the framed extent and the storeys the
-        // body is not standing on.
+        // inspection", which is the cut ring; `Grid` is, verbatim, "the
+        // annotation lines that carry no state of their own", which is the
+        // framed extent, the ladder post, and the storeys nobody is standing on.
+        //
+        // The ladder's *lit* rung is the one crossing between the registers, and
+        // it crosses on purpose: it wears `here` because what it reports is not
+        // "this storey is under inspection" but "the body you are following is
+        // on this one", which is the same fact the pin forty metres away is
+        // reporting. Reading it off the capture settles it - a white rung at the
+        // bottom of a green stack is unambiguous, and no viewer will mistake a
+        // rung on a ladder for a body in a room.
         //
         // It also keeps the registers out of each other's way. The first pass
         // drew the ring in observation-panel footprint cyan, which is a
