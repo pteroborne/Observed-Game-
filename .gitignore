@@ -1,4 +1,9 @@
 /target
+# Parallel worktrees set their own CARGO_TARGET_DIR to avoid corrupting the
+# shared one (see docs/arc_t/README.md §2a). Those live beside the worktree and
+# must never be committed — `/target` above is root-anchored and would not catch
+# them, and workers are told to `git add -A`.
+target-*/
 /dist/
 /scratch/
 /saves/
