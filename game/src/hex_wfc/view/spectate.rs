@@ -298,9 +298,11 @@ pub(in crate::hex_wfc) fn sync_key_light(
 /// **The marks are staged from here, not beside here.** A cutaway is a
 /// subtraction and a subtraction cannot describe itself; [`cutaway_marks`] draws
 /// the plane it happened at, the storey it happened on, and the bodies inside
-/// it. It is called with *this* function's `bearing` and `cell` rather than
-/// deriving its own, so the ring's open side and the walls' cut side are one
-/// answer. `OverviewFrame` is in this module's history precisely because two
+/// it. It runs *inside this system*, off the same two resources and on the same
+/// frame, and asks the near-arc question with the same `detent_bearing` call -
+/// so the ring's open side and the walls' cut side cannot answer differently,
+/// and no system-ordering change can put a frame between them.
+/// `OverviewFrame` is in this module's history precisely because two
 /// derivations of one fact drift.
 pub(in crate::hex_wfc) fn sync_cutaway(
     runtime: Res<HexWfcRuntime>,
