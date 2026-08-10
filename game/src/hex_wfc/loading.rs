@@ -515,7 +515,8 @@ pub(crate) fn poll_loading(
     // ever reaches this point already cancelled, polling it unwinds on the main
     // thread and takes the process with it. Catching it costs one branch and turns a
     // silent death into the error screen.
-    let polled = std::panic::catch_unwind(AssertUnwindSafe(|| block_on(poll_once(&mut worker.task))));
+    let polled =
+        std::panic::catch_unwind(AssertUnwindSafe(|| block_on(poll_once(&mut worker.task))));
     let completion = match polled {
         Ok(Some(completion)) => completion,
         Ok(None) => return,
@@ -529,7 +530,11 @@ pub(crate) fn poll_loading(
     };
     commands.remove_resource::<HexLaunchWorker>();
 
-    let outcome = completion.prepared.as_ref().map(|_| ()).map_err(Clone::clone);
+    let outcome = completion
+        .prepared
+        .as_ref()
+        .map(|_| ())
+        .map_err(Clone::clone);
     match state.accept_completion(completion.request_id, outcome) {
         CompletionAcceptance::Ready => {
             let prepared = completion

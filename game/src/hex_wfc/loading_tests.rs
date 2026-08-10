@@ -174,7 +174,9 @@ fn every_panic_payload_shape_produces_a_readable_report() {
 #[test]
 fn an_ordinary_solve_failure_is_not_reported_as_a_panic() {
     let outcome = guard_preparation(|| {
-        Err(HexLaunchError::CatalogLoad("fixture catalog failure".into()))
+        Err(HexLaunchError::CatalogLoad(
+            "fixture catalog failure".into(),
+        ))
     });
 
     assert_eq!(
