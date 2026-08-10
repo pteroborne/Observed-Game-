@@ -19,6 +19,38 @@ This document outlines the current active development goals, completed milestone
 > is the only open code arc, and what remains of it is **content authoring**
 > rather than refactoring.
 
+**Arc T — Somewhere To Go** `[ ]` (plan: [docs/arc_t/README.md](docs/arc_t/README.md)).
+Opened 2026-08-09 from the first Deck-to-Deck playtest — two humans, two Steam
+Decks, the v0.1.0/v0.2.0 builds. Nine findings landed as
+[bug_backlog.md](docs/bug_backlog.md) entries 29–36.
+
+**They are four problems, not nine.** One blocker: LAN crashes between the WFC
+solve and the map load, recording no error — the missing diagnosis is a second
+defect inside the first. One local defect: dropped lanterns and plates do not
+stay dropped. One root cause: **the corpus cannot compose places a player can
+tell apart**, which then produces three further reports that cannot be fixed
+directly — shallow-feeling choices, a facility whose changes are imperceptible,
+and a map that cannot orient anyone. One opportunity: the spectator cutaway was
+the only feature to draw unprompted praise.
+
+**The arc is mostly authoring, not engineering.** Arc S retired the
+shotgun-surgery smell as a code problem and said what remained was content debt;
+this is that bill arriving with a player's name on it.
+
+**The finding worth more than any single fix:** entries 20, 21, 22 and 25 were
+each marked *fix landed, awaiting human verification*, and this playtest failed
+all four. Entry 21 is the sharp case — its deterministic gate passes, proving
+every solve contains a connected open volume, while players still did not
+experience open places. A proxy was satisfied without the thing it stood for.
+Arc T holds one rule against a repeat: **no phase closes on a proxy.**
+
+Run as a parallel worktree fan-out, three workers plus an integrator. The
+parallel structure was verified rather than assumed: the crash, the dropped-tool
+fix and the cutaway touch disjoint trees and move no pinned identity, while
+facility size and corpus authoring both move `simulation_content_hash` and every
+pin behind it — so they serialize through the integrator by nature, not by
+coupling.
+
 **Refactor Arc S — Traversal Contracts and Module Assembly** `[ ]` (plan and
 execution record: [docs/traversal_contract_refactor_plan.md](docs/traversal_contract_refactor_plan.md)).
 Opened 2026-08-02 from the Arc R post-mortem. The switchback replacement
