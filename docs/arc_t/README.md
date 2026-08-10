@@ -1,7 +1,7 @@
 # Arc T — Somewhere To Go
 
 **Opened 2026-08-09 from the first Deck-to-Deck playtest.** Findings are
-[bug_backlog.md](../bug_backlog.md) entries **29–36**, plus playtest verdicts
+[bug_backlog.md](../bug_backlog.md) entries **29–37**, plus playtest verdicts
 recorded against the four entries (20, 21, 22, 25) that had been sitting on
 "fix landed, awaiting human verification".
 
@@ -10,10 +10,10 @@ are, where they are going, and how they would get back.
 
 ---
 
-## 1. What the nine findings actually are
+## 1. What the findings actually are
 
-Nine reports, four problems. Getting this collapse right is most of the plan,
-because three of the nine cannot be fixed by working on them directly.
+Ten reports, five problems. Getting this collapse right is most of the plan,
+because three of the ten cannot be fixed by working on them directly.
 
 | | Finding | Reading |
 | --- | --- | --- |
@@ -21,6 +21,7 @@ because three of the nine cannot be fixed by working on them directly.
 | **Local defect** | Lanterns and plates do not stay where dropped | Plates root-caused; lanterns not. Cheap, isolated. |
 | **The root** | Corpus too small to compose distinguishable places | Directly causes "nothing to move toward", and *indirectly* causes three more. |
 | **Opportunity** | Spectator cutaway is good | The only feature that drew unprompted praise. |
+| **Broken rule** | Events are a screen-space banner | Not a missing feature — a regression against a directive the project wrote down repeatedly and then stopped following. |
 
 The three findings that are **symptoms of the root**, and must not be scheduled
 as independent work:
@@ -66,6 +67,7 @@ disjoint trees, and none of them moves a pinned identity:
 | T-1 crash | `game/src/hex_wfc/loading.rs`, `loading_tests.rs` | no |
 | T-2 dropped tools | `crates/observed_match/src/hex_wfc/model/pad.rs`, `pad_tests.rs` | no — the gate bot never deploys, so `deployed_pads` is empty in its digest |
 | T-3 cutaway | `game/src/screens/match_runtime/spectator.rs`, cutaway paths under `game/src/hex_wfc/view/` | no |
+| T-9 diegetic events | `game/src/hex_wfc/feedback.rs`, `cues.rs`, `audio.rs` | no |
 
 **Two workstreams are serializing, and not because of coupling.** Facility size
 and corpus authoring each move `compiled_catalog` → `simulation_content_hash`,
@@ -74,7 +76,7 @@ and the 24-seed survey. They cannot run beside each other or beside anything tha
 re-pins, and by the Arc S rule **only the integrator regenerates content**
 (`.map`, catalog, manifest, FGD, `.sha256`, certificates).
 
-So: three-way parallel at the front, single-file through the middle, parallel
+So: four-way parallel at the front, single-file through the middle, parallel
 again at the back once the corpus is settled.
 
 ### 2a. The shared `target/` is the real hazard, and it has a fix
@@ -101,7 +103,7 @@ misdiagnosis. If a worker ever sees an impossible unresolved import,
 
 ### Wave 0 — unblock, and the cheap wins `[ ]`
 
-Three workers, fully parallel, disjoint files, no pins moved.
+Four workers, fully parallel, disjoint files, no pins moved.
 
 - **T-1 — The load crash produces a diagnosis, then stops happening.**
   Backlog #29. *Order matters*: make the failure report itself first, then fix
@@ -119,6 +121,24 @@ Three workers, fully parallel, disjoint files, no pins moved.
 - **T-3 — The cutaway says what it is cutting.** Backlog #36. Clarity only:
   what is cut, where the viewer is, which bodies are which. Do not promote it
   into the match yet; that is T-7's question and it wants this work done first.
+- **T-9 — Events are seen and heard in the world, not read off the screen.**
+  Backlog #37. A standing directive says a player should see and hear every
+  event diegetically; what ships is a banner reading "X rooms changed". Both
+  halves are wrong in the code's own words — `feedback.rs` is "Screen-space
+  semantic event feedback" and the cue audio is a **non-spatial** `AudioPlayer`
+  one-shot, which is a UI sting rather than a sound in the room.
+
+  **This is smaller than it looks:** `HexMatchEvent` already carries
+  `cell: Option<HexCoord>`, so the simulation already reports where every event
+  happened — presentation discards it. Nothing new is needed from the sim.
+
+  **This is also not a re-render.** `cues.rs` models an event as
+  `glyph`/`label`/`marker`/`sound` — a string to display. A diegetic vocabulary
+  answers *what does the world do when this happens?* Replace that model, or the
+  text just moves. Start with the events that are already local and provable —
+  a lantern placed, a plate set, a coherence lock taken — and let the mutation
+  beats follow; telling two *layouts* apart depends on Wave 2 and is T-7's
+  remainder.
 
 ### Wave 1 — size `[ ]`
 
@@ -151,7 +171,10 @@ that what remained was content debt. This is that bill.
 
 Parallel again. Deliberately after Wave 2.
 
-- **T-7 — The facility can be seen changing.** Backlog #31.
+- **T-7 — Two layouts can be told apart.** Backlog #31, **reduced by T-9**.
+  T-9 makes each mutation beat perceptible where it happens; what is left here
+  is the part that genuinely needs Wave 2 — a player noticing that the facility
+  is now *different*, which is impossible while every layout reads the same.
 - **T-8 — A map that answers where am I, where am I going, how do I get back.**
   Backlog #35. Decide first whether it should show *rooms and connections*
   rather than cells. T-3's cutaway is the strongest candidate input here — it is

@@ -21,10 +21,10 @@ This document outlines the current active development goals, completed milestone
 
 **Arc T — Somewhere To Go** `[ ]` (plan: [docs/arc_t/README.md](docs/arc_t/README.md)).
 Opened 2026-08-09 from the first Deck-to-Deck playtest — two humans, two Steam
-Decks, the v0.1.0/v0.2.0 builds. Nine findings landed as
-[bug_backlog.md](docs/bug_backlog.md) entries 29–36.
+Decks, the v0.1.0/v0.2.0 builds. Ten findings landed as
+[bug_backlog.md](docs/bug_backlog.md) entries 29–37.
 
-**They are four problems, not nine.** One blocker: LAN crashes between the WFC
+**They are five problems, not ten.** One blocker: LAN crashes between the WFC
 solve and the map load, recording no error — the missing diagnosis is a second
 defect inside the first. One local defect: dropped lanterns and plates do not
 stay dropped. One root cause: **the corpus cannot compose places a player can
@@ -32,6 +32,15 @@ tell apart**, which then produces three further reports that cannot be fixed
 directly — shallow-feeling choices, a facility whose changes are imperceptible,
 and a map that cannot orient anyone. One opportunity: the spectator cutaway was
 the only feature to draw unprompted praise.
+
+**And one broken rule.** An early directive — restated in `agents.md`, in the
+Phase 50 immersion ruling, and in the 2026-06-27 comfort pass — says a player
+should **see and hear every event diegetically**. What ships is a text banner
+reading "X rooms changed", and the cue audio is a non-spatial one-shot at the
+listener. Both halves contradict the rule in the code's own words: the module is
+named "Screen-space semantic event feedback". The repair is smaller than it
+looks, because `HexMatchEvent` already carries the cell an event happened in —
+presentation simply discards it.
 
 **The arc is mostly authoring, not engineering.** Arc S retired the
 shotgun-surgery smell as a code problem and said what remained was content debt;
