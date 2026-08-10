@@ -3,8 +3,9 @@
 use observed_facility::hex_wfc::HexWfcConfig;
 use observed_match::hex_wfc::HexMatchConfig;
 
+use super::diagnosis::WORKER_WATCHDOG_GRACE;
 use super::*;
-use crate::hex_wfc::launch::HexSeedPolicy;
+use crate::hex_wfc::launch::{HexLaunchError, HexSeedPolicy};
 
 fn request(sequence: &mut HexLaunchRequestSequence) -> HexLaunchRequest {
     sequence.issue(
