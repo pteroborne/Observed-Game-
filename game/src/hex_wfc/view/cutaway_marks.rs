@@ -56,12 +56,12 @@ use crate::hex_wfc::sim::HexWfcRuntime;
 
 /// Every root entity the rig owns, so one query retires all of it.
 #[derive(Component)]
-pub(in crate::hex_wfc::view) struct CutawayMark;
+pub(in crate::hex_wfc) struct CutawayMark;
 
 /// A body's marker root. The parts hang off it, so following a walking body is
 /// one transform write rather than three.
 #[derive(Component)]
-pub(in crate::hex_wfc::view) struct BodyMark(PlayerId);
+pub(in crate::hex_wfc) struct BodyMark(PlayerId);
 
 /// The static half of the rig is a function of these, and of nothing else.
 ///
@@ -71,7 +71,7 @@ pub(in crate::hex_wfc::view) struct BodyMark(PlayerId);
 /// rate at which the camera itself steps, since the overview snaps to tile
 /// centres rather than tracking the body.
 #[derive(Clone, Copy, Eq, PartialEq)]
-struct Section {
+pub(in crate::hex_wfc) struct Section {
     cell: HexCoord,
     detent: usize,
     tile_radius: u8,
@@ -80,7 +80,7 @@ struct Section {
 }
 
 /// Two meshes and five materials, built once and kept.
-struct MarkAssets {
+pub(in crate::hex_wfc) struct MarkAssets {
     /// A unit cube. Every bar, plate and post is this under a scale.
     bar: Handle<Mesh>,
     /// A unit cylinder. Discs and pins are this under a scale.
@@ -100,7 +100,7 @@ struct MarkAssets {
 /// system's own job - deciding which hulls survive - is three parameters, and a
 /// ten-parameter system reads as ten equal concerns rather than two.
 #[derive(SystemParam)]
-pub(in crate::hex_wfc::view) struct CutawayMarks<'w, 's> {
+pub(in crate::hex_wfc) struct CutawayMarks<'w, 's> {
     commands: Commands<'w, 's>,
     meshes: ResMut<'w, Assets<Mesh>>,
     materials: ResMut<'w, Assets<StandardMaterial>>,
@@ -150,7 +150,7 @@ impl CutawayMarks<'_, '_> {
     ///
     /// Called from `sync_cutaway` with the same resources it filters hulls by,
     /// so the ring's open side and the walls' cut side cannot disagree.
-    pub(in crate::hex_wfc::view) fn sync(
+    pub(in crate::hex_wfc) fn sync(
         &mut self,
         runtime: &HexWfcRuntime,
         overview: &SpectatorOverview,

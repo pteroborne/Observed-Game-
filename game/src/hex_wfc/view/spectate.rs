@@ -50,7 +50,7 @@ use bevy::prelude::*;
 // `spectate` - it is the half of the cutaway that says what the cutaway is
 // doing, and it is only ever reached through `sync_cutaway`.
 #[path = "cutaway_marks.rs"]
-pub(in crate::hex_wfc::view) mod cutaway_marks;
+pub(in crate::hex_wfc) mod cutaway_marks;
 
 use crate::hex_wfc::sim::HexWfcRuntime;
 
@@ -302,31 +302,13 @@ pub(in crate::hex_wfc) fn sync_key_light(
 /// deriving its own, so the ring's open side and the walls' cut side are one
 /// answer. `OverviewFrame` is in this module's history precisely because two
 /// derivations of one fact drift.
-#[allow(clippy::too_many_arguments)]
 pub(in crate::hex_wfc) fn sync_cutaway(
-    mut commands: Commands,
     runtime: Res<HexWfcRuntime>,
     overview: Res<SpectatorOverview>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut marks: cutaway_marks::CutawayMarks,
     mut hulls: Query<(&Cutaway, &mut Visibility), Without<cutaway_marks::BodyMark>>,
-    all_marks: Query<Entity, With<cutaway_marks::CutawayMark>>,
-    mut body_marks: cutaway_marks::BodyMarkQuery,
-    mut mark_assets: Local<Option<cutaway_marks::MarkAssets>>,
-    mut built_section: Local<Option<cutaway_marks::Section>>,
 ) {
-    cutaway_marks::sync(
-        &mut commands,
-        cutaway_marks::MarkRig {
-            meshes: &mut meshes,
-            materials: &mut materials,
-            assets: &mut mark_assets,
-            built: &mut built_section,
-        },
-        &runtime,
-        &overview,
-        (&all_marks, &mut body_marks),
-    );
+    marks.sync(&runtime, &overview);
 
     let bearing = overview
         .active
