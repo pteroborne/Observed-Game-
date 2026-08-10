@@ -4,8 +4,17 @@
 //! [`GameState::Loading`](crate::GameState::Loading). This module then owns the one
 //! expensive operation: running [`prepare`] on Bevy's async compute pool. Completion
 //! is identity checked, so a cancelled or superseded solve can never launch a match.
+//!
+//! A load that fails must say why. The machinery that makes that true — panic capture
+//! around the solve, the error taxonomy, and the lost-worker watchdog — lives in the
+//! `diagnosis` child module, whose header explains the mechanism it defends against.
+//! Every failure here is logged exactly once, by construction, in
+//! [`HexLoadingState::record_failure`].
 
-use std::time::{Duration, Instant};
+use std::{
+    panic::AssertUnwindSafe,
+    time::{Duration, Instant},
+};
 
 use bevy::{
     prelude::*,
@@ -15,7 +24,16 @@ use observed_core::PlayerId;
 
 use crate::{GameState, play_setup::LaunchContext};
 
-use super::launch::{HexLaunchError, HexLaunchSpec, PreparedHexLaunch, prepare};
+use super::launch::{HexLaunchSpec, PreparedHexLaunch, prepare};
+
+#[path = "loading_diagnosis.rs"]
+mod diagnosis;
+
+pub(crate) use diagnosis::HexLoadingError;
+use diagnosis::{
+    describe_panic, guard_preparation, install_panic_reporter, seed_policy_label, take_panic_site,
+    worker_watchdog,
+};
 
 /// Stable identity for one preparation attempt. Retry always receives a fresh value.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -113,31 +131,6 @@ pub(crate) enum HexLoadingPhase {
     Cancelled,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum HexLoadingError {
-    MissingRequest,
-    Preparation(HexLaunchError),
-    LanLaunchUnavailable,
-    LanLaunchWithdrawn,
-    LanTransport(String),
-}
-
-impl std::fmt::Display for HexLoadingError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::MissingRequest => formatter.write_str(
-                "No finalized launch request was provided. Return to Play and try again.",
-            ),
-            Self::Preparation(error) => error.fmt(formatter),
-            Self::LanLaunchUnavailable => formatter
-                .write_str("The server launch changed or disappeared before preparation began."),
-            Self::LanLaunchWithdrawn => formatter
-                .write_str("The server returned to the lobby while players were preparing."),
-            Self::LanTransport(error) => write!(formatter, "send launch readiness: {error}"),
-        }
-    }
-}
-
 /// Honest, player-facing loading state. There is deliberately no invented percentage:
 /// the deterministic WFC solve currently exposes no meaningful incremental progress.
 #[derive(Resource, Debug)]
@@ -187,11 +180,26 @@ impl HexLoadingState {
     fn fail_missing_request(&mut self) {
         self.request_id = None;
         self.attempt = 0;
-        self.phase = HexLoadingPhase::Failed;
         self.elapsed = Duration::ZERO;
-        self.error = Some(HexLoadingError::MissingRequest);
         self.lan_match_number = None;
         self.started_at = None;
+        self.record_failure(HexLoadingError::MissingRequest);
+    }
+
+    /// The single place a load is allowed to become `Failed`.
+    ///
+    /// Routing every path through here is what makes "the load failed and left no
+    /// evidence" unrepresentable: there is no way to set the failed phase without
+    /// also emitting the reason.
+    fn record_failure(&mut self, error: HexLoadingError) {
+        error!(
+            "hex facility load failed (request {:?}, attempt {}, {:.1} s): {error} [{error:?}]",
+            self.request_id.map(HexLaunchRequestId::get),
+            self.attempt,
+            self.elapsed.as_secs_f32(),
+        );
+        self.phase = HexLoadingPhase::Failed;
+        self.error = Some(error);
     }
 
     fn update_elapsed(&mut self) {
@@ -232,8 +240,7 @@ impl HexLoadingState {
                 CompletionAcceptance::Ready
             }
             Err(error) => {
-                self.phase = HexLoadingPhase::Failed;
-                self.error = Some(error);
+                self.record_failure(error);
                 CompletionAcceptance::Failed
             }
         }
@@ -255,15 +262,16 @@ impl HexLoadingState {
 
     fn fail(&mut self, error: HexLoadingError) {
         self.update_elapsed();
-        self.phase = HexLoadingPhase::Failed;
-        self.error = Some(error);
         self.started_at = None;
+        self.record_failure(error);
     }
 }
 
 struct HexLaunchTaskResult {
     request_id: HexLaunchRequestId,
-    prepared: Result<PreparedHexLaunch, HexLaunchError>,
+    /// Already classified on the worker thread. A panic never leaves the task as a
+    /// panic, so the handle stays pollable and the main thread stays alive.
+    prepared: Result<PreparedHexLaunch, HexLoadingError>,
 }
 
 #[derive(Resource)]
@@ -322,10 +330,30 @@ pub(crate) fn poll_loading(
         return;
     }
     let Some(worker) = worker.as_deref_mut() else {
+        // A load that has lost its worker will never complete on its own. Before this
+        // watchdog it simply sat on "Solving..." forever with nothing written down.
+        if let Some(error) = worker_watchdog(&state) {
+            commands.remove_resource::<PreparedHexLaunchSlot>();
+            state.fail(error);
+        }
         return;
     };
-    let Some(completion) = block_on(poll_once(&mut worker.task)) else {
-        return;
+    // Defence in depth for the mechanism described in the module header: if a handle
+    // ever reaches this point already cancelled, polling it unwinds on the main
+    // thread and takes the process with it. Catching it costs one branch and turns a
+    // silent death into the error screen.
+    let polled =
+        std::panic::catch_unwind(AssertUnwindSafe(|| block_on(poll_once(&mut worker.task))));
+    let completion = match polled {
+        Ok(Some(completion)) => completion,
+        Ok(None) => return,
+        Err(payload) => {
+            commands.remove_resource::<HexLaunchWorker>();
+            commands.remove_resource::<PreparedHexLaunchSlot>();
+            let detail = describe_panic(payload.as_ref(), take_panic_site());
+            state.fail(HexLoadingError::WorkerLost(detail));
+            return;
+        }
     };
     commands.remove_resource::<HexLaunchWorker>();
 
@@ -333,12 +361,20 @@ pub(crate) fn poll_loading(
         .prepared
         .as_ref()
         .map(|_| ())
-        .map_err(|error| HexLoadingError::Preparation(error.clone()));
+        .map_err(Clone::clone);
     match state.accept_completion(completion.request_id, outcome) {
         CompletionAcceptance::Ready => {
             let prepared = completion
                 .prepared
                 .expect("accepted ready completion contains a prepared launch");
+            info!(
+                "hex facility solved in {:.1} s (request {}, requested seed {}, selected seed {}, offset {})",
+                state.elapsed.as_secs_f32(),
+                completion.request_id.get(),
+                prepared.requested_seed,
+                prepared.selected_seed,
+                prepared.seed_offset,
+            );
             commands.insert_resource(PreparedHexLaunchSlot::ready(prepared));
             if request.as_deref().is_some_and(|request| request.networked) {
                 let Some(match_number) = state.lan_match_number else {
@@ -377,9 +413,24 @@ pub(crate) fn poll_loading(
                 next.set(GameState::HexWfc);
             }
         }
-        CompletionAcceptance::Failed
-        | CompletionAcceptance::Stale
-        | CompletionAcceptance::Inactive => {}
+        // `Failed` has already reported itself through `record_failure`. The other two
+        // are discards rather than failures, but a discarded solve is exactly the kind
+        // of event that reads as "it just stopped", so name it.
+        CompletionAcceptance::Failed => {}
+        CompletionAcceptance::Stale => {
+            info!(
+                "discarded a superseded hex facility solve (request {}, active request {:?})",
+                completion.request_id.get(),
+                state.request_id.map(HexLaunchRequestId::get),
+            );
+        }
+        CompletionAcceptance::Inactive => {
+            info!(
+                "discarded a hex facility solve that completed after the load left the preparing phase (request {}, phase {:?})",
+                completion.request_id.get(),
+                state.phase,
+            );
+        }
     }
 }
 
@@ -432,12 +483,25 @@ fn begin_request(
     attempt: u32,
 ) {
     state.begin(request.request_id, attempt);
+    // Installed on the main thread, before anything can be spawned that might unwind.
+    install_panic_reporter();
     let request_id = request.request_id;
     let spec = request.spec;
+    info!(
+        "hex facility preparation started (request {}, attempt {}, {}, seed {} {}, {}x{}x{} cells)",
+        request_id.get(),
+        attempt,
+        if request.networked { "LAN" } else { "local" },
+        spec.requested_seed,
+        seed_policy_label(spec.seed_policy),
+        spec.config.wfc.cols,
+        spec.config.wfc.rows,
+        spec.config.wfc.levels,
+    );
     let task = AsyncComputeTaskPool::get().spawn(async move {
         HexLaunchTaskResult {
             request_id,
-            prepared: prepare(spec),
+            prepared: guard_preparation(|| prepare(spec)),
         }
     });
     commands.insert_resource(HexLaunchWorker { task });

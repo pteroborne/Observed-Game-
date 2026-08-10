@@ -3,8 +3,9 @@
 use observed_facility::hex_wfc::HexWfcConfig;
 use observed_match::hex_wfc::HexMatchConfig;
 
+use super::diagnosis::WORKER_WATCHDOG_GRACE;
 use super::*;
-use crate::hex_wfc::launch::HexSeedPolicy;
+use crate::hex_wfc::launch::{HexLaunchError, HexSeedPolicy};
 
 fn request(sequence: &mut HexLaunchRequestSequence) -> HexLaunchRequest {
     sequence.issue(
@@ -31,6 +32,95 @@ fn request(sequence: &mut HexLaunchRequestSequence) -> HexLaunchRequest {
             seed_policy: HexSeedPolicy::Nearby,
         },
     )
+}
+
+/// Kept measurement, not a gate — run with
+/// `cargo test -p observed_game --lib production_size_solve -- --ignored --nocapture`.
+///
+/// Backlog #29 suspected the production-size solve of exhausting something on the
+/// second machine. This rules out the two ways it could do so silently. Bevy sets no
+/// `stack_size` on its pools, so a pool thread gets Rust's 2 MiB default against the
+/// main thread's 8 MiB — and every other caller of `prepare` in the codebase runs on
+/// the main thread, so a stack-hungry solve would die only on the loading worker, and
+/// a stack overflow aborts with no panic, no hook and no log at all.
+///
+/// Measured 2026-08-10 on the committed corpus at 28x20x10 (5600 cells): the pool
+/// thread completes in ~5.1 s and the main thread in ~4.3 s, both `Ok`. Neither the
+/// stack nor a solver panic is the reported crash. Left `#[ignore]`d because five
+/// seconds does not belong in the gate, and left in place because the next person to
+/// suspect the solve should be able to re-run the measurement rather than redo it.
+#[test]
+#[ignore = "multi-second measurement; run explicitly when re-examining backlog #29"]
+fn production_size_solve_survives_a_pool_thread_stack() {
+    use std::time::Instant;
+    let config = HexMatchConfig {
+        teams: 2,
+        members_per_team: 2,
+        guardian: true,
+        wfc: HexWfcConfig::arc_default(),
+    };
+    println!(
+        "config {}x{}x{} = {} cells, rooms {}..{}, retry_budget {}",
+        config.wfc.cols,
+        config.wfc.rows,
+        config.wfc.levels,
+        u32::from(config.wfc.cols) * u32::from(config.wfc.rows) * u32::from(config.wfc.levels),
+        config.wfc.min_rooms,
+        config.wfc.max_rooms,
+        config.wfc.retry_budget,
+    );
+
+    // Faithful reproduction: Bevy's pools set no stack_size, so pool threads get
+    // Rust's 2 MiB default while the main thread gets 8 MiB. Every other caller of
+    // `prepare` in the codebase runs on the main thread.
+    let pool = bevy::tasks::AsyncComputeTaskPool::get_or_init(bevy::tasks::TaskPool::new);
+    let started = Instant::now();
+    let task = pool.spawn(async move {
+        guard_preparation(|| {
+            prepare(HexLaunchSpec {
+                requested_seed: 0xF011_FAC1_1177,
+                config,
+                seed_policy: HexSeedPolicy::Nearby,
+            })
+        })
+    });
+    let outcome = bevy::tasks::block_on(task);
+    let elapsed = started.elapsed();
+    match &outcome {
+        Ok(prepared) => println!(
+            "POOL THREAD OK in {:.2} s, selected seed {} (offset {})",
+            elapsed.as_secs_f32(),
+            prepared.selected_seed,
+            prepared.seed_offset
+        ),
+        Err(error) => println!(
+            "POOL THREAD FAILED in {:.2} s: {error} [{error:?}]",
+            elapsed.as_secs_f32()
+        ),
+    }
+
+    let started = Instant::now();
+    let main_thread = guard_preparation(|| {
+        prepare(HexLaunchSpec {
+            requested_seed: 0xF011_FAC1_1177,
+            config,
+            seed_policy: HexSeedPolicy::Nearby,
+        })
+    });
+    println!(
+        "MAIN THREAD {} in {:.2} s",
+        if main_thread.is_ok() { "OK" } else { "FAILED" },
+        started.elapsed().as_secs_f32()
+    );
+
+    assert!(
+        outcome.is_ok(),
+        "the production-size solve must survive a 2 MiB pool-thread stack: {outcome:?}"
+    );
+    assert!(
+        main_thread.is_ok(),
+        "the production-size solve must succeed on the main thread too: {main_thread:?}"
+    );
 }
 
 #[test]
@@ -128,6 +218,145 @@ fn lan_descriptor_matching_rejects_stale_or_conflicting_generations() {
         Some(&request),
         8
     ));
+}
+
+/// The defect this guards is not "the solve panicked" but "the solve panicked and
+/// nobody found out". `bevy_tasks::TaskPool::spawn` leaves the future unguarded, the
+/// pool thread swallows the payload, and the next poll of the cancelled handle panics
+/// again on the *main* thread — killing the process between a finished solve and a
+/// playable map, with nothing written down. Catching it on the worker keeps the handle
+/// pollable and turns the payload into something the error screen can show.
+#[test]
+fn a_panicking_solve_becomes_a_reported_failure_rather_than_a_cancelled_task() {
+    let outcome = guard_preparation(|| panic!("the collapse ran out of candidates"));
+
+    let Err(HexLoadingError::PreparationPanicked(detail)) = outcome else {
+        panic!("a panicking solve must be classified as a panic, got {outcome:?}");
+    };
+    assert!(
+        detail.contains("the collapse ran out of candidates"),
+        "the panic message must survive into the report: {detail}"
+    );
+    assert!(
+        detail.contains("loading_tests.rs"),
+        "the report must name where the panic came from: {detail}"
+    );
+}
+
+/// An `unwrap`/`expect` payload is a `String`; a bare `panic!("literal")` is a
+/// `&'static str`. Both are common in the solver, and neither may report as empty.
+#[test]
+fn every_panic_payload_shape_produces_a_readable_report() {
+    let borrowed: Box<dyn std::any::Any + Send> = Box::new("a static message");
+    let owned: Box<dyn std::any::Any + Send> = Box::new("an owned message".to_string());
+    let opaque: Box<dyn std::any::Any + Send> = Box::new(17_u32);
+
+    assert_eq!(describe_panic(borrowed.as_ref(), None), "a static message");
+    assert_eq!(describe_panic(owned.as_ref(), None), "an owned message");
+    assert_eq!(
+        describe_panic(opaque.as_ref(), None),
+        "a non-string panic payload"
+    );
+}
+
+/// An ordinary solve failure must not be relabelled as a panic: the two mean very
+/// different things to whoever reads the report.
+#[test]
+fn an_ordinary_solve_failure_is_not_reported_as_a_panic() {
+    let outcome = guard_preparation(|| {
+        Err(HexLaunchError::CatalogLoad(
+            "fixture catalog failure".into(),
+        ))
+    });
+
+    assert_eq!(
+        outcome.expect_err("the fixture always fails"),
+        HexLoadingError::Preparation(HexLaunchError::CatalogLoad(
+            "fixture catalog failure".into()
+        ))
+    );
+}
+
+/// Every failure must be able to say something to a player. An error variant whose
+/// text is empty is the same defect as no error at all.
+#[test]
+fn every_loading_error_says_something() {
+    for error in [
+        HexLoadingError::MissingRequest,
+        HexLoadingError::Preparation(HexLaunchError::CatalogLoad("disk".into())),
+        HexLoadingError::PreparationPanicked("index out of bounds (at solve.rs:9:1)".into()),
+        HexLoadingError::WorkerLost("handle cancelled".into()),
+        HexLoadingError::LanLaunchUnavailable,
+        HexLoadingError::LanLaunchWithdrawn,
+        HexLoadingError::LanTransport("socket closed".into()),
+    ] {
+        assert!(
+            !error.to_string().trim().is_empty(),
+            "{error:?} renders as nothing"
+        );
+    }
+    assert!(
+        HexLoadingError::PreparationPanicked("index out of bounds (at solve.rs:9:1)".into())
+            .to_string()
+            .contains("solve.rs:9:1"),
+        "the panic location must reach the player-facing text"
+    );
+}
+
+/// `begin_request` advances the phase immediately but inserts the worker through
+/// `Commands`, so one flush of grace is legitimate. Anything past that is a load that
+/// will never finish, and it must report rather than sit on "Solving..." forever.
+#[test]
+fn a_lost_worker_is_reported_only_after_the_command_flush_window() {
+    let mut sequence = HexLaunchRequestSequence::default();
+    let request = request(&mut sequence);
+    let mut state = HexLoadingState::default();
+    state.begin(request.request_id, 1);
+
+    state.elapsed = Duration::ZERO;
+    assert!(worker_watchdog(&state).is_none());
+    state.elapsed = WORKER_WATCHDOG_GRACE - Duration::from_millis(1);
+    assert!(worker_watchdog(&state).is_none());
+
+    state.elapsed = WORKER_WATCHDOG_GRACE;
+    let error = worker_watchdog(&state).expect("a worker missing past the grace is lost");
+    assert!(matches!(error, HexLoadingError::WorkerLost(_)));
+
+    // A load that is not preparing has no worker to miss.
+    state.ready();
+    state.elapsed = WORKER_WATCHDOG_GRACE * 4;
+    assert!(worker_watchdog(&state).is_none());
+}
+
+/// Reaching `Failed` without recording the reason is the exact shape of this bug, so
+/// pin the invariant on the state machine itself.
+#[test]
+fn no_path_reaches_the_failed_phase_without_an_error_to_show() {
+    let mut sequence = HexLaunchRequestSequence::default();
+    let request = request(&mut sequence);
+
+    let mut missing = HexLoadingState::default();
+    missing.fail_missing_request();
+    assert_eq!(missing.phase, HexLoadingPhase::Failed);
+    assert!(missing.error.is_some());
+
+    let mut panicked = HexLoadingState::default();
+    panicked.begin(request.request_id, 1);
+    panicked.fail(HexLoadingError::PreparationPanicked("boom".into()));
+    assert_eq!(panicked.phase, HexLoadingPhase::Failed);
+    assert!(panicked.error.is_some());
+
+    let mut completed = HexLoadingState::default();
+    completed.begin(request.request_id, 1);
+    assert_eq!(
+        completed.accept_completion(
+            request.request_id,
+            Err(HexLoadingError::WorkerLost("handle cancelled".into()))
+        ),
+        CompletionAcceptance::Failed
+    );
+    assert_eq!(completed.phase, HexLoadingPhase::Failed);
+    assert!(completed.error.is_some());
 }
 
 #[test]
