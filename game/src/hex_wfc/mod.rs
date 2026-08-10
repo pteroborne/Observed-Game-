@@ -118,6 +118,7 @@ impl Plugin for HexWfcPlugin {
                     hud::sync,
                     view::map::sync,
                     feedback::sync,
+                    feedback::animate,
                     audio::sync,
                     entities::sync,
                     lantern::sync_projection,
