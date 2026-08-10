@@ -217,6 +217,12 @@ continuous local practicals. The implementation uses one composition-aware style
 mapping and exposes a saved 50°–80° FOV setting. It remains open until the human
 Phase 118 gate judges the live result.
 
+**2026-08-09 Deck playtest verdict: still open, and the diagnosis has moved.**
+Players did not describe the facility as dark — they described it as *samey*,
+with nothing distinguishable to move toward. Lighting and FOV were the treatment
+this entry chose; the playtest says the cause is upstream of both, in the corpus
+(**#30**). Re-judge this one only after the corpus can produce places that differ.
+
 ### 21. `Expanse` cells do not reliably compose into wide-open places
 
 **Scheduled: Arc P Phases 115 and 118** ([arc_p/README.md](arc_p/README.md)).
@@ -227,6 +233,13 @@ Production collapse now reinforces adjacent expanses and rejects any solve where
 an active level lacks a connected seven-cell, three-exit open volume. It also
 rejects any walkable region more than 24 graph edges from an open/decision beat.
 The deterministic gate is landed; the perceptual judgment remains with Phase 118.
+
+**2026-08-09 Deck playtest verdict: the deterministic gate passes and the
+perceptual result still fails.** The solve provably contains open volumes; players
+still did not experience the facility as having distinct open places. That gap is
+the clearest evidence in this backlog that a measurable proxy was satisfied
+without the thing it proxied for — treat the gate as necessary, not sufficient,
+and see **#30**.
 
 ### 22. The canonical hex race lacks deliberate intermediate choices
 
@@ -240,6 +253,13 @@ surveys and anchors keep their observation-freeze role. Bots, LAN authority,
 snapshots, cues, map knowledge, and world labels use the same model. It remains
 open until Phase 118 establishes that the loop feels like choosing rather than
 running errands.
+
+**2026-08-09 Deck playtest verdict: still errands.** Players reported the
+gameplay as shallow and the planned features as immature. The objective model
+(two keystones, a two-operator station, a regroup) is implemented and reachable,
+so this is not missing machinery — the choices are not legible as choices,
+because the places they are made in are not distinguishable (**#30**) and the
+map cannot support planning (**#35**).
 
 ### 23. Arc P objective routing collapses production FPS
 
@@ -287,6 +307,138 @@ played result faithfully. The new atlas uses production quotas and the runtime
 catalogue, shows the full solved room/hall lattice at low cost, streams exact
 authored hulls around a free-fly camera, and indexes every active production
 room/hall concept for direct comparison.
+
+**2026-08-09 Deck playtest verdict: still open.** Tile geometry was called
+amateur at best and confusing at worst (**#34**), which is the same reading from
+a second group of eyes. The production-corpus lab mode added for this entry is
+the right instrument; it has not yet been used to drive an authoring pass.
+
+### 29. Multiplayer crashes between the WFC solve and the map load
+
+**Found 2026-08-09, v0.1.0 Deck-to-Deck playtest. Blocks the entire LAN mode —
+nothing else on this list matters until it is fixed.** The solve completes, and
+the process dies before the map is playable. **No error was recorded**, which is
+the second defect here: this path can fail without leaving evidence, so the
+first job is to make it produce a diagnosis, not to guess at a cause.
+
+Look at: `game/src/hex_wfc/loading.rs` (`start_loading`, `poll_loading`,
+`cleanup_loading_worker`) — the solve runs on a worker thread, and a panic there
+is reported through the join handle rather than the panic hook, so it can be
+swallowed. Check that the worker's `Result`/panic payload is logged before it is
+discarded, and that a failed load transitions to an error screen rather than
+proceeding. Suspect interaction with **#33**: a facility at the current size may
+be exhausting memory or a retry budget specifically on the second machine.
+
+Reproduce with two peers rather than one — a listen host that never crashes solo
+points at the client's replay-from-tick-one path, not the solver.
+
+### 30. The tile corpus is too small to compose places worth moving toward
+
+**Found 2026-08-09, v0.1.0 Deck-to-Deck playtest — the single most-repeated piece
+of feedback.** Players could not find anything **distinguishable to move
+toward**. This is the root that #20, #21 and #25 are each a symptom of, and it is
+a *content* problem rather than a solver problem: the composition machinery works,
+but the corpus it draws from cannot produce places that read as different from
+each other. Arc S closed the shotgun-surgery smell as a code problem and
+explicitly left authoring as what remained; this is that bill arriving.
+
+The measure to design against is not variety for its own sake — it is whether a
+player crossing a threshold can tell *where they are* and *which way they came
+from*. Look at: the authored corpus under `assets/tiles/`, the archetype quotas
+in the composition profile, and `tools/composition_studio`'s coverage tab, which
+already reports which archetypes the corpus can and cannot fill.
+
+### 31. Players cannot tell the facility is changing
+
+**Found 2026-08-09, v0.1.0 Deck-to-Deck playtest.** Relayout is the arc's central
+mechanic — observation holds structure, unobserved structure breathes and
+re-collapses — and it is invisible in play: "it all looks the same." The
+`MutationWarning` / `MutationCommitted` / `MutationCancelled` cues fire, but a
+change the player cannot perceive is a change that did not happen for them.
+
+Note this is partly downstream of **#30**: if two layouts are not distinguishable
+from each other, then a layout *changing* cannot be distinguishable either. Fixing
+the cue without fixing the corpus will not land. Look at:
+`game/src/hex_wfc/cues.rs`, the mutation beats in
+`crates/observed_match/src/hex_wfc/model/mutation.rs`, and whether anything
+diegetic marks a seam that is about to move.
+
+### 32. Dropped lanterns and plates do not stay where they were dropped
+
+**Found 2026-08-09, v0.1.0/v0.2.0 Deck-to-Deck playtest. Root cause established
+for plates by reading the code, 2026-08-09.**
+
+**Plates: confirmed defect.** `HexWfcMatch::step_pad_actions` stores
+`player.position` as the plate's position, but `HexPlayerState::position` is the
+**centre of the body box** (`observed_traversal::FpsBody`: "Feet are at
+`position.y - half_height`", `half_height = 0.9`). So a plate is placed 0.9 m
+above the floor and hangs at chest height instead of lying on the deck. Contact
+still works — `pad_under` compares horizontal distance only — which is exactly
+why this survived its tests: every pad test asserts linking behaviour and none
+asserts a height. Fix in the sim, not the renderer, so the snapshot agrees:
+subtract the body half-height when recording the drop, and add a test that a
+placed plate sits on the walking surface.
+
+**Lanterns: not established.** A deployed lantern's position is cell-relative
+(`hex_origin(door.room_cell) + edge_mid`, `edge_mid.y = 1.1`), so it is not the
+same bug and needs its own diagnosis. Two candidates worth checking first:
+whether a relayout moves the room out from under a lantern whose world position
+was captured at drop time, and whether `equipment_signature` in
+`game/src/hex_wfc/lantern.rs` misses a state change that should trigger a
+rebuild. Confirm which before changing anything.
+
+### 33. The facility is too large to solve effectively at its current size
+
+**Found 2026-08-09, v0.1.0 Deck-to-Deck playtest.** The played facility is larger
+than the corpus and the objectives can fill, so a match is spent traversing
+rather than deciding. Suspected contributor to **#29** — solve cost and memory
+scale with it — and it makes **#30** worse by spreading a thin corpus over more
+cells.
+
+The lever is `HexWfcConfig` (`cols`, `rows`, `levels`) and the room quotas in the
+production composition profile. Treat this as a tuning pass with a measurement,
+not a guess: `hex_wfc_lab`'s production-corpus mode (added for #25) and the
+Studio's coverage tab both report how much of a facility the corpus can
+meaningfully fill.
+
+### 34. Tile geometry reads as amateur, and sometimes as confusing
+
+**Found 2026-08-09, v0.1.0 Deck-to-Deck playtest.** Distinct from #30: that entry
+is about there being too few kinds of place; this is about the modelling quality
+of the tiles that exist, up to and including geometry that misleads a player about
+where they can go. Confusing is worse than plain — a shape that implies a route
+that is not there costs more than a dull shape.
+
+Overlaps #25 (rooms reading as clusters of cells). Look at the authored `.map`
+sources and the seam auditor; the Studio's neighbour explorer (`N`) shows what a
+tile actually composes with, which is the fastest way to find shapes that only
+look right in isolation.
+
+### 35. The tac-map is useless for navigation
+
+**Found 2026-08-09, v0.1.0 Deck-to-Deck playtest.** The survivor map does not
+answer the question a player opens it to ask — where am I, where is the thing I
+want, and which way do I go. It is fog-of-war over a cell lattice, and a cell
+lattice is not a mental model of a building.
+
+Look at: `game/src/hex_wfc/view/map.rs` and `HexPlayerMapKnowledge`. Worth
+deciding first whether the fix is presentational (legibility, orientation,
+landmarks) or whether the map should show *rooms and connections* rather than
+cells — which again depends on **#30**, since a map of indistinguishable places
+cannot orient anyone.
+
+### 36. Spectator cutaway is good and needs clarity work
+
+**Found 2026-08-09, v0.1.0 Deck-to-Deck playtest — the one feature that drew
+unprompted praise.** The observer cutaway view reads well and is worth investing
+in rather than merely fixing. What it lacks is clarity: what is being cut, where
+the viewer is relative to it, and which bodies are which.
+
+Worth considering whether this earns a place beyond spectating — a diegetic
+in-match version of this view would attack **#31** and **#35** at once, since it
+is already the clearest picture of the facility the project has produced. Look
+at: `game/src/screens/match_runtime/spectator.rs` and the cutaway handling in
+`game/src/hex_wfc/view/`.
 
 ## Minor / hygiene
 
