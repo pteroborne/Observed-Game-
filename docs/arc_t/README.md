@@ -101,7 +101,42 @@ misdiagnosis. If a worker ever sees an impossible unresolved import,
 
 ## 3. Waves
 
-### Wave 0 — unblock, and the cheap wins `[ ]`
+### Wave 0 — unblock, and the cheap wins `[x]` COMPLETE 2026-08-10
+
+All four packets merged. Union gate: fmt clean, `dev-clippy` clean at
+`-D warnings`, `dev-test` **1906 passed / 0 failed** with cargo's real exit code
+captured, plus the 24-seed spectator survey run explicitly.
+
+**Verification held.** No packet's diff touched a `crates/` path, so no pinned
+identity could be inside one; no two packets overlapped; and both new modules
+reached the tree through `#[path]` rather than `hex_wfc/mod.rs`, so the single
+shared file took exactly the one line T-9 declared.
+
+**What Wave 0 did not do: fix the crash.** T-1 closed the silence and disproved
+the facility-size theory with measurements, but the cause is unestablished and
+the packet says so. Two new leads are filed as backlog #38 and #39; **#39 is the
+strongest and needs two physical machines.** Treat the blocker as still open.
+
+**Three traps this wave paid for, recorded so the next one does not.**
+1. *Session limits took every worker mid-packet, twice.* The first round lost
+   nothing only because the integrator salvaged it — one worker had a 557-line
+   **untracked** module on disk. After the instruction was repeated as the first
+   line of the resume, every worker committed and the second round cost nothing.
+   Put commit discipline at the top of the packet, not the bottom.
+2. *Two integrator instructions composed into a hazard.* "Set your own
+   `CARGO_TARGET_DIR`" plus "`git add -A`" would have committed a build
+   directory, because `/target` in `.gitignore` is root-anchored and does not
+   match `target-t1/`. Fixed in `.gitignore` and `.git/info/exclude` — note the
+   latter is read from the **common** git dir, not the per-worktree one.
+3. *The tooling cut worktrees from an older SHA than the packets named*, so a
+   worker read a plan predating the backlog entry its own packet cited. Check
+   `git -C <worktree> merge-base HEAD main` at dispatch.
+
+**And one the gate nearly let through:** the 24-seed survey this section
+requires is `#[ignore]`d, so `dev-test` reports green without ever running it.
+Run it explicitly — `-- --ignored` — or the wave gate is a proxy for itself.
+
+#### Original packet list
 
 Four workers, fully parallel, disjoint files, no pins moved.
 
