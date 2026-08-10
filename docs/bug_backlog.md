@@ -332,6 +332,87 @@ be exhausting memory or a retry budget specifically on the second machine.
 Reproduce with two peers rather than one — a listen host that never crashes solo
 points at the client's replay-from-tick-one path, not the solver.
 
+**2026-08-10, Arc T packet T-1: the silence is fixed, the cause is not, and the
+`#33` suspicion above is largely wrong.**
+
+*The silence, established exactly.* `bevy_tasks::TaskPool::spawn` does **not**
+wrap its future in `catch_unwind` — only `Scope::spawn` does. A panic in the
+solve therefore unwinds on a pool thread, where the pool's own `catch_unwind`
+swallows the payload and restarts the worker; the only trace is the default
+hook's stderr line, which is nowhere in a packaged Deck build. `async_task` then
+marks the task cancelled, and awaiting a cancelled task panics again — this time
+on the **main thread** inside `poll_loading`. That is what kills the process,
+and it is why it never reached the error screen, which existed and was ready.
+A solve panic now becomes `PreparationPanicked` with message and source
+location, a lost worker becomes `WorkerLost`, and every route to `Failed` logs
+before it stores.
+
+*What was ruled out, with numbers.* The specific fear above — a production-size
+solve blowing up on a worker thread — was measured on the committed corpus at
+`arc_default` (28×20×10 = 5600 cells). Bevy sets no `stack_size` on its pools,
+so the loading worker runs on Rust's 2 MiB default while every other `prepare`
+caller runs on the main thread's 8 MiB, and a stack overflow aborts with no
+panic and no hook. Both are clean: **pool thread 5.08 s, main thread 4.29 s,
+both `Ok`.** Kept as an `#[ignore]`d measurement. Caveats: peak memory was not
+measured, and the view/render side was not examined.
+
+*Where the #33 link actually lives — see **#39**.* Not severed, relocated: a
+bigger facility still makes the failure likelier, but through solve *duration*
+on the main thread rather than through solve *failure*.
+
+### 38. `LanClient` has no server-liveness signal, so the barrier can hang mute
+
+**Found 2026-08-10 by Arc T packet T-1**, which stopped at its file boundary and
+handed this over rather than reaching into `observed_net`.
+
+`crates/observed_net/src/lan.rs`, `pub struct LanClient` (line ~876) has
+`last_heartbeat`, but it is **outbound only and private** — nothing can ask
+whether the server has said anything *back*. `poll_lan_barrier` leaves
+`WaitingForPlayers` only on evidence the server actively sends (a lobby snapshot
+with `phase != InMatch`, or a launch-descriptor mismatch). If the server stops
+sending entirely — process died, Wi-Fi dropped, the Deck slept — there is no
+timeout and no diagnosis, and the screen sits on "Facility ready. Waiting for
+other players and server start..." forever.
+
+Fix shape: an inbound `last_server_packet: Instant`, set at `connect` and
+refreshed in `poll()` whenever a packet from `self.server` is accepted, plus a
+new `HexLoadingError` variant after a generous stale window.
+
+**Relationship to #29: low.** #29 reports the process *dying*; a mute barrier
+leaves it alive on a loading screen. On a handheld a player might describe
+either as "it died", so it is not excluded — but this is filed as a real defect
+in its own right, not as the crash.
+
+### 39. A desync resyncs by solving 5600 cells on the main thread, and discards the error
+
+**Found 2026-08-10 by Arc T packet T-1. Strongest untested lead for #29 —
+medium confidence, needs two physical machines to confirm.**
+
+At `game/src/hex_wfc/sim.rs:383`, the desync resync path calls
+`match_from_launch(...).ok()` — throwing away the only diagnosis available
+there. Worse, `match_from_launch` (`sim.rs:79`) calls `prepare()`, the full
+5600-cell solve **measured at ~4.3 s**, synchronously on the main thread inside
+`step_runtime`.
+
+The server drops a client after `CLIENT_TIMEOUT = 2 s` (`server/src/lib.rs:29`),
+and the client heartbeats every 500 ms from `LanClient::poll`, which only runs
+from the main loop. So a single desync stalls a client well past the server's
+timeout. If it lands while `awaiting_launch_barrier()`,
+`disconnect_timed_out_clients` also calls `abort_pending_launch()`
+(`server/src/lib.rs:819`) — killing the launch for **both** peers.
+
+That shape fits the report — LAN-only, at the moment the map becomes playable,
+nothing recorded — better than anything left in `loading.rs`. It is inference
+from constants plus one local timing measurement, not an observation.
+
+**This is where #33 re-enters #29:** the danger scales with solve duration, so a
+larger facility makes it more likely. Shrinking the facility (#33) may reduce
+the crash rate without addressing the cause.
+
+Also worth a look while in there: `setup_runtime` (`sim.rs:166-173`) has two
+`assert!`s that panic fatally on the main thread if `HexWfc` is entered without
+a prepared launch.
+
 ### 30. The tile corpus is too small to compose places worth moving toward
 
 **Found 2026-08-09, v0.1.0 Deck-to-Deck playtest — the single most-repeated piece

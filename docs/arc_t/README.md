@@ -201,6 +201,14 @@ O:\Observed 2-t-c     worker
   clean.
 - Workers do **not** regenerate content. Say it explicitly; they otherwise will.
 - Waves branch from the **published integration SHA**, never a moving branch.
+- **Verify the base a worker actually got; do not assume it matches the packet.**
+  In this arc's first wave, packets named base `9c95d35` and the tooling cut
+  every worktree from `c7abb6c` — three commits earlier. T-9 therefore worked
+  from a checkout where the backlog entry its packet cited did not yet exist. It
+  handled that correctly by flagging the mismatch instead of inventing, but the
+  integrator should check `git -C <worktree> merge-base HEAD main` at dispatch
+  rather than at handoff. A worker reading a stale plan is a silent failure the
+  gates cannot catch.
 - **`git add -A` and commit a compiling leaf immediately and at every
   milestone.** Arc S lost three agents mid-packet to session limits with ~130 KB
   uncommitted, most of it untracked and one checkout away from gone.
