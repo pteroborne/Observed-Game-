@@ -33,6 +33,95 @@ fn request(sequence: &mut HexLaunchRequestSequence) -> HexLaunchRequest {
     )
 }
 
+/// Kept measurement, not a gate — run with
+/// `cargo test -p observed_game --lib production_size_solve -- --ignored --nocapture`.
+///
+/// Backlog #29 suspected the production-size solve of exhausting something on the
+/// second machine. This rules out the two ways it could do so silently. Bevy sets no
+/// `stack_size` on its pools, so a pool thread gets Rust's 2 MiB default against the
+/// main thread's 8 MiB — and every other caller of `prepare` in the codebase runs on
+/// the main thread, so a stack-hungry solve would die only on the loading worker, and
+/// a stack overflow aborts with no panic, no hook and no log at all.
+///
+/// Measured 2026-08-10 on the committed corpus at 28x20x10 (5600 cells): the pool
+/// thread completes in ~5.1 s and the main thread in ~4.3 s, both `Ok`. Neither the
+/// stack nor a solver panic is the reported crash. Left `#[ignore]`d because five
+/// seconds does not belong in the gate, and left in place because the next person to
+/// suspect the solve should be able to re-run the measurement rather than redo it.
+#[test]
+#[ignore = "multi-second measurement; run explicitly when re-examining backlog #29"]
+fn production_size_solve_survives_a_pool_thread_stack() {
+    use std::time::Instant;
+    let config = HexMatchConfig {
+        teams: 2,
+        members_per_team: 2,
+        guardian: true,
+        wfc: HexWfcConfig::arc_default(),
+    };
+    println!(
+        "config {}x{}x{} = {} cells, rooms {}..{}, retry_budget {}",
+        config.wfc.cols,
+        config.wfc.rows,
+        config.wfc.levels,
+        u32::from(config.wfc.cols) * u32::from(config.wfc.rows) * u32::from(config.wfc.levels),
+        config.wfc.min_rooms,
+        config.wfc.max_rooms,
+        config.wfc.retry_budget,
+    );
+
+    // Faithful reproduction: Bevy's pools set no stack_size, so pool threads get
+    // Rust's 2 MiB default while the main thread gets 8 MiB. Every other caller of
+    // `prepare` in the codebase runs on the main thread.
+    let pool = bevy::tasks::AsyncComputeTaskPool::get_or_init(bevy::tasks::TaskPool::new);
+    let started = Instant::now();
+    let task = pool.spawn(async move {
+        guard_preparation(|| {
+            prepare(HexLaunchSpec {
+                requested_seed: 0xF011_FAC1_1177,
+                config,
+                seed_policy: HexSeedPolicy::Nearby,
+            })
+        })
+    });
+    let outcome = bevy::tasks::block_on(task);
+    let elapsed = started.elapsed();
+    match &outcome {
+        Ok(prepared) => println!(
+            "POOL THREAD OK in {:.2} s, selected seed {} (offset {})",
+            elapsed.as_secs_f32(),
+            prepared.selected_seed,
+            prepared.seed_offset
+        ),
+        Err(error) => println!(
+            "POOL THREAD FAILED in {:.2} s: {error} [{error:?}]",
+            elapsed.as_secs_f32()
+        ),
+    }
+
+    let started = Instant::now();
+    let main_thread = guard_preparation(|| {
+        prepare(HexLaunchSpec {
+            requested_seed: 0xF011_FAC1_1177,
+            config,
+            seed_policy: HexSeedPolicy::Nearby,
+        })
+    });
+    println!(
+        "MAIN THREAD {} in {:.2} s",
+        if main_thread.is_ok() { "OK" } else { "FAILED" },
+        started.elapsed().as_secs_f32()
+    );
+
+    assert!(
+        outcome.is_ok(),
+        "the production-size solve must survive a 2 MiB pool-thread stack: {outcome:?}"
+    );
+    assert!(
+        main_thread.is_ok(),
+        "the production-size solve must succeed on the main thread too: {main_thread:?}"
+    );
+}
+
 #[test]
 fn request_ids_are_unique_and_metadata_survives_finalization() {
     let mut sequence = HexLaunchRequestSequence::default();
