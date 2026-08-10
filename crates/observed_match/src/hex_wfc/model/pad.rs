@@ -193,7 +193,20 @@ impl HexWfcMatch {
             let state = &self.players[&player];
             (state.cell, state.position, state.team)
         };
-        if self.pads.deploy(player, team, cell, position).is_some() {
+        // A plate lies on the deck, and `HexPlayerState::position` is the centre
+        // of the body box — `FpsBody`: "Feet are at `position.y - half_height`".
+        // Dropping the raw position hung every plate at chest height. The offset
+        // comes from the traversal profile rather than a literal, because that
+        // is where the capsule's own dimensions are declared and a second copy
+        // would drift from the body it is supposed to describe.
+        let feet = position
+            - Vec3::Y
+                * self
+                    .content
+                    .traversal_profile()
+                    .requirements()
+                    .capsule_half_height;
+        if self.pads.deploy(player, team, cell, feet).is_some() {
             self.recent_events.push(HexMatchEvent {
                 tick: self.tick,
                 kind: HexMatchEventKind::PadDeployed,
@@ -209,6 +222,14 @@ impl HexWfcMatch {
     /// physics body exactly as a spawn does.
     pub(super) fn step_pad_contacts(&mut self) {
         self.pads.tick_suppression();
+        // Plates are stored on the deck; a body is positioned by its centre. The
+        // two frames differ by exactly this, and conflating them either buries a
+        // traveller to the waist or floats them.
+        let half_height = self
+            .content
+            .traversal_profile()
+            .requirements()
+            .capsule_half_height;
         let candidates = self
             .players
             .values()
@@ -231,7 +252,7 @@ impl HexWfcMatch {
             };
             let player = self.players.get_mut(&id).expect("stepped player");
             player.cell = target.0;
-            player.position = target.1;
+            player.position = target.1 + Vec3::Y * half_height;
             self.pads.suppress(id);
             self.recent_events.push(HexMatchEvent {
                 tick: self.tick,

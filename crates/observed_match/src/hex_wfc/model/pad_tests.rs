@@ -186,3 +186,51 @@ fn suppression_is_per_player() {
         "one player's jump must not disarm another's pads"
     );
 }
+
+/// The assertion whose absence let a chest-height plate ship.
+///
+/// Every other test here asserts *linking*, and linking is blind to height —
+/// `pad_under` compares horizontal distance only. So a plate recorded at the
+/// body-box centre passed the whole suite while hanging 0.9 m above the deck.
+/// These two pin the frames instead: a plate is stored on the floor, and a
+/// traveller arrives standing on it rather than buried in it.
+mod frames {
+    use super::*;
+
+    /// The offsets the sim applies, restated as the property they must satisfy:
+    /// store feet, restore centre. If these disagree the round trip drifts by a
+    /// half-height every jump.
+    #[test]
+    fn storing_feet_and_restoring_a_centre_is_a_round_trip() {
+        let half_height = 0.9_f32;
+        let body_centre = Vec3::new(3.0, 5.4, -2.0);
+
+        let stored = body_centre - Vec3::Y * half_height;
+        assert!(
+            (stored.y - 4.5).abs() < 1e-6,
+            "a plate is recorded where the feet are, not where the chest is"
+        );
+
+        let arrived = stored + Vec3::Y * half_height;
+        assert!(
+            (arrived - body_centre).length() < 1e-6,
+            "a traveller's centre must come back to body height, or they sink"
+        );
+    }
+
+    /// Horizontal contact must stay height-blind — that is what lets a body
+    /// walking at centre height trigger a plate lying on the deck below it.
+    #[test]
+    fn contact_ignores_height_within_a_cell() {
+        let mut pads = HexPadState::new([PlayerId(0)]);
+        let floor = Vec3::new(0.0, 0.0, 0.0);
+        pads.deploy(PlayerId(0), TeamId(0), cell(0, 0), floor)
+            .expect("plate on the deck");
+
+        let walking = Vec3::new(0.1, 0.9, 0.0);
+        assert!(
+            pads.pad_under(TeamId(0), cell(0, 0), walking).is_some(),
+            "a body standing on a floor plate is in contact with it"
+        );
+    }
+}

@@ -1388,7 +1388,19 @@ fn standing_on_a_linked_plate_moves_the_body_to_its_partner() {
         game.players[&player].cell, far_cell,
         "contact should move the body to the partner plate"
     );
-    assert_eq!(game.players[&player].position, far);
+    // Stored plate positions are foot height; a body is positioned by its
+    // centre. Arriving *at* the stored point would bury the traveller to the
+    // waist, so the half-height comes back on landing.
+    let half_height = game
+        .content()
+        .traversal_profile()
+        .requirements()
+        .capsule_half_height;
+    assert_eq!(
+        game.players[&player].position,
+        far + Vec3::Y * half_height,
+        "the traveller should stand on the far plate, not inside it"
+    );
     assert!(
         game.pads.is_suppressed(player),
         "arrival lands on a plate, so the traveller must be suppressed or bounce"
