@@ -46,6 +46,12 @@
 
 use bevy::prelude::*;
 
+// Declared here rather than in `view/mod.rs` because it is not a peer of
+// `spectate` - it is the half of the cutaway that says what the cutaway is
+// doing, and it is only ever reached through `sync_cutaway`.
+#[path = "cutaway_marks.rs"]
+pub(in crate::hex_wfc) mod cutaway_marks;
+
 use crate::hex_wfc::sim::HexWfcRuntime;
 
 /// Toggles the overview while spectating.
@@ -277,7 +283,8 @@ pub(in crate::hex_wfc) fn sync_key_light(
     }
 }
 
-/// Cut away the resident authored geometry so the overview can see inside it.
+/// Cut away the resident authored geometry so the overview can see inside it,
+/// and say what was cut.
 ///
 /// `observed_style::iso::survives` - the studio's own rule, from the shared
 /// crate - applied to the geometry residency has already spawned. Until this
@@ -287,11 +294,24 @@ pub(in crate::hex_wfc) fn sync_key_light(
 ///
 /// Everything is restored when the overview goes down: these are the same
 /// entities the first-person view walks through.
+///
+/// **The marks are staged from here, not beside here.** A cutaway is a
+/// subtraction and a subtraction cannot describe itself; [`cutaway_marks`] draws
+/// the plane it happened at, the storey it happened on, and the bodies inside
+/// it. It runs *inside this system*, off the same two resources and on the same
+/// frame, and asks the near-arc question with the same `detent_bearing` call -
+/// so the ring's open side and the walls' cut side cannot answer differently,
+/// and no system-ordering change can put a frame between them.
+/// `OverviewFrame` is in this module's history precisely because two
+/// derivations of one fact drift.
 pub(in crate::hex_wfc) fn sync_cutaway(
     runtime: Res<HexWfcRuntime>,
     overview: Res<SpectatorOverview>,
-    mut hulls: Query<(&Cutaway, &mut Visibility)>,
+    mut marks: cutaway_marks::CutawayMarks,
+    mut hulls: Query<(&Cutaway, &mut Visibility), Without<cutaway_marks::BodyMark>>,
 ) {
+    marks.sync(&runtime, &overview);
+
     let bearing = overview
         .active
         .then(|| observed_style::iso::detent_bearing(overview.detent));
