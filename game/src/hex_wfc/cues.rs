@@ -63,9 +63,11 @@ pub(super) const ALL_EVENTS: [HexMatchEventKind; 17] = [
 
 pub(super) fn cue_for(kind: HexMatchEventKind) -> CueDefinition {
     match kind {
-        HexMatchEventKind::MutationWarning => {
-            cue("STRUCTURE BREATHING", MarkerRole::NextRoom, HexWfcSound::Reroute)
-        }
+        HexMatchEventKind::MutationWarning => cue(
+            "STRUCTURE BREATHING",
+            MarkerRole::NextRoom,
+            HexWfcSound::Reroute,
+        ),
         HexMatchEventKind::MutationCommitted => {
             cue("ROOMS MUTATED", MarkerRole::Collapse, HexWfcSound::Reroute)
         }
@@ -86,11 +88,9 @@ pub(super) fn cue_for(kind: HexMatchEventKind) -> CueDefinition {
         HexMatchEventKind::KeystoneCollected => {
             cue("KEYSTONE CLAIMED", MarkerRole::NextRoom, HexWfcSound::Hold)
         }
-        HexMatchEventKind::DualStationProgress => cue(
-            "TEAM LINK HOLDING",
-            MarkerRole::Teammate,
-            HexWfcSound::Hold,
-        ),
+        HexMatchEventKind::DualStationProgress => {
+            cue("TEAM LINK HOLDING", MarkerRole::Teammate, HexWfcSound::Hold)
+        }
         HexMatchEventKind::DualStationCompleted => cue(
             "TEAM STATION COMPLETE",
             MarkerRole::Control,
@@ -109,9 +109,7 @@ pub(super) fn cue_for(kind: HexMatchEventKind) -> CueDefinition {
         HexMatchEventKind::AnchorDeployed => {
             cue("THRESHOLD ANCHORED", MarkerRole::Control, HexWfcSound::Hold)
         }
-        HexMatchEventKind::PadDeployed => {
-            cue("PLATE SET", MarkerRole::Control, HexWfcSound::Hold)
-        }
+        HexMatchEventKind::PadDeployed => cue("PLATE SET", MarkerRole::Control, HexWfcSound::Hold),
         // Arrival is the loud half of a jump: the departure is behind you and the
         // room you land in is the thing you need to reorient in.
         HexMatchEventKind::PadTraversed => {
@@ -122,9 +120,11 @@ pub(super) fn cue_for(kind: HexMatchEventKind) -> CueDefinition {
             MarkerRole::Control,
             HexWfcSound::Recover,
         ),
-        HexMatchEventKind::GuardianCatch => {
-            cue("GUARDIAN SETBACK", MarkerRole::Collapse, HexWfcSound::Guardian)
-        }
+        HexMatchEventKind::GuardianCatch => cue(
+            "GUARDIAN SETBACK",
+            MarkerRole::Collapse,
+            HexWfcSound::Guardian,
+        ),
         HexMatchEventKind::MatchFinished => {
             cue("MATCH COMPLETE", MarkerRole::Exit, HexWfcSound::Complete)
         }

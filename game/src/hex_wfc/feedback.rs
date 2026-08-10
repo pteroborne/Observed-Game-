@@ -146,7 +146,10 @@ pub(super) fn animate(
 /// through. `MatchFinished` has no single place either — it is the whole match ending, not
 /// something that happened somewhere — and is left as audio-only by the same logic in
 /// `audio.rs`.
-pub(super) fn event_cells(event: &HexMatchEvent, delta: Option<&HexRelayoutDelta>) -> Vec<HexCoord> {
+pub(super) fn event_cells(
+    event: &HexMatchEvent,
+    delta: Option<&HexRelayoutDelta>,
+) -> Vec<HexCoord> {
     if let Some(cell) = event.cell {
         return vec![cell];
     }
