@@ -48,7 +48,7 @@ use bevy::prelude::*;
 use observed_core::PlayerId;
 use observed_facility::hex_wfc::HexCoord;
 use observed_hex::{ACROSS_CORNERS, CORNERS, FLOOR_SLAB_TOP, TILE_LEVEL_HEIGHT};
-use observed_style::{MarkerRole, ObservationPanelRole, Treatment};
+use observed_style::{MarkerRole, SchematicRole, Treatment};
 
 use super::super::camera::{detail_reach, tile_centre};
 use super::{Cutaway, SpectatorOverview};
@@ -138,12 +138,16 @@ const DATUM_DROP: f32 = 0.25;
 /// which floor of how many without a word of text.
 const RUNG_RISE: f32 = 1.15;
 /// How far outside the ring the ladder stands.
-const LADDER_STANDOFF: f32 = 4.0;
+///
+/// Small on purpose. The framing box is `tile_radius * TILE_SPAN` in plan and
+/// the ring already reaches its vertices, so anything much further out is off
+/// the side of the picture at the detents whose bearing runs along an axis.
+const LADDER_STANDOFF: f32 = 1.5;
 /// A body's pin, in metres. Longer than a storey is tall, so it crosses the cut
 /// plane and is visible from outside whatever room the body is inside.
 const PIN_HEIGHT: f32 = 9.6;
 /// The followed body's pin, which has to win against three others.
-const HERE_PIN_HEIGHT: f32 = 13.0;
+const HERE_PIN_HEIGHT: f32 = 12.0;
 
 impl CutawayMarks<'_, '_> {
     /// Stage the marks for this frame.
@@ -468,36 +472,52 @@ fn bar(
 
 impl MarkAssets {
     fn build(meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>) -> Self {
-        // The ring is the same schematic-outline read the observation panels
-        // draw a room footprint with: this is the facility's own plan seen from
-        // outside, and it should not speak a second colour language.
-        let footprint = observed_style::observation_panel(ObservationPanelRole::Footprint);
+        // Two registers, deliberately: the section rig is *schematic* and the
+        // bodies are *markers*.
+        //
+        // `SchematicRole` describes itself as "a facility diagram as a ship's
+        // console would draw it ... read, not inhabited", which is exactly what
+        // a section datum is - it is not a thing in the building, it is the
+        // instrument laid over it. `Selected` is "the cell currently under
+        // inspection", said twice: once in plan as the cut ring, once in section
+        // as the lit rung. `Grid` is, verbatim, "the annotation lines that carry
+        // no state of their own", which is the framed extent and the storeys the
+        // body is not standing on.
+        //
+        // It also keeps the registers out of each other's way. The first pass
+        // drew the ring in observation-panel footprint cyan, which is a
+        // defensible read of "schematic outline" and within a few percent of
+        // `MarkerRole::You`. Diluting the body hues is the one thing this packet
+        // must not do: which body is which is a third of the job.
         Self {
             bar: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
             rod: meshes.add(Cylinder::new(0.5, 1.0)),
-            datum: mark_material(materials, footprint, 1.0),
-            quiet: mark_material(materials, footprint, 0.22),
-            here: mark_material(materials, observed_style::marker(MarkerRole::You), 1.0),
-            teammate: mark_material(materials, observed_style::marker(MarkerRole::Teammate), 1.0),
-            rival: mark_material(materials, observed_style::marker(MarkerRole::Rival), 1.0),
+            datum: mark_material(
+                materials,
+                observed_style::schematic(SchematicRole::Selected),
+            ),
+            quiet: mark_material(materials, observed_style::schematic(SchematicRole::Grid)),
+            here: mark_material(materials, observed_style::marker(MarkerRole::You)),
+            teammate: mark_material(materials, observed_style::marker(MarkerRole::Teammate)),
+            rival: mark_material(materials, observed_style::marker(MarkerRole::Rival)),
         }
     }
 }
 
-/// A style treatment as a marker material.
+/// A style treatment as a marker material, verbatim.
 ///
-/// `gain` only ever attenuates an emissive the style crate already chose: the
-/// quiet tier is the same footprint cyan at a fifth of the output, so the cut
-/// plane and the framed extent are legibly one family and unmistakably two
-/// tiers. No colour is invented here.
+/// No scalar, no tint, no blend: every colour in this module is a treatment the
+/// style crate already chose, and the tiering between the cut plane and the
+/// annotation lines is carried by picking a different *role* rather than by
+/// turning one role's emissive down. An attenuated role is a colour this file
+/// invented, and the Legibility Contract is a contract.
 fn mark_material(
     materials: &mut Assets<StandardMaterial>,
     treatment: Treatment,
-    gain: f32,
 ) -> Handle<StandardMaterial> {
     materials.add(StandardMaterial {
         base_color: treatment.base_color,
-        emissive: treatment.emissive * gain,
+        emissive: treatment.emissive,
         metallic: 0.0,
         perceptual_roughness: 0.55,
         ..default()
