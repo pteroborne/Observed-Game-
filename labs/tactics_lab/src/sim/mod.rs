@@ -147,6 +147,12 @@ pub enum TacticsError {
     Facility(HexWfcError),
     /// The squad size is outside what a match accepts.
     InvalidSquad,
+    /// A step costs nothing, which every "spend until you cannot" loop in the
+    /// match — the rival's turn, the click-to-walk path — would take as licence
+    /// to move forever. Rejected at construction rather than defended against in
+    /// each loop, because it is a property of the configuration and not of the
+    /// loops.
+    FreeMovement,
 }
 
 impl From<HexWfcError> for TacticsError {
@@ -182,7 +188,10 @@ pub struct TacticsGame {
     /// The pocket that will re-collapse when this turn ends.
     pub telegraph: Option<Telegraph>,
     pub last_shift: Option<ShiftOutcome>,
-    /// Events from the most recent turn resolution or action.
+    /// Everything that has happened since the last turn boundary: the squad's
+    /// own actions as they are taken, then the resolution of the turn they end.
+    /// Cleared by [`Self::end_turn`], so an event never outlives the moment it
+    /// describes.
     pub events: Vec<TacticsEvent>,
     /// Every action taken, in order. A match replays from settings plus this.
     pub log: Vec<LoggedAction>,
@@ -193,6 +202,9 @@ impl TacticsGame {
         if !(crate::settings::MIN_SQUAD..=crate::settings::MAX_SQUAD).contains(&settings.squad_size)
         {
             return Err(TacticsError::InvalidSquad);
+        }
+        if settings.costs.move_step == 0 {
+            return Err(TacticsError::FreeMovement);
         }
         let world = HexWfcWorld::generate(settings.seed, settings.facility())?;
         let spawn = world.config.spawn();

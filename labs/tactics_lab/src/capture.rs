@@ -51,13 +51,47 @@ pub fn configure(app: &mut App) {
         armed: false,
         manifest: Vec::new(),
     })
-    .add_systems(Startup, start_capture)
+    // Both entry points run the same function. Between seeds the run drops to
+    // Setup so the next match is rebuilt from fresh settings, and nothing else
+    // would ever take it out again — the only other route into Play is the Start
+    // button, and a headless run has nobody to press it. Startup covers the first
+    // match without depending on whether the initial state transition has already
+    // fired, and arming twice is harmless because it is a pure function of
+    // `seed_index`.
+    .add_systems(Startup, arm_next_match)
+    .add_systems(OnEnter(AppState::Setup), arm_next_match)
     .add_systems(Update, capture_progress.run_if(in_state(AppState::Play)));
 }
 
-fn start_capture(mut settings: ResMut<LabSettings>, mut next: ResMut<NextState<AppState>>) {
-    settings.0 = capture_settings(SEEDS[0]);
-    next.set(AppState::Play);
+/// Configure and enter the match for the run's current seed.
+///
+/// Seeds that do not solve are skipped rather than entered. `enter_play` sends a
+/// failed solve back to Setup, which is right for a player at the setup screen
+/// and would be an unbreakable loop here — Setup re-arms the same seed, which
+/// fails again, forever, with nothing written. Checking before entering is what
+/// makes the run terminate whatever the corpus contains.
+fn arm_next_match(
+    run: Option<ResMut<CaptureRun>>,
+    mut settings: ResMut<LabSettings>,
+    mut next: ResMut<NextState<AppState>>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    let Some(mut run) = run else {
+        return;
+    };
+    while let Some(&seed) = SEEDS.get(run.seed_index) {
+        let candidate = capture_settings(seed);
+        if TacticsGame::new(candidate).is_ok() {
+            settings.0 = candidate;
+            next.set(AppState::Play);
+            return;
+        }
+        warn!("seed {seed:#x} does not solve; skipping it");
+        run.seed_index += 1;
+        run.turn = 0;
+    }
+    // Every remaining seed was unusable, so there is nothing left to play.
+    exit.write(AppExit::Success);
 }
 
 /// The settings every captured match runs. Pinned rather than taken from the
@@ -74,7 +108,6 @@ fn capture_progress(
     mut commands: Commands,
     mut run: ResMut<CaptureRun>,
     mut state: ResMut<LabState>,
-    mut settings: ResMut<LabSettings>,
     mut next: ResMut<NextState<AppState>>,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -120,8 +153,8 @@ fn capture_progress(
     run.seed_index += 1;
     run.turn = 0;
     if run.seed_index < SEEDS.len() {
-        settings.0 = capture_settings(SEEDS[run.seed_index]);
-        // Re-entering Play rebuilds the match from the new settings.
+        // Bouncing through Setup rebuilds the match; `arm_next_match` picks the
+        // new seed up on the way back.
         next.set(AppState::Setup);
         return;
     }

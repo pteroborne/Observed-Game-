@@ -152,12 +152,9 @@ pub fn paint(game: &TacticsGame, cell: HexCoord) -> CellPaint {
         .get(&PLAYER_TEAM)
         .and_then(|map| map.cells.get(&cell));
     match known {
-        Some(known) if telegraphed => {
-            // Telegraph wins over plain memory: what is about to change is the
-            // one thing the player has to act on this turn.
-            let _ = known;
-            CellPaint::Volatile
-        }
+        // Telegraph wins over plain memory: what is about to change is the one
+        // thing the player has to act on this turn.
+        Some(_) if telegraphed => CellPaint::Volatile,
         Some(known) if known.is_stale(&game.world, cell) => CellPaint::Stale,
         Some(_) => CellPaint::Known,
         None if !game.settings.sight.hides_the_map() => {

@@ -240,6 +240,40 @@ fn the_exit_stays_reachable_across_many_shifts() {
     }
 }
 
+/// The guard under several of the tests above. If the relayout never actually
+/// committed — because a Compact board is mostly rooms and protective halo, say —
+/// then "a shift never touches a protected cell" would pass by doing nothing, and
+/// the mechanic this lab exists to tune would be untested.
+#[test]
+fn the_facility_really_does_shift() {
+    let mut committed = 0;
+    let mut changed = 0;
+    for seed in SEEDS {
+        let mut game = game(seed);
+        for _ in 0..10 {
+            wander(&mut game);
+            let before = game.world.placements.clone();
+            if game.end_turn() == ShiftOutcome::Committed {
+                committed += 1;
+                changed += before
+                    .iter()
+                    .filter(|(cell, placement)| {
+                        game.world.placements.get(*cell) != Some(*placement)
+                    })
+                    .count();
+            }
+        }
+    }
+    assert!(
+        committed > 0,
+        "no seed ever committed a shift; the relayout is inert"
+    );
+    assert!(
+        changed > 0,
+        "shifts committed but rewrote nothing, so nothing was being tested"
+    );
+}
+
 /// Standing in the telegraphed pocket is the mechanic. If the squad occupies it,
 /// the commit must be refused and reported as held.
 #[test]
@@ -671,6 +705,23 @@ fn a_squad_size_outside_the_offered_range_is_refused() {
             "a squad of {squad_size} was accepted"
         );
     }
+}
+
+/// A free step would let every "spend until you cannot" loop run forever. The
+/// configuration is refused rather than each loop being defended separately.
+#[test]
+fn a_match_where_stepping_is_free_is_refused() {
+    assert_eq!(
+        TacticsGame::new(MatchSettings {
+            costs: ActionCosts {
+                move_step: 0,
+                ..ActionCosts::default()
+            },
+            ..compact(SEEDS[0])
+        })
+        .err(),
+        Some(super::TacticsError::FreeMovement)
+    );
 }
 
 /// Costs are settings, so a match that prices moves differently must actually
