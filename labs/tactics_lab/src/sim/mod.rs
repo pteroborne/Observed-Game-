@@ -37,7 +37,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use glam::Vec3;
 use observed_core::{PlayerId, TeamId};
-use observed_facility::hex_wfc::{HexObservationFrame, HexThresholdKey, HexWfcError, HexWfcWorld};
+use observed_facility::hex_wfc::{
+    HexObservationFrame, HexRelayoutDelta, HexThresholdKey, HexWfcError, HexWfcWorld,
+};
 use observed_facility::map_spec::RoomRole;
 use observed_hex::{HexCoord, hex_origin};
 use observed_match::hex_wfc::{
@@ -77,6 +79,54 @@ pub enum MatchStatus {
     Escaped,
     /// The rival squad got out first.
     Outrun,
+}
+
+/// One deterministic step in a pointer-requested route.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MoveStep {
+    pub face: observed_hex::HexFace,
+    pub to: HexCoord,
+}
+
+/// What clicking a destination would do before it mutates the match.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MovePreview {
+    pub requested: HexCoord,
+    pub start: HexCoord,
+    pub steps: Vec<MoveStep>,
+    pub affordable_steps: usize,
+    pub stopping_cell: HexCoord,
+    pub reaches_destination: bool,
+    pub action_point_cost: u16,
+    pub refusal: Option<Refusal>,
+}
+
+impl MovePreview {
+    #[must_use]
+    pub fn executable_steps(&self) -> &[MoveStep] {
+        &self.steps[..self.affordable_steps]
+    }
+
+    #[must_use]
+    pub const fn can_move(&self) -> bool {
+        self.affordable_steps > 0
+    }
+}
+
+/// One action's simulation-owned availability for command presentation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ActionAvailability {
+    pub action: TacticsAction,
+    pub cost: u8,
+    pub enabled: bool,
+    pub refusal: Option<Refusal>,
+}
+
+/// End-of-turn result plus the logical delta presentation must project.
+#[derive(Clone, Debug)]
+pub struct TurnResolution {
+    pub outcome: ShiftOutcome,
+    pub relayout: Option<HexRelayoutDelta>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -315,6 +365,98 @@ impl TacticsGame {
         actions
     }
 
+    /// Query one action without changing the match. Presentation derives both
+    /// enabled and disabled controls from this simulation-owned answer.
+    #[must_use]
+    pub fn action_availability(&self, id: PlayerId, action: TacticsAction) -> ActionAvailability {
+        let cost = action.cost(&self.settings.costs);
+        let refusal = match self.units.get(&id) {
+            None => Some(Refusal::NoSuchUnit),
+            Some(_) if self.phase == TurnPhase::Finished => Some(Refusal::NotYourTurn),
+            Some(unit) if unit.escaped => Some(Refusal::UnitEscaped),
+            Some(unit) if !unit.can_afford(cost) => Some(Refusal::NotEnoughActionPoints),
+            Some(_) if self.legal_actions(id).contains(&action) => None,
+            Some(_) => Some(match action {
+                TacticsAction::Move(_) => Refusal::Blocked,
+                TacticsAction::Interact => Refusal::NothingHere,
+                _ => Refusal::Unavailable,
+            }),
+        };
+        ActionAvailability {
+            action,
+            cost,
+            enabled: refusal.is_none(),
+            refusal,
+        }
+    }
+
+    /// Preview the exact route a destination click will execute, including the
+    /// affordable prefix and the point where this turn runs out of AP.
+    #[must_use]
+    pub fn preview_move(&self, id: PlayerId, requested: HexCoord) -> MovePreview {
+        let Some(unit) = self.units.get(&id).copied() else {
+            return MovePreview {
+                requested,
+                start: requested,
+                steps: Vec::new(),
+                affordable_steps: 0,
+                stopping_cell: requested,
+                reaches_destination: false,
+                action_point_cost: 0,
+                refusal: Some(Refusal::NoSuchUnit),
+            };
+        };
+        let mut visited = vec![unit.cell];
+        let mut steps = Vec::new();
+        let mut cursor = unit.cell;
+        while cursor != requested && steps.len() < self.world.placements.len() {
+            let Some(next) = adversary::advance_toward(&self.world, cursor, requested) else {
+                break;
+            };
+            if visited.contains(&next) {
+                break;
+            }
+            let Some(face) = vision::exits(&self.world, cursor)
+                .into_iter()
+                .find(|&(_, destination)| destination == next)
+                .map(|(face, _)| face)
+            else {
+                break;
+            };
+            steps.push(MoveStep { face, to: next });
+            visited.push(next);
+            cursor = next;
+        }
+        let move_cost = usize::from(self.settings.costs.move_step);
+        let affordable_steps = steps
+            .len()
+            .min(usize::from(unit.action_points) / move_cost.max(1));
+        let stopping_cell = steps
+            .get(affordable_steps.saturating_sub(1))
+            .map_or(unit.cell, |step| step.to);
+        let refusal = if self.phase == TurnPhase::Finished {
+            Some(Refusal::NotYourTurn)
+        } else if unit.escaped {
+            Some(Refusal::UnitEscaped)
+        } else if steps.is_empty() && unit.cell != requested {
+            Some(Refusal::Blocked)
+        } else if affordable_steps == 0 && unit.cell != requested {
+            Some(Refusal::NotEnoughActionPoints)
+        } else {
+            None
+        };
+        MovePreview {
+            requested,
+            start: unit.cell,
+            steps,
+            affordable_steps,
+            stopping_cell,
+            reaches_destination: cursor == requested,
+            action_point_cost: u16::try_from(affordable_steps * move_cost).unwrap_or(u16::MAX),
+            refusal,
+        }
+    }
+
     /// Perform one action for one unit.
     pub fn apply(&mut self, id: PlayerId, action: TacticsAction) -> Result<(), Refusal> {
         if self.phase == TurnPhase::Finished {
@@ -389,14 +531,13 @@ impl TacticsGame {
                     cell: unit.cell,
                 });
             }
-            Some(Interaction::Cache) => {
-                if self.anchors.collect_cache(id, unit.cell).is_some() {
-                    self.events.push(TacticsEvent::CacheCollected {
-                        unit: id,
-                        cell: unit.cell,
-                    });
-                }
+            Some(Interaction::Cache) if self.anchors.collect_cache(id, unit.cell).is_some() => {
+                self.events.push(TacticsEvent::CacheCollected {
+                    unit: id,
+                    cell: unit.cell,
+                });
             }
+            Some(Interaction::Cache) => {}
             None => {}
         }
     }
@@ -481,8 +622,18 @@ impl TacticsGame {
     /// End the squad's turn: rivals move, the Guardian hunts, the facility
     /// shifts, and a new pocket is telegraphed.
     pub fn end_turn(&mut self) -> ShiftOutcome {
+        self.end_turn_detailed().outcome
+    }
+
+    /// Detailed turn boundary for authored presentation. Existing headless
+    /// callers can continue using [`Self::end_turn`] when they need only the
+    /// gameplay outcome.
+    pub fn end_turn_detailed(&mut self) -> TurnResolution {
         if self.phase == TurnPhase::Finished {
-            return ShiftOutcome::NothingToShift;
+            return TurnResolution {
+                outcome: ShiftOutcome::NothingToShift,
+                relayout: None,
+            };
         }
         self.events.clear();
         self.step_rivals();
@@ -492,7 +643,7 @@ impl TacticsGame {
         // now rather than standing in the doorway for a turn.
         self.resolve_standing_escapes();
         self.observation = self.build_observation();
-        let outcome = self.commit_shift();
+        let (outcome, relayout) = self.commit_shift();
         self.last_shift = Some(outcome);
         self.refresh_knowledge();
         self.resolve_all_escapes();
@@ -508,7 +659,7 @@ impl TacticsGame {
         if self.phase != TurnPhase::Finished {
             self.arm_telegraph();
         }
-        outcome
+        TurnResolution { outcome, relayout }
     }
 
     fn step_rivals(&mut self) {
@@ -630,20 +781,20 @@ impl TacticsGame {
         }
     }
 
-    fn commit_shift(&mut self) -> ShiftOutcome {
+    fn commit_shift(&mut self) -> (ShiftOutcome, Option<HexRelayoutDelta>) {
         let Some(telegraph) = self.telegraph.take() else {
-            return ShiftOutcome::NothingToShift;
+            return (ShiftOutcome::NothingToShift, None);
         };
         let (outcome, delta) = relayout::commit(&mut self.world, telegraph, &self.observation);
         match outcome {
             ShiftOutcome::Committed => {
-                let cells = delta.map_or(0, |delta| delta.changed_cells.len());
+                let cells = delta.as_ref().map_or(0, |delta| delta.changed_cells.len());
                 self.events.push(TacticsEvent::FacilityShifted { cells });
             }
             ShiftOutcome::Held => self.events.push(TacticsEvent::FacilityHeld),
             ShiftOutcome::NothingToShift => {}
         }
-        outcome
+        (outcome, delta)
     }
 
     /// Choose and solve the pocket that will change at the end of this turn.

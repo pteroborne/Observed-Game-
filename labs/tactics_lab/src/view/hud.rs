@@ -28,6 +28,10 @@ pub enum HudButton {
     LevelUp,
     LevelDown,
     NextUnit,
+    Interact,
+    DeployAnchor,
+    RecoverAnchor,
+    DeployPad,
     Restart,
 }
 
@@ -48,75 +52,94 @@ pub fn spawn(commands: &mut Commands) {
             Node {
                 width: percent(100.0),
                 height: percent(100.0),
-                justify_content: JustifyContent::SpaceBetween,
-                flex_direction: FlexDirection::Column,
-                padding: UiRect::all(px(14.0)),
+                justify_content: JustifyContent::FlexEnd,
+                flex_direction: FlexDirection::Row,
                 ..default()
             },
-            // The HUD must never eat a click meant for the board.
             Pickable::IGNORE,
             Name::new("Tactics HUD"),
         ))
         .with_children(|root| {
             root.spawn((
-                StatusText,
-                Text::new(String::new()),
-                TextFont {
-                    font_size: 17.0,
-                    ..default()
-                },
-                TextColor(Color::WHITE),
-            ));
-            root.spawn((
                 Node {
-                    flex_direction: FlexDirection::Row,
-                    justify_content: JustifyContent::SpaceBetween,
-                    align_items: AlignItems::FlexEnd,
-                    width: percent(100.0),
+                    width: px(380.0),
+                    height: percent(100.0),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(8.0),
+                    padding: UiRect::all(px(18.0)),
+                    border: UiRect::left(px(2.0)),
                     ..default()
                 },
-                Pickable::IGNORE,
+                BackgroundColor(Color::srgba(0.025, 0.035, 0.05, 0.97)),
+                BorderColor::all(Color::srgb(0.98, 0.48, 0.12)),
+                Name::new("Tactical command dock"),
             ))
-            .with_children(|row| {
-                row.spawn((
-                    Node {
-                        flex_direction: FlexDirection::Column,
+            .with_children(|dock| {
+                dock.spawn((
+                    Text::new("OBSERVED // TACTICAL"),
+                    TextFont {
+                        font_size: 24.0,
                         ..default()
                     },
+                    TextColor(Color::srgb(1.0, 0.62, 0.2)),
                     Pickable::IGNORE,
-                ))
-                .with_children(|column| {
-                    spawn_legend(column);
-                    column.spawn((
-                        SquadText,
-                        Text::new(String::new()),
-                        TextFont {
-                            font_size: 15.0,
-                            ..default()
-                        },
-                        TextColor(Color::WHITE),
-                    ));
-                });
-                row.spawn((
+                ));
+                dock.spawn((
+                    StatusText,
+                    Text::new(String::new()),
+                    TextFont {
+                        font_size: 15.0,
+                        ..default()
+                    },
+                    TextColor(Color::WHITE),
+                    Pickable::IGNORE,
+                ));
+                dock.spawn((
+                    SquadText,
+                    Text::new(String::new()),
+                    TextFont {
+                        font_size: 15.0,
+                        ..default()
+                    },
+                    TextColor(Color::WHITE),
+                    Pickable::IGNORE,
+                ));
+                dock.spawn((
+                    Text::new("ACTIONS"),
+                    TextFont {
+                        font_size: 13.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.7, 0.76, 0.82)),
+                    Pickable::IGNORE,
+                ));
+                dock.spawn((
                     Node {
                         flex_direction: FlexDirection::Row,
+                        flex_wrap: FlexWrap::Wrap,
                         column_gap: px(8.0),
+                        row_gap: px(8.0),
                         ..default()
                     },
                     Pickable::IGNORE,
                 ))
                 .with_children(|controls| {
                     for (button, label) in [
+                        (HudButton::Interact, "Interact"),
+                        (HudButton::DeployAnchor, "Place anchor"),
+                        (HudButton::RecoverAnchor, "Recover anchor"),
+                        (HudButton::DeployPad, "Place plate"),
                         (HudButton::NextUnit, "Next unit"),
                         (HudButton::LevelDown, "-"),
                         (HudButton::LevelUp, "+"),
-                        (HudButton::ToggleView, "View"),
+                        (HudButton::ToggleView, "Deck / overview"),
                         (HudButton::Restart, "Setup"),
                         (HudButton::EndTurn, "End turn"),
                     ] {
                         spawn_control(controls, button, label);
                     }
                 });
+                spawn_legend(dock);
             });
         });
 }
@@ -257,8 +280,8 @@ pub fn status_line(game: &TacticsGame, mode: ViewMode, level: u8) -> String {
         MatchStatus::Outrun => " | OUTRUN by the rival squad".to_string(),
     };
     let view = match mode {
-        ViewMode::Isometric => format!("{} (all levels)", mode.label()),
-        ViewMode::Flat => format!("{} (level {level})", mode.label()),
+        ViewMode::Overview => format!("{} (all levels)", mode.label()),
+        ViewMode::Deck => format!("{} (level {level})", mode.label()),
     };
     format!(
         "Turn {} | {view} | {shift}{last}{guardian}{objectives}{outcome}\n\
@@ -313,7 +336,7 @@ mod tests {
     #[test]
     fn the_status_line_names_what_the_facility_will_do() {
         let shifting = game(MatchSettings::standard());
-        let line = status_line(&shifting, ViewMode::Isometric, 0);
+        let line = status_line(&shifting, ViewMode::Overview, 0);
         assert!(
             line.contains("re-collapse") || line.contains("no shift"),
             "status line said nothing about the shift: {line}"
@@ -323,7 +346,7 @@ mod tests {
             shift: ShiftCadence::Off,
             ..MatchSettings::standard()
         });
-        assert!(status_line(&static_facility, ViewMode::Isometric, 0).contains("facility static"));
+        assert!(status_line(&static_facility, ViewMode::Overview, 0).contains("facility static"));
     }
 
     #[test]
@@ -332,7 +355,7 @@ mod tests {
             guardian: GuardianSetting::Off,
             ..MatchSettings::standard()
         });
-        assert!(!status_line(&quiet, ViewMode::Isometric, 0).contains("Guardian"));
+        assert!(!status_line(&quiet, ViewMode::Overview, 0).contains("Guardian"));
     }
 
     #[test]
@@ -341,16 +364,16 @@ mod tests {
             objectives: Objectives::ExitOnly,
             ..MatchSettings::standard()
         });
-        assert!(!status_line(&plain, ViewMode::Isometric, 0).contains("keystones"));
+        assert!(!status_line(&plain, ViewMode::Overview, 0).contains("keystones"));
         let full = game(MatchSettings::standard());
-        assert!(status_line(&full, ViewMode::Isometric, 0).contains("keystones 0/2"));
+        assert!(status_line(&full, ViewMode::Overview, 0).contains("keystones 0/2"));
     }
 
     #[test]
     fn the_flat_view_names_the_level_it_is_showing() {
         let game = game(MatchSettings::standard());
-        assert!(status_line(&game, ViewMode::Flat, 2).contains("level 2"));
-        assert!(status_line(&game, ViewMode::Isometric, 2).contains("all levels"));
+        assert!(status_line(&game, ViewMode::Deck, 2).contains("level 2"));
+        assert!(status_line(&game, ViewMode::Overview, 2).contains("all levels"));
     }
 
     #[test]

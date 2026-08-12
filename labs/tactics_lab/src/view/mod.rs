@@ -14,6 +14,7 @@
 pub mod board;
 pub mod camera;
 pub mod hud;
+pub mod overlay;
 pub mod setup;
 
 use bevy::prelude::*;
@@ -28,27 +29,27 @@ use crate::sim::unit::PLAYER_TEAM;
 /// Which renderer is drawing the board.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum ViewMode {
-    /// True isometric, all levels legible at once.
+    /// Authored cutaway geometry for one active deck.
     #[default]
-    Isometric,
-    /// Flat top-down, one level at a time.
-    Flat,
+    Deck,
+    /// Stacked schematic for strategic whole-board reading.
+    Overview,
 }
 
 impl ViewMode {
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
-            ViewMode::Isometric => "Isometric",
-            ViewMode::Flat => "Top-down",
+            ViewMode::Deck => "Deck detail",
+            ViewMode::Overview => "Overview",
         }
     }
 
     #[must_use]
     pub const fn toggled(self) -> Self {
         match self {
-            ViewMode::Isometric => ViewMode::Flat,
-            ViewMode::Flat => ViewMode::Isometric,
+            ViewMode::Deck => ViewMode::Overview,
+            ViewMode::Overview => ViewMode::Deck,
         }
     }
 }
@@ -217,6 +218,10 @@ pub fn unit_marker(is_selected: bool, is_rival: bool) -> Treatment {
 /// without touching the HUD or the camera.
 #[derive(Component)]
 pub struct BoardVisual;
+
+/// Lightweight pointer feedback, rebuilt independently from authored hulls.
+#[derive(Component)]
+pub struct BoardOverlay;
 
 /// Marks the entity roots each screen owns.
 #[derive(Component)]

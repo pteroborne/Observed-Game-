@@ -186,7 +186,7 @@ fn on_off(value: bool) -> String {
 
 /// Build the screen. Rebuilt whenever a value changes, which keeps every label
 /// derived from the settings rather than mutated in place.
-pub fn spawn(commands: &mut Commands, settings: &MatchSettings) {
+pub fn spawn(commands: &mut Commands, settings: &MatchSettings, error: Option<&str>) {
     commands
         .spawn((
             SetupRoot,
@@ -221,6 +221,18 @@ pub fn spawn(commands: &mut Commands, settings: &MatchSettings) {
                 },
                 TextColor(Color::srgb(0.65, 0.8, 0.9)),
             ));
+            if let Some(error) = error {
+                root.spawn((
+                    Text::new(format!("COULD NOT START: {error}")),
+                    TextFont {
+                        font_size: 15.0,
+                        ..default()
+                    },
+                    TextColor(
+                        observed_style::tactics(observed_style::TacticsRole::Blocked).base_color,
+                    ),
+                ));
+            }
 
             let mut order = 0u16;
             root.spawn(Node {

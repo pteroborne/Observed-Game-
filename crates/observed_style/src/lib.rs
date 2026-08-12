@@ -1231,6 +1231,93 @@ pub fn schematic_screen() -> Color {
     Color::srgb(0.006, 0.020, 0.012)
 }
 
+/// Semantic vocabulary for the tactical lab's greybox board. Neutral structure
+/// leaves hue available for input and game-state feedback.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TacticsRole {
+    DevSurface,
+    DevGrid,
+    ReachableRoute,
+    RouteLimit,
+    Selectable,
+    Blocked,
+    ClickPulse,
+}
+
+impl TacticsRole {
+    pub const ALL: [Self; 7] = [
+        Self::DevSurface,
+        Self::DevGrid,
+        Self::ReachableRoute,
+        Self::RouteLimit,
+        Self::Selectable,
+        Self::Blocked,
+        Self::ClickPulse,
+    ];
+
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::DevSurface => "authored structure",
+            Self::DevGrid => "cell boundary",
+            Self::ReachableRoute => "reachable route",
+            Self::RouteLimit => "route continues next turn",
+            Self::Selectable => "selectable",
+            Self::Blocked => "cannot act here",
+            Self::ClickPulse => "command accepted",
+        }
+    }
+}
+
+/// Code-generated dev-grid treatment for tactical presentation.
+#[must_use]
+pub fn tactics(role: TacticsRole) -> Treatment {
+    match role {
+        TacticsRole::DevSurface => Treatment {
+            base_color: Color::srgb(0.16, 0.18, 0.20),
+            emissive: LinearRgba::rgb(0.015, 0.018, 0.022),
+            signal: false,
+            edge: Some(Color::srgb(0.38, 0.42, 0.46)),
+        },
+        TacticsRole::DevGrid => Treatment {
+            base_color: Color::srgb(0.98, 0.48, 0.12),
+            emissive: LinearRgba::rgb(1.35, 0.42, 0.06),
+            signal: false,
+            edge: Some(Color::srgb(1.0, 0.55, 0.16)),
+        },
+        TacticsRole::ReachableRoute => Treatment {
+            base_color: Color::srgb(0.08, 0.86, 0.98),
+            emissive: LinearRgba::rgb(0.2, 3.2, 4.2),
+            signal: true,
+            edge: Some(Color::WHITE),
+        },
+        TacticsRole::RouteLimit => Treatment {
+            base_color: Color::srgb(1.0, 0.68, 0.12),
+            emissive: LinearRgba::rgb(4.0, 2.2, 0.10),
+            signal: true,
+            edge: Some(Color::WHITE),
+        },
+        TacticsRole::Selectable => Treatment {
+            base_color: Color::srgb(0.24, 1.0, 0.82),
+            emissive: LinearRgba::rgb(0.25, 3.8, 2.7),
+            signal: true,
+            edge: Some(Color::WHITE),
+        },
+        TacticsRole::Blocked => Treatment {
+            base_color: Color::srgb(1.0, 0.12, 0.22),
+            emissive: LinearRgba::rgb(10.0, 0.30, 0.40),
+            signal: true,
+            edge: Some(Color::WHITE),
+        },
+        TacticsRole::ClickPulse => Treatment {
+            base_color: Color::WHITE,
+            emissive: LinearRgba::rgb(4.0, 4.0, 4.0),
+            signal: true,
+            edge: Some(Color::WHITE),
+        },
+    }
+}
+
 /// What a hex cell is, for the purpose of *drawing a map of it*.
 ///
 /// The isometric map and `iso_observer_lab` both render a solved facility as
@@ -2354,5 +2441,26 @@ mod tests {
             luminance(screen) < ATMOSPHERE_MAX_LUMINANCE,
             "the screen is background, never a wash"
         );
+    }
+
+    #[test]
+    fn tactical_structure_stays_quiet_and_input_signals_punch_through() {
+        assert!(!tactics(TacticsRole::DevSurface).signal);
+        assert!(!tactics(TacticsRole::DevGrid).signal);
+        for role in [
+            TacticsRole::ReachableRoute,
+            TacticsRole::RouteLimit,
+            TacticsRole::Selectable,
+            TacticsRole::Blocked,
+            TacticsRole::ClickPulse,
+        ] {
+            let treatment = tactics(role);
+            assert!(treatment.signal, "{role:?} is interaction-critical");
+            assert!(
+                luminance(treatment.emissive) >= SIGNAL_MIN_LUMINANCE,
+                "{role:?} is too dim"
+            );
+            assert!(!role.label().is_empty());
+        }
     }
 }

@@ -9,20 +9,23 @@
 //! in [`super`].
 
 use bevy::prelude::*;
+use observed_core::PlayerId;
 use observed_hex::{HexCoord, HexFace, hex_origin};
 use observed_schematic::{
     LineBatch, SurfaceBatch, floor_ring, ramp_glyph, stair_glyph, wall_bands,
 };
 use observed_style::{HexSketchRole, Treatment, hex_sketch};
+use observed_style::{TacticsRole, tactics};
 
 use crate::sim::TacticsGame;
 use crate::sim::unit::PLAYER_TEAM;
 use crate::sim::vision;
 
 use super::{BoardVisual, CellPaint, ViewMode, paint, sketch_role, unit_marker};
+use crate::BoardGeometry;
 
 /// Height of a unit's marker above its cell's floor.
-const MARKER_HEIGHT: f32 = 3.4;
+const MARKER_HEIGHT: f32 = 7.0;
 /// Wall bands are drawn low: a floor plan is read from above, and a waist-high
 /// solid says "you cannot pass here" without occluding the cell behind it.
 const WALL_FRACTION: f32 = 1.0 / 3.0;
@@ -39,6 +42,14 @@ pub struct DrawReport {
     pub segments: usize,
     pub walls: usize,
     pub units: usize,
+    pub detail_hulls: usize,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct BoardView {
+    pub selected: Option<PlayerId>,
+    pub mode: ViewMode,
+    pub level: u8,
 }
 
 /// Rebuild the whole board.
@@ -51,10 +62,23 @@ pub fn build(
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     game: &TacticsGame,
-    mode: ViewMode,
-    level: u8,
+    geometry: Option<&BoardGeometry>,
+    cache: &mut observed_cutaway::TileMeshCache,
+    board_view: BoardView,
 ) -> DrawReport {
+    let BoardView {
+        selected,
+        mode,
+        level,
+    } = board_view;
     let mut report = DrawReport::default();
+    if mode == ViewMode::Deck
+        && let Some(geometry) = geometry
+    {
+        report.detail_hulls = spawn_authored_deck(
+            commands, meshes, materials, game, geometry, cache, board_view,
+        );
+    }
     let mut lines: Vec<(CellPaint, LineBatch)> = CellPaint::ALL
         .iter()
         .map(|&state| (state, LineBatch::default()))
@@ -88,7 +112,12 @@ pub fn build(
         let Some(height) = sketch.height else {
             continue;
         };
-        let origin = cell_origin(mode, cell);
+        let origin = cell_origin(mode, cell)
+            + if mode == ViewMode::Deck {
+                Vec3::Y * 0.65
+            } else {
+                Vec3::ZERO
+            };
         report.cells += 1;
 
         let line = &mut lines
@@ -113,19 +142,21 @@ pub fn build(
         }
 
         let open = HexFace::LATERAL.map(|face| placement.is_open(face));
-        let surface = &mut walls
-            .iter_mut()
-            .find(|(candidate, _)| *candidate == state)
-            .expect("every paint state has a batch")
-            .1;
-        for quad in wall_bands(height * WALL_FRACTION, open) {
-            surface.quad(
-                origin + quad[0],
-                origin + quad[1],
-                origin + quad[2],
-                origin + quad[3],
-            );
-            report.walls += 1;
+        if mode == ViewMode::Overview {
+            let surface = &mut walls
+                .iter_mut()
+                .find(|(candidate, _)| *candidate == state)
+                .expect("every paint state has a batch")
+                .1;
+            for quad in wall_bands(height * WALL_FRACTION, open) {
+                surface.quad(
+                    origin + quad[0],
+                    origin + quad[1],
+                    origin + quad[2],
+                    origin + quad[3],
+                );
+                report.walls += 1;
+            }
         }
     }
 
@@ -134,7 +165,9 @@ pub fn build(
             commands.spawn((
                 BoardVisual,
                 Mesh3d(meshes.add(mesh)),
-                MeshMaterial3d(materials.add(line_material(state.treatment(), state.dimmed()))),
+                MeshMaterial3d(
+                    materials.add(line_material(board_treatment(mode, state), state.dimmed())),
+                ),
                 Transform::IDENTITY,
                 Name::new(format!("Board lines: {}", state.legend())),
             ));
@@ -152,9 +185,86 @@ pub fn build(
         }
     }
 
-    report.units = spawn_units(commands, meshes, materials, game, mode, level);
+    report.units = spawn_units(commands, meshes, materials, game, selected, mode, level);
     spawn_objectives(commands, meshes, materials, game, mode, level);
     report
+}
+
+fn board_treatment(mode: ViewMode, state: CellPaint) -> Treatment {
+    if mode == ViewMode::Deck && matches!(state, CellPaint::Known | CellPaint::Stale) {
+        tactics(TacticsRole::DevGrid)
+    } else {
+        state.treatment()
+    }
+}
+
+fn spawn_authored_deck(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    game: &TacticsGame,
+    geometry: &BoardGeometry,
+    cache: &mut observed_cutaway::TileMeshCache,
+    board_view: BoardView,
+) -> usize {
+    let BoardView {
+        selected, level, ..
+    } = board_view;
+    let cells = game
+        .world
+        .placements
+        .keys()
+        .filter(|cell| cell.level == level && paint(game, **cell) != CellPaint::Unknown)
+        .copied()
+        .collect();
+    let selected = selected
+        .and_then(|id| game.units.get(&id))
+        .filter(|unit| unit.cell.level == level)
+        .map(|unit| unit.cell);
+    let bearing = observed_style::iso::detent_bearing(0);
+    let (focus, context, detail) = observed_cutaway::build(
+        &game.world,
+        &geometry.snapshot,
+        &cells,
+        selected,
+        bearing,
+        true,
+        cache,
+    );
+    let treatment = tactics(TacticsRole::DevSurface);
+    for batch in context.into_values().chain(std::iter::once(focus)) {
+        let Some(mesh) = batch.into_mesh() else {
+            continue;
+        };
+        commands.spawn((
+            BoardVisual,
+            Mesh3d(meshes.add(mesh)),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: treatment.base_color,
+                emissive: treatment.emissive,
+                perceptual_roughness: 0.82,
+                metallic: 0.04,
+                cull_mode: None,
+                double_sided: true,
+                ..default()
+            })),
+            Name::new("Authored tactical cutaway"),
+        ));
+    }
+    let bearing3 = Vec3::new(bearing.x, 0.0, bearing.y);
+    let key_from =
+        Quat::from_rotation_y(observed_style::iso::light::KEY_OFFSET) * bearing3 + Vec3::Y * 1.15;
+    commands.spawn((
+        BoardVisual,
+        DirectionalLight {
+            illuminance: observed_style::iso::light::KEY_ILLUMINANCE,
+            shadows_enabled: false,
+            ..default()
+        },
+        Transform::from_translation(key_from).looking_at(Vec3::ZERO, Vec3::Y),
+        Name::new("Tactical cutaway key"),
+    ));
+    detail.hulls_drawn
 }
 
 /// Units, drawn as a floating marker so they read over the line work rather than
@@ -164,6 +274,7 @@ fn spawn_units(
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     game: &TacticsGame,
+    selected: Option<PlayerId>,
     mode: ViewMode,
     level: u8,
 ) -> usize {
@@ -179,12 +290,25 @@ fn spawn_units(
         if rival && !game.observation.visible_cells.contains(&unit.cell) {
             continue;
         }
-        let treatment = unit_marker(!rival, rival);
+        let is_selected = selected == Some(unit.id);
+        let treatment = unit_marker(is_selected, rival);
+        // Squad members frequently share a cell. Fan their markers out just
+        // enough that selection stays legible without implying a different
+        // simulation position.
+        let marker_offset = if rival {
+            Vec3::ZERO
+        } else {
+            let angle = f32::from(unit.id.0) * std::f32::consts::TAU / 6.0;
+            Vec3::new(angle.cos(), 0.0, angle.sin()) * 1.8
+        };
+        let radius = if is_selected { 2.0 } else { 1.45 };
         commands.spawn((
             BoardVisual,
-            Mesh3d(meshes.add(Sphere::new(1.6).mesh().ico(2).expect("icosphere"))),
+            Mesh3d(meshes.add(Sphere::new(radius).mesh().ico(2).expect("icosphere"))),
             MeshMaterial3d(materials.add(line_material(treatment, false))),
-            Transform::from_translation(cell_origin(mode, unit.cell) + Vec3::Y * MARKER_HEIGHT),
+            Transform::from_translation(
+                cell_origin(mode, unit.cell) + marker_offset + Vec3::Y * MARKER_HEIGHT,
+            ),
             Name::new(format!("Unit {}", unit.id.0)),
         ));
         drawn += 1;
@@ -237,7 +361,7 @@ fn spawn_objectives(
             BoardVisual,
             Mesh3d(meshes.add(Torus::new(2.2, 2.8).mesh().build())),
             MeshMaterial3d(materials.add(line_material(observed_style::marker(role), false))),
-            Transform::from_translation(cell_origin(mode, cell) + Vec3::Y * 0.4),
+            Transform::from_translation(cell_origin(mode, cell) + Vec3::Y * 1.0),
             Name::new(format!("Objective {role:?}")),
         ));
     }
@@ -251,8 +375,8 @@ fn spawn_objectives(
 pub fn cell_origin(mode: ViewMode, cell: HexCoord) -> Vec3 {
     let [x, _, z] = hex_origin(cell);
     let y = match mode {
-        ViewMode::Isometric => f32::from(cell.level) * ISO_LEVEL_LIFT,
-        ViewMode::Flat => 0.0,
+        ViewMode::Overview => f32::from(cell.level) * ISO_LEVEL_LIFT,
+        ViewMode::Deck => hex_origin(cell)[1],
     };
     Vec3::new(x, y, z)
 }
@@ -261,8 +385,8 @@ pub fn cell_origin(mode: ViewMode, cell: HexCoord) -> Vec3 {
 #[must_use]
 pub fn draws_level(mode: ViewMode, cell: HexCoord, level: u8) -> bool {
     match mode {
-        ViewMode::Isometric => true,
-        ViewMode::Flat => cell.level == level,
+        ViewMode::Overview => true,
+        ViewMode::Deck => cell.level == level,
     }
 }
 

@@ -29,14 +29,16 @@ Collapse — or change any row, then start. `R` returns to setup at any time.
 
 | Input | Does |
 | --- | --- |
-| click a cell | walk the selected unit toward it, as far as its points allow |
+| hover a cell | preview the route, AP cost and this turn's stopping cell |
+| click a cell | commit the previewed route; the unit advances one visible step at a time |
 | click a unit | select it |
 | `Tab` / Next unit | select the next unit that can still act |
 | `1`–`6` | select a unit directly |
 | `Space` / End turn | end the turn: rivals move, the Guardian hunts, the facility shifts |
-| `V` / View | switch between isometric and top-down |
-| `[` `]` / `-` `+` | change the level the top-down view shows |
+| `V` / Deck / overview | switch between the authored active deck and stacked schematic |
+| `[` `]` / `-` `+` | browse the active authored deck |
 | scroll, right-drag | zoom and pan |
+| `Esc` | pause, resume or open the help/legend panel |
 
 Every command has an on-screen control as well as a key. That is deliberate: the
 prototype is pointed at a possible touch build, and a lab that can only be driven
@@ -54,6 +56,7 @@ conclusion about the game, not about a model of it.
   `HexGuardianStatus`.
 - `observed_style` — every colour on screen.
 - `observed_schematic` — line and band meshes, shared with `iso_observer_lab`.
+- `observed_cutaway` — cached authored hulls and the shared ceiling/near-wall cutaway.
 - `observed_ui` — the setup screen's widgets and focus.
 
 Three things could not be borrowed, and each says so where it lives: the
@@ -96,7 +99,16 @@ The lab succeeds if:
 
 - holding a telegraphed pocket visibly refuses the shift, and the HUD says so;
 - turning `Facility shift` off produces a match that feels *worse*;
-- the isometric and top-down views never disagree about what a cell is.
+- the authored deck and stacked overview never disagree about what a cell is.
+
+## Presentation direction
+
+The detailed deck uses the committed authored WFC catalogue rather than an
+approximation. Neutral slate hulls and orange construction lines create the
+greybox/dev-grid read; cyan, amber and red are reserved for named interaction
+states. The 3D viewport ends where the right-side command dock begins, so UI
+never covers a selectable cell. No render or pointer state participates in the
+match digest or replay log.
 
 It fails if spending observation on holding ground is never worth more than
 spending it on distance — in which case the freeze is decoration, and the

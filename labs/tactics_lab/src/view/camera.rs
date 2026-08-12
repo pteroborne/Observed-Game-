@@ -12,13 +12,14 @@ use crate::sim::TacticsGame;
 
 use super::ViewMode;
 use super::board::{cell_origin, draws_level};
+use super::{CellPaint, paint};
 
 /// True isometric pitch: `atan(1 / sqrt(2))`, the angle at which the three axes
 /// of a cube project to equal screen lengths.
 const ISO_PITCH: f32 = -0.615_479_7;
 const ISO_YAW: f32 = std::f32::consts::FRAC_PI_4;
 /// Padding around the framed board, as a multiple of its extent.
-const FRAME_MARGIN: f32 = 1.15;
+const FRAME_MARGIN: f32 = 1.55;
 
 #[derive(Component)]
 pub struct BoardCamera;
@@ -33,9 +34,17 @@ pub fn frame(game: &TacticsGame, mode: ViewMode, level: u8) -> (Transform, f32) 
         if !draws_level(mode, cell, level) {
             continue;
         }
+        if mode == ViewMode::Deck && paint(game, cell) == CellPaint::Unknown {
+            continue;
+        }
         let point = cell_origin(mode, cell);
-        min = min.min(point);
-        max = max.max(point);
+        let padding = if mode == ViewMode::Deck {
+            Vec3::new(12.0, 8.0, 12.0)
+        } else {
+            Vec3::new(8.0, 4.0, 8.0)
+        };
+        min = min.min(point - padding);
+        max = max.max(point + padding);
         any = true;
     }
     if !any {
@@ -48,15 +57,14 @@ pub fn frame(game: &TacticsGame, mode: ViewMode, level: u8) -> (Transform, f32) 
     let extent = (max - min).max(Vec3::splat(1.0));
 
     let (rotation, distance) = match mode {
-        ViewMode::Isometric => (
+        ViewMode::Overview => (
             Quat::from_euler(EulerRot::YXZ, ISO_YAW, ISO_PITCH, 0.0),
             extent.length() + 120.0,
         ),
-        // Straight down. The flat view is a plan, so anything but a true
-        // overhead would put a false perspective on distances the player is
-        // counting in cells.
-        ViewMode::Flat => (
-            Quat::from_euler(EulerRot::YXZ, 0.0, -std::f32::consts::FRAC_PI_2, 0.0),
+        // The detailed deck keeps the same projection as the strategic stack;
+        // switching modes should change information density, not orientation.
+        ViewMode::Deck => (
+            Quat::from_euler(EulerRot::YXZ, ISO_YAW, ISO_PITCH, 0.0),
             extent.length() + 120.0,
         ),
     };
@@ -100,19 +108,22 @@ mod tests {
     /// they framed the same volume, one of them would be wrong about what it is
     /// showing.
     #[test]
-    fn the_isometric_frame_covers_more_than_a_single_flat_level() {
+    fn the_overview_frames_more_than_one_detailed_deck() {
         let game = game();
-        let (iso, iso_scale) = frame(&game, ViewMode::Isometric, 0);
-        let (flat, flat_scale) = frame(&game, ViewMode::Flat, 0);
+        let (iso, iso_scale) = frame(&game, ViewMode::Overview, 0);
+        let (flat, flat_scale) = frame(&game, ViewMode::Deck, 0);
         assert!(iso_scale >= flat_scale);
-        assert_ne!(iso.rotation, flat.rotation);
+        assert_eq!(
+            iso.rotation, flat.rotation,
+            "both modes use the same isometric read"
+        );
     }
 
     #[test]
     fn a_level_with_nothing_on_it_still_produces_a_camera() {
         let game = game();
         let empty = game.world.config.levels + 5;
-        let (transform, scale) = frame(&game, ViewMode::Flat, empty);
+        let (transform, scale) = frame(&game, ViewMode::Deck, empty);
         assert!(transform.translation.is_finite());
         assert!(scale >= 20.0);
     }

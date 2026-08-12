@@ -2350,6 +2350,7 @@ dependencies = [
  "observed_authoring",
  "observed_content",
  "observed_core",
+ "observed_cutaway",
  "observed_facility",
  "observed_hex",
  "observed_match",
@@ -5486,6 +5487,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "observed_cutaway"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "observed_content",
+ "observed_facility",
+ "observed_hex",
+ "observed_match",
+ "observed_style",
+ "observed_traversal",
+]
+
+[[package]]
 name = "observed_diagnostics"
 version = "0.1.0"
 dependencies = [
@@ -7016,7 +7030,9 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "glam 0.30.10",
+ "observed_content",
  "observed_core",
+ "observed_cutaway",
  "observed_facility",
  "observed_hex",
  "observed_match",

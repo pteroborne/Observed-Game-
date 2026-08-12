@@ -37,5 +37,6 @@ observed_match = { path = "../../crates/observed_match", default-features = fals
 observed_style = { path = "../../crates/observed_style" }
 # `ConvexRenderMesh` turns a hull point cloud into edges.
 observed_traversal = { path = "../../crates/observed_traversal", default-features = false }
+observed_cutaway = { path = "../../crates/observed_cutaway" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0"

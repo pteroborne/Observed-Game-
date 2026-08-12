@@ -142,7 +142,13 @@ fn capture_progress(
         state.selected = Some(id);
         state.move_selected_toward(goal);
     }
-    state.game.end_turn();
+    let resolution = state.game.end_turn_detailed();
+    if let Some(mut geometry) = state.geometry.take() {
+        if let Err(detail) = geometry.apply_resolution(&state.game, &resolution) {
+            warn!("capture projection update failed: {detail}");
+        }
+        state.geometry = Some(geometry);
+    }
     state.dirty = true;
     run.turn += 1;
 

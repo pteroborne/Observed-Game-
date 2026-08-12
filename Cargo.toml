@@ -18,6 +18,7 @@ members = [
     "crates/observed_hex",
     "crates/observed_authoring",
     "crates/observed_schematic",
+    "crates/observed_cutaway",
     "labs/menu_lab",
     "labs/control_lab",
     "labs/movement_lab",

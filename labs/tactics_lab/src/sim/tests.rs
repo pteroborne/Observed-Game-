@@ -91,6 +91,46 @@ fn every_preset_produces_a_playable_match() {
 }
 
 #[test]
+fn a_move_preview_is_the_route_execution_uses() {
+    let mut game = game(SEEDS[0]);
+    let id = PlayerId(0);
+    let destination = game.world.config.exit();
+    let preview = game.preview_move(id, destination);
+    assert!(preview.can_move());
+    assert_eq!(
+        preview.action_point_cost,
+        u16::try_from(preview.affordable_steps).expect("compact route")
+            * u16::from(game.settings.costs.move_step)
+    );
+    for step in preview.executable_steps() {
+        game.apply(id, TacticsAction::Move(step.face))
+            .expect("a previewed step is legal");
+        assert_eq!(game.units[&id].cell, step.to);
+    }
+    assert_eq!(game.units[&id].cell, preview.stopping_cell);
+}
+
+#[test]
+fn action_availability_names_ap_refusals_without_mutating() {
+    let mut game = game(SEEDS[0]);
+    let id = PlayerId(0);
+    let before = game.digest();
+    let available = game.action_availability(id, TacticsAction::DeployAnchor);
+    assert!(available.enabled);
+    assert_eq!(available.cost, game.settings.costs.anchor);
+    assert_eq!(
+        game.digest(),
+        before,
+        "an availability query mutated the match"
+    );
+
+    game.units.get_mut(&id).expect("unit").action_points = 0;
+    let unavailable = game.action_availability(id, TacticsAction::DeployAnchor);
+    assert!(!unavailable.enabled);
+    assert_eq!(unavailable.refusal, Some(Refusal::NotEnoughActionPoints));
+}
+
+#[test]
 fn a_squad_cannot_spend_more_than_its_action_points() {
     let mut game = game(SEEDS[0]);
     let id = PlayerId(0);

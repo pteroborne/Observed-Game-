@@ -1,0 +1,14 @@
+[package]
+name = "observed_cutaway"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = ["2d", "3d"] }
+observed_content = { path = "../observed_content" }
+observed_facility = { path = "../observed_facility" }
+observed_hex = { path = "../observed_hex" }
+observed_match = { path = "../observed_match", default-features = false }
+observed_style = { path = "../observed_style" }
+observed_traversal = { path = "../observed_traversal", default-features = false }
