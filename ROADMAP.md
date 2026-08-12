@@ -19,6 +19,49 @@ This document outlines the current active development goals, completed milestone
 > is the only open code arc, and what remains of it is **content authoring**
 > rather than refactoring.
 
+### Tactical Lab — A Board You Can Actually Read `[x]`
+Added `labs/tactics_lab`, a turn-based whole-board variant of the canonical hex
+facility, aimed squarely at three of Arc T's findings that are gameplay
+questions rather than engineering ones: choices felt shallow, the facility's
+changes were imperceptible, and the map could not orient anyone. None of the
+three is falsifiable from inside a corridor at 60 Hz, which is why they survived
+four "fix landed" verdicts.
+
+- **The same rules, not a model of them.** The lab drives the real
+  `HexWfcWorld` and the real `begin_frontier_relayout` → `advance_relayout` →
+  `commit_relayout_delta` cycle, and reuses `HexPlayerMapKnowledge`,
+  `HexLanternState`, `HexPadState` and `HexGuardianStatus` directly. Three things
+  could not be borrowed and each says so where it lives: the Guardian's cadence
+  becomes per-turn, fog recording becomes per-hop because `Sight` is a setting
+  the shipped game has no equivalent of, and an anchor pins a cell rather than a
+  named doorway, since a unit with no facing has no doorway to choose.
+- **The telegraph.** The pocket that will re-collapse is selected, solved and
+  *drawn* at the start of the turn; the commit is attempted against wherever the
+  squad actually ended up, and is refused if they held it. This is the shipped
+  `MUTATION_WARNING_TICKS` contract at a cadence a human can read — the same
+  rules, a different rate.
+- **Match settings, not developer toggles.** A player-facing setup screen on
+  `observed_ui` widgets, grouped Board / Squad / Sight / Facility shift / Gear /
+  Objectives / Threats, with Scout, Standard and Collapse presets. Every command
+  has a pointer control as well as a key binding, and the simulation is pure —
+  both constraints taken on now because the prototype is pointed at a possible
+  touch build.
+- **One rule about the whole-map view:** `Sight::FullMap` changes presentation
+  only. A test digests the same match under `Corridor` and `FullMap` and asserts
+  they are identical, because a whole-board view that quietly changed the freeze
+  radius would be measuring a different game than the fogged one.
+- **A real bug the lab surfaced:** escaping was a property of *moving onto* the
+  exit, so a squad whose last keystone was collected by a different unit stood in
+  an open doorway indefinitely. The condition is now "standing on the exit,
+  authorized", evaluated wherever either half can change.
+- **`observed_schematic`:** the line-batching and prism helpers were extracted
+  from `iso_observer_lab` once this lab became a second consumer — the condition
+  `agents.md` sets for generalising, and the precedent `observed_ui` records in
+  its own manifest.
+- **Verification:** 49 `tactics_lab` tests and 10 `observed_schematic` tests
+  green, `iso_observer_lab` unchanged and still passing, workspace `cargo fmt`
+  and `clippy` clean.
+
 **Arc T — Somewhere To Go** `[ ]` (plan: [docs/arc_t/README.md](docs/arc_t/README.md)).
 Opened 2026-08-09 from the first Deck-to-Deck playtest — two humans, two Steam
 Decks, the v0.1.0/v0.2.0 builds. Ten findings landed as

@@ -1,0 +1,28 @@
+[package]
+name = "tactics_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = [
+    "2d",
+    "3d",
+    "png",
+    "experimental_bevy_ui_widgets",
+] }
+glam = "0.30"
+# The facility solver and its observation-safe relayout. `hex_wfc` is
+# unconditional in `observed_facility` — no `wfc` feature needed.
+observed_facility = { path = "../../crates/observed_facility" }
+observed_core = { path = "../../crates/observed_core", default-features = false }
+observed_hex = { path = "../../crates/observed_hex" }
+# Fog of war, anchors and pads are reused from the shipped match rather than
+# reimplemented; see `sim/README` prose in `sim/mod.rs`.
+observed_match = { path = "../../crates/observed_match", default-features = false }
+observed_schematic = { path = "../../crates/observed_schematic" }
+# Colours come from the production style crate, never invented locally.
+observed_style = { path = "../../crates/observed_style" }
+# Focusable menu chrome, shared with the shipped frontend.
+observed_ui = { path = "../../crates/observed_ui" }
+serde_json = "1.0"

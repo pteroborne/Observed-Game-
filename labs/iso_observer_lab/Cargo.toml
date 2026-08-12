@@ -14,6 +14,8 @@ observed_content = { path = "../../crates/observed_content" }
 observed_facility = { path = "../../crates/observed_facility" }
 observed_hex = { path = "../../crates/observed_hex" }
 observed_match = { path = "../../crates/observed_match", default-features = false }
+# Line batching, cell shells and the quantized prism, shared with `tactics_lab`.
+observed_schematic = { path = "../../crates/observed_schematic" }
 # Colours come from the production style crate, never invented locally.
 observed_style = { path = "../../crates/observed_style" }
 # `ConvexRenderMesh` turns a hull point cloud into edges without repeating

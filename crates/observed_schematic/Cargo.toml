@@ -1,0 +1,20 @@
+[package]
+name = "observed_schematic"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Line-and-band mesh building for hex schematic views. Extracted from
+# `iso_observer_lab` once a second consumer existed (`tactics_lab`), which is
+# the condition `agents.md` sets for generalising a lab module — the same
+# threshold `observed_ui` records in its own manifest.
+#
+# Deliberately narrow: `bevy` for meshes and `observed_hex` for the canonical
+# quantized footprint, and nothing else. The hull-wireframe half of the original
+# module stayed behind in the lab, because it needs `observed_traversal` and only
+# a view that draws authored tile geometry wants it.
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = ["2d", "3d"] }
+# The quantized hexagon is deliberately not regular; deriving a footprint
+# locally would leave sub-metre gaps between neighbouring cells.
+observed_hex = { path = "../observed_hex" }

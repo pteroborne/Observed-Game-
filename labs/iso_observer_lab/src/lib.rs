@@ -27,7 +27,6 @@
 mod capture;
 mod draw;
 mod inspect;
-mod prism;
 mod wire;
 
 use std::collections::{BTreeMap, BTreeSet};

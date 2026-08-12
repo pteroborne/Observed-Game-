@@ -1,0 +1,323 @@
+//! Drawing the board.
+//!
+//! One pass over the lattice, batched by meaning: every cell painted the same
+//! way lands in the same mesh, so a production-scale board costs six meshes
+//! rather than six thousand entities. The batching primitives are
+//! `observed_schematic`, shared with `iso_observer_lab`.
+//!
+//! The two view modes are parameters here, not separate renderers — see the note
+//! in [`super`].
+
+use bevy::prelude::*;
+use observed_hex::{HexCoord, HexFace, hex_origin};
+use observed_schematic::{
+    LineBatch, SurfaceBatch, floor_ring, ramp_glyph, stair_glyph, wall_bands,
+};
+use observed_style::{HexSketchRole, Treatment, hex_sketch};
+
+use crate::sim::TacticsGame;
+use crate::sim::unit::PLAYER_TEAM;
+use crate::sim::vision;
+
+use super::{BoardVisual, CellPaint, ViewMode, paint, sketch_role, unit_marker};
+
+/// Height of a unit's marker above its cell's floor.
+const MARKER_HEIGHT: f32 = 3.4;
+/// Wall bands are drawn low: a floor plan is read from above, and a waist-high
+/// solid says "you cannot pass here" without occluding the cell behind it.
+const WALL_FRACTION: f32 = 1.0 / 3.0;
+/// Metres between drawn levels in the isometric view. The lattice's own level
+/// height would stack a ten-level facility into an unreadable column; this
+/// separates the decks enough to read each one.
+const ISO_LEVEL_LIFT: f32 = 9.0;
+
+/// What one rebuild drew. Reported in the status line and asserted in tests.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct DrawReport {
+    pub cells: usize,
+    pub hidden: usize,
+    pub segments: usize,
+    pub walls: usize,
+    pub units: usize,
+}
+
+/// Rebuild the whole board.
+///
+/// Everything it spawns carries [`BoardVisual`], so the caller clears a board by
+/// despawning that one marker — the reset contract every lab in this workspace
+/// keeps.
+pub fn build(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    game: &TacticsGame,
+    mode: ViewMode,
+    level: u8,
+) -> DrawReport {
+    let mut report = DrawReport::default();
+    let mut lines: Vec<(CellPaint, LineBatch)> = CellPaint::ALL
+        .iter()
+        .map(|&state| (state, LineBatch::default()))
+        .collect();
+    let mut walls: Vec<(CellPaint, SurfaceBatch)> = CellPaint::ALL
+        .iter()
+        .map(|&state| (state, SurfaceBatch::default()))
+        .collect();
+
+    for (&cell, placement) in &game.world.placements {
+        if !draws_level(mode, cell, level) {
+            continue;
+        }
+        let state = paint(game, cell);
+        if state == CellPaint::Unknown {
+            // Fog is drawn by *not drawing*. An outline for "something is here"
+            // would be a map of the facility's shape, which is the thing the
+            // player is meant to be discovering.
+            report.hidden += 1;
+            continue;
+        }
+        let role = sketch_role(
+            placement.archetype,
+            placement.space,
+            game.world.room_id_at(cell).is_some(),
+        );
+        if role == HexSketchRole::Void {
+            continue;
+        }
+        let sketch = hex_sketch(role);
+        let Some(height) = sketch.height else {
+            continue;
+        };
+        let origin = cell_origin(mode, cell);
+        report.cells += 1;
+
+        let line = &mut lines
+            .iter_mut()
+            .find(|(candidate, _)| *candidate == state)
+            .expect("every paint state has a batch")
+            .1;
+        for (from, to) in floor_ring(sketch.inset) {
+            line.segment(origin + from, origin + to);
+            report.segments += 1;
+        }
+        // The glyphs are how a flat view says "the floor changes here" without
+        // the reader counting edges or selecting anything.
+        let vertical = match role {
+            HexSketchRole::Shaft => Some(stair_glyph(height)),
+            HexSketchRole::Ramp => Some(ramp_glyph(height)),
+            _ => None,
+        };
+        for (from, to) in vertical.into_iter().flatten() {
+            line.segment(origin + from, origin + to);
+            report.segments += 1;
+        }
+
+        let open = HexFace::LATERAL.map(|face| placement.is_open(face));
+        let surface = &mut walls
+            .iter_mut()
+            .find(|(candidate, _)| *candidate == state)
+            .expect("every paint state has a batch")
+            .1;
+        for quad in wall_bands(height * WALL_FRACTION, open) {
+            surface.quad(
+                origin + quad[0],
+                origin + quad[1],
+                origin + quad[2],
+                origin + quad[3],
+            );
+            report.walls += 1;
+        }
+    }
+
+    for (state, batch) in lines {
+        if let Some(mesh) = batch.build() {
+            commands.spawn((
+                BoardVisual,
+                Mesh3d(meshes.add(mesh)),
+                MeshMaterial3d(materials.add(line_material(state.treatment(), state.dimmed()))),
+                Transform::IDENTITY,
+                Name::new(format!("Board lines: {}", state.legend())),
+            ));
+        }
+    }
+    for (state, batch) in walls {
+        if let Some(mesh) = batch.build() {
+            commands.spawn((
+                BoardVisual,
+                Mesh3d(meshes.add(mesh)),
+                MeshMaterial3d(materials.add(line_material(state.treatment(), true))),
+                Transform::IDENTITY,
+                Name::new(format!("Board walls: {}", state.legend())),
+            ));
+        }
+    }
+
+    report.units = spawn_units(commands, meshes, materials, game, mode, level);
+    spawn_objectives(commands, meshes, materials, game, mode, level);
+    report
+}
+
+/// Units, drawn as a floating marker so they read over the line work rather than
+/// inside it.
+fn spawn_units(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    game: &TacticsGame,
+    mode: ViewMode,
+    level: u8,
+) -> usize {
+    let mut drawn = 0;
+    for unit in game.units.values().filter(|unit| !unit.escaped) {
+        if !draws_level(mode, unit.cell, level) {
+            continue;
+        }
+        let rival = unit.team != PLAYER_TEAM;
+        // A rival is only drawn where the squad can actually see it. Otherwise
+        // the race would be run against an opponent whose position the player is
+        // simply told, which is not the game.
+        if rival && !game.observation.visible_cells.contains(&unit.cell) {
+            continue;
+        }
+        let treatment = unit_marker(!rival, rival);
+        commands.spawn((
+            BoardVisual,
+            Mesh3d(meshes.add(Sphere::new(1.6).mesh().ico(2).expect("icosphere"))),
+            MeshMaterial3d(materials.add(line_material(treatment, false))),
+            Transform::from_translation(cell_origin(mode, unit.cell) + Vec3::Y * MARKER_HEIGHT),
+            Name::new(format!("Unit {}", unit.id.0)),
+        ));
+        drawn += 1;
+    }
+    if let Some(guardian) = game.guardian
+        && draws_level(mode, guardian.cell, level)
+        && game.observation.visible_cells.contains(&guardian.cell)
+    {
+        commands.spawn((
+            BoardVisual,
+            Mesh3d(meshes.add(Sphere::new(2.0).mesh().ico(2).expect("icosphere"))),
+            MeshMaterial3d(materials.add(line_material(
+                observed_style::marker(observed_style::MarkerRole::Director),
+                false,
+            ))),
+            Transform::from_translation(cell_origin(mode, guardian.cell) + Vec3::Y * MARKER_HEIGHT),
+            Name::new("Guardian"),
+        ));
+    }
+    drawn
+}
+
+/// The exit, and whatever objectives the squad still owes.
+fn spawn_objectives(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    game: &TacticsGame,
+    mode: ViewMode,
+    level: u8,
+) {
+    let exit = game.world.config.exit();
+    let mut targets = vec![(exit, observed_style::MarkerRole::Exit)];
+    targets.extend(
+        game.observation
+            .objective_cells
+            .iter()
+            .map(|&cell| (cell, observed_style::MarkerRole::NextRoom)),
+    );
+    for (cell, role) in targets {
+        if !draws_level(mode, cell, level) {
+            continue;
+        }
+        // An objective the squad has not found yet stays hidden, like everything
+        // else it has not found.
+        if paint(game, cell) == CellPaint::Unknown {
+            continue;
+        }
+        commands.spawn((
+            BoardVisual,
+            Mesh3d(meshes.add(Torus::new(2.2, 2.8).mesh().build())),
+            MeshMaterial3d(materials.add(line_material(observed_style::marker(role), false))),
+            Transform::from_translation(cell_origin(mode, cell) + Vec3::Y * 0.4),
+            Name::new(format!("Objective {role:?}")),
+        ));
+    }
+}
+
+/// Where a cell is drawn.
+///
+/// The flat view collapses every level onto one plane because it only ever draws
+/// one; the isometric view lifts them apart so a stack reads as a stack.
+#[must_use]
+pub fn cell_origin(mode: ViewMode, cell: HexCoord) -> Vec3 {
+    let [x, _, z] = hex_origin(cell);
+    let y = match mode {
+        ViewMode::Isometric => f32::from(cell.level) * ISO_LEVEL_LIFT,
+        ViewMode::Flat => 0.0,
+    };
+    Vec3::new(x, y, z)
+}
+
+/// Whether this cell belongs in the current drawing.
+#[must_use]
+pub fn draws_level(mode: ViewMode, cell: HexCoord, level: u8) -> bool {
+    match mode {
+        ViewMode::Isometric => true,
+        ViewMode::Flat => cell.level == level,
+    }
+}
+
+/// A schematic line is its own light source; shading it would only muddy the
+/// read, and a ribbon standing in for a line has no meaningful back face.
+fn line_material(treatment: Treatment, dimmed: bool) -> StandardMaterial {
+    let scale = if dimmed { 0.22 } else { 1.0 };
+    StandardMaterial {
+        base_color: treatment.base_color,
+        emissive: LinearRgba::rgb(
+            treatment.emissive.red * scale,
+            treatment.emissive.green * scale,
+            treatment.emissive.blue * scale,
+        ),
+        unlit: true,
+        cull_mode: None,
+        double_sided: true,
+        ..default()
+    }
+}
+
+/// The cell under a click, given a ray from the camera.
+///
+/// Pointer-first input is a requirement, not a convenience — the mobile note in
+/// the plan — so picking is part of the view's job rather than something the
+/// keyboard path gets to skip.
+#[must_use]
+pub fn cell_at_ray(
+    game: &TacticsGame,
+    mode: ViewMode,
+    level: u8,
+    origin: Vec3,
+    direction: Vec3,
+) -> Option<HexCoord> {
+    let mut best: Option<(f32, HexCoord)> = None;
+    for &cell in game.world.placements.keys() {
+        if !draws_level(mode, cell, level) || !vision::is_solid_space(&game.world, cell) {
+            continue;
+        }
+        let centre = cell_origin(mode, cell);
+        // Distance from the cell centre to the ray, which is a good enough pick
+        // for hexes this size and needs no mesh to be present.
+        let to_centre = centre - origin;
+        let along = to_centre.dot(direction);
+        if along <= 0.0 {
+            continue;
+        }
+        let closest = origin + direction * along;
+        let miss = closest.distance(centre);
+        if miss > 6.5 {
+            continue;
+        }
+        if best.is_none_or(|(best_miss, _)| miss < best_miss) {
+            best = Some((miss, cell));
+        }
+    }
+    best.map(|(_, cell)| cell)
+}

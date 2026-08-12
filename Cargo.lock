@@ -4336,6 +4336,7 @@ dependencies = [
  "observed_facility",
  "observed_hex",
  "observed_match",
+ "observed_schematic",
  "observed_style",
  "observed_traversal",
  "serde_json",
@@ -5600,6 +5601,14 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "observed_core",
+]
+
+[[package]]
+name = "observed_schematic"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "observed_hex",
 ]
 
 [[package]]
@@ -6999,6 +7008,22 @@ dependencies = [
  "objc2-core-foundation",
  "objc2-io-kit",
  "windows 0.61.3",
+]
+
+[[package]]
+name = "tactics_lab"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "glam 0.30.10",
+ "observed_core",
+ "observed_facility",
+ "observed_hex",
+ "observed_match",
+ "observed_schematic",
+ "observed_style",
+ "observed_ui",
+ "serde_json",
 ]
 
 [[package]]
