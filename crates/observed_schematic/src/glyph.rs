@@ -87,6 +87,39 @@ pub fn stair_glyph(height: f32) -> Vec<(Vec3, Vec3)> {
     out
 }
 
+/// Compact plan-view arrows for a shaft that connects to another floor.
+///
+/// Unlike [`stair_glyph`], this stays flat and occupies only the centre of the
+/// cell. An up connection points toward the top of the map, a down connection
+/// toward the bottom; a through-shaft draws both side by side.
+#[must_use]
+pub fn level_arrow_glyph(up: bool, down: bool) -> Vec<(Vec3, Vec3)> {
+    const HALF_SPAN: f32 = 1.6;
+    const HEAD_DEPTH: f32 = 0.75;
+    const HEAD_WIDTH: f32 = 0.7;
+    const Y: f32 = 0.18;
+
+    let mut out = Vec::with_capacity(6);
+    let mut arrow = |x: f32, direction: f32| {
+        let tail = Vec3::new(x, Y, -direction * HALF_SPAN);
+        let tip = Vec3::new(x, Y, direction * HALF_SPAN);
+        let shoulder_z = direction * (HALF_SPAN - HEAD_DEPTH);
+        out.push((tail, tip));
+        out.push((tip, Vec3::new(x - HEAD_WIDTH, Y, shoulder_z)));
+        out.push((tip, Vec3::new(x + HEAD_WIDTH, Y, shoulder_z)));
+    };
+    match (up, down) {
+        (true, true) => {
+            arrow(-1.0, 1.0);
+            arrow(1.0, -1.0);
+        }
+        (true, false) => arrow(0.0, 1.0),
+        (false, true) => arrow(0.0, -1.0),
+        (false, false) => {}
+    }
+    out
+}
+
 /// A slope with a chevron at its high end, for a cell that ramps upward.
 #[must_use]
 pub fn ramp_glyph(height: f32) -> Vec<(Vec3, Vec3)> {
@@ -167,5 +200,27 @@ mod tests {
             .flat_map(|quad| quad.iter().map(|corner| corner.y))
             .fold(f32::MIN, f32::max);
         assert!((top - 2.5).abs() < 1e-5);
+    }
+
+    #[test]
+    fn level_arrows_are_small_flat_and_directional() {
+        let up = level_arrow_glyph(true, false);
+        let down = level_arrow_glyph(false, true);
+        assert_eq!(up.len(), 3);
+        assert_eq!(down.len(), 3);
+        assert!(
+            up.iter()
+                .flat_map(|(from, to)| [from, to])
+                .all(|point| point.y == 0.18)
+        );
+        assert!(
+            down.iter()
+                .flat_map(|(from, to)| [from, to])
+                .all(|point| point.y == 0.18)
+        );
+        assert!(up[0].1.z > up[0].0.z);
+        assert!(down[0].1.z < down[0].0.z);
+        assert_eq!(level_arrow_glyph(true, true).len(), 6);
+        assert!(level_arrow_glyph(false, false).is_empty());
     }
 }

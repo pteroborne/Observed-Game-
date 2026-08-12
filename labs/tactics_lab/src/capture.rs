@@ -26,6 +26,30 @@ use crate::{AppState, LabSettings, LabState};
 /// Turns each captured match plays before it is called.
 const CAPTURE_TURNS: u32 = 24;
 
+#[derive(Clone, Copy)]
+enum CapturePreset {
+    Standard,
+    Guided,
+}
+
+impl CapturePreset {
+    fn settings(self, seed: u64) -> MatchSettings {
+        let mut settings = match self {
+            Self::Standard => MatchSettings::standard(),
+            Self::Guided => MatchSettings::guided(),
+        };
+        settings.seed = seed;
+        settings
+    }
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Standard => "standard",
+            Self::Guided => "guided",
+        }
+    }
+}
+
 #[derive(Resource)]
 struct CaptureRun {
     dir: String,
@@ -35,6 +59,8 @@ struct CaptureRun {
     /// the board only reaches the framebuffer on the frame after a rebuild.
     armed: bool,
     view: ViewMode,
+    preset: CapturePreset,
+    reveal_full_map: bool,
     manifest: Vec<serde_json::Value>,
 }
 
@@ -51,12 +77,19 @@ pub fn configure(app: &mut App) {
         Ok("map") => ViewMode::Overview,
         _ => ViewMode::Deck,
     };
+    let preset = match std::env::var("OBSERVED2_CAPTURE_PRESET").as_deref() {
+        Ok("guided") => CapturePreset::Guided,
+        _ => CapturePreset::Standard,
+    };
+    let reveal_full_map = std::env::var_os("OBSERVED2_CAPTURE_FULL_MAP").is_some();
     app.insert_resource(CaptureRun {
         dir,
         seed_index: 0,
         turn: 0,
         armed: false,
         view,
+        preset,
+        reveal_full_map,
         manifest: Vec::new(),
     })
     // Both entry points run the same function. Between seeds the run drops to
@@ -88,7 +121,8 @@ fn arm_next_match(
         return;
     };
     while let Some(&seed) = SEEDS.get(run.seed_index) {
-        let candidate = capture_settings(seed);
+        let mut candidate = run.preset.settings(seed);
+        candidate.reveal_full_map |= run.reveal_full_map;
         if TacticsGame::new(candidate).is_ok() {
             settings.0 = candidate;
             next.set(AppState::Play);
@@ -187,6 +221,8 @@ fn capture_progress(
     let manifest = serde_json::json!({
         "turns_per_match": CAPTURE_TURNS,
         "policy": "spectator_bot",
+        "preset": run.preset.label(),
+        "force_full_map": run.reveal_full_map,
         "seeds": SEEDS.iter().map(|seed| format!("{seed:#x}")).collect::<Vec<_>>(),
         "records": run.manifest,
     });

@@ -23,7 +23,8 @@ use observed_ui::{
 };
 
 use crate::settings::{
-    MAX_ACTION_POINTS, MAX_SQUAD, MIN_ACTION_POINTS, MIN_SQUAD, MatchSettings, PRESETS,
+    MAX_ACTION_POINTS, MAX_FLOORS, MAX_SQUAD, MIN_ACTION_POINTS, MIN_FLOORS, MIN_SQUAD,
+    MatchSettings, PRESETS,
 };
 
 const SCOPE: FocusScopeId = FocusScopeId("tactics_setup");
@@ -51,10 +52,12 @@ pub enum SetupAction {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SettingRow {
     Board,
+    Floors,
     Seed,
     Squad,
     ActionPoints,
     Sight,
+    RevealMap,
     Shift,
     Telegraph,
     Anchors,
@@ -65,12 +68,14 @@ pub enum SettingRow {
 }
 
 impl SettingRow {
-    pub const ALL: [SettingRow; 12] = [
+    pub const ALL: [SettingRow; 14] = [
         SettingRow::Board,
+        SettingRow::Floors,
         SettingRow::Seed,
         SettingRow::Squad,
         SettingRow::ActionPoints,
         SettingRow::Sight,
+        SettingRow::RevealMap,
         SettingRow::Shift,
         SettingRow::Telegraph,
         SettingRow::Anchors,
@@ -85,7 +90,7 @@ impl SettingRow {
     #[must_use]
     pub const fn heading(self) -> Option<&'static str> {
         match self {
-            SettingRow::Board => Some("Board"),
+            SettingRow::Board => Some("Map"),
             SettingRow::Squad => Some("Squad"),
             SettingRow::Sight => Some("Sight"),
             SettingRow::Shift => Some("Facility shift"),
@@ -99,11 +104,13 @@ impl SettingRow {
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
-            SettingRow::Board => "Size",
+            SettingRow::Board => "Tiles per floor",
+            SettingRow::Floors => "Floors per map",
             SettingRow::Seed => "Seed",
             SettingRow::Squad => "Units",
             SettingRow::ActionPoints => "Action points",
             SettingRow::Sight => "Sight",
+            SettingRow::RevealMap => "See full map",
             SettingRow::Shift => "Shift",
             SettingRow::Telegraph => "Telegraph",
             SettingRow::Anchors => "Anchors",
@@ -119,10 +126,12 @@ impl SettingRow {
     pub fn value(self, settings: &MatchSettings) -> String {
         match self {
             SettingRow::Board => settings.board.label().to_string(),
+            SettingRow::Floors => format!("{} floors", settings.floors),
             SettingRow::Seed => format!("{:#x}", settings.seed),
             SettingRow::Squad => format!("{} units", settings.squad_size),
             SettingRow::ActionPoints => format!("{} per unit per turn", settings.action_points),
             SettingRow::Sight => settings.sight.label().to_string(),
+            SettingRow::RevealMap => on_off(settings.reveal_full_map),
             SettingRow::Shift => settings.shift.label().to_string(),
             SettingRow::Telegraph => on_off(settings.telegraph),
             SettingRow::Anchors => on_off(settings.anchors),
@@ -138,6 +147,9 @@ impl SettingRow {
     pub fn cycle(self, settings: &mut MatchSettings) {
         match self {
             SettingRow::Board => settings.board = settings.board.next(),
+            SettingRow::Floors => {
+                settings.floors = wrap(settings.floors, MIN_FLOORS, MAX_FLOORS);
+            }
             // A seed cycles through a fixed ladder rather than randomising, so a
             // reader can get back to the layout they were just looking at.
             SettingRow::Seed => {
@@ -155,6 +167,7 @@ impl SettingRow {
                     wrap(settings.action_points, MIN_ACTION_POINTS, MAX_ACTION_POINTS);
             }
             SettingRow::Sight => settings.sight = settings.sight.next(),
+            SettingRow::RevealMap => settings.reveal_full_map = !settings.reveal_full_map,
             SettingRow::Shift => settings.shift = settings.shift.next(),
             SettingRow::Telegraph => settings.telegraph = !settings.telegraph,
             SettingRow::Anchors => settings.anchors = !settings.anchors,
@@ -251,7 +264,7 @@ pub fn spawn(commands: &mut Commands, settings: &MatchSettings, error: Option<&s
                             order,
                             preset.name.to_string(),
                         )
-                        .with_size(150.0, 46.0),
+                        .with_size(112.0, 46.0),
                         SetupAction::Preset(index),
                     );
                     order += 1;
@@ -363,7 +376,7 @@ mod tests {
     /// up as a failing test rather than as an invisible option.
     #[test]
     fn every_row_is_listed_and_named() {
-        assert_eq!(SettingRow::ALL.len(), 12);
+        assert_eq!(SettingRow::ALL.len(), 14);
         for row in SettingRow::ALL {
             assert!(!row.name().is_empty());
             assert!(!row.value(&MatchSettings::standard()).is_empty());
@@ -410,7 +423,7 @@ mod tests {
             activate_action(SetupAction::Preset(0), &mut settings),
             SetupRequest::Changed
         );
-        assert_eq!(settings, MatchSettings::scout());
+        assert_eq!(settings, MatchSettings::guided());
     }
 
     #[test]
@@ -430,8 +443,10 @@ mod tests {
         for _ in 0..40 {
             SettingRow::Squad.cycle(&mut settings);
             SettingRow::ActionPoints.cycle(&mut settings);
+            SettingRow::Floors.cycle(&mut settings);
             assert!((MIN_SQUAD..=MAX_SQUAD).contains(&settings.squad_size));
             assert!((MIN_ACTION_POINTS..=MAX_ACTION_POINTS).contains(&settings.action_points));
+            assert!((MIN_FLOORS..=MAX_FLOORS).contains(&settings.floors));
         }
     }
 }

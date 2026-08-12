@@ -125,7 +125,7 @@ impl CellPaint {
 
 /// Classify one cell for drawing.
 ///
-/// Under `Sight::FullMap` an undiscovered cell is reported as `Known` rather
+/// With `reveal_full_map` an undiscovered cell is reported as `Known` rather
 /// than `Unknown`, which is the *only* thing that setting changes. It cannot
 /// reach the simulation from here — this function has no `&mut` — which is the
 /// structural half of the promise that the whole-map view measures the same game.
@@ -158,7 +158,7 @@ pub fn paint(game: &TacticsGame, cell: HexCoord) -> CellPaint {
         Some(_) if telegraphed => CellPaint::Volatile,
         Some(known) if known.is_stale(&game.world, cell) => CellPaint::Stale,
         Some(_) => CellPaint::Known,
-        None if !game.settings.sight.hides_the_map() => {
+        None if game.settings.reveal_full_map => {
             if telegraphed {
                 CellPaint::Volatile
             } else {
@@ -233,22 +233,22 @@ mod tests {
     use crate::settings::{MatchSettings, Sight};
     use crate::sim::TacticsGame;
 
-    fn game(sight: Sight) -> TacticsGame {
+    fn game(sight: Sight, reveal_full_map: bool) -> TacticsGame {
         TacticsGame::new(MatchSettings {
             sight,
+            reveal_full_map,
             seed: 0x0000_0000_000c_0ffe,
             ..MatchSettings::standard()
         })
         .expect("solves")
     }
 
-    /// Fog is the difference between the two sight settings, and it is the only
-    /// difference. A cell nobody has found reads as nothing under fog and as
-    /// ordinary known ground without it.
+    /// A cell nobody has found reads as nothing under fog and as ordinary known
+    /// ground when the presentation-only full-map setting is enabled.
     #[test]
     fn full_map_paints_undiscovered_ground_and_fog_hides_it() {
-        let fogged = game(Sight::Corridor);
-        let revealed = game(Sight::FullMap);
+        let fogged = game(Sight::Corridor, false);
+        let revealed = game(Sight::Corridor, true);
         let far = fogged.world.config.exit();
         assert_eq!(paint(&fogged, far), CellPaint::Unknown);
         assert_ne!(paint(&revealed, far), CellPaint::Unknown);
@@ -256,7 +256,7 @@ mod tests {
 
     #[test]
     fn a_unit_stands_on_ground_it_is_holding() {
-        let game = game(Sight::Adjacent);
+        let game = game(Sight::Adjacent, false);
         let cell = game.units[&observed_core::PlayerId(0)].cell;
         assert_eq!(paint(&game, cell), CellPaint::Observed);
     }
@@ -265,7 +265,7 @@ mod tests {
     /// telegraphed cell will not change.
     #[test]
     fn an_anchor_outranks_every_other_reading() {
-        let mut game = game(Sight::Adjacent);
+        let mut game = game(Sight::Adjacent, false);
         let id = observed_core::PlayerId(0);
         game.apply(id, crate::sim::action::TacticsAction::DeployAnchor)
             .expect("deploys");

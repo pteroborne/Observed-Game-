@@ -107,7 +107,7 @@ pub fn spawn(commands: &mut Commands) {
                 dock.spawn((
                     Node {
                         width: percent(100.0),
-                        height: px(150.0),
+                        height: px(170.0),
                         overflow: Overflow::clip(),
                         ..default()
                     },
@@ -319,6 +319,20 @@ fn spawn_legend(parent: &mut ChildSpawnerCommands) {
                         ));
                     });
             }
+            for note in [
+                "ring - exit or current objective",
+                "small arrow - shaft to deck above / below",
+            ] {
+                legend.spawn((
+                    Text::new(note),
+                    TextFont {
+                        font_size: 13.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.8, 0.85, 0.9)),
+                    Pickable::IGNORE,
+                ));
+            }
         });
 }
 
@@ -381,11 +395,17 @@ pub fn status_line(game: &TacticsGame, mode: ViewMode, level: u8) -> String {
         ViewMode::Overview => format!("Map L{level}"),
         ViewMode::Deck => format!("Deck L{level}"),
     };
+    let exit_hint = if game.settings.reveal_full_map {
+        let exit = game.world.config.exit();
+        format!("\nFull map: EXIT L{} ({},{})", exit.level, exit.q, exit.r)
+    } else {
+        String::new()
+    };
     format!(
         "Turn {} | {view}\n\
          Shift: {shift}{last}\n\
          Guardian: {guardian}\n\
-         Goals: {objectives} | {outcome}",
+         Goals: {objectives} | {outcome}{exit_hint}",
         game.turn,
     )
 }
@@ -471,6 +491,14 @@ mod tests {
         let game = game(MatchSettings::standard());
         assert!(status_line(&game, ViewMode::Deck, 2).contains("Deck L2"));
         assert!(status_line(&game, ViewMode::Overview, 2).contains("Map L2"));
+    }
+
+    #[test]
+    fn full_map_status_names_the_exit_deck_and_coordinate() {
+        let game = game(MatchSettings::guided());
+        let exit = game.world.config.exit();
+        let line = status_line(&game, ViewMode::Overview, 0);
+        assert!(line.contains(&format!("EXIT L{} ({},{})", exit.level, exit.q, exit.r)));
     }
 
     #[test]

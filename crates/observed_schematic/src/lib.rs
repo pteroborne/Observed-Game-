@@ -16,5 +16,5 @@ mod glyph;
 mod prism;
 
 pub use batch::{LineBatch, SurfaceBatch};
-pub use glyph::{floor_ring, ramp_glyph, stair_glyph, wall_bands};
+pub use glyph::{floor_ring, level_arrow_glyph, ramp_glyph, stair_glyph, wall_bands};
 pub use prism::hex_prism;

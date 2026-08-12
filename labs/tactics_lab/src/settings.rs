@@ -12,7 +12,7 @@
 
 use observed_facility::hex_wfc::HexWfcConfig;
 
-/// How much facility to solve.
+/// How many lattice cells each floor may contain.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum BoardSize {
     /// One screen, one glance. The size to dial mechanics at.
@@ -35,10 +35,10 @@ impl BoardSize {
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
-            BoardSize::Compact => "Compact",
-            BoardSize::Standard => "Standard",
-            BoardSize::Sprawling => "Sprawling",
-            BoardSize::Facility => "Full Facility",
+            BoardSize::Compact => "80 tiles (10 x 8)",
+            BoardSize::Standard => "192 tiles (16 x 12)",
+            BoardSize::Sprawling => "352 tiles (22 x 16)",
+            BoardSize::Facility => "560 tiles (28 x 20)",
         }
     }
 
@@ -48,12 +48,12 @@ impl BoardSize {
     /// for a compact board leaves a sprawling one mostly corridor, and the
     /// objective settings need enough distinct room roles to place their rooms.
     #[must_use]
-    pub const fn config(self) -> HexWfcConfig {
+    pub const fn config(self, levels: u8) -> HexWfcConfig {
         match self {
             BoardSize::Compact => HexWfcConfig {
                 cols: 10,
                 rows: 8,
-                levels: 3,
+                levels,
                 min_rooms: 5,
                 max_rooms: 7,
                 retry_budget: 100,
@@ -62,7 +62,7 @@ impl BoardSize {
             BoardSize::Standard => HexWfcConfig {
                 cols: 16,
                 rows: 12,
-                levels: 4,
+                levels,
                 min_rooms: 7,
                 max_rooms: 9,
                 retry_budget: 100,
@@ -71,13 +71,16 @@ impl BoardSize {
             BoardSize::Sprawling => HexWfcConfig {
                 cols: 22,
                 rows: 16,
-                levels: 6,
+                levels,
                 min_rooms: 9,
                 max_rooms: 10,
                 retry_budget: 100,
                 min_room_distance: 2,
             },
-            BoardSize::Facility => HexWfcConfig::arc_default(),
+            BoardSize::Facility => HexWfcConfig {
+                levels,
+                ..HexWfcConfig::arc_default()
+            },
         }
     }
 
@@ -94,11 +97,9 @@ impl BoardSize {
 
 /// How far a unit's presence reaches — both what it reveals and what it freezes.
 ///
-/// Sight is one setting, not two, because in this game they are the same act:
-/// looking at structure is what stops it rewiring. Splitting "what I can see"
-/// from "what I hold" would let a configuration exist where the map shows you a
-/// cell you are not protecting, which is precisely the confusion the shipped
-/// game's first-person view suffers from.
+/// Sight remains the simulation rule: looking at structure is what stops it
+/// rewiring. [`MatchSettings::reveal_full_map`] is deliberately separate and
+/// presentation-only, so a teaching overlay cannot freeze the whole facility.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Sight {
     /// Only the cell a unit stands in.
@@ -108,17 +109,10 @@ pub enum Sight {
     Adjacent,
     /// Two hops through open ports — you hold the corridor you are in.
     Corridor,
-    /// The whole board is drawn. Presentation only: see [`MatchSettings`].
-    FullMap,
 }
 
 impl Sight {
-    pub const ALL: [Sight; 4] = [
-        Sight::Blind,
-        Sight::Adjacent,
-        Sight::Corridor,
-        Sight::FullMap,
-    ];
+    pub const ALL: [Sight; 3] = [Sight::Blind, Sight::Adjacent, Sight::Corridor];
 
     #[must_use]
     pub const fn label(self) -> &'static str {
@@ -126,28 +120,18 @@ impl Sight {
             Sight::Blind => "Blind",
             Sight::Adjacent => "Adjacent",
             Sight::Corridor => "Corridor",
-            Sight::FullMap => "Full Map",
         }
     }
 
     /// Hops through open ports a unit observes.
     ///
-    /// `FullMap` reveals the *drawing*, not the freeze: it still holds only what
-    /// `Corridor` holds, or a player could stop the entire facility mutating by
-    /// choosing a menu option.
     #[must_use]
     pub const fn hops(self) -> u8 {
         match self {
             Sight::Blind => 0,
             Sight::Adjacent => 1,
-            Sight::Corridor | Sight::FullMap => 2,
+            Sight::Corridor => 2,
         }
-    }
-
-    /// Whether undiscovered cells are hidden from the player.
-    #[must_use]
-    pub const fn hides_the_map(self) -> bool {
-        !matches!(self, Sight::FullMap)
     }
 
     #[must_use]
@@ -155,8 +139,7 @@ impl Sight {
         match self {
             Sight::Blind => Sight::Adjacent,
             Sight::Adjacent => Sight::Corridor,
-            Sight::Corridor => Sight::FullMap,
-            Sight::FullMap => Sight::Blind,
+            Sight::Corridor => Sight::Blind,
         }
     }
 }
@@ -337,11 +320,15 @@ impl Default for ActionCosts {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MatchSettings {
     pub board: BoardSize,
+    /// Independently configured vertical extent of the board.
+    pub floors: u8,
     pub seed: u64,
     pub squad_size: u8,
     pub action_points: u8,
     pub costs: ActionCosts,
     pub sight: Sight,
+    /// Reveal the solved drawing without increasing observation or freeze range.
+    pub reveal_full_map: bool,
     pub shift: ShiftCadence,
     /// Show the pocket that is about to re-collapse, a turn before it does.
     pub telegraph: bool,
@@ -360,6 +347,9 @@ pub const MAX_SQUAD: u8 = 6;
 /// Action points per unit per turn.
 pub const MIN_ACTION_POINTS: u8 = 2;
 pub const MAX_ACTION_POINTS: u8 = 8;
+/// Floors per generated map.
+pub const MIN_FLOORS: u8 = 1;
+pub const MAX_FLOORS: u8 = 10;
 
 impl Default for MatchSettings {
     fn default() -> Self {
@@ -368,16 +358,42 @@ impl Default for MatchSettings {
 }
 
 impl MatchSettings {
+    /// A teaching match: the destination and every route are visible from turn one.
+    #[must_use]
+    pub fn guided() -> Self {
+        Self {
+            board: BoardSize::Compact,
+            floors: 1,
+            seed: 0x0000_0000_000c_0ffe,
+            squad_size: 3,
+            action_points: 6,
+            costs: ActionCosts::default(),
+            sight: Sight::Corridor,
+            reveal_full_map: true,
+            shift: ShiftCadence::Slow,
+            telegraph: true,
+            anchors: true,
+            pads: true,
+            objectives: Objectives::ExitOnly,
+            keystones_required: 1,
+            station_hold_turns: 2,
+            guardian: GuardianSetting::Off,
+            rival_team: false,
+        }
+    }
+
     /// A first match: see everything coming, nothing chasing you.
     #[must_use]
     pub fn scout() -> Self {
         Self {
             board: BoardSize::Compact,
+            floors: 3,
             seed: 0x0000_0000_000c_0ffe,
             squad_size: 3,
             action_points: 5,
             costs: ActionCosts::default(),
             sight: Sight::Corridor,
+            reveal_full_map: false,
             shift: ShiftCadence::Slow,
             telegraph: true,
             anchors: true,
@@ -395,11 +411,13 @@ impl MatchSettings {
     pub fn standard() -> Self {
         Self {
             board: BoardSize::Compact,
+            floors: 3,
             seed: 0x0000_0000_000c_0ffe,
             squad_size: 3,
             action_points: 4,
             costs: ActionCosts::default(),
             sight: Sight::Adjacent,
+            reveal_full_map: false,
             shift: ShiftCadence::EveryTurn,
             telegraph: true,
             anchors: true,
@@ -417,11 +435,13 @@ impl MatchSettings {
     pub fn collapse() -> Self {
         Self {
             board: BoardSize::Standard,
+            floors: 4,
             seed: 0x5eed_0000_0000_0001,
             squad_size: 4,
             action_points: 4,
             costs: ActionCosts::default(),
             sight: Sight::Adjacent,
+            reveal_full_map: false,
             shift: ShiftCadence::EveryTurn,
             telegraph: false,
             anchors: true,
@@ -437,7 +457,7 @@ impl MatchSettings {
     /// The solver configuration this match will run.
     #[must_use]
     pub fn facility(&self) -> HexWfcConfig {
-        self.board.config()
+        self.board.config(self.floors)
     }
 
     /// Which named preset this equals, if any. Anything else is "Custom" — the
@@ -445,7 +465,9 @@ impl MatchSettings {
     /// selected after a value moved.
     #[must_use]
     pub fn preset_name(&self) -> &'static str {
-        if *self == Self::scout() {
+        if *self == Self::guided() {
+            "Guided"
+        } else if *self == Self::scout() {
             "Scout"
         } else if *self == Self::standard() {
             "Standard"
@@ -465,7 +487,11 @@ pub struct Preset {
 }
 
 /// The named presets, in setup-screen order.
-pub const PRESETS: [Preset; 3] = [
+pub const PRESETS: [Preset; 4] = [
+    Preset {
+        name: "Guided",
+        build: MatchSettings::guided,
+    },
     Preset {
         name: "Scout",
         build: MatchSettings::scout,
@@ -498,15 +524,12 @@ mod tests {
         assert_eq!(settings.preset_name(), "Custom");
     }
 
-    /// Full Map is a drawing option. If it ever shortened or lengthened the
-    /// freeze radius, choosing it from a menu would change what the solver is
-    /// allowed to rewire — the whole-board view would be measuring a different
-    /// game than the fogged one.
+    /// Revealing the complete drawing remains independent from sight/freeze.
     #[test]
-    fn full_map_holds_exactly_what_corridor_holds() {
-        assert_eq!(Sight::FullMap.hops(), Sight::Corridor.hops());
-        assert!(!Sight::FullMap.hides_the_map());
-        assert!(Sight::Corridor.hides_the_map());
+    fn full_map_is_a_presentation_setting_not_an_observation_radius() {
+        let guided = MatchSettings::guided();
+        assert!(guided.reveal_full_map);
+        assert_eq!(guided.sight, Sight::Corridor);
     }
 
     #[test]
@@ -537,15 +560,25 @@ mod tests {
     #[test]
     fn every_board_size_can_hold_a_full_objective_set() {
         for board in BoardSize::ALL {
-            let config = board.config();
+            let config = board.config(MIN_FLOORS);
             assert!(
                 config.min_rooms >= 5,
                 "{} must fit start, exit, a keystone and a station",
                 board.label()
             );
             assert!(config.max_rooms >= config.min_rooms);
-            assert!(config.levels >= 1 && config.cols >= 4 && config.rows >= 4);
+            assert_eq!(config.levels, MIN_FLOORS);
+            assert!(config.cols >= 4 && config.rows >= 4);
         }
+    }
+
+    #[test]
+    fn floor_count_is_independent_of_tiles_per_floor() {
+        let compact = BoardSize::Compact.config(7);
+        let standard = BoardSize::Standard.config(7);
+        assert_eq!(compact.levels, 7);
+        assert_eq!(standard.levels, 7);
+        assert_ne!((compact.cols, compact.rows), (standard.cols, standard.rows));
     }
 
     #[test]

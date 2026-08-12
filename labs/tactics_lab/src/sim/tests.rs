@@ -438,10 +438,12 @@ fn seeing_the_whole_map_changes_nothing_the_solver_protects() {
     for seed in SEEDS {
         let fogged = MatchSettings {
             sight: Sight::Corridor,
+            reveal_full_map: false,
             ..compact(seed)
         };
         let revealed = MatchSettings {
-            sight: Sight::FullMap,
+            sight: Sight::Corridor,
+            reveal_full_map: true,
             ..compact(seed)
         };
         let mut a = TacticsGame::new(fogged).expect("solves");
@@ -743,6 +745,21 @@ fn a_squad_size_outside_the_offered_range_is_refused() {
             .err(),
             Some(super::TacticsError::InvalidSquad),
             "a squad of {squad_size} was accepted"
+        );
+    }
+}
+
+#[test]
+fn a_floor_count_outside_the_offered_range_is_refused() {
+    for floors in [0, crate::settings::MAX_FLOORS + 1] {
+        assert_eq!(
+            TacticsGame::new(MatchSettings {
+                floors,
+                ..compact(SEEDS[0])
+            })
+            .err(),
+            Some(super::TacticsError::InvalidFloors),
+            "a map with {floors} floors was accepted"
         );
     }
 }

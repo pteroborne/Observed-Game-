@@ -197,6 +197,8 @@ pub enum TacticsError {
     Facility(HexWfcError),
     /// The squad size is outside what a match accepts.
     InvalidSquad,
+    /// The independently configured floor count is outside the setup range.
+    InvalidFloors,
     /// A step costs nothing, which every "spend until you cannot" loop in the
     /// match — the rival's turn, the click-to-walk path — would take as licence
     /// to move forever. Rejected at construction rather than defended against in
@@ -255,6 +257,9 @@ impl TacticsGame {
         if !(crate::settings::MIN_SQUAD..=crate::settings::MAX_SQUAD).contains(&settings.squad_size)
         {
             return Err(TacticsError::InvalidSquad);
+        }
+        if !(crate::settings::MIN_FLOORS..=crate::settings::MAX_FLOORS).contains(&settings.floors) {
+            return Err(TacticsError::InvalidFloors);
         }
         if settings.costs.move_step == 0 {
             return Err(TacticsError::FreeMovement);

@@ -24,8 +24,15 @@ This lab removes the camera problem so the rules can be judged on their own.
 cargo dev-run -p tactics_lab
 ```
 
-The lab opens on a **match setup screen**. Pick a preset — Scout, Standard or
-Collapse — or change any row, then start. `R` returns to setup at any time.
+The lab opens on a **match setup screen**. Pick Guided, Scout, Standard, or
+Collapse, or change any row, then start. `R` returns to setup at any time.
+
+**Guided** is the teaching mode: one 80-tile floor, the complete facility and
+exit visible from turn one, six AP, slow telegraphed shifts, no Guardian, and
+both anchors and teleport plates available. `Tiles per floor` and `Floors per
+map` are independent rows, so difficulty can be increased along either axis.
+`See full map` reveals the drawing and exit marker but does not increase the
+squad's observation/freeze radius.
 
 | Input | Does |
 | --- | --- |
@@ -109,7 +116,9 @@ $env:OBSERVED2_CAPTURE="docs/evidence/tactics_lab"; cargo run -p tactics_lab
 ```
 
 Set `OBSERVED2_CAPTURE_VIEW=map` to capture the operations map instead of the
-quarter-wall deck.
+quarter-wall deck. Set `OBSERVED2_CAPTURE_PRESET=guided` to capture the teaching
+configuration, or set `OBSERVED2_CAPTURE_FULL_MAP=1` to reveal every cell while
+capturing another preset.
 
 Lets the deterministic spectator bot play one match per seed and writes a frame per turn plus a
 `manifest.json` recording, for every turn, how many cells the facility changed,
@@ -130,7 +139,8 @@ The lab succeeds if:
 The detailed deck uses the committed authored WFC catalogue rather than an
 approximation. Ceilings are removed and every perimeter hull is capped at one
 quarter of the canonical deck height; floors, ramps, stairs, columns, and other
-interior structure keep their authored shape. Neutral slate hulls and orange
+interior structure keep their authored shape. Shaft connections use compact
+plan-view up/down arrows instead of the large staircase profile. Neutral slate hulls and orange
 construction lines create the greybox/dev-grid read; selected geometry is
 lifted from dimmer context, and cyan, amber and red are reserved for named
 interaction states. Route, selection, and relayout warnings have translucent

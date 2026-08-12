@@ -12,7 +12,7 @@ use bevy::prelude::*;
 use observed_core::PlayerId;
 use observed_hex::{HexCoord, HexFace, TILE_LEVEL_HEIGHT, hex_origin};
 use observed_schematic::{
-    LineBatch, SurfaceBatch, floor_ring, ramp_glyph, stair_glyph, wall_bands,
+    LineBatch, SurfaceBatch, floor_ring, level_arrow_glyph, ramp_glyph, wall_bands,
 };
 use observed_style::{HexSketchRole, Treatment, hex_sketch};
 use observed_style::{TacticsRole, tactics};
@@ -128,7 +128,10 @@ pub fn build(
         // The glyphs are how a flat view says "the floor changes here" without
         // the reader counting edges or selecting anything.
         let vertical = match role {
-            HexSketchRole::Shaft => Some(stair_glyph(height)),
+            HexSketchRole::Shaft => Some(level_arrow_glyph(
+                placement.is_open(HexFace::Up),
+                placement.is_open(HexFace::Down),
+            )),
             HexSketchRole::Ramp => Some(ramp_glyph(height)),
             _ => None,
         };
