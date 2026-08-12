@@ -64,9 +64,22 @@ pub struct SurfaceBatch {
     positions: Vec<[f32; 3]>,
     normals: Vec<[f32; 3]>,
     indices: Vec<u32>,
+    quads: usize,
 }
 
 impl SurfaceBatch {
+    /// Append one triangle wound `a b c`.
+    pub fn triangle(&mut self, a: Vec3, b: Vec3, c: Vec3) {
+        let normal = (b - a).cross(c - a).normalize_or_zero().to_array();
+        #[allow(clippy::cast_possible_truncation)]
+        let base = self.positions.len() as u32;
+        for corner in [a, b, c] {
+            self.positions.push(corner.to_array());
+            self.normals.push(normal);
+        }
+        self.indices.extend_from_slice(&[base, base + 1, base + 2]);
+    }
+
     /// Append a quad wound `a b c d`.
     pub fn quad(&mut self, a: Vec3, b: Vec3, c: Vec3, d: Vec3) {
         let normal = (b - a).cross(d - a).normalize_or_zero().to_array();
@@ -78,10 +91,11 @@ impl SurfaceBatch {
         }
         self.indices
             .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        self.quads += 1;
     }
 
     pub fn quads(&self) -> usize {
-        self.indices.len() / 6
+        self.quads
     }
 
     #[must_use]
@@ -107,6 +121,7 @@ mod tests {
     #[test]
     fn a_surface_batch_becomes_one_mesh_of_two_triangles_per_quad() {
         let mut walls = SurfaceBatch::default();
+        walls.triangle(Vec3::ZERO, Vec3::X, Vec3::Z);
         walls.quad(Vec3::ZERO, Vec3::X, Vec3::X + Vec3::Y, Vec3::Y);
         walls.quad(Vec3::Z, Vec3::X + Vec3::Z, Vec3::X + Vec3::Y, Vec3::Y);
         assert_eq!(walls.quads(), 2);

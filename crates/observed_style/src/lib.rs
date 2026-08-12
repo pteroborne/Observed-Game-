@@ -1236,6 +1236,7 @@ pub fn schematic_screen() -> Color {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TacticsRole {
     DevSurface,
+    DevContext,
     DevGrid,
     ReachableRoute,
     RouteLimit,
@@ -1245,8 +1246,9 @@ pub enum TacticsRole {
 }
 
 impl TacticsRole {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::DevSurface,
+        Self::DevContext,
         Self::DevGrid,
         Self::ReachableRoute,
         Self::RouteLimit,
@@ -1259,6 +1261,7 @@ impl TacticsRole {
     pub const fn label(self) -> &'static str {
         match self {
             Self::DevSurface => "authored structure",
+            Self::DevContext => "context structure",
             Self::DevGrid => "cell boundary",
             Self::ReachableRoute => "reachable route",
             Self::RouteLimit => "route continues next turn",
@@ -1278,6 +1281,12 @@ pub fn tactics(role: TacticsRole) -> Treatment {
             emissive: LinearRgba::rgb(0.015, 0.018, 0.022),
             signal: false,
             edge: Some(Color::srgb(0.38, 0.42, 0.46)),
+        },
+        TacticsRole::DevContext => Treatment {
+            base_color: Color::srgb(0.075, 0.085, 0.095),
+            emissive: LinearRgba::rgb(0.004, 0.005, 0.006),
+            signal: false,
+            edge: Some(Color::srgb(0.22, 0.25, 0.28)),
         },
         TacticsRole::DevGrid => Treatment {
             base_color: Color::srgb(0.98, 0.48, 0.12),
@@ -2446,6 +2455,7 @@ mod tests {
     #[test]
     fn tactical_structure_stays_quiet_and_input_signals_punch_through() {
         assert!(!tactics(TacticsRole::DevSurface).signal);
+        assert!(!tactics(TacticsRole::DevContext).signal);
         assert!(!tactics(TacticsRole::DevGrid).signal);
         for role in [
             TacticsRole::ReachableRoute,

@@ -10,7 +10,7 @@
 
 use bevy::prelude::*;
 use observed_core::PlayerId;
-use observed_hex::{HexCoord, HexFace, hex_origin};
+use observed_hex::{HexCoord, HexFace, TILE_LEVEL_HEIGHT, hex_origin};
 use observed_schematic::{
     LineBatch, SurfaceBatch, floor_ring, ramp_glyph, stair_glyph, wall_bands,
 };
@@ -29,11 +29,6 @@ const MARKER_HEIGHT: f32 = 7.0;
 /// Wall bands are drawn low: a floor plan is read from above, and a waist-high
 /// solid says "you cannot pass here" without occluding the cell behind it.
 const WALL_FRACTION: f32 = 1.0 / 3.0;
-/// Metres between drawn levels in the isometric view. The lattice's own level
-/// height would stack a ten-level facility into an unreadable column; this
-/// separates the decks enough to read each one.
-const ISO_LEVEL_LIFT: f32 = 9.0;
-
 /// What one rebuild drew. Reported in the status line and asserted in tests.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct DrawReport {
@@ -83,11 +78,10 @@ pub fn build(
         .iter()
         .map(|&state| (state, LineBatch::default()))
         .collect();
-    let mut walls: Vec<(CellPaint, SurfaceBatch)> = CellPaint::ALL
+    let mut map_surfaces: Vec<(CellPaint, SurfaceBatch)> = CellPaint::ALL
         .iter()
         .map(|&state| (state, SurfaceBatch::default()))
         .collect();
-
     for (&cell, placement) in &game.world.placements {
         if !draws_level(mode, cell, level) {
             continue;
@@ -125,9 +119,11 @@ pub fn build(
             .find(|(candidate, _)| *candidate == state)
             .expect("every paint state has a batch")
             .1;
-        for (from, to) in floor_ring(sketch.inset) {
-            line.segment(origin + from, origin + to);
-            report.segments += 1;
+        if mode == ViewMode::Deck {
+            for (from, to) in floor_ring(sketch.inset) {
+                line.segment(origin + from, origin + to);
+                report.segments += 1;
+            }
         }
         // The glyphs are how a flat view says "the floor changes here" without
         // the reader counting edges or selecting anything.
@@ -143,18 +139,18 @@ pub fn build(
 
         let open = HexFace::LATERAL.map(|face| placement.is_open(face));
         if mode == ViewMode::Overview {
-            let surface = &mut walls
+            let surface = &mut map_surfaces
                 .iter_mut()
                 .find(|(candidate, _)| *candidate == state)
-                .expect("every paint state has a batch")
+                .expect("every paint state has a map surface")
                 .1;
+            add_map_floor(surface, origin, sketch.inset);
             for quad in wall_bands(height * WALL_FRACTION, open) {
-                surface.quad(
-                    origin + quad[0],
-                    origin + quad[1],
-                    origin + quad[2],
-                    origin + quad[3],
-                );
+                // A top-down map sees the wall's top edge. Drawing the old
+                // vertical band edge-on made openings indistinguishable from
+                // missing geometry; these segments preserve real doorway gaps.
+                line.segment(origin + quad[2], origin + quad[3]);
+                report.segments += 1;
                 report.walls += 1;
             }
         }
@@ -173,21 +169,44 @@ pub fn build(
             ));
         }
     }
-    for (state, batch) in walls {
-        if let Some(mesh) = batch.build() {
+    if mode == ViewMode::Overview {
+        for (state, batch) in map_surfaces {
+            let Some(mesh) = batch.build() else { continue };
+            let treatment = state.treatment();
+            let alpha = if state.dimmed() { 0.035 } else { 0.10 };
             commands.spawn((
                 BoardVisual,
                 Mesh3d(meshes.add(mesh)),
-                MeshMaterial3d(materials.add(line_material(state.treatment(), true))),
-                Transform::IDENTITY,
-                Name::new(format!("Board walls: {}", state.legend())),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color: treatment.base_color.with_alpha(alpha),
+                    emissive: treatment.emissive * alpha,
+                    unlit: true,
+                    alpha_mode: AlphaMode::Blend,
+                    cull_mode: None,
+                    double_sided: true,
+                    ..default()
+                })),
+                Name::new(format!("Map floor: {}", state.legend())),
             ));
         }
     }
-
     report.units = spawn_units(commands, meshes, materials, game, selected, mode, level);
     spawn_objectives(commands, meshes, materials, game, mode, level);
     report
+}
+
+fn add_map_floor(batch: &mut SurfaceBatch, origin: Vec3, inset: f32) {
+    let vertices: Vec<Vec3> = floor_ring(inset)
+        .into_iter()
+        .map(|(from, _)| origin + from)
+        .collect();
+    for index in 0..vertices.len() {
+        batch.triangle(
+            origin,
+            vertices[index],
+            vertices[(index + 1) % vertices.len()],
+        );
+    }
 }
 
 fn board_treatment(mode: ViewMode, state: CellPaint) -> Treatment {
@@ -222,17 +241,19 @@ fn spawn_authored_deck(
         .filter(|unit| unit.cell.level == level)
         .map(|unit| unit.cell);
     let bearing = observed_style::iso::detent_bearing(0);
-    let (focus, context, detail) = observed_cutaway::build(
+    let (focus, context, detail) = observed_cutaway::build_quarter_walls(
         &game.world,
         &geometry.snapshot,
         &cells,
         selected,
-        bearing,
-        true,
+        TILE_LEVEL_HEIGHT * 0.25,
         cache,
     );
-    let treatment = tactics(TacticsRole::DevSurface);
-    for batch in context.into_values().chain(std::iter::once(focus)) {
+    for (batch, treatment) in context
+        .into_values()
+        .map(|batch| (batch, tactics(TacticsRole::DevContext)))
+        .chain(std::iter::once((focus, tactics(TacticsRole::DevSurface))))
+    {
         let Some(mesh) = batch.into_mesh() else {
             continue;
         };
@@ -248,7 +269,7 @@ fn spawn_authored_deck(
                 double_sided: true,
                 ..default()
             })),
-            Name::new("Authored tactical cutaway"),
+            Name::new("Authored tactical quarter-wall deck"),
         ));
     }
     let bearing3 = Vec3::new(bearing.x, 0.0, bearing.y);
@@ -262,7 +283,7 @@ fn spawn_authored_deck(
             ..default()
         },
         Transform::from_translation(key_from).looking_at(Vec3::ZERO, Vec3::Y),
-        Name::new("Tactical cutaway key"),
+        Name::new("Tactical deck key"),
     ));
     detail.hulls_drawn
 }
@@ -375,7 +396,7 @@ fn spawn_objectives(
 pub fn cell_origin(mode: ViewMode, cell: HexCoord) -> Vec3 {
     let [x, _, z] = hex_origin(cell);
     let y = match mode {
-        ViewMode::Overview => f32::from(cell.level) * ISO_LEVEL_LIFT,
+        ViewMode::Overview => 0.0,
         ViewMode::Deck => hex_origin(cell)[1],
     };
     Vec3::new(x, y, z)
@@ -385,8 +406,7 @@ pub fn cell_origin(mode: ViewMode, cell: HexCoord) -> Vec3 {
 #[must_use]
 pub fn draws_level(mode: ViewMode, cell: HexCoord, level: u8) -> bool {
     match mode {
-        ViewMode::Overview => true,
-        ViewMode::Deck => cell.level == level,
+        ViewMode::Overview | ViewMode::Deck => cell.level == level,
     }
 }
 

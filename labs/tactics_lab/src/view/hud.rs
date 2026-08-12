@@ -32,6 +32,15 @@ pub enum HudButton {
     DeployAnchor,
     RecoverAnchor,
     DeployPad,
+    PanLeft,
+    PanRight,
+    PanUp,
+    PanDown,
+    ZoomIn,
+    ZoomOut,
+    Recenter,
+    ToggleBot,
+    StepBot,
     Restart,
 }
 
@@ -41,9 +50,15 @@ pub struct StatusText;
 #[derive(Component)]
 pub struct SquadText;
 
+#[derive(Component)]
+pub struct CommandDock;
+
 /// Touch-sized. The mobile trajectory in the plan is a constraint on this
 /// number: 44 logical pixels is the smallest control a thumb reliably hits.
 const CONTROL_SIZE: f32 = 48.0;
+/// Logical width shared with the camera viewport inset. One owner prevents the
+/// panel and map boundary drifting apart under DPI scaling.
+pub const COMMAND_DOCK_WIDTH: f32 = 340.0;
 
 pub fn spawn(commands: &mut Commands) {
     commands
@@ -61,13 +76,18 @@ pub fn spawn(commands: &mut Commands) {
         ))
         .with_children(|root| {
             root.spawn((
+                CommandDock,
+                ScrollPosition::default(),
                 Node {
-                    width: px(380.0),
+                    width: px(COMMAND_DOCK_WIDTH),
+                    min_width: px(COMMAND_DOCK_WIDTH),
+                    max_width: px(COMMAND_DOCK_WIDTH),
                     height: percent(100.0),
                     flex_direction: FlexDirection::Column,
-                    row_gap: px(8.0),
+                    row_gap: px(6.0),
                     padding: UiRect::all(px(18.0)),
                     border: UiRect::left(px(2.0)),
+                    overflow: Overflow::scroll_y(),
                     ..default()
                 },
                 BackgroundColor(Color::srgba(0.025, 0.035, 0.05, 0.97)),
@@ -85,36 +105,52 @@ pub fn spawn(commands: &mut Commands) {
                     Pickable::IGNORE,
                 ));
                 dock.spawn((
-                    StatusText,
-                    Text::new(String::new()),
-                    TextFont {
-                        font_size: 15.0,
+                    Node {
+                        width: percent(100.0),
+                        height: px(150.0),
+                        overflow: Overflow::clip(),
                         ..default()
                     },
-                    TextColor(Color::WHITE),
                     Pickable::IGNORE,
-                ));
-                dock.spawn((
-                    SquadText,
-                    Text::new(String::new()),
-                    TextFont {
-                        font_size: 15.0,
-                        ..default()
-                    },
-                    TextColor(Color::WHITE),
-                    Pickable::IGNORE,
-                ));
-                dock.spawn((
-                    Text::new("ACTIONS"),
-                    TextFont {
-                        font_size: 13.0,
-                        ..default()
-                    },
-                    TextColor(Color::srgb(0.7, 0.76, 0.82)),
-                    Pickable::IGNORE,
-                ));
+                ))
+                .with_children(|slot| {
+                    slot.spawn((
+                        StatusText,
+                        Text::new(String::new()),
+                        TextFont {
+                            font_size: 15.0,
+                            ..default()
+                        },
+                        TextColor(Color::WHITE),
+                        Pickable::IGNORE,
+                    ));
+                });
                 dock.spawn((
                     Node {
+                        width: percent(100.0),
+                        height: px(70.0),
+                        overflow: Overflow::clip(),
+                        ..default()
+                    },
+                    Pickable::IGNORE,
+                ))
+                .with_children(|slot| {
+                    slot.spawn((
+                        SquadText,
+                        Text::new(String::new()),
+                        TextFont {
+                            font_size: 15.0,
+                            ..default()
+                        },
+                        TextColor(Color::WHITE),
+                        Pickable::IGNORE,
+                    ));
+                });
+                spawn_section_label(dock, "ACTIONS");
+                dock.spawn((
+                    Node {
+                        width: percent(100.0),
+                        height: px(220.0),
                         flex_direction: FlexDirection::Row,
                         flex_wrap: FlexWrap::Wrap,
                         column_gap: px(8.0),
@@ -130,11 +166,56 @@ pub fn spawn(commands: &mut Commands) {
                         (HudButton::RecoverAnchor, "Recover anchor"),
                         (HudButton::DeployPad, "Place plate"),
                         (HudButton::NextUnit, "Next unit"),
-                        (HudButton::LevelDown, "-"),
-                        (HudButton::LevelUp, "+"),
-                        (HudButton::ToggleView, "Deck / overview"),
-                        (HudButton::Restart, "Setup"),
                         (HudButton::EndTurn, "End turn"),
+                    ] {
+                        spawn_control(controls, button, label);
+                    }
+                });
+                spawn_section_label(dock, "VIEW");
+                dock.spawn((
+                    Node {
+                        width: percent(100.0),
+                        height: px(276.0),
+                        flex_direction: FlexDirection::Row,
+                        flex_wrap: FlexWrap::Wrap,
+                        column_gap: px(8.0),
+                        row_gap: px(8.0),
+                        ..default()
+                    },
+                    Pickable::IGNORE,
+                ))
+                .with_children(|controls| {
+                    for (button, label) in [
+                        (HudButton::PanLeft, "< pan"),
+                        (HudButton::PanUp, "pan ^"),
+                        (HudButton::PanRight, "pan >"),
+                        (HudButton::PanDown, "pan v"),
+                        (HudButton::ZoomOut, "- zoom"),
+                        (HudButton::ZoomIn, "+ zoom"),
+                        (HudButton::Recenter, "Recenter"),
+                        (HudButton::LevelDown, "Deck -"),
+                        (HudButton::LevelUp, "Deck +"),
+                        (HudButton::ToggleView, "Deck / map"),
+                        (HudButton::Restart, "Setup"),
+                    ] {
+                        spawn_control(controls, button, label);
+                    }
+                });
+                spawn_section_label(dock, "SPECTATE");
+                dock.spawn((
+                    Node {
+                        width: percent(100.0),
+                        height: px(56.0),
+                        flex_direction: FlexDirection::Row,
+                        column_gap: px(8.0),
+                        ..default()
+                    },
+                    Pickable::IGNORE,
+                ))
+                .with_children(|controls| {
+                    for (button, label) in [
+                        (HudButton::ToggleBot, "Bot run / pause"),
+                        (HudButton::StepBot, "Bot step"),
                     ] {
                         spawn_control(controls, button, label);
                     }
@@ -142,6 +223,23 @@ pub fn spawn(commands: &mut Commands) {
                 spawn_legend(dock);
             });
         });
+}
+
+fn spawn_section_label(parent: &mut ChildSpawnerCommands, label: &str) {
+    parent.spawn((
+        Node {
+            width: percent(100.0),
+            height: px(18.0),
+            ..default()
+        },
+        Text::new(label.to_string()),
+        TextFont {
+            font_size: 13.0,
+            ..default()
+        },
+        TextColor(Color::srgb(0.7, 0.76, 0.82)),
+        Pickable::IGNORE,
+    ));
 }
 
 fn spawn_control(parent: &mut ChildSpawnerCommands, button: HudButton, label: &str) {
@@ -239,21 +337,21 @@ fn swatch(state: CellPaint) -> Color {
 #[must_use]
 pub fn status_line(game: &TacticsGame, mode: ViewMode, level: u8) -> String {
     let shift = match (&game.telegraph, game.settings.shift.interval()) {
-        (Some(telegraph), _) => format!("{} cells will re-collapse", telegraph.cells().len()),
-        (None, None) => "facility static".to_string(),
-        (None, Some(_)) => "no shift this turn".to_string(),
+        (Some(telegraph), _) => format!("{} pending", telegraph.cells().len()),
+        (None, None) => "static".to_string(),
+        (None, Some(_)) => "none pending".to_string(),
     };
     let last = match game.last_shift {
-        Some(ShiftOutcome::Committed) => " | last turn: the facility shifted",
-        Some(ShiftOutcome::Held) => " | last turn: you held it",
-        Some(ShiftOutcome::NothingToShift) => " | last turn: nothing shifted",
+        Some(ShiftOutcome::Committed) => " | last: shifted",
+        Some(ShiftOutcome::Held) => " | last: held",
+        Some(ShiftOutcome::NothingToShift) => " | last: none",
         None => "",
     };
     let guardian = match game.guardian_status() {
-        Some(HexGuardianStatus::Active) => " | Guardian hunting",
-        Some(HexGuardianStatus::FrozenByPlayer) => " | Guardian frozen: watched",
-        Some(HexGuardianStatus::FrozenByAnchor) => " | Guardian frozen: anchored",
-        None => "",
+        Some(HexGuardianStatus::Active) => "hunting",
+        Some(HexGuardianStatus::FrozenByPlayer) => "frozen: watched",
+        Some(HexGuardianStatus::FrozenByAnchor) => "frozen: anchored",
+        None => "not deployed",
     };
     let objectives = if game.keystones_required() > 0 || game.settings.objectives.stations() {
         let progress = game.objectives.team(PLAYER_TEAM);
@@ -267,26 +365,28 @@ pub fn status_line(game: &TacticsGame, mode: ViewMode, level: u8) -> String {
             ""
         };
         format!(
-            " | keystones {}/{}{station}",
+            "keystones {}/{}{station}",
             progress.keystones,
             game.keystones_required()
         )
     } else {
-        String::new()
+        "none".to_string()
     };
     let outcome = match game.status {
-        MatchStatus::Running => String::new(),
-        MatchStatus::Escaped => format!(" | ESCAPED on turn {}", game.turn),
-        MatchStatus::Outrun => " | OUTRUN by the rival squad".to_string(),
+        MatchStatus::Running => "running".to_string(),
+        MatchStatus::Escaped => format!("ESCAPED on turn {}", game.turn),
+        MatchStatus::Outrun => "OUTRUN by the rival squad".to_string(),
     };
     let view = match mode {
-        ViewMode::Overview => format!("{} (all levels)", mode.label()),
-        ViewMode::Deck => format!("{} (level {level})", mode.label()),
+        ViewMode::Overview => format!("Map L{level}"),
+        ViewMode::Deck => format!("Deck L{level}"),
     };
     format!(
-        "Turn {} | {view} | {shift}{last}{guardian}{objectives}{outcome}\n\
-         click a cell to move the selected unit | Tab next unit | Space end turn | V view | R setup",
-        game.turn
+        "Turn {} | {view}\n\
+         Shift: {shift}{last}\n\
+         Guardian: {guardian}\n\
+         Goals: {objectives} | {outcome}",
+        game.turn,
     )
 }
 
@@ -300,15 +400,15 @@ pub fn squad_line(game: &TacticsGame, selected: Option<observed_core::PlayerId>)
             "escaped".to_string()
         } else {
             format!(
-                "{} AP  anchors {}  pads {}",
+                "AP{} A{} P{}",
                 unit.action_points,
                 game.anchors.inventory(unit.id),
                 game.pads.inventory(unit.id)
             )
         };
         lines.push(format!(
-            "{mark} unit {}  ({},{},L{})  {state}",
-            unit.id.0, unit.cell.q, unit.cell.r, unit.cell.level
+            "{mark} U{} L{} ({},{}) | {state}",
+            unit.id.0, unit.cell.level, unit.cell.q, unit.cell.r
         ));
     }
     lines.join("\n")
@@ -337,25 +437,22 @@ mod tests {
     fn the_status_line_names_what_the_facility_will_do() {
         let shifting = game(MatchSettings::standard());
         let line = status_line(&shifting, ViewMode::Overview, 0);
-        assert!(
-            line.contains("re-collapse") || line.contains("no shift"),
-            "status line said nothing about the shift: {line}"
-        );
+        assert!(line.contains("Shift:") && line.contains("pending"));
 
         let static_facility = game(MatchSettings {
             shift: ShiftCadence::Off,
             ..MatchSettings::standard()
         });
-        assert!(status_line(&static_facility, ViewMode::Overview, 0).contains("facility static"));
+        assert!(status_line(&static_facility, ViewMode::Overview, 0).contains("Shift: static"));
     }
 
     #[test]
-    fn a_match_without_a_guardian_says_nothing_about_one() {
+    fn a_match_without_a_guardian_keeps_the_fixed_status_slot() {
         let quiet = game(MatchSettings {
             guardian: GuardianSetting::Off,
             ..MatchSettings::standard()
         });
-        assert!(!status_line(&quiet, ViewMode::Overview, 0).contains("Guardian"));
+        assert!(status_line(&quiet, ViewMode::Overview, 0).contains("Guardian: not deployed"));
     }
 
     #[test]
@@ -366,14 +463,14 @@ mod tests {
         });
         assert!(!status_line(&plain, ViewMode::Overview, 0).contains("keystones"));
         let full = game(MatchSettings::standard());
-        assert!(status_line(&full, ViewMode::Overview, 0).contains("keystones 0/2"));
+        assert!(status_line(&full, ViewMode::Overview, 0).contains("keystones 0/1"));
     }
 
     #[test]
-    fn the_flat_view_names_the_level_it_is_showing() {
+    fn both_views_name_the_deck_they_are_showing() {
         let game = game(MatchSettings::standard());
-        assert!(status_line(&game, ViewMode::Deck, 2).contains("level 2"));
-        assert!(status_line(&game, ViewMode::Overview, 2).contains("all levels"));
+        assert!(status_line(&game, ViewMode::Deck, 2).contains("Deck L2"));
+        assert!(status_line(&game, ViewMode::Overview, 2).contains("Map L2"));
     }
 
     #[test]

@@ -383,7 +383,7 @@ impl MatchSettings {
             anchors: true,
             pads: false,
             objectives: Objectives::ExitOnly,
-            keystones_required: 2,
+            keystones_required: 1,
             station_hold_turns: 2,
             guardian: GuardianSetting::Off,
             rival_team: false,
@@ -405,7 +405,7 @@ impl MatchSettings {
             anchors: true,
             pads: true,
             objectives: Objectives::Keystones,
-            keystones_required: 2,
+            keystones_required: 1,
             station_hold_turns: 2,
             guardian: GuardianSetting::Slow,
             rival_team: false,
@@ -427,7 +427,7 @@ impl MatchSettings {
             anchors: true,
             pads: true,
             objectives: Objectives::Full,
-            keystones_required: 2,
+            keystones_required: 1,
             station_hold_turns: 2,
             guardian: GuardianSetting::Hunting,
             rival_team: true,
@@ -531,7 +531,7 @@ mod tests {
         cycles(&GuardianSetting::ALL, GuardianSetting::next);
     }
 
-    /// A board has to hold the rooms its objectives need: start, exit, keystones,
+    /// A board has to hold the rooms its objectives need: start, exit, a keystone,
     /// and the station. A size that cannot is a setup screen offering a match
     /// that fails at generation.
     #[test]
@@ -540,7 +540,7 @@ mod tests {
             let config = board.config();
             assert!(
                 config.min_rooms >= 5,
-                "{} must fit start, exit, two keystones and a station",
+                "{} must fit start, exit, a keystone and a station",
                 board.label()
             );
             assert!(config.max_rooms >= config.min_rooms);

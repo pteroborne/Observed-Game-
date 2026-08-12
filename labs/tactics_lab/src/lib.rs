@@ -10,12 +10,14 @@
 //! reset contract every lab in this workspace keeps: no leaked entities, no
 //! restart needed.
 
+pub mod bot;
 pub mod capture;
 pub mod settings;
 pub mod sim;
 pub mod view;
 
 use bevy::camera::Viewport;
+use bevy::ecs::system::SystemParam;
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
 use bevy::prelude::*;
 use bevy::ui::InteractionDisabled;
@@ -35,7 +37,7 @@ use sim::unit::PLAYER_TEAM;
 use sim::{MovePreview, TacticsGame, TurnPhase, TurnResolution};
 use view::board::DrawReport;
 use view::camera::BoardCamera;
-use view::hud::HudButton;
+use view::hud::{CommandDock, HudButton};
 use view::setup::{SetupRequest, SetupRoot};
 use view::{BoardVisual, HudRoot, ViewMode};
 
@@ -43,7 +45,67 @@ const WINDOW_WIDTH: f32 = 1600.0;
 const WINDOW_HEIGHT: f32 = 1000.0;
 const MIN_ZOOM: f32 = 0.15;
 const MAX_ZOOM: f32 = 3.0;
-const COMMAND_DOCK_WIDTH: f32 = 380.0;
+const CAMERA_NUDGE: f32 = 18.0;
+const BOT_BEAT_SECONDS: f32 = 0.45;
+
+#[derive(Clone, Copy, Debug)]
+pub struct CameraPose {
+    pub zoom: f32,
+    pub pan: Vec2,
+}
+
+impl Default for CameraPose {
+    fn default() -> Self {
+        Self {
+            zoom: 1.0,
+            pan: Vec2::ZERO,
+        }
+    }
+}
+
+#[derive(Resource, Default)]
+struct MapPointerCapture {
+    panning: bool,
+}
+
+#[derive(Resource)]
+struct BotSpectator {
+    enabled: bool,
+    step_requested: bool,
+    cadence: Timer,
+    last: String,
+}
+
+impl Default for BotSpectator {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            step_requested: false,
+            cadence: Timer::from_seconds(BOT_BEAT_SECONDS, TimerMode::Repeating),
+            last: String::new(),
+        }
+    }
+}
+
+/// Full-window camera for UI. The board camera owns an inset viewport, so it
+/// cannot also be allowed to define the HUD's layout coordinate space.
+#[derive(Component)]
+struct HudCamera;
+
+#[derive(SystemParam)]
+struct CameraInput<'w, 's> {
+    mouse: Res<'w, ButtonInput<MouseButton>>,
+    motion: Res<'w, AccumulatedMouseMotion>,
+    scroll: Res<'w, AccumulatedMouseScroll>,
+    windows: Query<'w, 's, &'static Window>,
+    viewports: Query<'w, 's, &'static Camera, With<BoardCamera>>,
+}
+
+#[derive(SystemParam)]
+struct TacticsCameras<'w, 's> {
+    board: Query<'w, 's, Entity, With<BoardCamera>>,
+    hud: Query<'w, 's, Entity, With<HudCamera>>,
+}
 
 /// Which screen is up.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, States)]
@@ -178,8 +240,8 @@ pub struct LabState {
     /// Level the flat view is showing.
     pub level: u8,
     pub selected: Option<PlayerId>,
-    pub zoom: f32,
-    pub pan: Vec2,
+    pub deck_camera: CameraPose,
+    pub map_camera: CameraPose,
     /// Set whenever the board needs redrawing. Presentation never mutates the
     /// match, so this is the only channel between the two.
     pub dirty: bool,
@@ -198,6 +260,7 @@ pub struct LabState {
     /// setting — where it is least affordable — so zoom and pan modify a cached
     /// framing instead.
     framing: (Transform, f32),
+    viewport_size: Vec2,
 }
 
 impl LabState {
@@ -213,8 +276,8 @@ impl LabState {
             mode: ViewMode::default(),
             level: 0,
             selected,
-            zoom: 1.0,
-            pan: Vec2::ZERO,
+            deck_camera: CameraPose::default(),
+            map_camera: CameraPose::default(),
             dirty: true,
             report: DrawReport::default(),
             geometry: None,
@@ -224,7 +287,27 @@ impl LabState {
             notice: String::new(),
             pending_move: None,
             framing: (Transform::IDENTITY, 1.0),
+            viewport_size: Vec2::new(WINDOW_WIDTH - view::hud::COMMAND_DOCK_WIDTH, WINDOW_HEIGHT),
         }
+    }
+
+    #[must_use]
+    fn camera_pose(&self) -> CameraPose {
+        match self.mode {
+            ViewMode::Deck => self.deck_camera,
+            ViewMode::Overview => self.map_camera,
+        }
+    }
+
+    fn camera_pose_mut(&mut self) -> &mut CameraPose {
+        match self.mode {
+            ViewMode::Deck => &mut self.deck_camera,
+            ViewMode::Overview => &mut self.map_camera,
+        }
+    }
+
+    fn recenter_camera(&mut self) {
+        *self.camera_pose_mut() = CameraPose::default();
     }
 
     fn attach_content(&mut self, content: Arc<HexMatchContent>) -> Result<(), String> {
@@ -316,6 +399,8 @@ pub fn configure(app: &mut App) {
         .init_resource::<LabSettings>()
         .init_resource::<LabMessage>()
         .init_resource::<PlayOverlay>()
+        .init_resource::<MapPointerCapture>()
+        .init_resource::<BotSpectator>()
         .init_resource::<AuthoredBoardContent>()
         .init_resource::<observed_cutaway::TileMeshCache>()
         .add_message::<SetupRequested>()
@@ -332,6 +417,7 @@ pub fn configure(app: &mut App) {
                 despawn::<view::BoardOverlay>,
                 despawn::<HudRoot>,
                 despawn::<OverlayRoot>,
+                despawn::<HudCamera>,
                 leave_play,
             ),
         )
@@ -353,11 +439,13 @@ pub fn configure(app: &mut App) {
                 keyboard_commands,
                 hud_clicks,
                 advance_pending_move,
+                drive_spectator_bot,
                 sync_camera_viewport,
+                scroll_command_dock,
                 update_board_hover,
                 board_clicks,
-                camera_controls,
                 rebuild_board,
+                camera_controls,
                 view::overlay::rebuild,
                 refresh_action_buttons,
                 refresh_hud,
@@ -372,12 +460,17 @@ fn enter_setup(
     mut commands: Commands,
     settings: Res<LabSettings>,
     message: Res<LabMessage>,
-    cameras: Query<Entity, With<BoardCamera>>,
+    cameras: TacticsCameras,
 ) {
-    for entity in cameras.iter() {
+    for entity in cameras.board.iter().chain(cameras.hud.iter()) {
         commands.entity(entity).despawn();
     }
-    commands.spawn((BoardCamera, Camera2d, Name::new("Setup camera")));
+    commands.spawn((
+        BoardCamera,
+        Camera2d,
+        bevy::ui::IsDefaultUiCamera,
+        Name::new("Setup camera"),
+    ));
     view::setup::spawn(&mut commands, &settings.0, message.0.as_deref());
 }
 
@@ -580,7 +673,8 @@ fn spawn_overlay(commands: &mut Commands, mode: OverlayMode, status: Option<sim:
                             "Hover a deck cell to preview its route and AP limit.\n\
                              Click a unit to select it; click a route to commit.\n\
                              Cyan = reachable, amber = next-turn limit, red = blocked.\n\
-                             Right-drag pans; wheel zooms; V changes deck/overview.",
+                             Right-drag pans; wheel zooms; V changes deck/map.\n\
+                             B runs/pauses bot spectate; . advances one bot decision.",
                         ),
                         TextFont {
                             font_size: 16.0,
@@ -640,7 +734,7 @@ fn enter_play(
     content: Res<AuthoredBoardContent>,
     mut message: ResMut<LabMessage>,
     mut overlay: ResMut<PlayOverlay>,
-    cameras: Query<Entity, With<BoardCamera>>,
+    cameras: TacticsCameras,
     mut next: ResMut<NextState<AppState>>,
 ) {
     overlay.0 = OverlayMode::None;
@@ -653,7 +747,7 @@ fn enter_play(
         next.set(AppState::Setup);
         return;
     };
-    for entity in cameras.iter() {
+    for entity in cameras.board.iter().chain(cameras.hud.iter()) {
         commands.entity(entity).despawn();
     }
     commands.spawn((
@@ -662,6 +756,17 @@ fn enter_play(
         Projection::Orthographic(OrthographicProjection::default_3d()),
         Transform::default(),
         Name::new("Board camera"),
+    ));
+    commands.spawn((
+        HudCamera,
+        Camera2d,
+        Camera {
+            order: 1,
+            clear_color: ClearColorConfig::None,
+            ..default()
+        },
+        bevy::ui::IsDefaultUiCamera,
+        Name::new("Tactics HUD camera"),
     ));
     let mut state = LabState::new(game);
     match &content.0 {
@@ -681,6 +786,7 @@ fn enter_play(
         }
     }
     message.0 = None;
+    commands.insert_resource(BotSpectator::default());
     state.level = state
         .selected
         .and_then(|id| state.game.units.get(&id))
@@ -704,6 +810,7 @@ fn despawn<T: Component>(mut commands: Commands, entities: Query<Entity, With<T>
 fn keyboard_commands(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<LabState>,
+    mut spectator: ResMut<BotSpectator>,
     mut next: ResMut<NextState<AppState>>,
 ) {
     if state.pending_move.is_some() {
@@ -714,7 +821,11 @@ fn keyboard_commands(
         return;
     }
     let mut command = None;
-    if keyboard.just_pressed(KeyCode::Space) {
+    if keyboard.just_pressed(KeyCode::KeyB) {
+        command = Some(HudButton::ToggleBot);
+    } else if keyboard.just_pressed(KeyCode::Period) {
+        command = Some(HudButton::StepBot);
+    } else if keyboard.just_pressed(KeyCode::Space) {
         command = Some(HudButton::EndTurn);
     } else if keyboard.just_pressed(KeyCode::KeyV) {
         command = Some(HudButton::ToggleView);
@@ -724,9 +835,23 @@ fn keyboard_commands(
         command = Some(HudButton::LevelUp);
     } else if keyboard.just_pressed(KeyCode::BracketLeft) {
         command = Some(HudButton::LevelDown);
+    } else if keyboard.just_pressed(KeyCode::ArrowLeft) {
+        command = Some(HudButton::PanLeft);
+    } else if keyboard.just_pressed(KeyCode::ArrowRight) {
+        command = Some(HudButton::PanRight);
+    } else if keyboard.just_pressed(KeyCode::ArrowUp) {
+        command = Some(HudButton::PanUp);
+    } else if keyboard.just_pressed(KeyCode::ArrowDown) {
+        command = Some(HudButton::PanDown);
+    } else if keyboard.just_pressed(KeyCode::Equal) {
+        command = Some(HudButton::ZoomIn);
+    } else if keyboard.just_pressed(KeyCode::Minus) {
+        command = Some(HudButton::ZoomOut);
+    } else if keyboard.just_pressed(KeyCode::Home) {
+        command = Some(HudButton::Recenter);
     }
     if let Some(command) = command {
-        apply_command(&mut state, command, &mut next);
+        apply_command(&mut state, &mut spectator, command, &mut next);
     }
     // Number keys select a unit directly, which is the accelerator a tactics
     // player expects and costs nothing to offer.
@@ -741,7 +866,7 @@ fn keyboard_commands(
     .into_iter()
     .enumerate()
     {
-        if keyboard.just_pressed(key) {
+        if keyboard.just_pressed(key) && !spectator.enabled {
             let id = PlayerId(index as u16);
             if state.game.units.contains_key(&id) {
                 state.selected = Some(id);
@@ -754,6 +879,7 @@ fn keyboard_commands(
 fn hud_clicks(
     controls: Query<(&Interaction, &HudButton), Changed<Interaction>>,
     mut state: ResMut<LabState>,
+    mut spectator: ResMut<BotSpectator>,
     mut next: ResMut<NextState<AppState>>,
 ) {
     if state.pending_move.is_some() {
@@ -761,34 +887,52 @@ fn hud_clicks(
     }
     for (interaction, &button) in controls.iter() {
         if *interaction == Interaction::Pressed {
-            apply_command(&mut state, button, &mut next);
+            apply_command(&mut state, &mut spectator, button, &mut next);
         }
     }
 }
 
 /// One place every command is carried out, whichever input asked for it.
-fn apply_command(state: &mut LabState, command: HudButton, next: &mut ResMut<NextState<AppState>>) {
+fn apply_command(
+    state: &mut LabState,
+    spectator: &mut BotSpectator,
+    command: HudButton,
+    next: &mut ResMut<NextState<AppState>>,
+) {
+    let available_while_spectating = matches!(
+        command,
+        HudButton::ToggleBot
+            | HudButton::StepBot
+            | HudButton::ToggleView
+            | HudButton::LevelUp
+            | HudButton::LevelDown
+            | HudButton::PanLeft
+            | HudButton::PanRight
+            | HudButton::PanUp
+            | HudButton::PanDown
+            | HudButton::ZoomIn
+            | HudButton::ZoomOut
+            | HudButton::Recenter
+            | HudButton::Restart
+    );
+    if spectator.enabled && !available_while_spectating {
+        state.notice = String::from("Pause bot spectate before issuing squad commands");
+        return;
+    }
+    let board_unchanged = matches!(
+        command,
+        HudButton::PanLeft
+            | HudButton::PanRight
+            | HudButton::PanUp
+            | HudButton::PanDown
+            | HudButton::ZoomIn
+            | HudButton::ZoomOut
+            | HudButton::Recenter
+            | HudButton::ToggleBot
+            | HudButton::StepBot
+    );
     match command {
-        HudButton::EndTurn => {
-            let resolution = state.game.end_turn_detailed();
-            if let Some(mut geometry) = state.geometry.take() {
-                if let Err(detail) = geometry.apply_resolution(&state.game, &resolution) {
-                    state.notice = detail;
-                } else {
-                    state.notice = match resolution.outcome {
-                        sim::relayout::ShiftOutcome::Committed => {
-                            String::from("Facility shift committed")
-                        }
-                        sim::relayout::ShiftOutcome::Held => String::from("Facility shift held"),
-                        sim::relayout::ShiftOutcome::NothingToShift => {
-                            String::from("No facility shift")
-                        }
-                    };
-                }
-                state.geometry = Some(geometry);
-            }
-            state.select_next();
-        }
+        HudButton::EndTurn => resolve_turn(state),
         HudButton::ToggleView => {
             state.mode = state.mode.toggled();
             if state.mode == ViewMode::Deck
@@ -803,6 +947,40 @@ fn apply_command(state: &mut LabState, command: HudButton, next: &mut ResMut<Nex
         }
         HudButton::LevelDown => state.level = state.level.saturating_sub(1),
         HudButton::NextUnit => state.select_next(),
+        HudButton::PanLeft => state.camera_pose_mut().pan.x -= CAMERA_NUDGE,
+        HudButton::PanRight => state.camera_pose_mut().pan.x += CAMERA_NUDGE,
+        HudButton::PanUp => state.camera_pose_mut().pan.y += CAMERA_NUDGE,
+        HudButton::PanDown => state.camera_pose_mut().pan.y -= CAMERA_NUDGE,
+        HudButton::ZoomIn => {
+            let pose = state.camera_pose_mut();
+            pose.zoom = (pose.zoom * 0.82).clamp(MIN_ZOOM, MAX_ZOOM);
+        }
+        HudButton::ZoomOut => {
+            let pose = state.camera_pose_mut();
+            pose.zoom = (pose.zoom * 1.22).clamp(MIN_ZOOM, MAX_ZOOM);
+        }
+        HudButton::Recenter => state.recenter_camera(),
+        HudButton::ToggleBot => {
+            spectator.enabled = !spectator.enabled;
+            spectator.step_requested = spectator.enabled;
+            spectator.cadence.reset();
+            state.pending_move = None;
+            state.hovered = None;
+            state.preview = None;
+            state.overlay_dirty = true;
+            state.notice = if spectator.enabled {
+                String::from("Bot spectate running")
+            } else {
+                String::from("Bot spectate paused")
+            };
+        }
+        HudButton::StepBot => {
+            spectator.enabled = false;
+            spectator.step_requested = true;
+            spectator.cadence.reset();
+            state.pending_move = None;
+            state.notice = String::from("Bot single-step queued");
+        }
         HudButton::Interact
         | HudButton::DeployAnchor
         | HudButton::RecoverAnchor
@@ -833,6 +1011,75 @@ fn apply_command(state: &mut LabState, command: HudButton, next: &mut ResMut<Nex
             return;
         }
     }
+    if !board_unchanged {
+        state.dirty = true;
+        state.hovered = None;
+        state.preview = None;
+        state.overlay_dirty = true;
+    }
+}
+
+fn resolve_turn(state: &mut LabState) {
+    let resolution = state.game.end_turn_detailed();
+    if let Some(mut geometry) = state.geometry.take() {
+        if let Err(detail) = geometry.apply_resolution(&state.game, &resolution) {
+            state.notice = detail;
+        } else {
+            state.notice = match resolution.outcome {
+                sim::relayout::ShiftOutcome::Committed => String::from("Facility shift committed"),
+                sim::relayout::ShiftOutcome::Held => String::from("Facility shift held"),
+                sim::relayout::ShiftOutcome::NothingToShift => String::from("No facility shift"),
+            };
+        }
+        state.geometry = Some(geometry);
+    }
+    state.select_next();
+}
+
+/// Advance one bot decision at a reviewable cadence. This system is only an
+/// adapter: target and action selection stay in the pure [`bot`] module.
+fn drive_spectator_bot(
+    time: Res<Time>,
+    mut spectator: ResMut<BotSpectator>,
+    mut state: ResMut<LabState>,
+) {
+    let due = if spectator.step_requested {
+        spectator.step_requested = false;
+        true
+    } else if spectator.enabled {
+        spectator.cadence.tick(time.delta()).just_finished()
+    } else {
+        false
+    };
+    if !due {
+        return;
+    }
+
+    let directive = bot::choose(&state.game);
+    spectator.last = bot::describe(directive);
+    let old_level = state.level;
+    match directive {
+        bot::BotDirective::Act { unit, action } => {
+            state.selected = Some(unit);
+            if let Err(refusal) = state.game.apply(unit, action) {
+                spectator.enabled = false;
+                state.notice = format!("Bot paused: {action:?} refused ({refusal:?})");
+                return;
+            }
+            if let Some(actor) = state.game.units.get(&unit) {
+                state.level = actor.cell.level;
+            }
+            state.notice = format!("Bot: {}", spectator.last);
+        }
+        bot::BotDirective::EndTurn => resolve_turn(&mut state),
+        bot::BotDirective::Finished => {
+            spectator.enabled = false;
+            state.notice = String::from("Bot spectate complete");
+        }
+    }
+    if state.level != old_level {
+        state.recenter_camera();
+    }
     state.dirty = true;
     state.hovered = None;
     state.preview = None;
@@ -842,11 +1089,12 @@ fn apply_command(state: &mut LabState, command: HudButton, next: &mut ResMut<Nex
 fn sync_camera_viewport(
     windows: Query<&Window>,
     mut cameras: Query<&mut Camera, With<BoardCamera>>,
+    mut state: ResMut<LabState>,
 ) {
     let (Ok(window), Ok(mut camera)) = (windows.single(), cameras.single_mut()) else {
         return;
     };
-    let dock = (COMMAND_DOCK_WIDTH * window.scale_factor()) as u32;
+    let dock = (view::hud::COMMAND_DOCK_WIDTH * window.scale_factor()) as u32;
     let width = window.physical_width().saturating_sub(dock).max(1);
     let height = window.physical_height().max(1);
     let size = UVec2::new(width, height);
@@ -862,15 +1110,47 @@ fn sync_camera_viewport(
             depth: 0.0..1.0,
         });
     }
+    let logical = size.as_vec2() / window.scale_factor();
+    if logical != state.viewport_size {
+        state.viewport_size = logical;
+        state.framing = view::camera::frame(&state.game, state.mode, state.level, logical);
+    }
+}
+
+/// Mouse wheel over the fixed dock scrolls the dock and never leaks through to
+/// map zoom. The same dock width defines the 3D viewport boundary, so pointer
+/// ownership cannot drift from the layout under DPI scaling.
+fn scroll_command_dock(
+    scroll: Res<AccumulatedMouseScroll>,
+    windows: Query<&Window>,
+    mut docks: Query<(&mut ScrollPosition, &ComputedNode), With<CommandDock>>,
+) {
+    if scroll.delta.y.abs() <= f32::EPSILON {
+        return;
+    }
+    let (Ok(window), Ok((mut position, computed))) = (windows.single(), docks.single_mut()) else {
+        return;
+    };
+    let over_dock = window
+        .cursor_position()
+        .is_some_and(|cursor| cursor.x >= window.width() - view::hud::COMMAND_DOCK_WIDTH);
+    if !over_dock {
+        return;
+    }
+    let max_offset = ((computed.content_size().y - computed.size().y)
+        * computed.inverse_scale_factor())
+    .max(0.0);
+    position.y = (position.y - scroll.delta.y * 32.0).clamp(0.0, max_offset);
 }
 
 /// Keep pointer affordance, hovered cell, and route preview in lockstep without
 /// touching authored board geometry.
 fn update_board_hover(
-    mouse: Res<ButtonInput<MouseButton>>,
     windows: Query<(Entity, &Window)>,
     cameras: Query<(&Camera, &GlobalTransform), With<BoardCamera>>,
     controls: Query<(&Interaction, Has<InteractionDisabled>), With<Button>>,
+    capture: Res<MapPointerCapture>,
+    spectator: Res<BotSpectator>,
     mut state: ResMut<LabState>,
     mut commands: Commands,
 ) {
@@ -883,10 +1163,15 @@ fn update_board_hover(
         .map(|(_, disabled)| disabled);
     let mut hovered = None;
     let mut preview = None;
+    let camera = cameras.single().ok();
+    let cursor = window.cursor_position();
+    let over_map = cursor.is_some_and(|cursor| {
+        camera.is_some_and(|(camera, _)| view::camera::cursor_in_viewport(window, camera, cursor))
+    });
     let icon =
         if state.pending_move.is_some() {
             SystemCursorIcon::Progress
-        } else if mouse.pressed(MouseButton::Right) {
+        } else if capture.panning {
             SystemCursorIcon::Grabbing
         } else if let Some(disabled) = control_hover {
             if disabled {
@@ -894,8 +1179,10 @@ fn update_board_hover(
             } else {
                 SystemCursorIcon::Pointer
             }
-        } else if let (Some(cursor), Ok((camera, transform))) =
-            (window.cursor_position(), cameras.single())
+        } else if spectator.enabled && over_map {
+            SystemCursorIcon::Default
+        } else if let (Some(cursor), Some((camera, transform))) = (cursor, camera)
+            && over_map
         {
             if let Ok(ray) = camera.viewport_to_world(transform, cursor) {
                 hovered = view::board::cell_at_ray(
@@ -944,9 +1231,11 @@ fn update_board_hover(
 fn board_clicks(
     mouse: Res<ButtonInput<MouseButton>>,
     interactions: Query<&Interaction, With<HudButton>>,
+    spectator: Res<BotSpectator>,
     mut state: ResMut<LabState>,
 ) {
     if !mouse.just_pressed(MouseButton::Left)
+        || spectator.enabled
         || state.game.phase == TurnPhase::Finished
         || state.pending_move.is_some()
     {
@@ -965,7 +1254,7 @@ fn board_clicks(
     if state.mode == ViewMode::Overview {
         state.mode = ViewMode::Deck;
         state.level = cell.level;
-        state.pan = Vec2::ZERO;
+        state.deck_camera = CameraPose::default();
         state.dirty = true;
         state.overlay_dirty = true;
         return;
@@ -1048,27 +1337,54 @@ fn advance_pending_move(time: Res<Time>, mut state: ResMut<LabState>) {
 }
 
 fn camera_controls(
-    mouse: Res<ButtonInput<MouseButton>>,
-    motion: Res<AccumulatedMouseMotion>,
-    scroll: Res<AccumulatedMouseScroll>,
+    input: CameraInput,
+    mut capture: ResMut<MapPointerCapture>,
     mut state: ResMut<LabState>,
     mut cameras: Query<(&mut Transform, &mut Projection), With<BoardCamera>>,
 ) {
-    if scroll.delta.y != 0.0 {
-        state.zoom = (state.zoom * (1.0 - scroll.delta.y * 0.1)).clamp(MIN_ZOOM, MAX_ZOOM);
+    let cursor_offset = input.windows.single().ok().and_then(|window| {
+        window.cursor_position().and_then(|cursor| {
+            input
+                .viewports
+                .single()
+                .ok()
+                .and_then(|camera| view::camera::viewport_cursor_offset(window, camera, cursor))
+        })
+    });
+    let over_map = cursor_offset.is_some();
+    if (input.mouse.just_pressed(MouseButton::Right)
+        || input.mouse.just_pressed(MouseButton::Middle))
+        && over_map
+    {
+        capture.panning = true;
     }
-    if mouse.pressed(MouseButton::Right) {
-        let scale = state.zoom * 0.6;
-        state.pan += Vec2::new(-motion.delta.x, motion.delta.y) * scale;
+    if !input.mouse.pressed(MouseButton::Right) && !input.mouse.pressed(MouseButton::Middle) {
+        capture.panning = false;
+    }
+    if over_map && input.scroll.delta.y.abs() > f32::EPSILON {
+        let old_zoom = state.camera_pose().zoom;
+        let new_zoom = (old_zoom * 1.14_f32.powf(-input.scroll.delta.y)).clamp(MIN_ZOOM, MAX_ZOOM);
+        let anchor_delta =
+            cursor_offset.unwrap_or_default() * state.framing().1 * (old_zoom - new_zoom)
+                / state.viewport_size.y.max(1.0);
+        let pose = state.camera_pose_mut();
+        pose.zoom = new_zoom;
+        pose.pan += anchor_delta;
+    }
+    if capture.panning {
+        let pose = state.camera_pose_mut();
+        let scale = pose.zoom * 0.6;
+        pose.pan += Vec2::new(-input.motion.delta.x, input.motion.delta.y) * scale;
     }
     let framing = state.framing();
+    let pose = state.camera_pose();
     for (mut transform, mut projection) in &mut cameras {
         view::camera::apply(
             &mut transform,
             &mut projection,
             framing,
-            state.zoom,
-            state.pan,
+            pose.zoom,
+            pose.pan,
         );
     }
 }
@@ -1103,35 +1419,55 @@ fn rebuild_board(
     );
     // The lattice only changes shape when the board is rebuilt, so this is the
     // one place the framing can go stale.
-    state.framing = view::camera::frame(&state.game, mode, level);
+    state.framing = view::camera::frame(&state.game, mode, level, state.viewport_size);
     state.dirty = false;
 }
 
 fn refresh_hud(
     state: Res<LabState>,
+    spectator: Res<BotSpectator>,
     mut status: Query<&mut Text, (With<view::hud::StatusText>, Without<view::hud::SquadText>)>,
     mut squad: Query<&mut Text, (With<view::hud::SquadText>, Without<view::hud::StatusText>)>,
 ) {
     for mut text in &mut status {
         let mut value = view::hud::status_line(&state.game, state.mode, state.level);
-        if let Some(preview) = state.preview.as_ref() {
-            value.push_str(&format!(
-                "\nRoute: {} step(s), {} AP, stops at ({},{},L{}){}",
-                preview.affordable_steps,
-                preview.action_point_cost,
-                preview.stopping_cell.q,
-                preview.stopping_cell.r,
-                preview.stopping_cell.level,
-                if preview.reaches_destination && preview.affordable_steps == preview.steps.len() {
-                    ""
-                } else {
-                    " - continues"
-                }
-            ));
-        }
-        if !state.notice.is_empty() {
-            value.push('\n');
-            value.push_str(&state.notice);
+        let route = state.preview.as_ref().map_or_else(
+            || String::from("Route: hover a cell"),
+            |preview| {
+                format!(
+                    "Route: {} steps / {} AP -> ({},{},L{}){}",
+                    preview.affordable_steps,
+                    preview.action_point_cost,
+                    preview.stopping_cell.q,
+                    preview.stopping_cell.r,
+                    preview.stopping_cell.level,
+                    if preview.reaches_destination
+                        && preview.affordable_steps == preview.steps.len()
+                    {
+                        ""
+                    } else {
+                        " - continues"
+                    }
+                )
+            },
+        );
+        value.push('\n');
+        value.push_str(&route);
+        value.push('\n');
+        value.push_str(if state.notice.is_empty() {
+            "Ready"
+        } else {
+            &state.notice
+        });
+        value.push('\n');
+        value.push_str(if spectator.enabled {
+            "Spectate: RUN"
+        } else {
+            "Spectate: paused"
+        });
+        if !spectator.last.is_empty() {
+            value.push_str(" | last: ");
+            value.push_str(&spectator.last);
         }
         **text = value;
     }
@@ -1143,6 +1479,7 @@ fn refresh_hud(
 fn refresh_action_buttons(
     mut commands: Commands,
     state: Res<LabState>,
+    spectator: Res<BotSpectator>,
     buttons: Query<(Entity, &HudButton, Has<InteractionDisabled>)>,
 ) {
     for (entity, button, disabled) in &buttons {
@@ -1153,11 +1490,21 @@ fn refresh_action_buttons(
             HudButton::DeployPad => Some(TacticsAction::DeployPad),
             _ => None,
         };
-        let should_disable = action.is_some_and(|action| {
-            state
-                .selected
-                .is_none_or(|id| !state.game.action_availability(id, action).enabled)
-        });
+        let squad_command = matches!(
+            button,
+            HudButton::EndTurn
+                | HudButton::NextUnit
+                | HudButton::Interact
+                | HudButton::DeployAnchor
+                | HudButton::RecoverAnchor
+                | HudButton::DeployPad
+        );
+        let should_disable = (spectator.enabled && squad_command)
+            || action.is_some_and(|action| {
+                state
+                    .selected
+                    .is_none_or(|id| !state.game.action_availability(id, action).enabled)
+            });
         if should_disable && !disabled {
             commands.entity(entity).insert(InteractionDisabled);
         } else if !should_disable && disabled {

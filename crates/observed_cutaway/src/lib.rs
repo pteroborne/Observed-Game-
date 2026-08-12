@@ -79,9 +79,6 @@ pub fn survives(min_y: f32, max_y: f32, local: Vec3, bearing: Vec2, cutaway: boo
 
 pub struct CachedHull {
     mesh: ConvexRenderMesh,
-    min_y: f32,
-    max_y: f32,
-    centroid: Vec3,
 }
 
 #[derive(Default, Resource)]
@@ -104,13 +101,7 @@ impl TileMeshCache {
 
     fn build_owned(points: &[Vec3]) -> Option<CachedHull> {
         let mesh = ConvexRenderMesh::from_convex_hull(points)?;
-        let (min_y, max_y, centroid) = measure(points);
-        Some(CachedHull {
-            mesh,
-            min_y,
-            max_y,
-            centroid,
-        })
+        Some(CachedHull { mesh })
     }
 
     #[must_use]
@@ -216,6 +207,65 @@ pub fn build(
     BTreeMap<ArchitectureRegister, HullBatch>,
     DetailReport,
 ) {
+    build_with_projection(
+        world,
+        snapshot,
+        cells,
+        selected,
+        Projection::Cutaway {
+            bearing,
+            enabled: cutaway,
+        },
+        cache,
+    )
+}
+
+/// Draw an authored deck with its ceilings removed and every perimeter hull
+/// capped to `wall_height`. Floors, ramps, stairs, columns, and other interior
+/// structure retain their authored shape. Collision data is never touched.
+#[must_use]
+pub fn build_quarter_walls(
+    world: &HexWfcWorld,
+    snapshot: &HexWfcGeometrySnapshot,
+    cells: &BTreeSet<HexCoord>,
+    selected: Option<HexCoord>,
+    wall_height: f32,
+    cache: &mut TileMeshCache,
+) -> (
+    HullBatch,
+    BTreeMap<ArchitectureRegister, HullBatch>,
+    DetailReport,
+) {
+    build_with_projection(
+        world,
+        snapshot,
+        cells,
+        selected,
+        Projection::QuarterWalls {
+            height: wall_height.max(0.1),
+        },
+        cache,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum Projection {
+    Cutaway { bearing: Vec2, enabled: bool },
+    QuarterWalls { height: f32 },
+}
+
+fn build_with_projection(
+    world: &HexWfcWorld,
+    snapshot: &HexWfcGeometrySnapshot,
+    cells: &BTreeSet<HexCoord>,
+    selected: Option<HexCoord>,
+    projection: Projection,
+    cache: &mut TileMeshCache,
+) -> (
+    HullBatch,
+    BTreeMap<ArchitectureRegister, HullBatch>,
+    DetailReport,
+) {
     let mut focus = HullBatch::default();
     let mut context: BTreeMap<ArchitectureRegister, HullBatch> = BTreeMap::new();
     let mut report = DetailReport {
@@ -248,37 +298,67 @@ pub fn build(
             if points.is_empty() {
                 continue;
             }
+            let (min_y, max_y, centroid) = measure(points);
+            let projected_points;
+            let source = match projection {
+                Projection::Cutaway { bearing, enabled } => {
+                    if !survives(min_y, max_y, centroid, bearing, enabled) {
+                        report.hulls_cut += 1;
+                        continue;
+                    }
+                    points.as_slice()
+                }
+                Projection::QuarterWalls { height } => {
+                    use observed_style::iso::HullRegion;
+                    match observed_style::iso::hull_region(min_y, max_y, centroid) {
+                        HullRegion::Ceiling => {
+                            report.hulls_cut += 1;
+                            continue;
+                        }
+                        HullRegion::Perimeter => {
+                            projected_points = quarter_wall_points(points, min_y + height);
+                            projected_points.as_slice()
+                        }
+                        HullRegion::Floor | HullRegion::Interior => points.as_slice(),
+                    }
+                }
+            };
             let fresh: Option<CachedHull>;
             let cached = match piece.tile.as_ref() {
                 Some(tile) => {
+                    let prefix = match projection {
+                        Projection::Cutaway { .. } => "full".to_string(),
+                        Projection::QuarterWalls { height } => {
+                            format!("quarter-{height:.3}")
+                        }
+                    };
                     let key = format!(
-                        "{}/{}/{}#{ordinal}",
+                        "{prefix}/{}/{}/{}#{ordinal}",
                         tile.archetype, tile.register, tile.variant
                     );
-                    cache.entry(key, points.as_slice())
+                    cache.entry(key, source)
                 }
                 None => {
-                    fresh = TileMeshCache::build_hull(points.as_slice());
+                    fresh = TileMeshCache::build_hull(source);
                     fresh.as_ref()
                 }
             };
             let Some(cached) = cached else { continue };
-            if survives(
-                cached.min_y,
-                cached.max_y,
-                cached.centroid,
-                bearing,
-                cutaway,
-            ) {
+            {
                 batch.push(&cached.mesh, origin);
                 report.hulls_drawn += 1;
-            } else {
-                report.hulls_cut += 1;
             }
         }
     }
     report.distinct_hulls_cached = cache.len();
     (focus, context, report)
+}
+
+fn quarter_wall_points(points: &[Vec3], top: f32) -> Vec<Vec3> {
+    points
+        .iter()
+        .map(|point| Vec3::new(point.x, point.y.min(top), point.z))
+        .collect()
 }
 
 #[cfg(test)]
@@ -303,5 +383,21 @@ mod tests {
         ] {
             assert!(!mode.label().is_empty());
         }
+    }
+
+    #[test]
+    fn a_quarter_wall_keeps_its_footprint_and_gains_a_flat_low_cap() {
+        let points = vec![
+            Vec3::new(-1.0, 0.0, -0.2),
+            Vec3::new(1.0, 0.0, -0.2),
+            Vec3::new(-1.0, 8.0, 0.2),
+            Vec3::new(1.0, 8.0, 0.2),
+            Vec3::new(-1.0, 0.0, 0.2),
+            Vec3::new(1.0, 0.0, 0.2),
+        ];
+        let projected = quarter_wall_points(&points, 2.0);
+        assert!(projected.iter().all(|point| point.y <= 2.0));
+        assert!(projected.iter().any(|point| point.y == 2.0));
+        assert!(TileMeshCache::build_hull(&projected).is_some());
     }
 }

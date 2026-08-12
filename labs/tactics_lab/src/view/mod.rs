@@ -29,10 +29,10 @@ use crate::sim::unit::PLAYER_TEAM;
 /// Which renderer is drawing the board.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum ViewMode {
-    /// Authored cutaway geometry for one active deck.
+    /// Authored geometry with quarter-height perimeter walls for one active deck.
     #[default]
     Deck,
-    /// Stacked schematic for strategic whole-board reading.
+    /// Top-down schematic of one deck for strategic orientation.
     Overview,
 }
 
@@ -40,8 +40,8 @@ impl ViewMode {
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
-            ViewMode::Deck => "Deck detail",
-            ViewMode::Overview => "Overview",
+            ViewMode::Deck => "Quarter-wall deck",
+            ViewMode::Overview => "Operations map",
         }
     }
 

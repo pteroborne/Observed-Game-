@@ -464,7 +464,7 @@ fn seeing_the_whole_map_changes_nothing_the_solver_protects() {
 fn the_exit_refuses_a_squad_that_has_not_finished_its_objectives() {
     let mut game = TacticsGame::new(MatchSettings {
         objectives: Objectives::Keystones,
-        keystones_required: 2,
+        keystones_required: 1,
         ..compact(SEEDS[0])
     })
     .expect("solves");
@@ -483,7 +483,7 @@ fn the_exit_refuses_a_squad_that_has_not_finished_its_objectives() {
     assert!(game.units.values().all(|unit| !unit.escaped));
 
     // Grant the keystones the way the match does, then try again.
-    game.objectives.team_mut(PLAYER_TEAM).keystones = 2;
+    game.objectives.team_mut(PLAYER_TEAM).keystones = 1;
     assert!(game.team_authorized(PLAYER_TEAM));
     for unit in game.units.values_mut() {
         unit.cell = exit;
@@ -762,6 +762,22 @@ fn a_match_where_stepping_is_free_is_refused() {
         .err(),
         Some(super::TacticsError::FreeMovement)
     );
+}
+
+#[test]
+fn a_match_cannot_require_more_keystones_than_its_facility_contains() {
+    let settings = MatchSettings {
+        objectives: crate::settings::Objectives::Keystones,
+        keystones_required: u8::MAX,
+        ..compact(SEEDS[0])
+    };
+    assert!(matches!(
+        TacticsGame::new(settings),
+        Err(super::TacticsError::InsufficientKeystones {
+            required: u8::MAX,
+            ..
+        })
+    ));
 }
 
 /// Costs are settings, so a match that prices moves differently must actually

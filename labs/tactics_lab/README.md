@@ -35,14 +35,34 @@ Collapse — or change any row, then start. `R` returns to setup at any time.
 | `Tab` / Next unit | select the next unit that can still act |
 | `1`–`6` | select a unit directly |
 | `Space` / End turn | end the turn: rivals move, the Guardian hunts, the facility shifts |
-| `V` / Deck / overview | switch between the authored active deck and stacked schematic |
-| `[` `]` / `-` `+` | browse the active authored deck |
-| scroll, right-drag | zoom and pan |
+| `V` / Deck / map | switch between the authored quarter-wall deck and active-deck operations map |
+| `[` `]` / Deck - / Deck + | browse decks in either view |
+| wheel or `-` `+` / Zoom | zoom under the map cursor; dock buttons zoom around centre |
+| right/middle-drag or arrows / Pan | pan only when the gesture starts inside the map viewport |
+| `Home` / Recenter | restore the current view's fitted framing |
+| `B` / Bot run / pause | let the deterministic objective bot drive the squad, or return control |
+| `.` / Bot step | pause and advance exactly one bot decision for debugging |
 | `Esc` | pause, resume or open the help/legend panel |
 
 Every command has an on-screen control as well as a key. That is deliberate: the
 prototype is pointed at a possible touch build, and a lab that can only be driven
 from a keyboard would not survive the move.
+
+The map and command dock have exclusive pointer ownership. Scrolling or dragging
+over the dock never moves the board; on a short display the fixed dock scrolls
+internally instead of reflowing its controls. Deck and map retain independent
+pan/zoom poses, so switching views does not destroy either composition.
+
+## Bot spectate
+
+Bot spectate issues one normal `TacticsAction` every 0.45 seconds. It collects
+required keystones, coordinates the squad at a two-operator station, uses an
+anchor when standing in a telegraphed pocket, and then routes everyone to the
+exit. The bot has no alternate mutation path: its decisions pass through the
+same legality, AP, action log, observation, Guardian, and relayout rules as
+manual play. `Bot step` is the useful debugging mode—each press exposes one
+decision and its resulting digest-sized simulation change while the camera and
+deck controls remain available.
 
 ## What it reuses
 
@@ -56,7 +76,7 @@ conclusion about the game, not about a model of it.
   `HexGuardianStatus`.
 - `observed_style` — every colour on screen.
 - `observed_schematic` — line and band meshes, shared with `iso_observer_lab`.
-- `observed_cutaway` — cached authored hulls and the shared ceiling/near-wall cutaway.
+- `observed_cutaway` — cached authored hulls plus shared cutaway and quarter-wall projection.
 - `observed_ui` — the setup screen's widgets and focus.
 
 Three things could not be borrowed, and each says so where it lives: the
@@ -88,7 +108,10 @@ read. Nothing about the rules changed; only the rate.
 $env:OBSERVED2_CAPTURE="docs/evidence/tactics_lab"; cargo run -p tactics_lab
 ```
 
-Plays a scripted match per seed and writes a frame per turn plus a
+Set `OBSERVED2_CAPTURE_VIEW=map` to capture the operations map instead of the
+quarter-wall deck.
+
+Lets the deterministic spectator bot play one match per seed and writes a frame per turn plus a
 `manifest.json` recording, for every turn, how many cells the facility changed,
 how many the squad held, and how much of the map it knew. Two settings
 configurations are compared by diffing manifests, not by squinting at images.
@@ -99,16 +122,23 @@ The lab succeeds if:
 
 - holding a telegraphed pocket visibly refuses the shift, and the HUD says so;
 - turning `Facility shift` off produces a match that feels *worse*;
-- the authored deck and stacked overview never disagree about what a cell is.
+- the authored quarter-wall deck and active-deck operations map never disagree about what a cell is;
+- a bot spectate run can finish an objective match through ordinary logged actions.
 
 ## Presentation direction
 
 The detailed deck uses the committed authored WFC catalogue rather than an
-approximation. Neutral slate hulls and orange construction lines create the
-greybox/dev-grid read; cyan, amber and red are reserved for named interaction
-states. The 3D viewport ends where the right-side command dock begins, so UI
-never covers a selectable cell. No render or pointer state participates in the
-match digest or replay log.
+approximation. Ceilings are removed and every perimeter hull is capped at one
+quarter of the canonical deck height; floors, ramps, stairs, columns, and other
+interior structure keep their authored shape. Neutral slate hulls and orange
+construction lines create the greybox/dev-grid read; selected geometry is
+lifted from dimmer context, and cyan, amber and red are reserved for named
+interaction states. Route, selection, and relayout warnings have translucent
+floor area as well as line work. The 3D
+viewport ends where the fixed right-side command dock begins, so UI never covers
+a selectable cell. The second view is a top-down schematic of one deck with real
+doorway gaps and explicit vertical glyphs, not an occluded stack of every floor.
+No render or pointer state participates in the match digest or replay log.
 
 It fails if spending observation on holding ground is never worth more than
 spending it on distance — in which case the freeze is decoration, and the

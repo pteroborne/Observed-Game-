@@ -203,6 +203,9 @@ pub enum TacticsError {
     /// each loop, because it is a property of the configuration and not of the
     /// loops.
     FreeMovement,
+    /// The configuration asks for more distinct keystones than the generated
+    /// facility contains. Refusing it prevents an unwinnable match.
+    InsufficientKeystones { required: u8, available: u8 },
 }
 
 impl From<HexWfcError> for TacticsError {
@@ -257,6 +260,14 @@ impl TacticsGame {
             return Err(TacticsError::FreeMovement);
         }
         let world = HexWfcWorld::generate(settings.seed, settings.facility())?;
+        let available_keystones = objectives::rooms_with_role(&world, RoomRole::Keystone).count();
+        let available_keystones = u8::try_from(available_keystones).unwrap_or(u8::MAX);
+        if settings.objectives.keystones() && settings.keystones_required > available_keystones {
+            return Err(TacticsError::InsufficientKeystones {
+                required: settings.keystones_required,
+                available: available_keystones,
+            });
+        }
         let spawn = world.config.spawn();
 
         let mut units = BTreeMap::new();

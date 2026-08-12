@@ -1,4 +1,4 @@
-//! Headless evidence: play a scripted match and record what each turn did.
+//! Headless evidence: let the spectator bot play and record what each turn did.
 //!
 //! `OBSERVED2_CAPTURE=<dir>` plays one match per seed with a deterministic
 //! policy and writes `manifest.json` — a per-turn record of how many cells the
@@ -14,10 +14,12 @@ use bevy::app::AppExit;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 
+use crate::bot::{self, BotDirective};
 use crate::settings::MatchSettings;
 use crate::sim::relayout::ShiftOutcome;
 use crate::sim::unit::PLAYER_TEAM;
 use crate::sim::{MatchStatus, TacticsGame};
+use crate::view::ViewMode;
 use crate::view::setup::SEEDS;
 use crate::{AppState, LabSettings, LabState};
 
@@ -32,6 +34,7 @@ struct CaptureRun {
     /// Frames are deferred one tick after the state change that produced them:
     /// the board only reaches the framebuffer on the frame after a rebuild.
     armed: bool,
+    view: ViewMode,
     manifest: Vec<serde_json::Value>,
 }
 
@@ -44,11 +47,16 @@ pub fn configure(app: &mut App) {
         warn!("capture directory {dir} could not be created; capture disabled");
         return;
     }
+    let view = match std::env::var("OBSERVED2_CAPTURE_VIEW").as_deref() {
+        Ok("map") => ViewMode::Overview,
+        _ => ViewMode::Deck,
+    };
     app.insert_resource(CaptureRun {
         dir,
         seed_index: 0,
         turn: 0,
         armed: false,
+        view,
         manifest: Vec::new(),
     })
     // Both entry points run the same function. Between seeds the run drops to
@@ -111,6 +119,17 @@ fn capture_progress(
     mut next: ResMut<NextState<AppState>>,
     mut exit: MessageWriter<AppExit>,
 ) {
+    if state.mode != run.view {
+        state.mode = run.view;
+        state.level = state
+            .selected
+            .and_then(|id| state.game.units.get(&id))
+            .map_or(state.level, |unit| unit.cell.level);
+        state.dirty = true;
+        state.overlay_dirty = true;
+        run.armed = true;
+        return;
+    }
     if !run.armed {
         run.armed = true;
         return;
@@ -127,29 +146,30 @@ fn capture_progress(
         .observe(save_to_disk(path));
     run.manifest.push(turn_record(&state.game, seed));
 
-    // A deterministic policy: walk every unit as far as it can toward the exit,
-    // then end the turn. Not clever, and not meant to be — it is a fixed ruler
-    // held against two different rule configurations.
-    let goal = state.game.world.config.exit();
-    let ids: Vec<observed_core::PlayerId> = state
-        .game
-        .units
-        .values()
-        .filter(|unit| unit.team == PLAYER_TEAM)
-        .map(|unit| unit.id)
-        .collect();
-    for id in ids {
-        state.selected = Some(id);
-        state.move_selected_toward(goal);
-    }
-    let resolution = state.game.end_turn_detailed();
-    if let Some(mut geometry) = state.geometry.take() {
-        if let Err(detail) = geometry.apply_resolution(&state.game, &resolution) {
-            warn!("capture projection update failed: {detail}");
+    // Exercise the exact policy and ordinary action boundary exposed by the
+    // interactive spectator controls. A guard turns a bot regression into a
+    // finite, diagnosable capture rather than a hung evidence run.
+    for _ in 0..512 {
+        match bot::choose(&state.game) {
+            BotDirective::Act { unit, action } => {
+                state.selected = Some(unit);
+                if let Err(refusal) = state.game.apply(unit, action) {
+                    warn!("capture bot action {action:?} was refused: {refusal:?}");
+                    break;
+                }
+                if let Some(actor) = state.game.units.get(&unit) {
+                    state.level = actor.cell.level;
+                }
+            }
+            BotDirective::EndTurn => {
+                crate::resolve_turn(&mut state);
+                break;
+            }
+            BotDirective::Finished => break,
         }
-        state.geometry = Some(geometry);
     }
     state.dirty = true;
+    state.overlay_dirty = true;
     run.turn += 1;
 
     let finished = run.turn >= CAPTURE_TURNS || state.game.status != MatchStatus::Running;
@@ -166,6 +186,7 @@ fn capture_progress(
     }
     let manifest = serde_json::json!({
         "turns_per_match": CAPTURE_TURNS,
+        "policy": "spectator_bot",
         "seeds": SEEDS.iter().map(|seed| format!("{seed:#x}")).collect::<Vec<_>>(),
         "records": run.manifest,
     });
