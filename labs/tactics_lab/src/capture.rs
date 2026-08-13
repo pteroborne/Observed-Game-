@@ -17,6 +17,7 @@ use observed_facility::hex_wfc::HexArchetype;
 
 use crate::bot::{self, BotDirective};
 use crate::settings::MatchSettings;
+use crate::sim::action::TacticsAction;
 use crate::sim::relayout::ShiftOutcome;
 use crate::sim::unit::PLAYER_TEAM;
 use crate::sim::{MatchStatus, TacticsGame};
@@ -62,6 +63,9 @@ struct CaptureRun {
     view: ViewMode,
     preset: CapturePreset,
     reveal_full_map: bool,
+    portal_demo: bool,
+    portal_staged: bool,
+    portal_frame_timer: Timer,
     manifest: Vec<serde_json::Value>,
 }
 
@@ -83,6 +87,7 @@ pub fn configure(app: &mut App) {
         _ => CapturePreset::Standard,
     };
     let reveal_full_map = std::env::var_os("OBSERVED2_CAPTURE_FULL_MAP").is_some();
+    let portal_demo = std::env::var_os("OBSERVED2_CAPTURE_PORTAL_DEMO").is_some();
     app.insert_resource(CaptureRun {
         dir,
         seed_index: 0,
@@ -91,6 +96,9 @@ pub fn configure(app: &mut App) {
         view,
         preset,
         reveal_full_map,
+        portal_demo,
+        portal_staged: false,
+        portal_frame_timer: Timer::from_seconds(0.075, TimerMode::Repeating),
         manifest: Vec::new(),
     })
     // Both entry points run the same function. Between seeds the run drops to
@@ -126,6 +134,8 @@ fn arm_next_match(
         candidate.reveal_full_map |= run.reveal_full_map;
         if TacticsGame::new(candidate).is_ok() {
             settings.0 = candidate;
+            run.portal_staged = false;
+            run.portal_frame_timer.reset();
             next.set(AppState::Play);
             return;
         }
@@ -148,6 +158,7 @@ pub fn capture_settings(seed: u64) -> MatchSettings {
 }
 
 fn capture_progress(
+    time: Res<Time>,
     mut commands: Commands,
     mut run: ResMut<CaptureRun>,
     mut state: ResMut<LabState>,
@@ -169,6 +180,22 @@ fn capture_progress(
         run.armed = true;
         return;
     }
+    if run.portal_demo && !run.portal_staged {
+        if !stage_portal_demo(&mut state) {
+            warn!(
+                "could not stage portal evidence for seed {}",
+                run.seed_index
+            );
+        }
+        run.portal_staged = true;
+        state.dirty = true;
+        state.overlay_dirty = true;
+        run.armed = true;
+        return;
+    }
+    if run.portal_demo && !run.portal_frame_timer.tick(time.delta()).just_finished() {
+        return;
+    }
     run.armed = false;
 
     let seed = SEEDS[run.seed_index];
@@ -184,23 +211,25 @@ fn capture_progress(
     // Exercise the exact policy and ordinary action boundary exposed by the
     // interactive spectator controls. A guard turns a bot regression into a
     // finite, diagnosable capture rather than a hung evidence run.
-    for _ in 0..512 {
-        match bot::choose(&state.game) {
-            BotDirective::Act { unit, action } => {
-                state.selected = Some(unit);
-                if let Err(refusal) = state.game.apply(unit, action) {
-                    warn!("capture bot action {action:?} was refused: {refusal:?}");
+    if !run.portal_demo {
+        for _ in 0..512 {
+            match bot::choose(&state.game) {
+                BotDirective::Act { unit, action } => {
+                    state.selected = Some(unit);
+                    if let Err(refusal) = state.game.apply(unit, action) {
+                        warn!("capture bot action {action:?} was refused: {refusal:?}");
+                        break;
+                    }
+                    if let Some(actor) = state.game.units.get(&unit) {
+                        state.level = actor.cell.level;
+                    }
+                }
+                BotDirective::EndTurn => {
+                    crate::resolve_turn(&mut state);
                     break;
                 }
-                if let Some(actor) = state.game.units.get(&unit) {
-                    state.level = actor.cell.level;
-                }
+                BotDirective::Finished => break,
             }
-            BotDirective::EndTurn => {
-                crate::resolve_turn(&mut state);
-                break;
-            }
-            BotDirective::Finished => break,
         }
     }
     state.dirty = true;
@@ -224,6 +253,7 @@ fn capture_progress(
         "policy": "spectator_bot",
         "preset": run.preset.label(),
         "force_full_map": run.reveal_full_map,
+        "portal_demo": run.portal_demo,
         "seeds": SEEDS.iter().map(|seed| format!("{seed:#x}")).collect::<Vec<_>>(),
         "records": run.manifest,
     });
@@ -234,6 +264,45 @@ fn capture_progress(
         warn!("could not write {path}");
     }
     exit.write(AppExit::Success);
+}
+
+/// Build a linked pair through the ordinary action boundary, then step onto the
+/// first plate so capture frames exercise the same transit event as play.
+fn stage_portal_demo(state: &mut LabState) -> bool {
+    let Some(id) = state.selected else {
+        return false;
+    };
+    if state
+        .apply_tactics_action(id, TacticsAction::DeployPad)
+        .is_err()
+    {
+        return false;
+    }
+    let Some(face) = state.game.legal_actions(id).into_iter().find_map(|action| {
+        if let TacticsAction::Move(face) = action {
+            Some(face)
+        } else {
+            None
+        }
+    }) else {
+        return false;
+    };
+    if state
+        .apply_tactics_action(id, TacticsAction::Move(face))
+        .is_err()
+        || state
+            .apply_tactics_action(id, TacticsAction::DeployPad)
+            .is_err()
+    {
+        return false;
+    }
+    for _ in 0..observed_match::hex_wfc::PAD_REARM_TICKS {
+        state.game.pads.tick_suppression();
+    }
+    state
+        .apply_tactics_action(id, TacticsAction::Move(face.opposite()))
+        .is_ok()
+        && state.teleport.is_some()
 }
 
 /// What one turn is worth recording.

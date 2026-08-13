@@ -34,7 +34,7 @@ use std::time::Duration;
 use settings::MatchSettings;
 use sim::action::TacticsAction;
 use sim::unit::PLAYER_TEAM;
-use sim::{MovePreview, TacticsGame, TurnPhase, TurnResolution};
+use sim::{MovePreview, TacticsEvent, TacticsGame, TurnPhase, TurnResolution};
 use view::board::DrawReport;
 use view::camera::BoardCamera;
 use view::hud::{CommandDock, HudButton};
@@ -252,6 +252,8 @@ pub struct LabState {
     pub overlay_dirty: bool,
     pub notice: String,
     pub pending_move: Option<PendingMove>,
+    /// A presentation-only pause over an already-resolved pad traversal.
+    pub teleport: Option<view::portals::TeleportPresentation>,
     /// The fit-everything framing, recomputed only when the board is rebuilt.
     ///
     /// Framing walks every cell in the lattice, which at full facility scale is
@@ -286,6 +288,7 @@ impl LabState {
             overlay_dirty: true,
             notice: String::new(),
             pending_move: None,
+            teleport: None,
             framing: (Transform::IDENTITY, 1.0),
             viewport_size: Vec2::new(WINDOW_WIDTH - view::hud::COMMAND_DOCK_WIDTH, WINDOW_HEIGHT),
         }
@@ -362,14 +365,49 @@ impl LabState {
         let preview = self.game.preview_move(id, cell);
         let steps = preview.executable_steps().to_vec();
         for step in &steps {
-            if self.game.apply(id, TacticsAction::Move(step.face)).is_err() {
+            if self
+                .apply_tactics_action(id, TacticsAction::Move(step.face))
+                .is_err()
+            {
                 return false;
+            }
+            if self.teleport.is_some() {
+                break;
             }
         }
         if let Some(unit) = self.game.units.get(&id) {
-            self.level = unit.cell.level;
+            self.level = self
+                .teleport
+                .map_or(unit.cell.level, |transit| transit.from.level);
         }
         !steps.is_empty()
+    }
+
+    /// Apply one ordinary simulation action and retain only the metadata needed
+    /// to project a completed portal traversal.
+    fn apply_tactics_action(
+        &mut self,
+        id: PlayerId,
+        action: TacticsAction,
+    ) -> Result<(), sim::action::Refusal> {
+        let first_new_event = self.game.events.len();
+        self.game.apply(id, action)?;
+        if let Some(TacticsEvent::PadTraversed { unit, from, to }) = self.game.events
+            [first_new_event..]
+            .iter()
+            .rev()
+            .copied()
+            .find(|event| matches!(event, TacticsEvent::PadTraversed { .. }))
+            && unit == id
+        {
+            self.teleport = Some(view::portals::TeleportPresentation::new(unit, from, to));
+            self.level = from.level;
+            self.notice = format!(
+                "Portal transit: U{} L{} ({},{}) -> L{} ({},{})",
+                unit.0, from.level, from.q, from.r, to.level, to.q, to.r
+            );
+        }
+        Ok(())
     }
 }
 
@@ -416,6 +454,8 @@ pub fn configure(app: &mut App) {
             (
                 despawn::<BoardVisual>,
                 despawn::<view::units::UnitVisual>,
+                despawn::<view::portals::PadVisual>,
+                despawn::<view::portals::TeleportEffect>,
                 despawn::<view::BoardOverlay>,
                 despawn::<HudRoot>,
                 despawn::<OverlayRoot>,
@@ -449,12 +489,15 @@ pub fn configure(app: &mut App) {
                 hud_clicks,
                 advance_pending_move,
                 drive_spectator_bot,
+                view::portals::advance,
                 sync_camera_viewport,
                 scroll_command_dock,
                 update_board_hover,
                 board_clicks,
                 rebuild_board,
+                view::portals::sync_plates,
                 view::units::sync,
+                view::portals::animate_effects,
                 camera_controls,
                 view::overlay::rebuild,
                 refresh_action_buttons,
@@ -815,7 +858,7 @@ fn keyboard_commands(
     mut spectator: ResMut<BotSpectator>,
     mut next: ResMut<NextState<AppState>>,
 ) {
-    if state.pending_move.is_some() {
+    if state.pending_move.is_some() || state.teleport.is_some() {
         return;
     }
     if keyboard.just_pressed(KeyCode::KeyR) {
@@ -884,7 +927,7 @@ fn hud_clicks(
     mut spectator: ResMut<BotSpectator>,
     mut next: ResMut<NextState<AppState>>,
 ) {
-    if state.pending_move.is_some() {
+    if state.pending_move.is_some() || state.teleport.is_some() {
         return;
     }
     for (interaction, &button) in controls.iter() {
@@ -997,9 +1040,12 @@ fn apply_command(
             if let Some(id) = state.selected {
                 let availability = state.game.action_availability(id, action);
                 if availability.enabled {
-                    match state.game.apply(id, action) {
+                    match state.apply_tactics_action(id, action) {
                         Ok(()) => {
-                            state.notice = format!("{action:?} accepted - {} AP", availability.cost)
+                            if state.teleport.is_none() {
+                                state.notice =
+                                    format!("{action:?} accepted - {} AP", availability.cost);
+                            }
                         }
                         Err(refusal) => state.notice = format!("Action refused: {refusal:?}"),
                     }
@@ -1045,6 +1091,9 @@ fn drive_spectator_bot(
     mut spectator: ResMut<BotSpectator>,
     mut state: ResMut<LabState>,
 ) {
+    if state.teleport.is_some() {
+        return;
+    }
     let due = if spectator.step_requested {
         spectator.step_requested = false;
         true
@@ -1063,15 +1112,19 @@ fn drive_spectator_bot(
     match directive {
         bot::BotDirective::Act { unit, action } => {
             state.selected = Some(unit);
-            if let Err(refusal) = state.game.apply(unit, action) {
+            if let Err(refusal) = state.apply_tactics_action(unit, action) {
                 spectator.enabled = false;
                 state.notice = format!("Bot paused: {action:?} refused ({refusal:?})");
                 return;
             }
-            if let Some(actor) = state.game.units.get(&unit) {
+            if state.teleport.is_none()
+                && let Some(actor) = state.game.units.get(&unit)
+            {
                 state.level = actor.cell.level;
             }
-            state.notice = format!("Bot: {}", spectator.last);
+            if state.teleport.is_none() {
+                state.notice = format!("Bot: {}", spectator.last);
+            }
         }
         bot::BotDirective::EndTurn => resolve_turn(&mut state),
         bot::BotDirective::Finished => {
@@ -1171,7 +1224,7 @@ fn update_board_hover(
         camera.is_some_and(|(camera, _)| view::camera::cursor_in_viewport(window, camera, cursor))
     });
     let icon =
-        if state.pending_move.is_some() {
+        if state.pending_move.is_some() || state.teleport.is_some() {
             SystemCursorIcon::Progress
         } else if capture.panning {
             SystemCursorIcon::Grabbing
@@ -1240,6 +1293,7 @@ fn board_clicks(
         || spectator.enabled
         || state.game.phase == TurnPhase::Finished
         || state.pending_move.is_some()
+        || state.teleport.is_some()
     {
         return;
     }
@@ -1300,6 +1354,9 @@ fn board_clicks(
 }
 
 fn advance_pending_move(time: Res<Time>, mut state: ResMut<LabState>) {
+    if state.teleport.is_some() {
+        return;
+    }
     let Some(mut pending) = state.pending_move.take() else {
         return;
     };
@@ -1311,16 +1368,15 @@ fn advance_pending_move(time: Res<Time>, mut state: ResMut<LabState>) {
     let Some(step) = pending.steps.pop_front() else {
         return;
     };
-    match state
-        .game
-        .apply(pending.unit, TacticsAction::Move(step.face))
-    {
+    match state.apply_tactics_action(pending.unit, TacticsAction::Move(step.face)) {
         Ok(()) => {
-            state.level = step.to.level;
-            state.notice = format!(
-                "Unit {} moved to ({},{},L{})",
-                pending.unit.0, step.to.q, step.to.r, step.to.level
-            );
+            if state.teleport.is_none() {
+                state.level = step.to.level;
+                state.notice = format!(
+                    "Unit {} moved to ({},{},L{})",
+                    pending.unit.0, step.to.q, step.to.r, step.to.level
+                );
+            }
             state.dirty = true;
             state.overlay_dirty = true;
         }
@@ -1463,6 +1519,22 @@ fn refresh_hud(
             value.push_str("District: ");
             value.push_str(register.label());
         }
+        if let Some(pad) = state.hovered.and_then(|cell| {
+            state
+                .game
+                .pads
+                .deployed
+                .values()
+                .find(|pad| pad.cell == cell)
+        }) {
+            let linked = state.game.pads.link_target(pad.team, pad.id).is_some();
+            value.push('\n');
+            value.push_str(if linked {
+                "Portal plate: LINKED"
+            } else {
+                "Portal plate: waiting for pair"
+            });
+        }
         value.push('\n');
         value.push_str(if state.notice.is_empty() {
             "Ready"
@@ -1509,7 +1581,7 @@ fn refresh_action_buttons(
                 | HudButton::RecoverAnchor
                 | HudButton::DeployPad
         );
-        let should_disable = (spectator.enabled && squad_command)
+        let should_disable = ((spectator.enabled || state.teleport.is_some()) && squad_command)
             || action.is_some_and(|action| {
                 state
                     .selected

@@ -15,6 +15,7 @@ pub mod board;
 pub mod camera;
 pub mod hud;
 pub mod overlay;
+pub mod portals;
 pub mod setup;
 pub mod units;
 

@@ -142,6 +142,10 @@ one-third-wall deck. Set `OBSERVED2_CAPTURE_PRESET=guided` to capture the teachi
 configuration, or set `OBSERVED2_CAPTURE_FULL_MAP=1` to reveal every cell while
 capturing another preset.
 
+Set `OBSERVED2_CAPTURE_PORTAL_DEMO=1` to stage a linked plate pair through the
+ordinary action boundary and record the complete lift / transit / descent beat.
+This mode spaces frames at 75 ms so the short effect is visually reviewable.
+
 Lets the deterministic spectator bot play one match per seed and writes a frame per turn plus a
 `manifest.json` recording, for every turn, how many cells the facility changed,
 how many the squad held, how many cells are truly blank, how many nonblank
@@ -173,6 +177,12 @@ floor area as well as line work. The 3D
 viewport ends where the fixed right-side command dock begins, so UI never covers
 a selectable cell. The second view is a top-down schematic of one deck with real
 doorway gaps and explicit vertical glyphs, not an occluded stack of every floor.
+Deployed teleport plates are persistent procedural floor assemblies: purple
+single-ring plates are waiting for a partner, while cyan double-ring plates are
+linked and pulse with a small practical pool. Traversal plays a 1.15-second
+machinery beat in which staggered rings lift the floating runner into a light
+column, hide the already-resolved transfer, then descend over the destination
+and rebuild the runner. Commands and bot beats pause during that presentation.
 No render or pointer state participates in the match digest or replay log.
 
 It fails if spending observation on holding ground is never worth more than

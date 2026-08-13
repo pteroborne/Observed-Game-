@@ -322,6 +322,9 @@ fn spawn_legend(parent: &mut ChildSpawnerCommands) {
             for note in [
                 "structure hue - district atmosphere (hover to name)",
                 "ring - exit or current objective",
+                "purple floor disc - unlinked portal plate",
+                "cyan double ring - linked portal plate",
+                "rising / descending rings - portal transit",
                 "small arrow - shaft to deck above / below",
             ] {
                 legend.spawn((

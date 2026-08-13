@@ -18,7 +18,7 @@ use crate::settings::{
 
 use super::action::{Refusal, TacticsAction};
 use super::unit::PLAYER_TEAM;
-use super::{MatchStatus, TacticsGame, relayout::ShiftOutcome, vision};
+use super::{MatchStatus, TacticsEvent, TacticsGame, relayout::ShiftOutcome, vision};
 
 /// Enough seeds to catch a rule that only holds for a lucky layout, few enough
 /// that the suite stays quick at Compact scale.
@@ -708,6 +708,23 @@ fn a_pad_pair_links_and_a_single_pad_does_not() {
     // Next turn clears the re-arm, and stepping back onto a plate links.
     game.end_turn();
     assert!(!game.pads.is_suppressed(id));
+    let TacticsAction::Move(face) = step else {
+        unreachable!("the chosen step was a move")
+    };
+    game.apply(id, TacticsAction::Move(face.opposite()))
+        .expect("steps onto the first plate");
+    assert_eq!(
+        game.units[&id].cell, second,
+        "the linked plate receives the unit"
+    );
+    assert_eq!(
+        game.events.last(),
+        Some(&TacticsEvent::PadTraversed {
+            unit: id,
+            from: first,
+            to: second,
+        })
+    );
 }
 
 #[test]

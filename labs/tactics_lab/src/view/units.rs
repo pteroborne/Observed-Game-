@@ -97,14 +97,37 @@ pub fn sync(
             continue;
         };
         let rival = unit.team != PLAYER_TEAM;
+        let selected = state.selected == Some(unit.id);
+        if visual.selected != selected {
+            visual.selected = selected;
+            material.0 = materials.add(line_material(unit_marker(selected, rival), false));
+        }
+        let base_scale = if selected { 2.65 } else { 2.3 };
+        let transit = state
+            .teleport
+            .filter(|transit| transit.unit == unit.id)
+            .map(super::portals::runner_sample);
+        let display_cell = transit.map_or(unit.cell, |(cell, _, _)| cell);
         let shown = !unit.escaped
-            && draws_level(state.mode, unit.cell, state.level)
-            && (!rival || state.game.observation.visible_cells.contains(&unit.cell));
+            && draws_level(state.mode, display_cell, state.level)
+            && (!rival || state.game.observation.visible_cells.contains(&display_cell));
         *visibility = if shown {
             Visibility::Visible
         } else {
             Visibility::Hidden
         };
+
+        if let Some((cell, lift, transit_scale)) = transit {
+            let settled = target(state.mode, unit.cell, unit.id, rival);
+            visual.from = settled;
+            visual.target = settled;
+            visual.progress = 1.0;
+            visual.mode = state.mode;
+            visual.level = state.level;
+            transform.translation = target(state.mode, cell, unit.id, rival) + Vec3::Y * lift;
+            transform.scale = Vec3::splat(base_scale * transit_scale);
+            continue;
+        }
 
         let next = target(state.mode, unit.cell, unit.id, rival);
         if visual.mode != state.mode || visual.level != state.level {
@@ -125,16 +148,6 @@ pub fn sync(
         let eased = t * t * (3.0 - 2.0 * t);
         let bob = (elapsed * 2.1 + f32::from(unit.id.0) * 1.7).sin() * HOVER_AMPLITUDE;
         transform.translation = visual.from.lerp(visual.target, eased) + Vec3::Y * bob;
-
-        let selected = state.selected == Some(unit.id);
-        if visual.selected != selected {
-            visual.selected = selected;
-            material.0 = materials.add(line_material(unit_marker(selected, rival), false));
-        }
-        transform.scale = if selected {
-            Vec3::splat(2.65)
-        } else {
-            Vec3::splat(2.3)
-        };
+        transform.scale = Vec3::splat(base_scale);
     }
 }

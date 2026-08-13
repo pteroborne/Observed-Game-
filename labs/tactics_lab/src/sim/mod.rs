@@ -168,6 +168,7 @@ pub enum TacticsEvent {
     },
     PadTraversed {
         unit: PlayerId,
+        from: HexCoord,
         to: HexCoord,
     },
     /// The Guardian reached a unit and set it back.
@@ -635,10 +636,12 @@ impl TacticsGame {
         let Some(destination) = self.pads.link_target(unit.team, pad).map(|pad| pad.cell) else {
             return;
         };
+        let source = unit.cell;
         self.units.get_mut(&id).expect("unit").cell = destination;
         self.pads.suppress(id);
         self.events.push(TacticsEvent::PadTraversed {
             unit: id,
+            from: source,
             to: destination,
         });
         self.resolve_escape(id);
