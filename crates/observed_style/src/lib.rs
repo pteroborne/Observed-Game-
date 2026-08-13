@@ -1046,6 +1046,23 @@ pub fn architecture_surface(
     }
 }
 
+/// Non-signal district treatment for tactical and schematic structure.
+///
+/// A tactical overview shows several districts at once, so it cannot apply one
+/// district's global fog or ambient fill to the whole camera. This treatment
+/// carries the same style-owned accent into ordinary hulls and floor lines;
+/// gameplay states still replace it with their signal-tier treatments.
+#[must_use]
+pub fn architecture_tactical(register: observed_content::ArchitectureRegister) -> Treatment {
+    let accent = architecture(register).accent;
+    Treatment {
+        base_color: Color::LinearRgba(accent),
+        emissive: accent * 0.22,
+        signal: false,
+        edge: None,
+    }
+}
+
 /// The non-signal fluorescent treatment used by authored practical housings.
 pub fn architecture_practical_fixture(
     register: observed_content::ArchitectureRegister,
@@ -2481,6 +2498,14 @@ mod tests {
                 "{role:?} is too dim"
             );
             assert!(!role.label().is_empty());
+        }
+        for register in observed_content::ArchitectureRegister::ALL {
+            let treatment = architecture_tactical(register);
+            assert!(!treatment.signal, "{register:?} is atmosphere, not a cue");
+            assert!(
+                luminance(treatment.emissive) < SIGNAL_MIN_LUMINANCE,
+                "{register:?} district structure competes with signals"
+            );
         }
     }
 }

@@ -8,7 +8,7 @@
 use std::collections::BTreeSet;
 
 use observed_core::{PlayerId, TeamId};
-use observed_facility::map_spec::RoomRole;
+use observed_facility::{hex_wfc::HexArchetype, map_spec::RoomRole};
 use observed_hex::HexCoord;
 
 use crate::settings::{
@@ -41,6 +41,35 @@ fn compact(seed: u64) -> MatchSettings {
 
 fn game(seed: u64) -> TacticsGame {
     TacticsGame::new(compact(seed)).expect("a compact facility solves at every corpus seed")
+}
+
+#[test]
+fn tactical_layouts_leave_negative_space_and_use_a_varied_vocabulary() {
+    for seed in SEEDS {
+        let game = game(seed);
+        let total = game.world.placements.len();
+        let voids = game
+            .world
+            .placements
+            .values()
+            .filter(|placement| placement.archetype == HexArchetype::Void)
+            .count();
+        let archetypes: BTreeSet<_> = game
+            .world
+            .placements
+            .values()
+            .filter(|placement| placement.archetype != HexArchetype::Void)
+            .map(|placement| placement.archetype)
+            .collect();
+        assert!(
+            voids * 5 >= total,
+            "seed {seed:#x} has only {voids}/{total} blank cells"
+        );
+        assert!(
+            archetypes.len() >= 7,
+            "seed {seed:#x} uses only {archetypes:?}"
+        );
+    }
 }
 
 /// Spend a unit's whole turn walking wherever it can, deterministically: always

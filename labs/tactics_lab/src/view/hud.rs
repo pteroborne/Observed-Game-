@@ -320,6 +320,7 @@ fn spawn_legend(parent: &mut ChildSpawnerCommands) {
                     });
             }
             for note in [
+                "structure hue - district atmosphere (hover to name)",
                 "ring - exit or current objective",
                 "small arrow - shaft to deck above / below",
             ] {
@@ -404,9 +405,10 @@ pub fn status_line(game: &TacticsGame, mode: ViewMode, level: u8) -> String {
     format!(
         "Turn {} | {view}\n\
          Shift: {shift}{last}\n\
-         Guardian: {guardian}\n\
+         Guardian: {guardian} | Observe: {} tiles\n\
          Goals: {objectives} | {outcome}{exit_hint}",
         game.turn,
+        game.settings.sight.hops(),
     )
 }
 

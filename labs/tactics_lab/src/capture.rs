@@ -13,6 +13,7 @@
 use bevy::app::AppExit;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
+use observed_facility::hex_wfc::HexArchetype;
 
 use crate::bot::{self, BotDirective};
 use crate::settings::MatchSettings;
@@ -238,10 +239,26 @@ fn capture_progress(
 /// What one turn is worth recording.
 #[must_use]
 pub fn turn_record(game: &TacticsGame, seed: u64) -> serde_json::Value {
+    let blank_cells = game
+        .world
+        .placements
+        .values()
+        .filter(|placement| placement.archetype == HexArchetype::Void)
+        .count();
+    let distinct_archetypes = game
+        .world
+        .placements
+        .values()
+        .filter(|placement| placement.archetype != HexArchetype::Void)
+        .map(|placement| placement.archetype)
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
     serde_json::json!({
         "seed": format!("{seed:#x}"),
         "turn": game.turn,
         "generation": game.world.generation,
+        "blank_cells": blank_cells,
+        "distinct_nonblank_archetypes": distinct_archetypes,
         "known_cells": game
             .knowledge
             .get(&PLAYER_TEAM)
@@ -282,6 +299,8 @@ mod tests {
             "seed",
             "turn",
             "generation",
+            "blank_cells",
+            "distinct_nonblank_archetypes",
             "known_cells",
             "observed_cells",
             "telegraphed_cells",

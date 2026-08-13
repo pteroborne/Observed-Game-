@@ -8,7 +8,10 @@
 //! The two view modes are parameters here, not separate renderers — see the note
 //! in [`super`].
 
+use std::collections::BTreeMap;
+
 use bevy::prelude::*;
+use observed_content::ArchitectureRegister;
 use observed_core::PlayerId;
 use observed_hex::{HexCoord, HexFace, TILE_LEVEL_HEIGHT, hex_origin};
 use observed_schematic::{
@@ -74,19 +77,33 @@ pub fn build(
             commands, meshes, materials, game, geometry, cache, board_view,
         );
     }
-    let mut lines: Vec<(CellPaint, LineBatch)> = CellPaint::ALL
+    let mut lines: Vec<((CellPaint, ArchitectureRegister), LineBatch)> = CellPaint::ALL
         .iter()
-        .map(|&state| (state, LineBatch::default()))
+        .flat_map(|&state| {
+            ArchitectureRegister::ALL
+                .into_iter()
+                .map(move |register| ((state, register), LineBatch::default()))
+        })
         .collect();
-    let mut map_surfaces: Vec<(CellPaint, SurfaceBatch)> = CellPaint::ALL
+    let mut map_surfaces: Vec<((CellPaint, ArchitectureRegister), SurfaceBatch)> = CellPaint::ALL
         .iter()
-        .map(|&state| (state, SurfaceBatch::default()))
+        .flat_map(|&state| {
+            ArchitectureRegister::ALL
+                .into_iter()
+                .map(move |register| ((state, register), SurfaceBatch::default()))
+        })
         .collect();
     for (&cell, placement) in &game.world.placements {
         if !draws_level(mode, cell, level) {
             continue;
         }
         let state = paint(game, cell);
+        let register = game
+            .world
+            .architecture
+            .get(&cell)
+            .copied()
+            .unwrap_or(ArchitectureRegister::Institutional);
         if state == CellPaint::Unknown {
             // Fog is drawn by *not drawing*. An outline for "something is here"
             // would be a map of the facility's shape, which is the thing the
@@ -116,7 +133,9 @@ pub fn build(
 
         let line = &mut lines
             .iter_mut()
-            .find(|(candidate, _)| *candidate == state)
+            .find(|((candidate_state, candidate_register), _)| {
+                *candidate_state == state && *candidate_register == register
+            })
             .expect("every paint state has a batch")
             .1;
         if mode == ViewMode::Deck {
@@ -144,7 +163,9 @@ pub fn build(
         if mode == ViewMode::Overview {
             let surface = &mut map_surfaces
                 .iter_mut()
-                .find(|(candidate, _)| *candidate == state)
+                .find(|((candidate_state, candidate_register), _)| {
+                    *candidate_state == state && *candidate_register == register
+                })
                 .expect("every paint state has a map surface")
                 .1;
             add_map_floor(surface, origin, sketch.inset);
@@ -159,23 +180,28 @@ pub fn build(
         }
     }
 
-    for (state, batch) in lines {
+    for ((state, register), batch) in lines {
         if let Some(mesh) = batch.build() {
             commands.spawn((
                 BoardVisual,
                 Mesh3d(meshes.add(mesh)),
-                MeshMaterial3d(
-                    materials.add(line_material(board_treatment(mode, state), state.dimmed())),
-                ),
+                MeshMaterial3d(materials.add(line_material(
+                    board_treatment(state, register),
+                    state.dimmed(),
+                ))),
                 Transform::IDENTITY,
-                Name::new(format!("Board lines: {}", state.legend())),
+                Name::new(format!(
+                    "Board lines: {} / {}",
+                    state.legend(),
+                    register.slug()
+                )),
             ));
         }
     }
     if mode == ViewMode::Overview {
-        for (state, batch) in map_surfaces {
+        for ((state, register), batch) in map_surfaces {
             let Some(mesh) = batch.build() else { continue };
-            let treatment = state.treatment();
+            let treatment = board_treatment(state, register);
             let alpha = if state.dimmed() { 0.035 } else { 0.10 };
             commands.spawn((
                 BoardVisual,
@@ -213,9 +239,9 @@ fn add_map_floor(batch: &mut SurfaceBatch, origin: Vec3, inset: f32) {
     }
 }
 
-fn board_treatment(mode: ViewMode, state: CellPaint) -> Treatment {
-    if mode == ViewMode::Deck && matches!(state, CellPaint::Known | CellPaint::Stale) {
-        tactics(TacticsRole::DevGrid)
+fn board_treatment(state: CellPaint, register: ArchitectureRegister) -> Treatment {
+    if state == CellPaint::Known {
+        observed_style::architecture_tactical(register)
     } else {
         state.treatment()
     }
@@ -244,6 +270,10 @@ fn spawn_authored_deck(
         .and_then(|id| game.units.get(&id))
         .filter(|unit| unit.cell.level == level)
         .map(|unit| unit.cell);
+    let focus_treatment = selected
+        .and_then(|cell| game.world.architecture.get(&cell).copied())
+        .map(observed_style::architecture_tactical)
+        .unwrap_or_else(|| tactics(TacticsRole::DevSurface));
     let bearing = observed_style::iso::detent_bearing(0);
     let (focus, context, detail) = observed_cutaway::build_low_walls(
         &game.world,
@@ -254,9 +284,9 @@ fn spawn_authored_deck(
         cache,
     );
     for (batch, treatment) in context
-        .into_values()
-        .map(|batch| (batch, tactics(TacticsRole::DevContext)))
-        .chain(std::iter::once((focus, tactics(TacticsRole::DevSurface))))
+        .into_iter()
+        .map(|(register, batch)| (batch, observed_style::architecture_tactical(register)))
+        .chain(std::iter::once((focus, focus_treatment)))
     {
         let Some(mesh) = batch.into_mesh() else {
             continue;
@@ -289,7 +319,49 @@ fn spawn_authored_deck(
         Transform::from_translation(key_from).looking_at(Vec3::ZERO, Vec3::Y),
         Name::new("Tactical deck key"),
     ));
+    spawn_district_lights(commands, game, level);
     detail.hulls_drawn
+}
+
+/// One local practical pool per visible architecture register. A tactical view
+/// may contain several districts simultaneously, so a single global fog/ambient
+/// palette would necessarily lie about all but one of them.
+fn spawn_district_lights(commands: &mut Commands, game: &TacticsGame, level: u8) {
+    let mut centres: BTreeMap<ArchitectureRegister, (Vec3, u16)> = BTreeMap::new();
+    for (&cell, placement) in &game.world.placements {
+        if cell.level != level
+            || placement.archetype == observed_facility::hex_wfc::HexArchetype::Void
+            || paint(game, cell) == CellPaint::Unknown
+        {
+            continue;
+        }
+        let register = game
+            .world
+            .architecture
+            .get(&cell)
+            .copied()
+            .unwrap_or(ArchitectureRegister::Institutional);
+        let entry = centres.entry(register).or_insert((Vec3::ZERO, 0));
+        entry.0 += cell_origin(ViewMode::Deck, cell);
+        entry.1 = entry.1.saturating_add(1);
+    }
+    for (register, (sum, count)) in centres {
+        let centre = sum / f32::from(count.max(1));
+        let palette = observed_style::architecture(register);
+        commands.spawn((
+            BoardVisual,
+            PointLight {
+                color: palette.light_color,
+                intensity: 22_000.0,
+                range: 34.0,
+                radius: 3.0,
+                shadows_enabled: false,
+                ..default()
+            },
+            Transform::from_translation(centre + Vec3::Y * 12.0),
+            Name::new(format!("District practical: {}", register.slug())),
+        ));
+    }
 }
 
 fn visible_unit_count(game: &TacticsGame, mode: ViewMode, level: u8) -> usize {

@@ -427,7 +427,8 @@ pub fn configure(app: &mut App) {
             Update,
             (
                 handle_setup_requests,
-                view::setup::sync,
+                view::setup::sync_sliders,
+                view::setup::sync_labels,
                 view::setup::focus_hovered,
             )
                 .chain()
@@ -1454,6 +1455,14 @@ fn refresh_hud(
         );
         value.push('\n');
         value.push_str(&route);
+        if let Some(register) = state
+            .hovered
+            .and_then(|cell| state.game.world.architecture.get(&cell))
+        {
+            value.push('\n');
+            value.push_str("District: ");
+            value.push_str(register.label());
+        }
         value.push('\n');
         value.push_str(if state.notice.is_empty() {
             "Ready"

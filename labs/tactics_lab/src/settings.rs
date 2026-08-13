@@ -1,7 +1,7 @@
 //! What a player configures before a match starts.
 //!
 //! These are **match settings**, not developer switches. Every value has a name
-//! a player would use ("Sight: Corridor") rather than the number it resolves to,
+//! a player would use ("Observation radius: 1 tile") rather than an internal field,
 //! and the presets below are the intended way to move them — you dial this game
 //! in by playing a preset and disagreeing with it, not by reading a spec.
 //!
@@ -10,7 +10,8 @@
 //! [`MatchSettings`] plus its action log, which is what makes the determinism
 //! test meaningful and what any future replay or save would need.
 
-use observed_facility::hex_wfc::HexWfcConfig;
+use observed_content::ArchitectureRegister;
+use observed_facility::hex_wfc::{DistrictBias, HexArchetype, HexCompositionProfile, HexWfcConfig};
 
 /// How many lattice cells each floor may contain.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -102,12 +103,12 @@ impl BoardSize {
 /// presentation-only, so a teaching overlay cannot freeze the whole facility.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Sight {
-    /// Only the cell a unit stands in.
+    /// Only the cell a unit stands in: radius zero.
     Blind,
-    /// The unit's cell and everything one open port away.
+    /// The unit's cell and everything one open port away: radius one.
     #[default]
     Adjacent,
-    /// Two hops through open ports — you hold the corridor you are in.
+    /// Two hops through open ports: radius two.
     Corridor,
 }
 
@@ -117,9 +118,9 @@ impl Sight {
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
-            Sight::Blind => "Blind",
-            Sight::Adjacent => "Adjacent",
-            Sight::Corridor => "Corridor",
+            Sight::Blind => "0 tiles (occupied tile only)",
+            Sight::Adjacent => "1 tile",
+            Sight::Corridor => "2 tiles",
         }
     }
 
@@ -368,7 +369,7 @@ impl MatchSettings {
             squad_size: 3,
             action_points: 6,
             costs: ActionCosts::default(),
-            sight: Sight::Corridor,
+            sight: Sight::Adjacent,
             reveal_full_map: true,
             shift: ShiftCadence::Slow,
             telegraph: true,
@@ -416,7 +417,7 @@ impl MatchSettings {
             squad_size: 3,
             action_points: 4,
             costs: ActionCosts::default(),
-            sight: Sight::Adjacent,
+            sight: Sight::Blind,
             reveal_full_map: false,
             shift: ShiftCadence::EveryTurn,
             telegraph: true,
@@ -440,7 +441,7 @@ impl MatchSettings {
             squad_size: 4,
             action_points: 4,
             costs: ActionCosts::default(),
-            sight: Sight::Adjacent,
+            sight: Sight::Blind,
             reveal_full_map: false,
             shift: ShiftCadence::EveryTurn,
             telegraph: false,
@@ -458,6 +459,38 @@ impl MatchSettings {
     #[must_use]
     pub fn facility(&self) -> HexWfcConfig {
         self.board.config(self.floors)
+    }
+
+    /// Composition used by this tuning lab.
+    ///
+    /// This remains the real bounded production-profile path: no legal
+    /// archetype is disabled and the solver's connectivity and room gates stay
+    /// authoritative. The weights ask for more negative space, fewer repeated
+    /// straight runs, and more turns, junctions, ramps, and open expanses.
+    #[must_use]
+    pub fn composition_profile(&self) -> HexCompositionProfile {
+        let mut profile = HexCompositionProfile::baseline();
+        profile.label = String::from("tactical negative space");
+        profile.archetype_bias = profile
+            .archetype_bias
+            .with(HexArchetype::Void, 4.0)
+            .with(HexArchetype::Room, 1.15)
+            .with(HexArchetype::Straight, 0.55)
+            .with(HexArchetype::Corner, 1.35)
+            .with(HexArchetype::Junction, 1.65)
+            .with(HexArchetype::RampUp, 1.45)
+            .with(HexArchetype::RampHead, 1.45)
+            .with(HexArchetype::Shaft, 0.50)
+            .with(HexArchetype::Expanse, 1.70);
+        profile.district_bias = ArchitectureRegister::ALL
+            .into_iter()
+            .map(|register| DistrictBias {
+                register: register.slug().to_string(),
+                bias: observed_facility::hex_wfc::ArchetypeBias::neutral()
+                    .with(HexArchetype::Void, 4.0),
+            })
+            .collect();
+        profile
     }
 
     /// Which named preset this equals, if any. Anything else is "Custom" — the
@@ -529,7 +562,16 @@ mod tests {
     fn full_map_is_a_presentation_setting_not_an_observation_radius() {
         let guided = MatchSettings::guided();
         assert!(guided.reveal_full_map);
-        assert_eq!(guided.sight, Sight::Corridor);
+        assert_eq!(guided.sight, Sight::Adjacent);
+    }
+
+    #[test]
+    fn tactical_composition_is_valid_and_biases_toward_negative_space() {
+        let profile = MatchSettings::standard().composition_profile();
+        assert_eq!(profile.validate(), Ok(()));
+        assert!(profile.archetype_bias.void > 1.0);
+        assert!(profile.archetype_bias.straight < 1.0);
+        assert!(profile.archetype_bias.junction > profile.archetype_bias.straight);
     }
 
     #[test]

@@ -23,8 +23,8 @@ use bevy::ui_widgets::{
     Activate, Slider, SliderRange, SliderStep, SliderThumb, SliderValue, TrackClick, ValueChange,
 };
 use observed_ui::{
-    FocusScope, FocusScopeId, FocusTarget, WidgetId, WidgetSpec, activation_enabled, focus_scope,
-    spawn_button,
+    FocusScope, FocusScopeId, FocusTarget, WidgetId, WidgetLabel, WidgetSpec, WidgetText,
+    activation_enabled, focus_scope, spawn_button,
 };
 
 use crate::settings::{
@@ -43,6 +43,8 @@ pub struct SetupRoot;
 pub enum SetupAction {
     /// Load a named preset wholesale.
     Preset(usize),
+    /// Flip a setting that has exactly two states.
+    Toggle(SettingRow),
     Start,
 }
 
@@ -53,6 +55,9 @@ pub struct SettingSlider(pub SettingRow);
 pub struct SettingSliderThumb;
 
 #[derive(Component)]
+pub struct SettingToggle(pub SettingRow);
+
+#[derive(Component)]
 pub struct SettingValue(pub SettingRow);
 
 #[derive(Component)]
@@ -60,12 +65,22 @@ pub struct PresetValue;
 
 type HoveredSliderQuery<'w, 's> =
     Query<'w, 's, (Entity, &'static Hovered), (Changed<Hovered>, With<SettingSlider>)>;
+type ToggleTextFilter = (
+    With<WidgetText>,
+    Without<SettingValue>,
+    Without<PresetValue>,
+);
+type PresetTextFilter = (
+    With<PresetValue>,
+    Without<SettingValue>,
+    Without<WidgetText>,
+);
 
 /// One configurable row.
 ///
-/// Each row maps its handful of meaningful values onto a discrete slider. The
-/// label stays semantic while pointer and keyboard users can move in either
-/// direction.
+/// Rows with three or more meaningful values use a discrete slider. Binary rows
+/// use an activate-to-toggle button, so a rail never implies granularity that
+/// the setting does not have.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SettingRow {
     Board,
@@ -109,7 +124,7 @@ impl SettingRow {
         match self {
             SettingRow::Board => Some("Map"),
             SettingRow::Squad => Some("Squad"),
-            SettingRow::Sight => Some("Sight"),
+            SettingRow::Sight => Some("Observation"),
             SettingRow::Shift => Some("Facility shift"),
             SettingRow::Anchors => Some("Gear"),
             SettingRow::Objectives => Some("Objectives"),
@@ -126,7 +141,7 @@ impl SettingRow {
             SettingRow::Seed => "Seed",
             SettingRow::Squad => "Units",
             SettingRow::ActionPoints => "Action points",
-            SettingRow::Sight => "Sight",
+            SettingRow::Sight => "Observation radius",
             SettingRow::RevealMap => "See full map",
             SettingRow::Shift => "Shift",
             SettingRow::Telegraph => "Telegraph",
@@ -177,6 +192,13 @@ impl SettingRow {
             | SettingRow::Pads
             | SettingRow::Rival => 1,
         }
+    }
+
+    /// Sliders are reserved for genuine ranges. Binary rows are ordinary
+    /// activate-to-toggle buttons, so their affordance matches their choice.
+    #[must_use]
+    pub fn uses_slider(self) -> bool {
+        self.maximum() > 1
     }
 
     #[must_use]
@@ -331,7 +353,11 @@ pub fn spawn(commands: &mut Commands, settings: &MatchSettings, error: Option<&s
                         },
                     ));
                 }
-                spawn_setting_slider(root, row, settings, order);
+                if row.uses_slider() {
+                    spawn_setting_slider(root, row, settings, order);
+                } else {
+                    spawn_setting_toggle(root, row, settings, order);
+                }
                 order += 1;
             }
 
@@ -341,7 +367,7 @@ pub fn spawn(commands: &mut Commands, settings: &MatchSettings, error: Option<&s
                 SetupAction::Start,
             );
             root.spawn((
-                Text::new("drag or click a rail; arrow keys move one step at a time"),
+                Text::new("ranges: drag/click a rail or use arrows | switches: activate to toggle"),
                 TextFont {
                     font_size: 13.0,
                     ..default()
@@ -449,6 +475,52 @@ fn spawn_setting_slider(
         });
 }
 
+fn spawn_setting_toggle(
+    parent: &mut ChildSpawnerCommands,
+    row: SettingRow,
+    settings: &MatchSettings,
+    order: u16,
+) {
+    parent
+        .spawn((
+            Node {
+                width: px(620.0),
+                height: px(38.0),
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                column_gap: px(14.0),
+                ..default()
+            },
+            Pickable::IGNORE,
+        ))
+        .with_children(|line| {
+            line.spawn((
+                Text::new(row.name()),
+                TextFont {
+                    font_size: 15.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.76, 0.82, 0.88)),
+                Node {
+                    width: px(150.0),
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ));
+            spawn_button(
+                line,
+                WidgetSpec::enabled(
+                    WidgetId::keyed("tactics_toggle", u64::from(order)),
+                    SCOPE,
+                    order,
+                    row.value(settings),
+                )
+                .with_size(260.0, 34.0),
+                (SetupAction::Toggle(row), SettingToggle(row)),
+            );
+        });
+}
+
 /// Apply direct-manipulation changes without rebuilding the screen mid-drag.
 pub fn adjust(
     change: On<ValueChange<f32>>,
@@ -463,9 +535,8 @@ pub fn adjust(
         .set_position(&mut settings.0, change.value.round() as u8);
 }
 
-/// Keep named values, preset status, and thumb positions derived from the one
-/// settings resource. Preset buttons therefore update every rail atomically.
-pub fn sync(
+/// Keep slider positions and direct-manipulation feedback derived from settings.
+pub fn sync_sliders(
     settings: Res<crate::LabSettings>,
     focus: Res<InputFocus>,
     mut commands: Commands,
@@ -479,8 +550,6 @@ pub fn sync(
         &mut Outline,
     )>,
     mut thumbs: Query<(&mut Node, &mut BackgroundColor), With<SettingSliderThumb>>,
-    mut values: Query<(&SettingValue, &mut Text)>,
-    mut presets: Query<&mut Text, (With<PresetValue>, Without<SettingValue>)>,
 ) {
     for (entity, slider, value, range, children, hovered, mut outline) in sliders {
         let expected = f32::from(slider.0.position(&settings.0));
@@ -506,8 +575,28 @@ pub fn sync(
             }
         }
     }
+}
+
+/// Keep named values, toggle labels, and preset status synchronized without
+/// rebuilding the screen during a drag.
+pub fn sync_labels(
+    settings: Res<crate::LabSettings>,
+    mut values: Query<(&SettingValue, &mut Text), Without<WidgetText>>,
+    mut toggles: Query<(&SettingToggle, &Children, &mut WidgetLabel)>,
+    mut widget_texts: Query<&mut Text, ToggleTextFilter>,
+    mut presets: Query<&mut Text, PresetTextFilter>,
+) {
     for (value, mut text) in &mut values {
         **text = value.0.value(&settings.0);
+    }
+    for (toggle, children, mut widget_label) in &mut toggles {
+        let label = toggle.0.value(&settings.0);
+        widget_label.0.clone_from(&label);
+        for child in children.iter() {
+            if let Ok(mut text) = widget_texts.get_mut(child) {
+                **text = label.clone();
+            }
+        }
     }
     for mut text in &mut presets {
         **text = format!("Preset: {}", settings.0.preset_name());
@@ -543,6 +632,11 @@ pub fn activate_action(action: SetupAction, settings: &mut MatchSettings) -> Set
             if let Some(preset) = PRESETS.get(index) {
                 *settings = (preset.build)();
             }
+            SetupRequest::Changed
+        }
+        SetupAction::Toggle(row) => {
+            let next = u8::from(row.position(settings) == 0);
+            row.set_position(settings, next);
             SetupRequest::Changed
         }
         SetupAction::Start => SetupRequest::Start,
@@ -585,7 +679,7 @@ mod tests {
     }
 
     #[test]
-    fn moving_a_slider_changes_exactly_that_row() {
+    fn moving_a_control_changes_exactly_that_row() {
         for row in SettingRow::ALL {
             let before = MatchSettings::standard();
             let mut after = before;
@@ -600,7 +694,7 @@ mod tests {
     }
 
     #[test]
-    fn every_slider_round_trips_every_position() {
+    fn every_control_round_trips_every_position() {
         for row in SettingRow::ALL {
             let mut settings = MatchSettings::standard();
             for position in 0..=row.maximum() {
@@ -608,6 +702,29 @@ mod tests {
                 assert_eq!(row.position(&settings), position, "{}", row.name());
             }
         }
+    }
+
+    #[test]
+    fn only_rows_with_more_than_two_choices_use_sliders() {
+        for row in SettingRow::ALL {
+            assert_eq!(row.uses_slider(), row.maximum() > 1, "{}", row.name());
+        }
+        assert!(!SettingRow::RevealMap.uses_slider());
+        assert!(!SettingRow::Telegraph.uses_slider());
+        assert!(SettingRow::Sight.uses_slider());
+    }
+
+    #[test]
+    fn activating_a_binary_control_toggles_both_directions() {
+        let mut settings = MatchSettings::standard();
+        let before = settings.reveal_full_map;
+        assert_eq!(
+            activate_action(SetupAction::Toggle(SettingRow::RevealMap), &mut settings),
+            SetupRequest::Changed
+        );
+        assert_eq!(settings.reveal_full_map, !before);
+        let _ = activate_action(SetupAction::Toggle(SettingRow::RevealMap), &mut settings);
+        assert_eq!(settings.reveal_full_map, before);
     }
 
     #[test]

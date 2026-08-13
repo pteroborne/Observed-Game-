@@ -25,15 +25,17 @@ cargo dev-run -p tactics_lab
 ```
 
 The lab opens on a **match setup screen**. Pick Guided, Scout, Standard, or
-Collapse, or drag any discrete slider in either direction, then start. `R`
-returns to setup at any time.
+Collapse, then adjust it: ranges with three or more choices are discrete
+sliders, while two-state rules are ordinary toggle buttons. `R` returns to
+setup at any time.
 
 **Guided** is the teaching mode: one 80-tile floor, the complete facility and
 exit visible from turn one, six AP, slow telegraphed shifts, no Guardian, and
 both anchors and teleport plates available. `Tiles per floor` and `Floors per
 map` are independent rows, so difficulty can be increased along either axis.
-`See full map` reveals the drawing and exit marker but does not increase the
-squad's observation/freeze radius.
+`Observation radius` is an explicit 0/1/2-tile slider; Standard starts at zero
+so occupied ground is held without freezing a large halo. `See full map`
+reveals the drawing and exit marker but does not increase that radius.
 
 | Input | Does |
 | --- | --- |
@@ -121,6 +123,14 @@ same commit rule: current observation and anchors always win. A zero-delta solve
 is reported separately from a hold, while a real committed pocket remains
 magenta for the following turn, including in full-map mode.
 
+Initial solves use the production composition-profile boundary with a
+lab-authored readability profile. It increases true WFC void space, suppresses
+repeated straight runs and full-height shafts, and favours turns, junctions,
+ramps, and expanses. Global and per-district void biases stack inside the
+profile's existing safe bounds, leaving neutral production seeds and their
+pinned traversal evidence unchanged. No route or room is removed after generation: normal WFC adjacency,
+connectivity, room, and objective validation still decide every accepted map.
+
 ## Evidence
 
 ```powershell
@@ -134,7 +144,8 @@ capturing another preset.
 
 Lets the deterministic spectator bot play one match per seed and writes a frame per turn plus a
 `manifest.json` recording, for every turn, how many cells the facility changed,
-how many the squad held, and how much of the map it knew. Two settings
+how many the squad held, how many cells are truly blank, how many nonblank
+archetypes appear, and how much of the map it knew. Two settings
 configurations are compared by diffing manifests, not by squinting at images.
 
 ## Success and failure conditions
@@ -152,10 +163,12 @@ The detailed deck uses the committed authored WFC catalogue rather than an
 approximation. Ceilings are removed and every perimeter hull is capped at one
 third of the canonical deck height; floors, ramps, stairs, columns, and other
 interior structure keep their authored shape. Shaft connections use compact
-plan-view up/down arrows instead of the large staircase profile. Neutral slate hulls and orange
-construction lines create the greybox/dev-grid read; selected geometry is
-lifted from dimmer context, and cyan, amber and red are reserved for named
-interaction states. Route, selection, and relayout warnings have translucent
+plan-view up/down arrows instead of the large staircase profile. Ordinary hulls,
+map floors, and construction lines retain their style-owned architecture
+register accent, with one local practical-light pool per visible district.
+Hover names the register and the legend explains the structural hue; observation,
+anchors, warnings, routes, and selection still replace atmosphere with their
+named signal treatment. Route, selection, and relayout warnings have translucent
 floor area as well as line work. The 3D
 viewport ends where the fixed right-side command dock begins, so UI never covers
 a selectable cell. The second view is a top-down schematic of one deck with real

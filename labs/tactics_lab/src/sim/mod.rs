@@ -268,7 +268,13 @@ impl TacticsGame {
         if settings.costs.move_step == 0 {
             return Err(TacticsError::FreeMovement);
         }
-        let world = HexWfcWorld::generate(settings.seed, settings.facility())?;
+        let composition = settings.composition_profile();
+        let world = HexWfcWorld::generate_with_profile(
+            settings.seed,
+            settings.facility(),
+            None,
+            &composition,
+        )?;
         let available_keystones = objectives::rooms_with_role(&world, RoomRole::Keystone).count();
         let available_keystones = u8::try_from(available_keystones).unwrap_or(u8::MAX);
         if settings.objectives.keystones() && settings.keystones_required > available_keystones {
