@@ -41,9 +41,10 @@ pub(super) struct CueDefinition {
 }
 
 #[cfg(test)]
-pub(super) const ALL_EVENTS: [HexMatchEventKind; 17] = [
+pub(super) const ALL_EVENTS: [HexMatchEventKind; 18] = [
     HexMatchEventKind::MutationWarning,
     HexMatchEventKind::MutationCommitted,
+    HexMatchEventKind::MutationNoChange,
     HexMatchEventKind::MutationCancelled,
     HexMatchEventKind::PlayerRecovered,
     HexMatchEventKind::PlayerEscaped,
@@ -71,6 +72,11 @@ pub(super) fn cue_for(kind: HexMatchEventKind) -> CueDefinition {
         HexMatchEventKind::MutationCommitted => {
             cue("ROOMS MUTATED", MarkerRole::Collapse, HexWfcSound::Reroute)
         }
+        HexMatchEventKind::MutationNoChange => cue(
+            "STRUCTURE UNCHANGED",
+            MarkerRole::NextRoom,
+            HexWfcSound::Reroute,
+        ),
         HexMatchEventKind::MutationCancelled => {
             cue("MUTATION HELD", MarkerRole::You, HexWfcSound::Hold)
         }

@@ -1,6 +1,6 @@
 //! Where the camera sits, and how the board is framed.
 //!
-//! Quarter-wall deck and operations-map framing, plus the pure viewport ownership test
+//! Low-wall deck and operations-map framing, plus the pure viewport ownership test
 //! used by every pointer system.
 
 use bevy::prelude::*;
@@ -150,7 +150,7 @@ mod tests {
     /// they framed the same volume, one of them would be wrong about what it is
     /// showing.
     #[test]
-    fn the_map_and_quarter_wall_view_frame_the_same_deck_with_distinct_projections() {
+    fn the_map_and_low_wall_view_frame_the_same_deck_with_distinct_projections() {
         let game = game();
         let viewport = Vec2::new(1220.0, 1000.0);
         let (iso, iso_scale) = frame(&game, ViewMode::Overview, 0, viewport);
@@ -159,7 +159,7 @@ mod tests {
         assert!(iso_scale > 0.0 && flat_scale > 0.0);
         assert_ne!(
             iso.rotation, flat.rotation,
-            "map and quarter-wall deck have distinct jobs"
+            "map and low-wall deck have distinct jobs"
         );
     }
 

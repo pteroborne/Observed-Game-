@@ -31,7 +31,9 @@ pub fn rebuild(
     let mut route = LineBatch::default();
     let mut limit = LineBatch::default();
     let mut target = LineBatch::default();
+    let mut shifted = LineBatch::default();
     let mut route_fill = SurfaceBatch::default();
+    let mut shifted_fill = SurfaceBatch::default();
     let mut volatile_fill = SurfaceBatch::default();
     let mut selected_fill = SurfaceBatch::default();
 
@@ -88,6 +90,20 @@ pub fn rebuild(
             }
         }
     }
+    for &cell in &state.game.last_shifted_cells {
+        if super::board::draws_level(state.mode, cell, state.level)
+            && super::paint(&state.game, cell) != super::CellPaint::Unknown
+        {
+            add_ring(&mut shifted, state.mode, cell, 0.68, OVERLAY_LIFT + 0.32);
+            add_hex(
+                &mut shifted_fill,
+                state.mode,
+                cell,
+                0.82,
+                OVERLAY_LIFT - 0.16,
+            );
+        }
+    }
 
     spawn_batch(
         &mut commands,
@@ -128,6 +144,14 @@ pub fn rebuild(
         &mut commands,
         &mut meshes,
         &mut materials,
+        shifted,
+        tactics(TacticsRole::Shifted),
+        "Last facility shift outline",
+    );
+    spawn_batch(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
         target,
         tactics(role),
         "Pointer target",
@@ -149,6 +173,15 @@ pub fn rebuild(
         tactics(TacticsRole::Selectable),
         0.34,
         "Selected unit floor",
+    );
+    spawn_surface(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        shifted_fill,
+        tactics(TacticsRole::Shifted),
+        0.30,
+        "Last facility shift floor",
     );
     spawn_surface(
         &mut commands,

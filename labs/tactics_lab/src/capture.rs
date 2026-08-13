@@ -258,6 +258,7 @@ pub fn turn_record(game: &TacticsGame, seed: u64) -> serde_json::Value {
             Some(ShiftOutcome::NothingToShift) => "none",
             None => "none",
         },
+        "shifted_cells": game.last_shifted_cells.len(),
         "keystones": game.objectives.team(PLAYER_TEAM).keystones,
         "status": match game.status {
             MatchStatus::Running => "running",
@@ -285,6 +286,7 @@ mod tests {
             "observed_cells",
             "telegraphed_cells",
             "last_shift",
+            "shifted_cells",
             "status",
         ] {
             assert!(record.get(key).is_some(), "record is missing {key}");

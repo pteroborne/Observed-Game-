@@ -15,16 +15,21 @@
 //! which is what gives this screen pointer, keyboard and controller focus
 //! without a bespoke input path.
 
+use bevy::input_focus::{InputFocus, InputFocusVisible, tab_navigation::TabIndex};
+use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::ui::InteractionDisabled;
-use bevy::ui_widgets::Activate;
+use bevy::ui_widgets::{
+    Activate, Slider, SliderRange, SliderStep, SliderThumb, SliderValue, TrackClick, ValueChange,
+};
 use observed_ui::{
-    FocusScope, FocusScopeId, WidgetId, WidgetSpec, activation_enabled, focus_scope, spawn_button,
+    FocusScope, FocusScopeId, FocusTarget, WidgetId, WidgetSpec, activation_enabled, focus_scope,
+    spawn_button,
 };
 
 use crate::settings::{
-    MAX_ACTION_POINTS, MAX_FLOORS, MAX_SQUAD, MIN_ACTION_POINTS, MIN_FLOORS, MIN_SQUAD,
-    MatchSettings, PRESETS,
+    BoardSize, GuardianSetting, MAX_ACTION_POINTS, MAX_FLOORS, MAX_SQUAD, MIN_ACTION_POINTS,
+    MIN_FLOORS, MIN_SQUAD, MatchSettings, Objectives, PRESETS, ShiftCadence, Sight,
 };
 
 const SCOPE: FocusScopeId = FocusScopeId("tactics_setup");
@@ -38,17 +43,29 @@ pub struct SetupRoot;
 pub enum SetupAction {
     /// Load a named preset wholesale.
     Preset(usize),
-    /// Advance one setting to its next value.
-    Cycle(SettingRow),
     Start,
 }
 
+#[derive(Component)]
+pub struct SettingSlider(pub SettingRow);
+
+#[derive(Component)]
+pub struct SettingSliderThumb;
+
+#[derive(Component)]
+pub struct SettingValue(pub SettingRow);
+
+#[derive(Component)]
+pub struct PresetValue;
+
+type HoveredSliderQuery<'w, 's> =
+    Query<'w, 's, (Entity, &'static Hovered), (Changed<Hovered>, With<SettingSlider>)>;
+
 /// One configurable row.
 ///
-/// Cycling is the only edit verb. A slider or a text field would need its own
-/// pointer and keyboard handling for no gain — every one of these settings has a
-/// handful of meaningful values, and naming them is more useful than letting a
-/// player pick 37 action points.
+/// Each row maps its handful of meaningful values onto a discrete slider. The
+/// label stays semantic while pointer and keyboard users can move in either
+/// direction.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SettingRow {
     Board,
@@ -142,39 +159,63 @@ impl SettingRow {
         }
     }
 
-    /// Advance this row to its next value. Numeric rows wrap at their bounds so
-    /// a single verb reaches everything.
-    pub fn cycle(self, settings: &mut MatchSettings) {
+    #[must_use]
+    pub fn maximum(self) -> u8 {
         match self {
-            SettingRow::Board => settings.board = settings.board.next(),
-            SettingRow::Floors => {
-                settings.floors = wrap(settings.floors, MIN_FLOORS, MAX_FLOORS);
-            }
-            // A seed cycles through a fixed ladder rather than randomising, so a
-            // reader can get back to the layout they were just looking at.
-            SettingRow::Seed => {
-                let index = SEEDS
-                    .iter()
-                    .position(|&seed| seed == settings.seed)
-                    .map_or(0, |index| (index + 1) % SEEDS.len());
-                settings.seed = SEEDS[index];
-            }
-            SettingRow::Squad => {
-                settings.squad_size = wrap(settings.squad_size, MIN_SQUAD, MAX_SQUAD);
-            }
-            SettingRow::ActionPoints => {
-                settings.action_points =
-                    wrap(settings.action_points, MIN_ACTION_POINTS, MAX_ACTION_POINTS);
-            }
-            SettingRow::Sight => settings.sight = settings.sight.next(),
-            SettingRow::RevealMap => settings.reveal_full_map = !settings.reveal_full_map,
-            SettingRow::Shift => settings.shift = settings.shift.next(),
-            SettingRow::Telegraph => settings.telegraph = !settings.telegraph,
-            SettingRow::Anchors => settings.anchors = !settings.anchors,
-            SettingRow::Pads => settings.pads = !settings.pads,
-            SettingRow::Objectives => settings.objectives = settings.objectives.next(),
-            SettingRow::Guardian => settings.guardian = settings.guardian.next(),
-            SettingRow::Rival => settings.rival_team = !settings.rival_team,
+            SettingRow::Board => BoardSize::ALL.len() as u8 - 1,
+            SettingRow::Floors => MAX_FLOORS - MIN_FLOORS,
+            SettingRow::Seed => SEEDS.len() as u8 - 1,
+            SettingRow::Squad => MAX_SQUAD - MIN_SQUAD,
+            SettingRow::ActionPoints => MAX_ACTION_POINTS - MIN_ACTION_POINTS,
+            SettingRow::Sight => Sight::ALL.len() as u8 - 1,
+            SettingRow::Shift => ShiftCadence::ALL.len() as u8 - 1,
+            SettingRow::Objectives => Objectives::ALL.len() as u8 - 1,
+            SettingRow::Guardian => GuardianSetting::ALL.len() as u8 - 1,
+            SettingRow::RevealMap
+            | SettingRow::Telegraph
+            | SettingRow::Anchors
+            | SettingRow::Pads
+            | SettingRow::Rival => 1,
+        }
+    }
+
+    #[must_use]
+    pub fn position(self, settings: &MatchSettings) -> u8 {
+        match self {
+            SettingRow::Board => index_of(&BoardSize::ALL, settings.board),
+            SettingRow::Floors => settings.floors - MIN_FLOORS,
+            SettingRow::Seed => index_of(&SEEDS, settings.seed),
+            SettingRow::Squad => settings.squad_size - MIN_SQUAD,
+            SettingRow::ActionPoints => settings.action_points - MIN_ACTION_POINTS,
+            SettingRow::Sight => index_of(&Sight::ALL, settings.sight),
+            SettingRow::RevealMap => u8::from(settings.reveal_full_map),
+            SettingRow::Shift => index_of(&ShiftCadence::ALL, settings.shift),
+            SettingRow::Telegraph => u8::from(settings.telegraph),
+            SettingRow::Anchors => u8::from(settings.anchors),
+            SettingRow::Pads => u8::from(settings.pads),
+            SettingRow::Objectives => index_of(&Objectives::ALL, settings.objectives),
+            SettingRow::Guardian => index_of(&GuardianSetting::ALL, settings.guardian),
+            SettingRow::Rival => u8::from(settings.rival_team),
+        }
+    }
+
+    pub fn set_position(self, settings: &mut MatchSettings, position: u8) {
+        let position = position.min(self.maximum());
+        match self {
+            SettingRow::Board => settings.board = BoardSize::ALL[position as usize],
+            SettingRow::Floors => settings.floors = MIN_FLOORS + position,
+            SettingRow::Seed => settings.seed = SEEDS[position as usize],
+            SettingRow::Squad => settings.squad_size = MIN_SQUAD + position,
+            SettingRow::ActionPoints => settings.action_points = MIN_ACTION_POINTS + position,
+            SettingRow::Sight => settings.sight = Sight::ALL[position as usize],
+            SettingRow::RevealMap => settings.reveal_full_map = position != 0,
+            SettingRow::Shift => settings.shift = ShiftCadence::ALL[position as usize],
+            SettingRow::Telegraph => settings.telegraph = position != 0,
+            SettingRow::Anchors => settings.anchors = position != 0,
+            SettingRow::Pads => settings.pads = position != 0,
+            SettingRow::Objectives => settings.objectives = Objectives::ALL[position as usize],
+            SettingRow::Guardian => settings.guardian = GuardianSetting::ALL[position as usize],
+            SettingRow::Rival => settings.rival_team = position != 0,
         }
     }
 }
@@ -189,8 +230,11 @@ pub const SEEDS: [u64; 5] = [
     0xa11c_e3d0_0000_0008,
 ];
 
-fn wrap(value: u8, min: u8, max: u8) -> u8 {
-    if value >= max { min } else { value + 1 }
+fn index_of<T: PartialEq>(values: &[T], value: T) -> u8 {
+    values
+        .iter()
+        .position(|candidate| *candidate == value)
+        .unwrap_or(0) as u8
 }
 
 fn on_off(value: bool) -> String {
@@ -227,6 +271,7 @@ pub fn spawn(commands: &mut Commands, settings: &MatchSettings, error: Option<&s
                 TextColor(Color::WHITE),
             ));
             root.spawn((
+                PresetValue,
                 Text::new(format!("Preset: {}", settings.preset_name())),
                 TextFont {
                     font_size: 16.0,
@@ -286,17 +331,7 @@ pub fn spawn(commands: &mut Commands, settings: &MatchSettings, error: Option<&s
                         },
                     ));
                 }
-                spawn_button(
-                    root,
-                    WidgetSpec::enabled(
-                        WidgetId::keyed("tactics_row", order.into()),
-                        SCOPE,
-                        order,
-                        format!("{}:  {}", row.name(), row.value(settings)),
-                    )
-                    .with_size(460.0, 40.0),
-                    SetupAction::Cycle(row),
-                );
+                spawn_setting_slider(root, row, settings, order);
                 order += 1;
             }
 
@@ -306,9 +341,7 @@ pub fn spawn(commands: &mut Commands, settings: &MatchSettings, error: Option<&s
                 SetupAction::Start,
             );
             root.spawn((
-                Text::new(
-                    "click or tap any row to change it - every control is reachable by pointer",
-                ),
+                Text::new("drag or click a rail; arrow keys move one step at a time"),
                 TextFont {
                     font_size: 13.0,
                     ..default()
@@ -320,6 +353,178 @@ pub fn spawn(commands: &mut Commands, settings: &MatchSettings, error: Option<&s
                 },
             ));
         });
+}
+
+fn spawn_setting_slider(
+    parent: &mut ChildSpawnerCommands,
+    row: SettingRow,
+    settings: &MatchSettings,
+    order: u16,
+) {
+    parent
+        .spawn((
+            Node {
+                width: px(620.0),
+                height: px(32.0),
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                column_gap: px(14.0),
+                ..default()
+            },
+            Pickable::IGNORE,
+        ))
+        .with_children(|line| {
+            line.spawn((
+                Text::new(row.name()),
+                TextFont {
+                    font_size: 15.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.76, 0.82, 0.88)),
+                Node {
+                    width: px(150.0),
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ));
+            line.spawn((
+                SettingSlider(row),
+                Slider {
+                    track_click: TrackClick::Snap,
+                },
+                SliderValue(f32::from(row.position(settings))),
+                SliderRange::new(0.0, f32::from(row.maximum())),
+                SliderStep(1.0),
+                Hovered::default(),
+                WidgetId::keyed("tactics_slider", u64::from(order)),
+                FocusTarget {
+                    scope: SCOPE,
+                    order,
+                },
+                TabIndex(i32::from(order)),
+                Node {
+                    width: px(260.0),
+                    height: px(8.0),
+                    border_radius: BorderRadius::all(px(4.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgb(0.08, 0.15, 0.19)),
+                Outline {
+                    color: Color::NONE,
+                    width: px(0.0),
+                    offset: px(4.0),
+                },
+                Name::new(format!("{} slider", row.name())),
+                children![(
+                    SettingSliderThumb,
+                    SliderThumb,
+                    Node {
+                        position_type: PositionType::Absolute,
+                        width: px(16.0),
+                        height: px(16.0),
+                        top: px(-4.0),
+                        left: percent(0.0),
+                        border_radius: BorderRadius::MAX,
+                        ..default()
+                    },
+                    BackgroundColor(
+                        observed_style::tactics(observed_style::TacticsRole::Selectable).base_color,
+                    ),
+                )],
+            ));
+            line.spawn((
+                SettingValue(row),
+                Text::new(row.value(settings)),
+                TextFont {
+                    font_size: 15.0,
+                    ..default()
+                },
+                TextColor(Color::WHITE),
+                Node {
+                    width: px(190.0),
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ));
+        });
+}
+
+/// Apply direct-manipulation changes without rebuilding the screen mid-drag.
+pub fn adjust(
+    change: On<ValueChange<f32>>,
+    sliders: Query<&SettingSlider>,
+    mut settings: ResMut<crate::LabSettings>,
+) {
+    let Ok(slider) = sliders.get(change.source) else {
+        return;
+    };
+    slider
+        .0
+        .set_position(&mut settings.0, change.value.round() as u8);
+}
+
+/// Keep named values, preset status, and thumb positions derived from the one
+/// settings resource. Preset buttons therefore update every rail atomically.
+pub fn sync(
+    settings: Res<crate::LabSettings>,
+    focus: Res<InputFocus>,
+    mut commands: Commands,
+    sliders: Query<(
+        Entity,
+        &SettingSlider,
+        &SliderValue,
+        &SliderRange,
+        &Children,
+        &Hovered,
+        &mut Outline,
+    )>,
+    mut thumbs: Query<(&mut Node, &mut BackgroundColor), With<SettingSliderThumb>>,
+    mut values: Query<(&SettingValue, &mut Text)>,
+    mut presets: Query<&mut Text, (With<PresetValue>, Without<SettingValue>)>,
+) {
+    for (entity, slider, value, range, children, hovered, mut outline) in sliders {
+        let expected = f32::from(slider.0.position(&settings.0));
+        if (value.0 - expected).abs() > f32::EPSILON {
+            commands.entity(entity).insert(SliderValue(expected));
+        }
+        let focused = focus.0 == Some(entity);
+        let treatment = observed_style::tactics(if focused || hovered.0 {
+            observed_style::TacticsRole::ReachableRoute
+        } else {
+            observed_style::TacticsRole::Selectable
+        });
+        outline.color = if focused {
+            treatment.base_color
+        } else {
+            Color::NONE
+        };
+        outline.width = if focused { px(2.0) } else { px(0.0) };
+        for child in children.iter() {
+            if let Ok((mut node, mut background)) = thumbs.get_mut(child) {
+                node.left = percent(range.thumb_position(expected) * 100.0);
+                background.0 = treatment.base_color;
+            }
+        }
+    }
+    for (value, mut text) in &mut values {
+        **text = value.0.value(&settings.0);
+    }
+    for mut text in &mut presets {
+        **text = format!("Preset: {}", settings.0.preset_name());
+    }
+}
+
+pub fn focus_hovered(
+    sliders: HoveredSliderQuery,
+    mut focus: ResMut<InputFocus>,
+    mut visible: ResMut<InputFocusVisible>,
+) {
+    for (entity, hovered) in &sliders {
+        if hovered.0 {
+            focus.set(entity);
+            visible.0 = true;
+        }
+    }
 }
 
 /// What one activation asks the lab to do. Returned rather than acted on so the
@@ -338,10 +543,6 @@ pub fn activate_action(action: SetupAction, settings: &mut MatchSettings) -> Set
             if let Some(preset) = PRESETS.get(index) {
                 *settings = (preset.build)();
             }
-            SetupRequest::Changed
-        }
-        SetupAction::Cycle(row) => {
-            row.cycle(settings);
             SetupRequest::Changed
         }
         SetupAction::Start => SetupRequest::Start,
@@ -384,31 +585,28 @@ mod tests {
     }
 
     #[test]
-    fn cycling_a_row_changes_exactly_that_row() {
+    fn moving_a_slider_changes_exactly_that_row() {
         for row in SettingRow::ALL {
             let before = MatchSettings::standard();
             let mut after = before;
-            row.cycle(&mut after);
+            let next = if row.position(&after) == row.maximum() {
+                0
+            } else {
+                row.position(&after) + 1
+            };
+            row.set_position(&mut after, next);
             assert_ne!(before, after, "{} did not change anything", row.name());
         }
     }
 
-    /// Cycling any row returns to where it started, so a player can always undo
-    /// by continuing to press.
     #[test]
-    fn cycling_a_row_eventually_returns_to_its_first_value() {
+    fn every_slider_round_trips_every_position() {
         for row in SettingRow::ALL {
-            let start = MatchSettings::standard();
-            let mut settings = start;
-            let mut returned = false;
-            for _ in 0..16 {
-                row.cycle(&mut settings);
-                if settings == start {
-                    returned = true;
-                    break;
-                }
+            let mut settings = MatchSettings::standard();
+            for position in 0..=row.maximum() {
+                row.set_position(&mut settings, position);
+                assert_eq!(row.position(&settings), position, "{}", row.name());
             }
-            assert!(returned, "{} never cycled back", row.name());
         }
     }
 
@@ -440,10 +638,10 @@ mod tests {
     #[test]
     fn numeric_rows_stay_inside_the_range_the_match_accepts() {
         let mut settings = MatchSettings::standard();
-        for _ in 0..40 {
-            SettingRow::Squad.cycle(&mut settings);
-            SettingRow::ActionPoints.cycle(&mut settings);
-            SettingRow::Floors.cycle(&mut settings);
+        for position in 0..40 {
+            SettingRow::Squad.set_position(&mut settings, position);
+            SettingRow::ActionPoints.set_position(&mut settings, position);
+            SettingRow::Floors.set_position(&mut settings, position);
             assert!((MIN_SQUAD..=MAX_SQUAD).contains(&settings.squad_size));
             assert!((MIN_ACTION_POINTS..=MAX_ACTION_POINTS).contains(&settings.action_points));
             assert!((MIN_FLOORS..=MAX_FLOORS).contains(&settings.floors));

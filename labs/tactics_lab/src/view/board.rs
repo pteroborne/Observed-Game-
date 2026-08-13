@@ -21,10 +21,10 @@ use crate::sim::TacticsGame;
 use crate::sim::unit::PLAYER_TEAM;
 use crate::sim::vision;
 
-use super::{BoardVisual, CellPaint, ViewMode, paint, sketch_role, unit_marker};
+use super::{BoardVisual, CellPaint, ViewMode, paint, sketch_role};
 use crate::BoardGeometry;
 
-/// Height of a unit's marker above its cell's floor.
+/// Height of the Guardian marker above its cell's floor.
 const MARKER_HEIGHT: f32 = 7.0;
 /// Wall bands are drawn low: a floor plan is read from above, and a waist-high
 /// solid says "you cannot pass here" without occluding the cell behind it.
@@ -62,7 +62,7 @@ pub fn build(
     board_view: BoardView,
 ) -> DrawReport {
     let BoardView {
-        selected,
+        selected: _,
         mode,
         level,
     } = board_view;
@@ -193,7 +193,8 @@ pub fn build(
             ));
         }
     }
-    report.units = spawn_units(commands, meshes, materials, game, selected, mode, level);
+    report.units = visible_unit_count(game, mode, level);
+    spawn_guardian(commands, meshes, materials, game, mode, level);
     spawn_objectives(commands, meshes, materials, game, mode, level);
     report
 }
@@ -244,12 +245,12 @@ fn spawn_authored_deck(
         .filter(|unit| unit.cell.level == level)
         .map(|unit| unit.cell);
     let bearing = observed_style::iso::detent_bearing(0);
-    let (focus, context, detail) = observed_cutaway::build_quarter_walls(
+    let (focus, context, detail) = observed_cutaway::build_low_walls(
         &game.world,
         &geometry.snapshot,
         &cells,
         selected,
-        TILE_LEVEL_HEIGHT * 0.25,
+        TILE_LEVEL_HEIGHT / 3.0,
         cache,
     );
     for (batch, treatment) in context
@@ -272,7 +273,7 @@ fn spawn_authored_deck(
                 double_sided: true,
                 ..default()
             })),
-            Name::new("Authored tactical quarter-wall deck"),
+            Name::new("Authored tactical third-wall deck"),
         ));
     }
     let bearing3 = Vec3::new(bearing.x, 0.0, bearing.y);
@@ -291,52 +292,25 @@ fn spawn_authored_deck(
     detail.hulls_drawn
 }
 
-/// Units, drawn as a floating marker so they read over the line work rather than
-/// inside it.
-fn spawn_units(
+fn visible_unit_count(game: &TacticsGame, mode: ViewMode, level: u8) -> usize {
+    game.units
+        .values()
+        .filter(|unit| {
+            !unit.escaped
+                && draws_level(mode, unit.cell, level)
+                && (unit.team == PLAYER_TEAM || game.observation.visible_cells.contains(&unit.cell))
+        })
+        .count()
+}
+
+fn spawn_guardian(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     game: &TacticsGame,
-    selected: Option<PlayerId>,
     mode: ViewMode,
     level: u8,
-) -> usize {
-    let mut drawn = 0;
-    for unit in game.units.values().filter(|unit| !unit.escaped) {
-        if !draws_level(mode, unit.cell, level) {
-            continue;
-        }
-        let rival = unit.team != PLAYER_TEAM;
-        // A rival is only drawn where the squad can actually see it. Otherwise
-        // the race would be run against an opponent whose position the player is
-        // simply told, which is not the game.
-        if rival && !game.observation.visible_cells.contains(&unit.cell) {
-            continue;
-        }
-        let is_selected = selected == Some(unit.id);
-        let treatment = unit_marker(is_selected, rival);
-        // Squad members frequently share a cell. Fan their markers out just
-        // enough that selection stays legible without implying a different
-        // simulation position.
-        let marker_offset = if rival {
-            Vec3::ZERO
-        } else {
-            let angle = f32::from(unit.id.0) * std::f32::consts::TAU / 6.0;
-            Vec3::new(angle.cos(), 0.0, angle.sin()) * 1.8
-        };
-        let radius = if is_selected { 2.0 } else { 1.45 };
-        commands.spawn((
-            BoardVisual,
-            Mesh3d(meshes.add(Sphere::new(radius).mesh().ico(2).expect("icosphere"))),
-            MeshMaterial3d(materials.add(line_material(treatment, false))),
-            Transform::from_translation(
-                cell_origin(mode, unit.cell) + marker_offset + Vec3::Y * MARKER_HEIGHT,
-            ),
-            Name::new(format!("Unit {}", unit.id.0)),
-        ));
-        drawn += 1;
-    }
+) {
     if let Some(guardian) = game.guardian
         && draws_level(mode, guardian.cell, level)
         && game.observation.visible_cells.contains(&guardian.cell)
@@ -352,7 +326,6 @@ fn spawn_units(
             Name::new("Guardian"),
         ));
     }
-    drawn
 }
 
 /// The exit, and whatever objectives the squad still owes.
@@ -415,7 +388,7 @@ pub fn draws_level(mode: ViewMode, cell: HexCoord, level: u8) -> bool {
 
 /// A schematic line is its own light source; shading it would only muddy the
 /// read, and a ribbon standing in for a line has no meaningful back face.
-fn line_material(treatment: Treatment, dimmed: bool) -> StandardMaterial {
+pub(crate) fn line_material(treatment: Treatment, dimmed: bool) -> StandardMaterial {
     let scale = if dimmed { 0.22 } else { 1.0 };
     StandardMaterial {
         base_color: treatment.base_color,

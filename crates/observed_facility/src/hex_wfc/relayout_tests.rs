@@ -184,6 +184,19 @@ fn pocket_selection_and_attempts_are_deterministic() {
 }
 
 #[test]
+fn caller_sized_pocket_keeps_its_requested_bounds() {
+    let world = HexWfcWorld::generate(0x9301, config()).expect("world");
+    let mut frame = HexObservationFrame::default();
+    frame
+        .occupied_cells
+        .insert(PlayerId(0), world.config.spawn());
+    let frontier = frame.visible_cells.clone();
+    let work = world.begin_frontier_relayout_sized(&frame, &frontier, 8, 16);
+    assert!(work.region().cells.len() >= 8);
+    assert!(work.region().cells.len() <= 16);
+}
+
+#[test]
 fn target_pocket_changes_at_most_four_topology_cells() {
     let world = HexWfcWorld::generate(0xA11C_9500_0000_0000, config()).expect("world");
     let proposal = candidate(&world, &HexObservationFrame::default());

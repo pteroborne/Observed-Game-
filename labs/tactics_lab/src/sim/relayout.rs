@@ -17,7 +17,7 @@ use observed_facility::hex_wfc::{
     HexObservationFrame, HexRelayoutCandidate, HexRelayoutDelta, HexRelayoutProgress, HexWfcError,
     HexWfcWorld,
 };
-use observed_hex::HexCoord;
+use observed_hex::{HexCoord, HexFace};
 use std::collections::BTreeSet;
 
 /// A pocket that has been solved and is waiting for the turn to end.
@@ -59,7 +59,28 @@ pub fn telegraph(
     observation: &HexObservationFrame,
     frontier: &BTreeSet<HexCoord>,
 ) -> Option<Telegraph> {
-    let mut work = world.begin_frontier_relayout(observation, frontier);
+    // The production warning lasts about two real-time seconds, during which a
+    // runner cannot cross several complete hexes. A tactics turn can spend up
+    // to eight whole-tile moves. Give selection one extra protected ring so an
+    // ordinary first step does not accidentally hold nearly every warning;
+    // reaching the pocket remains possible, but becomes a deliberate route.
+    let mut selection_frame = observation.clone();
+    let visible = selection_frame.visible_cells.clone();
+    for cell in visible {
+        for face in HexFace::ALL {
+            if let Some(neighbor) = world.config.grid().neighbor(cell, face) {
+                selection_frame.visible_cells.insert(neighbor);
+            }
+        }
+    }
+    // The canonical 32-cell pocket is intentionally modest in a production
+    // facility, but would occupy 40% of an 80-tile teaching floor. Scale the
+    // lab pocket with its configurable map so "held" means the squad actually
+    // committed to the warned area, not merely crossed a giant region.
+    let target_cells = (world.placements.len() / 16).clamp(8, 32);
+    let max_cells = (target_cells * 2).min(64);
+    let mut work =
+        world.begin_frontier_relayout_sized(&selection_frame, frontier, target_cells, max_cells);
     loop {
         match world.advance_relayout(work) {
             Ok(HexRelayoutProgress::Pending(next)) => work = next,
@@ -88,6 +109,7 @@ pub fn commit(
     latest: &HexObservationFrame,
 ) -> (ShiftOutcome, Option<HexRelayoutDelta>) {
     match world.commit_relayout_delta(telegraph.candidate, latest) {
+        Ok(delta) if delta.changed_cells.is_empty() => (ShiftOutcome::NothingToShift, Some(delta)),
         Ok(delta) => (ShiftOutcome::Committed, Some(delta)),
         // Every failure here is the facility being refused, which is what the
         // player was trying to achieve. The variants differ in *why* it was

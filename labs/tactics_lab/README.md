@@ -25,7 +25,8 @@ cargo dev-run -p tactics_lab
 ```
 
 The lab opens on a **match setup screen**. Pick Guided, Scout, Standard, or
-Collapse, or change any row, then start. `R` returns to setup at any time.
+Collapse, or drag any discrete slider in either direction, then start. `R`
+returns to setup at any time.
 
 **Guided** is the teaching mode: one 80-tile floor, the complete facility and
 exit visible from turn one, six AP, slow telegraphed shifts, no Guardian, and
@@ -42,7 +43,7 @@ squad's observation/freeze radius.
 | `Tab` / Next unit | select the next unit that can still act |
 | `1`–`6` | select a unit directly |
 | `Space` / End turn | end the turn: rivals move, the Guardian hunts, the facility shifts |
-| `V` / Deck / map | switch between the authored quarter-wall deck and active-deck operations map |
+| `V` / Deck / map | switch between the authored one-third-wall deck and active-deck operations map |
 | `[` `]` / Deck - / Deck + | browse decks in either view |
 | wheel or `-` `+` / Zoom | zoom under the map cursor; dock buttons zoom around centre |
 | right/middle-drag or arrows / Pan | pan only when the gesture starts inside the map viewport |
@@ -62,7 +63,9 @@ pan/zoom poses, so switching views does not destroy either composition.
 
 ## Bot spectate
 
-Bot spectate issues one normal `TacticsAction` every 0.45 seconds. It collects
+Bot spectate issues one normal `TacticsAction` every 0.45 seconds. Its floating
+runner projections interpolate between the authoritative cells selected by that
+same navigation action and idle with a small hover animation. It collects
 required keystones, coordinates the squad at a two-operator station, uses an
 anchor when standing in a telegraphed pocket, and then routes everyone to the
 exit. The bot has no alternate mutation path: its decisions pass through the
@@ -83,7 +86,7 @@ conclusion about the game, not about a model of it.
   `HexGuardianStatus`.
 - `observed_style` — every colour on screen.
 - `observed_schematic` — line and band meshes, shared with `iso_observer_lab`.
-- `observed_cutaway` — cached authored hulls plus shared cutaway and quarter-wall projection.
+- `observed_cutaway` — cached authored hulls plus shared cutaway and configurable low-wall projection.
 - `observed_ui` — the setup screen's widgets and focus.
 
 Three things could not be borrowed, and each says so where it lives: the
@@ -94,8 +97,9 @@ because a unit with no facing has no doorway to choose (`sim/mod.rs`).
 
 ## What it drops
 
-Bodies, physics, continuous position, and the sub-room placement of objectives.
-A unit is a cell. Everything else follows from that.
+Physical bodies, collision, continuous simulation position, and the sub-room
+placement of objectives. A unit is logically a cell; the floating production
+runner silhouette and its interpolation are presentation only.
 
 ## The telegraph
 
@@ -107,7 +111,15 @@ wherever the squad actually ended up, and `commit_relayout_delta` refuses it if
 you held it.
 
 This is the shipped `MUTATION_WARNING_TICKS` contract at a cadence a human can
-read. Nothing about the rules changed; only the rate.
+read. Because a tactics turn permits several whole-cell moves while the real-time
+warning does not, pocket selection reserves one extra protected ring. That keeps
+routine movement from accidentally holding most warnings. Pocket size also
+scales from eight cells on the smallest map toward the production 32-cell target;
+the production-sized pocket had occupied 40% of an 80-tile teaching floor.
+Both adjustments preserve the
+same commit rule: current observation and anchors always win. A zero-delta solve
+is reported separately from a hold, while a real committed pocket remains
+magenta for the following turn, including in full-map mode.
 
 ## Evidence
 
@@ -116,7 +128,7 @@ $env:OBSERVED2_CAPTURE="docs/evidence/tactics_lab"; cargo run -p tactics_lab
 ```
 
 Set `OBSERVED2_CAPTURE_VIEW=map` to capture the operations map instead of the
-quarter-wall deck. Set `OBSERVED2_CAPTURE_PRESET=guided` to capture the teaching
+one-third-wall deck. Set `OBSERVED2_CAPTURE_PRESET=guided` to capture the teaching
 configuration, or set `OBSERVED2_CAPTURE_FULL_MAP=1` to reveal every cell while
 capturing another preset.
 
@@ -131,14 +143,14 @@ The lab succeeds if:
 
 - holding a telegraphed pocket visibly refuses the shift, and the HUD says so;
 - turning `Facility shift` off produces a match that feels *worse*;
-- the authored quarter-wall deck and active-deck operations map never disagree about what a cell is;
+- the authored one-third-wall deck and active-deck operations map never disagree about what a cell is;
 - a bot spectate run can finish an objective match through ordinary logged actions.
 
 ## Presentation direction
 
 The detailed deck uses the committed authored WFC catalogue rather than an
 approximation. Ceilings are removed and every perimeter hull is capped at one
-quarter of the canonical deck height; floors, ramps, stairs, columns, and other
+third of the canonical deck height; floors, ramps, stairs, columns, and other
 interior structure keep their authored shape. Shaft connections use compact
 plan-view up/down arrows instead of the large staircase profile. Neutral slate hulls and orange
 construction lines create the greybox/dev-grid read; selected geometry is

@@ -405,6 +405,7 @@ pub fn configure(app: &mut App) {
         .init_resource::<observed_cutaway::TileMeshCache>()
         .add_message::<SetupRequested>()
         .add_observer(view::setup::activate)
+        .add_observer(view::setup::adjust)
         .add_systems(OnEnter(AppState::Setup), enter_setup)
         .add_systems(OnExit(AppState::Setup), despawn::<SetupRoot>)
         .add_systems(OnEnter(AppState::Loading), enter_loading)
@@ -414,6 +415,7 @@ pub fn configure(app: &mut App) {
             OnExit(AppState::Play),
             (
                 despawn::<BoardVisual>,
+                despawn::<view::units::UnitVisual>,
                 despawn::<view::BoardOverlay>,
                 despawn::<HudRoot>,
                 despawn::<OverlayRoot>,
@@ -423,7 +425,13 @@ pub fn configure(app: &mut App) {
         )
         .add_systems(
             Update,
-            handle_setup_requests.run_if(in_state(AppState::Setup)),
+            (
+                handle_setup_requests,
+                view::setup::sync,
+                view::setup::focus_hovered,
+            )
+                .chain()
+                .run_if(in_state(AppState::Setup)),
         )
         .add_systems(Update, begin_loading.run_if(in_state(AppState::Loading)))
         .add_systems(Update, sync_screen_cursor)
@@ -445,6 +453,7 @@ pub fn configure(app: &mut App) {
                 update_board_hover,
                 board_clicks,
                 rebuild_board,
+                view::units::sync,
                 camera_controls,
                 view::overlay::rebuild,
                 refresh_action_buttons,
@@ -475,22 +484,14 @@ fn enter_setup(
 }
 
 fn handle_setup_requests(
-    mut commands: Commands,
     mut requests: MessageReader<SetupRequested>,
-    settings: Res<LabSettings>,
-    message: Res<LabMessage>,
-    roots: Query<Entity, With<SetupRoot>>,
     mut next: ResMut<NextState<AppState>>,
 ) {
     for request in requests.read() {
         match request.0 {
             SetupRequest::Changed => {
-                // Rebuild rather than patch: every label is derived from the
-                // settings, so there is no second copy to keep in step.
-                for entity in roots.iter() {
-                    commands.entity(entity).despawn();
-                }
-                view::setup::spawn(&mut commands, &settings.0, message.0.as_deref());
+                // The setup sync system derives labels and rails from the live
+                // settings without breaking pointer ownership mid-drag.
             }
             SetupRequest::Start => next.set(AppState::Loading),
         }
@@ -1286,7 +1287,7 @@ fn board_clicks(
         state.pending_move = Some(PendingMove {
             unit: id,
             steps: preview.executable_steps().iter().copied().collect(),
-            timer: Timer::new(Duration::from_millis(120), TimerMode::Repeating),
+            timer: Timer::new(Duration::from_millis(340), TimerMode::Repeating),
         });
         state.overlay_dirty = true;
     } else if let Some(preview) = preview {

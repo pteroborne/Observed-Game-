@@ -69,6 +69,7 @@ impl HexWfcMatch {
             Ok(delta) => delta,
             Err(_) => return HexMatchEventKind::MutationCancelled,
         };
+        let changed = !logical.changed_cells.is_empty();
         let geometry = match self.geometry.project_delta_with_rooms(
             &self.facility,
             &logical,
@@ -101,7 +102,11 @@ impl HexWfcMatch {
         // `lantern_proximity` is stale. This is the only path that mutates the facility
         // after construction — every earlier `return` above leaves it untouched.
         self.refresh_spawn_to_exit_cost();
-        HexMatchEventKind::MutationCommitted
+        if changed {
+            HexMatchEventKind::MutationCommitted
+        } else {
+            HexMatchEventKind::MutationNoChange
+        }
     }
 
     fn cancel_mutation(&mut self) {

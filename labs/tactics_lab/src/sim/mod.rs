@@ -243,6 +243,10 @@ pub struct TacticsGame {
     /// The pocket that will re-collapse when this turn ends.
     pub telegraph: Option<Telegraph>,
     pub last_shift: Option<ShiftOutcome>,
+    /// Cells rewritten by the most recent successful shift. This is simulation
+    /// debug state, not inferred from meshes, and lets full-map presentation
+    /// show a change even when the player had never discovered that pocket.
+    pub last_shifted_cells: BTreeSet<HexCoord>,
     /// Everything that has happened since the last turn boundary: the squad's
     /// own actions as they are taken, then the resolution of the turn they end.
     /// Cleared by [`Self::end_turn`], so an event never outlives the moment it
@@ -321,6 +325,7 @@ impl TacticsGame {
             observation: HexObservationFrame::default(),
             telegraph: None,
             last_shift: None,
+            last_shifted_cells: BTreeSet::new(),
             events: Vec::new(),
             log: Vec::new(),
         };
@@ -661,6 +666,10 @@ impl TacticsGame {
         self.observation = self.build_observation();
         let (outcome, relayout) = self.commit_shift();
         self.last_shift = Some(outcome);
+        self.last_shifted_cells = relayout
+            .as_ref()
+            .map(|delta| delta.changed_cells.iter().copied().collect())
+            .unwrap_or_default();
         self.refresh_knowledge();
         self.resolve_all_escapes();
 

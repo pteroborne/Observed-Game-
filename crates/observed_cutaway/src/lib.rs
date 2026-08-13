@@ -224,7 +224,7 @@ pub fn build(
 /// capped to `wall_height`. Floors, ramps, stairs, columns, and other interior
 /// structure retain their authored shape. Collision data is never touched.
 #[must_use]
-pub fn build_quarter_walls(
+pub fn build_low_walls(
     world: &HexWfcWorld,
     snapshot: &HexWfcGeometrySnapshot,
     cells: &BTreeSet<HexCoord>,
@@ -241,7 +241,7 @@ pub fn build_quarter_walls(
         snapshot,
         cells,
         selected,
-        Projection::QuarterWalls {
+        Projection::LowWalls {
             height: wall_height.max(0.1),
         },
         cache,
@@ -251,7 +251,7 @@ pub fn build_quarter_walls(
 #[derive(Clone, Copy)]
 enum Projection {
     Cutaway { bearing: Vec2, enabled: bool },
-    QuarterWalls { height: f32 },
+    LowWalls { height: f32 },
 }
 
 fn build_with_projection(
@@ -308,7 +308,7 @@ fn build_with_projection(
                     }
                     points.as_slice()
                 }
-                Projection::QuarterWalls { height } => {
+                Projection::LowWalls { height } => {
                     use observed_style::iso::HullRegion;
                     match observed_style::iso::hull_region(min_y, max_y, centroid) {
                         HullRegion::Ceiling => {
@@ -316,7 +316,7 @@ fn build_with_projection(
                             continue;
                         }
                         HullRegion::Perimeter => {
-                            projected_points = quarter_wall_points(points, min_y + height);
+                            projected_points = low_wall_points(points, min_y + height);
                             projected_points.as_slice()
                         }
                         HullRegion::Floor | HullRegion::Interior => points.as_slice(),
@@ -328,8 +328,8 @@ fn build_with_projection(
                 Some(tile) => {
                     let prefix = match projection {
                         Projection::Cutaway { .. } => "full".to_string(),
-                        Projection::QuarterWalls { height } => {
-                            format!("quarter-{height:.3}")
+                        Projection::LowWalls { height } => {
+                            format!("low-{height:.3}")
                         }
                     };
                     let key = format!(
@@ -354,7 +354,7 @@ fn build_with_projection(
     (focus, context, report)
 }
 
-fn quarter_wall_points(points: &[Vec3], top: f32) -> Vec<Vec3> {
+fn low_wall_points(points: &[Vec3], top: f32) -> Vec<Vec3> {
     points
         .iter()
         .map(|point| Vec3::new(point.x, point.y.min(top), point.z))
@@ -386,7 +386,7 @@ mod tests {
     }
 
     #[test]
-    fn a_quarter_wall_keeps_its_footprint_and_gains_a_flat_low_cap() {
+    fn a_low_wall_keeps_its_footprint_and_gains_a_flat_cap() {
         let points = vec![
             Vec3::new(-1.0, 0.0, -0.2),
             Vec3::new(1.0, 0.0, -0.2),
@@ -395,7 +395,7 @@ mod tests {
             Vec3::new(-1.0, 0.0, 0.2),
             Vec3::new(1.0, 0.0, 0.2),
         ];
-        let projected = quarter_wall_points(&points, 2.0);
+        let projected = low_wall_points(&points, 2.0);
         assert!(projected.iter().all(|point| point.y <= 2.0));
         assert!(projected.iter().any(|point| point.y == 2.0));
         assert!(TileMeshCache::build_hull(&projected).is_some());

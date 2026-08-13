@@ -1243,10 +1243,11 @@ pub enum TacticsRole {
     Selectable,
     Blocked,
     ClickPulse,
+    Shifted,
 }
 
 impl TacticsRole {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::DevSurface,
         Self::DevContext,
         Self::DevGrid,
@@ -1255,6 +1256,7 @@ impl TacticsRole {
         Self::Selectable,
         Self::Blocked,
         Self::ClickPulse,
+        Self::Shifted,
     ];
 
     #[must_use]
@@ -1268,6 +1270,7 @@ impl TacticsRole {
             Self::Selectable => "selectable",
             Self::Blocked => "cannot act here",
             Self::ClickPulse => "command accepted",
+            Self::Shifted => "changed in the last facility shift",
         }
     }
 }
@@ -1321,6 +1324,12 @@ pub fn tactics(role: TacticsRole) -> Treatment {
         TacticsRole::ClickPulse => Treatment {
             base_color: Color::WHITE,
             emissive: LinearRgba::rgb(4.0, 4.0, 4.0),
+            signal: true,
+            edge: Some(Color::WHITE),
+        },
+        TacticsRole::Shifted => Treatment {
+            base_color: Color::srgb(0.92, 0.30, 1.0),
+            emissive: LinearRgba::rgb(5.5, 0.55, 7.0),
             signal: true,
             edge: Some(Color::WHITE),
         },
@@ -2463,6 +2472,7 @@ mod tests {
             TacticsRole::Selectable,
             TacticsRole::Blocked,
             TacticsRole::ClickPulse,
+            TacticsRole::Shifted,
         ] {
             let treatment = tactics(role);
             assert!(treatment.signal, "{role:?} is interaction-critical");

@@ -287,20 +287,29 @@ fn the_exit_stays_reachable_across_many_shifts() {
 #[test]
 fn the_facility_really_does_shift() {
     let mut committed = 0;
+    let mut held = 0;
     let mut changed = 0;
     for seed in SEEDS {
         let mut game = game(seed);
         for _ in 0..10 {
             wander(&mut game);
             let before = game.world.placements.clone();
-            if game.end_turn() == ShiftOutcome::Committed {
-                committed += 1;
-                changed += before
-                    .iter()
-                    .filter(|(cell, placement)| {
-                        game.world.placements.get(*cell) != Some(*placement)
-                    })
-                    .count();
+            match game.end_turn() {
+                ShiftOutcome::Committed => {
+                    committed += 1;
+                    let actual = before
+                        .iter()
+                        .filter(|(cell, placement)| {
+                            game.world.placements.get(*cell) != Some(*placement)
+                        })
+                        .map(|(&cell, _)| cell)
+                        .collect::<BTreeSet<_>>();
+                    assert!(!actual.is_empty(), "a committed shift must change a cell");
+                    changed += actual.len();
+                    assert_eq!(game.last_shifted_cells, actual);
+                }
+                ShiftOutcome::Held => held += 1,
+                ShiftOutcome::NothingToShift => {}
             }
         }
     }
@@ -311,6 +320,10 @@ fn the_facility_really_does_shift() {
     assert!(
         changed > 0,
         "shifts committed but rewrote nothing, so nothing was being tested"
+    );
+    assert!(
+        committed >= held,
+        "ordinary route movement held {held} pockets but committed only {committed}"
     );
 }
 

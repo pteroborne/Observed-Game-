@@ -16,12 +16,15 @@ pub mod camera;
 pub mod hud;
 pub mod overlay;
 pub mod setup;
+pub mod units;
 
 use bevy::prelude::*;
 use observed_facility::hex_wfc::{HexArchetype, HexSpace};
 use observed_hex::HexCoord;
 use observed_match::hex_wfc::HexMapDiscovery;
-use observed_style::{HexSketchRole, MarkerRole, SchematicRole, Treatment, marker, schematic};
+use observed_style::{
+    HexSketchRole, MarkerRole, SchematicRole, TacticsRole, Treatment, marker, schematic, tactics,
+};
 
 use crate::sim::TacticsGame;
 use crate::sim::unit::PLAYER_TEAM;
@@ -29,7 +32,7 @@ use crate::sim::unit::PLAYER_TEAM;
 /// Which renderer is drawing the board.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum ViewMode {
-    /// Authored geometry with quarter-height perimeter walls for one active deck.
+    /// Authored geometry with third-height perimeter walls for one active deck.
     #[default]
     Deck,
     /// Top-down schematic of one deck for strategic orientation.
@@ -40,7 +43,7 @@ impl ViewMode {
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
-            ViewMode::Deck => "Quarter-wall deck",
+            ViewMode::Deck => "Low-wall deck",
             ViewMode::Overview => "Operations map",
         }
     }
@@ -69,6 +72,8 @@ pub enum CellPaint {
     Observed,
     /// Telegraphed to re-collapse when the turn ends.
     Volatile,
+    /// Rewritten by the most recent successful facility shift.
+    Shifted,
     /// Remembered, but the facility has rewritten it since.
     Stale,
     /// Remembered and believed current.
@@ -86,6 +91,7 @@ impl CellPaint {
             CellPaint::Anchored => marker(MarkerRole::Control),
             CellPaint::Observed => schematic(SchematicRole::Pinned),
             CellPaint::Volatile => schematic(SchematicRole::Volatile),
+            CellPaint::Shifted => tactics(TacticsRole::Shifted),
             CellPaint::Stale => schematic(SchematicRole::Grid),
             CellPaint::Known => schematic(SchematicRole::Pinned),
         }
@@ -107,16 +113,18 @@ impl CellPaint {
             CellPaint::Anchored => "anchored - will not change",
             CellPaint::Observed => "in sight - held this turn",
             CellPaint::Volatile => "will re-collapse this turn",
+            CellPaint::Shifted => "changed in the last shift",
             CellPaint::Stale => "remembered - has since changed",
             CellPaint::Known => "remembered",
         }
     }
 
     /// Everything a legend needs to list, in reading order.
-    pub const ALL: [CellPaint; 6] = [
+    pub const ALL: [CellPaint; 7] = [
         CellPaint::Observed,
         CellPaint::Anchored,
         CellPaint::Volatile,
+        CellPaint::Shifted,
         CellPaint::Known,
         CellPaint::Stale,
         CellPaint::Unknown,
@@ -143,6 +151,9 @@ pub fn paint(game: &TacticsGame, cell: HexCoord) -> CellPaint {
             .any(|&at| at == cell);
     if observed {
         return CellPaint::Observed;
+    }
+    if game.last_shifted_cells.contains(&cell) {
+        return CellPaint::Shifted;
     }
     let telegraphed = game
         .telegraph
@@ -274,10 +285,18 @@ mod tests {
     }
 
     #[test]
+    fn a_full_map_still_marks_cells_changed_by_the_last_shift() {
+        let mut game = game(Sight::Corridor, true);
+        let far = game.world.config.exit();
+        game.last_shifted_cells.insert(far);
+        assert_eq!(paint(&game, far), CellPaint::Shifted);
+    }
+
+    #[test]
     fn every_paint_state_has_a_legend_entry() {
         for state in CellPaint::ALL {
             assert!(!state.legend().is_empty(), "{state:?} has no legend");
         }
-        assert_eq!(CellPaint::ALL.len(), 6, "a new state needs a legend entry");
+        assert_eq!(CellPaint::ALL.len(), 7, "a new state needs a legend entry");
     }
 }
