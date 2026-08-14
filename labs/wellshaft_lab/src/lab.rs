@@ -4,10 +4,10 @@
 //! pillar: every landing has an outward threshold bridge, and visible tread
 //! heights are the controller's real collision heights.
 
+use bevy::camera::Hdr;
 use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::prelude::*;
-use bevy::camera::Hdr;
 use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow};
 use observed_traversal::{FpsArena, FpsBody, FpsConfig, step_body};
 use player_input::PlayerIntent;

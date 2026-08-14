@@ -355,7 +355,7 @@ pub(crate) fn draw_tac_map(
                     },
                     Text::new(label),
                     TextFont {
-                        font_size: (room_size * 0.2).clamp(7.0, 9.0),
+                        font_size: FontSize::Px((room_size * 0.2).clamp(7.0, 9.0)),
                         ..default()
                     },
                     TextColor(rival_col.with_alpha(pip.alpha())),

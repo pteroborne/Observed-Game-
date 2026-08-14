@@ -10,15 +10,13 @@
 
 use bevy::{
     app::AppExit,
+    camera::Hdr,
     ecs::system::SystemParam,
     input::InputSystems,
     pbr::{DistanceFog, FogFalloff},
     post_process::bloom::Bloom,
     prelude::*,
-    camera::Hdr,
-    render::view::{
-        screenshot::{Screenshot, save_to_disk},
-    },
+    render::view::screenshot::{Screenshot, save_to_disk},
     window::{PresentMode, WindowResolution},
 };
 use bevy_mod_outline::{OutlineMode, OutlinePlugin, OutlineStencil, OutlineVolume};

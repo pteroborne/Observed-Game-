@@ -20,11 +20,11 @@ use std::path::{Path, PathBuf};
 
 use bevy::app::AppExit;
 use bevy::asset::RenderAssetUsages;
+use bevy::camera::Hdr;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
-use bevy::camera::Hdr;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use bevy::window::{PresentMode, WindowResolution};
 use observed_authoring::{

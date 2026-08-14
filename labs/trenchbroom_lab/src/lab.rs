@@ -11,14 +11,12 @@ use std::path::Path;
 
 use bevy::{
     app::AppExit,
+    camera::Hdr,
     input::{InputSystems, mouse::AccumulatedMouseMotion},
     pbr::{DistanceFog, FogFalloff},
     post_process::bloom::Bloom,
     prelude::*,
-    camera::Hdr,
-    render::view::{
-        screenshot::{Screenshot, save_to_disk},
-    },
+    render::view::screenshot::{Screenshot, save_to_disk},
     window::{CursorGrabMode, CursorOptions, PresentMode, PrimaryWindow, WindowResolution},
 };
 use bevy_trenchbroom::config::WriteTrenchBroomConfigOnStartPlugin;
@@ -842,6 +840,8 @@ mod tests {
             MinimalPlugins,
             AssetPlugin::default(),
             InputPlugin,
+            // Registers the mesh assets that 0.19's new skinned-mesh-bounds gizmo validates.
+            bevy::mesh::MeshPlugin,
             GizmoPlugin,
         ))
         .init_asset::<Mesh>()

@@ -14,14 +14,19 @@ pub(crate) fn load_repeating_texture(
     path: &'static str,
 ) -> Option<Handle<Image>> {
     asset_present(path).then(|| {
-        asset_server.load_with_settings(path, |settings: &mut bevy::image::ImageLoaderSettings| {
-            settings.sampler =
-                bevy::image::ImageSampler::Descriptor(bevy::image::ImageSamplerDescriptor {
-                    address_mode_u: bevy::image::ImageAddressMode::Repeat,
-                    address_mode_v: bevy::image::ImageAddressMode::Repeat,
-                    ..default()
-                });
-        })
+        // `load_with_settings` is deprecated in Bevy 0.19 in favour of the
+        // builder; the settings themselves are unchanged.
+        asset_server
+            .load_builder()
+            .with_settings(|settings: &mut bevy::image::ImageLoaderSettings| {
+                settings.sampler =
+                    bevy::image::ImageSampler::Descriptor(bevy::image::ImageSamplerDescriptor {
+                        address_mode_u: bevy::image::ImageAddressMode::Repeat,
+                        address_mode_v: bevy::image::ImageAddressMode::Repeat,
+                        ..default()
+                    });
+            })
+            .load(path)
     })
 }
 

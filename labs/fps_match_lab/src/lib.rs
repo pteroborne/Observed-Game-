@@ -115,6 +115,8 @@ mod tests {
             MinimalPlugins,
             AssetPlugin::default(),
             InputPlugin,
+            // Registers the mesh assets that 0.19's new skinned-mesh-bounds gizmo validates.
+            bevy::mesh::MeshPlugin,
             GizmoPlugin,
         ))
         .init_resource::<Assets<Mesh>>()

@@ -90,6 +90,7 @@ impl Plugin for ObservedGamePlugin {
             .add_plugins((
                 Sprite3dPlugin,
                 screens::ScreensPlugin,
+                // Deliberately deprecated legacy match, kept as a regression fixture.
                 #[allow(deprecated)]
                 screens::MatchPlugin,
                 full_wfc::FullWfcPlugin,
@@ -169,12 +170,13 @@ pub fn run() {
         });
     if gpu_profiling {
         plugins = plugins.set(RenderPlugin {
-            render_creation: RenderCreation::Automatic(WgpuSettings {
+            // Bevy 0.19 boxes the settings inside this variant.
+            render_creation: RenderCreation::Automatic(Box::new(WgpuSettings {
                 features: WgpuFeatures::TIMESTAMP_QUERY
                     | WgpuFeatures::TIMESTAMP_QUERY_INSIDE_PASSES
                     | WgpuFeatures::TIMESTAMP_QUERY_INSIDE_ENCODERS,
                 ..default()
-            }),
+            })),
             ..default()
         });
     }

@@ -20,13 +20,13 @@ pub(in crate::hex_wfc) mod spectate;
 mod spectate_tests;
 
 use bevy::anti_alias::fxaa::Fxaa;
+use bevy::camera::Hdr;
 use bevy::core_pipeline::prepass::{DepthPrepass, NormalPrepass};
 use bevy::pbr::{
     DistanceFog, FogFalloff, ScreenSpaceAmbientOcclusion, ScreenSpaceAmbientOcclusionQualityLevel,
 };
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
-use bevy::camera::Hdr;
 use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::HexCoord;
 

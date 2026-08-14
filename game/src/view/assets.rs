@@ -7,6 +7,7 @@
 use std::path::PathBuf;
 
 use bevy::prelude::*;
+use bevy::world_serialization::WorldAsset;
 use observed_match::facility::TEAM_COUNT;
 use observed_style::{self as style, MarkerRole, SurfaceRole};
 
@@ -87,7 +88,7 @@ pub(crate) const DOOR_LEAF_D: f32 = 0.14;
 
 #[derive(Clone)]
 pub(crate) struct ContentScene {
-    pub scene: Handle<Scene>,
+    pub scene: Handle<WorldAsset>,
     pub scale: f32,
 }
 
@@ -268,12 +269,12 @@ pub struct MatchAssets {
     pub(crate) anchor_torch_material: Handle<StandardMaterial>,
     pub(crate) teleport_pad_material: Handle<StandardMaterial>,
     pub(crate) team_materials: [Handle<StandardMaterial>; TEAM_COUNT],
-    pub(crate) light_fixture: Option<Handle<Scene>>,
-    pub(crate) exit_gate: Option<Handle<Scene>>,
-    pub(crate) player: Option<Handle<Scene>>,
-    pub(crate) bot: Option<Handle<Scene>>,
-    pub(crate) equipment: Option<Handle<Scene>>,
-    pub(crate) hazard: Option<Handle<Scene>>,
+    pub(crate) light_fixture: Option<Handle<WorldAsset>>,
+    pub(crate) exit_gate: Option<Handle<WorldAsset>>,
+    pub(crate) player: Option<Handle<WorldAsset>>,
+    pub(crate) bot: Option<Handle<WorldAsset>>,
+    pub(crate) equipment: Option<Handle<WorldAsset>>,
+    pub(crate) hazard: Option<Handle<WorldAsset>>,
     /// Canonical CC0 Modular Space dressing selected by the committed manifest.
     pub(crate) threshold_gate: Option<ContentScene>,
     pub(crate) cable_bundle: Option<ContentScene>,

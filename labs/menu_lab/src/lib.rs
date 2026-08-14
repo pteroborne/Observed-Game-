@@ -351,7 +351,9 @@ mod tests {
         assert_eq!(accessibility.label(), Some("Continue — no saved session"));
         assert!(accessibility.is_disabled());
 
-        app.world_mut().resource_mut::<InputFocus>().set(disabled, bevy::input_focus::FocusCause::Navigated);
+        app.world_mut()
+            .resource_mut::<InputFocus>()
+            .set(disabled, bevy::input_focus::FocusCause::Navigated);
         tap_key(&mut app, KeyCode::Enter);
         assert_eq!(
             *app.world().resource::<State<AppState>>().get(),

@@ -364,8 +364,7 @@ fn route_between(
     let clamped_start = clamp_to_place(start, geom);
     let clamped_goal = clamp_to_place(goal, geom);
 
-    if let Some(path) = navmesh.path(clamped_start, clamped_goal) {
-        let mut waypoints = path.path;
+    if let Some(mut waypoints) = crate::navmesh::path(&navmesh, clamped_start, clamped_goal) {
         if waypoints.is_empty() {
             waypoints.push(clamped_goal);
         }
@@ -382,8 +381,8 @@ fn route_between(
         clamped_start,
         goal,
         clamped_goal,
-        navmesh.is_in_mesh(clamped_start),
-        navmesh.is_in_mesh(clamped_goal),
+        crate::navmesh::contains(&navmesh, clamped_start),
+        crate::navmesh::contains(&navmesh, clamped_goal),
         geom.half,
         geom.gaps
             .iter()

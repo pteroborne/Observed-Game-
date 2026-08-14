@@ -2,14 +2,12 @@ use bevy::{
     app::AppExit,
     asset::RenderAssetUsages,
     camera::Exposure,
+    camera::Hdr,
     mesh::{Indices, PrimitiveTopology},
     pbr::{DistanceFog, FogFalloff},
     post_process::bloom::Bloom,
     prelude::*,
-    camera::Hdr,
-    render::view::{
-        screenshot::{Screenshot, save_to_disk},
-    },
+    render::view::screenshot::{Screenshot, save_to_disk},
     window::{PresentMode, WindowResolution},
 };
 use observed_style::{District, MarkerRole, SurfaceRole, Treatment, district, marker};

@@ -3,6 +3,7 @@
 //! sealed leaf) cut into them.
 
 use bevy::prelude::*;
+use bevy::world_serialization::WorldAssetRoot;
 use observed_style::{self as style, MarkerRole};
 
 use crate::GameState;
@@ -856,7 +857,7 @@ fn spawn_place_frame(
                 kind: crate::evidence::DiagnosticThresholdVisualKind::Frame,
                 status,
             },
-            SceneRoot(gate.scene.clone()),
+            WorldAssetRoot(gate.scene.clone()),
             Transform::from_xyz(gap.center.x, base_y, gap.center.y)
                 .with_rotation(rot)
                 .with_scale(scale),
@@ -923,7 +924,7 @@ fn spawn_place_frame(
             PlaceGeometry,
             DespawnOnExit(GameState::Match),
             ImportedThresholdDressing::Cables,
-            SceneRoot(cables.scene.clone()),
+            WorldAssetRoot(cables.scene.clone()),
             Transform::from_xyz(p.x, base_y + 0.04, p.y)
                 .with_rotation(rot)
                 .with_scale(Vec3::splat(cables.scale.min(0.55))),

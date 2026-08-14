@@ -20,15 +20,37 @@ fn test_app() -> App {
             ..default()
         },
         InputPlugin,
+        // Registers the mesh assets that 0.19's new skinned-mesh-bounds gizmo validates.
+        bevy::mesh::MeshPlugin,
         GizmoPlugin,
+        // 0.19's `UiWidgetsPlugins` (added by `observed_ui`) now bundles
+        // `EditableTextInputPlugin`, whose systems read window messages, `UiScale`
+        // and picking messages. Production gets all three from `DefaultPlugins`;
+        // only this headless harness lacked them, and 0.19 turns a missing system
+        // parameter into a hard error instead of silently skipping the system.
+        // `primary_window: None` registers the window messages without spawning a
+        // window entity, so no test world gains a `PrimaryWindow`.
+        bevy::window::WindowPlugin {
+            primary_window: None,
+            exit_condition: bevy::window::ExitCondition::DontExit,
+            ..default()
+        },
+        // `UiPlugin` brings the text widgets, whose measure/layout systems need the
+        // font assets and text pipeline that `TextPlugin` owns.
+        bevy::text::TextPlugin,
+        bevy::ui::UiPlugin::default(),
     ))
+    // The whole picking group, not hand-picked members: `PickingPlugin` alone
+    // registers the pointer messages but not `HoverMap`, which `InteractionPlugin`
+    // owns and `bevy_ui`'s viewport picking requires.
+    .add_plugins(bevy::picking::DefaultPickingPlugins)
     // The Match builds meshes/materials and loads drop-in textures/models, so the
     // headless test app needs those asset types registered (no render plugins).
     .init_asset::<Mesh>()
     .init_asset::<StandardMaterial>()
     .init_asset::<Image>()
     .init_asset::<TextureAtlasLayout>()
-    .init_asset::<Scene>()
+    .init_asset::<WorldAsset>()
     .init_asset::<AudioSource>()
     .insert_resource(ClearColor(Color::BLACK))
     .add_plugins(ObservedGamePlugin);
@@ -86,11 +108,14 @@ fn focus_settings_row(app: &mut App, row: crate::screens::settings::SettingsRow)
     };
     app.world_mut()
         .resource_mut::<bevy::input_focus::InputFocus>()
-        .set(entity);
+        .set(entity, bevy::input_focus::FocusCause::Navigated);
 }
 
 fn focused_settings_row(app: &App) -> Option<crate::screens::settings::SettingsRow> {
-    let entity = app.world().resource::<bevy::input_focus::InputFocus>().get()?;
+    let entity = app
+        .world()
+        .resource::<bevy::input_focus::InputFocus>()
+        .get()?;
     app.world()
         .get::<crate::screens::settings::SettingsRowText>(entity)
         .map(|row| row.0)

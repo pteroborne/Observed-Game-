@@ -6948,6 +6948,7 @@ version = "0.2.0"
 dependencies = [
  "bevy 0.19.1",
  "bevy_sprite3d",
+ "glam 0.30.10",
  "image",
  "observed_assets",
  "observed_authoring",
@@ -6965,10 +6966,10 @@ dependencies = [
  "observed_traversal",
  "observed_ui",
  "player_input",
+ "polyanya",
  "rapier3d",
  "serde",
  "serde_json",
- "vleue_navigator",
 ]
 
 [[package]]
@@ -9059,18 +9060,6 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
-
-[[package]]
-name = "vleue_navigator"
-version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50c0ffab1d042cfda27adc4c1ce39cc6db9967ab134f32d76b8a9cd6b9c4fa4c"
-dependencies = [
- "bevy 0.18.1",
- "itertools 0.14.0",
- "log",
- "polyanya",
-]
 
 [[package]]
 name = "walkdir"

@@ -33,10 +33,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::f32::consts::FRAC_PI_4;
 use std::sync::OnceLock;
 
+use bevy::camera::Hdr;
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
-use bevy::camera::Hdr;
 use bevy::window::{PresentMode, WindowResolution};
 use observed_authoring::{RoomPrototype, RuntimeHexCatalog, TilePrototype};
 use observed_content::ArchitectureRegister;

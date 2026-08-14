@@ -153,7 +153,7 @@ pub(crate) fn register(app: &mut App) {
         .add_systems(Startup, setup)
         .add_systems(
             FixedUpdate,
-            controls::step_walk.run_if(facility_mode_active.and(bot_pov_inactive)),
+            controls::step_walk.run_if(facility_mode_active.and_then(bot_pov_inactive)),
         )
         .add_systems(
             Update,

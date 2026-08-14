@@ -16,14 +16,12 @@ use observed_style as style;
 
 use bevy::{
     app::AppExit,
+    camera::Hdr,
     input::InputSystems,
     pbr::{DistanceFog, FogFalloff},
     post_process::bloom::Bloom,
     prelude::*,
-    camera::Hdr,
-    render::view::{
-        screenshot::{Screenshot, save_to_disk},
-    },
+    render::view::screenshot::{Screenshot, save_to_disk},
     window::{PresentMode, WindowResolution},
 };
 
@@ -539,6 +537,8 @@ mod tests {
             MinimalPlugins,
             AssetPlugin::default(),
             InputPlugin,
+            // Registers the mesh assets that 0.19's new skinned-mesh-bounds gizmo validates.
+            bevy::mesh::MeshPlugin,
             GizmoPlugin,
         ))
         .init_asset::<Mesh>()

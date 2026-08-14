@@ -10,6 +10,7 @@ mod registers;
 mod shell;
 
 use bevy::anti_alias::fxaa::Fxaa;
+use bevy::camera::Hdr;
 use bevy::core_pipeline::prepass::{DepthPrepass, NormalPrepass};
 use bevy::light::VolumetricFog;
 use bevy::pbr::{
@@ -17,7 +18,6 @@ use bevy::pbr::{
 };
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
-use bevy::camera::Hdr;
 use observed_facility::full_wfc::{CellCoord, ThresholdKey};
 use observed_style::ThresholdFrameState;
 

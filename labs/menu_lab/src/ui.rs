@@ -1,6 +1,11 @@
 use bevy::{
-    app::AppExit, ecs::system::SystemParam, input::gamepad::GamepadButton, input_focus::{FocusCause, InputFocus},
-    prelude::*, ui::InteractionDisabled, ui_widgets::Activate,
+    app::AppExit,
+    ecs::system::SystemParam,
+    input::gamepad::GamepadButton,
+    input_focus::{FocusCause, InputFocus},
+    prelude::*,
+    ui::InteractionDisabled,
+    ui_widgets::Activate,
 };
 
 use crate::{

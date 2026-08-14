@@ -24,6 +24,7 @@ pub mod script_runner;
 use std::f32::consts::TAU;
 
 use bevy::asset::{AssetPlugin, RenderAssetUsages};
+use bevy::camera::Hdr;
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::light::VolumetricFog;
 use bevy::mesh::{Indices, PrimitiveTopology};
@@ -31,7 +32,6 @@ use bevy::pbr::wireframe::{WireframeConfig, WireframePlugin};
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
-use bevy::camera::Hdr;
 use bevy::window::{CursorGrabMode, CursorOptions, PresentMode, PrimaryWindow, WindowResolution};
 use lab_menu::{FilterCategory, LabMenuState, MenuTab};
 use observed_authoring::{RuntimeHexCatalog, TilePrototype};

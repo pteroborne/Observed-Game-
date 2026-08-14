@@ -26,10 +26,10 @@ pub mod wellshaft;
 
 use bevy::{
     camera::Exposure,
+    camera::Hdr,
     pbr::{DistanceFog, FogFalloff},
     post_process::bloom::Bloom,
     prelude::*,
-    camera::Hdr,
 };
 use observed_style as style;
 

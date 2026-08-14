@@ -34,7 +34,7 @@ pub(super) enum PadVisual {
 
 #[derive(Resource)]
 pub(super) struct PadVisualAssets {
-    authored: Option<Handle<Scene>>,
+    authored: Option<Handle<WorldAsset>>,
     plate: Handle<Mesh>,
     core: Handle<Mesh>,
     /// A plate whose partner is down: the link is usable.
@@ -178,7 +178,7 @@ fn spawn_plate(
         .with_children(|root| {
             if let Some(ref authored) = assets.authored {
                 root.spawn((
-                    SceneRoot(authored.clone()),
+                    WorldAssetRoot(authored.clone()),
                     Visibility::Inherited,
                     Transform::IDENTITY,
                 ));

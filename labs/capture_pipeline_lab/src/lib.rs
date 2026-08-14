@@ -14,8 +14,8 @@ pub use model::{
 use std::path::{Path, PathBuf};
 
 use bevy::{
-    camera::Hdr,
     app::AppExit,
+    camera::Hdr,
     camera::RenderTarget,
     ecs::system::SystemParam,
     input::InputSystems,
