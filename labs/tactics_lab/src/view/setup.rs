@@ -269,14 +269,16 @@ pub fn spawn(commands: &mut Commands, settings: &MatchSettings, error: Option<&s
     commands
         .spawn((
             SetupRoot,
+            ScrollPosition::default(),
             Node {
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
+                justify_content: JustifyContent::FlexStart,
                 row_gap: Val::Px(2.0),
                 padding: UiRect::all(Val::Px(24.0)),
+                overflow: Overflow::scroll_y(),
                 ..default()
             },
             BackgroundColor(observed_style::schematic_screen()),
@@ -316,8 +318,13 @@ pub fn spawn(commands: &mut Commands, settings: &MatchSettings, error: Option<&s
 
             let mut order = 0u16;
             root.spawn(Node {
+                width: percent(100.0),
+                max_width: px(620.0),
                 flex_direction: FlexDirection::Row,
+                flex_wrap: FlexWrap::Wrap,
+                justify_content: JustifyContent::Center,
                 column_gap: Val::Px(8.0),
+                row_gap: Val::Px(8.0),
                 margin: UiRect::vertical(Val::Px(10.0)),
                 ..default()
             })
@@ -363,7 +370,7 @@ pub fn spawn(commands: &mut Commands, settings: &MatchSettings, error: Option<&s
 
             spawn_button(
                 root,
-                WidgetSpec::enabled(START, SCOPE, order, "Start match").with_size(460.0, 56.0),
+                WidgetSpec::enabled(START, SCOPE, order, "Start match").with_size(340.0, 56.0),
                 SetupAction::Start,
             );
             root.spawn((
@@ -390,7 +397,8 @@ fn spawn_setting_slider(
     parent
         .spawn((
             Node {
-                width: px(620.0),
+                width: percent(100.0),
+                max_width: px(620.0),
                 height: px(32.0),
                 flex_direction: FlexDirection::Row,
                 align_items: AlignItems::Center,
@@ -408,7 +416,7 @@ fn spawn_setting_slider(
                 },
                 TextColor(Color::srgb(0.76, 0.82, 0.88)),
                 Node {
-                    width: px(150.0),
+                    width: percent(24.0),
                     ..default()
                 },
                 Pickable::IGNORE,
@@ -429,7 +437,7 @@ fn spawn_setting_slider(
                 },
                 TabIndex(i32::from(order)),
                 Node {
-                    width: px(260.0),
+                    width: percent(42.0),
                     height: px(8.0),
                     border_radius: BorderRadius::all(px(4.0)),
                     ..default()
@@ -467,7 +475,7 @@ fn spawn_setting_slider(
                 },
                 TextColor(Color::WHITE),
                 Node {
-                    width: px(190.0),
+                    width: percent(29.0),
                     ..default()
                 },
                 Pickable::IGNORE,
@@ -484,7 +492,8 @@ fn spawn_setting_toggle(
     parent
         .spawn((
             Node {
-                width: px(620.0),
+                width: percent(100.0),
+                max_width: px(620.0),
                 height: px(38.0),
                 flex_direction: FlexDirection::Row,
                 align_items: AlignItems::Center,
@@ -502,7 +511,7 @@ fn spawn_setting_toggle(
                 },
                 TextColor(Color::srgb(0.76, 0.82, 0.88)),
                 Node {
-                    width: px(150.0),
+                    width: percent(24.0),
                     ..default()
                 },
                 Pickable::IGNORE,

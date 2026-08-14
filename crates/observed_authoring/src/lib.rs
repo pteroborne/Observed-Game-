@@ -134,4 +134,48 @@ impl RuntimeHexCatalog {
             composition: composition.profile,
         })
     }
+
+    /// Build the canonical runtime catalog from artifacts baked into a binary.
+    ///
+    /// Browser builds cannot discover or synchronously read the repository's
+    /// tile directory. Keeping the same schema parsing, validation, sidecar
+    /// checks, and content-hash fold here ensures an embedded client consumes
+    /// exactly the same authored content as a filesystem-backed host.
+    pub fn from_embedded(
+        compiled_catalog: &str,
+        compiled_catalog_hash: &str,
+        composition_profile: &str,
+        composition_profile_hash: &str,
+        register_slugs: &[&str],
+    ) -> Result<Self, String> {
+        let mut cells = tile_source::compatibility_cells()
+            .map_err(|error| format!("compatibility cells: {error:?}"))?;
+        let compiled = CompiledTileCatalog::from_ron(compiled_catalog)
+            .map_err(|error| format!("compiled catalog schema: {error:?}"))?;
+        if compiled_catalog_hash.trim() != compiled.simulation_content_hash {
+            return Err("compiled catalog and embedded hash sidecar disagree".to_string());
+        }
+        let strict = compiled
+            .runtime_catalog(register_slugs)
+            .map_err(|error| format!("runtime catalog: {error:?}"))?;
+        cells.extend(strict.cells);
+
+        let composition = composition::parse_profile(composition_profile)
+            .map_err(|error| format!("composition: {error}"))?;
+        let actual_composition_hash = composition::profile_content_hash(&composition)
+            .map_err(|error| format!("composition: {error}"))?;
+        if composition_profile_hash.trim() != actual_composition_hash {
+            return Err("composition profile and embedded hash sidecar disagree".to_string());
+        }
+
+        Ok(Self {
+            cells,
+            rooms: strict.rooms,
+            simulation_content_hash: composition::fold_simulation_content_hash(
+                compiled_catalog_hash.trim(),
+                &actual_composition_hash,
+            ),
+            composition,
+        })
+    }
 }

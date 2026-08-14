@@ -75,6 +75,32 @@ fn committed_authored_maps_validate_independently_of_the_generator() {
 }
 
 #[test]
+fn embedded_catalog_matches_the_filesystem_catalog() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tiles");
+    let filesystem = crate::RuntimeHexCatalog::load(&root, &[]).expect("filesystem catalog loads");
+    let read = |name: &str| {
+        std::fs::read_to_string(root.join(name))
+            .unwrap_or_else(|error| panic!("{name} reads: {error}"))
+    };
+    let embedded = crate::RuntimeHexCatalog::from_embedded(
+        &read("compiled_catalog.ron"),
+        &read("compiled_catalog.sha256"),
+        &read("composition_profile.ron"),
+        &read("composition_profile.sha256"),
+        &[],
+    )
+    .expect("embedded catalog loads");
+
+    assert_eq!(embedded.cells.len(), filesystem.cells.len());
+    assert_eq!(embedded.rooms.len(), filesystem.rooms.len());
+    assert_eq!(
+        embedded.simulation_content_hash,
+        filesystem.simulation_content_hash
+    );
+    assert_eq!(embedded.composition, filesystem.composition);
+}
+
+#[test]
 fn seed_tile_signatures_match_their_authored_ports() {
     let straight = parse_tile(&tile_source::hall_straight_ew_map()).expect("straight parses");
     assert_eq!(

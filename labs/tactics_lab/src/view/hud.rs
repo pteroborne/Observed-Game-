@@ -59,6 +59,63 @@ const CONTROL_SIZE: f32 = 48.0;
 /// Logical width shared with the camera viewport inset. One owner prevents the
 /// panel and map boundary drifting apart under DPI scaling.
 pub const COMMAND_DOCK_WIDTH: f32 = 340.0;
+/// Below this logical width the command surface becomes a bottom dock. The
+/// breakpoint is deliberately narrow enough that a phone in landscape retains
+/// a useful map beside the desktop dock while portrait phones do not.
+pub const MOBILE_DOCK_BREAKPOINT: f32 = 700.0;
+const MOBILE_DOCK_MIN_HEIGHT: f32 = 220.0;
+const MOBILE_DOCK_MAX_HEIGHT: f32 = 320.0;
+const MOBILE_MAP_MIN_HEIGHT: f32 = 180.0;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DockPlacement {
+    Right,
+    Bottom,
+}
+
+/// The one layout decision consumed by both Bevy UI and the board camera.
+/// Keeping the viewport and visible dock derived from the same value prevents
+/// touch ownership from drifting at a responsive breakpoint.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DockLayout {
+    pub placement: DockPlacement,
+    pub viewport_size: Vec2,
+    pub dock_size: Vec2,
+}
+
+impl DockLayout {
+    #[must_use]
+    pub fn for_window(window_size: Vec2) -> Self {
+        if window_size.x < MOBILE_DOCK_BREAKPOINT {
+            let available = (window_size.y - MOBILE_MAP_MIN_HEIGHT).max(0.0);
+            let height = (window_size.y * 0.4)
+                .clamp(MOBILE_DOCK_MIN_HEIGHT, MOBILE_DOCK_MAX_HEIGHT)
+                .min(available);
+            Self {
+                placement: DockPlacement::Bottom,
+                viewport_size: Vec2::new(window_size.x.max(1.0), (window_size.y - height).max(1.0)),
+                dock_size: Vec2::new(window_size.x.max(1.0), height),
+            }
+        } else {
+            Self {
+                placement: DockPlacement::Right,
+                viewport_size: Vec2::new(
+                    (window_size.x - COMMAND_DOCK_WIDTH).max(1.0),
+                    window_size.y.max(1.0),
+                ),
+                dock_size: Vec2::new(COMMAND_DOCK_WIDTH, window_size.y.max(1.0)),
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn contains_dock_point(self, point: Vec2) -> bool {
+        match self.placement {
+            DockPlacement::Right => point.x >= self.viewport_size.x,
+            DockPlacement::Bottom => point.y >= self.viewport_size.y,
+        }
+    }
+}
 
 pub fn spawn(commands: &mut Commands) {
     commands
@@ -223,6 +280,35 @@ pub fn spawn(commands: &mut Commands) {
                 spawn_legend(dock);
             });
         });
+}
+
+/// Apply the responsive dock orientation. This is idempotent and only changes
+/// values derived from the display dimensions; game state never reflows it.
+pub fn sync_layout(window_size: Vec2, root: &mut Node, dock: &mut Node) -> DockLayout {
+    let layout = DockLayout::for_window(window_size);
+    match layout.placement {
+        DockPlacement::Right => {
+            root.flex_direction = FlexDirection::Row;
+            dock.width = px(layout.dock_size.x);
+            dock.min_width = px(layout.dock_size.x);
+            dock.max_width = px(layout.dock_size.x);
+            dock.height = percent(100.0);
+            dock.min_height = Val::Auto;
+            dock.max_height = Val::Auto;
+            dock.border = UiRect::left(px(2.0));
+        }
+        DockPlacement::Bottom => {
+            root.flex_direction = FlexDirection::Column;
+            dock.width = percent(100.0);
+            dock.min_width = Val::Auto;
+            dock.max_width = Val::Auto;
+            dock.height = px(layout.dock_size.y);
+            dock.min_height = px(layout.dock_size.y);
+            dock.max_height = px(layout.dock_size.y);
+            dock.border = UiRect::top(px(2.0));
+        }
+    }
+    layout
 }
 
 fn spawn_section_label(parent: &mut ChildSpawnerCommands, label: &str) {
@@ -512,5 +598,26 @@ mod tests {
         let line = squad_line(&game, Some(observed_core::PlayerId(0)));
         assert_eq!(line.lines().count(), usize::from(game.settings.squad_size));
         assert!(line.starts_with('>'), "the selected unit is not marked");
+    }
+
+    #[test]
+    fn narrow_displays_use_a_bottom_dock_without_covering_the_map() {
+        let layout = DockLayout::for_window(Vec2::new(390.0, 844.0));
+        assert_eq!(layout.placement, DockPlacement::Bottom);
+        assert_eq!(layout.viewport_size.x, 390.0);
+        assert!(layout.viewport_size.y >= MOBILE_MAP_MIN_HEIGHT);
+        assert_eq!(layout.viewport_size.y + layout.dock_size.y, 844.0);
+        assert!(!layout.contains_dock_point(Vec2::new(100.0, layout.viewport_size.y - 1.0)));
+        assert!(layout.contains_dock_point(Vec2::new(100.0, layout.viewport_size.y + 1.0)));
+    }
+
+    #[test]
+    fn landscape_and_desktop_displays_keep_the_right_dock() {
+        for size in [Vec2::new(844.0, 390.0), Vec2::new(1600.0, 1000.0)] {
+            let layout = DockLayout::for_window(size);
+            assert_eq!(layout.placement, DockPlacement::Right);
+            assert_eq!(layout.viewport_size.x + layout.dock_size.x, size.x);
+            assert_eq!(layout.viewport_size.y, size.y);
+        }
     }
 }

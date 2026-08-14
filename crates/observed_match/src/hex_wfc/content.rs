@@ -24,6 +24,24 @@ impl HexMatchContent {
         RuntimeHexCatalog::load(base, register_slugs).map(Self::from_runtime_catalog)
     }
 
+    /// Parse the canonical authored artifacts compiled into a browser client.
+    pub fn from_embedded(
+        compiled_catalog: &str,
+        compiled_catalog_hash: &str,
+        composition_profile: &str,
+        composition_profile_hash: &str,
+        register_slugs: &[&str],
+    ) -> Result<Self, String> {
+        RuntimeHexCatalog::from_embedded(
+            compiled_catalog,
+            compiled_catalog_hash,
+            composition_profile,
+            composition_profile_hash,
+            register_slugs,
+        )
+        .map(Self::from_runtime_catalog)
+    }
+
     /// Consume an already-loaded catalog without cloning its authored corpus.
     #[must_use]
     pub fn from_runtime_catalog(catalog: RuntimeHexCatalog) -> Self {

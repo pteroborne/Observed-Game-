@@ -11,6 +11,7 @@
 //! restart needed.
 
 pub mod bot;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod capture;
 pub mod settings;
 pub mod sim;
@@ -19,6 +20,7 @@ pub mod view;
 use bevy::camera::Viewport;
 use bevy::ecs::system::SystemParam;
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
+use bevy::input::touch::Touches;
 use bevy::prelude::*;
 use bevy::ui::InteractionDisabled;
 use bevy::window::{CursorIcon, PresentMode, SystemCursorIcon, WindowResolution};
@@ -27,6 +29,7 @@ use observed_core::PlayerId;
 use observed_hex::HexCoord;
 use observed_match::hex_wfc::{HexMatchContent, HexWfcGeometrySnapshot};
 use std::collections::VecDeque;
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -47,6 +50,7 @@ const MIN_ZOOM: f32 = 0.15;
 const MAX_ZOOM: f32 = 3.0;
 const CAMERA_NUDGE: f32 = 18.0;
 const BOT_BEAT_SECONDS: f32 = 0.45;
+const TOUCH_DRAG_THRESHOLD: f32 = 10.0;
 
 #[derive(Clone, Copy, Debug)]
 pub struct CameraPose {
@@ -66,6 +70,16 @@ impl Default for CameraPose {
 #[derive(Resource, Default)]
 struct MapPointerCapture {
     panning: bool,
+}
+
+/// Presentation-only gesture state. Touch input changes the same camera pose
+/// and invokes the same cell command path as mouse input; it never enters the
+/// deterministic tactics simulation or replay digest.
+#[derive(Resource, Default)]
+struct MapTouchGesture {
+    active: bool,
+    moved: bool,
+    max_contacts: usize,
 }
 
 #[derive(Resource)]
@@ -160,14 +174,31 @@ pub struct AuthoredBoardContent(pub Result<Arc<HexMatchContent>, String>);
 
 impl Default for AuthoredBoardContent {
     fn default() -> Self {
-        let cwd = PathBuf::from("assets/tiles");
-        let base = if cwd.exists() {
-            cwd
-        } else {
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tiles")
-        };
-        let registers = ArchitectureRegister::ALL.map(ArchitectureRegister::slug);
-        Self(HexMatchContent::load(&base, &registers).map(Arc::new))
+        #[cfg(target_arch = "wasm32")]
+        {
+            let registers = ArchitectureRegister::ALL.map(ArchitectureRegister::slug);
+            Self(
+                HexMatchContent::from_embedded(
+                    include_str!("../../../assets/tiles/compiled_catalog.ron"),
+                    include_str!("../../../assets/tiles/compiled_catalog.sha256"),
+                    include_str!("../../../assets/tiles/composition_profile.ron"),
+                    include_str!("../../../assets/tiles/composition_profile.sha256"),
+                    &registers,
+                )
+                .map(Arc::new),
+            )
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let cwd = PathBuf::from("assets/tiles");
+            let base = if cwd.exists() {
+                cwd
+            } else {
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tiles")
+            };
+            let registers = ArchitectureRegister::ALL.map(ArchitectureRegister::slug);
+            Self(HexMatchContent::load(&base, &registers).map(Arc::new))
+        }
     }
 }
 
@@ -419,12 +450,16 @@ pub fn run() {
             title: "Observed - Tactical Lab".to_string(),
             resolution: WindowResolution::new(WINDOW_WIDTH as u32, WINDOW_HEIGHT as u32),
             present_mode: PresentMode::AutoVsync,
+            canvas: Some("#tactics-canvas".to_string()),
+            fit_canvas_to_parent: true,
+            prevent_default_event_handling: true,
             ..default()
         }),
         ..default()
     }))
     .add_plugins(observed_ui::FrontendWidgetsPlugin);
     configure(&mut app);
+    #[cfg(not(target_arch = "wasm32"))]
     capture::configure(&mut app);
     app.run();
 }
@@ -438,6 +473,7 @@ pub fn configure(app: &mut App) {
         .init_resource::<LabMessage>()
         .init_resource::<PlayOverlay>()
         .init_resource::<MapPointerCapture>()
+        .init_resource::<MapTouchGesture>()
         .init_resource::<BotSpectator>()
         .init_resource::<AuthoredBoardContent>()
         .init_resource::<observed_cutaway::TileMeshCache>()
@@ -470,12 +506,19 @@ pub fn configure(app: &mut App) {
                 view::setup::sync_sliders,
                 view::setup::sync_labels,
                 view::setup::focus_hovered,
+                scroll_setup,
             )
                 .chain()
                 .run_if(in_state(AppState::Setup)),
         )
         .add_systems(Update, begin_loading.run_if(in_state(AppState::Loading)))
         .add_systems(Update, sync_screen_cursor)
+        .add_systems(
+            Update,
+            (sync_hud_layout, sync_camera_viewport)
+                .chain()
+                .run_if(in_state(AppState::Play)),
+        )
         .add_systems(
             Update,
             (toggle_pause, overlay_clicks, show_results)
@@ -490,8 +533,8 @@ pub fn configure(app: &mut App) {
                 advance_pending_move,
                 drive_spectator_bot,
                 view::portals::advance,
-                sync_camera_viewport,
                 scroll_command_dock,
+                touch_map_controls,
                 update_board_hover,
                 board_clicks,
                 rebuild_board,
@@ -540,6 +583,35 @@ fn handle_setup_requests(
             SetupRequest::Start => next.set(AppState::Loading),
         }
     }
+}
+
+/// Setup can exceed a short phone viewport. Wheel input and a predominantly
+/// vertical one-finger drag move only this screen's scroll position; horizontal
+/// slider manipulation remains owned by the widget under the finger.
+fn scroll_setup(
+    scroll: Res<AccumulatedMouseScroll>,
+    touches: Res<Touches>,
+    mut roots: Query<(&mut ScrollPosition, &ComputedNode), With<SetupRoot>>,
+) {
+    let Ok((mut position, computed)) = roots.single_mut() else {
+        return;
+    };
+    let touch_delta = touches
+        .iter()
+        .filter(|touch| {
+            let distance = touch.distance();
+            distance.y.abs() > distance.x.abs() && distance.y.abs() >= TOUCH_DRAG_THRESHOLD
+        })
+        .map(|touch| -touch.delta().y)
+        .sum::<f32>();
+    let delta = -scroll.delta.y * 32.0 + touch_delta;
+    if delta.abs() <= f32::EPSILON {
+        return;
+    }
+    let max_offset = ((computed.content_size().y - computed.size().y)
+        * computed.inverse_scale_factor())
+    .max(0.0);
+    position.y = (position.y + delta).clamp(0.0, max_offset);
 }
 
 fn enter_loading(mut commands: Commands) {
@@ -1143,16 +1215,18 @@ fn drive_spectator_bot(
 
 fn sync_camera_viewport(
     windows: Query<&Window>,
-    mut cameras: Query<&mut Camera, With<BoardCamera>>,
+    mut cameras: Query<(&mut Camera, &mut Transform, &mut Projection), With<BoardCamera>>,
     mut state: ResMut<LabState>,
 ) {
-    let (Ok(window), Ok(mut camera)) = (windows.single(), cameras.single_mut()) else {
+    let (Ok(window), Ok((mut camera, mut transform, mut projection))) =
+        (windows.single(), cameras.single_mut())
+    else {
         return;
     };
-    let dock = (view::hud::COMMAND_DOCK_WIDTH * window.scale_factor()) as u32;
-    let width = window.physical_width().saturating_sub(dock).max(1);
-    let height = window.physical_height().max(1);
-    let size = UVec2::new(width, height);
+    let layout = view::hud::DockLayout::for_window(Vec2::new(window.width(), window.height()));
+    let size = (layout.viewport_size * window.scale_factor())
+        .as_uvec2()
+        .max(UVec2::ONE);
     if camera
         .viewport
         .as_ref()
@@ -1170,6 +1244,30 @@ fn sync_camera_viewport(
         state.viewport_size = logical;
         state.framing = view::camera::frame(&state.game, state.mode, state.level, logical);
     }
+    view::camera::apply(
+        &mut transform,
+        &mut projection,
+        state.framing(),
+        state.camera_pose().zoom,
+        state.camera_pose().pan,
+    );
+}
+
+fn sync_hud_layout(
+    windows: Query<&Window>,
+    mut roots: Query<&mut Node, (With<HudRoot>, Without<CommandDock>)>,
+    mut docks: Query<&mut Node, (With<CommandDock>, Without<HudRoot>)>,
+) {
+    let (Ok(window), Ok(mut root), Ok(mut dock)) =
+        (windows.single(), roots.single_mut(), docks.single_mut())
+    else {
+        return;
+    };
+    view::hud::sync_layout(
+        Vec2::new(window.width(), window.height()),
+        &mut root,
+        &mut dock,
+    );
 }
 
 /// Mouse wheel over the fixed dock scrolls the dock and never leaks through to
@@ -1186,9 +1284,10 @@ fn scroll_command_dock(
     let (Ok(window), Ok((mut position, computed))) = (windows.single(), docks.single_mut()) else {
         return;
     };
+    let layout = view::hud::DockLayout::for_window(Vec2::new(window.width(), window.height()));
     let over_dock = window
         .cursor_position()
-        .is_some_and(|cursor| cursor.x >= window.width() - view::hud::COMMAND_DOCK_WIDTH);
+        .is_some_and(|cursor| layout.contains_dock_point(cursor));
     if !over_dock {
         return;
     }
@@ -1196,6 +1295,108 @@ fn scroll_command_dock(
         * computed.inverse_scale_factor())
     .max(0.0);
     position.y = (position.y - scroll.delta.y * 32.0).clamp(0.0, max_offset);
+}
+
+/// One-finger drag pans, two-finger movement pans and pinches, and a short
+/// one-finger release activates the cell under the finger. Only contacts that
+/// begin inside the camera viewport join the gesture, so touching the dock can
+/// never move or zoom the map even if the finger later crosses the boundary.
+fn touch_map_controls(
+    touches: Res<Touches>,
+    windows: Query<&Window>,
+    cameras: Query<(&Camera, &GlobalTransform), With<BoardCamera>>,
+    spectator: Res<BotSpectator>,
+    mut gesture: ResMut<MapTouchGesture>,
+    mut state: ResMut<LabState>,
+) {
+    let (Ok(window), Ok((camera, transform))) = (windows.single(), cameras.single()) else {
+        return;
+    };
+    let belongs_to_map =
+        |position: Vec2| view::camera::cursor_in_viewport(window, camera, position);
+    let mut active = touches
+        .iter()
+        .filter(|touch| belongs_to_map(touch.start_position()))
+        .collect::<Vec<_>>();
+    active.sort_by_key(|touch| touch.id());
+    let started = touches
+        .iter_just_pressed()
+        .any(|touch| belongs_to_map(touch.start_position()));
+    if !gesture.active && (started || !active.is_empty()) {
+        gesture.active = true;
+        gesture.moved = false;
+        gesture.max_contacts = 0;
+    }
+    if !gesture.active {
+        return;
+    }
+
+    gesture.max_contacts = gesture.max_contacts.max(active.len());
+    if active
+        .iter()
+        .any(|touch| touch.distance().length() >= TOUCH_DRAG_THRESHOLD)
+    {
+        gesture.moved = true;
+    }
+
+    if !active.is_empty() {
+        let count = active.len() as f32;
+        let centre = active.iter().map(|touch| touch.position()).sum::<Vec2>() / count;
+        let previous_centre = active
+            .iter()
+            .map(|touch| touch.previous_position())
+            .sum::<Vec2>()
+            / count;
+        let centre_delta = centre - previous_centre;
+        if gesture.moved || active.len() >= 2 {
+            let scale = state.camera_pose().zoom * 0.6;
+            state.camera_pose_mut().pan += Vec2::new(-centre_delta.x, centre_delta.y) * scale;
+        }
+
+        if active.len() >= 2 {
+            gesture.moved = true;
+            let current_span = active[0].position().distance(active[1].position());
+            let previous_span = active[0]
+                .previous_position()
+                .distance(active[1].previous_position());
+            if current_span > 1.0 && previous_span > 1.0 {
+                let old_zoom = state.camera_pose().zoom;
+                let new_zoom = (old_zoom * previous_span / current_span).clamp(MIN_ZOOM, MAX_ZOOM);
+                if let Some(anchor) = view::camera::viewport_cursor_offset(window, camera, centre) {
+                    let anchor_delta = anchor * state.framing().1 * (old_zoom - new_zoom)
+                        / state.viewport_size.y.max(1.0);
+                    state.camera_pose_mut().pan += anchor_delta;
+                }
+                state.camera_pose_mut().zoom = new_zoom;
+            }
+        }
+    }
+
+    let released = touches
+        .iter_just_released()
+        .find(|touch| belongs_to_map(touch.start_position()));
+    let canceled = touches
+        .iter_just_canceled()
+        .any(|touch| belongs_to_map(touch.start_position()));
+    if active.is_empty() && (released.is_some() || canceled) {
+        if !canceled
+            && gesture.max_contacts == 1
+            && !gesture.moved
+            && let Some(touch) = released
+            && touch.distance().length() < TOUCH_DRAG_THRESHOLD
+            && let Ok(ray) = camera.viewport_to_world(transform, touch.position())
+            && let Some(cell) = view::board::cell_at_ray(
+                &state.game,
+                state.mode,
+                state.level,
+                ray.origin,
+                ray.direction.as_vec3(),
+            )
+        {
+            activate_board_cell(&mut state, &spectator, cell);
+        }
+        *gesture = MapTouchGesture::default();
+    }
 }
 
 /// Keep pointer affordance, hovered cell, and route preview in lockstep without
@@ -1285,11 +1486,15 @@ fn update_board_hover(
 /// Clicking a cell moves the selected unit toward it.
 fn board_clicks(
     mouse: Res<ButtonInput<MouseButton>>,
+    touches: Res<Touches>,
     interactions: Query<&Interaction, With<HudButton>>,
     spectator: Res<BotSpectator>,
     mut state: ResMut<LabState>,
 ) {
     if !mouse.just_pressed(MouseButton::Left)
+        || touches.iter().next().is_some()
+        || touches.any_just_pressed()
+        || touches.any_just_released()
         || spectator.enabled
         || state.game.phase == TurnPhase::Finished
         || state.pending_move.is_some()
@@ -1307,6 +1512,17 @@ fn board_clicks(
     let Some(cell) = state.hovered else {
         return;
     };
+    activate_board_cell(&mut state, &spectator, cell);
+}
+
+fn activate_board_cell(state: &mut LabState, spectator: &BotSpectator, cell: HexCoord) {
+    if spectator.enabled
+        || state.game.phase == TurnPhase::Finished
+        || state.pending_move.is_some()
+        || state.teleport.is_some()
+    {
+        return;
+    }
     if state.mode == ViewMode::Overview {
         state.mode = ViewMode::Deck;
         state.level = cell.level;

@@ -49,6 +49,8 @@ reveals the drawing and exit marker but does not increase that radius.
 | `[` `]` / Deck - / Deck + | browse decks in either view |
 | wheel or `-` `+` / Zoom | zoom under the map cursor; dock buttons zoom around centre |
 | right/middle-drag or arrows / Pan | pan only when the gesture starts inside the map viewport |
+| one-finger tap / drag | select or move / pan on touch displays |
+| two-finger drag / pinch | pan and zoom around the gesture centre |
 | `Home` / Recenter | restore the current view's fitted framing |
 | `B` / Bot run / pause | let the deterministic objective bot drive the squad, or return control |
 | `.` / Bot step | pause and advance exactly one bot decision for debugging |
@@ -62,6 +64,27 @@ The map and command dock have exclusive pointer ownership. Scrolling or dragging
 over the dock never moves the board; on a short display the fixed dock scrolls
 internally instead of reflowing its controls. Deck and map retain independent
 pan/zoom poses, so switching views does not destroy either composition.
+
+Below 700 logical pixels wide, the command surface becomes a fixed, internally
+scrolling bottom dock and the board viewport ends above it. Wider windows retain
+the fixed right dock. The breakpoint is driven only by display size, so match
+events never move or resize the UI.
+
+## Mobile browser build
+
+The browser target bakes the validated compiled tile catalog and composition
+profile into the WASM binary; it does not depend on a desktop filesystem. From
+the repository root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build-tactics-web.ps1
+powershell -ExecutionPolicy Bypass -File scripts/serve-tactics-web.ps1 -SkipBuild
+```
+
+The second command prints the desktop's LAN URLs. Open one from a phone on the
+same private Wi-Fi network. The initial compatibility target is WebGL2, so the
+LAN server does not require HTTPS. Do not router-forward this development
+server.
 
 ## Bot spectate
 
