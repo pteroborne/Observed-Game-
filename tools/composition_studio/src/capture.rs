@@ -24,8 +24,10 @@ pub fn capture_system(
 
     match capture.step {
         0 => {
-            // Settle time 0.8s
-            if capture.timer >= 0.8 {
+            // Settle time. Generous because the studio builds the whole generated
+            // tile library before its first frame, and a short wait silently
+            // captures an empty black window rather than failing.
+            if capture.timer >= 6.0 {
                 let path = format!("{}/{}.png", capture.dir, capture.name);
                 std::fs::create_dir_all(&capture.dir).ok();
                 commands

@@ -38,7 +38,7 @@ fn test_app() -> App {
         // `UiPlugin` brings the text widgets, whose measure/layout systems need the
         // font assets and text pipeline that `TextPlugin` owns.
         bevy::text::TextPlugin,
-        bevy::ui::UiPlugin::default(),
+        bevy::ui::UiPlugin,
     ))
     // The whole picking group, not hand-picked members: `PickingPlugin` alone
     // registers the pointer messages but not `HoverMap`, which `InteractionPlugin`

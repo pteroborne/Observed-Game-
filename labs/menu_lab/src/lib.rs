@@ -44,8 +44,13 @@ pub struct MenuLabPlugin;
 
 impl Plugin for MenuLabPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(ButtonPlugin)
-            .init_state::<AppState>()
+        // 0.19's `DefaultPlugins` ships `UiWidgetsPlugins`, which already contains
+        // `ButtonPlugin`; adding it again panics in the windowed lab. Headless
+        // tests build on `MinimalPlugins` and still need it here.
+        if !app.is_plugin_added::<ButtonPlugin>() {
+            app.add_plugins(ButtonPlugin);
+        }
+        app.init_state::<AppState>()
             .init_resource::<LabSettings>()
             .init_resource::<InputFocus>()
             .insert_resource(InputFocusVisible(true))

@@ -302,7 +302,6 @@ impl Plugin for FrontendWidgetsPlugin {
         if !app.is_plugin_added::<PopoverPlugin>() {
             app.add_plugins(UiWidgetsPlugins);
         }
-
         app.init_resource::<InputFocus>()
             .insert_resource(InputFocusVisible(true))
             .init_resource::<FocusMemory>()

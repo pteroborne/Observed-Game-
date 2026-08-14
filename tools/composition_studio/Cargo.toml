@@ -19,6 +19,9 @@ bevy = { version = "0.19", default-features = false, features = [
     "2d",
     "3d",
     "png",
+    # UI rendering. 0.18's `2d`/`3d` included `ui`; 0.19's do not. Without it the
+    # chrome lays out and never draws - a silent loss the compiler cannot see.
+    "ui",
     "bevy_ui_widgets",
 ] }
 # The profile type and the solver it drives. `serde` carries the profile;

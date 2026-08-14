@@ -19,5 +19,9 @@ publish = false
 # attaches.
 bevy = { version = "0.19", default-features = false, features = [
     "2d",
+    # UI rendering. 0.18's `2d` included `ui`; 0.19's does not. This crate is the
+    # shared menu chrome, so it names the render feature rather than relying on
+    # whichever binary happens to link it.
+    "ui",
     "bevy_ui_widgets",
 ] }

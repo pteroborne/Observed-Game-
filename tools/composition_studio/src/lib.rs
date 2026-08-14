@@ -118,8 +118,8 @@ pub struct StudioPlugin;
 
 impl Plugin for StudioPlugin {
     fn build(&self, app: &mut App) {
-        // Not part of `DefaultPlugins`: without it the sliders spawn, lay out,
-        // and draw exactly as they should while ignoring every drag.
+        // Without a slider plugin the sliders spawn, lay out, and draw exactly as
+        // they should while ignoring every drag.
         //
         // `SliderPlugin` alone, not the whole `UiWidgetsPlugins` group. The
         // group's menu plugin runs `Update` systems against `InputFocus`, a
@@ -127,8 +127,14 @@ impl Plugin for StudioPlugin {
         // every headless test into a panic. Taking only the widget in use also
         // keeps the focus story straight: this tool routes the keyboard through
         // `KeyboardOwner`, and never through Bevy's focus resource.
-        app.add_plugins(bevy::ui_widgets::SliderPlugin)
-            .insert_resource(ClearColor(schematic_screen()))
+        //
+        // Guarded because 0.19's `DefaultPlugins` ships `UiWidgetsPlugins` (0.18's
+        // did not), so the windowed studio already has it and adding it again is a
+        // panic. Headless tests build on `MinimalPlugins` and still need it here.
+        if !app.is_plugin_added::<bevy::ui_widgets::SliderPlugin>() {
+            app.add_plugins(bevy::ui_widgets::SliderPlugin);
+        }
+        app.insert_resource(ClearColor(schematic_screen()))
             .init_resource::<StudioState>()
             .init_resource::<detail::TileMeshCache>()
             .init_resource::<LabMenuState>()

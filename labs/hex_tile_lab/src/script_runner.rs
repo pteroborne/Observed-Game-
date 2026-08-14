@@ -205,8 +205,10 @@ pub fn run_script_system(
         exec.configured = true;
     }
 
-    // Phase 2: screenshot after the scene settles (tick 0.8 s).
-    if exec.configured && !exec.captured && exec.timer >= 0.8 {
+    // Phase 2: screenshot once the scene has settled. Generous, because the tile
+    // library is built before the first frame: shooting too early saves a black
+    // PNG and still reports success, which reads as a render regression.
+    if exec.configured && !exec.captured && exec.timer >= 6.0 {
         if let Some(ref out_path) = script.output_image {
             let out_path = out_path.clone();
             if let Some(parent) = Path::new(&out_path).parent() {
@@ -219,8 +221,8 @@ pub fn run_script_system(
         exec.captured = true;
     }
 
-    // Phase 3: exit after the screenshot GPU writeback completes (tick 1.6 s).
-    if exec.captured && exec.timer >= 1.6 {
+    // Phase 3: exit after the screenshot GPU writeback completes.
+    if exec.captured && exec.timer >= 7.0 {
         app_exit.write(AppExit::Success);
     }
 }

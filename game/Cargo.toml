@@ -26,6 +26,11 @@ bevy = { version = "0.19", default-features = false, features = [
     # Bloom (the neon glow for the match) lives in bevy_post_process, which `3d`
     # does not pull; DefaultPlugins wires its PostProcessPlugin when enabled.
     "bevy_post_process",
+    # UI rendering. Bevy 0.18's `3d` meta-feature included `ui`; 0.19's does not,
+    # so this must be named explicitly. Without it the UI API still compiles and
+    # lays out - `bevy_ui_widgets` supplies the types - and simply never draws, so
+    # the loss is invisible to the compiler and to every headless test.
+    "ui",
     # Headless button semantics, activation events, accessibility metadata, and
     # pointer parity for the shared frontend widget foundation.
     "bevy_ui_widgets",

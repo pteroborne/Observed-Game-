@@ -651,10 +651,13 @@ pub(super) fn capture_progress(
         }
         next.set(GameState::MainMenu);
         request.phase = 1;
-    } else if request.phase == 1 && elapsed >= 0.8 {
+    // Settle generously: the frontend does not draw until fonts, atlases and the
+    // catalog have loaded, and a short wait captures a black window while still
+    // reporting success - evidence that looks like a render regression but is not.
+    } else if request.phase == 1 && elapsed >= 6.0 {
         crate::evidence::driver::screenshot_to(&mut commands, request.path.clone());
         request.phase = 2;
-    } else if request.phase == 2 && elapsed >= 1.6 {
+    } else if request.phase == 2 && elapsed >= 7.0 {
         exit.write(AppExit::Success);
     }
 }

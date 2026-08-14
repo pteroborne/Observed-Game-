@@ -5,4 +5,10 @@ edition = "2024"
 publish = false
 
 [dependencies]
-bevy = { version = "0.19", default-features = false, features = ["2d", "bevy_ui_widgets"] }
+# `ui` is explicit: 0.18's `2d` meta-feature included it, 0.19's does not, and
+# without it the menu lays out but never draws.
+bevy = { version = "0.19", default-features = false, features = [
+    "2d",
+    "ui",
+    "bevy_ui_widgets",
+] }
