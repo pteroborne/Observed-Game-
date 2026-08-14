@@ -10,15 +10,13 @@
 
 use bevy::{
     app::AppExit,
+    camera::Hdr,
     ecs::system::SystemParam,
     input::InputSystems,
     pbr::{DistanceFog, FogFalloff},
     post_process::bloom::Bloom,
     prelude::*,
-    render::view::{
-        Hdr,
-        screenshot::{Screenshot, save_to_disk},
-    },
+    render::view::screenshot::{Screenshot, save_to_disk},
     window::{PresentMode, WindowResolution},
 };
 use bevy_mod_outline::{OutlineMode, OutlinePlugin, OutlineStencil, OutlineVolume};
@@ -239,7 +237,7 @@ fn setup_scene(
         LabSpawned,
         DirectionalLight {
             illuminance: 950.0,
-            shadows_enabled: false,
+            shadow_maps_enabled: false,
             ..default()
         },
         Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.7, -0.4, 0.0)),
@@ -331,7 +329,7 @@ fn setup_scene(
             color: marker(MarkerRole::Collapse).base_color,
             intensity: 48_000.0,
             range: 16.0,
-            shadows_enabled: false,
+            shadow_maps_enabled: false,
             ..default()
         },
         Transform::from_xyz(0.0, 3.0, -1.2),
@@ -510,7 +508,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DebugText,
                     Text::new("Outline legibility diagnostics starting..."),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.88, 0.95, 1.0)),
@@ -529,7 +527,7 @@ fn spawn_ui(commands: &mut Commands) {
                 children![(
                     Text::new(help_text()),
                     TextFont {
-                        font_size: 13.5,
+                        font_size: FontSize::Px(13.5),
                         ..default()
                     },
                     TextColor(Color::srgb(0.88, 0.95, 1.0)),
@@ -594,7 +592,7 @@ fn apply_preview_mode(
     }
     state.preview_dirty = false;
     for (semantic, material) in &semantic {
-        if let Some(material) = materials.get_mut(&material.0) {
+        if let Some(material) = materials.get_mut(&material.0).as_deref_mut() {
             *material = material_for(semantic.treatment, state.preview_mode);
         }
     }
@@ -706,7 +704,7 @@ pub fn run() {
             }),
             ..default()
         }))
-        .add_plugins(OutlinePlugin)
+        .add_plugins(OutlinePlugin::EXTRUDE_VERTEX)
         .add_plugins(OutlineLegibilityLabPlugin);
 
     if let Ok(path) = std::env::var("OBSERVED2_CAPTURE") {

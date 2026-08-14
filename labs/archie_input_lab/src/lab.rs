@@ -267,7 +267,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DiagnosticsText,
                     Text::new("Archie input diagnostics starting..."),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.88, 0.95, 1.0)),
@@ -286,7 +286,7 @@ fn spawn_ui(commands: &mut Commands) {
                 children![(
                     Text::new(help_text()),
                     TextFont {
-                        font_size: 13.0,
+                        font_size: FontSize::Px(13.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.86, 0.93, 1.0)),

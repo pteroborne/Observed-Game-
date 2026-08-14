@@ -120,7 +120,7 @@ pub fn build_sandbox(commands: &mut Commands, built: &mut SandboxBuilt) {
                     HudText,
                     Text::new("Facility online."),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.82, 0.92, 1.0)),

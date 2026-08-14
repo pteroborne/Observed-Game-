@@ -226,7 +226,7 @@ pub(crate) fn spawn_passage_preview(
         DespawnOnExit(GameState::Match),
         Text2d::new(label),
         TextFont {
-            font_size: 15.0,
+            font_size: FontSize::Px(15.0),
             ..default()
         },
         TextColor(Color::srgb(0.95, 0.75, 0.35)),
@@ -272,7 +272,7 @@ pub(crate) fn spawn_passage_preview(
             color: observed_style::observation_panel(ObservationPanelRole::Footprint).base_color,
             intensity: PORTAL_SCANNER_INTENSITY,
             range: 48.0,
-            shadows_enabled: false,
+            shadow_maps_enabled: false,
             ..default()
         },
         RenderTarget::Image(target.into()),

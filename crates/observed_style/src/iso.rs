@@ -116,6 +116,19 @@ pub mod light {
     /// the same value. Off-axis is what gives them different values, which is
     /// the whole point of lighting a cutaway.
     pub const KEY_OFFSET: f32 = 0.7;
+
+    /// One local practical pool per visible architecture register.
+    ///
+    /// An overview may show several districts at once, so a single global
+    /// fog/ambient palette would necessarily lie about all but one of them. A
+    /// pool per register is what lets each district keep its own light colour
+    /// while they share a frame.
+    pub const PRACTICAL_INTENSITY: f32 = 22_000.0;
+    /// Wide enough to wash a district rather than spot one cell of it.
+    pub const PRACTICAL_RANGE: f32 = 34.0;
+    pub const PRACTICAL_RADIUS: f32 = 3.0;
+    /// How far above the deck the pool hangs.
+    pub const PRACTICAL_LIFT: f32 = 12.0;
 }
 
 /// Which floors are drawn.
@@ -200,6 +213,32 @@ const INTERIOR_RADIUS: f32 = 6.5;
 /// A hull within 90 degrees of the camera bearing is between you and the room.
 const NEAR_ARC_COS: f32 = 0.0;
 
+/// Structural region of an authored convex hull in an isometric interior view.
+/// This is presentation classification only: it never changes collision.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HullRegion {
+    Floor,
+    Ceiling,
+    Interior,
+    Perimeter,
+}
+
+/// Classify one cell-local hull before a view decides whether to hide, dim, or
+/// shorten it. Keeping this beside [`survives`] gives cutaways and low-wall
+/// plans one answer to what counts as architectural perimeter.
+#[must_use]
+pub fn hull_region(min_y: f32, max_y: f32, local: Vec3) -> HullRegion {
+    if max_y <= FLOOR_TOP {
+        HullRegion::Floor
+    } else if min_y >= HEAD_CLEARANCE {
+        HullRegion::Ceiling
+    } else if Vec2::new(local.x, local.z).length() < INTERIOR_RADIUS {
+        HullRegion::Interior
+    } else {
+        HullRegion::Perimeter
+    }
+}
+
 /// Whether a hull survives the cutaway.
 ///
 /// `bearing` is the direction from the scene toward the camera in the plan (XZ)
@@ -221,17 +260,14 @@ pub fn survives(min_y: f32, max_y: f32, local: Vec3, bearing: Vec2, cutaway: boo
     if !cutaway {
         return true;
     }
-    if max_y <= FLOOR_TOP {
-        return true;
+    match hull_region(min_y, max_y, local) {
+        HullRegion::Floor | HullRegion::Interior => true,
+        HullRegion::Ceiling => false,
+        HullRegion::Perimeter => {
+            let plan = Vec2::new(local.x, local.z);
+            plan.normalize_or_zero().dot(bearing) <= NEAR_ARC_COS
+        }
     }
-    if min_y >= HEAD_CLEARANCE {
-        return false;
-    }
-    let plan = Vec2::new(local.x, local.z);
-    if plan.length() < INTERIOR_RADIUS {
-        return true;
-    }
-    plan.normalize_or_zero().dot(bearing) <= NEAR_ARC_COS
 }
 
 #[cfg(test)]

@@ -1,0 +1,162 @@
+name: Browser labs
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/lab-web.yml"
+      - ".dockerignore"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "assets/content/**"
+      - "crates/**"
+      - "deploy/labs/**"
+      - "labs/tactics_lab/**"
+      - "scripts/build-tactics-web.ps1"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/lab-web.yml"
+      - ".dockerignore"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "assets/content/**"
+      - "crates/**"
+      - "deploy/labs/**"
+      - "labs/tactics_lab/**"
+      - "scripts/build-tactics-web.ps1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-labs-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TARGET_DIR: ${{ github.workspace }}/target
+  RUST_TOOLCHAIN: "1.96.0"
+  WASM_BINDGEN_VERSION: "0.2.125"
+
+jobs:
+  build-web:
+    name: Test and build tactics WASM
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Install native Bevy build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            libasound2-dev \
+            libudev-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            pkg-config
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" \
+            --profile minimal \
+            --target wasm32-unknown-unknown
+          rustup default "$RUST_TOOLCHAIN"
+
+      - name: Restore Cargo cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/bin/wasm-bindgen
+            ~/.cargo/bin/wasm-bindgen-test-runner
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ${{ env.CARGO_TARGET_DIR }}
+          key: browser-labs-${{ runner.os }}-rust-${{ env.RUST_TOOLCHAIN }}-bindgen-${{ env.WASM_BINDGEN_VERSION }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            browser-labs-${{ runner.os }}-rust-${{ env.RUST_TOOLCHAIN }}-bindgen-${{ env.WASM_BINDGEN_VERSION }}-
+
+      - name: Install lockfile-matched wasm-bindgen CLI
+        shell: bash
+        run: |
+          if ! wasm-bindgen --version 2>/dev/null | grep -Fq "$WASM_BINDGEN_VERSION"; then
+            cargo install wasm-bindgen-cli \
+              --version "$WASM_BINDGEN_VERSION" \
+              --locked \
+              --force
+          fi
+
+      - name: Test tactics simulation and lifecycle
+        run: cargo test --locked -p tactics_lab --lib
+
+      - name: Build browser bundle
+        shell: pwsh
+        run: ./scripts/build-tactics-web.ps1
+
+      - name: Upload browser bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: observed-browser-labs
+          path: web-dist/tactics-lab
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-image:
+    name: Publish lab image
+    if: github.event_name != 'pull_request'
+    needs: build-web
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out deployment files
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Download browser bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: observed-browser-labs
+          path: web-dist/tactics-lab
+
+      - name: Resolve image name
+        id: image
+        shell: bash
+        env:
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: echo "name=ghcr.io/${REPOSITORY_OWNER,,}/observed-labs" >> "$GITHUB_OUTPUT"
+
+      - name: Sign in to GitHub Container Registry
+        shell: bash
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+          REGISTRY_USER: ${{ github.actor }}
+        run: echo "$REGISTRY_TOKEN" | docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
+
+      - name: Build immutable image
+        shell: bash
+        env:
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+          REVISION: ${{ github.sha }}
+        run: |
+          docker build \
+            --file deploy/labs/Dockerfile \
+            --build-arg "BUILD_REVISION=$REVISION" \
+            --build-arg "BUILD_VERSION=sha-${REVISION:0:12}" \
+            --tag "$IMAGE_NAME:sha-$REVISION" \
+            .
+
+      - name: Publish immutable image and moving edge channel
+        shell: bash
+        env:
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+          REVISION: ${{ github.sha }}
+          REF_NAME: ${{ github.ref }}
+        run: |
+          docker push "$IMAGE_NAME:sha-$REVISION"
+          if [[ "$REF_NAME" == "refs/heads/main" ]]; then
+            docker tag "$IMAGE_NAME:sha-$REVISION" "$IMAGE_NAME:edge"
+            docker push "$IMAGE_NAME:edge"
+          fi

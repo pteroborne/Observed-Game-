@@ -327,7 +327,7 @@ pub(crate) fn adjust_focused(
         (false, true) => 1.0,
         _ => return,
     };
-    let Some(entity) = focus.0 else {
+    let Some(entity) = focus.get() else {
         return;
     };
     let Ok(row) = rows.get(entity) else {

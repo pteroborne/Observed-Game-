@@ -78,7 +78,7 @@ pub(crate) fn setup_lab(mut commands: Commands) {
                 parent.spawn((
                     Text2d::new(label),
                     TextFont {
-                        font_size: 17.0,
+                        font_size: FontSize::Px(17.0),
                         ..default()
                     },
                     TextColor(color),
@@ -126,7 +126,7 @@ pub(crate) fn setup_lab(mut commands: Commands) {
                 parent.spawn((
                     Text2d::new(*label),
                     TextFont {
-                        font_size: 11.0,
+                        font_size: FontSize::Px(11.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.85, 0.90, 0.95)),
@@ -168,7 +168,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DebugText,
                     Text::new("Session diagnostics starting..."),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.84, 0.94, 1.0)),
@@ -201,7 +201,7 @@ fn spawn_ui(commands: &mut Commands) {
                          preserves identity, while host migration is deterministic.",
                     ),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.95, 0.92, 0.88)),

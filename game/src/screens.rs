@@ -130,10 +130,13 @@ impl Plugin for ScreensPlugin {
 )]
 pub(crate) struct MatchPlugin;
 
+// Suppresses this crate's own `#[deprecated]` on `MatchPlugin` above - the legacy
+// match is kept deliberately as a regression fixture, so naming it here is intended.
+// It is not a licence to ignore engine deprecations inside this impl.
 #[allow(deprecated)]
 impl Plugin for MatchPlugin {
     fn build(&self, app: &mut App) {
-        let in_match = || in_state(GameState::Match).and(resource_exists::<MatchDirector>);
+        let in_match = || in_state(GameState::Match).and_then(resource_exists::<MatchDirector>);
         app.insert_resource(Time::<Fixed>::from_hz(60.0))
             .init_resource::<place::LastRenderedSignature>()
             .init_resource::<match_runtime::pause_settings::PauseSettingsOpen>()
@@ -161,7 +164,7 @@ impl Plugin for MatchPlugin {
             .add_systems(
                 FixedUpdate,
                 match_runtime::drive_spectator_bot
-                    .run_if(in_match().and(resource_exists::<SpectatorBot>))
+                    .run_if(in_match().and_then(resource_exists::<SpectatorBot>))
                     .before(match_runtime::crossing::teleport_sim),
             )
             .add_systems(

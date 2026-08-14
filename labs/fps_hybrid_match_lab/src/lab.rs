@@ -165,7 +165,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DebugText,
                     Text::new("Hybrid match diagnostics starting..."),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.86, 0.94, 1.0)),
@@ -201,7 +201,7 @@ fn spawn_ui(commands: &mut Commands) {
                          The match, rendered maze, and first-person pose replay exactly.",
                     ),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.9, 0.94, 0.98)),

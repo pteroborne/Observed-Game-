@@ -5,6 +5,7 @@
 # them, and workers are told to `git add -A`.
 target-*/
 /dist/
+/web-dist/
 /scratch/
 /saves/
 /game/saves/

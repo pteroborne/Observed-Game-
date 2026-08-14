@@ -104,7 +104,7 @@ pub(crate) fn text(s: impl Into<String>, size: f32, color: Color) -> impl Bundle
     (
         Text::new(s.into()),
         TextFont {
-            font_size: size,
+            font_size: FontSize::Px(size),
             ..default()
         },
         TextColor(color),

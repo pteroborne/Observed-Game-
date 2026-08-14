@@ -41,6 +41,9 @@ fn dragging_a_slider_edits_the_profile_it_points_at() {
     app.world_mut().trigger(bevy::ui_widgets::ValueChange {
         source: entity,
         value: wanted as f32,
+        // A committed edit, not a live drag: these tests assert the profile
+        // moved, which is what a slider release means.
+        is_final: true,
     });
     app.update();
 
@@ -75,6 +78,9 @@ fn a_slider_cannot_push_a_field_past_its_own_range() {
     app.world_mut().trigger(bevy::ui_widgets::ValueChange {
         source: entity,
         value: 9_000.0,
+        // A committed edit, not a live drag: these tests assert the profile
+        // moved, which is what a slider release means.
+        is_final: true,
     });
     app.update();
 

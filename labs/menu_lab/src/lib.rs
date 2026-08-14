@@ -199,7 +199,7 @@ mod tests {
     }
 
     fn focused_widget(app: &App) -> Option<widgets::WidgetId> {
-        let entity = app.world().resource::<InputFocus>().0?;
+        let entity = app.world().resource::<InputFocus>().get()?;
         app.world().get::<widgets::WidgetId>(entity).copied()
     }
 
@@ -216,27 +216,25 @@ mod tests {
 
     fn click_widget(app: &mut App, entity: Entity) {
         app.world_mut().entity_mut(entity).insert(Pressed);
-        app.world_mut().trigger(Pointer::<Click> {
-            entity,
-            pointer_id: PointerId::Mouse,
-            pointer_location: Location {
+        // Bevy 0.19 made `Pointer`'s propagation field private, so this is
+        // built through the constructor rather than as a literal.
+        app.world_mut().trigger(Pointer::<Click>::new(
+            PointerId::Mouse,
+            Location {
                 target: NormalizedRenderTarget::None {
                     width: 0,
                     height: 0,
                 },
                 position: Vec2::ZERO,
             },
-            event: Click {
+            Click {
                 button: PointerButton::Primary,
-                hit: HitData {
-                    camera: Entity::PLACEHOLDER,
-                    depth: 0.0,
-                    position: None,
-                    normal: None,
-                },
+                hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
                 duration: Duration::from_millis(20),
+                count: 1,
             },
-        });
+            entity,
+        ));
         app.update();
         app.update();
     }
@@ -353,7 +351,9 @@ mod tests {
         assert_eq!(accessibility.label(), Some("Continue — no saved session"));
         assert!(accessibility.is_disabled());
 
-        app.world_mut().resource_mut::<InputFocus>().set(disabled);
+        app.world_mut()
+            .resource_mut::<InputFocus>()
+            .set(disabled, bevy::input_focus::FocusCause::Navigated);
         tap_key(&mut app, KeyCode::Enter);
         assert_eq!(
             *app.world().resource::<State<AppState>>().get(),

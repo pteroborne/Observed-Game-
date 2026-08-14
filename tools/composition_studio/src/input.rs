@@ -153,20 +153,21 @@ pub fn handle_chrome_input(
         state.touch_view();
     }
 
-    // A different seed is a different facility, so the cached baseline solve
-    // no longer describes anything the compare overlay should trust.
+    // The brackets walk the five pinned evidence seeds; `M` leaves them for a
+    // seed nobody chose. The presets are a contract shared with
+    // `iso_observer_lab` and stay exactly as they were - they just stop being
+    // the only facilities this tool can be pointed at.
     if keyboard.just_pressed(KeyCode::BracketLeft) {
-        state.seed_index = state.seed_index.saturating_sub(1);
-        state.invalidate_baseline();
-        state.touch_profile(now);
+        state.step_preset_seed(-1, now);
     }
     if keyboard.just_pressed(KeyCode::BracketRight) {
-        state.seed_index += 1;
-        state.invalidate_baseline();
-        state.touch_profile(now);
+        state.step_preset_seed(1, now);
+    }
+    if keyboard.just_pressed(KeyCode::KeyM) {
+        state.roll_seed(now);
     }
 
-    if keyboard.just_pressed(KeyCode::KeyR) {
+    if keyboard.just_pressed(KeyCode::KeyR) && !(ctrl && shift) {
         if ctrl {
             state.reload(now);
         } else {
@@ -174,8 +175,11 @@ pub fn handle_chrome_input(
         }
     }
 
+    // The solver's topology, laid over the authored geometry. Off by default:
+    // it answers "do these two agree", which is a question you ask, not the
+    // view you work in.
     if keyboard.just_pressed(KeyCode::KeyG) {
-        state.show_walls = !state.show_walls;
+        state.show_schematic = !state.show_schematic;
         state.touch_view();
     }
 
@@ -202,7 +206,26 @@ pub fn handle_chrome_input(
         request_save(&mut state, &mut menu_state, shift);
     }
 
+    // One edit at a time. `Ctrl+Z` used to throw away everything since the last
+    // save, which mid-way through painting a run of pins is the opposite of
+    // what the key means everywhere else. Revert-to-saved is still here, under
+    // its own name, next to the reload it resembles.
     if ctrl && keyboard.just_pressed(KeyCode::KeyZ) {
+        let moved = if shift {
+            state.redo(now)
+        } else {
+            state.undo(now)
+        };
+        if !moved {
+            state.status = String::from(if shift {
+                "nothing to redo"
+            } else {
+                "nothing to undo"
+            });
+        }
+    }
+
+    if ctrl && shift && keyboard.just_pressed(KeyCode::KeyR) {
         state.profile = state.saved.clone();
         state.status = String::from("reverted to the last saved profile");
         state.touch_profile(now);
@@ -214,25 +237,25 @@ pub fn handle_chrome_input(
     }
 
     // --- detail rendering ---
+    // Scope of the authored deck. `Layer` is the view; `Focus` isolates one
+    // cell and what it connects to; `Off` is the schematic-only view this tool
+    // used to open on, kept reachable rather than deleted.
+    //
+    // The old "layer mode needs a single layer" refusal is gone: it was written
+    // against production's 5,600 cells, and the studio caps at ten levels of a
+    // 12x9 lattice. The status reports the count instead.
     if keyboard.just_pressed(KeyCode::KeyF) {
         use crate::detail::DetailMode;
         state.detail_mode = if shift {
-            // A layer sweep needs a layer. Refusing loudly beats silently
-            // drawing nothing and letting the author think detail is broken.
-            if state.layer.level().is_some() {
-                DetailMode::Layer
-            } else {
-                state.status = String::from(
-                    "detail: layer mode needs a single layer (Tab to pick one); \
-                     all-layers detail is ~120k hulls and not a diagram",
-                );
-                DetailMode::Off
-            }
-        } else if state.detail_mode == DetailMode::Focus {
-            DetailMode::Off
+            DetailMode::Layer
         } else {
-            DetailMode::Focus
+            match state.detail_mode {
+                DetailMode::Layer => DetailMode::Focus,
+                DetailMode::Focus => DetailMode::Off,
+                _ => DetailMode::Layer,
+            }
         };
+        state.status = format!("deck scope: {}", state.detail_mode.label());
         state.touch_view();
     }
     // The neighbourhood explorer. Entering it re-runs the query, because the
@@ -255,10 +278,19 @@ pub fn handle_chrome_input(
 
     if state.detail_mode == crate::detail::DetailMode::Neighborhood {
         handle_neighbor_keys(&keyboard, &mut state, shift);
+    } else {
+        // Arrows are the replay's scrub, but the neighbourhood explorer is a
+        // list with a cursor on it and arrows are what a list answers to. One
+        // key, one meaning: the explorer keeps them while it is open.
+        handle_timeline_keys(&keyboard, &mut state);
     }
 
+    // Three named projections rather than a cutaway on/off, because "partial"
+    // is a real answer that neither of the other two gives: a whole deck
+    // readable at once from any bearing, with nothing cut away.
     if keyboard.just_pressed(KeyCode::KeyC) {
-        state.cutaway = !state.cutaway;
+        state.walls = state.walls.next();
+        state.status = format!("walls: {}", state.walls.label());
         state.touch_view();
     }
     // Six detents, so the set of walls the cutaway removes changes coherently
@@ -301,6 +333,61 @@ pub fn handle_chrome_input(
     // than automatic. Running it per solve would make tuning unusable.
     if keyboard.just_pressed(KeyCode::KeyA) {
         run_seam_audit(&mut state);
+    }
+}
+
+/// Keys that drive the solve replay.
+///
+/// `T`, `End` and the arrows rather than the `Space`/`.`/`Home` vocabulary
+/// `hex_wfc_lab` uses for the same job: every one of those already means
+/// something here — rolling a neighbour ring, cycling the pin brush, resetting
+/// the camera — and this tool's one input rule is that a key never means two
+/// things at once. `+`/`-` are free in the viewport because the panel's own
+/// handling of them returns before this point.
+fn handle_timeline_keys(keyboard: &ButtonInput<KeyCode>, state: &mut crate::StudioState) {
+    let steps = crate::timeline::trace_len(state);
+    if steps == 0 {
+        return;
+    }
+    let shift = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
+    let stride = if shift {
+        crate::timeline::COARSE_STEP
+    } else {
+        1
+    };
+    let mut moved = false;
+
+    if keyboard.just_pressed(KeyCode::KeyT) {
+        state.timeline.toggle(steps);
+        moved = true;
+    }
+    if keyboard.just_pressed(KeyCode::End) {
+        state.timeline.to_end(steps);
+        moved = true;
+    }
+    if keyboard.just_pressed(KeyCode::ArrowRight) {
+        state.timeline.step(steps, stride);
+        moved = true;
+    }
+    if keyboard.just_pressed(KeyCode::ArrowLeft) {
+        state.timeline.step(steps, -stride);
+        moved = true;
+    }
+    // Speed alone changes nothing on screen, so it does not redraw.
+    if keyboard.just_pressed(KeyCode::Equal) || keyboard.just_pressed(KeyCode::NumpadAdd) {
+        state.timeline.change_speed(true);
+    }
+    if keyboard.just_pressed(KeyCode::Minus) || keyboard.just_pressed(KeyCode::NumpadSubtract) {
+        state.timeline.change_speed(false);
+    }
+
+    if moved {
+        state.status = if state.timeline.settled(steps) {
+            format!("replay settled on the finished solve ({steps} steps)")
+        } else {
+            format!("replaying step {} of {steps}", state.timeline.cursor)
+        };
+        state.touch_view();
     }
 }
 

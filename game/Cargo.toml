@@ -12,12 +12,15 @@ path = "src/main.rs"
 # The menus are UI overlays (camera-agnostic); the Match is a first-person 3D view,
 # so the assembled game renders in 3D. Image, glTF, HDR, and audio features cover
 # the complete drop-in asset plan.
-bevy = { version = "0.18.1", default-features = false, features = [
+bevy = { version = "0.19", default-features = false, features = [
     "3d",
     "png",
     "jpeg",
     "hdr",
     "bevy_gltf",
+    # Bevy 0.19 turned `Scene` into a BSN trait; glTF scenes are now
+    # `WorldAsset` handles spawned through `WorldAssetRoot`, which live here.
+    "bevy_world_serialization",
     "bevy_audio",
     "vorbis",
     # Bloom (the neon glow for the match) lives in bevy_post_process, which `3d`
@@ -25,7 +28,7 @@ bevy = { version = "0.18.1", default-features = false, features = [
     "bevy_post_process",
     # Headless button semantics, activation events, accessibility metadata, and
     # pointer parity for the shared frontend widget foundation.
-    "experimental_bevy_ui_widgets",
+    "bevy_ui_widgets",
     # Derives serde Serialize/Deserialize on existing bevy types (KeyCode, …) so the
     # Settings resource (Phase 48) can serialize keybindings without inventing a
     # parallel key-name enum. An in-tree feature flip on the existing dependency, not
@@ -49,9 +52,21 @@ observed_hex = { path = "../crates/observed_hex" }
 observed_authoring = { path = "../crates/observed_authoring" }
 observed_match = { path = "../crates/observed_match" }
 observed_traversal = { path = "../crates/observed_traversal" }
-vleue_navigator = { version = "0.15.0", default-features = false }
-# Bevy 0.18-compatible line. The latest bevy_sprite3d 9.x targets Bevy 0.19.
-bevy_sprite3d = { version = "=8.0.0", default-features = false }
+# Pathfinding, taken directly rather than through `vleue_navigator`.
+#
+# The wrapper is a Bevy plugin pinned to one engine line (0.15.0 declares
+# `bevy ^0.18`), and this crate only ever used two of its functions, both
+# thin covers over `polyanya`. Depending on `polyanya` directly removes an
+# engine-version lock from the bot's routing.
+polyanya = "0.16"
+# ...at the cost of a second `glam`: `polyanya::Coords` has private fields
+# and its only constructor is `From<Vec2>` on *its* glam, which is 0.30
+# while Bevy 0.19 is on 0.32. Every conversion is confined to
+# `src/navmesh.rs`; nothing else in the game sees this type. Drop this the
+# moment `polyanya` moves to 0.32.
+nav_glam = { package = "glam", version = "0.30" }
+# Bevy 0.19 line.
+bevy_sprite3d = { version = "=9.0.0", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 image = { version = "0.25", default-features = false, features = ["png"] }

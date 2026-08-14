@@ -110,7 +110,7 @@ pub(super) fn setup(
             color: observed_style::marker(MarkerRole::Exit).base_color,
             intensity: 2_200.0,
             range: 18.0,
-            shadows_enabled: false,
+            shadow_maps_enabled: false,
             ..default()
         },
         Transform::from_translation(exit_origin + Vec3::Y * 2.5),
@@ -137,7 +137,7 @@ pub(super) fn setup(
                     DespawnOnExit(GameState::HexWfc),
                     Text2d::new(socket_glyph(socket.kind)),
                     TextFont {
-                        font_size: 40.0,
+                        font_size: FontSize::Px(40.0),
                         ..default()
                     },
                     TextColor(observed_style::outline(OutlineRole::ObjectiveBeacon).color),
@@ -169,7 +169,7 @@ pub(super) fn setup(
             DespawnOnExit(GameState::HexWfc),
             Text2d::new(socket_glyph(socket.kind)),
             TextFont {
-                font_size: 34.0,
+                font_size: FontSize::Px(34.0),
                 ..default()
             },
             TextColor(observed_style::outline(outline_role(socket.kind)).color),

@@ -5,7 +5,15 @@ edition = "2024"
 publish = false
 
 [dependencies]
-bevy = { version = "0.18.1", default-features = false, features = ["2d"] }
+bevy = { version = "0.19", default-features = false, features = [
+    "ui","2d"] }
+# Declared directly, with default features, because this lab uses `PlayerId`
+# and `PlayerIntent` as ECS components. `observed_core` depends on
+# `player_input` with `default-features = false`, which deliberately omits
+# the `bevy` adapter that derives `Component` - so relying on the transitive
+# path only worked while some other crate in a workspace build turned that
+# feature on for everyone.
+player_input = { path = "../../crates/player_input" }
 observed_core = { path = "../../crates/observed_core" }
 # The interaction state machine now lives in the production crate; this lab projects it.
 observed_interaction = { path = "../../crates/observed_interaction" }

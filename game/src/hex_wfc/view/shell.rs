@@ -432,7 +432,7 @@ fn spawn_cell_practicals(
                 color: palette.light_color,
                 intensity: PRACTICAL_BASE_INTENSITY * role_scale * rhythm_dim * per_source_scale,
                 range: PRACTICAL_RANGE,
-                shadows_enabled: false,
+                shadow_maps_enabled: false,
                 ..default()
             },
             Transform::from_translation(position),

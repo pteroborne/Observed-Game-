@@ -27,17 +27,16 @@
 mod capture;
 mod draw;
 mod inspect;
-mod prism;
 mod wire;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::f32::consts::FRAC_PI_4;
 use std::sync::OnceLock;
 
+use bevy::camera::Hdr;
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
-use bevy::render::view::Hdr;
 use bevy::window::{PresentMode, WindowResolution};
 use observed_authoring::{RoomPrototype, RuntimeHexCatalog, TilePrototype};
 use observed_content::ArchitectureRegister;
@@ -531,7 +530,7 @@ fn setup(mut commands: Commands, state: Res<LabState>) {
     commands.spawn((
         DirectionalLight {
             illuminance: 2_600.0,
-            shadows_enabled: false,
+            shadow_maps_enabled: false,
             ..default()
         },
         Transform::from_rotation(Quat::from_euler(EulerRot::YXZ, 0.9, -0.95, 0.0)),
@@ -542,7 +541,7 @@ fn setup(mut commands: Commands, state: Res<LabState>) {
         LabStatus,
         Text::new(""),
         TextFont {
-            font_size: 14.0,
+            font_size: FontSize::Px(14.0),
             ..default()
         },
         TextColor(observed_style::schematic(SchematicRole::Pinned).base_color),
@@ -561,7 +560,7 @@ fn setup(mut commands: Commands, state: Res<LabState>) {
         LabDiagnostics,
         Text::new(""),
         TextFont {
-            font_size: 14.0,
+            font_size: FontSize::Px(14.0),
             ..default()
         },
         TextColor(observed_style::schematic(SchematicRole::Selected).base_color),

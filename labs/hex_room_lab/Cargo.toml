@@ -6,7 +6,8 @@ publish = false
 
 [dependencies]
 # Bloom via bevy_post_process; PBR shadows/spot/point ship with the `3d` set.
-bevy = { version = "0.18.1", default-features = false, features = [
+bevy = { version = "0.19", default-features = false, features = [
+    "ui",
     "3d",
     "png",
     "bevy_post_process",

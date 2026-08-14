@@ -227,13 +227,34 @@ impl HexWfcWorld {
         observation: &HexObservationFrame,
         frontier: &BTreeSet<HexCoord>,
     ) -> HexRelayoutWork {
+        self.begin_frontier_relayout_sized(
+            observation,
+            frontier,
+            DEFAULT_MUTATION_TARGET_CELLS,
+            DEFAULT_MUTATION_MAX_CELLS,
+        )
+    }
+
+    /// Select a deterministic frontier pocket with caller-supplied size bounds.
+    ///
+    /// Production uses [`Self::begin_frontier_relayout`]'s 32/64 bounds. Small
+    /// tuning boards can use this form so one pocket does not consume an
+    /// outsized fraction of the entire experiment.
+    #[must_use]
+    pub fn begin_frontier_relayout_sized(
+        &self,
+        observation: &HexObservationFrame,
+        frontier: &BTreeSet<HexCoord>,
+        target_cells: usize,
+        max_cells: usize,
+    ) -> HexRelayoutWork {
         let protected = protected_with_halo(self, observation);
         let region = select_region(
             self,
             frontier,
             protected,
-            DEFAULT_MUTATION_TARGET_CELLS,
-            DEFAULT_MUTATION_MAX_CELLS,
+            target_cells.max(1),
+            max_cells.max(target_cells).max(1),
         );
         HexRelayoutWork {
             base_seed: self.seed,

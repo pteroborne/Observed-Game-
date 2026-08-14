@@ -209,13 +209,142 @@ pub(crate) fn pillar_brush(center: [f64; 2], half: f64, z0: f64, z1: f64) -> Str
 
 /// A hexagonal pylon of `radius` centered at the origin.
 pub(crate) fn pylon_brush(radius: f64, z0: f64, z1: f64) -> String {
-    let corners: Vec<[f64; 2]> = (0..6)
-        .map(|i| {
-            let angle = f64::from(i) * 60.0f64.to_radians();
-            [radius * angle.cos(), radius * angle.sin()]
-        })
+    general_prism_brush(
+        &column_plan(ColumnForm::Round, radius, 0.0),
+        z0,
+        z1,
+        [0.0, 0.0],
+    )
+}
+
+/// What a support *is*, in plan.
+///
+/// A district's character is mostly carried by its supports — they are the
+/// thing you stand next to. Before this there was one column shape in the whole
+/// facility and ten districts differed by its radius, which is why they read as
+/// one building.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ColumnForm {
+    /// A hexagonal prism: the historical pylon, and still the neutral reading.
+    #[default]
+    Round,
+    /// A square pier, aligned to the cell frame.
+    Square,
+    /// A twelve-sided shaft with alternating radii, so it catches light in
+    /// facets rather than a single sweep.
+    Faceted,
+}
+
+/// The plan polygon of a support, centered at `center`.
+///
+/// **Every form covers the same floor area for a given `radius`.** A square of
+/// half-width `r` is 54% larger than a hexagon of radius `r`, and swapping one
+/// for the other in the middle of a junction narrowed the crossing enough to
+/// wedge bots against it — caught by `bot_soak_has_no_stalls`, which is exactly
+/// what that gate is for. Form is a look; it must not be a floorplan change.
+pub(crate) fn column_plan(form: ColumnForm, radius: f64, rotation_deg: f64) -> Vec<[f64; 2]> {
+    // Hexagon area is `3*sqrt(3)/2 * r^2`; a square of half-width `h` is
+    // `4h^2`. Equal area at `h = r * sqrt(3*sqrt(3)/8)`.
+    const SQUARE_EQUAL_AREA: f64 = 0.805_927_0;
+    let corners: Vec<[f64; 2]> = match form {
+        ColumnForm::Round => (0..6)
+            .map(|i| {
+                let angle = f64::from(i) * 60.0f64.to_radians();
+                [radius * angle.cos(), radius * angle.sin()]
+            })
+            .collect(),
+        ColumnForm::Square => {
+            let h = radius * SQUARE_EQUAL_AREA;
+            vec![[-h, -h], [h, -h], [h, h], [-h, h]]
+        }
+        ColumnForm::Faceted => (0..12)
+            .map(|i| {
+                let angle = f64::from(i) * 30.0f64.to_radians();
+                // Alternating radii: the flutes that make a facet read.
+                let r = if i % 2 == 0 { radius } else { radius * 0.78 };
+                [r * angle.cos(), r * angle.sin()]
+            })
+            .collect(),
+    };
+    if rotation_deg.abs() < f64::EPSILON {
+        corners
+    } else {
+        rotate_points(&corners, rotation_deg)
+    }
+}
+
+/// Inboard ceiling relief. Never touches the boundary plane, so it cannot move
+/// a face signature — see the seam note on [`open_span`].
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum CeilingForm {
+    /// The historical flat slab.
+    #[default]
+    Flat,
+    /// A recessed centre panel: one step up into the slab.
+    Coffered,
+    /// A lattice of ribs below the slab, reading as an open grid.
+    Grid,
+}
+
+/// Ceiling relief hung under the slab at `ceiling_z`, inboard of `reach`.
+pub(crate) fn ceiling_relief(form: CeilingForm, ceiling_z: f64, reach: f64) -> String {
+    match form {
+        CeilingForm::Flat => String::new(),
+        CeilingForm::Coffered => {
+            // A single recessed panel: a ring of mass around an open centre.
+            let outer = reach;
+            let inner = reach * 0.55;
+            let mut out = String::new();
+            for (i, sign) in [(0usize, 1.0f64), (1, -1.0)] {
+                let _ = i;
+                out += &general_prism_brush(
+                    &[
+                        [-outer, sign * inner],
+                        [outer, sign * inner],
+                        [outer, sign * outer],
+                        [-outer, sign * outer],
+                    ],
+                    ceiling_z - 10.0,
+                    ceiling_z,
+                    [0.0, sign * (inner + outer) * 0.5],
+                );
+            }
+            out
+        }
+        CeilingForm::Grid => {
+            // Ribs both ways: an overlit district reads its ceiling as a grid.
+            let mut out = String::new();
+            for offset in [-48.0, 0.0, 48.0] {
+                out += &general_prism_brush(
+                    &[
+                        [-reach, offset - 4.0],
+                        [reach, offset - 4.0],
+                        [reach, offset + 4.0],
+                        [-reach, offset + 4.0],
+                    ],
+                    ceiling_z - 8.0,
+                    ceiling_z,
+                    [0.0, offset],
+                );
+            }
+            out
+        }
+    }
+}
+
+/// A support of `form` at `center`, from `z0` to `z1`.
+pub(crate) fn column_brush(
+    form: ColumnForm,
+    center: [f64; 2],
+    radius: f64,
+    z0: f64,
+    z1: f64,
+) -> String {
+    let plan: Vec<[f64; 2]> = column_plan(form, radius, 0.0)
+        .into_iter()
+        .map(|corner| [corner[0] + center[0], corner[1] + center[1]])
         .collect();
-    general_prism_brush(&corners, z0, z1, [0.0, 0.0])
+    general_prism_brush(&plan, z0, z1, center)
 }
 
 pub(crate) fn rotate_points(corners: &[[f64; 2]], angle_deg: f64) -> Vec<[f64; 2]> {
@@ -226,6 +355,37 @@ pub(crate) fn rotate_points(corners: &[[f64; 2]], angle_deg: f64) -> Vec<[f64; 2
         .iter()
         .map(|&[x, y]| [x * cos - y * sin, x * sin + y * cos])
         .collect()
+}
+
+/// A face left open across its **whole width**: the lintel band above `top`
+/// and the sill band below `sill`, and nothing between them.
+///
+/// [`door_wall`] with its jambs removed. That difference is the whole of what
+/// makes an expanse an expanse: a cell that opens through a `DOOR_HALF_WIDTH`
+/// aperture is a room with a doorway, and a run of them is a honeycomb of rooms
+/// with doorways however open the topology says they are.
+///
+/// The seam contract is untouched, and deliberately so.
+/// `seam_auditor::sample_face_signature` takes the min and max Y of geometry
+/// touching the face plane; the lintel and sill still touch it at exactly the
+/// heights the jambs did, so `floor_height` and `headroom` are bit-identical to
+/// the doorway's. An open span therefore mates with an ordinary hall door on
+/// the same terms — which it must, because an expanse borders halls far more
+/// often than it borders another expanse.
+pub(crate) fn open_span(face: HexFace, z0: f64, z1: f64, sill: f64, top: f64) -> String {
+    let (a, b) = tb_edge(face);
+    let (ia, ib) = offset_inward(a, b, WALL);
+    let inward = [ia[0] - a[0], ia[1] - a[1]];
+    let mid = [(a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5];
+    let hint = [mid[0] + inward[0] * 0.5, mid[1] + inward[1] * 0.5];
+    let mut out = String::new();
+    if top < z1 {
+        out += &general_prism_brush(&[a, b, ib, ia], top, z1, hint);
+    }
+    if sill > z0 {
+        out += &general_prism_brush(&[a, b, ib, ia], z0, sill, hint);
+    }
+    out
 }
 
 /// A doorway wall on `face`: two jamb prisms beside a `DOOR_HALF_WIDTH`

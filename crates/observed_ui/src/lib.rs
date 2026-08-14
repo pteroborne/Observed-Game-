@@ -256,7 +256,7 @@ pub fn spawn_button<B: Bundle>(
             FocusMarker,
             Text::new(">"),
             TextFont {
-                font_size: 22.0,
+                font_size: FontSize::Px(22.0),
                 ..default()
             },
             TextColor(Color::WHITE),
@@ -271,11 +271,11 @@ pub fn spawn_button<B: Bundle>(
             WidgetText,
             Text::new(label),
             TextFont {
-                font_size: 18.0,
+                font_size: FontSize::Px(18.0),
                 ..default()
             },
             TextColor(crate::theme::LABEL),
-            TextLayout::new_with_justify(Justify::Center),
+            TextLayout::justify(Justify::Center),
         ));
     });
     entity.id()

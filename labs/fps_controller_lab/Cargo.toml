@@ -5,7 +5,8 @@ edition = "2024"
 publish = false
 
 [dependencies]
-bevy = { version = "0.18.1", default-features = false, features = ["3d", "png"] }
+bevy = { version = "0.19", default-features = false, features = [
+    "ui","3d", "png"] }
 observed_core = { path = "../../crates/observed_core" }
 player_input = { path = "../../crates/player_input" }
 # The deterministic controller now lives in the production crate; this lab projects it.

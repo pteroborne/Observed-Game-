@@ -13,5 +13,5 @@ bevy = ["dep:bevy"]
 
 [dependencies]
 observed_core = { path = "../observed_core" }
-glam = "0.30"
-bevy = { version = "0.18.1", default-features = false, optional = true }
+glam = "0.32"
+bevy = { version = "0.19", default-features = false, optional = true }

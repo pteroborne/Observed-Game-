@@ -134,7 +134,7 @@ fn setup(
     commands.spawn((
         DirectionalLight {
             illuminance: 7_000.0,
-            shadows_enabled: true,
+            shadow_maps_enabled: true,
             ..default()
         },
         Transform::from_xyz(7.0, 11.0, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
@@ -205,7 +205,7 @@ fn setup(
             LabHud,
             Text::new("Rapier controller lab"),
             TextFont {
-                font_size: 16.0,
+                font_size: FontSize::Px(16.0),
                 ..default()
             },
             TextColor(Color::srgb(0.82, 0.94, 1.0)),

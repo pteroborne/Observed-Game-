@@ -555,7 +555,7 @@ pub(crate) fn spawn_hallway_modules(
                             intensity: 1_600_000.0 * fade,
                             range: cell * 5.0,
                             radius: 0.04,
-                            shadows_enabled: shadow_budget_left,
+                            shadow_maps_enabled: shadow_budget_left,
                             inner_angle: 0.55,
                             outer_angle: 1.05,
                             ..default()
@@ -604,7 +604,7 @@ pub(crate) fn spawn_hallway_modules(
                         color: palette.light_color,
                         intensity: 42_000.0 * fade,
                         range: cell * 1.9,
-                        shadows_enabled: false,
+                        shadow_maps_enabled: false,
                         ..default()
                     },
                     place_in(Transform::from_xyz(
@@ -641,7 +641,7 @@ pub(crate) fn spawn_hallway_modules(
                         ),
                         intensity: 130_000.0 * fade,
                         range: 6.0,
-                        shadows_enabled: false,
+                        shadow_maps_enabled: false,
                         ..default()
                     },
                     place_in(Transform::from_xyz(pos.x, 2.0, pos.y)),
@@ -702,7 +702,7 @@ pub(crate) fn spawn_hallway_modules(
                         ),
                         intensity: 9_000.0,
                         range: 4.5,
-                        shadows_enabled: false,
+                        shadow_maps_enabled: false,
                         ..default()
                     },
                     place_in(Transform::from_xyz(

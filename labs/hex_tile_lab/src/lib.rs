@@ -24,6 +24,7 @@ pub mod script_runner;
 use std::f32::consts::TAU;
 
 use bevy::asset::{AssetPlugin, RenderAssetUsages};
+use bevy::camera::Hdr;
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::light::VolumetricFog;
 use bevy::mesh::{Indices, PrimitiveTopology};
@@ -31,7 +32,6 @@ use bevy::pbr::wireframe::{WireframeConfig, WireframePlugin};
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
-use bevy::render::view::Hdr;
 use bevy::window::{CursorGrabMode, CursorOptions, PresentMode, PrimaryWindow, WindowResolution};
 use lab_menu::{FilterCategory, LabMenuState, MenuTab};
 use observed_authoring::{RuntimeHexCatalog, TilePrototype};
@@ -758,7 +758,7 @@ fn setup(mut commands: Commands, mut cursors: Query<&mut CursorOptions, With<Pri
                     intensity: 90_000.0,
                     range: 16.0,
                     color: Color::srgb(0.92, 0.95, 1.0),
-                    shadows_enabled: false,
+                    shadow_maps_enabled: false,
                     ..default()
                 },
                 Name::new("Headlamp"),
@@ -769,7 +769,7 @@ fn setup(mut commands: Commands, mut cursors: Query<&mut CursorOptions, With<Pri
         LabStatus,
         Text::new(""),
         TextFont {
-            font_size: 14.0,
+            font_size: FontSize::Px(14.0),
             ..default()
         },
         TextColor(Color::srgb(0.88, 0.94, 1.0)),
@@ -814,7 +814,7 @@ fn spawn_menu_overlay(mut commands: Commands) {
                 MenuText,
                 Text::new(""),
                 TextFont {
-                    font_size: 13.0,
+                    font_size: FontSize::Px(13.0),
                     ..default()
                 },
                 TextColor(Color::srgb(0.88, 0.94, 1.0)),
@@ -1558,7 +1558,7 @@ fn rebuild_visuals(
             DirectionalLight {
                 illuminance: 5_500.0,
                 color: Color::srgb(1.0, 0.98, 0.92),
-                shadows_enabled: false,
+                shadow_maps_enabled: false,
                 ..default()
             },
             Transform::default().looking_to(Vec3::new(-0.5, -1.0, -0.35).normalize(), Vec3::Y),
@@ -1569,7 +1569,7 @@ fn rebuild_visuals(
             DirectionalLight {
                 illuminance: 1_800.0,
                 color: Color::srgb(0.82, 0.88, 1.0),
-                shadows_enabled: false,
+                shadow_maps_enabled: false,
                 ..default()
             },
             Transform::default().looking_to(Vec3::new(0.55, -0.35, 0.5).normalize(), Vec3::Y),
@@ -1590,7 +1590,7 @@ fn rebuild_visuals(
                 DirectionalLight {
                     illuminance,
                     color: Color::srgb(0.85, 0.90, 1.0),
-                    shadows_enabled: false,
+                    shadow_maps_enabled: false,
                     ..default()
                 },
                 Transform::default().looking_to(dir.normalize(), Vec3::Y),
@@ -1623,7 +1623,7 @@ fn rebuild_visuals(
                     color: palette.light_color,
                     intensity: 900_000.0,
                     range: 14.0,
-                    shadows_enabled: false,
+                    shadow_maps_enabled: false,
                     ..default()
                 },
                 Transform::from_translation(*origin),
@@ -1648,7 +1648,7 @@ fn rebuild_visuals(
                         radius: 0.02,
                         inner_angle: 0.16,
                         outer_angle: 0.22,
-                        shadows_enabled: true,
+                        shadow_maps_enabled: true,
                         ..default()
                     },
                     Transform::from_translation(center + Vec3::new(-12.0, key_height, -2.0))
@@ -1665,7 +1665,7 @@ fn rebuild_visuals(
                         radius: palette.key_radius,
                         inner_angle: palette.key_inner_angle,
                         outer_angle: palette.key_outer_angle,
-                        shadows_enabled: palette.key_shadows_enabled,
+                        shadow_maps_enabled: palette.key_shadows_enabled,
                         ..default()
                     },
                     Transform::from_translation(center + Vec3::new(3.0, key_height, 3.0))

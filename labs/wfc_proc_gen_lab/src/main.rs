@@ -90,7 +90,7 @@ fn setup_ui(mut commands: Commands) {
         SeedText,
         Text::new(""),
         TextFont {
-            font_size: 18.0,
+            font_size: FontSize::Px(18.0),
             ..default()
         },
         TextColor(Color::srgb(0.9, 0.92, 0.98)),

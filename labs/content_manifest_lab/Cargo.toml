@@ -5,7 +5,14 @@ edition = "2024"
 publish = false
 
 [dependencies]
-bevy = { version = "0.18.1", default-features = false, features = ["3d", "png"] }
+bevy = { version = "0.19", default-features = false, features = [
+    "ui",
+    "3d",
+    "png",
+    # Bevy 0.19 no longer folds glTF/scene loading into the `3d` umbrella, and
+    # `SceneRoot` arrives with it.
+    "bevy_gltf",
+] }
 observed_style = { path = "../../crates/observed_style" }
 rapier3d = { version = "0.34", features = ["enhanced-determinism"] }
 rapier_aesthetic_lab = { path = "../rapier_aesthetic_lab" }

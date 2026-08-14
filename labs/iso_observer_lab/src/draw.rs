@@ -18,8 +18,10 @@ use observed_hex::{HexFace, PortClass, hex_origin};
 use observed_style::{MarkerRole, SchematicRole, hex_sketch, marker, schematic};
 use observed_traversal::ColliderShape;
 
-use crate::wire::{LineBatch, SurfaceBatch, floor_ring, ramp_glyph, stair_glyph, wall_bands};
 use crate::{LabState, LabVisual, Layer, cell_sketch, sketch_role};
+use observed_schematic::{
+    LineBatch, SurfaceBatch, floor_ring, hex_prism, ramp_glyph, stair_glyph, wall_bands,
+};
 
 /// Walls are drawn at a fraction of the cell's height. A floor plan is read
 /// from above; full-height cages stack into an unreadable thicket, while a low
@@ -261,7 +263,7 @@ pub fn solid_view(
             .unwrap_or(ArchitectureRegister::Institutional);
         let mesh = mesh_cache
             .entry((height.to_bits(), sketch.inset.to_bits()))
-            .or_insert_with(|| meshes.add(crate::prism::hex_prism(height, sketch.inset)))
+            .or_insert_with(|| meshes.add(hex_prism(height, sketch.inset)))
             .clone();
         let material = material_cache
             .entry(register as u8)
@@ -297,7 +299,7 @@ pub fn solid_view(
         let treatment = marker(role);
         commands.spawn((
             LabVisual,
-            Mesh3d(meshes.add(crate::prism::hex_prism(0.5, 0.55))),
+            Mesh3d(meshes.add(hex_prism(0.5, 0.55))),
             MeshMaterial3d(materials.add(StandardMaterial {
                 base_color: treatment.base_color,
                 emissive: treatment.emissive,

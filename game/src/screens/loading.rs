@@ -6,7 +6,7 @@
 
 use bevy::{
     ecs::system::SystemParam,
-    input_focus::{InputFocus, tab_navigation::TabIndex},
+    input_focus::{FocusCause, InputFocus, tab_navigation::TabIndex},
     prelude::*,
     ui::InteractionDisabled,
     ui_widgets::Activate,
@@ -233,16 +233,16 @@ pub(crate) fn refresh(mut context: LoadingRefreshContext) {
                 .entity(entity)
                 .remove::<InteractionDisabled>()
                 .insert(TabIndex(0));
-            context.focus.set(entity);
+            context.focus.set(entity, FocusCause::Navigated);
         } else {
             context
                 .commands
                 .entity(entity)
                 .insert(InteractionDisabled)
                 .remove::<TabIndex>();
-            if context.focus.0 == Some(entity) {
+            if context.focus.get() == Some(entity) {
                 if let Some(cancel_entity) = cancel_entity {
-                    context.focus.set(cancel_entity);
+                    context.focus.set(cancel_entity, FocusCause::Navigated);
                 } else {
                     context.focus.clear();
                 }

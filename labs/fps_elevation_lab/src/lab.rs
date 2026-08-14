@@ -141,7 +141,7 @@ fn spawn_ui(commands: &mut Commands) {
             DebugText,
             Text::new("Elevation"),
             TextFont {
-                font_size: 16.0,
+                font_size: FontSize::Px(16.0),
                 ..default()
             },
             TextColor(Color::srgb(0.9, 0.95, 1.0)),

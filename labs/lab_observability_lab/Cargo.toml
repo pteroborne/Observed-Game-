@@ -14,8 +14,9 @@ publish = false
 # capability it would provide is implemented lab-locally over Bevy `tracing`
 # (see `event_trace` in `lab.rs`). See the README and roadmap A7 for the finding.
 [dependencies]
-bevy = { version = "0.18.1", default-features = false, features = ["2d", "png"] }
-bevy_mod_config = { version = "0.6.2", default-features = false, features = [
+bevy = { version = "0.19", default-features = false, features = [
+    "ui","2d", "png"] }
+bevy_mod_config = { version = "0.7.1", default-features = false, features = [
     "std",
     "serde",
     "serde_json",

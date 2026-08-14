@@ -1,0 +1,12 @@
+[Unit]
+Description=Check for a new Observed browser labs image
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+RandomizedDelaySec=15s
+Persistent=true
+Unit=observed-labs-deploy.service
+
+[Install]
+WantedBy=timers.target

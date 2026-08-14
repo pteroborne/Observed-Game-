@@ -34,7 +34,7 @@ pub fn update_button_visuals(
         &mut buttons
     {
         let treatment = crate::theme::widget_treatment(crate::theme::WidgetVisualState {
-            focused: focus.0 == Some(entity),
+            focused: focus.get() == Some(entity),
             hovered: *interaction == Interaction::Hovered,
             pressed: pressed || *interaction == Interaction::Pressed,
             disabled,
@@ -46,7 +46,7 @@ pub fn update_button_visuals(
         outline.width = px(treatment.outline_width);
     }
     for (parent, mut visibility) in &mut markers {
-        *visibility = if focus.0 == Some(parent.parent()) {
+        *visibility = if focus.get() == Some(parent.parent()) {
             Visibility::Visible
         } else {
             Visibility::Hidden

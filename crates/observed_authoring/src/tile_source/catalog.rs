@@ -100,15 +100,17 @@ pub(crate) fn library_for(registers: &[&'static str]) -> Vec<GeneratedTile> {
         for (i, j) in corner_pairs() {
             let f1 = HexFace::LATERAL[i];
             let f2 = HexFace::LATERAL[j];
-            push(
-                format!("{reg}_hall_corner_{i}_{j}.map"),
-                hall_corner_map(reg, f1, f2),
-                "hall_corner",
-                reg,
-                (i * 6 + j) as u16,
-                1,
-                door_ports(&[f1, f2]),
-            );
+            for reading in 0..super::halls::CORNER_READINGS {
+                push(
+                    format!("{reg}_hall_corner_{i}_{j}_v{reading}.map"),
+                    hall_corner_map(reg, reading, f1, f2),
+                    "hall_corner",
+                    reg,
+                    (i * 6 + j) as u16 + reading * super::halls::READING_STRIDE,
+                    1,
+                    door_ports(&[f1, f2]),
+                );
+            }
         }
         // Junctions: all 3-way and 4-way door combinations.
         for i in 0..6 {
@@ -119,15 +121,18 @@ pub(crate) fn library_for(registers: &[&'static str]) -> Vec<GeneratedTile> {
                         HexFace::LATERAL[j],
                         HexFace::LATERAL[k],
                     ];
-                    push(
-                        format!("{reg}_hall_junction_{i}_{j}_{k}.map"),
-                        hall_junction_map(reg, &faces),
-                        "hall_junction",
-                        reg,
-                        (1 << i) | (1 << j) | (1 << k),
-                        1,
-                        door_ports(&faces),
-                    );
+                    for reading in 0..super::halls::JUNCTION_READINGS {
+                        push(
+                            format!("{reg}_hall_junction_{i}_{j}_{k}_v{reading}.map"),
+                            hall_junction_map(reg, reading, &faces),
+                            "hall_junction",
+                            reg,
+                            ((1 << i) | (1 << j) | (1 << k))
+                                + reading * super::halls::READING_STRIDE,
+                            1,
+                            door_ports(&faces),
+                        );
+                    }
                     for l in (k + 1)..6 {
                         let faces = [
                             HexFace::LATERAL[i],
@@ -135,15 +140,18 @@ pub(crate) fn library_for(registers: &[&'static str]) -> Vec<GeneratedTile> {
                             HexFace::LATERAL[k],
                             HexFace::LATERAL[l],
                         ];
-                        push(
-                            format!("{reg}_hall_junction_{i}_{j}_{k}_{l}.map"),
-                            hall_junction_map(reg, &faces),
-                            "hall_junction",
-                            reg,
-                            (1 << i) | (1 << j) | (1 << k) | (1 << l),
-                            1,
-                            door_ports(&faces),
-                        );
+                        for reading in 0..super::halls::JUNCTION_READINGS {
+                            push(
+                                format!("{reg}_hall_junction_{i}_{j}_{k}_{l}_v{reading}.map"),
+                                hall_junction_map(reg, reading, &faces),
+                                "hall_junction",
+                                reg,
+                                ((1 << i) | (1 << j) | (1 << k) | (1 << l))
+                                    + reading * super::halls::READING_STRIDE,
+                                1,
+                                door_ports(&faces),
+                            );
+                        }
                     }
                 }
             }
@@ -183,15 +191,17 @@ pub(crate) fn library_for(registers: &[&'static str]) -> Vec<GeneratedTile> {
                 .into_iter()
                 .filter(|face| mask & (1 << face.index()) != 0)
                 .collect::<Vec<_>>();
-            push(
-                format!("{reg}_expanse_{mask:02}.map"),
-                expanse_map(reg, &faces),
-                "expanse",
-                reg,
-                u16::from(mask),
-                1,
-                door_ports(&faces),
-            );
+            for reading in 0..super::halls::EXPANSE_READINGS {
+                push(
+                    format!("{reg}_expanse_{mask:02}_v{reading}.map"),
+                    expanse_map(reg, reading, &faces),
+                    "expanse",
+                    reg,
+                    u16::from(mask) + reading * super::halls::READING_STRIDE,
+                    1,
+                    door_ports(&faces),
+                );
+            }
         }
 
         for (variant, thresholds) in [

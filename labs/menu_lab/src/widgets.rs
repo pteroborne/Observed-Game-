@@ -5,7 +5,7 @@ use bevy::{
     ecs::system::SystemParam,
     input::gamepad::{GamepadAxis, GamepadButton},
     input_focus::{
-        InputFocus, InputFocusVisible,
+        FocusCause, InputFocus, InputFocusVisible,
         tab_navigation::{TabGroup, TabIndex},
     },
     prelude::*,
@@ -194,7 +194,7 @@ pub(crate) fn spawn_button<B: Bundle>(
             FocusMarker,
             Text::new(">"),
             TextFont {
-                font_size: 24.0,
+                font_size: FontSize::Px(24.0),
                 ..default()
             },
             TextColor(Color::WHITE),
@@ -209,11 +209,11 @@ pub(crate) fn spawn_button<B: Bundle>(
             WidgetText,
             Text::new(label),
             TextFont {
-                font_size: 18.0,
+                font_size: FontSize::Px(18.0),
                 ..default()
             },
             TextColor(if spec.disabled { MUTED_TEXT } else { TEXT }),
-            TextLayout::new_with_justify(Justify::Center),
+            TextLayout::justify(Justify::Center),
         ));
     });
 
@@ -247,7 +247,7 @@ pub(crate) fn initialize_focus(
         .or_else(|| first_target(scope.id, &targets));
 
     if let Some(target) = target {
-        focus.set(target);
+        focus.set(target, FocusCause::Navigated);
         focus_visible.0 = true;
     } else {
         focus.clear();
@@ -261,7 +261,7 @@ pub(crate) fn focus_hovered_widget(
 ) {
     for (entity, interaction) in &interactions {
         if matches!(interaction, Interaction::Hovered | Interaction::Pressed) {
-            focus.set(entity);
+            focus.set(entity, FocusCause::Pressed);
             focus_visible.0 = true;
         }
     }
@@ -341,14 +341,14 @@ pub(crate) fn handle_focus_input(mut context: FocusNavigationContext) {
     };
 
     if let Some(step) = step
-        && let Some(target) = adjacent_target(scope.id, context.focus.0, step, &context.targets)
+        && let Some(target) = adjacent_target(scope.id, context.focus.get(), step, &context.targets)
     {
-        context.focus.set(target);
+        context.focus.set(target, FocusCause::Navigated);
         context.focus_visible.0 = true;
     }
 
     if activate
-        && let Some(entity) = context.focus.0
+        && let Some(entity) = context.focus.get()
         && context.targets.get(entity).is_ok()
     {
         context.commands.trigger(Activate { entity });
@@ -364,7 +364,7 @@ pub(crate) fn capture_focus_memory(
         return;
     }
 
-    let Some(entity) = focus.0 else {
+    let Some(entity) = focus.get() else {
         return;
     };
     let Ok((id, target)) = targets.get(entity) else {
@@ -397,7 +397,7 @@ pub(crate) fn update_button_visuals(
     for (entity, interaction, pressed, disabled, mut background, mut border, mut outline) in
         &mut buttons
     {
-        let is_focused = focus.0 == Some(entity);
+        let is_focused = focus.get() == Some(entity);
         let (normal, hovered, active) = if settings.high_contrast {
             (
                 Color::BLACK,
@@ -430,7 +430,7 @@ pub(crate) fn update_button_visuals(
     }
 
     for (parent, mut visibility) in &mut markers {
-        *visibility = if focus.0 == Some(parent.parent()) {
+        *visibility = if focus.get() == Some(parent.parent()) {
             Visibility::Visible
         } else {
             Visibility::Hidden

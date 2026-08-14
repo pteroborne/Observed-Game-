@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use bevy::{
     ecs::system::SystemParam,
     input::gamepad::{GamepadAxis, GamepadButton},
-    input_focus::{InputFocus, InputFocusVisible},
+    input_focus::{FocusCause, InputFocus, InputFocusVisible},
     prelude::*,
     ui::InteractionDisabled,
     ui_widgets::{Activate, Button as HeadlessButton},
@@ -83,7 +83,9 @@ pub fn initialize_focus(
         .map(|(entity, _, _)| entity)
         .or_else(|| first_target(active_id, &targets));
     if let Some(entity) = target {
-        focus.set(entity);
+        // Programmatic: restoring a remembered or default target, not a
+        // pointer press.
+        focus.set(entity, FocusCause::Navigated);
         focus_visible.0 = true;
     } else {
         focus.clear();
@@ -109,9 +111,9 @@ pub fn focus_hovered_widget(
 ) {
     for (entity, interaction) in &interactions {
         if matches!(interaction, Interaction::Hovered | Interaction::Pressed)
-            && focus.0 != Some(entity)
+            && focus.get() != Some(entity)
         {
-            focus.set(entity);
+            focus.set(entity, FocusCause::Pressed);
             focus_visible.0 = true;
             feedback.write(UiFeedback::FocusMoved);
         }
@@ -226,14 +228,14 @@ pub fn handle_focus_input(mut context: FocusNavigationContext) {
     if let Some(step) = step
         && let Some(target) = adjacent_target(
             scope_id,
-            context.focus.0,
+            context.focus.get(),
             step,
             scope.columns,
             &context.targets,
         )
-        && context.focus.0 != Some(target)
+        && context.focus.get() != Some(target)
     {
-        context.focus.set(target);
+        context.focus.set(target, FocusCause::Navigated);
         context.focus_visible.0 = true;
         context.feedback.write(UiFeedback::FocusMoved);
     }
@@ -245,7 +247,7 @@ pub fn handle_focus_input(mut context: FocusNavigationContext) {
     } else if activate {
         context
             .focus
-            .0
+            .get()
             .filter(|entity| context.targets.get(*entity).is_ok())
     } else {
         None
@@ -263,7 +265,7 @@ pub fn capture_focus_memory(
     if !focus.is_changed() {
         return;
     }
-    let Some(entity) = focus.0 else {
+    let Some(entity) = focus.get() else {
         return;
     };
     let Ok((id, target)) = targets.get(entity) else {

@@ -73,7 +73,7 @@ fn overlay<M: Component>(commands: &mut Commands, marker: M, lines: &str, accent
             children![(
                 Text::new(lines.to_string()),
                 TextFont {
-                    font_size: 20.0,
+                    font_size: FontSize::Px(20.0),
                     ..default()
                 },
                 TextColor(Color::srgb(0.85, 0.93, 1.0)),

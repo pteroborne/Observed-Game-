@@ -22,7 +22,7 @@ pub(super) fn setup(mut commands: Commands) {
         DespawnOnExit(GameState::FullWfc),
         Text::new(""),
         TextFont {
-            font_size: 24.0,
+            font_size: FontSize::Px(24.0),
             ..Default::default()
         },
         TextColor(Color::WHITE),

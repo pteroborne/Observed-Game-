@@ -5,7 +5,8 @@ edition = "2024"
 publish = false
 
 [dependencies]
-bevy = { version = "0.18.1", default-features = false, features = [
+bevy = { version = "0.19", default-features = false, features = [
+    "ui",
     "3d",
     "png",
     "jpeg",
@@ -14,7 +15,7 @@ bevy = { version = "0.18.1", default-features = false, features = [
     "bevy_post_process",
     "bevy_winit",
 ] }
-bevy_sprite3d = { version = "=8.0.0", default-features = false }
+bevy_sprite3d = { version = "=9.0.0", default-features = false }
 observed_core = { path = "../../crates/observed_core" }
 observed_content = { path = "../../crates/observed_content" }
 observed_facility = { path = "../../crates/observed_facility" }

@@ -13,7 +13,8 @@ default = []
 dev_tools = ["dep:bevy-inspector-egui"]
 
 [dependencies]
-bevy = { version = "0.18.1", default-features = false, features = ["3d", "png"] }
+bevy = { version = "0.19", default-features = false, features = [
+    "ui","3d", "png"] }
 observed_core = { path = "../../crates/observed_core" }
 # Verified compatible with Bevy 0.18.1 (0.36.0 requires `bevy ^0.18.0`); optional and
 # default-off, so it only enters the build under `--features dev_tools`.

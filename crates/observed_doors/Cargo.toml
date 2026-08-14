@@ -11,4 +11,4 @@ publish = false
 [dependencies]
 observed_observation = { path = "../observed_observation", default-features = false }
 observed_core = { path = "../observed_core" }
-glam = "0.30"
+glam = "0.32"

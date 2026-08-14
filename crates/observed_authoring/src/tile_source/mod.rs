@@ -170,27 +170,53 @@ pub const REGISTERS: &[&str] = &[
 pub(crate) struct RegisterStyle {
     pub trim_height: f64,
     pub pylon_radius: f64,
+    /// What a support is, in plan.
+    pub column: geometry::ColumnForm,
+    /// How many supports a colonnade or bay reading places along an axis.
+    /// Two is sparse and monumental; four is a gallery.
+    pub support_rhythm: usize,
+    /// Inboard ceiling relief.
+    pub ceiling: geometry::CeilingForm,
 }
 
+/// The form vocabulary of one district.
+///
+/// This used to be two numbers — a dado height and a pylon radius — which meant
+/// ten districts were one building rendered ten times with a different skirting
+/// board. Every field here is **inboard** of the face plane, so a district may
+/// look like itself without any of it reaching a seam. `DOOR_TOP`,
+/// `DOOR_HALF_WIDTH` and the floor slab are shared and stay shared.
 pub(crate) fn register_style(register: &str) -> RegisterStyle {
-    let (trim_height, pylon_radius) = match register {
-        "shadow_screen" => (16.0, 10.0),
-        "monolith" => (32.0, 16.0),
-        "overlit_grid" => (4.0, 8.0),
-        "facet_monument" => (24.0, 14.0),
-        "megastructure" => (48.0, 16.0),
-        "wellshaft" => (20.0, 12.0),
-        "infinite_gallery" => (8.0, 10.0),
-        "thinning" => (0.0, 8.0),
+    use geometry::{CeilingForm, ColumnForm};
+    let (trim_height, pylon_radius, column, support_rhythm, ceiling) = match register {
+        // Slatted screens between you and the light: many thin members.
+        "shadow_screen" => (16.0, 10.0, ColumnForm::Square, 4, CeilingForm::Grid),
+        // One mass, undivided. The fewest supports of any district, and the
+        // heaviest; a flat lid so nothing breaks the weight.
+        "monolith" => (32.0, 16.0, ColumnForm::Square, 2, CeilingForm::Flat),
+        // The ceiling is the subject here, so it is the thing with structure.
+        "overlit_grid" => (4.0, 8.0, ColumnForm::Round, 3, CeilingForm::Grid),
+        // Faceted by name: flutes that catch the key light on every stop.
+        "facet_monument" => (24.0, 14.0, ColumnForm::Faceted, 3, CeilingForm::Coffered),
+        // Too big to read as a room: two enormous piers and a deep coffer.
+        "megastructure" => (48.0, 16.0, ColumnForm::Square, 2, CeilingForm::Coffered),
+        "wellshaft" => (20.0, 12.0, ColumnForm::Round, 3, CeilingForm::Flat),
+        // A gallery is a rhythm: the most supports, the slimmest, repeating.
+        "infinite_gallery" => (8.0, 10.0, ColumnForm::Faceted, 4, CeilingForm::Coffered),
+        // Almost nothing, by name. No trim, fewest members, flat lid.
+        "thinning" => (0.0, 8.0, ColumnForm::Round, 2, CeilingForm::Flat),
         // Vast and open: the lowest trim of any district that has one, and slim
         // pylons, so nothing in a Liminal hall interrupts the run of the walls.
-        "liminal_grid" => (6.0, 9.0),
+        "liminal_grid" => (6.0, 9.0, ColumnForm::Square, 3, CeilingForm::Grid),
         // institutional and the template default: a modest dado rail.
-        _ => (12.0, 12.0),
+        _ => (12.0, 12.0, ColumnForm::Round, 3, CeilingForm::Flat),
     };
     RegisterStyle {
         trim_height,
         pylon_radius,
+        column,
+        support_rhythm,
+        ceiling,
     }
 }
 

@@ -5,7 +5,47 @@
 
 use bevy::math::Vec2;
 use observed_traversal::{FpsConfig, rapier_controller::StructuralCollider};
-use vleue_navigator::NavMesh;
+use polyanya::{Mesh, Triangulation};
+
+/// The navmesh type: `polyanya::Mesh` directly.
+pub type NavMesh = Mesh;
+
+/// Bevy's `Vec2` (glam 0.32) to polyanya's (glam 0.30).
+///
+/// `polyanya::Coords` has private fields and its only constructor is
+/// `From<Vec2>` on its own glam, so the two versions have to meet somewhere.
+/// They meet here, and only here - every other file in the game speaks Bevy's
+/// `Vec2`, which is why `path` below exists rather than callers reaching for
+/// `Mesh::path` themselves.
+#[inline]
+fn to_nav(v: Vec2) -> nav_glam::Vec2 {
+    nav_glam::Vec2::new(v.x, v.y)
+}
+
+/// ...and back.
+#[inline]
+fn from_nav(v: nav_glam::Vec2) -> Vec2 {
+    Vec2::new(v.x, v.y)
+}
+
+/// Whether a point lies inside the walkable area.
+///
+/// `vleue_navigator` called this `is_in_mesh`; polyanya calls it
+/// `point_in_mesh`. Wrapped here for the same reason as [`path`] - so the
+/// second `glam` stays in this file.
+#[must_use]
+pub fn contains(navmesh: &NavMesh, point: Vec2) -> bool {
+    navmesh.point_in_mesh(to_nav(point))
+}
+
+/// Route between two points, in the game's own `Vec2`.
+///
+/// The wrapper `vleue_navigator` used to provide, minus the Bevy plugin.
+#[must_use]
+pub fn path(navmesh: &NavMesh, start: Vec2, goal: Vec2) -> Option<Vec<Vec2>> {
+    let found = navmesh.path(to_nav(start), to_nav(goal))?;
+    Some(found.path.into_iter().map(from_nav).collect())
+}
 
 use crate::teleport::PlaceGeom;
 
@@ -227,7 +267,24 @@ pub fn build_navmesh(
     let edges_clone = edges.clone();
     let obstacles_clone = perturbed_obstacles.clone();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
-        NavMesh::from_edge_and_obstacles(edges, perturbed_obstacles)
+        let edges: Vec<nav_glam::Vec2> = edges.into_iter().map(to_nav).collect();
+        let perturbed_obstacles: Vec<Vec<nav_glam::Vec2>> = perturbed_obstacles
+            .into_iter()
+            .map(|poly| poly.into_iter().map(to_nav).collect())
+            .collect();
+        // `vleue_navigator::NavMesh::from_edge_and_obstacles`, inlined: it was
+        // this sequence of `polyanya` calls behind a Bevy-shaped door.
+        let mut triangulation = Triangulation::from_outer_edges(&edges);
+        triangulation.add_obstacles(perturbed_obstacles);
+        let mut mesh: Mesh = triangulation.as_navmesh();
+        triangulation.simplify(0.001);
+        for _ in 0..3 {
+            if mesh.merge_polygons() {
+                break;
+            }
+        }
+        mesh.set_search_delta(0.01);
+        mesh
     }));
     match result {
         Ok(mesh) => mesh,

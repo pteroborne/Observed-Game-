@@ -1172,7 +1172,7 @@ pub(crate) fn update_tether_monitors(
                 .any(|anchor| anchor.room == room)
     };
     for (monitor, mat_handle) in &monitors {
-        if let Some(mat) = materials.get_mut(&mat_handle.0) {
+        if let Some(mat) = materials.get_mut(&mat_handle.0).as_deref_mut() {
             *mat = monitor_label_segment_material(
                 ObservationMonitorKind::Tether,
                 is_tethered(monitor.room),
@@ -1185,7 +1185,7 @@ pub(crate) fn update_tether_monitors(
         if segment.kind != ObservationMonitorKind::Tether {
             continue;
         }
-        if let Some(mat) = materials.get_mut(&mat_handle.0) {
+        if let Some(mat) = materials.get_mut(&mat_handle.0).as_deref_mut() {
             *mat = monitor_label_segment_material(
                 segment.kind,
                 is_tethered(segment.room),
@@ -1213,7 +1213,7 @@ pub(crate) fn update_guardian_monitors(
     for (monitor, mat_handle) in &monitors {
         let is_guardian_here = guardian_room == Some(monitor.room);
 
-        if let Some(mat) = materials.get_mut(&mat_handle.0) {
+        if let Some(mat) = materials.get_mut(&mat_handle.0).as_deref_mut() {
             *mat = monitor_label_segment_material(
                 ObservationMonitorKind::Guardian,
                 is_guardian_here,
@@ -1231,7 +1231,7 @@ pub(crate) fn update_guardian_monitors(
             continue;
         }
         let is_guardian_here = guardian_room == Some(segment.room);
-        if let Some(mat) = materials.get_mut(&mat_handle.0) {
+        if let Some(mat) = materials.get_mut(&mat_handle.0).as_deref_mut() {
             *mat =
                 monitor_label_segment_material(segment.kind, is_guardian_here, segment.status_only);
             if is_guardian_here {
@@ -1301,7 +1301,7 @@ pub(crate) fn interact_guardian_console(
     // Visual feedback: Console active/inactive glow
     let target_active = guardian.reassigned_target.is_some();
     for mat_handle in &consoles {
-        if let Some(mat) = materials.get_mut(&mat_handle.0) {
+        if let Some(mat) = materials.get_mut(&mat_handle.0).as_deref_mut() {
             if target_active {
                 mat.base_color = Color::srgb(0.1, 1.0, 0.2);
                 mat.emissive = LinearRgba::new(0.5, 5.0, 1.0, 1.0);

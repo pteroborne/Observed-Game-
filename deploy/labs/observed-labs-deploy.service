@@ -1,0 +1,12 @@
+[Unit]
+Description=Pull and deploy the latest Observed browser labs image
+After=docker.service network-online.target
+Wants=docker.service network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/observed-labs
+ExecStart=/opt/observed-labs/deploy.sh
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only

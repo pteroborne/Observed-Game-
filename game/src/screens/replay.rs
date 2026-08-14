@@ -373,7 +373,7 @@ pub(crate) fn draw_replay_map(
                 replay_box(center, MAP_ROOM, MAP_ROOM, room_color(room)),
                 Text::new(format!("{}", room.id.0)),
                 TextFont {
-                    font_size: 10.0,
+                    font_size: FontSize::Px(10.0),
                     ..default()
                 },
                 TextColor(TITLE),

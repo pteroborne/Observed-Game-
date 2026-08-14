@@ -40,7 +40,7 @@ pub(crate) fn spawn_place_light(
             color,
             intensity,
             range,
-            shadows_enabled: false,
+            shadow_maps_enabled: false,
             ..default()
         },
         transform,
@@ -143,7 +143,7 @@ pub(crate) fn spawn_place_lighting(
             intensity: palette.key_intensity,
             range: palette.key_range,
             radius: palette.key_radius,
-            shadows_enabled: palette.key_shadows_enabled,
+            shadow_maps_enabled: palette.key_shadows_enabled,
             inner_angle: palette.key_inner_angle,
             outer_angle: palette.key_outer_angle,
             ..default()
@@ -314,7 +314,7 @@ fn spawn_wellshaft_lighting(
                 color: practical_color,
                 intensity,
                 range: 5.5,
-                shadows_enabled: level + 1 == crate::hallway::WELL_SHAFT_LEVELS,
+                shadow_maps_enabled: level + 1 == crate::hallway::WELL_SHAFT_LEVELS,
                 ..default()
             },
             place_in(Transform::from_translation(lamp_pos)),

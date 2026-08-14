@@ -126,7 +126,7 @@ fn setup_ui(mut commands: Commands) {
                     DebugText,
                     Text::new("Door diagnostics starting…"),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.80, 0.94, 1.0)),
@@ -156,7 +156,7 @@ fn setup_ui(mut commands: Commands) {
                          reopen it. Blue room = start, green = exit, red = dead-end.",
                     ),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.86, 0.92, 0.97)),
@@ -410,6 +410,8 @@ mod tests {
             MinimalPlugins,
             AssetPlugin::default(),
             InputPlugin,
+            // Registers the mesh assets that 0.19's new skinned-mesh-bounds gizmo validates.
+            bevy::mesh::MeshPlugin,
             GizmoPlugin,
         ))
         .insert_resource(ClearColor(Color::BLACK))

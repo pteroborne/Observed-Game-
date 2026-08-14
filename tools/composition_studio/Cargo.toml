@@ -15,11 +15,11 @@ name = "module-studio"
 path = "src/bin/module_studio.rs"
 
 [dependencies]
-bevy = { version = "0.18.1", default-features = false, features = [
+bevy = { version = "0.19", default-features = false, features = [
     "2d",
     "3d",
     "png",
-    "experimental_bevy_ui_widgets",
+    "bevy_ui_widgets",
 ] }
 # The profile type and the solver it drives. `serde` carries the profile;
 # hex_wfc is unconditional, so no `wfc` feature is needed.
@@ -37,5 +37,6 @@ observed_match = { path = "../../crates/observed_match", default-features = fals
 observed_style = { path = "../../crates/observed_style" }
 # `ConvexRenderMesh` turns a hull point cloud into edges.
 observed_traversal = { path = "../../crates/observed_traversal", default-features = false }
+observed_cutaway = { path = "../../crates/observed_cutaway" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0"

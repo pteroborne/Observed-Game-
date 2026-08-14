@@ -115,8 +115,9 @@ fn changing_the_seed_invalidates_the_cached_baseline() {
     crate::solve::run_solve(&mut state);
     assert!(state.baseline_world.is_some());
 
-    state.seed_index += 1;
-    state.invalidate_baseline();
+    // Through the ordinary control, so this covers the invalidation rather than
+    // restating it: `step_preset_seed` is what the bracket keys call.
+    state.step_preset_seed(1, 0.0);
     assert!(state.baseline_world.is_none());
     assert!(state.baseline_score.is_none());
 

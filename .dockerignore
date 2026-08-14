@@ -1,0 +1,10 @@
+**
+!.dockerignore
+!deploy/
+!deploy/labs/
+!deploy/labs/nginx.conf
+!deploy/labs/site/
+!deploy/labs/site/index.html
+!web-dist/
+!web-dist/tactics-lab/
+!web-dist/tactics-lab/**

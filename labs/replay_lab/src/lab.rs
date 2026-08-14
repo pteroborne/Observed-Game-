@@ -124,7 +124,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DebugText,
                     Text::new("Replay diagnostics starting…"),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.85, 0.93, 1.0)),
@@ -154,7 +154,7 @@ fn spawn_ui(commands: &mut Commands) {
                          seek anywhere and the state is reproduced exactly.",
                     ),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.88, 0.92, 0.97)),

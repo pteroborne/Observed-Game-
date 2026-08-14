@@ -155,7 +155,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DebugText,
                     Text::new("Profile starting…"),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.9, 1.0, 0.94)),
@@ -186,7 +186,7 @@ fn spawn_ui(commands: &mut Commands) {
                          equipped slots serialize to a save string and round-trip.",
                     ),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.88, 0.95, 0.9)),

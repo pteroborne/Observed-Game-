@@ -33,7 +33,15 @@ use crate::{LabMenuState, Layer, StudioState, StudioTab};
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StudioScript {
+    /// One of the five pinned evidence seeds, by index.
     pub seed_index: Option<usize>,
+    /// An explicit seed, for a facility outside the pinned set. Takes
+    /// precedence over `seed_index` if both are given.
+    pub seed: Option<u64>,
+    /// Where to stop the solve replay, for photographing a facility part-way
+    /// built. Omit for the finished solve, which is what every existing script
+    /// captures and must keep capturing.
+    pub timeline_cursor: Option<usize>,
     /// How many floors the working facility has. One is the historical default
     /// and the only scale at which a cell has no up or down neighbour, so a
     /// capture of a vertical neighbourhood has to set this.
@@ -60,8 +68,15 @@ pub struct StudioScript {
     pub ring_rolls: Option<u32>,
     /// View azimuth detent, `0..6`. Detent 0 is the historical camera.
     pub detent: Option<usize>,
-    /// Cut away the ceiling and near walls. Defaults on in detail mode.
+    /// How much of each cell's authored walls to draw: `"cutaway"`,
+    /// `"partial"`, or `"full"`.
+    pub walls: Option<String>,
+    /// The pre-`WallMode` spelling, kept so the committed evidence scripts
+    /// still name the projection they were written against: `true` is
+    /// `"cutaway"` and `false` is `"full"`. `walls` wins if both are given.
     pub cutaway: Option<bool>,
+    /// Lay the solver's schematic over the authored deck.
+    pub schematic: Option<bool>,
     /// Pins to paint before solving, as `[q, r, level, brush]` — brush being a
     /// [`crate::brush::Brush`] label such as `"shaft"` or `"junction"`.
     #[serde(default)]
@@ -149,7 +164,16 @@ pub fn script_system(
     if run.phase == 0 && run.timer >= 0.1 {
         let script = run.script.clone();
         if let Some(index) = script.seed_index {
-            state.seed_index = index;
+            state.seed = crate::PRESET_SEEDS[index % crate::PRESET_SEEDS.len()];
+            state.seed_preset = Some(index % crate::PRESET_SEEDS.len());
+            state.invalidate_baseline();
+        }
+        // After `seed_index`, so a script that names both gets the explicit
+        // one. A capture that quietly photographed a different facility than
+        // the one it named is exactly what this runner refuses to do.
+        if let Some(seed) = script.seed {
+            state.seed = seed;
+            state.seed_preset = None;
             state.invalidate_baseline();
         }
         // Before `layer` and `select`, both of which `set_levels` clears —
@@ -217,7 +241,23 @@ pub fn script_system(
             state.detent = detent % crate::viewport::AZIMUTH_DETENTS;
         }
         if let Some(cutaway) = script.cutaway {
-            state.cutaway = cutaway;
+            state.walls = if cutaway {
+                crate::detail::WallMode::Cutaway
+            } else {
+                crate::detail::WallMode::Full
+            };
+        }
+        // After the legacy flag, so a script naming both gets the explicit one.
+        if let Some(name) = &script.walls {
+            match crate::detail::WallMode::parse(name) {
+                Some(mode) => state.walls = mode,
+                // Refusing beats photographing a different projection than the
+                // one the script named.
+                None => state.status = format!("ERROR: unknown wall mode {name:?}"),
+            }
+        }
+        if let Some(schematic) = script.schematic {
+            state.show_schematic = schematic;
         }
         if let Some(mode) = &script.detail {
             state.detail_mode = match mode.to_ascii_lowercase().as_str() {
@@ -261,6 +301,23 @@ pub fn script_system(
     // before the roll, which is the exact class of quietly-wrong capture this
     // runner exists to refuse.
     if run.phase == 1 && run.timer >= 0.6 {
+        // Same reasoning as the ring roll below: a cursor exists only once
+        // there is a trace to put it in, and it must land a whole phase before
+        // the shot so the redraw it asks for has happened.
+        if let Some(cursor) = run.script.timeline_cursor {
+            let steps = crate::timeline::trace_len(&state);
+            if cursor > steps {
+                // A script that named a step past the end of the trace asked
+                // for a facility that does not exist. Refusing beats
+                // photographing the finished solve under its name.
+                state.status =
+                    format!("ERROR: timeline_cursor {cursor} is past the {steps}-step trace");
+            } else {
+                state.timeline.cursor = cursor;
+                state.timeline.playing = false;
+                state.touch_view();
+            }
+        }
         if let Some(rolls) = run.script.ring_rolls
             && state.detail_mode == crate::detail::DetailMode::Neighborhood
         {

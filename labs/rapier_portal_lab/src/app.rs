@@ -112,7 +112,7 @@ fn setup(
     commands.spawn((
         DirectionalLight {
             illuminance: 4_000.0,
-            shadows_enabled: true,
+            shadow_maps_enabled: true,
             ..default()
         },
         Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.8, -0.7, 0.0)),
@@ -131,7 +131,7 @@ fn setup(
             Monitor,
             Text::new("Portal composition lab"),
             TextFont {
-                font_size: 16.0,
+                font_size: FontSize::Px(16.0),
                 ..default()
             },
             TextColor(Color::WHITE),
@@ -324,7 +324,7 @@ fn spawn_threshold(
             color: treatment.base_color,
             intensity: if anchored { 2_400.0 } else { 1_000.0 },
             range: 6.0,
-            shadows_enabled: false,
+            shadow_maps_enabled: false,
             ..default()
         },
         Transform::from_xyz(0.0, 4.55, SOURCE_THRESHOLD_Z + 0.1),

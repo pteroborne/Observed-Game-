@@ -19,18 +19,20 @@ struct ActiveRebind<T> {
 /// it impossible for the same Enter/F7/etc. press that opened the prompt to become
 /// the captured binding. Once armed, pressing that activation key again is a normal
 /// deliberate binding.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct RebindCapture<T> {
+/// Derived, not hand-written: Bevy 0.19's `Resource` derive also registers the
+/// `IsResource` required component and picks sparse-set storage. A manual
+/// `Component` impl silently omits both, and the resource then fails `Res<T>`
+/// parameter validation at run time with "Resource does not exist".
+#[derive(Clone, Copy, Debug, Eq, PartialEq, bevy::prelude::Resource)]
+pub struct RebindCapture<T: Send + Sync + 'static> {
     active: Option<ActiveRebind<T>>,
 }
 
-impl<T> Default for RebindCapture<T> {
+impl<T: Send + Sync + 'static> Default for RebindCapture<T> {
     fn default() -> Self {
         Self { active: None }
     }
 }
-
-impl<T: Send + Sync + 'static> bevy::prelude::Resource for RebindCapture<T> {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RebindCaptureStatus<T> {
@@ -45,7 +47,7 @@ pub enum RebindCaptureEvent<T> {
     Captured { target: T, key: KeyCode },
 }
 
-impl<T: Copy> RebindCapture<T> {
+impl<T: Copy + Send + Sync + 'static> RebindCapture<T> {
     pub fn begin_waiting_for_release(&mut self, target: T, activation_key: KeyCode) {
         self.active = Some(ActiveRebind {
             target,

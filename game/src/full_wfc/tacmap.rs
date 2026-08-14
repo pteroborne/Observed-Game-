@@ -88,7 +88,7 @@ fn spawn_map(commands: &mut Commands, runtime: &FullWfcRuntime, knowledge: &Team
             root.spawn((
                 Text::new("SURVIVOR SKETCH  [TAB CLOSE]"),
                 TextFont {
-                    font_size: 15.0,
+                    font_size: FontSize::Px(15.0),
                     ..Default::default()
                 },
                 TextColor(traversed),
@@ -104,7 +104,7 @@ fn spawn_map(commands: &mut Commands, runtime: &FullWfcRuntime, knowledge: &Team
                     "[+] traversed   [ ] glimpsed   X stale   A anchored   @ you   T teammate",
                 ),
                 TextFont {
-                    font_size: 12.0,
+                    font_size: FontSize::Px(12.0),
                     ..Default::default()
                 },
                 TextColor(Color::srgb(0.76, 0.84, 0.94)),
@@ -120,7 +120,7 @@ fn spawn_map(commands: &mut Commands, runtime: &FullWfcRuntime, knowledge: &Team
                 root.spawn((
                     Text::new(format!("L{level}")),
                     TextFont {
-                        font_size: 12.0,
+                        font_size: FontSize::Px(12.0),
                         ..Default::default()
                     },
                     TextColor(Color::srgb(0.76, 0.84, 0.94)),
@@ -183,7 +183,7 @@ fn spawn_map(commands: &mut Commands, runtime: &FullWfcRuntime, knowledge: &Team
                 .with_child((
                     Text::new(glyph),
                     TextFont {
-                        font_size: 12.0,
+                        font_size: FontSize::Px(12.0),
                         ..Default::default()
                     },
                     TextColor(if known.anchored { anchor } else { traversed }),

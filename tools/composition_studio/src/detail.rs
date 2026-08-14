@@ -1,498 +1,288 @@
-//! Real authored geometry, cut away so you can see inside it.
+//! The authored deck: what the facility will actually be built as.
 //!
-//! The schematic answers *topology* — which faces are open, where the rooms
-//! are. It cannot answer *craft*: do these two tiles actually meet, is the
-//! doorway where the solver thinks it is, does this seam line up. Those are
-//! questions about the authored hulls, so this module draws them.
+//! Re-exports the shared cutaway rendering under the studio's original module
+//! path so its established callers keep the same interface, and owns the
+//! studio's emission pass over it.
 //!
-//! # Why a cutaway is not optional
+//! This used to be an on-demand extra behind `F`, with a wireframe schematic as
+//! the default view. That had the tool showing a diagram of a building rather
+//! than the building, so the two swapped places: the solid is the view, and
+//! `draw.rs`'s line work is an overlay you ask for when you want to compare the
+//! *solver's* topology against the *authored* geometry.
 //!
-//! The camera is a fixed isometric looking down at roughly 35 degrees. A tile
-//! rendered whole shows you its ceiling and the three walls between you and its
-//! interior, which is to say: nothing you wanted. So three tests decide what
-//! survives, in this order:
-//!
-//! 1. **Floor always stays.** Anything whose top sits at or below the floor
-//!    slab. Cull it and cells appear to float.
-//! 2. **Ceiling goes** when a hull's *lowest* point is above head clearance.
-//!    Deliberately min-Y and not the centroid: a pillar spanning floor to
-//!    ceiling has a high centroid, and dropping it would silently delete
-//!    structure rather than roofing.
-//! 3. **The near walls go** — a hull outside the interior radius whose plan
-//!    azimuth lies within 90 degrees of the camera bearing. At any bearing that
-//!    is three of the six walls, which falls out of hex geometry rather than
-//!    being a tuned number.
-//!
-//! # Overlay, never replace
-//!
-//! The schematic keeps drawing on top of this. Its walls come from
-//! `placement.is_open(face)` — the *solver's* truth — while these hulls are the
-//! *authored* truth. Where the two disagree there is a real bug: a face the
-//! solver routes traffic through that the tile has walled off. That is exactly
-//! what `tilec audit-seams` exists to catch, and showing both makes it visible
-//! for free.
+//! The signals the schematic used to carry in its wall bands — pins, the
+//! baseline compare, the replay — come with it, as treatments on the solid.
+//! That is `tactics_lab`'s rule (`board_treatment`) rather than a new one: a
+//! cell wears its district accent when it has nothing else to say, and a named
+//! signal treatment when it does.
 
-use bevy::prelude::*;
-use observed_facility::hex_wfc::{HexFace, HexWfcWorld, PortClass};
-use observed_hex::HexCoord;
-use observed_match::hex_wfc::{HexStructurePiece, HexWfcGeometrySnapshot};
-use observed_traversal::{ColliderShape, ConvexRenderMesh};
-
-use observed_content::ArchitectureRegister;
 use std::collections::{BTreeMap, BTreeSet};
 
-// The cutaway rule and its thresholds live in `observed_style::iso`, shared
-// with the game's spectator overview: two surfaces cutting away differently
-// would show the same facility as two buildings.
+use bevy::prelude::*;
+use observed_content::ArchitectureRegister;
+use observed_facility::hex_wfc::HexArchetype;
+use observed_hex::HexCoord;
+use observed_style::{SchematicRole, Treatment, schematic};
 
-/// Which cells draw their real geometry.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum DetailMode {
-    /// Schematic only.
-    #[default]
-    Off,
-    /// The selected cell and everything it actually connects to. Bounded at
-    /// eight cells, so this costs the same on a 5,600-cell facility as on a
-    /// hundred-cell one.
-    Focus,
-    /// Every cell on the **focus** floor. Floors above and below stay dim
-    /// wireframe, so vertical context is visible without ten layers of solid
-    /// geometry hiding each other — which is an occlusion problem before it is
-    /// a performance one.
-    ///
-    /// Refused on "all layers": one production floor is roughly fourteen
-    /// thousand hulls, heavy but drawable; ten floors is over a hundred
-    /// thousand, and the top one would hide the rest anyway.
-    Layer,
-    /// The selected cell solid, its whole ring as wireframe.
-    ///
-    /// The other two modes answer "what did the solver build". This one answers
-    /// "what could it have built", and the split between solid and wireframe
-    /// *is* the answer: the centre is locked in, everything touching it is a
-    /// possibility you can page through. See [`crate::neighbors`].
-    Neighborhood,
+pub use observed_cutaway::{
+    DetailMode, DetailReport, HullBatch, TileMeshCache, WallMode, build, build_low_walls,
+    build_walls, focus_set, measure, mesh_from, partial_wall_height, survives,
+};
+
+use crate::StudioState;
+use crate::draw::{KEY_ILLUMINANCE, KEY_LIGHT_OFFSET, StudioVisual};
+
+/// What one cell means right now, in the order the viewport must resolve.
+///
+/// Precedence is deliberate and is the same order the variants are declared:
+/// selection outranks everything because a cell you are working on must stay
+/// findable, and the two replay states outrank authoring state because while a
+/// replay runs it owns the colour.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum CellSignal {
+    Selected,
+    /// Mid-replay: propagation emptied this cell's domain.
+    Contradicted,
+    /// Mid-replay: the solver has not observed this cell yet, so it has no
+    /// authored geometry to draw. Not a class the solid pass renders.
+    Unobserved,
+    /// Compare mode: this profile placed something the baseline did not.
+    Changed,
+    Pinned,
+    Ordinary,
 }
 
-impl DetailMode {
+impl CellSignal {
+    /// The named treatment, or `None` for a cell that should wear its district.
     #[must_use]
-    pub fn label(self) -> &'static str {
+    fn treatment(self) -> Option<Treatment> {
         match self {
-            Self::Off => "schematic",
-            Self::Focus => "detail: focus",
-            Self::Layer => "detail: layer",
-            Self::Neighborhood => "detail: neighbours",
+            Self::Selected => Some(schematic(SchematicRole::Selected)),
+            Self::Contradicted | Self::Changed => Some(schematic(SchematicRole::Volatile)),
+            Self::Pinned => Some(schematic(SchematicRole::Pinned)),
+            Self::Unobserved | Self::Ordinary => None,
         }
     }
 }
 
-/// What the last detail pass drew, for the status line.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct DetailReport {
-    pub cells: usize,
-    pub hulls_drawn: usize,
-    pub hulls_cut: usize,
-    /// Distinct hulls triangulated so far this session. Grows to the size of
-    /// the tile vocabulary in use and then stops, however many cells are drawn.
-    pub distinct_hulls_cached: usize,
-}
-
-/// The cells to draw in detail.
-///
-/// In [`DetailMode::Focus`] this is the selected cell plus every neighbour it
-/// shares an **open port** with — the connection set, which is precisely what
-/// "which tiles are connecting" is asking about. A sealed neighbour is not part
-/// of the question and only gets in the way.
+/// What every drawn cell means, resolved once so the solid and the schematic
+/// overlay cannot disagree about the same cell.
 #[must_use]
-pub fn focus_set(world: &HexWfcWorld, selected: Option<HexCoord>) -> BTreeSet<HexCoord> {
-    let mut set = BTreeSet::new();
-    let Some(centre) = selected else {
-        return set;
+pub fn classify(state: &StudioState) -> BTreeMap<HexCoord, CellSignal> {
+    let mut signals = BTreeMap::new();
+    let Some(solved) = state.solved.as_ref() else {
+        return signals;
     };
-    let Some(placement) = world.placements.get(&centre) else {
-        return set;
-    };
-    set.insert(centre);
+    let pinned = crate::brush::pinned_coords(&state.profile);
+    let replay = crate::timeline::replay_cells(state);
+    // The compare overlay asks "what did my tuning move", against a finished
+    // baseline world. Mid-replay that question has no answer, and its colour
+    // would sit in the same viewport as the replay's meaning something else.
+    let compare = state.show_baseline_compare && replay.is_none();
 
-    let grid = world.config.grid();
-    for face in HexFace::ALL {
-        let open = if face.is_lateral() {
-            placement.is_open(face)
-        } else if face == HexFace::Up {
-            placement.up != PortClass::Sealed
-        } else {
-            placement.down != PortClass::Sealed
-        };
-        if !open {
+    for (coord, placement) in &solved.world.placements {
+        if placement.archetype == HexArchetype::Void || !state.layer.draws(coord.level) {
             continue;
         }
-        if let Some(neighbour) = grid.neighbor(centre, face)
-            && world.placements.contains_key(&neighbour)
+        let signal = if state.selected == Some(*coord) {
+            CellSignal::Selected
+        } else if let Some(cells) = replay.as_ref() {
+            let cell = cells.get(coord).copied().unwrap_or_default();
+            if cell.contradicted {
+                CellSignal::Contradicted
+            } else if cell.resolved.is_none() {
+                CellSignal::Unobserved
+            } else {
+                CellSignal::Ordinary
+            }
+        } else if compare
+            && state
+                .baseline_world
+                .as_ref()
+                .is_some_and(|world| world.placements.get(coord) != Some(placement))
         {
-            set.insert(neighbour);
-        }
+            CellSignal::Changed
+        } else if pinned.contains(coord) {
+            CellSignal::Pinned
+        } else {
+            CellSignal::Ordinary
+        };
+        signals.insert(*coord, signal);
     }
-    set
+    signals
 }
 
-/// Whether a hull survives the cutaway. See `observed_style::iso::survives`.
-#[must_use]
-pub fn survives(min_y: f32, max_y: f32, local: Vec3, bearing: Vec2, cutaway: bool) -> bool {
-    observed_style::iso::survives(min_y, max_y, local, bearing, cutaway)
-}
-
-/// One hull, triangulated once and measured once.
-///
-/// The extents ride along with the mesh because the cutaway needs them on every
-/// rebuild and recomputing them means walking the point cloud again.
-pub struct CachedHull {
-    mesh: ConvexRenderMesh,
-    min_y: f32,
-    max_y: f32,
-    centroid: Vec3,
-}
-
-/// Triangulated tile geometry, computed once per distinct tile and instanced by
-/// offset at every cell that resolves to it.
-///
-/// Without this, a rebuild re-triangulates the same handful of prototypes once
-/// per placement — a hundred cells of one hall shape pay for that shape a
-/// hundred times. `iso_observer_lab`'s `EdgeCache` makes exactly this trade for
-/// line work and states the reason in the same terms.
-///
-/// **Keying by [`TileKey`] is safe because rotation is part of the key.**
-/// `runtime_catalog` assigns `variant = module.variant * 6 + turn`, so each of a
-/// module's six turns is a distinct variant, and the projector bakes the turn
-/// into the hull points (it leaves `HexStructurePiece::rotation` at identity).
-/// Two cells sharing a key therefore share geometry exactly.
-#[derive(Default, Resource)]
-pub struct TileMeshCache {
-    by_key: BTreeMap<String, Option<CachedHull>>,
-}
-
-impl TileMeshCache {
-    /// The cached hull for `key`, triangulating and measuring on first sight.
-    ///
-    /// `None` means the hull is degenerate — a coplanar sliver, say. That is
-    /// cached too, so a bad hull is not re-triangulated every rebuild just to
-    /// fail again.
-    pub fn entry(&mut self, key: String, points: &[Vec3]) -> Option<&CachedHull> {
-        self.by_key
-            .entry(key)
-            .or_insert_with(|| Self::build_owned(points))
-            .as_ref()
-    }
-
-    /// Build without caching, for hulls that have no stable key.
-    #[must_use]
-    pub fn build_hull(points: &[Vec3]) -> Option<CachedHull> {
-        Self::build_owned(points)
-    }
-
-    fn build_owned(points: &[Vec3]) -> Option<CachedHull> {
-        let mesh = ConvexRenderMesh::from_convex_hull(points)?;
-        let (min_y, max_y, centroid) = measure(points);
-        Some(CachedHull {
-            mesh,
-            min_y,
-            max_y,
-            centroid,
-        })
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.by_key.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.by_key.is_empty()
-    }
-
-    /// Drop everything. Needed if the corpus changes under the tool.
-    pub fn clear(&mut self) {
-        self.by_key.clear();
-    }
-}
-
-/// A hull's vertical extent and centroid.
-///
-/// Public because the module viewer runs the same cutaway over raw authored
-/// hulls: one classifier, so a module and the facility it lands in cut away
-/// identically.
-#[must_use]
-pub fn measure(points: &[Vec3]) -> (f32, f32, Vec3) {
-    let mut min_y = f32::INFINITY;
-    let mut max_y = f32::NEG_INFINITY;
-    let mut sum = Vec3::ZERO;
-    for point in points {
-        min_y = min_y.min(point.y);
-        max_y = max_y.max(point.y);
-        sum += *point;
-    }
-    #[allow(clippy::cast_precision_loss)]
-    let centroid = sum / points.len() as f32;
-    (min_y, max_y, centroid)
-}
-
-/// Accumulated triangles for one colour of detail geometry.
-#[derive(Default)]
-pub struct HullBatch {
-    positions: Vec<[f32; 3]>,
-    normals: Vec<[f32; 3]>,
-    indices: Vec<u32>,
-}
-
-impl HullBatch {
-    fn push(&mut self, mesh: &ConvexRenderMesh, offset: Vec3) {
-        #[allow(clippy::cast_possible_truncation)]
-        let base = self.positions.len() as u32;
-        for (position, normal) in mesh.positions.iter().zip(mesh.normals.iter()) {
-            self.positions.push([
-                position[0] + offset.x,
-                position[1] + offset.y,
-                position[2] + offset.z,
-            ]);
-            self.normals.push(*normal);
-        }
-        self.indices
-            .extend(mesh.indices.iter().map(|index| index + base));
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.indices.is_empty()
-    }
-
-    #[must_use]
-    pub fn into_mesh(self) -> Option<Mesh> {
-        if self.indices.is_empty() {
-            return None;
-        }
-        let mut mesh = Mesh::new(
-            bevy::mesh::PrimitiveTopology::TriangleList,
-            bevy::asset::RenderAssetUsages::RENDER_WORLD
-                | bevy::asset::RenderAssetUsages::MAIN_WORLD,
-        );
-        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, self.positions);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals);
-        mesh.insert_indices(bevy::mesh::Indices::U32(self.indices));
-        Some(mesh)
-    }
-}
-
-/// A Bevy mesh from one convex hull.
-///
-/// `ConvexRenderMesh` carries positions, normals, and indices but no Bevy
-/// dependency - it lives in `observed_traversal`, which the headless simulation
-/// also uses. This is the one place that bridge is crossed, so a renderer never
-/// has to know the attribute names.
-#[must_use]
-pub fn mesh_from(render: &ConvexRenderMesh) -> Option<Mesh> {
-    if render.indices.is_empty() {
-        return None;
-    }
-    let mut mesh = Mesh::new(
-        bevy::mesh::PrimitiveTopology::TriangleList,
-        bevy::asset::RenderAssetUsages::RENDER_WORLD | bevy::asset::RenderAssetUsages::MAIN_WORLD,
-    );
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, render.positions.clone());
-    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, render.normals.clone());
-    mesh.insert_indices(bevy::mesh::Indices::U32(render.indices.clone()));
-    Some(mesh)
-}
-
-/// Build the cut-away solid geometry for `cells`.
-///
-/// Returns one batch for the selected cell and one for everything else, so the
-/// cell under inspection can be told apart from its neighbours without a second
-/// pass over the hulls.
-#[must_use]
-pub fn build(
-    world: &HexWfcWorld,
-    snapshot: &HexWfcGeometrySnapshot,
-    cells: &BTreeSet<HexCoord>,
-    selected: Option<HexCoord>,
-    bearing: Vec2,
-    cutaway: bool,
-    cache: &mut TileMeshCache,
-) -> (
-    HullBatch,
-    BTreeMap<ArchitectureRegister, HullBatch>,
-    DetailReport,
-) {
-    let mut focus = HullBatch::default();
-    // Context hulls batch by district, because solid massing is drawn in the
-    // *surface* language rather than the schematic one: this view shows the
-    // geometry that will really be built, so it should look like it.
-    let mut context: BTreeMap<ArchitectureRegister, HullBatch> = BTreeMap::new();
-    let mut report = DetailReport {
-        cells: cells.len(),
-        ..DetailReport::default()
+/// Which cells the solid pass draws, before signals are applied.
+fn scope(state: &StudioState, signals: &BTreeMap<HexCoord, CellSignal>) -> BTreeSet<HexCoord> {
+    let Some(solved) = state.solved.as_ref() else {
+        return BTreeSet::new();
     };
+    let drawn: BTreeSet<HexCoord> = signals
+        .iter()
+        // Context floors above and below stay line work, and a cell the replay
+        // has not reached has nothing authored to draw.
+        .filter(|(coord, signal)| {
+            state.layer.is_focus(coord.level) && **signal != CellSignal::Unobserved
+        })
+        .map(|(coord, _)| *coord)
+        .collect();
 
-    // Group by cell first. The projector emits one piece per hull, so a piece's
-    // position within its cell is a stable ordinal, and (tile key, ordinal)
-    // identifies one hull of one tile exactly. Iterating pieces flat and
-    // caching per tile would either re-emit a tile's whole hull set once per
-    // hull, or need a guard that breaks on cells mixing tiled and untiled
-    // pieces. Grouping avoids both.
-    let mut by_cell: BTreeMap<HexCoord, Vec<&HexStructurePiece>> = BTreeMap::new();
-    for piece in &snapshot.pieces {
-        if cells.contains(&piece.source_cell) {
-            by_cell.entry(piece.source_cell).or_default().push(piece);
+    match state.detail_mode {
+        // The schematic-only escape hatch: the view this tool used to open on.
+        DetailMode::Off => BTreeSet::new(),
+        DetailMode::Layer => drawn,
+        DetailMode::Focus => focus_set(&solved.world, state.selected)
+            .intersection(&drawn)
+            .copied()
+            .collect(),
+        // Only the centre is solid here. Its ring is drawn as wireframe by
+        // `neighbors::emit`, which is the whole point of the mode: solid is what
+        // is settled, and everything touching it is still a question.
+        DetailMode::Neighborhood => state.selected.into_iter().collect(),
+    }
+}
+
+/// Draw the authored deck.
+pub(crate) fn emit_detail(
+    commands: &mut Commands,
+    state: &StudioState,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    cache: &mut TileMeshCache,
+) -> DetailReport {
+    let Some(solved) = state.solved.as_ref() else {
+        return DetailReport::default();
+    };
+    // Without a projected catalog there is nothing authored to draw. `draw.rs`
+    // notices the same thing and forces its schematic back on, so the viewport
+    // reports a missing catalog rather than going black.
+    let Some(snapshot) = solved.geometry.as_ref() else {
+        return DetailReport::default();
+    };
+    let signals = classify(state);
+    let cells = scope(state, &signals);
+    if cells.is_empty() {
+        return DetailReport::default();
+    }
+
+    // One pass per signal class. Deliberately not a change to
+    // `observed_cutaway`'s bucketing API, which `tactics_lab` and
+    // `iso_observer_lab` also depend on; the extra passes are over an already
+    // built snapshot, on a rebuild that only happens when geometry changes.
+    let mut by_signal: BTreeMap<CellSignal, BTreeSet<HexCoord>> = BTreeMap::new();
+    for coord in &cells {
+        let signal = signals.get(coord).copied().unwrap_or(CellSignal::Ordinary);
+        by_signal.entry(signal).or_default().insert(*coord);
+    }
+
+    let bearing = crate::viewport::detent_bearing(state.detent);
+    let mut report = DetailReport::default();
+    let mut batches: Vec<(Mesh, Treatment)> = Vec::new();
+
+    for (signal, class) in by_signal {
+        let (_, context, pass) = build_walls(
+            &solved.world,
+            snapshot,
+            &class,
+            None,
+            state.walls,
+            bearing,
+            cache,
+        );
+        report.cells += pass.cells;
+        report.hulls_drawn += pass.hulls_drawn;
+        report.hulls_cut += pass.hulls_cut;
+        report.distinct_hulls_cached = report.distinct_hulls_cached.max(pass.distinct_hulls_cached);
+        for (register, batch) in context {
+            let Some(mesh) = batch.into_mesh() else {
+                continue;
+            };
+            // A cell wears its district unless it has something to say.
+            let treatment = signal
+                .treatment()
+                .unwrap_or_else(|| observed_style::architecture_tactical(register));
+            batches.push((mesh, treatment));
         }
     }
 
-    for (coord, pieces) in by_cell {
-        let origin = Vec3::from_array(observed_hex::hex_origin(coord));
-        let register = world
+    // A key light aimed off the current view bearing. Deriving it from the
+    // detent means contrast stays equivalent at all six stops instead of one
+    // stop happening to look flat; offsetting it from the view axis is what
+    // separates a wall face from the floor it stands on, which head-on lighting
+    // cannot do.
+    let bearing3 = Vec3::new(bearing.x, 0.0, bearing.y);
+    let key_from = Quat::from_rotation_y(KEY_LIGHT_OFFSET) * bearing3 + Vec3::Y * 1.15;
+    commands.spawn((
+        DirectionalLight {
+            illuminance: KEY_ILLUMINANCE,
+            shadow_maps_enabled: false,
+            ..default()
+        },
+        Transform::from_translation(key_from).looking_at(Vec3::ZERO, Vec3::Y),
+        StudioVisual,
+    ));
+    spawn_district_lights(commands, state, &cells);
+
+    for (mesh, treatment) in batches {
+        commands.spawn((
+            Mesh3d(meshes.add(mesh)),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: treatment.base_color,
+                emissive: treatment.emissive,
+                // Lit, unlike the schematic: this is surface, and without
+                // shading every face of a hull is the same flat colour, so
+                // interior geometry silhouettes but never reads.
+                unlit: false,
+                perceptual_roughness: 0.82,
+                metallic: 0.04,
+                cull_mode: None,
+                double_sided: true,
+                ..default()
+            })),
+            StudioVisual,
+        ));
+    }
+    report
+}
+
+/// One local practical pool per visible architecture register.
+///
+/// Ported from `tactics_lab`, for its reason: a view may contain several
+/// districts at once, so a single global palette would necessarily lie about
+/// all but one of them.
+fn spawn_district_lights(commands: &mut Commands, state: &StudioState, cells: &BTreeSet<HexCoord>) {
+    let Some(solved) = state.solved.as_ref() else {
+        return;
+    };
+    let mut centres: BTreeMap<ArchitectureRegister, (Vec3, u32)> = BTreeMap::new();
+    for coord in cells {
+        let register = solved
+            .world
             .architecture
-            .get(&coord)
+            .get(coord)
             .copied()
             .unwrap_or(ArchitectureRegister::Institutional);
-        let batch = if selected == Some(coord) {
-            &mut focus
-        } else {
-            context.entry(register).or_default()
-        };
-
-        for (ordinal, piece) in pieces.iter().enumerate() {
-            let ColliderShape::ConvexHull { points } = &piece.shape else {
-                continue;
-            };
-            if points.is_empty() {
-                continue;
-            }
-
-            // Boundary shells carry no tile key. There are few of them, and
-            // filing them under one shared key would hand back another shell's
-            // geometry, so they are built fresh and held here for the borrow.
-            let fresh: Option<CachedHull>;
-            let cached = match piece.tile.as_ref() {
-                Some(tile) => {
-                    let key = format!(
-                        "{}/{}/{}#{ordinal}",
-                        tile.archetype, tile.register, tile.variant
-                    );
-                    cache.entry(key, points.as_slice())
-                }
-                None => {
-                    fresh = TileMeshCache::build_hull(points.as_slice());
-                    fresh.as_ref()
-                }
-            };
-            let Some(cached) = cached else { continue };
-
-            if survives(
-                cached.min_y,
-                cached.max_y,
-                cached.centroid,
-                bearing,
-                cutaway,
-            ) {
-                batch.push(&cached.mesh, origin);
-                report.hulls_drawn += 1;
-            } else {
-                report.hulls_cut += 1;
-            }
-        }
+        let entry = centres.entry(register).or_insert((Vec3::ZERO, 0));
+        entry.0 += Vec3::from_array(observed_hex::hex_origin(*coord));
+        entry.1 += 1;
     }
-
-    report.distinct_hulls_cached = cache.len();
-    (focus, context, report)
-}
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Looking from +X: the bearing points from the scene toward the camera.
-    fn bearing() -> Vec2 {
-        Vec2::new(1.0, 0.0)
-    }
-
-    #[test]
-    fn the_floor_is_never_cut_away() {
-        // Low, wide, and on the near side: every other rule would drop it.
-        assert!(survives(
-            0.0,
-            0.5,
-            Vec3::new(7.0, 0.2, 0.0),
-            bearing(),
-            true
-        ));
-    }
-
-    /// Min-Y, not the centroid. A pillar from floor to ceiling has a high
-    /// centroid; culling it would delete structure and call it roofing.
-    #[test]
-    fn a_full_height_pillar_survives_but_a_ceiling_slab_does_not() {
-        let pillar_centroid = Vec3::new(0.0, 4.0, 0.0);
-        assert!(
-            survives(0.4, 8.0, pillar_centroid, bearing(), true),
-            "a pillar spanning the cell is structure"
-        );
-        assert!(
-            !survives(7.5, 8.0, Vec3::new(0.0, 7.8, 0.0), bearing(), true),
-            "a slab starting above head clearance is roofing"
-        );
-    }
-
-    #[test]
-    fn interior_fittings_are_never_treated_as_near_walls() {
-        // Inside the interior radius, on the near side, at wall height.
-        assert!(survives(
-            1.0,
-            2.0,
-            Vec3::new(1.0, 1.5, 0.0),
-            bearing(),
-            true
-        ));
-    }
-
-    /// The whole point: walls between the camera and the interior go, the far
-    /// ones stay, and it is three of six either way.
-    #[test]
-    fn the_near_walls_are_cut_and_the_far_walls_are_kept() {
-        let mut kept = 0;
-        let mut cut = 0;
-        for index in 0..6 {
-            #[allow(clippy::cast_precision_loss)]
-            let angle = std::f32::consts::TAU * index as f32 / 6.0;
-            let local = Vec3::new(angle.cos() * 7.0, 1.5, angle.sin() * 7.0);
-            if survives(1.0, 2.5, local, bearing(), true) {
-                kept += 1;
-            } else {
-                cut += 1;
-            }
-        }
-        assert_eq!(kept + cut, 6);
-        assert_eq!(cut, 3, "exactly half the perimeter faces the camera");
-    }
-
-    /// Rotating the view must move which walls are cut, or the detents do
-    /// nothing and the far side is never inspectable.
-    #[test]
-    fn rotating_the_bearing_moves_which_walls_are_cut() {
-        let wall = Vec3::new(7.0, 1.5, 0.0);
-        assert!(
-            !survives(1.0, 2.5, wall, Vec2::new(1.0, 0.0), true),
-            "cut when the camera is on that side"
-        );
-        assert!(
-            survives(1.0, 2.5, wall, Vec2::new(-1.0, 0.0), true),
-            "kept when the camera is opposite"
-        );
-    }
-
-    #[test]
-    fn cutaway_off_keeps_everything() {
-        assert!(survives(
-            7.5,
-            8.0,
-            Vec3::new(7.0, 7.8, 0.0),
-            bearing(),
-            false
+    for (register, (sum, count)) in centres {
+        #[allow(clippy::cast_precision_loss)]
+        let centre = sum / count.max(1) as f32;
+        let palette = observed_style::architecture(register);
+        commands.spawn((
+            PointLight {
+                color: palette.light_color,
+                intensity: observed_style::iso::light::PRACTICAL_INTENSITY,
+                range: observed_style::iso::light::PRACTICAL_RANGE,
+                radius: observed_style::iso::light::PRACTICAL_RADIUS,
+                shadow_maps_enabled: false,
+                ..default()
+            },
+            Transform::from_translation(
+                centre + Vec3::Y * observed_style::iso::light::PRACTICAL_LIFT,
+            ),
+            StudioVisual,
         ));
     }
 }

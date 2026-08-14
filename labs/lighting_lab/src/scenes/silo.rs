@@ -130,7 +130,7 @@ pub fn spawn(ctx: &mut SceneCtx) {
                 color: Color::srgb(1.0, 0.6, 0.25),
                 intensity: 240_000.0,
                 range: PRACTICAL_RANGE,
-                shadows_enabled: level < 2, // shadow budget: only the top pools cast
+                shadow_maps_enabled: level < 2, // shadow budget: only the top pools cast
                 ..default()
             },
             Transform::from_translation(lamp_pos),

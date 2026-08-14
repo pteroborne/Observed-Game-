@@ -70,7 +70,7 @@ fn primed_key_light(architecture: ArchitectureRegister, composition: HexComposit
         radius: palette.key_radius,
         inner_angle: palette.key_inner_angle,
         outer_angle: palette.key_outer_angle,
-        shadows_enabled: palette.key_shadows_enabled,
+        shadow_maps_enabled: palette.key_shadows_enabled,
         ..default()
     }
 }
@@ -114,16 +114,16 @@ pub(in crate::hex_wfc) fn sync_practical_shadow_budget(
     for entity in std::mem::take(&mut *shadowed) {
         if !want.contains(&entity)
             && let Ok((_, _, mut light)) = practicals.get_mut(entity)
-            && light.shadows_enabled
+            && light.shadow_maps_enabled
         {
-            light.shadows_enabled = false;
+            light.shadow_maps_enabled = false;
         }
     }
     for &entity in &want {
         if let Ok((_, _, mut light)) = practicals.get_mut(entity)
-            && !light.shadows_enabled
+            && !light.shadow_maps_enabled
         {
-            light.shadows_enabled = true;
+            light.shadow_maps_enabled = true;
         }
     }
     *shadowed = want;
@@ -212,7 +212,7 @@ pub(in crate::hex_wfc) fn sync_lighting_and_atmosphere(
         light.radius = lerp_f(light.radius, palette.key_radius, t);
         light.inner_angle = lerp_f(light.inner_angle, palette.key_inner_angle, t);
         light.outer_angle = lerp_f(light.outer_angle, palette.key_outer_angle, t);
-        light.shadows_enabled = palette.key_shadows_enabled;
+        light.shadow_maps_enabled = palette.key_shadows_enabled;
     }
 }
 
@@ -285,7 +285,7 @@ mod tests {
             assert_eq!(key.radius, palette.key_radius);
             assert_eq!(key.inner_angle, palette.key_inner_angle);
             assert_eq!(key.outer_angle, palette.key_outer_angle);
-            assert_eq!(key.shadows_enabled, palette.key_shadows_enabled);
+            assert_eq!(key.shadow_maps_enabled, palette.key_shadows_enabled);
         }
     }
 }

@@ -124,6 +124,9 @@ pub enum HexMatchEventKind {
     /// A relayout re-collapse committed: `facility.generation` incremented and
     /// unobserved cells mutated. Presentation re-snapshots geometry on this.
     MutationCommitted,
+    /// The relayout stream advanced but solved back to identical structure.
+    /// This is neither a mutation nor an observation hold.
+    MutationNoChange,
     /// A pending relayout was rejected — observation held the structure, the
     /// re-collapse failed, or the candidate no longer projected.
     MutationCancelled,

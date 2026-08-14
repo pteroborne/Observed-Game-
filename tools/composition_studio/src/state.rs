@@ -6,6 +6,7 @@
 //! camera — and this is the state those systems read and write, plus the
 //! loading that establishes it.
 
+use std::collections::VecDeque;
 use std::sync::OnceLock;
 
 use bevy::prelude::*;
@@ -19,7 +20,7 @@ use observed_match::hex_wfc::HexWfcGeometrySnapshot;
 
 use crate::{
     DrawReport, KeyboardOwner, Layer, PANEL_WIDTH, PRESET_SEEDS, brush, detail, neighbors, panels,
-    persist, viewport,
+    persist, timeline, viewport,
 };
 
 pub struct SolveResult {
@@ -81,7 +82,25 @@ pub struct StudioState {
     pub catalog_hash: CatalogHash,
 
     pub config: HexWfcConfig,
-    pub seed_index: usize,
+    /// The seed being solved. A real value rather than an index, so the studio
+    /// is not confined to the five pinned evidence seeds — `PRESET_SEEDS` stays
+    /// exactly what it was and becomes a set of bookmarks into a whole space.
+    pub seed: u64,
+    /// Which preset this seed came from, when it came from one.
+    pub seed_preset: Option<usize>,
+
+    /// Profiles as they were before each edit, most recent last.
+    ///
+    /// Bounded, because a session can edit for hours and an unbounded history
+    /// of a struct this size is a leak with a nice name.
+    pub undo_stack: VecDeque<HexCompositionProfile>,
+    pub redo_stack: Vec<HexCompositionProfile>,
+    /// The profile as of the last history entry, so an edit can be detected
+    /// without every call site having to announce one. Bookkeeping for
+    /// [`StudioState::undo`]; nothing outside it should write this.
+    pub last_committed: HexCompositionProfile,
+    /// When the last history entry was pushed, for coalescing a burst.
+    pub last_undo_push: Option<f32>,
 
     pub solved: Option<SolveResult>,
     /// The same seed solved at the baseline profile, for the compare overlay
@@ -117,8 +136,17 @@ pub struct StudioState {
     pub show_baseline_compare: bool,
     /// Which cells draw their real authored geometry.
     pub detail_mode: detail::DetailMode,
-    /// Whether the ceiling and near walls are cut away in detail mode.
-    pub cutaway: bool,
+    /// How much of each cell's authored walls the deck draws.
+    pub walls: detail::WallMode,
+    /// Whether the solver's schematic is laid over the authored deck.
+    ///
+    /// Off by default — it is a diagnostic, not the view. `draw.rs` forces it on
+    /// when there is no authored geometry to draw and while a replay runs, and
+    /// says which in the status line.
+    pub show_schematic: bool,
+    /// Why the schematic is on when it was not asked for, set by the drawer.
+    /// `None` when the overlay reflects what you configured.
+    pub schematic_forced: Option<String>,
     /// View azimuth, in 60-degree detents anchored at the historical default.
     pub detent: usize,
     pub detail_report: detail::DetailReport,
@@ -134,6 +162,9 @@ pub struct StudioState {
     /// What could stand around the selected cell, and which of those options
     /// is currently being previewed. See [`neighbors`].
     pub neighbors: neighbors::NeighborView,
+    /// Where the solve replay is. Settled at the end of the trace unless a
+    /// person has asked to watch the solve happen.
+    pub timeline: timeline::Timeline,
     pub status: String,
     pub report: DrawReport,
     /// The whole-catalog seam audit. On demand, because it recompiles every
@@ -141,6 +172,23 @@ pub struct StudioState {
     /// solve.
     pub seam_audit: panels::coverage::SeamAudit,
     pub base_frame: (Transform, f32, f32),
+}
+
+/// A seed nobody chose.
+///
+/// The clock's entropy is all in its low bits, so it is spread across all
+/// sixty-four with the standard SplitMix64 finaliser — otherwise every rolled
+/// seed would share a high half and look like a family. This is a convenience
+/// for an author browsing facilities; it is not a simulation RNG and nothing
+/// deterministic depends on it.
+fn rolled_seed() -> u64 {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_nanos() as u64);
+    let mut z = nanos.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
 }
 
 fn tile_dir() -> std::path::PathBuf {
@@ -213,6 +261,7 @@ impl Default for StudioState {
             status.push_str(&format!("  |  {detail}"));
         }
 
+        let profile_for_history = profile.clone();
         Self {
             profile: profile.clone(),
             baseline: HexCompositionProfile::baseline(),
@@ -221,7 +270,12 @@ impl Default for StudioState {
             origin,
             catalog_hash,
             config: HexWfcConfig::default(),
-            seed_index: 0,
+            seed: PRESET_SEEDS[0],
+            seed_preset: Some(0),
+            undo_stack: VecDeque::new(),
+            redo_stack: Vec::new(),
+            last_committed: profile_for_history,
+            last_undo_push: None,
             solved: None,
             baseline_world: None,
             baseline_score: None,
@@ -237,8 +291,12 @@ impl Default for StudioState {
             hovered: None,
             show_walls: true,
             show_baseline_compare: false,
-            detail_mode: detail::DetailMode::default(),
-            cutaway: true,
+            // The authored deck, not the schematic. The tool's subject is the
+            // facility a profile builds, and it should open on it.
+            detail_mode: detail::DetailMode::Layer,
+            walls: detail::WallMode::default(),
+            show_schematic: false,
+            schematic_forced: None,
             detent: 0,
             detail_report: detail::DetailReport::default(),
             panel_open: true,
@@ -246,6 +304,7 @@ impl Default for StudioState {
             brush: brush::Brush::default(),
             pin_diagnostics: Vec::new(),
             neighbors: neighbors::NeighborView::default(),
+            timeline: timeline::Timeline::default(),
             status,
             report: DrawReport::default(),
             seam_audit: panels::coverage::SeamAudit::default(),
@@ -254,15 +313,121 @@ impl Default for StudioState {
     }
 }
 
+/// How many edits back the history reaches.
+pub const UNDO_DEPTH: usize = 64;
+
 impl StudioState {
     /// The seed currently being solved.
     #[must_use]
-    pub fn seed(&self) -> u64 {
-        PRESET_SEEDS[self.seed_index % PRESET_SEEDS.len()]
+    pub const fn seed(&self) -> u64 {
+        self.seed
+    }
+
+    /// How the current seed should be named on screen.
+    #[must_use]
+    pub fn seed_label(&self) -> String {
+        match self.seed_preset {
+            Some(index) => format!("{:#018x} (preset {index})", self.seed),
+            None => format!("{:#018x} (free)", self.seed),
+        }
+    }
+
+    /// Move to a pinned preset seed, wrapping.
+    pub fn step_preset_seed(&mut self, delta: isize, now: f32) {
+        let count = PRESET_SEEDS.len();
+        #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+        let next = match self.seed_preset {
+            Some(index) => (index as isize + delta).rem_euclid(count as isize) as usize,
+            // Coming back from a free seed lands on the first preset rather
+            // than guessing which one a rolled seed was "near".
+            None => 0,
+        };
+        self.set_seed(PRESET_SEEDS[next], Some(next), now);
+    }
+
+    /// Solve a seed that is not in the pinned set.
+    ///
+    /// The five presets are an evidence contract shared with `iso_observer_lab`
+    /// and are not touched by this; they simply stop being the only reachable
+    /// facilities. A seed is not part of the composition profile, so rolling one
+    /// does not move the simulation hash and cannot lock out a LAN peer.
+    pub fn roll_seed(&mut self, now: f32) {
+        self.set_seed(rolled_seed(), None, now);
+    }
+
+    fn set_seed(&mut self, seed: u64, preset: Option<usize>, now: f32) {
+        self.seed = seed;
+        self.seed_preset = preset;
+        // A different seed is a different facility, so the cached baseline solve
+        // no longer describes anything the compare overlay should trust.
+        self.invalidate_baseline();
+        self.status = format!("seed is now {}", self.seed_label());
+        self.touch_profile(now);
     }
 
     /// Mark the profile edited: re-solve after the debounce, and redraw.
+    ///
+    /// This is also where edit history is taken. Every profile edit in the tool
+    /// already routes through here, so the alternative — asking each call site
+    /// to announce itself — would only mean a future edit path that silently
+    /// cannot be undone.
     pub fn touch_profile(&mut self, now: f32) {
+        self.record_edit(now);
+        self.solve_dirty = true;
+        self.last_edit = Some(now);
+    }
+
+    fn record_edit(&mut self, now: f32) {
+        if self.profile == self.last_committed {
+            return;
+        }
+        // A drag across thirty cells, or a slider swept through ten steps, is
+        // one edit to the person doing it. Coalescing on the same window the
+        // solver debounces on keeps "one gesture, one undo" true without
+        // inventing a second notion of what an edit is.
+        let coalesce = self
+            .last_undo_push
+            .is_some_and(|pushed| now - pushed < crate::SOLVE_DEBOUNCE_SECONDS);
+        if !coalesce {
+            self.undo_stack.push_back(self.last_committed.clone());
+            if self.undo_stack.len() > UNDO_DEPTH {
+                self.undo_stack.pop_front();
+            }
+            self.redo_stack.clear();
+            self.last_undo_push = Some(now);
+        }
+        self.last_committed = self.profile.clone();
+    }
+
+    /// Step back one edit. Returns whether there was one.
+    pub fn undo(&mut self, now: f32) -> bool {
+        let Some(previous) = self.undo_stack.pop_back() else {
+            return false;
+        };
+        self.redo_stack.push(self.profile.clone());
+        self.apply_history(previous, now);
+        self.status = format!("undo ({} left)", self.undo_stack.len());
+        true
+    }
+
+    /// Step forward again. Returns whether there was something to redo.
+    pub fn redo(&mut self, now: f32) -> bool {
+        let Some(next) = self.redo_stack.pop() else {
+            return false;
+        };
+        self.undo_stack.push_back(self.profile.clone());
+        self.apply_history(next, now);
+        self.status = format!("redo ({} left)", self.redo_stack.len());
+        true
+    }
+
+    fn apply_history(&mut self, profile: HexCompositionProfile, now: f32) {
+        self.profile = profile;
+        // The history move is not itself an edit to record, and the next real
+        // edit must start a fresh entry rather than coalescing into this one.
+        self.last_committed = self.profile.clone();
+        self.last_undo_push = None;
+        self.refresh_pin_diagnostics();
         self.solve_dirty = true;
         self.last_edit = Some(now);
     }

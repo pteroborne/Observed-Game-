@@ -630,7 +630,17 @@ fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
     //
     // Determinism, which is what this gate actually guards, is asserted above
     // and is unaffected by either move.
-    assert_eq!(a, 6_589, "TR-10 pins the declared-ramp completion tick");
+    // Moved a third time (6,589 -> 6,610) when corner, junction and expanse
+    // gained interior readings. This one is cheap and for the opposite reason
+    // to the two above: nothing about how a shape is *followed* changed, only
+    // which shapes are there. A route that used to pass the same junction pylon
+    // every time now passes a pylon, then an open crossing, then a pylon, and
+    // walking around different furniture costs 21 ticks — 0.3%.
+    //
+    // The load-bearing check is the one above: run A and run B still agree
+    // tick-for-tick. A geometry change that had broken determinism would fail
+    // there, not here.
+    assert_eq!(a, 6_610, "TR-10 pins the declared-ramp completion tick");
     // Teleport plates moved this digest (0x02dd_ea8d_c8d2_ac4a -> below) without
     // moving the tick above, and that pairing is the proof it was a
     // representation change and not a behavioural one: the snapshot now folds
@@ -638,7 +648,7 @@ fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
     // presses the button, so its route is tick-for-tick what it was.
     assert_eq!(
         first.snapshot().digest,
-        0x2c61_8b5d_b4af_d843,
+        0xb9d9_6ea5_2ed3_3b33,
         "TR-10 pins the declared-ramp final snapshot digest"
     );
 }
