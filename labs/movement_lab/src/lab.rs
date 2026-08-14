@@ -207,7 +207,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DebugText,
                     Text::new("Movement diagnostics starting…"),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.72, 0.90, 1.0)),
@@ -237,7 +237,7 @@ fn spawn_ui(commands: &mut Commands) {
                          upper ledge → moving platform → respawn gap",
                     ),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.82, 0.91, 1.0)),

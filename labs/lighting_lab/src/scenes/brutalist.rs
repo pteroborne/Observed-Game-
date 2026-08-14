@@ -103,7 +103,7 @@ pub fn spawn(ctx: &mut SceneCtx) {
             intensity: 300_000_000.0,
             range: 60.0,
             radius: 0.02,
-            shadows_enabled: true,
+            shadow_maps_enabled: true,
             inner_angle: 0.16,
             outer_angle: 0.22,
             ..default()

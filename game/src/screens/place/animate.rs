@@ -271,7 +271,7 @@ pub(crate) fn animate_teleport_pad_glow(
         transform.rotate_local_y(time.delta_secs() * 0.5);
         transform.translation.y = scale_y * 0.5 + 0.05;
 
-        if let Some(mat) = materials.get_mut(material_handle.as_ref()) {
+        if let Some(mat) = materials.get_mut(material_handle.as_ref()).as_deref_mut() {
             let pad = style::marker(MarkerRole::You);
             let intensity = if stepped_on {
                 0.8 + (elapsed * 3.0).sin() * 0.2
@@ -308,7 +308,7 @@ pub(crate) fn update_carried_torch_light(
                         color: style::marker(MarkerRole::Control).base_color,
                         intensity: 2_200.0,
                         range: 8.0,
-                        shadows_enabled: false,
+                        shadow_maps_enabled: false,
                         ..default()
                     },
                     Transform::from_xyz(0.0, 0.0, 0.0),

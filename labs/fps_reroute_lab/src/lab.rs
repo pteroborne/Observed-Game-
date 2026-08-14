@@ -161,7 +161,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DebugText,
                     Text::new("Reroute diagnostics starting…"),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(1.0, 0.9, 0.97)),
@@ -192,7 +192,7 @@ fn spawn_ui(commands: &mut Commands) {
                          Walk off, look back, and a corridor leads somewhere new.",
                     ),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.92, 0.9, 0.96)),

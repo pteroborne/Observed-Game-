@@ -5,11 +5,12 @@ edition = "2024"
 publish = false
 
 [dependencies]
-bevy = { version = "0.18.1", default-features = false, features = ["3d", "png"] }
+bevy = { version = "0.19", default-features = false, features = [
+    "ui","3d", "png"] }
 # Phase A1 of the asset-integration roadmap: TrenchBroom `.map` authoring. Only the
 # default `client` feature (map loading + PBR materials) — no `bsp` (qbsp/ericw-tools)
 # and no physics integration; this lab uses the project's own AABB traversal instead.
-bevy_trenchbroom = { version = "0.13", default-features = false, features = ["client"] }
+bevy_trenchbroom = { version = "0.14", default-features = false, features = ["client"] }
 observed_core = { path = "../../crates/observed_core" }
 player_input = { path = "../../crates/player_input" }
 observed_style = { path = "../../crates/observed_style" }

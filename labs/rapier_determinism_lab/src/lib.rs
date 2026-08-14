@@ -133,7 +133,7 @@ fn setup(
     commands.spawn((
         DirectionalLight {
             illuminance: 6000.0,
-            shadows_enabled: true,
+            shadow_maps_enabled: true,
             ..default()
         },
         Transform::from_xyz(4.0, 8.0, 4.0).looking_at(Vec3::ZERO, Vec3::Y),
@@ -195,7 +195,7 @@ fn setup(
             VerdictText,
             Text::new("Rapier3D lockstep spike"),
             TextFont {
-                font_size: 15.0,
+                font_size: FontSize::Px(15.0),
                 ..default()
             },
             TextColor(Color::srgb(0.9, 0.95, 1.0)),

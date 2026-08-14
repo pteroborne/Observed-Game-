@@ -109,7 +109,7 @@ fn setup(
     commands.spawn((
         DirectionalLight {
             illuminance: 3_500.0,
-            shadows_enabled: true,
+            shadow_maps_enabled: true,
             ..default()
         },
         Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.8, -0.7, 0.0)),
@@ -133,7 +133,7 @@ fn setup(
             Monitor,
             Text::new("Rapier authoring lab"),
             TextFont {
-                font_size: 17.0,
+                font_size: FontSize::Px(17.0),
                 ..default()
             },
             TextColor(Color::WHITE),

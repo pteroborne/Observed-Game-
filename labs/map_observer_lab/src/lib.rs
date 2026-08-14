@@ -80,7 +80,7 @@ fn setup_hud(mut commands: Commands) {
         ObserverHudText,
         Text::new(""),
         TextFont {
-            font_size: 16.0,
+            font_size: FontSize::Px(16.0),
             ..default()
         },
         TextColor(Color::srgb(0.24, 0.82, 1.0)), // Cyan neon glow color

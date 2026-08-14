@@ -150,7 +150,7 @@ fn setup(mut commands: Commands) {
         LabStatus,
         Text::new(""),
         TextFont {
-            font_size: 16.0,
+            font_size: FontSize::Px(16.0),
             ..default()
         },
         TextColor(Color::srgb(0.88, 0.94, 1.0)),
@@ -357,7 +357,7 @@ fn rebuild_visuals(
             LabVisual,
             Text2d::new(format!("LEVEL {level}")),
             TextFont {
-                font_size: 15.0,
+                font_size: FontSize::Px(15.0),
                 ..default()
             },
             TextColor(Color::srgb(0.58, 0.72, 0.9)),

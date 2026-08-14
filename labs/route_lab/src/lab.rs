@@ -113,7 +113,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DebugText,
                     Text::new("Route diagnostics starting…"),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.84, 0.93, 1.0)),
@@ -143,7 +143,7 @@ fn spawn_ui(commands: &mut Commands) {
                          your cable to send that route back into the churn.",
                     ),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.88, 0.92, 0.97)),

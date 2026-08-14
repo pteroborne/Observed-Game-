@@ -5,7 +5,8 @@ edition = "2024"
 publish = false
 
 [dependencies]
-bevy = { version = "0.18.1", default-features = false, features = ["2d", "png"] }
+bevy = { version = "0.19", default-features = false, features = [
+    "ui","2d", "png"] }
 observed_core = { path = "../../crates/observed_core" }
 # Projects the promoted production models (refactor R5) — no cross-lab dependency.
 observed_observation = { path = "../../crates/observed_observation" }

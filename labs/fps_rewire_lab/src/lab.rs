@@ -114,7 +114,7 @@ pub(crate) fn setup_lab(
     commands.spawn((
         DirectionalLight {
             illuminance: 12_000.0,
-            shadows_enabled: true,
+            shadow_maps_enabled: true,
             ..default()
         },
         Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.8, -0.7, 0.0)),
@@ -343,7 +343,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DebugText,
                     Text::new("Rewire diagnostics starting..."),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.86, 1.0, 0.92)),
@@ -375,7 +375,7 @@ fn spawn_ui(commands: &mut Commands) {
                          its old rendered destination until arrival.",
                     ),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.9, 0.96, 0.94)),

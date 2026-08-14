@@ -141,7 +141,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DebugText,
                     Text::new("Team diagnostics starting…"),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.80, 0.92, 1.0)),
@@ -172,7 +172,7 @@ fn spawn_ui(commands: &mut Commands) {
                          resolves by player id; cohesion tracks who is together.",
                     ),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.86, 0.90, 0.95)),

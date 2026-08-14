@@ -273,7 +273,7 @@ pub(in crate::hex_wfc) fn sync_key_light(
         commands.spawn((
             DirectionalLight {
                 illuminance: observed_style::iso::light::KEY_ILLUMINANCE,
-                shadows_enabled: false,
+                shadow_maps_enabled: false,
                 ..default()
             },
             aimed,

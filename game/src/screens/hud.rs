@@ -355,7 +355,7 @@ pub(crate) fn draw_tac_map(
                     },
                     Text::new(label),
                     TextFont {
-                        font_size: (room_size * 0.2).clamp(7.0, 9.0),
+                        font_size: FontSize::Px((room_size * 0.2).clamp(7.0, 9.0)),
                         ..default()
                     },
                     TextColor(rival_col.with_alpha(pip.alpha())),
@@ -428,7 +428,7 @@ pub(crate) fn draw_tac_map(
                         .map_or("--".to_string(), |rounds| rounds.to_string())
                 )),
                 TextFont {
-                    font_size: 11.0,
+                    font_size: FontSize::Px(11.0),
                     ..default()
                 },
                 TextColor(TITLE),
@@ -892,7 +892,7 @@ pub(crate) fn spawn_match_hud(commands: &mut Commands, high_contrast: bool, debu
                     BorderColor::all(BORDER),
                     Text::new("Match starting..."),
                     TextFont {
-                        font_size: 1.0,
+                        font_size: FontSize::Px(1.0),
                         ..default()
                     },
                     TextColor(Color::NONE),
@@ -958,7 +958,7 @@ pub(crate) fn spawn_match_hud(commands: &mut Commands, high_contrast: bool, debu
                             "PAUSED\n\nEsc / Start  Resume\nO              Settings\nQ / Y        Quit to menu"
                         ),
                         TextFont {
-                            font_size: 28.0,
+                            font_size: FontSize::Px(28.0),
                             ..default()
                         },
                         TextColor(TITLE),
@@ -967,7 +967,7 @@ pub(crate) fn spawn_match_hud(commands: &mut Commands, high_contrast: bool, debu
                         PauseConfigReadout,
                         Text::new(""),
                         TextFont {
-                            font_size: 14.0,
+                            font_size: FontSize::Px(14.0),
                             ..default()
                         },
                         TextColor(DIM),
@@ -1016,7 +1016,7 @@ pub(crate) fn spawn_match_hud(commands: &mut Commands, high_contrast: bool, debu
                     },
                     Text::new("TAC-MAP"),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(TITLE),

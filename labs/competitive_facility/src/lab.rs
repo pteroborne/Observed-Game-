@@ -134,7 +134,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DebugText,
                     Text::new("Match diagnostics starting…"),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(1.0, 0.92, 0.86)),
@@ -165,7 +165,7 @@ fn spawn_ui(commands: &mut Commands) {
                          the match resolves: some escape, the rest are taken.",
                     ),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.9, 0.92, 0.95)),

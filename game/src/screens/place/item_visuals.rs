@@ -51,7 +51,7 @@ pub(crate) fn spawn_keystone_item(
                         color: Color::srgb(1.0, 0.82, 0.3),
                         intensity: 2_400.0,
                         range: 7.0,
-                        shadows_enabled: false,
+                        shadow_maps_enabled: false,
                         ..default()
                     },
                     Transform::default(),
@@ -78,7 +78,7 @@ pub(crate) fn spawn_keystone_item(
                     color: Color::srgb(1.0, 0.82, 0.3),
                     intensity: 2_400.0,
                     range: 7.0,
-                    shadows_enabled: false,
+                    shadow_maps_enabled: false,
                     ..default()
                 },
                 Transform::default(),
@@ -136,7 +136,7 @@ pub(crate) fn spawn_anchor_torch(
                         color: style::marker(MarkerRole::Control).base_color,
                         intensity: 1_900.0,
                         range: ANCHOR_RADIUS,
-                        shadows_enabled: false,
+                        shadow_maps_enabled: false,
                         ..default()
                     },
                     Name::new("Anchor torch light"),
@@ -169,7 +169,7 @@ pub(crate) fn spawn_anchor_torch(
                     color: style::marker(MarkerRole::Control).base_color,
                     intensity: 1_900.0,
                     range: ANCHOR_RADIUS,
-                    shadows_enabled: false,
+                    shadow_maps_enabled: false,
                     ..default()
                 },
                 Name::new("Anchor torch light"),
@@ -223,7 +223,7 @@ pub(crate) fn spawn_teleport_pad(
                         color: style::marker(MarkerRole::You).base_color,
                         intensity: 1_700.0,
                         range: 6.0,
-                        shadows_enabled: false,
+                        shadow_maps_enabled: false,
                         ..default()
                     },
                     Transform::from_xyz(0.0, -0.1, 0.0),
@@ -270,7 +270,7 @@ pub(crate) fn spawn_teleport_pad(
                     color: style::marker(MarkerRole::You).base_color,
                     intensity: 1_700.0,
                     range: 6.0,
-                    shadows_enabled: false,
+                    shadow_maps_enabled: false,
                     ..default()
                 },
                 Transform::from_xyz(0.0, 0.35, 0.0),

@@ -269,119 +269,6 @@ pub fn drawn_bounds(world: &HexWfcWorld, layer: Layer) -> Option<(Vec3, Vec3)> {
     found.then_some((min, max))
 }
 
-/// Draw the cut-away authored hulls for whichever cells the mode selects.
-fn emit_detail(
-    commands: &mut Commands,
-    state: &StudioState,
-    meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<StandardMaterial>,
-    cache: &mut crate::detail::TileMeshCache,
-) -> crate::detail::DetailReport {
-    use crate::detail::DetailMode;
-
-    if state.detail_mode == DetailMode::Off {
-        return crate::detail::DetailReport::default();
-    }
-    let Some(solved) = state.solved.as_ref() else {
-        return crate::detail::DetailReport::default();
-    };
-    let Some(snapshot) = solved.geometry.as_ref() else {
-        return crate::detail::DetailReport::default();
-    };
-
-    let cells = match state.detail_mode {
-        DetailMode::Off => return crate::detail::DetailReport::default(),
-        DetailMode::Focus => crate::detail::focus_set(&solved.world, state.selected),
-        // Only the centre is solid here. Its ring is drawn as wireframe by
-        // `neighbors::emit`, which is the whole point of the mode: solid is what
-        // is settled, and everything touching it is still a question.
-        DetailMode::Neighborhood => state.selected.into_iter().collect(),
-        DetailMode::Layer => {
-            // Solid geometry is drawn for the *focus* floor only. The floors
-            // above and below stay dim wireframe, which is what makes stacked
-            // floors readable at all.
-            let Some(level) = state.layer.level() else {
-                return crate::detail::DetailReport::default();
-            };
-            solved
-                .world
-                .placements
-                .iter()
-                .filter(|(coord, placement)| {
-                    coord.level == level && placement.archetype != HexArchetype::Void
-                })
-                .map(|(coord, _)| *coord)
-                .collect()
-        }
-    };
-    if cells.is_empty() {
-        return crate::detail::DetailReport::default();
-    }
-
-    let bearing = crate::viewport::detent_bearing(state.detent);
-    let (focus, context, report) = crate::detail::build(
-        &solved.world,
-        snapshot,
-        &cells,
-        state.selected,
-        bearing,
-        state.cutaway,
-        cache,
-    );
-
-    // Solid massing speaks the *surface* language, not the schematic one: this
-    // view shows the geometry that will really be built, so neighbours take
-    // their district accent and the cell under inspection takes the selection
-    // amber. The schematic's lines still overlay it for topology.
-    let mut batches: Vec<(Mesh, Color)> = Vec::new();
-    for (register, batch) in context {
-        if let Some(mesh) = batch.into_mesh() {
-            let accent = observed_style::architecture(register).accent;
-            batches.push((mesh, Color::LinearRgba(accent)));
-        }
-    }
-    if let Some(mesh) = focus.into_mesh() {
-        batches.push((mesh, schematic(SchematicRole::Selected).base_color));
-    }
-
-    // A key light aimed off the current view bearing. Deriving it from the
-    // detent means contrast stays equivalent at all six stops instead of one
-    // stop happening to look flat; offsetting it from the view axis is what
-    // separates a wall face from the floor it stands on, which head-on lighting
-    // cannot do.
-    let bearing3 = Vec3::new(bearing.x, 0.0, bearing.y);
-    let key_from = Quat::from_rotation_y(KEY_LIGHT_OFFSET) * bearing3 + Vec3::Y * 1.15;
-    commands.spawn((
-        DirectionalLight {
-            illuminance: KEY_ILLUMINANCE,
-            shadows_enabled: false,
-            ..default()
-        },
-        Transform::from_translation(key_from).looking_at(Vec3::ZERO, Vec3::Y),
-        StudioVisual,
-    ));
-
-    for (mesh, colour) in batches {
-        commands.spawn((
-            Mesh3d(meshes.add(mesh)),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: colour,
-                // Lit, unlike the schematic: this is surface, and without
-                // shading every face of a hull is the same flat colour, so
-                // interior geometry silhouettes but never reads.
-                unlit: false,
-                perceptual_roughness: 0.85,
-                metallic: 0.0,
-                cull_mode: None,
-                double_sided: true,
-                ..default()
-            })),
-            StudioVisual,
-        ));
-    }
-    report
-}
-
 pub(crate) fn unlit(treatment: Treatment) -> StandardMaterial {
     StandardMaterial {
         base_color: treatment.base_color,
@@ -425,7 +312,7 @@ pub fn rebuild_visuals(
     // the point: the schematic's walls are the *solver's* truth and these hulls
     // are the *authored* truth, and a disagreement between them is a real bug
     // worth seeing rather than hiding behind whichever drew last.
-    let detail_report = emit_detail(
+    let detail_report = crate::detail::emit_detail(
         &mut commands,
         &state,
         &mut meshes,
@@ -437,20 +324,55 @@ pub fn rebuild_visuals(
         crate::neighbors::emit(&mut commands, &state, &mut meshes, &mut materials);
     state.neighbors.report = neighbor_report;
     let pinned = crate::brush::pinned_coords(&state.profile);
+    // What the solver knew at the replay cursor, or `None` when the replay is
+    // settled and the finished world is what to draw.
+    let replay = crate::timeline::replay_cells(&state);
     let Some(solved) = state.solved.as_ref() else {
         state.report = DrawReport::default();
         return;
     };
-    let compare = state.show_baseline_compare;
+    // The compare overlay asks "what did my tuning move", against a finished
+    // baseline world. Mid-replay that question has no answer, and its red would
+    // sit in the same viewport as the replay's red meaning something else — the
+    // Legibility Contract's exact failure case. The replay owns the colour while
+    // it is running, exactly as the neighbourhood explorer does.
+    let compare = state.show_baseline_compare && replay.is_none();
     let baseline = state.baseline_world.as_ref();
+
+    // The authored deck is the view; these lines are the *solver's* topology,
+    // which is a different question. It is asked with `G`, and answered
+    // unasked in three cases where the view would otherwise be wrong:
+    //
+    // - no projected catalog, so there is no solid at all and a black viewport
+    //   would read as a crash;
+    // - mid-replay, where an unobserved cell has no authored geometry and
+    //   without the lattice the facility grows out of nothing;
+    // - the neighbourhood explorer, whose subject is one ring *in a lattice*.
+    let solid_drawing = solved.geometry.is_some()
+        && state.detail_mode != crate::detail::DetailMode::Off
+        && state.detail_report.hulls_drawn > 0;
+    let forced = if solved.geometry.is_none() {
+        Some("no authored geometry: showing the solver's schematic")
+    } else if replay.is_some() {
+        Some("replaying: the lattice is drawn for cells not yet observed")
+    } else if state.detail_mode == crate::detail::DetailMode::Neighborhood {
+        Some("neighbourhood: the lattice is drawn around the ring")
+    } else {
+        None
+    };
+    let overlay_on = state.show_schematic
+        || forced.is_some()
+        || state.detail_mode == crate::detail::DetailMode::Off;
+    let forced_reason = forced.map(String::from);
+    // With the solid drawing, pins and compare are already said in its
+    // treatments, so the line work drops to one neutral colour and stops
+    // answering a second question in the same green and red. Without it, the
+    // overlay is the only surface there is and carries them as it always did.
+    let overlay_carries_signals = !solid_drawing;
 
     // Just clear of `FLOOR_SLAB_TOP` (0.5 m) so the outline reads on top of a
     // solid floor rather than z-fighting inside it.
-    let schematic_lift = if state.detail_mode == crate::detail::DetailMode::Off {
-        0.0
-    } else {
-        0.6
-    };
+    let schematic_lift = if solid_drawing { 0.6 } else { 0.0 };
 
     let mut grid = LineBatch::default();
     // `walls` is the green batch, `changed_walls` the red one. Which question
@@ -480,8 +402,26 @@ pub fn rebuild_visuals(
         let sketch = cell_sketch(&solved.world, *coord, placement);
         let height = sketch.height.unwrap_or(0.9) * WALL_FRACTION * 8.0;
 
-        for (a, b) in floor_ring(CELL_EXTENT) {
-            grid.segment(origin + a, origin + b);
+        // Mid-replay a cell the solver has not observed yet keeps its floor
+        // plan and nothing else — the lattice is there, the cell is not. A
+        // contradicted cell takes the red ring, because propagation emptying a
+        // domain is the event a profile author most needs to see and it has no
+        // geometry of its own to draw.
+        let replayed = replay.as_ref().map(|cells| {
+            cells
+                .get(coord)
+                .copied()
+                .unwrap_or_else(observed_facility::hex_wfc::CellTrace::default)
+        });
+        if overlay_on {
+            let ring_target = if replayed.is_some_and(|cell| cell.contradicted) {
+                &mut changed_walls
+            } else {
+                &mut grid
+            };
+            for (a, b) in floor_ring(CELL_EXTENT) {
+                ring_target.segment(origin + a, origin + b);
+            }
         }
 
         // Compare mode: a cell counts as changed when this profile placed
@@ -502,8 +442,11 @@ pub fn rebuild_visuals(
 
         // Context floors stop at the outline: no walls, no glyphs, no solid.
         // They say "something is under you" without competing with the floor
-        // you are working on.
-        if !is_focus_floor {
+        // you are working on. A cell the replay has not reached stops there too,
+        // for the same reason: its floor plan is real and its walls are not yet
+        // decided. Pin and compare accounting happens above this, so a replay
+        // never makes the panel understate how many cells are pinned.
+        if !overlay_on || !is_focus_floor || replayed.is_some_and(|cell| cell.resolved.is_none()) {
             continue;
         }
 
@@ -511,13 +454,16 @@ pub fn rebuild_visuals(
         for face in HexFace::LATERAL {
             open[face.index()] = placement.is_open(face);
         }
-        // In the neighbourhood explorer the schematic steps back to `Grid`.
-        // Its green/red answers "is this cell pinned"; the mode's green/red
-        // answers "is this neighbour showing what was solved". Two unrelated
-        // questions in one pair of colours is the Legibility Contract's exact
-        // failure case, and with a hundred cells of pin-mode red on screen the
-        // half-dozen cages that carry the answer simply vanish into it.
-        let target = if state.detail_mode == crate::detail::DetailMode::Neighborhood {
+        // One question at a time. When the solid is drawing, pins and compare
+        // are already said there, so these lines stay the neutral `Grid` and
+        // mean only "this is what the solver placed". Two unrelated questions
+        // in one pair of colours is the Legibility Contract's exact failure
+        // case — and it is why the neighbourhood explorer, whose own green and
+        // red answer "is this cage showing an alternative", has always stepped
+        // the schematic back to `Grid`.
+        let target = if !overlay_carries_signals
+            || state.detail_mode == crate::detail::DetailMode::Neighborhood
+        {
             &mut grid
         } else if hold {
             &mut walls
@@ -560,4 +506,5 @@ pub fn rebuild_visuals(
     }
 
     state.report = report;
+    state.schematic_forced = forced_reason;
 }

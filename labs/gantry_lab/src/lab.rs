@@ -97,7 +97,7 @@ pub fn setup_lab(
         GantrySpawned,
         DirectionalLight {
             illuminance: 6_200.0,
-            shadows_enabled: true,
+            shadow_maps_enabled: true,
             ..default()
         },
         Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.75, -0.55, 0.0)),
@@ -109,7 +109,7 @@ pub fn setup_lab(
             color: Color::srgb(0.20, 0.52, 1.0),
             intensity: 1_400_000.0,
             range: 54.0,
-            shadows_enabled: false,
+            shadow_maps_enabled: false,
             ..default()
         },
         Transform::from_xyz(-55.0, GANTRY_EXPANSE_DECK_Y + 6.0, -34.0),
@@ -345,7 +345,7 @@ fn spawn_ui(commands: &mut Commands) {
             DebugText,
             Text::new("Gantry Expanse"),
             TextFont {
-                font_size: 15.0,
+                font_size: FontSize::Px(15.0),
                 ..default()
             },
             TextColor(Color::srgb(0.86, 0.95, 1.0)),

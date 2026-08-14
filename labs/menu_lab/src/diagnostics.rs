@@ -55,11 +55,11 @@ pub(crate) fn setup_overlay(mut commands: Commands) {
             DiagnosticsText,
             Text::new("Lifecycle diagnostics starting…"),
             TextFont {
-                font_size: 15.0,
+                font_size: FontSize::Px(15.0),
                 ..default()
             },
             TextColor(Color::srgb(0.76, 0.88, 1.0)),
-            TextLayout::new_with_justify(Justify::Left),
+            TextLayout::justify(Justify::Left),
         )],
     ));
 }

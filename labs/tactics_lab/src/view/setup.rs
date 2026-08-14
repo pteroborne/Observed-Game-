@@ -15,12 +15,13 @@
 //! which is what gives this screen pointer, keyboard and controller focus
 //! without a bespoke input path.
 
-use bevy::input_focus::{InputFocus, InputFocusVisible, tab_navigation::TabIndex};
+use bevy::input_focus::{FocusCause, InputFocus, InputFocusVisible, tab_navigation::TabIndex};
 use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::ui::InteractionDisabled;
 use bevy::ui_widgets::{
-    Activate, Slider, SliderRange, SliderStep, SliderThumb, SliderValue, TrackClick, ValueChange,
+    Activate, Slider, SliderOrientation, SliderRange, SliderStep, SliderThumb, SliderValue,
+    TrackClick, ValueChange,
 };
 use observed_ui::{
     FocusScope, FocusScopeId, FocusTarget, WidgetId, WidgetLabel, WidgetSpec, WidgetText,
@@ -305,7 +306,7 @@ pub fn spawn(commands: &mut Commands, settings: &MatchSettings, error: Option<&s
             root.spawn((
                 Text::new("OBSERVED - TACTICAL"),
                 TextFont {
-                    font_size: 30.0,
+                    font_size: FontSize::Px(30.0),
                     ..default()
                 },
                 TextColor(Color::WHITE),
@@ -314,7 +315,7 @@ pub fn spawn(commands: &mut Commands, settings: &MatchSettings, error: Option<&s
                 PresetValue,
                 Text::new(format!("Preset: {}", settings.preset_name())),
                 TextFont {
-                    font_size: 16.0,
+                    font_size: FontSize::Px(16.0),
                     ..default()
                 },
                 TextColor(Color::srgb(0.65, 0.8, 0.9)),
@@ -323,7 +324,7 @@ pub fn spawn(commands: &mut Commands, settings: &MatchSettings, error: Option<&s
                 root.spawn((
                     Text::new(format!("COULD NOT START: {error}")),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(
@@ -366,7 +367,7 @@ pub fn spawn(commands: &mut Commands, settings: &MatchSettings, error: Option<&s
                     root.spawn((
                         Text::new(heading.to_uppercase()),
                         TextFont {
-                            font_size: 13.0,
+                            font_size: FontSize::Px(13.0),
                             ..default()
                         },
                         TextColor(Color::srgb(0.5, 0.62, 0.72)),
@@ -393,7 +394,7 @@ pub fn spawn(commands: &mut Commands, settings: &MatchSettings, error: Option<&s
             root.spawn((
                 Text::new("Drag or tap a range. Tap a switch to toggle it."),
                 TextFont {
-                    font_size: 13.0,
+                    font_size: FontSize::Px(13.0),
                     ..default()
                 },
                 TextColor(Color::srgb(0.45, 0.55, 0.62)),
@@ -441,7 +442,7 @@ fn spawn_setting_slider(
                 meta.spawn((
                     Text::new(row.name()),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.76, 0.82, 0.88)),
@@ -455,11 +456,11 @@ fn spawn_setting_slider(
                     SettingValue(row),
                     Text::new(row.value(settings)),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::WHITE),
-                    TextLayout::new_with_justify(Justify::Right),
+                    TextLayout::justify(Justify::Right),
                     Node {
                         width: percent(48.0),
                         ..default()
@@ -471,6 +472,7 @@ fn spawn_setting_slider(
                 SettingSlider(row),
                 Slider {
                     track_click: TrackClick::Snap,
+                    orientation: SliderOrientation::Auto,
                 },
                 SliderValue(f32::from(row.position(settings))),
                 SliderRange::new(0.0, f32::from(row.maximum())),
@@ -556,7 +558,7 @@ fn spawn_setting_toggle(
             line.spawn((
                 Text::new(row.name()),
                 TextFont {
-                    font_size: 15.0,
+                    font_size: FontSize::Px(15.0),
                     ..default()
                 },
                 TextColor(Color::srgb(0.76, 0.82, 0.88)),
@@ -615,7 +617,7 @@ pub fn sync_sliders(
         if (value.0 - expected).abs() > f32::EPSILON {
             commands.entity(entity).insert(SliderValue(expected));
         }
-        let focused = focus.0 == Some(entity);
+        let focused = focus.get() == Some(entity);
         let treatment = observed_style::tactics(if focused || hovered.0 {
             observed_style::TacticsRole::ReachableRoute
         } else {
@@ -669,7 +671,7 @@ pub fn focus_hovered(
 ) {
     for (entity, hovered) in &sliders {
         if hovered.0 {
-            focus.set(entity);
+            focus.set(entity, FocusCause::Pressed);
             visible.0 = true;
         }
     }

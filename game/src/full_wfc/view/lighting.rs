@@ -44,7 +44,7 @@ pub(super) fn spawn_rig(commands: &mut Commands) {
         DespawnOnExit(GameState::FullWfc),
         SpotLight {
             intensity: 0.0,
-            shadows_enabled: true,
+            shadow_maps_enabled: true,
             ..default()
         },
         Transform::default(),
@@ -70,7 +70,7 @@ pub(super) fn spawn_rig(commands: &mut Commands) {
             color: style::marker(MarkerRole::NextRoom).base_color,
             intensity: 220.0,
             range: 9.0,
-            shadows_enabled: false,
+            shadow_maps_enabled: false,
             ..default()
         },
         Transform::default(),
@@ -246,7 +246,7 @@ pub(in crate::full_wfc) fn sync_lighting_and_atmosphere(
         light.radius = lerp_f(light.radius, palette.key_radius, t);
         light.inner_angle = lerp_f(light.inner_angle, palette.key_inner_angle, t);
         light.outer_angle = lerp_f(light.outer_angle, palette.key_outer_angle, t);
-        light.shadows_enabled = palette.key_shadows_enabled;
+        light.shadow_maps_enabled = palette.key_shadows_enabled;
 
         if wants_volumetric && !has_volumetric {
             commands.entity(entity).insert(VolumetricLight);
@@ -313,7 +313,7 @@ pub(in crate::full_wfc) fn sync_lighting_and_atmosphere(
             } else {
                 11.0
             };
-            light.shadows_enabled = false;
+            light.shadow_maps_enabled = false;
 
             (intensity, practical_palette.light_color)
         } else {

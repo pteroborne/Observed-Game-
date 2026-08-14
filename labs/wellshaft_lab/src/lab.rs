@@ -4,10 +4,10 @@
 //! pillar: every landing has an outward threshold bridge, and visible tread
 //! heights are the controller's real collision heights.
 
+use bevy::camera::Hdr;
 use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::prelude::*;
-use bevy::render::view::Hdr;
 use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow};
 use observed_traversal::{FpsArena, FpsBody, FpsConfig, step_body};
 use player_input::PlayerIntent;
@@ -160,7 +160,7 @@ pub fn setup_lab(
                     color: Color::srgb(1.0, 0.6, 0.28),
                     intensity: 170_000.0,
                     range: 6.5,
-                    shadows_enabled: matches!(p.part, Part::Lamp(level) if level + 1 == shaft::LEVELS),
+                    shadow_maps_enabled: matches!(p.part, Part::Lamp(level) if level + 1 == shaft::LEVELS),
                     ..default()
                 },
                 Transform::from_translation(p.center),
@@ -187,7 +187,7 @@ fn spawn_ui(commands: &mut Commands) {
             DebugText,
             Text::new("Wellshaft"),
             TextFont {
-                font_size: 15.0,
+                font_size: FontSize::Px(15.0),
                 ..default()
             },
             TextColor(Color::srgb(0.9, 0.95, 1.0)),

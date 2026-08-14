@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy::world_serialization::WorldAssetRoot;
 use observed_content::ArchitectureRegister;
 use observed_facility::full_wfc::{
     CellCoord, FullWfcWorld, ModuleFace, ModulePlacement, ModuleSpace, ThresholdKey,
@@ -157,7 +158,7 @@ fn spawn_practical(
         PointLight {
             intensity: 0.0,
             range: 10.5,
-            shadows_enabled: false,
+            shadow_maps_enabled: false,
             ..default()
         },
         Transform::from_translation(position - Vec3::Y * 0.42),
@@ -179,7 +180,7 @@ fn spawn_threshold_frame(
                 kind: ImportedThresholdKind::Gate,
                 register,
             },
-            SceneRoot(gate.scene),
+            WorldAssetRoot(gate.scene),
             Transform::from_translation(translation)
                 .with_rotation(rotation)
                 .with_scale(kenney_gate_scale(gate.scale)),
@@ -198,7 +199,7 @@ fn spawn_threshold_frame(
                 kind: ImportedThresholdKind::Cables,
                 register,
             },
-            SceneRoot(cables.scene),
+            WorldAssetRoot(cables.scene),
             Transform::from_translation(translation + along * (half + 0.55) - Vec3::Y * 0.02)
                 .with_rotation(rotation)
                 .with_scale(Vec3::splat(cables.scale.min(0.55))),
@@ -336,7 +337,7 @@ fn spawn_exit_beacon(
             color: observed_style::marker(observed_style::MarkerRole::Exit).base_color,
             intensity: 2_200.0,
             range: 18.0,
-            shadows_enabled: false,
+            shadow_maps_enabled: false,
             ..default()
         },
         Transform::from_xyz(0.0, 2.5, 0.0),

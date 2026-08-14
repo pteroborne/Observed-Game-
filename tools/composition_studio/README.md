@@ -31,6 +31,11 @@ cargo dev-run -p composition_studio -- --script scratch/studio/fit.json
 }
 ```
 
+`seed` names a facility outside the pinned five and wins over `seed_index` if
+both are given. `timeline_cursor` stops the solve replay at a step, for
+photographing a facility part-way built; a cursor past the end of the trace is a
+hard error rather than a silent fall back to the finished solve.
+
 Every field is optional. An unparseable script is a hard error rather than a
 fallback: a capture that silently photographed the wrong view is worse than one
 that did not run. (Write the file without a BOM — PowerShell 5.1's
@@ -38,12 +43,40 @@ that did not run. (Write the file without a BOM — PowerShell 5.1's
 
 ## What the viewport shows
 
+**The authored facility**, drawn from the committed catalogue — not a diagram of
+it. The tool used to open on a wireframe schematic with the real geometry behind
+`F`; those two swapped places, because the subject is the building a profile
+builds and it should look like one.
+
+`C` cycles how much of each cell's walls is drawn:
+
+| Mode | Shows |
+| --- | --- |
+| cutaway | ceiling and the walls between you and the interior removed, so you can look in |
+| **partial** (default) | ceilings gone, perimeter capped at a third of a level. Floors, ramps, stairs and columns keep their authored shape, so a whole deck reads at once from any bearing with nothing cut away |
+| full | everything the catalogue authored, ceilings included |
+
+A cell wears its **district accent** when it has nothing else to say, and a named
+signal treatment when it does. That is `tactics_lab`'s rule, not a new one:
+
 | Colour | Meaning |
 | --- | --- |
-| dim green outline | the cell floor plan — the lattice itself |
-| green wall band | a face you cannot pass through |
-| **red** wall band | in compare mode (`B`), a cell whose placement differs from the same seed solved at the *baseline* profile — the direct answer to "what did my tuning change?" |
-| amber ring | the selected cell |
+| district accent | ordinary structure, coloured by architecture register |
+| green | an authored pin — the solver is required to honour it |
+| **red** | in compare mode (`B`), a cell whose placement differs from the same seed solved at the *baseline* profile — the direct answer to "what did my tuning change?"; mid-replay, a cell whose domain propagation emptied |
+| amber | the selected cell |
+
+`G` lays the **solver's schematic** over the deck: dim line work for the lattice,
+wall bands for what the solver thinks is impassable. It is a diagnostic rather
+than the view — the lines are the *solver's* topology and the hulls are the
+*authored* geometry, and a disagreement between them is a real bug worth seeing.
+
+It turns itself on, and says why in the status line, in three cases: there is no
+projected catalogue and so no solid to draw at all (a black viewport reads as a
+crash); a replay is running and cells not yet observed have no geometry; or the
+neighbourhood explorer is open, whose subject is one ring *in a lattice*. In the
+first case it also takes the pin and compare colours back, because it is then the
+only surface there is.
 
 Colours come from `observed_style`; a ratchet test fails the build if this crate
 invents one. A second ratchet fails on non-ASCII in a rendered string, because
@@ -56,28 +89,34 @@ the tool ships no font asset and Bevy's default subset is all it can draw.
 | `F2` | open/close the tool menu. While open it **owns the keyboard**, so a key never means two things at once. |
 | `Tab` / `Shift+Tab` | menu open: cycle tabs. Menu closed: cycle the drawn layer. |
 | `PageUp` / `PageDown` | step the drawn layer |
-| `[` / `]` | previous / next preset seed |
+| `[` / `]` | previous / next preset seed (wraps) |
+| `M` | roll a seed outside the pinned set |
+| `T` | play the solve replay, or start it again from the end |
+| `Left` / `Right` | step the replay one decision (`Shift` for twenty) |
+| `End` | settle the replay on the finished solve |
+| `+` / `-` | replay speed |
 | `L` / `Shift+L` | more / fewer floors in the working facility (re-solves) |
 | `Up` / `Down` | select a tunable (TUNING tab) |
 | `Left` / `Right`, `+` / `-` | move the selected tunable |
 | `R` | re-solve |
 | `Ctrl+R` | reload the profile from disk and re-solve, keeping zoom/pan/layer |
-| `G` | show/hide wall bands (plan-only view) |
+| `G` | show/hide the solver's schematic over the deck |
 | `B` | toggle the baseline compare overlay |
 | `A` | run the whole-catalog seam audit (slow; recompiles every `.map`) |
-| `F` | detail: focus (selected cell + what it connects to) |
-| `Shift+F` | detail: whole current layer (refused on "all layers") |
+| `F` | cycle deck scope: whole deck, focus (selected cell + what it connects to), schematic only |
+| `Shift+F` | back to the whole deck |
 | `N` | neighbourhood: what could stand around the selected cell |
 | `Up` / `Down`, `1`-`8` | neighbourhood: pick a face |
 | `Left` / `Right` | neighbourhood: cycle that face's candidate |
 | `Space` | neighbourhood: roll one whole consistent ring |
 | `Shift+Space` | neighbourhood: back to what the seed solved |
-| `C` | cutaway on/off |
+| `C` | cycle walls: cutaway, partial, full |
 | `Q` / `E` | rotate the view one 60-degree detent |
 | `Home` / `0` | reset zoom and pan |
 | `Ctrl+S` | save to the working path (`scratch/composition/`) |
 | `Ctrl+Shift+S` | promote to the corpus — asks for confirmation first |
-| `Ctrl+Z` | revert to the last saved profile |
+| `Ctrl+Z` / `Ctrl+Shift+Z` | undo / redo one edit |
+| `Ctrl+Shift+R` | revert to the last saved profile |
 | `,` / `.` | cycle the pin brush |
 | `Delete` | unpin the selected cell |
 | `Ctrl+Delete` | clear every painted pin |
@@ -85,6 +124,64 @@ the tool ships no font asset and Bevy's default subset is all it can draw.
 | scroll | zoom |
 | **left drag** | **paint the active brush** |
 | shift + left drag | inspect without painting |
+
+## The solve replay — watching the profile work
+
+The studio had always asked for a *traced* solve, kept the step log, and drawn
+only the finished world. So the question the tool exists to answer — what does
+this profile make the solver **do** — could only ever be answered from the
+result. `T` plays that log back.
+
+The cursor sits at the end of the trace by default, which is the finished world
+and exactly what the studio drew before this existed. That is the state it is in
+for all but a few seconds of a session, and it costs what it always did: the
+fold is not run at all while the replay is settled. A new solve settles it again,
+because tuning a value is a request to see the *result* and a studio that
+replayed four hundred steps after every slider nudge would be unusable.
+
+Cells build in authored geometry as the solver observes them. A cell it has not
+reached yet has none to draw, so the lattice returns underneath — the floor plan
+is there, the cell is not — which is why the schematic forces itself on for the
+duration. A cell whose domain propagation emptied takes a red ring. That last one
+is worth the feature on its own: a contradiction is what becomes
+`RetryBudgetExhausted` a hundred attempts later, and this is where you can watch
+one happen. `AttemptStart` clears the board, so a retry is visible as a retry
+rather than as a stutter.
+
+While it runs, red belongs to the replay and the compare overlay stands aside.
+Two questions in one colour is the Legibility Contract's exact failure case, and
+the compare overlay's question — what did my tuning move, against a *finished*
+baseline — has no answer half way through a solve anyway.
+
+The SOLVE tab reports the same log as numbers — collapsed of total, cells still
+open and how many options they hold between them, which attempt, how many
+contradictions — read at the cursor, so they count up as the replay plays.
+
+**One number, said carefully.** Hovering a cell reports `domain at collapse N`.
+That is the domain size at the moment propagation last touched it, straight out
+of the solver's own log. It is *not* the neighbourhood explorer's number, which
+re-opens a cell's domain and runs AC-3 across the ring — `N` remains where that
+question is answered honestly. The label is part of the contract: an author who
+read the cheap number as "what could stand here" would be tuning against variety
+that cannot occur, which is the same mistake the `N` panel spends three
+paragraphs warning about.
+
+## Seeds and undo
+
+`[` and `]` walk the five pinned preset seeds and now wrap; `M` rolls one
+outside that set. `PRESET_SEEDS` is unchanged — it is an evidence contract shared
+with `iso_observer_lab`, and free seeds are additive rather than a replacement.
+A seed is not authored content, so rolling one does not move the simulation hash
+and cannot lock a LAN peer out.
+
+`Ctrl+Z` steps back one edit rather than discarding everything since the last
+save, which is what it used to do and the opposite of what the key means
+elsewhere — most obviously part-way through painting a run of pins. History is
+taken in `touch_profile`, which every profile edit in the tool already routes
+through, so a future edit path cannot quietly arrive without an undo. Edits
+landing inside the solve debounce window coalesce into one entry, because a
+swept slider and a dragged brush are each one edit to the person doing them and
+the tool already had a notion of that window. The stack is bounded at 64.
 
 ## Two rules this tool does not soften
 
@@ -106,14 +203,16 @@ profile into `assets/tiles/` is a separate confirmed action that names the
 simulation hash before and after, because every LAN peer must take the same
 change to stay joinable.
 
-## Detail view — seeing the actual tiles
+## The deck — seeing the actual tiles
 
 The schematic answers *topology*. It cannot answer *craft*: do these two tiles
-meet, is the doorway where the solver thinks it is, does this seam line up.
-`F` renders the real authored hulls instead.
+meet, is the doorway where the solver thinks it is, does this seam line up. The
+deck is the real authored hulls, and it is what the tool opens on.
 
 A tile drawn whole from a fixed isometric shows you its ceiling and the three
-walls between you and its interior, so three tests decide what survives:
+walls between you and its interior, so something has to give. `C` picks what.
+
+Under **cutaway**, three tests decide what survives:
 
 1. **Floor always stays** — anything topping out at or below the slab. Cull it
    and cells appear to float.
@@ -125,24 +224,48 @@ walls between you and its interior, so three tests decide what survives:
    of the camera. At any bearing that is three of six, which falls out of hex
    geometry rather than being tuned.
 
+Under **partial** — the default, and the projection `tactics_lab` reads a whole
+board with — nothing is culled for facing at all. Ceilings go by the same min-Y
+test, and every perimeter hull is *capped* at a third of a level rather than
+removed. Floors, ramps, stairs and columns keep their authored shape. That is
+what makes a deck readable from all six detents at once instead of one at a time,
+and it is why rotating no longer changes what exists.
+
+Under **full**, nothing is removed. Useful for checking a roof or a full-height
+shaft; not useful for looking into anything.
+
+Evidence, from `scratch/studio/walls_*.json`:
+
+| | |
+| --- | --- |
+| ![partial](../../docs/evidence/composition_studio/walls_partial.png) | the default: a whole deck at a third height, districts reading as districts |
+| ![cutaway](../../docs/evidence/composition_studio/walls_cutaway.png) | the same seed with near walls culled instead of capped — taller, and only readable from this bearing |
+| ![full](../../docs/evidence/composition_studio/walls_full.png) | the same seed again, nothing removed: 2,642 hulls, **0 cut**, and a sealed roof. This is why it is not the default |
+| ![pins](../../docs/evidence/composition_studio/walls_pins.png) | four painted pins and a selection, said on the solid rather than in line work |
+
+**Scope** is separate from projection. `F` cycles the whole drawn deck (the
+default), *focus* — the selected cell plus everything it shares an open port
+with, bounded at eight cells — and schematic-only. Focus costs the same on a
+5,600-cell facility as on a hundred-cell one, which is what it is for.
+
 `Q`/`E` rotate in **six 60-degree detents**, matching the six faces, so each
 stop has one unambiguous set of near walls instead of geometry popping at
 arbitrary angles. Detent 0 is the historical 45-degree camera, so every capture
 taken before this feature is still framed identically.
 
-**Two scopes.** *Focus* (`F`) draws the selected cell plus everything it shares
-an open port with — the connection set, bounded at eight cells, so it costs the
-same on a 5,600-cell facility as on a hundred-cell one. *Layer* (`Shift+F`)
-draws the whole current layer and is refused on "all layers": one production
-layer is around 18,000 hulls, which is heavy but drawable, while ten layers is
-roughly 120,000, which is not a diagram. Two scopes mean no LOD system is needed.
+The deck scope no longer refuses "all layers". That refusal was written against
+production's 5,600-cell facility, where ten layers is roughly 120,000 hulls and
+not a diagram; the studio caps at ten levels of a 12x9 lattice, an order of
+magnitude under it. The status line reports the hull count rather than guessing
+on your behalf, and `F` is there if a floor is in the way.
 
 Solid massing takes each cell's **district accent**, because this view shows the
-geometry that will really be built and should look like it; the cell under
-inspection takes the selection amber. The schematic keeps drawing on top, lifted
-just clear of the floor slab — those lines are the *solver's* topology and the
-solid is the *authored* geometry, and a disagreement between them is a real bug
-worth seeing rather than hiding behind whichever drew last.
+geometry that will really be built and should look like it, plus one local
+practical pool per visible register — a single global palette would necessarily
+lie about all but one district in a frame containing several. Lighting constants
+are shared with `tactics_lab` through `observed_style::iso::light`, for the same
+reason the cutaway rule is: two answers to "how bright is an interior" would make
+it two buildings.
 
 ## The neighbourhood explorer (`N`) — what you can expect to see
 

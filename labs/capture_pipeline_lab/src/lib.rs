@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 
 use bevy::{
     app::AppExit,
+    camera::Hdr,
     camera::RenderTarget,
     ecs::system::SystemParam,
     input::InputSystems,
@@ -26,7 +27,6 @@ use bevy::{
         render_resource::{
             Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
         },
-        view::Hdr,
     },
     window::{PresentMode, WindowResolution},
 };
@@ -295,7 +295,7 @@ fn setup_scene(
         LabSpawned,
         DirectionalLight {
             illuminance: 1_100.0,
-            shadows_enabled: false,
+            shadow_maps_enabled: false,
             ..default()
         },
         Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.65, -0.5, 0.0)),
@@ -478,7 +478,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DebugText,
                     Text::new("Capture pipeline diagnostics starting..."),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.88, 0.95, 1.0)),
@@ -497,7 +497,7 @@ fn spawn_ui(commands: &mut Commands) {
                 children![(
                     Text::new(help_text()),
                     TextFont {
-                        font_size: 13.0,
+                        font_size: FontSize::Px(13.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.88, 0.95, 1.0)),
@@ -720,7 +720,7 @@ fn present_scene(
         } else {
             Visibility::Hidden
         };
-        if let Some(material) = materials.get_mut(&material.0) {
+        if let Some(material) = materials.get_mut(&material.0).as_deref_mut() {
             material.base_color = marker(MarkerRole::NextRoom)
                 .base_color
                 .with_alpha(snapshot.reroute_flash_alpha * 0.55);

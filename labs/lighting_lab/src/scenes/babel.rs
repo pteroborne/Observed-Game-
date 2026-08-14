@@ -122,7 +122,7 @@ fn gallery(ctx: &mut SceneCtx, center: Vec3, depth: usize) {
             color: Color::srgb(1.0, 0.72, 0.4),
             intensity: 300_000.0 * dim,
             range: 12.0,
-            shadows_enabled: depth == 0,
+            shadow_maps_enabled: depth == 0,
             ..default()
         },
         Transform::from_translation(center + Vec3::new(0.0, h - 1.3, 0.0)),

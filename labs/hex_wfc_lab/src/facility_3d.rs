@@ -153,7 +153,7 @@ pub(crate) fn register(app: &mut App) {
         .add_systems(Startup, setup)
         .add_systems(
             FixedUpdate,
-            controls::step_walk.run_if(facility_mode_active.and(bot_pov_inactive)),
+            controls::step_walk.run_if(facility_mode_active.and_then(bot_pov_inactive)),
         )
         .add_systems(
             Update,
@@ -266,7 +266,7 @@ fn setup(
                     intensity: 450_000.0,
                     range: 48.0,
                     color: Color::srgb(0.82, 0.91, 1.0),
-                    shadows_enabled: false,
+                    shadow_maps_enabled: false,
                     ..default()
                 },
                 Name::new("Walkthrough headlamp"),
@@ -277,7 +277,7 @@ fn setup(
         FacilityVisual,
         DirectionalLight {
             illuminance: 8_000.0,
-            shadows_enabled: false,
+            shadow_maps_enabled: false,
             ..default()
         },
         Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.9, 0.7, 0.0)),
@@ -296,7 +296,7 @@ fn setup(
         UiTargetCamera(camera_entity),
         Text::new(""),
         TextFont {
-            font_size: 15.0,
+            font_size: FontSize::Px(15.0),
             ..default()
         },
         TextColor(Color::srgb(0.88, 0.94, 1.0)),

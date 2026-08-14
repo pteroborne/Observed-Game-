@@ -203,7 +203,7 @@ pub fn spawn(commands: &mut Commands) {
                     dock.spawn((
                         Text::new("OBSERVED // TACTICAL"),
                         TextFont {
-                            font_size: 24.0,
+                            font_size: FontSize::Px(24.0),
                             ..default()
                         },
                         TextColor(Color::srgb(1.0, 0.62, 0.2)),
@@ -223,7 +223,7 @@ pub fn spawn(commands: &mut Commands) {
                             StatusText,
                             Text::new(String::new()),
                             TextFont {
-                                font_size: 15.0,
+                                font_size: FontSize::Px(15.0),
                                 ..default()
                             },
                             TextColor(Color::WHITE),
@@ -244,7 +244,7 @@ pub fn spawn(commands: &mut Commands) {
                             SquadText,
                             Text::new(String::new()),
                             TextFont {
-                                font_size: 15.0,
+                                font_size: FontSize::Px(15.0),
                                 ..default()
                             },
                             TextColor(Color::WHITE),
@@ -350,14 +350,14 @@ fn spawn_mobile_content(parent: &mut ChildSpawnerCommands) {
             mobile.spawn((
                 MobileStatusText,
                 Text::new(String::new()),
-                TextFont { font_size: 16.0, ..default() },
+                TextFont { font_size: FontSize::Px(16.0), ..default() },
                 TextColor(Color::srgb(1.0, 0.68, 0.28)),
                 Pickable::IGNORE,
             ));
             mobile.spawn((
                 MobilePromptText,
                 Text::new(String::new()),
-                TextFont { font_size: 17.0, ..default() },
+                TextFont { font_size: FontSize::Px(17.0), ..default() },
                 TextColor(Color::WHITE),
                 Pickable::IGNORE,
             ));
@@ -408,7 +408,7 @@ fn spawn_mobile_content(parent: &mut ChildSpawnerCommands) {
                     )).with_children(|handle| {
                         handle.spawn((
                             Text::new("SWIPE UP FOR MORE CONTROLS"),
-                            TextFont { font_size: 14.0, ..default() },
+                            TextFont { font_size: FontSize::Px(14.0), ..default() },
                             TextColor(Color::srgb(0.65, 0.86, 0.94)),
                             Pickable::IGNORE,
                         ));
@@ -440,7 +440,7 @@ fn spawn_mobile_content(parent: &mut ChildSpawnerCommands) {
                     );
                     more.spawn((
                         Text::new("Touch map: tap runner, then highlighted ground. Drag to pan. Pinch to zoom."),
-                        TextFont { font_size: 14.0, ..default() },
+                        TextFont { font_size: FontSize::Px(14.0), ..default() },
                         TextColor(Color::srgb(0.72, 0.8, 0.88)),
                         Pickable::IGNORE,
                     ));
@@ -485,7 +485,7 @@ fn spawn_mobile_row(parent: &mut ChildSpawnerCommands, controls: &[(HudButton, &
                     button.spawn((
                         Text::new(label.to_string()),
                         TextFont {
-                            font_size: 15.0,
+                            font_size: FontSize::Px(15.0),
                             ..default()
                         },
                         TextColor(Color::WHITE),
@@ -548,7 +548,7 @@ fn spawn_section_label(parent: &mut ChildSpawnerCommands, label: &str) {
         },
         Text::new(label.to_string()),
         TextFont {
-            font_size: 13.0,
+            font_size: FontSize::Px(13.0),
             ..default()
         },
         TextColor(Color::srgb(0.7, 0.76, 0.82)),
@@ -578,7 +578,7 @@ fn spawn_control(parent: &mut ChildSpawnerCommands, button: HudButton, label: &s
             control.spawn((
                 Text::new(label.to_string()),
                 TextFont {
-                    font_size: 16.0,
+                    font_size: FontSize::Px(16.0),
                     ..default()
                 },
                 TextColor(Color::WHITE),
@@ -625,7 +625,7 @@ fn spawn_legend(parent: &mut ChildSpawnerCommands) {
                         row.spawn((
                             Text::new(state.legend().to_string()),
                             TextFont {
-                                font_size: 13.0,
+                                font_size: FontSize::Px(13.0),
                                 ..default()
                             },
                             TextColor(Color::srgb(0.8, 0.85, 0.9)),
@@ -644,7 +644,7 @@ fn spawn_legend(parent: &mut ChildSpawnerCommands) {
                 legend.spawn((
                     Text::new(note),
                     TextFont {
-                        font_size: 13.0,
+                        font_size: FontSize::Px(13.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.8, 0.85, 0.9)),

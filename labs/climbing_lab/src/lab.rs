@@ -220,7 +220,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DebugText,
                     Text::new("Climbing diagnostics starting…"),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.75, 0.97, 0.85)),
@@ -251,7 +251,7 @@ fn spawn_ui(commands: &mut Commands) {
                          and grapple sockets only.",
                     ),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.84, 0.95, 0.90)),

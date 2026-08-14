@@ -184,7 +184,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DebugText,
                     Text::new("Interaction diagnostics starting…"),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.68, 0.88, 1.0)),
@@ -194,7 +194,7 @@ fn spawn_ui(commands: &mut Commands) {
                         PlayerPrompt(player),
                         Text::new(format!("{} prompt pending…", player.label())),
                         TextFont {
-                            font_size: 14.0,
+                            font_size: FontSize::Px(14.0),
                             ..default()
                         },
                         TextColor(PLAYER_COLORS[player.index()]),
@@ -227,7 +227,7 @@ fn spawn_ui(commands: &mut Commands) {
                         ObjectStatus(InteractionId(id)),
                         Text::new("fixture pending…"),
                         TextFont {
-                            font_size: 13.0,
+                            font_size: FontSize::Px(13.0),
                             ..default()
                         },
                         TextColor(Color::srgb(0.75, 0.86, 0.95)),
@@ -241,7 +241,7 @@ fn text_bundle(value: impl Into<String>, size: f32, color: Color) -> impl Bundle
     (
         Text::new(value),
         TextFont {
-            font_size: size,
+            font_size: FontSize::Px(size),
             ..default()
         },
         TextColor(color),

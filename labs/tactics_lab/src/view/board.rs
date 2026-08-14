@@ -313,7 +313,7 @@ fn spawn_authored_deck(
         BoardVisual,
         DirectionalLight {
             illuminance: observed_style::iso::light::KEY_ILLUMINANCE,
-            shadows_enabled: false,
+            shadow_maps_enabled: false,
             ..default()
         },
         Transform::from_translation(key_from).looking_at(Vec3::ZERO, Vec3::Y),
@@ -352,13 +352,15 @@ fn spawn_district_lights(commands: &mut Commands, game: &TacticsGame, level: u8)
             BoardVisual,
             PointLight {
                 color: palette.light_color,
-                intensity: 22_000.0,
-                range: 34.0,
-                radius: 3.0,
-                shadows_enabled: false,
+                intensity: observed_style::iso::light::PRACTICAL_INTENSITY,
+                range: observed_style::iso::light::PRACTICAL_RANGE,
+                radius: observed_style::iso::light::PRACTICAL_RADIUS,
+                shadow_maps_enabled: false,
                 ..default()
             },
-            Transform::from_translation(centre + Vec3::Y * 12.0),
+            Transform::from_translation(
+                centre + Vec3::Y * observed_style::iso::light::PRACTICAL_LIFT,
+            ),
             Name::new(format!("District practical: {}", register.slug())),
         ));
     }

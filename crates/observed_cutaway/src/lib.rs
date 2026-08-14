@@ -37,6 +37,72 @@ impl DetailMode {
     }
 }
 
+/// How much of a cell's authored walls to draw.
+///
+/// The public face of the private [`Projection`] enum. Both projections already
+/// existed and were reached through separate entry points; naming the choice is
+/// what lets a viewer put it on a key and a legend, and lets a capture script
+/// name the view it photographed.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum WallMode {
+    /// Ceiling and the walls between the camera and the interior are removed,
+    /// so an interior can be looked into from a fixed isometric.
+    Cutaway,
+    /// Ceilings removed and every perimeter hull capped to a third of a level.
+    /// Floors, ramps, stairs and columns keep their authored shape, so a whole
+    /// deck reads at once from any bearing without anything being cut away.
+    #[default]
+    Partial,
+    /// Everything the catalog authored, ceilings included.
+    Full,
+}
+
+impl WallMode {
+    pub const ALL: [Self; 3] = [Self::Cutaway, Self::Partial, Self::Full];
+
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Cutaway => "cutaway",
+            Self::Partial => "partial walls",
+            Self::Full => "full walls",
+        }
+    }
+
+    #[must_use]
+    pub const fn next(self) -> Self {
+        match self {
+            Self::Cutaway => Self::Partial,
+            Self::Partial => Self::Full,
+            Self::Full => Self::Cutaway,
+        }
+    }
+
+    /// Parse a script's spelling. `None` rather than a default, because a
+    /// capture that quietly photographed a different projection than the one it
+    /// named is the failure the script runner exists to refuse.
+    #[must_use]
+    pub fn parse(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|mode| {
+            mode.label().eq_ignore_ascii_case(name)
+                || name.eq_ignore_ascii_case(match mode {
+                    Self::Cutaway => "cutaway",
+                    Self::Partial => "partial",
+                    Self::Full => "full",
+                })
+        })
+    }
+}
+
+/// The height a [`WallMode::Partial`] perimeter is capped to.
+///
+/// One third of a level. Low enough to see over from a fixed isometric, tall
+/// enough that a doorway still reads as a gap in something.
+#[must_use]
+pub fn partial_wall_height() -> f32 {
+    observed_hex::TILE_LEVEL_HEIGHT / 3.0
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct DetailReport {
     pub cells: usize,
@@ -246,6 +312,40 @@ pub fn build_low_walls(
         },
         cache,
     )
+}
+
+/// Draw a deck under a named [`WallMode`].
+///
+/// The single entry point a viewer with a wall control wants; `build` and
+/// `build_low_walls` remain for callers that only ever want one projection.
+#[must_use]
+pub fn build_walls(
+    world: &HexWfcWorld,
+    snapshot: &HexWfcGeometrySnapshot,
+    cells: &BTreeSet<HexCoord>,
+    selected: Option<HexCoord>,
+    mode: WallMode,
+    bearing: Vec2,
+    cache: &mut TileMeshCache,
+) -> (
+    HullBatch,
+    BTreeMap<ArchitectureRegister, HullBatch>,
+    DetailReport,
+) {
+    let projection = match mode {
+        WallMode::Cutaway => Projection::Cutaway {
+            bearing,
+            enabled: true,
+        },
+        WallMode::Partial => Projection::LowWalls {
+            height: partial_wall_height(),
+        },
+        WallMode::Full => Projection::Cutaway {
+            bearing,
+            enabled: false,
+        },
+    };
+    build_with_projection(world, snapshot, cells, selected, projection, cache)
 }
 
 #[derive(Clone, Copy)]

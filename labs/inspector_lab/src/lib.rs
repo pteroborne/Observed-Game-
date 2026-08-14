@@ -90,7 +90,7 @@ fn setup_ui(mut commands: Commands) {
         OverlayText,
         Text::new("inspector_lab"),
         TextFont {
-            font_size: 16.0,
+            font_size: FontSize::Px(16.0),
             ..default()
         },
         TextColor(Color::srgb(0.85, 0.95, 1.0)),

@@ -76,13 +76,19 @@ pub fn diagnostics(state: &StudioState) -> String {
         .get(&selected)
         .map_or("none", |r| r.slug());
 
+    // What the solver went through to place this, rather than only what it
+    // placed. `N` answers "what could stand here" properly, by re-opening the
+    // ring; this is the cheap half of that question, and it says so.
+    let traced = crate::timeline::describe_cell(state, selected)
+        .map_or_else(String::new, |described| format!("\nSolver:    {described}"));
+
     format!(
         "SELECTED CELL: q={} r={} L={}\n\
          Archetype: {:?}\n\
          Space:     {:?}\n\
          District:  {}\n\
          Up Port:   {:?}\n\
-         Down Port: {:?}",
+         Down Port: {:?}{}",
         selected.q,
         selected.r,
         selected.level,
@@ -91,5 +97,6 @@ pub fn diagnostics(state: &StudioState) -> String {
         district,
         placement.up,
         placement.down,
+        traced,
     )
 }

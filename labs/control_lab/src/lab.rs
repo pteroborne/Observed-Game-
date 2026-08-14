@@ -254,7 +254,7 @@ fn spawn_ui(commands: &mut Commands) {
                             NoticeText,
                             Text::new("Ready. Select a player with 1–4."),
                             TextFont {
-                                font_size: 14.0,
+                                font_size: FontSize::Px(14.0),
                                 ..default()
                             },
                             TextColor(Color::srgb(0.65, 0.86, 1.0)),
@@ -329,11 +329,11 @@ fn spawn_ui(commands: &mut Commands) {
                     FooterStatus,
                     Text::new("Checking invariants…"),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.60, 0.85, 1.0)),
-                    TextLayout::new_with_justify(Justify::Center),
+                    TextLayout::justify(Justify::Center),
                     Node {
                         width: percent(100),
                         ..default()
@@ -364,7 +364,7 @@ fn spawn_player_card(parent: &mut ChildSpawnerCommands, player: PlayerId) {
                 PlayerSummary(player),
                 Text::new(format!("{} initializing…", player.label())),
                 TextFont {
-                    font_size: 14.0,
+                    font_size: FontSize::Px(14.0),
                     ..default()
                 },
                 TextColor(Color::WHITE),
@@ -397,7 +397,7 @@ fn text_bundle(value: impl Into<String>, size: f32, color: Color) -> impl Bundle
     (
         Text::new(value),
         TextFont {
-            font_size: size,
+            font_size: FontSize::Px(size),
             ..default()
         },
         TextColor(color),

@@ -78,7 +78,7 @@ pub(crate) fn setup_lab(
     commands.spawn((
         DirectionalLight {
             illuminance: 11_000.0,
-            shadows_enabled: true,
+            shadow_maps_enabled: true,
             ..default()
         },
         Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.9, -0.5, 0.0)),
@@ -210,7 +210,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DebugText,
                     Text::new("Scanning assets…"),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.86, 0.94, 1.0)),
@@ -239,7 +239,7 @@ fn spawn_ui(commands: &mut Commands) {
                          Poly Pizza (models); Kenney, Freesound (sounds).",
                     ),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.9, 0.94, 0.98)),

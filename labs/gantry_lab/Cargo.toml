@@ -5,6 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
-bevy = { version = "0.18.1", default-features = false, features = ["3d", "png"] }
+bevy = { version = "0.19", default-features = false, features = [
+    "ui","3d", "png"] }
 observed_style = { path = "../../crates/observed_style" }
 observed_traversal = { path = "../../crates/observed_traversal" }

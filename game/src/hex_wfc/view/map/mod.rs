@@ -99,7 +99,7 @@ pub(in crate::hex_wfc) fn setup(mut commands: Commands) {
         DespawnOnExit(GameState::HexWfc),
         DirectionalLight {
             illuminance: 3_200.0,
-            shadows_enabled: false,
+            shadow_maps_enabled: false,
             ..default()
         },
         RenderLayers::layer(MAP_RENDER_LAYER),
@@ -115,7 +115,7 @@ pub(in crate::hex_wfc) fn setup(mut commands: Commands) {
         Visibility::Hidden,
         Text::new(""),
         TextFont {
-            font_size: 14.0,
+            font_size: FontSize::Px(14.0),
             ..default()
         },
         TextColor(observed_style::marker(MarkerRole::You).base_color),

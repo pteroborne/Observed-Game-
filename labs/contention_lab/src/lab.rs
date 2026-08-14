@@ -156,7 +156,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DebugText,
                     Text::new("Contention diagnostics starting…"),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.80, 0.94, 1.0)),
@@ -189,7 +189,7 @@ fn spawn_ui(commands: &mut Commands) {
                          ledger shows only what it has personally observed.",
                     ),
                     TextFont {
-                        font_size: 13.0,
+                        font_size: FontSize::Px(13.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.86, 0.92, 0.97)),

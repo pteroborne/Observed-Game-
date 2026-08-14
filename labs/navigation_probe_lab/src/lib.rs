@@ -7,7 +7,7 @@
 //!
 //! * [`facility`] is the **authoritative** model -- four rooms, a wall cross, and
 //!   four doors. Connectivity is decided here, by graph search over open doors.
-//! * [`nav`] is a **derived consumer** -- it builds a `vleue_navigator` navmesh
+//! * [`nav`] is a **derived consumer** -- it builds a `polyanya` navmesh
 //!   from the facility's walls + closed-door plugs and routes over it with
 //!   polyanya. It reads the facility and never writes back.
 //!
@@ -17,7 +17,7 @@
 //! graph: it respects every closed door, and the room graph stays the source of
 //! truth.
 //!
-//! `vleue_navigator` is used as the navmesh builder + path query only
+//! `polyanya` is used directly as the navmesh builder + path query
 //! (`NavMesh::from_edge_and_obstacles` + `NavMesh::path`); the auto-updater
 //! plugin (built for physics-collider obstacle meshes) is not adopted, mirroring
 //! the prior labs' "use the data model, not the part that fights the
@@ -43,7 +43,7 @@ use bevy::{
 };
 use observed_core::RoomId;
 use observed_style::{MarkerRole, SurfaceRole, marker, surface};
-use vleue_navigator::NavMesh;
+use crate::nav::NavMesh;
 
 /// Floor-units-to-pixels for the top-down schematic view.
 const SCALE: f32 = 17.0;
@@ -313,7 +313,7 @@ fn setup_scene(mut commands: Commands, existing: Query<Entity, With<LabSpawned>>
             RoomLabel,
             Text2d::new(facility::room_label(room).to_string()),
             TextFont {
-                font_size: 30.0,
+                font_size: FontSize::Px(30.0),
                 ..default()
             },
             TextColor(Color::srgb(0.75, 0.86, 1.0)),
@@ -353,7 +353,7 @@ fn setup_ui(mut commands: Commands) {
                     OverlayText,
                     Text::new("Building navmesh..."),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.85, 0.93, 1.0)),
@@ -375,7 +375,7 @@ fn setup_ui(mut commands: Commands) {
                          R reset - F1 overlay - T lock room A\n\
                          1-4 goal room A/B/C/D\n\
                          Z/X/C/V toggle door AB/AC/BD/CD\n\n\
-                         gold line = navmesh route (vleue_navigator)\n\
+                         gold line = navmesh route (polyanya)\n\
                          cyan = probe bot / start, green = goal\n\
                          green door = open, red door = closed\n\
                          purple diamond = locked threshold assignment\n\n\
@@ -384,7 +384,7 @@ fn setup_ui(mut commands: Commands) {
                          Threshold slots are fixed; assignments collapse.",
                     ),
                     TextFont {
-                        font_size: 13.0,
+                        font_size: FontSize::Px(13.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.85, 0.93, 1.0)),
@@ -853,6 +853,8 @@ mod tests {
             MinimalPlugins,
             AssetPlugin::default(),
             InputPlugin,
+            // Registers the mesh assets that 0.19's new skinned-mesh-bounds gizmo validates.
+            bevy::mesh::MeshPlugin,
             GizmoPlugin,
         ))
         .insert_resource(ClearColor(Color::BLACK))

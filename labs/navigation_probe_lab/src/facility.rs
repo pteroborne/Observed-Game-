@@ -1,6 +1,6 @@
 //! The **authoritative facility**: four rooms divided by a cross of walls, joined
 //! by four doors. This module is the single source of truth for connectivity. It
-//! has no dependency on `vleue_navigator`; the navmesh ([`crate::nav`]) is a pure
+//! has no dependency on `polyanya`; the navmesh ([`crate::nav`]) is a pure
 //! *derived consumer* that reads this and never feeds back.
 //!
 //! Layout (floor-plane units, `y` increasing "south"):

@@ -5,13 +5,13 @@ edition = "2024"
 publish = false
 
 [dependencies]
-bevy = { version = "0.18.1", default-features = false, features = [
+bevy = { version = "0.19", default-features = false, features = [
     "2d",
     "3d",
     "png",
-    "experimental_bevy_ui_widgets",
+    "bevy_ui_widgets",
 ] }
-glam = "0.30"
+glam = "0.32"
 # The facility solver and its observation-safe relayout. `hex_wfc` is
 # unconditional in `observed_facility` — no `wfc` feature needed.
 observed_facility = { path = "../../crates/observed_facility" }

@@ -227,53 +227,6 @@ fn an_empty_selection_focuses_nothing() {
     assert!(crate::detail::focus_set(&world, None).is_empty());
 }
 
-/// Detail is off by default and must add nothing to the scene until asked.
-#[test]
-fn detail_off_draws_no_extra_geometry() {
-    let mut state = StudioState::default();
-    assert_eq!(state.detail_mode, crate::detail::DetailMode::Off);
-    crate::solve::run_solve(&mut state);
-    assert_eq!(state.detail_report, crate::detail::DetailReport::default());
-}
-
-/// Layer detail on "all layers" would be roughly 120k hulls at production
-/// scale. It must refuse and say why, not quietly draw nothing.
-#[test]
-fn layer_detail_is_refused_without_a_single_layer() {
-    let mut app = App::new();
-    app.add_plugins(MinimalPlugins)
-        .add_plugins(AssetPlugin::default())
-        .add_plugins(crate::StudioPlugin);
-    // Settle the initial solve first: it writes the status line, and would
-    // otherwise overwrite the refusal this test is looking for.
-    for _ in 0..4 {
-        app.update();
-        app.world_mut().resource_mut::<StudioState>().last_edit = None;
-    }
-    app.update();
-    {
-        let mut state = app.world_mut().resource_mut::<StudioState>();
-        state.layer = crate::Layer::All;
-    }
-    // Viewport keys only reach the viewport when the viewport owns the
-    // keyboard - that is the ownership rule, not an accident.
-    app.world_mut().resource_mut::<StudioState>().keyboard_owner = crate::KeyboardOwner::Viewport;
-    {
-        let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
-        keys.press(KeyCode::ShiftLeft);
-        keys.press(KeyCode::KeyF);
-    }
-    app.update();
-
-    let state = app.world().resource::<StudioState>();
-    assert_eq!(state.detail_mode, crate::detail::DetailMode::Off);
-    assert!(
-        state.status.contains("single layer"),
-        "the refusal must explain itself: {}",
-        state.status
-    );
-}
-
 /// Detent 0 must be the historical camera, or every capture taken before this
 /// feature silently stops matching what the tool now produces.
 #[test]

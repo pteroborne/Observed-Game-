@@ -172,12 +172,12 @@ pub fn setup_chrome(mut commands: Commands) {
                         },
                         Text::new("COMPOSITION STUDIO"),
                         TextFont {
-                            font_size: 14.0,
+                            font_size: FontSize::Px(14.0),
                             ..default()
                         },
                         // Monospace panel content is laid out with spaces; centre
                         // justification would break every column alignment in it.
-                        TextLayout::new_with_justify(Justify::Left),
+                        TextLayout::justify(Justify::Left),
                         TextColor(schematic(SchematicRole::Selected).base_color),
                         ChromeMenuText,
                     ));
@@ -217,10 +217,10 @@ pub fn setup_chrome(mut commands: Commands) {
                             bar.spawn((
                                 Text::new(""),
                                 TextFont {
-                                    font_size: 13.0,
+                                    font_size: FontSize::Px(13.0),
                                     ..default()
                                 },
-                                TextLayout::new_with_justify(Justify::Left),
+                                TextLayout::justify(Justify::Left),
                                 TextColor(schematic(SchematicRole::Pinned).base_color),
                                 ChromeActionText,
                             ));
@@ -241,10 +241,10 @@ pub fn setup_chrome(mut commands: Commands) {
                             bar.spawn((
                                 Text::new("Status Line"),
                                 TextFont {
-                                    font_size: 13.0,
+                                    font_size: FontSize::Px(13.0),
                                     ..default()
                                 },
-                                TextLayout::new_with_justify(Justify::Left),
+                                TextLayout::justify(Justify::Left),
                                 TextColor(schematic(SchematicRole::Pinned).base_color),
                                 ChromeStatusText,
                             ));
@@ -326,15 +326,26 @@ pub fn update_chrome_ui(
             StudioTab::Solve => {
                 let mut s = String::new();
                 s.push_str("SOLVE CONTROLS & A/B COMPARISON:\n\n");
+                s.push_str(&format!("Seed: {}\n", state.seed_label()));
                 s.push_str(&format!(
-                    "Seed Index: {} (Preset Seed: {:#x})\n",
-                    state.seed_index,
-                    crate::PRESET_SEEDS[state.seed_index % crate::PRESET_SEEDS.len()]
+                    "  [ / ] walk the {} pinned presets | M rolls a new seed\n",
+                    crate::PRESET_SEEDS.len()
+                ));
+                s.push_str(&format!(
+                    "History: {} undo, {} redo (Ctrl+Z / Ctrl+Shift+Z)\n",
+                    state.undo_stack.len(),
+                    state.redo_stack.len()
                 ));
                 s.push_str(&format!(
                     "Working Scale: {}x{}x{}\n",
                     state.config.cols, state.config.rows, state.config.levels
                 ));
+                s.push('\n');
+
+                // What the solver did, before what it scored. The tool's whole
+                // subject is the solver's behaviour, and it had only ever been
+                // reported as a finished number.
+                s.push_str(&crate::timeline::format_solver_state(&state));
                 s.push('\n');
 
                 if let Some(solved) = state.solved.as_ref() {
@@ -421,7 +432,16 @@ pub fn update_chrome_ui(
         let sim = simulation_hash(&state, &state.profile);
         // Naming the mode is not optional: the same two colours answer two
         // different questions, so the legend has to travel with the view.
-        let compare = if state.detail_mode == crate::detail::DetailMode::Neighborhood {
+        let compare = if crate::timeline::replaying(&state) {
+            // The replay owns green and red while it runs, so it names them
+            // here for the same reason every other mode does: the legend has to
+            // travel with the view.
+            let steps = crate::timeline::trace_len(&state);
+            format!(
+                " | REPLAY (dim = not yet observed, red = contradiction): step {} of {steps}",
+                state.timeline.cursor
+            )
+        } else if state.detail_mode == crate::detail::DetailMode::Neighborhood {
             // The schematic has stepped back to Grid here, so the only green
             // and red on screen are the ring's. Saying so is the same rule the
             // other two modes follow: the legend travels with the view.
@@ -466,24 +486,46 @@ pub fn update_chrome_ui(
             compare
         };
 
+        // The cell under the cursor, as the solver saw it. This is the tooltip
+        // question — "what could have stood here" — answered from the step log,
+        // which is the only source that can answer it for free.
+        let hover = match state
+            .hovered
+            .and_then(|coord| crate::timeline::describe_cell(&state, coord).map(|d| (coord, d)))
+        {
+            Some((coord, described)) => format!(
+                " | hover ({},{},{}) {described}",
+                coord.q, coord.r, coord.level
+            ),
+            None => String::new(),
+        };
+
         let detail = if state.detail_mode == crate::detail::DetailMode::Off {
-            String::new()
+            String::from(" | schematic only (F for the authored deck)")
         } else {
             format!(
-                " | {} view {}/{}{}: {} cell(s), {} hull(s), {} cut, {} cached",
+                " | {} | {} view {}/{}: {} cell(s), {} hull(s), {} cut, {} cached",
+                state.walls.label(),
                 state.detail_mode.label(),
                 state.detent + 1,
                 crate::viewport::AZIMUTH_DETENTS,
-                if state.cutaway { "" } else { " (no cutaway)" },
                 state.detail_report.cells,
                 state.detail_report.hulls_drawn,
                 state.detail_report.hulls_cut,
                 state.detail_report.distinct_hulls_cached,
             )
         };
+        // Why the line overlay is on, when it was not asked for. A view that
+        // silently differs from the one you configured is the failure this tool
+        // spends most of its rules avoiding.
+        let overlay = match (state.show_schematic, state.schematic_forced.as_deref()) {
+            (_, Some(reason)) => format!(" | schematic: {reason}"),
+            (true, None) => String::from(" | schematic overlay on (G)"),
+            (false, None) => String::new(),
+        };
 
         **status = format!(
-            "F2 menu | sim {sim} | {}{unsaved} | {} | {}{compare}{detail} | {}",
+            "F2 menu | sim {sim} | {}{unsaved} | {} | {}{compare}{hover}{detail}{overlay} | {}",
             state.profile.label,
             state.layer.label(),
             format_args!("{} cells", state.report.cells),

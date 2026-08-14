@@ -205,7 +205,7 @@ fn spawn_plate(
                         intensity: 7_500.0,
                         range: 11.0,
                         radius: 1.1,
-                        shadows_enabled: false,
+                        shadow_maps_enabled: false,
                         ..default()
                     },
                     Transform::from_xyz(0.0, 2.4, 0.0),
@@ -343,7 +343,7 @@ pub fn animate_effects(
         } else {
             Visibility::Hidden
         };
-        if let Some(material) = materials.get_mut(&material.0) {
+        if let Some(material) = materials.get_mut(&material.0).as_deref_mut() {
             material.base_color = effect.treatment.base_color.with_alpha(alpha * 0.58);
             material.emissive = effect.treatment.emissive * alpha;
         }

@@ -17,7 +17,7 @@ publish = false
 # `bevy_ui`/`bevy_text`/`bevy_color`. The widget feature adds headless button
 # semantics, activation events, and the accessibility metadata the focus layer
 # attaches.
-bevy = { version = "0.18.1", default-features = false, features = [
+bevy = { version = "0.19", default-features = false, features = [
     "2d",
-    "experimental_bevy_ui_widgets",
+    "bevy_ui_widgets",
 ] }

@@ -14,7 +14,7 @@ publish = false
 # module stayed behind in the lab, because it needs `observed_traversal` and only
 # a view that draws authored tile geometry wants it.
 [dependencies]
-bevy = { version = "0.18.1", default-features = false, features = ["2d", "3d"] }
+bevy = { version = "0.19", default-features = false, features = ["2d", "3d"] }
 # The quantized hexagon is deliberately not regular; deriving a footprint
 # locally would leave sub-metre gaps between neighbouring cells.
 observed_hex = { path = "../observed_hex" }

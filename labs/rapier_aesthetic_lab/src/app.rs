@@ -2,14 +2,12 @@ use bevy::{
     app::AppExit,
     asset::RenderAssetUsages,
     camera::Exposure,
+    camera::Hdr,
     mesh::{Indices, PrimitiveTopology},
     pbr::{DistanceFog, FogFalloff},
     post_process::bloom::Bloom,
     prelude::*,
-    render::view::{
-        Hdr,
-        screenshot::{Screenshot, save_to_disk},
-    },
+    render::view::screenshot::{Screenshot, save_to_disk},
     window::{PresentMode, WindowResolution},
 };
 use observed_style::{District, MarkerRole, SurfaceRole, Treatment, district, marker};
@@ -132,7 +130,7 @@ fn setup(mut commands: Commands, capture: Option<Res<CaptureRun>>) {
             Monitor,
             Text::new("Authored neon-noir recreation"),
             TextFont {
-                font_size: 15.0,
+                font_size: FontSize::Px(15.0),
                 ..default()
             },
             TextColor(Color::WHITE),
@@ -306,7 +304,7 @@ fn spawn_threshold(
             color: treatment.base_color,
             intensity: if anchored { 9_000.0 } else { 1_000.0 },
             range: 5.0,
-            shadows_enabled: false,
+            shadow_maps_enabled: false,
             ..default()
         },
         Transform::from_xyz(0.0, 4.4, SOURCE_THRESHOLD_Z + 0.25),
@@ -325,7 +323,7 @@ fn spawn_source_key(commands: &mut Commands) {
             radius: palette.key_radius,
             inner_angle: 0.32,
             outer_angle: 0.72,
-            shadows_enabled: true,
+            shadow_maps_enabled: true,
             ..default()
         },
         Transform::from_xyz(-4.5, 6.5, 3.0)
@@ -379,7 +377,7 @@ fn spawn_module_lighting(
                     radius: palette.key_radius,
                     inner_angle: palette.key_inner_angle,
                     outer_angle: palette.key_outer_angle,
-                    shadows_enabled: !preview,
+                    shadow_maps_enabled: !preview,
                     ..default()
                 },
                 Transform::from_xyz(4.0, 9.0, z_offset - length * 0.82)
@@ -419,7 +417,7 @@ fn spawn_module_lighting(
                         color: palette.light_color,
                         intensity: 260_000.0,
                         range: 7.5,
-                        shadows_enabled: !preview && index == 0,
+                        shadow_maps_enabled: !preview && index == 0,
                         ..default()
                     },
                     Transform::from_translation(position),

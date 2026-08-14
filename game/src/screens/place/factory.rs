@@ -543,7 +543,7 @@ pub(crate) fn spawn_guardian_model(
                             color: Color::srgb(1.0, 0.05, 0.05),
                             intensity: 3000.0,
                             range: 9.0,
-                            shadows_enabled: false,
+                            shadow_maps_enabled: false,
                             ..default()
                         },
                         Transform::from_xyz(0.0, 0.9, 0.0),
@@ -573,7 +573,7 @@ pub(crate) fn spawn_guardian_model(
                         color: Color::srgb(1.0, 0.05, 0.05),
                         intensity: 3000.0,
                         range: 9.0,
-                        shadows_enabled: false,
+                        shadow_maps_enabled: false,
                         ..default()
                     },
                     Transform::from_xyz(0.0, 0.9, 0.0),
@@ -598,7 +598,7 @@ pub(crate) fn spawn_guardian_model(
                     color: Color::srgb(1.0, 0.05, 0.05),
                     intensity: 3000.0,
                     range: 9.0,
-                    shadows_enabled: false,
+                    shadow_maps_enabled: false,
                     ..default()
                 },
                 Transform::from_xyz(0.0, 0.8, 0.0),

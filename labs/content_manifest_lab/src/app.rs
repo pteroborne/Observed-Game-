@@ -9,8 +9,8 @@ use bevy::{
     pbr::{DistanceFog, FogFalloff},
     post_process::bloom::Bloom,
     prelude::*,
+    camera::Hdr,
     render::view::{
-        Hdr,
         screenshot::{Screenshot, save_to_disk},
     },
     window::{PresentMode, WindowResolution},
@@ -136,7 +136,7 @@ fn setup(mut commands: Commands) {
             Monitor,
             Text::new("Content manifest loading"),
             TextFont {
-                font_size: 15.0,
+                font_size: FontSize::Px(15.0),
                 ..default()
             },
             TextColor(Color::WHITE),
@@ -321,7 +321,7 @@ fn rebuild_scene(
             color: palette.light_color,
             intensity: 210_000.0 * definition.practical_intensity_scale,
             range: 13.0,
-            shadows_enabled: true,
+            shadow_maps_enabled: true,
             ..default()
         },
         Transform::from_xyz(-3.2, 4.8, -3.0),

@@ -11,14 +11,12 @@ use std::path::Path;
 
 use bevy::{
     app::AppExit,
+    camera::Hdr,
     input::{InputSystems, mouse::AccumulatedMouseMotion},
     pbr::{DistanceFog, FogFalloff},
     post_process::bloom::Bloom,
     prelude::*,
-    render::view::{
-        Hdr,
-        screenshot::{Screenshot, save_to_disk},
-    },
+    render::view::screenshot::{Screenshot, save_to_disk},
     window::{CursorGrabMode, CursorOptions, PresentMode, PrimaryWindow, WindowResolution},
 };
 use bevy_trenchbroom::config::WriteTrenchBroomConfigOnStartPlugin;
@@ -661,7 +659,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DebugText,
                     Text::new("Importing authored map…"),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.85, 0.93, 1.0)),
@@ -693,7 +691,7 @@ fn spawn_ui(commands: &mut Commands) {
                          purple = ports, green/red = open/closed doors.",
                     ),
                     TextFont {
-                        font_size: 13.5,
+                        font_size: FontSize::Px(13.5),
                         ..default()
                     },
                     TextColor(Color::srgb(0.85, 0.93, 1.0)),
@@ -842,6 +840,8 @@ mod tests {
             MinimalPlugins,
             AssetPlugin::default(),
             InputPlugin,
+            // Registers the mesh assets that 0.19's new skinned-mesh-bounds gizmo validates.
+            bevy::mesh::MeshPlugin,
             GizmoPlugin,
         ))
         .init_asset::<Mesh>()

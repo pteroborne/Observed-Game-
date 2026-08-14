@@ -115,7 +115,7 @@ pub fn spawn(ctx: &mut SceneCtx) {
             radius: 0.05,
             // The six authored blades carry the floor read. Disabling sampled
             // shadows keeps the walls and ceiling calm across GPU backends.
-            shadows_enabled: false,
+            shadow_maps_enabled: false,
             inner_angle: 0.30,
             outer_angle: 0.52,
             ..default()

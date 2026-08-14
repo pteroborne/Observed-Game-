@@ -11,7 +11,8 @@ observed_traversal = { path = "../../crates/observed_traversal", features = [
     "bevy",
 ] }
 player_input = { path = "../../crates/player_input" }
-bevy = { version = "0.18.1", default-features = false, features = [
+bevy = { version = "0.19", default-features = false, features = [
+    "ui",
     "3d",
     "png",
     "bevy_post_process",

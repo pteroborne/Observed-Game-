@@ -192,7 +192,7 @@ fn spawn_overlay(mut commands: Commands) {
                 OverlayText,
                 Text::new("…"),
                 TextFont {
-                    font_size: 14.0,
+                    font_size: FontSize::Px(14.0),
                     ..default()
                 },
                 TextColor(Color::srgb(0.88, 0.94, 1.0)),
