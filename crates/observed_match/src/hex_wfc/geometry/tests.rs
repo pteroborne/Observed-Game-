@@ -193,6 +193,19 @@ fn selected_tiles(snapshot: &HexWfcGeometrySnapshot) -> BTreeMap<HexCoord, TileK
 /// both the canonical spectator seed and the seed that exposed the perimeter
 /// tower stall. This pins the pre-refactor bucket ordering before selection is
 /// moved behind a catalog object and later changed deliberately in TR-9.
+///
+/// **Re-pinned when corner, junction and expanse gained interior readings.**
+/// More candidates in a bucket move the modulo, so the hall digests had to
+/// change; the point is *what did not*. Both seeds kept their cell count (384)
+/// and — byte for byte — their tower count and tower digest, because stair
+/// towers gained no readings and their selection is therefore untouched. A
+/// change that had moved those would have been a different change than the one
+/// intended.
+///
+/// | | before | after |
+/// | --- | --- | --- |
+/// | seed 1 | `0x53ff32531fe8f9f8` | `0xcdcbe8fbaacac084` |
+/// | seed 10000031 | `0x68eb78fd363f2172` | `0xdb8c7c36035aec42` |
 #[test]
 fn production_catalog_selection_is_pinned_for_spectator_seeds() {
     let catalog = crate::hex_wfc::test_catalog();
@@ -200,14 +213,14 @@ fn production_catalog_selection_is_pinned_for_spectator_seeds() {
         (
             1u64,
             384usize,
-            0x53ff_3253_1fe8_f9f8u64,
+            0xcdcb_e8fb_aaca_c084u64,
             60usize,
             0xbb47_d739_344b_7354u64,
         ),
         (
             10_000_031u64,
             384usize,
-            0x68eb_78fd_363f_2172u64,
+            0xdb8c_7c36_035a_ec42u64,
             72usize,
             0x8cce_4f17_090b_9f2bu64,
         ),
@@ -1722,3 +1735,209 @@ fn a_towers_register_still_comes_from_its_column_base() {
          base was never distinguishable from resolving per cell"
     );
 }
+
+/// The corpus must be able to build the solver's **whole** vocabulary at
+/// production scale, not merely the part a given profile happens to reach.
+///
+/// This exists because it did not, and nothing noticed. `HexArchetype::Expanse`
+/// is a third of an unprofiled production layout, and the studio's 12x9 working
+/// lattice is too narrow to place a single one — so every instrument pointed at
+/// this corpus reported full coverage while the largest archetype went
+/// unexercised. An unprofiled solve is the useful thing to project for exactly
+/// that reason: it asks what the corpus *could* be asked for, rather than what
+/// today's composition happens to ask.
+#[test]
+fn the_corpus_builds_the_solvers_whole_vocabulary_at_production_scale() {
+    let catalog = crate::hex_wfc::test_catalog();
+    let world = HexWfcWorld::generate(0xa11c_0000_0000_0000, HexWfcConfig::arc_default())
+        .expect("production dimensions solve");
+
+    let mut placed: std::collections::BTreeMap<HexArchetype, usize> =
+        std::collections::BTreeMap::new();
+    for placement in world.placements.values() {
+        if placement.archetype != HexArchetype::Void {
+            *placed.entry(placement.archetype).or_default() += 1;
+        }
+    }
+    assert!(
+        placed.contains_key(&HexArchetype::Expanse),
+        "this seed is meant to exercise Expanse; without it the test proves nothing"
+    );
+
+    HexWfcGeometrySnapshot::project_with_rooms(&world, &catalog.cells, &catalog.rooms)
+        .unwrap_or_else(|error| {
+            panic!(
+                "the corpus cannot build a production layout: {error:?}\n\
+                 placed archetypes: {placed:?}"
+            )
+        });
+}
+
+/// Sample what geometry a cell actually presents at one of its lateral faces:
+/// the lowest and highest Y of any hull vertex sitting on that face's boundary
+/// plane.
+///
+/// The projected twin of `seam_auditor::sample_face_signature`, which reads
+/// module-local `.map` geometry. Both answer the same question — *what floor
+/// and headroom does this boundary really offer* — but only this one can be
+/// asked of a **projected** facility, which is the only place the generated
+/// compatibility library's geometry exists.
+///
+/// Piece points are **cell-local**: `observed_cutaway` adds `hex_origin` when
+/// it batches them, so they arrive here unoffset. Two lateral neighbours share
+/// a level, so their local Y values are directly comparable and the face edge
+/// is read in each cell's own frame.
+fn projected_face_extent(
+    snapshot: &HexWfcGeometrySnapshot,
+    coord: HexCoord,
+    face: HexFace,
+) -> Option<(f32, f32)> {
+    const BOUNDARY_EPSILON: f32 = 0.05;
+
+    let [(ax, az), (bx, bz)] = observed_hex::metrics::face_edge(face);
+    #[allow(clippy::cast_precision_loss)]
+    let a = (ax as f32, az as f32);
+    #[allow(clippy::cast_precision_loss)]
+    let b = (bx as f32, bz as f32);
+
+    let on_edge = |x: f32, z: f32| {
+        let (dx, dz) = (b.0 - a.0, b.1 - a.1);
+        let length_sq = dx * dx + dz * dz;
+        if length_sq <= f32::EPSILON {
+            return false;
+        }
+        let t = (((x - a.0) * dx + (z - a.1) * dz) / length_sq).clamp(0.0, 1.0);
+        let (px, pz) = (a.0 + dx * t, a.1 + dz * t);
+        (x - px).hypot(z - pz) <= BOUNDARY_EPSILON
+    };
+
+    let mut low = f32::INFINITY;
+    let mut high = f32::NEG_INFINITY;
+    for piece in &snapshot.pieces {
+        if piece.source_cell != coord {
+            continue;
+        }
+        let observed_traversal::ColliderShape::ConvexHull { points } = &piece.shape else {
+            continue;
+        };
+        for point in points {
+            if on_edge(point.x, point.z) {
+                low = low.min(point.y);
+                high = high.max(point.y);
+            }
+        }
+    }
+    // Clamp the span to one level, for the reason `sample_face_signature`
+    // gives: on a two-level tile the wall mass above the lintel runs the tile's
+    // full height, so an unclamped sample reports 16 m of "headroom" for an
+    // ordinary door and falsely mismatches its 8 m neighbour.
+    (low.is_finite() && high.is_finite())
+        .then(|| (low, (high - low).min(observed_hex::TILE_LEVEL_HEIGHT)))
+}
+
+/// Every open seam in a projected production facility must actually meet.
+///
+/// `tilec audit-seams` checks the 125 committed `.map` sources. The **generated**
+/// compatibility library is most of what a player walks through and has never
+/// been audited at all — it is built in code at load time, so it is in no
+/// directory the auditor scans. This closes that gap where it matters most: on
+/// real placements, in a real projection, at production dimensions.
+#[test]
+fn every_open_seam_in_a_projected_facility_actually_meets() {
+    let catalog = crate::hex_wfc::test_catalog();
+    let world = HexWfcWorld::generate(0xa11c_0000_0000_0000, HexWfcConfig::arc_default())
+        .expect("production dimensions solve");
+    let snapshot =
+        HexWfcGeometrySnapshot::project_with_rooms(&world, &catalog.cells, &catalog.rooms)
+            .expect("production layout projects");
+
+    let grid = world.config.grid();
+    let mut checked = 0usize;
+    let mut floor_mismatches: Vec<String> = Vec::new();
+    let mut headroom_mismatches: Vec<String> = Vec::new();
+    let mut headroom_shapes: Vec<(f32, f32)> = Vec::new();
+
+    for (&coord, placement) in &world.placements {
+        for face in HexFace::LATERAL {
+            if !placement.is_open(face) {
+                continue;
+            }
+            // Each seam once: only walk it from the lower-sorting side.
+            let Some(neighbour) = grid.neighbor(coord, face) else {
+                continue;
+            };
+            if neighbour < coord || !world.placements.contains_key(&neighbour) {
+                continue;
+            }
+            let (Some(near), Some(far)) = (
+                projected_face_extent(&snapshot, coord, face),
+                projected_face_extent(&snapshot, neighbour, face.opposite()),
+            ) else {
+                continue;
+            };
+            checked += 1;
+            let entry = format!(
+                "{coord:?} {face:?} floor {:.3}/{:.3} headroom {:.3}/{:.3}",
+                near.0, far.0, near.1, far.1
+            );
+            if (near.0 - far.0).abs() > 0.05 {
+                floor_mismatches.push(entry.clone());
+            }
+            if (near.1 - far.1).abs() > 0.05 {
+                headroom_shapes.push((near.1, far.1));
+                headroom_mismatches.push(entry);
+            }
+        }
+    }
+
+    assert!(
+        checked > 5_000,
+        "only {checked} seams sampled; this gate proves nothing that small"
+    );
+
+    // Floors must agree everywhere. There is no benign reason for two cells to
+    // offer different floor heights at a seam the solver says you can walk.
+    assert!(
+        floor_mismatches.is_empty(),
+        "{} of {checked} open seams disagree about floor height:\n{}",
+        floor_mismatches.len(),
+        sample(&floor_mismatches)
+    );
+
+    // Headroom carries one **pre-existing** disagreement, present before this
+    // gate was written and not introduced by it: a face whose geometry touches
+    // the boundary plane only up to the lintel reads 4.5 m (`DOOR_TOP`), while
+    // one whose wall mass above the lintel reaches the plane reads the full
+    // 8 m level. It is a modelling difference between the generated library and
+    // the authored corpus, not a hole — both sides still present a floor and a
+    // doorway at the same heights.
+    //
+    // So this pins the shape rather than demanding zero: any *other* headroom
+    // pair is a new defect and fails, and the count may not grow. That is what
+    // makes this gate useful to the work it was built for — rewriting all of
+    // the generated geometry must not make seams worse.
+    const KNOWN_HEADROOM_DISAGREEMENTS: usize = 259;
+    for (a, b) in &headroom_shapes {
+        let pair = (a.min(*b), a.max(*b));
+        assert!(
+            (pair.0 - 4.5).abs() < 0.01 && (pair.1 - 8.0).abs() < 0.01,
+            "unfamiliar headroom disagreement {pair:?}; the known one is 4.5 vs 8.0"
+        );
+    }
+    assert!(
+        headroom_mismatches.len() <= KNOWN_HEADROOM_DISAGREEMENTS,
+        "headroom disagreements rose from {KNOWN_HEADROOM_DISAGREEMENTS} to {} of {checked}:\n{}",
+        headroom_mismatches.len(),
+        sample(&headroom_mismatches)
+    );
+}
+
+fn sample(entries: &[String]) -> String {
+    entries
+        .iter()
+        .take(10)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
