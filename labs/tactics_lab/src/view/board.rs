@@ -352,13 +352,15 @@ fn spawn_district_lights(commands: &mut Commands, game: &TacticsGame, level: u8)
             BoardVisual,
             PointLight {
                 color: palette.light_color,
-                intensity: 22_000.0,
-                range: 34.0,
-                radius: 3.0,
+                intensity: observed_style::iso::light::PRACTICAL_INTENSITY,
+                range: observed_style::iso::light::PRACTICAL_RANGE,
+                radius: observed_style::iso::light::PRACTICAL_RADIUS,
                 shadows_enabled: false,
                 ..default()
             },
-            Transform::from_translation(centre + Vec3::Y * 12.0),
+            Transform::from_translation(
+                centre + Vec3::Y * observed_style::iso::light::PRACTICAL_LIFT,
+            ),
             Name::new(format!("District practical: {}", register.slug())),
         ));
     }

@@ -116,6 +116,19 @@ pub mod light {
     /// the same value. Off-axis is what gives them different values, which is
     /// the whole point of lighting a cutaway.
     pub const KEY_OFFSET: f32 = 0.7;
+
+    /// One local practical pool per visible architecture register.
+    ///
+    /// An overview may show several districts at once, so a single global
+    /// fog/ambient palette would necessarily lie about all but one of them. A
+    /// pool per register is what lets each district keep its own light colour
+    /// while they share a frame.
+    pub const PRACTICAL_INTENSITY: f32 = 22_000.0;
+    /// Wide enough to wash a district rather than spot one cell of it.
+    pub const PRACTICAL_RANGE: f32 = 34.0;
+    pub const PRACTICAL_RADIUS: f32 = 3.0;
+    /// How far above the deck the pool hangs.
+    pub const PRACTICAL_LIFT: f32 = 12.0;
 }
 
 /// Which floors are drawn.

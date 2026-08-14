@@ -36,6 +36,7 @@ pub mod pick;
 pub mod script;
 pub mod solve;
 pub mod state;
+pub mod timeline;
 pub mod tunables;
 pub mod viewport;
 pub mod viewport_input;
@@ -48,6 +49,10 @@ pub mod authoring_tests;
 pub mod neighbor_tests;
 #[cfg(test)]
 pub mod tests;
+#[cfg(test)]
+pub mod timeline_tests;
+#[cfg(test)]
+pub mod view_tests;
 #[cfg(test)]
 pub mod widget_tests;
 
@@ -139,7 +144,8 @@ impl Plugin for StudioPlugin {
                 (
                     input::handle_chrome_input,
                     update_studio_solve.after(input::handle_chrome_input),
-                    draw::rebuild_visuals.after(update_studio_solve),
+                    timeline::advance_timeline.after(update_studio_solve),
+                    draw::rebuild_visuals.after(timeline::advance_timeline),
                     draw::rebuild_overlay.after(draw::rebuild_visuals),
                     viewport::sync_camera.after(draw::rebuild_visuals),
                     chrome::update_chrome_ui.after(update_studio_solve),

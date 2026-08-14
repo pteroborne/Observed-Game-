@@ -126,6 +126,10 @@ pub fn run_solve(state: &mut StudioState) {
                 "seed {seed:#x} solved in {elapsed_ms}ms, \
                  {attempts} attempt(s){search_note}{projection_note}"
             );
+            // A new solve lands on its finished world. Tuning a value is a
+            // request to see the result, and a studio that replayed four hundred
+            // steps after every slider nudge would be unusable.
+            state.timeline.settle(steps.len());
             state.solved = Some(SolveResult {
                 world,
                 steps,
