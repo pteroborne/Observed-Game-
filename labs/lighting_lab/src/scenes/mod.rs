@@ -29,7 +29,7 @@ use bevy::{
     pbr::{DistanceFog, FogFalloff},
     post_process::bloom::Bloom,
     prelude::*,
-    render::view::Hdr,
+    camera::Hdr,
 };
 use observed_style as style;
 
@@ -305,7 +305,7 @@ impl SceneCtx<'_, '_, '_> {
                 color: Color::srgb(srgb.red, srgb.green, srgb.blue),
                 intensity: 12_000.0,
                 range: 5.0,
-                shadows_enabled: false,
+                shadow_maps_enabled: false,
                 ..default()
             },
             Transform::from_translation(center + Vec3::Y * (size.y * 0.5 + 0.25)),

@@ -104,7 +104,7 @@ pub fn spawn(ctx: &mut SceneCtx) {
             color: Color::srgb(0.75, 0.85, 1.0),
             intensity: 900_000_000.0,
             range: 160.0,
-            shadows_enabled: true,
+            shadow_maps_enabled: true,
             ..default()
         },
         Transform::from_xyz(6.0, 12.0, -84.0),

@@ -24,7 +24,7 @@ use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
-use bevy::render::view::Hdr;
+use bevy::camera::Hdr;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use bevy::window::{PresentMode, WindowResolution};
 use observed_authoring::{
@@ -398,7 +398,7 @@ fn setup(mut commands: Commands) {
                 OverlayText,
                 Text::new("…"),
                 TextFont {
-                    font_size: 14.0,
+                    font_size: FontSize::Px(14.0),
                     ..default()
                 },
                 TextColor(Color::srgb(0.88, 0.94, 1.0)),
@@ -584,7 +584,7 @@ fn rebuild(
                 color: palette.light_color,
                 intensity: TILE_FILL_INTENSITY,
                 range: TILE_FILL_RANGE,
-                shadows_enabled: false,
+                shadow_maps_enabled: false,
                 ..default()
             },
             Transform::from_translation(origin + Vec3::Y * TILE_FILL_HEIGHT),
@@ -614,7 +614,7 @@ fn rebuild(
             radius: palette.key_radius,
             inner_angle: palette.key_inner_angle,
             outer_angle: palette.key_outer_angle,
-            shadows_enabled: palette.key_shadows_enabled,
+            shadow_maps_enabled: palette.key_shadows_enabled,
             ..default()
         },
         Transform::from_translation(center + Vec3::new(3.0, 22.0, 3.0)).looking_at(center, Vec3::Z),

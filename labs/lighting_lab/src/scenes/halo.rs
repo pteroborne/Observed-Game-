@@ -69,7 +69,7 @@ pub fn spawn(ctx: &mut SceneCtx) {
                 color: Color::srgb(0.32, 0.48, 0.72),
                 intensity: 1_200_000.0,
                 range: 28.0,
-                shadows_enabled: false,
+                shadow_maps_enabled: false,
                 ..default()
             },
             Transform::from_xyz(side * 2.5, 7.0, -15.0),
@@ -140,7 +140,7 @@ pub fn spawn(ctx: &mut SceneCtx) {
             intensity: 28_000_000.0,
             range: 72.0,
             radius: 0.45,
-            shadows_enabled: true,
+            shadow_maps_enabled: true,
             inner_angle: 0.11,
             outer_angle: 0.18,
             ..default()
@@ -159,7 +159,7 @@ pub fn spawn(ctx: &mut SceneCtx) {
             color: Color::srgb(0.72, 0.84, 1.0),
             intensity: 180_000.0,
             range: 42.0,
-            shadows_enabled: false,
+            shadow_maps_enabled: false,
             ..default()
         },
         VolumetricLight,

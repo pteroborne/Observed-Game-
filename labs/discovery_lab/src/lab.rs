@@ -115,7 +115,7 @@ pub(crate) fn setup_lab(mut commands: Commands) {
                             DoorReadGlyph(room),
                             Text2d::new(" "),
                             TextFont {
-                                font_size: 24.0,
+                                font_size: FontSize::Px(24.0),
                                 ..default()
                             },
                             TextColor(Color::srgb(0.02, 0.03, 0.04)),
@@ -125,7 +125,7 @@ pub(crate) fn setup_lab(mut commands: Commands) {
                             RoomGlyph(room),
                             Text2d::new("?"),
                             TextFont {
-                                font_size: 46.0,
+                                font_size: FontSize::Px(46.0),
                                 ..default()
                             },
                             TextColor(Color::srgb(0.85, 0.9, 1.0)),
@@ -169,7 +169,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DebugText,
                     Text::new("Discovery diagnostics starting..."),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(1.0, 0.94, 0.80)),
@@ -207,7 +207,7 @@ fn spawn_ui(commands: &mut Commands) {
                          solvable; turn it OFF and a keystone can strand.",
                     ),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.92, 0.90, 0.84)),

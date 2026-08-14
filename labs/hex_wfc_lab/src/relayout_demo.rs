@@ -157,7 +157,7 @@ fn setup_status(mut commands: Commands) {
         RelayoutStatus,
         Text::new(""),
         TextFont {
-            font_size: 15.0,
+            font_size: FontSize::Px(15.0),
             ..default()
         },
         TextColor(Color::srgb(0.93, 0.96, 1.0)),
@@ -359,7 +359,7 @@ fn rebuild_overlay(
                 RelayoutVisual,
                 Text2d::new("[P] PIN"),
                 TextFont {
-                    font_size: 11.0,
+                    font_size: FontSize::Px(11.0),
                     ..default()
                 },
                 TextColor(pin_style.base_color),
@@ -403,7 +403,7 @@ fn rebuild_overlay(
             RelayoutVisual,
             Text2d::new("[C]"),
             TextFont {
-                font_size: 13.0,
+                font_size: FontSize::Px(13.0),
                 ..default()
             },
             TextColor(change_style.base_color),

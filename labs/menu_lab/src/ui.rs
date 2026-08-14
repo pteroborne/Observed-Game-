@@ -1,5 +1,5 @@
 use bevy::{
-    app::AppExit, ecs::system::SystemParam, input::gamepad::GamepadButton, input_focus::InputFocus,
+    app::AppExit, ecs::system::SystemParam, input::gamepad::GamepadButton, input_focus::{FocusCause, InputFocus},
     prelude::*, ui::InteractionDisabled, ui_widgets::Activate,
 };
 
@@ -276,7 +276,7 @@ pub(crate) fn setup_loading(mut commands: Commands) {
                         LoadingStatus,
                         Text::new("Validating owned-entity boundary… 0%"),
                         TextFont {
-                            font_size: 18.0,
+                            font_size: FontSize::Px(18.0),
                             ..default()
                         },
                         TextColor(MUTED_TEXT),
@@ -516,7 +516,9 @@ pub(crate) fn handle_widget_activation(
         return;
     }
 
-    context.focus.set(activation.entity);
+    // Activation reaches here from keyboard and gamepad too, not only a
+    // click, and Bevy reserves `Pressed` for primary mouse presses.
+    context.focus.set(activation.entity, FocusCause::Navigated);
     widgets::remember_activated(&mut context.focus_memory, *context.state.get(), *widget);
 
     match action {
@@ -643,11 +645,11 @@ fn spawn_text(
     parent.spawn((
         Text::new(value),
         TextFont {
-            font_size: size,
+            font_size: FontSize::Px(size),
             ..default()
         },
         TextColor(color),
-        TextLayout::new_with_justify(Justify::Center),
+        TextLayout::justify(Justify::Center),
     ));
 }
 

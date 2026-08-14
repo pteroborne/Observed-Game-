@@ -15,11 +15,11 @@ name = "module-studio"
 path = "src/bin/module_studio.rs"
 
 [dependencies]
-bevy = { version = "0.18.1", default-features = false, features = [
+bevy = { version = "0.19", default-features = false, features = [
     "2d",
     "3d",
     "png",
-    "experimental_bevy_ui_widgets",
+    "bevy_ui_widgets",
 ] }
 # The profile type and the solver it drives. `serde` carries the profile;
 # hex_wfc is unconditional, so no `wfc` feature is needed.

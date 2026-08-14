@@ -133,7 +133,7 @@ pub fn spawn(ctx: &mut SceneCtx) {
                     color: Color::srgb(0.90, 0.95, 0.94),
                     intensity,
                     range,
-                    shadows_enabled: false,
+                    shadow_maps_enabled: false,
                     ..default()
                 },
                 Transform::from_translation(center + Vec3::new(0.0, height - 0.35, 0.0)),

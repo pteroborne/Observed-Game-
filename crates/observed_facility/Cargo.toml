@@ -32,10 +32,10 @@ observed_hex = { path = "../observed_hex" }
 # The constraint world builds on the observe/decohere graph; it embeds it as data, so
 # it needs no ECS from that crate.
 observed_observation = { path = "../observed_observation", default-features = false }
-glam = "0.30"
+glam = "0.32"
 # `bevy_color` provides `Color` for the `color()` presentation helpers (not pulled by
 # bare Bevy); `Resource` comes from bevy_ecs in the default-feature-free facade.
-bevy = { version = "0.18.1", default-features = false, features = [
+bevy = { version = "0.19", default-features = false, features = [
     "bevy_color",
 ], optional = true }
 # Seeded topology generation for the `wfc` feature only; see feature comment above.

@@ -206,7 +206,7 @@ pub(super) fn sync_projection(
                     color: observed_style::marker(MarkerRole::Collapse).base_color,
                     intensity: 1_000.0,
                     range: 6.0,
-                    shadows_enabled: false,
+                    shadow_maps_enabled: false,
                     ..default()
                 },
                 Transform::from_translation(Vec3::Y * 0.8),
@@ -383,7 +383,7 @@ fn spawn_caged_lantern(
                         color: observed_style::marker(MarkerRole::NextRoom).base_color,
                         intensity: 35.0,
                         range: 3.2,
-                        shadows_enabled: false,
+                        shadow_maps_enabled: false,
                         ..default()
                     },
                     Transform::from_translation(core_transform.translation),
@@ -394,7 +394,7 @@ fn spawn_caged_lantern(
                         color: observed_style::marker(MarkerRole::Control).base_color,
                         intensity: 180.0,
                         range: 5.0,
-                        shadows_enabled: false,
+                        shadow_maps_enabled: false,
                         ..default()
                     },
                     Transform::from_translation(core_transform.translation),

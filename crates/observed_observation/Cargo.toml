@@ -15,5 +15,5 @@ bevy = ["dep:bevy"]
 observed_core = { path = "../observed_core" }
 # Vector math only (the same crate Bevy re-exports as `bevy::math`), so a position from
 # this model is type-compatible with Bevy presentation code.
-glam = "0.30"
-bevy = { version = "0.18.1", default-features = false, optional = true }
+glam = "0.32"
+bevy = { version = "0.19", default-features = false, optional = true }

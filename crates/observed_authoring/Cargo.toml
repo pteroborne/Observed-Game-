@@ -11,7 +11,7 @@ publish = false
 # math, no Bevy, no asset server. Downstream consumers get `TilePrototype`s
 # (validated footprints, port signatures, convex hulls ready for `ColliderSpec`).
 [dependencies]
-glam = "0.30"
+glam = "0.32"
 observed_hex = { path = "../observed_hex" }
 # ColliderSpec / StableColliderId / ArenaSpec — the collision seam. Pure arm only.
 observed_traversal = { path = "../observed_traversal", default-features = false }

@@ -26,7 +26,7 @@ use bevy::pbr::{
 };
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
-use bevy::render::view::Hdr;
+use bevy::camera::Hdr;
 use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::HexCoord;
 

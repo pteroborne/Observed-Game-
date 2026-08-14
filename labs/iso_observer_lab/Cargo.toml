@@ -5,7 +5,8 @@ edition = "2024"
 publish = false
 
 [dependencies]
-bevy = { version = "0.18.1", default-features = false, features = ["2d", "3d", "png"] }
+bevy = { version = "0.19", default-features = false, features = [
+    "ui","2d", "3d", "png"] }
 # The authored tile corpus and the projector that resolves a cell to a tile:
 # the schematic draws real geometry, and the inspector names the real tile.
 observed_authoring = { path = "../../crates/observed_authoring" }

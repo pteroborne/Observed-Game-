@@ -83,7 +83,7 @@ pub fn rebuild_module_view(
     commands.spawn((
         DirectionalLight {
             illuminance: crate::draw::KEY_ILLUMINANCE,
-            shadows_enabled: false,
+            shadow_maps_enabled: false,
             ..default()
         },
         Transform::from_translation(key_from * 40.0).looking_at(Vec3::ZERO, Vec3::Y),

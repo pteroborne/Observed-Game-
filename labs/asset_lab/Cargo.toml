@@ -8,7 +8,8 @@ publish = false
 # The drop-in slot manifest now lives in the production crate; this lab is its
 # visual showcase.
 observed_assets = { path = "../../crates/observed_assets" }
-bevy = { version = "0.18.1", default-features = false, features = [
+bevy = { version = "0.19", default-features = false, features = [
+    "ui",
     "3d",
     "png",
     "jpeg",

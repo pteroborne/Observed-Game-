@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::net::SocketAddr;
 
 use bevy::input::keyboard::{Key, KeyboardInput};
-use bevy::input_focus::{InputFocus, tab_navigation::TabIndex};
+use bevy::input_focus::{FocusCause, InputFocus, tab_navigation::TabIndex};
 use bevy::prelude::*;
 use bevy::ui::InteractionDisabled;
 use bevy::ui_widgets::Activate;
@@ -313,7 +313,7 @@ pub(crate) fn edit_direct_address(
     let Ok(address_widget) = address_widgets.single() else {
         return;
     };
-    if focus.0 != Some(address_widget) {
+    if focus.get() != Some(address_widget) {
         // Drain the messages while this screen is active, but do not apply them.
         for _ in inputs.read() {}
         return;
@@ -428,10 +428,10 @@ pub(crate) fn refresh_browser_text(
             .iter()
             .any(|server| server.address == *address)
         {
-            if focus.0 == Some(*entity)
+            if focus.get() == Some(*entity)
                 && let Ok(address_widget) = address_widgets.single()
             {
-                focus.set(address_widget);
+                focus.set(address_widget, FocusCause::Navigated);
             }
             commands.entity(*entity).despawn();
         }

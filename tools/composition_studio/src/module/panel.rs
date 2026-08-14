@@ -37,10 +37,10 @@ pub fn setup_panel(mut commands: Commands) {
                 BackgroundColor(background),
                 Text::new(""),
                 TextFont {
-                    font_size: 14.0,
+                    font_size: FontSize::Px(14.0),
                     ..default()
                 },
-                TextLayout::new_with_justify(Justify::Left),
+                TextLayout::justify(Justify::Left),
                 TextColor(schematic(SchematicRole::Selected).base_color),
                 ModulePanelText,
             ));
@@ -53,10 +53,10 @@ pub fn setup_panel(mut commands: Commands) {
                 BackgroundColor(background),
                 Text::new(""),
                 TextFont {
-                    font_size: 13.0,
+                    font_size: FontSize::Px(13.0),
                     ..default()
                 },
-                TextLayout::new_with_justify(Justify::Left),
+                TextLayout::justify(Justify::Left),
                 TextColor(schematic(SchematicRole::Pinned).base_color),
                 ModuleStatusText,
             ));

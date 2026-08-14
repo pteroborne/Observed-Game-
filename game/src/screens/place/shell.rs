@@ -820,7 +820,7 @@ pub(crate) fn spawn_rival_anchor_torch_at(
                     color,
                     intensity: 1_900.0,
                     range: 6.5,
-                    shadows_enabled: false,
+                    shadow_maps_enabled: false,
                     ..default()
                 },
                 Transform::from_xyz(0.0, 0.45, 0.0),
@@ -961,7 +961,7 @@ fn spawn_place_frame(
             color: tether_color,
             intensity,
             range: 5.0,
-            shadows_enabled: false,
+            shadow_maps_enabled: false,
             ..default()
         },
         Transform::from_xyz(gap.center.x, base_y + WALL_HEIGHT - 0.35, gap.center.y),
@@ -987,7 +987,7 @@ fn spawn_place_frame(
             },
             Text2d::new(crate::evidence::threshold_label(&gap.threshold)),
             TextFont {
-                font_size: 16.0,
+                font_size: FontSize::Px(16.0),
                 ..default()
             },
             TextColor(Color::WHITE),

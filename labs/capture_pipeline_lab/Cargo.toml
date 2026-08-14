@@ -5,12 +5,13 @@ edition = "2024"
 publish = false
 
 [dependencies]
-bevy = { version = "0.18.1", default-features = false, features = [
+bevy = { version = "0.19", default-features = false, features = [
+    "ui",
     "3d",
     "png",
     "bevy_post_process",
 ] }
 # Phase A5 of the asset-integration roadmap. `0.16.0` is the Bevy `0.18`
 # compatible line; `0.17.0` targets Bevy `0.19` and is intentionally avoided.
-bevy_image_export = { version = "=0.16.0", default-features = false, features = ["png"] }
+bevy_image_export = { version = "=0.17.0", default-features = false, features = ["png"] }
 observed_style = { path = "../../crates/observed_style" }

@@ -2,7 +2,7 @@ use bevy::light::VolumetricFog;
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
-use bevy::render::view::Hdr;
+use bevy::camera::Hdr;
 use observed_match::facility::CollapseState;
 use observed_match::hybrid::HybridMatch;
 use observed_style as style;

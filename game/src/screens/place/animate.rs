@@ -308,7 +308,7 @@ pub(crate) fn update_carried_torch_light(
                         color: style::marker(MarkerRole::Control).base_color,
                         intensity: 2_200.0,
                         range: 8.0,
-                        shadows_enabled: false,
+                        shadow_maps_enabled: false,
                         ..default()
                     },
                     Transform::from_xyz(0.0, 0.0, 0.0),

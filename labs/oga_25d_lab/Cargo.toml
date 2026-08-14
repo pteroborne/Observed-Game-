@@ -13,12 +13,13 @@ name = "derive_sprites"
 path = "src/bin/derive_sprites.rs"
 
 [dependencies]
-bevy = { version = "0.18.1", default-features = false, features = [
+bevy = { version = "0.19", default-features = false, features = [
+    "ui",
     "3d",
     "png",
 ] }
-# Bevy 0.18-compatible line. The latest bevy_sprite3d 9.x targets Bevy 0.19.
-bevy_sprite3d = { version = "=8.0.0", default-features = false }
+# Bevy 0.19 line.
+bevy_sprite3d = { version = "=9.0.0", default-features = false }
 observed_assets = { path = "../../crates/observed_assets" }
 observed_style = { path = "../../crates/observed_style" }
 image = { version = "0.25.10", default-features = false, features = ["png"] }

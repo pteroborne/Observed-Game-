@@ -185,7 +185,7 @@ pub(crate) fn spawn(
                 panel.spawn((
                     OnboardingBody,
                     text(first.body.clone(), 18.0, TITLE),
-                    TextLayout::new_with_justify(Justify::Center),
+                    TextLayout::justify(Justify::Center),
                     Node {
                         max_width: px(620),
                         ..default()

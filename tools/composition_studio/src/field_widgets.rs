@@ -137,7 +137,7 @@ pub fn spawn_field_rows(panel: &mut ChildSpawnerCommands) {
                     },
                     Text::new(""),
                     TextFont {
-                        font_size: 13.0,
+                        font_size: FontSize::Px(13.0),
                         ..default()
                     },
                     TextColor(schematic(SchematicRole::Selected).base_color),
@@ -164,7 +164,7 @@ fn spawn_row(list: &mut ChildSpawnerCommands, at: FieldRef, field: &'static Tuna
             },
             Text::new(field.label),
             TextFont {
-                font_size: 13.0,
+                font_size: FontSize::Px(13.0),
                 ..default()
             },
             TextColor(schematic(SchematicRole::Grid).base_color),
@@ -216,7 +216,7 @@ fn spawn_row(list: &mut ChildSpawnerCommands, at: FieldRef, field: &'static Tuna
             },
             Text::new(""),
             TextFont {
-                font_size: 13.0,
+                font_size: FontSize::Px(13.0),
                 ..default()
             },
             TextColor(schematic(SchematicRole::Grid).base_color),

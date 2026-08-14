@@ -12,7 +12,7 @@ path = "src/main.rs"
 # The menus are UI overlays (camera-agnostic); the Match is a first-person 3D view,
 # so the assembled game renders in 3D. Image, glTF, HDR, and audio features cover
 # the complete drop-in asset plan.
-bevy = { version = "0.18.1", default-features = false, features = [
+bevy = { version = "0.19", default-features = false, features = [
     "3d",
     "png",
     "jpeg",
@@ -25,7 +25,7 @@ bevy = { version = "0.18.1", default-features = false, features = [
     "bevy_post_process",
     # Headless button semantics, activation events, accessibility metadata, and
     # pointer parity for the shared frontend widget foundation.
-    "experimental_bevy_ui_widgets",
+    "bevy_ui_widgets",
     # Derives serde Serialize/Deserialize on existing bevy types (KeyCode, …) so the
     # Settings resource (Phase 48) can serialize keybindings without inventing a
     # parallel key-name enum. An in-tree feature flip on the existing dependency, not
@@ -50,8 +50,8 @@ observed_authoring = { path = "../crates/observed_authoring" }
 observed_match = { path = "../crates/observed_match" }
 observed_traversal = { path = "../crates/observed_traversal" }
 vleue_navigator = { version = "0.15.0", default-features = false }
-# Bevy 0.18-compatible line. The latest bevy_sprite3d 9.x targets Bevy 0.19.
-bevy_sprite3d = { version = "=8.0.0", default-features = false }
+# Bevy 0.19 line.
+bevy_sprite3d = { version = "=9.0.0", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 image = { version = "0.25", default-features = false, features = ["png"] }

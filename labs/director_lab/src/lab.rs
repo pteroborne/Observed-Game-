@@ -115,7 +115,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DebugText,
                     Text::new("Director diagnostics starting…"),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(1.0, 0.86, 0.82)),
@@ -143,7 +143,7 @@ fn spawn_ui(commands: &mut Commands) {
                          faster. The director never harms you; it only closes in.",
                     ),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.95, 0.90, 0.90)),

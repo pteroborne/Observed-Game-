@@ -66,7 +66,7 @@ fn setup(mut commands: Commands) {
         StatusText,
         Text::new("LAN lab starting..."),
         TextFont {
-            font_size: 22.0,
+            font_size: FontSize::Px(22.0),
             ..default()
         },
         TextColor(Color::srgb(0.45, 0.92, 1.0)),

@@ -30,6 +30,16 @@ impl<T> Default for RebindCapture<T> {
     }
 }
 
+// Bevy 0.19 made `Resource` require `Component` (resources are entities now),
+// so the manual impl needs a manual `Component` beside it. Derives cannot be
+// used here: `#[derive(Component)]` would demand `T: Component`, and `T` is a
+// plain action enum, not an ECS type.
+impl<T: Send + Sync + 'static> bevy::prelude::Component for RebindCapture<T> {
+    const STORAGE_TYPE: bevy::ecs::component::StorageType =
+        bevy::ecs::component::StorageType::Table;
+    type Mutability = bevy::ecs::component::Mutable;
+}
+
 impl<T: Send + Sync + 'static> bevy::prelude::Resource for RebindCapture<T> {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

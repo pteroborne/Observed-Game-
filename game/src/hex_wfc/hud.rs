@@ -37,7 +37,7 @@ pub(super) fn setup(
                     HexWfcHud,
                     Text::new("Hex facility initializing"),
                     TextFont {
-                        font_size: 16.0,
+                        font_size: FontSize::Px(16.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.88, 0.95, 1.0)),
@@ -58,7 +58,7 @@ pub(super) fn setup(
                 root.spawn((
                     Text::new(help_text),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.70, 0.78, 0.9)),
@@ -76,7 +76,7 @@ pub(super) fn setup(
                 root.spawn((
                     Text::new("+"),
                     TextFont {
-                        font_size: 22.0,
+                        font_size: FontSize::Px(22.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.9, 0.95, 1.0)),

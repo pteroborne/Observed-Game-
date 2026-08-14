@@ -157,7 +157,7 @@ fn spawn_practical(
         PointLight {
             intensity: 0.0,
             range: 10.5,
-            shadows_enabled: false,
+            shadow_maps_enabled: false,
             ..default()
         },
         Transform::from_translation(position - Vec3::Y * 0.42),
@@ -336,7 +336,7 @@ fn spawn_exit_beacon(
             color: observed_style::marker(observed_style::MarkerRole::Exit).base_color,
             intensity: 2_200.0,
             range: 18.0,
-            shadows_enabled: false,
+            shadow_maps_enabled: false,
             ..default()
         },
         Transform::from_xyz(0.0, 2.5, 0.0),

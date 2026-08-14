@@ -20,8 +20,8 @@ use bevy::{
     pbr::{DistanceFog, FogFalloff},
     post_process::bloom::Bloom,
     prelude::*,
+    camera::Hdr,
     render::view::{
-        Hdr,
         screenshot::{Screenshot, save_to_disk},
     },
     window::{PresentMode, WindowResolution},
@@ -129,7 +129,7 @@ fn place_beacon(
                     color: Color::srgb(srgb.red, srgb.green, srgb.blue),
                     intensity: 9_000.0,
                     range: 9.0,
-                    shadows_enabled: false,
+                    shadow_maps_enabled: false,
                     ..default()
                 },
                 // Child transform is in the parent's scaled space (y-scale 2.2), so a
@@ -169,7 +169,7 @@ fn setup(
         StyleSpawned,
         DirectionalLight {
             illuminance: 1_500.0,
-            shadows_enabled: false,
+            shadow_maps_enabled: false,
             ..default()
         },
         Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.9, -0.4, 0.0)),
@@ -356,7 +356,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DebugText,
                     Text::new("…"),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.85, 0.95, 1.0)),
@@ -375,7 +375,7 @@ fn spawn_ui(commands: &mut Commands) {
                 children![(
                     Text::new(legend),
                     TextFont {
-                        font_size: 13.0,
+                        font_size: FontSize::Px(13.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.9, 0.94, 0.98)),

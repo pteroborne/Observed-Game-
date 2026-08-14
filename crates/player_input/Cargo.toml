@@ -19,5 +19,5 @@ bevy = ["dep:bevy"]
 # Pure vector math, the same crate (and version) Bevy re-exports as `bevy::math`, so a
 # `player_input::PlayerIntent` built without Bevy is type-compatible with one built
 # with it.
-glam = "0.30"
-bevy = { version = "0.18.1", default-features = false, optional = true, features = ["keyboard"] }
+glam = "0.32"
+bevy = { version = "0.19", default-features = false, optional = true, features = ["keyboard"] }

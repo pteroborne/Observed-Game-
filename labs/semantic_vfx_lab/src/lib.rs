@@ -19,8 +19,8 @@ use bevy::{
     pbr::{DistanceFog, FogFalloff},
     post_process::bloom::Bloom,
     prelude::*,
+    camera::Hdr,
     render::view::{
-        Hdr,
         screenshot::{Screenshot, save_to_disk},
     },
     window::{PresentMode, WindowResolution},
@@ -284,7 +284,7 @@ fn spawn_anchor(
                         700.0
                     },
                     range: 6.5,
-                    shadows_enabled: false,
+                    shadow_maps_enabled: false,
                     ..default()
                 },
                 Transform::from_xyz(0.0, 0.8, 0.0),
@@ -332,7 +332,7 @@ fn setup_scene(
         LabSpawned,
         DirectionalLight {
             illuminance: 1_100.0,
-            shadows_enabled: false,
+            shadow_maps_enabled: false,
             ..default()
         },
         Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.75, -0.35, 0.0)),
@@ -465,7 +465,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DebugText,
                     Text::new("Semantic VFX diagnostics starting..."),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.88, 0.95, 1.0)),
@@ -484,7 +484,7 @@ fn spawn_ui(commands: &mut Commands) {
                 children![(
                     Text::new(help_text()),
                     TextFont {
-                        font_size: 13.5,
+                        font_size: FontSize::Px(13.5),
                         ..default()
                     },
                     TextColor(Color::srgb(0.88, 0.95, 1.0)),

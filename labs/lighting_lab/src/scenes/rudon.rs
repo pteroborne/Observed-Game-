@@ -111,7 +111,7 @@ pub fn spawn(ctx: &mut SceneCtx) {
                     color: fixture_color,
                     intensity: 160_000.0 * strength + 4_000.0,
                     range: 9.0,
-                    shadows_enabled: false,
+                    shadow_maps_enabled: false,
                     ..default()
                 },
                 Transform::from_xyz(0.0, h - 0.5, zc),

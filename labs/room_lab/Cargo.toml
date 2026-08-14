@@ -5,7 +5,8 @@ edition = "2024"
 publish = false
 
 [dependencies]
-bevy = { version = "0.18.1", default-features = false, features = ["2d"] }
+bevy = { version = "0.19", default-features = false, features = [
+    "ui","2d"] }
 observed_core = { path = "../../crates/observed_core" }
 # The room/port topology now lives in the production crate; this lab projects it.
 observed_facility = { path = "../../crates/observed_facility" }

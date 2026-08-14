@@ -129,7 +129,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DebugText,
                     Text::new("Equipment diagnostics starting…"),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.98, 0.92, 0.75)),
@@ -163,7 +163,7 @@ fn spawn_ui(commands: &mut Commands) {
                          replacement.",
                     ),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.86, 0.90, 0.95)),

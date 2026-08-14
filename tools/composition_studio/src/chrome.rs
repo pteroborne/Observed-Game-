@@ -172,12 +172,12 @@ pub fn setup_chrome(mut commands: Commands) {
                         },
                         Text::new("COMPOSITION STUDIO"),
                         TextFont {
-                            font_size: 14.0,
+                            font_size: FontSize::Px(14.0),
                             ..default()
                         },
                         // Monospace panel content is laid out with spaces; centre
                         // justification would break every column alignment in it.
-                        TextLayout::new_with_justify(Justify::Left),
+                        TextLayout::justify(Justify::Left),
                         TextColor(schematic(SchematicRole::Selected).base_color),
                         ChromeMenuText,
                     ));
@@ -217,10 +217,10 @@ pub fn setup_chrome(mut commands: Commands) {
                             bar.spawn((
                                 Text::new(""),
                                 TextFont {
-                                    font_size: 13.0,
+                                    font_size: FontSize::Px(13.0),
                                     ..default()
                                 },
-                                TextLayout::new_with_justify(Justify::Left),
+                                TextLayout::justify(Justify::Left),
                                 TextColor(schematic(SchematicRole::Pinned).base_color),
                                 ChromeActionText,
                             ));
@@ -241,10 +241,10 @@ pub fn setup_chrome(mut commands: Commands) {
                             bar.spawn((
                                 Text::new("Status Line"),
                                 TextFont {
-                                    font_size: 13.0,
+                                    font_size: FontSize::Px(13.0),
                                     ..default()
                                 },
-                                TextLayout::new_with_justify(Justify::Left),
+                                TextLayout::justify(Justify::Left),
                                 TextColor(schematic(SchematicRole::Pinned).base_color),
                                 ChromeStatusText,
                             ));

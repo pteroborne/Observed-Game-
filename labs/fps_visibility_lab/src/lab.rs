@@ -114,7 +114,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DebugText,
                     Text::new("Visibility diagnostics starting..."),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.85, 1.0, 0.92)),
@@ -145,7 +145,7 @@ fn spawn_ui(commands: &mut Commands) {
                          cyan links are unseen and may re-pair on decoherence.",
                     ),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.88, 0.95, 0.92)),

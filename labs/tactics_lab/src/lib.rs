@@ -560,7 +560,7 @@ fn enter_loading(mut commands: Commands) {
             root.spawn((
                 Text::new("SOLVING FACILITY // PROJECTING AUTHORED DECKS"),
                 TextFont {
-                    font_size: 22.0,
+                    font_size: FontSize::Px(22.0),
                     ..default()
                 },
                 TextColor(Color::WHITE),
@@ -707,7 +707,7 @@ fn spawn_overlay(commands: &mut Commands, mode: OverlayMode, status: Option<sim:
                 panel.spawn((
                     Text::new(title),
                     TextFont {
-                        font_size: 28.0,
+                        font_size: FontSize::Px(28.0),
                         ..default()
                     },
                     TextColor(Color::WHITE),
@@ -722,7 +722,7 @@ fn spawn_overlay(commands: &mut Commands, mode: OverlayMode, status: Option<sim:
                              B runs/pauses bot spectate; . advances one bot decision.",
                         ),
                         TextFont {
-                            font_size: 16.0,
+                            font_size: FontSize::Px(16.0),
                             ..default()
                         },
                         TextColor(Color::WHITE),
@@ -764,7 +764,7 @@ fn spawn_overlay_button(
             button.spawn((
                 Text::new(label),
                 TextFont {
-                    font_size: 17.0,
+                    font_size: FontSize::Px(17.0),
                     ..default()
                 },
                 TextColor(Color::WHITE),

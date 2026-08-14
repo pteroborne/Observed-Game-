@@ -412,7 +412,7 @@ fn rooms_present(
             DespawnOnExit(GameState::HexWfc),
             Text2d::new(room_label(blueprint.role)),
             TextFont {
-                font_size: 20.0,
+                font_size: FontSize::Px(20.0),
                 ..default()
             },
             TextColor(observed_style::marker(MarkerRole::NextRoom).base_color),

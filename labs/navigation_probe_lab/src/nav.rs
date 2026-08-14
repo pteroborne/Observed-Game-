@@ -1,4 +1,4 @@
-//! The **derived navigation consumer**. It builds a `vleue_navigator` navmesh from
+//! The **derived navigation consumer**. It builds a `polyanya` navmesh from
 //! the authoritative [`Facility`]'s current obstacle set and answers route queries
 //! by running polyanya pathfinding over it. Crucially it is a *one-way* consumer:
 //! it reads door state and geometry, and never writes back to the facility graph,
@@ -10,13 +10,28 @@
 
 use bevy::math::Vec2;
 use observed_core::RoomId;
-use vleue_navigator::NavMesh;
+use polyanya::{Mesh, Triangulation};
 
 use crate::facility::{self, Facility};
+
+/// The navmesh type. `polyanya::Mesh` directly, rather than through
+/// `vleue_navigator`.
+///
+/// The wrapper was a Bevy plugin pinned to one engine line, and this lab never
+/// wanted the plugin — its own module docs said so, describing the dependency
+/// as "navmesh builder + polyanya path query only". Taking that stance to its
+/// conclusion removes an engine-version lock from a lab that does pure CPU
+/// geometry: `polyanya` depends on `glam`, not on Bevy, so this lab no longer
+/// has an opinion about which Bevy the workspace is on.
+pub type NavMesh = Mesh;
 
 /// Build a navmesh from the facility's current walls + closed-door plugs. Pure CPU
 /// construction (constrained Delaunay triangulation + polyanya), so it is callable
 /// in tests with no Bevy app or GPU.
+///
+/// The body is `vleue_navigator::NavMesh::from_edge_and_obstacles` inlined —
+/// triangulate, simplify, merge coplanar polygons, set the search epsilon. It
+/// was a dozen lines of `polyanya` calls behind a Bevy-shaped door.
 pub fn build_navmesh(facility: &Facility) -> NavMesh {
     let edges = facility::outer_boundary();
     let obstacles: Vec<Vec<Vec2>> = facility
@@ -24,7 +39,20 @@ pub fn build_navmesh(facility: &Facility) -> NavMesh {
         .iter()
         .map(|rect| rect.corners())
         .collect();
-    NavMesh::from_edge_and_obstacles(edges, obstacles)
+
+    let mut triangulation = Triangulation::from_outer_edges(&edges);
+    triangulation.add_obstacles(obstacles);
+    let mut mesh: Mesh = triangulation.as_navmesh();
+    triangulation.simplify(0.001);
+    // Merging is iterative and converges quickly; three passes is what the
+    // wrapper did and what the lab's pinned route expectations were built on.
+    for _ in 0..3 {
+        if mesh.merge_polygons() {
+            break;
+        }
+    }
+    mesh.set_search_delta(0.01);
+    mesh
 }
 
 /// A navigation query result, classified against the authoritative room graph.

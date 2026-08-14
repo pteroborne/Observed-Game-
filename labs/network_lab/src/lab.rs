@@ -113,7 +113,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DebugText,
                     Text::new("Lockstep diagnostics starting..."),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.84, 0.94, 1.0)),
@@ -145,7 +145,7 @@ fn spawn_ui(commands: &mut Commands) {
                          are the exact replay tape.",
                     ),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.95, 0.92, 0.88)),

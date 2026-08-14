@@ -402,7 +402,7 @@ fn setup_ui(mut commands: Commands) {
                     DebugText,
                     Text::new("Loading LDtk schematic..."),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.85, 0.93, 1.0)),
@@ -430,7 +430,7 @@ fn setup_ui(mut commands: Commands) {
                          violet = door ports, pale = spawn, green = objective.",
                     ),
                     TextFont {
-                        font_size: 13.5,
+                        font_size: FontSize::Px(13.5),
                         ..default()
                     },
                     TextColor(Color::srgb(0.85, 0.93, 1.0)),

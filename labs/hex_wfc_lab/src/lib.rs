@@ -150,7 +150,7 @@ fn setup(mut commands: Commands, state: Res<LabState>, mode: Res<facility_3d::La
         LabStatus,
         Text::new(""),
         TextFont {
-            font_size: 15.0,
+            font_size: FontSize::Px(15.0),
             ..default()
         },
         TextColor(Color::srgb(0.88, 0.94, 1.0)),
@@ -311,7 +311,7 @@ fn rebuild_visuals(
                     LabVisual,
                     Text2d::new(label),
                     TextFont {
-                        font_size: 13.0,
+                        font_size: FontSize::Px(13.0),
                         ..default()
                     },
                     TextColor(edge),
@@ -327,7 +327,7 @@ fn rebuild_visuals(
                 LabVisual,
                 Text2d::new(label),
                 TextFont {
-                    font_size: 11.0,
+                    font_size: FontSize::Px(11.0),
                     ..default()
                 },
                 TextColor(Color::srgb(0.08, 0.10, 0.15)),

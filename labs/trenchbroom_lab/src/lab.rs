@@ -15,8 +15,8 @@ use bevy::{
     pbr::{DistanceFog, FogFalloff},
     post_process::bloom::Bloom,
     prelude::*,
+    camera::Hdr,
     render::view::{
-        Hdr,
         screenshot::{Screenshot, save_to_disk},
     },
     window::{CursorGrabMode, CursorOptions, PresentMode, PrimaryWindow, WindowResolution},
@@ -661,7 +661,7 @@ fn spawn_ui(commands: &mut Commands) {
                     DebugText,
                     Text::new("Importing authored map…"),
                     TextFont {
-                        font_size: 15.0,
+                        font_size: FontSize::Px(15.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.85, 0.93, 1.0)),
@@ -693,7 +693,7 @@ fn spawn_ui(commands: &mut Commands) {
                          purple = ports, green/red = open/closed doors.",
                     ),
                     TextFont {
-                        font_size: 13.5,
+                        font_size: FontSize::Px(13.5),
                         ..default()
                     },
                     TextColor(Color::srgb(0.85, 0.93, 1.0)),

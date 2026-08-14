@@ -118,7 +118,7 @@ pub fn setup_map_topology_ui(mut commands: Commands) {
         MapTopologyLegendText,
         Text::new(""),
         TextFont {
-            font_size: 13.0,
+            font_size: FontSize::Px(13.0),
             ..default()
         },
         TextColor(Color::srgb(0.9, 0.92, 0.98)),
@@ -394,7 +394,7 @@ pub fn render_map_topology(
             MapTopologyTile,
             Text2d::new(label),
             TextFont {
-                font_size: 8.0,
+                font_size: FontSize::Px(8.0),
                 ..default()
             },
             TextColor(label_color),

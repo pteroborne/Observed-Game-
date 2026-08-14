@@ -17,7 +17,7 @@ use bevy::pbr::{
 };
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
-use bevy::render::view::Hdr;
+use bevy::camera::Hdr;
 use observed_facility::full_wfc::{CellCoord, ThresholdKey};
 use observed_style::ThresholdFrameState;
 

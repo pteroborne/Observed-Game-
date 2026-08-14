@@ -215,7 +215,7 @@ pub(crate) fn emit_detail(
     commands.spawn((
         DirectionalLight {
             illuminance: KEY_ILLUMINANCE,
-            shadows_enabled: false,
+            shadow_maps_enabled: false,
             ..default()
         },
         Transform::from_translation(key_from).looking_at(Vec3::ZERO, Vec3::Y),
@@ -276,7 +276,7 @@ fn spawn_district_lights(commands: &mut Commands, state: &StudioState, cells: &B
                 intensity: observed_style::iso::light::PRACTICAL_INTENSITY,
                 range: observed_style::iso::light::PRACTICAL_RANGE,
                 radius: observed_style::iso::light::PRACTICAL_RADIUS,
-                shadows_enabled: false,
+                shadow_maps_enabled: false,
                 ..default()
             },
             Transform::from_translation(

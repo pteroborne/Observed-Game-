@@ -13,7 +13,10 @@ publish = false
 # `simd-*`/`parallel`, so we take the default (scalar) build and add only this.
 rapier3d = { version = "0.34", features = ["enhanced-determinism"] }
 # Bevy is presentation only here — it renders world A and draws the verdict HUD.
-bevy = { version = "0.18.1", default-features = false, features = [
+bevy = { version = "0.19", default-features = false, features = [
     "3d",
     "png",
+    # Bevy 0.19 stopped folding UI into the `3d` umbrella; a lab that draws a
+    # verdict overlay has to ask for it.
+    "ui",
 ] }

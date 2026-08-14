@@ -90,7 +90,7 @@ fn focus_settings_row(app: &mut App, row: crate::screens::settings::SettingsRow)
 }
 
 fn focused_settings_row(app: &App) -> Option<crate::screens::settings::SettingsRow> {
-    let entity = app.world().resource::<bevy::input_focus::InputFocus>().0?;
+    let entity = app.world().resource::<bevy::input_focus::InputFocus>().get()?;
     app.world()
         .get::<crate::screens::settings::SettingsRowText>(entity)
         .map(|row| row.0)
@@ -2712,7 +2712,7 @@ fn a_wellshaft_renders_the_hex_pillar_spiral_bridges_and_sealed_service_bays() {
         let practical_lights: Vec<bool> = lights
             .iter(world)
             .filter(|(_, name)| name.as_str() == "Wellshaft practical light")
-            .map(|(light, _)| light.shadows_enabled)
+            .map(|(light, _)| light.shadow_maps_enabled)
             .collect();
         (
             all_names

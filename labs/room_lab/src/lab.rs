@@ -101,7 +101,7 @@ pub(crate) fn setup_ui(mut commands: Commands) {
                     DebugText,
                     Text::new("Room diagnostics starting…"),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.72, 0.90, 1.0)),
@@ -120,7 +120,7 @@ pub(crate) fn setup_ui(mut commands: Commands) {
                     LibraryText,
                     Text::new("Room library loading…"),
                     TextFont {
-                        font_size: 14.0,
+                        font_size: FontSize::Px(14.0),
                         ..default()
                     },
                     TextColor(Color::srgb(0.80, 0.90, 1.0)),
