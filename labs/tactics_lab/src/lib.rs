@@ -40,7 +40,7 @@ use sim::unit::PLAYER_TEAM;
 use sim::{MovePreview, TacticsEvent, TacticsGame, TurnPhase, TurnResolution};
 use view::board::DrawReport;
 use view::camera::BoardCamera;
-use view::hud::{CommandDock, HudButton};
+use view::hud::{CommandDock, DesktopHudContent, HudButton, MobileHudContent, MobileMorePanel};
 use view::setup::{SetupRequest, SetupRoot};
 use view::{BoardVisual, HudRoot, ViewMode};
 
@@ -50,7 +50,8 @@ const MIN_ZOOM: f32 = 0.15;
 const MAX_ZOOM: f32 = 3.0;
 const CAMERA_NUDGE: f32 = 18.0;
 const BOT_BEAT_SECONDS: f32 = 0.45;
-const TOUCH_DRAG_THRESHOLD: f32 = 10.0;
+const TOUCH_DRAG_THRESHOLD: f32 = 18.0;
+const TOUCH_FEEDBACK_SECONDS: f32 = 1.25;
 
 #[derive(Clone, Copy, Debug)]
 pub struct CameraPose {
@@ -75,11 +76,23 @@ struct MapPointerCapture {
 /// Presentation-only gesture state. Touch input changes the same camera pose
 /// and invokes the same cell command path as mouse input; it never enters the
 /// deterministic tactics simulation or replay digest.
-#[derive(Resource, Default)]
+#[derive(Resource)]
 struct MapTouchGesture {
     active: bool,
     moved: bool,
     max_contacts: usize,
+    feedback: Timer,
+}
+
+impl Default for MapTouchGesture {
+    fn default() -> Self {
+        Self {
+            active: false,
+            moved: false,
+            max_contacts: 0,
+            feedback: Timer::from_seconds(0.0, TimerMode::Once),
+        }
+    }
 }
 
 #[derive(Resource)]
@@ -120,6 +133,65 @@ struct TacticsCameras<'w, 's> {
     board: Query<'w, 's, Entity, With<BoardCamera>>,
     hud: Query<'w, 's, Entity, With<HudCamera>>,
 }
+
+#[derive(SystemParam)]
+struct BoardHoverInput<'w, 's> {
+    time: Res<'w, Time>,
+    windows: Query<'w, 's, (Entity, &'static Window)>,
+    cameras: Query<'w, 's, (&'static Camera, &'static GlobalTransform), With<BoardCamera>>,
+    controls: Query<'w, 's, (&'static Interaction, Has<InteractionDisabled>), With<Button>>,
+    capture: Res<'w, MapPointerCapture>,
+    touch_gesture: ResMut<'w, MapTouchGesture>,
+}
+
+type HudRootNode = (
+    With<HudRoot>,
+    Without<CommandDock>,
+    Without<DesktopHudContent>,
+    Without<MobileHudContent>,
+);
+type CommandDockNode = (
+    With<CommandDock>,
+    Without<HudRoot>,
+    Without<DesktopHudContent>,
+    Without<MobileHudContent>,
+);
+type DesktopHudNode = (
+    With<DesktopHudContent>,
+    Without<HudRoot>,
+    Without<CommandDock>,
+    Without<MobileHudContent>,
+);
+type MobileHudNode = (
+    With<MobileHudContent>,
+    Without<HudRoot>,
+    Without<CommandDock>,
+    Without<DesktopHudContent>,
+);
+type StatusTextNode = (
+    With<view::hud::StatusText>,
+    Without<view::hud::SquadText>,
+    Without<view::hud::MobileStatusText>,
+    Without<view::hud::MobilePromptText>,
+);
+type SquadTextNode = (
+    With<view::hud::SquadText>,
+    Without<view::hud::StatusText>,
+    Without<view::hud::MobileStatusText>,
+    Without<view::hud::MobilePromptText>,
+);
+type MobileStatusTextNode = (
+    With<view::hud::MobileStatusText>,
+    Without<view::hud::StatusText>,
+    Without<view::hud::SquadText>,
+    Without<view::hud::MobilePromptText>,
+);
+type MobilePromptTextNode = (
+    With<view::hud::MobilePromptText>,
+    Without<view::hud::StatusText>,
+    Without<view::hud::SquadText>,
+    Without<view::hud::MobileStatusText>,
+);
 
 /// Which screen is up.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, States)]
@@ -995,6 +1067,7 @@ fn keyboard_commands(
 
 fn hud_clicks(
     controls: Query<(&Interaction, &HudButton), Changed<Interaction>>,
+    mut more_panels: Query<&mut Node, With<MobileMorePanel>>,
     mut state: ResMut<LabState>,
     mut spectator: ResMut<BotSpectator>,
     mut next: ResMut<NextState<AppState>>,
@@ -1004,6 +1077,16 @@ fn hud_clicks(
     }
     for (interaction, &button) in controls.iter() {
         if *interaction == Interaction::Pressed {
+            if button == HudButton::ToggleMore {
+                for mut panel in &mut more_panels {
+                    panel.display = if panel.display == Display::None {
+                        Display::Flex
+                    } else {
+                        Display::None
+                    };
+                }
+                continue;
+            }
             apply_command(&mut state, &mut spectator, button, &mut next);
         }
     }
@@ -1031,6 +1114,7 @@ fn apply_command(
             | HudButton::ZoomOut
             | HudButton::Recenter
             | HudButton::Restart
+            | HudButton::ToggleMore
     );
     if spectator.enabled && !available_while_spectating {
         state.notice = String::from("Pause bot spectate before issuing squad commands");
@@ -1047,6 +1131,7 @@ fn apply_command(
             | HudButton::Recenter
             | HudButton::ToggleBot
             | HudButton::StepBot
+            | HudButton::ToggleMore
     );
     match command {
         HudButton::EndTurn => resolve_turn(state),
@@ -1077,6 +1162,7 @@ fn apply_command(
             pose.zoom = (pose.zoom * 1.22).clamp(MIN_ZOOM, MAX_ZOOM);
         }
         HudButton::Recenter => state.recenter_camera(),
+        HudButton::ToggleMore => {}
         HudButton::ToggleBot => {
             spectator.enabled = !spectator.enabled;
             spectator.step_requested = spectator.enabled;
@@ -1255,19 +1341,26 @@ fn sync_camera_viewport(
 
 fn sync_hud_layout(
     windows: Query<&Window>,
-    mut roots: Query<&mut Node, (With<HudRoot>, Without<CommandDock>)>,
-    mut docks: Query<&mut Node, (With<CommandDock>, Without<HudRoot>)>,
+    mut roots: Query<&mut Node, HudRootNode>,
+    mut docks: Query<&mut Node, CommandDockNode>,
+    mut desktop: Query<&mut Node, DesktopHudNode>,
+    mut mobile: Query<&mut Node, MobileHudNode>,
 ) {
-    let (Ok(window), Ok(mut root), Ok(mut dock)) =
-        (windows.single(), roots.single_mut(), docks.single_mut())
-    else {
+    let (Ok(window), Ok(mut root), Ok(mut dock), Ok(mut desktop), Ok(mut mobile)) = (
+        windows.single(),
+        roots.single_mut(),
+        docks.single_mut(),
+        desktop.single_mut(),
+        mobile.single_mut(),
+    ) else {
         return;
     };
-    view::hud::sync_layout(
+    let layout = view::hud::sync_layout(
         Vec2::new(window.width(), window.height()),
         &mut root,
         &mut dock,
     );
+    view::hud::sync_content_visibility(layout.placement, &mut desktop, &mut mobile);
 }
 
 /// Mouse wheel over the fixed dock scrolls the dock and never leaks through to
@@ -1379,47 +1472,63 @@ fn touch_map_controls(
         .iter_just_canceled()
         .any(|touch| belongs_to_map(touch.start_position()));
     if active.is_empty() && (released.is_some() || canceled) {
-        if !canceled
+        let tapped_cell = if !canceled
             && gesture.max_contacts == 1
             && !gesture.moved
             && let Some(touch) = released
             && touch.distance().length() < TOUCH_DRAG_THRESHOLD
             && let Ok(ray) = camera.viewport_to_world(transform, touch.position())
-            && let Some(cell) = view::board::cell_at_ray(
+        {
+            view::board::cell_at_ray(
                 &state.game,
                 state.mode,
                 state.level,
                 ray.origin,
                 ray.direction.as_vec3(),
             )
-        {
+        } else {
+            None
+        };
+        if let Some(cell) = tapped_cell {
+            state.hovered = Some(cell);
+            state.preview = state
+                .selected
+                .map(|selected| state.game.preview_move(selected, cell));
+            state.overlay_dirty = true;
             activate_board_cell(&mut state, &spectator, cell);
+            gesture.feedback = Timer::from_seconds(TOUCH_FEEDBACK_SECONDS, TimerMode::Once);
+        } else if !canceled && gesture.max_contacts == 1 && !gesture.moved {
+            state.notice = String::from("Tap directly on a runner or floor tile");
         }
-        *gesture = MapTouchGesture::default();
+        gesture.active = false;
+        gesture.moved = false;
+        gesture.max_contacts = 0;
     }
 }
 
 /// Keep pointer affordance, hovered cell, and route preview in lockstep without
 /// touching authored board geometry.
 fn update_board_hover(
-    windows: Query<(Entity, &Window)>,
-    cameras: Query<(&Camera, &GlobalTransform), With<BoardCamera>>,
-    controls: Query<(&Interaction, Has<InteractionDisabled>), With<Button>>,
-    capture: Res<MapPointerCapture>,
+    mut input: BoardHoverInput,
     spectator: Res<BotSpectator>,
     mut state: ResMut<LabState>,
     mut commands: Commands,
 ) {
-    let Ok((window_entity, window)) = windows.single() else {
+    let Ok((window_entity, window)) = input.windows.single() else {
         return;
     };
-    let control_hover = controls
+    input.touch_gesture.feedback.tick(input.time.delta());
+    if !input.touch_gesture.feedback.is_finished() {
+        return;
+    }
+    let control_hover = input
+        .controls
         .iter()
         .find(|(interaction, _)| **interaction != Interaction::None)
         .map(|(_, disabled)| disabled);
     let mut hovered = None;
     let mut preview = None;
-    let camera = cameras.single().ok();
+    let camera = input.cameras.single().ok();
     let cursor = window.cursor_position();
     let over_map = cursor.is_some_and(|cursor| {
         camera.is_some_and(|(camera, _)| view::camera::cursor_in_viewport(window, camera, cursor))
@@ -1427,7 +1536,7 @@ fn update_board_hover(
     let icon =
         if state.pending_move.is_some() || state.teleport.is_some() {
             SystemCursorIcon::Progress
-        } else if capture.panning {
+        } else if input.capture.panning {
             SystemCursorIcon::Grabbing
         } else if let Some(disabled) = control_hover {
             if disabled {
@@ -1527,6 +1636,7 @@ fn activate_board_cell(state: &mut LabState, spectator: &BotSpectator, cell: Hex
         state.mode = ViewMode::Deck;
         state.level = cell.level;
         state.deck_camera = CameraPose::default();
+        state.notice = String::from("Deck view opened - tap a runner, then highlighted ground");
         state.dirty = true;
         state.overlay_dirty = true;
         return;
@@ -1542,15 +1652,22 @@ fn activate_board_cell(state: &mut LabState, spectator: &BotSpectator, cell: Hex
     {
         state.selected = Some(unit);
         state.level = cell.level;
-        state.notice = format!("Unit {} selected", unit.0);
+        state.notice = format!("Unit {} selected - tap highlighted ground to move", unit.0);
         state.dirty = true;
         state.overlay_dirty = true;
         return;
     }
-    let preview = state.preview.clone();
-    if let (Some(id), Some(preview)) = (state.selected, preview.as_ref())
-        && preview.can_move()
-    {
+    let Some(id) = state.selected else {
+        state.notice = String::from("Select a runner first, then tap its destination");
+        return;
+    };
+    // A touch device has no hover phase. Always derive the route from the cell
+    // that was actually activated instead of reusing mouse-only preview state.
+    let preview = state.game.preview_move(id, cell);
+    state.hovered = Some(cell);
+    state.preview = Some(preview.clone());
+    state.overlay_dirty = true;
+    if preview.can_move() {
         state.notice = format!(
             "Move accepted - {} step(s), {} AP",
             preview.affordable_steps, preview.action_point_cost
@@ -1561,7 +1678,7 @@ fn activate_board_cell(state: &mut LabState, spectator: &BotSpectator, cell: Hex
             timer: Timer::new(Duration::from_millis(340), TimerMode::Repeating),
         });
         state.overlay_dirty = true;
-    } else if let Some(preview) = preview {
+    } else {
         state.notice = format!(
             "Move refused: {:?}",
             preview.refusal.unwrap_or(sim::action::Refusal::Blocked)
@@ -1700,8 +1817,10 @@ fn rebuild_board(
 fn refresh_hud(
     state: Res<LabState>,
     spectator: Res<BotSpectator>,
-    mut status: Query<&mut Text, (With<view::hud::StatusText>, Without<view::hud::SquadText>)>,
-    mut squad: Query<&mut Text, (With<view::hud::SquadText>, Without<view::hud::StatusText>)>,
+    mut status: Query<&mut Text, StatusTextNode>,
+    mut squad: Query<&mut Text, SquadTextNode>,
+    mut mobile_status: Query<&mut Text, MobileStatusTextNode>,
+    mut mobile_prompt: Query<&mut Text, MobilePromptTextNode>,
 ) {
     for mut text in &mut status {
         let mut value = view::hud::status_line(&state.game, state.mode, state.level);
@@ -1772,6 +1891,43 @@ fn refresh_hud(
     for mut text in &mut squad {
         **text = view::hud::squad_line(&state.game, state.selected);
     }
+    for mut text in &mut mobile_status {
+        let view = match state.mode {
+            ViewMode::Deck => "DECK",
+            ViewMode::Overview => "MAP",
+        };
+        let unit = state.selected.and_then(|id| state.game.units.get(&id));
+        **text = unit.map_or_else(
+            || {
+                format!(
+                    "TURN {}  |  {view} L{}  |  NO RUNNER",
+                    state.game.turn, state.level
+                )
+            },
+            |unit| {
+                format!(
+                    "TURN {}  |  {view} L{}  |  U{}  AP{}",
+                    state.game.turn, state.level, unit.id.0, unit.action_points
+                )
+            },
+        );
+    }
+    for mut text in &mut mobile_prompt {
+        **text = if state.pending_move.is_some() {
+            String::from("Moving runner...")
+        } else if state.teleport.is_some() {
+            String::from("Portal transit...")
+        } else if spectator.enabled {
+            String::from("Bot spectating. Tap Bot run / pause under More to take control.")
+        } else if state.selected.is_some() {
+            format!(
+                "1 Runner selected  |  2 Tap highlighted ground\n{}",
+                state.notice
+            )
+        } else {
+            String::from("1 Tap a runner  |  2 Tap highlighted ground")
+        };
+    }
 }
 
 fn refresh_action_buttons(
@@ -1808,5 +1964,39 @@ fn refresh_action_buttons(
         } else if !should_disable && disabled {
             commands.entity(entity).remove::<InteractionDisabled>();
         }
+    }
+}
+
+#[cfg(test)]
+mod interaction_tests {
+    use super::*;
+
+    #[test]
+    fn activating_a_destination_does_not_depend_on_mouse_hover() {
+        let game = TacticsGame::new(MatchSettings::guided()).expect("guided match solves");
+        let mut state = LabState::new(game);
+        state.mode = ViewMode::Deck;
+        let selected = state.selected.expect("guided match has a player runner");
+        let destination = state
+            .game
+            .world
+            .placements
+            .keys()
+            .copied()
+            .find(|&cell| state.game.preview_move(selected, cell).can_move())
+            .expect("runner has a reachable destination");
+
+        // This is the phone path: the tap supplies a cell without ever having
+        // populated the mouse-hover preview.
+        state.hovered = None;
+        state.preview = None;
+        activate_board_cell(&mut state, &BotSpectator::default(), destination);
+
+        assert!(state.pending_move.is_some());
+        assert_eq!(state.hovered, Some(destination));
+        assert_eq!(
+            state.preview.as_ref().map(|preview| preview.requested),
+            Some(destination)
+        );
     }
 }

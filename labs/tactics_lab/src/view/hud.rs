@@ -42,6 +42,7 @@ pub enum HudButton {
     ToggleBot,
     StepBot,
     Restart,
+    ToggleMore,
 }
 
 #[derive(Component)]
@@ -52,6 +53,21 @@ pub struct SquadText;
 
 #[derive(Component)]
 pub struct CommandDock;
+
+#[derive(Component)]
+pub struct DesktopHudContent;
+
+#[derive(Component)]
+pub struct MobileHudContent;
+
+#[derive(Component)]
+pub struct MobileStatusText;
+
+#[derive(Component)]
+pub struct MobilePromptText;
+
+#[derive(Component)]
+pub struct MobileMorePanel;
 
 /// Touch-sized. The mobile trajectory in the plan is a constraint on this
 /// number: 44 logical pixels is the smallest control a thumb reliably hits.
@@ -153,132 +169,288 @@ pub fn spawn(commands: &mut Commands) {
             ))
             .with_children(|dock| {
                 dock.spawn((
-                    Text::new("OBSERVED // TACTICAL"),
-                    TextFont {
-                        font_size: 24.0,
-                        ..default()
-                    },
-                    TextColor(Color::srgb(1.0, 0.62, 0.2)),
-                    Pickable::IGNORE,
-                ));
-                dock.spawn((
+                    DesktopHudContent,
                     Node {
                         width: percent(100.0),
-                        height: px(170.0),
-                        overflow: Overflow::clip(),
+                        flex_direction: FlexDirection::Column,
+                        flex_shrink: 0.0,
+                        row_gap: px(6.0),
                         ..default()
                     },
                     Pickable::IGNORE,
                 ))
-                .with_children(|slot| {
-                    slot.spawn((
-                        StatusText,
-                        Text::new(String::new()),
+                .with_children(|dock| {
+                    dock.spawn((
+                        Text::new("OBSERVED // TACTICAL"),
                         TextFont {
-                            font_size: 15.0,
+                            font_size: 24.0,
                             ..default()
                         },
-                        TextColor(Color::WHITE),
+                        TextColor(Color::srgb(1.0, 0.62, 0.2)),
                         Pickable::IGNORE,
                     ));
-                });
-                dock.spawn((
-                    Node {
-                        width: percent(100.0),
-                        height: px(70.0),
-                        overflow: Overflow::clip(),
-                        ..default()
-                    },
-                    Pickable::IGNORE,
-                ))
-                .with_children(|slot| {
-                    slot.spawn((
-                        SquadText,
-                        Text::new(String::new()),
-                        TextFont {
-                            font_size: 15.0,
+                    dock.spawn((
+                        Node {
+                            width: percent(100.0),
+                            height: px(170.0),
+                            overflow: Overflow::clip(),
                             ..default()
                         },
-                        TextColor(Color::WHITE),
                         Pickable::IGNORE,
-                    ));
+                    ))
+                    .with_children(|slot| {
+                        slot.spawn((
+                            StatusText,
+                            Text::new(String::new()),
+                            TextFont {
+                                font_size: 15.0,
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                            Pickable::IGNORE,
+                        ));
+                    });
+                    dock.spawn((
+                        Node {
+                            width: percent(100.0),
+                            height: px(70.0),
+                            overflow: Overflow::clip(),
+                            ..default()
+                        },
+                        Pickable::IGNORE,
+                    ))
+                    .with_children(|slot| {
+                        slot.spawn((
+                            SquadText,
+                            Text::new(String::new()),
+                            TextFont {
+                                font_size: 15.0,
+                                ..default()
+                            },
+                            TextColor(Color::WHITE),
+                            Pickable::IGNORE,
+                        ));
+                    });
+                    spawn_section_label(dock, "ACTIONS");
+                    dock.spawn((
+                        Node {
+                            width: percent(100.0),
+                            height: px(220.0),
+                            flex_direction: FlexDirection::Row,
+                            flex_wrap: FlexWrap::Wrap,
+                            column_gap: px(8.0),
+                            row_gap: px(8.0),
+                            ..default()
+                        },
+                        Pickable::IGNORE,
+                    ))
+                    .with_children(|controls| {
+                        for (button, label) in [
+                            (HudButton::Interact, "Interact"),
+                            (HudButton::DeployAnchor, "Place anchor"),
+                            (HudButton::RecoverAnchor, "Recover anchor"),
+                            (HudButton::DeployPad, "Place plate"),
+                            (HudButton::NextUnit, "Next unit"),
+                            (HudButton::EndTurn, "End turn"),
+                        ] {
+                            spawn_control(controls, button, label);
+                        }
+                    });
+                    spawn_section_label(dock, "VIEW");
+                    dock.spawn((
+                        Node {
+                            width: percent(100.0),
+                            height: px(276.0),
+                            flex_direction: FlexDirection::Row,
+                            flex_wrap: FlexWrap::Wrap,
+                            column_gap: px(8.0),
+                            row_gap: px(8.0),
+                            ..default()
+                        },
+                        Pickable::IGNORE,
+                    ))
+                    .with_children(|controls| {
+                        for (button, label) in [
+                            (HudButton::PanLeft, "< pan"),
+                            (HudButton::PanUp, "pan ^"),
+                            (HudButton::PanRight, "pan >"),
+                            (HudButton::PanDown, "pan v"),
+                            (HudButton::ZoomOut, "- zoom"),
+                            (HudButton::ZoomIn, "+ zoom"),
+                            (HudButton::Recenter, "Recenter"),
+                            (HudButton::LevelDown, "Deck -"),
+                            (HudButton::LevelUp, "Deck +"),
+                            (HudButton::ToggleView, "Deck / map"),
+                            (HudButton::Restart, "Setup"),
+                        ] {
+                            spawn_control(controls, button, label);
+                        }
+                    });
+                    spawn_section_label(dock, "SPECTATE");
+                    dock.spawn((
+                        Node {
+                            width: percent(100.0),
+                            height: px(56.0),
+                            flex_direction: FlexDirection::Row,
+                            column_gap: px(8.0),
+                            ..default()
+                        },
+                        Pickable::IGNORE,
+                    ))
+                    .with_children(|controls| {
+                        for (button, label) in [
+                            (HudButton::ToggleBot, "Bot run / pause"),
+                            (HudButton::StepBot, "Bot step"),
+                        ] {
+                            spawn_control(controls, button, label);
+                        }
+                    });
+                    spawn_legend(dock);
                 });
-                spawn_section_label(dock, "ACTIONS");
-                dock.spawn((
-                    Node {
-                        width: percent(100.0),
-                        height: px(220.0),
-                        flex_direction: FlexDirection::Row,
-                        flex_wrap: FlexWrap::Wrap,
-                        column_gap: px(8.0),
-                        row_gap: px(8.0),
-                        ..default()
-                    },
-                    Pickable::IGNORE,
-                ))
-                .with_children(|controls| {
-                    for (button, label) in [
-                        (HudButton::Interact, "Interact"),
-                        (HudButton::DeployAnchor, "Place anchor"),
-                        (HudButton::RecoverAnchor, "Recover anchor"),
-                        (HudButton::DeployPad, "Place plate"),
-                        (HudButton::NextUnit, "Next unit"),
-                        (HudButton::EndTurn, "End turn"),
-                    ] {
-                        spawn_control(controls, button, label);
-                    }
-                });
-                spawn_section_label(dock, "VIEW");
-                dock.spawn((
-                    Node {
-                        width: percent(100.0),
-                        height: px(276.0),
-                        flex_direction: FlexDirection::Row,
-                        flex_wrap: FlexWrap::Wrap,
-                        column_gap: px(8.0),
-                        row_gap: px(8.0),
-                        ..default()
-                    },
-                    Pickable::IGNORE,
-                ))
-                .with_children(|controls| {
-                    for (button, label) in [
-                        (HudButton::PanLeft, "< pan"),
-                        (HudButton::PanUp, "pan ^"),
-                        (HudButton::PanRight, "pan >"),
-                        (HudButton::PanDown, "pan v"),
-                        (HudButton::ZoomOut, "- zoom"),
-                        (HudButton::ZoomIn, "+ zoom"),
-                        (HudButton::Recenter, "Recenter"),
-                        (HudButton::LevelDown, "Deck -"),
-                        (HudButton::LevelUp, "Deck +"),
-                        (HudButton::ToggleView, "Deck / map"),
-                        (HudButton::Restart, "Setup"),
-                    ] {
-                        spawn_control(controls, button, label);
-                    }
-                });
-                spawn_section_label(dock, "SPECTATE");
-                dock.spawn((
-                    Node {
-                        width: percent(100.0),
-                        height: px(56.0),
-                        flex_direction: FlexDirection::Row,
-                        column_gap: px(8.0),
-                        ..default()
-                    },
-                    Pickable::IGNORE,
-                ))
-                .with_children(|controls| {
-                    for (button, label) in [
-                        (HudButton::ToggleBot, "Bot run / pause"),
-                        (HudButton::StepBot, "Bot step"),
-                    ] {
-                        spawn_control(controls, button, label);
-                    }
-                });
-                spawn_legend(dock);
+                spawn_mobile_content(dock);
             });
+        });
+}
+
+fn spawn_mobile_content(parent: &mut ChildSpawnerCommands) {
+    parent
+        .spawn((
+            MobileHudContent,
+            Node {
+                display: Display::None,
+                width: percent(100.0),
+                flex_direction: FlexDirection::Column,
+                flex_shrink: 0.0,
+                row_gap: px(8.0),
+                ..default()
+            },
+            Pickable::IGNORE,
+        ))
+        .with_children(|mobile| {
+            mobile.spawn((
+                MobileStatusText,
+                Text::new(String::new()),
+                TextFont { font_size: 16.0, ..default() },
+                TextColor(Color::srgb(1.0, 0.68, 0.28)),
+                Pickable::IGNORE,
+            ));
+            mobile.spawn((
+                MobilePromptText,
+                Text::new(String::new()),
+                TextFont { font_size: 17.0, ..default() },
+                TextColor(Color::WHITE),
+                Pickable::IGNORE,
+            ));
+            spawn_mobile_row(
+                mobile,
+                &[
+                    (HudButton::NextUnit, "Next runner"),
+                    (HudButton::Interact, "Use"),
+                    (HudButton::EndTurn, "End turn"),
+                ],
+            );
+            spawn_mobile_row(
+                mobile,
+                &[
+                    (HudButton::ToggleView, "Deck / map"),
+                    (HudButton::Recenter, "Recenter"),
+                    (HudButton::ToggleMore, "More / less"),
+                ],
+            );
+            mobile
+                .spawn((
+                    MobileMorePanel,
+                    Node {
+                        display: Display::None,
+                        width: percent(100.0),
+                        flex_direction: FlexDirection::Column,
+                        flex_shrink: 0.0,
+                        row_gap: px(8.0),
+                        padding: UiRect::top(px(4.0)),
+                        ..default()
+                    },
+                    Pickable::IGNORE,
+                ))
+                .with_children(|more| {
+                    spawn_mobile_row(
+                        more,
+                        &[
+                            (HudButton::DeployAnchor, "Place anchor"),
+                            (HudButton::RecoverAnchor, "Recover"),
+                            (HudButton::DeployPad, "Place portal"),
+                        ],
+                    );
+                    spawn_mobile_row(
+                        more,
+                        &[
+                            (HudButton::LevelDown, "Deck -"),
+                            (HudButton::LevelUp, "Deck +"),
+                            (HudButton::ZoomOut, "Zoom -"),
+                            (HudButton::ZoomIn, "Zoom +"),
+                        ],
+                    );
+                    spawn_mobile_row(
+                        more,
+                        &[
+                            (HudButton::ToggleBot, "Bot run / pause"),
+                            (HudButton::StepBot, "Bot step"),
+                            (HudButton::Restart, "Setup"),
+                        ],
+                    );
+                    more.spawn((
+                        Text::new("Touch map: tap runner, then highlighted ground. Drag to pan. Pinch to zoom."),
+                        TextFont { font_size: 14.0, ..default() },
+                        TextColor(Color::srgb(0.72, 0.8, 0.88)),
+                        Pickable::IGNORE,
+                    ));
+                });
+        });
+}
+
+fn spawn_mobile_row(parent: &mut ChildSpawnerCommands, controls: &[(HudButton, &str)]) {
+    parent
+        .spawn((
+            Node {
+                width: percent(100.0),
+                min_height: px(52.0),
+                flex_direction: FlexDirection::Row,
+                column_gap: px(8.0),
+                ..default()
+            },
+            Pickable::IGNORE,
+        ))
+        .with_children(|row| {
+            for &(button, label) in controls {
+                row.spawn((
+                    button,
+                    Button,
+                    Node {
+                        min_width: px(0.0),
+                        min_height: px(52.0),
+                        flex_basis: px(0.0),
+                        flex_grow: 1.0,
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        padding: UiRect::axes(px(8.0), px(6.0)),
+                        border: UiRect::all(px(2.0)),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.05, 0.07, 0.1, 0.94)),
+                    BorderColor::all(Color::srgb(0.35, 0.65, 0.82)),
+                    Name::new(format!("Mobile HUD control: {label}")),
+                ))
+                .with_children(|button| {
+                    button.spawn((
+                        Text::new(label.to_string()),
+                        TextFont {
+                            font_size: 15.0,
+                            ..default()
+                        },
+                        TextColor(Color::WHITE),
+                        Pickable::IGNORE,
+                    ));
+                });
+            }
         });
 }
 
@@ -309,6 +481,20 @@ pub fn sync_layout(window_size: Vec2, root: &mut Node, dock: &mut Node) -> DockL
         }
     }
     layout
+}
+
+pub fn sync_content_visibility(placement: DockPlacement, desktop: &mut Node, mobile: &mut Node) {
+    let mobile_display = placement == DockPlacement::Bottom;
+    desktop.display = if mobile_display {
+        Display::None
+    } else {
+        Display::Flex
+    };
+    mobile.display = if mobile_display {
+        Display::Flex
+    } else {
+        Display::None
+    };
 }
 
 fn spawn_section_label(parent: &mut ChildSpawnerCommands, label: &str) {
@@ -619,5 +805,18 @@ mod tests {
             assert_eq!(layout.viewport_size.x + layout.dock_size.x, size.x);
             assert_eq!(layout.viewport_size.y, size.y);
         }
+    }
+
+    #[test]
+    fn mobile_layout_uses_the_compact_touch_surface() {
+        let mut desktop = Node::default();
+        let mut mobile = Node::default();
+        sync_content_visibility(DockPlacement::Bottom, &mut desktop, &mut mobile);
+        assert_eq!(desktop.display, Display::None);
+        assert_eq!(mobile.display, Display::Flex);
+
+        sync_content_visibility(DockPlacement::Right, &mut desktop, &mut mobile);
+        assert_eq!(desktop.display, Display::Flex);
+        assert_eq!(mobile.display, Display::None);
     }
 }

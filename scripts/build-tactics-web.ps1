@@ -35,10 +35,16 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "wasm-bindgen failed."
     }
-    Copy-Item -LiteralPath (Join-Path $repoRoot "labs\tactics_lab\web\index.html") -Destination $outputPath -Force
-
     $bundle = Get-Item -LiteralPath (Join-Path $outputPath "tactics_lab_bg.wasm")
+    $buildHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $bundle.FullName).Hash.Substring(0, 16).ToLowerInvariant()
+    $versionedBundle = Join-Path $outputPath "tactics_lab_bg.$buildHash.wasm"
+    Copy-Item -LiteralPath $bundle.FullName -Destination $versionedBundle -Force
+    $indexTemplate = Get-Content -Raw -LiteralPath (Join-Path $repoRoot "labs\tactics_lab\web\index.html")
+    $index = $indexTemplate.Replace("__TACTICS_BUILD__", $buildHash)
+    Set-Content -LiteralPath (Join-Path $outputPath "index.html") -Value $index -Encoding utf8
+
     Write-Host ("Tactics web bundle: {0:N1} MiB" -f ($bundle.Length / 1MB))
+    Write-Host "Build cache key: $buildHash"
     Write-Host "Output: $outputPath"
 }
 finally {

@@ -69,11 +69,16 @@
       <div id="loading" role="status">BAKING THE FACILITY…</div>
     </main>
     <script type="module">
-      import init from "./tactics_lab.js";
-
       const loading = document.querySelector("#loading");
       try {
-        await init();
+        const build = "__TACTICS_BUILD__";
+        const { default: init } = await import(`./tactics_lab.js?v=${build}`);
+        await init({
+          module_or_path: new URL(
+            `./tactics_lab_bg.${build}.wasm`,
+            import.meta.url,
+          ),
+        });
         loading.classList.add("ready");
       } catch (error) {
         console.error(error);

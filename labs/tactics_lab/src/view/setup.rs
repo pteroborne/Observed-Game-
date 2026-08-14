@@ -161,7 +161,7 @@ impl SettingRow {
             SettingRow::Floors => format!("{} floors", settings.floors),
             SettingRow::Seed => format!("{:#x}", settings.seed),
             SettingRow::Squad => format!("{} units", settings.squad_size),
-            SettingRow::ActionPoints => format!("{} per unit per turn", settings.action_points),
+            SettingRow::ActionPoints => format!("{} AP each", settings.action_points),
             SettingRow::Sight => settings.sight.label().to_string(),
             SettingRow::RevealMap => on_off(settings.reveal_full_map),
             SettingRow::Shift => settings.shift.label().to_string(),
@@ -277,7 +277,7 @@ pub fn spawn(commands: &mut Commands, settings: &MatchSettings, error: Option<&s
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::FlexStart,
                 row_gap: Val::Px(2.0),
-                padding: UiRect::all(Val::Px(24.0)),
+                padding: UiRect::axes(Val::Px(16.0), Val::Px(20.0)),
                 overflow: Overflow::scroll_y(),
                 ..default()
             },
@@ -289,7 +289,7 @@ pub fn spawn(commands: &mut Commands, settings: &MatchSettings, error: Option<&s
             root.spawn((
                 Text::new("OBSERVED - TACTICAL"),
                 TextFont {
-                    font_size: 34.0,
+                    font_size: 30.0,
                     ..default()
                 },
                 TextColor(Color::WHITE),
@@ -338,7 +338,7 @@ pub fn spawn(commands: &mut Commands, settings: &MatchSettings, error: Option<&s
                             order,
                             preset.name.to_string(),
                         )
-                        .with_size(112.0, 46.0),
+                        .with_size(138.0, 52.0),
                         SetupAction::Preset(index),
                     );
                     order += 1;
@@ -355,6 +355,7 @@ pub fn spawn(commands: &mut Commands, settings: &MatchSettings, error: Option<&s
                         },
                         TextColor(Color::srgb(0.5, 0.62, 0.72)),
                         Node {
+                            height: px(18.0),
                             margin: UiRect::top(Val::Px(8.0)),
                             ..default()
                         },
@@ -370,11 +371,11 @@ pub fn spawn(commands: &mut Commands, settings: &MatchSettings, error: Option<&s
 
             spawn_button(
                 root,
-                WidgetSpec::enabled(START, SCOPE, order, "Start match").with_size(340.0, 56.0),
+                WidgetSpec::enabled(START, SCOPE, order, "Start match").with_size(280.0, 58.0),
                 SetupAction::Start,
             );
             root.spawn((
-                Text::new("ranges: drag/click a rail or use arrows | switches: activate to toggle"),
+                Text::new("Drag or tap a range. Tap a switch to toggle it."),
                 TextFont {
                     font_size: 13.0,
                     ..default()
@@ -399,28 +400,57 @@ fn spawn_setting_slider(
             Node {
                 width: percent(100.0),
                 max_width: px(620.0),
-                height: px(32.0),
-                flex_direction: FlexDirection::Row,
-                align_items: AlignItems::Center,
-                column_gap: px(14.0),
+                height: px(94.0),
+                min_height: px(94.0),
+                flex_shrink: 0.0,
+                flex_direction: FlexDirection::Column,
+                row_gap: px(4.0),
                 ..default()
             },
             Pickable::IGNORE,
         ))
         .with_children(|line| {
             line.spawn((
-                Text::new(row.name()),
-                TextFont {
-                    font_size: 15.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(0.76, 0.82, 0.88)),
                 Node {
-                    width: percent(24.0),
+                    width: percent(100.0),
+                    height: px(42.0),
+                    flex_direction: FlexDirection::Row,
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::SpaceBetween,
                     ..default()
                 },
                 Pickable::IGNORE,
-            ));
+            ))
+            .with_children(|meta| {
+                meta.spawn((
+                    Text::new(row.name()),
+                    TextFont {
+                        font_size: 15.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.76, 0.82, 0.88)),
+                    Node {
+                        width: percent(48.0),
+                        ..default()
+                    },
+                    Pickable::IGNORE,
+                ));
+                meta.spawn((
+                    SettingValue(row),
+                    Text::new(row.value(settings)),
+                    TextFont {
+                        font_size: 15.0,
+                        ..default()
+                    },
+                    TextColor(Color::WHITE),
+                    TextLayout::new_with_justify(Justify::Right),
+                    Node {
+                        width: percent(48.0),
+                        ..default()
+                    },
+                    Pickable::IGNORE,
+                ));
+            });
             line.spawn((
                 SettingSlider(row),
                 Slider {
@@ -437,48 +467,50 @@ fn spawn_setting_slider(
                 },
                 TabIndex(i32::from(order)),
                 Node {
-                    width: percent(42.0),
-                    height: px(8.0),
-                    border_radius: BorderRadius::all(px(4.0)),
+                    width: percent(100.0),
+                    height: px(44.0),
+                    border_radius: BorderRadius::all(px(8.0)),
                     ..default()
                 },
-                BackgroundColor(Color::srgb(0.08, 0.15, 0.19)),
+                BackgroundColor(Color::srgba(0.08, 0.15, 0.19, 0.35)),
                 Outline {
                     color: Color::NONE,
                     width: px(0.0),
                     offset: px(4.0),
                 },
                 Name::new(format!("{} slider", row.name())),
-                children![(
-                    SettingSliderThumb,
-                    SliderThumb,
-                    Node {
-                        position_type: PositionType::Absolute,
-                        width: px(16.0),
-                        height: px(16.0),
-                        top: px(-4.0),
-                        left: percent(0.0),
-                        border_radius: BorderRadius::MAX,
-                        ..default()
-                    },
-                    BackgroundColor(
-                        observed_style::tactics(observed_style::TacticsRole::Selectable).base_color,
+                children![
+                    (
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: px(8.0),
+                            right: px(8.0),
+                            top: px(18.0),
+                            height: px(8.0),
+                            border_radius: BorderRadius::all(px(4.0)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgb(0.08, 0.15, 0.19)),
+                        Pickable::IGNORE,
                     ),
-                )],
-            ));
-            line.spawn((
-                SettingValue(row),
-                Text::new(row.value(settings)),
-                TextFont {
-                    font_size: 15.0,
-                    ..default()
-                },
-                TextColor(Color::WHITE),
-                Node {
-                    width: percent(29.0),
-                    ..default()
-                },
-                Pickable::IGNORE,
+                    (
+                        SettingSliderThumb,
+                        SliderThumb,
+                        Node {
+                            position_type: PositionType::Absolute,
+                            width: px(28.0),
+                            height: px(28.0),
+                            top: px(8.0),
+                            left: percent(0.0),
+                            border_radius: BorderRadius::MAX,
+                            ..default()
+                        },
+                        BackgroundColor(
+                            observed_style::tactics(observed_style::TacticsRole::Selectable)
+                                .base_color,
+                        ),
+                    )
+                ],
             ));
         });
 }
@@ -494,10 +526,12 @@ fn spawn_setting_toggle(
             Node {
                 width: percent(100.0),
                 max_width: px(620.0),
-                height: px(38.0),
-                flex_direction: FlexDirection::Row,
+                height: px(82.0),
+                min_height: px(82.0),
+                flex_shrink: 0.0,
+                flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
-                column_gap: px(14.0),
+                row_gap: px(4.0),
                 ..default()
             },
             Pickable::IGNORE,
@@ -511,7 +545,7 @@ fn spawn_setting_toggle(
                 },
                 TextColor(Color::srgb(0.76, 0.82, 0.88)),
                 Node {
-                    width: percent(24.0),
+                    width: percent(100.0),
                     ..default()
                 },
                 Pickable::IGNORE,
@@ -524,7 +558,7 @@ fn spawn_setting_toggle(
                     order,
                     row.value(settings),
                 )
-                .with_size(260.0, 34.0),
+                .with_size(280.0, 52.0),
                 (SetupAction::Toggle(row), SettingToggle(row)),
             );
         });
