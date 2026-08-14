@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#06090d" />
+    <title>Observed Labs</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+        background: #06090d;
+        color: #e7edf4;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        min-height: 100svh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        padding: max(24px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+          max(24px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+        background:
+          radial-gradient(circle at 18% 12%, #173540 0, transparent 38%),
+          linear-gradient(145deg, #06090d 20%, #0b1118 100%);
+      }
+
+      main { width: min(720px, 100%); }
+
+      .eyebrow {
+        margin: 0 0 10px;
+        color: #65e8db;
+        font: 700 0.78rem/1.2 ui-monospace, monospace;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      h1 { margin: 0; font-size: clamp(2.4rem, 9vw, 5.4rem); line-height: 0.92; }
+
+      .intro { max-width: 48rem; margin: 18px 0 32px; color: #9aabb9; line-height: 1.6; }
+
+      .lab {
+        display: grid;
+        gap: 10px;
+        min-height: 160px;
+        padding: 24px;
+        border: 1px solid #28505a;
+        border-radius: 16px;
+        color: inherit;
+        text-decoration: none;
+        background: linear-gradient(135deg, #0d1b22, #10141a);
+        box-shadow: 0 18px 60px #0008, inset 0 1px #65e8db25;
+        transition: border-color 140ms ease, transform 140ms ease;
+      }
+
+      .lab:hover, .lab:focus-visible { border-color: #65e8db; transform: translateY(-2px); }
+      .lab:focus-visible { outline: 3px solid #ff9e33; outline-offset: 4px; }
+      .lab strong { color: #ffb353; font-size: 1.35rem; }
+      .lab span { color: #a8b6c2; line-height: 1.5; }
+      .lab small { align-self: end; color: #65e8db; font: 700 0.78rem/1 ui-monospace, monospace; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">Observed 2 / live instruments</p>
+      <h1>Test the facility.</h1>
+      <p class="intro">
+        Browser builds of focused gameplay labs. Each instrument is mobile-ready,
+        resettable, and deployed from the same revision that passed CI.
+      </p>
+      <a class="lab" href="./tactics/">
+        <strong>Isometric Tactics Lab</strong>
+        <span>Inspect, reconfigure, route, teleport, and spectate the mutable facility.</span>
+        <small>OPEN LAB →</small>
+      </a>
+    </main>
+  </body>
+</html>

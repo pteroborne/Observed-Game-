@@ -10,7 +10,8 @@ if (-not $OutputDirectory) {
 }
 $outputPath = [System.IO.Path]::GetFullPath($OutputDirectory)
 $expectedRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot "web-dist"))
-if (-not $outputPath.StartsWith($expectedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+$expectedPrefix = $expectedRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+if (-not $outputPath.StartsWith($expectedPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
     throw "OutputDirectory must remain inside $expectedRoot"
 }
 
@@ -30,20 +31,26 @@ try {
     if (-not (Test-Path -LiteralPath $wasm -PathType Leaf)) {
         throw "Cargo completed but $wasm was not produced."
     }
+    # A distribution directory is one deployable build. Remove stale
+    # content-addressed bundles so a container never carries previous builds.
+    if (Test-Path -LiteralPath $outputPath) {
+        Remove-Item -LiteralPath $outputPath -Recurse -Force
+    }
     New-Item -ItemType Directory -Force -Path $outputPath | Out-Null
     & $bindgen.Source --target web --no-typescript --out-dir $outputPath --out-name tactics_lab $wasm
     if ($LASTEXITCODE -ne 0) {
         throw "wasm-bindgen failed."
     }
     $bundle = Get-Item -LiteralPath (Join-Path $outputPath "tactics_lab_bg.wasm")
+    $bundleLength = $bundle.Length
     $buildHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $bundle.FullName).Hash.Substring(0, 16).ToLowerInvariant()
     $versionedBundle = Join-Path $outputPath "tactics_lab_bg.$buildHash.wasm"
-    Copy-Item -LiteralPath $bundle.FullName -Destination $versionedBundle -Force
+    Move-Item -LiteralPath $bundle.FullName -Destination $versionedBundle -Force
     $indexTemplate = Get-Content -Raw -LiteralPath (Join-Path $repoRoot "labs\tactics_lab\web\index.html")
     $index = $indexTemplate.Replace("__TACTICS_BUILD__", $buildHash)
     Set-Content -LiteralPath (Join-Path $outputPath "index.html") -Value $index -Encoding utf8
 
-    Write-Host ("Tactics web bundle: {0:N1} MiB" -f ($bundle.Length / 1MB))
+    Write-Host ("Tactics web bundle: {0:N1} MiB" -f ($bundleLength / 1MB))
     Write-Host "Build cache key: $buildHash"
     Write-Host "Output: $outputPath"
 }
