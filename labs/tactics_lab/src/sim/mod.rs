@@ -844,7 +844,12 @@ impl TacticsGame {
         if frontier.is_empty() {
             return;
         }
-        self.telegraph = relayout::telegraph(&self.world, &self.observation, &frontier);
+        self.telegraph = relayout::telegraph(
+            &self.world,
+            &self.observation,
+            &frontier,
+            self.settings.decoherence_coverage,
+        );
     }
 
     // ------------------------------------------------------------------ state

@@ -1068,6 +1068,7 @@ fn keyboard_commands(
 fn hud_clicks(
     controls: Query<(&Interaction, &HudButton), Changed<Interaction>>,
     mut more_panels: Query<&mut Node, With<MobileMorePanel>>,
+    mut docks: Query<&mut ScrollPosition, With<CommandDock>>,
     mut state: ResMut<LabState>,
     mut spectator: ResMut<BotSpectator>,
     mut next: ResMut<NextState<AppState>>,
@@ -1084,6 +1085,9 @@ fn hud_clicks(
                     } else {
                         Display::None
                     };
+                }
+                for mut position in &mut docks {
+                    position.y = 0.0;
                 }
                 continue;
             }
@@ -1368,26 +1372,41 @@ fn sync_hud_layout(
 /// ownership cannot drift from the layout under DPI scaling.
 fn scroll_command_dock(
     scroll: Res<AccumulatedMouseScroll>,
+    touches: Res<Touches>,
     windows: Query<&Window>,
     mut docks: Query<(&mut ScrollPosition, &ComputedNode), With<CommandDock>>,
 ) {
-    if scroll.delta.y.abs() <= f32::EPSILON {
-        return;
-    }
     let (Ok(window), Ok((mut position, computed))) = (windows.single(), docks.single_mut()) else {
         return;
     };
     let layout = view::hud::DockLayout::for_window(Vec2::new(window.width(), window.height()));
-    let over_dock = window
+    let mouse_over_dock = window
         .cursor_position()
         .is_some_and(|cursor| layout.contains_dock_point(cursor));
-    if !over_dock {
+    let mouse_delta = if mouse_over_dock {
+        -scroll.delta.y * 32.0
+    } else {
+        0.0
+    };
+    let touch_delta = touches
+        .iter()
+        .map(|touch| {
+            layout.touch_scroll_delta(
+                touch.start_position(),
+                touch.distance(),
+                touch.delta(),
+                TOUCH_DRAG_THRESHOLD,
+            )
+        })
+        .sum::<f32>();
+    let delta = mouse_delta + touch_delta;
+    if delta.abs() <= f32::EPSILON {
         return;
     }
     let max_offset = ((computed.content_size().y - computed.size().y)
         * computed.inverse_scale_factor())
     .max(0.0);
-    position.y = (position.y - scroll.delta.y * 32.0).clamp(0.0, max_offset);
+    position.y = (position.y + delta).clamp(0.0, max_offset);
 }
 
 /// One-finger drag pans, two-finger movement pans and pinches, and a short

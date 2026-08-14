@@ -20,6 +20,8 @@ use observed_facility::hex_wfc::{
 use observed_hex::{HexCoord, HexFace};
 use std::collections::BTreeSet;
 
+use crate::settings::DecoherenceCoverage;
+
 /// A pocket that has been solved and is waiting for the turn to end.
 #[derive(Clone, Debug)]
 pub struct Telegraph {
@@ -58,6 +60,7 @@ pub fn telegraph(
     world: &HexWfcWorld,
     observation: &HexObservationFrame,
     frontier: &BTreeSet<HexCoord>,
+    coverage: DecoherenceCoverage,
 ) -> Option<Telegraph> {
     // The production warning lasts about two real-time seconds, during which a
     // runner cannot cross several complete hexes. A tactics turn can spend up
@@ -73,12 +76,8 @@ pub fn telegraph(
             }
         }
     }
-    // The canonical 32-cell pocket is intentionally modest in a production
-    // facility, but would occupy 40% of an 80-tile teaching floor. Scale the
-    // lab pocket with its configurable map so "held" means the squad actually
-    // committed to the warned area, not merely crossed a giant region.
-    let target_cells = (world.placements.len() / 16).clamp(8, 32);
-    let max_cells = (target_cells * 2).min(64);
+    let target_cells = coverage.target_cells(world.placements.len());
+    let max_cells = coverage.max_cells(world.placements.len());
     let mut work =
         world.begin_frontier_relayout_sized(&selection_frame, frontier, target_cells, max_cells);
     loop {

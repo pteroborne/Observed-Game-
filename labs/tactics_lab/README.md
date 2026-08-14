@@ -36,6 +36,9 @@ map` are independent rows, so difficulty can be increased along either axis.
 `Observation radius` is an explicit 0/1/2-tile slider; Standard starts at zero
 so occupied ground is held without freezing a large halo. `See full map`
 reveals the drawing and exit marker but does not increase that radius.
+`Decoherence coverage` controls how much of the complete lattice one shift may
+reconfigure, from Focused through Cascade. Setup reports the resulting target
+cell count, including the safety bounds used on unusually small or large maps.
 
 | Input | Does |
 | --- | --- |
@@ -60,10 +63,11 @@ Every command has an on-screen control as well as a key. That is deliberate: the
 prototype is pointed at a possible touch build, and a lab that can only be driven
 from a keyboard would not survive the move.
 
-The map and command dock have exclusive pointer ownership. Scrolling or dragging
-over the dock never moves the board; on a short display the fixed dock scrolls
-internally instead of reflowing its controls. Deck and map retain independent
-pan/zoom poses, so switching views does not destroy either composition.
+The map and command dock have exclusive pointer ownership. Scrolling or swiping
+vertically over the dock moves its controls and never moves the board; the
+expanded mobile menu includes a dedicated swipe handle and a bottom Close menu
+control. Deck and map retain independent pan/zoom poses, so switching views does
+not destroy either composition.
 
 Below 700 logical pixels wide, the command surface becomes a fixed, internally
 scrolling bottom dock and the board viewport ends above it. Wider windows retain

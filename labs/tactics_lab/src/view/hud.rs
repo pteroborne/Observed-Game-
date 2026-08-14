@@ -131,6 +131,26 @@ impl DockLayout {
             DockPlacement::Bottom => point.y >= self.viewport_size.y,
         }
     }
+
+    /// Convert a predominantly vertical finger drag that began in the dock to
+    /// scroll movement. Map-origin and horizontal gestures remain unclaimed.
+    #[must_use]
+    pub fn touch_scroll_delta(
+        self,
+        start: Vec2,
+        distance: Vec2,
+        delta: Vec2,
+        threshold: f32,
+    ) -> f32 {
+        if self.contains_dock_point(start)
+            && distance.y.abs() > distance.x.abs()
+            && distance.y.abs() >= threshold
+        {
+            -delta.y
+        } else {
+            0.0
+        }
+    }
 }
 
 pub fn spawn(commands: &mut Commands) {
@@ -372,6 +392,27 @@ fn spawn_mobile_content(parent: &mut ChildSpawnerCommands) {
                     Pickable::IGNORE,
                 ))
                 .with_children(|more| {
+                    more.spawn((
+                        Node {
+                            width: percent(100.0),
+                            height: px(44.0),
+                            flex_shrink: 0.0,
+                            align_items: AlignItems::Center,
+                            justify_content: JustifyContent::Center,
+                            border: UiRect::vertical(px(1.0)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.06, 0.11, 0.14, 0.95)),
+                        BorderColor::all(Color::srgb(0.22, 0.48, 0.62)),
+                        Pickable::IGNORE,
+                    )).with_children(|handle| {
+                        handle.spawn((
+                            Text::new("SWIPE UP FOR MORE CONTROLS"),
+                            TextFont { font_size: 14.0, ..default() },
+                            TextColor(Color::srgb(0.65, 0.86, 0.94)),
+                            Pickable::IGNORE,
+                        ));
+                    });
                     spawn_mobile_row(
                         more,
                         &[
@@ -403,6 +444,7 @@ fn spawn_mobile_content(parent: &mut ChildSpawnerCommands) {
                         TextColor(Color::srgb(0.72, 0.8, 0.88)),
                         Pickable::IGNORE,
                     ));
+                    spawn_mobile_row(more, &[(HudButton::ToggleMore, "Close menu")]);
                 });
         });
 }
@@ -679,10 +721,12 @@ pub fn status_line(game: &TacticsGame, mode: ViewMode, level: u8) -> String {
     };
     format!(
         "Turn {} | {view}\n\
-         Shift: {shift}{last}\n\
+         Shift: {shift}{last} | Coverage: {} ({} cells)\n\
          Guardian: {guardian} | Observe: {} tiles\n\
          Goals: {objectives} | {outcome}{exit_hint}",
         game.turn,
+        game.settings.decoherence_coverage.label(),
+        game.settings.decoherence_target_cells(),
         game.settings.sight.hops(),
     )
 }
@@ -818,5 +862,35 @@ mod tests {
         sync_content_visibility(DockPlacement::Right, &mut desktop, &mut mobile);
         assert_eq!(desktop.display, Display::Flex);
         assert_eq!(mobile.display, Display::None);
+    }
+
+    #[test]
+    fn only_vertical_drags_that_start_in_the_dock_scroll_it() {
+        let layout = DockLayout::for_window(Vec2::new(390.0, 844.0));
+        let dock_start = Vec2::new(195.0, layout.viewport_size.y + 50.0);
+        let map_start = Vec2::new(195.0, layout.viewport_size.y - 50.0);
+        assert_eq!(
+            layout.touch_scroll_delta(
+                dock_start,
+                Vec2::new(2.0, -30.0),
+                Vec2::new(1.0, -8.0),
+                18.0,
+            ),
+            8.0
+        );
+        assert_eq!(
+            layout
+                .touch_scroll_delta(map_start, Vec2::new(2.0, -30.0), Vec2::new(1.0, -8.0), 18.0,),
+            0.0
+        );
+        assert_eq!(
+            layout.touch_scroll_delta(
+                dock_start,
+                Vec2::new(30.0, -2.0),
+                Vec2::new(8.0, -1.0),
+                18.0,
+            ),
+            0.0
+        );
     }
 }

@@ -28,8 +28,9 @@ use observed_ui::{
 };
 
 use crate::settings::{
-    BoardSize, GuardianSetting, MAX_ACTION_POINTS, MAX_FLOORS, MAX_SQUAD, MIN_ACTION_POINTS,
-    MIN_FLOORS, MIN_SQUAD, MatchSettings, Objectives, PRESETS, ShiftCadence, Sight,
+    BoardSize, DecoherenceCoverage, GuardianSetting, MAX_ACTION_POINTS, MAX_FLOORS, MAX_SQUAD,
+    MIN_ACTION_POINTS, MIN_FLOORS, MIN_SQUAD, MatchSettings, Objectives, PRESETS, ShiftCadence,
+    Sight,
 };
 
 const SCOPE: FocusScopeId = FocusScopeId("tactics_setup");
@@ -91,6 +92,7 @@ pub enum SettingRow {
     Sight,
     RevealMap,
     Shift,
+    DecoherenceCoverage,
     Telegraph,
     Anchors,
     Pads,
@@ -100,7 +102,7 @@ pub enum SettingRow {
 }
 
 impl SettingRow {
-    pub const ALL: [SettingRow; 14] = [
+    pub const ALL: [SettingRow; 15] = [
         SettingRow::Board,
         SettingRow::Floors,
         SettingRow::Seed,
@@ -109,6 +111,7 @@ impl SettingRow {
         SettingRow::Sight,
         SettingRow::RevealMap,
         SettingRow::Shift,
+        SettingRow::DecoherenceCoverage,
         SettingRow::Telegraph,
         SettingRow::Anchors,
         SettingRow::Pads,
@@ -144,6 +147,7 @@ impl SettingRow {
             SettingRow::Sight => "Observation radius",
             SettingRow::RevealMap => "See full map",
             SettingRow::Shift => "Shift",
+            SettingRow::DecoherenceCoverage => "Decoherence coverage",
             SettingRow::Telegraph => "Telegraph",
             SettingRow::Anchors => "Anchors",
             SettingRow::Pads => "Teleport plates",
@@ -165,6 +169,11 @@ impl SettingRow {
             SettingRow::Sight => settings.sight.label().to_string(),
             SettingRow::RevealMap => on_off(settings.reveal_full_map),
             SettingRow::Shift => settings.shift.label().to_string(),
+            SettingRow::DecoherenceCoverage => format!(
+                "{} ({} cells)",
+                settings.decoherence_coverage.label(),
+                settings.decoherence_target_cells()
+            ),
             SettingRow::Telegraph => on_off(settings.telegraph),
             SettingRow::Anchors => on_off(settings.anchors),
             SettingRow::Pads => on_off(settings.pads),
@@ -184,6 +193,7 @@ impl SettingRow {
             SettingRow::ActionPoints => MAX_ACTION_POINTS - MIN_ACTION_POINTS,
             SettingRow::Sight => Sight::ALL.len() as u8 - 1,
             SettingRow::Shift => ShiftCadence::ALL.len() as u8 - 1,
+            SettingRow::DecoherenceCoverage => DecoherenceCoverage::ALL.len() as u8 - 1,
             SettingRow::Objectives => Objectives::ALL.len() as u8 - 1,
             SettingRow::Guardian => GuardianSetting::ALL.len() as u8 - 1,
             SettingRow::RevealMap
@@ -212,6 +222,9 @@ impl SettingRow {
             SettingRow::Sight => index_of(&Sight::ALL, settings.sight),
             SettingRow::RevealMap => u8::from(settings.reveal_full_map),
             SettingRow::Shift => index_of(&ShiftCadence::ALL, settings.shift),
+            SettingRow::DecoherenceCoverage => {
+                index_of(&DecoherenceCoverage::ALL, settings.decoherence_coverage)
+            }
             SettingRow::Telegraph => u8::from(settings.telegraph),
             SettingRow::Anchors => u8::from(settings.anchors),
             SettingRow::Pads => u8::from(settings.pads),
@@ -232,6 +245,9 @@ impl SettingRow {
             SettingRow::Sight => settings.sight = Sight::ALL[position as usize],
             SettingRow::RevealMap => settings.reveal_full_map = position != 0,
             SettingRow::Shift => settings.shift = ShiftCadence::ALL[position as usize],
+            SettingRow::DecoherenceCoverage => {
+                settings.decoherence_coverage = DecoherenceCoverage::ALL[position as usize];
+            }
             SettingRow::Telegraph => settings.telegraph = position != 0,
             SettingRow::Anchors => settings.anchors = position != 0,
             SettingRow::Pads => settings.pads = position != 0,
@@ -714,7 +730,7 @@ mod tests {
     /// up as a failing test rather than as an invisible option.
     #[test]
     fn every_row_is_listed_and_named() {
-        assert_eq!(SettingRow::ALL.len(), 14);
+        assert_eq!(SettingRow::ALL.len(), 15);
         for row in SettingRow::ALL {
             assert!(!row.name().is_empty());
             assert!(!row.value(&MatchSettings::standard()).is_empty());

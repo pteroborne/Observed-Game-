@@ -12,8 +12,8 @@ use observed_facility::{hex_wfc::HexArchetype, map_spec::RoomRole};
 use observed_hex::HexCoord;
 
 use crate::settings::{
-    ActionCosts, BoardSize, GuardianSetting, MatchSettings, Objectives, PRESETS, ShiftCadence,
-    Sight,
+    ActionCosts, BoardSize, DecoherenceCoverage, GuardianSetting, MatchSettings, Objectives,
+    PRESETS, ShiftCadence, Sight,
 };
 
 use super::action::{Refusal, TacticsAction};
@@ -395,6 +395,35 @@ fn holding_the_telegraphed_pocket_refuses_the_shift() {
     assert!(
         held_at_least_once,
         "occupying the telegraphed pocket never once held it"
+    );
+}
+
+#[test]
+fn decoherence_coverage_controls_the_armed_shift_region() {
+    let mut totals = Vec::new();
+    for coverage in DecoherenceCoverage::ALL {
+        let mut total = 0;
+        let mut armed = 0;
+        for seed in SEEDS {
+            let game = TacticsGame::new(MatchSettings {
+                decoherence_coverage: coverage,
+                ..compact(seed)
+            })
+            .expect("coverage does not change facility solvability");
+            let Some(telegraph) = game.telegraph.as_ref() else {
+                continue;
+            };
+            let cells = telegraph.cells().len();
+            assert!(cells <= coverage.max_cells(game.world.placements.len()));
+            total += cells;
+            armed += 1;
+        }
+        assert!(armed > 0, "{coverage:?} never armed a shift");
+        totals.push(total);
+    }
+    assert!(
+        totals.windows(2).all(|pair| pair[0] < pair[1]),
+        "larger coverage did not produce larger warned regions: {totals:?}"
     );
 }
 

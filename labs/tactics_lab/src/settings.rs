@@ -198,6 +198,60 @@ impl ShiftCadence {
     }
 }
 
+/// How much unobserved structure one facility shift is allowed to reconsider.
+///
+/// The value scales with the complete multi-floor lattice, then stays inside a
+/// solver-safe band. This makes the control comparable across map sizes while
+/// keeping a compact teaching map from losing half a floor at once.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum DecoherenceCoverage {
+    Focused,
+    #[default]
+    Standard,
+    Broad,
+    Cascade,
+}
+
+impl DecoherenceCoverage {
+    pub const ALL: [Self; 4] = [Self::Focused, Self::Standard, Self::Broad, Self::Cascade];
+
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Focused => "Focused",
+            Self::Standard => "Standard",
+            Self::Broad => "Broad",
+            Self::Cascade => "Cascade",
+        }
+    }
+
+    #[must_use]
+    pub fn target_cells(self, map_cells: usize) -> usize {
+        let (divisor, minimum, maximum) = match self {
+            Self::Focused => (24, 6, 24),
+            Self::Standard => (16, 8, 32),
+            Self::Broad => (10, 12, 48),
+            Self::Cascade => (6, 16, 64),
+        };
+        map_cells.div_ceil(divisor).clamp(minimum, maximum)
+    }
+
+    #[must_use]
+    pub fn max_cells(self, map_cells: usize) -> usize {
+        self.target_cells(map_cells) * 2
+    }
+
+    #[must_use]
+    pub const fn next(self) -> Self {
+        match self {
+            Self::Focused => Self::Standard,
+            Self::Standard => Self::Broad,
+            Self::Broad => Self::Cascade,
+            Self::Cascade => Self::Focused,
+        }
+    }
+}
+
 /// What a squad has to do besides reach the exit.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Objectives {
@@ -331,6 +385,8 @@ pub struct MatchSettings {
     /// Reveal the solved drawing without increasing observation or freeze range.
     pub reveal_full_map: bool,
     pub shift: ShiftCadence,
+    /// Fraction of the facility eligible for one shift's relayout pocket.
+    pub decoherence_coverage: DecoherenceCoverage,
     /// Show the pocket that is about to re-collapse, a turn before it does.
     pub telegraph: bool,
     pub anchors: bool,
@@ -372,6 +428,7 @@ impl MatchSettings {
             sight: Sight::Adjacent,
             reveal_full_map: true,
             shift: ShiftCadence::Slow,
+            decoherence_coverage: DecoherenceCoverage::Focused,
             telegraph: true,
             anchors: true,
             pads: true,
@@ -396,6 +453,7 @@ impl MatchSettings {
             sight: Sight::Corridor,
             reveal_full_map: false,
             shift: ShiftCadence::Slow,
+            decoherence_coverage: DecoherenceCoverage::Focused,
             telegraph: true,
             anchors: true,
             pads: false,
@@ -420,6 +478,7 @@ impl MatchSettings {
             sight: Sight::Blind,
             reveal_full_map: false,
             shift: ShiftCadence::EveryTurn,
+            decoherence_coverage: DecoherenceCoverage::Standard,
             telegraph: true,
             anchors: true,
             pads: true,
@@ -444,6 +503,7 @@ impl MatchSettings {
             sight: Sight::Blind,
             reveal_full_map: false,
             shift: ShiftCadence::EveryTurn,
+            decoherence_coverage: DecoherenceCoverage::Cascade,
             telegraph: false,
             anchors: true,
             pads: true,
@@ -459,6 +519,15 @@ impl MatchSettings {
     #[must_use]
     pub fn facility(&self) -> HexWfcConfig {
         self.board.config(self.floors)
+    }
+
+    /// Target pocket size shown in setup before a solved world exists.
+    #[must_use]
+    pub fn decoherence_target_cells(&self) -> usize {
+        let config = self.facility();
+        let map_cells =
+            usize::from(config.cols) * usize::from(config.rows) * usize::from(config.levels);
+        self.decoherence_coverage.target_cells(map_cells)
     }
 
     /// Composition used by this tuning lab.
@@ -592,6 +661,7 @@ mod tests {
         cycles(&BoardSize::ALL, BoardSize::next);
         cycles(&Sight::ALL, Sight::next);
         cycles(&ShiftCadence::ALL, ShiftCadence::next);
+        cycles(&DecoherenceCoverage::ALL, DecoherenceCoverage::next);
         cycles(&Objectives::ALL, Objectives::next);
         cycles(&GuardianSetting::ALL, GuardianSetting::next);
     }
@@ -627,5 +697,15 @@ mod tests {
     fn an_anchor_costs_more_than_a_step() {
         let costs = ActionCosts::default();
         assert!(costs.anchor > costs.move_step);
+    }
+
+    #[test]
+    fn decoherence_coverage_scales_monotonically_and_stays_bounded() {
+        for cells in [80, 240, 560, 1_680, 5_600] {
+            let targets = DecoherenceCoverage::ALL.map(|coverage| coverage.target_cells(cells));
+            assert!(targets.windows(2).all(|pair| pair[0] < pair[1]));
+            assert!(targets[0] >= 6);
+            assert!(targets[3] <= 64);
+        }
     }
 }
