@@ -24,6 +24,8 @@ pub mod score;
 mod tests;
 mod topology;
 mod trace;
+#[cfg(test)]
+mod trace_tests;
 mod validate;
 mod variants;
 
@@ -53,7 +55,9 @@ pub use relayout::{
 };
 pub use score::{LayoutScore, score_layout, score_layout_with};
 pub use topology::{HexRoute, MAX_CONNECTION_COST};
-pub use trace::SolveStep;
+pub use trace::{
+    CellTrace, SolveStep, TraceSummary, cells_from_world, fold_trace, summarise_trace,
+};
 pub use variants::{
     HexGeometryDemand, demandable_signatures, geometry_demands, placement_tile_archetype,
 };

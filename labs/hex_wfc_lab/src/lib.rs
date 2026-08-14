@@ -12,7 +12,10 @@ use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResolution};
 use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::blueprint;
-use observed_facility::hex_wfc::{HexSpace, HexWfcWorld, PortClass, SolveStep, lateral_bit};
+use observed_facility::hex_wfc::{
+    CellTrace, HexSpace, HexWfcWorld, PortClass, SolveStep, cells_from_world, fold_trace,
+    lateral_bit,
+};
 use observed_hex::{HexCoord, HexFace, hex_origin_plan};
 use observed_style::{ArchitectureSurfaceRole, MarkerRole, SurfaceRole};
 
@@ -38,16 +41,6 @@ struct LabVisual;
 
 #[derive(Component)]
 struct LabStatus;
-
-/// What the replay knows about a cell at the current trace cursor.
-#[derive(Clone, Copy, Default)]
-struct CellVis {
-    site: bool,
-    forced: bool,
-    pruned_to: Option<u16>,
-    resolved: Option<(HexSpace, u8, PortClass, PortClass)>,
-    role: Option<observed_facility::map_spec::RoomRole>,
-}
 
 #[derive(Resource)]
 pub(crate) struct LabState {
@@ -90,66 +83,15 @@ impl LabState {
     }
 
     /// Replay the trace prefix into per-cell display state.
-    fn cell_views(&self) -> BTreeMap<HexCoord, CellVis> {
+    ///
+    /// The production corpus mode does not trace, so an empty trace means "this
+    /// world arrived already solved" rather than "nothing has happened yet".
+    fn cell_views(&self) -> BTreeMap<HexCoord, CellTrace> {
         if self.trace.is_empty() {
-            let mut views = self
-                .world
-                .placements
-                .iter()
-                .map(|(&coord, placement)| {
-                    (
-                        coord,
-                        CellVis {
-                            resolved: Some((
-                                placement.space,
-                                placement.doors,
-                                placement.up,
-                                placement.down,
-                            )),
-                            ..default()
-                        },
-                    )
-                })
-                .collect::<BTreeMap<_, _>>();
-            for blueprint in &self.world.blueprints {
-                for &coord in &blueprint.cells {
-                    views.entry(coord).or_default().role = Some(blueprint.role);
-                }
-            }
-            return views;
+            cells_from_world(&self.world)
+        } else {
+            fold_trace(&self.trace[..self.cursor])
         }
-        let mut views: BTreeMap<HexCoord, CellVis> = BTreeMap::new();
-        for step in &self.trace[..self.cursor] {
-            match *step {
-                SolveStep::AttemptStart { .. } => views.clear(),
-                SolveStep::BlueprintCell { coord, role } => {
-                    let cell_vis = views.entry(coord).or_default();
-                    cell_vis.site = true;
-                    cell_vis.role = Some(role);
-                }
-                SolveStep::ForcedCell { coord, .. } => {
-                    views.entry(coord).or_default().forced = true;
-                }
-                SolveStep::DomainPruned { coord, remaining } => {
-                    views.entry(coord).or_default().pruned_to = Some(remaining);
-                }
-                SolveStep::Collapsed {
-                    coord,
-                    space,
-                    doors,
-                    up,
-                    down,
-                    ..
-                } => {
-                    views.entry(coord).or_default().resolved = Some((space, doors, up, down));
-                }
-                SolveStep::Contradiction { coord } => {
-                    views.entry(coord).or_default().resolved = None;
-                }
-                SolveStep::Completed { .. } => {}
-            }
-        }
-        views
     }
 }
 
@@ -267,9 +209,10 @@ fn rebuild_visuals(
         let view = views.get(&coord).copied().unwrap_or_default();
         let center = screen_position(coord);
 
-        let topology_fill = match view.resolved {
-            Some((HexSpace::Room, _, _, _)) => spine.emissive,
-            Some((HexSpace::Hall, _, up, down)) => {
+        let topology_fill = match view.resolved.map(|placement| (placement.space, placement)) {
+            Some((HexSpace::Room, _)) => spine.emissive,
+            Some((HexSpace::Hall, placement)) => {
+                let (up, down) = (placement.up, placement.down);
                 if up == PortClass::RampOpen || down == PortClass::RampOpen {
                     bypass.emissive
                 } else if up == PortClass::ShaftOpen || down == PortClass::ShaftOpen {
@@ -278,7 +221,7 @@ fn rebuild_visuals(
                     deck.emissive * 1.3
                 }
             }
-            Some((HexSpace::Void, _, _, _)) => plain.base_color.to_linear() * 0.4,
+            Some((HexSpace::Void, _)) => plain.base_color.to_linear() * 0.4,
             None if view.forced => spine.emissive * 0.20,
             None if view.site => spine.emissive * 0.09,
             None if view.pruned_to.is_some() => plain.emissive * 0.5,
@@ -286,7 +229,7 @@ fn rebuild_visuals(
         };
         let fill = if view
             .resolved
-            .is_some_and(|(space, _, _, _)| space != HexSpace::Void)
+            .is_some_and(|placement| placement.space != HexSpace::Void)
             && state.world.architecture[&coord] == ArchitectureRegister::LiminalGrid
         {
             observed_style::architecture_surface(
@@ -298,8 +241,8 @@ fn rebuild_visuals(
         } else {
             topology_fill
         };
-        let alpha = match view.resolved {
-            Some((HexSpace::Void, _, _, _)) => 0.35,
+        let alpha = match view.resolved.map(|placement| placement.space) {
+            Some(HexSpace::Void) => 0.35,
             _ => 1.0,
         };
 
@@ -314,9 +257,15 @@ fn rebuild_visuals(
         ));
 
         // Draw lateral doors
-        if let Some((space, doors, up, down)) = view.resolved
-            && space != HexSpace::Void
+        if let Some(placement) = view.resolved
+            && placement.space != HexSpace::Void
         {
+            let (space, doors, up, down) = (
+                placement.space,
+                placement.doors,
+                placement.up,
+                placement.down,
+            );
             let edge = match space {
                 HexSpace::Room => spine.edge.unwrap_or(spine.base_color),
                 _ => {
@@ -531,10 +480,13 @@ mod tests {
         state.cursor = state.trace.len();
         let views = state.cell_views();
         for (coord, view) in views {
-            if let Some((space, doors, _, _)) = view.resolved {
+            if let Some(replayed) = view.resolved {
                 let placement = state.world.placements[&coord];
-                if placement.space == space {
-                    assert_eq!(placement.doors, doors, "doors diverge at {coord:?}");
+                if placement.space == replayed.space {
+                    assert_eq!(
+                        placement.doors, replayed.doors,
+                        "doors diverge at {coord:?}"
+                    );
                 }
             }
         }
