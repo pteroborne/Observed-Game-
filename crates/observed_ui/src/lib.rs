@@ -29,7 +29,7 @@ use bevy::{
     },
     prelude::*,
     ui::{FocusPolicy, InteractionDisabled},
-    ui_widgets::{Activate, Button as HeadlessButton, UiWidgetsPlugins},
+    ui_widgets::{Activate, Button as HeadlessButton, UiWidgetsPlugins, popover::PopoverPlugin},
 };
 
 pub use focus::{ActiveFocusScopes, FocusMemory};
@@ -296,8 +296,14 @@ pub struct FrontendWidgetsPlugin;
 
 impl Plugin for FrontendWidgetsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(UiWidgetsPlugins)
-            .init_resource::<InputFocus>()
+        // Bevy 0.19's `DefaultPlugins` already includes this group. Headless
+        // harnesses may still omit it, so install it only when its first member
+        // is absent instead of registering every widget observer twice.
+        if !app.is_plugin_added::<PopoverPlugin>() {
+            app.add_plugins(UiWidgetsPlugins);
+        }
+
+        app.init_resource::<InputFocus>()
             .insert_resource(InputFocusVisible(true))
             .init_resource::<FocusMemory>()
             .init_resource::<focus::GamepadNavigationLatch>()
@@ -321,5 +327,21 @@ impl Plugin for FrontendWidgetsPlugin {
                     presentation::sync_accessibility,
                 ),
             );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FrontendWidgetsPlugin, UiWidgetsPlugins};
+    use bevy::prelude::*;
+
+    #[test]
+    fn frontend_widgets_coexist_with_bevys_default_widget_group() {
+        let mut app = App::new();
+        app.add_plugins(UiWidgetsPlugins);
+
+        // Bevy panics immediately when a plugin is registered twice. Production
+        // reaches this shape through `DefaultPlugins` followed by our frontend.
+        app.add_plugins(FrontendWidgetsPlugin);
     }
 }
