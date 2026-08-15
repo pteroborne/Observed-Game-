@@ -647,7 +647,8 @@ fn collect_monitors(
                             && item.place == Place::Room(monitor.room)
                     }),
                 )
-            } else if let Some(monitor) = guardian_monitor {
+            } else {
+                let monitor = guardian_monitor?;
                 (
                     "guardian",
                     crate::screens::place::ObservationMonitorKind::Guardian,
@@ -655,8 +656,6 @@ fn collect_monitors(
                     monitor.room,
                     guardian.room == monitor.room,
                 )
-            } else {
-                return None;
             };
             Some(MonitorSnapshot {
                 subject: format!("{kind} monitor room {}", room.0),
