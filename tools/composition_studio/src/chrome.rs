@@ -10,6 +10,8 @@ use crate::panels::score::format_score_breakdown;
 use crate::panels::tuning::format_tuning_panel;
 use crate::persist::simulation_hash;
 use crate::pick::diagnostics;
+use crate::tabs::spawn_tab_row;
+use crate::typography;
 
 #[derive(Component)]
 pub struct ChromeMenuRoot;
@@ -114,7 +116,7 @@ impl LabMenuState {
 }
 
 /// Setup Bevy UI overlay nodes.
-pub fn setup_chrome(mut commands: Commands) {
+pub fn setup_chrome(mut commands: Commands, assets: &AssetServer) {
     let screen_bg = schematic_screen();
     let mat_bg = screen_bg.with_alpha(0.86);
 
@@ -159,6 +161,20 @@ pub fn setup_chrome(mut commands: Commands) {
                 ))
                 .with_children(|menu| {
                     menu.spawn((
+                        Node {
+                            width: Val::Percent(100.0),
+                            margin: UiRect::bottom(Val::Px(10.0)),
+                            ..default()
+                        },
+                        Text::new("COMPOSITION STUDIO"),
+                        typography::font(assets, typography::Role::Heading),
+                        TextLayout::justify(Justify::Left),
+                        TextColor(typography::Role::Heading.colour()),
+                    ));
+
+                    spawn_tab_row(menu, assets);
+
+                    menu.spawn((
                         // Explicit full width. A `Text` entity's implicit node is
                         // content-sized, and a content-sized box inside a column
                         // gets placed by the cross-axis rule rather than pinned to
@@ -170,15 +186,14 @@ pub fn setup_chrome(mut commands: Commands) {
                             width: Val::Percent(100.0),
                             ..default()
                         },
-                        Text::new("COMPOSITION STUDIO"),
-                        TextFont {
-                            font_size: FontSize::Px(14.0),
-                            ..default()
-                        },
-                        // Monospace panel content is laid out with spaces; centre
-                        // justification would break every column alignment in it.
+                        Text::new(""),
+                        // Still monospaced: these panels align their columns with
+                        // padding spaces, so a proportional font would ragged every
+                        // one of them. They go proportional when they are rebuilt
+                        // as real rows, not before.
+                        typography::font(assets, typography::Role::Data),
                         TextLayout::justify(Justify::Left),
-                        TextColor(schematic(SchematicRole::Selected).base_color),
+                        TextColor(typography::Role::Data.colour()),
                         ChromeMenuText,
                     ));
                     // Real controls for every tab that declares tunables, as
@@ -313,15 +328,6 @@ pub fn update_chrome_ui(
         let Ok(mut text) = menu_query.single_mut() else {
             return;
         };
-        let mut tabs_header = String::new();
-        for tab in StudioTab::ALL {
-            if tab == menu_state.tab() {
-                tabs_header.push_str(&format!("[ {} ] ", tab.label()));
-            } else {
-                tabs_header.push_str(&format!("  {}   ", tab.label()));
-            }
-        }
-
         let tab_content = match menu_state.tab() {
             StudioTab::Solve => {
                 let mut s = String::new();
@@ -421,7 +427,7 @@ pub fn update_chrome_ui(
         // nothing else to look at while an irreversible action is asked.
         **text = match menu_state.confirm.as_ref() {
             Some(confirm) => confirm.prompt.clone(),
-            None => format!("{tabs_header}\n\n{tab_content}"),
+            None => tab_content,
         };
     }
 

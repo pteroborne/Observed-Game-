@@ -36,9 +36,11 @@ pub mod pick;
 pub mod script;
 pub mod solve;
 pub mod state;
+pub mod tabs;
 pub mod theme;
 pub mod timeline;
 pub mod tunables;
+pub mod typography;
 pub mod viewport;
 pub mod viewport_input;
 
@@ -155,6 +157,9 @@ impl Plugin for StudioPlugin {
         init_asset_once::<bevy::shader::Shader>(app);
         init_asset_once::<Mesh>(app);
         init_asset_once::<StandardMaterial>(app);
+        // The type scale loads the fonts `feathers` embeds, and only `TextPlugin`
+        // registers `Assets<Font>` - which the headless harness does not have.
+        init_asset_once::<bevy::text::Font>(app);
         // `feathers`' menu systems read `InputFocus` and `InputFocusVisible`, and
         // 0.19 turns a missing resource into a hard error rather than skipping
         // the system. `InputFocusPlugin` owns both.
@@ -192,6 +197,7 @@ impl Plugin for StudioPlugin {
                     draw::rebuild_overlay.after(draw::rebuild_visuals),
                     viewport::sync_camera.after(draw::rebuild_visuals),
                     chrome::update_chrome_ui.after(update_studio_solve),
+                    tabs::update_tab_row,
                     field_widgets::sync_field_rows.after(update_studio_solve),
                     viewport_input::handle_viewport_painting,
                     viewport_input::update_hover_and_cursor,
@@ -234,7 +240,7 @@ impl Default for StudioPlugin {
     }
 }
 
-fn setup_studio(mut commands: Commands) {
+fn setup_studio(mut commands: Commands, assets: Res<AssetServer>) {
     let rotation = Quat::from_euler(
         EulerRot::YXZ,
         std::f32::consts::FRAC_PI_4,
@@ -284,7 +290,7 @@ fn setup_studio(mut commands: Commands) {
         bevy::ui::IsDefaultUiCamera,
     ));
 
-    chrome::setup_chrome(commands);
+    chrome::setup_chrome(commands, &assets);
 }
 
 /// Re-solve once the edit has settled. Debounced so dragging a value through a
