@@ -7,6 +7,17 @@ target-dir = "O:/Observed 2/target"
 # default MSVC linker for Bevy's large dependency graph.
 linker = "rust-lld.exe"
 
+[target.x86_64-unknown-linux-gnu]
+# mold links Bevy's large dependency graph much faster than GNU ld. Target
+# tables only apply to a matching host, so this is inert on Windows.
+#
+# mold writes its output with mmap(MAP_SHARED), which the ntfs3 driver does not
+# support - so on Linux the build directory must sit on a native filesystem
+# rather than the NTFS mount this repo lives on. `target-dir` above is a
+# Windows path and is deliberately left alone; override it per-machine with
+# CARGO_TARGET_DIR instead of committing a second OS-specific path here.
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
 [alias]
 # Dynamic Bevy linking is a development-only optimization. Keeping it behind
 # aliases avoids accidentally shipping a binary that requires bevy_dylib.
