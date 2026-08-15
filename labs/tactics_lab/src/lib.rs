@@ -530,6 +530,18 @@ pub fn run() {
         ..default()
     }))
     .add_plugins(observed_ui::FrontendWidgetsPlugin);
+
+    // Keep the browser's most important visual dependency executable, not just
+    // documented in Cargo.toml. Bevy 0.19 no longer includes UI rendering in its
+    // `2d`/`3d` feature groups: without the explicit `ui` feature the setup still
+    // builds and accepts input, but the canvas only clears black. Referencing the
+    // plugin here makes removing that feature a compile error, while this runtime
+    // check also catches a future DefaultPlugins composition change immediately.
+    assert!(
+        app.is_plugin_added::<bevy::ui_render::UiRenderPlugin>(),
+        "tactics_lab requires Bevy's UiRenderPlugin"
+    );
+
     configure(&mut app);
     #[cfg(not(target_arch = "wasm32"))]
     capture::configure(&mut app);
