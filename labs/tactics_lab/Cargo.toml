@@ -9,6 +9,8 @@ bevy = { version = "0.19", default-features = false, features = [
     "2d",
     "3d",
     "png",
+    # 0.18's `2d`/`3d` included `ui`; 0.19's do not, and the loss is silent.
+    "ui",
     "bevy_ui_widgets",
 ] }
 glam = "0.32"
