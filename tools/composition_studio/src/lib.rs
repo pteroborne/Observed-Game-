@@ -36,6 +36,7 @@ pub mod pick;
 pub mod script;
 pub mod solve;
 pub mod state;
+pub mod theme;
 pub mod timeline;
 pub mod tunables;
 pub mod viewport;
@@ -114,6 +115,21 @@ impl KeyboardOwner {
     }
 }
 
+/// Register an asset type only if nothing else already has.
+///
+/// `App::init_asset` is **not** idempotent: it builds a fresh `Assets<A>` and
+/// inserts it, replacing whatever was there, while the `AssetServer` keeps
+/// handing out indices from the original allocator. Calling it for a type the
+/// render plugins already own throws away a populated collection, and the
+/// symptom arrives much later as `index out of bounds` deep inside
+/// `handle_internal_asset_events` - windowed only, because headless has no
+/// render plugin to collide with.
+fn init_asset_once<A: Asset>(app: &mut App) {
+    if !app.world().contains_resource::<Assets<A>>() {
+        app.init_asset::<A>();
+    }
+}
+
 pub struct StudioPlugin;
 
 impl Plugin for StudioPlugin {
@@ -121,12 +137,10 @@ impl Plugin for StudioPlugin {
         // Without a slider plugin the sliders spawn, lay out, and draw exactly as
         // they should while ignoring every drag.
         //
-        // `SliderPlugin` alone, not the whole `UiWidgetsPlugins` group. The
-        // group's menu plugin runs `Update` systems against `InputFocus`, a
-        // resource owned by a plugin this tool does not install - which turns
-        // every headless test into a panic. Taking only the widget in use also
-        // keeps the focus story straight: this tool routes the keyboard through
-        // `KeyboardOwner`, and never through Bevy's focus resource.
+        // `SliderPlugin` alone, not the whole `UiWidgetsPlugins` group: taking
+        // only the widget in use keeps the focus story straight, because this
+        // tool routes the keyboard through `KeyboardOwner` and never through
+        // Bevy's focus resource.
         //
         // Guarded because 0.19's `DefaultPlugins` ships `UiWidgetsPlugins` (0.18's
         // did not), so the windowed studio already has it and adding it again is a
@@ -134,7 +148,32 @@ impl Plugin for StudioPlugin {
         if !app.is_plugin_added::<bevy::ui_widgets::SliderPlugin>() {
             app.add_plugins(bevy::ui_widgets::SliderPlugin);
         }
-        app.insert_resource(ClearColor(schematic_screen()))
+        // Before `FeathersPlugins`, not after: its `build` registers embedded
+        // shader assets immediately, so the asset type has to exist by then.
+        // Headless has no render plugin to provide it, and the failure is a
+        // runtime panic rather than a compile error.
+        init_asset_once::<bevy::shader::Shader>(app);
+        init_asset_once::<Mesh>(app);
+        init_asset_once::<StandardMaterial>(app);
+        // `feathers`' menu systems read `InputFocus` and `InputFocusVisible`, and
+        // 0.19 turns a missing resource into a hard error rather than skipping
+        // the system. `InputFocusPlugin` owns both.
+        //
+        // Deliberately *not* `InputDispatchPlugin`: that one dispatches keyboard
+        // events to the focused entity, which is exactly the job `KeyboardOwner`
+        // does here. Taking the resources without the dispatcher keeps this tool's
+        // "which region owns the keyboard" model authoritative.
+        if !app.is_plugin_added::<bevy::input_focus::InputFocusPlugin>() {
+            app.add_plugins(bevy::input_focus::InputFocusPlugin);
+        }
+        // Bevy's editor widget set, themed onto this repo's chrome palette in
+        // `theme::apply_studio_theme`. Guarded on the core plugin because
+        // `FeathersPlugins` is a group and has no `is_plugin_added` of its own.
+        if !app.is_plugin_added::<bevy::feathers::FeathersCorePlugin>() {
+            app.add_plugins(bevy::feathers::FeathersPlugins);
+        }
+        app.add_systems(Startup, theme::apply_studio_theme)
+            .insert_resource(ClearColor(schematic_screen()))
             .init_resource::<StudioState>()
             .init_resource::<detail::TileMeshCache>()
             .init_resource::<LabMenuState>()
@@ -142,8 +181,6 @@ impl Plugin for StudioPlugin {
             .init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<bevy::input::mouse::AccumulatedMouseMotion>()
             .init_resource::<bevy::input::mouse::AccumulatedMouseScroll>()
-            .init_asset::<Mesh>()
-            .init_asset::<StandardMaterial>()
             .add_systems(Startup, setup_studio)
             .add_systems(
                 Update,

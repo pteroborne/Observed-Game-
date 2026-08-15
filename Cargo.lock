@@ -3573,6 +3573,7 @@ dependencies = [
  "observed_match",
  "observed_style",
  "observed_traversal",
+ "observed_ui",
  "serde",
  "serde_json",
 ]

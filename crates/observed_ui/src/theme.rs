@@ -22,6 +22,80 @@ const DIM: Color = Color::srgb(0.58, 0.64, 0.74);
 /// unreadable against the treatment this module chose for it.
 pub const LABEL: Color = Color::srgb(0.95, 0.97, 1.0);
 
+/// The chrome palette as a named vocabulary.
+///
+/// [`widget_treatment`] answers "what does *this widget* look like in *this
+/// state*". These roles answer the flatter question a theming layer asks: "what
+/// colour is a surface, a border, dim text". A third-party widget set is themed
+/// by mapping its tokens onto these, which is why they are named for their job
+/// rather than for a widget.
+///
+/// Same boundary as the rest of this module: chrome only. Gameplay colour comes
+/// from `observed_style`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ChromeRole {
+    /// The panel or window behind everything else.
+    Surface,
+    /// A control sitting on `Surface`: button face, field, track.
+    Control,
+    /// `Control` under the pointer.
+    ControlHover,
+    /// `Control` while held.
+    ControlPressed,
+    /// `Control` that cannot be operated.
+    ControlDisabled,
+    /// The filled portion of a slider or progress track.
+    ControlFill,
+    /// Ordinary separators and control outlines.
+    Border,
+    /// The focus ring. Paired with a shape cue by [`widget_treatment`], because
+    /// focus must never rest on hue alone.
+    Accent,
+    /// Primary reading text.
+    TextMain,
+    /// Secondary text: units, hints, inactive tabs.
+    TextDim,
+    /// Text belonging to a disabled control.
+    TextDisabled,
+}
+
+impl ChromeRole {
+    pub const ALL: [ChromeRole; 11] = [
+        ChromeRole::Surface,
+        ChromeRole::Control,
+        ChromeRole::ControlHover,
+        ChromeRole::ControlPressed,
+        ChromeRole::ControlDisabled,
+        ChromeRole::ControlFill,
+        ChromeRole::Border,
+        ChromeRole::Accent,
+        ChromeRole::TextMain,
+        ChromeRole::TextDim,
+        ChromeRole::TextDisabled,
+    ];
+}
+
+/// The one place chrome colour is decided.
+///
+/// Values match [`widget_treatment`]'s non-high-contrast branch, so a themed
+/// third-party widget and a hand-built one agree on screen.
+#[must_use]
+pub fn chrome(role: ChromeRole) -> Color {
+    match role {
+        ChromeRole::Surface => Color::srgb(0.035, 0.045, 0.06),
+        ChromeRole::Control => Color::srgb(0.07, 0.10, 0.16),
+        ChromeRole::ControlHover => Color::srgb(0.09, 0.22, 0.31),
+        ChromeRole::ControlPressed => Color::srgb(0.12, 0.50, 0.62),
+        ChromeRole::ControlDisabled => Color::srgb(0.035, 0.045, 0.06),
+        ChromeRole::ControlFill => Color::srgb(0.12, 0.50, 0.62),
+        ChromeRole::Border => BORDER,
+        ChromeRole::Accent => ACCENT,
+        ChromeRole::TextMain => LABEL,
+        ChromeRole::TextDim => DIM,
+        ChromeRole::TextDisabled => DIM.with_alpha(0.35),
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct WidgetVisualState {
     pub focused: bool,

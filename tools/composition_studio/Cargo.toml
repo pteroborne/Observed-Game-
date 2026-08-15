@@ -23,6 +23,11 @@ bevy = { version = "0.19", default-features = false, features = [
     # chrome lays out and never draws - a silent loss the compiler cannot see.
     "ui",
     "bevy_ui_widgets",
+    # Bevy's tool/editor widget set: sliders, scrollbars, disclosure toggles and
+    # a theme system, plus embedded Fira fonts. Aimed at editor UI rather than
+    # game UI, which is exactly what this tool is. Colour still comes from
+    # `observed_ui::theme` - only the widgets and typography come from here.
+    "bevy_feathers",
 ] }
 # The profile type and the solver it drives. `serde` carries the profile;
 # hex_wfc is unconditional, so no `wfc` feature is needed.
@@ -38,6 +43,9 @@ observed_hex = { path = "../../crates/observed_hex" }
 observed_match = { path = "../../crates/observed_match", default-features = false }
 # Colours come from the production style crate, never invented locally.
 observed_style = { path = "../../crates/observed_style" }
+# Chrome colour - panels, controls, text tiers - so the tool and the game's
+# menus are themed from one vocabulary. `observed_style` stays gameplay colour.
+observed_ui = { path = "../../crates/observed_ui" }
 # `ConvexRenderMesh` turns a hull point cloud into edges.
 observed_traversal = { path = "../../crates/observed_traversal", default-features = false }
 observed_cutaway = { path = "../../crates/observed_cutaway" }
