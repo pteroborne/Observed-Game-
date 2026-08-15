@@ -640,7 +640,11 @@ fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
     // The load-bearing check is the one above: run A and run B still agree
     // tick-for-tick. A geometry change that had broken determinism would fail
     // there, not here.
-    assert_eq!(a, 6_610, "TR-10 pins the declared-ramp completion tick");
+    //
+    // The Bevy 0.19 migration moved the route again (6,610 -> 6,691). The two
+    // independent runs above still agree on both completion and snapshot, so
+    // this is the new engine/math baseline rather than nondeterministic drift.
+    assert_eq!(a, 6_691, "TR-10 pins the declared-ramp completion tick");
     // Teleport plates moved this digest (0x02dd_ea8d_c8d2_ac4a -> below) without
     // moving the tick above, and that pairing is the proof it was a
     // representation change and not a behavioural one: the snapshot now folds
@@ -648,7 +652,7 @@ fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
     // presses the button, so its route is tick-for-tick what it was.
     assert_eq!(
         first.snapshot().digest,
-        0xb9d9_6ea5_2ed3_3b33,
+        0x1b5d_d3d7_ca8e_3dae,
         "TR-10 pins the declared-ramp final snapshot digest"
     );
 }
@@ -769,9 +773,11 @@ fn perimeter_tower_local_intent_and_body_trace_is_pinned() {
     //
     // Selection is not steering: the catalog hash, the composition profile, the
     // simulation hash and both spectator selection digests are unmoved.
+    // Bevy 0.19 changed the intermediate floating-point trace while preserving
+    // the pinned completion tick, traced-tick count, and terminal body bits.
     assert_eq!(completion, Some(1_075));
     assert_eq!(traced_ticks, 973);
-    assert_eq!(trace, 0x5adc_2eb9_81ea_1880);
+    assert_eq!(trace, 0x69d7_d1c4_0681_1ff8);
     assert_eq!(
         [
             body.position.x.to_bits(),
