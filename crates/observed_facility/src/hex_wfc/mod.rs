@@ -623,10 +623,11 @@ impl HexWfcWorld {
         })
     }
 
-    /// Logical corridors projected from connected hall components.
+    /// Logical corridors: connected hall components, identified by the named
+    /// room thresholds they join rather than by the cells they occupy.
     #[must_use]
     pub fn corridors(&self) -> Vec<HexCorridorInstance> {
-        topology::corridor_instances(self.config, &self.placements)
+        topology::corridor_instances(self.config, &self.placements, &self.blueprints)
     }
 
     #[must_use]

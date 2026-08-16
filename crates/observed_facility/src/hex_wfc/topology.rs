@@ -371,10 +371,71 @@ fn pin_blueprint_and_thresholds(
     }
 }
 
+/// One authored room port resolved against current geometry.
+///
+/// The named port is the stable half of a threshold: `(room, port_name)` comes
+/// from the blueprint and survives any relayout that leaves the room standing.
+/// `hall_cell` is where it currently opens, which does not.
+struct ResolvedPort {
+    hall_cell: HexCoord,
+    room: observed_core::RoomId,
+    port_name: &'static str,
+    room_cell: HexCoord,
+    face: HexFace,
+}
+
+/// Every named blueprint port that is currently open, paired with the cell it
+/// opens onto. Shared by corridor identity and threshold attachment so the two
+/// can never disagree about which ports are live.
+fn resolved_ports(
+    config: HexWfcConfig,
+    placements: &BTreeMap<HexCoord, HexPlacement>,
+    blueprints: &[StampedBlueprint],
+) -> Vec<ResolvedPort> {
+    let mut ports = Vec::new();
+    for stamped in blueprints {
+        let blueprint = super::blueprint_for_role(stamped.role);
+        let room = observed_core::RoomId(super::relayout::fold_generation_key(
+            stamped.generation_key(),
+        ));
+        for &(port_name, offset, face) in &blueprint.named_ports {
+            let Some(index) = blueprint.cells.iter().position(|&cell| cell == offset) else {
+                continue;
+            };
+            let room_cell = stamped.cells[index];
+            let Some(hall_cell) = config.grid().neighbor(room_cell, face) else {
+                continue;
+            };
+            let Some(placement) = placements.get(&room_cell) else {
+                continue;
+            };
+            if placement.is_open(face) {
+                ports.push(ResolvedPort {
+                    hall_cell,
+                    room,
+                    port_name,
+                    room_cell,
+                    face,
+                });
+            }
+        }
+    }
+    ports
+}
+
 pub(super) fn corridor_instances(
     config: HexWfcConfig,
     placements: &BTreeMap<HexCoord, HexPlacement>,
+    blueprints: &[StampedBlueprint],
 ) -> Vec<HexCorridorInstance> {
+    let mut ports_at: BTreeMap<HexCoord, BTreeSet<(observed_core::RoomId, &'static str)>> =
+        BTreeMap::new();
+    for port in resolved_ports(config, placements, blueprints) {
+        ports_at
+            .entry(port.hall_cell)
+            .or_default()
+            .insert((port.room, port.port_name));
+    }
     let mut unseen = placements
         .iter()
         .filter_map(|(&coord, placement)| (placement.space == HexSpace::Hall).then_some(coord))
@@ -398,7 +459,27 @@ pub(super) fn corridor_instances(
                 }
             }
         }
-        let generation_key = corridor_generation_key(&cells);
+        // A hall is the run between the thresholds it joins, not the cells it
+        // currently occupies. Keying identity on the named ports lets the solver
+        // reroute the interior across a relayout while the run stays the same
+        // run - which is what makes a threshold anchorable at all.
+        //
+        // A component with no live port has no threshold identity to inherit,
+        // so it falls back to its cell set. Those are dead-end stubs and
+        // orphaned pockets: nothing attaches to them, so nothing can anchor to
+        // them either, and without the fallback they would all collide on the
+        // hash of the empty set.
+        let attached: BTreeSet<(observed_core::RoomId, &'static str)> = cells
+            .iter()
+            .filter_map(|cell| ports_at.get(cell))
+            .flatten()
+            .copied()
+            .collect();
+        let generation_key = if attached.is_empty() {
+            corridor_generation_key(&cells)
+        } else {
+            threshold_generation_key(&attached)
+        };
         corridors.push(HexCorridorInstance {
             id: observed_core::CorridorId(super::relayout::fold_generation_key(generation_key)),
             generation_key,
@@ -408,11 +489,28 @@ pub(super) fn corridor_instances(
     corridors
 }
 
+/// Fallback identity for a hall with no live threshold. See the call site.
 fn corridor_generation_key(cells: &BTreeSet<HexCoord>) -> u64 {
     cells.iter().fold(0xCBF2_9CE4_8422_2325u64, |hash, coord| {
         let key = u64::from(coord.q) | (u64::from(coord.r) << 16) | (u64::from(coord.level) << 32);
         (hash ^ key).wrapping_mul(0x0000_0100_0000_01B3)
     })
+}
+
+/// Identity for a hall, folded over the named thresholds it joins.
+///
+/// The set is a `BTreeSet`, so the fold order is the sorted order and does not
+/// depend on which cell the flood fill happened to start from.
+fn threshold_generation_key(ports: &BTreeSet<(observed_core::RoomId, &'static str)>) -> u64 {
+    ports
+        .iter()
+        .fold(0xCBF2_9CE4_8422_2325u64, |hash, (room, port_name)| {
+            let mut folded = (hash ^ u64::from(room.0)).wrapping_mul(0x0000_0100_0000_01B3);
+            for byte in port_name.as_bytes() {
+                folded = (folded ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01B3);
+            }
+            folded
+        })
 }
 
 pub(super) fn threshold_attachments(world: &HexWfcWorld) -> Vec<HexThresholdAttachment> {
@@ -424,30 +522,17 @@ pub(super) fn threshold_attachments(world: &HexWfcWorld) -> Vec<HexThresholdAtta
         }
     }
     let mut attachments = Vec::new();
-    for stamped in &world.blueprints {
-        let blueprint = super::blueprint_for_role(stamped.role);
-        let room = observed_core::RoomId(super::relayout::fold_generation_key(
-            stamped.generation_key(),
-        ));
-        for &(port_name, offset, face) in &blueprint.named_ports {
-            let Some(index) = blueprint.cells.iter().position(|&cell| cell == offset) else {
-                continue;
-            };
-            let room_cell = stamped.cells[index];
-            let Some(neighbor) = world.config.grid().neighbor(room_cell, face) else {
-                continue;
-            };
-            if world.placements[&room_cell].is_open(face)
-                && let Some(&corridor) = corridor_at.get(&neighbor)
-            {
-                attachments.push(HexThresholdAttachment {
-                    room,
-                    port_name,
-                    room_cell,
-                    face,
-                    corridor,
-                });
-            }
+    // The same resolver corridor identity is folded from, so an attachment can
+    // never name a port that did not contribute to the corridor it points at.
+    for port in resolved_ports(world.config, &world.placements, &world.blueprints) {
+        if let Some(&corridor) = corridor_at.get(&port.hall_cell) {
+            attachments.push(HexThresholdAttachment {
+                room: port.room,
+                port_name: port.port_name,
+                room_cell: port.room_cell,
+                face: port.face,
+                corridor,
+            });
         }
     }
     attachments.sort_by_key(|attachment| {

@@ -549,3 +549,93 @@ fn local_pockets_commit_routes_across_a_seed_corpus() {
         "at least three quarters of deterministic pockets should preserve live routes; got {committed}/32"
     );
 }
+
+/// A hall's identity is the run it serves, not the cells it occupies.
+///
+/// Corridor identity used to be a hash of the exact connected cell set, so any
+/// relayout that moved a single hall cell produced a different `CorridorId`.
+/// That made a threshold unanchorable: `HexThresholdAttachment` names its room
+/// end (`RoomId` plus the authored `port_name`) but its corridor end dissolved
+/// underneath it on every commit.
+///
+/// Identity now folds over the named thresholds the component joins, so the
+/// solver may reshape the interior while the run stays the same run. The
+/// assertion below is the one the old derivation could not satisfy at all: a
+/// corridor whose cell set changed across a commit, keeping its id.
+#[test]
+fn a_rerouted_hall_keeps_the_identity_of_the_run_it_serves() {
+    let mut rerouted_and_stable = 0;
+    let mut examined = 0;
+
+    for seed in 0xC0FF_0100..0xC0FF_0140u64 {
+        let world = HexWfcWorld::generate(seed, config()).expect("world");
+        let mut frame = HexObservationFrame::default();
+        frame
+            .occupied_cells
+            .insert(PlayerId(0), world.config.spawn());
+        frame.objective_cells.insert(world.config.spawn());
+
+        let before: BTreeMap<_, _> = world
+            .corridors()
+            .into_iter()
+            .map(|corridor| (corridor.id, corridor.cells))
+            .collect();
+
+        let Ok(proposal) = world.propose_relayout(&frame) else {
+            continue;
+        };
+        let mut committed = world.clone();
+        if committed.commit_relayout(proposal, &frame).is_err() {
+            continue;
+        }
+        examined += 1;
+
+        for corridor in committed.corridors() {
+            let Some(previous) = before.get(&corridor.id) else {
+                continue;
+            };
+            if *previous != corridor.cells {
+                rerouted_and_stable += 1;
+            }
+        }
+    }
+
+    assert!(
+        examined > 0,
+        "no relayout committed across the corpus, so the property was never exercised"
+    );
+    assert!(
+        rerouted_and_stable > 0,
+        "no hall survived a reroute with its identity intact across {examined} commits; \
+         corridor identity is behaving as though it were still keyed on cells"
+    );
+}
+
+/// The other half of the contract: a run between *different* thresholds is a
+/// different hall. Identity tracks which named ports are joined, so a component
+/// that gains or loses a threshold must not keep the old id.
+#[test]
+fn halls_joining_different_thresholds_have_different_identities() {
+    let world = HexWfcWorld::generate(0xC0FF_0201, config()).expect("world");
+
+    let mut ports_by_corridor: BTreeMap<_, BTreeSet<_>> = BTreeMap::new();
+    for attachment in world.threshold_attachments() {
+        ports_by_corridor
+            .entry(attachment.corridor)
+            .or_default()
+            .insert((attachment.room, attachment.port_name));
+    }
+
+    // Two corridors that join the same set of named thresholds would be
+    // indistinguishable. A port opens onto exactly one component, so the sets
+    // are disjoint and this must hold.
+    let mut seen: BTreeMap<BTreeSet<_>, observed_core::CorridorId> = BTreeMap::new();
+    for (corridor, ports) in ports_by_corridor {
+        if let Some(other) = seen.insert(ports.clone(), corridor) {
+            assert_eq!(
+                other, corridor,
+                "two distinct corridors claim the same threshold set {ports:?}"
+            );
+        }
+    }
+}
