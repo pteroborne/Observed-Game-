@@ -13,6 +13,21 @@ use crate::pick::diagnostics;
 use crate::tabs::spawn_tab_row;
 use crate::typography;
 
+/// The full-window container the panel and the facility share.
+///
+/// Marked so the layout can turn its axis: the panel sits beside the facility
+/// on a desktop and beneath it on a phone.
+#[derive(Component)]
+pub struct ChromeShellRoot;
+
+/// The column holding the facility and its chrome, beside or above the panel.
+#[derive(Component)]
+pub struct ChromeViewportColumn;
+
+/// The keyboard cheat sheet. Hidden where there is no keyboard.
+#[derive(Component)]
+pub struct ChromeActionBar;
+
 #[derive(Component)]
 pub struct ChromeMenuRoot;
 
@@ -126,12 +141,15 @@ pub fn setup_chrome(mut commands: Commands, assets: &AssetServer) {
             Node {
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
-                // Row, not column: the panel is a sibling of the viewport area
-                // now, not an overlay floating above it.
+                // The panel is a sibling of the viewport area, not an overlay
+                // floating above it. The axis is set per layout in
+                // `update_chrome_ui`: a row on a desktop, a reversed column on
+                // a phone so the panel docks to the foot.
                 flex_direction: FlexDirection::Row,
                 ..default()
             },
             Pickable::IGNORE,
+            ChromeShellRoot,
         ))
         .with_children(|parent| {
             // Docked panel: a full-height column on the left. The 3D camera's
@@ -215,6 +233,7 @@ pub fn setup_chrome(mut commands: Commands, assets: &AssetServer) {
                         ..default()
                     },
                     Pickable::IGNORE,
+                    ChromeViewportColumn,
                 ))
                 .with_children(|column| {
                     column
@@ -227,6 +246,7 @@ pub fn setup_chrome(mut commands: Commands, assets: &AssetServer) {
                                 ..default()
                             },
                             BackgroundColor(mat_bg),
+                            ChromeActionBar,
                         ))
                         .with_children(|bar| {
                             bar.spawn((

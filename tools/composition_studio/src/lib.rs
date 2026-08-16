@@ -22,6 +22,7 @@ pub mod actionbar;
 pub mod brush;
 pub mod capture;
 pub mod chrome;
+pub mod chrome_layout;
 pub mod coverage;
 pub mod detail;
 pub mod draw;
@@ -90,6 +91,53 @@ pub const SOLVE_DEBOUNCE_SECONDS: f32 = 0.25;
 /// inset by this, so the panel sits *beside* the facility rather than on top of
 /// it — nothing is ever hidden behind chrome.
 pub const PANEL_WIDTH: f32 = 560.0;
+
+/// Below this window width the panel cannot sit beside the facility.
+///
+/// [`PANEL_WIDTH`] plus enough viewport to be worth looking at. A handset is
+/// 360-430 logical pixels wide, so it is never close; the threshold exists for
+/// the sizes in between, where a narrow desktop window should behave like a
+/// phone rather than squeeze the facility into a strip.
+pub const COMPACT_WIDTH_LIMIT: f32 = 960.0;
+
+/// How much of a compact window's height the panel takes when open.
+///
+/// Slightly over half. The facility keeps the larger share of what remains
+/// legible at a glance, while the panel still shows several controls without
+/// scrolling.
+pub const COMPACT_PANEL_FRACTION: f32 = 0.52;
+
+/// How the panel and the facility share the window.
+///
+/// The studio's premise is that you change a value and watch the facility
+/// answer, so both must be on screen at once. A phone cannot do that side by
+/// side - [`PANEL_WIDTH`] alone is wider than the whole display - so the split
+/// turns to run the other way rather than the panel becoming a screen you have
+/// to leave to see the result.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum LayoutMode {
+    /// Panel beside the facility, full height.
+    #[default]
+    Wide,
+    /// Panel below the facility, full width.
+    Compact,
+}
+
+impl LayoutMode {
+    #[must_use]
+    pub fn for_window_width(width: f32) -> Self {
+        if width < COMPACT_WIDTH_LIMIT {
+            Self::Compact
+        } else {
+            Self::Wide
+        }
+    }
+
+    #[must_use]
+    pub fn is_compact(self) -> bool {
+        matches!(self, Self::Compact)
+    }
+}
 
 /// Which region the keyboard is talking to.
 ///
@@ -220,7 +268,9 @@ impl Plugin for StudioPlugin {
                     field_widgets::sync_field_rows.after(update_studio_solve),
                     viewport_input::handle_viewport_painting,
                     viewport_input::update_hover_and_cursor,
-                    viewport::sync_camera_viewport,
+                    viewport::sync_layout_mode.before(chrome_layout::sync_chrome_layout),
+                    chrome_layout::sync_chrome_layout,
+                    viewport::sync_camera_viewport.after(viewport::sync_layout_mode),
                 ),
             )
             .add_observer(field_widgets::apply_slider_change);

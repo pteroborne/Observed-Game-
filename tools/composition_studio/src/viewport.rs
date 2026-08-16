@@ -87,6 +87,21 @@ pub fn sync_camera(
 /// This is what makes the panel *docked* rather than an overlay: with the
 /// viewport inset, no part of the layout is ever hidden behind chrome, and the
 /// framing maths sees the real drawable area instead of the whole window.
+/// Keep the layout mode in step with the window.
+///
+/// Runs before the chrome and the camera read it, so a resize never leaves the
+/// panel and the viewport disagreeing about which edge the panel is on - which
+/// would show up as the facility drawn underneath the controls.
+pub fn sync_layout_mode(windows: Query<&Window>, mut state: ResMut<StudioState>) {
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let wanted = crate::LayoutMode::for_window_width(window.width());
+    if state.layout != wanted {
+        state.layout = wanted;
+    }
+}
+
 pub fn sync_camera_viewport(
     windows: Query<&Window>,
     state: Res<StudioState>,
@@ -102,12 +117,16 @@ pub fn sync_camera_viewport(
     let scale = window.scale_factor();
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let left = (state.viewport_origin() * scale) as u32;
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let bottom = (state.viewport_bottom_inset(window.height()) * scale) as u32;
     let full = window.physical_size();
-    // A window narrower than the panel would ask for a zero-width viewport,
-    // which Bevy treats as invalid; fall back to the whole window.
-    let viewport = (full.x > left + 32).then(|| bevy::camera::Viewport {
+    // A window smaller than the panel would ask for a zero-sized viewport,
+    // which Bevy treats as invalid; fall back to the whole window. Both axes
+    // are checked because the panel docks left in a wide layout and along the
+    // foot in a compact one.
+    let viewport = (full.x > left + 32 && full.y > bottom + 32).then(|| bevy::camera::Viewport {
         physical_position: UVec2::new(left, 0),
-        physical_size: UVec2::new(full.x - left, full.y),
+        physical_size: UVec2::new(full.x - left, full.y - bottom),
         ..default()
     });
     // Compared field-wise rather than by equality — `Viewport` is not `PartialEq`

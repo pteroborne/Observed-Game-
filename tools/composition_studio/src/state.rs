@@ -151,6 +151,9 @@ pub struct StudioState {
     /// Whether the docked panel is expanded. Collapsing gives the facility the
     /// whole window; it never changes what the keyboard can reach.
     pub panel_open: bool,
+    /// How the panel and the facility share the window. Driven by window width
+    /// in `sync_layout_mode`; never set by hand.
+    pub layout: crate::LayoutMode,
     /// Which region receives keys. See [`KeyboardOwner`].
     pub keyboard_owner: KeyboardOwner,
     /// What left-drag paints.
@@ -249,6 +252,7 @@ impl Default for StudioState {
             detent: 0,
             detail_report: detail::DetailReport::default(),
             panel_open: true,
+            layout: crate::LayoutMode::default(),
             keyboard_owner: KeyboardOwner::default(),
             brush: brush::Brush::default(),
             pin_diagnostics: Vec::new(),
@@ -445,15 +449,47 @@ impl StudioState {
 
     /// Where the facility is drawn, in logical window pixels: the whole window
     /// minus the docked panel.
+    ///
+    /// Zero in a compact layout, where the panel is below the facility rather
+    /// than beside it. See [`Self::viewport_bottom_inset`].
     #[must_use]
     pub fn viewport_origin(&self) -> f32 {
-        if self.panel_open { PANEL_WIDTH } else { 0.0 }
+        if self.panel_open && !self.layout.is_compact() {
+            PANEL_WIDTH
+        } else {
+            0.0
+        }
+    }
+
+    /// How much of the window's foot the panel occupies, in logical pixels.
+    ///
+    /// The compact counterpart to [`Self::viewport_origin`]: one of the two is
+    /// always zero, because the panel is docked to exactly one edge.
+    #[must_use]
+    pub fn viewport_bottom_inset(&self, window_height: f32) -> f32 {
+        if self.panel_open && self.layout.is_compact() {
+            (window_height * crate::COMPACT_PANEL_FRACTION).floor()
+        } else {
+            0.0
+        }
     }
 
     /// Whether a window-space cursor position is over the facility.
     #[must_use]
     pub fn cursor_in_viewport(&self, cursor: Vec2) -> bool {
         cursor.x >= self.viewport_origin()
+    }
+
+    /// [`Self::cursor_in_viewport`] for a window whose height is known.
+    ///
+    /// A compact layout puts the panel under the facility, so "is this over the
+    /// facility" stops being a question about x alone. Callers with a window to
+    /// hand should prefer this; the x-only form stays correct for wide layouts
+    /// and for the tests that pin them.
+    #[must_use]
+    pub fn cursor_in_viewport_within(&self, cursor: Vec2, window_height: f32) -> bool {
+        cursor.x >= self.viewport_origin()
+            && cursor.y < window_height - self.viewport_bottom_inset(window_height)
     }
 
     /// Convert a window-space cursor position into the camera's viewport space.
