@@ -5,6 +5,18 @@ location = /labs {
     return 308 /labs/;
 }
 
+# Answer the trailing-slash redirects here rather than letting them reach the
+# container. The container is mounted under /labs but does not know it, so a
+# redirect it issues names a path relative to its own root and arrives at the
+# browser missing the prefix. Add one line per lab.
+location = /labs/tactics {
+    return 308 /labs/tactics/;
+}
+
+location = /labs/composition {
+    return 308 /labs/composition/;
+}
+
 location /labs/ {
     proxy_pass http://127.0.0.1:8086/;
     proxy_http_version 1.1;
@@ -14,12 +26,10 @@ location /labs/ {
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_read_timeout 120s;
 
-    # The container is mounted at /labs but does not know it. A bare
-    # /labs/composition reaches it as /composition, and its trailing-slash
-    # redirect answers with a root-relative `Location: /composition/` that has
-    # lost the prefix - sending the browser to /composition/ on this host, which
-    # does not exist. `proxy_redirect default` cannot help: it only rewrites
-    # absolute URLs matching proxy_pass, not root-relative ones. Put the prefix
-    # back on every redirect the container issues.
+    # A safety net for redirects other than the trailing-slash ones handled
+    # above. The container sets `absolute_redirect off`, so what it issues is
+    # root-relative and has lost the /labs prefix by the time it reaches the
+    # browser; this puts the prefix back. `proxy_redirect default` does not
+    # cover it - that only rewrites absolute URLs matching proxy_pass.
     proxy_redirect ~^/(.*)$ /labs/$1;
 }
