@@ -99,8 +99,12 @@ jobs:
         shell: pwsh
         run: ./scripts/build-tactics-web.ps1
 
+      # Invoked through bash rather than executed directly. The repository is
+      # developed on an ntfs3 mount that cannot store a Unix permission bit, so
+      # the executable mode is easy to lose and the failure is a bare
+      # `Permission denied` from the runner.
       - name: Build composition studio bundle
-        run: ./scripts/build-studio-web.sh
+        run: bash ./scripts/build-studio-web.sh
 
       # Both bundles share `web-dist` as their least common ancestor, so the
       # artifact carries one directory per lab and the image build below can
