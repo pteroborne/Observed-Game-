@@ -55,7 +55,8 @@ jobs:
             libudev-dev \
             libwayland-dev \
             libxkbcommon-dev \
-            pkg-config
+            pkg-config \
+            mold
 
       - name: Install pinned Rust toolchain
         run: |

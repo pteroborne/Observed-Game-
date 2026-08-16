@@ -9,7 +9,11 @@ linker = "rust-lld.exe"
 
 [target.x86_64-unknown-linux-gnu]
 # mold links Bevy's large dependency graph much faster than GNU ld. Target
-# tables only apply to a matching host, so this is inert on Windows.
+# tables only apply to a matching host, so this is inert on Windows - but it
+# applies to *every* Linux host, CI runners included, and a machine without
+# mold fails at the link step with `collect2: cannot find 'ld'` rather than
+# quietly falling back. Both workflows install it; a new Linux environment
+# must too.
 #
 # mold writes its output with mmap(MAP_SHARED), which the ntfs3 driver does not
 # support - so on Linux the build directory must sit on a native filesystem

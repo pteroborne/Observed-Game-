@@ -36,7 +36,8 @@ jobs:
             curl \
             libasound2-dev \
             libudev-dev \
-            pkg-config
+            pkg-config \
+            mold
 
       - name: Install pinned Rust toolchain
         run: |
