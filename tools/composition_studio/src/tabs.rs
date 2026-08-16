@@ -57,6 +57,16 @@ pub fn spawn_tab_row(menu: &mut RelatedSpawnerCommands<ChildOf>, assets: &AssetS
                 BorderColor::all(Color::NONE),
                 ChromeTab(index),
             ))
+            // Tapping a tab selects it. Without this the strip is decoration on
+            // a touch device: `Tab` cycles the selection and there is no Tab
+            // key. The index is captured rather than read back off the trigger,
+            // so each header knows its own answer.
+            .observe(
+                move |_: On<Pointer<Click>>, mut menu_state: ResMut<LabMenuState>| {
+                    menu_state.active_tab = index;
+                    menu_state.selected_item = 0;
+                },
+            )
             .with_children(|cell| {
                 cell.spawn((
                     Text::new(tab.label()),

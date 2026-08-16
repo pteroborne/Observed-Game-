@@ -6,27 +6,16 @@ use bevy::prelude::*;
 use observed_content::ArchitectureRegister;
 use observed_style::{SchematicRole, schematic, schematic_screen};
 
+use crate::chrome_layout::{
+    ChromeActionBar, ChromePanelToggle, ChromePanelToggleLabel, ChromeShellRoot,
+    ChromeViewportColumn,
+};
 use crate::panels::score::format_score_breakdown;
 use crate::panels::tuning::format_tuning_panel;
 use crate::persist::simulation_hash;
 use crate::pick::diagnostics;
 use crate::tabs::spawn_tab_row;
 use crate::typography;
-
-/// The full-window container the panel and the facility share.
-///
-/// Marked so the layout can turn its axis: the panel sits beside the facility
-/// on a desktop and beneath it on a phone.
-#[derive(Component)]
-pub struct ChromeShellRoot;
-
-/// The column holding the facility and its chrome, beside or above the panel.
-#[derive(Component)]
-pub struct ChromeViewportColumn;
-
-/// The keyboard cheat sheet. Hidden where there is no keyboard.
-#[derive(Component)]
-pub struct ChromeActionBar;
 
 #[derive(Component)]
 pub struct ChromeMenuRoot;
@@ -236,6 +225,45 @@ pub fn setup_chrome(mut commands: Commands, assets: &AssetServer) {
                     ChromeViewportColumn,
                 ))
                 .with_children(|column| {
+                    column
+                        .spawn((
+                            Node {
+                                align_self: AlignSelf::FlexEnd,
+                                // A finger's worth of target. The keyboard has
+                                // F2; a thumb has only this.
+                                min_width: Val::Px(96.0),
+                                min_height: Val::Px(44.0),
+                                margin: UiRect::all(Val::Px(12.0)),
+                                padding: UiRect::axes(Val::Px(16.0), Val::Px(12.0)),
+                                align_items: AlignItems::Center,
+                                justify_content: JustifyContent::Center,
+                                border: UiRect::all(Val::Px(1.0)),
+                                ..default()
+                            },
+                            BackgroundColor(mat_bg),
+                            BorderColor::all(schematic(SchematicRole::Selected).base_color),
+                            ChromePanelToggle,
+                        ))
+                        .observe(
+                            |_: On<Pointer<Click>>,
+                             mut state: ResMut<crate::StudioState>,
+                             mut menu_state: ResMut<LabMenuState>| {
+                                state.panel_open = !state.panel_open;
+                                menu_state.is_open = state.panel_open;
+                            },
+                        )
+                        .with_children(|button| {
+                            button.spawn((
+                                Text::new("TOOLS"),
+                                TextFont {
+                                    font_size: FontSize::Px(14.0),
+                                    ..default()
+                                },
+                                TextColor(typography::Role::Heading.colour()),
+                                ChromePanelToggleLabel,
+                            ));
+                        });
+
                     column
                         .spawn((
                             Node {

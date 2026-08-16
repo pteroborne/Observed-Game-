@@ -1,6 +1,7 @@
 //! Orthographic isometric viewport camera, framing, zoom, and pan controls.
 
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
+use bevy::input::touch::Touches;
 use bevy::prelude::*;
 
 use crate::{LabMenuState, StudioState};
@@ -44,6 +45,72 @@ pub fn frame_camera_at(min: Vec3, max: Vec3, detent: usize) -> (Transform, f32, 
         framing.units_per_pixel,
         framing.far,
     )
+}
+
+/// The finger positions the last frame, so a drag can be measured as a delta.
+///
+/// Touch reports absolute positions rather than the accumulated motion the
+/// mouse path uses, so the previous frame has to be kept somewhere.
+#[derive(Resource, Default)]
+pub struct ViewportTouch {
+    centroid: Option<Vec2>,
+    spread: Option<f32>,
+}
+
+/// Drag to pan, pinch to zoom.
+///
+/// Writes the same `pan` and `zoom` the mouse path writes, so `sync_camera`
+/// stays the single place the camera is actually moved. Only contacts over the
+/// facility count: the panel owns the ones that land on it, or a finger on a
+/// slider would drag the world as well as the value.
+pub fn sync_camera_touch(
+    touches: Res<Touches>,
+    windows: Query<&Window>,
+    menu_state: Res<LabMenuState>,
+    mut gesture: ResMut<ViewportTouch>,
+    mut state: ResMut<StudioState>,
+) {
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let height = window.height();
+    let points: Vec<Vec2> = touches
+        .iter()
+        .map(bevy::input::touch::Touch::position)
+        .filter(|point| state.cursor_in_viewport_within(*point, height))
+        .collect();
+
+    if points.is_empty() || menu_state.confirm.is_some() {
+        gesture.centroid = None;
+        gesture.spread = None;
+        return;
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    let centroid = points.iter().copied().sum::<Vec2>() / points.len() as f32;
+    if let Some(previous) = gesture.centroid {
+        let delta = centroid - previous;
+        let scale = state.base_frame.1 * state.zoom;
+        // Y is negated for the same reason the mouse path negates it: window
+        // pixels grow downward and the camera's pan does not.
+        state.pan += Vec2::new(-delta.x, delta.y) * scale;
+    }
+    gesture.centroid = Some(centroid);
+
+    // Two contacts pinch. The ratio is previous/current so spreading the
+    // fingers apart zooms in, which is the direction every other app uses.
+    if let (Some(a), Some(b)) = (points.first(), points.get(1)) {
+        let spread = a.distance(*b);
+        if let Some(previous) = gesture.spread
+            && previous > 1.0
+            && spread > 1.0
+        {
+            state.zoom = (state.zoom * (previous / spread)).clamp(MIN_ZOOM, MAX_ZOOM);
+        }
+        gesture.spread = Some(spread);
+    } else {
+        gesture.spread = None;
+    }
 }
 
 /// Zoom and pan are applied to the camera every frame.

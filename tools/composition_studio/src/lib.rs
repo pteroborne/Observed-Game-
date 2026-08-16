@@ -251,6 +251,12 @@ impl Plugin for StudioPlugin {
             .init_resource::<LabMenuState>()
             .init_resource::<ButtonInput<MouseButton>>()
             .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<viewport::ViewportTouch>()
+            // `Touches` belongs to `InputPlugin`, which the headless harness
+            // does not build - the same reason the mouse resources above are
+            // initialised by hand. Without it every system in this schedule
+            // fails parameter validation, not just the one that reads it.
+            .init_resource::<bevy::input::touch::Touches>()
             .init_resource::<bevy::input::mouse::AccumulatedMouseMotion>()
             .init_resource::<bevy::input::mouse::AccumulatedMouseScroll>()
             .add_systems(Startup, setup_studio)
@@ -271,6 +277,7 @@ impl Plugin for StudioPlugin {
                     viewport::sync_layout_mode.before(chrome_layout::sync_chrome_layout),
                     chrome_layout::sync_chrome_layout,
                     viewport::sync_camera_viewport.after(viewport::sync_layout_mode),
+                    viewport::sync_camera_touch.before(viewport::sync_camera),
                 ),
             )
             .add_observer(field_widgets::apply_slider_change);

@@ -6,7 +6,34 @@
 
 use bevy::prelude::*;
 
-use crate::chrome::{ChromeActionBar, ChromeMenuRoot, ChromeShellRoot, ChromeViewportColumn};
+use crate::chrome::ChromeMenuRoot;
+
+/// The full-window container the panel and the facility share.
+///
+/// Marked so the layout can turn its axis: the panel sits beside the facility
+/// on a desktop and beneath it on a phone.
+#[derive(Component)]
+pub struct ChromeShellRoot;
+
+/// The column holding the facility and its chrome, beside or above the panel.
+#[derive(Component)]
+pub struct ChromeViewportColumn;
+
+/// The keyboard cheat sheet. Hidden where there is no keyboard.
+#[derive(Component)]
+pub struct ChromeActionBar;
+
+/// Tap target that collapses and restores the panel.
+///
+/// Lives in the viewport column rather than the panel, because a control
+/// inside the panel disappears with it and leaves a touch device no way to
+/// bring the tools back. `F2` does the same job for a keyboard.
+#[derive(Component)]
+pub struct ChromePanelToggle;
+
+/// The toggle's label, which says what the tap will do next.
+#[derive(Component)]
+pub struct ChromePanelToggleLabel;
 
 /// Dock the panel to the edge the current layout calls for.
 ///
@@ -36,6 +63,17 @@ pub fn sync_chrome_layout(
             Without<ChromeViewportColumn>,
         ),
     >,
+    mut toggle_query: Query<
+        &mut Node,
+        (
+            With<ChromePanelToggle>,
+            Without<ChromeShellRoot>,
+            Without<ChromeMenuRoot>,
+            Without<ChromeViewportColumn>,
+            Without<ChromeActionBar>,
+        ),
+    >,
+    mut toggle_label: Query<&mut Text, With<ChromePanelToggleLabel>>,
 ) {
     let compact = state.layout.is_compact();
     if let Ok(mut shell) = shell_query.single_mut() {
@@ -78,5 +116,22 @@ pub fn sync_chrome_layout(
         } else {
             Display::Flex
         };
+    }
+    if let Ok(mut toggle) = toggle_query.single_mut() {
+        // Desktop already has F2 and an action bar that says so, and the
+        // showcase captures are an evidence contract - so this appears only
+        // where the keyboard does not.
+        toggle.display = if compact {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+    if let Ok(mut label) = toggle_label.single_mut() {
+        // Says what the next tap does, not what is currently true.
+        let wanted = if state.panel_open { "HIDE" } else { "TOOLS" };
+        if label.as_str() != wanted {
+            **label = wanted.to_string();
+        }
     }
 }
