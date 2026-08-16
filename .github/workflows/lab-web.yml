@@ -8,10 +8,15 @@ on:
       - "Cargo.lock"
       - "Cargo.toml"
       - "assets/content/**"
+      # Both bundles `include_str!` the compiled catalog and composition
+      # profile, so a change here is baked into an artifact and must rebuild it.
+      - "assets/tiles/**"
       - "crates/**"
       - "deploy/labs/**"
       - "labs/tactics_lab/**"
+      - "scripts/build-studio-web.sh"
       - "scripts/build-tactics-web.ps1"
+      - "tools/composition_studio/**"
   push:
     branches:
       - main
@@ -21,10 +26,15 @@ on:
       - "Cargo.lock"
       - "Cargo.toml"
       - "assets/content/**"
+      # Both bundles `include_str!` the compiled catalog and composition
+      # profile, so a change here is baked into an artifact and must rebuild it.
+      - "assets/tiles/**"
       - "crates/**"
       - "deploy/labs/**"
       - "labs/tactics_lab/**"
+      - "scripts/build-studio-web.sh"
       - "scripts/build-tactics-web.ps1"
+      - "tools/composition_studio/**"
   workflow_dispatch:
 
 permissions:
