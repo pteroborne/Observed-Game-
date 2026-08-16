@@ -126,8 +126,25 @@ impl KeyboardOwner {
 /// symptom arrives much later as `index out of bounds` deep inside
 /// `handle_internal_asset_events` - windowed only, because headless has no
 /// render plugin to collide with.
+/// Whether this app has to supply its own asset collections.
+///
+/// "Is `Assets<A>` here yet" is the wrong question. Native render plugins
+/// insert their collections during `build`, so asking at `build` time happens
+/// to work there - but the browser acquires its adapter and device
+/// asynchronously, and the collections arrive after every `build` has run.
+/// The presence check therefore answers "no" in the browser for types the
+/// renderer does own, a fresh empty `Assets<Shader>` is installed over the top,
+/// and `feathers`' embedded shaders end up somewhere nothing reads. The canvas
+/// stays black and nothing is logged, because nothing failed.
+///
+/// So ask about the plugin instead. It is added synchronously, and if it is
+/// present it owns these types whenever it gets round to inserting them.
+fn renderer_owns_assets(app: &App) -> bool {
+    app.is_plugin_added::<bevy::render::RenderPlugin>()
+}
+
 fn init_asset_once<A: Asset>(app: &mut App) {
-    if !app.world().contains_resource::<Assets<A>>() {
+    if !renderer_owns_assets(app) && !app.world().contains_resource::<Assets<A>>() {
         app.init_asset::<A>();
     }
 }

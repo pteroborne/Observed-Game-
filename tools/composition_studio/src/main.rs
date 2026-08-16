@@ -31,11 +31,24 @@ fn primary_window() -> Window {
 }
 
 fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(primary_window()),
-            ..default()
-        }))
-        .add_plugins(StudioPlugin)
-        .run();
+    let mut app = App::new();
+    app.add_plugins(DefaultPlugins.set(WindowPlugin {
+        primary_window: Some(primary_window()),
+        ..default()
+    }))
+    .add_plugins(StudioPlugin);
+
+    // Keep the studio's most important visual dependency executable rather than
+    // merely documented. Bevy 0.19 dropped UI rendering from its `2d`/`3d`
+    // feature groups: without the explicit `ui` feature the studio still builds,
+    // lays out, and accepts input while drawing nothing at all. A black canvas
+    // is indistinguishable from a slow load, so assert the plugin is really
+    // here - this also catches a future change in how `DefaultPlugins` is
+    // composed, which no Cargo feature could.
+    assert!(
+        app.is_plugin_added::<bevy::ui_render::UiRenderPlugin>(),
+        "composition_studio requires Bevy's UiRenderPlugin"
+    );
+
+    app.run();
 }
