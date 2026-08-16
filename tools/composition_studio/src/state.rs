@@ -20,8 +20,12 @@ use observed_match::hex_wfc::HexWfcGeometrySnapshot;
 
 use crate::{
     DrawReport, KeyboardOwner, Layer, PANEL_WIDTH, PRESET_SEEDS, brush, detail, neighbors, panels,
-    persist, timeline, viewport,
+    timeline, viewport,
 };
+// Only the filesystem-backed loaders below reach for the corpus/working paths;
+// a browser build reads the same artifacts out of `embedded`.
+#[cfg(not(target_arch = "wasm32"))]
+use crate::persist;
 
 pub struct SolveResult {
     pub world: HexWfcWorld,
@@ -191,12 +195,31 @@ fn rolled_seed() -> u64 {
     z ^ (z >> 31)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn tile_dir() -> std::path::PathBuf {
     let cwd_relative = std::path::PathBuf::from("assets/tiles");
     if cwd_relative.exists() {
         return cwd_relative;
     }
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tiles")
+}
+
+/// The authored corpus, baked into the binary for browser builds.
+///
+/// A browser cannot discover or synchronously read the repository's tile
+/// directory, so the same four artifacts a filesystem host reads are embedded
+/// at compile time. `RuntimeHexCatalog::from_embedded` then applies the same
+/// schema parsing, sidecar agreement checks, and content-hash fold, so a hosted
+/// studio is looking at exactly the content a desktop one would.
+#[cfg(target_arch = "wasm32")]
+mod embedded {
+    pub const COMPILED_CATALOG: &str = include_str!("../../../assets/tiles/compiled_catalog.ron");
+    pub const COMPILED_CATALOG_HASH: &str =
+        include_str!("../../../assets/tiles/compiled_catalog.sha256");
+    pub const COMPOSITION_PROFILE: &str =
+        include_str!("../../../assets/tiles/composition_profile.ron");
+    pub const COMPOSITION_PROFILE_HASH: &str =
+        include_str!("../../../assets/tiles/composition_profile.sha256");
 }
 
 /// The authored tile corpus: per-cell prototypes and whole-room prototypes.
@@ -208,13 +231,24 @@ pub fn corpus() -> &'static Result<Corpus, String> {
     static CORPUS: OnceLock<Result<Corpus, String>> = OnceLock::new();
     CORPUS.get_or_init(|| {
         let slugs = ArchitectureRegister::ALL.map(ArchitectureRegister::slug);
-        RuntimeHexCatalog::load(&tile_dir(), &slugs)
+        #[cfg(target_arch = "wasm32")]
+        let loaded = RuntimeHexCatalog::from_embedded(
+            embedded::COMPILED_CATALOG,
+            embedded::COMPILED_CATALOG_HASH,
+            embedded::COMPOSITION_PROFILE,
+            embedded::COMPOSITION_PROFILE_HASH,
+            &slugs,
+        );
+        #[cfg(not(target_arch = "wasm32"))]
+        let loaded = RuntimeHexCatalog::load(&tile_dir(), &slugs);
+        loaded
             .map(|loaded| (loaded.cells, loaded.rooms))
             .map_err(|error| format!("authored catalog unavailable: {error}"))
     })
 }
 
 /// Read the compiled catalog's committed digest — the other half of the fold.
+#[cfg(not(target_arch = "wasm32"))]
 fn load_catalog_hash() -> CatalogHash {
     let path = persist::corpus_dir().join("compiled_catalog.sha256");
     match std::fs::read_to_string(&path) {
@@ -224,7 +258,49 @@ fn load_catalog_hash() -> CatalogHash {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+fn load_catalog_hash() -> CatalogHash {
+    let text = embedded::COMPILED_CATALOG_HASH.trim();
+    if text.len() == 64 {
+        CatalogHash::Known(text.to_string())
+    } else {
+        CatalogHash::Unavailable(String::from(
+            "embedded compiled_catalog.sha256 is not a 64-char digest",
+        ))
+    }
+}
+
+/// The corpus profile, parsed from the baked-in copy.
+///
+/// There is no working-copy arm: a browser build is a read-only viewer, so the
+/// scratch directory `Ctrl+S` writes to on the desktop never exists here.
+#[cfg(target_arch = "wasm32")]
+fn load_startup_profile() -> (HexCompositionProfile, String, ProfileOrigin) {
+    use observed_authoring::composition::{parse_profile, profile_content_hash};
+    match parse_profile(embedded::COMPOSITION_PROFILE) {
+        Ok(profile) => match profile_content_hash(&profile) {
+            Ok(hash) => (profile, hash, ProfileOrigin::Corpus),
+            Err(error) => (
+                profile,
+                String::from("unavailable"),
+                ProfileOrigin::Unreadable(format!("embedded profile hash: {error}")),
+            ),
+        },
+        Err(error) => {
+            let baseline = HexCompositionProfile::baseline();
+            let hash =
+                profile_content_hash(&baseline).unwrap_or_else(|_| String::from("unavailable"));
+            (
+                baseline,
+                hash,
+                ProfileOrigin::Unreadable(format!("embedded profile unreadable: {error}")),
+            )
+        }
+    }
+}
+
 /// Load the profile to edit: the working copy if one exists, else the corpus.
+#[cfg(not(target_arch = "wasm32"))]
 fn load_startup_profile() -> (HexCompositionProfile, String, ProfileOrigin) {
     if let Ok(build) = observed_authoring::composition::load_profile(&persist::working_dir()) {
         return (build.profile, build.content_hash, ProfileOrigin::Working);
