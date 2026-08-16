@@ -4,7 +4,10 @@
 //! Debouncing lives in the caller (`update_studio_solve`), not here, so this
 //! function stays a pure "solve once, now" that tests can call directly.
 
-use std::time::Instant;
+// Not `std::time::Instant`, which panics with "time not implemented on this
+// platform" on wasm32-unknown-unknown. This one is `web_time` in the browser
+// and `std` everywhere else.
+use bevy::platform::time::Instant;
 
 use observed_facility::hex_wfc::profile::ScoreWeights;
 use observed_facility::hex_wfc::score::score_layout_with;

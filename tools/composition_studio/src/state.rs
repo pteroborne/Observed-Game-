@@ -179,9 +179,13 @@ pub struct StudioState {
 /// seed would share a high half and look like a family. This is a convenience
 /// for an author browsing facilities; it is not a simulation RNG and nothing
 /// deterministic depends on it.
+///
+/// The clock is read through `web_time`, not `std::time`: the browser has no
+/// `SystemTime`, and `std`'s panics there rather than failing a call the
+/// `map_or` below would have absorbed.
 fn rolled_seed() -> u64 {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let nanos = web_time::SystemTime::now()
+        .duration_since(web_time::UNIX_EPOCH)
         .map_or(0, |since| since.as_nanos() as u64);
     let mut z = nanos.wrapping_add(0x9E37_79B9_7F4A_7C15);
     z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);

@@ -479,7 +479,7 @@ fn the_simulation_hash_moves_when_the_profile_does() {
 
 /// Every `.rs` under `src/`, discovered rather than listed — a hand-written file
 /// list silently exempts whatever is added next.
-fn studio_sources() -> Vec<(PathBuf, String)> {
+pub(crate) fn studio_sources() -> Vec<(PathBuf, String)> {
     fn walk(dir: &Path, out: &mut Vec<(PathBuf, String)>) {
         let entries = std::fs::read_dir(dir).expect("studio src is readable");
         for entry in entries.flatten() {

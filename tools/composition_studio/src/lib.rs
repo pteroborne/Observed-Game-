@@ -50,6 +50,8 @@ pub mod viewport_input;
 #[cfg(test)]
 pub mod authoring_tests;
 #[cfg(test)]
+pub mod browser_tests;
+#[cfg(test)]
 pub mod neighbor_tests;
 #[cfg(test)]
 pub mod tests;

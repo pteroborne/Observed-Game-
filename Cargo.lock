@@ -3577,6 +3577,7 @@ dependencies = [
  "observed_ui",
  "serde",
  "serde_json",
+ "web-time",
 ]
 
 [[package]]
