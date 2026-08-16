@@ -119,6 +119,23 @@ impl KeyboardOwner {
     }
 }
 
+/// Whether the renderer supplies the asset collections, or this app must.
+///
+/// "Is `Assets<A>` here yet" is the wrong question. Native render plugins
+/// insert their collections during `build`, so asking at `build` time happens
+/// to work there - but the browser acquires its adapter and device
+/// asynchronously, and the collections arrive after every `build` has run.
+/// The presence check therefore answers "no" in the browser for types the
+/// renderer does own, a fresh empty `Assets<Shader>` would be installed over
+/// the top, and `feathers`' embedded shaders would end up somewhere nothing
+/// reads.
+///
+/// So ask about the plugin instead. It is added synchronously, and if it is
+/// present it owns these types whenever it gets round to inserting them.
+fn renderer_owns_assets(app: &App) -> bool {
+    app.is_plugin_added::<bevy::render::RenderPlugin>()
+}
+
 /// Register an asset type only if nothing else already has.
 ///
 /// `App::init_asset` is **not** idempotent: it builds a fresh `Assets<A>` and
@@ -128,23 +145,6 @@ impl KeyboardOwner {
 /// symptom arrives much later as `index out of bounds` deep inside
 /// `handle_internal_asset_events` - windowed only, because headless has no
 /// render plugin to collide with.
-/// Whether this app has to supply its own asset collections.
-///
-/// "Is `Assets<A>` here yet" is the wrong question. Native render plugins
-/// insert their collections during `build`, so asking at `build` time happens
-/// to work there - but the browser acquires its adapter and device
-/// asynchronously, and the collections arrive after every `build` has run.
-/// The presence check therefore answers "no" in the browser for types the
-/// renderer does own, a fresh empty `Assets<Shader>` is installed over the top,
-/// and `feathers`' embedded shaders end up somewhere nothing reads. The canvas
-/// stays black and nothing is logged, because nothing failed.
-///
-/// So ask about the plugin instead. It is added synchronously, and if it is
-/// present it owns these types whenever it gets round to inserting them.
-fn renderer_owns_assets(app: &App) -> bool {
-    app.is_plugin_added::<bevy::render::RenderPlugin>()
-}
-
 fn init_asset_once<A: Asset>(app: &mut App) {
     if !renderer_owns_assets(app) && !app.world().contains_resource::<Assets<A>>() {
         app.init_asset::<A>();
@@ -225,9 +225,6 @@ impl Plugin for StudioPlugin {
             )
             .add_observer(field_widgets::apply_slider_change);
 
-        #[cfg(target_arch = "wasm32")]
-        app.add_systems(Update, log_browser_diagnostics);
-
         if let Ok(dir) = std::env::var("OBSERVED2_CAPTURE") {
             app.insert_resource(capture::CaptureState {
                 dir,
@@ -260,54 +257,6 @@ impl Default for StudioPlugin {
     fn default() -> Self {
         Self
     }
-}
-
-/// One-line browser diagnostics, logged a few frames in.
-///
-/// The hosted studio draws nothing while reporting no error, and the usual
-/// checks - it boots, it acquires an adapter, the console is clean - are all
-/// true of a black canvas as well as a working one. This prints the state that
-/// actually distinguishes them: whether the window has a real size, whether the
-/// camera got a valid viewport, whether a facility has been solved, and whether
-/// anything was handed to the renderer.
-///
-/// Frame-gated rather than time-gated so it costs nothing after the first few
-/// seconds, and browser-only because every desktop path here is already
-/// observable by looking at the window.
-#[cfg(target_arch = "wasm32")]
-fn log_browser_diagnostics(
-    windows: Query<&Window>,
-    cameras: Query<&Camera, With<StudioCamera>>,
-    state: Res<StudioState>,
-    mut frame: Local<u32>,
-) {
-    *frame += 1;
-    if !matches!(*frame, 30 | 180 | 600) {
-        return;
-    }
-    let window = windows.single().ok();
-    let viewport = cameras
-        .single()
-        .ok()
-        .and_then(|camera| camera.viewport.as_ref())
-        .map(|view| (view.physical_position, view.physical_size));
-    info!(
-        "studio diagnostics frame={} window_physical={:?} scale={:?} viewport={:?} \
-         solved={} geometry={} corpus_ok={} cells={} meshes={} status={:?}",
-        *frame,
-        window.map(bevy::window::Window::physical_size),
-        window.map(bevy::window::Window::scale_factor),
-        viewport,
-        state.solved.is_some(),
-        state
-            .solved
-            .as_ref()
-            .is_some_and(|solved| solved.geometry.is_some()),
-        corpus().is_ok(),
-        state.report.cells,
-        state.report.meshes,
-        state.status,
-    );
 }
 
 fn setup_studio(mut commands: Commands, assets: Res<AssetServer>) {

@@ -4,11 +4,26 @@ use bevy::prelude::*;
 use composition_studio::StudioPlugin;
 
 /// The desktop window, sized for the authoring layout.
+///
+/// `OBSERVED2_STUDIO_W` / `_H` override the size. The browser build is the one
+/// that has to cope with a phone, and nothing on this side of the wasm boundary
+/// can be pointed at a phone directly - so the capture harness borrows the
+/// desktop window at a handset's dimensions to photograph the layout there.
 #[cfg(not(target_arch = "wasm32"))]
 fn primary_window() -> Window {
     Window {
         title: "Observed 2 - Composition Studio".to_string(),
-        resolution: (1600u32, 1000u32).into(),
+        resolution: (
+            std::env::var("OBSERVED2_STUDIO_W")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1600u32),
+            std::env::var("OBSERVED2_STUDIO_H")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1000u32),
+        )
+            .into(),
         ..default()
     }
 }
