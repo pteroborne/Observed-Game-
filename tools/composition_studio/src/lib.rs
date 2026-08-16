@@ -28,6 +28,7 @@ pub mod draw;
 pub mod field_widgets;
 pub mod input;
 pub mod layer;
+pub mod load;
 pub mod module;
 pub mod neighbors;
 pub mod panels;
@@ -65,9 +66,8 @@ use observed_style::schematic_screen;
 pub use chrome::{LabMenuState, StudioTab};
 pub use draw::DrawReport;
 pub use layer::Layer;
-pub use state::{
-    CatalogHash, Corpus, MAX_WORKING_LEVELS, ProfileOrigin, SolveResult, StudioState, corpus,
-};
+pub use load::{Corpus, corpus};
+pub use state::{CatalogHash, MAX_WORKING_LEVELS, ProfileOrigin, SolveResult, StudioState};
 pub use viewport::StudioCamera;
 
 /// The same five seeds `iso_observer_lab` pins, so a studio capture and an Arc O
