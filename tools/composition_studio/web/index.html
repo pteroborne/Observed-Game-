@@ -63,6 +63,35 @@
         color: #ff5577;
         letter-spacing: normal;
       }
+
+      /* An on-page console.
+         A phone has no developer tools worth the name, and this page's whole
+         job is to be looked at on one. Without somewhere to put them, the
+         engine's own diagnostics are only readable on a desktop - which is
+         exactly the machine that does not reproduce the problem. */
+      #log {
+        position: absolute;
+        inset: auto 0 0 0;
+        z-index: 3;
+        max-height: 45%;
+        margin: 0;
+        padding: 8px 10px;
+        overflow: auto;
+        background: #000000d0;
+        color: #9fe8ff;
+        font: 11px/1.45 ui-monospace, monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+        border-top: 1px solid #2b5a66;
+      }
+
+      #log:empty {
+        display: none;
+      }
+
+      #log .err {
+        color: #ff7a94;
+      }
     </style>
   </head>
   <body>
@@ -72,7 +101,49 @@
         aria-label="Observed composition studio"
       ></canvas>
       <div id="loading" role="status">READING THE CORPUS…</div>
+      <pre id="log" aria-label="diagnostics"></pre>
     </main>
+    <script>
+      // Installed before the module below, so nothing the engine says on its
+      // way up is missed. Only lines the studio itself emits are shown: Bevy is
+      // chatty at INFO and the interesting ones would scroll away.
+      (function mirrorConsoleToPage() {
+        const log = document.querySelector("#log");
+        const KEEP = /studio diagnostics|AdapterInfo|panic|error|warn/i;
+
+        function render(args, isError) {
+          // Bevy's browser logger formats with %c and passes CSS as trailing
+          // arguments; strip both so the line reads as text.
+          const text = args
+            .filter((a) => !(typeof a === "string" && /(^|;)\s*(color|background|font-style)\s*:/.test(a)))
+            .map((a) => (typeof a === "string" ? a.replaceAll("%c", "") : String(a)))
+            .join(" ")
+            .trim();
+          if (!text || !(isError || KEEP.test(text))) return;
+          const line = document.createElement("div");
+          if (isError) line.className = "err";
+          line.textContent = text;
+          log.appendChild(line);
+          log.scrollTop = log.scrollHeight;
+        }
+
+        for (const level of ["log", "info", "warn", "error"]) {
+          const original = console[level];
+          console[level] = function (...args) {
+            original.apply(console, args);
+            try {
+              render(args, level === "error" || level === "warn");
+            } catch {
+              /* a broken logger must never take the page down */
+            }
+          };
+        }
+        addEventListener("error", (event) => render([`error: ${event.message}`], true));
+        addEventListener("unhandledrejection", (event) =>
+          render([`unhandled rejection: ${event.reason}`], true),
+        );
+      })();
+    </script>
     <script type="module">
       const loading = document.querySelector("#loading");
       try {
