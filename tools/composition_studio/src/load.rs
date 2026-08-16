@@ -139,3 +139,44 @@ pub(crate) fn startup_profile() -> (HexCompositionProfile, String, ProfileOrigin
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use observed_content::ArchitectureRegister;
+
+    /// The browser build bakes these four artifacts in and never touches the
+    /// filesystem. Nothing else exercises that path natively, so a corpus that
+    /// fails to load in the browser - and leaves the studio with nothing to
+    /// draw - would otherwise only show up as a blank canvas after a deploy.
+    ///
+    /// Paths deliberately match `embedded` above character for character.
+    #[test]
+    fn the_embedded_corpus_loads_and_matches_the_filesystem_one() {
+        let slugs = ArchitectureRegister::ALL.map(ArchitectureRegister::slug);
+        let embedded = super::RuntimeHexCatalog::from_embedded(
+            include_str!("../../../assets/tiles/compiled_catalog.ron"),
+            include_str!("../../../assets/tiles/compiled_catalog.sha256"),
+            include_str!("../../../assets/tiles/composition_profile.ron"),
+            include_str!("../../../assets/tiles/composition_profile.sha256"),
+            &slugs,
+        )
+        .expect("the embedded corpus must load; the browser build has no fallback");
+
+        let filesystem = super::RuntimeHexCatalog::load(&super::tile_dir(), &slugs)
+            .expect("the filesystem corpus must load");
+
+        assert_eq!(
+            embedded.simulation_content_hash, filesystem.simulation_content_hash,
+            "browser and desktop must agree on the simulation content hash"
+        );
+        assert!(
+            !embedded.rooms.is_empty(),
+            "an embedded corpus with no room prototypes leaves nothing to draw"
+        );
+        assert_eq!(
+            (embedded.cells.len(), embedded.rooms.len()),
+            (filesystem.cells.len(), filesystem.rooms.len()),
+            "browser and desktop must offer the solver the same vocabulary"
+        );
+    }
+}

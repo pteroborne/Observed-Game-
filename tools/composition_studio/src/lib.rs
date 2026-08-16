@@ -223,6 +223,9 @@ impl Plugin for StudioPlugin {
             )
             .add_observer(field_widgets::apply_slider_change);
 
+        #[cfg(target_arch = "wasm32")]
+        app.add_systems(Update, log_browser_diagnostics);
+
         if let Ok(dir) = std::env::var("OBSERVED2_CAPTURE") {
             app.insert_resource(capture::CaptureState {
                 dir,
@@ -255,6 +258,54 @@ impl Default for StudioPlugin {
     fn default() -> Self {
         Self
     }
+}
+
+/// One-line browser diagnostics, logged a few frames in.
+///
+/// The hosted studio draws nothing while reporting no error, and the usual
+/// checks - it boots, it acquires an adapter, the console is clean - are all
+/// true of a black canvas as well as a working one. This prints the state that
+/// actually distinguishes them: whether the window has a real size, whether the
+/// camera got a valid viewport, whether a facility has been solved, and whether
+/// anything was handed to the renderer.
+///
+/// Frame-gated rather than time-gated so it costs nothing after the first few
+/// seconds, and browser-only because every desktop path here is already
+/// observable by looking at the window.
+#[cfg(target_arch = "wasm32")]
+fn log_browser_diagnostics(
+    windows: Query<&Window>,
+    cameras: Query<&Camera, With<StudioCamera>>,
+    state: Res<StudioState>,
+    mut frame: Local<u32>,
+) {
+    *frame += 1;
+    if !matches!(*frame, 30 | 180 | 600) {
+        return;
+    }
+    let window = windows.single().ok();
+    let viewport = cameras
+        .single()
+        .ok()
+        .and_then(|camera| camera.viewport.as_ref())
+        .map(|view| (view.physical_position, view.physical_size));
+    info!(
+        "studio diagnostics frame={} window_physical={:?} scale={:?} viewport={:?} \
+         solved={} geometry={} corpus_ok={} cells={} meshes={} status={:?}",
+        *frame,
+        window.map(bevy::window::Window::physical_size),
+        window.map(bevy::window::Window::scale_factor),
+        viewport,
+        state.solved.is_some(),
+        state
+            .solved
+            .as_ref()
+            .is_some_and(|solved| solved.geometry.is_some()),
+        corpus().is_ok(),
+        state.report.cells,
+        state.report.meshes,
+        state.status,
+    );
 }
 
 fn setup_studio(mut commands: Commands, assets: Res<AssetServer>) {
