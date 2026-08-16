@@ -55,6 +55,7 @@
         transition: border-color 140ms ease, transform 140ms ease;
       }
 
+      .lab + .lab { margin-top: 16px; }
       .lab:hover, .lab:focus-visible { border-color: #65e8db; transform: translateY(-2px); }
       .lab:focus-visible { outline: 3px solid #ff9e33; outline-offset: 4px; }
       .lab strong { color: #ffb353; font-size: 1.35rem; }
@@ -74,6 +75,14 @@
         <strong>Isometric Tactics Lab</strong>
         <span>Inspect, reconfigure, route, teleport, and spectate the mutable facility.</span>
         <small>OPEN LAB →</small>
+      </a>
+      <a class="lab" href="./composition/">
+        <strong>Composition Studio</strong>
+        <span>
+          Read the authored district composition profile and roll the layouts it
+          produces. Viewer only - this build cannot write back to the corpus.
+        </span>
+        <small>OPEN STUDIO →</small>
       </a>
     </main>
   </body>

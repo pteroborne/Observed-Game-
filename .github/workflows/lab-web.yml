@@ -91,15 +91,26 @@ jobs:
       - name: Test tactics simulation and lifecycle
         run: cargo test --locked -p tactics_lab --lib
 
+      - name: Test composition studio
+        run: cargo test --locked -p composition_studio --lib
+
       - name: Build browser bundle
         shell: pwsh
         run: ./scripts/build-tactics-web.ps1
 
+      - name: Build composition studio bundle
+        run: ./scripts/build-studio-web.sh
+
+      # Both bundles share `web-dist` as their least common ancestor, so the
+      # artifact carries one directory per lab and the image build below can
+      # copy each to its own route.
       - name: Upload browser bundle
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: observed-browser-labs
-          path: web-dist/tactics-lab
+          path: |
+            web-dist/tactics-lab
+            web-dist/composition-studio
           if-no-files-found: error
           retention-days: 7
 
@@ -119,7 +130,7 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: observed-browser-labs
-          path: web-dist/tactics-lab
+          path: web-dist
 
       - name: Resolve image name
         id: image

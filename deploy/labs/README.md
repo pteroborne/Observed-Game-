@@ -5,6 +5,9 @@ The current image exposes:
 
 - `/` — a mobile-friendly lab index.
 - `/tactics/` — the isometric tactics lab.
+- `/composition/` — the composition studio, as a read-only viewer. The browser
+  build has no corpus to write back to, so saving and promotion are absent
+  rather than merely disabled.
 - `/healthz` — a container and reverse-proxy health probe.
 
 ## Delivery model
@@ -51,7 +54,12 @@ and performs the first health-checked deployment.
 
 If nginx runs directly on the host, include
 `nginx-location.conf.example` in the desired virtual host and reload nginx. The
-public path will be `/labs/tactics/`.
+public paths will be `/labs/tactics/` and `/labs/composition/`.
+
+Keep the `proxy_redirect` line from that example. The container is mounted under
+`/labs` but is not aware of it, so its trailing-slash redirects come back
+root-relative and would otherwise send a browser that asked for
+`/labs/composition` to `/composition/` on the public host.
 
 For Nginx Proxy Manager, create a Proxy Host with scheme `http`, forward host
 `192.168.1.136`, and forward port `8086`. The lab remains `/tactics/` on that

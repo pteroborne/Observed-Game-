@@ -1,5 +1,6 @@
 # Native nginx/openresty example. This strips /labs before forwarding, so the
-# tactics build is available at https://your-host.example/labs/tactics/.
+# builds are available at https://your-host.example/labs/tactics/ and
+# https://your-host.example/labs/composition/.
 location = /labs {
     return 308 /labs/;
 }
@@ -12,4 +13,13 @@ location /labs/ {
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_read_timeout 120s;
+
+    # The container is mounted at /labs but does not know it. A bare
+    # /labs/composition reaches it as /composition, and its trailing-slash
+    # redirect answers with a root-relative `Location: /composition/` that has
+    # lost the prefix - sending the browser to /composition/ on this host, which
+    # does not exist. `proxy_redirect default` cannot help: it only rewrites
+    # absolute URLs matching proxy_pass, not root-relative ones. Put the prefix
+    # back on every redirect the container issues.
+    proxy_redirect ~^/(.*)$ /labs/$1;
 }
