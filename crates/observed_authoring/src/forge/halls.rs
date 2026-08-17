@@ -8,8 +8,8 @@ use super::entities::{
     Meta, PORT_SHORT, ceiling_fixture, lateral_port, tile_cell_default, worldspawn,
 };
 use super::geometry::{
-    FACE_NAMES, FLOOR_TOP, LEVEL, P2, WALL, band, door_wall_default, face_mid, hex_slab, prism,
-    pylon, wall,
+    DOOR_HALF_WIDTH, FACE_NAMES, FLOOR_TOP, LEVEL, P2, WALL, band, centroid, edge, face_mid,
+    hex_slab, prism, pylon,
 };
 use super::{Builder, GENERATED_NOTE};
 
@@ -23,8 +23,70 @@ fn square(center: P2, half: f64) -> Vec<P2> {
     ]
 }
 
-/// Floor and ceiling slabs, then a wall per face: a doorway where `door_faces`
-/// says so, otherwise a sealed wall with a trim band.
+/// Unit vector from the cell centre toward a face's midpoint.
+#[must_use]
+fn axis(face: usize) -> P2 {
+    let mid = face_mid(face);
+    let length = mid.0.hypot(mid.1);
+    (mid.0 / length, mid.1 / length)
+}
+
+/// The left-hand normal of `u`, which is the direction a channel is measured in.
+#[must_use]
+const fn left_normal(u: P2) -> P2 {
+    (-u.1, u.0)
+}
+
+/// The triangle from the cell centre out to one face.
+#[must_use]
+fn sector(face: usize) -> Vec<P2> {
+    let (a, b) = edge(face);
+    vec![(0.0, 0.0), a, b]
+}
+
+/// Clip a convex polygon to the half-plane `n . p <= d` (Sutherland-Hodgman).
+#[must_use]
+fn clip(poly: &[P2], n: P2, d: f64) -> Vec<P2> {
+    let inside = |p: &P2| n.0 * p.0 + n.1 * p.1 <= d + 1e-9;
+    let mut out: Vec<P2> = Vec::new();
+    for index in 0..poly.len() {
+        let current = poly[index];
+        let next = poly[(index + 1) % poly.len()];
+        let (cin, nin) = (inside(&current), inside(&next));
+        if cin {
+            out.push(current);
+        }
+        if cin != nin {
+            let cd = n.0 * current.0 + n.1 * current.1 - d;
+            let nd = n.0 * next.0 + n.1 * next.1 - d;
+            let t = cd / (cd - nd);
+            out.push((
+                current.0 + (next.0 - current.0) * t,
+                current.1 + (next.1 - current.1) * t,
+            ));
+        }
+    }
+    out
+}
+
+/// Floor and ceiling slabs, then solid flanks either side of the walk channel.
+///
+/// A hall used to be a hex-wide chamber whose connected faces carried a wall
+/// with a doorway punched through it. Both halves of that read wrongly. The
+/// width was the cell's own, so length could never exceed width and a run of
+/// cells was a string of chambers; and because a doorway also marks where a
+/// *room* begins, crossing into one looked exactly like carrying on.
+///
+/// The channel is now axial rather than radial: an arm of the canonical door
+/// width runs from the centre to each door face, and everything else in the
+/// cell is filled solid. The passage is therefore the same width at a seam as
+/// in the middle of a cell, and a run of them is one continuous corridor.
+///
+/// Nothing is emitted across a door face at all. A hall meeting a hall wants no
+/// wall between them, and a hall meeting a room already has one: `room_shell`
+/// emits `door_wall_default` at its own named ports, so the threshold belongs
+/// to the room and is the only doorway on that seam. That is what makes the
+/// boundary legible without the tile needing to know what it abuts.
 #[must_use]
 fn hall_shell(door_faces: &[usize]) -> String {
     let h = LEVEL;
@@ -32,13 +94,40 @@ fn hall_shell(door_faces: &[usize]) -> String {
     brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 3.0, 0.0));
     brushes.push_str(&hex_slab(h - FLOOR_TOP, h, 0.0, 3.0));
     for (face, name) in FACE_NAMES.iter().enumerate() {
+        let piece = sector(face);
         if door_faces.contains(&face) {
-            brushes.push_str(&format!("// Door wall: {name}\n"));
-            brushes.push_str(&door_wall_default(face, 0.0, h));
+            // The arm runs down this sector; fill what it leaves either side.
+            let n = left_normal(axis(face));
+            brushes.push_str(&format!("// Channel flanks: {name}\n"));
+            for side in [1.0, -1.0] {
+                let normal = (n.0 * side, n.1 * side);
+                let flank = clip(&piece, (-normal.0, -normal.1), -DOOR_HALF_WIDTH);
+                if flank.len() >= 3 {
+                    brushes.push_str(&prism(&flank, 0.0, h, None, 0.0, 0.0));
+                }
+            }
         } else {
-            brushes.push_str(&format!("// Sealed wall + trim: {name}\n"));
-            brushes.push_str(&wall(face, 0.0, h));
-            brushes.push_str(&band(face, WALL, WALL + 8.0, FLOOR_TOP, FLOOR_TOP + 12.0));
+            // Solid to the face, cut back by any arm that reaches into it.
+            brushes.push_str(&format!("// Solid flank: {name}\n"));
+            let centre = centroid(&piece);
+            let mut solid = piece;
+            for &door in door_faces {
+                let n = left_normal(axis(door));
+                let side = if n.0 * centre.0 + n.1 * centre.1 >= 0.0 {
+                    1.0
+                } else {
+                    -1.0
+                };
+                let normal = (n.0 * side, n.1 * side);
+                solid = clip(&solid, (-normal.0, -normal.1), -DOOR_HALF_WIDTH);
+                if solid.len() < 3 {
+                    break;
+                }
+            }
+            if solid.len() >= 3 {
+                brushes.push_str(&prism(&solid, 0.0, h, None, 0.0, 0.0));
+                brushes.push_str(&band(face, WALL, WALL + 8.0, FLOOR_TOP, FLOOR_TOP + 12.0));
+            }
         }
     }
     brushes

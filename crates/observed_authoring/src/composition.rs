@@ -468,14 +468,18 @@ mod tests {
     /// one on this catalog will not play together, by design.
     #[test]
     fn committed_arc_s_catalog_identity_is_pinned() {
+        // Moved when the hall family changed shape: the walk channel became
+        // axial, and the wall that used to carry a doorway across every seam
+        // was removed so a run of halls is one corridor rather than a string of
+        // chambers. Eight hall modules, no others.
         const CATALOG_HASH: &str =
-            "803639ea23959701f28884eb022575b684f28343679a4e2f04ad5741cb5eeae0";
+            "6ea4bfb1ce19003894c106d7ec04323a5a71ed693aee7c361d625547b2944145";
         const PROFILE_HASH: &str =
             "99e682b1f1348f9a7f8d2d10024a2d08b11dec0a917f51e41eb7801b5db84c2f";
         // Folds the catalog and the profile, so the ramp spine moves it too.
         // The profile side is unchanged; this is the catalog change arriving.
         const SIMULATION_HASH: &str =
-            "5f89f4966192b2632f15a59ddcc2075929685b7bafef11d48d30278dc53834e0";
+            "1e9e8a90f1fbd539aa4cde6d6c66e3c4f2673151bcd30f12989d21a664e3082a";
 
         let root = committed_tiles();
         let compiled_text =
