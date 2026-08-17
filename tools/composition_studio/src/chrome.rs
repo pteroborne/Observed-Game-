@@ -8,7 +8,7 @@ use observed_style::{SchematicRole, schematic, schematic_screen};
 
 use crate::chrome_layout::{
     ChromeActionBar, ChromePanelToggle, ChromePanelToggleLabel, ChromeShellRoot,
-    ChromeViewportColumn,
+    ChromeViewportColumn, CompactOnly, WideOnly,
 };
 use crate::panels::score::format_score_breakdown;
 use crate::panels::tuning::format_tuning_panel;
@@ -225,6 +225,8 @@ pub fn setup_chrome(mut commands: Commands, assets: &AssetServer) {
                     ChromeViewportColumn,
                 ))
                 .with_children(|column| {
+                    crate::touch_bar::spawn_touch_bar(column, mat_bg);
+
                     column
                         .spawn((
                             Node {
@@ -243,6 +245,7 @@ pub fn setup_chrome(mut commands: Commands, assets: &AssetServer) {
                             BackgroundColor(mat_bg),
                             BorderColor::all(schematic(SchematicRole::Selected).base_color),
                             ChromePanelToggle,
+                            CompactOnly,
                         ))
                         .observe(
                             |_: On<Pointer<Click>>,
@@ -275,6 +278,7 @@ pub fn setup_chrome(mut commands: Commands, assets: &AssetServer) {
                             },
                             BackgroundColor(mat_bg),
                             ChromeActionBar,
+                            WideOnly,
                         ))
                         .with_children(|bar| {
                             bar.spawn((

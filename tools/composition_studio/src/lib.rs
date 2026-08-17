@@ -41,6 +41,7 @@ pub mod state;
 pub mod tabs;
 pub mod theme;
 pub mod timeline;
+pub mod touch_bar;
 pub mod tunables;
 pub mod typography;
 pub mod viewport;

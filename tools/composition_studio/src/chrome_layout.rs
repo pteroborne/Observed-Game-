@@ -8,6 +8,19 @@ use bevy::prelude::*;
 
 use crate::chrome::ChromeMenuRoot;
 
+/// Shown only where the panel docks to the foot - that is, on a handset.
+///
+/// A marker rather than a query per control: the desktop reaches all of this
+/// from the keyboard and its showcase captures are an evidence contract, so
+/// "appears only on touch" is a property several nodes share and will keep
+/// sharing.
+#[derive(Component)]
+pub struct CompactOnly;
+
+/// Shown only where there is a keyboard to describe.
+#[derive(Component)]
+pub struct WideOnly;
+
 /// The full-window container the panel and the facility share.
 ///
 /// Marked so the layout can turn its axis: the panel sits beside the facility
@@ -54,23 +67,23 @@ pub fn sync_chrome_layout(
             Without<ChromeMenuRoot>,
         ),
     >,
-    mut action_query: Query<
+    mut compact_only: Query<
         &mut Node,
         (
-            With<ChromeActionBar>,
+            With<CompactOnly>,
             Without<ChromeShellRoot>,
             Without<ChromeMenuRoot>,
             Without<ChromeViewportColumn>,
         ),
     >,
-    mut toggle_query: Query<
+    mut wide_only: Query<
         &mut Node,
         (
-            With<ChromePanelToggle>,
+            With<WideOnly>,
             Without<ChromeShellRoot>,
             Without<ChromeMenuRoot>,
             Without<ChromeViewportColumn>,
-            Without<ChromeActionBar>,
+            Without<CompactOnly>,
         ),
     >,
     mut toggle_label: Query<&mut Text, With<ChromePanelToggleLabel>>,
@@ -107,24 +120,22 @@ pub fn sync_chrome_layout(
             Val::Percent(100.0)
         };
     }
-    if let Ok(mut action) = action_query.single_mut() {
-        // The action bar is a keyboard cheat sheet - "[Up/Dn] select a control",
-        // "F2 collapse the panel". On a touch screen it is advice that cannot
-        // be taken, printed over the facility it is describing.
-        action.display = if compact {
-            Display::None
-        } else {
+    // The action bar is a keyboard cheat sheet - "[Up/Dn] select a control",
+    // "F2 collapse the panel" - and on a touch screen it is advice that cannot
+    // be taken, printed over the facility it describes. The touch controls are
+    // the mirror image: the desktop reaches all of them from the keyboard.
+    for mut node in &mut compact_only {
+        node.display = if compact {
             Display::Flex
+        } else {
+            Display::None
         };
     }
-    if let Ok(mut toggle) = toggle_query.single_mut() {
-        // Desktop already has F2 and an action bar that says so, and the
-        // showcase captures are an evidence contract - so this appears only
-        // where the keyboard does not.
-        toggle.display = if compact {
-            Display::Flex
-        } else {
+    for mut node in &mut wide_only {
+        node.display = if compact {
             Display::None
+        } else {
+            Display::Flex
         };
     }
     if let Ok(mut label) = toggle_label.single_mut() {
