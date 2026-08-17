@@ -131,7 +131,49 @@ pub(crate) fn runtime_config_for(play_setup: &crate::play_setup::PlaySetupDraft)
     } else if !is_test_binary() && !relayout_capture && playtest.as_deref() != Some("relayout") {
         config.wfc = HexWfcConfig::arc_default();
     }
+    apply_facility_override(&mut config);
     config
+}
+
+/// `OBSERVED2_HEX_FACILITY=<cols>x<rows>x<levels>` resizes the facility.
+///
+/// A production facility is 28x20x10 with a handful of rooms scattered through
+/// it, which is the right thing to play and the wrong thing to inspect: a
+/// feature that appears once per room - a threshold, its doorway - can be
+/// working perfectly and still not appear in any capture, because nothing
+/// walked past one. A small single-storey facility puts every room within sight
+/// of the spawn.
+///
+/// Ignored unless well-formed, and clamped to what the solver can actually
+/// fill, so a typo resizes nothing rather than producing an unsolvable request.
+fn apply_facility_override(config: &mut HexMatchConfig) {
+    let Ok(raw) = std::env::var("OBSERVED2_HEX_FACILITY") else {
+        return;
+    };
+    let parts: Vec<&str> = raw.trim().split(['x', 'X']).collect();
+    let [cols, rows, levels] = parts.as_slice() else {
+        return;
+    };
+    let (Ok(cols), Ok(rows), Ok(levels)) = (
+        cols.trim().parse::<u16>(),
+        rows.trim().parse::<u16>(),
+        levels.trim().parse::<u8>(),
+    ) else {
+        return;
+    };
+    if cols < 4 || rows < 4 || levels == 0 {
+        return;
+    }
+    config.wfc.cols = cols;
+    config.wfc.rows = rows;
+    config.wfc.levels = levels;
+    // Room count has to follow the area or the solver spends its whole retry
+    // budget trying to fit the production spread into a tenth of the floor.
+    let cells = u32::from(cols) * u32::from(rows) * u32::from(levels);
+    let max_rooms = (cells / 24).clamp(2, 8) as usize;
+    config.wfc.max_rooms = max_rooms;
+    config.wfc.min_rooms = config.wfc.min_rooms.min(max_rooms).max(2);
+    config.wfc.min_room_distance = config.wfc.min_room_distance.min(2);
 }
 
 pub(super) fn setup_runtime(

@@ -36,11 +36,13 @@ use super::geometry::{HexStructurePiece, HexStructureRole, HexWfcGeometrySnapsho
 /// meters. Purely a placement hint for the later renderer pass.
 const RAILING_HEIGHT: f32 = 1.0;
 
-/// Where a lintel sits above its owning cell's floor, in meters.
+/// Where a threshold piece sits above its owning cell's floor, in meters.
 ///
-/// Head height rather than mid-wall: a lintel is the head of an opening, and
-/// the authored aperture's own soffit is at 4 m in tile units.
-const LINTEL_HEIGHT: f32 = 2.4;
+/// Zero: the piece marks the *opening*, and what stands in an opening stands on
+/// its floor. Naming the kind `Lintel` describes what it marks - the head of a
+/// doorway - not where its origin goes, and a frame placed at head height hangs
+/// in the ceiling above the gap it was meant to fill.
+const THRESHOLD_HEIGHT: f32 = 0.0;
 
 /// One kind of derived seam trim. Matches the design note's vocabulary;
 /// `Lintel` comes from [`derive_thresholds`] rather than [`derive_trim`].
@@ -256,7 +258,7 @@ pub fn derive_thresholds(world: &HexWfcWorld) -> Vec<HexTrimPiece> {
                 HexTrimKind::Lintel,
                 attachment.room_cell,
                 attachment.face,
-                LINTEL_HEIGHT,
+                THRESHOLD_HEIGHT,
             )
         })
         .collect()

@@ -18,6 +18,7 @@ mod shell;
 pub(in crate::hex_wfc) mod spectate;
 #[cfg(test)]
 mod spectate_tests;
+mod thresholds;
 
 use bevy::anti_alias::fxaa::Fxaa;
 use bevy::camera::Hdr;
@@ -192,7 +193,7 @@ pub(super) fn setup_view(
     let mut assets = HexWfcVisualAssets::load(&asset_server, &mut materials, &content.manifest);
     let catalog = shell::HexGeometryCatalog::build(&runtime);
     shell::spawn_boundary(&mut commands, &mut assets, &mut meshes, &runtime, &catalog);
-    shell::spawn_thresholds(&mut commands, &assets, &runtime);
+    thresholds::spawn_thresholds(&mut commands, &assets, &runtime);
     let capture_unbounded = capture_requests_deterministic_residency();
     let initial_budget = if capture_unbounded {
         usize::MAX
