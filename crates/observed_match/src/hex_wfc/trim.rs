@@ -7,26 +7,28 @@
 //! types. `derive_trim` is a plain function of its snapshot input, so the same
 //! snapshot always yields the same trim set.
 //!
-//! ## Known data gap: no lintel rule yet
+//! ## Lintels come from the world, not the snapshot
 //!
-//! The design note this module implements calls for a **lintel** at `Door`
-//! port-class faces. [`HexWfcGeometrySnapshot`] does not carry that
-//! information: [`HexStructurePiece`] records a `role`, a `source_cell`, and
-//! an optional [`observed_authoring::TileKey`], but never the per-face
-//! [`observed_hex::PortClass`] the solver assigned (that lives on
-//! `HexWfcWorld::placements[coord].ports()` / `TilePrototype::signature`,
-//! neither of which reach the projected snapshot). Guessing "this shared face
-//! is probably a Door" from role/tile adjacency alone would be fabricating a
-//! field this module does not actually have, so `HexTrimKind::Lintel` is
-//! defined (matching the design note's vocabulary) but never emitted here.
-//! Emitting it needs either an extended snapshot (out of scope: geometry.rs is
-//! owned by another stream) or a follow-up pass fed the solved `HexWfcWorld`
-//! directly.
+//! The design note calls for a **lintel** at `Door` port-class faces, and
+//! [`HexWfcGeometrySnapshot`] cannot answer that: [`HexStructurePiece`] records
+//! a `role`, a `source_cell`, and an optional [`observed_authoring::TileKey`],
+//! but never the per-face [`observed_hex::PortClass`] the solver assigned.
+//! Guessing "this shared face is probably a Door" from role adjacency alone
+//! would fabricate a field this module does not have, so [`derive_trim`] still
+//! never emits one.
+//!
+//! [`derive_thresholds`] is the follow-up pass those docs anticipated, fed the
+//! solved `HexWfcWorld` directly. It does not guess: it asks the world for its
+//! named threshold attachments, each of which *is* a room's authored port and
+//! the hall it opens onto. Snapshot-fed and world-fed derivations therefore
+//! stay separate, and neither invents information the other holds.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use glam::{Quat, Vec2, Vec3};
 use observed_hex::{HexCoord, HexFace, TILE_LEVEL_HEIGHT, face_edge, hex_origin};
+
+use observed_facility::hex_wfc::HexWfcWorld;
 
 use super::geometry::{HexStructurePiece, HexStructureRole, HexWfcGeometrySnapshot};
 
@@ -34,15 +36,22 @@ use super::geometry::{HexStructurePiece, HexStructureRole, HexWfcGeometrySnapsho
 /// meters. Purely a placement hint for the later renderer pass.
 const RAILING_HEIGHT: f32 = 1.0;
 
+/// Where a lintel sits above its owning cell's floor, in meters.
+///
+/// Head height rather than mid-wall: a lintel is the head of an opening, and
+/// the authored aperture's own soffit is at 4 m in tile units.
+const LINTEL_HEIGHT: f32 = 2.4;
+
 /// One kind of derived seam trim. Matches the design note's vocabulary;
-/// `Lintel` is reserved for a future pass (see module docs).
+/// `Lintel` comes from [`derive_thresholds`] rather than [`derive_trim`].
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HexTrimKind {
     /// A guard rail at an open ledge: a walkable cell's lateral face borders
     /// no occupied neighbor cell (solid <-> void edge).
     Railing,
-    /// A doorway header at a `Door` port-class face. Not yet derivable from
-    /// [`HexWfcGeometrySnapshot`]; see module docs.
+    /// A doorway header at a named threshold: where a room's authored port
+    /// opens onto a hall. Derived by [`derive_thresholds`] from the solved
+    /// world, not by [`derive_trim`] from the snapshot.
     Lintel,
     /// A structural seam marker where two adjacent occupied cells differ in
     /// role (e.g. room <-> hall) or in resolved tile register. "Register"
@@ -222,6 +231,37 @@ fn step(coord: HexCoord, face: HexFace) -> Option<HexCoord> {
 /// cell floor, facing outward along the face normal — the same
 /// origin+edge+yaw construction `geometry.rs::push_boundary_shell` uses for
 /// the arena shell.
+/// A lintel at every named threshold the facility currently has.
+///
+/// A threshold is the one place in this geometry where a room meets a hall, and
+/// it is the only doorway on that seam: halls no longer carry a wall across a
+/// connection, so the aperture belongs to the room's authored port. Marking it
+/// is therefore marking the boundary itself rather than decorating a shared
+/// face - crossing one is a real transition, and it should look like one.
+///
+/// Fed the solved world because that is where the answer lives.
+/// [`HexWfcWorld::threshold_attachments`] pairs a `RoomId` and an authored port
+/// name with the corridor it opens onto, and both ends are stable across a
+/// relayout, so a lintel does not move when the hall beyond it reroutes.
+///
+/// Pure and ordered: the attachments arrive sorted, so the same world always
+/// yields the same pieces in the same order.
+#[must_use]
+pub fn derive_thresholds(world: &HexWfcWorld) -> Vec<HexTrimPiece> {
+    world
+        .threshold_attachments()
+        .into_iter()
+        .map(|attachment| {
+            trim_piece(
+                HexTrimKind::Lintel,
+                attachment.room_cell,
+                attachment.face,
+                LINTEL_HEIGHT,
+            )
+        })
+        .collect()
+}
+
 fn trim_piece(kind: HexTrimKind, cell: HexCoord, face: HexFace, height: f32) -> HexTrimPiece {
     let origin = Vec3::from_array(hex_origin(cell));
     let [a, b] = face_edge(face);

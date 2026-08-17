@@ -327,3 +327,90 @@ fn scoped_trim_matches_the_owned_subset_of_the_full_derivation() {
     };
     assert!(derive_trim_for(&snapshot, &BTreeSet::from([absent])).is_empty());
 }
+
+/// Every lintel sits on a face the world actually calls a threshold, and there
+/// is exactly one per named attachment.
+///
+/// `derive_trim` still emits none: the snapshot cannot tell a `Door` face from
+/// any other shared face, and inventing one was the reason the rule waited.
+#[test]
+fn thresholds_put_a_lintel_on_every_named_room_port() {
+    let world = showcase();
+    let attachments = world.threshold_attachments();
+    let lintels = derive_thresholds(&world);
+
+    assert!(
+        !attachments.is_empty(),
+        "the showcase facility has rooms attached to halls"
+    );
+    assert_eq!(
+        lintels.len(),
+        attachments.len(),
+        "one lintel per named threshold, no more and no fewer"
+    );
+    assert!(
+        lintels
+            .iter()
+            .all(|piece| piece.kind == HexTrimKind::Lintel),
+        "this pass emits lintels only"
+    );
+
+    // Each lintel is on the room's own cell and the port's own face.
+    for (piece, attachment) in lintels.iter().zip(attachments.iter()) {
+        assert_eq!(piece.cell, attachment.room_cell);
+        assert_eq!(piece.face, attachment.face);
+    }
+
+    assert_eq!(lintels, derive_thresholds(&world), "pure over one world");
+
+    let prototypes = tiles();
+    let snapshot = HexWfcGeometrySnapshot::project(&world, &prototypes).expect("projection");
+    assert!(
+        !derive_trim(&snapshot)
+            .iter()
+            .any(|piece| piece.kind == HexTrimKind::Lintel),
+        "the snapshot-fed pass must not guess at doorways"
+    );
+}
+
+/// A lintel marks the boundary, so it must not move when the hall on the far
+/// side reroutes. This is the geometric payoff of threshold-derived corridor
+/// identity: both ends of an attachment are stable, so the doorway is too.
+#[test]
+fn a_lintel_stays_put_when_the_hall_beyond_it_reroutes() {
+    use observed_core::PlayerId;
+    use observed_facility::hex_wfc::HexObservationFrame;
+
+    let mut moved = 0;
+    for seed in 0xD00D_0100..0xD00D_0140u64 {
+        let world = HexWfcWorld::generate(seed, showcase_config(4)).expect("world");
+        let mut frame = HexObservationFrame::default();
+        frame
+            .occupied_cells
+            .insert(PlayerId(0), world.config.spawn());
+        frame.objective_cells.insert(world.config.spawn());
+
+        let before = derive_thresholds(&world);
+        let Ok(proposal) = world.propose_relayout(&frame) else {
+            continue;
+        };
+        let mut committed = world.clone();
+        if committed.commit_relayout(proposal, &frame).is_err() {
+            continue;
+        }
+
+        // A room that survived keeps its ports, so any lintel whose room cell is
+        // still a threshold must be in exactly the same place.
+        let after = derive_thresholds(&committed);
+        for piece in &before {
+            if let Some(same) = after
+                .iter()
+                .find(|other| other.cell == piece.cell && other.face == piece.face)
+                && (same.position != piece.position || same.rotation != piece.rotation)
+            {
+                moved += 1;
+            }
+        }
+    }
+    assert_eq!(moved, 0, "{moved} lintels shifted under a relayout");
+}
