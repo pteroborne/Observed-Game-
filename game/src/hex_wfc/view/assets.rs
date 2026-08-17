@@ -16,8 +16,8 @@ use observed_match::hex_wfc::{HexStructurePiece, HexStructureRole, HexTrimKind};
 use observed_style::{self as style, ArchitectureSurfaceRole, SurfaceRole};
 use observed_traversal::{ColliderShape, ConvexRenderMesh};
 
-use crate::view::assets::palette_tinted_neon_material;
-use crate::view::environment::{cuboid_mesh, load_repeating_texture};
+use crate::view::assets::{ContentScene, palette_tinted_neon_material};
+use crate::view::environment::{cuboid_mesh, load_content_scene, load_repeating_texture};
 
 #[derive(Clone)]
 pub(in crate::hex_wfc) struct RegisterMaterials {
@@ -65,12 +65,17 @@ pub(in crate::hex_wfc) struct HexWfcVisualAssets {
     registers: Vec<RegisterMaterials>,
     hull_cache: HashMap<(String, usize), Handle<Mesh>>,
     cuboid_cache: HashMap<[u32; 3], Handle<Mesh>>,
+    /// The doorway model stood in a named threshold. `None` when the asset is
+    /// absent, which is a missing frame rather than a missing facility - the
+    /// aperture is authored into the room's own geometry either way.
+    pub(in crate::hex_wfc) threshold_gate: Option<ContentScene>,
 }
 
 impl HexWfcVisualAssets {
     pub(in crate::hex_wfc) fn load(
         asset_server: &AssetServer,
         materials: &mut Assets<StandardMaterial>,
+        content: &observed_content::ContentManifest,
     ) -> Self {
         let wall_texture = load_repeating_texture(asset_server, observed_assets::WALL.path);
         let floor_texture = load_repeating_texture(asset_server, observed_assets::FLOOR.path);
@@ -129,6 +134,7 @@ impl HexWfcVisualAssets {
             registers,
             hull_cache: HashMap::new(),
             cuboid_cache: HashMap::new(),
+            threshold_gate: load_content_scene(asset_server, content, "kenney_gate"),
         }
     }
 

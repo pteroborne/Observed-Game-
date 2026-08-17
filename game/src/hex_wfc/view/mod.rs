@@ -117,6 +117,7 @@ pub(super) fn setup_view(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     runtime: Res<HexWfcRuntime>,
+    content: Res<crate::content::GameContent>,
     settings: Res<Settings>,
     mut camera: Query<(Entity, &mut Transform), With<GameCam>>,
     mut projection: Query<&mut Projection, With<GameCam>>,
@@ -188,9 +189,10 @@ pub(super) fn setup_view(
     // and both semantic lights have their exact initial values. Entry projects only a
     // safe local neighborhood; the production-sized logical snapshot remains resident
     // in simulation without synchronously creating its ~100k presentation pieces.
-    let mut assets = HexWfcVisualAssets::load(&asset_server, &mut materials);
+    let mut assets = HexWfcVisualAssets::load(&asset_server, &mut materials, &content.manifest);
     let catalog = shell::HexGeometryCatalog::build(&runtime);
     shell::spawn_boundary(&mut commands, &mut assets, &mut meshes, &runtime, &catalog);
+    shell::spawn_thresholds(&mut commands, &assets, &runtime);
     let capture_unbounded = capture_requests_deterministic_residency();
     let initial_budget = if capture_unbounded {
         usize::MAX

@@ -26,7 +26,7 @@ pub use model::{
     HexWfcMatch, KEYSTONES_REQUIRED, MAX_ROSTER, PAD_CONTACT_RADIUS, PAD_REARM_TICKS,
     PADS_PER_PLAYER,
 };
-pub use trim::{HexTrimKind, HexTrimPiece, derive_trim, derive_trim_for};
+pub use trim::{HexTrimKind, HexTrimPiece, derive_thresholds, derive_trim, derive_trim_for};
 
 /// Test corpus that preserves the legacy hall fixtures while supplying the
 /// authored towers that atomically replaced their generated counterparts.
