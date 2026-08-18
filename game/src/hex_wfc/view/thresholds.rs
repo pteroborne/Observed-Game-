@@ -65,16 +65,27 @@ pub(in crate::hex_wfc::view) fn spawn_thresholds(
         fitted.min((observed_hex::TILE_LEVEL_HEIGHT - 0.1) / GATE_NATIVE_HEIGHT),
         fitted.min(GATE_MAX_DEPTH / GATE_NATIVE_DEPTH),
     );
-    // A jamb per side, always. The model is dressing on top of it: glTF scene
-    // spawning is mid-port to Bevy 0.19's BSN rewrite (see the parked
-    // `asset_lab` / `content_manifest_lab` in Cargo.toml), and a threshold that
-    // marks itself only when an asset pipeline cooperates is a threshold that
-    // silently stops being marked. `screens::place` carries the same fallback
-    // for the same reason.
+    // The model where there is one, a pair of jambs where there is not.
+    // `screens::place` keeps the same fallback, and for the same reason: a
+    // threshold that marks itself only while an asset happens to ship is one
+    // that silently stops being marked, and being marked is the point.
     let post = assets.trim_mesh(meshes, HexTrimKind::Buttress);
     let material = assets.trim_material(ArchitectureRegister::ALL[0]);
     for piece in derive_thresholds(&runtime.match_state.facility) {
         let rotation = Quat::from_array(piece.rotation);
+        let name = format!("Hex threshold {:?} {:?}", piece.cell, piece.face);
+        if let Some(gate) = &gate {
+            commands.spawn((
+                WorldAssetRoot(gate.scene.clone()),
+                Transform::from_translation(piece.position)
+                    .with_rotation(rotation)
+                    .with_scale(scale),
+                Name::new(format!("{name} gate")),
+                HexWfcGeometry,
+                DespawnOnExit(crate::GameState::HexWfc),
+            ));
+            continue;
+        }
         for side in [-1.0_f32, 1.0] {
             let offset = rotation * Vec3::new(side * THRESHOLD_APERTURE * 0.5, 0.0, 0.0);
             commands.spawn((
@@ -84,24 +95,7 @@ pub(in crate::hex_wfc::view) fn spawn_thresholds(
                     piece.position + offset + Vec3::Y * observed_hex::TILE_LEVEL_HEIGHT * 0.45,
                 )
                 .with_rotation(rotation),
-                Name::new(format!(
-                    "Hex threshold jamb {:?} {:?}",
-                    piece.cell, piece.face
-                )),
-                HexWfcGeometry,
-                DespawnOnExit(crate::GameState::HexWfc),
-            ));
-        }
-        if let Some(gate) = &gate {
-            commands.spawn((
-                WorldAssetRoot(gate.scene.clone()),
-                Transform::from_translation(piece.position)
-                    .with_rotation(rotation)
-                    .with_scale(scale),
-                Name::new(format!(
-                    "Hex threshold gate {:?} {:?}",
-                    piece.cell, piece.face
-                )),
+                Name::new(format!("{name} jamb")),
                 HexWfcGeometry,
                 DespawnOnExit(crate::GameState::HexWfc),
             ));

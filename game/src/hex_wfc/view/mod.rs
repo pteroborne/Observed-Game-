@@ -18,7 +18,7 @@ mod shell;
 pub(in crate::hex_wfc) mod spectate;
 #[cfg(test)]
 mod spectate_tests;
-mod thresholds;
+pub(in crate::hex_wfc) mod thresholds;
 
 use bevy::anti_alias::fxaa::Fxaa;
 use bevy::camera::Hdr;
