@@ -193,7 +193,7 @@ pub(super) fn setup_view(
     let mut assets = HexWfcVisualAssets::load(&asset_server, &mut materials, &content.manifest);
     let catalog = shell::HexGeometryCatalog::build(&runtime);
     shell::spawn_boundary(&mut commands, &mut assets, &mut meshes, &runtime, &catalog);
-    thresholds::spawn_thresholds(&mut commands, &assets, &runtime);
+    thresholds::spawn_thresholds(&mut commands, &mut assets, &mut meshes, &runtime);
     let capture_unbounded = capture_requests_deterministic_residency();
     let initial_budget = if capture_unbounded {
         usize::MAX

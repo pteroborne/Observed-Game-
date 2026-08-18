@@ -9,6 +9,9 @@ use bevy::world_serialization::WorldAssetRoot;
 use observed_match::hex_wfc::derive_thresholds;
 
 use super::HexWfcGeometry;
+use observed_content::ArchitectureRegister;
+use observed_match::hex_wfc::HexTrimKind;
+
 use super::assets::HexWfcVisualAssets;
 use crate::hex_wfc::sim::HexWfcRuntime;
 
@@ -44,35 +47,64 @@ const GATE_MAX_DEPTH: f32 = 0.5;
 /// transition in advance.
 pub(in crate::hex_wfc::view) fn spawn_thresholds(
     commands: &mut Commands,
-    assets: &HexWfcVisualAssets,
+    assets: &mut HexWfcVisualAssets,
+    meshes: &mut Assets<Mesh>,
     runtime: &HexWfcRuntime,
 ) {
-    let Some(gate) = assets.threshold_gate.clone() else {
-        return;
-    };
+    let gate = assets.threshold_gate.clone();
     // Fit the model to the aperture it stands in rather than trusting the
     // asset's authored scale: the hex doorway is the forge's canonical opening,
     // and a frame that does not match it reads as a prop rather than the
     // building.
     // Per axis, and clamped: the aperture sets the width, the storey caps the
     // height, and depth is held to a jamb's thickness.
-    let fitted = gate.scale * THRESHOLD_APERTURE / GATE_NATIVE_WIDTH;
+    let fitted =
+        gate.as_ref().map_or(1.0, |gate| gate.scale) * THRESHOLD_APERTURE / GATE_NATIVE_WIDTH;
     let scale = Vec3::new(
         fitted.min(THRESHOLD_APERTURE / GATE_NATIVE_WIDTH),
         fitted.min((observed_hex::TILE_LEVEL_HEIGHT - 0.1) / GATE_NATIVE_HEIGHT),
         fitted.min(GATE_MAX_DEPTH / GATE_NATIVE_DEPTH),
     );
+    // A jamb per side, always. The model is dressing on top of it: glTF scene
+    // spawning is mid-port to Bevy 0.19's BSN rewrite (see the parked
+    // `asset_lab` / `content_manifest_lab` in Cargo.toml), and a threshold that
+    // marks itself only when an asset pipeline cooperates is a threshold that
+    // silently stops being marked. `screens::place` carries the same fallback
+    // for the same reason.
+    let post = assets.trim_mesh(meshes, HexTrimKind::Buttress);
+    let material = assets.trim_material(ArchitectureRegister::ALL[0]);
     for piece in derive_thresholds(&runtime.match_state.facility) {
-        commands.spawn((
-            WorldAssetRoot(gate.scene.clone()),
-            Transform::from_translation(piece.position)
-                .with_rotation(Quat::from_array(piece.rotation))
-                .with_scale(scale),
-            Name::new(format!(
-                "Hex threshold gate {:?} {:?}",
-                piece.cell, piece.face
-            )),
-            HexWfcGeometry,
-        ));
+        let rotation = Quat::from_array(piece.rotation);
+        for side in [-1.0_f32, 1.0] {
+            let offset = rotation * Vec3::new(side * THRESHOLD_APERTURE * 0.5, 0.0, 0.0);
+            commands.spawn((
+                Mesh3d(post.clone()),
+                MeshMaterial3d(material.clone()),
+                Transform::from_translation(
+                    piece.position + offset + Vec3::Y * observed_hex::TILE_LEVEL_HEIGHT * 0.45,
+                )
+                .with_rotation(rotation),
+                Name::new(format!(
+                    "Hex threshold jamb {:?} {:?}",
+                    piece.cell, piece.face
+                )),
+                HexWfcGeometry,
+                DespawnOnExit(crate::GameState::HexWfc),
+            ));
+        }
+        if let Some(gate) = &gate {
+            commands.spawn((
+                WorldAssetRoot(gate.scene.clone()),
+                Transform::from_translation(piece.position)
+                    .with_rotation(rotation)
+                    .with_scale(scale),
+                Name::new(format!(
+                    "Hex threshold gate {:?} {:?}",
+                    piece.cell, piece.face
+                )),
+                HexWfcGeometry,
+                DespawnOnExit(crate::GameState::HexWfc),
+            ));
+        }
     }
 }
