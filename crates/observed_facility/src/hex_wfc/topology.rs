@@ -73,14 +73,20 @@ pub(super) fn is_connection_open(
     }
     // A vertical link between two room cells is a port the facility cannot
     // actually deliver. Nothing climbs it: the bot's stair handling is gated on
-    // `HexArchetype::Shaft` and its waypoints are tuned to the switchback
-    // tower's own geometry, and a room cell is projected through
-    // `blueprint_cell_archetype`, which returns `sanctuary` for every role and
-    // every cell (bug backlog #15) — so there are no treads inside it either.
+    // `HexArchetype::Shaft`, and its waypoints are tuned to the switchback
+    // tower's own geometry, so there are no treads inside a room to follow.
     //
     // Routing through one promises a climb that cannot happen, which strands
-    // whoever follows the route. Until rooms have real geometry, this is not a
-    // connection.
+    // whoever follows the route.
+    //
+    // This rule also used to cite bug backlog #15 - rooms projecting
+    // `sanctuary` for every cell, and so having no real interior at all. That
+    // is fixed: `blueprint_cell_archetype` now answers per role and per cell,
+    // and the wing geometry exists. Only the bot half of the argument still
+    // holds, which leaves one case genuinely stranded: `RoomRole::
+    // GuardianControl` is "the one room that stacks: a two-storey atrium open
+    // through its floor", and this refuses the vertical seam it is built
+    // around. Lifting it needs the climb to be traversable, not just present.
     !(a.space == HexSpace::Room && b.space == HexSpace::Room)
 }
 
