@@ -42,6 +42,18 @@ use super::{HexArchetype, HexSpace, PortClass};
 
 /// Bumped whenever a stored profile's meaning changes. A profile carrying any
 /// other version is rejected outright rather than reinterpreted.
+///
+/// **Also bump it whenever the solver's output changes for a fixed seed.** The
+/// LAN handshake gates on `fold_simulation_content_hash`, which folds the
+/// compiled catalog digest and the profile digest and nothing else - no part of
+/// `hex_wfc` reaches it directly. So two peers running different solver builds
+/// pass the handshake and then generate different facilities, which is a desync
+/// with no diagnostic attached to it.
+///
+/// This constant is written into the stored profile, so moving it moves the
+/// profile digest, moves the folded hash, and makes the handshake refuse a
+/// mismatched peer instead. It is the only channel by which a solver change can
+/// reach that hash; nothing else will notice.
 pub const COMPOSITION_PROFILE_VERSION: u16 = 1;
 
 /// The widest a score component's weight may be set. Unlike the lottery

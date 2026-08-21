@@ -199,6 +199,14 @@ pub fn write_profile_build(build: &CompositionBuild, base: &Path) -> Result<(), 
 /// Domain-separated and length-delimited by the newlines: because both inputs
 /// are fixed-width 64-character hex digests, no reshuffling of bytes between
 /// them can produce the same preimage.
+///
+/// Note what is *not* here: the solver. This folds authored content only, so a
+/// change to `hex_wfc` that makes a seed generate a different facility does not
+/// move this hash, and two peers on different solver builds will shake hands
+/// and then disagree about the map. The solver reaches this value through one
+/// channel only - `COMPOSITION_PROFILE_VERSION`, which is stored in the profile
+/// and therefore folded in as part of `profile_hex`. Bumping it on a solver
+/// change is what turns that silent disagreement into a refused handshake.
 #[must_use]
 pub fn fold_simulation_content_hash(catalog_hex: &str, profile_hex: &str) -> [u8; 32] {
     let mut hasher = Sha256::new();
