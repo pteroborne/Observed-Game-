@@ -1021,3 +1021,114 @@ fn survey_whether_void_bias_separates_hall_networks() {
          rooms_on_biggest near the room count means the graph is still a clique."
     );
 }
+
+/// Can a pinned wall of Void split the facility into separate hall networks?
+///
+/// The sweep next door shows composition cannot do it: the profile can only
+/// bend weights, and `profile.rs`'s first invariant guarantees it can never
+/// remove a variant, so it can make connective fabric rarer and never absent.
+/// The same module names the alternative — "a genuine prohibition is a pin" —
+/// so this asks whether the sanctioned structural mechanism can express what
+/// the tuning one cannot.
+///
+/// The wall is a column of `Space(Void)` pins across the middle of the lattice,
+/// with a deliberate gap so spawn and exit are not severed. If separation is
+/// achievable at all, this is the cheapest possible demonstration of it, and it
+/// needs no change to the solver: pins already filter initial domains.
+///
+/// Three things are worth reading off the result. Whether it still solves at
+/// all, because `hall_components_valid` requires every hall component to touch
+/// two rooms and a bisected facility may simply be rejected. Whether the
+/// component count actually rises. And whether the rooms end up distributed
+/// across the components or all still hang off one, which is the question that
+/// matters — a second component holding two cells and no rooms is not
+/// structure.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore = "structural pin experiment"]
+fn survey_whether_a_pinned_void_wall_splits_the_facility() {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let config = HexWfcConfig::arc_default();
+    let quotas = HexRoomQuotas::for_team_count(2);
+
+    // A wall down the middle, with a gap left open at the top few rows so the
+    // two halves still have a legal route between them. A full bisection would
+    // sever spawn from exit and fail for a reason that says nothing about
+    // whether separation is expressible.
+    for &gap_rows in &[0usize, 3, 6] {
+        let wall_q = config.cols / 2;
+        let mut pins = Vec::new();
+        for r in 0..config.rows {
+            if usize::from(r) < gap_rows {
+                continue;
+            }
+            for level in 0..config.levels {
+                pins.push(HexPin {
+                    q: wall_q,
+                    r,
+                    level,
+                    intent: PinIntent::Space(HexSpace::Void),
+                });
+            }
+        }
+        let wall_cells = pins.len();
+
+        let mut profile = HexCompositionProfile::baseline();
+        profile.pin_sets = vec![PinSet {
+            id: "void_wall_experiment".to_string(),
+            note: "Bisect the lattice and see whether hall networks separate.".to_string(),
+            cols: config.cols,
+            rows: config.rows,
+            levels: config.levels,
+            pins,
+        }];
+        assert!(profile.validate().is_ok(), "the pin set must be legal");
+
+        let seed = 0xA11C_E3D0_0000_0000u64;
+        match HexWfcWorld::generate_with_profile(seed, config, Some(quotas), &profile) {
+            Err(error) => {
+                println!("gap_rows={gap_rows:>2}  wall={wall_cells:>4}  UNSOLVED: {error:?}");
+            }
+            Ok(world) => {
+                let corridors = world.corridors();
+                let mut rooms_per_corridor: BTreeMap<
+                    observed_core::CorridorId,
+                    BTreeSet<observed_core::RoomId>,
+                > = BTreeMap::new();
+                for attachment in world.threshold_attachments() {
+                    rooms_per_corridor
+                        .entry(attachment.corridor)
+                        .or_default()
+                        .insert(attachment.room);
+                }
+                let mut sizes: Vec<_> = rooms_per_corridor
+                    .values()
+                    .map(BTreeSet::len)
+                    .collect::<Vec<_>>();
+                sizes.sort_unstable_by(|a, b| b.cmp(a));
+                sizes.truncate(5);
+                println!(
+                    "gap_rows={gap_rows:>2}  wall={wall_cells:>4}  attempts={:>2}  \
+                     halls={:>3}  rooms={:>3}  rooms_per_network={sizes:?}",
+                    world.last_attempts,
+                    corridors.len(),
+                    world.blueprints.len(),
+                );
+            }
+        }
+    }
+    println!(
+        "\nrooms_per_network is the top five hall networks by room count. Several \
+         entries of comparable size is the outcome that would mean structure;\n\
+         one large entry and a tail of small ones means the wall made pockets, not regions."
+    );
+    println!(
+        "Observed: every wall exhausts the retry budget on \"pinned cell contradicts \
+         blueprint, forced route, or an authored pin\".\nThat is the pipeline order, \
+         not the wall. `stamp_blueprints_with_pins` takes no pins - its name means \
+         locked blueprints -\nand `forced_route_edges` runs before `resolved_pins` \
+         too, so both place geometry that the pins then contradict."
+    );
+}
