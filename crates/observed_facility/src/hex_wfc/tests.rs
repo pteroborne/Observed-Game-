@@ -1222,3 +1222,234 @@ fn survey_how_permeable_the_regions_are() {
          places is a seam, not a threshold."
     );
 }
+
+/// The six seeds the region and room-graph measurements were taken on.
+///
+/// The same formula as the surveys above, truncated to the first six. Sharing
+/// the seeds is the point: the bands below are read off numbers those surveys
+/// printed, so drift here is comparable to drift there.
+fn baseline_seeds() -> impl Iterator<Item = u64> {
+    (0..6u64).map(|index| 0xA11C_E3D0_0000_0000 ^ (index.wrapping_mul(0x9E37_79B9_7F4A_7C15)))
+}
+
+/// One seed's worth of the numbers this area is judged on.
+///
+/// Two different degrees live here and they are easy to confuse, so they are
+/// named apart. `port_ends` is what the *blueprints declare* - a ceiling no
+/// solver change can raise. `derived_peers` is what the *solved lattice
+/// delivers* - who actually ends up connected to whom.
+struct FacilityBaseline {
+    attempts: u32,
+    elapsed: std::time::Duration,
+    phantom: usize,
+    rooms: usize,
+    port_ends: usize,
+    derived_peers: usize,
+    frontier: usize,
+    open: usize,
+}
+
+/// Solve one facility and measure it. `None` when the seed does not solve,
+/// which the caller treats as a failure rather than skipping.
+fn measure_baseline(
+    seed: u64,
+    config: HexWfcConfig,
+    quotas: HexRoomQuotas,
+) -> Option<FacilityBaseline> {
+    use std::collections::BTreeMap;
+
+    let start = std::time::Instant::now();
+    let world = HexWfcWorld::generate_with_room_quotas(seed, config, quotas).ok()?;
+    let elapsed = start.elapsed();
+
+    // A room is real only if a cell of it survived the prune.
+    let live = super::topology::active_component(config, &world.placements, config.spawn());
+    let phantom = world
+        .blueprints
+        .iter()
+        .filter(|blueprint| !blueprint.cells.iter().any(|cell| live.contains(cell)))
+        .count();
+
+    // The port budget, read off the rooms actually placed rather than off a
+    // second copy of the quota table.
+    let port_ends = world
+        .blueprints
+        .iter()
+        .map(|blueprint| {
+            super::blueprint::blueprint_for_role(blueprint.role)
+                .named_ports
+                .len()
+        })
+        .sum();
+
+    // The derived room graph: how many distinct rooms each room shares a
+    // corridor with, summed.
+    let mut rooms_on_corridor: BTreeMap<
+        observed_core::CorridorId,
+        BTreeSet<observed_core::RoomId>,
+    > = BTreeMap::new();
+    for attachment in world.threshold_attachments() {
+        rooms_on_corridor
+            .entry(attachment.corridor)
+            .or_default()
+            .insert(attachment.room);
+    }
+    let mut peers: BTreeMap<observed_core::RoomId, BTreeSet<observed_core::RoomId>> =
+        BTreeMap::new();
+    for rooms in rooms_on_corridor.values() {
+        for room in rooms {
+            peers
+                .entry(*room)
+                .or_default()
+                .extend(rooms.iter().filter(|other| *other != room).copied());
+        }
+    }
+
+    // How much of every region boundary you can actually walk across.
+    let plan = super::region::region_plan(seed, config);
+    let (mut frontier, mut open) = (0usize, 0usize);
+    for gateway in &plan.gateways {
+        frontier += gateway.frontier.len();
+        for &(a, b) in &gateway.frontier {
+            let (Some(here), Some(there)) = (world.placements.get(&a), world.placements.get(&b))
+            else {
+                continue;
+            };
+            let Some(face) = HexFace::LATERAL
+                .into_iter()
+                .find(|face| config.grid().neighbor(a, *face) == Some(b))
+            else {
+                continue;
+            };
+            if here.is_open(face) && there.is_open(face.opposite()) {
+                open += 1;
+            }
+        }
+    }
+
+    Some(FacilityBaseline {
+        attempts: world.last_attempts,
+        elapsed,
+        phantom,
+        rooms: world.blueprints.len(),
+        port_ends,
+        derived_peers: peers.values().map(BTreeSet::len).sum(),
+        frontier,
+        open,
+    })
+}
+
+/// The measured baseline of the production facility, as a guard rather than a
+/// paragraph.
+///
+/// Every number this area's design argument rests on was, until now, printed by
+/// an `#[ignore]`d survey - so it ran when someone remembered to run it, and
+/// never in CI. A change that halved the room graph or doubled the solve time
+/// would have stayed invisible until the next manual sweep.
+///
+/// These are bands, not equalities. The intent is to catch drift while leaving
+/// the solver free to move: a change that improves a number should move the band
+/// deliberately and say why, and a change that wrecks one should fail here rather
+/// than in a playtest. Six seeds rather than the surveys' twenty-four keeps it
+/// affordable on every run; the surveys stay for deep dives.
+#[test]
+fn the_production_facility_holds_its_measured_baseline() {
+    let config = HexWfcConfig::arc_default();
+    let quotas = HexRoomQuotas::for_team_count(2);
+
+    let mut solved = 0usize;
+    let mut worst_attempts = 0u32;
+    let mut slowest = std::time::Duration::ZERO;
+    let (mut phantom_total, mut rooms_total) = (0usize, 0usize);
+    let (mut port_ends_total, mut peers_total) = (0usize, 0usize);
+    let (mut total_open, mut total_frontier) = (0usize, 0usize);
+
+    for seed in baseline_seeds() {
+        let Some(measured) = measure_baseline(seed, config, quotas) else {
+            panic!("{seed:016x} must solve at production scale");
+        };
+        solved += 1;
+        worst_attempts = worst_attempts.max(measured.attempts);
+        slowest = slowest.max(measured.elapsed);
+        phantom_total += measured.phantom;
+        rooms_total += measured.rooms;
+        port_ends_total += measured.port_ends;
+        peers_total += measured.derived_peers;
+        total_open += measured.open;
+        total_frontier += measured.frontier;
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    let port_budget = port_ends_total as f64 / rooms_total as f64;
+    #[allow(clippy::cast_precision_loss)]
+    let derived_degree = peers_total as f64 / rooms_total as f64;
+    #[allow(clippy::cast_precision_loss)]
+    let permeability = total_open as f64 * 100.0 / total_frontier as f64;
+    println!(
+        "baseline: {solved} solved | phantom {phantom_total} | \
+         ports/room {port_budget:.2} | peers/room {derived_degree:.2} | \
+         permeability {permeability:.1}% | attempts {worst_attempts} | slowest {slowest:?}"
+    );
+
+    let expected_rooms = solved * quotas.total_with_start_and_exit();
+    assert_eq!(
+        rooms_total, expected_rooms,
+        "the quota total moved; every number below is per-room and reads against it"
+    );
+
+    // Established by `4caba31`, which made a stranded room fail the solve. An
+    // equality rather than a band: a phantom room holds a quota slot and a
+    // `RoomId`, projects its objective sockets into `Void`, and then refuses
+    // every relayout commit for the rest of the match. No number but zero is
+    // tolerable.
+    assert_eq!(
+        phantom_total, 0,
+        "a stamped room was unreachable from spawn - see the guard in validate.rs"
+    );
+
+    // The ceiling. 62 port-ends across 30 rooms is 2.07 per room, and no solver
+    // change can raise it while `blueprint.rs` declares a single door on
+    // Keystone, Monitor and Recovery. A floor rather than an equality so that
+    // giving those roles a second port raises it without a test edit - but
+    // *lowering* it means a room quietly lost a door, which is the regression
+    // this is here to catch.
+    assert!(
+        port_ends_total >= 62 * solved,
+        "port budget fell to {port_budget:.2} per room, below the declared 2.07"
+    );
+
+    // The room graph is a clique: ~29 peers per room across 30 rooms means every
+    // room reaches every other, so "which rooms connect" carries no information.
+    //
+    // This band records a *failing grade on purpose*. Breaking it is the goal of
+    // a region-aware generation stage, so if this assertion fires because the
+    // number dropped, that is the win and not the bug - move the band down and
+    // record what did it. It exists so that such a change cannot happen by
+    // accident and go unnoticed.
+    assert!(
+        derived_degree >= 20.0,
+        "the room graph is no longer a clique ({derived_degree:.2} peers per room) - \
+         if a region stage did this, move this band down deliberately"
+    );
+
+    // Established by `7f7917c`: 49.9% of every region frontier is walkable, the
+    // quantified form of "regions are a colour, not a structure". A region-aware
+    // stage should drive this down; until one exists, a large move either way
+    // means something changed that nobody understood.
+    assert!(
+        (44.9..=54.9).contains(&permeability),
+        "region permeability moved to {permeability:.1}%, away from the measured 49.9%"
+    );
+
+    // The solve runs synchronously on the desync and late-join paths against a
+    // 2 s LAN client timeout (bug #39), so this is a real ceiling and not a
+    // vanity metric. The surveyed baseline was 3 attempts and 2.57 s.
+    assert!(
+        worst_attempts <= 5,
+        "solve needed {worst_attempts} attempts, above the surveyed 3"
+    );
+    assert!(
+        slowest < std::time::Duration::from_secs(4),
+        "slowest solve was {slowest:?}, above the surveyed 2.57s"
+    );
+}
