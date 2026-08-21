@@ -222,6 +222,32 @@ pub(super) fn layout_failure(
         return Some("disconnected component survived");
     }
 
+    // Every stamped room must have survived as somewhere you can reach.
+    //
+    // The check above cannot catch this. `prune_disconnected` runs before this
+    // function and voids anything the spawn flood did not reach, so by the time
+    // it asks, no disconnected component is left to find - an island of rooms
+    // and halls has already been erased, consistently, and the lattice is still
+    // edge-correct.
+    //
+    // Nothing downstream notices either, because the room half of this solver
+    // reads `blueprints` rather than `placements`: `room_quota_failure` counts
+    // a voided room toward its quota and `HexWfcWorld::rooms` still hands out
+    // its `RoomId`. The projector then places its authored prefab, and its
+    // objective sockets, in cells that are now `Void`.
+    //
+    // The cost is not cosmetic. A `Void` cell is never in the exit component,
+    // so an objective pinned to one makes `validate_patch_routes_and_boundary`
+    // refuse every relayout commit for the rest of the match, and the objective
+    // itself can never be completed. Discarding the attempt costs one retry; a
+    // survey of 24 production seeds found one that needs it.
+    if blueprints
+        .iter()
+        .any(|blueprint| !blueprint.cells.iter().any(|cell| keep.contains(cell)))
+    {
+        return Some("stamped room unreachable from spawn");
+    }
+
     if !all_edges_match(config, placements, blueprints) {
         return Some("edge mismatch or room-room opening outside one footprint");
     }

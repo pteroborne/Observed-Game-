@@ -1307,6 +1307,20 @@ fn project_blueprint(
     consumed: &mut BTreeSet<HexCoord>,
     out: &mut ProjectedCells,
 ) -> Result<(), HexGeometryError> {
+    // Defence in depth against projecting a room that no longer exists.
+    //
+    // `validate::layout_failure` rejects a solve that strands a stamped room,
+    // so this should be unreachable. It is asserted rather than assumed because
+    // the consequence is quiet and expensive: a stamped room whose cells were
+    // all voided still carries a `RoomId` and still declares objective sockets,
+    // and projecting them puts an objective somewhere no route can reach.
+    debug_assert!(
+        stamped.cells.iter().any(|cell| world
+            .placements
+            .get(cell)
+            .is_some_and(|placement| placement.space != HexSpace::Void)),
+        "projecting a blueprint whose every cell is Void"
+    );
     let blueprint = blueprint_for_role(stamped.role);
     if let Some(room) = room_for(world, stamped, room_catalogue) {
         push_room(world, stamped, room, out)?;

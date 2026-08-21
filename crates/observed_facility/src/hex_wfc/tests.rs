@@ -733,3 +733,165 @@ fn survey_how_shaft_columns_stack() {
     }
     println!("through shafts (open above and below)={through}");
 }
+
+/// How often does a stamped room end up unreachable, and what does the room
+/// graph actually look like at production scale?
+///
+/// `prune_disconnected` runs before `layout_failure`, so "disconnected
+/// component survived" can never fire: an island of rooms and halls is voided
+/// first and the check then finds nothing wrong. But `room_quota_failure` and
+/// `HexWfcWorld::rooms()` both read `blueprints`, never `placements`, so a
+/// voided room still satisfies its quota and still hands out a `RoomId` — and
+/// `project_blueprint` will project its objective sockets into cells that are
+/// now `Void`. A `Void` cell is never in the exit component, so
+/// `validate_patch_routes_and_boundary` then refuses every relayout commit for
+/// the rest of the match.
+///
+/// That is the chain this measures. `phantom` is the number it exists for:
+/// anything above zero means the chain is reachable in practice.
+///
+/// The rest is baseline. `attempts` and wall-clock are what any later routing
+/// work has to be measured against — the desync and late-join paths run this
+/// solve synchronously against a two-second LAN client timeout, so a change
+/// that multiplies attempts is not affordable however good the layouts get.
+/// `halls` tests a second claim: `score::connectivity_score` adds an uncapped
+/// `sqrt(hall components)`, so if facilities routinely carry one large hall
+/// network then that term is noise, and if they carry many then the score is
+/// actively selecting for shattered ones.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore = "production-scale room-graph survey"]
+fn survey_room_graph_at_production_scale() {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let config = HexWfcConfig::arc_default();
+    let quotas = HexRoomQuotas::for_team_count(2);
+
+    let mut phantom_total = 0usize;
+    let mut solved = 0usize;
+    let mut worst_attempts = 0u32;
+    let mut slowest = std::time::Duration::ZERO;
+
+    println!("seed             attempts   solve   rooms  phantom  halls  deg1  mean_deg  far");
+    for index in 0..24u64 {
+        let seed = 0xA11C_E3D0_0000_0000 ^ (index.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        let start = std::time::Instant::now();
+        let Ok(world) = HexWfcWorld::generate_with_room_quotas(seed, config, quotas) else {
+            println!("{seed:016x}  UNSOLVED");
+            continue;
+        };
+        let elapsed = start.elapsed();
+        solved += 1;
+        worst_attempts = worst_attempts.max(world.last_attempts);
+        slowest = slowest.max(elapsed);
+
+        // A room is real only if at least one of its cells survived the prune.
+        let live = super::topology::active_component(config, &world.placements, config.spawn());
+        let phantom = world
+            .blueprints
+            .iter()
+            .filter(|blueprint| !blueprint.cells.iter().any(|cell| live.contains(cell)))
+            .count();
+        phantom_total += phantom;
+
+        // Degree over the derived room graph: distinct rooms each room shares a
+        // corridor with, which is what `threshold_attachments` already answers.
+        let mut rooms_on_corridor: BTreeMap<
+            observed_core::CorridorId,
+            BTreeSet<observed_core::RoomId>,
+        > = BTreeMap::new();
+        for attachment in world.threshold_attachments() {
+            rooms_on_corridor
+                .entry(attachment.corridor)
+                .or_default()
+                .insert(attachment.room);
+        }
+        let mut degree: BTreeMap<observed_core::RoomId, BTreeSet<observed_core::RoomId>> =
+            BTreeMap::new();
+        for rooms in rooms_on_corridor.values() {
+            for room in rooms {
+                let peers = rooms.iter().filter(|other| *other != room).copied();
+                degree.entry(*room).or_default().extend(peers);
+            }
+        }
+        let room_count = world.blueprints.len();
+        let degree_one = degree.values().filter(|peers| peers.len() == 1).count()
+            + room_count.saturating_sub(degree.len());
+        #[allow(clippy::cast_precision_loss)]
+        let mean_degree = if degree.is_empty() {
+            0.0
+        } else {
+            degree.values().map(BTreeSet::len).sum::<usize>() as f64 / room_count as f64
+        };
+
+        // Furthest room from spawn, in the same weighted metric the solver's own
+        // A* heuristic uses.
+        let far = world
+            .blueprints
+            .iter()
+            .map(|blueprint| observed_hex::travel_distance(config.spawn(), blueprint.anchor))
+            .max()
+            .unwrap_or(0);
+
+        println!(
+            "{seed:016x}  {:>8}  {:>6.2}s  {:>5}  {:>7}  {:>5}  {:>4}  {:>8.2}  {:>3}",
+            world.last_attempts,
+            elapsed.as_secs_f64(),
+            room_count,
+            phantom,
+            world.corridors().len(),
+            degree_one,
+            mean_degree,
+            far
+        );
+    }
+
+    println!(
+        "\nsolved {solved}/24 | phantom rooms total {phantom_total} | \
+         worst attempts {worst_attempts} | slowest {slowest:?}"
+    );
+    println!(
+        "phantom > 0 means an unreachable room keeps its quota slot and its RoomId, \
+         projects objective sockets into Void, and freezes relayout for the match."
+    );
+}
+
+/// The seed that produced a phantom room must not produce one any more.
+///
+/// A hand-built fixture was tried first and abandoned, which is worth recording
+/// because the reason is the defect itself. Voiding a room by hand leaves the
+/// lattice inconsistent somewhere - a hall below its two-door minimum, a door
+/// facing a hole - and `all_edges_match` reports that instead, so the fixture
+/// "failed without the guard" for the wrong reason and proved nothing. The real
+/// article is silent precisely because `prune_disconnected` leaves everything
+/// self-consistent on the way out.
+///
+/// So this uses the seed a 24-seed production survey actually caught:
+/// `survey_room_graph_at_production_scale` found exactly one, and before the
+/// guard it solved with a stamped room whose every cell had been voided - still
+/// counted by `room_quota_failure`, still holding a `RoomId`, still projecting
+/// its objective sockets into `Void`.
+///
+/// Production-scale, so it costs a solve. That is the price of testing the
+/// thing that actually happened rather than a model of it.
+#[test]
+fn the_seed_that_stranded_a_room_no_longer_does() {
+    let config = HexWfcConfig::arc_default();
+    let quotas = HexRoomQuotas::for_team_count(2);
+    let world = HexWfcWorld::generate_with_room_quotas(0x8F36_22EE_F8E8_D8D2, config, quotas)
+        .expect("the seed must still solve; the guard costs a retry, not the facility");
+
+    let live = super::topology::active_component(config, &world.placements, config.spawn());
+    let stranded: Vec<_> = world
+        .blueprints
+        .iter()
+        .filter(|blueprint| !blueprint.cells.iter().any(|cell| live.contains(cell)))
+        .map(|blueprint| (blueprint.role, blueprint.anchor))
+        .collect();
+
+    assert!(
+        stranded.is_empty(),
+        "every stamped room must be reachable; stranded: {stranded:?}"
+    );
+}

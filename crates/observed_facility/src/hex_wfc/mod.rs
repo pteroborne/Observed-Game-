@@ -291,6 +291,13 @@ pub enum HexWfcError {
     UnsafeChange(HexCoord),
     MissingPlayerRoute(observed_core::PlayerId),
     MissingObjectiveRoute(HexCoord),
+    /// A commit would leave a stamped room with no route to the exit.
+    ///
+    /// Distinct from `MissingObjectiveRoute` because it fires for rooms that
+    /// carry no objective yet: a Decision or Recovery room cut off by a pocket
+    /// is still a room the match promised and can no longer deliver, and it
+    /// would otherwise be found only when a player walked to it.
+    StrandedRoom(observed_core::RoomId),
     /// A production relayout would destroy the guaranteed open/decision cadence.
     OpenVolumeContract,
     NoMutationRegion,

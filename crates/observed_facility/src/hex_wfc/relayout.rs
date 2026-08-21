@@ -572,6 +572,26 @@ impl HexWfcWorld {
                 return Err(HexWfcError::MissingObjectiveRoute(coord));
             }
         }
+        // And every room, not only the ones currently carrying an objective.
+        //
+        // `objective_cells` covers keystones and station sockets, so a pocket
+        // that severs the throat to a Decision, Monitor, Recovery or Anchor
+        // room commits cleanly today and the loss is discovered by walking
+        // there. Four retopologised hall cells is enough to close a corridor.
+        //
+        // This reuses the flood above rather than adding one: it is a lookup
+        // per footprint cell, roughly ninety of them at production quotas.
+        for blueprint in &self.blueprints {
+            if !blueprint
+                .cells
+                .iter()
+                .any(|cell| exit_component.contains(cell))
+            {
+                return Err(HexWfcError::StrandedRoom(observed_core::RoomId(
+                    fold_generation_key(blueprint.generation_key()),
+                )));
+            }
+        }
         let production_scale =
             self.config.cols >= 28 && self.config.rows >= 20 && self.config.levels >= 10;
         if production_scale
