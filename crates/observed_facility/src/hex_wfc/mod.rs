@@ -16,6 +16,7 @@ pub mod neighborhood;
 mod neighborhood_tests;
 pub mod pins;
 pub mod profile;
+pub mod region;
 mod relayout;
 #[cfg(test)]
 mod relayout_tests;
@@ -48,6 +49,7 @@ pub use profile::{
     HexCompositionProfile, HexPin, PinIntent, PinPortClass, PinSet, ProfileDefect, ScoreWeights,
     SearchPolicy,
 };
+pub use region::{Gateway, Region, RegionKey, RegionPlan, region_plan};
 pub use relayout::{
     DEFAULT_MUTATION_MAX_CELLS, DEFAULT_MUTATION_TARGET_CELLS, DistrictSite, HexMutationRegion,
     HexObservationFrame, HexRelayoutCandidate, HexRelayoutDelta, HexRelayoutProgress,

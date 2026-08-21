@@ -1132,3 +1132,93 @@ fn survey_whether_a_pinned_void_wall_splits_the_facility() {
          too, so both place geometry that the pins then contradict."
     );
 }
+
+/// How permeable are the regions the facility already has?
+///
+/// `region::region_plan` names the districts as territories and the cells where
+/// two of them touch. This asks what a solved facility actually does at those
+/// frontiers: of all the places two regions could be joined, how many are
+/// joined?
+///
+/// The number is the concrete form of "uniform mush". A frontier that is open
+/// almost everywhere is not a boundary between two areas, it is a seam in one
+/// area, and no amount of tile authoring on either side will make crossing it
+/// read as an event. It is also the number any future region-aware stage would
+/// have to move, so it is worth having before such a stage exists rather than
+/// after.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore = "region permeability survey"]
+fn survey_how_permeable_the_regions_are() {
+    let config = HexWfcConfig::arc_default();
+    let quotas = HexRoomQuotas::for_team_count(2);
+
+    println!("seed              regions  gateways  frontier  open   open%  widest");
+    let (mut total_open, mut total_frontier) = (0usize, 0usize);
+    for index in 0..6u64 {
+        let seed = 0xA11C_E3D0_0000_0000 ^ (index.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        let Ok(world) = HexWfcWorld::generate_with_room_quotas(seed, config, quotas) else {
+            continue;
+        };
+        let plan = super::region::region_plan(seed, config);
+
+        // A frontier pair is "open" when the solved lattice actually lets you
+        // walk across it.
+        let mut frontier = 0usize;
+        let mut open = 0usize;
+        let mut widest = 0usize;
+        for gateway in &plan.gateways {
+            frontier += gateway.frontier.len();
+            let mut crossings = 0usize;
+            for &(a, b) in &gateway.frontier {
+                let (Some(here), Some(there)) =
+                    (world.placements.get(&a), world.placements.get(&b))
+                else {
+                    continue;
+                };
+                let Some(face) = HexFace::LATERAL
+                    .into_iter()
+                    .find(|face| config.grid().neighbor(a, *face) == Some(b))
+                else {
+                    continue;
+                };
+                if here.is_open(face) && there.is_open(face.opposite()) {
+                    crossings += 1;
+                }
+            }
+            open += crossings;
+            widest = widest.max(crossings);
+        }
+        total_open += open;
+        total_frontier += frontier;
+
+        #[allow(clippy::cast_precision_loss)]
+        let pct = if frontier == 0 {
+            0.0
+        } else {
+            open as f64 * 100.0 / frontier as f64
+        };
+        println!(
+            "{seed:016x}  {:>7}  {:>8}  {:>8}  {:>4}  {:>5.1}  {:>6}",
+            plan.regions.len(),
+            plan.gateways.len(),
+            frontier,
+            open,
+            pct,
+            widest
+        );
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    let overall = if total_frontier == 0 {
+        0.0
+    } else {
+        total_open as f64 * 100.0 / total_frontier as f64
+    };
+    println!(
+        "\n{total_open} of {total_frontier} frontier pairs are walkable ({overall:.1}%).\n\
+         widest is the single most-crossed gateway: a boundary crossed in dozens of \
+         places is a seam, not a threshold."
+    );
+}
