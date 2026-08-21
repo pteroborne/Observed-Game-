@@ -114,3 +114,60 @@ fn all_layers_draws_the_deck_rather_than_refusing_it() {
         state.detail_report
     );
 }
+
+/// The overlay draws every frontier the plan names, and counts what it draws.
+///
+/// The point of the overlay is that the picture and the number agree: if it
+/// silently dropped pairs it could not match, the border would look tidier than
+/// it is and the whole reason for drawing it - seeing how much of a boundary is
+/// open - would be quietly defeated. So this recomputes the expected frontier
+/// independently from `region_plan` and demands the same answer.
+#[test]
+fn the_region_overlay_draws_every_frontier_on_the_focus_floor() {
+    use observed_facility::hex_wfc::region_plan;
+
+    let mut app = crate::tests::headless();
+    for _ in 0..6 {
+        app.update();
+        app.world_mut().resource_mut::<StudioState>().last_edit = None;
+    }
+    app.update();
+
+    assert_eq!(
+        app.world().resource::<StudioState>().region_report,
+        crate::regions::RegionReport::default(),
+        "the overlay is a mode and starts off"
+    );
+
+    {
+        let mut state = app.world_mut().resource_mut::<StudioState>();
+        state.show_regions = true;
+        state.touch_view();
+    }
+    app.update();
+
+    let state = app.world().resource::<StudioState>();
+    let report = state.region_report;
+    let plan = region_plan(state.seed, state.config);
+    let expected = plan
+        .gateways
+        .iter()
+        .flat_map(|gateway| gateway.frontier.iter())
+        .filter(|(a, _)| state.layer.is_focus(a.level))
+        .count();
+
+    assert_eq!(report.regions, plan.regions.len());
+    assert_eq!(report.gateways, plan.gateways.len());
+    assert!(
+        expected > 0,
+        "the studio's default facility must have regions"
+    );
+    assert_eq!(
+        report.frontier, expected,
+        "the overlay dropped frontier pairs it could not resolve to a shared face"
+    );
+    assert!(
+        report.open <= report.frontier && report.widest <= report.frontier,
+        "walkable crossings are a subset of the frontier: {report:?}"
+    );
+}

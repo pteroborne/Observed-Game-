@@ -26,7 +26,13 @@
 //! - **green walls** — identical to the same seed solved at the baseline.
 //! - **red walls** — this cell moved.
 //!
-//! In both modes an **amber ring** is the selected cell.
+//! **Region mode** (`D`, [`crate::regions`]) — *do the facility's regions meet
+//! anywhere in particular?* Owns both signal colours while it is on, so these
+//! walls step back to one neutral dim exactly as they do behind the authored
+//! deck; green and red there mean "the border holds" and "you can walk through
+//! it", which is a different question from pins and cannot share their palette.
+//!
+//! In every mode an **amber ring** is the selected cell.
 //!
 //! The roles come from [`observed_style::SchematicRole`], whose documented
 //! meanings are already exactly "the solver will not rewire this" (`Pinned`)
@@ -192,6 +198,15 @@ fn floor_ring(inset: f32) -> [(Vec3, Vec3); 6] {
     std::array::from_fn(|index| (corners[index], corners[(index + 1) % 6]))
 }
 
+/// The floor edge a cell presents on one face, in cell-local space.
+///
+/// Shared with the region overlay, which traces a frontier along exactly these
+/// edges - the boundary between two regions *is* the set of shared faces, so
+/// drawing it any other way would be drawing something else.
+pub(crate) fn face_edge(face: HexFace) -> (Vec3, Vec3) {
+    floor_ring(CELL_EXTENT)[face.index()]
+}
+
 /// A vertical band on every face the cell does **not** open through.
 fn wall_edges(height: f32, open: [bool; 6]) -> Vec<(Vec3, Vec3)> {
     let base = ring(0.0, CELL_EXTENT);
@@ -323,6 +338,8 @@ pub fn rebuild_visuals(
     let neighbor_report =
         crate::neighbors::emit(&mut commands, &state, &mut meshes, &mut materials);
     state.neighbors.report = neighbor_report;
+    let region_report = crate::regions::emit(&mut commands, &state, &mut meshes, &mut materials);
+    state.region_report = region_report;
     let pinned = crate::brush::pinned_coords(&state.profile);
     // What the solver knew at the replay cursor, or `None` when the replay is
     // settled and the finished world is what to draw.
@@ -463,6 +480,7 @@ pub fn rebuild_visuals(
         // the schematic back to `Grid`.
         let target = if !overlay_carries_signals
             || state.detail_mode == crate::detail::DetailMode::Neighborhood
+            || state.show_regions
         {
             &mut grid
         } else if hold {

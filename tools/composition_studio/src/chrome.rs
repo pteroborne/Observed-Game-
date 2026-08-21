@@ -435,6 +435,7 @@ pub fn update_chrome_ui(
             }
             StudioTab::Districts => {
                 let mut s = String::new();
+                s.push_str(&crate::regions::summary(&state));
                 s.push_str("DISTRICT BIAS OVERRIDES:\n\n");
                 for register in ArchitectureRegister::ALL {
                     s.push_str(&format!(
@@ -515,6 +516,8 @@ pub fn update_chrome_ui(
                     String::new()
                 }
             )
+        } else if state.show_regions {
+            crate::regions::status(state.region_report)
         } else if state.show_baseline_compare {
             format!(
                 " | COMPARE (red = moved): {} of {} differ",

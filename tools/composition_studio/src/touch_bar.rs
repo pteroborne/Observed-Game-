@@ -35,6 +35,7 @@ pub enum TouchAction {
     RollSeed,
     FewerFloors,
     MoreFloors,
+    ToggleRegions,
 }
 
 impl TouchAction {
@@ -47,15 +48,17 @@ impl TouchAction {
             Self::RollSeed => "ROLL",
             Self::FewerFloors => "- FLOOR",
             Self::MoreFloors => "+ FLOOR",
+            Self::ToggleRegions => "REGIONS",
         }
     }
 
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 6] = [
         Self::PreviousSeed,
         Self::NextSeed,
         Self::RollSeed,
         Self::FewerFloors,
         Self::MoreFloors,
+        Self::ToggleRegions,
     ];
 }
 
@@ -81,6 +84,14 @@ pub fn apply_touch_action(
         TouchAction::MoreFloors => {
             let next = state.config.levels.saturating_add(1);
             state.set_levels(next, now);
+        }
+        // The frontier overlay is the one thing here that is a *reading* aid
+        // rather than a way to move around the seed space, and it is on the bar
+        // for the same reason as the rest: the keyboard path does not exist on
+        // a handset.
+        TouchAction::ToggleRegions => {
+            state.show_regions = !state.show_regions;
+            state.touch_view();
         }
     }
 }

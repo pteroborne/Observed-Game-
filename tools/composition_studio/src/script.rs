@@ -77,6 +77,8 @@ pub struct StudioScript {
     pub cutaway: Option<bool>,
     /// Lay the solver's schematic over the authored deck.
     pub schematic: Option<bool>,
+    /// Trace the region frontiers, dim where they hold and red where they open.
+    pub regions: Option<bool>,
     /// Pins to paint before solving, as `[q, r, level, brush]` — brush being a
     /// [`crate::brush::Brush`] label such as `"shaft"` or `"junction"`.
     #[serde(default)]
@@ -258,6 +260,9 @@ pub fn script_system(
         }
         if let Some(schematic) = script.schematic {
             state.show_schematic = schematic;
+        }
+        if let Some(regions) = script.regions {
+            state.show_regions = regions;
         }
         if let Some(mode) = &script.detail {
             state.detail_mode = match mode.to_ascii_lowercase().as_str() {

@@ -35,6 +35,7 @@ pub mod neighbors;
 pub mod panels;
 pub mod persist;
 pub mod pick;
+pub mod regions;
 pub mod script;
 pub mod solve;
 pub mod state;

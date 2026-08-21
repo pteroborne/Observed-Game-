@@ -132,6 +132,12 @@ pub struct StudioState {
     pub hovered: Option<HexCoord>,
     pub show_walls: bool,
     pub show_baseline_compare: bool,
+    /// Draw the region frontiers, and how permeable the last pass found them.
+    ///
+    /// A mode rather than an always-on overlay: it reuses the alert colour for
+    /// a third meaning, so the status bar has to be able to say it is on.
+    pub show_regions: bool,
+    pub region_report: crate::regions::RegionReport,
     /// Which cells draw their real authored geometry.
     pub detail_mode: detail::DetailMode,
     /// How much of each cell's authored walls the deck draws.
@@ -243,6 +249,8 @@ impl Default for StudioState {
             hovered: None,
             show_walls: true,
             show_baseline_compare: false,
+            show_regions: false,
+            region_report: crate::regions::RegionReport::default(),
             // The authored deck, not the schematic. The tool's subject is the
             // facility a profile builds, and it should open on it.
             detail_mode: detail::DetailMode::Layer,

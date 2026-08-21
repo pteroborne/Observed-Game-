@@ -236,6 +236,19 @@ pub fn handle_chrome_input(
         state.touch_view();
     }
 
+    // The region frontiers. A mode, and one that announces itself: it spends
+    // the alert colour on a third meaning, and the status line is what keeps
+    // that legible.
+    if keyboard.just_pressed(KeyCode::KeyD) {
+        state.show_regions = !state.show_regions;
+        state.status = String::from(if state.show_regions {
+            "region frontiers: red crosses, dim holds"
+        } else {
+            "region frontiers: off"
+        });
+        state.touch_view();
+    }
+
     // --- detail rendering ---
     // Scope of the authored deck. `Layer` is the view; `Focus` isolates one
     // cell and what it connects to; `Off` is the schematic-only view this tool

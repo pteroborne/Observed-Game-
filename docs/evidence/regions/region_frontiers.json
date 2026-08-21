@@ -1,0 +1,10 @@
+{
+  "seed": 11651887862982574082,
+  "levels": 1,
+  "layer": 0,
+  "regions": true,
+  "detail": "off",
+  "schematic": true,
+  "tab": "districts",
+  "output_image": "docs/evidence/regions/region_frontiers.png"
+}
