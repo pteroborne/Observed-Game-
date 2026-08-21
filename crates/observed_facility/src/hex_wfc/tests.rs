@@ -895,3 +895,129 @@ fn the_seed_that_stranded_a_room_no_longer_does() {
         "every stamped room must be reachable; stranded: {stranded:?}"
     );
 }
+
+/// Does raising `void_bias` break the one hall network into several?
+///
+/// `survey_room_graph_at_production_scale` found 22 of 24 seeds carrying a
+/// single hall component. Every room hangs off it, so the derived room graph is
+/// very nearly a clique and "which rooms connect" carries no information. That
+/// is the structural form of the thing agents.md warns against — rooms and
+/// corridors are supposed to have distinct jobs and produce a tension/release
+/// rhythm "instead of uniform mush", and one undifferentiated network touching
+/// thirty rooms is mush however good the tiles are.
+///
+/// Void is the only thing that separates hall components: a component is a
+/// flood through open connections, so two runs of hall are distinct only when
+/// something non-walkable lies between them. `Void` is a catalogue variant of
+/// weight 4 and `ArchetypeBias::void` scales it, bounded to [0.25, 4.0].
+///
+/// So this sweeps the one knob that could produce separation and reports what
+/// it actually buys: how much of the lattice goes dark, how many hall networks
+/// result, and whether rooms start to sit on different ones.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore = "composition sweep"]
+fn survey_whether_void_bias_separates_hall_networks() {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let config = HexWfcConfig::arc_default();
+    let quotas = HexRoomQuotas::for_team_count(2);
+
+    println!("void_bias  seeds  void%   halls  biggest%  rooms_on_biggest  mean_deg  attempts");
+    for &bias in &[1.0_f64, 1.5, 2.0, 3.0, 4.0] {
+        let mut profile = HexCompositionProfile::baseline();
+        profile.archetype_bias.void = bias;
+        assert!(profile.validate().is_ok(), "{bias} must be a legal bias");
+
+        let (mut solved, mut void_pct, mut halls, mut biggest_pct) = (0u32, 0.0, 0.0, 0.0);
+        let (mut on_biggest, mut mean_deg, mut attempts) = (0.0, 0.0, 0u32);
+
+        for index in 0..6u64 {
+            let seed = 0xA11C_E3D0_0000_0000 ^ (index.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+            let Ok(world) =
+                HexWfcWorld::generate_with_profile(seed, config, Some(quotas), &profile)
+            else {
+                continue;
+            };
+            solved += 1;
+            attempts = attempts.max(world.last_attempts);
+
+            let total = world.placements.len();
+            let dark = world
+                .placements
+                .values()
+                .filter(|placement| placement.space == HexSpace::Void)
+                .count();
+            #[allow(clippy::cast_precision_loss)]
+            {
+                void_pct += dark as f64 * 100.0 / total as f64;
+            }
+
+            let corridors = world.corridors();
+            #[allow(clippy::cast_precision_loss)]
+            {
+                halls += corridors.len() as f64;
+            }
+            let largest = corridors
+                .iter()
+                .map(|corridor| corridor.cells.len())
+                .max()
+                .unwrap_or(0);
+            let hall_cells: usize = corridors.iter().map(|c| c.cells.len()).sum();
+            #[allow(clippy::cast_precision_loss)]
+            {
+                biggest_pct += if hall_cells == 0 {
+                    0.0
+                } else {
+                    largest as f64 * 100.0 / hall_cells as f64
+                };
+            }
+
+            // How many rooms sit on the single largest network? If that is every
+            // room, the graph is a clique whatever the component count says.
+            let mut rooms_per_corridor: BTreeMap<
+                observed_core::CorridorId,
+                BTreeSet<observed_core::RoomId>,
+            > = BTreeMap::new();
+            for attachment in world.threshold_attachments() {
+                rooms_per_corridor
+                    .entry(attachment.corridor)
+                    .or_default()
+                    .insert(attachment.room);
+            }
+            #[allow(clippy::cast_precision_loss)]
+            {
+                on_biggest += rooms_per_corridor
+                    .values()
+                    .map(BTreeSet::len)
+                    .max()
+                    .unwrap_or(0) as f64;
+                let peers: usize = rooms_per_corridor
+                    .values()
+                    .map(|rooms| rooms.len().saturating_sub(1) * rooms.len())
+                    .sum();
+                mean_deg += peers as f64 / world.blueprints.len().max(1) as f64;
+            }
+        }
+
+        if solved == 0 {
+            println!("{bias:>9.2}      0   (no seed solved)");
+            continue;
+        }
+        let n = f64::from(solved);
+        println!(
+            "{bias:>9.2}  {solved:>5}  {:>5.1}  {:>6.1}  {:>7.1}  {:>16.1}  {:>8.1}  {:>8}",
+            void_pct / n,
+            halls / n,
+            biggest_pct / n,
+            on_biggest / n,
+            mean_deg / n,
+            attempts
+        );
+    }
+    println!(
+        "\nhalls is the component count; biggest% is how much hall area the largest one holds.\n\
+         rooms_on_biggest near the room count means the graph is still a clique."
+    );
+}
