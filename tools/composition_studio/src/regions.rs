@@ -30,9 +30,15 @@
 //! green border broken by a few deliberate red crossings. What it draws instead
 //! is closer to half and half, which is what "uniform mush" looks like.
 //!
-//! Only the focus floor's frontiers draw. A frontier is a lateral adjacency on
-//! one level, so including the context floors above and below would treble the
-//! line work and answer nobody's question.
+//! Only the focus floor's frontiers draw, so the context floors above and below
+//! do not treble the line work.
+//!
+//! A region is a whole-height volume, so some frontiers are *vertical* - a cell
+//! whose neighbour one floor up belongs to another region. Those are counted and
+//! reported but not drawn, because a floor plan has no edge to draw them on;
+//! a ring inside the cell would collide with the selection ring, which already
+//! owns that shape. The count is what matters: they were invisible in the region
+//! model until a survey found the facility leaking through them.
 
 use bevy::prelude::*;
 use observed_facility::hex_wfc::region_plan;
@@ -58,6 +64,11 @@ pub struct RegionReport {
     /// The most-crossed single gateway, which is what tells a threshold from a
     /// seam: a boundary crossed twenty times is not a threshold.
     pub widest: usize,
+    /// Frontier pairs that leave the region through a floor or ceiling rather
+    /// than a wall. Counted, not drawn - see the module legend.
+    pub vertical: usize,
+    /// How many of those you can climb through.
+    pub vertical_open: usize,
 }
 
 impl RegionReport {
@@ -88,6 +99,7 @@ pub fn summary(state: &StudioState) -> String {
     format!(
         "REGION FRONTIERS: on\n\
          regions {}  gateways {}  frontier {}  open {} ({:.1}%)  widest {}\n\
+         vertical {} ({} open, not drawn)\n\
          a boundary crossed in dozens of places is a seam, not a threshold.\n\n",
         report.regions,
         report.gateways,
@@ -95,6 +107,8 @@ pub fn summary(state: &StudioState) -> String {
         report.open,
         report.permeability(),
         report.widest,
+        report.vertical,
+        report.vertical_open,
     )
 }
 
@@ -157,6 +171,20 @@ pub fn emit(
                 .into_iter()
                 .find(|face| grid.neighbor(a, *face) == Some(b))
             else {
+                // Vertical: no wall to draw it on, so count it and move on.
+                // Silently dropping it would make the border look tidier than
+                // it is, which is the one thing this overlay must not do.
+                report.vertical += 1;
+                let climbable = matches!(
+                    (
+                        solved.world.placements.get(&a),
+                        solved.world.placements.get(&b)
+                    ),
+                    (Some(here), Some(there))
+                        if here.space != observed_facility::hex_wfc::HexSpace::Void
+                            && there.space != observed_facility::hex_wfc::HexSpace::Void
+                );
+                report.vertical_open += usize::from(climbable);
                 continue;
             };
             report.frontier += 1;

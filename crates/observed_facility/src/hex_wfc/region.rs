@@ -44,18 +44,24 @@ use observed_hex::HexCoord;
 use super::relayout::{district_of, district_sites};
 use super::{HexFace, HexWfcConfig};
 
-/// One region: a register's territory on a single level.
+/// One region: a register's territory through the whole height of the facility.
 ///
-/// Per level rather than per register, because `district_of` resolves against
-/// anchors on the cell's own level — the same register on two floors is two
-/// territories, and merging them would name a region that is not contiguous.
+/// This was per level once, on the reasoning that `district_of` resolves against
+/// anchors on the cell's own level, so the same register on two floors is two
+/// territories and merging them names something discontiguous. True, and it made
+/// the regions useless: a survey found that sealing all but nine lateral
+/// gateways still left one corridor running through 99 of the hundred regions
+/// and all ten floors, because a per-level region has no vertical boundary at
+/// all. Every shaft and ramp was a hole straight through it, and no rule
+/// attached to a lateral frontier could reach one.
+///
+/// So a region is a volume. `cells` is therefore **not** contiguous in general -
+/// a register can own unrelated pockets on different floors - and the thing that
+/// makes the type useful is not contiguity but that a vertical step out of a
+/// region is now a [`Gateway`] like any other, and can be counted.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Region {
     pub register: ArchitectureRegister,
-    pub level: u8,
-    /// Every cell the district owns. Contiguous by construction: ownership is
-    /// nearest-anchor, so every cell on the path from a cell to its anchor is at
-    /// least as close to that anchor.
     pub cells: BTreeSet<HexCoord>,
 }
 
@@ -65,7 +71,6 @@ impl Region {
     pub const fn key(&self) -> RegionKey {
         RegionKey {
             register: self.register,
-            level: self.level,
         }
     }
 }
@@ -74,7 +79,6 @@ impl Region {
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct RegionKey {
     pub register: ArchitectureRegister,
-    pub level: u8,
 }
 
 /// Where two regions touch.
@@ -134,21 +138,27 @@ pub fn region_plan(seed: u64, config: HexWfcConfig) -> RegionPlan {
                 let Some(register) = district_of(coord, &sites) else {
                     continue;
                 };
-                let key = RegionKey { register, level };
+                let key = RegionKey { register };
                 owners.insert(coord, key);
                 regions.entry(key).or_default().insert(coord);
             }
         }
     }
 
-    // Frontiers: every lateral adjacency whose two cells belong to different
-    // regions. Lateral only — a vertical neighbour is a different level and so
-    // always a different region, which would make every cell in the facility a
-    // frontier and the word meaningless.
+    // Frontiers: every adjacency, lateral or vertical, whose two cells belong to
+    // different regions.
+    //
+    // Vertical faces are included, and that is the whole point of the region
+    // being a volume. While regions were per-level a vertical neighbour was
+    // always a different region, so counting those would have made every cell a
+    // frontier; excluding them instead left the vertical direction completely
+    // unpoliced, which is what a survey caught. Now a vertical step is interior
+    // when the floor above belongs to the same register and a gateway when it
+    // does not, which is the same rule the lateral direction already followed.
     let mut frontiers: BTreeMap<(RegionKey, RegionKey), Vec<(HexCoord, HexCoord)>> =
         BTreeMap::new();
     for (&coord, &key) in &owners {
-        for face in HexFace::LATERAL {
+        for face in HexFace::ALL {
             let Some(neighbor) = grid.neighbor(coord, face) else {
                 continue;
             };
@@ -171,7 +181,6 @@ pub fn region_plan(seed: u64, config: HexWfcConfig) -> RegionPlan {
             .into_iter()
             .map(|(key, cells)| Region {
                 register: key.register,
-                level: key.level,
                 cells,
             })
             .collect(),

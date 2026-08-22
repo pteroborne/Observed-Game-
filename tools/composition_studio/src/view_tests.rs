@@ -139,10 +139,17 @@ fn the_region_overlay_draws_every_frontier_on_the_focus_floor() {
         "the overlay is a mode and starts off"
     );
 
+    // Four floors, because a region is a whole-height volume and a single-level
+    // facility has no vertical frontier at all - which is exactly how the
+    // vertical case stayed untested through the change that introduced it.
     {
         let mut state = app.world_mut().resource_mut::<StudioState>();
+        state.set_levels(4, 0.0);
         state.show_regions = true;
-        state.touch_view();
+    }
+    for _ in 0..6 {
+        app.update();
+        app.world_mut().resource_mut::<StudioState>().last_edit = None;
     }
     app.update();
 
@@ -158,13 +165,17 @@ fn the_region_overlay_draws_every_frontier_on_the_focus_floor() {
 
     assert_eq!(report.regions, plan.regions.len());
     assert_eq!(report.gateways, plan.gateways.len());
+    assert!(expected > 0, "the studio's facility must have regions");
     assert!(
-        expected > 0,
-        "the studio's default facility must have regions"
+        report.vertical > 0,
+        "a four-floor facility must have vertical frontiers, or this asserts nothing"
     );
     assert_eq!(
-        report.frontier, expected,
-        "the overlay dropped frontier pairs it could not resolve to a shared face"
+        report.frontier + report.vertical,
+        expected,
+        "every frontier pair on the floor is either drawn as a wall or counted as \
+         vertical - anything else is a pair silently dropped, which would draw a \
+         tidier border than the facility has"
     );
     assert!(
         report.open <= report.frontier && report.widest <= report.frontier,

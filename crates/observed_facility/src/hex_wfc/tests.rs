@@ -1449,13 +1449,19 @@ fn the_production_facility_holds_its_measured_baseline() {
          if a region stage did this, move this band down deliberately"
     );
 
-    // Established by `7f7917c`: 49.9% of every region frontier is walkable, the
-    // quantified form of "regions are a colour, not a structure". A region-aware
-    // stage should drive this down; until one exists, a large move either way
-    // means something changed that nobody understood.
+    // Was 49.9% while a region was one register on one floor. Regions became
+    // whole-height volumes when a survey found that per-level ones had no
+    // vertical boundary at all, and the figure fell to 23.7%.
+    //
+    // That fall is not an improvement and should not be read as one. The
+    // frontier now blends lateral pairs, still about half open, with vertical
+    // pairs, which are mostly solid floor - so the composite is lower for a
+    // reason that has nothing to do with boundaries tightening. It is a
+    // different measurement of a different object, re-baselined rather than
+    // beaten.
     assert!(
-        (44.9..=54.9).contains(&permeability),
-        "region permeability moved to {permeability:.1}%, away from the measured 49.9%"
+        (18.7..=28.7).contains(&permeability),
+        "region permeability moved to {permeability:.1}%, away from the measured 23.7%"
     );
 
     // The solve runs synchronously on the desync and late-join paths against a
@@ -1682,7 +1688,7 @@ fn survey_whether_a_thin_gateway_graph_breaks_the_clique() {
     let grid = config.grid();
 
     println!(
-        "extras  kept  tree_reach  halls  peers/room  biggest  rooms_live  exit_ok  spanned  floors"
+        "extras  kept  halls  peers/room  biggest  rooms_live  exit_ok  spanned  artery  cycles"
     );
     for extras in [usize::MAX, 40, 20, 10, 0] {
         let mut kept_total = 0usize;
@@ -1692,8 +1698,7 @@ fn survey_whether_a_thin_gateway_graph_breaks_the_clique() {
         let mut biggest_total = 0usize;
         let mut live_total = 0usize;
         let mut spanned_total = 0usize;
-        let mut levels_total = 0usize;
-        let mut regions_reached = 0usize;
+        let (mut artery_cells, mut artery_cycles) = (0usize, 0usize);
         let mut exit_ok = 0usize;
         let mut seeds = 0usize;
 
@@ -1829,22 +1834,28 @@ fn survey_whether_a_thin_gateway_graph_breaks_the_clique() {
                         .len()
                 })
                 .unwrap_or(0);
-            // How many floors does that corridor touch? Region frontiers are
-            // lateral only, so a vertical link is not a frontier and no gateway
-            // rule can reach it.
-            levels_total += corridors
-                .iter()
-                .max_by_key(|corridor| corridor.cells.len())
-                .map(|corridor| {
-                    corridor
-                        .cells
-                        .iter()
-                        .map(|cell| cell.level)
-                        .collect::<BTreeSet<_>>()
-                        .len()
-                })
-                .unwrap_or(0);
-            regions_reached += seen.len();
+            // The artery's own shape. `cells` is how big it is; `cycles` is
+            // edges - nodes + 1, the number of independent loops in it. A snake
+            // threading room to room has almost none and could be cut into legs
+            // at the rooms it passes; a lattice with many loops cannot, because
+            // every cut leaves another way round.
+            if let Some(artery) = corridors.iter().max_by_key(|corridor| corridor.cells.len()) {
+                let cells: BTreeSet<HexCoord> = artery.cells.iter().copied().collect();
+                let mut edges = 0usize;
+                for &cell in &cells {
+                    for face in HexFace::LATERAL {
+                        if grid
+                            .neighbor(cell, face)
+                            .is_some_and(|next| cells.contains(&next))
+                        {
+                            edges += 1;
+                        }
+                    }
+                }
+                artery_cells += cells.len();
+                artery_cycles += (edges / 2 + 1).saturating_sub(cells.len());
+            }
+
             halls_total += corridors.len();
             peers_total += peers.values().map(BTreeSet::len).sum::<usize>();
             rooms_total += trial.blueprints.len();
@@ -1859,23 +1870,27 @@ fn survey_whether_a_thin_gateway_graph_breaks_the_clique() {
         #[allow(clippy::cast_precision_loss)]
         {
             println!(
-                "{label}  {:>4.0}  {:>10.1}  {:>5.1}  {:>10.2}  {:>7.1}  {:>10.1}  \
-                 {:>3}/{seeds}  {:>7.1}  {:>6.1}",
+                "{label}  {:>4.0}  {:>5.1}  {:>10.2}  {:>7.1}  {:>10.1}  \
+                 {:>3}/{seeds}  {:>7.1}  {:>6.0}  {:>6.0}",
                 kept_total as f64 / seeds as f64,
-                regions_reached as f64 / seeds as f64,
                 halls_total as f64 / seeds as f64,
                 peers_total as f64 / rooms_total as f64,
                 biggest_total as f64 / seeds as f64,
                 live_total as f64 / seeds as f64,
                 exit_ok,
                 spanned_total as f64 / seeds as f64,
-                levels_total as f64 / seeds as f64,
+                artery_cells as f64 / seeds as f64,
+                artery_cycles as f64 / seeds as f64,
             );
         }
     }
     println!(
         "\nextras is gateways kept beyond a spanning tree. rooms_live and exit_ok \
-         are the feasibility bill: a facility that cannot reach its own exit is \
-         not a facility, however good its room graph looks."
+         are the feasibility bill.\n\
+         artery is the largest corridor's cell count against a 5,600-cell \
+         facility, and cycles is how many independent loops it holds. Those two \
+         are the finding: the facility is 97.2% hall, 1.1% room and 1.7% void, \
+         so the artery is not a corridor system with boundaries to police - it \
+         is nearly the whole building, and the rooms are inclusions in it."
     );
 }
