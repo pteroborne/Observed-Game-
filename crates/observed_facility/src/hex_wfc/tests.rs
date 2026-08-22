@@ -2338,3 +2338,170 @@ fn survey_whether_bias_can_shape_the_halls() {
         }
     }
 }
+
+/// What would a routed corridor skeleton actually look like?
+///
+/// Asked before building a router, because the answer decides whether there is
+/// any point. `archetype_bias` can push passageway from 36.6% to 52.5% but costs
+/// eight attempts and 7.19s doing it, and the reason is that weights bias rather
+/// than remove - the solver ends up hunting the rare assignments that satisfy a
+/// corridor-heavy preference. Handing it corridors already chosen is the way out
+/// only if the corridors a router would choose are themselves narrow.
+///
+/// So: derive the skeleton over solved facilities without solving anything new.
+/// Take a spanning tree over the rooms, route each edge between the two rooms'
+/// port attachments with the lattice's own BFS, and look at the union.
+///
+/// `deg2%` is the question. A skeleton that is itself a web of four-way
+/// junctions would hand the collapse the same shape it already produces, and
+/// routing would buy nothing that bias did not.
+#[test]
+#[ignore = "corridor skeleton probe"]
+fn survey_what_a_routed_skeleton_would_look_like() {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let config = HexWfcConfig::arc_default();
+    let quotas = HexRoomQuotas::for_team_count(2);
+    let grid = config.grid();
+
+    println!("seed              rooms  routed  cells  cover%  deg2%  deg4+%  in_room  carve%");
+    let (mut cover_sum, mut deg2_sum, mut deg4_sum, mut carve_sum) = (0.0, 0.0, 0.0, 0.0);
+    let mut seeds = 0usize;
+
+    for seed in baseline_seeds() {
+        let Ok(world) = HexWfcWorld::generate_with_room_quotas(seed, config, quotas) else {
+            continue;
+        };
+        let room_cells: BTreeSet<HexCoord> = world
+            .blueprints
+            .iter()
+            .flat_map(|blueprint| blueprint.cells.iter().copied())
+            .collect();
+
+        // Each room's attachment points: the cell just outside a named port.
+        let attachments: Vec<(usize, Vec<HexCoord>)> = world
+            .blueprints
+            .iter()
+            .enumerate()
+            .map(|(index, stamped)| {
+                let blueprint = super::blueprint::blueprint_for_role(stamped.role);
+                let outside = blueprint
+                    .named_ports
+                    .iter()
+                    .filter_map(|&(_, offset, face)| {
+                        let slot = blueprint.cells.iter().position(|&cell| cell == offset)?;
+                        let cell = *stamped.cells.get(slot)?;
+                        let neighbor = grid.neighbor(cell, face)?;
+                        (!room_cells.contains(&neighbor)).then_some(neighbor)
+                    })
+                    .collect();
+                (index, outside)
+            })
+            .collect();
+
+        // A spanning tree over rooms, nearest unvisited first, so the skeleton
+        // is the minimum that connects every room to every other.
+        let mut visited: BTreeSet<usize> = BTreeSet::from([0]);
+        let mut edges: Vec<(usize, usize)> = Vec::new();
+        while visited.len() < world.blueprints.len() {
+            let Some((from, to)) = visited
+                .iter()
+                .flat_map(|&from| {
+                    (0..world.blueprints.len())
+                        .filter(|to| !visited.contains(to))
+                        .map(move |to| (from, to))
+                })
+                .min_by_key(|&(from, to)| {
+                    observed_hex::travel_distance(
+                        world.blueprints[from].anchor,
+                        world.blueprints[to].anchor,
+                    )
+                })
+            else {
+                break;
+            };
+            visited.insert(to);
+            edges.push((from, to));
+        }
+
+        // Route each tree edge over the lattice the solver already produced.
+        let mut skeleton: BTreeSet<HexCoord> = BTreeSet::new();
+        let mut adjacency: BTreeMap<HexCoord, BTreeSet<HexCoord>> = BTreeMap::new();
+        let mut routed = 0usize;
+        let mut in_room = 0usize;
+        for (from, to) in &edges {
+            let Some(path) = attachments[*from]
+                .1
+                .iter()
+                .flat_map(|start| attachments[*to].1.iter().map(move |end| (*start, *end)))
+                .filter_map(|(start, end)| world.route_between(start, end))
+                .min_by_key(Vec::len)
+            else {
+                continue;
+            };
+            routed += 1;
+            for window in path.windows(2) {
+                let (a, b) = (window[0], window[1]);
+                for cell in [a, b] {
+                    if room_cells.contains(&cell) {
+                        in_room += 1;
+                    } else {
+                        skeleton.insert(cell);
+                    }
+                }
+                if !room_cells.contains(&a) && !room_cells.contains(&b) {
+                    adjacency.entry(a).or_default().insert(b);
+                    adjacency.entry(b).or_default().insert(a);
+                }
+            }
+        }
+
+        let halls = world
+            .placements
+            .values()
+            .filter(|placement| placement.space == HexSpace::Hall)
+            .count();
+        let mut degrees = [0usize; 7];
+        for cell in &skeleton {
+            let degree = adjacency.get(cell).map_or(0, BTreeSet::len).min(6);
+            degrees[degree] += 1;
+        }
+
+        #[allow(clippy::cast_precision_loss)]
+        {
+            let cover = skeleton.len() as f64 * 100.0 / halls as f64;
+            let deg2 = degrees[2] as f64 * 100.0 / skeleton.len().max(1) as f64;
+            let deg4 =
+                degrees[4..].iter().sum::<usize>() as f64 * 100.0 / skeleton.len().max(1) as f64;
+            let carve = (halls - skeleton.len().min(halls)) as f64 * 100.0 / halls as f64;
+            println!(
+                "{seed:016x}  {:>5}  {routed:>6}  {:>5}  {cover:>6.1}  {deg2:>5.1}  \
+                 {deg4:>6.1}  {in_room:>7}  {carve:>6.1}",
+                world.blueprints.len(),
+                skeleton.len(),
+            );
+            cover_sum += cover;
+            deg2_sum += deg2;
+            deg4_sum += deg4;
+            carve_sum += carve;
+            seeds += 1;
+        }
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    {
+        let n = seeds.max(1) as f64;
+        println!(
+            "\nmean cover {:.1}%  deg2 {:.1}%  deg4+ {:.1}%  carve {:.1}%",
+            cover_sum / n,
+            deg2_sum / n,
+            deg4_sum / n,
+            carve_sum / n
+        );
+        println!(
+            "cover is how much of today's hall the skeleton uses; carve is what \
+             would become void.\ndeg2 is the question: a skeleton that is itself \
+             a web of junctions would hand the collapse the shape it already makes."
+        );
+    }
+}
