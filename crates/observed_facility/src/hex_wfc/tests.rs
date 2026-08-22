@@ -1894,3 +1894,92 @@ fn survey_whether_a_thin_gateway_graph_breaks_the_clique() {
          is nearly the whole building, and the rooms are inclusions in it."
     );
 }
+
+/// What the collapse lottery actually offers, before any seed or profile.
+///
+/// A production facility measures 97.2% hall, 1.1% room and 1.7% void, and the
+/// composition profile cannot change that - a survey found `void_bias` from 1.0
+/// to 4.0 moves nothing, and the profile's first invariant is that it reweights
+/// variants and never removes one.
+///
+/// This asks whether the answer was decided before any of that. The collapse
+/// draws from the variant alphabet weighted per entry, so a space represented by
+/// three hundred entries at weight 6 beats one represented by a single entry at
+/// weight 4 by a factor of four hundred and fifty, whatever the weights say.
+/// That arithmetic has bitten this solver before: the comment above the shaft
+/// family in `variants.rs` records the facility coming out 47% stairs because
+/// 190 shaft entries competed with a handful for a straight (backlog #13), and
+/// the fix was to lower the shaft weight rather than to change the counting.
+#[test]
+#[ignore = "variant alphabet composition"]
+fn survey_what_the_collapse_lottery_offers() {
+    use std::collections::BTreeMap;
+
+    let catalogue = super::variants::catalogue();
+    let mut by_space: BTreeMap<String, (usize, u32)> = BTreeMap::new();
+    for variant in &catalogue {
+        let entry = by_space.entry(format!("{:?}", variant.space)).or_default();
+        entry.0 += 1;
+        entry.1 += variant.weight;
+    }
+    let total_weight: u32 = catalogue.iter().map(|variant| variant.weight).sum();
+
+    println!("space    entries  total_weight  lottery_share");
+    for (space, (entries, weight)) in &by_space {
+        #[allow(clippy::cast_precision_loss)]
+        let share = f64::from(*weight) * 100.0 / f64::from(total_weight);
+        println!("{space:<8} {entries:>7}  {weight:>12}  {share:>12.2}%");
+    }
+
+    let mut by_archetype: BTreeMap<String, (usize, u32)> = BTreeMap::new();
+    for variant in &catalogue {
+        let entry = by_archetype
+            .entry(format!("{:?}", variant.archetype))
+            .or_default();
+        entry.0 += 1;
+        entry.1 += variant.weight;
+    }
+    println!("\narchetype     entries  total_weight  lottery_share");
+    for (archetype, (entries, weight)) in &by_archetype {
+        let share = f64::from(*weight) * 100.0 / f64::from(total_weight);
+        println!("{archetype:<13} {entries:>7}  {weight:>12}  {share:>12.2}%");
+    }
+    // Room variants are 45% of the alphabet and 1.1% of the facility because
+    // they are only ever legal inside a stamped blueprint - `geometry_demands`
+    // says as much, calling them "generic Room variants that can never leave a
+    // blueprint domain". So the lottery an *ordinary* cell actually runs is Hall
+    // against Void, and nothing else.
+    let hall: u32 = catalogue
+        .iter()
+        .filter(|variant| variant.space == HexSpace::Hall)
+        .map(|variant| variant.weight)
+        .sum();
+    let void: u32 = catalogue
+        .iter()
+        .filter(|variant| variant.space == HexSpace::Void)
+        .map(|variant| variant.weight)
+        .sum();
+    let share = |weight: f64| weight * 100.0 / (f64::from(hall) + weight);
+    let ceiling = super::context::PROFILE_MAX;
+    // What multiplier would a quarter-empty facility need?
+    let wanted = f64::from(hall) / 3.0 / f64::from(void);
+    println!(
+        "\nthe lottery a non-blueprint cell runs: hall {hall} against void {void}.\n\
+         void share at bias 1.0        {:.2}%\n\
+         void share at the {ceiling:.1} ceiling  {:.2}%\n\
+         bias needed for 25% void      {wanted:.0}x\n\
+         \n\
+         PROFILE_MAX is {ceiling:.1} and exists so that \"no single input can \
+         dominate the lottery\". A quarter-empty facility needs {:.0} times more \
+         than the profile is allowed to ask for, so no tuning reaches it - which \
+         is why void_bias 1.0 to 4.0 measured no change at all. The alphabet \
+         offers one way for a cell to be nothing and {} ways for it to be hall.",
+        share(f64::from(void)),
+        share(f64::from(void) * ceiling),
+        wanted / ceiling,
+        catalogue
+            .iter()
+            .filter(|variant| variant.space == HexSpace::Hall)
+            .count(),
+    );
+}
