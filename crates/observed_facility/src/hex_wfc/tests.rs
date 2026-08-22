@@ -1646,3 +1646,236 @@ fn survey_whether_narrow_gateways_break_the_clique() {
          through."
     );
 }
+
+/// Does thinning the *gateway graph* break the clique, and what does it cost?
+///
+/// The narrowing probe above found that width is not the variable: at one
+/// crossing per gateway the surviving corridor still ran through 99.7 of the
+/// hundred regions. The reason is arithmetic rather than geometry - a hundred
+/// regions joined by about a hundred and seventy-six gateways is a graph of
+/// average degree three and a half, so a single crossing on every edge still
+/// leaves everything reachable from everything. Narrowing a boundary cannot
+/// disconnect a graph that is connected many times over.
+///
+/// So this seals whole gateways instead. Keep a spanning tree of the region
+/// graph - the minimum that leaves every region reachable - plus `extras`
+/// further edges, and seal every crossing of every gateway not kept. Kept
+/// gateways are held to one crossing, since the probe above showed width does
+/// not matter once the graph is thin.
+///
+/// Two questions at once, and the second is the one that decides whether any of
+/// this is buildable. Does the room graph finally stop being complete, and what
+/// does confining the facility to a thin region graph cost in reachability? A
+/// tree over a hundred ten-cell regions is a very long, very thin maze, and it
+/// may simply not admit thirty rooms and a spawn-to-exit route.
+///
+/// Same caveat as the probe above: sealing is a lower bound, because the solver
+/// never gets to compensate. The reachability column is the bill a real stage
+/// would have to pay back by routing.
+#[test]
+#[ignore = "region gateway-graph probe"]
+fn survey_whether_a_thin_gateway_graph_breaks_the_clique() {
+    use std::collections::{BTreeMap, VecDeque};
+
+    let config = HexWfcConfig::arc_default();
+    let quotas = HexRoomQuotas::for_team_count(2);
+    let grid = config.grid();
+
+    println!(
+        "extras  kept  tree_reach  halls  peers/room  biggest  rooms_live  exit_ok  spanned  floors"
+    );
+    for extras in [usize::MAX, 40, 20, 10, 0] {
+        let mut kept_total = 0usize;
+        let mut halls_total = 0usize;
+        let mut peers_total = 0usize;
+        let mut rooms_total = 0usize;
+        let mut biggest_total = 0usize;
+        let mut live_total = 0usize;
+        let mut spanned_total = 0usize;
+        let mut levels_total = 0usize;
+        let mut regions_reached = 0usize;
+        let mut exit_ok = 0usize;
+        let mut seeds = 0usize;
+
+        for seed in baseline_seeds() {
+            let Ok(world) = HexWfcWorld::generate_with_room_quotas(seed, config, quotas) else {
+                continue;
+            };
+            let plan = super::region::region_plan(seed, config);
+
+            // A spanning tree of the region graph, breadth-first from the
+            // region the spawn sits in, so the kept set is deterministic and
+            // every region stays nominally reachable.
+            let mut adjacency: BTreeMap<_, Vec<(usize, _)>> = BTreeMap::new();
+            for (index, gateway) in plan.gateways.iter().enumerate() {
+                adjacency
+                    .entry(gateway.a)
+                    .or_default()
+                    .push((index, gateway.b));
+                adjacency
+                    .entry(gateway.b)
+                    .or_default()
+                    .push((index, gateway.a));
+            }
+            let root = plan
+                .regions
+                .iter()
+                .find(|region| region.cells.contains(&config.spawn()))
+                .map(super::region::Region::key);
+            let mut kept: BTreeSet<usize> = BTreeSet::new();
+            let mut seen: BTreeSet<_> = root.into_iter().collect();
+            let mut queue: VecDeque<_> = seen.iter().copied().collect();
+            while let Some(here) = queue.pop_front() {
+                for &(index, there) in adjacency.get(&here).into_iter().flatten() {
+                    if seen.insert(there) {
+                        kept.insert(index);
+                        queue.push_back(there);
+                    }
+                }
+            }
+            // Then the requested number of extra edges, in gateway order.
+            for index in 0..plan.gateways.len() {
+                if kept.len() >= seen.len().saturating_sub(1).saturating_add(extras) {
+                    break;
+                }
+                kept.insert(index);
+            }
+            kept_total += kept.len();
+
+            let mut trial = world.clone();
+            for (index, gateway) in plan.gateways.iter().enumerate() {
+                let budget = usize::from(kept.contains(&index));
+                let mut used = 0usize;
+                for &(a, b) in &gateway.frontier {
+                    let Some(face) = HexFace::LATERAL
+                        .into_iter()
+                        .find(|face| grid.neighbor(a, *face) == Some(b))
+                    else {
+                        continue;
+                    };
+                    let walkable = trial
+                        .placements
+                        .get(&a)
+                        .is_some_and(|here| here.is_open(face))
+                        && trial
+                            .placements
+                            .get(&b)
+                            .is_some_and(|there| there.is_open(face.opposite()));
+                    if !walkable {
+                        continue;
+                    }
+                    if used < budget {
+                        used += 1;
+                        continue;
+                    }
+                    if let Some(here) = trial.placements.get_mut(&a) {
+                        here.doors &= !lateral_bit(face);
+                    }
+                    if let Some(there) = trial.placements.get_mut(&b) {
+                        there.doors &= !lateral_bit(face.opposite());
+                    }
+                }
+            }
+
+            let live = super::topology::active_component(config, &trial.placements, config.spawn());
+            live_total += trial
+                .blueprints
+                .iter()
+                .filter(|blueprint| blueprint.cells.iter().any(|cell| live.contains(cell)))
+                .count();
+            exit_ok += usize::from(live.contains(&config.exit()));
+
+            let mut rooms_on_corridor: BTreeMap<
+                observed_core::CorridorId,
+                BTreeSet<observed_core::RoomId>,
+            > = BTreeMap::new();
+            for attachment in trial.threshold_attachments() {
+                rooms_on_corridor
+                    .entry(attachment.corridor)
+                    .or_default()
+                    .insert(attachment.room);
+            }
+            let mut peers: BTreeMap<observed_core::RoomId, BTreeSet<observed_core::RoomId>> =
+                BTreeMap::new();
+            for rooms in rooms_on_corridor.values() {
+                for room in rooms {
+                    peers
+                        .entry(*room)
+                        .or_default()
+                        .extend(rooms.iter().filter(|other| *other != room).copied());
+                }
+            }
+            biggest_total += rooms_on_corridor
+                .values()
+                .map(BTreeSet::len)
+                .max()
+                .unwrap_or(0);
+
+            let owner: BTreeMap<HexCoord, _> = plan
+                .regions
+                .iter()
+                .flat_map(|region| region.cells.iter().map(move |&cell| (cell, region.key())))
+                .collect();
+            let corridors = trial.corridors();
+            spanned_total += corridors
+                .iter()
+                .max_by_key(|corridor| corridor.cells.len())
+                .map(|corridor| {
+                    corridor
+                        .cells
+                        .iter()
+                        .filter_map(|cell| owner.get(cell))
+                        .collect::<BTreeSet<_>>()
+                        .len()
+                })
+                .unwrap_or(0);
+            // How many floors does that corridor touch? Region frontiers are
+            // lateral only, so a vertical link is not a frontier and no gateway
+            // rule can reach it.
+            levels_total += corridors
+                .iter()
+                .max_by_key(|corridor| corridor.cells.len())
+                .map(|corridor| {
+                    corridor
+                        .cells
+                        .iter()
+                        .map(|cell| cell.level)
+                        .collect::<BTreeSet<_>>()
+                        .len()
+                })
+                .unwrap_or(0);
+            regions_reached += seen.len();
+            halls_total += corridors.len();
+            peers_total += peers.values().map(BTreeSet::len).sum::<usize>();
+            rooms_total += trial.blueprints.len();
+            seeds += 1;
+        }
+
+        let label = if extras == usize::MAX {
+            String::from("all   ")
+        } else {
+            format!("{extras:<6}")
+        };
+        #[allow(clippy::cast_precision_loss)]
+        {
+            println!(
+                "{label}  {:>4.0}  {:>10.1}  {:>5.1}  {:>10.2}  {:>7.1}  {:>10.1}  \
+                 {:>3}/{seeds}  {:>7.1}  {:>6.1}",
+                kept_total as f64 / seeds as f64,
+                regions_reached as f64 / seeds as f64,
+                halls_total as f64 / seeds as f64,
+                peers_total as f64 / rooms_total as f64,
+                biggest_total as f64 / seeds as f64,
+                live_total as f64 / seeds as f64,
+                exit_ok,
+                spanned_total as f64 / seeds as f64,
+                levels_total as f64 / seeds as f64,
+            );
+        }
+    }
+    println!(
+        "\nextras is gateways kept beyond a spanning tree. rooms_live and exit_ok \
+         are the feasibility bill: a facility that cannot reach its own exit is \
+         not a facility, however good its room graph looks."
+    );
+}
