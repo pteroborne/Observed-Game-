@@ -174,14 +174,33 @@ fn capture_world() -> HexWfcWorld {
         .filter_map(|offset| {
             HexWfcWorld::generate(crate::PRESET_SEEDS[0].wrapping_add(offset), config).ok()
         })
-        .find(|world| shaft_view(world).is_some())
-        .expect("Phase 92 evidence search must find a full-height shaft")
+        .find(|world| {
+            // Every vantage the showcase shoots, not just the shaft. The search
+            // used to ask for the shaft alone and let the other two `expect`
+            // downstream, which held only for as long as a world with a shaft
+            // happened to have the rest. Giving Keystone, Monitor and Recovery a
+            // second door each ended that: routes now hop room to room where
+            // they used to thread a corridor, and the first shaft-bearing seed
+            // no longer carries two consecutive flat hall cells on its
+            // spawn-to-exit route. Asking for all three restores the property
+            // the panics below were always assuming.
+            shaft_view(world).is_some()
+                && try_hall_vantage(world).is_some()
+                && try_ramp_vantage(world).is_some()
+        })
+        .expect("Phase 92 evidence search must find a shaft, a flat hall and a ramp")
 }
 
 fn hall_vantage(world: &HexWfcWorld) -> (Vec3, Vec3) {
-    let route = world
-        .route_between(world.config.spawn(), world.config.exit())
-        .expect("showcase route");
+    try_hall_vantage(world).expect("showcase route has no flat hall")
+}
+
+/// Two consecutive hall cells on one level, somewhere along the showcase route.
+///
+/// Fallible so [`capture_world`] can *search* for a world that has one rather
+/// than assert that the world it already picked does.
+fn try_hall_vantage(world: &HexWfcWorld) -> Option<(Vec3, Vec3)> {
+    let route = world.route_between(world.config.spawn(), world.config.exit())?;
     for chain in route.windows(3) {
         let placement = world.placements[&chain[0]];
         let next = world.placements[&chain[1]];
@@ -194,29 +213,33 @@ fn hall_vantage(world: &HexWfcWorld) -> (Vec3, Vec3) {
         ) && chain[0].level == chain[1].level
         {
             let origin = Vec3::from_array(hex_origin(chain[0]));
-            return (
+            return Some((
                 origin + Vec3::Y * 2.2,
                 Vec3::from_array(hex_origin(chain[1])) + Vec3::Y * 2.2,
-            );
+            ));
         }
     }
-    panic!("showcase route has no flat hall");
+    None
 }
 
 fn ramp_vantage(world: &HexWfcWorld) -> (Vec3, Vec3) {
+    try_ramp_vantage(world).expect("showcase ramp")
+}
+
+/// A ramp to stand beside, or `None` when this world has none to show.
+fn try_ramp_vantage(world: &HexWfcWorld) -> Option<(Vec3, Vec3)> {
     let (coord, exit) = world
         .placements
         .keys()
-        .find_map(|&coord| ramp_exit(world, coord).map(|exit| (coord, exit)))
-        .expect("showcase ramp");
+        .find_map(|&coord| ramp_exit(world, coord).map(|exit| (coord, exit)))?;
     let origin = Vec3::from_array(hex_origin(coord));
     let direction = face_plan_dir(exit);
     let along = Vec3::new(direction.x, 0.0, direction.y);
     let side = Vec3::new(-along.z, 0.0, along.x);
-    (
+    Some((
         origin - along * 3.0 + side * 2.5 + Vec3::Y * 4.4,
         origin + along * 5.5 + Vec3::Y * 7.8,
-    )
+    ))
 }
 
 fn shaft_vantage(world: &HexWfcWorld) -> (Vec3, Vec3) {

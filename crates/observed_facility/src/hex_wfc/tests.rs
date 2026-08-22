@@ -1244,6 +1244,9 @@ struct FacilityBaseline {
     phantom: usize,
     rooms: usize,
     port_ends: usize,
+    /// Rooms whose blueprint declares exactly one door. A hard leaf: no solver
+    /// can route through it, because there is nothing to route through.
+    leaves: usize,
     derived_peers: usize,
     frontier: usize,
     open: usize,
@@ -1272,7 +1275,7 @@ fn measure_baseline(
 
     // The port budget, read off the rooms actually placed rather than off a
     // second copy of the quota table.
-    let port_ends = world
+    let doors = world
         .blueprints
         .iter()
         .map(|blueprint| {
@@ -1280,7 +1283,9 @@ fn measure_baseline(
                 .named_ports
                 .len()
         })
-        .sum();
+        .collect::<Vec<_>>();
+    let port_ends = doors.iter().sum();
+    let leaves = doors.iter().filter(|count| **count == 1).count();
 
     // The derived room graph: how many distinct rooms each room shares a
     // corridor with, summed.
@@ -1333,6 +1338,7 @@ fn measure_baseline(
         phantom,
         rooms: world.blueprints.len(),
         port_ends,
+        leaves,
         derived_peers: peers.values().map(BTreeSet::len).sum(),
         frontier,
         open,
@@ -1362,6 +1368,7 @@ fn the_production_facility_holds_its_measured_baseline() {
     let mut slowest = std::time::Duration::ZERO;
     let (mut phantom_total, mut rooms_total) = (0usize, 0usize);
     let (mut port_ends_total, mut peers_total) = (0usize, 0usize);
+    let mut leaves_total = 0usize;
     let (mut total_open, mut total_frontier) = (0usize, 0usize);
 
     for seed in baseline_seeds() {
@@ -1374,6 +1381,7 @@ fn the_production_facility_holds_its_measured_baseline() {
         phantom_total += measured.phantom;
         rooms_total += measured.rooms;
         port_ends_total += measured.port_ends;
+        leaves_total += measured.leaves;
         peers_total += measured.derived_peers;
         total_open += measured.open;
         total_frontier += measured.frontier;
@@ -1387,7 +1395,8 @@ fn the_production_facility_holds_its_measured_baseline() {
     let permeability = total_open as f64 * 100.0 / total_frontier as f64;
     println!(
         "baseline: {solved} solved | phantom {phantom_total} | \
-         ports/room {port_budget:.2} | peers/room {derived_degree:.2} | \
+         ports/room {port_budget:.2} | leaves {leaves_total} | \
+         peers/room {derived_degree:.2} | \
          permeability {permeability:.1}% | attempts {worst_attempts} | slowest {slowest:?}"
     );
 
@@ -1407,15 +1416,23 @@ fn the_production_facility_holds_its_measured_baseline() {
         "a stamped room was unreachable from spawn - see the guard in validate.rs"
     );
 
-    // The ceiling. 62 port-ends across 30 rooms is 2.07 per room, and no solver
-    // change can raise it while `blueprint.rs` declares a single door on
-    // Keystone, Monitor and Recovery. A floor rather than an equality so that
-    // giving those roles a second port raises it without a test edit - but
-    // *lowering* it means a room quietly lost a door, which is the regression
-    // this is here to catch.
+    // The ceiling. It was 62 port-ends across 30 rooms - 2.07 each - until
+    // Keystone, Monitor and Recovery each gained a second door, which took it to
+    // 73 and 2.43. A floor rather than an equality, so authoring another port
+    // needs no test edit; *lowering* it means a room quietly lost a door, which
+    // is the regression this catches.
     assert!(
-        port_ends_total >= 62 * solved,
-        "port budget fell to {port_budget:.2} per room, below the declared 2.07"
+        port_ends_total >= 73 * solved,
+        "port budget fell to {port_budget:.2} per room, below the authored 2.43"
+    );
+
+    // Hard leaves: rooms declaring a single door, which no solver can route
+    // through. Twelve of thirty before the second doors landed; now only the
+    // Exit, whose one entrance is a deliberate contention chokepoint rather than
+    // an oversight. This is the number that actually gates a richer room graph.
+    assert!(
+        leaves_total <= solved,
+        "{leaves_total} single-door rooms across {solved} facilities - only the Exit should be one"
     );
 
     // The room graph is a clique: ~29 peers per room across 30 rooms means every

@@ -355,26 +355,45 @@ pub fn room_start() -> String {
     )
 }
 
-/// A single-cell room with one west threshold and an optional socket.
+/// Lateral face indices, matching `observed_hex::HexFace`. Named because a bare
+/// `3` in a port table is the kind of thing that drifts from the blueprint side
+/// silently, and `room_contract_matches` is the only thing that would notice.
+const WEST: usize = 3;
+const EAST: usize = 0;
+
+/// A one-hex room with its doors on the faces given.
+///
+/// Takes a list rather than a single port because a room with one door is a
+/// leaf in the facility graph, and a facility of leaves has nothing to route
+/// between. Which faces a role opens is a content decision; that it *can* open
+/// more than one is this function's job.
 #[must_use]
-fn simple_room(name: &str, role: &str, port: &'static str, socket: Option<Socket<'_>>) -> String {
+fn simple_room(
+    name: &str,
+    role: &str,
+    ports: &[(&'static str, usize)],
+    socket: Option<Socket<'_>>,
+) -> String {
     let sockets: Vec<Socket<'_>> = socket.into_iter().collect();
-    room_module(
-        name,
-        role,
-        &[Cell::ground(0, 0)],
-        &[NamedPort {
+    let named: Vec<NamedPort> = ports
+        .iter()
+        .map(|&(name, face)| NamedPort {
             cell: Cell::ground(0, 0),
-            face: 3,
-            name: port,
-        }],
-        &sockets,
-    )
+            face,
+            name,
+        })
+        .collect();
+    room_module(name, role, &[Cell::ground(0, 0)], &named, &sockets)
 }
 
 #[must_use]
 pub fn room_teleport_relay() -> String {
-    simple_room("room_teleport_relay", "TeleportRelay", "port_a", None)
+    simple_room(
+        "room_teleport_relay",
+        "TeleportRelay",
+        &[("port_a", WEST)],
+        None,
+    )
 }
 
 #[must_use]
@@ -382,7 +401,7 @@ pub fn room_keystone() -> String {
     simple_room(
         "room_keystone",
         "Keystone",
-        "port_a",
+        &[("port_a", WEST), ("port_b", EAST)],
         Some(Socket::new("keystone", "keystone")),
     )
 }
@@ -392,7 +411,7 @@ pub fn room_monitor() -> String {
     simple_room(
         "room_monitor",
         "Monitor",
-        "port_a",
+        &[("port_a", WEST), ("port_b", EAST)],
         Some(Socket::new("monitor", "monitor")),
     )
 }
@@ -402,7 +421,7 @@ pub fn room_recovery() -> String {
     simple_room(
         "room_recovery",
         "Recovery",
-        "port_a",
+        &[("port_a", WEST), ("port_b", EAST)],
         Some(Socket::new("recovery", "recovery")),
     )
 }
@@ -412,7 +431,7 @@ pub fn room_exit() -> String {
     simple_room(
         "room_exit",
         "Exit",
-        "entrance",
+        &[("entrance", WEST)],
         Some(Socket::new("exit", "exit")),
     )
 }

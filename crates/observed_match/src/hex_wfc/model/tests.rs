@@ -644,7 +644,13 @@ fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
     // The Bevy 0.19 migration moved the route again (6,610 -> 6,691). The two
     // independent runs above still agree on both completion and snapshot, so
     // this is the new engine/math baseline rather than nondeterministic drift.
-    assert_eq!(a, 6_691, "TR-10 pins the declared-ramp completion tick");
+    //
+    // And a fifth time (6,691 -> 6,869) when Keystone, Monitor and Recovery each
+    // gained a second door. Same reason as the third move and not the second:
+    // nothing about how a shape is followed changed, only which shapes are
+    // where. A room that opens two faces puts hall where fill used to be, so the
+    // route through it is a different route. 178 ticks, 2.7%.
+    assert_eq!(a, 6_869, "TR-10 pins the declared-ramp completion tick");
     // Teleport plates moved this digest (0x02dd_ea8d_c8d2_ac4a -> below) without
     // moving the tick above, and that pairing is the proof it was a
     // representation change and not a behavioural one: the snapshot now folds
@@ -652,7 +658,7 @@ fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
     // presses the button, so its route is tick-for-tick what it was.
     assert_eq!(
         first.snapshot().digest,
-        0x1b5d_d3d7_ca8e_3dae,
+        0x3e99_38f2_4b75_7f8f,
         "TR-10 pins the declared-ramp final snapshot digest"
     );
 }
@@ -1170,8 +1176,14 @@ fn cached_spawn_to_exit_cost_survives_a_committed_relayout() {
             .map_or(1, |route| route.cost_millis.max(1))
     };
 
+    // The seed moved from `0xa11c950000000000` when Keystone, Monitor and
+    // Recovery each gained a second door: on the old seed the bots now finish
+    // before the facility ever re-collapses, so the run committed nothing and
+    // the guard at the bottom caught it rather than letting the test pass
+    // proving nothing. This one commits four times in the same window, which is
+    // more exercise for a staleness check than the old one ever gave.
     let mut game = HexWfcMatch::new(
-        0xA11C_9500_0000_0000,
+        0xD9C1_73E5_FD29_F054,
         HexMatchConfig {
             guardian: true,
             teams: 2,

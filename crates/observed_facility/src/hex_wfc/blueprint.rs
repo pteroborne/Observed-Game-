@@ -235,7 +235,10 @@ pub fn blueprint_for_role(role: RoomRole) -> RoomBlueprint {
             "Keystone",
             &[(0, 0, 0)],
             &[],
-            &[("port_a", (0, 0, 0), HexFace::West)],
+            &[
+                ("port_a", (0, 0, 0), HexFace::West),
+                ("port_b", (0, 0, 0), HexFace::East),
+            ],
         ),
         RoomRole::DualStation => make(
             role,
@@ -265,14 +268,20 @@ pub fn blueprint_for_role(role: RoomRole) -> RoomBlueprint {
             "Monitor",
             &[(0, 0, 0)],
             &[],
-            &[("port_a", (0, 0, 0), HexFace::West)],
+            &[
+                ("port_a", (0, 0, 0), HexFace::West),
+                ("port_b", (0, 0, 0), HexFace::East),
+            ],
         ),
         RoomRole::Recovery => make(
             role,
             "Recovery",
             &[(0, 0, 0)],
             &[],
-            &[("port_a", (0, 0, 0), HexFace::West)],
+            &[
+                ("port_a", (0, 0, 0), HexFace::West),
+                ("port_b", (0, 0, 0), HexFace::East),
+            ],
         ),
     }
 }

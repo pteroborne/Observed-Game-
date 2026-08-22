@@ -22,6 +22,12 @@ fn placed(coord: HexCoord) -> SolveStep {
     }
 }
 
+/// Replaying a whole trace must land on the world the solver returned.
+///
+/// Seed `0xa11ce3d000000002` is the one that matters here: it is the first
+/// fixture whose solve actually prunes disconnected cells, and before
+/// `prune_disconnected` learned to emit a step, the fold and the returned world
+/// disagreed by exactly those cells.
 #[test]
 fn a_full_fold_reproduces_the_solved_world() {
     for n in 0..8u64 {
@@ -76,6 +82,14 @@ fn collapsed_never_goes_backwards_within_an_attempt() {
     let mut previous = 0;
     for cursor in 0..=steps.len() {
         let summary = summarise_trace(&steps[..cursor]);
+        // A retry throws the lattice away and starts over, so the count going
+        // back to zero *there* is the design and not a regression - which is
+        // what "within an attempt" in the name was always meant to exclude. The
+        // reset was missing because no fixture seed had ever needed a second
+        // attempt, so the loop had never crossed one.
+        if cursor > 0 && matches!(steps[cursor - 1], SolveStep::AttemptStart { .. }) {
+            previous = 0;
+        }
         assert!(
             summary.collapsed >= previous,
             "collapsed fell from {previous} to {} at cursor {cursor}",

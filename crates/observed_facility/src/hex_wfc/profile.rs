@@ -54,7 +54,7 @@ use super::{HexArchetype, HexSpace, PortClass};
 /// profile digest, moves the folded hash, and makes the handshake refuse a
 /// mismatched peer instead. It is the only channel by which a solver change can
 /// reach that hash; nothing else will notice.
-pub const COMPOSITION_PROFILE_VERSION: u16 = 1;
+pub const COMPOSITION_PROFILE_VERSION: u16 = 2;
 
 /// The widest a score component's weight may be set. Unlike the lottery
 /// multipliers, `0.0` *is* legal here: scoring is post-hoc and disabling a

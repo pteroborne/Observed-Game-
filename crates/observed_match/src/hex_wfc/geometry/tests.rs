@@ -206,23 +206,33 @@ fn selected_tiles(snapshot: &HexWfcGeometrySnapshot) -> BTreeMap<HexCoord, TileK
 /// | --- | --- | --- |
 /// | seed 1 | `0x53ff32531fe8f9f8` | `0xcdcbe8fbaacac084` |
 /// | seed 10000031 | `0x68eb78fd363f2172` | `0xdb8c7c36035aec42` |
+///
+/// Moved again when Keystone, Monitor and Recovery each gained a second door.
+/// Both seeds project more tiles than before (384 -> 387 and 400), which is the
+/// expected direction: a room that opens a second face needs the cell beyond it
+/// to be a hall rather than the fill it used to be.
+///
+/// | | before | after |
+/// | --- | --- | --- |
+/// | seed 1 | `0xcdcbe8fbaacac084` | `0x724700725be9a28d` |
+/// | seed 10000031 | `0xdb8c7c36035aec42` | `0x1a2c49860d076a3a` |
 #[test]
 fn production_catalog_selection_is_pinned_for_spectator_seeds() {
     let catalog = crate::hex_wfc::test_catalog();
     let cases = [
         (
             1u64,
-            384usize,
-            0xcdcb_e8fb_aaca_c084u64,
-            60usize,
-            0xbb47_d739_344b_7354u64,
+            387usize,
+            0x7247_0072_5be9_a28du64,
+            72usize,
+            0xbb87_7b43_bc14_a039u64,
         ),
         (
             10_000_031u64,
-            384usize,
-            0xdb8c_7c36_035a_ec42u64,
-            72usize,
-            0x8cce_4f17_090b_9f2bu64,
+            400usize,
+            0x1a2c_4986_0d07_6a3au64,
+            45usize,
+            0xf321_40c9_822c_e514u64,
         ),
     ];
     for (seed, expected_count, expected_digest, expected_tower_count, expected_tower_digest) in

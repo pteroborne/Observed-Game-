@@ -642,7 +642,7 @@ fn collapse_attempt_with_blueprints(
         return Err("collapse contradiction");
     }
     let mut placements = materialize(config, variants, &domains);
-    prune_disconnected(config, &mut placements);
+    prune_disconnected(config, &mut placements, &mut trace);
     if let Some(reason) = layout_failure(config, &placements, &blueprints) {
         return Err(reason);
     }
@@ -1103,7 +1103,24 @@ fn materialize(
 
 /// Void every cell unreachable from spawn (their doors pointed only at each
 /// other, so edge consistency survives).
-fn prune_disconnected(config: HexWfcConfig, placements: &mut BTreeMap<HexCoord, HexPlacement>) {
+/// Void everything the spawn cannot reach, and say so in the trace.
+///
+/// This runs *after* the last collapse step, so it is the one place the solver
+/// changes a cell without the trace hearing about it. That was invisible for as
+/// long as no traced seed actually had anything to prune, and it stopped being
+/// invisible the moment one did: the fold replays the collapse steps, the solver
+/// returns the pruned world, and the two disagree by exactly the cells voided
+/// here. A step-by-step viewer would draw a facility the solver never returned.
+///
+/// So the prune emits the same `Collapsed` step any other resolution does. The
+/// cell really is resolved, and it really is `Void`; re-resolving a coord is
+/// something `fold_trace` already handles, and the summary counts distinct
+/// resolved cells rather than steps, so nothing double-counts.
+fn prune_disconnected(
+    config: HexWfcConfig,
+    placements: &mut BTreeMap<HexCoord, HexPlacement>,
+    trace: &mut Option<&mut Vec<SolveStep>>,
+) {
     let keep = super::topology::active_component(config, placements, config.spawn());
     for (coord, placement) in placements.iter_mut() {
         if placement.space != HexSpace::Void && !keep.contains(coord) {
@@ -1112,6 +1129,17 @@ fn prune_disconnected(config: HexWfcConfig, placements: &mut BTreeMap<HexCoord, 
             placement.doors = 0;
             placement.up = PortClass::Sealed;
             placement.down = PortClass::Sealed;
+            emit(
+                trace,
+                SolveStep::Collapsed {
+                    coord: *coord,
+                    space: HexSpace::Void,
+                    archetype: HexArchetype::Void,
+                    doors: 0,
+                    up: PortClass::Sealed,
+                    down: PortClass::Sealed,
+                },
+            );
         }
     }
 }
