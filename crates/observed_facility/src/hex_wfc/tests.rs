@@ -1983,3 +1983,160 @@ fn survey_what_the_collapse_lottery_offers() {
             .count(),
     );
 }
+
+/// Sweep the void share and watch the facility empty out.
+///
+/// The point of drawing the space before the variant is that "how much of this
+/// building is nothing" becomes a number somebody sets. This is the check that
+/// it really is one: the alphabet's own implied ratio is 4 against hall's 639,
+/// so raising the void share should move the composition roughly as the ratio
+/// predicts, and the columns after it are what that costs.
+#[test]
+#[ignore = "space-mix sweep"]
+fn survey_what_the_space_mix_buys() {
+    let config = HexWfcConfig::arc_default();
+    let quotas = HexRoomQuotas::for_team_count(2);
+
+    println!(
+        "void_share  predicted  void%  hall%  peers/room  artery  halls  slowest  live  exit_ok"
+    );
+    for void_share in [4.0, 320.0, 639.0, 1918.0, 5000.0, 10_000.0] {
+        let mut profile = super::profile::HexCompositionProfile::baseline();
+        profile.space_mix = profile.space_mix.with(HexSpace::Void, void_share);
+
+        let (mut void, mut room, mut hall, mut total) = (0usize, 0usize, 0usize, 0usize);
+        let mut worst_attempts = 0u32;
+        let mut slowest = std::time::Duration::ZERO;
+        let (mut live_total, mut exit_ok, mut solved) = (0usize, 0usize, 0usize);
+        let (mut peers_total, mut rooms_counted) = (0usize, 0usize);
+        let (mut artery_total, mut halls_total) = (0usize, 0usize);
+
+        for seed in baseline_seeds() {
+            let start = std::time::Instant::now();
+            let Ok(world) =
+                HexWfcWorld::generate_with_profile(seed, config, Some(quotas), &profile)
+            else {
+                continue;
+            };
+            slowest = slowest.max(start.elapsed());
+            worst_attempts = worst_attempts.max(world.last_attempts);
+            solved += 1;
+            for placement in world.placements.values() {
+                total += 1;
+                match placement.space {
+                    HexSpace::Void => void += 1,
+                    HexSpace::Room => room += 1,
+                    HexSpace::Hall => hall += 1,
+                }
+            }
+            // The payoff metric. A sparser facility is only worth anything if
+            // the room graph gets sparser with it.
+            {
+                use std::collections::BTreeMap;
+                let mut rooms_on_corridor: BTreeMap<
+                    observed_core::CorridorId,
+                    BTreeSet<observed_core::RoomId>,
+                > = BTreeMap::new();
+                for attachment in world.threshold_attachments() {
+                    rooms_on_corridor
+                        .entry(attachment.corridor)
+                        .or_default()
+                        .insert(attachment.room);
+                }
+                let mut peers: BTreeMap<observed_core::RoomId, BTreeSet<observed_core::RoomId>> =
+                    BTreeMap::new();
+                for rooms in rooms_on_corridor.values() {
+                    for room in rooms {
+                        peers
+                            .entry(*room)
+                            .or_default()
+                            .extend(rooms.iter().filter(|other| *other != room).copied());
+                    }
+                }
+                peers_total += peers.values().map(BTreeSet::len).sum::<usize>();
+                rooms_counted += world.blueprints.len();
+                let corridors = world.corridors();
+                halls_total += corridors.len();
+                artery_total += corridors
+                    .iter()
+                    .map(|corridor| corridor.cells.len())
+                    .max()
+                    .unwrap_or(0);
+            }
+            let live = super::topology::active_component(config, &world.placements, config.spawn());
+            live_total += world
+                .blueprints
+                .iter()
+                .filter(|blueprint| blueprint.cells.iter().any(|cell| live.contains(cell)))
+                .count();
+            exit_ok += usize::from(live.contains(&config.exit()));
+        }
+
+        if total == 0 {
+            println!("{void_share:<10}  UNSOLVED at every seed");
+            continue;
+        }
+        #[allow(clippy::cast_precision_loss)]
+        {
+            let pct = |n: usize| n as f64 * 100.0 / total as f64;
+            let predicted = void_share * 100.0 / (void_share + 639.0);
+            let _ = (room, worst_attempts);
+            println!(
+                "{void_share:<10}  {predicted:>8.1}%  {:>4.1}%  {:>4.1}%  {:>10.2}  {:>6.0}  \
+                 {:>5.0}  {:>6.2}s  {:>4.1}  {exit_ok:>3}/{solved}",
+                pct(void),
+                pct(hall),
+                peers_total as f64 / rooms_counted.max(1) as f64,
+                artery_total as f64 / solved.max(1) as f64,
+                halls_total as f64 / solved.max(1) as f64,
+                slowest.as_secs_f64(),
+                live_total as f64 / solved.max(1) as f64,
+            );
+        }
+    }
+    println!(
+        "\npredicted is void/(void+hall) from the shares alone. Where the measured \
+         column tracks it, the mix is a real control; where it falls short, \
+         propagation is refusing the void a neighbour would contradict."
+    );
+}
+
+#[test]
+#[ignore = "diagnostic"]
+fn diagnose_archetype_shift() {
+    use std::collections::BTreeMap;
+    let config = HexWfcConfig::arc_default();
+    let quotas = HexRoomQuotas::for_team_count(2);
+    for (label, mix) in [
+        (
+            "alphabet",
+            super::profile::SpaceMix::implied_by_the_alphabet(),
+        ),
+        ("baseline", super::profile::SpaceMix::baseline()),
+    ] {
+        let mut profile = super::profile::HexCompositionProfile::baseline();
+        profile.space_mix = mix;
+        let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+        let mut total = 0usize;
+        for seed in baseline_seeds() {
+            let Ok(world) =
+                HexWfcWorld::generate_with_profile(seed, config, Some(quotas), &profile)
+            else {
+                continue;
+            };
+            for placement in world.placements.values() {
+                *counts
+                    .entry(format!("{:?}", placement.archetype))
+                    .or_default() += 1;
+                total += 1;
+            }
+        }
+        #[allow(clippy::cast_precision_loss)]
+        let line = counts
+            .iter()
+            .map(|(k, v)| format!("{k} {:.1}%", *v as f64 * 100.0 / total as f64))
+            .collect::<Vec<_>>()
+            .join("  ");
+        println!("{label:<9} {line}");
+    }
+}

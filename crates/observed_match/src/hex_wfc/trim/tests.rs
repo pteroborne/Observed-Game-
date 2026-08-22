@@ -90,6 +90,7 @@ fn two_cell_world() -> HexWfcWorld {
         cell_revisions: BTreeMap::from([(a, 1), (b, 1)]),
         last_attempts: 1,
         authored_pins: Default::default(),
+        space_mix: observed_facility::hex_wfc::profile::SpaceMix::baseline(),
     }
 }
 

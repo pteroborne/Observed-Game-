@@ -373,6 +373,13 @@ pub struct HexWfcWorld {
     /// deliberately placed, silently erasing authored intent between one tick
     /// and the next.
     pub authored_pins: BTreeSet<HexCoord>,
+    /// The space mix this world was solved under.
+    ///
+    /// Kept for the same reason as `authored_pins`: a mid-match relayout
+    /// re-collapses a pocket and has no profile to hand, so without this it
+    /// would refill the hole at the alphabet's own hall-heavy ratio and undo,
+    /// a pocket at a time, whatever emptiness the facility was authored with.
+    pub space_mix: super::hex_wfc::profile::SpaceMix,
 }
 
 impl HexWfcWorld {
@@ -561,6 +568,7 @@ impl HexWfcWorld {
                 cell_revisions,
                 last_attempts: attempts,
                 authored_pins: pins::resolved_pins(config, profile).0.into_keys().collect(),
+                space_mix: profile.space_mix,
             },
             attempts,
         ))

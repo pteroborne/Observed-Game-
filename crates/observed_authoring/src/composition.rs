@@ -476,7 +476,13 @@ mod tests {
     /// one on this catalog will not play together, by design.
     #[test]
     fn committed_arc_s_catalog_identity_is_pinned() {
-        // Moved when Keystone, Monitor and Recovery each gained a second door.
+        // Moved again when the collapse learned to draw the *space* before the
+        // variant. The catalog is untouched - no tile changed - and the whole
+        // move is on the profile side: a new `space_mix` field, and
+        // `COMPOSITION_PROFILE_VERSION` at 3 because solver output moved.
+        //
+        // Moved before that when Keystone, Monitor and Recovery each gained a
+        // second door.
         // Three room modules, no others: the geometry of a one-hex room is
         // unchanged and only the east face turned from solid wall into a framed
         // threshold. The profile side moved too, and for once not because a
@@ -486,12 +492,12 @@ mod tests {
         const CATALOG_HASH: &str =
             "10f86ca6ffefa462f8fb243d9af343a0fc8540ea058c88fe9edca83b3422c0b9";
         const PROFILE_HASH: &str =
-            "22ee251b321e912b7db4003f84d1c24f18ddafaf9026506da71b1d4929e0d45d";
+            "e876ed4e9c102fda925573f4545b39e09f5105a1ac2d4b0ca2bf62e5be710fe1";
         // Folds the catalog and the profile. Both sides moved this time, which
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "6c0f4b816aad65aeaa56ced40cc04aa241305508eaec452367a4e31fbd09247e";
+            "29bf8d7fb8449871a562a217babd1ca5c288675ead48aadc5087f809d7b7decf";
 
         let root = committed_tiles();
         let compiled_text =

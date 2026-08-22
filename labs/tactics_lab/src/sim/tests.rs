@@ -61,11 +61,14 @@ fn game(seed: u64) -> TacticsGame {
 /// | `0xdeadbeef` | 27.5% | 19.6% |
 ///
 /// Mean 24.5% -> 22.4%, one seed up and `0xdeadbeef` down hard enough to graze
-/// a fifth. So the floor moves to a sixth, which is a real weakening and is
-/// written down here rather than quietly applied: the measured worst case is
-/// 19.6% and this leaves about three points under it. If a later change pushes
-/// the mean down again, the answer is to find the space back, not to move this
-/// a second time.
+/// a fifth. The floor moved to a sixth, recorded here as a real weakening, with
+/// the note that if a later change pushed the mean down again the answer would
+/// be to find the space back rather than move this a second time.
+///
+/// The space was found. The collapse now draws void, room or hall by an
+/// authored share before it draws a variant, so this lab asks for emptiness
+/// through `space_mix` instead of through a void `archetype_bias` that the
+/// space draw makes inert. The floor is back at a fifth.
 #[test]
 fn tactical_layouts_leave_negative_space_and_use_a_varied_vocabulary() {
     for seed in SEEDS {
@@ -85,7 +88,7 @@ fn tactical_layouts_leave_negative_space_and_use_a_varied_vocabulary() {
             .map(|placement| placement.archetype)
             .collect();
         assert!(
-            voids * 6 >= total,
+            voids * 5 >= total,
             "seed {seed:#x} has only {voids}/{total} blank cells"
         );
         assert!(

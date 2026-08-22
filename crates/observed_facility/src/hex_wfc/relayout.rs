@@ -311,6 +311,7 @@ impl HexWfcWorld {
             &self.blueprints,
             &work.region,
             influence,
+            self.space_mix,
         ) {
             Ok(solved) => Ok(HexRelayoutProgress::Ready(make_candidate(
                 self,

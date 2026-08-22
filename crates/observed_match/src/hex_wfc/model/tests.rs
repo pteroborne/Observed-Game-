@@ -579,8 +579,13 @@ fn diagnose_bot() {
 /// route retained stairs but no longer crossed a ramp. That is expected — the gate
 /// asserts the *bot* can walk a route with both vertical kinds on it, not that one
 /// particular seed produces one.
+///
+/// Re-pinned again when the collapse began drawing the space before the variant:
+/// the old seed's route came back `ramps=0 stairs=4`, the same symptom as last
+/// time and for the same reason - a route, not the alphabet, changed shape.
+/// Ramps are still 4.5% of the facility against 5.6% before.
 /// Any arc that touches weighting should expect to re-run `scan_gate_seeds`.
-const GATE_SEED: u64 = 0xd9c1_e6e5_fd29_f054;
+const GATE_SEED: u64 = 0x1450_da58_fbbe_e87e;
 const GATE_LEVELS: u8 = 5;
 
 /// Phase 94 success criterion 1 — the headless gate. On a pinned seed whose
@@ -650,7 +655,15 @@ fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
     // nothing about how a shape is followed changed, only which shapes are
     // where. A room that opens two faces puts hall where fill used to be, so the
     // route through it is a different route. 178 ticks, 2.7%.
-    assert_eq!(a, 6_869, "TR-10 pins the declared-ramp completion tick");
+    //
+    // Sixth move (6,869 -> 8,062), and this one comes with a new seed rather
+    // than the same one walking a different route: drawing the space before the
+    // variant took the facility from 1.7% void to 18.5%, the old gate seed's
+    // route lost its ramps entirely, and `scan_gate_seeds` found this one. So
+    // the tick is not comparable to the five before it - it is a different
+    // building. Determinism, which is what the gate actually guards, is
+    // asserted above and still holds run against run.
+    assert_eq!(a, 8_062, "TR-10 pins the declared-ramp completion tick");
     // Teleport plates moved this digest (0x02dd_ea8d_c8d2_ac4a -> below) without
     // moving the tick above, and that pairing is the proof it was a
     // representation change and not a behavioural one: the snapshot now folds
@@ -658,7 +671,7 @@ fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
     // presses the button, so its route is tick-for-tick what it was.
     assert_eq!(
         first.snapshot().digest,
-        0x3e99_38f2_4b75_7f8f,
+        0xb458_0070_8f65_6d21,
         "TR-10 pins the declared-ramp final snapshot digest"
     );
 }
@@ -765,8 +778,15 @@ fn perimeter_tower_local_intent_and_body_trace_is_pinned() {
         }
     );
     assert_eq!(tile.archetype, "stair_tower");
-    assert_eq!(tile.register, "megastructure");
-    assert_eq!(tile.variant, 360);
+    // Register and variant moved with `GATE_SEED`, and only those two: the cell,
+    // the archetype, the completion tick, the traced tick count and the body
+    // trace below are all bit-identical to the old seed's. So the bot climbs the
+    // same tower through the same geometry and the *dressing* changed - a
+    // different district owns that cell now, and the projector picks a different
+    // authored variation for it. Worth keeping distinct from a move where the
+    // climb itself changed, which is what the trace pin exists to catch.
+    assert_eq!(tile.register, "institutional");
+    assert_eq!(tile.variant, 306);
     // TR-11 moved this trace on purpose, and it is the only pin in that packet
     // permitted to move: the tower is now climbed by a graph leg instead of by
     // the compatibility follower beside it.
@@ -1011,7 +1031,13 @@ fn ordinary_drops_do_not_trigger_recovery_on_the_gate_route() {
 /// same generation timeline and the same final snapshot digest byte-for-byte.
 ///
 /// The fixture's first warned pocket commits on its first scheduled attempt.
-const MUTATION_SEED: u64 = 0x7BBA_F82C_7DDF_743F;
+///
+/// Re-scanned when the collapse began drawing the space before the variant. The
+/// old seed's first pocket started being cancelled instead of committing
+/// (`scan_mutation_seeds` reports `cancelled=1` for it now), which is the
+/// fixture losing its premise rather than relayout breaking - the same scan
+/// shows most seeds still committing on the first attempt, and this one does.
+const MUTATION_SEED: u64 = 0x8F36_543E_F8E8_D8D2;
 
 #[test]
 fn observed_relayout_commits_mid_match_deterministically() {

@@ -10,8 +10,7 @@
 //! [`MatchSettings`] plus its action log, which is what makes the determinism
 //! test meaningful and what any future replay or save would need.
 
-use observed_content::ArchitectureRegister;
-use observed_facility::hex_wfc::{DistrictBias, HexArchetype, HexCompositionProfile, HexWfcConfig};
+use observed_facility::hex_wfc::{HexArchetype, HexCompositionProfile, HexSpace, HexWfcConfig};
 
 /// How many lattice cells each floor may contain.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -540,9 +539,18 @@ impl MatchSettings {
     pub fn composition_profile(&self) -> HexCompositionProfile {
         let mut profile = HexCompositionProfile::baseline();
         profile.label = String::from("tactical negative space");
+        // Negative space is asked for here and not through `archetype_bias`.
+        //
+        // It used to be: void at the 4.0 ceiling, and a further 4.0 in every
+        // district, sixteen times the alphabet's own weight - because that was
+        // the only lever there was. It is now inert, and the reason is worth
+        // knowing before reaching for it again. Void is the only archetype in
+        // its space, so multiplying its weight multiplies the whole space's sum
+        // and cancels out of the space draw entirely. Emptiness is a share now,
+        // not a bias.
+        profile.space_mix = profile.space_mix.with(HexSpace::Void, 3_000.0);
         profile.archetype_bias = profile
             .archetype_bias
-            .with(HexArchetype::Void, 4.0)
             .with(HexArchetype::Room, 1.15)
             .with(HexArchetype::Straight, 0.55)
             .with(HexArchetype::Corner, 1.35)
@@ -551,14 +559,6 @@ impl MatchSettings {
             .with(HexArchetype::RampHead, 1.45)
             .with(HexArchetype::Shaft, 0.50)
             .with(HexArchetype::Expanse, 1.70);
-        profile.district_bias = ArchitectureRegister::ALL
-            .into_iter()
-            .map(|register| DistrictBias {
-                register: register.slug().to_string(),
-                bias: observed_facility::hex_wfc::ArchetypeBias::neutral()
-                    .with(HexArchetype::Void, 4.0),
-            })
-            .collect();
         profile
     }
 
@@ -638,7 +638,15 @@ mod tests {
     fn tactical_composition_is_valid_and_biases_toward_negative_space() {
         let profile = MatchSettings::standard().composition_profile();
         assert_eq!(profile.validate(), Ok(()));
-        assert!(profile.archetype_bias.void > 1.0);
+        // Emptiness is a share of the space draw, not a bias on an archetype.
+        // Asserted against the shipped default rather than against 1.0, because
+        // the whole claim is that this lab wants *more* negative space than the
+        // game does - and a void bias would say nothing at all, since void is
+        // alone in its space and scaling it cancels out of the draw.
+        assert!(
+            profile.space_mix.void > observed_facility::hex_wfc::profile::SpaceMix::baseline().void
+        );
+        assert!(profile.space_mix.void > profile.space_mix.hall);
         assert!(profile.archetype_bias.straight < 1.0);
         assert!(profile.archetype_bias.junction > profile.archetype_bias.straight);
     }

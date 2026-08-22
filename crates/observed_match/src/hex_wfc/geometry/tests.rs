@@ -216,23 +216,33 @@ fn selected_tiles(snapshot: &HexWfcGeometrySnapshot) -> BTreeMap<HexCoord, TileK
 /// | --- | --- | --- |
 /// | seed 1 | `0xcdcbe8fbaacac084` | `0x724700725be9a28d` |
 /// | seed 10000031 | `0xdb8c7c36035aec42` | `0x1a2c49860d076a3a` |
+///
+/// Moved again when the collapse began drawing the space before the variant.
+/// Both seeds project *fewer* tiles now - 387 to 300 and 400 to 267 - and that
+/// direction is the whole point: the facility went from 1.7% void to 18.5%, so
+/// there is simply less of it to build.
+///
+/// | | before | after |
+/// | --- | --- | --- |
+/// | seed 1 | `0x724700725be9a28d` | `0xda2b4f50572c48fb` |
+/// | seed 10000031 | `0x1a2c49860d076a3a` | `0x5b7df763dd7bbf5d` |
 #[test]
 fn production_catalog_selection_is_pinned_for_spectator_seeds() {
     let catalog = crate::hex_wfc::test_catalog();
     let cases = [
         (
             1u64,
-            387usize,
-            0x7247_0072_5be9_a28du64,
-            72usize,
-            0xbb87_7b43_bc14_a039u64,
+            300usize,
+            0xda2b_4f50_572c_48fbu64,
+            68usize,
+            0x1ebd_4697_3911_01e6u64,
         ),
         (
             10_000_031u64,
-            400usize,
-            0x1a2c_4986_0d07_6a3au64,
+            267usize,
+            0x5b7d_f763_dd7b_bf5du64,
             45usize,
-            0xf321_40c9_822c_e514u64,
+            0xde1b_66d4_f3b9_514cu64,
         ),
     ];
     for (seed, expected_count, expected_digest, expected_tower_count, expected_tower_digest) in
@@ -349,6 +359,7 @@ fn oversized_grid_reports_collider_id_capacity_before_projection() {
         cell_revisions: BTreeMap::new(),
         last_attempts: 1,
         authored_pins: Default::default(),
+        space_mix: observed_facility::hex_wfc::profile::SpaceMix::baseline(),
     };
     assert!(matches!(
         HexWfcGeometrySnapshot::project(&world, &[]),
@@ -921,6 +932,7 @@ fn multi_cell_world(role: RoomRole, anchor: HexCoord) -> HexWfcWorld {
         cell_revisions,
         last_attempts: 1,
         authored_pins: Default::default(),
+        space_mix: observed_facility::hex_wfc::profile::SpaceMix::baseline(),
     }
 }
 

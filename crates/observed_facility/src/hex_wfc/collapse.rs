@@ -246,6 +246,7 @@ pub(super) fn collapse_pocket_attempt(
     blueprints: &[StampedBlueprint],
     region: &super::relayout::HexMutationRegion,
     influence: Option<&super::context::HexInfluenceField>,
+    space_mix: super::profile::SpaceMix,
 ) -> Result<CollapseAttempt, &'static str> {
     let tables = solver_tables();
     let mut rng = SplitMix::new(mixed(seed, generation, attempt, 0x4E8C_0FFE_D011_88AA));
@@ -295,7 +296,15 @@ pub(super) fn collapse_pocket_attempt(
     if !propagate_pocket(tables, region, &mut domains) {
         return Err("pocket propagation contradiction");
     }
-    if !collapse_pocket_domains(tables, region, &mut domains, &mut rng, influence, previous) {
+    if !collapse_pocket_domains(
+        tables,
+        region,
+        &mut domains,
+        &mut rng,
+        influence,
+        previous,
+        space_mix,
+    ) {
         return Err("pocket collapse contradiction");
     }
     let placements = domains
@@ -522,6 +531,71 @@ fn propagate_pocket(
     true
 }
 
+/// Draws the *space* by its share, then the variant within it by the alphabet's
+/// own weight - in a single weighted roll, so the RNG is consumed exactly as
+/// before and no seed shifts for the sake of the restructuring alone.
+///
+/// The old lottery drew straight from the alphabet per entry, which made a
+/// space as likely as it had ways of being spelled. That is how a facility came
+/// out 97.2% hall against 1.7% void: 148 hall entries totalling 639 against one
+/// void entry weighing 4, a ratio no [`HexCompositionProfile`] could bend
+/// because its ceiling is 4.0 and the gap needed 53.
+///
+/// The trick that keeps it to one roll: scale every variant of space `s` by
+/// `share(s)` and by the product of the *other* present spaces' weight sums.
+/// The sum over a space then comes to `share(s) * (product of all present
+/// sums)`, and that product is common to every space - so the spaces stand in
+/// exactly their share ratio while, inside one, variants keep their own
+/// proportions. A space with nothing legal in this domain has a zero sum, drops
+/// out of the product, and simply does not enter the draw.
+#[derive(Clone, Copy)]
+struct SpaceLottery {
+    sums: [u64; 3],
+    shares: [u64; 3],
+}
+
+impl SpaceLottery {
+    const fn slot(space: HexSpace) -> usize {
+        match space {
+            HexSpace::Void => 0,
+            HexSpace::Room => 1,
+            HexSpace::Hall => 2,
+        }
+    }
+
+    /// Total the domain's raw weights per space, and read the authored shares.
+    fn build(
+        domain: impl Iterator<Item = usize>,
+        variants: &[HexVariant],
+        mix: super::profile::SpaceMix,
+        raw_of: impl Fn(usize) -> u64,
+    ) -> Self {
+        let mut sums = [0u64; 3];
+        for variant in domain {
+            sums[Self::slot(variants[variant].space)] =
+                sums[Self::slot(variants[variant].space)].saturating_add(raw_of(variant));
+        }
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let share = |value: f64| value.round().max(1.0) as u64;
+        Self {
+            sums,
+            shares: [share(mix.void), share(mix.room), share(mix.hall)],
+        }
+    }
+
+    /// This variant's weight in the combined draw.
+    fn scaled(&self, space: HexSpace, raw: u64) -> u128 {
+        let slot = Self::slot(space);
+        let mut weight = u128::from(self.shares[slot]) * u128::from(raw);
+        for other in 0..3 {
+            if other != slot && self.sums[other] > 0 {
+                weight *= u128::from(self.sums[other]);
+            }
+        }
+        weight
+    }
+}
+
 fn collapse_pocket_domains(
     tables: &SolverTables,
     region: &super::relayout::HexMutationRegion,
@@ -529,6 +603,7 @@ fn collapse_pocket_domains(
     rng: &mut SplitMix,
     influence: Option<&super::context::HexInfluenceField>,
     previous: &BTreeMap<HexCoord, HexPlacement>,
+    space_mix: super::profile::SpaceMix,
 ) -> bool {
     loop {
         let Some(min_size) = domains
@@ -561,11 +636,14 @@ fn collapse_pocket_domains(
             };
             clustered_expanse_weight(base, tables.variants[variant].archetype, adjacent_expanses)
         };
-        let total = domain.iter().map(weight_of).sum::<u64>();
-        let mut roll = rng.next_u64() % total.max(1);
+        let lottery = SpaceLottery::build(domain.iter(), &tables.variants, space_mix, weight_of);
+        let scaled_of =
+            |variant: usize| lottery.scaled(tables.variants[variant].space, weight_of(variant));
+        let total = domain.iter().map(scaled_of).sum::<u128>().max(1);
+        let mut roll = u128::from(rng.next_u64()) % total;
         let mut picked = domain.iter().next().expect("non-empty pocket domain");
         for variant in domain.iter() {
-            let weight = weight_of(variant);
+            let weight = scaled_of(variant);
             if roll < weight {
                 picked = variant;
                 break;
@@ -989,15 +1067,19 @@ fn collapse_domains(
             );
             clustered_expanse_weight(base, variants[variant].archetype, adjacent_expanses)
         };
-        let total: u64 = domains[cell].iter().map(weight_of).sum();
+        let lottery =
+            SpaceLottery::build(domains[cell].iter(), variants, profile.space_mix, weight_of);
+        let scaled_of =
+            |variant: usize| lottery.scaled(variants[variant].space, weight_of(variant));
+        let total: u128 = domains[cell].iter().map(scaled_of).sum();
         let first = domains[cell].iter().next().expect("candidate is non-empty");
         let picked = if total == 0 {
             first
         } else {
-            let mut roll = rng.next_u64() % total;
+            let mut roll = u128::from(rng.next_u64()) % total;
             let mut chosen = first;
             for variant in domains[cell].iter() {
-                let weight = weight_of(variant);
+                let weight = scaled_of(variant);
                 if roll < weight {
                     chosen = variant;
                     break;

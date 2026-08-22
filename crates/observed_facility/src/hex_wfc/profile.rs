@@ -54,7 +54,7 @@ use super::{HexArchetype, HexSpace, PortClass};
 /// profile digest, moves the folded hash, and makes the handshake refuse a
 /// mismatched peer instead. It is the only channel by which a solver change can
 /// reach that hash; nothing else will notice.
-pub const COMPOSITION_PROFILE_VERSION: u16 = 2;
+pub const COMPOSITION_PROFILE_VERSION: u16 = 3;
 
 /// The widest a score component's weight may be set. Unlike the lottery
 /// multipliers, `0.0` *is* legal here: scoring is post-hoc and disabling a
@@ -65,6 +65,14 @@ pub const SCORE_WEIGHT_MAX: f64 = 16.0;
 /// independent solve with its own retry budget, so this bounds match-start
 /// latency.
 pub const MAX_SEARCH_CANDIDATES: u32 = 8;
+
+/// The band a [`SpaceMix`] share is validated into. Floored above zero so no
+/// space can be driven out of contention, and wide enough that the ratio
+/// between two shares can span four orders of magnitude - which it needs to,
+/// because the alphabet's own implied ratio is already 639 to 4.
+pub const SPACE_SHARE_MIN: f64 = 1.0;
+/// See [`SPACE_SHARE_MIN`].
+pub const SPACE_SHARE_MAX: f64 = 10_000.0;
 
 /// The authored composition of a facility: tendencies, biases, scoring, search
 /// policy, and pinned authorial intent.
@@ -78,6 +86,8 @@ pub struct HexCompositionProfile {
     /// Free-text name for the authoring tool's benefit; never read by the solver.
     pub label: String,
     pub tendencies: CompositionTendencies,
+    /// How much of the facility each *kind of space* should be.
+    pub space_mix: SpaceMix,
     pub archetype_bias: ArchetypeBias,
     pub district_bias: Vec<DistrictBias>,
     pub score: ScoreWeights,
@@ -102,6 +112,102 @@ pub struct CompositionTendencies {
     pub room_low_level: f64,
     /// Weight multiplier for rooms at the highest level.
     pub room_high_level: f64,
+}
+
+/// How much of the facility should be nothing, room, and corridor.
+///
+/// These are shares of the *space* lottery, not multipliers on it, and that
+/// distinction is the whole reason the type exists. The collapse used to draw
+/// straight from the variant alphabet weighted per entry, which meant a space
+/// was as likely as it had ways of being spelled: 148 hall entries totalling
+/// 639 against a single void entry weighing 4. A facility came out 97.2% hall,
+/// 1.1% room and 1.7% void, and no [`ArchetypeBias`] could touch it - the
+/// permitted ceiling is 4.0 and a quarter-empty building needed 53.
+///
+/// So the draw happens in two steps: which space, by these shares, and then
+/// which variant within it, by the alphabet's own weights. How empty a facility
+/// is becomes a number somebody chose rather than a consequence of how many
+/// ways there are to draw a corridor.
+///
+/// Shares are relative - only their ratio matters - and a space absent from a
+/// cell's domain simply does not enter the draw. None may be zero, because the
+/// profile's first invariant is that a legal variant is never driven out of
+/// contention.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct SpaceMix {
+    pub void: f64,
+    pub room: f64,
+    pub hall: f64,
+}
+
+impl SpaceMix {
+    /// The shares the alphabet used to imply on its own, so this is what the
+    /// solver did before the space draw existed - near enough to serve as the
+    /// reference point a sweep measures against, though not byte-identical: the
+    /// old per-entry lottery renormalised against whatever survived in each
+    /// cell's domain, and these shares do not.
+    #[must_use]
+    pub const fn implied_by_the_alphabet() -> Self {
+        Self {
+            void: 4.0,
+            room: 536.0,
+            hall: 639.0,
+        }
+    }
+
+    /// The authored default: three parts nothing to one part corridor.
+    ///
+    /// Chosen off a sweep rather than a feeling. Void share against a fixed hall
+    /// of 100 gives 0.3% empty at 1.3 (the alphabet's own ratio), 5.9% at 50,
+    /// 18.5% at 300, and 38.6% at the 10,000 ceiling - and every one of those
+    /// solved all six seeds with all thirty rooms live, the exit reachable, and
+    /// no change in solve time. 300 is the knee: it clears the sixth of the
+    /// board `tactics_lab` asks for with room to spare, and leaves most of the
+    /// range still above it rather than spending it all at once.
+    ///
+    /// Room's share only decides anything inside a stamped blueprint, where
+    /// room variants are the only legal space, so it is kept near its old
+    /// proportion and does no work.
+    #[must_use]
+    pub const fn baseline() -> Self {
+        Self {
+            void: 300.0,
+            room: 84.0,
+            hall: 100.0,
+        }
+    }
+
+    /// The share for one space.
+    #[must_use]
+    pub const fn get(&self, space: HexSpace) -> f64 {
+        match space {
+            HexSpace::Void => self.void,
+            HexSpace::Room => self.room,
+            HexSpace::Hall => self.hall,
+        }
+    }
+
+    /// Set one space's share. Chainable, for tests and the tool.
+    #[must_use]
+    pub const fn with(mut self, space: HexSpace, share: f64) -> Self {
+        match space {
+            HexSpace::Void => self.void = share,
+            HexSpace::Room => self.room = share,
+            HexSpace::Hall => self.hall = share,
+        }
+        self
+    }
+
+    /// Named fields, for validation and the authoring tool's readout.
+    #[must_use]
+    pub fn fields(&self) -> [(&'static str, f64); 3] {
+        [
+            ("space_void", self.void),
+            ("space_room", self.room),
+            ("space_hall", self.hall),
+        ]
+    }
 }
 
 /// A per-archetype weight multiplier.
@@ -487,6 +593,7 @@ impl HexCompositionProfile {
             version: COMPOSITION_PROFILE_VERSION,
             label: String::from("baseline"),
             tendencies: CompositionTendencies::baseline(),
+            space_mix: SpaceMix::baseline(),
             archetype_bias: ArchetypeBias::neutral(),
             district_bias: Vec::new(),
             score: ScoreWeights::baseline(),
@@ -548,6 +655,21 @@ impl HexCompositionProfile {
         }
         for (name, value) in self.archetype_bias.fields() {
             check_multiplier(name, value, &mut defects);
+        }
+        // Shares, not multipliers, so they get their own band: wide enough to
+        // express "almost none of this" and "mostly this", and floored above
+        // zero so no space is driven out of contention.
+        for (name, value) in self.space_mix.fields() {
+            if !value.is_finite() {
+                defects.push(ProfileDefect::NonFiniteWeight { field: name });
+            } else if !(SPACE_SHARE_MIN..=SPACE_SHARE_MAX).contains(&value) {
+                defects.push(ProfileDefect::BiasOutOfRange {
+                    field: name,
+                    value,
+                    min: SPACE_SHARE_MIN,
+                    max: SPACE_SHARE_MAX,
+                });
+            }
         }
 
         let mut seen_registers: Vec<&str> = Vec::new();
