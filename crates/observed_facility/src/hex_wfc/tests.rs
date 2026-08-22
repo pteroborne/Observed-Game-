@@ -2140,3 +2140,63 @@ fn diagnose_archetype_shift() {
         println!("{label:<9} {line}");
     }
 }
+
+/// How much of the corridor network is actually corridor-shaped?
+///
+/// "A hall is a long narrow continuous passageway" is the goal, and `peers/room`
+/// has turned out to be a poor proxy for it - that number is a derived graph
+/// metric that cannot fall while the facility is connected through halls, and it
+/// sat at exactly 29.00 through the port change, the region rework and a
+/// twenty-fold swing in how empty the building is.
+///
+/// This measures the thing directly. A hall cell's lateral degree is how many of
+/// its six sides you can actually walk through. Degree 2 is a passageway; degree
+/// 4 or more is a room-sized opening that happens to be made of hall.
+#[test]
+#[ignore = "hall shape survey"]
+fn survey_how_corridor_shaped_the_halls_are() {
+    let config = HexWfcConfig::arc_default();
+    let quotas = HexRoomQuotas::for_team_count(2);
+    let grid = config.grid();
+    let mut degrees = [0usize; 7];
+    let mut halls = 0usize;
+    for seed in baseline_seeds() {
+        let Ok(world) = HexWfcWorld::generate_with_room_quotas(seed, config, quotas) else {
+            continue;
+        };
+        for (&coord, placement) in &world.placements {
+            if placement.space != HexSpace::Hall {
+                continue;
+            }
+            let open = HexFace::LATERAL
+                .into_iter()
+                .filter(|&face| {
+                    placement.is_open(face)
+                        && grid.neighbor(coord, face).is_some_and(|next| {
+                            world
+                                .placements
+                                .get(&next)
+                                .is_some_and(|there| there.is_open(face.opposite()))
+                        })
+                })
+                .count();
+            degrees[open] += 1;
+            halls += 1;
+        }
+    }
+    #[allow(clippy::cast_precision_loss)]
+    {
+        for (degree, count) in degrees.iter().enumerate() {
+            println!(
+                "lateral degree {degree}: {:.1}%",
+                *count as f64 * 100.0 / halls as f64
+            );
+        }
+        let passage = degrees[2] as f64 * 100.0 / halls as f64;
+        let open = degrees[4..].iter().sum::<usize>() as f64 * 100.0 / halls as f64;
+        println!(
+            "\npassageway (degree 2) {passage:.1}%, open on four or more sides {open:.1}%.\n\
+             The second number is the one that stops a hall reading as a hall."
+        );
+    }
+}
