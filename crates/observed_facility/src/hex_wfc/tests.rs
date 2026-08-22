@@ -1470,3 +1470,179 @@ fn the_production_facility_holds_its_measured_baseline() {
         "slowest solve was {slowest:?}, above the surveyed 2.57s"
     );
 }
+
+/// Would narrowing every region boundary to a few crossings break the clique?
+///
+/// This is the cheapest possible test of the whole region idea, and it is
+/// deliberately run *before* building anything. The proposition is that the room
+/// graph is a clique because connectivity is total, and that if a boundary
+/// between two regions were crossed in two or three places instead of twenty,
+/// "which rooms connect" would start carrying information. If sealing all but a
+/// handful of crossings leaves the graph a clique anyway, the proposition is
+/// wrong and no amount of solver work will rescue it.
+///
+/// **This is a lower bound, not a simulation.** It seals crossings on a finished
+/// world, so the solver never gets to compensate - it cannot route around a
+/// sealed gateway, re-place a room, or widen a corridor elsewhere. A real
+/// region-aware stage would do all three. So the connectivity numbers here are
+/// the worst case and the component counts are the best case. What the survey
+/// can settle is the *direction*: whether constraining gateways moves the graph
+/// at all, and how much reachability a naive constraint destroys - which is the
+/// bill a real stage would have to pay to repair.
+///
+/// Crossings are kept in frontier order, which is arbitrary on purpose. A real
+/// stage would choose which crossing to keep; choosing well is the difference
+/// between these reachability numbers and better ones.
+#[test]
+#[ignore = "region gateway-narrowing probe"]
+fn survey_whether_narrow_gateways_break_the_clique() {
+    use std::collections::BTreeMap;
+
+    let config = HexWfcConfig::arc_default();
+    let quotas = HexRoomQuotas::for_team_count(2);
+    let grid = config.grid();
+
+    println!(
+        "budget   halls  peers/room  biggest  linking  regions_spanned  exit_ok  open/frontier"
+    );
+    for budget in [usize::MAX, 3, 2, 1] {
+        let mut halls_total = 0usize;
+        let mut peers_total = 0usize;
+        let mut rooms_total = 0usize;
+        let mut exit_ok = 0usize;
+        let (mut open_total, mut frontier_total) = (0usize, 0usize);
+        let (mut biggest_total, mut linking_total) = (0usize, 0usize);
+        let mut spanned_total = 0usize;
+        let mut seeds = 0usize;
+
+        for seed in baseline_seeds() {
+            let Ok(world) = HexWfcWorld::generate_with_room_quotas(seed, config, quotas) else {
+                continue;
+            };
+            let plan = super::region::region_plan(seed, config);
+            let mut trial = world.clone();
+
+            for gateway in &plan.gateways {
+                let mut kept = 0usize;
+                for &(a, b) in &gateway.frontier {
+                    let Some(face) = HexFace::LATERAL
+                        .into_iter()
+                        .find(|face| grid.neighbor(a, *face) == Some(b))
+                    else {
+                        continue;
+                    };
+                    let walkable = trial
+                        .placements
+                        .get(&a)
+                        .is_some_and(|here| here.is_open(face))
+                        && trial
+                            .placements
+                            .get(&b)
+                            .is_some_and(|there| there.is_open(face.opposite()));
+                    if !walkable {
+                        continue;
+                    }
+                    frontier_total += 1;
+                    if kept < budget {
+                        kept += 1;
+                        open_total += 1;
+                        continue;
+                    }
+                    // Seal from both sides, or the lattice contradicts itself.
+                    if let Some(here) = trial.placements.get_mut(&a) {
+                        here.doors &= !lateral_bit(face);
+                    }
+                    if let Some(there) = trial.placements.get_mut(&b) {
+                        there.doors &= !lateral_bit(face.opposite());
+                    }
+                }
+            }
+
+            let live = super::topology::active_component(config, &trial.placements, config.spawn());
+
+            let mut rooms_on_corridor: BTreeMap<
+                observed_core::CorridorId,
+                BTreeSet<observed_core::RoomId>,
+            > = BTreeMap::new();
+            for attachment in trial.threshold_attachments() {
+                rooms_on_corridor
+                    .entry(attachment.corridor)
+                    .or_default()
+                    .insert(attachment.room);
+            }
+            let mut peers: BTreeMap<observed_core::RoomId, BTreeSet<observed_core::RoomId>> =
+                BTreeMap::new();
+            for rooms in rooms_on_corridor.values() {
+                for room in rooms {
+                    peers
+                        .entry(*room)
+                        .or_default()
+                        .extend(rooms.iter().filter(|other| *other != room).copied());
+                }
+            }
+
+            let biggest = rooms_on_corridor
+                .values()
+                .map(BTreeSet::len)
+                .max()
+                .unwrap_or(0);
+            biggest_total += biggest;
+            let touching: usize = rooms_on_corridor
+                .values()
+                .filter(|rooms| rooms.len() > 1)
+                .count();
+            linking_total += touching;
+
+            // How many regions does the room-linking corridor run through? If it
+            // spans most of them, the seal never touched the artery.
+            let owner: BTreeMap<HexCoord, _> = plan
+                .regions
+                .iter()
+                .flat_map(|region| region.cells.iter().map(move |&cell| (cell, region.key())))
+                .collect();
+            let corridors = trial.corridors();
+            let widest_regions = corridors
+                .iter()
+                .max_by_key(|corridor| corridor.cells.len())
+                .map(|corridor| {
+                    corridor
+                        .cells
+                        .iter()
+                        .filter_map(|cell| owner.get(cell))
+                        .collect::<BTreeSet<_>>()
+                        .len()
+                })
+                .unwrap_or(0);
+            spanned_total += widest_regions;
+
+            halls_total += corridors.len();
+            peers_total += peers.values().map(BTreeSet::len).sum::<usize>();
+            rooms_total += trial.blueprints.len();
+            exit_ok += usize::from(live.contains(&config.exit()));
+            seeds += 1;
+        }
+
+        let label = if budget == usize::MAX {
+            String::from("none  ")
+        } else {
+            format!("{budget:<6}")
+        };
+        println!(
+            "{label}  {:>5.1}  {:>10.2}  {:>7.1}  {:>7.1}  {:>15.1}  {:>3}/{seeds}  \
+             {open_total}/{frontier_total}",
+            halls_total as f64 / seeds as f64,
+            peers_total as f64 / rooms_total as f64,
+            biggest_total as f64 / seeds as f64,
+            linking_total as f64 / seeds as f64,
+            spanned_total as f64 / seeds as f64,
+            exit_ok,
+        );
+    }
+    println!(
+        "\npeers/room is the clique: 29 means every room reaches every other.\n\
+         biggest is how many rooms the largest corridor touches; linking is how \
+         many corridors touch more than one room at all.\n\
+         regions_spanned is how many of the 100 regions that one corridor runs \
+         through."
+    );
+}
