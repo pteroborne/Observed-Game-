@@ -682,21 +682,20 @@ fn collapse_attempt_with_blueprints(
     // staircase's job and more. Running both would put a floor and a ceiling on
     // the same cells from two different route decisions, and the first place
     // they disagreed would be a contradiction rather than a wider corridor.
-    let exact_doors = if profile.route_corridors {
-        let Some(skeleton) = corridor_skeleton(config, &blueprints) else {
+    let (exact_doors, forced_doors, forced_up, forced_down) = if profile.route_corridors {
+        let Some((exact, up, down)) = corridor_skeleton(config, &blueprints) else {
             return Err("blueprints blocked the corridor skeleton");
         };
-        skeleton
+        // The skeleton's climbs go in as `forced_up`/`forced_down` because a
+        // shaft is a port class and not a door bit; the exact mask covers only
+        // the six lateral faces and has nothing to say about a floor.
+        (exact, BTreeMap::new(), up, down)
     } else {
-        BTreeMap::new()
-    };
-    let (forced_doors, forced_up, forced_down) = if profile.route_corridors {
-        (BTreeMap::new(), BTreeMap::new(), BTreeMap::new())
-    } else {
-        let Some(forced) = forced_route_edges(config, &blueprints, &signatures, rng) else {
+        let Some((doors, up, down)) = forced_route_edges(config, &blueprints, &signatures, rng)
+        else {
             return Err("blueprints blocked every forced route");
         };
-        forced
+        (BTreeMap::new(), doors, up, down)
     };
     emit_blueprints(&blueprints, &forced_doors, &mut trace);
 

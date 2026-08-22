@@ -339,18 +339,27 @@ pub(super) fn stamp_blueprints_with_pins(
 /// same rule `forced_route_edges` follows. Returns `None` when a tree edge
 /// cannot be routed at all, so the caller restamps rather than shipping a
 /// facility with an unreachable room.
+#[allow(clippy::type_complexity)]
 pub(super) fn corridor_skeleton(
     config: HexWfcConfig,
     blueprints: &[StampedBlueprint],
-) -> Option<BTreeMap<HexCoord, u8>> {
+) -> Option<(
+    BTreeMap<HexCoord, u8>,
+    BTreeMap<HexCoord, PortClass>,
+    BTreeMap<HexCoord, PortClass>,
+)> {
     let grid = config.grid();
     let room_cells: BTreeSet<HexCoord> = blueprints
         .iter()
         .flat_map(|blueprint| blueprint.cells.iter().copied())
         .collect();
 
-    // Where a corridor may touch each room: the cell just outside a named port.
-    let attachments: Vec<Vec<HexCoord>> = blueprints
+    // Where a corridor may touch each room: the cell just outside a named port,
+    // paired with the port cell itself. The pairing matters - a corridor that
+    // ended beside a door without opening onto it would be a dead end with a
+    // one-door mask, and there is no hall variant with exactly one lateral door
+    // and no shaft.
+    let attachments: Vec<Vec<(HexCoord, HexCoord)>> = blueprints
         .iter()
         .map(|stamped| {
             let blueprint = super::blueprint::blueprint_for_role(stamped.role);
@@ -361,7 +370,7 @@ pub(super) fn corridor_skeleton(
                     let slot = blueprint.cells.iter().position(|&cell| cell == offset)?;
                     let cell = *stamped.cells.get(slot)?;
                     let outside = grid.neighbor(cell, face)?;
-                    (!room_cells.contains(&outside)).then_some(outside)
+                    (!room_cells.contains(&outside)).then_some((outside, cell))
                 })
                 .collect()
         })
@@ -392,44 +401,81 @@ pub(super) fn corridor_skeleton(
     }
 
     let mut adjacency: BTreeMap<HexCoord, BTreeSet<HexCoord>> = BTreeMap::new();
+    let mut up: BTreeMap<HexCoord, PortClass> = BTreeMap::new();
+    let mut down: BTreeMap<HexCoord, PortClass> = BTreeMap::new();
     for (from, to) in edges {
-        let path = attachments[from]
+        let (path, start_port, end_port) = attachments[from]
             .iter()
             .flat_map(|start| attachments[to].iter().map(move |end| (*start, *end)))
-            .filter_map(|(start, end)| skeleton_path(config, &room_cells, start, end))
-            .min_by_key(Vec::len)?;
+            .filter_map(|((start, start_port), (end, end_port))| {
+                skeleton_path(config, &room_cells, start, end)
+                    .map(|path| (path, start_port, end_port))
+            })
+            .min_by_key(|(path, _, _)| path.len())?;
+        // Open each end onto the door it serves, so an endpoint is a passage
+        // into a room rather than a corridor stub beside one.
+        if let (Some(&first), Some(&last)) = (path.first(), path.last()) {
+            adjacency.entry(first).or_default().insert(start_port);
+            adjacency.entry(last).or_default().insert(end_port);
+        }
         for window in path.windows(2) {
-            adjacency.entry(window[0]).or_default().insert(window[1]);
-            adjacency.entry(window[1]).or_default().insert(window[0]);
+            let (here, next) = (window[0], window[1]);
+            if here.level == next.level {
+                adjacency.entry(here).or_default().insert(next);
+                adjacency.entry(next).or_default().insert(here);
+                continue;
+            }
+            // A climb is a port class, not a door bit. Both cells still enter
+            // `adjacency` so a purely vertical stop is not mistaken for an
+            // unvisited cell and left without a mask.
+            let (lower, upper) = if here.level < next.level {
+                (here, next)
+            } else {
+                (next, here)
+            };
+            up.insert(lower, PortClass::ShaftOpen);
+            down.insert(upper, PortClass::ShaftOpen);
+            adjacency.entry(here).or_default();
+            adjacency.entry(next).or_default();
         }
     }
 
     // A cell's mask is exactly the faces it uses, so the corridor is as wide as
     // it needs to be and no wider. Room cells are dropped: their ports are a
     // frozen contract and the stamp already owns them.
-    Some(
-        adjacency
-            .into_iter()
-            .filter(|(cell, _)| !room_cells.contains(cell))
-            .map(|(cell, neighbours)| {
-                let mask = HexFace::LATERAL
-                    .into_iter()
-                    .filter(|&face| {
-                        grid.neighbor(cell, face)
-                            .is_some_and(|next| neighbours.contains(&next))
-                    })
-                    .fold(0u8, |mask, face| mask | super::lateral_bit(face));
-                (cell, mask)
-            })
-            .collect(),
-    )
+    let doors = adjacency
+        .into_iter()
+        .filter(|(cell, _)| !room_cells.contains(cell))
+        .map(|(cell, neighbours)| {
+            let mask = HexFace::LATERAL
+                .into_iter()
+                .filter(|&face| {
+                    grid.neighbor(cell, face)
+                        .is_some_and(|next| neighbours.contains(&next))
+                })
+                .fold(0u8, |mask, face| mask | super::lateral_bit(face));
+            (cell, mask)
+        })
+        .collect();
+    up.retain(|cell, _| !room_cells.contains(cell));
+    down.retain(|cell, _| !room_cells.contains(cell));
+    Some((doors, up, down))
 }
 
-/// Shortest lateral path between two cells that never enters a room footprint.
+/// Shortest path between two cells that never enters a room footprint.
 ///
-/// Lateral only: a vertical link is a shaft or a ramp, which is a two-cell
-/// authored prefab rather than a door bit, and claiming one here would put an
-/// exact mask on geometry the stamp owns.
+/// Vertical steps are included and they are the reason this is not simply a
+/// lateral walk. Rooms are spread over ten levels, so a spanning tree over them
+/// is full of edges between floors, and a lateral-only router cannot route a
+/// single one - it returns `None` for the whole skeleton and every seed fails.
+/// (That is not hypothetical: this function was lateral-only first, and the
+/// probe that sized the idea missed it by routing over a *solved* lattice,
+/// where the shafts already existed.)
+///
+/// A vertical step is claimed the way [`forced_route_edges`] claims one: as a
+/// `ShaftOpen` pair on the two cells' facing vertical ports, never as a door
+/// bit. Doors and shafts are different port classes and a mask cannot express
+/// one of them.
 fn skeleton_path(
     config: HexWfcConfig,
     room_cells: &BTreeSet<HexCoord>,
@@ -451,7 +497,7 @@ fn skeleton_path(
             path.reverse();
             return Some(path);
         }
-        for face in HexFace::LATERAL {
+        for face in HexFace::ALL {
             let Some(next) = grid.neighbor(cell, face) else {
                 continue;
             };

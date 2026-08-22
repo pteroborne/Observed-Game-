@@ -2505,3 +2505,118 @@ fn survey_what_a_routed_skeleton_would_look_like() {
         );
     }
 }
+
+/// What the routed skeleton actually produces, against what it replaced.
+///
+///     mode        deg2%  deg4+%  void%  hall%  attempts  slowest
+///     weighted     36.6    40.8   18.5   80.4         1    0.93s
+///     routed       40.5    33.1   20.8   78.1         4    1.51s
+///     routed+void  40.5    31.5   50.2   48.7         4    1.93s
+///     routed+max   44.0    27.0   64.2   34.7        15    8.33s
+///
+/// Routing works, is affordable, and moves the shape - four-way openings from
+/// 40.8% to 31.5% at four attempts and under two seconds, well inside budget.
+/// It also lets void go further than it could alone, 64.2% against 38.6%,
+/// because a forced skeleton holds the facility together while the rest empties.
+///
+/// But passageway reaches 44.0%, not the 81.5% the probe promised, and the gap
+/// is worth understanding rather than tuning at. The skeleton is 134 cells
+/// against thousands of hall: it makes the corridors it owns narrow and says
+/// nothing about the rest, and `SpaceMix` is a lottery rather than a rule, so
+/// even at sixty-four parts void the remainder keeps drawing hall. The probe's
+/// number was measured on the skeleton *alone*, with the rest carved away.
+///
+/// Closing it needs the move this packet made once already: an exact space
+/// assignment for the cells the skeleton does not claim, in the way
+/// `exact_doors` is an exact mask for the ones it does.
+#[test]
+#[ignore = "corridor routing comparison"]
+fn survey_what_routing_the_corridors_buys() {
+    let config = HexWfcConfig::arc_default();
+    let quotas = HexRoomQuotas::for_team_count(2);
+    let grid = config.grid();
+
+    println!("mode        solved  deg2%  deg4+%  void%  hall%  attempts  slowest  live  exit_ok");
+    // The third and fourth rows are the point. A skeleton is 134 cells against
+    // roughly 4,400 of hall, so on its own it forces narrow corridors along
+    // itself and leaves the other 97% the blob it always was. Emptying that
+    // remainder is what `SpaceMix` already does, and the probe that sized this
+    // idea assumed exactly that - its 81.5% passageway was measured on the
+    // skeleton alone, with 94.5% of today's hall carved away.
+    for (label, routed, void) in [
+        ("weighted", false, 300.0),
+        ("routed", true, 300.0),
+        ("routed+void", true, 3_000.0),
+        ("routed+max", true, 10_000.0),
+    ] {
+        let mut profile = super::profile::HexCompositionProfile::baseline();
+        profile.route_corridors = routed;
+        profile.space_mix = profile.space_mix.with(HexSpace::Void, void);
+
+        let mut degrees = [0usize; 7];
+        let (mut halls, mut voids, mut cells) = (0usize, 0usize, 0usize);
+        let mut worst_attempts = 0u32;
+        let mut slowest = std::time::Duration::ZERO;
+        let (mut live_total, mut exit_ok, mut solved) = (0usize, 0usize, 0usize);
+
+        for seed in baseline_seeds() {
+            let start = std::time::Instant::now();
+            let Ok(world) =
+                HexWfcWorld::generate_with_profile(seed, config, Some(quotas), &profile)
+            else {
+                continue;
+            };
+            slowest = slowest.max(start.elapsed());
+            worst_attempts = worst_attempts.max(world.last_attempts);
+            solved += 1;
+            for (&coord, placement) in &world.placements {
+                cells += 1;
+                match placement.space {
+                    HexSpace::Void => voids += 1,
+                    HexSpace::Hall => {
+                        let open = HexFace::LATERAL
+                            .into_iter()
+                            .filter(|&face| {
+                                placement.is_open(face)
+                                    && grid.neighbor(coord, face).is_some_and(|next| {
+                                        world
+                                            .placements
+                                            .get(&next)
+                                            .is_some_and(|there| there.is_open(face.opposite()))
+                                    })
+                            })
+                            .count();
+                        degrees[open] += 1;
+                        halls += 1;
+                    }
+                    HexSpace::Room => {}
+                }
+            }
+            let live = super::topology::active_component(config, &world.placements, config.spawn());
+            live_total += world
+                .blueprints
+                .iter()
+                .filter(|blueprint| blueprint.cells.iter().any(|cell| live.contains(cell)))
+                .count();
+            exit_ok += usize::from(live.contains(&config.exit()));
+        }
+
+        if solved == 0 {
+            println!("{label:<11} UNSOLVED at every seed");
+            continue;
+        }
+        #[allow(clippy::cast_precision_loss)]
+        {
+            println!(
+                "{label:<11} {solved:>6}  {:>5.1}  {:>6.1}  {:>5.1}  {:>5.1}  {worst_attempts:>8}  \
+                 {:>6.2}s  {:>4.1}  {exit_ok:>3}/{solved}",
+                degrees[2] as f64 * 100.0 / halls.max(1) as f64,
+                degrees[4..].iter().sum::<usize>() as f64 * 100.0 / halls.max(1) as f64,
+                voids as f64 * 100.0 / cells as f64,
+                halls as f64 * 100.0 / cells as f64,
+                slowest.as_secs_f64(),
+                live_total as f64 / solved as f64,
+            );
+        }
+    }
+}
