@@ -2200,3 +2200,141 @@ fn survey_how_corridor_shaped_the_halls_are() {
         );
     }
 }
+
+/// Can archetype bias alone make the halls corridor-shaped?
+///
+/// Unlike void, the hall archetypes share their space with each other, so
+/// scaling one does *not* cancel out of the space draw - `archetype_bias` is
+/// still a live lever here, and this asks how far it reaches before anything is
+/// built. Straight and Corner are exactly the degree-2 variants; Junction is
+/// degree three and up, Expanse degree four and up. So biasing toward the first
+/// two is biasing directly toward passageway.
+///
+/// The column to watch is `shaft%`. The alphabet's vertical family is 369 of
+/// hall's 639 before any bias, and pushing the flat archetypes around without
+/// touching it is how this solver once came out 47% stairs (backlog #13).
+///
+/// The answer, measured:
+///
+///     bias      deg2%  deg4+%  shaft%  void%  attempts  slowest
+///     neutral    36.6    40.8    10.8   18.5         1    0.94s
+///     mild       52.5    22.6    10.4   25.5         8    7.19s
+///     strong    UNSOLVED at every seed
+///     ceiling   UNSOLVED at every seed
+///
+/// Partially, unaffordably, and then off a cliff. Mild bias really does shape
+/// the halls - passageway from 36.6% to 52.5%, four-way openings nearly halved -
+/// but it takes eight attempts and 7.19 s to do it, against a 2 s LAN client
+/// timeout and a one-attempt baseline. One step further and no seed solves at
+/// all.
+///
+/// The reason is not the lottery. Weights bias and never remove, so a
+/// corridor-heavy preference leaves the solver hunting for the rare assignments
+/// that satisfy it: a degree-2 cell forces two neighbours open and four sealed,
+/// and that tension is paid for in retries. Expressing the same preference as a
+/// share rather than a bias - the fix that made void cheap - would not help
+/// here, because void is trivially consistent with everything (it seals every
+/// face) and a corridor is the opposite.
+///
+/// Which says the shape of the hall network is not a weighting problem at all.
+#[test]
+#[ignore = "hall shape bias sweep"]
+fn survey_whether_bias_can_shape_the_halls() {
+    let config = HexWfcConfig::arc_default();
+    let quotas = HexRoomQuotas::for_team_count(2);
+    let grid = config.grid();
+
+    // `PROFILE_MIN` is 0.25 and `PROFILE_MAX` is 4.0, so the last row is the
+    // most this lever can ever be asked for.
+    let cases: [(&str, f64, f64, f64, f64); 4] = [
+        ("neutral", 1.0, 1.0, 1.0, 1.0),
+        ("mild", 2.0, 1.5, 0.7, 0.5),
+        ("strong", 4.0, 2.0, 0.5, 0.25),
+        ("ceiling", 4.0, 4.0, 0.25, 0.25),
+    ];
+
+    println!("bias      deg2%  deg4+%  shaft%  void%  attempts  slowest  live  exit_ok");
+    for (label, straight, corner, junction, expanse) in cases {
+        let mut profile = super::profile::HexCompositionProfile::baseline();
+        profile.archetype_bias = profile
+            .archetype_bias
+            .with(HexArchetype::Straight, straight)
+            .with(HexArchetype::Corner, corner)
+            .with(HexArchetype::Junction, junction)
+            .with(HexArchetype::Expanse, expanse);
+        assert_eq!(
+            profile.validate(),
+            Ok(()),
+            "{label} must be a legal profile"
+        );
+
+        let mut degrees = [0usize; 7];
+        let (mut halls, mut shafts, mut voids, mut cells) = (0usize, 0usize, 0usize, 0usize);
+        let mut worst_attempts = 0u32;
+        let mut slowest = std::time::Duration::ZERO;
+        let (mut live_total, mut exit_ok, mut solved) = (0usize, 0usize, 0usize);
+
+        for seed in baseline_seeds() {
+            let start = std::time::Instant::now();
+            let Ok(world) =
+                HexWfcWorld::generate_with_profile(seed, config, Some(quotas), &profile)
+            else {
+                continue;
+            };
+            slowest = slowest.max(start.elapsed());
+            worst_attempts = worst_attempts.max(world.last_attempts);
+            solved += 1;
+            for (&coord, placement) in &world.placements {
+                cells += 1;
+                if placement.space == HexSpace::Void {
+                    voids += 1;
+                }
+                if placement.archetype == HexArchetype::Shaft {
+                    shafts += 1;
+                }
+                if placement.space != HexSpace::Hall {
+                    continue;
+                }
+                let open = HexFace::LATERAL
+                    .into_iter()
+                    .filter(|&face| {
+                        placement.is_open(face)
+                            && grid.neighbor(coord, face).is_some_and(|next| {
+                                world
+                                    .placements
+                                    .get(&next)
+                                    .is_some_and(|there| there.is_open(face.opposite()))
+                            })
+                    })
+                    .count();
+                degrees[open] += 1;
+                halls += 1;
+            }
+            let live = super::topology::active_component(config, &world.placements, config.spawn());
+            live_total += world
+                .blueprints
+                .iter()
+                .filter(|blueprint| blueprint.cells.iter().any(|cell| live.contains(cell)))
+                .count();
+            exit_ok += usize::from(live.contains(&config.exit()));
+        }
+
+        if solved == 0 {
+            println!("{label:<9} UNSOLVED at every seed");
+            continue;
+        }
+        #[allow(clippy::cast_precision_loss)]
+        {
+            println!(
+                "{label:<9} {:>5.1}  {:>6.1}  {:>6.1}  {:>5.1}  {worst_attempts:>8}  {:>6.2}s  \
+                 {:>4.1}  {exit_ok:>3}/{solved}",
+                degrees[2] as f64 * 100.0 / halls as f64,
+                degrees[4..].iter().sum::<usize>() as f64 * 100.0 / halls as f64,
+                shafts as f64 * 100.0 / cells as f64,
+                voids as f64 * 100.0 / cells as f64,
+                slowest.as_secs_f64(),
+                live_total as f64 / solved as f64,
+            );
+        }
+    }
+}
