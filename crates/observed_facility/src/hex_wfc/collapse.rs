@@ -8,7 +8,8 @@ use observed_hex::{HexCoord, HexFace, PortClass, PortSignature};
 
 use super::blueprint::StampedBlueprint;
 use super::constraints::{
-    all_coords, forced_route_edges, stamp_blueprints_with_pins, stamped_signatures,
+    all_coords, corridor_skeleton, forced_route_edges, stamp_blueprints_with_pins,
+    stamped_signatures,
 };
 use super::profile::{HexCompositionProfile, PinIntent};
 use super::trace::SolveStep;
@@ -677,10 +678,25 @@ fn collapse_attempt_with_blueprints(
     let blueprints =
         stamp_blueprints_with_pins(config, rng, locked_blueprints, &districts, room_quotas);
     let signatures = stamped_signatures(config, &blueprints);
-    let Some((forced_doors, forced_up, forced_down)) =
-        forced_route_edges(config, &blueprints, &signatures, rng)
-    else {
-        return Err("blueprints blocked every forced route");
+    // A skeleton connects every room, spawn and exit among them, so it does the
+    // staircase's job and more. Running both would put a floor and a ceiling on
+    // the same cells from two different route decisions, and the first place
+    // they disagreed would be a contradiction rather than a wider corridor.
+    let exact_doors = if profile.route_corridors {
+        let Some(skeleton) = corridor_skeleton(config, &blueprints) else {
+            return Err("blueprints blocked the corridor skeleton");
+        };
+        skeleton
+    } else {
+        BTreeMap::new()
+    };
+    let (forced_doors, forced_up, forced_down) = if profile.route_corridors {
+        (BTreeMap::new(), BTreeMap::new(), BTreeMap::new())
+    } else {
+        let Some(forced) = forced_route_edges(config, &blueprints, &signatures, rng) else {
+            return Err("blueprints blocked every forced route");
+        };
+        forced
     };
     emit_blueprints(&blueprints, &forced_doors, &mut trace);
 
@@ -692,6 +708,7 @@ fn collapse_attempt_with_blueprints(
         config,
         variants,
         &forced_doors,
+        &exact_doors,
         &forced_up,
         &forced_down,
         &signatures,
@@ -826,6 +843,8 @@ fn initial_domains(
     config: HexWfcConfig,
     variants: &[HexVariant],
     forced_doors: &BTreeMap<HexCoord, u8>,
+    // Cells the corridor skeleton fixed exactly; empty when it is switched off.
+    exact_doors: &BTreeMap<HexCoord, u8>,
     forced_up: &BTreeMap<HexCoord, PortClass>,
     forced_down: &BTreeMap<HexCoord, PortClass>,
     signatures: &BTreeMap<HexCoord, PortSignature>,
@@ -846,6 +865,7 @@ fn initial_domains(
                 variants,
                 coord,
                 forced_doors.get(&coord).copied().unwrap_or(0),
+                exact_doors.get(&coord).copied(),
                 forced_up.get(&coord).copied().unwrap_or(PortClass::Sealed),
                 forced_down
                     .get(&coord)
@@ -874,6 +894,8 @@ pub(super) fn initial_domain_for(
     variants: &[HexVariant],
     coord: HexCoord,
     required_doors: u8,
+    // When set, the cell opens these faces and no others.
+    exact_doors: Option<u8>,
     required_up: PortClass,
     required_down: PortClass,
     blueprint_signature: Option<PortSignature>,
@@ -911,6 +933,15 @@ pub(super) fn initial_domain_for(
                 return false;
             }
             if variant.doors & required_doors != required_doors {
+                return false;
+            }
+            // `required_doors` is a floor - open at least these. `exact_doors`
+            // is a ceiling as well, and the two are kept apart because the
+            // difference is the whole reason a routed corridor can be narrow.
+            // Forcing a route with the floor alone guarantees the cell opens
+            // toward its neighbours and leaves it free to open four more ways,
+            // which is precisely the shape the routing exists to avoid.
+            if exact_doors.is_some_and(|mask| variant.doors != mask) {
                 return false;
             }
             if required_up != PortClass::Sealed && variant.up != required_up {

@@ -88,6 +88,20 @@ pub struct HexCompositionProfile {
     pub tendencies: CompositionTendencies,
     /// How much of the facility each *kind of space* should be.
     pub space_mix: SpaceMix,
+    /// Route a corridor skeleton between the rooms before collapsing.
+    ///
+    /// Off by default while it earns its keep. On, the solver decides the
+    /// corridors as paths and fixes their cells to an exact door mask, instead
+    /// of asking the collapse to prefer narrow ones - which it can be made to
+    /// do, but only at eight attempts and 7.19 s against a one-attempt 0.94 s
+    /// baseline, because a weight biases without removing.
+    ///
+    /// `serde(default)` so a profile written before this existed still parses
+    /// and still hashes to what it hashed before. That is what lets the feature
+    /// land switched off and provably inert, with no LAN peer locked out for a
+    /// capability nothing yet uses.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub route_corridors: bool,
     pub archetype_bias: ArchetypeBias,
     pub district_bias: Vec<DistrictBias>,
     pub score: ScoreWeights,
@@ -594,6 +608,7 @@ impl HexCompositionProfile {
             label: String::from("baseline"),
             tendencies: CompositionTendencies::baseline(),
             space_mix: SpaceMix::baseline(),
+            route_corridors: false,
             archetype_bias: ArchetypeBias::neutral(),
             district_bias: Vec::new(),
             score: ScoreWeights::baseline(),

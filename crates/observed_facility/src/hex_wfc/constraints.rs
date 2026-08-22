@@ -319,6 +319,154 @@ pub(super) fn stamp_blueprints_with_pins(
     stamped
 }
 
+/// A corridor skeleton: one narrow path per edge of a spanning tree over the
+/// stamped rooms, returned as an *exact* door mask per cell.
+///
+/// The point of routing rather than weighting. `archetype_bias` can push
+/// passageway from 36.6% to 52.5% of hall cells, but only at eight attempts and
+/// 7.19 s, because a weight biases without removing and the solver ends up
+/// hunting the rare assignments that satisfy a corridor-heavy preference. A
+/// route does not have to be searched for - it is decided, and the collapse
+/// fills around it. Measured on solved facilities before this existed, the
+/// skeleton a spanning tree produces is 81.5% degree-2 and 0.1% degree-4.
+///
+/// Exact masks, not the `forced_route_edges` floor. That function says "open at
+/// least these faces", which is right for a route that only has to exist; a
+/// corridor also has to *not* open the other four, and the difference between
+/// those two statements is the whole feature.
+///
+/// Paths avoid room footprints and enter a room only through a named port, the
+/// same rule `forced_route_edges` follows. Returns `None` when a tree edge
+/// cannot be routed at all, so the caller restamps rather than shipping a
+/// facility with an unreachable room.
+pub(super) fn corridor_skeleton(
+    config: HexWfcConfig,
+    blueprints: &[StampedBlueprint],
+) -> Option<BTreeMap<HexCoord, u8>> {
+    let grid = config.grid();
+    let room_cells: BTreeSet<HexCoord> = blueprints
+        .iter()
+        .flat_map(|blueprint| blueprint.cells.iter().copied())
+        .collect();
+
+    // Where a corridor may touch each room: the cell just outside a named port.
+    let attachments: Vec<Vec<HexCoord>> = blueprints
+        .iter()
+        .map(|stamped| {
+            let blueprint = super::blueprint::blueprint_for_role(stamped.role);
+            blueprint
+                .named_ports
+                .iter()
+                .filter_map(|&(_, offset, face)| {
+                    let slot = blueprint.cells.iter().position(|&cell| cell == offset)?;
+                    let cell = *stamped.cells.get(slot)?;
+                    let outside = grid.neighbor(cell, face)?;
+                    (!room_cells.contains(&outside)).then_some(outside)
+                })
+                .collect()
+        })
+        .collect();
+
+    // Nearest-first spanning tree, so every room is reachable and no edge is
+    // spent twice. Deterministic: ties break on index, and the anchors it
+    // measures are already fixed by the stamp.
+    let mut visited: BTreeSet<usize> = BTreeSet::from([0]);
+    let mut edges: Vec<(usize, usize)> = Vec::new();
+    while visited.len() < blueprints.len() {
+        let (from, to) = visited
+            .iter()
+            .flat_map(|&from| {
+                (0..blueprints.len())
+                    .filter(|to| !visited.contains(to))
+                    .map(move |to| (from, to))
+            })
+            .min_by_key(|&(from, to)| {
+                (
+                    observed_hex::travel_distance(blueprints[from].anchor, blueprints[to].anchor),
+                    from,
+                    to,
+                )
+            })?;
+        visited.insert(to);
+        edges.push((from, to));
+    }
+
+    let mut adjacency: BTreeMap<HexCoord, BTreeSet<HexCoord>> = BTreeMap::new();
+    for (from, to) in edges {
+        let path = attachments[from]
+            .iter()
+            .flat_map(|start| attachments[to].iter().map(move |end| (*start, *end)))
+            .filter_map(|(start, end)| skeleton_path(config, &room_cells, start, end))
+            .min_by_key(Vec::len)?;
+        for window in path.windows(2) {
+            adjacency.entry(window[0]).or_default().insert(window[1]);
+            adjacency.entry(window[1]).or_default().insert(window[0]);
+        }
+    }
+
+    // A cell's mask is exactly the faces it uses, so the corridor is as wide as
+    // it needs to be and no wider. Room cells are dropped: their ports are a
+    // frozen contract and the stamp already owns them.
+    Some(
+        adjacency
+            .into_iter()
+            .filter(|(cell, _)| !room_cells.contains(cell))
+            .map(|(cell, neighbours)| {
+                let mask = HexFace::LATERAL
+                    .into_iter()
+                    .filter(|&face| {
+                        grid.neighbor(cell, face)
+                            .is_some_and(|next| neighbours.contains(&next))
+                    })
+                    .fold(0u8, |mask, face| mask | super::lateral_bit(face));
+                (cell, mask)
+            })
+            .collect(),
+    )
+}
+
+/// Shortest lateral path between two cells that never enters a room footprint.
+///
+/// Lateral only: a vertical link is a shaft or a ramp, which is a two-cell
+/// authored prefab rather than a door bit, and claiming one here would put an
+/// exact mask on geometry the stamp owns.
+fn skeleton_path(
+    config: HexWfcConfig,
+    room_cells: &BTreeSet<HexCoord>,
+    start: HexCoord,
+    end: HexCoord,
+) -> Option<Vec<HexCoord>> {
+    let grid = config.grid();
+    let mut came_from: BTreeMap<HexCoord, HexCoord> = BTreeMap::new();
+    let mut queue = std::collections::VecDeque::from([start]);
+    let mut seen: BTreeSet<HexCoord> = BTreeSet::from([start]);
+    while let Some(cell) = queue.pop_front() {
+        if cell == end {
+            let mut path = vec![cell];
+            let mut here = cell;
+            while let Some(&previous) = came_from.get(&here) {
+                path.push(previous);
+                here = previous;
+            }
+            path.reverse();
+            return Some(path);
+        }
+        for face in HexFace::LATERAL {
+            let Some(next) = grid.neighbor(cell, face) else {
+                continue;
+            };
+            if room_cells.contains(&next) && next != end {
+                continue;
+            }
+            if seen.insert(next) {
+                came_from.insert(next, cell);
+                queue.push_back(next);
+            }
+        }
+    }
+    None
+}
+
 fn coord_key(coord: HexCoord) -> u64 {
     u64::from(coord.q) | (u64::from(coord.r) << 16) | (u64::from(coord.level) << 32)
 }

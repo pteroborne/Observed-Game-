@@ -476,8 +476,15 @@ mod tests {
     /// one on this catalog will not play together, by design.
     #[test]
     fn committed_arc_s_catalog_identity_is_pinned() {
-        // Moved again when the collapse learned to draw the *space* before the
-        // variant. The catalog is untouched - no tile changed - and the whole
+        // Moved a third time by a schema change with no behaviour behind it: the
+        // profile grew a `route_corridors` flag, default off. Worth recording
+        // that `serde(default)` did *not* save it - this hash is taken over the
+        // profile struct, not over the file, so any field added moves it whether
+        // or not an old file still parses. A schema-only move is still a LAN
+        // lockout, and there is no way to add a control without one.
+        //
+        // Moved before that when the collapse learned to draw the *space* before
+        // the variant. The catalog is untouched - no tile changed - and the whole
         // move is on the profile side: a new `space_mix` field, and
         // `COMPOSITION_PROFILE_VERSION` at 3 because solver output moved.
         //
@@ -492,12 +499,12 @@ mod tests {
         const CATALOG_HASH: &str =
             "10f86ca6ffefa462f8fb243d9af343a0fc8540ea058c88fe9edca83b3422c0b9";
         const PROFILE_HASH: &str =
-            "e876ed4e9c102fda925573f4545b39e09f5105a1ac2d4b0ca2bf62e5be710fe1";
+            "e683bc9e13785d16456a75395383fb764c94e936709a20e9e3972f1a6332c8e3";
         // Folds the catalog and the profile. Both sides moved this time, which
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "29bf8d7fb8449871a562a217babd1ca5c288675ead48aadc5087f809d7b7decf";
+            "449be1273a9b6e2b5e4decaa52dfd4058e141a9f85b44933fde4d4e7e1b6116f";
 
         let root = committed_tiles();
         let compiled_text =

@@ -377,6 +377,10 @@ pub fn neighborhood(
             &tables.variants,
             coord,
             constraints.forced_doors.get(&coord).copied().unwrap_or(0),
+            // The skeleton is decided during the solve. Re-opening one cell of
+            // a finished facility asks what else could stand there, and pinning
+            // it back to the route it already took would answer nothing.
+            None,
             constraints
                 .forced_up
                 .get(&coord)
