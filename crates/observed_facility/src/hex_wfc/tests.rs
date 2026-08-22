@@ -2620,3 +2620,103 @@ fn survey_what_routing_the_corridors_buys() {
         }
     }
 }
+
+/// Why the skeleton cannot yet be the *only* corridors.
+///
+/// Routing narrows the corridors it owns and says nothing about the rest, so the
+/// obvious completion is to void every cell the skeleton did not claim - the
+/// carve. Attempting it found two things, and the second is a wall.
+///
+/// **Every named port has to be routed.** A door is a promise that something is
+/// on the other side, and under a carve it becomes load-bearing: an unrouted
+/// port faces a cell the carve makes `Void`, the door demands its neighbour
+/// open, and the domain empties. A spanning tree spends one port per room pair
+/// and leaves the rest idle - measured below, and it is not a handful.
+///
+/// **Routing every port asks for a tile that does not exist.** Corridors then
+/// meet, and a cell comes out both a three-way junction and a staircase. The
+/// shaft family covers one- and two-door masks only; `Junction` and `Expanse`
+/// are vertically sealed. There is no variant that is both, and declining to
+/// pin such a cell does not help - its neighbours still demand those doors and
+/// the route still demands the climb, so the same contradiction arrives through
+/// propagation instead of through an empty initial domain.
+///
+/// So the carve is blocked on the alphabet rather than on the router, and the
+/// fix is a tile rather than an algorithm: shaft variants at degree three and
+/// four, which is a stair landing that branches - an ordinary thing for a
+/// building to contain. That change moves the lottery and every pin with it,
+/// which is why it is recorded here rather than attempted at the end of a long
+/// packet.
+#[test]
+#[ignore = "carve feasibility survey"]
+fn survey_why_the_carve_needs_a_tile_that_does_not_exist() {
+    let config = HexWfcConfig::arc_default();
+    let quotas = HexRoomQuotas::for_team_count(2);
+    let grid = config.grid();
+
+    let mut ports_total = 0usize;
+    let mut orphaned_total = 0usize;
+    let mut seeds = 0usize;
+    for seed in baseline_seeds() {
+        let Ok(world) = HexWfcWorld::generate_with_room_quotas(seed, config, quotas) else {
+            continue;
+        };
+        let Some((skeleton, _, _)) =
+            super::constraints::corridor_skeleton(config, &world.blueprints)
+        else {
+            continue;
+        };
+        let room_cells: BTreeSet<HexCoord> = world
+            .blueprints
+            .iter()
+            .flat_map(|blueprint| blueprint.cells.iter().copied())
+            .collect();
+        for stamped in &world.blueprints {
+            let blueprint = super::blueprint::blueprint_for_role(stamped.role);
+            for &(_, offset, face) in &blueprint.named_ports {
+                let Some(outside) = blueprint
+                    .cells
+                    .iter()
+                    .position(|&cell| cell == offset)
+                    .and_then(|slot| stamped.cells.get(slot))
+                    .and_then(|&cell| grid.neighbor(cell, face))
+                else {
+                    continue;
+                };
+                if room_cells.contains(&outside) {
+                    continue;
+                }
+                ports_total += 1;
+                orphaned_total += usize::from(!skeleton.contains_key(&outside));
+            }
+        }
+        seeds += 1;
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    let per_seed = |n: usize| n as f64 / seeds.max(1) as f64;
+    println!(
+        "ports facing open ground {:.0} per facility, of which the spanning tree \
+         leaves {:.0} unrouted",
+        per_seed(ports_total),
+        per_seed(orphaned_total),
+    );
+
+    // And the tile that would be needed. A vertical hall variant exists only at
+    // one and two doors, so a junction can never also be a climb.
+    let catalogue = super::variants::catalogue();
+    let vertical_degrees: BTreeSet<u32> = catalogue
+        .iter()
+        .filter(|variant| {
+            variant.space == HexSpace::Hall
+                && (variant.up == PortClass::ShaftOpen || variant.down == PortClass::ShaftOpen)
+        })
+        .map(|variant| variant.doors.count_ones())
+        .collect();
+    println!("hall variants that climb exist at door counts {vertical_degrees:?}");
+    assert!(
+        !vertical_degrees.contains(&3),
+        "a three-door climb now exists, so the carve is no longer blocked - \
+         re-run the routing survey and turn `carve_unrouted` back on"
+    );
+}
