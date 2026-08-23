@@ -2520,27 +2520,50 @@ fn survey_what_a_routed_skeleton_would_look_like() {
 
 /// What the routed skeleton actually produces, against what it replaced.
 ///
+/// Re-measured after the branching stair landing widened the alphabet from 404
+/// variants to 509. Every row moved, so the table before it is kept underneath
+/// rather than overwritten - the two together say more than either alone.
+///
+///     mode        deg2%  deg4+%  void%  hall%  attempts  slowest
+///     weighted     32.0    34.2   18.8   80.1         1    0.47s
+///     routed       34.7    28.4   21.5   77.4         2    1.01s
+///     routed+void  38.5    24.4   53.7   45.2        31   15.64s
+///     routed+max   UNSOLVED at every seed
+///
+/// And the same four rows before the alphabet moved:
+///
 ///     mode        deg2%  deg4+%  void%  hall%  attempts  slowest
 ///     weighted     36.6    40.8   18.5   80.4         1    0.93s
 ///     routed       40.5    33.1   20.8   78.1         4    1.51s
 ///     routed+void  40.5    31.5   50.2   48.7         4    1.93s
 ///     routed+max   44.0    27.0   64.2   34.7        15    8.33s
 ///
-/// Routing works, is affordable, and moves the shape - four-way openings from
-/// 40.8% to 31.5% at four attempts and under two seconds, well inside budget.
-/// It also lets void go further than it could alone, 64.2% against 38.6%,
-/// because a forced skeleton holds the facility together while the rest empties.
+/// **The shipped row is the second one and it improved.** Four-way openings fall
+/// from 34.2% to 28.4% at two attempts and a second, which is the number this
+/// whole line of work exists to move: a hall cell open on four or more sides is
+/// a room that happens to be built out of corridor.
 ///
-/// But passageway reaches 44.0%, not the 81.5% the probe promised, and the gap
-/// is worth understanding rather than tuning at. The skeleton is 134 cells
-/// against thousands of hall: it makes the corridors it owns narrow and says
-/// nothing about the rest, and `SpaceMix` is a lottery rather than a rule, so
-/// even at sixty-four parts void the remainder keeps drawing hall. The probe's
-/// number was measured on the skeleton *alone*, with the rest carved away.
+/// **Passageway did not.** 34.7% against the probe's 81.5%, and the reason is
+/// the one the earlier table already gave: the skeleton is a hundred-odd cells
+/// against thousands of hall, so it makes the corridors it owns narrow and says
+/// nothing about the rest. `SpaceMix` is a lottery rather than a rule. The probe
+/// measured the skeleton *alone*, with the rest carved away - and the carve now
+/// reaches 74-85%, exactly as promised, on a facility that cannot yet ship. So
+/// the gap is not a tuning failure, it is the carve's absence, and it closes
+/// when the carve does.
 ///
-/// Closing it needs the move this packet made once already: an exact space
-/// assignment for the cells the skeleton does not claim, in the way
-/// `exact_doors` is an exact mask for the ones it does.
+/// **The high-void rows regressed and that is the cost of the wider alphabet.**
+/// `routed+void` went from four attempts and under two seconds to thirty-one and
+/// fifteen, and `routed+max` stopped solving at all. More shaft variants mean
+/// more vertical coupling, and vertical coupling is what an emptying facility
+/// has least room for: `Void` seals every face, so a cell that wants a climb
+/// above it competes with a lottery that keeps drawing nothing.
+///
+/// It costs nothing shipped - `space_mix.void` is 300 and the routed row is two
+/// attempts - but it closes off the direction the earlier table had pointed at,
+/// which was "let void go further than it could alone". That door is shut until
+/// the shaft family's share of the hall alphabet comes back down, and it went
+/// from 20% to 31% to buy the branching landing.
 #[test]
 #[ignore = "corridor routing comparison"]
 fn survey_what_routing_the_corridors_buys() {
