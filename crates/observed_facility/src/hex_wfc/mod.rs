@@ -380,6 +380,16 @@ pub struct HexWfcWorld {
     /// would refill the hole at the alphabet's own hall-heavy ratio and undo,
     /// a pocket at a time, whatever emptiness the facility was authored with.
     pub space_mix: super::hex_wfc::profile::SpaceMix,
+    /// Whether this world's corridors were routed rather than weighted.
+    ///
+    /// Carried for the same reason as `space_mix`, and against the same
+    /// failure: a relayout re-collapses a pocket with no profile to hand, and
+    /// one that did not know the corridors were routed would refill them from
+    /// the lottery and widen them back out, undoing the routing a pocket at a
+    /// time. The skeleton itself is not stored - it is a function of the config
+    /// and the stamped blueprints, and both are pinned across a relayout, so it
+    /// is cheaper to recompute than to keep in sync.
+    pub route_corridors: bool,
 }
 
 impl HexWfcWorld {
@@ -569,6 +579,7 @@ impl HexWfcWorld {
                 last_attempts: attempts,
                 authored_pins: pins::resolved_pins(config, profile).0.into_keys().collect(),
                 space_mix: profile.space_mix,
+                route_corridors: profile.route_corridors,
             },
             attempts,
         ))

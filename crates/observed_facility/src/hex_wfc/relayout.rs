@@ -312,6 +312,7 @@ impl HexWfcWorld {
             &work.region,
             influence,
             self.space_mix,
+            self.route_corridors,
         ) {
             Ok(solved) => Ok(HexRelayoutProgress::Ready(make_candidate(
                 self,

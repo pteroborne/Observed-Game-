@@ -639,3 +639,56 @@ fn halls_joining_different_thresholds_have_different_identities() {
         }
     }
 }
+
+/// A routed corridor keeps its shape through a relayout.
+///
+/// The failure this guards is quiet and cumulative. A relayout re-collapses a
+/// pocket, and a pocket that did not know the corridors were routed is free to
+/// pick any variant its boundary allows. Without the fix this test caught a
+/// cell going `010010` to `010001` - still two doors, but a different two, so
+/// the corridor turned somewhere the router never sent it. Widening is the
+/// worse case and rerouting is the commoner one; both are the route being
+/// decided twice by two things that never spoke.
+///
+/// Nothing errors and nothing looks wrong in the moment, so the routing would
+/// erode a pocket at a time across a match.
+///
+/// Exactly the trap the space mix fell into, which is why the world carries
+/// `route_corridors` beside it.
+#[test]
+fn a_relayout_leaves_routed_corridors_as_narrow_as_it_found_them() {
+    let mut profile = super::profile::HexCompositionProfile::baseline();
+    profile.route_corridors = true;
+    let world = HexWfcWorld::generate_with_profile(0x9301, config(), None, &profile)
+        .expect("a routed world solves");
+    assert!(
+        world.route_corridors,
+        "the world must remember it was routed, or the relayout cannot know"
+    );
+
+    let skeleton = super::constraints::corridor_skeleton(world.config, &world.blueprints)
+        .expect("the routed world has a skeleton")
+        .0;
+    assert!(
+        !skeleton.is_empty(),
+        "an empty skeleton would assert nothing"
+    );
+
+    let proposal = candidate(&world, &HexObservationFrame::default());
+    let mut checked = 0usize;
+    for (coord, placement) in &proposal.placements {
+        let Some(&mask) = skeleton.get(coord) else {
+            continue;
+        };
+        checked += 1;
+        assert_eq!(
+            placement.doors, mask,
+            "relayout moved the corridor at {coord:?}: {:06b} became {:06b}",
+            mask, placement.doors
+        );
+    }
+    assert!(
+        checked > 0,
+        "the pocket touched no corridor cell, so this proved nothing"
+    );
+}

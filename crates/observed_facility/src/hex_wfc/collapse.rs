@@ -248,11 +248,19 @@ pub(super) fn collapse_pocket_attempt(
     region: &super::relayout::HexMutationRegion,
     influence: Option<&super::context::HexInfluenceField>,
     space_mix: super::profile::SpaceMix,
+    route_corridors: bool,
 ) -> Result<CollapseAttempt, &'static str> {
     let tables = solver_tables();
     let mut rng = SplitMix::new(mixed(seed, generation, attempt, 0x4E8C_0FFE_D011_88AA));
     let topology_core =
         select_topology_core(seed, generation, attempt, config, previous, &region.cells);
+    // Recomputed rather than remembered: the skeleton is a function of the
+    // config and the stamped blueprints, and a relayout pins both.
+    let skeleton = route_corridors
+        .then(|| corridor_skeleton(config, blueprints))
+        .flatten()
+        .map(|(doors, _, _)| doors)
+        .unwrap_or_default();
     let mut domains = region
         .cells
         .iter()
@@ -264,6 +272,15 @@ pub(super) fn collapse_pocket_attempt(
                 .iter()
                 .enumerate()
                 .filter(|(_, variant)| {
+                    // A routed corridor keeps its exact shape through a
+                    // relayout. Without this the pocket is free to pick any
+                    // variant its boundary allows, which for a corridor cell
+                    // means a wider one.
+                    if let Some(&mask) = skeleton.get(&coord)
+                        && variant.doors != mask
+                    {
+                        return false;
+                    }
                     if !topology_core.contains(&coord) {
                         return variant_matches(**variant, before);
                     }

@@ -360,6 +360,7 @@ fn oversized_grid_reports_collider_id_capacity_before_projection() {
         last_attempts: 1,
         authored_pins: Default::default(),
         space_mix: observed_facility::hex_wfc::profile::SpaceMix::baseline(),
+        route_corridors: false,
     };
     assert!(matches!(
         HexWfcGeometrySnapshot::project(&world, &[]),
@@ -933,6 +934,7 @@ fn multi_cell_world(role: RoomRole, anchor: HexCoord) -> HexWfcWorld {
         last_attempts: 1,
         authored_pins: Default::default(),
         space_mix: observed_facility::hex_wfc::profile::SpaceMix::baseline(),
+        route_corridors: false,
     }
 }
 

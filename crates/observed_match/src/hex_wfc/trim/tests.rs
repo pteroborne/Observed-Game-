@@ -91,6 +91,7 @@ fn two_cell_world() -> HexWfcWorld {
         last_attempts: 1,
         authored_pins: Default::default(),
         space_mix: observed_facility::hex_wfc::profile::SpaceMix::baseline(),
+        route_corridors: false,
     }
 }
 
