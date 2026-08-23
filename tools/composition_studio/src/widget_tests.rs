@@ -92,3 +92,36 @@ fn a_slider_cannot_push_a_field_past_its_own_range() {
         field.max
     );
 }
+
+/// The corridor routing switch must produce a facility, not a dead viewport.
+///
+/// It ships a control the moment it appears in `TUNABLE_FIELDS`, and a control
+/// that empties the viewport is worse than no control: an author flips it, sees
+/// nothing, and has no way to tell a broken switch from a hard seed. The routing
+/// stage is off by default precisely because it is still being sized, so this is
+/// the guard that keeps the *switch* honest while the feature is unfinished.
+#[test]
+fn the_corridor_routing_switch_still_solves() {
+    use observed_facility::hex_wfc::{HexWfcConfig, HexWfcWorld};
+
+    let mut profile = observed_facility::hex_wfc::profile::HexCompositionProfile::baseline();
+    profile.route_corridors = true;
+    assert_eq!(profile.validate(), Ok(()));
+
+    // Several floors, because the router has to claim shafts to connect rooms
+    // that are not on the same one, and a single-level facility never exercises
+    // that at all.
+    for levels in [1u8, 4] {
+        let config = HexWfcConfig {
+            levels,
+            ..HexWfcConfig::default()
+        };
+        for seed in [1u64, 0x0000_0000_000c_0ffe, 0x5eed_0000_0000_0001] {
+            assert!(
+                HexWfcWorld::generate_with_profile(seed, config, None, &profile).is_ok(),
+                "routing left seed {seed:#x} unsolved at {levels} level(s), so the \
+                 switch would show an author an empty viewport"
+            );
+        }
+    }
+}

@@ -1,7 +1,8 @@
 //! Declarative metadata table mapping profile scalars to interactive tunables.
 
 use observed_facility::hex_wfc::profile::{
-    HexCompositionProfile, MAX_SEARCH_CANDIDATES, SCORE_WEIGHT_MAX,
+    HexCompositionProfile, MAX_SEARCH_CANDIDATES, SCORE_WEIGHT_MAX, SPACE_SHARE_MAX,
+    SPACE_SHARE_MIN,
 };
 use observed_facility::hex_wfc::{HexArchetype, PROFILE_MAX, PROFILE_MIN};
 
@@ -26,10 +27,63 @@ pub struct TunableField {
     pub set: fn(&mut HexCompositionProfile, f64),
 }
 
-/// The 18 scalar tunable fields present in a [`HexCompositionProfile`].
+/// The scalar tunable fields present in a [`HexCompositionProfile`].
 ///
-/// 4 composition tendencies + 9 archetype biases + 5 score weights.
+/// 4 composition tendencies + 9 archetype biases + 5 score weights + 3 space
+/// shares + the search candidate count + the corridor routing switch.
 pub const TUNABLE_FIELDS: &[TunableField] = &[
+    // --- Space mix (3) ---
+    // Shares, not multipliers, so the step is coarse and the range is wide: the
+    // interesting span for void runs from the alphabet's own 4 up past 3,000,
+    // and a slider fine enough for a bias would take a hundred presses to cross
+    // it.
+    TunableField {
+        label: "space_void",
+        consequence: "Higher empties the facility out, trading corridor for open nothing; the shipped default of 300 against hall's 100 gives roughly a fifth empty.",
+        category: "Space mix",
+        tab: StudioTab::Tuning,
+        min: SPACE_SHARE_MIN,
+        max: SPACE_SHARE_MAX,
+        step: 100.0,
+        get: |p| p.space_mix.void,
+        set: |p, v| p.space_mix.void = v,
+    },
+    TunableField {
+        label: "space_room",
+        consequence: "Only decides anything inside a stamped room footprint, where room tiles are the sole legal space, so moving it changes very little.",
+        category: "Space mix",
+        tab: StudioTab::Tuning,
+        min: SPACE_SHARE_MIN,
+        max: SPACE_SHARE_MAX,
+        step: 100.0,
+        get: |p| p.space_mix.room,
+        set: |p, v| p.space_mix.room = v,
+    },
+    TunableField {
+        label: "space_hall",
+        consequence: "Higher fills the facility with corridor at the expense of empty space; read it against space_void, since only their ratio matters.",
+        category: "Space mix",
+        tab: StudioTab::Tuning,
+        min: SPACE_SHARE_MIN,
+        max: SPACE_SHARE_MAX,
+        step: 100.0,
+        get: |p| p.space_mix.hall,
+        set: |p, v| p.space_mix.hall = v,
+    },
+    // --- Corridor routing (1) ---
+    // A switch rather than a scalar, carried in the same table so it appears
+    // beside the shares it wants comparing against. Anything above zero is on.
+    TunableField {
+        label: "route_corridors",
+        consequence: "On, the solver routes narrow corridors between the rooms and fixes their shape instead of hoping the collapse prefers narrow ones.",
+        category: "Corridors",
+        tab: StudioTab::Tuning,
+        min: 0.0,
+        max: 1.0,
+        step: 1.0,
+        get: |p| f64::from(u8::from(p.route_corridors)),
+        set: |p, v| p.route_corridors = v > 0.5,
+    },
     // --- Tendencies (4) ---
     TunableField {
         label: "vertical_center_boost",

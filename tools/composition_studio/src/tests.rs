@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use bevy::prelude::*;
 use observed_facility::hex_wfc::profile::{
-    ArchetypeBias, CompositionTendencies, HexCompositionProfile, ScoreWeights,
+    ArchetypeBias, CompositionTendencies, HexCompositionProfile, ScoreWeights, SpaceMix,
 };
 use observed_facility::hex_wfc::{HexArchetype, HexWfcConfig, HexWfcWorld};
 
@@ -360,11 +360,17 @@ fn every_profile_scalar_has_a_tunable_entry() {
     // retry budget whether the author meant to or not. It stays editable in the
     // RON.
     const SEARCH_SCALARS_WITH_CONTROLS: usize = 1;
+    // `route_corridors` is a bool and so has no entry in any `fields()` table,
+    // but it still ships a control - carried as a 0/1 scalar so it sits beside
+    // the space shares an author compares it against.
+    const BOOL_SWITCHES_WITH_CONTROLS: usize = 1;
 
     let expected = CompositionTendencies::baseline().fields().len()
         + ArchetypeBias::neutral().fields().len()
         + ScoreWeights::baseline().fields().len()
-        + SEARCH_SCALARS_WITH_CONTROLS;
+        + SpaceMix::baseline().fields().len()
+        + SEARCH_SCALARS_WITH_CONTROLS
+        + BOOL_SWITCHES_WITH_CONTROLS;
     assert_eq!(
         TUNABLE_FIELDS.len(),
         expected,
@@ -418,6 +424,18 @@ fn no_slider_position_can_zero_a_legal_variant() {
         // there disables a criterion rather than starving the lottery.
         if field.category == "Score Weights" {
             assert!(field.min >= 0.0, "{} may not go negative", field.label);
+            continue;
+        }
+        // Switches are not weights. `route_corridors` rides in this table as a
+        // 0/1 so it sits beside the shares it wants comparing against, and zero
+        // is the shipped default rather than a starved variant - it turns a
+        // stage off, it does not make a tile unreachable.
+        if field.category == "Corridors" {
+            assert!(
+                field.min == 0.0 && field.max == 1.0 && field.step == 1.0,
+                "{} is in the switch category but is not a 0/1 switch",
+                field.label
+            );
             continue;
         }
         assert!(
