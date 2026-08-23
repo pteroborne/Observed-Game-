@@ -19,10 +19,17 @@ use super::{HexArchetype, HexPlacement, HexRoomQuotas, HexSpace, HexWfcConfig, H
 
 type CollapseOutput = (BTreeMap<HexCoord, HexPlacement>, Vec<StampedBlueprint>, u32);
 
-/// Fixed-width bitset over catalogue variant indices. The catalogue holds 404
-/// variants since Phase 108 added `Expanse`, which needed one more word — six
-/// gave 384 slots against 382 in use. `solver_tables` asserts the fit.
-const MASK_WORDS: usize = 7;
+/// Fixed-width bitset over catalogue variant indices. The catalogue holds 509
+/// variants since the shaft family gained its branching landing — every three-
+/// and four-door mask against three vertical connectivities, 105 entries, which
+/// took it past the 448 slots seven words gave. Eight give 512 against 509 in
+/// use. `solver_tables` asserts the fit.
+///
+/// It was seven since Phase 108 added `Expanse`, and six before that — 384 slots
+/// against 382 in use. The margin has always been a handful, deliberately: the
+/// assertion is the notice, and a word of slack is a word copied on every
+/// propagation step.
+const MASK_WORDS: usize = 8;
 /// A cadence event refreshes the architecture register across its full
 /// target-32 pocket, but only this connected structural core is allowed to
 /// change topology. This keeps collision churn bounded independently of
@@ -249,6 +256,7 @@ pub(super) fn collapse_pocket_attempt(
     influence: Option<&super::context::HexInfluenceField>,
     space_mix: super::profile::SpaceMix,
     route_corridors: bool,
+    carve_unrouted: bool,
 ) -> Result<CollapseAttempt, &'static str> {
     let tables = solver_tables();
     let mut rng = SplitMix::new(mixed(seed, generation, attempt, 0x4E8C_0FFE_D011_88AA));
@@ -256,11 +264,33 @@ pub(super) fn collapse_pocket_attempt(
         select_topology_core(seed, generation, attempt, config, previous, &region.cells);
     // Recomputed rather than remembered: the skeleton is a function of the
     // config and the stamped blueprints, and a relayout pins both.
-    let skeleton = route_corridors
-        .then(|| corridor_skeleton(config, blueprints))
-        .flatten()
-        .map(|(doors, _, _)| doors)
+    let routed = route_corridors
+        .then(|| corridor_skeleton(config, blueprints, carve_unrouted))
+        .flatten();
+    let skeleton = routed
+        .as_ref()
+        .map(|(doors, _, _)| doors.clone())
         .unwrap_or_default();
+    // The carve, recomputed from the same three inputs and for the same reason.
+    // Restricted to the pocket because that is all this collapse can write, and
+    // building it over the whole lattice would cost a pass over five thousand
+    // cells to answer a question about thirty-two.
+    let carved: BTreeSet<HexCoord> = match (carve_unrouted, routed.as_ref()) {
+        (true, Some((_, up, down))) => {
+            let rooms: BTreeSet<HexCoord> = blueprints
+                .iter()
+                .flat_map(|blueprint| blueprint.cells.iter().copied())
+                .collect();
+            region
+                .cells
+                .iter()
+                .copied()
+                .filter(|coord| !skeleton.contains_key(coord) && !rooms.contains(coord))
+                .filter(|coord| !up.contains_key(coord) && !down.contains_key(coord))
+                .collect()
+        }
+        _ => BTreeSet::new(),
+    };
     let mut domains = region
         .cells
         .iter()
@@ -279,6 +309,13 @@ pub(super) fn collapse_pocket_attempt(
                     if let Some(&mask) = skeleton.get(&coord)
                         && variant.doors != mask
                     {
+                        return false;
+                    }
+                    // And a cell the carve emptied stays empty, which is the
+                    // same guard one line up wearing different clothes: both
+                    // exist because a pocket has no profile to hand and would
+                    // otherwise refill from the lottery.
+                    if carved.contains(&coord) && variant.space != HexSpace::Void {
                         return false;
                     }
                     if !topology_core.contains(&coord) {
@@ -485,19 +522,43 @@ pub(super) struct AttemptConstraints {
 /// mismatched one yields a *different valid-looking* answer, which is why the
 /// caller must verify the blueprints against the world rather than trusting
 /// the attempt number it was given.
+///
+/// `route_corridors` has to be passed in for the same reason the relayout and
+/// the pocket collapse need it, and this is the third place the omission was
+/// found rather than reasoned about. A replay that always called
+/// `forced_route_edges` while the solve had called `corridor_skeleton` produced
+/// a staircase the facility never contained, handed it to the neighbourhood
+/// query as fact, and the query then reported `Contradiction` on eight cells of
+/// the first solved world - a solved world being, by construction, a witness
+/// that its own cells are satisfiable.
+///
+/// Take it from `HexWfcWorld::route_corridors` rather than from a profile: the
+/// world records what the solve *did*, and a profile edited since would answer
+/// for a facility that was never built.
 pub(super) fn replay_constraints(
     seed: u64,
     generation: u32,
     attempt: u32,
     config: HexWfcConfig,
     room_quotas: Option<HexRoomQuotas>,
+    route_corridors: bool,
+    carve_unrouted: bool,
 ) -> Option<AttemptConstraints> {
     let mut rng = SplitMix::new(mixed(seed, generation, attempt, 0x4E8C_0FFE_D011_88AA));
     let districts = super::relayout::district_sites(seed, config);
     let blueprints = stamp_blueprints_with_pins(config, &mut rng, &[], &districts, room_quotas);
     let signatures = stamped_signatures(config, &blueprints);
-    let (forced_doors, forced_up, forced_down) =
-        forced_route_edges(config, &blueprints, &signatures, &mut rng)?;
+    let (forced_doors, forced_up, forced_down) = if route_corridors {
+        // The exact masks are dropped rather than returned. The one caller
+        // deliberately does not want them - re-opening a cell to ask what else
+        // could stand there, then pinning it back to the corridor it already
+        // is, answers nothing - and the climbs are kept because they are the
+        // part a neighbour across a floor still has to agree with.
+        let (_, up, down) = corridor_skeleton(config, &blueprints, carve_unrouted)?;
+        (BTreeMap::new(), up, down)
+    } else {
+        forced_route_edges(config, &blueprints, &signatures, &mut rng)?
+    };
     Some(AttemptConstraints {
         blueprints,
         signatures,
@@ -700,7 +761,9 @@ fn collapse_attempt_with_blueprints(
     // the same cells from two different route decisions, and the first place
     // they disagreed would be a contradiction rather than a wider corridor.
     let (exact_doors, forced_doors, forced_up, forced_down) = if profile.route_corridors {
-        let Some((exact, up, down)) = corridor_skeleton(config, &blueprints) else {
+        let Some((exact, up, down)) =
+            corridor_skeleton(config, &blueprints, profile.carve_unrouted)
+        else {
             return Err("blueprints blocked the corridor skeleton");
         };
         // The skeleton's climbs go in as `forced_up`/`forced_down` because a
@@ -714,7 +777,33 @@ fn collapse_attempt_with_blueprints(
         };
         (BTreeMap::new(), doors, up, down)
     };
-    emit_blueprints(&blueprints, &forced_doors, &mut trace);
+    // The carve. Everything the skeleton did not claim and no blueprint stamped
+    // is not part of the building.
+    //
+    // Expressed as a *space*, not as `exact_doors: 0`, and the difference is not
+    // pedantic: a doorless mask still admits the through-shaft, which seals its
+    // six sides and then opens its floor and ceiling. Carving with a mask would
+    // leave the facility threaded with sealed lift shafts nothing can enter.
+    let carved: BTreeSet<HexCoord> = if profile.route_corridors && profile.carve_unrouted {
+        all_coords(config)
+            .filter(|coord| !exact_doors.contains_key(coord) && !signatures.contains_key(coord))
+            .filter(|coord| !forced_up.contains_key(coord) && !forced_down.contains_key(coord))
+            .collect()
+    } else {
+        BTreeSet::new()
+    };
+    // Whichever stage decided the route, its cells are the forced ones. Routing
+    // puts them in `exact_doors` and leaves `forced_doors` empty, and passing
+    // only the latter made `ForcedCell` vanish from the trace the moment routing
+    // became the default - so the lab's replay stopped drawing the route at all,
+    // and said nothing about it. A cell the router fixed is forced in the sense
+    // this step means: decided before the collapse, not by it.
+    let announced = if exact_doors.is_empty() {
+        &forced_doors
+    } else {
+        &exact_doors
+    };
+    emit_blueprints(&blueprints, announced, &mut trace);
 
     // Authored pins are part of the profile, so they resolve from it rather
     // than riding another parameter down the call chain. Resolution is a few
@@ -731,11 +820,12 @@ fn collapse_attempt_with_blueprints(
         previous,
         pinned,
         &authored,
+        &carved,
     );
     if domains.iter().any(VariantSet::is_empty) {
         return Err("pinned cell contradicts blueprint, forced route, or an authored pin");
     }
-    emit_precollapsed(config, variants, &domains, &signatures, &mut trace);
+    emit_precollapsed(config, variants, &domains, &mut trace);
     // The initial pass seeds every cell; later passes are incremental.
     let all_cells: VecDeque<usize> = (0..domains.len()).collect();
     if !propagate(config, tables, &mut domains, all_cells, &mut trace) {
@@ -808,19 +898,28 @@ fn emit_blueprints(
     }
 }
 
+/// Every cell the constraints alone already decided, before the lottery runs.
+///
+/// **Every cell, not every blueprint cell.** This used to walk `signatures`,
+/// because a stamped room was the only thing that could fix a cell outright and
+/// the domain-of-one case and the blueprint case were the same set. Routing
+/// broke that: `exact_doors` fixes a corridor cell to one variant just as
+/// firmly, and those cells are in no signature map.
+///
+/// What that cost was a trace that did not describe its own solve. Seventeen
+/// cells of a hundred and eight were never announced, so the fold stopped at 91
+/// and the replay of a finished solve did not reproduce the world it replayed -
+/// which is the one property the whole trace exists to have.
 fn emit_precollapsed(
     config: HexWfcConfig,
     variants: &[HexVariant],
     domains: &[VariantSet],
-    signatures: &BTreeMap<HexCoord, PortSignature>,
     trace: &mut Option<&mut Vec<SolveStep>>,
 ) {
     let Some(steps) = trace.as_deref_mut() else {
         return;
     };
-    let grid = config.grid();
-    for &coord in signatures.keys() {
-        let domain = &domains[grid.index(coord)];
+    for (coord, domain) in all_coords(config).zip(domains.iter()) {
         if let Some(only) = domain.single() {
             let variant = variants[only];
             steps.push(SolveStep::Collapsed {
@@ -867,6 +966,8 @@ fn initial_domains(
     previous: Option<&BTreeMap<HexCoord, HexPlacement>>,
     pinned: &BTreeSet<HexCoord>,
     authored: &BTreeMap<HexCoord, PinIntent>,
+    // Cells the carve makes `Void`; empty when it is switched off.
+    carved: &BTreeSet<HexCoord>,
 ) -> Vec<VariantSet> {
     all_coords(config)
         .map(|coord| {
@@ -891,6 +992,7 @@ fn initial_domains(
                 locked_to,
                 is_pinned,
                 authored.get(&coord),
+                carved.contains(&coord),
             )
         })
         .collect()
@@ -918,19 +1020,37 @@ pub(super) fn initial_domain_for(
     locked_to: Option<HexPlacement>,
     pinned: bool,
     authored: Option<&PinIntent>,
+    // The carve: this cell is not part of the building.
+    carved: bool,
 ) -> VariantSet {
     let grid = config.grid();
     variants
         .iter()
         .enumerate()
         .filter(|(_, variant)| {
+            if carved && variant.space != HexSpace::Void {
+                return false;
+            }
             // Authored intent narrows the domain like any other constraint
-            // here — except where a stamped blueprint already fixes the cell.
+            // here — except where something decided before the collapse already
+            // fixes the cell. Two things do.
+            //
             // Room footprints and named ports are a frozen contract, so the
             // blueprint wins and `pins::diagnose_pins` reports the collision
             // rather than this emptying the domain and calling it a
             // contradiction.
+            //
+            // A routed corridor is the same kind of claim and now gets the same
+            // treatment. It was not: pin and exact mask were both applied, so
+            // painting a `Junction` onto a cell the router had made a corridor
+            // emptied the domain, every restamp hit it again, and the author got
+            // `RetryBudgetExhausted` with no attribution - the tool's own pin
+            // diagnostics could not name a cause because none of them was about
+            // the router. Letting the route win turns a dead solve into a
+            // reported override, which is the choice already made once for
+            // blueprints and for the same reason.
             if blueprint_signature.is_none()
+                && exact_doors.is_none()
                 && let Some(intent) = authored
                 && !super::pins::pin_admits(intent, variant)
             {

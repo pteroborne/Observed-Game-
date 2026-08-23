@@ -476,6 +476,23 @@ mod tests {
     /// one on this catalog will not play together, by design.
     #[test]
     fn committed_arc_s_catalog_identity_is_pinned() {
+        // Moved a fourth time, and this is the one with the most behind it. Both
+        // sides moved and for once the catalog side moved the most.
+        //
+        // The catalog gained 105 modules - every three- and four-door stair
+        // tower, in each of the three vertical connectivities - taking it from
+        // 125 to 230 and from 1.5 MB to 3.2 MB. Nothing that was already there
+        // changed by a byte: the forge's door patterns are appended rather than
+        // reordered, so all 66 committed towers reproduce exactly and the diff
+        // is 105 new files and nothing else.
+        //
+        // The profile side moved twice over. `route_corridors` is `true` now
+        // rather than `false`, `carve_unrouted` is a new field, and
+        // `COMPOSITION_PROFILE_VERSION` went to 4 because the solver's output
+        // for a fixed seed moved - which it did in three separate ways: a wider
+        // variant alphabet, a different default routing stage, and a different
+        // lottery under both.
+        //
         // Moved a third time by a schema change with no behaviour behind it: the
         // profile grew a `route_corridors` flag, default off. Worth recording
         // that `serde(default)` did *not* save it - this hash is taken over the
@@ -497,14 +514,14 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "10f86ca6ffefa462f8fb243d9af343a0fc8540ea058c88fe9edca83b3422c0b9";
+            "9c08aaa16b048fed4999a990bf55ba1bb86b8c390d88e717f6385a23bbbc99b6";
         const PROFILE_HASH: &str =
-            "e683bc9e13785d16456a75395383fb764c94e936709a20e9e3972f1a6332c8e3";
+            "5c1bc69db058d4e3332e755326548f887d46f215d81fdeb454591cd9c2c0104e";
         // Folds the catalog and the profile. Both sides moved this time, which
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "449be1273a9b6e2b5e4decaa52dfd4058e141a9f85b44933fde4d4e7e1b6116f";
+            "b4c06d66043f5952fedf9516e0eb5ba8bf31888ea3f0ff99f27ac6c4c0c7933d";
 
         let root = committed_tiles();
         let compiled_text =
@@ -517,8 +534,11 @@ mod tests {
             .filter(|module| module.archetype == "stair_tower")
             .collect::<Vec<_>>();
         assert_eq!(compiled.simulation_content_hash, CATALOG_HASH);
-        assert_eq!(compiled.modules.len(), 125, "committed strict source count");
-        assert_eq!(tower_modules.len(), 66, "one source per tower signature");
+        assert_eq!(compiled.modules.len(), 230, "committed strict source count");
+        // 1 doorless + every one-to-four-door pattern, in three vertical
+        // connectivities: (1 + 6 + 15 + 20 + 15) * 3. Was 66, when the family
+        // stopped at two doors and there was no branching landing.
+        assert_eq!(tower_modules.len(), 171, "one source per tower signature");
         assert!(
             tower_modules
                 .iter()

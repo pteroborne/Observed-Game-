@@ -54,7 +54,7 @@ use super::{HexArchetype, HexSpace, PortClass};
 /// profile digest, moves the folded hash, and makes the handshake refuse a
 /// mismatched peer instead. It is the only channel by which a solver change can
 /// reach that hash; nothing else will notice.
-pub const COMPOSITION_PROFILE_VERSION: u16 = 3;
+pub const COMPOSITION_PROFILE_VERSION: u16 = 4;
 
 /// The widest a score component's weight may be set. Unlike the lottery
 /// multipliers, `0.0` *is* legal here: scoring is post-hoc and disabling a
@@ -90,18 +90,44 @@ pub struct HexCompositionProfile {
     pub space_mix: SpaceMix,
     /// Route a corridor skeleton between the rooms before collapsing.
     ///
-    /// Off by default while it earns its keep. On, the solver decides the
-    /// corridors as paths and fixes their cells to an exact door mask, instead
-    /// of asking the collapse to prefer narrow ones - which it can be made to
-    /// do, but only at eight attempts and 7.19 s against a one-attempt 0.94 s
-    /// baseline, because a weight biases without removing.
+    /// **On, and shipped.** The solver decides the corridors as paths and fixes
+    /// their cells to an exact door mask, instead of asking the collapse to
+    /// prefer narrow ones - which it can be made to do, but only at eight
+    /// attempts and 7.19 s against a one-attempt 0.94 s baseline, because a
+    /// weight biases without removing.
     ///
-    /// `serde(default)` so a profile written before this existed still parses
-    /// and still hashes to what it hashed before. That is what lets the feature
-    /// land switched off and provably inert, with no LAN peer locked out for a
-    /// capability nothing yet uses.
+    /// It landed off, was measured over two phases, and is on now because the
+    /// number it was built to move moved. Four-way openings - a hall cell you
+    /// can walk out of on four or more sides, which is a room that happens to be
+    /// built of corridor - fall from 34.2% to 28.4% of hall cells, at two
+    /// attempts and 1.04 s. Passageway is roughly flat at 34.7% against 32.0%,
+    /// and the honest reading is that routing removes the blob rather than
+    /// replacing it with corridor; the carve is what would do the replacing.
+    ///
+    /// `serde(default)` is now load-bearing in the other direction: a profile
+    /// written before this field existed parses with `false`, which is no longer
+    /// what the solver ships. The field is written explicitly by
+    /// `tilec profile-write`, so a committed profile always says which it means.
     #[cfg_attr(feature = "serde", serde(default))]
     pub route_corridors: bool,
+    /// Void every cell the corridor skeleton did not claim.
+    ///
+    /// Off. The skeleton makes the corridors it owns narrow and says nothing
+    /// about the other 97% of the facility, so the completion is to say
+    /// something: the skeleton is the building, and what it did not route is
+    /// not there. Measured on solved facilities, that is a carve of 94.5%.
+    ///
+    /// It requires [`Self::route_corridors`] - there is no skeleton to carve
+    /// around without it - and it makes every exterior door load-bearing, which
+    /// is why it also switches the skeleton to routing *every* named port rather
+    /// than the spanning tree's twenty-nine. `corridor_skeleton` carries the
+    /// argument for that at length.
+    ///
+    /// Off rather than on because it is a different building, not a better one,
+    /// and that is a decision to take with the game in front of you rather than
+    /// with a survey. The studio's TUNING tab has the switch.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub carve_unrouted: bool,
     pub archetype_bias: ArchetypeBias,
     pub district_bias: Vec<DistrictBias>,
     pub score: ScoreWeights,
@@ -608,7 +634,8 @@ impl HexCompositionProfile {
             label: String::from("baseline"),
             tendencies: CompositionTendencies::baseline(),
             space_mix: SpaceMix::baseline(),
-            route_corridors: false,
+            route_corridors: true,
+            carve_unrouted: false,
             archetype_bias: ArchetypeBias::neutral(),
             district_bias: Vec::new(),
             score: ScoreWeights::baseline(),

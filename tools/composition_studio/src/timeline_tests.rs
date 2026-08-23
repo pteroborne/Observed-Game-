@@ -108,7 +108,32 @@ fn a_replay_only_draws_cells_the_solver_has_observed() {
         .placements
         .len();
 
-    state.timeline.cursor = steps / 3;
+    // Both cursors sit inside the **last** attempt, and that is not a detail.
+    // A retry throws the lattice away and the fold clears with it, so a cursor
+    // before a restart and one after it are counting two different solves; a
+    // contradiction does the same thing on a smaller scale, un-resolving the
+    // cell it lands on. Neither is the replay drawing something it has not
+    // observed, which is what this test is named for.
+    //
+    // It held on a single cursor pair for as long as every fixture solved first
+    // time. Routing does not always, and the third and two-thirds marks landed
+    // either side of an `AttemptStart`.
+    let last_attempt = state
+        .solved
+        .as_ref()
+        .expect("solved")
+        .steps
+        .iter()
+        .rposition(|step| {
+            matches!(
+                step,
+                observed_facility::hex_wfc::SolveStep::AttemptStart { .. }
+            )
+        })
+        .unwrap_or(0);
+    let span = steps - last_attempt;
+
+    state.timeline.cursor = last_attempt + span / 3;
     let cells = timeline::replay_cells(&state).expect("part-way through is a replay");
     let resolved = cells.values().filter(|c| c.resolved.is_some()).count();
     assert!(
@@ -117,7 +142,7 @@ fn a_replay_only_draws_cells_the_solver_has_observed() {
     );
 
     // And the count only grows.
-    state.timeline.cursor = (steps * 2) / 3;
+    state.timeline.cursor = last_attempt + (span * 2) / 3;
     let later = timeline::replay_cells(&state).expect("still a replay");
     let later_resolved = later.values().filter(|c| c.resolved.is_some()).count();
     assert!(later_resolved >= resolved);

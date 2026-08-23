@@ -179,7 +179,20 @@ fn pocket_selection_and_attempts_are_deterministic() {
     let a_work = world.begin_relayout(&frame);
     let b_work = world.begin_relayout(&frame);
     assert_eq!(a_work, b_work);
-    assert_eq!(a_work.region().cells.len(), DEFAULT_MUTATION_TARGET_CELLS);
+    // A target with a ceiling, not an exact size. The pocket grows until it
+    // reaches the target and then `close_units` pulls in whole rooms and ramp
+    // pairs, so the last step can overshoot by whatever the last unit was worth
+    // - and `advance_relayout` checks the ceiling, not the target.
+    //
+    // It was an equality and it held for as long as it did by luck: this seed's
+    // pocket happened to close on 32 exactly, until routing moved the facility
+    // under it and the same seed closed on 33. Nothing about the selection
+    // changed, only what was standing there.
+    let selected = a_work.region().cells.len();
+    assert!(
+        (DEFAULT_MUTATION_TARGET_CELLS..=DEFAULT_MUTATION_MAX_CELLS).contains(&selected),
+        "pocket of {selected} cells is outside the target..max band"
+    );
     assert_eq!(candidate(&world, &frame), candidate(&world, &frame));
 }
 
@@ -666,7 +679,7 @@ fn a_relayout_leaves_routed_corridors_as_narrow_as_it_found_them() {
         "the world must remember it was routed, or the relayout cannot know"
     );
 
-    let skeleton = super::constraints::corridor_skeleton(world.config, &world.blueprints)
+    let skeleton = super::constraints::corridor_skeleton(world.config, &world.blueprints, false)
         .expect("the routed world has a skeleton")
         .0;
     assert!(

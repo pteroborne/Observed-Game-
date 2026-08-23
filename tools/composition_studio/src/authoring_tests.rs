@@ -19,7 +19,21 @@ fn a_painted_pin_reaches_the_solved_facility() {
     crate::solve::run_solve(&mut state);
 
     // Find a cell the baseline did not already build as a junction, so the
-    // assertion cannot pass by coincidence.
+    // assertion cannot pass by coincidence — and that nothing decided before the
+    // collapse has already claimed.
+    //
+    // Two things can claim one. A stamped room is the long-standing case and the
+    // test has always allowed for it below. A **routed corridor** is the new
+    // one: `route_corridors` is on by default, the skeleton fixes its cells to
+    // an exact door mask, and that mask outranks a pin the same way a blueprint
+    // does. Painting a Junction onto a corridor is not a pin that failed to
+    // reach the facility, it is a pin the route overruled — reported as
+    // `PinDiagnostic::CorridorCollision` and asserted on in `pins.rs`.
+    //
+    // Rather than trying to guess which cells the router owns, the assertion
+    // below accepts the reported override the same way it already accepts the
+    // reported blueprint one. An override that is *not* reported is still a
+    // failure, which is the property worth keeping.
     let target = state
         .solved
         .as_ref()
@@ -46,9 +60,20 @@ fn a_painted_pin_reaches_the_solved_facility() {
     assert_eq!(state.profile.validate(), Ok(()));
     crate::solve::run_solve(&mut state);
 
+    state.refresh_pin_diagnostics();
+    let overruled_by_route = state.pin_diagnostics.iter().any(|diagnostic| {
+        matches!(
+            diagnostic,
+            observed_facility::hex_wfc::PinDiagnostic::CorridorCollision { coord, .. }
+                if *coord == target
+        )
+    });
     let world = &state.solved.as_ref().expect("re-solves").world;
-    // A stamped room may claim the cell; that is the one legal override.
-    if world.room_id_at(target).is_none() {
+    // A stamped room may claim the cell, and so may a routed corridor. Both are
+    // decided before the collapse and both outrank a pin; what the tool owes the
+    // author is to *say so*, which is why the route case is read off the
+    // diagnostics rather than inferred from the geometry.
+    if world.room_id_at(target).is_none() && !overruled_by_route {
         assert_eq!(
             world.placements[&target].archetype,
             HexArchetype::Junction,

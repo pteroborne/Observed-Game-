@@ -313,6 +313,7 @@ impl HexWfcWorld {
             influence,
             self.space_mix,
             self.route_corridors,
+            self.carve_unrouted,
         ) {
             Ok(solved) => Ok(HexRelayoutProgress::Ready(make_candidate(
                 self,

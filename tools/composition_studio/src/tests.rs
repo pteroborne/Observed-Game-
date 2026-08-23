@@ -363,6 +363,15 @@ fn every_profile_scalar_has_a_tunable_entry() {
     // `route_corridors` is a bool and so has no entry in any `fields()` table,
     // but it still ships a control - carried as a 0/1 scalar so it sits beside
     // the space shares an author compares it against.
+    //
+    // `carve_unrouted` is the second such bool and deliberately has **no**
+    // control, which is the opposite decision on purpose. The switch guard this
+    // panel ships asks that a stage still solves before it gets a slider, and
+    // the carve does not: it satisfies the collapse and then fails the
+    // whole-layout contract on every seed. A control that empties the viewport
+    // is worse than no control, because an author cannot tell a broken switch
+    // from a hard seed. It stays editable in the RON until the survey
+    // `survey_what_the_carve_produces_and_what_still_blocks_it` stops failing.
     const BOOL_SWITCHES_WITH_CONTROLS: usize = 1;
 
     let expected = CompositionTendencies::baseline().fields().len()

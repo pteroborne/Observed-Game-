@@ -90,6 +90,19 @@ fn collapsed_never_goes_backwards_within_an_attempt() {
         if cursor > 0 && matches!(steps[cursor - 1], SolveStep::AttemptStart { .. }) {
             previous = 0;
         }
+        // A `Contradiction` is the last step of its attempt - `propagate`
+        // returns the moment it emits one - so the attempt is over here in
+        // every sense but the marker, and the next step is either an
+        // `AttemptStart` or the solve giving up.
+        //
+        // It can take the count down with it, which is new. The fold clears
+        // `resolved` on the contradicted cell, and since routing began fixing
+        // corridor cells outright there are cells that were resolved before the
+        // lottery ran and can therefore be un-resolved by it. Measured: 32 to
+        // 31, one cell, on the last step of a doomed attempt.
+        if cursor > 0 && matches!(steps[cursor - 1], SolveStep::Contradiction { .. }) {
+            previous = 0;
+        }
         assert!(
             summary.collapsed >= previous,
             "collapsed fell from {previous} to {} at cursor {cursor}",

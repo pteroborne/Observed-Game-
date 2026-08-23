@@ -83,6 +83,13 @@ pub(super) struct ResolvedModuleGraph {
     pub instance: HexModuleInstanceId,
     pub revision: HexModuleRevision,
     pub graph: ProjectedTraversalGraph,
+    /// The foot of this module's own climb, where it stands on this module's
+    /// deck. `None` when the module has no climb.
+    ///
+    /// Named rather than derived because it is what a *descent* into this module
+    /// ends at, and the alternatives are all shape readings - the lowest node,
+    /// or the one a level under the top terminal. See [`descent`].
+    pub climb_foot: Option<TraversalNodeId>,
 }
 
 impl ResolvedModuleGraph {
@@ -102,10 +109,14 @@ impl ResolvedModuleGraph {
             let instance = guide.instance;
             let revision = guide.revision.clone();
             if let Some(graph) = &guide.graph {
+                // An authored graph names its own terminals; nothing in the
+                // corpus ships one yet, so there is no climb foot to report and
+                // a descent into such a module falls back rather than guessing.
                 return Some(Self {
                     instance,
                     revision,
                     graph: graph.clone(),
+                    climb_foot: None,
                 });
             }
             let compiled = compile_compatibility_graph(guide.deck.as_ref(), guide.climb.as_ref())?;
@@ -129,6 +140,7 @@ impl ResolvedModuleGraph {
                 );
             }
             bind_lateral_ports(game, cell, &compiled.guide, &mut port_bindings);
+            let climb_foot = compiled.climb_bottom();
             return Some(Self {
                 instance,
                 revision,
@@ -136,6 +148,7 @@ impl ResolvedModuleGraph {
                     guide: compiled.guide,
                     port_bindings,
                 },
+                climb_foot,
             });
         }
         legacy_cell_adapter(game, cell)
@@ -250,6 +263,8 @@ fn legacy_cell_adapter(game: &HexWfcMatch, cell: HexCoord) -> Option<ResolvedMod
             guide,
             port_bindings: bindings,
         },
+        // The legacy adapter builds a hub and doorways, never a climb.
+        climb_foot: None,
     })
 }
 
@@ -313,8 +328,78 @@ pub(super) fn acquire(
     feet: Vec3,
     transition: ExternalTransition,
 ) -> Option<HexTraversalCursor> {
+    within(game, feet, transition).or_else(|| descent(game, feet, transition))
+}
+
+/// The ordinary case: a leg that crosses the module the body is standing in.
+fn within(
+    game: &HexWfcMatch,
+    feet: Vec3,
+    transition: ExternalTransition,
+) -> Option<HexTraversalCursor> {
     let module = ResolvedModuleGraph::resolve(game, transition.from)?;
     let exit = module.exit_for(transition)?;
+    lease_between(module, feet, exit)
+}
+
+/// Going down a shaft, which is a leg in the module *below*.
+///
+/// A climb rises out of the module that owns it: a tower's flight starts on its
+/// own deck and tops out on the deck above, so going **up** is a leg across the
+/// module the body is already in, and the port binding for `Up` is that flight's
+/// far terminal. Every part of the leg system is shaped by that, and it is only
+/// true in one direction.
+///
+/// Going **down** is the same flight walked the other way, and it belongs to the
+/// cell below. The body stands on the upper cell's floor at the head of the
+/// lower cell's climb - `ring_deck` puts a node exactly there, because that is
+/// "where the tower below sets a body down" - and to descend it walks that climb
+/// in reverse to its foot, arriving on the lower deck. Nothing in the upper
+/// module describes any of it. If the upper module is a shaft head it does not
+/// even have a climb: it is capped, so it ships no spine at all.
+///
+/// So `within` returns `None` for every descent out of a shaft head, and before
+/// this the caller fell through to `finish_vertical_crossing`, which is
+/// ramp-shaped - it takes the cell's first open lateral face and steers along
+/// it. On a ramp that is the last metre of the crossing. On a tower it is a
+/// heading into a wall, and the body holds it at full throttle until the match
+/// runs out of ticks.
+///
+/// **Why now.** `forced_route_edges` is a monotone staircase - east, south-east,
+/// or up, and never down - so the shipped facility's guaranteed route never
+/// descended a shaft, and a weighted route that wanted to could usually go round.
+/// A routed corridor skeleton claims climbs as `ShaftOpen` pairs and its BFS
+/// walks them in both directions, so descending becomes an ordinary move on a
+/// one-cell-wide corridor with nothing to go round by. Measured on the bot soak:
+/// seven of twenty-eight layouts stalled with `route_corridors` on, six of them
+/// in a shaft head. The defect is older than the routing that found it.
+///
+/// **The other repair this needed and did not have.** A shaft head declares a
+/// `Down` port that no graph terminal answers for, and binding it to the nearest
+/// deck node is the obvious companion fix. It was written, and measured, and it
+/// changes nothing: on its own the soak still stalled seven of twenty-eight,
+/// because walking a body to the lip of a hole is not descending. It is deleted
+/// rather than kept beside this, since a second code path that fixes nothing is
+/// a second code path to explain.
+fn descent(
+    game: &HexWfcMatch,
+    feet: Vec3,
+    transition: ExternalTransition,
+) -> Option<HexTraversalCursor> {
+    (transition.face == HexFace::Down).then_some(())?;
+    let below = ResolvedModuleGraph::resolve(game, transition.to)?;
+    // The entry is left to `nearest_node`, not named as the climb's top
+    // terminal: the body may have drifted a node along the upper deck before
+    // this was asked for, and where it actually stands is the honest answer.
+    let foot = below.climb_foot?;
+    lease_between(below, feet, foot)
+}
+
+fn lease_between(
+    module: ResolvedModuleGraph,
+    feet: Vec3,
+    exit: TraversalNodeId,
+) -> Option<HexTraversalCursor> {
     let entry = module.graph.guide.nearest_node(feet)?;
     let local = module.graph.guide.cursor_between(entry, exit)?;
     Some(HexTraversalCursor {

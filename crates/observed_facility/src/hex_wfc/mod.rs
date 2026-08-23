@@ -390,6 +390,14 @@ pub struct HexWfcWorld {
     /// and the stamped blueprints, and both are pinned across a relayout, so it
     /// is cheaper to recompute than to keep in sync.
     pub route_corridors: bool,
+    /// Whether this world's unrouted cells were carved to `Void`.
+    ///
+    /// Carried for the third time and for the third instance of the same
+    /// failure. A pocket that did not know the facility was carved would refill
+    /// its hole with hall, and the carve would erode exactly the way the routing
+    /// and the space mix would have - quietly, a pocket at a time, with nothing
+    /// erroring anywhere.
+    pub carve_unrouted: bool,
 }
 
 impl HexWfcWorld {
@@ -580,6 +588,7 @@ impl HexWfcWorld {
                 authored_pins: pins::resolved_pins(config, profile).0.into_keys().collect(),
                 space_mix: profile.space_mix,
                 route_corridors: profile.route_corridors,
+                carve_unrouted: profile.carve_unrouted,
             },
             attempts,
         ))

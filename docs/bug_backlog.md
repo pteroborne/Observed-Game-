@@ -569,6 +569,51 @@ open behind #30.
 
 ## Fixed
 
+### 40. A body could not walk *down* a stair tower
+
+**Found and fixed 2026-08-23, while turning `route_corridors` on.** Descending a
+stair tower had never been implemented. It went unnoticed for as long as it did
+because almost nothing ever asked for it: `forced_route_edges` builds a
+*monotone* staircase - east, south-east, or up, and never down - so the
+facility's one guaranteed route only ever climbed, and a weighted route that
+wanted to descend could usually go round instead.
+
+A routed corridor skeleton does ask for it. It claims each climb as a
+`ShaftOpen` pair and its BFS walks them in both directions, on corridors one cell
+wide with nothing to go round by. Turning the flag on took the bot soak from
+clean to **seven stalls in twenty-eight layouts**, every one of them inside a
+stair tower and six of the seven in a shaft head. Capping the shaft alphabet back
+at two doors reproduced it exactly, which is what ruled out the branching landing
+that landed in the same change.
+
+The mechanism, end to end. A climb rises *out of* the module that owns it: a
+tower's flight starts on its own deck and tops out on the deck above. So going up
+is a leg across the module the body is already standing in, and the `Up` port
+binds to that flight's far terminal. Going down is the same flight walked the
+other way and it belongs to the cell *below* - and if the upper cell is a shaft
+head it has no flight at all, because it is capped and ships no spine. So
+`leg::acquire` found nothing to bind, returned `None`, and the caller fell
+through to `finish_vertical_crossing`, which is ramp-shaped: it takes the cell's
+first open lateral face and steers along it. On a ramp that is the last metre of
+the crossing. On a tower it is a heading into a wall, and the body holds it at
+full throttle, `grounded`, until the match runs out of ticks.
+
+Fixed in `observed_match/src/hex_wfc/model/bot/leg.rs`: `acquire` now falls back
+to `descent`, which resolves the module below and leases its climb from where the
+body stands down to `climb_foot`. `ResolvedModuleGraph` carries that terminal by
+name rather than letting anything derive it from shape.
+
+One plausible companion fix was written and then deleted, which is worth
+recording because it is the obvious thing to try. A shaft head declares a `Down`
+port that no graph terminal answers for, so binding it to the nearest deck node
+looks like the missing piece. Measured on its own it left the soak at seven
+stalls of twenty-eight, unchanged: walking a body to the lip of a hole is not
+descending it. The binding was not the defect; the missing leg was.
+
+Soak is back to zero stalls of twenty-eight, and
+`perimeter_tower_local_intent_and_body_trace_is_pinned` still measures 973 traced
+ticks, bit for bit, across the seed change: the climb itself never moved.
+
 ### 26. Arc Q shipped with a failing suite and a stopped simulation in test
 
 **Fixed 2026-07-30 during the Phase 123 gate.** The Arc P/Q implementation was

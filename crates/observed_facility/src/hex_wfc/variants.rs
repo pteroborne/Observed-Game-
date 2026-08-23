@@ -47,6 +47,41 @@ impl HexVariant {
     }
 }
 
+/// How many lateral doors a climbing hall cell may have.
+///
+/// Four, and it was two until the corridor router needed a cell that is both a
+/// junction and a staircase. That cell is what a routed facility produces the
+/// moment every named port is routed rather than a spanning tree's worth of
+/// them: corridors start meeting, and some meet where the route also climbs.
+/// Capped at two, the alphabet had no such variant, so the domain emptied - and
+/// declining to pin the cell did not help, because its neighbours still demanded
+/// the doors and the route still demanded the climb.
+///
+/// Four rather than six, to match `Junction`, which stops there for its own
+/// reasons: past four an opening is an `Expanse` rather than a corridor. The
+/// authored corpus is cut to the same line - `door_patterns` in the tower forge
+/// says why in geometry rather than in alphabet.
+const SHAFT_MAX_DOORS: u32 = 4;
+
+/// A one- or two-door climb: a staircase you enter, or pass through.
+const SHAFT_WEIGHT: u32 = 2;
+
+/// A three- or four-door climb: a stair landing that branches.
+///
+/// Half the weight of a plain climb, on the same reasoning that makes a
+/// `Junction` a third of a `Straight`: a landing several corridors meet at is a
+/// rarer thing than a landing one passes through, and the alphabet should say so
+/// rather than leaving it to the constraints.
+///
+/// It is also arithmetic, and the comment below on the shaft family is the
+/// warning. Thirty-five new masks against three vertical combinations is a
+/// hundred and five new entries, and at the plain weight they would have raised
+/// the shaft family's share of the hall alphabet from 20% to 40% - the shape of
+/// the mistake that made the facility 47% stairs (backlog #13). At 1 it goes to
+/// 31%, and the measured shaft share of a solved facility is what actually
+/// decides whether that is too much.
+const BRANCHING_LANDING_WEIGHT: u32 = 1;
+
 pub(super) fn catalogue() -> Vec<HexVariant> {
     let mut variants = vec![HexVariant {
         space: HexSpace::Void,
@@ -158,13 +193,18 @@ pub(super) fn catalogue() -> Vec<HexVariant> {
     // alphabet, but presentation resolves them to grounded stair towers.
     //
     // Weights here are deliberately low relative to the flat alphabet. The
-    // shaft family is enormous — a doorless through-shaft plus every one- and
-    // two-door mask against three vertical combinations, 190 entries against a
-    // handful for a straight — so equal per-entry weight is not equal weight at
-    // all, and that arithmetic is how the facility ended up 47 % stairs
-    // (backlog #13). Verticality now comes from Phase 107's district profiles,
-    // which raise it where it is the identity, rather than from a baseline that
-    // raises it everywhere.
+    // shaft family is enormous — a doorless through-shaft plus every mask up to
+    // [`SHAFT_MAX_DOORS`] against three vertical combinations, 169 entries
+    // against a handful for a straight — so equal per-entry weight is not equal
+    // weight at all, and that arithmetic is how the facility ended up 47 %
+    // stairs (backlog #13). Verticality now comes from Phase 107's district
+    // profiles, which raise it where it is the identity, rather than from a
+    // baseline that raises it everywhere.
+    //
+    // The family grew from 64 entries to 169 when the branching landing landed,
+    // which is why the two door counts now carry different weights: the count
+    // went up by a factor of two and a half and the mass by a factor of one and
+    // a third. See [`BRANCHING_LANDING_WEIGHT`].
     variants.push(HexVariant {
         space: HexSpace::Hall,
         archetype: HexArchetype::Shaft,
@@ -180,14 +220,18 @@ pub(super) fn catalogue() -> Vec<HexVariant> {
             }
             for mask in 1u8..64 {
                 let degree = mask.count_ones();
-                if degree == 1 || degree == 2 {
+                if (1..=SHAFT_MAX_DOORS).contains(&degree) {
                     variants.push(HexVariant {
                         space: HexSpace::Hall,
                         archetype: HexArchetype::Shaft,
                         doors: mask,
                         up,
                         down,
-                        weight: 2,
+                        weight: if degree <= 2 {
+                            SHAFT_WEIGHT
+                        } else {
+                            BRANCHING_LANDING_WEIGHT
+                        },
                     });
                 }
             }
@@ -381,12 +425,15 @@ mod geometry_tests {
                 .count(),
             6
         );
+        // A doorless through-shaft, plus every one-to-four-door mask against
+        // each of the three vertical connectivities: 1 + 56 * 3. Was 64, when
+        // the family stopped at two doors and had no branching landing.
         assert_eq!(
             demands
                 .iter()
                 .filter(|demand| demand.archetype == "stair_tower")
                 .count(),
-            64
+            169
         );
         assert!(!demands.iter().any(|demand| demand.archetype == "void"));
         assert!(!demands.iter().any(|demand| demand.archetype == "ramp_head"));

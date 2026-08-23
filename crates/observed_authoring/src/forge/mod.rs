@@ -197,4 +197,35 @@ mod tests {
                 .unwrap_or_else(|error| panic!("{name} does not validate: {error:?}"));
         }
     }
+
+    /// What the corpus's most expensive cell actually costs, as a number rather
+    /// than as a limit nothing happens to reach.
+    ///
+    /// `CELL_HULL_BUDGET` is a stylistic ratchet and was moved from 32 to 36 for
+    /// the branching stair landing. A ratchet only ratchets while somebody can
+    /// see where it is being held, and a cap set above the corpus drifts into
+    /// slack in silence - which is how it came to be fitted to the corpus in the
+    /// first place. So the standing maximum is pinned here beside the cap.
+    ///
+    /// The two are deliberately equal. A four-door through tower *is* the
+    /// budget, so the next cell that wants a thirty-seventh hull fails the
+    /// importer and comes back with a reason, which is the whole point.
+    #[test]
+    fn the_corpus_stays_inside_its_stylistic_hull_budget() {
+        let mut worst = (0usize, String::new());
+        for (name, text) in generate_all() {
+            let module = crate::parse_authored_module(&text).expect("generated modules validate");
+            if module.kind != crate::ModuleKind::Cell {
+                continue;
+            }
+            if module.prototype.hulls.len() > worst.0 {
+                worst = (module.prototype.hulls.len(), name);
+            }
+        }
+        assert_eq!(
+            worst,
+            (36, "stair_tower_helix_0123".to_string()),
+            "the most expensive cell in the corpus moved"
+        );
+    }
 }

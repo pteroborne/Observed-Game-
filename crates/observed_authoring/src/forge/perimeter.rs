@@ -402,8 +402,14 @@ pub(super) fn landing(extent: Extent) -> String {
 ///
 /// Emitted as one convex brush per region rather than one polygon, because a
 /// hexagon with a bite out of it is not convex and a brush must be. Seven of
-/// them, which matters: a tower is one hull under the 32 the importer allows,
-/// and seaming every face at the climb's radius costs two more and puts it over.
+/// them, which matters: seaming every face at the climb's radius costs two more,
+/// and the tower is the corpus's most expensive cell with or without them.
+///
+/// This used to read "one hull under the 32 the importer allows". The importer
+/// now allows 36, because the branching landing needed it and 32 had been fitted
+/// to a corpus that had no such tile - see `CELL_HULL_BUDGET`. The slack is
+/// spent on doors, not on this: a four-door through tower sits exactly on the
+/// new cap, so the seam-per-face version is still over.
 #[must_use]
 pub(super) fn pierced_floor(extent: Extent, z0: f64, z1: f64) -> String {
     // `rim` is the hexagon itself: the band the climb was pulled in off. See

@@ -226,23 +226,39 @@ fn selected_tiles(snapshot: &HexWfcGeometrySnapshot) -> BTreeMap<HexCoord, TileK
 /// | --- | --- | --- |
 /// | seed 1 | `0x724700725be9a28d` | `0xda2b4f50572c48fb` |
 /// | seed 10000031 | `0x1a2c49860d076a3a` | `0x5b7df763dd7bbf5d` |
+///
+/// Moved again by the branching stair landing. The alphabet grew from 404
+/// variants to 509 - every three- and four-door shaft mask, against three
+/// vertical connectivities - so the lottery moved for every cell, and the
+/// corpus grew the 105 towers to serve them.
+///
+/// The tower columns are the ones to read. Seed 1 goes from 68 towers to 84 and
+/// seed 10000031 from 45 to 64, against tile counts that barely move (300 -> 276
+/// and 267 -> 281). That is the shaft family taking a larger share of the hall
+/// alphabet - 20% to 31% by weight - and it is the number to watch if the
+/// facility ever starts reading as stairs again, which is what backlog #13 was.
+///
+/// | | before | after |
+/// | --- | --- | --- |
+/// | seed 1 | `0xda2b4f50572c48fb` | `0xacfd4d912b5386e9` |
+/// | seed 10000031 | `0x5b7df763dd7bbf5d` | `0x50068539c58d897f` |
 #[test]
 fn production_catalog_selection_is_pinned_for_spectator_seeds() {
     let catalog = crate::hex_wfc::test_catalog();
     let cases = [
         (
             1u64,
-            300usize,
-            0xda2b_4f50_572c_48fbu64,
-            68usize,
-            0x1ebd_4697_3911_01e6u64,
+            276usize,
+            0xacfd_4d91_2b53_86e9u64,
+            84usize,
+            0x3978_e5c3_e54c_5673u64,
         ),
         (
             10_000_031u64,
-            267usize,
-            0x5b7d_f763_dd7b_bf5du64,
-            45usize,
-            0xde1b_66d4_f3b9_514cu64,
+            281usize,
+            0x5006_8539_c58d_897fu64,
+            64usize,
+            0x678f_cfdd_cf29_cee8u64,
         ),
     ];
     for (seed, expected_count, expected_digest, expected_tower_count, expected_tower_digest) in
@@ -361,6 +377,7 @@ fn oversized_grid_reports_collider_id_capacity_before_projection() {
         authored_pins: Default::default(),
         space_mix: observed_facility::hex_wfc::profile::SpaceMix::baseline(),
         route_corridors: false,
+        carve_unrouted: false,
     };
     assert!(matches!(
         HexWfcGeometrySnapshot::project(&world, &[]),
@@ -935,6 +952,7 @@ fn multi_cell_world(role: RoomRole, anchor: HexCoord) -> HexWfcWorld {
         authored_pins: Default::default(),
         space_mix: observed_facility::hex_wfc::profile::SpaceMix::baseline(),
         route_corridors: false,
+        carve_unrouted: false,
     }
 }
 

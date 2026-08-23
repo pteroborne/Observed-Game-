@@ -37,7 +37,27 @@ const PORT_EPSILON_UNITS: f64 = 1.0;
 /// neighbouring cell.
 const SAFE_INTERIOR_RADIUS_UNITS: f64 = 104.0;
 const MIN_HEADROOM_METERS: f32 = 2.2;
-const CELL_HULL_BUDGET: usize = 32;
+/// How many convex hulls one cell module may carry.
+///
+/// A stylistic ratchet, not the real ceiling. The real ceiling is
+/// `COLLIDER_STRIDE`, the fixed collider-ID range the projector reserves per
+/// cell; Phase 110 already made that distinction once, when a hand-picked 28
+/// was retired because "a six-door expanse legitimately exceeds" it. This is
+/// the same shape of number and it has now been moved for the same reason.
+///
+/// **Was 32, and 32 was fitted to a corpus in which nothing climbed and
+/// branched at once.** The most complex cell in that corpus was a through stair
+/// tower with two doors, at 30, and `pierced_floor` was shaped around the
+/// remaining slack - it says so, and it is worth reading before spending any of
+/// it. A door costs three hulls (two jambs, a lintel, a sill, against one band
+/// for a plain wall), so the branching landing the corridor router needs - a
+/// through tower at three and four doors - lands at 33 and 36.
+///
+/// 36 is that tower and no more, so this stays a ratchet rather than becoming
+/// slack: the next cell that wants a thirty-seventh hull has to come here and
+/// say why. `the_corpus_stays_inside_its_stylistic_hull_budget` records the
+/// standing maximum so a drift cannot arrive unannounced.
+const CELL_HULL_BUDGET: usize = 36;
 const ROOM_HULL_BUDGET: usize = 128;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

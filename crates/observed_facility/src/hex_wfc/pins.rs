@@ -94,6 +94,11 @@ pub enum PinDiagnostic {
     /// the pin had no effect there. Where rooms land is seed-dependent, so this
     /// is a report about the probe seed, not a permanent property.
     BlueprintCollision { coord: HexCoord, role: RoomRole },
+    /// The corridor router claimed this cell, so its exact door mask took it and
+    /// the pin had no effect there. Seed-dependent in the same way and for the
+    /// same reason as [`Self::BlueprintCollision`]: where the skeleton runs
+    /// depends on where the rooms were stamped.
+    CorridorCollision { coord: HexCoord, doors: u8 },
     /// Adding `culprit` is what first emptied `at`'s domain. Attribution: the
     /// pin an author should actually go and change.
     Conflict {
@@ -132,6 +137,12 @@ impl core::fmt::Display for PinDiagnostic {
                 coord.r,
                 coord.level,
                 reason.explain()
+            ),
+            Self::CorridorCollision { coord, doors } => write!(
+                f,
+                "({},{},{}) is a routed corridor with doors {doors:06b}; the route wins \
+                 and the pin has no effect there",
+                coord.q, coord.r, coord.level
             ),
             Self::BlueprintCollision { coord, role } => write!(
                 f,
@@ -321,8 +332,40 @@ pub fn diagnose_pins(config: HexWfcConfig, profile: &HexCompositionProfile) -> V
     // "always"; the wording in `PinDiagnostic` says so.
     if let Ok(world) = super::HexWfcWorld::generate_with_profile(PROBE_SEED, config, None, profile)
     {
-        for coord in resolved.keys() {
+        // Recomputed rather than read off the world: the skeleton is a function
+        // of the config and the stamped blueprints, and the probe world pins
+        // both, so this is the same map the solve used.
+        let skeleton = profile
+            .route_corridors
+            .then(|| {
+                super::constraints::corridor_skeleton(
+                    config,
+                    &world.blueprints,
+                    profile.carve_unrouted,
+                )
+            })
+            .flatten()
+            .map(|(doors, _, _)| doors)
+            .unwrap_or_default();
+        for (coord, intent) in &resolved {
             if world.room_id_at(*coord).is_none() {
+                // Only where the route and the pin actually disagree. A skeleton
+                // that made a cell the very `Straight` its pin asked for has
+                // overruled nothing, and a panel that said so on every routed
+                // pin would be the always-complaining view this module's other
+                // gate exists to prevent.
+                if let Some(&doors) = skeleton.get(coord)
+                    && !variants.iter().any(|variant| {
+                        variant.space != HexSpace::Room
+                            && variant.doors == doors
+                            && pin_admits(intent, variant)
+                    })
+                {
+                    diagnostics.push(PinDiagnostic::CorridorCollision {
+                        coord: *coord,
+                        doors,
+                    });
+                }
                 continue;
             }
             let role = world
@@ -569,10 +612,59 @@ mod tests {
                 let coord = HexCoord { q, r, level: 0 };
                 let placed = world.placements.get(&coord).expect("the cell is placed");
                 // A stamped room may land on the cell; blueprints are a frozen
-                // contract and win. That is the one legal way a pin does not
+                // contract and win. That is one legal way a pin does not
                 // appear, and `diagnose_pins` reports it rather than leaving
                 // the author guessing.
                 if world.room_id_at(coord).is_some() {
+                    continue;
+                }
+                // And the cell may not be part of the building. `route_corridors`
+                // is the default now, so the live facility is the skeleton plus
+                // whatever the collapse joined onto it, and `prune_disconnected`
+                // voids the rest. On this small lattice that is a third to a
+                // half of it - two of the three seeds here - where the weighted
+                // blob it replaced reached nearly everywhere.
+                //
+                // The pin is not overruled in that case, it is *stranded*: the
+                // collapse placed the Junction and then the facility decided
+                // that corner is not part of itself. Worth knowing that unlike
+                // the blueprint case this one is currently silent - the author
+                // gets no diagnostic - which is a gap in `diagnose_pins` rather
+                // than in the solver.
+                let live = super::super::topology::active_component(
+                    config,
+                    &world.placements,
+                    config.spawn(),
+                );
+                if !live.contains(&coord) {
+                    assert_eq!(
+                        placed.space,
+                        HexSpace::Void,
+                        "seed {seed:#x}: pin at ({q},{r}) is outside the live \
+                         component but was not pruned"
+                    );
+                    continue;
+                }
+                // Or the corridor router claimed it, which is the third legal
+                // override and the only one that is a *decision* rather than an
+                // accident. A route is fixed before the collapse runs, exactly
+                // as a blueprint is, so it wins for the same reason - and like
+                // the blueprint case it is reported, as
+                // `PinDiagnostic::CorridorCollision`.
+                //
+                // The exact mask is asserted rather than waved through: what the
+                // route promised is what has to be built, or this exception
+                // would excuse any outcome at all on a routed cell.
+                let skeleton =
+                    super::super::constraints::corridor_skeleton(config, &world.blueprints, false)
+                        .map(|(doors, _, _)| doors)
+                        .unwrap_or_default();
+                if let Some(&mask) = skeleton.get(&coord) {
+                    assert_eq!(
+                        placed.doors, mask,
+                        "seed {seed:#x}: the router claimed ({q},{r}) and the \
+                         facility did not build the mask it decided"
+                    );
                     continue;
                 }
                 assert_eq!(

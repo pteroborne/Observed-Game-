@@ -86,22 +86,50 @@ const RING: f64 = (OUTER_SCALE + (1.0 - WALL / 112.0)) * 0.5;
 /// second column-compatible treatment is introduced later.
 const WEIGHT: u32 = 6;
 
-/// Every door pattern a tower can be asked for: none, each single face, and
-/// each unordered pair. 1 + 6 + 15 = 22, and 22 times three connectivities is
-/// the 66-signature demand the generated family enumerated by hand.
+/// Every door pattern a tower can be asked for: none, and each unordered
+/// subset of one to four faces. 1 + 6 + 15 + 20 + 15 = 57, and 57 times three
+/// connectivities is the 171-source family.
+///
+/// **The last two sizes are the branching landing**, and they were added for a
+/// reason outside this file. A corridor router that routes every named port
+/// makes corridors meet, and where two meet on a cell that also climbs, the
+/// cell is a three- or four-way junction *and* a staircase. The solver had no
+/// such variant because this family had no such tower: the alphabet was capped
+/// at two doors to match the corpus, and the corpus was capped at two doors
+/// because nothing had ever asked for more. Neither cap was a geometric limit.
+///
+/// It costs nothing in geometry, which is the part worth stating plainly. A
+/// door opens onto the ring and never onto the flight - that is [`OUTER_SCALE`]
+/// and it is why the sweep can be fixed - so the envelope loop below already
+/// draws any subset of the six faces correctly. Three doors is the same tower
+/// with a third opening cut in it.
+///
+/// Five and six are left out to match the solver's `Junction`, which stops at
+/// four for its own reasons. Adding them here without a variant to demand them
+/// would author thirty sources nothing can select.
+///
+/// Order is append-only: the pairs keep the slots they had, so the sixty-six
+/// committed towers stay byte-identical and only new files appear. Variant
+/// numbers run from [`FIRST_VARIANT`] in this order, and a reordering would
+/// rewrite the whole corpus for nothing.
 ///
 /// Enumerated rather than turned. See the `rotation_policy` in [`stair_tower`]
 /// for why the compiler's sixfold expansion cannot stand in for this.
 #[must_use]
 fn door_patterns() -> Vec<Vec<usize>> {
     let mut out = vec![Vec::new()];
-    for face in 0..6 {
-        out.push(vec![face]);
-    }
-    for first in 0..6 {
-        for second in (first + 1)..6 {
-            out.push(vec![first, second]);
+    for size in 1..=4usize {
+        let mut sized: Vec<Vec<usize>> = Vec::new();
+        for mask in 0u8..64 {
+            if usize::try_from(mask.count_ones()).expect("six faces fit a usize") != size {
+                continue;
+            }
+            sized.push((0..6).filter(|face| mask & (1 << face) != 0).collect());
         }
+        // Lexicographic by face, which for one and two doors is exactly the
+        // order the nested loops produced before this generalised.
+        sized.sort();
+        out.extend(sized);
     }
     out
 }

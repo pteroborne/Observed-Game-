@@ -351,8 +351,16 @@ pub fn neighborhood(
     // assumed: a replay at the wrong attempt produces a different, entirely
     // plausible constraint set.
     let attempt = world.last_attempts.saturating_sub(1);
-    let constraints = replay_constraints(world.seed, world.generation, attempt, config, quotas)
-        .ok_or(NeighborhoodError::ConstraintReplayFailed)?;
+    let constraints = replay_constraints(
+        world.seed,
+        world.generation,
+        attempt,
+        config,
+        quotas,
+        world.route_corridors,
+        world.carve_unrouted,
+    )
+    .ok_or(NeighborhoodError::ConstraintReplayFailed)?;
     if constraints.blueprints != world.blueprints {
         return Err(NeighborhoodError::ConstraintReplayFailed);
     }
@@ -372,29 +380,47 @@ pub fn neighborhood(
     let mut domains: BTreeMap<HexCoord, VariantSet> = BTreeMap::new();
     let mut from_centre: BTreeMap<HexCoord, usize> = BTreeMap::new();
     for &coord in &ring {
+        // A route constraint describes the facility the collapse produced, and
+        // `prune_disconnected` runs *after* that: a cell the prune emptied is
+        // `Void` in the world while the replay still says a corridor climbs
+        // through it. Asking for both is asking for a contradiction, and the
+        // query reports one - `Contradiction(2,0,0)` on the first solved
+        // facility, once routing became the default and the prune started
+        // reaching a third of the lattice instead of a corner of it.
+        //
+        // The route is not what is wrong here. The claim simply expired: there
+        // is no corridor through a cell the facility decided is not part of
+        // itself, so there is nothing for the query to hold the cell to.
+        let routed = world.placements[&coord].space != super::HexSpace::Void;
+        let forced = |source: &BTreeMap<HexCoord, super::PortClass>| {
+            routed
+                .then(|| source.get(&coord).copied())
+                .flatten()
+                .unwrap_or(super::PortClass::Sealed)
+        };
         let mut domain = initial_domain_for(
             config,
             &tables.variants,
             coord,
-            constraints.forced_doors.get(&coord).copied().unwrap_or(0),
+            if routed {
+                constraints.forced_doors.get(&coord).copied().unwrap_or(0)
+            } else {
+                0
+            },
             // The skeleton is decided during the solve. Re-opening one cell of
             // a finished facility asks what else could stand there, and pinning
             // it back to the route it already took would answer nothing.
             None,
-            constraints
-                .forced_up
-                .get(&coord)
-                .copied()
-                .unwrap_or(super::PortClass::Sealed),
-            constraints
-                .forced_down
-                .get(&coord)
-                .copied()
-                .unwrap_or(super::PortClass::Sealed),
+            forced(&constraints.forced_up),
+            forced(&constraints.forced_down),
             constraints.signatures.get(&coord).copied(),
             Some(world.placements[&coord]),
             world.authored_pins.contains(&coord),
             authored.get(&coord),
+            // And not the carve either, for the reason directly above: a query
+            // that answered "Void, because the router did not come this way"
+            // would be restating the solve rather than exploring it.
+            false,
         );
 
         // The centre's own contribution, recorded before anything else narrows

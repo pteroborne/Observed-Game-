@@ -339,10 +339,36 @@ pub(super) fn stamp_blueprints_with_pins(
 /// same rule `forced_route_edges` follows. Returns `None` when a tree edge
 /// cannot be routed at all, so the caller restamps rather than shipping a
 /// facility with an unreachable room.
+///
+/// # Every port, or only the tree
+///
+/// `every_port` is what the carve needs and what nothing else does, so it is a
+/// parameter rather than the behaviour.
+///
+/// A spanning tree spends one port per room pair. Measured, that leaves 26 of a
+/// facility's 72 exterior doors facing ground the skeleton never claimed. With
+/// the collapse filling that ground it does not matter - whatever lands outside
+/// the door will open toward it or the propagation will make it. Under a carve
+/// it matters completely: the cell outside becomes `Void`, `Void` seals every
+/// face, and the door on the other side is a promise nothing can keep. The
+/// domain empties on the first such port.
+///
+/// So the carve does not merely need more corridor, it needs the skeleton to be
+/// the *whole* answer about which cells are open. Every port routed is what
+/// makes that true.
+///
+/// It is not free and it is not strictly better, which is why it does not
+/// simply become the rule. Extra edges make corridors meet, and a meeting is a
+/// junction the collapse has to satisfy rather than a straight it can take for
+/// granted. What they buy back is loops: the tree measured 0.1% degree-4, which
+/// is a corridor network with no alternative route anywhere in it, and a game
+/// that wants the risky shortcut against the safe bypass needs somewhere for
+/// the two to diverge.
 #[allow(clippy::type_complexity)]
 pub(super) fn corridor_skeleton(
     config: HexWfcConfig,
     blueprints: &[StampedBlueprint],
+    every_port: bool,
 ) -> Option<(
     BTreeMap<HexCoord, u8>,
     BTreeMap<HexCoord, PortClass>,
@@ -403,21 +429,13 @@ pub(super) fn corridor_skeleton(
     let mut adjacency: BTreeMap<HexCoord, BTreeSet<HexCoord>> = BTreeMap::new();
     let mut up: BTreeMap<HexCoord, PortClass> = BTreeMap::new();
     let mut down: BTreeMap<HexCoord, PortClass> = BTreeMap::new();
-    for (from, to) in edges {
-        let (path, start_port, end_port) = attachments[from]
-            .iter()
-            .flat_map(|start| attachments[to].iter().map(move |end| (*start, *end)))
-            .filter_map(|((start, start_port), (end, end_port))| {
-                skeleton_path(config, &room_cells, start, end)
-                    .map(|path| (path, start_port, end_port))
-            })
-            .min_by_key(|(path, _, _)| path.len())?;
-        // Open each end onto the door it serves, so an endpoint is a passage
-        // into a room rather than a corridor stub beside one.
-        if let (Some(&first), Some(&last)) = (path.first(), path.last()) {
-            adjacency.entry(first).or_default().insert(start_port);
-            adjacency.entry(last).or_default().insert(end_port);
-        }
+    // Claiming a path is the same work whichever pass asks for it, and the two
+    // passes below disagreeing about it is the kind of drift that shows up as a
+    // corridor that stops one cell short of a door.
+    let claim = |path: &[HexCoord],
+                 adjacency: &mut BTreeMap<HexCoord, BTreeSet<HexCoord>>,
+                 up: &mut BTreeMap<HexCoord, PortClass>,
+                 down: &mut BTreeMap<HexCoord, PortClass>| {
         for window in path.windows(2) {
             let (here, next) = (window[0], window[1]);
             if here.level == next.level {
@@ -437,6 +455,49 @@ pub(super) fn corridor_skeleton(
             down.insert(upper, PortClass::ShaftOpen);
             adjacency.entry(here).or_default();
             adjacency.entry(next).or_default();
+        }
+    };
+
+    for (from, to) in edges {
+        let (path, start_port, end_port) = attachments[from]
+            .iter()
+            .flat_map(|start| attachments[to].iter().map(move |end| (*start, *end)))
+            .filter_map(|((start, start_port), (end, end_port))| {
+                skeleton_path(config, &room_cells, start, end)
+                    .map(|path| (path, start_port, end_port))
+            })
+            .min_by_key(|(path, _, _)| path.len())?;
+        // Open each end onto the door it serves, so an endpoint is a passage
+        // into a room rather than a corridor stub beside one.
+        if let (Some(&first), Some(&last)) = (path.first(), path.last()) {
+            adjacency.entry(first).or_default().insert(start_port);
+            adjacency.entry(last).or_default().insert(end_port);
+        }
+        claim(&path, &mut adjacency, &mut up, &mut down);
+    }
+
+    // The second pass: every door the tree did not use, joined to the nearest
+    // corridor the tree did lay. Deterministic by construction - blueprints in
+    // stamp order, ports in authored order, and a BFS whose frontier is ordered
+    // by `HexFace::ALL` - so it adds nothing the seed does not already fix.
+    //
+    // Nearest *claimed cell*, not nearest room: a door wants to reach the
+    // corridor network, and the network is what the tree already built. Routing
+    // each spare door to another room instead would lay a second network beside
+    // the first and meet it only by accident.
+    if every_port {
+        for room in &attachments {
+            for &(outside, port_cell) in room {
+                if adjacency
+                    .get(&outside)
+                    .is_some_and(|open| open.contains(&port_cell))
+                {
+                    continue;
+                }
+                let path = skeleton_path_to_skeleton(config, &room_cells, &adjacency, outside)?;
+                claim(&path, &mut adjacency, &mut up, &mut down);
+                adjacency.entry(outside).or_default().insert(port_cell);
+            }
         }
     }
 
@@ -502,6 +563,59 @@ fn skeleton_path(
                 continue;
             };
             if room_cells.contains(&next) && next != end {
+                continue;
+            }
+            if seen.insert(next) {
+                came_from.insert(next, cell);
+                queue.push_back(next);
+            }
+        }
+    }
+    None
+}
+
+/// Shortest path from a stray door's outside cell to the corridor network that
+/// already exists, never entering a room footprint.
+///
+/// The counterpart to [`skeleton_path`], and deliberately a different function
+/// rather than the same one with a set for its goal. The tree's router walks
+/// between two *named* cells and the caller picks the cheapest pair; this one
+/// walks toward whichever corridor is nearest and the caller has no say. Folding
+/// them together would mean a goal predicate and a search that returns which
+/// goal it hit, for two calls that never want the same thing.
+///
+/// Returns a single-cell path when the door already stands on the skeleton -
+/// the corridor is there and only the door onto it is missing, which the caller
+/// adds either way.
+fn skeleton_path_to_skeleton(
+    config: HexWfcConfig,
+    room_cells: &BTreeSet<HexCoord>,
+    skeleton: &BTreeMap<HexCoord, BTreeSet<HexCoord>>,
+    start: HexCoord,
+) -> Option<Vec<HexCoord>> {
+    if skeleton.contains_key(&start) {
+        return Some(vec![start]);
+    }
+    let grid = config.grid();
+    let mut came_from: BTreeMap<HexCoord, HexCoord> = BTreeMap::new();
+    let mut queue = std::collections::VecDeque::from([start]);
+    let mut seen: BTreeSet<HexCoord> = BTreeSet::from([start]);
+    while let Some(cell) = queue.pop_front() {
+        if skeleton.contains_key(&cell) {
+            let mut path = vec![cell];
+            let mut here = cell;
+            while let Some(&previous) = came_from.get(&here) {
+                path.push(previous);
+                here = previous;
+            }
+            path.reverse();
+            return Some(path);
+        }
+        for face in HexFace::ALL {
+            let Some(next) = grid.neighbor(cell, face) else {
+                continue;
+            };
+            if room_cells.contains(&next) {
                 continue;
             }
             if seen.insert(next) {
