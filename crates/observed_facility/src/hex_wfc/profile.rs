@@ -123,9 +123,17 @@ pub struct HexCompositionProfile {
     /// than the spanning tree's twenty-nine. `corridor_skeleton` carries the
     /// argument for that at length.
     ///
-    /// Off rather than on because it is a different building, not a better one,
-    /// and that is a decision to take with the game in front of you rather than
-    /// with a survey. The studio's TUNING tab has the switch.
+    /// Off rather than on because it does not yet satisfy the whole-layout
+    /// contract: a carved facility has no `Expanse` cells, and
+    /// `open_volume_failure` wants a seven-cell multi-exit volume on every
+    /// active level. `survey_what_the_carve_produces_and_what_still_blocks_it`
+    /// measures it and asserts on the wall.
+    ///
+    /// **No studio control, deliberately.** The panel's switch guard asks that a
+    /// stage still solves before it gets a slider, and this one does not - so it
+    /// stays editable in the RON until that changes. A control that empties the
+    /// viewport is worse than no control, because an author cannot tell a broken
+    /// switch from a hard seed.
     #[cfg_attr(feature = "serde", serde(default))]
     pub carve_unrouted: bool,
     pub archetype_bias: ArchetypeBias,
