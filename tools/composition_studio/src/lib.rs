@@ -57,6 +57,8 @@ pub mod browser_tests;
 #[cfg(test)]
 pub mod neighbor_tests;
 #[cfg(test)]
+pub mod sizing_tests;
+#[cfg(test)]
 pub mod tests;
 #[cfg(test)]
 pub mod timeline_tests;
