@@ -137,7 +137,7 @@ pub(crate) fn runtime_config_for(play_setup: &crate::play_setup::PlaySetupDraft)
 
 /// `OBSERVED2_HEX_FACILITY=<cols>x<rows>x<levels>` resizes the facility.
 ///
-/// A production facility is 28x20x10 with a handful of rooms scattered through
+/// A production facility is 24x17x8 with a handful of rooms scattered through
 /// it, which is the right thing to play and the wrong thing to inspect: a
 /// feature that appears once per room - a threshold, its doorway - can be
 /// working perfectly and still not appear in any capture, because nothing

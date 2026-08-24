@@ -8,7 +8,7 @@
 //!
 //! # Massing far, real geometry near
 //!
-//! A production facility is 28 x 20 x 10 - 5,600 cells - and presentation is
+//! A production facility is 24 x 17 x 8 - 3,264 cells - and presentation is
 //! deliberately *bounded*: `residency` admits cells within 30 m of the runner at
 //! eight per frame, so the whole facility is never resident and never should be.
 //! Spawning it in authored geometry would be several hundred frames of hitching

@@ -490,7 +490,7 @@ fn print_placement_digests() {
     }
 }
 
-/// Manual Arc L performance audit at the 5,600-cell production dimensions.
+/// Manual performance audit at the 3,264-cell production dimensions.
 /// Run with `--ignored --nocapture` to print the wall-clock solve time.
 #[test]
 #[ignore = "production-scale solve timing audit"]
@@ -501,7 +501,10 @@ fn time_arc_default_production_solve() {
         HexWfcWorld::generate(0xA11C_9300_0000_0001, config).expect("arc-default seed must solve");
     let elapsed = start.elapsed();
     println!(
-        "arc_default 28x20x10 solved in {elapsed:?} (attempts={}, rooms={})",
+        "arc_default {}x{}x{} solved in {elapsed:?} (attempts={}, rooms={})",
+        config.cols,
+        config.rows,
+        config.levels,
         world.last_attempts,
         world.room_count()
     );

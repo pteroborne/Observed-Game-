@@ -711,10 +711,10 @@ fn bounded_delta_matches_full_projection_and_preserves_pinned_pieces() {
     }
 }
 
-/// Manual risk measurement for the arc's full 28x20x10 production-shaped grid.
+/// Manual risk measurement for the full production-shaped grid.
 /// Ignored in the ordinary suite because the large WFC solve is intentionally expensive.
 #[test]
-#[ignore = "manual 28x20x10 collider budget measurement"]
+#[ignore = "manual production-scale collider budget measurement"]
 fn report_arc_default_collider_build_and_step_budget() {
     let started = std::time::Instant::now();
     let mut world = HexWfcWorld::generate(0xA11C_9300_0000_0001, HexWfcConfig::arc_default())
@@ -1377,35 +1377,69 @@ fn a_district_exclusive_tile_never_answers_for_another_district() {
 /// lit or composed.
 #[test]
 fn every_placed_cell_is_built_from_its_own_district() {
-    let world =
-        HexWfcWorld::generate(SHOWCASE_SEED, HexWfcConfig::arc_default()).expect("world solves");
-    let snapshot = HexWfcGeometrySnapshot::project(&world, &tiles()).expect("projects");
+    let prototypes = tiles();
+    // Four seeds rather than one. This gate ran on `SHOWCASE_SEED` alone and
+    // passed for years on a rule that was wrong - measured, the old rule reports
+    // foreign geometry on three of eight seeds at the lattice size before T-4
+    // and five of eight after it, and the pinned seed happened to be a clean one
+    // both times until the size moved. A property this cheap to break should not
+    // rest on one draw.
+    for offset in 0..4u64 {
+        let seed = SHOWCASE_SEED ^ offset.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        check_one_facility_is_built_from_its_own_districts(seed, &prototypes);
+    }
+}
+
+fn check_one_facility_is_built_from_its_own_districts(seed: u64, prototypes: &[TilePrototype]) {
+    let world = HexWfcWorld::generate(seed, HexWfcConfig::arc_default()).expect("world solves");
+    let snapshot = HexWfcGeometrySnapshot::project(&world, prototypes).expect("projects");
+    // Against the register that governs each piece's **assembly**, not the one
+    // under its own feet.
+    //
+    // This used to read `world.architecture` per cell and exempt `stair_tower`
+    // by name, because a tower is chosen for the whole column from its base
+    // cell (Phase 109) and so need not match the cell it stands in. The
+    // exemption was a name where the selector had already moved to a property:
+    // `compatibility_scope` gives `VerticalColumn` to *any* archetype presenting
+    // a `ShaftOpen` face, and its own comment says so - "unlike the string it
+    // stays true for any tower an author draws next".
+    //
+    // The two-level Guardian Control atrium is exactly that next thing. It opens
+    // `up: ShaftOpen`, so it is column-scoped by the same rule, and this gate
+    // called it foreign geometry whenever its column crossed a district
+    // boundary. Measured: three of eight seeds at the old lattice size and five
+    // of eight at the new one - so the gate was passing on a lucky pinned seed
+    // rather than on the property, which is precisely the failure Arc T's own
+    // plan warns about.
+    //
+    // Asking `assembly_register` removes the exemption rather than widening it.
+    // A tower and an atrium are now both checked, against the cell that actually
+    // decides them.
+    let catalogue = HexTileCatalogue::new(prototypes);
     let mut foreign: BTreeMap<String, usize> = BTreeMap::new();
     let mut own = 0usize;
     for piece in &snapshot.pieces {
         let Some(tile) = piece.tile.as_ref() else {
             continue;
         };
-        // A stair tower is deliberately chosen for the whole column from its
-        // base cell's register (Phase 109), so it need not match the cell it
-        // stands in — only the column, which `a_shaft_column_uses_one_tower_shape`
-        // covers.
-        if tile.archetype == "stair_tower" {
-            continue;
-        }
-        let Some(register) = world.architecture.get(&piece.source_cell) else {
+        let Some(register) =
+            catalogue.assembly_register(&world, piece.source_cell, &tile.archetype)
+        else {
             continue;
         };
-        if tile.register == register.slug() {
+        if tile.register == register {
             own += 1;
         } else {
             *foreign.entry(tile.register.clone()).or_default() += 1;
         }
     }
-    assert!(own > 1_000, "unexpectedly small sample: {own}");
+    assert!(
+        own > 1_000,
+        "seed {seed:#x}: unexpectedly small sample: {own}"
+    );
     assert!(
         foreign.is_empty(),
-        "{} colliders are drawn from another district's kit: {foreign:?}",
+        "seed {seed:#x}: {} colliders are drawn from another district's kit: {foreign:?}",
         foreign.values().sum::<usize>()
     );
 }
@@ -1932,8 +1966,14 @@ fn every_open_seam_in_a_projected_facility_actually_meets() {
         }
     }
 
+    // A floor on the sample, not on the facility. It was 5,000 when a
+    // production lattice was 5,600 cells; T-4 took the lattice to 3,264 and the
+    // seam count fell with it, to about 3,050. The gate is unchanged in what it
+    // proves - every open seam in a whole projected facility meets - and this
+    // number only exists so a harness that silently stopped projecting cannot
+    // pass by checking nothing.
     assert!(
-        checked > 5_000,
+        checked > 2_500,
         "only {checked} seams sampled; this gate proves nothing that small"
     );
 

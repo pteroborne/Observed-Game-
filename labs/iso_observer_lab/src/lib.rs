@@ -952,6 +952,19 @@ mod tests {
         // neighbourhood you can cross, so the mean climbs by orders of
         // magnitude, and it must hold for *every* register rather than on
         // average across them.
+        //
+        // **The band moved from 8.0 to 6.0 when T-4 resized the facility**, and
+        // it moved because the facility did rather than because a district got
+        // worse. Measured across four preset seeds at both sizes, the worst
+        // register's mean was 10.4 (Megastructure, 125 cells) at 28x20x10 and
+        // 8.0 (LiminalGrid, 80 cells) at 24x17x8 - a lattice at 58% of its old
+        // size carrying districts at 77% of their old cohesion, which is roughly
+        // proportional and expected. The old bar sat exactly on the new value,
+        // so it had no headroom left rather than a finding behind it.
+        //
+        // 6.0 keeps a quarter's margin under what is measured and is still four
+        // times the confetti baseline this test was written against. A district
+        // that genuinely fragmented would have to halve to reach it.
         let state = LabState::new(0);
         let census = state.district_census();
         assert_eq!(
@@ -963,7 +976,7 @@ mod tests {
             #[allow(clippy::cast_precision_loss)]
             let mean = *cells as f32 / (*regions).max(1) as f32;
             assert!(
-                mean > 8.0,
+                mean > 6.0,
                 "{register:?} averages {mean:.1} cells per region across {cells} cells"
             );
         }

@@ -235,15 +235,57 @@ impl Default for HexWfcConfig {
 }
 
 impl HexWfcConfig {
-    /// Arc L production-scale facility dimensions. [`Default`] remains the
-    /// compact solver/corpus fixture; benchmarks and yield audits use this
-    /// explicit 5,600-cell configuration.
+    /// Production facility dimensions. [`Default`] remains the compact
+    /// solver/corpus fixture; benchmarks and yield audits use this explicit
+    /// 3,264-cell configuration.
+    ///
+    /// **Was 28x20x10, 5,600 cells, until Arc T's T-4 measured it.** The finding
+    /// (backlog #33) was that a match is spent traversing rather than deciding,
+    /// and the instruction was to treat size as a measurement rather than a
+    /// guess. Twelve lattices against the six baseline seeds:
+    ///
+    /// ```text
+    /// lattice      cells  attempts  slowest  route  cells/module  deg4+%
+    /// 28x20x10      5600         2    1.07s     60          44.6    28.4
+    /// 28x20x8       4480         1    0.40s     57          35.0    28.4
+    /// 24x17x10      4080         3    0.77s     54          31.7    26.8
+    /// 24x17x8       3264         1    0.25s     52          25.6    27.4
+    /// 24x17x6       2448         3    0.40s     49          19.0    26.8
+    /// 22x16x8       2816         6    1.17s     47          21.9    26.0
+    /// 21x15x8       2520        10    1.65s     47          19.3    24.9
+    /// 20x14x8       2240        16    2.10s     42          17.1    26.2
+    /// 18x13x8       1872        24    2.48s     40          14.1    25.0
+    /// 16x12x8       1536  UNSOLVED at every seed
+    /// ```
+    ///
+    /// **Floor area drives the cost, not height.** At 28x20 and 24x17 the level
+    /// count barely moves solve attempts; below roughly four hundred cells of
+    /// floor the retry count climbs fast and then stops solving. Thirty rooms
+    /// at `min_room_distance` need ground rather than storeys, so the axis to
+    /// cut is the one that was not obvious.
+    ///
+    /// This size is the best-cost row of the sweep - one attempt and a quarter
+    /// second, four times faster than the size it replaces, against a 2 s LAN
+    /// client timeout the old size was within a factor of two of. It also cuts
+    /// the spawn-to-exit route from 60 cells to 52 and takes each authored
+    /// module from covering 44.6 cells to 25.6.
+    ///
+    /// 24x17x6 is the next step down and was not taken: it is denser again
+    /// (19.0) and shorter again (49) at three attempts, but it spends a quarter
+    /// of the facility's verticality, which is an identity the districts, the
+    /// ramp kit and the stair towers are all built around. If a playtest still
+    /// reports too much traversing, that is the row to take, and the cliff is
+    /// not until 22x16.
+    ///
+    /// Unlike the composition profile, this is **not** a LAN lockout: the match
+    /// config carries `cols`/`rows`/`levels` over the wire, so peers agree on
+    /// whatever the host sends rather than on a compiled-in constant.
     #[must_use]
     pub const fn arc_default() -> Self {
         Self {
-            cols: 28,
-            rows: 20,
-            levels: 10,
+            cols: 24,
+            rows: 17,
+            levels: 8,
             // Start + exit + every current authored gameplay role. Production
             // must never silently omit the lantern caches or Guardian origin.
             min_rooms: 9,
