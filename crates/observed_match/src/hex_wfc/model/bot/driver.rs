@@ -241,7 +241,7 @@ impl HexBotDriver {
         // port class, or authored shape, which is the property a new
         // graph-shaped fixture relies on.
         if let Some(transition) = ExternalTransition::between(game, player.cell, next)
-            && leg::ships_a_graph(game, transition.from)
+            && leg::serves_the_crossing(game, transition)
             && let Some(intent) = self.acquire_leg(game, id, objective, transition)
         {
             return game.apply_unstick(id, intent);

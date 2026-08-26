@@ -821,7 +821,17 @@ mod tests {
                 },
             ));
         }
-        let profile = profile_with(pins);
+        let mut profile = profile_with(pins);
+        // Routing off for this fixture, and only this one. The subject here is
+        // pin against *pin*: six neighbours sealing while the cell between them
+        // opens through all six. With `route_corridors` on - the shipped default
+        // - the skeleton claims three of those seven cells and its exact mask
+        // outranks a pin, so the contradiction never forms and the report comes
+        // back as three `CorridorCollision`s instead. That is the right
+        // behaviour and it is asserted next door in
+        // `diagnose_pins_is_silent_on_a_workable_set`; here it would mean the
+        // fixture no longer builds the thing the test is named for.
+        profile.route_corridors = false;
         let diagnostics = diagnose_pins(config, &profile);
         assert!(
             diagnostics

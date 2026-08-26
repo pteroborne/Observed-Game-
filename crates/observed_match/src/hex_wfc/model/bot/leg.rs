@@ -305,6 +305,30 @@ pub(super) fn ships_a_graph(game: &HexWfcMatch, cell: HexCoord) -> bool {
     game.geometry.guides.contains_key(&cell)
 }
 
+/// Whether a graph can serve this crossing at all, from either end.
+///
+/// The gate used to ask only about the cell being left, which is right for
+/// every lateral step and for every climb *out* of a module - the graph that
+/// describes the crossing is the one the body is standing in.
+///
+/// A descent is the exception, and a `RampHead` is the sharp case. It is the
+/// empty upper half of a two-level prefab: `placement_tile_archetype` returns
+/// `None` for it, so it projects no tile, ships no guide, and answers `false`
+/// here. The whole leg path was therefore skipped for a body standing on one
+/// and the caller fell through to `finish_vertical_crossing`, whose heading is
+/// the last metre of a crossing rather than a way down a ramp. The body pushed
+/// at the slope and never descended - `FORMERLY_FAILING_SEED` caught exactly
+/// that, which is what it is pinned for.
+///
+/// The mass it needs to walk down belongs to the cell below in both cases, so
+/// the question is whether *that* module ships a graph. [`descent`] then leases
+/// it. This is the same correction as the shaft head one storey further out:
+/// going down is described by the module you are going down *into*.
+pub(super) fn serves_the_crossing(game: &HexWfcMatch, transition: ExternalTransition) -> bool {
+    ships_a_graph(game, transition.from)
+        || (transition.face == HexFace::Down && ships_a_graph(game, transition.to))
+}
+
 /// The follower pose of one player's feet.
 pub(super) fn pose(game: &HexWfcMatch, position: Vec3, yaw: f32) -> FollowerPose {
     let half_height = game

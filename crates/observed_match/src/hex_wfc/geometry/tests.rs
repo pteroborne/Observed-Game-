@@ -242,23 +242,36 @@ fn selected_tiles(snapshot: &HexWfcGeometrySnapshot) -> BTreeMap<HexCoord, TileK
 /// | --- | --- | --- |
 /// | seed 1 | `0xda2b4f50572c48fb` | `0xacfd4d912b5386e9` |
 /// | seed 10000031 | `0x5b7df763dd7bbf5d` | `0x50068539c58d897f` |
+///
+/// Moved twice more in one packet, and the tower column is again the one to
+/// read. T-4 resized the facility from 5,600 cells to 3,264, and the flat
+/// alphabet was then doubled against the shaft family to undo the share the
+/// branching landing had taken. Towers go from 84 to 45 on seed 1 and 64 to 29
+/// on seed 10000031 - roughly halved on both, against tile counts that barely
+/// move. That is backlog #13's number coming back down: stair towers were 29.7%
+/// of placed geometry after the landing and are 18.9% now.
+///
+/// | | before | after |
+/// | --- | --- | --- |
+/// | seed 1 | `0xacfd4d912b5386e9` | `0x080fe5f632e2aae6` |
+/// | seed 10000031 | `0x50068539c58d897f` | `0xca66060faa6ab9aa` |
 #[test]
 fn production_catalog_selection_is_pinned_for_spectator_seeds() {
     let catalog = crate::hex_wfc::test_catalog();
     let cases = [
         (
             1u64,
-            276usize,
-            0xacfd_4d91_2b53_86e9u64,
-            84usize,
-            0x3978_e5c3_e54c_5673u64,
+            293usize,
+            0x080f_e5f6_32e2_aae6u64,
+            45usize,
+            0x95e0_1b87_e452_104cu64,
         ),
         (
             10_000_031u64,
-            281usize,
-            0x5006_8539_c58d_897fu64,
-            64usize,
-            0x678f_cfdd_cf29_cee8u64,
+            238usize,
+            0xca66_060f_aa6a_b9aau64,
+            29usize,
+            0xe5db_a473_4a53_b1a3u64,
         ),
     ];
     for (seed, expected_count, expected_digest, expected_tower_count, expected_tower_digest) in

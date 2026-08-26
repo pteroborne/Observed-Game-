@@ -592,15 +592,19 @@ fn diagnose_bot() {
 /// facility moves this route; the note above should be read as "any arc that
 /// touches the solver".
 ///
-/// Worth recording what the scan showed on the way, because it found a defect
-/// rather than a seed. Twelve candidates met the vertical profile and only five
-/// let the bot reach the exit; the bot soak agreed, stalling on seven of
-/// twenty-eight layouts. Every stall was inside a stair tower and six of the
-/// seven in a shaft head, and the cause was that descending a tower had never
-/// been implemented - see `leg::descent`. It is fixed, both gates are green,
-/// and this seed was chosen before the fix, which is why it is one of the five
-/// rather than one of the twelve.
-const GATE_SEED: u64 = 0x2977_6a97_43bb_32f9;
+/// Re-pinned a fifth time when the flat alphabet was rebalanced against the
+/// shaft family; the old seed came back `ramps=1 stairs=3`. The same sentence
+/// as every time before it: what moves the facility moves this route.
+///
+/// Worth recording what the scans showed on the way, because between them they
+/// found two defects rather than two seeds. The first scan offered twelve
+/// candidates and only five let the bot reach the exit, and the soak agreed by
+/// stalling on seven of twenty-eight layouts - every stall inside a stair tower,
+/// six of seven in a shaft head. The second scan, after `leg::descent` and
+/// `leg::serves_the_crossing` landed, offered eight candidates and **all eight
+/// completed**. Descending was simply not implemented, in two places, and this
+/// gate's own scan is what measured it.
+const GATE_SEED: u64 = 0xfeaf_ad20_d9b6_2c6e;
 const GATE_LEVELS: u8 = 5;
 
 /// Phase 94 success criterion 1 — the headless gate. On a pinned seed whose
@@ -685,7 +689,15 @@ fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
     // the tick before it - a different building, and a thinner one. The bot
     // takes 23% longer, which is what a one-cell corridor costs a follower that
     // used to be able to cut a corner.
-    assert_eq!(a, 9_938, "TR-10 pins the declared-ramp completion tick");
+    //
+    // Eighth (9,938 -> 13,066), new seed again, when the flat alphabet was
+    // rebalanced against the shaft family. Not comparable either, and this one
+    // deliberately buys a harder route: the seed was picked for `ramps=3
+    // stairs=5` where the last was `ramps=2 stairs=4`, because after the two
+    // descent fixes every candidate the scan offered could be completed and the
+    // choice was free. A gate that exercises more verticality is worth more
+    // ticks.
+    assert_eq!(a, 13_066, "TR-10 pins the declared-ramp completion tick");
     // Teleport plates moved this digest (0x02dd_ea8d_c8d2_ac4a -> below) without
     // moving the tick above, and that pairing is the proof it was a
     // representation change and not a behavioural one: the snapshot now folds
@@ -693,7 +705,7 @@ fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
     // presses the button, so its route is tick-for-tick what it was.
     assert_eq!(
         first.snapshot().digest,
-        0x9f71_34fa_9f6d_d17e,
+        0x2718_448f_7a71_5601,
         "TR-10 pins the declared-ramp final snapshot digest"
     );
 }
@@ -810,7 +822,7 @@ fn perimeter_tower_local_intent_and_body_trace_is_pinned() {
     assert_eq!(
         cell,
         HexCoord {
-            q: 3,
+            q: 1,
             r: 0,
             level: 0
         }
@@ -827,13 +839,19 @@ fn perimeter_tower_local_intent_and_body_trace_is_pinned() {
     // A new gate seed moved all of it again - different facility, different
     // cell, different register - except for the one number that matters, and
     // that exception is the finding. **`traced_ticks` is still 973**, bit for
-    // bit, across two seed changes and a widened alphabet. The bot spends the
-    // identical number of ticks on the climb because it is the identical climb:
-    // a fixed sweep, a fixed outer scale, one authored helix for every tower in
-    // the corpus. If the branching landing had disturbed the climb geometry -
-    // which was the risk in authoring 105 new towers - this is the number that
-    // would have said so.
-    assert_eq!(tile.register, "megastructure");
+    // bit, across three seed changes, a widened alphabet, a resized facility and
+    // a rebalanced one. The bot spends the identical number of ticks on the
+    // climb because it is the identical climb: a fixed sweep, a fixed outer
+    // scale, one authored helix for every tower in the corpus. If the branching
+    // landing had disturbed the climb geometry - which was the risk in authoring
+    // 105 new towers - this is the number that would have said so.
+    //
+    // Stronger than that here: the completion tick, the traced-tick count *and*
+    // the whole body trace have come back to the values they held before T-4
+    // moved anything. A different seed put the bot on a different tower in a
+    // different district and it climbed it identically, which is the clearest
+    // statement this suite makes that the tower family is one shape.
+    assert_eq!(tile.register, "shadow_screen");
     assert_eq!(tile.variant, 234);
     // TR-11 moved this trace on purpose, and it is the only pin in that packet
     // permitted to move: the tower is now climbed by a graph leg instead of by
@@ -850,13 +868,9 @@ fn perimeter_tower_local_intent_and_body_trace_is_pinned() {
     // Bevy 0.19 changed the intermediate floating-point trace while preserving
     // the pinned completion tick, traced-tick count, and terminal body bits.
     //
-    // The completion tick moved from 1,075 to 1,999 and the traced-tick count
-    // did not. Those two together say the bot took longer to *reach* the tower
-    // and no longer to climb it, which is a statement about the route and not
-    // about the follower.
-    assert_eq!(completion, Some(1_999));
+    assert_eq!(completion, Some(1_075));
     assert_eq!(traced_ticks, 973);
-    assert_eq!(trace, 0x3cbd_022c_168c_e152);
+    assert_eq!(trace, 0x69d7_d1c4_0681_1ff8);
     assert_eq!(
         [
             body.position.x.to_bits(),
@@ -868,13 +882,13 @@ fn perimeter_tower_local_intent_and_body_trace_is_pinned() {
             body.yaw.to_bits(),
         ],
         [
-            1_109_920_933,
-            1_091_997_439,
-            1_079_996_545,
-            3_171_529_757,
+            1_096_826_245,
+            1_091_997_307,
+            1_079_991_628,
+            3_173_502_237,
             0,
-            3_217_950_969,
-            1_086_874_824,
+            3_217_949_542,
+            1_086_865_250,
         ]
     );
 }
@@ -1265,15 +1279,22 @@ fn cached_spawn_to_exit_cost_survives_a_committed_relayout() {
     // Moved again from `0xd9c173e5fd29f054` for exactly the same reason when
     // the branching stair landing widened the alphabet: `scan_mutation_seeds`
     // now reports that seed as `committed=None cancelled=4`, so every proposal
-    // it makes is rejected and the run never changes shape at all. This one
-    // commits at tick 551 and reaches generation 4 with nothing cancelled.
+    // it makes is rejected and the run never changes shape at all.
+    //
+    // And moved a third time, from `0x2eefd285799e5cbd`, when the flat alphabet
+    // was rebalanced. Three retirements now, all the same shape, which is worth
+    // naming as a property of the fixture rather than as bad luck: a test that
+    // has to *observe* a relayout depends on the bots being slow enough to still
+    // be playing when one lands, so anything that changes the facility can turn
+    // it into a no-op. The guard at the bottom is the only reason all three were
+    // noticed instead of passing while proving nothing.
     //
     // Two seeds retired this way now, which is the standing lesson: a fixture
     // that has to *observe* a relayout is a fixture that a solver change can
     // silently turn into a no-op, and the guard at the bottom is the only
     // reason either retirement was noticed.
     let mut game = HexWfcMatch::new(
-        0x2EEF_D285_799E_5CBD,
+        0x9D72_6672_FE94_F82A,
         HexMatchConfig {
             guardian: true,
             teams: 2,

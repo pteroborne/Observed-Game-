@@ -47,6 +47,40 @@ impl HexVariant {
     }
 }
 
+/// The flat-hall weights, all scaled together.
+///
+/// **Doubled from 6/2/20/5 when the branching landing arrived**, and the reason
+/// is arithmetic rather than taste. Adding every three- and four-door shaft mask
+/// put 105 new entries into a family that had 64, and the family is weighted per
+/// entry, so its share of the hall alphabet went from 20% to 31% without anyone
+/// choosing that. Measured on solved facilities, stair towers went from 10.8% of
+/// the lattice to 21.0% - past where Phase 109 left backlog #13, whose headline
+/// was a facility that came out 47% stairs.
+///
+/// The family's own comment already names the trap: "equal per-entry weight is
+/// not equal weight at all". The fix it records is to lower the shaft weight,
+/// and that is not available here - the branching landing is already at 1, the
+/// smallest positive weight there is. So the correction goes the other way and
+/// the flat alphabet is raised instead, which restores the balance without
+/// making a legal variant unreachable.
+///
+/// Doubling rather than retuning, deliberately: every flat family moves by the
+/// same factor, so their proportions to *each other* are exactly what they were
+/// and only the flat-against-vertical balance moves. Shaft share returns to
+/// 18.7% of the hall alphabet against the 20.2% it had before the landing.
+///
+/// Nothing here changes how empty the facility is. `SpaceMix` draws the space
+/// before the variant and normalises within each one, so scaling every Hall
+/// weight together leaves the Void share exactly where `space_mix` puts it.
+const FLAT_DEGREE_2: u32 = 12;
+/// Three and four lateral doors, flat. A third of a straight, as before.
+const FLAT_JUNCTION: u32 = 4;
+/// Ramp halves, sparse in a much larger flat alphabet - see the note at the
+/// ramp family for why this is so far above the others.
+const FLAT_RAMP: u32 = 40;
+/// Open expanse cells.
+const FLAT_EXPANSE: u32 = 10;
+
 /// How many lateral doors a climbing hall cell may have.
 ///
 /// Four, and it was two until the corridor router needed a cell that is both a
@@ -131,7 +165,7 @@ pub(super) fn catalogue() -> Vec<HexVariant> {
                 doors: mask,
                 up: PortClass::Sealed,
                 down: PortClass::Sealed,
-                weight: 6,
+                weight: FLAT_DEGREE_2,
             });
         } else if (3..=4).contains(&degree) {
             variants.push(HexVariant {
@@ -140,7 +174,7 @@ pub(super) fn catalogue() -> Vec<HexVariant> {
                 doors: mask,
                 up: PortClass::Sealed,
                 down: PortClass::Sealed,
-                weight: 2,
+                weight: FLAT_JUNCTION,
             });
         }
     }
@@ -158,7 +192,7 @@ pub(super) fn catalogue() -> Vec<HexVariant> {
             down: PortClass::Sealed,
             // Ramp halves are sparse in the much larger flat-hall alphabet;
             // this weight makes three-level chains occur in the seeded corpus.
-            weight: 20,
+            weight: FLAT_RAMP,
         });
         variants.push(HexVariant {
             space: HexSpace::Hall,
@@ -166,7 +200,7 @@ pub(super) fn catalogue() -> Vec<HexVariant> {
             doors: lateral_bit(d),
             up: PortClass::Sealed,
             down: PortClass::RampOpen,
-            weight: 20,
+            weight: FLAT_RAMP,
         });
     }
 
@@ -185,7 +219,7 @@ pub(super) fn catalogue() -> Vec<HexVariant> {
             doors: mask,
             up: PortClass::Sealed,
             down: PortClass::Sealed,
-            weight: 5,
+            weight: FLAT_EXPANSE,
         });
     }
 
