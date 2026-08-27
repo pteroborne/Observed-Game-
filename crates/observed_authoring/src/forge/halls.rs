@@ -752,6 +752,192 @@ pub fn hall_turn_120_hewn() -> String {
     )
 }
 
+/// A ring of `N` radii at evenly spaced angles, for masses that want more
+/// facets than [`hewn_ring`]'s six.
+///
+/// Same convexity guarantee and for the same reason: evenly spaced angles with
+/// radii inside a modest band cannot fold back on themselves, so the shape can
+/// be irregular without being an invalid brush.
+#[must_use]
+fn hewn_ring_n(center: P2, radii: &[f64], phase_deg: f64) -> Vec<P2> {
+    let count = radii.len();
+    #[allow(clippy::cast_precision_loss)]
+    let step = 360.0 / count as f64;
+    radii
+        .iter()
+        .enumerate()
+        .map(|(index, &radius)| {
+            #[allow(clippy::cast_precision_loss)]
+            let angle = (phase_deg + index as f64 * step).to_radians();
+            (
+                center.0 + radius * angle.cos(),
+                center.1 + radius * angle.sin(),
+            )
+        })
+        .collect()
+}
+
+/// A three-way junction whose mass is cut for one district's own vocabulary.
+///
+/// The hand-cut masses that came before this are register-agnostic: the same
+/// splinter and the same monolith stand in every district, re-skinned. That is
+/// a landmark you can navigate by and it is *not* a place you can tell apart
+/// from the next district's version of it, which is the other half of what Arc
+/// T asks for.
+///
+/// `register_style` in the generated kit already states each district's
+/// vocabulary in as many words - "one mass, undivided", "faceted by name:
+/// flutes that catch the key light", "almost nothing, by name" - and until now
+/// only the *generated* library read it. These are hand-cut answers to the same
+/// three sentences, scoped so each is reachable only in the district it was cut
+/// for.
+#[must_use]
+fn hall_junction_3way_themed(
+    name: &str,
+    register: &str,
+    variant: i32,
+    tiers: &[(Vec<f64>, f64, f64, f64, f64)],
+    note: &str,
+) -> String {
+    const DOORS: [usize; 3] = [0, 3, 5];
+    let mut brushes = hall_shell(&DOORS);
+    let (a, b) = (face_mid(1), face_mid(2));
+    let bisector = ((a.0 + b.0) * 0.5, (a.1 + b.1) * 0.5);
+    let length = bisector.0.hypot(bisector.1);
+    let seat = (bisector.0 / length * 54.0, bisector.1 / length * 54.0);
+
+    brushes.push_str("// District mass, cut to this register's own vocabulary\n");
+    for (radii, phase, z0, z1, chamfer) in tiers {
+        brushes.push_str(&prism(
+            &hewn_ring_n(seat, radii, *phase),
+            *z0,
+            *z1,
+            Some(seat),
+            *chamfer,
+            0.0,
+        ));
+    }
+
+    let mut lights = String::new();
+    for (x, y, size, reach) in [
+        (seat.0 * 1.4, seat.1 * 1.4, 11.0, 7.0),
+        (0.0, 0.0, 15.0, 9.0),
+    ] {
+        let (fixture, source) = ceiling_fixture(x, y, LEVEL, size, reach);
+        brushes.push_str(&fixture);
+        lights.push_str(&source);
+    }
+
+    let mut out = format!("// {note}\n");
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell(
+            &format!("authored/{name}"),
+            "hall_junction_3way",
+            variant,
+            1,
+            8,
+        )
+        .with_register_scope(register)
+        .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    for &face in &DOORS {
+        let short = if face == 0 || face == 3 {
+            FACE_NAMES[face]
+        } else {
+            PORT_SHORT[face]
+        };
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{short}_port"),
+            0,
+            0,
+            0,
+        ));
+    }
+    out.push_str(&lights);
+    out
+}
+
+/// Monolith: "one mass, undivided", the fewest supports of any district and the
+/// heaviest. So one block, floor to ceiling, four-sided and barely tapered - no
+/// tiers, because a tier is a division and this district's whole statement is
+/// that there are none.
+#[must_use]
+pub fn hall_junction_3way_monolith() -> String {
+    hall_junction_3way_themed(
+        "hall_junction_3way_monolith",
+        "monolith",
+        2,
+        &[(
+            vec![41.0, 38.0, 41.0, 38.0],
+            12.0,
+            FLOOR_TOP,
+            LEVEL - FLOOR_TOP,
+            6.0,
+        )],
+        "Junction, Monolith: one undivided block, floor to ceiling.",
+    )
+}
+
+/// Facet Monument: "flutes that catch the key light on every stop". Twelve
+/// narrow faces on a tall shaft, alternating in and out by three units, so a
+/// single moving key rakes across a dozen highlights instead of one. Tall and
+/// slim rather than heavy - a monument is read at distance.
+#[must_use]
+pub fn hall_junction_3way_facet() -> String {
+    let flutes: Vec<f64> = (0..12)
+        .map(|index| if index % 2 == 0 { 30.0 } else { 27.0 })
+        .collect();
+    let upper: Vec<f64> = (0..12)
+        .map(|index| if index % 2 == 0 { 24.0 } else { 21.5 })
+        .collect();
+    hall_junction_3way_themed(
+        "hall_junction_3way_facet",
+        "facet_monument",
+        3,
+        &[
+            (flutes, 0.0, FLOOR_TOP, 84.0, 3.0),
+            (upper, 15.0, 84.0, LEVEL - FLOOR_TOP, 5.0),
+        ],
+        "Junction, Facet Monument: a twelve-flute shaft that rakes the key light.",
+    )
+}
+
+/// Thinning: "almost nothing, by name". A stump - what is left of a mass rather
+/// than a mass, knee-high on one side and shin-high on the other, so the
+/// district reads as the one where the architecture has gone. Deliberately the
+/// least of the three: this is a landmark by absence, and making it handsome
+/// would be answering a different brief.
+#[must_use]
+pub fn hall_junction_3way_thinning() -> String {
+    hall_junction_3way_themed(
+        "hall_junction_3way_thinning",
+        "thinning",
+        4,
+        &[
+            (
+                vec![34.0, 21.0, 29.0, 17.0, 31.0, 24.0],
+                0.0,
+                FLOOR_TOP,
+                26.0,
+                5.0,
+            ),
+            (
+                vec![19.0, 12.0, 16.0, 10.0, 17.0, 13.0],
+                37.0,
+                26.0,
+                41.0,
+                4.0,
+            ),
+        ],
+        "Junction, Thinning: a stump where the district's mass used to be.",
+    )
+}
+
 #[must_use]
 pub fn builders() -> Vec<Builder> {
     vec![
@@ -766,6 +952,9 @@ pub fn builders() -> Vec<Builder> {
         ("hall_turn_120_hewn", hall_turn_120_hewn),
         ("hall_junction_3way", hall_junction_3way),
         ("hall_junction_3way_hewn", hall_junction_3way_hewn),
+        ("hall_junction_3way_monolith", hall_junction_3way_monolith),
+        ("hall_junction_3way_facet", hall_junction_3way_facet),
+        ("hall_junction_3way_thinning", hall_junction_3way_thinning),
         ("hall_junction_4way", hall_junction_4way),
     ]
 }

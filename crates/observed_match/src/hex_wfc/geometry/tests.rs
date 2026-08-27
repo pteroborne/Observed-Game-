@@ -266,8 +266,8 @@ fn selected_tiles(snapshot: &HexWfcGeometrySnapshot) -> BTreeMap<HexCoord, TileK
 ///
 /// | | before | after |
 /// | --- | --- | --- |
-/// | seed 1 | `0x080fe5f632e2aae6` | `0xf689c046fdfe5a69` |
-/// | seed 10000031 | `0xca66060faa6ab9aa` | `0xdbf26c24571c739e` |
+/// | seed 1 | `0x080fe5f632e2aae6` | `0xe185a695434edb1b` |
+/// | seed 10000031 | `0xca66060faa6ab9aa` | `0xc5c7d9bd14dce338` |
 #[test]
 fn production_catalog_selection_is_pinned_for_spectator_seeds() {
     let catalog = crate::hex_wfc::test_catalog();
@@ -275,14 +275,14 @@ fn production_catalog_selection_is_pinned_for_spectator_seeds() {
         (
             1u64,
             293usize,
-            0xf689_c046_fdfe_5a69u64,
+            0xe185_a695_434e_db1bu64,
             45usize,
             0x95e0_1b87_e452_104cu64,
         ),
         (
             10_000_031u64,
             238usize,
-            0xdbf2_6c24_571c_739eu64,
+            0xc5c7_d9bd_14dc_e338u64,
             29usize,
             0xe5db_a473_4a53_b1a3u64,
         ),

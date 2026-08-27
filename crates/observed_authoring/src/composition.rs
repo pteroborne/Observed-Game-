@@ -478,6 +478,12 @@ mod tests {
     fn committed_arc_s_catalog_identity_is_pinned() {
         // Moved a fifth time by three authored tiles, and the profile side did
         // not move at all - which is the shape of an Arc T corpus change. 230 to
+        // 238 modules, and the last three are the first **register-scoped**
+        // authored masses in the corpus: a Monolith block, a Facet Monument
+        // twelve-flute shaft and a Thinning stump, each reachable only in the
+        // district it was cut for. Every authored hall before them is
+        // register-agnostic - the same shape re-skinned ten ways.
+        //
         // 235 modules: `hall_straight_datum`, a corridor that is not symmetric
         // under the half-turn swapping its doors; `hall_ramp_gallery`, a second
         // reading for the largest archetype that had only one; and three
@@ -528,14 +534,14 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "af8677d53ef12572e60b37fb694a057f07fc60420345b0e5133bd7e042a4f4f2";
+            "72729bbbc21cc22b01da5b85e4fd0cb25cec21eb1b44af65bc2ed25504a729e5";
         const PROFILE_HASH: &str =
             "5c1bc69db058d4e3332e755326548f887d46f215d81fdeb454591cd9c2c0104e";
         // Folds the catalog and the profile. Both sides moved this time, which
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "2b6e4dd5eba57c68b27d21cbf155d6ac08900e2f8ea634fcbc74909bd03b4001";
+            "a96e98f644d2cba86e2110e2917c4be5c3e47f127986c301202f50c865b3d210";
 
         let root = committed_tiles();
         let compiled_text =
@@ -548,7 +554,7 @@ mod tests {
             .filter(|module| module.archetype == "stair_tower")
             .collect::<Vec<_>>();
         assert_eq!(compiled.simulation_content_hash, CATALOG_HASH);
-        assert_eq!(compiled.modules.len(), 235, "committed strict source count");
+        assert_eq!(compiled.modules.len(), 238, "committed strict source count");
         // 1 doorless + every one-to-four-door pattern, in three vertical
         // connectivities: (1 + 6 + 15 + 20 + 15) * 3. Was 66, when the family
         // stopped at two doors and there was no branching landing.
