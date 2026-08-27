@@ -365,6 +365,28 @@ picture, and the four differences all push the same way - flatter:
 | materials | `hex_shell_surface` per register/role | hardcoded greys for 8 of 10 registers |
 | ceiling texture | the **wall** texture | `ceiling.png`, which the game never loads |
 
+Textures load with `address_mode: Repeat` in both now. They did not: the lab
+used the sampler default, `ClampToEdge`, and every hull face is far larger than
+one texture, so Bevy smeared the edge row of pixels across the surface. That is
+where the long horizontal streaks in older lab captures came from - the same
+PNG the game tiles finely. Fixed for every render mode, because it was a bug
+rather than a mode difference.
+
+**Measured against the shipped game** (`OBSERVED2_CAPTURE_HEX_WFC_STYLE`), with
+`signalstats` over whole frames:
+
+| | Yavg | SATavg |
+| --- | --- | --- |
+| game facility | 57.7 - 67.4 | 11.1 - 11.4 |
+| lab, `facility_lighting` | 59.3 - 60.5 | 5.2 - 8.2 |
+| lab, default Lit | 64.2 | 14.0 |
+
+Luminance lands inside the game's range. Saturation is still low, and the
+comparison is **not clean**: the game frames carry saturated gameplay props -
+lantern glows, plate markers, a blue-and-orange body - that a lab run has none
+of, and those lift the average. Treat the luminance match as evidence and the
+saturation gap as unresolved.
+
 The headlamp is the big one. The facility rig's own note says a flat
 player-locked fill "washed out the very shadows this rig exists to cast" - so a
 lab capture is lit by exactly the thing the game deleted.

@@ -13,6 +13,7 @@ observed_facility = { path = "../../crates/observed_facility" }
 observed_hex = { path = "../../crates/observed_hex" }
 # Colors come from the production style crate, never invented locally.
 observed_style = { path = "../../crates/observed_style" }
+observed_assets = { path = "../../crates/observed_assets" }
 # The SHARED controller — the ramp gate must hold on production movement code.
 observed_traversal = { path = "../../crates/observed_traversal", default-features = false }
 player_input = { path = "../../crates/player_input", default-features = false }

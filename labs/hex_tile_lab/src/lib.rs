@@ -476,6 +476,36 @@ fn facility_palette(state: &LabState) -> style::DistrictPalette {
     style::architecture_for_composition(state.register(), composition)
 }
 
+/// Load a surface texture the way the facility loads one: **tiling**.
+///
+/// A plain `asset_server.load` leaves the sampler on its default
+/// `ClampToEdge`, and every hull face here is far larger than one texture, so
+/// the UVs run well past 1.0 and Bevy smears the edge row of pixels across the
+/// rest of the surface. That is why lab captures showed long horizontal streaks
+/// where the game shows fine mottling - the same PNG, sampled two different
+/// ways.
+///
+/// Not a lighting-mode difference and not a matter of taste, so it is fixed for
+/// every render mode rather than only under `facility_lighting`.
+///
+/// Duplicated from `load_repeating_texture` in `game/src/view/environment.rs`
+/// rather than shared: it is a Bevy sampler descriptor, and the crate that owns
+/// the asset paths (`observed_assets`) is deliberately Bevy-free so it can be
+/// unit-tested without an app.
+fn repeating_texture(asset_server: &AssetServer, path: &'static str) -> Handle<Image> {
+    asset_server
+        .load_builder()
+        .with_settings(|settings: &mut bevy::image::ImageLoaderSettings| {
+            settings.sampler =
+                bevy::image::ImageSampler::Descriptor(bevy::image::ImageSamplerDescriptor {
+                    address_mode_u: bevy::image::ImageAddressMode::Repeat,
+                    address_mode_v: bevy::image::ImageAddressMode::Repeat,
+                    ..default()
+                });
+        })
+        .load(path)
+}
+
 fn yaw_toward(f: Vec2) -> f32 {
     f.x.atan2(-f.y)
 }
@@ -1552,9 +1582,9 @@ fn rebuild_visuals(
     let palette = style::architecture(register);
     let mode = state.render_mode;
 
-    let floor_tex: Handle<Image> = asset_server.load("textures/floor.png");
-    let wall_tex: Handle<Image> = asset_server.load("textures/wall.png");
-    let ceiling_tex: Handle<Image> = asset_server.load("textures/ceiling.png");
+    let floor_tex = repeating_texture(&asset_server, observed_assets::FLOOR.path);
+    let wall_tex = repeating_texture(&asset_server, observed_assets::WALL.path);
+    let ceiling_tex = repeating_texture(&asset_server, observed_assets::CEILING.path);
 
     // Tier 1: the ambient legibility floor. District palettes may be moody in
     // the shipped game, but in the lab geometry legibility wins: Lit clamps
