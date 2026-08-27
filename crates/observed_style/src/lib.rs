@@ -1433,6 +1433,115 @@ impl HexComposition {
     }
 }
 
+/// What one structural surface of the hex facility actually looks like.
+///
+/// Not a material - this crate knows nothing about Bevy assets - but the three
+/// numbers a material is built from, so a renderer's only remaining job is to
+/// hang a texture on them.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HexSurfaceLook {
+    pub base_color: Color,
+    pub emissive: LinearRgba,
+    /// Signal treatments render unlit so a gameplay cue cannot be dimmed by the
+    /// room it is standing in.
+    pub unlit: bool,
+}
+
+/// How far hex shell albedo is pulled down from the palette tint.
+///
+/// Exact hex hulls put far more surface area close to the camera than the
+/// teleport rooms the tint was tuned in, so the shell is returned to the
+/// neon-noir atmosphere tier rather than reading as lit plaster. Liminal Grid
+/// is the exception by design: it is the one district whose identity *is*
+/// brightness.
+const HEX_SHELL_ALBEDO_SCALE: f32 = 0.38;
+const HEX_SHELL_ALBEDO_SCALE_LIMINAL: f32 = 0.82;
+/// Structural surfaces are lit, never light sources; this is what is left of a
+/// treatment's own glow after the district has spoken.
+const HEX_SHELL_EMISSIVE_SCALE: f32 = 0.35;
+
+/// The district tint for a structural surface, before any albedo texture.
+///
+/// Bevy multiplies `base_color` by `base_color_texture`, so this keeps imported
+/// albedo *under* the palette instead of letting it replace the palette.
+#[must_use]
+pub fn palette_tint_for_surface(t: &Treatment, palette: &DistrictPalette) -> Color {
+    if t.signal {
+        return t.base_color;
+    }
+    let channels = |c: Color| {
+        let c = c.to_srgba();
+        [c.red, c.green, c.blue]
+    };
+    let role = channels(t.base_color);
+    let light = channels(palette.light_color);
+    let ambient = channels(palette.ambient_color);
+    let brightness = (palette.ambient_brightness / 75.0).clamp(0.45, 1.1);
+    let mut rgb = [0.0; 3];
+    for i in 0..3 {
+        let palette_channel = light[i] * 0.68 + ambient[i] * 0.32;
+        rgb[i] = (role[i] * 0.28 + palette_channel * 0.72) * 0.55 * brightness;
+    }
+    Color::srgb(rgb[0], rgb[1], rgb[2])
+}
+
+/// The district cast on a structural surface, kept well below the treatment's
+/// own glow. Any stronger flat emissive swamps the lit, tinted albedo - which
+/// is exactly the wash that hid both the textures and the palette in the first
+/// Phase 62 captures.
+#[must_use]
+pub fn palette_emissive_for_surface(t: &Treatment, palette: &DistrictPalette) -> LinearRgba {
+    if t.signal {
+        return t.emissive;
+    }
+    LinearRgba::rgb(
+        t.emissive.red * 0.25 + palette.accent.red * 0.06,
+        t.emissive.green * 0.25 + palette.accent.green * 0.06,
+        t.emissive.blue * 0.25 + palette.accent.blue * 0.06,
+    )
+}
+
+/// The look of one hex facility shell surface, district and all.
+///
+/// **Here rather than in the game for the reason the key trim is.** A preview
+/// that reproduces the facility's lighting and then paints it with its own
+/// colours is previewing a different building, and the lab did exactly that:
+/// eight of the ten registers were hardcoded neutral greys, so a capture said
+/// nothing about the district it claimed to show.
+#[must_use]
+pub fn hex_shell_look(
+    treatment: &Treatment,
+    register: observed_content::ArchitectureRegister,
+) -> HexSurfaceLook {
+    let palette = architecture(register);
+    let tint = palette_tint_for_surface(treatment, &palette).to_srgba();
+    let scale = if register == observed_content::ArchitectureRegister::LiminalGrid {
+        HEX_SHELL_ALBEDO_SCALE_LIMINAL
+    } else {
+        HEX_SHELL_ALBEDO_SCALE
+    };
+    HexSurfaceLook {
+        base_color: Color::srgba(
+            tint.red * scale,
+            tint.green * scale,
+            tint.blue * scale,
+            tint.alpha,
+        ),
+        emissive: palette_emissive_for_surface(treatment, &palette) * HEX_SHELL_EMISSIVE_SCALE,
+        unlit: treatment.signal,
+    }
+}
+
+/// [`hex_shell_look`] for one of the three structural surface roles, which is
+/// what a preview wants when it is painting a floor, a wall or a ceiling.
+#[must_use]
+pub fn hex_shell_surface(
+    register: observed_content::ArchitectureRegister,
+    role: ArchitectureSurfaceRole,
+) -> HexSurfaceLook {
+    hex_shell_look(&architecture_surface(register, role), register)
+}
+
 /// How far the hex facility trims the district key spotlight.
 ///
 /// Hex cells are tighter than the teleport-era rooms the palette's absolute

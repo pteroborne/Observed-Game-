@@ -83,25 +83,17 @@ impl HexWfcVisualAssets {
             .into_iter()
             .map(|register| {
                 let palette = style::architecture(register);
+                // The shell's own look - the albedo pull-down and the emissive
+                // trim that keep exact hex hulls in the neon-noir tier - now
+                // lives in `observed_style::hex_shell_surface`, so a preview can
+                // reproduce it instead of inventing its own greys. The scaling
+                // that used to be written out here is that function's body.
                 let mut tinted = |treatment: style::Treatment, texture: Option<Handle<Image>>| {
                     let mut material = palette_tinted_neon_material(&treatment, &palette, texture);
-                    // Exact hex hulls put much more surface area close to the
-                    // camera than the teleport rooms this helper was tuned on.
-                    // Preserve the style hue while returning shell albedo and
-                    // non-signal emission to the neon-noir atmosphere tier.
-                    let base = material.base_color.to_srgba();
-                    let shell_scale = if register == ArchitectureRegister::LiminalGrid {
-                        0.82
-                    } else {
-                        0.38
-                    };
-                    material.base_color = Color::srgba(
-                        base.red * shell_scale,
-                        base.green * shell_scale,
-                        base.blue * shell_scale,
-                        base.alpha,
-                    );
-                    material.emissive *= 0.35;
+                    let look = style::hex_shell_look(&treatment, register);
+                    material.base_color = look.base_color;
+                    material.emissive = look.emissive;
+                    material.unlit = look.unlit;
                     materials.add(material)
                 };
                 RegisterMaterials {

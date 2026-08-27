@@ -362,6 +362,8 @@ picture, and the four differences all push the same way - flatter:
 | fog | palette `fog_start..fog_end`, about 10..28 m | 60..170 m, so it never engages at tile scale |
 | key light | shadow-casting district spot at `HEX_KEY_INTENSITY_SCALE` | none |
 | headlamp | **none, deliberately** | 90,000 lm, camera-mounted |
+| materials | `hex_shell_surface` per register/role | hardcoded greys for 8 of 10 registers |
+| ceiling texture | the **wall** texture | `ceiling.png`, which the game never loads |
 
 The headlamp is the big one. The facility rig's own note says a flat
 player-locked fill "washed out the very shadows this rig exists to cast" - so a

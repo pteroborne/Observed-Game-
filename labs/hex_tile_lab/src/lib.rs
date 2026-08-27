@@ -1602,6 +1602,7 @@ fn rebuild_visuals(
         }
     }
 
+    let facility_lighting = state.facility_lighting;
     let mut get_surface_material = |kind: SurfaceKind| -> Handle<StandardMaterial> {
         match mode {
             RenderMode::Xray => {
@@ -1640,6 +1641,34 @@ fn rebuild_visuals(
                     base_color: color,
                     base_color_texture: tex,
                     perceptual_roughness: 0.92,
+                    ..default()
+                })
+            }
+            RenderMode::Lit if facility_lighting => {
+                // The facility's own shell look, from the one function the game
+                // paints with. The branch below hardcodes neutral greys for
+                // eight of the ten registers, so a Lit capture said nothing
+                // whatever about the district it claimed to be showing.
+                //
+                // Ceilings take the **wall** texture, because that is what the
+                // facility does: `ceiling.png` is loaded by this lab and by
+                // nothing in the shipped game.
+                let role = match kind {
+                    SurfaceKind::Floor => style::ArchitectureSurfaceRole::Floor,
+                    SurfaceKind::Wall | SurfaceKind::Trim => style::ArchitectureSurfaceRole::Wall,
+                    SurfaceKind::Ceiling => style::ArchitectureSurfaceRole::Ceiling,
+                };
+                let look = style::hex_shell_surface(register, role);
+                let tex = match kind {
+                    SurfaceKind::Floor => floor_tex.clone(),
+                    _ => wall_tex.clone(),
+                };
+                materials.add(StandardMaterial {
+                    base_color: look.base_color,
+                    base_color_texture: Some(tex),
+                    emissive: look.emissive,
+                    unlit: look.unlit,
+                    perceptual_roughness: 0.85,
                     ..default()
                 })
             }
