@@ -255,6 +255,19 @@ fn selected_tiles(snapshot: &HexWfcGeometrySnapshot) -> BTreeMap<HexCoord, TileK
 /// | --- | --- | --- |
 /// | seed 1 | `0xacfd4d912b5386e9` | `0x080fe5f632e2aae6` |
 /// | seed 10000031 | `0x50068539c58d897f` | `0xca66060faa6ab9aa` |
+///
+/// Moved again by Arc T corpus authoring, and this time the *unmoved* columns
+/// carry the argument. `hall_straight` gained a handed variant, `hall_ramp` a
+/// second reading, and the expanse gained its district's ceiling - all hall
+/// geometry. The tile counts are identical (293 and 238) and so are the tower
+/// count and tower digest, bit for bit, because nothing vertical was touched.
+/// A corpus change that had disturbed the towers would show here rather than
+/// somewhere a playtest would find it.
+///
+/// | | before | after |
+/// | --- | --- | --- |
+/// | seed 1 | `0x080fe5f632e2aae6` | `0x07dc718c52b5c647` |
+/// | seed 10000031 | `0xca66060faa6ab9aa` | `0xd06a2619ebf5be17` |
 #[test]
 fn production_catalog_selection_is_pinned_for_spectator_seeds() {
     let catalog = crate::hex_wfc::test_catalog();
@@ -262,14 +275,14 @@ fn production_catalog_selection_is_pinned_for_spectator_seeds() {
         (
             1u64,
             293usize,
-            0x080f_e5f6_32e2_aae6u64,
+            0x07dc_718c_52b5_c647u64,
             45usize,
             0x95e0_1b87_e452_104cu64,
         ),
         (
             10_000_031u64,
             238usize,
-            0xca66_060f_aa6a_b9aau64,
+            0xd06a_2619_ebf5_be17u64,
             29usize,
             0xe5db_a473_4a53_b1a3u64,
         ),

@@ -46,7 +46,7 @@ fn sector(face: usize) -> Vec<P2> {
 
 /// Clip a convex polygon to the half-plane `n . p <= d` (Sutherland-Hodgman).
 #[must_use]
-fn clip(poly: &[P2], n: P2, d: f64) -> Vec<P2> {
+pub(super) fn clip(poly: &[P2], n: P2, d: f64) -> Vec<P2> {
     let inside = |p: &P2| n.0 * p.0 + n.1 * p.1 <= d + 1e-9;
     let mut out: Vec<P2> = Vec::new();
     for index in 0..poly.len() {
@@ -359,11 +359,100 @@ pub fn hall_turn_60_buttressed() -> String {
 /// The pairing lives here rather than in a central registry so a new hall
 /// cannot be added without naming its output - which is what the byte-identity
 /// gate iterates.
+/// How far the datum shelf steps up between bays, in editor units.
+///
+/// Eleven, which is 0.69 m: large enough to read as a step from the far end of
+/// the cell and small enough that four of them stay under [`DOOR_TOP`]. The
+/// last thing a directional cue may do is foul the doorway it points at.
+const DATUM_RISE: f64 = 11.0;
+
+/// Where the lowest bay's shelf sits. 28 units is 1.75 m - just above a
+/// standing eye at 1.6 m, so the run is read against the wall rather than
+/// walked into.
+const DATUM_BASE: f64 = 28.0;
+
+/// A straight hall that tells you which way you are facing.
+///
+/// # Why this tile exists
+///
+/// Arc T's first playtest reported that players could not say where they were
+/// or which way they had come from (backlog #30, #35). For a corridor that is
+/// not a lighting problem or a corpus-size problem, it is a **symmetry**
+/// problem: `hall_straight` and `hall_straight_buttressed` are both invariant
+/// under the half-turn that swaps their two doors, so the view east and the
+/// view west are the same picture. No amount of authoring more symmetric
+/// corridors fixes that.
+///
+/// So the identity here is a **datum**: a shelf on both channel walls that
+/// climbs in four discrete bays from one door to the other. Walking one way the
+/// run rises, the other way it falls, and the bay you are beside says roughly
+/// how far along you are. It is deliberately the same on the left and the right,
+/// because a left/right difference would make the tile read differently
+/// depending on which way you entered, which is a second ambiguity rather than
+/// an answer to the first.
+///
+/// # What it may not do
+///
+/// **Stop short of both seams.** The aperture at a face plane is a frozen
+/// contract - 72 units wide, `FLOOR_TOP..DOOR_TOP` - and the shelf spans
+/// `|y| = 28..36`, which is inside that width. Running it to the face would put
+/// mass in the doorway and break every neighbour. It ends at `+/-88`, a metre
+/// and a half short of the 112-unit apothem, and reads as a run that stops at
+/// the threshold.
+///
+/// **Leave the walk clear.** The channel is 72 units across; the shelf takes 8
+/// from each side, leaving 3.5 m between the runs for a body 0.76 m wide. The
+/// colonnade the plain straight carries is dropped rather than kept, because
+/// four pillars plus eight shelf bays is a busier cell than a corridor wants
+/// and this variant's identity is the datum, not the pillars.
+#[must_use]
+pub fn hall_straight_datum() -> String {
+    let mut brushes = hall_shell(&[0, 3]);
+    brushes.push_str("// Datum run: four bays climbing west to east, both channel walls\n");
+    for bay in 0..4 {
+        #[allow(clippy::cast_precision_loss)]
+        let step = f64::from(bay);
+        let x0 = -88.0 + step * 44.0;
+        let x1 = x0 + 44.0;
+        let z0 = DATUM_BASE + step * DATUM_RISE;
+        let z1 = z0 + 8.0;
+        for side in [-1.0, 1.0] {
+            let (near, far) = (36.0 * side, 28.0 * side);
+            let plan: Vec<P2> = if side > 0.0 {
+                vec![(x0, far), (x1, far), (x1, near), (x0, near)]
+            } else {
+                vec![(x0, near), (x1, near), (x1, far), (x0, far)]
+            };
+            brushes.push_str(&prism(&plan, z0, z1, None, 2.0, 2.0));
+        }
+    }
+    // Lit from the high end only, so the cue survives a dark corridor: the
+    // bright end is the end the datum climbs toward.
+    let mut lights = String::new();
+    for (x, size, reach) in [(-56.0, 12.0, 7.0), (56.0, 20.0, 12.0)] {
+        let (fixture, source) = ceiling_fixture(x, 0.0, LEVEL, size, reach);
+        brushes.push_str(&fixture);
+        lights.push_str(&source);
+    }
+    let mut out = String::from(
+        "// Straight hall variant: a stepped datum run that makes the corridor handed.\n",
+    );
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(&Meta::cell("authored/hall_straight_datum", "hall_straight", 2, 1, 7).emit());
+    out.push_str(&tile_cell_default());
+    out.push_str(&lateral_port(0, "door", "east_port", 0, 0, 0));
+    out.push_str(&lateral_port(3, "door", "west_port", 0, 0, 0));
+    out.push_str(&lights);
+    out
+}
+
 #[must_use]
 pub fn builders() -> Vec<Builder> {
     vec![
         ("hall_straight", hall_straight as fn() -> String),
         ("hall_straight_buttressed", hall_straight_buttressed),
+        ("hall_straight_datum", hall_straight_datum),
         ("hall_cap", hall_cap),
         ("hall_turn_60", hall_turn_60),
         ("hall_turn_60_buttressed", hall_turn_60_buttressed),

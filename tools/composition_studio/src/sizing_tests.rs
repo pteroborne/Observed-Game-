@@ -253,3 +253,119 @@ fn survey_what_changes_when_the_lattice_does() {
         );
     }
 }
+
+/// What a facility is actually built out of, by shape.
+///
+/// The companion to the density number: `cells/module` says how hard each
+/// authored thing is working, and this says what the things *are*. T-5 and T-6
+/// both start here, because "the corpus cannot compose places you can tell
+/// apart" is a claim about this list rather than about the catalog's size.
+#[test]
+#[ignore = "T-4 sizing instrument"]
+fn survey_what_shapes_the_facility_is_built_from() {
+    use observed_facility::hex_wfc::HexRoomQuotas;
+    use std::collections::BTreeMap;
+
+    let Ok((cells, rooms)) = crate::corpus() else {
+        panic!("the committed corpus must load");
+    };
+    let config = HexWfcConfig::arc_default();
+    let quotas = HexRoomQuotas::for_team_count(2);
+
+    let mut by_shape: BTreeMap<String, (usize, std::collections::BTreeSet<String>)> =
+        BTreeMap::new();
+    let mut seeds = 0usize;
+    for i in 0..6u64 {
+        let seed = 0xA11C_E3D0_0000_0000 ^ i.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        let Ok(world) = HexWfcWorld::generate_with_room_quotas(seed, config, quotas) else {
+            continue;
+        };
+        let Ok(snapshot) = observed_match::hex_wfc::HexWfcGeometrySnapshot::project_with_rooms(
+            &world, cells, rooms,
+        ) else {
+            continue;
+        };
+        seeds += 1;
+        let mut seen: BTreeMap<String, std::collections::BTreeSet<_>> = BTreeMap::new();
+        for piece in &snapshot.pieces {
+            if let Some(tile) = &piece.tile {
+                let entry = by_shape.entry(tile.archetype.clone()).or_default();
+                entry.1.insert(tile.register.clone());
+                seen.entry(tile.archetype.clone())
+                    .or_default()
+                    .insert(piece.source_cell);
+            }
+        }
+        for (archetype, cells) in seen {
+            by_shape.entry(archetype).or_default().0 += cells.len();
+        }
+    }
+
+    let total: usize = by_shape.values().map(|(n, _)| *n).sum();
+    println!("shape                   cells/facility   share  registers");
+    for (archetype, (n, registers)) in &by_shape {
+        println!(
+            "{archetype:<22}  {:>13.0}  {:>5.1}%  {:>9}",
+            *n as f64 / seeds.max(1) as f64,
+            *n as f64 * 100.0 / total.max(1) as f64,
+            registers.len(),
+        );
+    }
+    println!(
+        "\n{} distinct shapes across {seeds} facilities",
+        by_shape.len()
+    );
+}
+
+/// Which *reading* of each archetype the facility actually places.
+///
+/// The generated kit gives several archetypes more than one interior: an
+/// expanse is either a pure volume or a pair of off-centre piers, a junction
+/// either carries the waypoint pylon or leaves the crossing clear. Those are
+/// the corpus's own answer to "places you can tell apart", and whether they
+/// reach a facility in any useful proportion is a question about the *lottery*
+/// rather than about the geometry.
+///
+/// Runtime variant encodes the reading above `READING_STRIDE` (64) and the door
+/// mask below it, so the reading is the quotient.
+#[test]
+#[ignore = "T-4 sizing instrument"]
+fn survey_which_readings_reach_the_facility() {
+    use observed_facility::hex_wfc::HexRoomQuotas;
+    use std::collections::BTreeMap;
+
+    let Ok((cells, rooms)) = crate::corpus() else {
+        panic!("the committed corpus must load");
+    };
+    let config = HexWfcConfig::arc_default();
+    let quotas = HexRoomQuotas::for_team_count(2);
+    const READING_STRIDE: u16 = 64;
+
+    let mut tally: BTreeMap<(String, u16), usize> = BTreeMap::new();
+    for i in 0..6u64 {
+        let seed = 0xA11C_E3D0_0000_0000 ^ i.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        let Ok(world) = HexWfcWorld::generate_with_room_quotas(seed, config, quotas) else {
+            continue;
+        };
+        let Ok(snapshot) = observed_match::hex_wfc::HexWfcGeometrySnapshot::project_with_rooms(
+            &world, cells, rooms,
+        ) else {
+            continue;
+        };
+        let mut seen: BTreeMap<(String, u16), std::collections::BTreeSet<_>> = BTreeMap::new();
+        for piece in &snapshot.pieces {
+            if let Some(tile) = &piece.tile {
+                seen.entry((tile.archetype.clone(), tile.variant / READING_STRIDE))
+                    .or_default()
+                    .insert(piece.source_cell);
+            }
+        }
+        for (key, cells) in seen {
+            *tally.entry(key).or_default() += cells.len();
+        }
+    }
+    println!("archetype               reading   cells/facility");
+    for ((archetype, reading), n) in &tally {
+        println!("{archetype:<22}  {reading:>7}  {:>14.0}", *n as f64 / 6.0);
+    }
+}

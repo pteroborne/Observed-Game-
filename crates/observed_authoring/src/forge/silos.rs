@@ -282,6 +282,142 @@ pub fn hall_ramp() -> String {
     out
 }
 
+/// Where the gallery's parapet runs, in plan `y`.
+///
+/// The walk stays south of this line and the well opens north of it. 44 units
+/// is 2.75 m from the centreline, so the flight is still wider than the 72-unit
+/// doorway it has to receive at either end.
+const WELL_EDGE: f64 = 44.0;
+
+/// Half the well's length along the climb. The mass is left solid outside it,
+/// so both doors keep a full-width landing and the opening is a bite out of the
+/// middle rather than a channel down one side.
+const WELL_HALF: f64 = 60.0;
+
+/// How far the parapet stands above the walk surface. 20 units is 1.25 m -
+/// over a stride and under a sightline, so it stops a body and not the view.
+const PARAPET: f64 = 20.0;
+
+/// A two-level ramp with a gallery: the same climb, beside an open well.
+///
+/// # Why a second reading exists at all
+///
+/// Measured across six production facilities, `hall_ramp` places about 220
+/// cells and every one of them was the same tile. It was the largest archetype
+/// in the corpus with exactly one reading - expanse has two and runs them 50/50,
+/// junctions have two, turns have three. A ramp was the one climb in the game
+/// that always looked the same, which is a direct contribution to not being
+/// able to say where you are.
+///
+/// # What the contract allowed and what it did not
+///
+/// **The walk had to stay one mass.** `validate_ramps` finds the ramp surface
+/// by taking the tallest hull covering the cell origin and requires its own
+/// height to be within 0.6 m of a full level - it is checking that the thing
+/// under your feet really does climb a storey. Cutting the mass into a
+/// west half and an east half fails that on both halves, so the well cannot
+/// cross the centreline. It is a bite out of the north flank instead, and the
+/// south band runs the whole length and carries both the walk and the contract.
+///
+/// **Both doors keep a full-width landing.** The well stops [`WELL_HALF`] short
+/// of each end, so the aperture at either seam meets solid floor.
+///
+/// **The spine is unchanged and that is deliberate.** The climb line is the
+/// centreline at `y = 0`, which is inside the south band at every `x`, so the
+/// follower walks exactly what it walked before and this variant cannot be the
+/// reason a bot stalls.
+#[must_use]
+pub fn hall_ramp_gallery() -> String {
+    let top = 2.0 * LEVEL;
+    let plane = [
+        (RAMP_WEST, -64.0, ramp_height(RAMP_WEST)),
+        (RAMP_WEST, 64.0, ramp_height(RAMP_WEST)),
+        (RAMP_EAST, -64.0, ramp_height(RAMP_EAST)),
+    ];
+    let hex: Vec<P2> = corners().to_vec();
+
+    let mut brushes =
+        String::from("// Ground slab: the well's floor, four metres under the walk\n");
+    brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 2.0, 0.0));
+    brushes.push_str("// The walk: one mass the whole length, south of the parapet\n");
+    brushes.push_str(&sloped_prism(
+        &super::halls::clip(&hex, (0.0, 1.0), WELL_EDGE),
+        0.0,
+        plane,
+        None,
+    ));
+    brushes.push_str("// North shoulders: solid landing at both doors, well between them\n");
+    let north = super::halls::clip(&hex, (0.0, -1.0), -WELL_EDGE);
+    for normal in [(1.0, 0.0), (-1.0, 0.0)] {
+        let shoulder = super::halls::clip(&north, normal, -WELL_HALF);
+        if shoulder.len() >= 3 {
+            brushes.push_str(&sloped_prism(&shoulder, 0.0, plane, None));
+        }
+    }
+    brushes.push_str("// Parapet along the open edge, climbing with the walk\n");
+    let rail = [
+        (-WELL_HALF, WELL_EDGE - 6.0),
+        (WELL_HALF, WELL_EDGE - 6.0),
+        (WELL_HALF, WELL_EDGE),
+        (-WELL_HALF, WELL_EDGE),
+    ];
+    brushes.push_str(&sloped_prism(
+        &rail,
+        0.0,
+        [
+            (plane[0].0, plane[0].1, plane[0].2 + PARAPET),
+            (plane[1].0, plane[1].1, plane[1].2 + PARAPET),
+            (plane[2].0, plane[2].1, plane[2].2 + PARAPET),
+        ],
+        None,
+    ));
+    brushes.push_str(&hex_slab(top - FLOOR_TOP, top, 0.0, 3.0));
+
+    for face in 0..6 {
+        if face == 3 {
+            brushes.push_str(&door_wall_default(face, 0.0, top));
+        } else if face == 0 {
+            brushes.push_str(&door_wall(
+                face,
+                0.0,
+                top,
+                LEVEL + FLOOR_TOP,
+                LEVEL + DOOR_TOP,
+                10.0,
+                8.0,
+            ));
+        } else {
+            brushes.push_str(&wall(face, 0.0, top));
+        }
+    }
+
+    let mut lights = String::new();
+    // One practical over the walk and one down in the well, so the drop reads
+    // as a place rather than as a dark hole beside the route.
+    for (face, along, z) in [(2, 0.72, 88.0), (1, 0.5, 40.0), (5, 0.28, 184.0)] {
+        let (fixture, source) = wall_fixture(face, along, z, 18.0);
+        brushes.push_str(&fixture);
+        lights.push_str(&source);
+    }
+
+    let mut out = String::from(
+        "// Two-level ramp variant: the same climb with an open gallery well beside it.\n",
+    );
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell("authored/hall_ramp_gallery", "hall_ramp", 1, 2, 7)
+            .with_register_scope("all")
+            .emit(),
+    );
+    out.push_str(&tile_cell(0, 0, 0, 2, "ramp"));
+    out.push_str(&lateral_port(3, "door", "west_entry", 0, 0, 0));
+    out.push_str(&vertical_port("up", "ramp_open", "upper_ramp", 0));
+    out.push_str(&ramp_spine());
+    out.push_str(&lights);
+    out
+}
+
 /// Every builder in this module, paired with the file it must reproduce.
 #[must_use]
 pub fn builders() -> Vec<Builder> {
@@ -291,6 +427,7 @@ pub fn builders() -> Vec<Builder> {
         ("silo_ring_bridge", silo_ring_bridge),
         ("room_grounded_hub", room_grounded_hub),
         ("hall_ramp", hall_ramp),
+        ("hall_ramp_gallery", hall_ramp_gallery),
     ]
 }
 

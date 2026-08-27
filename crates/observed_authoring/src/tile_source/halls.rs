@@ -313,6 +313,29 @@ pub fn hall_corner_map(register: &str, reading: u16, f1: HexFace, f2: HexFace) -
 /// The lintel stays. It keeps the face signature identical to a doorway's, so
 /// an expanse still mates with an ordinary hall, and a run of expanses reads as
 /// a bay structure rather than an unsupported slab.
+/// How far out the expanse's ceiling relief reaches, in editor units.
+///
+/// The same 72 the halls use, and the reason it cannot be larger is worth
+/// writing down because it is not obvious and the importer had to teach it.
+///
+/// `ceiling_relief` builds **rectangles**, so a reach of `r` puts mass at the
+/// plan corner `(r, r)`, which is `r * sqrt(2)` from the centre - not `r`. The
+/// cell is a hexagon of apothem 112, and the tightest face normal to a 45
+/// degree corner is 60 degrees away, so the real limit is
+/// `r * (cos 60 + sin 60) <= 112`, or about 82 before the wall is allowed for
+/// and 76 after it.
+///
+/// Reaching for 96 on the reasoning that an expanse is a wider room than a
+/// corridor therefore failed - `FootprintViolation` at vertex
+/// `[-96, 96, 110]` against the north-west face plane, which is the whole cell
+/// contract working exactly as intended. A wider relief needs a hexagonal
+/// profile rather than a bigger number, and that is a change to
+/// `ceiling_relief` rather than to its caller.
+///
+/// Height is not the constraint: the relief hangs at 110..120, far above the
+/// 72-unit `DOOR_TOP` an open span leaves clear, so it cannot foul a seam.
+const EXPANSE_CEILING_REACH: f64 = 72.0;
+
 /// The expanse's two readings — deliberately only two, and deliberately sparse.
 ///
 /// 0 = nothing, the pure volume. 1 = a pair of slim piers set well off the
@@ -348,6 +371,20 @@ pub fn expanse_map(register: &str, reading: u16, open_faces: &[HexFace]) -> Stri
         + reading * READING_STRIDE;
     let mut brushes = hex_slab_brush(0.0, FLOOR_TOP);
     brushes += &expanse_interior(reading, style, h);
+    // The district's ceiling, which this archetype did not have.
+    //
+    // `ceiling_relief` reached `hall_corner_map` and `hall_junction_map` and
+    // stopped there - the two *smallest* spaces in the kit got a section and the
+    // one whose entire job is to be an open volume got a flat lid. Measured, the
+    // expanse is 25.6% of a production facility, the largest single archetype in
+    // it, so a quarter of the building was the one place the district's ceiling
+    // vocabulary never reached. Backlog #21's complaint is that players do not
+    // experience open places; a flat slab over the widest room in the game is
+    // not the whole of that, but it is the part that is free to fix.
+    //
+    // See [`EXPANSE_CEILING_REACH`] for why this is the halls' number rather
+    // than the larger one a wider room seems to want.
+    brushes += &ceiling_relief(style.ceiling, h - FLOOR_TOP, EXPANSE_CEILING_REACH);
     for face in HexFace::LATERAL {
         if open_faces.contains(&face) {
             brushes += &open_span(face, 0.0, h, FLOOR_TOP, DOOR_TOP);
