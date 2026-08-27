@@ -610,6 +610,148 @@ pub fn hall_junction_3way_hewn() -> String {
     out
 }
 
+/// Where a hand-cut mass stands in a **turn**, in plan.
+///
+/// Directly opposite the elbow: the two door faces are 60 or 120 degrees apart,
+/// so their summed mid-point is a bearing into the bend and the negation of it
+/// is the deepest part of the cell away from the walk. A body rounding the
+/// corner cuts the inside; this sits on the outside of that arc.
+///
+/// A junction cannot use this rule and does not - three doors roughly cancel,
+/// so `hall_junction_3way_hewn` seats from the *undoored* faces instead. Two
+/// door patterns, two rules, and neither generalises to the other.
+#[must_use]
+fn hewn_seat_opposite(doors: [usize; 2], radius: f64) -> P2 {
+    let (a, b) = (face_mid(doors[0]), face_mid(doors[1]));
+    let sum = (a.0 + b.0, a.1 + b.1);
+    let length = sum.0.hypot(sum.1).max(1.0);
+    (-sum.0 / length * radius, -sum.1 / length * radius)
+}
+
+/// The shared body of the two hand-cut turns.
+///
+/// The tiers are the argument rather than the code, because the whole point of
+/// these two tiles is that they are *different landmarks*. A shared shape with
+/// a shared silhouette would put the same object at both kinds of corner and
+/// leave the corpus exactly as legible as it was.
+#[must_use]
+fn hall_turn_hewn(
+    name: &str,
+    archetype: &str,
+    doors: [usize; 2],
+    seat_radius: f64,
+    variant: i32,
+    tiers: &[([f64; 6], f64, f64, f64, f64)],
+    note: &str,
+) -> String {
+    let mut brushes = hall_shell(&doors);
+    let seat = hewn_seat_opposite(doors, seat_radius);
+    brushes.push_str("// Hand-cut mass, seated opposite the elbow\n");
+    for &(radii, phase, z0, z1, chamfer) in tiers {
+        brushes.push_str(&prism(
+            &hewn_ring(seat, radii, phase),
+            z0,
+            z1,
+            Some(seat),
+            chamfer,
+            0.0,
+        ));
+    }
+    let mut lights = String::new();
+    for (x, y, size, reach) in [
+        (seat.0 * 1.4, seat.1 * 1.4, 11.0, 7.0),
+        (-seat.0 * 0.5, -seat.1 * 0.5, 15.0, 9.0),
+    ] {
+        let (fixture, source) = ceiling_fixture(x, y, LEVEL, size, reach);
+        brushes.push_str(&fixture);
+        lights.push_str(&source);
+    }
+    let mut out = format!("// {note}\n");
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(&Meta::cell(&format!("authored/{name}"), archetype, variant, 1, 6).emit());
+    out.push_str(&tile_cell_default());
+    for &face in &doors {
+        let short = if face == 0 || face == 3 {
+            FACE_NAMES[face]
+        } else {
+            PORT_SHORT[face]
+        };
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{short}_port"),
+            0,
+            0,
+            0,
+        ));
+    }
+    out.push_str(&lights);
+    out
+}
+
+/// A sixty-degree turn with a splinter standing in it.
+///
+/// Tall and thin: it reaches the ceiling and reads in silhouette from either
+/// arm, which is what a tight corner wants. You know which turn this is before
+/// you have rounded it.
+#[must_use]
+pub fn hall_turn_60_hewn() -> String {
+    hall_turn_hewn(
+        "hall_turn_60_hewn",
+        "hall_turn_60",
+        [0, 5],
+        50.0,
+        2,
+        &[
+            (
+                [25.0, 20.0, 24.0, 19.0, 23.0, 21.0],
+                0.0,
+                FLOOR_TOP,
+                52.0,
+                3.0,
+            ),
+            ([21.0, 24.0, 18.0, 22.0, 19.0, 23.0], 27.0, 52.0, 96.0, 2.0),
+            (
+                [17.0, 14.0, 18.0, 13.0, 16.0, 15.0],
+                49.0,
+                96.0,
+                LEVEL - FLOOR_TOP,
+                4.0,
+            ),
+        ],
+        "Sixty-degree turn: a hand-cut splinter opposite the elbow, full height.",
+    )
+}
+
+/// A hundred-and-twenty-degree turn with a boulder in it.
+///
+/// Squat and broad, and deliberately **not** full height - it stops at 70 units
+/// so a body sees over it and the shallow bend keeps its long sightline. A
+/// splinter here would block the one thing this corner has that the sharp one
+/// does not.
+#[must_use]
+pub fn hall_turn_120_hewn() -> String {
+    hall_turn_hewn(
+        "hall_turn_120_hewn",
+        "hall_turn_120",
+        [0, 4],
+        46.0,
+        1,
+        &[
+            (
+                [43.0, 36.0, 41.0, 34.0, 39.0, 37.0],
+                0.0,
+                FLOOR_TOP,
+                40.0,
+                4.0,
+            ),
+            ([34.0, 30.0, 33.0, 28.0, 31.0, 29.0], 31.0, 40.0, 70.0, 6.0),
+        ],
+        "Hundred-and-twenty-degree turn: a low hand-cut boulder, sightline kept.",
+    )
+}
+
 #[must_use]
 pub fn builders() -> Vec<Builder> {
     vec![
@@ -620,6 +762,8 @@ pub fn builders() -> Vec<Builder> {
         ("hall_turn_60", hall_turn_60),
         ("hall_turn_60_buttressed", hall_turn_60_buttressed),
         ("hall_turn_120", hall_turn_120),
+        ("hall_turn_60_hewn", hall_turn_60_hewn),
+        ("hall_turn_120_hewn", hall_turn_120_hewn),
         ("hall_junction_3way", hall_junction_3way),
         ("hall_junction_3way_hewn", hall_junction_3way_hewn),
         ("hall_junction_4way", hall_junction_4way),
