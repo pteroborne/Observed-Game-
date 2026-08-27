@@ -447,6 +447,169 @@ pub fn hall_straight_datum() -> String {
     out
 }
 
+/// One hand-cut face ring, as radii at sixty-degree steps from `phase`.
+///
+/// Every other mass in this corpus is a call to `pylon`, `square` or `band` -
+/// a shape a function chose. These radii were chosen by hand, tier by tier, and
+/// that is the whole point of the tile they build: the kit needs something that
+/// is not a regular solid, and the only way to get one is to write the numbers.
+///
+/// Six radii rather than an arbitrary polygon because a brush must be convex
+/// and a hand-written vertex list is one typo away from not being. Evenly
+/// spaced angles with radii inside a modest band are convex by construction, so
+/// the shape can be irregular without being invalid.
+#[must_use]
+fn hewn_ring(center: P2, radii: [f64; 6], phase_deg: f64) -> Vec<P2> {
+    (0..6)
+        .map(|index| {
+            #[allow(clippy::cast_precision_loss)]
+            let angle = (phase_deg + index as f64 * 60.0).to_radians();
+            (
+                center.0 + radii[index] * angle.cos(),
+                center.1 + radii[index] * angle.sin(),
+            )
+        })
+        .collect()
+}
+
+/// A three-way junction with a hewn monolith standing in it.
+///
+/// # Why this one is written rather than generated
+///
+/// Arc T's T-6 note says the kit will need hand-made tiles and that everything
+/// in the corpus is forge-generated. This is the first that is not. Its mass is
+/// three tiers of hand-chosen radii, canted against each other, rather than a
+/// primitive with a radius argument - so it is the one shape in the facility
+/// that does not read as a solid of revolution.
+///
+/// A junction is where it belongs. Junctions are decision points, and the
+/// measured corpus places about 117 three-way junctions a facility on the
+/// pylon reading - all of them identical. A landmark is only a landmark if
+/// there is one of it.
+///
+/// # Where it may stand, which is not the middle
+///
+/// **The cell centre stays clear**, and that is a bot constraint rather than an
+/// aesthetic one. `lateral_waypoint` steers a body at the shared doorway and
+/// then at the neighbour's centre, so the centre of a cell is on the path
+/// through it; the existing waypoint pylon is thin enough to be walked round and
+/// a mass this size is not. It stands in the solid quarter between the two
+/// undoored faces, found from their own mid-points rather than from a bearing
+/// written down here, so it follows the door pattern if this is ever asked for
+/// another one.
+///
+/// **Nothing reaches a door channel.** `hall_shell` has already cut the arms to
+/// `DOOR_HALF_WIDTH`; the monolith sits outside them by construction, and the
+/// canted beam overhead starts above `DOOR_TOP` so a sightline down any arm is
+/// unobstructed.
+#[must_use]
+pub fn hall_junction_3way_hewn() -> String {
+    const DOORS: [usize; 3] = [0, 3, 5];
+    let mut brushes = hall_shell(&DOORS);
+
+    // The solid quarter, from the two faces that carry no door.
+    let (a, b) = (face_mid(1), face_mid(2));
+    let bisector = ((a.0 + b.0) * 0.5, (a.1 + b.1) * 0.5);
+    let length = bisector.0.hypot(bisector.1);
+    let seat = (bisector.0 / length * 54.0, bisector.1 / length * 54.0);
+
+    brushes.push_str("// Hewn monolith: three canted tiers, radii chosen by hand\n");
+    for (radii, phase, z0, z1, chamfer) in [
+        (
+            [38.0, 31.0, 35.0, 29.0, 36.0, 33.0],
+            0.0,
+            FLOOR_TOP,
+            44.0,
+            3.0,
+        ),
+        ([33.0, 36.0, 28.0, 34.0, 30.0, 37.0], 22.0, 44.0, 82.0, 2.0),
+        (
+            [27.0, 24.0, 29.0, 23.0, 28.0, 25.0],
+            41.0,
+            82.0,
+            LEVEL - FLOOR_TOP,
+            4.0,
+        ),
+    ] {
+        brushes.push_str(&prism(
+            &hewn_ring(seat, radii, phase),
+            z0,
+            z1,
+            Some(seat),
+            chamfer,
+            0.0,
+        ));
+    }
+
+    // A canted beam from the monolith's head across the crossing. It starts
+    // above `DOOR_TOP`, so it darkens the ceiling over the junction without
+    // taking anything off a sightline down an arm.
+    brushes.push_str("// Canted head beam, clear of every doorway\n");
+    let across = (-seat.0 / 54.0 * 96.0, -seat.1 / 54.0 * 96.0);
+    let perp = (-(across.1 - seat.1), across.0 - seat.0);
+    let span = perp.0.hypot(perp.1).max(1.0);
+    let half = (perp.0 / span * 11.0, perp.1 / span * 11.0);
+    brushes.push_str(&prism(
+        &[
+            (seat.0 + half.0, seat.1 + half.1),
+            (across.0 + half.0, across.1 + half.1),
+            (across.0 - half.0, across.1 - half.1),
+            (seat.0 - half.0, seat.1 - half.1),
+        ],
+        88.0,
+        104.0,
+        None,
+        2.0,
+        2.0,
+    ));
+
+    let mut lights = String::new();
+    // One practical washing the monolith and one out over the crossing, so the
+    // mass is what is lit rather than the empty middle.
+    for (x, y, size, reach) in [
+        (seat.0 * 1.5, seat.1 * 1.5, 10.0, 7.0),
+        (0.0, 0.0, 16.0, 10.0),
+    ] {
+        let (fixture, source) = ceiling_fixture(x, y, LEVEL, size, reach);
+        brushes.push_str(&fixture);
+        lights.push_str(&source);
+    }
+
+    let mut out = String::from(
+        "// Three-way junction: a hand-hewn monolith in the solid quarter, centre kept clear.\n",
+    );
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell(
+            "authored/hall_junction_3way_hewn",
+            "hall_junction_3way",
+            1,
+            1,
+            6,
+        )
+        .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    for &face in &DOORS {
+        let short = if face == 0 || face == 3 {
+            FACE_NAMES[face]
+        } else {
+            PORT_SHORT[face]
+        };
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{short}_port"),
+            0,
+            0,
+            0,
+        ));
+    }
+    out.push_str(&lights);
+    out
+}
+
 #[must_use]
 pub fn builders() -> Vec<Builder> {
     vec![
@@ -458,6 +621,7 @@ pub fn builders() -> Vec<Builder> {
         ("hall_turn_60_buttressed", hall_turn_60_buttressed),
         ("hall_turn_120", hall_turn_120),
         ("hall_junction_3way", hall_junction_3way),
+        ("hall_junction_3way_hewn", hall_junction_3way_hewn),
         ("hall_junction_4way", hall_junction_4way),
     ]
 }

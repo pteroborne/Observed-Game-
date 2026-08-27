@@ -476,11 +476,13 @@ mod tests {
     /// one on this catalog will not play together, by design.
     #[test]
     fn committed_arc_s_catalog_identity_is_pinned() {
-        // Moved a fifth time by two authored tiles, and the profile side did not
-        // move at all - which is the shape of an Arc T corpus change. 230 to 232
-        // modules: `hall_straight_datum`, a corridor that is not symmetric under
-        // the half-turn swapping its doors, and `hall_ramp_gallery`, a second
-        // reading for the largest archetype that had only one. No solve control
+        // Moved a fifth time by three authored tiles, and the profile side did
+        // not move at all - which is the shape of an Arc T corpus change. 230 to
+        // 233 modules: `hall_straight_datum`, a corridor that is not symmetric
+        // under the half-turn swapping its doors; `hall_ramp_gallery`, a second
+        // reading for the largest archetype that had only one; and
+        // `hall_junction_3way_hewn`, the first module in this corpus whose mass
+        // is hand-written rather than a call to a primitive. No solve control
         // changed, so `COMPOSITION_PROFILE_VERSION` and the profile hash stand.
         //
         // The tower count is deliberately asserted alongside and is unmoved at
@@ -525,14 +527,14 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "fb2939630fb7ad3580afcdc81267bcabb4dbf692c97d35208110adf927c09c3b";
+            "683ee311d6761643a44274adb32e43d3a6bdf5608ab788ec573fd4730a0ea320";
         const PROFILE_HASH: &str =
             "5c1bc69db058d4e3332e755326548f887d46f215d81fdeb454591cd9c2c0104e";
         // Folds the catalog and the profile. Both sides moved this time, which
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "7c0a0576075f9990f63f60b4339d772b2349bd8204cce27a28daf6820d8c1cfe";
+            "bf0f142eef0bac4d0f5067bf44c33bba09e3b818389f25796b86b9163886eca6";
 
         let root = committed_tiles();
         let compiled_text =
@@ -545,7 +547,7 @@ mod tests {
             .filter(|module| module.archetype == "stair_tower")
             .collect::<Vec<_>>();
         assert_eq!(compiled.simulation_content_hash, CATALOG_HASH);
-        assert_eq!(compiled.modules.len(), 232, "committed strict source count");
+        assert_eq!(compiled.modules.len(), 233, "committed strict source count");
         // 1 doorless + every one-to-four-door pattern, in three vertical
         // connectivities: (1 + 6 + 15 + 20 + 15) * 3. Was 66, when the family
         // stopped at two doors and there was no branching landing.
