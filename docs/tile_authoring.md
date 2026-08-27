@@ -326,6 +326,48 @@ any rotated neighbor matches by construction. Evidence:
 `docs/evidence/silo_wellshaft_{topdown,cutaway,clay,ramp_fp}.png` with view
 scripts alongside.
 
+## Walking a chosen run (`hex_tile_lab`)
+
+Every other capture in this project shows one module by itself, which answers
+whether a tile is *correct* and says nothing about whether a run of them is a
+place. A view script may name a **run** instead of a single tile: the lab lays
+the tiles end to end, rotating each so its entry door meets the previous tile's
+exit, and walks the production character controller along it while capturing a
+numbered frame sequence.
+
+```json
+{
+  "run": ["hall_straight:12", "hall_turn_60:12", "hall_junction_3way:6"],
+  "render_mode": "lit",
+  "view_mode": "firstperson",
+  "walk": true,
+  "frames": 60,
+  "frame_interval": 10,
+  "output_image": "docs/evidence/<name>.png"
+}
+```
+
+Then the same FFmpeg pair the bot-POV capture uses, over `<name>_%03d.png`.
+
+Four things that will otherwise cost an afternoon:
+
+- **Run variants are `runtime` numbers, not authored ones.** Rotations expand
+  sixfold, so authored variant 2 is `:12`. The lab's own composition titles
+  print `variant / 6`, which is the number to read back.
+- **`walk` needs `view_mode: "firstperson"`.** The walk system returns early in
+  any other mode, and the capture then quietly shows a stationary camera.
+- **A tile with fewer than two lateral doors ends the run.** A cap is a dead
+  end; a ramp's second opening is a *vertical* port belonging to the cell above,
+  so continuing through one means changing level and this composition builds a
+  lateral walk only.
+- **A run is not a solved facility.** It proves the tiles compose and that the
+  seams mate well enough to walk; it does not prove the solver will ever place
+  them adjacent.
+
+What makes the walk worth more than a photograph is that it is the production
+controller: it collides, a seam that does not mate stops the body, and a missing
+floor drops it. A run that captures cleanly is a run that is walkable.
+
 ## Grounded first-person references
 
 `room_grounded_hub` uses six physical threshold walls, a floor-to-ceiling

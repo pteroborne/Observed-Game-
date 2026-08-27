@@ -38,7 +38,7 @@ use observed_authoring::{RuntimeHexCatalog, TilePrototype};
 use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::{blueprint_cell_archetype, blueprint_for_role};
 use observed_facility::map_spec::RoomRole;
-use observed_hex::{HexCoord, TILE_LEVEL_HEIGHT, hex_origin};
+use observed_hex::{HexCoord, HexFace, HexGridSize, PortClass, TILE_LEVEL_HEIGHT, hex_origin};
 use observed_style as style;
 use observed_traversal::rapier_controller::{RapierTraversalScene, step_character};
 use observed_traversal::{ColliderSpec, ConvexRenderMesh, FpsBody, FpsConfig};
@@ -131,6 +131,16 @@ pub enum Composition {
         archetype: String,
         variant: u16,
     },
+    /// A hand-chosen sequence of tiles laid end to end, each rotated so its
+    /// entry door meets the previous tile's exit.
+    ///
+    /// The point of this one is composition. Every other entry in this list
+    /// shows a module by itself, which answers whether a tile is *correct* and
+    /// says nothing about whether a run of them is a place - and "somewhere to
+    /// go" is a claim about the run.
+    Run {
+        steps: Vec<(String, u16)>,
+    },
 }
 
 /// Levels of the silo wellshaft showcase composition.
@@ -152,6 +162,71 @@ const SILO_RING_ORDER: [(f32, f32); 6] = [
 /// local west); position j uses turn (6 - j) % 6 with the catalog's
 /// clockwise-rotation convention. One ring tile per level (staggered around
 /// the shaft) is the bridge variant.
+/// Lay a chosen sequence of tiles end to end, each rotated so its entry door
+/// meets the previous tile's exit.
+///
+/// The lattice does the arithmetic. Stepping with `HexGridSize::neighbor` and
+/// placing at `hex_origin` means the run cannot drift out of alignment the way
+/// a hand-written table of plan offsets can - the silo composition above is
+/// exactly such a table, and it is right only because its six offsets were
+/// checked once and never touched again.
+///
+/// **Rotation is the whole trick.** A tile is authored with its doors on
+/// particular faces, so laying two of them next to each other only mates if the
+/// second one is turned to receive the first. `turn` is how many sixths carry
+/// the tile's own entry door round to the face we are arriving through, and the
+/// same turn carries its exit door to wherever the run goes next.
+///
+/// Tiles with fewer than two lateral doors end the run rather than being
+/// skipped: a `hall_cap` is a dead end and pretending otherwise would lay the
+/// next tile inside it. A ramp ends it too, for a subtler reason. Its second
+/// opening is a *vertical* port belonging to the cell above, so continuing
+/// through one means changing level, and a lateral walk is all this composition
+/// claims to build.
+fn run_placements(
+    tiles: &[TilePrototype],
+    register: &str,
+    steps: &[(String, u16)],
+) -> Vec<(TilePrototype, Vec3, Quat)> {
+    let grid = HexGridSize {
+        cols: 32,
+        rows: 32,
+        levels: 4,
+    };
+    let mut coord = HexCoord {
+        q: 12,
+        r: 12,
+        level: 0,
+    };
+    let mut entry = HexFace::West;
+    let mut out = Vec::new();
+    for (archetype, variant) in steps {
+        let Some(tile) = resolve_tile(tiles, archetype, *variant, register).cloned() else {
+            continue;
+        };
+        let doors: Vec<HexFace> = HexFace::LATERAL
+            .into_iter()
+            .filter(|face| tile.signature.port(*face) == PortClass::Door)
+            .collect();
+        let (Some(&own_entry), Some(&own_exit)) = (doors.first(), doors.get(1)) else {
+            out.push((tile, Vec3::from_array(hex_origin(coord)), Quat::IDENTITY));
+            break;
+        };
+        let turn = (entry.index() + 6 - own_entry.index()) % 6;
+        #[allow(clippy::cast_precision_loss)]
+        let rotation = Quat::from_rotation_y(-(turn as f32) * std::f32::consts::TAU / 6.0);
+        out.push((tile, Vec3::from_array(hex_origin(coord)), rotation));
+
+        let exit = HexFace::LATERAL[(own_exit.index() + turn) % 6];
+        let Some(next) = grid.neighbor(coord, exit) else {
+            break;
+        };
+        coord = next;
+        entry = exit.opposite();
+    }
+    out
+}
+
 fn silo_placements(tiles: &[TilePrototype], register: &str) -> Vec<(TilePrototype, Vec3, Quat)> {
     let core = resolve_tile(tiles, "silo_core", 0, register);
     let ring = resolve_tile(tiles, "silo_ring", 0, register);
@@ -188,6 +263,13 @@ impl Composition {
                 "SILO WELLSHAFT: 7-hex, {SILO_LEVELS} levels — solid core, helical ring ramp, bridge per level"
             ),
             Self::Room(role) => format!("ROOM BLUEPRINT: {role:?}"),
+            Self::Run { steps } => {
+                let names: Vec<String> = steps
+                    .iter()
+                    .map(|(archetype, variant)| format!("{archetype} v{variant}"))
+                    .collect();
+                format!("RUN ({} tiles): {}", steps.len(), names.join(" -> "))
+            }
             Self::SingleTile { archetype, variant } => {
                 match resolve_tile(tiles, archetype, *variant, register) {
                     Some(tile) => format!(
@@ -209,6 +291,7 @@ impl Composition {
             Self::SiloWellshaft => "silo_wellshaft".to_string(),
             Self::Room(role) => format!("room_{role:?}").to_lowercase(),
             Self::SingleTile { archetype, variant } => format!("{archetype}_v{variant}"),
+            Self::Run { steps } => format!("run_{}", steps.len()),
         }
     }
 
@@ -311,6 +394,10 @@ pub struct LabState {
 
     // Scripted walk for capture
     pub scripted_walk: bool,
+    /// Cell centres of the current run, in order, for the scripted walk to
+    /// steer along. Empty for every composition that is not a run.
+    pub walk_path: Vec<Vec3>,
+    pub walk_index: usize,
     pub last_reload: String,
     pub dirty: bool,
 }
@@ -437,6 +524,8 @@ impl LabState {
             auto_orbit: false,
 
             scripted_walk: false,
+            walk_path: Vec::new(),
+            walk_index: 0,
             last_reload: "tiles loaded".to_string(),
             dirty: true,
         };
@@ -478,6 +567,12 @@ impl LabState {
             Composition::SiloWellshaft => ["silo_core", "silo_ring", "silo_ring_bridge"]
                 .into_iter()
                 .all(|archetype| resolve_tile(&self.tiles, archetype, 0, register).is_some()),
+            // A run is available when its *first* tile is: the rest are reported
+            // by the run coming out short, which is more use to an author than
+            // the whole composition vanishing from the list.
+            Composition::Run { steps } => steps.first().is_some_and(|(archetype, variant)| {
+                resolve_tile(&self.tiles, archetype, *variant, register).is_some()
+            }),
         }
     }
 
@@ -540,6 +635,8 @@ impl LabState {
         };
         let composition = self.composition().clone();
         let register = self.register();
+        self.walk_path.clear();
+        self.walk_index = 0;
 
         match composition {
             Composition::SingleTile { archetype, variant } => {
@@ -593,6 +690,49 @@ impl LabState {
                 };
                 self.scene = RapierTraversalScene::from_arena_spec(&spec);
                 self.body = FpsBody::spawned(center + Vec3::Y * self.config.half_height, 0.0);
+            }
+            Composition::Run { ref steps } => {
+                let placements = run_placements(&self.tiles, register.slug(), steps);
+                let mut collider_specs: Vec<ColliderSpec> = Vec::new();
+                for (tile, origin, rotation) in &placements {
+                    let specs = tile.collider_specs_with_transform(
+                        collider_specs.len() as u32,
+                        *origin,
+                        *rotation,
+                    );
+                    collider_specs.extend(specs);
+                }
+                let count = placements.len().max(1) as f32;
+                let center = placements.iter().map(|(_, o, _)| *o).sum::<Vec3>() / count
+                    + Vec3::Y * (TILE_LEVEL_HEIGHT * 0.5);
+                let extent = placements
+                    .iter()
+                    .map(|(_, o, _)| (*o - center).length())
+                    .fold(0.0_f32, f32::max);
+                self.center = center;
+                self.radius = extent + 30.0;
+                self.height = (extent + 30.0) * 0.7;
+                let spec = observed_traversal::ArenaSpec {
+                    colliders: collider_specs,
+                    floor_y: 0.0,
+                    safety_center: center,
+                    safety_half: Vec3::new(extent + 26.0, 30.0, extent + 26.0),
+                };
+                self.scene = RapierTraversalScene::from_arena_spec(&spec);
+                // Standing in the first tile, facing the way the run goes.
+                let (spawn, facing) = match (placements.first(), placements.get(1)) {
+                    (Some((_, first, _)), Some((_, second, _))) => {
+                        (*first, (*second - *first).normalize_or_zero())
+                    }
+                    (Some((_, first, _)), None) => (*first, Vec3::X),
+                    _ => (center, Vec3::X),
+                };
+                self.body = FpsBody::spawned(
+                    spawn + Vec3::Y * self.config.half_height,
+                    yaw_toward(Vec2::new(facing.x, facing.z)),
+                );
+                self.walk_path = placements.iter().map(|(_, o, _)| *o).collect();
+                self.walk_index = 1;
             }
             Composition::SiloWellshaft => {
                 let mut collider_specs: Vec<ColliderSpec> = Vec::new();
@@ -719,6 +859,7 @@ pub fn run() {
                     script_path: Some(script_path),
                     configured: false,
                     captured: false,
+                    shot: 0,
                     timer: 0.0,
                 })
                 .add_systems(
@@ -1077,8 +1218,33 @@ fn step_body(
         return;
     }
     let intent = if state.scripted_walk {
+        // Steer along the run rather than simply holding forward. Forward alone
+        // walks a straight and stops dead at the first turn, which would make
+        // every captured sequence a test of the first tile only.
+        //
+        // This is the production character controller being driven toward a
+        // waypoint, not a camera flying a path: it collides, it is stopped by a
+        // seam that does not mate, and it falls if the floor is not there. That
+        // is the whole reason to walk a run instead of photographing it.
+        let mut movement = Vec2::new(0.0, 1.0);
+        if let Some(&target) = state.walk_path.get(state.walk_index) {
+            let here = state.body.position;
+            let to = Vec3::new(target.x - here.x, 0.0, target.z - here.z);
+            if to.length() < 2.5 {
+                state.walk_index += 1;
+            }
+            let desired = yaw_toward(Vec2::new(to.x, to.z));
+            let error = (desired - state.body.yaw + std::f32::consts::PI)
+                .rem_euclid(std::f32::consts::TAU)
+                - std::f32::consts::PI;
+            state.body.yaw += error.clamp(-0.05, 0.05);
+        } else if !state.walk_path.is_empty() {
+            // Past the last waypoint: stand still rather than walk into the end
+            // wall, so the tail of a sequence is the run and not a scuffle.
+            movement = Vec2::ZERO;
+        }
         PlayerIntent {
-            movement: Vec2::new(0.0, 1.0),
+            movement,
             ..PlayerIntent::default()
         }
     } else {
@@ -1511,6 +1677,33 @@ fn rebuild_visuals(
                             format!("Room cell {archetype}"),
                         );
                     }
+                }
+            }
+        }
+        Composition::Run { ref steps } => {
+            for (tile, origin, rotation) in run_placements(&state.tiles, register.slug(), steps) {
+                let top_y = f32::from(tile.levels) * TILE_LEVEL_HEIGHT;
+                let transform = Transform::from_translation(origin).with_rotation(rotation);
+                pool_origins.extend(
+                    tile.lights
+                        .iter()
+                        .map(|light| origin + rotation * light.position),
+                );
+                for hull in &tile.hulls {
+                    // Section from above: drop ceilings so a run reads as a
+                    // plan, and keep every wall, because the walls are what a
+                    // run is being looked at for.
+                    if cross_section && is_ceiling(hull, top_y) {
+                        continue;
+                    }
+                    spawn_hull_entity(
+                        &mut commands,
+                        &mut meshes,
+                        hull,
+                        transform,
+                        top_y,
+                        format!("Run {}", tile.key.archetype),
+                    );
                 }
             }
         }

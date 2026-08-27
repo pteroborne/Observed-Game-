@@ -39,6 +39,34 @@ pub struct ViewScript {
     pub volumetrics: Option<bool>,
     pub hide_menu: Option<bool>,
     pub output_image: Option<String>,
+    /// A hand-chosen run, as `"archetype"` or `"archetype:variant"` entries.
+    ///
+    /// Takes precedence over `tile_id`/`composition`: a script that names a run
+    /// is asking about composition, and the single-tile selectors cannot answer
+    /// that question.
+    pub run: Option<Vec<String>>,
+    /// Walk the body forward while the script runs, instead of standing still.
+    ///
+    /// The flag already existed on `LabState` and nothing could set it. It is
+    /// the production character controller being driven, not a camera path, so
+    /// what it proves is that the run is *walkable* - a seam that does not mate
+    /// stops the body rather than merely looking wrong.
+    pub walk: Option<bool>,
+    /// Capture this many frames instead of one, `frame_interval` ticks apart.
+    pub frames: Option<u32>,
+    pub frame_interval: Option<u32>,
+}
+
+/// Parse one `"archetype"` or `"archetype:variant"` run entry.
+#[must_use]
+fn parse_step(entry: &str) -> (String, u16) {
+    match entry.split_once(':') {
+        Some((archetype, variant)) => (
+            archetype.trim().to_string(),
+            variant.trim().parse().unwrap_or(0),
+        ),
+        None => (entry.trim().to_string(), 0),
+    }
 }
 
 impl ViewScript {
@@ -54,6 +82,8 @@ pub struct ScriptExecution {
     pub script_path: Option<PathBuf>,
     pub configured: bool,
     pub captured: bool,
+    /// How many frames of a sequence have been written so far.
+    pub shot: u32,
     pub timer: f32,
 }
 
@@ -140,14 +170,25 @@ pub fn run_script_system(
             state.render_mode = RenderMode::Clay;
         }
 
-        let target = script
-            .tile_id
-            .as_deref()
-            .or(script.composition.as_deref())
-            .and_then(|needle| composition_position(&state, needle, script.variant));
-        if let Some(position) = target {
+        // A named run is appended to the list and selected, so everything
+        // downstream - the title, the camera framing, the capture filename -
+        // works on it exactly as it does on the built-in compositions.
+        if let Some(ref entries) = script.run {
+            let steps: Vec<(String, u16)> = entries.iter().map(|e| parse_step(e)).collect();
+            state.compositions.push(Composition::Run { steps });
+            let position = state.compositions.len() - 1;
             state.switch(position);
+        } else {
+            let target = script
+                .tile_id
+                .as_deref()
+                .or(script.composition.as_deref())
+                .and_then(|needle| composition_position(&state, needle, script.variant));
+            if let Some(position) = target {
+                state.switch(position);
+            }
         }
+        state.scripted_walk = script.walk == Some(true);
 
         if let Some(ref mode_str) = script.view_mode {
             match mode_str.to_lowercase().as_str() {
@@ -205,24 +246,37 @@ pub fn run_script_system(
         exec.configured = true;
     }
 
-    // Phase 2: screenshot once the scene has settled. Generous, because the tile
+    // Phase 2: shoot once the scene has settled. Generous, because the tile
     // library is built before the first frame: shooting too early saves a black
     // PNG and still reports success, which reads as a render regression.
-    if exec.configured && !exec.captured && exec.timer >= 6.0 {
+    //
+    // A sequence numbers its files and keeps walking between them; a single
+    // still is that with `frames = 1`, so there is one path rather than two.
+    let frames = script.frames.unwrap_or(1).max(1);
+    #[allow(clippy::cast_precision_loss)]
+    let interval = script.frame_interval.unwrap_or(12) as f32 / 60.0;
+    let due = 6.0 + exec.shot as f32 * interval;
+    if exec.configured && exec.shot < frames && exec.timer >= due {
         if let Some(ref out_path) = script.output_image {
-            let out_path = out_path.clone();
-            if let Some(parent) = Path::new(&out_path).parent() {
+            let path = if frames == 1 {
+                out_path.clone()
+            } else {
+                let stem = out_path.strip_suffix(".png").unwrap_or(out_path);
+                format!("{stem}_{:03}.png", exec.shot)
+            };
+            if let Some(parent) = Path::new(&path).parent() {
                 let _ = fs::create_dir_all(parent);
             }
             commands
                 .spawn(Screenshot::primary_window())
-                .observe(save_to_disk(out_path));
+                .observe(save_to_disk(path));
         }
-        exec.captured = true;
+        exec.shot += 1;
+        exec.captured = exec.shot >= frames;
     }
 
-    // Phase 3: exit after the screenshot GPU writeback completes.
-    if exec.captured && exec.timer >= 7.0 {
+    // Phase 3: exit after the last screenshot's GPU writeback completes.
+    if exec.captured && exec.timer >= due + 1.0 {
         app_exit.write(AppExit::Success);
     }
 }
