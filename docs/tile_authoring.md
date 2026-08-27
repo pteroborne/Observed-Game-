@@ -349,6 +349,28 @@ numbered frame sequence.
 
 Then the same FFmpeg pair the bot-POV capture uses, over `<name>_%03d.png`.
 
+### `facility_lighting`: judge it the way the game shows it
+
+The lab's Lit mode is an **inspection** light and the shipped facility's rig is
+not. Judging a tile's *look* from a default Lit capture is judging the wrong
+picture, and the four differences all push the same way - flatter:
+
+| | facility | lab Lit |
+| --- | --- | --- |
+| palette | `architecture_for_composition` (composition lift) | `architecture` (register only) |
+| ambient | the palette's own value | floored at 200, or 340 in cutaway |
+| fog | palette `fog_start..fog_end`, about 10..28 m | 60..170 m, so it never engages at tile scale |
+| key light | shadow-casting district spot at `HEX_KEY_INTENSITY_SCALE` | none |
+| headlamp | **none, deliberately** | 90,000 lm, camera-mounted |
+
+The headlamp is the big one. The facility rig's own note says a flat
+player-locked fill "washed out the very shadows this rig exists to cast" - so a
+lab capture is lit by exactly the thing the game deleted.
+
+`"facility_lighting": true` on a view script switches all five to the shipped
+values. Keep it **off** when inspecting geometry, where the fill is the point,
+and **on** for anything that answers "how will this read in the game".
+
 Four things that will otherwise cost an afternoon:
 
 - **Run variants are `runtime` numbers, not authored ones.** Rotations expand

@@ -1433,6 +1433,20 @@ impl HexComposition {
     }
 }
 
+/// How far the hex facility trims the district key spotlight.
+///
+/// Hex cells are tighter than the teleport-era rooms the palette's absolute
+/// lumen values were established in, so the shadow-casting key is pulled back
+/// to keep a nearby wall in material contrast without blowing out. The value
+/// sits inside the proven `full_wfc` key range of `0.16..=0.68`.
+///
+/// **Here rather than in the game** because it is the difference between what
+/// the palette says and what the facility actually shows, and anything trying
+/// to reproduce the facility's lighting - a lab preview, an evidence capture -
+/// needs the same number or it is previewing a different building. It lived in
+/// `game/src/hex_wfc/view/lighting.rs` while the game was its only reader.
+pub const HEX_KEY_INTENSITY_SCALE: f32 = 0.62;
+
 /// Composition-aware atmosphere for the canonical hex facility.
 ///
 /// Architecture registers still own hue and character. Composition owns the

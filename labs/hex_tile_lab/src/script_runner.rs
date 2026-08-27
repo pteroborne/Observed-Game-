@@ -52,6 +52,14 @@ pub struct ViewScript {
     /// what it proves is that the run is *walkable* - a seam that does not mate
     /// stops the body rather than merely looking wrong.
     pub walk: Option<bool>,
+    /// Light the scene exactly as the shipped facility lights it.
+    ///
+    /// The lab's Lit mode is an *inspection* light: it floors ambient so
+    /// geometry stays legible, stretches fog to 60..170 m so an orbit camera
+    /// can stand back, and carries a headlamp the facility deliberately does
+    /// not ship. Every one of those makes a tile easier to look at and makes
+    /// the capture a worse answer to "how will this read in the game".
+    pub facility_lighting: Option<bool>,
     /// Capture this many frames instead of one, `frame_interval` ticks apart.
     pub frames: Option<u32>,
     pub frame_interval: Option<u32>,
@@ -189,6 +197,7 @@ pub fn run_script_system(
             }
         }
         state.scripted_walk = script.walk == Some(true);
+        state.facility_lighting = script.facility_lighting == Some(true);
 
         if let Some(ref mode_str) = script.view_mode {
             match mode_str.to_lowercase().as_str() {

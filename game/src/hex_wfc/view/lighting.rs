@@ -30,12 +30,11 @@ use crate::view::components::GameCam;
 const PRACTICAL_SHADOW_BUDGET: usize = 4;
 
 const BLEND_RATE: f32 = 2.5;
-/// Hex cells are somewhat tighter than the teleport-era rooms that established the
-/// style palette's absolute lumen values, so the shadow-casting key is trimmed a little
-/// to keep a nearby wall in material contrast without blowing out. Value sits in the
-/// proven `full_wfc` key range (`0.16..=0.68`); the per-cell practicals in
-/// [`super::shell`] now carry the interior read the deleted eye headlamp used to fake.
-const HEX_KEY_INTENSITY_SCALE: f32 = 0.62;
+/// The key trim, which now lives in `observed_style` beside the palette it
+/// trims: a preview that reproduces this rig needs the same number or it is
+/// previewing a different building. The per-cell practicals in [`super::shell`]
+/// carry the interior read the deleted eye headlamp used to fake.
+use observed_style::HEX_KEY_INTENSITY_SCALE;
 
 /// Spawn the complete semantic rig at its final treatment for the initial cell.
 ///

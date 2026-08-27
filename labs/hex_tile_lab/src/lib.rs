@@ -362,6 +362,10 @@ struct EyeCamera;
 #[derive(Component)]
 struct Headlamp;
 
+/// The district key spotlight, spawned only under facility lighting.
+#[derive(Component)]
+struct FacilityKeyLight;
+
 #[derive(Resource)]
 pub struct LabState {
     pub tiles: Vec<TilePrototype>,
@@ -392,6 +396,9 @@ pub struct LabState {
     pub look_delta: Vec2,
     pub auto_orbit: bool,
 
+    /// Light the scene exactly as the shipped facility lights it, instead of
+    /// with the lab's inspection fill. See `apply_facility_lighting`.
+    pub facility_lighting: bool,
     // Scripted walk for capture
     pub scripted_walk: bool,
     /// Cell centres of the current run, in order, for the scripted walk to
@@ -428,6 +435,45 @@ fn first_lateral_door(tile: &TilePrototype) -> Option<observed_hex::HexFace> {
     observed_hex::HexFace::LATERAL
         .into_iter()
         .find(|&face| tile.signature.port(face) == observed_hex::PortClass::Door)
+}
+
+/// Which composition the shipped facility would call this tile.
+///
+/// Mirrors `composition_at` in `game/src/hex_wfc/view/lighting.rs`, which is
+/// the authority. It works from a solved world - blueprint membership first,
+/// then the placement's `HexArchetype` - and a lab has neither, so this reads
+/// the tile's own archetype string instead.
+///
+/// The one place the two can disagree is `Room`, and it is unavoidable rather
+/// than sloppy: in a facility a room cell is one the blueprint stamped, and in
+/// a lab it is whichever composition the author selected. Every other arm is
+/// the same rule on the same names.
+#[must_use]
+fn facility_composition(archetype: &str) -> style::HexComposition {
+    match archetype {
+        "expanse" | "sanctuary" => style::HexComposition::Room,
+        a if a.starts_with("room_") => style::HexComposition::Room,
+        "stair_tower" | "hall_ramp" => style::HexComposition::Vertical,
+        _ => style::HexComposition::Hall,
+    }
+}
+
+/// The palette the shipped facility would light this scene with.
+fn facility_palette(state: &LabState) -> style::DistrictPalette {
+    let composition = match state.composition() {
+        Composition::Room(_) => style::HexComposition::Room,
+        Composition::SiloWellshaft => style::HexComposition::Vertical,
+        Composition::SingleTile { archetype, .. } => facility_composition(archetype),
+        // A run is lit for the tile the body is standing in at the start; a run
+        // that crosses compositions is exactly the case a single still cannot
+        // report, and the walk capture is the answer to it.
+        Composition::Run { steps } => {
+            steps.first().map_or(style::HexComposition::Hall, |(a, _)| {
+                facility_composition(a)
+            })
+        }
+    };
+    style::architecture_for_composition(state.register(), composition)
 }
 
 fn yaw_toward(f: Vec2) -> f32 {
@@ -523,6 +569,7 @@ impl LabState {
             look_delta: Vec2::ZERO,
             auto_orbit: false,
 
+            facility_lighting: false,
             scripted_walk: false,
             walk_path: Vec::new(),
             walk_index: 0,
@@ -1264,6 +1311,16 @@ fn step_body(
     }
 }
 
+/// The district key light. `Without<EyeCamera>` is load-bearing rather than
+/// tidy: the camera query beside it also takes `Transform` mutably, and Bevy
+/// rejects the overlap at startup rather than at the call site.
+type FacilityKeyQuery<'w, 's> = Query<
+    'w,
+    's,
+    (&'static mut SpotLight, &'static mut Transform),
+    (With<FacilityKeyLight>, Without<EyeCamera>),
+>;
+
 type ShowcaseCameraQuery<'w, 's> = Query<
     'w,
     's,
@@ -1317,6 +1374,7 @@ fn sync_render_env(
     state: Res<LabState>,
     mut camera: ShowcaseCameraQuery,
     mut headlamps: Query<&mut PointLight, With<Headlamp>>,
+    mut key: FacilityKeyQuery,
     mut commands: Commands,
 ) {
     let Ok((cam_entity, _, has_bloom, has_vol, has_fog)) = camera.single_mut() else {
@@ -1346,25 +1404,84 @@ fn sync_render_env(
         commands.entity(cam_entity).remove::<VolumetricFog>();
     }
 
-    if lit && !has_fog {
-        let palette = style::architecture(state.register());
+    if lit {
+        // Facility fog is tuned for a body in a corridor - roughly 10 to 28 m -
+        // and the lab's 60..170 was chosen so an orbit camera standing well
+        // back could still see the tile. At tile scale the lab's fog never
+        // engages at all, which is most of why a Lit capture looked flat: the
+        // depth cue the district is built around was simply absent.
+        let (start, end) = if state.facility_lighting {
+            let palette = facility_palette(&state);
+            (palette.fog_start, palette.fog_end)
+        } else {
+            (60.0, 170.0)
+        };
+        let color = if state.facility_lighting {
+            facility_palette(&state).fog_color
+        } else {
+            style::architecture(state.register()).fog_color
+        };
         commands.entity(cam_entity).insert(DistanceFog {
-            color: palette.fog_color,
-            falloff: FogFalloff::Linear {
-                start: 60.0,
-                end: 170.0,
-            },
+            color,
+            falloff: FogFalloff::Linear { start, end },
             ..default()
         });
-    } else if !lit && has_fog {
+    } else if has_fog {
         commands.entity(cam_entity).remove::<DistanceFog>();
     }
 
     if let Ok(mut lamp) = headlamps.single_mut() {
+        // The facility ships **no headlamp**, and deliberately: the rig's own
+        // note says a flat player-locked fill "washed out the very shadows this
+        // rig exists to cast". The lab keeps one as a Lit-mode safety light, and
+        // it is the single biggest reason a lab capture reads flatter than the
+        // game - so facility lighting turns it off rather than dimming it.
         lamp.intensity = match state.render_mode {
+            RenderMode::Lit if state.facility_lighting => 0.0,
             RenderMode::Lit | RenderMode::Clay => 90_000.0,
             RenderMode::Xray | RenderMode::Colliders => 0.0,
         };
+    }
+
+    // The district key: a shadow-casting spot over the body, which is what
+    // gives each register its directional read. Nothing in the lab had one.
+    let want_key = lit && state.facility_lighting;
+    match (want_key, key.single_mut()) {
+        (true, Ok((mut light, mut transform))) => {
+            let palette = facility_palette(&state);
+            let origin = Vec3::new(state.body.position.x, 0.0, state.body.position.z);
+            *transform = Transform::from_translation(origin + Vec3::new(2.6, 6.4, 2.6))
+                .looking_at(origin + Vec3::new(-1.0, 0.2, -1.0), Vec3::Y);
+            light.color = palette.key_color;
+            light.intensity = palette.key_intensity * style::HEX_KEY_INTENSITY_SCALE;
+            light.range = palette.key_range;
+            light.radius = palette.key_radius;
+            light.inner_angle = palette.key_inner_angle;
+            light.outer_angle = palette.key_outer_angle;
+            light.shadow_maps_enabled = palette.key_shadows_enabled;
+        }
+        (true, Err(_)) => {
+            let palette = facility_palette(&state);
+            let origin = Vec3::new(state.body.position.x, 0.0, state.body.position.z);
+            commands.spawn((
+                FacilityKeyLight,
+                SpotLight {
+                    color: palette.key_color,
+                    intensity: palette.key_intensity * style::HEX_KEY_INTENSITY_SCALE,
+                    range: palette.key_range,
+                    radius: palette.key_radius,
+                    inner_angle: palette.key_inner_angle,
+                    outer_angle: palette.key_outer_angle,
+                    shadow_maps_enabled: palette.key_shadows_enabled,
+                    ..default()
+                },
+                Transform::from_translation(origin + Vec3::new(2.6, 6.4, 2.6))
+                    .looking_at(origin + Vec3::new(-1.0, 0.2, -1.0), Vec3::Y),
+                Name::new("facility key light"),
+            ));
+        }
+        (false, Ok((mut light, _))) => light.intensity = 0.0,
+        (false, Err(_)) => {}
     }
 }
 
@@ -1443,6 +1560,19 @@ fn rebuild_visuals(
     // the shipped game, but in the lab geometry legibility wins: Lit clamps
     // ambient up to a floor; the study modes use bright neutral ambient.
     match mode {
+        RenderMode::Lit if state.facility_lighting => {
+            // No floor, no lift, no clamp: the shipped rig's own numbers, so a
+            // capture answers "how does this read in the game" rather than "how
+            // does this read in the lab". The two are different questions and
+            // the lab's fill exists for the other one.
+            let palette = facility_palette(&state);
+            commands.insert_resource(GlobalAmbientLight {
+                color: palette.ambient_color,
+                brightness: palette.ambient_brightness,
+                ..default()
+            });
+            commands.insert_resource(ClearColor(palette.fog_color));
+        }
         RenderMode::Lit => {
             // Cutaway views are inspection views: open roofs read as caves
             // without a stronger fill, so the ambient floor rises with it.
