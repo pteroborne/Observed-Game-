@@ -112,5 +112,7 @@
  ],
  "radius": 95.0,
  "height": 0.0,
- "output_image": "docs/evidence/compositions/japan_iso.png"
+ "output_image": "docs/evidence/compositions/japan_iso.png",
+ "section": "plan",
+ "section_axis": 34.0
 }

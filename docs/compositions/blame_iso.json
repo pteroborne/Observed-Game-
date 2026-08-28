@@ -607,7 +607,9 @@
   96.0,
   144.0
  ],
- "radius": 260.0,
+ "radius": 190.0,
  "height": 0.0,
- "output_image": "docs/evidence/compositions/blame_iso.png"
+ "output_image": "docs/evidence/compositions/blame_iso.png",
+ "section": "half",
+ "section_axis": 34.0
 }

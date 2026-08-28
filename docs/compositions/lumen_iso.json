@@ -54,7 +54,9 @@
   4.0,
   144.0
  ],
- "radius": 57.2,
+ "radius": 50.0,
  "height": 0.0,
- "output_image": "docs/evidence/compositions/lumen_iso.png"
+ "output_image": "docs/evidence/compositions/lumen_iso.png",
+ "section": "plan",
+ "section_axis": 34.0
 }

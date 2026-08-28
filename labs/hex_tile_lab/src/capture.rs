@@ -53,7 +53,7 @@ pub fn capture_progress(
         // interior is actually visible in the still.
         state.overlay = false;
         state.view_mode = crate::ViewMode::Orbit;
-        state.cross_section = true;
+        state.section = crate::SectionCut::Plan;
         state.orbit_yaw = 0.8;
         state.orbit_pitch = 0.9;
         state.switch(0);

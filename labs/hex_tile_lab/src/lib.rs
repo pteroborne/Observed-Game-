@@ -110,6 +110,66 @@ impl RenderMode {
     }
 }
 
+/// How much of a composition a section view takes away.
+///
+/// Named after what a drawing of each is called, because that is what they
+/// are: `Plan` is the roof lifted off, `Half` is a cut on a vertical plane,
+/// `Quarter` is the dollhouse that keeps two elevations standing so the
+/// composition still reads as a solid.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SectionCut {
+    /// Sealed. What a body inside actually sees.
+    #[default]
+    None,
+    /// Roof off. Every wall stands and nothing is above you.
+    Plan,
+    /// Roof off, one quadrant of walls gone. Two elevations stay standing, so
+    /// the composition still reads as a solid while you see inside it.
+    Quarter,
+    /// Roof off, the near half of the walls gone. Storeys stack and you see
+    /// into all of them at once - the only view that shows a shaft as a shaft.
+    Half,
+}
+
+impl SectionCut {
+    pub const ALL: [Self; 4] = [Self::None, Self::Plan, Self::Quarter, Self::Half];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::None => "Sealed",
+            Self::Plan => "Plan (no roof)",
+            Self::Quarter => "Quarter (dollhouse)",
+            Self::Half => "Half (section)",
+        }
+    }
+
+    /// True for anything that opens the composition up. Inspection lighting
+    /// and the HUD both key off this rather than off a particular cut.
+    pub fn is_open(self) -> bool {
+        self != Self::None
+    }
+
+    pub fn next(self) -> Self {
+        match self {
+            Self::None => Self::Plan,
+            Self::Plan => Self::Quarter,
+            Self::Quarter => Self::Half,
+            Self::Half => Self::None,
+        }
+    }
+
+    /// Parse a view script's `section` field.
+    pub fn parse(name: &str) -> Option<Self> {
+        match name.to_lowercase().as_str() {
+            "none" | "sealed" | "off" => Some(Self::None),
+            "plan" | "no_ceiling" | "noceiling" => Some(Self::Plan),
+            "quarter" | "dollhouse" => Some(Self::Quarter),
+            "half" | "section" => Some(Self::Half),
+            _ => None,
+        }
+    }
+}
+
 /// Room blueprint roles shown in the BROWSE list.
 const ROOM_ROLES: [RoomRole; 7] = [
     RoomRole::DecoherenceFork,
@@ -419,7 +479,10 @@ pub struct LabState {
     pub register_index: usize,
     pub view_mode: ViewMode,
     pub render_mode: RenderMode,
-    pub cross_section: bool,
+    pub section: SectionCut,
+    /// Which way the cut opens, in radians about Y. The default opens the
+    /// quadrant the orbit camera starts in.
+    pub section_axis: f32,
     pub volumetrics: bool,
     pub bloom: bool,
     pub overlay: bool,
@@ -630,7 +693,8 @@ impl LabState {
             register_index,
             view_mode: ViewMode::FirstPerson,
             render_mode: RenderMode::default(),
-            cross_section: false,
+            section: SectionCut::default(),
+            section_axis: std::f32::consts::FRAC_PI_4,
             volumetrics: false,
             bloom: true,
             overlay: true,
@@ -1148,7 +1212,7 @@ fn handle_input(
         state.view_mode = state.view_mode.next();
     }
     if keyboard.just_pressed(KeyCode::KeyX) {
-        state.cross_section = !state.cross_section;
+        state.section = state.section.next();
         state.dirty = true;
     }
     if keyboard.just_pressed(KeyCode::KeyO) {
@@ -1302,7 +1366,7 @@ fn handle_menu_navigation(
                     state.dirty = true;
                 }
                 4 => {
-                    state.cross_section = !state.cross_section;
+                    state.section = state.section.next();
                     state.dirty = true;
                 }
                 5 => state.volumetrics = !state.volumetrics,
@@ -1586,9 +1650,61 @@ fn is_ceiling(hull: &[Vec3], top_y: f32) -> bool {
     hull.iter().all(|point| point.y >= top_y - 1.5)
 }
 
-fn is_cutaway_wall(hull: &[Vec3], center: Vec3) -> bool {
-    hull.iter()
-        .any(|p| p.z > center.z + 1.5 || p.x > center.x + 3.0)
+/// A hull tall enough to be a wall shell rather than a slab, in metres.
+const WALL_SHELL_MIN: f32 = 4.0;
+/// How far past the cut plane a hull's middle must sit before it is removed.
+/// A slab centred on the plane straddles it and stays.
+const SECTION_EPS: f32 = 1.5;
+
+/// Whether a section view removes this hull.
+///
+/// One rule for every composition. There used to be four: a single tile
+/// dropped ceilings, a room dropped ceilings and any wall past the centre, the
+/// silo dropped tall shells on its south side, and a layout — the composition
+/// that actually stacks — dropped ceilings only. That is why a four-storey
+/// shaft photographed as a closed box: the one view that needed a wall opened
+/// was the one view that never opened one.
+///
+/// Only wall shells are cut. Floors and landings stay in every mode, because
+/// a section that removed the slabs would remove the thing it exists to show.
+fn section_hides(
+    hull: &[Vec3],
+    top_y: f32,
+    transform: &Transform,
+    center: Vec3,
+    cut: SectionCut,
+    axis: f32,
+) -> bool {
+    if cut == SectionCut::None {
+        return false;
+    }
+    if is_ceiling(hull, top_y) {
+        return true;
+    }
+    if cut == SectionCut::Plan {
+        return false;
+    }
+    let (min_y, max_y) = hull.iter().fold((f32::MAX, f32::MIN), |(lo, hi), p| {
+        (lo.min(p.y), hi.max(p.y))
+    });
+    if max_y - min_y < WALL_SHELL_MIN {
+        return false;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let mid = hull
+        .iter()
+        .map(|p| transform.transform_point(*p))
+        .sum::<Vec3>()
+        / hull.len() as f32;
+    let delta = mid - center;
+    let (sin, cos) = axis.sin_cos();
+    let toward = delta.x * cos + delta.z * sin;
+    let across = delta.z * cos - delta.x * sin;
+    match cut {
+        SectionCut::Half => toward > SECTION_EPS,
+        SectionCut::Quarter => toward > SECTION_EPS && across > SECTION_EPS,
+        SectionCut::None | SectionCut::Plan => false,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1671,7 +1787,11 @@ fn rebuild_visuals(
         RenderMode::Lit => {
             // Cutaway views are inspection views: open roofs read as caves
             // without a stronger fill, so the ambient floor rises with it.
-            let floor = if state.cross_section { 340.0 } else { 200.0 };
+            let floor = if state.section.is_open() {
+                340.0
+            } else {
+                200.0
+            };
             commands.insert_resource(GlobalAmbientLight {
                 color: palette.ambient_color,
                 brightness: palette.ambient_brightness.max(floor),
@@ -1840,7 +1960,9 @@ fn rebuild_visuals(
     };
 
     let composition = state.composition().clone();
-    let cross_section = state.cross_section;
+    let section = state.section;
+    let section_axis = state.section_axis;
+    let cross_section = section.is_open();
     let center = state.center;
 
     // Authored practical positions accumulate with the exact geometry
@@ -1882,7 +2004,14 @@ fn rebuild_visuals(
                     pool_origins.extend(tile.lights.iter().map(|light| light.position));
                 }
                 for hull in &tile.hulls {
-                    if cross_section && is_ceiling(hull, top_y) {
+                    if section_hides(
+                        hull,
+                        top_y,
+                        &Transform::IDENTITY,
+                        Vec3::ZERO,
+                        section,
+                        section_axis,
+                    ) {
                         continue;
                     }
                     spawn_hull_entity(
@@ -1917,9 +2046,14 @@ fn rebuild_visuals(
                             .extend(tile.lights.iter().map(|light| origin + light.position));
                     }
                     for hull in &tile.hulls {
-                        if cross_section
-                            && (is_ceiling(hull, top_y) || is_cutaway_wall(hull, center - origin))
-                        {
+                        if section_hides(
+                            hull,
+                            top_y,
+                            &Transform::from_translation(origin),
+                            center,
+                            section,
+                            section_axis,
+                        ) {
                             continue;
                         }
                         spawn_hull_entity(
@@ -1945,7 +2079,7 @@ fn rebuild_visuals(
                         .map(|light| origin + rotation * light.position),
                 );
                 for hull in &tile.hulls {
-                    if cross_section && is_ceiling(hull, top_y) {
+                    if section_hides(hull, top_y, &transform, center, section, section_axis) {
                         continue;
                     }
                     spawn_hull_entity(
@@ -1969,10 +2103,7 @@ fn rebuild_visuals(
                         .map(|light| origin + rotation * light.position),
                 );
                 for hull in &tile.hulls {
-                    // Section from above: drop ceilings so a run reads as a
-                    // plan, and keep every wall, because the walls are what a
-                    // run is being looked at for.
-                    if cross_section && is_ceiling(hull, top_y) {
+                    if section_hides(hull, top_y, &transform, center, section, section_axis) {
                         continue;
                     }
                     spawn_hull_entity(
@@ -1996,17 +2127,13 @@ fn rebuild_visuals(
                         .map(|light| origin + rotation * light.position),
                 );
                 for hull in &tile.hulls {
-                    // Dollhouse section: drop only tall wall shells on the
-                    // south (camera-default) side. Ramps, landings, and the
-                    // core stay, so the helix stays readable.
-                    if cross_section && tile.key.archetype != "silo_core" {
-                        let min_y = hull.iter().map(|p| p.y).fold(f32::MAX, f32::min);
-                        let max_y = hull.iter().map(|p| p.y).fold(f32::MIN, f32::max);
-                        let is_wall_shell = max_y - min_y > 4.0;
-                        let south_side = hull.iter().any(|p| (origin + rotation * *p).z > 2.0);
-                        if is_wall_shell && south_side {
-                            continue;
-                        }
+                    // The core is the subject of this composition, so it is
+                    // never cut; everything round it obeys the same rule as
+                    // every other composition.
+                    if tile.key.archetype != "silo_core"
+                        && section_hides(hull, top_y, &transform, center, section, section_axis)
+                    {
+                        continue;
                     }
                     spawn_hull_entity(
                         &mut commands,
@@ -2181,7 +2308,11 @@ fn update_status(
         state.register_index + 1,
         ArchitectureRegister::ALL.len(),
         register.slug(),
-        if state.cross_section { "CUTAWAY  " } else { "" },
+        if state.section.is_open() {
+            state.section.label()
+        } else {
+            ""
+        },
         if state.auto_orbit { "AUTO-ORBIT" } else { "" },
         state.last_reload,
         position,
@@ -2261,10 +2392,7 @@ fn update_menu_ui(
                 .iter()
                 .map(|m| format!("Mode: {}", m.label()))
                 .collect();
-            items.push(format!(
-                "Cutaway cross-section: {}",
-                if state.cross_section { "ON" } else { "OFF" }
-            ));
+            items.push(format!("Section: {}", state.section.label()));
             items.push(format!(
                 "Volumetric fog (Lit): {}",
                 if state.volumetrics { "ON" } else { "OFF" }

@@ -236,7 +236,9 @@
   64.0,
   144.0
  ],
- "radius": 231.2,
+ "radius": 150.0,
  "height": 0.0,
- "output_image": "docs/evidence/compositions/silo_iso.png"
+ "output_image": "docs/evidence/compositions/silo_iso.png",
+ "section": "half",
+ "section_axis": 34.0
 }

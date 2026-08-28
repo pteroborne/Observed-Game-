@@ -411,7 +411,9 @@
   12.0,
   144.0
  ],
- "radius": 93.6,
+ "radius": 84.0,
  "height": 0.0,
- "output_image": "docs/evidence/compositions/babel_iso.png"
+ "output_image": "docs/evidence/compositions/babel_iso.png",
+ "section": "half",
+ "section_axis": 34.0
 }

@@ -131,7 +131,9 @@
   4.0,
   144.0
  ],
- "radius": 174.8,
+ "radius": 165.0,
  "height": 0.0,
- "output_image": "docs/evidence/compositions/halo_iso.png"
+ "output_image": "docs/evidence/compositions/halo_iso.png",
+ "section": "plan",
+ "section_axis": 34.0
 }

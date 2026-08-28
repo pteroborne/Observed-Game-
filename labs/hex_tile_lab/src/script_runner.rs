@@ -10,7 +10,7 @@ use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use observed_content::ArchitectureRegister;
 use serde::Deserialize;
 
-use crate::{Composition, LabState, RenderMode, ViewMode};
+use crate::{Composition, LabState, RenderMode, SectionCut, ViewMode};
 
 /// JSON view script: composition/tile selection, camera framing, render mode.
 ///
@@ -35,6 +35,16 @@ pub struct ViewScript {
     pub height: Option<f32>,
     pub strong_wireframe: Option<bool>,
     pub dev_mode: Option<bool>,
+    /// `"none"`, `"plan"`, `"quarter"` or `"half"`.
+    ///
+    /// A section is the only way to photograph something that stacks: sealed,
+    /// a shaft is a closed box, and roof-off alone still leaves six walls
+    /// round it. Takes precedence over the older `cross_section` flag, which
+    /// is kept because existing scripts use it and means `"plan"`.
+    pub section: Option<String>,
+    /// Which way the cut opens, in degrees about Y. Defaults to 45, the
+    /// quadrant the orbit camera starts in.
+    pub section_axis: Option<f32>,
     pub cross_section: Option<bool>,
     pub volumetrics: Option<bool>,
     pub hide_menu: Option<bool>,
@@ -286,7 +296,21 @@ pub fn run_script_system(
             state.height = h;
         }
         if let Some(cross) = script.cross_section {
-            state.cross_section = cross;
+            state.section = if cross {
+                SectionCut::Plan
+            } else {
+                SectionCut::None
+            };
+        }
+        if let Some(ref name) = script.section {
+            if let Some(cut) = SectionCut::parse(name) {
+                state.section = cut;
+            } else {
+                eprintln!("unknown section {name:?}; expected none, plan, quarter or half");
+            }
+        }
+        if let Some(degrees) = script.section_axis {
+            state.section_axis = degrees.to_radians();
         }
         if let Some(vol) = script.volumetrics {
             state.volumetrics = vol;
