@@ -938,12 +938,133 @@ pub fn hall_junction_3way_thinning() -> String {
     )
 }
 
+/// How low a dropped soffit may hang, in editor units.
+///
+/// 56 is 3.5 m, against the 7.5 m every other cell in the corpus has. The floor
+/// is `validate_floor_and_headroom`: a body needs 2.2 m and this leaves 3.0 m,
+/// so it is compressed and not a crawl.
+///
+/// It sits **below** `DOOR_TOP`, which is the point. A 4.5 m doorway under a
+/// 3.5 m ceiling is a wrong proportion, and wrongness is the whole feeling this
+/// exists to produce - a place built to a plan that no longer matches what is
+/// standing in it.
+const SOFFIT_UNDERSIDE: f64 = 56.0;
+
+/// How far from each door the soffit stops.
+///
+/// Not decoration. The aperture is a frozen contract and the soffit hangs below
+/// `DOOR_TOP`, so a soffit run to the face plane would put mass across the top
+/// of a doorway and break every neighbour that meets it. Stopping at 60 leaves
+/// three metres of full-height reveal at each end, and a body walks from tall,
+/// through low, back to tall - which reads far more strongly than a uniformly
+/// low cell would.
+const SOFFIT_HALF_RUN: f64 = 60.0;
+
+/// A corridor with a dropped soffit: the first cell in the corpus that is not
+/// 7.5 m tall.
+///
+/// # The gap this is aimed at
+///
+/// Ten districts, and every hall tile in all of them - generated and authored -
+/// puts its ceiling at `LEVEL - FLOOR_TOP`. Ten call sites, one value. What a
+/// district varies today is skirting height, column cross-section, how many
+/// columns, whether the ceiling carries ribs, and hue. The **envelope** is a
+/// constant: the same 14 m hexagon, 7.5 m to the ceiling, a 4.5 m doorway.
+///
+/// So a district cannot currently read as a *kind of space*. "Somewhere
+/// endless and too low" and "somewhere vertical and vast" are differences in
+/// section, and the corpus has no way to say either. This is the first tile
+/// that uses the one dimension the seam contract leaves free.
+///
+/// # Why the ceiling is free and the rest is not
+///
+/// The aperture is fixed at `FLOOR_TOP..DOOR_TOP`, 8 to 72, and the ceiling
+/// sits at 120 - forty-eight units of headroom above the tallest thing any
+/// neighbour can see through. Nothing outside the cell can observe where the
+/// ceiling is. Floor height, doorway and footprint are all load-bearing across
+/// seams; ceiling height alone is a district's to spend.
+///
+/// Scoped to Infinite Gallery, whose stated vocabulary is "a gallery is a
+/// rhythm: the most supports, the slimmest, repeating". A rhythm needs
+/// something to beat against, and a low lid is what turns a run of pilasters
+/// into a corridor you are travelling *along* rather than a room you are
+/// standing in.
+#[must_use]
+pub fn hall_straight_soffit() -> String {
+    let mut brushes = hall_shell(&[0, 3]);
+    brushes.push_str("// Dropped soffit: 3.5 m over the middle, full reveal at both doors\n");
+    brushes.push_str(&prism(
+        &[
+            (-SOFFIT_HALF_RUN, -DOOR_HALF_WIDTH),
+            (SOFFIT_HALF_RUN, -DOOR_HALF_WIDTH),
+            (SOFFIT_HALF_RUN, DOOR_HALF_WIDTH),
+            (-SOFFIT_HALF_RUN, DOOR_HALF_WIDTH),
+        ],
+        SOFFIT_UNDERSIDE,
+        LEVEL - FLOOR_TOP,
+        None,
+        0.0,
+        4.0,
+    ));
+
+    brushes.push_str("// The rhythm the soffit beats against: slim pilasters, both walls\n");
+    for step in 0..4 {
+        #[allow(clippy::cast_precision_loss)]
+        let x = -66.0 + f64::from(step) * 44.0;
+        for side in [-1.0, 1.0] {
+            let (near, far) = (DOOR_HALF_WIDTH * side, (DOOR_HALF_WIDTH - 7.0) * side);
+            let plan: Vec<P2> = if side > 0.0 {
+                vec![
+                    (x - 5.0, far),
+                    (x + 5.0, far),
+                    (x + 5.0, near),
+                    (x - 5.0, near),
+                ]
+            } else {
+                vec![
+                    (x - 5.0, near),
+                    (x + 5.0, near),
+                    (x + 5.0, far),
+                    (x - 5.0, far),
+                ]
+            };
+            brushes.push_str(&prism(&plan, FLOOR_TOP, SOFFIT_UNDERSIDE, None, 2.0, 0.0));
+        }
+    }
+
+    let mut lights = String::new();
+    // Under the soffit, not above it: a low lid you can see the fittings on is
+    // lower than one you cannot.
+    for x in [-30.0, 30.0] {
+        let (fixture, source) = ceiling_fixture(x, 0.0, SOFFIT_UNDERSIDE, 12.0, 7.0);
+        brushes.push_str(&fixture);
+        lights.push_str(&source);
+    }
+
+    let mut out = String::from(
+        "// Straight hall, Infinite Gallery: a dropped soffit and a rhythm of pilasters.\n",
+    );
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell("authored/hall_straight_soffit", "hall_straight", 3, 1, 9)
+            .with_register_scope("infinite_gallery")
+            .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    out.push_str(&lateral_port(0, "door", "east_port", 0, 0, 0));
+    out.push_str(&lateral_port(3, "door", "west_port", 0, 0, 0));
+    out.push_str(&lights);
+    out
+}
+
 #[must_use]
 pub fn builders() -> Vec<Builder> {
     vec![
         ("hall_straight", hall_straight as fn() -> String),
         ("hall_straight_buttressed", hall_straight_buttressed),
         ("hall_straight_datum", hall_straight_datum),
+        ("hall_straight_soffit", hall_straight_soffit),
         ("hall_cap", hall_cap),
         ("hall_turn_60", hall_turn_60),
         ("hall_turn_60_buttressed", hall_turn_60_buttressed),
