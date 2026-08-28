@@ -1,0 +1,92 @@
+{
+ "layout": [
+  {
+   "tile": "hall_straight_threshold",
+   "q": 12,
+   "r": 12,
+   "level": 0,
+   "turn": 0,
+   "register": "liminal_grid"
+  },
+  {
+   "tile": "hall_bore",
+   "q": 13,
+   "r": 12,
+   "level": 0,
+   "turn": 0,
+   "register": "monolith"
+  },
+  {
+   "tile": "hall_squint",
+   "q": 14,
+   "r": 12,
+   "level": 0,
+   "turn": 0,
+   "register": "shadow_screen"
+  },
+  {
+   "tile": "hall_straight",
+   "q": 15,
+   "r": 12,
+   "level": 0,
+   "turn": 0,
+   "register": "overlit_grid"
+  },
+  {
+   "tile": "hall_transom",
+   "q": 16,
+   "r": 12,
+   "level": 0,
+   "turn": 0,
+   "register": "wellshaft"
+  },
+  {
+   "tile": "hall_reliquary",
+   "q": 17,
+   "r": 12,
+   "level": 0,
+   "turn": 0,
+   "register": "infinite_gallery"
+  },
+  {
+   "tile": "hall_step_platform",
+   "q": 18,
+   "r": 12,
+   "level": 0,
+   "turn": 0,
+   "register": "thinning"
+  },
+  {
+   "tile": "hall_straight",
+   "q": 19,
+   "r": 12,
+   "level": 0,
+   "turn": 0,
+   "register": "facet_monument"
+  },
+  {
+   "tile": "hall_dais",
+   "q": 20,
+   "r": 12,
+   "level": 0,
+   "turn": 3,
+   "register": "facet_monument"
+  }
+ ],
+ "register": 4,
+ "hide_menu": true,
+ "view_mode": "first_person",
+ "render_mode": "lit",
+ "facility_lighting": true,
+ "camera_pos": [
+  246.0,
+  2.1,
+  144.0
+ ],
+ "camera_target": [
+  364.0,
+  2.4,
+  144.0
+ ],
+ "output_image": "docs/evidence/multi/enfilade_eye.png"
+}

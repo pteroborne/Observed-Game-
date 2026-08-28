@@ -94,6 +94,10 @@ pub struct LayoutEntry {
     pub level: u8,
     #[serde(default)]
     pub turn: u8,
+    /// Register slug for this one cell, e.g. `"monolith"`. Defaults to the
+    /// script's own register.
+    #[serde(default)]
+    pub register: Option<String>,
 }
 
 /// Parse one `"archetype"` or `"archetype:variant"` run entry.
@@ -226,6 +230,7 @@ pub fn run_script_system(
                             level: entry.level,
                         },
                         turn: entry.turn,
+                        register: entry.register.clone(),
                     }
                 })
                 .collect();

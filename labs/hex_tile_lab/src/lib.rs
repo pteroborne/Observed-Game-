@@ -225,6 +225,13 @@ pub struct LayoutCell {
     pub coord: HexCoord,
     /// Sixths of a turn, applied the same way a run's mating rotation is.
     pub turn: u8,
+    /// The register this one cell resolves in, overriding the composition's.
+    ///
+    /// Every other view in this lab is one district at a time, which is right
+    /// for reading a tile and wrong for the only question a *facility* poses:
+    /// what does the boundary between two districts look like from inside. A
+    /// composition that cannot cross a register cannot ask it.
+    pub register: Option<String>,
 }
 
 /// Levels of the silo wellshaft showcase composition.
@@ -256,7 +263,8 @@ fn layout_placements(
     cells
         .iter()
         .filter_map(|cell| {
-            let tile = resolve_tile(tiles, &cell.archetype, cell.variant, register).cloned()?;
+            let scope = cell.register.as_deref().unwrap_or(register);
+            let tile = resolve_tile(tiles, &cell.archetype, cell.variant, scope).cloned()?;
             #[allow(clippy::cast_precision_loss)]
             let rotation =
                 Quat::from_rotation_y(-f32::from(cell.turn % 6) * std::f32::consts::TAU / 6.0);
@@ -764,8 +772,15 @@ impl LabState {
             Composition::Run { steps } => steps.first().is_some_and(|(archetype, variant)| {
                 resolve_tile(&self.tiles, archetype, *variant, register).is_some()
             }),
+            // A layout's first cell may name its own register, and a
+            // cross-district composition's first cell usually does. Asking
+            // whether it resolves in the *composition's* register is asking
+            // the wrong question, and answering it wrongly is silent: `switch`
+            // quietly falls back to another composition and the capture comes
+            // out empty with nothing logged.
             Composition::Layout { cells } => cells.first().is_some_and(|cell| {
-                resolve_tile(&self.tiles, &cell.archetype, cell.variant, register).is_some()
+                let scope = cell.register.as_deref().unwrap_or(register);
+                resolve_tile(&self.tiles, &cell.archetype, cell.variant, scope).is_some()
             }),
         }
     }
