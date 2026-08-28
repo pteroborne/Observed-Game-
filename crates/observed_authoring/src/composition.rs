@@ -512,6 +512,21 @@ mod tests {
         // reordered, so all 66 committed towers reproduce exactly and the diff
         // is 105 new files and nothing else.
         //
+        // Moved by the same restroom in all ten registers. Everything that
+        // says *restroom* is fixed and identical across the set - four stalls
+        // at the same pitch on the same wall, a counter, a splashback, three
+        // bare pads, one door narrowed inboard. Only the way each district
+        // builds those things varies, and holding the sentence still is what
+        // turns the register vocabulary from ten moods into ten dialects.
+        //
+        // Each one is an argument. Monolith will not make a gap under
+        // anything, so its stalls are piers. The Noon runs a soffit over the
+        // row and removes the mirrors - the district that erased every landmark
+        // was not going to leave the one fitting whose purpose is letting you
+        // check you are still there. The Well, whose whole design is sightlines
+        // between people, has no partitions at all: it did not solve privacy,
+        // it abolished it.
+        //
         // Moved by the first program tile, and by the module it opens.
         // `forge::program` is for the mundane fittings a facility is emptied
         // *of* - a liminal space is a lived-in space missing its living, and
@@ -610,14 +625,14 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "839d95f999049e68b5c9f3a5d604340a86a99eff1321431497fd4fe3b52eedd2";
+            "c9e60ed60d3c2a92d972890df4cadb5c8db007f4abb7ae3a8215615881eefcfb";
         const PROFILE_HASH: &str =
             "5c1bc69db058d4e3332e755326548f887d46f215d81fdeb454591cd9c2c0104e";
         // Folds the catalog and the profile. Both sides moved this time, which
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "c86a8c04881d3642fa6faf9cd8da936bc49d73599a8c3a5a046e53d0aff50a22";
+            "345bdb3195152ec0f5fa2a237179fa148c8755a9ca63f058bc36ae1654de9071";
 
         let root = committed_tiles();
         let compiled_text =
@@ -630,7 +645,7 @@ mod tests {
             .filter(|module| module.archetype == "stair_tower")
             .collect::<Vec<_>>();
         assert_eq!(compiled.simulation_content_hash, CATALOG_HASH);
-        assert_eq!(compiled.modules.len(), 257, "committed strict source count");
+        assert_eq!(compiled.modules.len(), 266, "committed strict source count");
         // 1 doorless + every one-to-four-door pattern, in three vertical
         // connectivities: (1 + 6 + 15 + 20 + 15) * 3. Was 66, when the family
         // stopped at two doors and there was no branching landing.
