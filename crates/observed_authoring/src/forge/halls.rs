@@ -5,11 +5,12 @@
 //! unchanged - these regenerate the committed files rather than replacing them.
 
 use super::entities::{
-    Meta, PORT_SHORT, ceiling_fixture, lateral_port, tile_cell_default, worldspawn,
+    Meta, PORT_SHORT, ceiling_fixture, lateral_port, tile_cell, tile_cell_default, wall_fixture,
+    worldspawn,
 };
 use super::geometry::{
-    DOOR_HALF_WIDTH, FACE_NAMES, FLOOR_TOP, LEVEL, P2, WALL, band, centroid, edge, face_mid,
-    hex_slab, prism, pylon,
+    DOOR_HALF_WIDTH, DOOR_TOP, FACE_NAMES, FLOOR_TOP, LEVEL, P2, WALL, band, centroid, corners,
+    door_wall, edge, face_mid, hex_slab, prism, pylon, wall,
 };
 use super::{Builder, GENERATED_NOTE};
 
@@ -1058,6 +1059,140 @@ pub fn hall_straight_soffit() -> String {
     out
 }
 
+/// How far in from the rim a gallery's walkway reaches.
+///
+/// The annulus between the wall and this radius is floor; inside it is a hole.
+/// 66 units is 4.1 m of walk against a 7 m apothem - wide enough to pass on,
+/// narrow enough that the void is the subject.
+const GALLERY_INNER: f64 = 66.0;
+
+/// A gallery: a walkway round an open middle, with no ceiling over the void.
+///
+/// # What composing by hand revealed
+///
+/// Stacking four storeys of `expanse` by hand produced four separate plates.
+/// Every cell in the corpus carries a floor slab *and* a ceiling slab, so a
+/// stack of them is layered, not continuous - you cannot see up through it, and
+/// a vertical space you cannot see through is just several rooms.
+///
+/// A silo, a Babel gallery and a BLAME! shaft are all the same claim: **one
+/// volume that several storeys look into**. That needs a cell whose floor is a
+/// ring and whose middle is absent, top and bottom. This is the first one.
+///
+/// # The seam is untouched, which is what makes it composable
+///
+/// Doors sit on the walkway at exactly the authored aperture, so a gallery
+/// mates with an ordinary hall on the usual terms and a body walks in at floor
+/// level. Only the *middle* of the cell is missing, and the middle is not
+/// something a neighbour can see.
+///
+/// The footprint declares `floor="open"` for the reason `silo_ring` does: the
+/// walkable surface is a ring rather than a slab under the cell origin, and the
+/// floor probe would otherwise look straight down the hole and call the cell
+/// bottomless.
+///
+/// A parapet stands at the lip. It is not decoration - without it the first
+/// thing that happens on a gallery is a body walking off the inside edge.
+#[must_use]
+fn hall_gallery(name: &str, register: &str, variant: i32, doors: &[usize]) -> String {
+    let hex: Vec<P2> = corners().to_vec();
+    let inner: Vec<P2> = (0..6)
+        .map(|index| {
+            #[allow(clippy::cast_precision_loss)]
+            let angle = (30.0 + f64::from(index) * 60.0).to_radians();
+            (GALLERY_INNER * angle.cos(), GALLERY_INNER * angle.sin())
+        })
+        .collect();
+
+    let mut brushes = String::from("// Walkway ring: floor everywhere but the middle\n");
+    for index in 0..6 {
+        let (a, b) = (hex[index], hex[(index + 1) % 6]);
+        let (c, d) = (inner[(index + 1) % 6], inner[index]);
+        brushes.push_str(&prism(&[a, b, c, d], 0.0, FLOOR_TOP, None, 2.0, 0.0));
+    }
+    brushes.push_str("// Parapet at the lip - the reason a body stays on the walkway\n");
+    for index in 0..6 {
+        let (a, b) = (inner[index], inner[(index + 1) % 6]);
+        let shrink = |p: P2| (p.0 * 0.90, p.1 * 0.90);
+        brushes.push_str(&prism(
+            &[a, b, shrink(b), shrink(a)],
+            FLOOR_TOP,
+            FLOOR_TOP + 20.0,
+            None,
+            2.0,
+            0.0,
+        ));
+    }
+    brushes.push_str("// Envelope: doors where the gallery is entered, wall elsewhere\n");
+    for face in 0..6 {
+        if doors.contains(&face) {
+            brushes.push_str(&door_wall(face, 0.0, LEVEL, FLOOR_TOP, DOOR_TOP, 10.0, 8.0));
+        } else {
+            brushes.push_str(&wall(face, 0.0, LEVEL));
+        }
+    }
+
+    let mut lights = String::new();
+    for (face, along, z) in [(1usize, 0.5, 96.0), (4, 0.5, 96.0)] {
+        let (fixture, source) = wall_fixture(face, along, z, 18.0);
+        brushes.push_str(&fixture);
+        lights.push_str(&source);
+    }
+
+    let mut out = String::from(
+        "// Gallery: a walkway round an open middle, so a stack of them is one volume.\n",
+    );
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell(&format!("authored/{name}"), "hall_gallery", variant, 1, 8)
+            .with_register_scope(register)
+            .emit(),
+    );
+    out.push_str(&tile_cell(0, 0, 0, 1, "open"));
+    for &face in doors {
+        let short = if face == 0 || face == 3 {
+            FACE_NAMES[face]
+        } else {
+            PORT_SHORT[face]
+        };
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{short}_port"),
+            0,
+            0,
+            0,
+        ));
+    }
+    out.push_str(&lights);
+    out
+}
+
+/// The Megastructure gallery: two opposed doors, so a run of them rings a shaft.
+#[must_use]
+pub fn hall_gallery_megastructure() -> String {
+    hall_gallery("hall_gallery_megastructure", "megastructure", 0, &[0, 3])
+}
+
+/// The Wellshaft gallery: the same walkway, in the register that is *about* a
+/// well. Two doors, because a silo is entered on one side and left on the other.
+#[must_use]
+pub fn hall_gallery_wellshaft() -> String {
+    hall_gallery("hall_gallery_wellshaft", "wellshaft", 0, &[0, 3])
+}
+
+/// The Infinite Gallery gallery: doors on every other face.
+///
+/// Babel's cell is not a corridor with a hole in it - it is a landing that
+/// every neighbouring landing can be reached from, and the identical landing
+/// above and below. Three doors is what makes a storey read as a *floor of the
+/// library* rather than a link in a route.
+#[must_use]
+pub fn hall_gallery_infinite() -> String {
+    hall_gallery("hall_gallery_infinite", "infinite_gallery", 0, &[0, 2, 4])
+}
+
 #[must_use]
 pub fn builders() -> Vec<Builder> {
     vec![
@@ -1065,6 +1200,9 @@ pub fn builders() -> Vec<Builder> {
         ("hall_straight_buttressed", hall_straight_buttressed),
         ("hall_straight_datum", hall_straight_datum),
         ("hall_straight_soffit", hall_straight_soffit),
+        ("hall_gallery_megastructure", hall_gallery_megastructure),
+        ("hall_gallery_wellshaft", hall_gallery_wellshaft),
+        ("hall_gallery_infinite", hall_gallery_infinite),
         ("hall_cap", hall_cap),
         ("hall_turn_60", hall_turn_60),
         ("hall_turn_60_buttressed", hall_turn_60_buttressed),

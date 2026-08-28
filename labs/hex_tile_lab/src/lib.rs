@@ -141,6 +141,30 @@ pub enum Composition {
     Run {
         steps: Vec<(String, u16)>,
     },
+    /// Tiles placed at explicit lattice coordinates and turns.
+    ///
+    /// [`Composition::Run`] auto-mates a chain and can only walk laterally,
+    /// which is the wrong shape for the identities that are *vertical* - a
+    /// shaft you live in, galleries stacked over a light well. This one makes
+    /// no decisions at all: an author says where every cell goes, including its
+    /// level, and the lattice supplies the world position.
+    ///
+    /// Composing by hand first is deliberate. What the solver should be made to
+    /// produce is a question that cannot be answered until somebody has seen
+    /// the thing standing up.
+    Layout {
+        cells: Vec<LayoutCell>,
+    },
+}
+
+/// One explicitly placed cell of a [`Composition::Layout`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LayoutCell {
+    pub archetype: String,
+    pub variant: u16,
+    pub coord: HexCoord,
+    /// Sixths of a turn, applied the same way a run's mating rotation is.
+    pub turn: u8,
 }
 
 /// Levels of the silo wellshaft showcase composition.
@@ -162,6 +186,25 @@ const SILO_RING_ORDER: [(f32, f32); 6] = [
 /// local west); position j uses turn (6 - j) % 6 with the catalog's
 /// clockwise-rotation convention. One ring tile per level (staggered around
 /// the shaft) is the bridge variant.
+/// World placements for an explicit layout. No mating, no inference: the
+/// author's coordinates and turns, resolved against the active register.
+fn layout_placements(
+    tiles: &[TilePrototype],
+    register: &str,
+    cells: &[LayoutCell],
+) -> Vec<(TilePrototype, Vec3, Quat)> {
+    cells
+        .iter()
+        .filter_map(|cell| {
+            let tile = resolve_tile(tiles, &cell.archetype, cell.variant, register).cloned()?;
+            #[allow(clippy::cast_precision_loss)]
+            let rotation =
+                Quat::from_rotation_y(-f32::from(cell.turn % 6) * std::f32::consts::TAU / 6.0);
+            Some((tile, Vec3::from_array(hex_origin(cell.coord)), rotation))
+        })
+        .collect()
+}
+
 /// Lay a chosen sequence of tiles end to end, each rotated so its entry door
 /// meets the previous tile's exit.
 ///
@@ -263,6 +306,7 @@ impl Composition {
                 "SILO WELLSHAFT: 7-hex, {SILO_LEVELS} levels — solid core, helical ring ramp, bridge per level"
             ),
             Self::Room(role) => format!("ROOM BLUEPRINT: {role:?}"),
+            Self::Layout { cells } => format!("LAYOUT: {} cells, placed by hand", cells.len()),
             Self::Run { steps } => {
                 let names: Vec<String> = steps
                     .iter()
@@ -292,6 +336,7 @@ impl Composition {
             Self::Room(role) => format!("room_{role:?}").to_lowercase(),
             Self::SingleTile { archetype, variant } => format!("{archetype}_v{variant}"),
             Self::Run { steps } => format!("run_{}", steps.len()),
+            Self::Layout { cells } => format!("layout_{}", cells.len()),
         }
     }
 
@@ -472,6 +517,11 @@ fn facility_palette(state: &LabState) -> style::DistrictPalette {
                 facility_composition(a)
             })
         }
+        Composition::Layout { cells } => {
+            cells.first().map_or(style::HexComposition::Hall, |cell| {
+                facility_composition(&cell.archetype)
+            })
+        }
     };
     style::architecture_for_composition(state.register(), composition)
 }
@@ -650,6 +700,9 @@ impl LabState {
             Composition::Run { steps } => steps.first().is_some_and(|(archetype, variant)| {
                 resolve_tile(&self.tiles, archetype, *variant, register).is_some()
             }),
+            Composition::Layout { cells } => cells.first().is_some_and(|cell| {
+                resolve_tile(&self.tiles, &cell.archetype, cell.variant, register).is_some()
+            }),
         }
     }
 
@@ -768,48 +821,13 @@ impl LabState {
                 self.scene = RapierTraversalScene::from_arena_spec(&spec);
                 self.body = FpsBody::spawned(center + Vec3::Y * self.config.half_height, 0.0);
             }
+            Composition::Layout { ref cells } => {
+                let placements = layout_placements(&self.tiles, register.slug(), cells);
+                self.build_from_placements(&placements);
+            }
             Composition::Run { ref steps } => {
                 let placements = run_placements(&self.tiles, register.slug(), steps);
-                let mut collider_specs: Vec<ColliderSpec> = Vec::new();
-                for (tile, origin, rotation) in &placements {
-                    let specs = tile.collider_specs_with_transform(
-                        collider_specs.len() as u32,
-                        *origin,
-                        *rotation,
-                    );
-                    collider_specs.extend(specs);
-                }
-                let count = placements.len().max(1) as f32;
-                let center = placements.iter().map(|(_, o, _)| *o).sum::<Vec3>() / count
-                    + Vec3::Y * (TILE_LEVEL_HEIGHT * 0.5);
-                let extent = placements
-                    .iter()
-                    .map(|(_, o, _)| (*o - center).length())
-                    .fold(0.0_f32, f32::max);
-                self.center = center;
-                self.radius = extent + 30.0;
-                self.height = (extent + 30.0) * 0.7;
-                let spec = observed_traversal::ArenaSpec {
-                    colliders: collider_specs,
-                    floor_y: 0.0,
-                    safety_center: center,
-                    safety_half: Vec3::new(extent + 26.0, 30.0, extent + 26.0),
-                };
-                self.scene = RapierTraversalScene::from_arena_spec(&spec);
-                // Standing in the first tile, facing the way the run goes.
-                let (spawn, facing) = match (placements.first(), placements.get(1)) {
-                    (Some((_, first, _)), Some((_, second, _))) => {
-                        (*first, (*second - *first).normalize_or_zero())
-                    }
-                    (Some((_, first, _)), None) => (*first, Vec3::X),
-                    _ => (center, Vec3::X),
-                };
-                self.body = FpsBody::spawned(
-                    spawn + Vec3::Y * self.config.half_height,
-                    yaw_toward(Vec2::new(facing.x, facing.z)),
-                );
-                self.walk_path = placements.iter().map(|(_, o, _)| *o).collect();
-                self.walk_index = 1;
+                self.build_from_placements(&placements);
             }
             Composition::SiloWellshaft => {
                 let mut collider_specs: Vec<ColliderSpec> = Vec::new();
@@ -842,6 +860,53 @@ impl LabState {
         }
         self.free_fly_pos = self.center + Vec3::new(0.0, self.height, self.radius);
         self.dirty = true;
+    }
+
+    /// Build the scene, colliders, camera framing and spawn pose from a list of
+    /// placed tiles.
+    ///
+    /// Shared by [`Composition::Run`] and [`Composition::Layout`] because the
+    /// only thing that differs between them is *how the list was decided* - a
+    /// chain that mates itself, or an author's explicit coordinates. Everything
+    /// downstream is the same work, and two copies of it would drift.
+    fn build_from_placements(&mut self, placements: &[(TilePrototype, Vec3, Quat)]) {
+        let mut collider_specs: Vec<ColliderSpec> = Vec::new();
+        for (tile, origin, rotation) in placements {
+            let specs =
+                tile.collider_specs_with_transform(collider_specs.len() as u32, *origin, *rotation);
+            collider_specs.extend(specs);
+        }
+        let count = placements.len().max(1) as f32;
+        let center = placements.iter().map(|(_, o, _)| *o).sum::<Vec3>() / count
+            + Vec3::Y * (TILE_LEVEL_HEIGHT * 0.5);
+        let extent = placements
+            .iter()
+            .map(|(_, o, _)| (*o - center).length())
+            .fold(0.0_f32, f32::max);
+        self.center = center;
+        self.radius = extent + 30.0;
+        self.height = (extent + 30.0) * 0.7;
+        let spec = observed_traversal::ArenaSpec {
+            colliders: collider_specs,
+            floor_y: 0.0,
+            safety_center: center,
+            safety_half: Vec3::new(extent + 26.0, 30.0, extent + 26.0),
+        };
+        self.scene = RapierTraversalScene::from_arena_spec(&spec);
+        // Standing in the first tile, facing the way the run goes.
+        let (spawn, facing) = match (placements.first(), placements.get(1)) {
+            (Some((_, first, _)), Some((_, second, _))) => {
+                (*first, (*second - *first).normalize_or_zero())
+            }
+            (Some((_, first, _)), None) => (*first, Vec3::X),
+            _ => (center, Vec3::X),
+        };
+        self.body = FpsBody::spawned(
+            spawn + Vec3::Y * self.config.half_height,
+            yaw_toward(Vec2::new(facing.x, facing.z)),
+        );
+        self.walk_path = placements.iter().map(|(_, o, _)| *o).collect();
+        self.walk_index = 1;
     }
 
     pub fn respawn(&mut self) {
@@ -1866,6 +1931,31 @@ fn rebuild_visuals(
                             format!("Room cell {archetype}"),
                         );
                     }
+                }
+            }
+        }
+        Composition::Layout { ref cells } => {
+            for (tile, origin, rotation) in layout_placements(&state.tiles, register.slug(), cells)
+            {
+                let top_y = f32::from(tile.levels) * TILE_LEVEL_HEIGHT;
+                let transform = Transform::from_translation(origin).with_rotation(rotation);
+                pool_origins.extend(
+                    tile.lights
+                        .iter()
+                        .map(|light| origin + rotation * light.position),
+                );
+                for hull in &tile.hulls {
+                    if cross_section && is_ceiling(hull, top_y) {
+                        continue;
+                    }
+                    spawn_hull_entity(
+                        &mut commands,
+                        &mut meshes,
+                        hull,
+                        transform,
+                        top_y,
+                        format!("Layout {}", tile.key.archetype),
+                    );
                 }
             }
         }

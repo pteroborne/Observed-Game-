@@ -1,0 +1,60 @@
+{
+ "layout": [
+  {
+   "tile": "hall_turn_120",
+   "q": 12,
+   "r": 11,
+   "level": 0,
+   "turn": 2
+  },
+  {
+   "tile": "hall_turn_120",
+   "q": 13,
+   "r": 11,
+   "level": 0,
+   "turn": 3
+  },
+  {
+   "tile": "hall_turn_120",
+   "q": 13,
+   "r": 12,
+   "level": 0,
+   "turn": 4
+  },
+  {
+   "tile": "hall_turn_120",
+   "q": 12,
+   "r": 13,
+   "level": 0,
+   "turn": 5
+  },
+  {
+   "tile": "hall_turn_120",
+   "q": 11,
+   "r": 13,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_turn_120",
+   "q": 11,
+   "r": 12,
+   "level": 0,
+   "turn": 1
+  }
+ ],
+ "register": 3,
+ "hide_menu": true,
+ "view_mode": "orbit",
+ "render_mode": "clay",
+ "orbit_yaw": 0.6,
+ "orbit_pitch": 0.45,
+ "camera_target": [
+  252.0,
+  4.0,
+  144.0
+ ],
+ "radius": 57.2,
+ "height": 0.0,
+ "output_image": "docs/evidence/compositions/lumen_iso.png"
+}

@@ -420,3 +420,83 @@ floor drops it. A run that captures cleanly is a run that is walkable.
 service pier, and ceiling-attached practical housings. `hall_ramp` is a solid
 two-level ramp mass with wall-attached sconces; it is the production elevation
 primitive instead of vertical lifts or unsupported connector decks.
+
+## Composing by hand: `layout`
+
+`run` chains tiles end to end and works out the rotations. `layout` does not
+infer anything: every cell names its tile, its lattice coordinate and its turn.
+
+```json
+{
+  "layout": [
+    { "tile": "hall_gallery", "q": 12, "r": 12, "level": 0, "turn": 0 },
+    { "tile": "hall_gallery", "q": 12, "r": 12, "level": 1, "turn": 0 }
+  ],
+  "register": 7, "view_mode": "orbit", "render_mode": "clay"
+}
+```
+
+`tile` takes the same `archetype` or `archetype:variant` form a run entry does,
+`turn` is sixths and defaults to 0. This is the only way to build something that
+stacks, and the only way to place a cell the solver would never choose.
+
+Door faces, for working out `turn` by hand — a tile rotated by `t` moves a door
+from face `f` to face `(f + t) % 6`, and the faces are
+`0 east, 1 south_east, 2 south_west, 3 west, 4 north_west, 5 north_east`:
+
+| tile | doors at turn 0 |
+| --- | --- |
+| `hall_straight` | 0, 3 |
+| `hall_turn_120` | 0, 4 |
+| `hall_turn_60` | 0, 5 |
+| `hall_junction_3way` | 0, 3, 5 |
+| `hall_junction_4way` | 0, 2, 3, 5 |
+| `hall_gallery` (Megastructure, Wellshaft) | 0, 3 |
+| `hall_gallery` (Infinite Gallery) | 0, 2, 4 |
+
+Getting a turn wrong is silent: the cells still sit in the right places and the
+plan still reads, but the doors face walls and nothing is walkable. Check a
+composition in `render_mode: "clay"` from `orbit_pitch: 1.4` before believing it.
+
+## The gallery, and why a stack needed one
+
+Stacking four storeys of `expanse` by hand produced four separate plates. Every
+other cell in the corpus carries a floor slab *and* a ceiling slab, so a stack of
+them is layered by construction: a vertical space you cannot see through is just
+several rooms with the same footprint.
+
+`hall_gallery` is a walkway ring round an open middle — floor everywhere but the
+centre, a parapet at the lip, and **no ceiling at all**. Stack it and the void
+runs the full height. A silo, a Babel shaft and a BLAME! well are all the same
+claim — *one volume that several storeys look into* — and none of them could be
+composed until a cell was allowed to decline a lid.
+
+Three registers carry one: Megastructure and Wellshaft with two opposed doors,
+Infinite Gallery with three, because a Babel cell is a landing every neighbouring
+landing reaches rather than a link in a route.
+
+## Seven places, composed by hand
+
+`docs/compositions/*.json` are the view scripts; `docs/evidence/compositions/`
+holds an `_iso` and a `_plan` render of each. Each one is a claim that the
+*arrangement* carries the identity, with the register supplying the dialect:
+
+| place | register | composition |
+| --- | --- | --- |
+| Halo / Forerunner | 5 Facet Monument | one axis held for eleven cells, a symmetric transept at its middle, a chamber closing each end |
+| Lumen | 3 Overlit Grid | a ring of six turns that closes on itself — no cell is the destination |
+| Backrooms | 10 Liminal Grid | a flat field of thirty-seven identical junctions: same choices everywhere, one storey, nothing above |
+| Silo | 7 Wellshaft | one gallery shaft sixteen storeys deep with the ramp strapped to its flank |
+| BLAME! | 6 Megastructure | seven shafts that do not agree — different heights, different starts, storeys simply absent |
+| Library of Babel | 8 Infinite Gallery | lateral, not vertical: a wide regular honeycomb of nineteen identical galleries, and the same honeycomb twice more above |
+| Feudal Japan, empty | 9 Thinning | a continuous walk round a court left out on purpose, entered from one side rather than at the middle |
+
+Two of these are worth reading together. **Babel and BLAME! are built from the
+same tile** and differ only in arrangement: Babel is wide, regular and three
+storeys; BLAME! is narrow, ragged and twenty-four. The first pass built both as
+a seven-shaft cluster and they were indistinguishable — which is the finding.
+Repetition versus incoherence is a composition decision, not a tile one, and no
+amount of surface treatment would have separated them.
+
+None of these are solver output. They are what the solver would have to be
+taught to produce, stated in a form that can be looked at first.

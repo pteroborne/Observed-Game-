@@ -1,0 +1,277 @@
+{
+ "layout": [
+  {
+   "tile": "hall_junction_4way",
+   "q": 12,
+   "r": 12,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 12,
+   "r": 11,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 13,
+   "r": 11,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 13,
+   "r": 12,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 12,
+   "r": 13,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 11,
+   "r": 13,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 11,
+   "r": 12,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 12,
+   "r": 10,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 13,
+   "r": 10,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 14,
+   "r": 10,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 14,
+   "r": 11,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 14,
+   "r": 12,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 13,
+   "r": 13,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 12,
+   "r": 14,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 11,
+   "r": 14,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 10,
+   "r": 14,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 10,
+   "r": 13,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 10,
+   "r": 12,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 11,
+   "r": 11,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 12,
+   "r": 9,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 13,
+   "r": 9,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 14,
+   "r": 9,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 15,
+   "r": 9,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 15,
+   "r": 10,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 15,
+   "r": 11,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 15,
+   "r": 12,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 14,
+   "r": 13,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 13,
+   "r": 14,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 12,
+   "r": 15,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 11,
+   "r": 15,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 10,
+   "r": 15,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 9,
+   "r": 15,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 9,
+   "r": 14,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 9,
+   "r": 13,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 9,
+   "r": 12,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 10,
+   "r": 11,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_junction_4way",
+   "q": 11,
+   "r": 10,
+   "level": 0,
+   "turn": 0
+  }
+ ],
+ "register": 10,
+ "hide_menu": true,
+ "view_mode": "orbit",
+ "render_mode": "clay",
+ "orbit_yaw": 0.6,
+ "orbit_pitch": 1.4,
+ "camera_target": [
+  252.0,
+  4.0,
+  144.0
+ ],
+ "radius": 75.0,
+ "height": 0.0,
+ "output_image": "docs/evidence/compositions/backrooms_plan.png"
+}

@@ -1,0 +1,242 @@
+{
+ "layout": [
+  {
+   "tile": "hall_gallery",
+   "q": 12,
+   "r": 12,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_gallery",
+   "q": 12,
+   "r": 12,
+   "level": 1,
+   "turn": 0
+  },
+  {
+   "tile": "hall_gallery",
+   "q": 12,
+   "r": 12,
+   "level": 2,
+   "turn": 0
+  },
+  {
+   "tile": "hall_gallery",
+   "q": 12,
+   "r": 12,
+   "level": 3,
+   "turn": 0
+  },
+  {
+   "tile": "hall_gallery",
+   "q": 12,
+   "r": 12,
+   "level": 4,
+   "turn": 0
+  },
+  {
+   "tile": "hall_gallery",
+   "q": 12,
+   "r": 12,
+   "level": 5,
+   "turn": 0
+  },
+  {
+   "tile": "hall_gallery",
+   "q": 12,
+   "r": 12,
+   "level": 6,
+   "turn": 0
+  },
+  {
+   "tile": "hall_gallery",
+   "q": 12,
+   "r": 12,
+   "level": 7,
+   "turn": 0
+  },
+  {
+   "tile": "hall_gallery",
+   "q": 12,
+   "r": 12,
+   "level": 8,
+   "turn": 0
+  },
+  {
+   "tile": "hall_gallery",
+   "q": 12,
+   "r": 12,
+   "level": 9,
+   "turn": 0
+  },
+  {
+   "tile": "hall_gallery",
+   "q": 12,
+   "r": 12,
+   "level": 10,
+   "turn": 0
+  },
+  {
+   "tile": "hall_gallery",
+   "q": 12,
+   "r": 12,
+   "level": 11,
+   "turn": 0
+  },
+  {
+   "tile": "hall_gallery",
+   "q": 12,
+   "r": 12,
+   "level": 12,
+   "turn": 0
+  },
+  {
+   "tile": "hall_gallery",
+   "q": 12,
+   "r": 12,
+   "level": 13,
+   "turn": 0
+  },
+  {
+   "tile": "hall_gallery",
+   "q": 12,
+   "r": 12,
+   "level": 14,
+   "turn": 0
+  },
+  {
+   "tile": "hall_gallery",
+   "q": 12,
+   "r": 12,
+   "level": 15,
+   "turn": 0
+  },
+  {
+   "tile": "hall_ramp",
+   "q": 13,
+   "r": 12,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_ramp",
+   "q": 13,
+   "r": 12,
+   "level": 1,
+   "turn": 0
+  },
+  {
+   "tile": "hall_ramp",
+   "q": 13,
+   "r": 12,
+   "level": 2,
+   "turn": 0
+  },
+  {
+   "tile": "hall_ramp",
+   "q": 13,
+   "r": 12,
+   "level": 3,
+   "turn": 0
+  },
+  {
+   "tile": "hall_ramp",
+   "q": 13,
+   "r": 12,
+   "level": 4,
+   "turn": 0
+  },
+  {
+   "tile": "hall_ramp",
+   "q": 13,
+   "r": 12,
+   "level": 5,
+   "turn": 0
+  },
+  {
+   "tile": "hall_ramp",
+   "q": 13,
+   "r": 12,
+   "level": 6,
+   "turn": 0
+  },
+  {
+   "tile": "hall_ramp",
+   "q": 13,
+   "r": 12,
+   "level": 7,
+   "turn": 0
+  },
+  {
+   "tile": "hall_ramp",
+   "q": 13,
+   "r": 12,
+   "level": 8,
+   "turn": 0
+  },
+  {
+   "tile": "hall_ramp",
+   "q": 13,
+   "r": 12,
+   "level": 9,
+   "turn": 0
+  },
+  {
+   "tile": "hall_ramp",
+   "q": 13,
+   "r": 12,
+   "level": 10,
+   "turn": 0
+  },
+  {
+   "tile": "hall_ramp",
+   "q": 13,
+   "r": 12,
+   "level": 11,
+   "turn": 0
+  },
+  {
+   "tile": "hall_ramp",
+   "q": 13,
+   "r": 12,
+   "level": 12,
+   "turn": 0
+  },
+  {
+   "tile": "hall_ramp",
+   "q": 13,
+   "r": 12,
+   "level": 13,
+   "turn": 0
+  },
+  {
+   "tile": "hall_ramp",
+   "q": 13,
+   "r": 12,
+   "level": 14,
+   "turn": 0
+  },
+  {
+   "tile": "hall_ramp",
+   "q": 13,
+   "r": 12,
+   "level": 15,
+   "turn": 0
+  }
+ ],
+ "register": 7,
+ "hide_menu": true,
+ "view_mode": "orbit",
+ "render_mode": "clay",
+ "orbit_yaw": 0.6,
+ "orbit_pitch": 0.45,
+ "camera_target": [
+  259.0,
+  64.0,
+  144.0
+ ],
+ "radius": 231.2,
+ "height": 0.0,
+ "output_image": "docs/evidence/compositions/silo_iso.png"
+}

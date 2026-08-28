@@ -1,0 +1,116 @@
+{
+ "layout": [
+  {
+   "tile": "hall_turn_120",
+   "q": 12,
+   "r": 10,
+   "level": 0,
+   "turn": 2
+  },
+  {
+   "tile": "hall_straight",
+   "q": 13,
+   "r": 10,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_turn_120",
+   "q": 14,
+   "r": 10,
+   "level": 0,
+   "turn": 3
+  },
+  {
+   "tile": "hall_straight",
+   "q": 14,
+   "r": 11,
+   "level": 0,
+   "turn": 1
+  },
+  {
+   "tile": "hall_turn_120",
+   "q": 14,
+   "r": 12,
+   "level": 0,
+   "turn": 4
+  },
+  {
+   "tile": "hall_straight",
+   "q": 13,
+   "r": 13,
+   "level": 0,
+   "turn": 2
+  },
+  {
+   "tile": "hall_turn_120",
+   "q": 12,
+   "r": 14,
+   "level": 0,
+   "turn": 5
+  },
+  {
+   "tile": "hall_straight",
+   "q": 11,
+   "r": 14,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_turn_120",
+   "q": 10,
+   "r": 14,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_straight",
+   "q": 10,
+   "r": 13,
+   "level": 0,
+   "turn": 1
+  },
+  {
+   "tile": "hall_turn_120",
+   "q": 10,
+   "r": 12,
+   "level": 0,
+   "turn": 1
+  },
+  {
+   "tile": "hall_straight",
+   "q": 11,
+   "r": 11,
+   "level": 0,
+   "turn": 2
+  },
+  {
+   "tile": "hall_straight",
+   "q": 15,
+   "r": 12,
+   "level": 0,
+   "turn": 0
+  },
+  {
+   "tile": "hall_cap",
+   "q": 16,
+   "r": 12,
+   "level": 0,
+   "turn": 0
+  }
+ ],
+ "register": 9,
+ "hide_menu": true,
+ "view_mode": "orbit",
+ "render_mode": "clay",
+ "orbit_yaw": 0.6,
+ "orbit_pitch": 0.45,
+ "camera_target": [
+  266.0,
+  4.0,
+  144.0
+ ],
+ "radius": 95.0,
+ "height": 0.0,
+ "output_image": "docs/evidence/compositions/japan_iso.png"
+}

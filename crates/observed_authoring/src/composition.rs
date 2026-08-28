@@ -512,6 +512,22 @@ mod tests {
         // reordered, so all 66 committed towers reproduce exactly and the diff
         // is 105 new files and nothing else.
         //
+        // Moved by three authored galleries - `hall_gallery` in the
+        // Megastructure, Wellshaft and Infinite Gallery registers. A gallery is
+        // a walkway round an open middle with no ceiling over the void, and it
+        // exists because every other cell in the corpus carries a floor slab
+        // *and* a ceiling slab: stack those and you get layered plates, not one
+        // volume. A silo, a Babel shaft and a BLAME! well are the same claim -
+        // one volume that several storeys look into - and none of them could be
+        // composed until a cell could decline to have a lid.
+        //
+        // Catalog side only. The profile hash is unchanged at
+        // 5c1bc69d..., because the solver's controls and its output for a fixed
+        // seed did not move: these are authored modules that no WFC variant
+        // draws yet. The simulation fold still moves, so this is still a LAN
+        // lockout - a catalog-only change is exactly as breaking as a solver
+        // one, and the fold is what says so.
+        //
         // The profile side moved twice over. `route_corridors` is `true` now
         // rather than `false`, `carve_unrouted` is a new field, and
         // `COMPOSITION_PROFILE_VERSION` went to 4 because the solver's output
@@ -540,14 +556,14 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "bf815aee47159605728fee1f2a7544bca973a2cb6faf64498938a4f20045b2ad";
+            "26de4f666aa6afb49039ac2d62bd44991362a2d94842b0076ec844dc408e07ab";
         const PROFILE_HASH: &str =
             "5c1bc69db058d4e3332e755326548f887d46f215d81fdeb454591cd9c2c0104e";
         // Folds the catalog and the profile. Both sides moved this time, which
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "3cdd3ffbff4830353a6161741aae1c29f80f50b0f86926ade43a7d3d742f4060";
+            "1a04e299b6d372d2acee57a7bb94cf2b455e3fef099073a05a024ece8a2ccc9e";
 
         let root = committed_tiles();
         let compiled_text =
@@ -560,7 +576,7 @@ mod tests {
             .filter(|module| module.archetype == "stair_tower")
             .collect::<Vec<_>>();
         assert_eq!(compiled.simulation_content_hash, CATALOG_HASH);
-        assert_eq!(compiled.modules.len(), 239, "committed strict source count");
+        assert_eq!(compiled.modules.len(), 242, "committed strict source count");
         // 1 doorless + every one-to-four-door pattern, in three vertical
         // connectivities: (1 + 6 + 15 + 20 + 15) * 3. Was 66, when the family
         // stopped at two doors and there was no branching landing.

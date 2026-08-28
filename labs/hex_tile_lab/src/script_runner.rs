@@ -45,6 +45,13 @@ pub struct ViewScript {
     /// is asking about composition, and the single-tile selectors cannot answer
     /// that question.
     pub run: Option<Vec<String>>,
+    /// An explicit composition: every cell's tile, lattice coordinate and turn.
+    ///
+    /// `"tile"` takes the same `archetype` or `archetype:variant` form a run
+    /// entry does. `q`, `r`, `level` are lattice coordinates and `turn` is
+    /// sixths, default 0. Nothing is inferred - this is the hand-composed case,
+    /// and it is the only way to build something that stacks.
+    pub layout: Option<Vec<LayoutEntry>>,
     /// Walk the body forward while the script runs, instead of standing still.
     ///
     /// The flag already existed on `LabState` and nothing could set it. It is
@@ -63,6 +70,20 @@ pub struct ViewScript {
     /// Capture this many frames instead of one, `frame_interval` ticks apart.
     pub frames: Option<u32>,
     pub frame_interval: Option<u32>,
+}
+
+/// One `layout` entry as written in a script.
+#[derive(Debug, Clone, Deserialize)]
+pub struct LayoutEntry {
+    pub tile: String,
+    #[serde(default)]
+    pub q: u16,
+    #[serde(default)]
+    pub r: u16,
+    #[serde(default)]
+    pub level: u8,
+    #[serde(default)]
+    pub turn: u8,
 }
 
 /// Parse one `"archetype"` or `"archetype:variant"` run entry.
@@ -181,7 +202,27 @@ pub fn run_script_system(
         // A named run is appended to the list and selected, so everything
         // downstream - the title, the camera framing, the capture filename -
         // works on it exactly as it does on the built-in compositions.
-        if let Some(ref entries) = script.run {
+        if let Some(ref entries) = script.layout {
+            let cells = entries
+                .iter()
+                .map(|entry| {
+                    let (archetype, variant) = parse_step(&entry.tile);
+                    crate::LayoutCell {
+                        archetype,
+                        variant,
+                        coord: observed_hex::HexCoord {
+                            q: entry.q,
+                            r: entry.r,
+                            level: entry.level,
+                        },
+                        turn: entry.turn,
+                    }
+                })
+                .collect();
+            state.compositions.push(Composition::Layout { cells });
+            let position = state.compositions.len() - 1;
+            state.switch(position);
+        } else if let Some(ref entries) = script.run {
             let steps: Vec<(String, u16)> = entries.iter().map(|e| parse_step(e)).collect();
             state.compositions.push(Composition::Run { steps });
             let position = state.compositions.len() - 1;
