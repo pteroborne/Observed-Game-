@@ -10,7 +10,8 @@ use super::entities::{
 };
 use super::geometry::{
     DOOR_HALF_WIDTH, DOOR_TOP, FACE_NAMES, FLOOR_TOP, LEVEL, P2, WALL, band, centroid, corners,
-    door_wall, edge, face_mid, hex_slab, prism, pylon, regular_polygon, translate, wall,
+    door_wall, edge, face_mid, hex_slab, offset_inward, prism, pylon, regular_polygon,
+    sloped_prism, translate, wall,
 };
 use super::{Builder, GENERATED_NOTE};
 
@@ -1599,6 +1600,217 @@ pub fn hall_dais_monument() -> String {
     out
 }
 
+// ---------------------------------------------------------------------------
+// The Vestry - one room, built the way a Quake map is built.
+// ---------------------------------------------------------------------------
+//
+// Every other tile in this file solves a district. This one solves a *room*,
+// and it follows the rules you learn making deathmatch maps rather than the
+// ones in the seam contract:
+//
+//   1. Everything lands on the grid. Eight units, no exceptions.
+//   2. Trim every transition, and never let two planes meet flush - set the
+//      course proud by four so the light catches an edge and drops a shadow
+//      line under it. Rooms are legible because of their shadow lines.
+//   3. **One idea, at full size.** The first cut of this room had a ledge on
+//      one wall, a short ramp and a crate, and it was correct and boring: trim
+//      everywhere and nothing happening. A room with three small gestures is
+//      worse than a room with one large one.
+//   4. Light where the geometry already is. Three sources, all of them tucked
+//      under something. No lamp floats.
+//   5. Cover breaks the diagonal. Two doors facing each other down the long
+//      axis is a free shot from threshold to threshold, so a block stands
+//      *off* the axis to spoil it - off, not centred, because centred cover
+//      makes a symmetric room and symmetric rooms are dull to fight in.
+//
+// The idea, at full size: **the room is a spiral.** A ramp climbs the
+// south-east wall, a second ramp continues from it up the south-west wall, and
+// what they arrive at is a gallery that runs the remaining three walls at five
+// metres - passing clean over the west doorway on the way. You end up standing
+// above the door you came in by, having walked the entire perimeter to get
+// there, with the whole floor under you and one way down.
+
+/// Where the gallery runs, and where the second ramp has to reach.
+///
+/// Above `DOOR_TOP`, which is the entire reason the number is what it is: a
+/// gallery below the door head has to stop at every doorway, and a gallery
+/// that stops at every doorway is three shelves rather than one circuit.
+const VESTRY_GALLERY: f64 = 80.0;
+/// Height of the ramps' shared landing, halfway up.
+const VESTRY_HALF: f64 = 40.0;
+/// How far the gallery cuts into the room.
+const VESTRY_DEPTH: f64 = 44.0;
+/// Thickness of every proud course. Four units is one shadow line.
+const VESTRY_PROUD: f64 = 4.0;
+
+/// One ramp of the spiral, climbing the inside of `face` from `rise0` to
+/// `rise1` in the direction the faces are numbered.
+fn vestry_ramp(face: usize, rise0: f64, rise1: f64) -> String {
+    let (a, b) = edge(face);
+    let (foot, head) = offset_inward(a, b, WALL);
+    let (inner_foot, _) = offset_inward(a, b, WALL + VESTRY_DEPTH);
+    let (_, inner_head) = offset_inward(a, b, WALL + VESTRY_DEPTH);
+    sloped_prism(
+        &[foot, head, inner_head, inner_foot],
+        0.0,
+        [
+            (foot.0, foot.1, rise0),
+            (head.0, head.1, rise1),
+            (inner_foot.0, inner_foot.1, rise0),
+        ],
+        None,
+    )
+}
+
+/// A room that is a spiral.
+///
+/// Monolith, because the register is "one mass, undivided, the fewest supports
+/// of any district and the heaviest" - which is the brief a pier-and-lintel
+/// room was going to be built to anyway.
+///
+/// # The walk
+///
+/// You come in the east door onto open floor, with a block off to one side
+/// spoiling the shot straight through to the west door. The first ramp is
+/// immediately on your right and climbing it turns your back on the way you
+/// came in - that is what the height costs, charged in the only currency a room
+/// has. It lands halfway up and hands you to a second ramp, which puts you on
+/// the gallery. The gallery crosses *over* the west doorway, so anyone leaving
+/// underneath you never looks up, and it dead-ends five metres above the door
+/// you entered by. There is no second way down. Everything about the room is
+/// arranged so that going up is a decision.
+#[must_use]
+pub fn hall_arena_monolith() -> String {
+    let doors = [0usize, 3];
+    let gallery_faces = [3usize, 4, 5];
+
+    let mut brushes = String::from("// Floor and lid\n");
+    brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 3.0, 0.0));
+    brushes.push_str(&hex_slab(LEVEL - FLOOR_TOP, LEVEL, 0.0, 3.0));
+
+    brushes.push_str("// Envelope\n");
+    for face in 0..6 {
+        if doors.contains(&face) {
+            brushes.push_str(&door_wall(face, 0.0, LEVEL, FLOOR_TOP, DOOR_TOP, 12.0, 8.0));
+        } else {
+            brushes.push_str(&wall(face, 0.0, LEVEL));
+        }
+    }
+
+    brushes.push_str("// The spiral: two ramps, south-east then south-west\n");
+    brushes.push_str(&vestry_ramp(1, FLOOR_TOP, VESTRY_HALF + FLOOR_TOP));
+    brushes.push_str(&vestry_ramp(
+        2,
+        VESTRY_HALF + FLOOR_TOP,
+        VESTRY_GALLERY + FLOOR_TOP,
+    ));
+
+    brushes.push_str("// The gallery, over the west door and round to the east\n");
+    for &face in &gallery_faces {
+        // Deck.
+        brushes.push_str(&band(
+            face,
+            WALL,
+            WALL + VESTRY_DEPTH,
+            VESTRY_GALLERY,
+            VESTRY_GALLERY + FLOOR_TOP,
+        ));
+        // Nosing. This is the difference between a gallery and a slab stuck to
+        // a wall: four units of shadow under the lip, and the deck reads as
+        // carried rather than glued.
+        brushes.push_str(&band(
+            face,
+            WALL + VESTRY_DEPTH - VESTRY_PROUD,
+            WALL + VESTRY_DEPTH,
+            VESTRY_GALLERY - VESTRY_PROUD,
+            VESTRY_GALLERY,
+        ));
+        // Parapet. Waist high from up there, a lip that hides a crouched body
+        // from down here.
+        brushes.push_str(&band(
+            face,
+            WALL + VESTRY_DEPTH - WALL,
+            WALL + VESTRY_DEPTH,
+            VESTRY_GALLERY + FLOOR_TOP,
+            VESTRY_GALLERY + FLOOR_TOP + 20.0,
+        ));
+    }
+
+    brushes.push_str("// Base course, on the two walls that have a base to course\n");
+    for face in [4usize, 5] {
+        brushes.push_str(&band(
+            face,
+            WALL,
+            WALL + VESTRY_PROUD,
+            FLOOR_TOP,
+            FLOOR_TOP + 24.0,
+        ));
+    }
+
+    brushes.push_str("// Two piers under the gallery's far side. Fewest, heaviest\n");
+    let mid = face_mid(4);
+    let reach = mid.0.hypot(mid.1);
+    let normal = (mid.0 / reach, mid.1 / reach);
+    let tangent = (-normal.1, normal.0);
+    let stand = reach - VESTRY_DEPTH + 8.0;
+    for side in [-1.0, 1.0] {
+        brushes.push_str(&translate(
+            &pylon(16.0, FLOOR_TOP, VESTRY_GALLERY, 0.0, 3.0, 0.0),
+            normal.0 * stand + tangent.0 * side * 44.0,
+            normal.1 * stand + tangent.1 * side * 44.0,
+            0.0,
+        ));
+    }
+
+    brushes.push_str("// Cover, off the axis between the two doors\n");
+    brushes.push_str(&translate(
+        &pylon(32.0, FLOOR_TOP, FLOOR_TOP + 24.0, 0.0, 3.0, 0.0),
+        -16.0,
+        -56.0,
+        0.0,
+    ));
+
+    let mut lights = String::new();
+    for face in [4usize, 5] {
+        let m = face_mid(face);
+        let r = m.0.hypot(m.1);
+        let (fixture, source) = ceiling_fixture(
+            m.0 / r * (r - 24.0),
+            m.1 / r * (r - 24.0),
+            VESTRY_GALLERY,
+            14.0,
+            14.0,
+        );
+        brushes.push_str(&fixture);
+        lights.push_str(&source);
+    }
+    let (high, high_source) = ceiling_fixture(0.0, 0.0, LEVEL - FLOOR_TOP, 22.0, 14.0);
+    brushes.push_str(&high);
+    lights.push_str(&high_source);
+
+    let mut out = String::from("// The Vestry, Monolith: a room that is a spiral.\n");
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell("authored/hall_arena_monolith", "hall_arena", 0, 1, 8)
+            .with_register_scope("monolith")
+            .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    for face in doors {
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{}_port", FACE_NAMES[face]),
+            0,
+            0,
+            0,
+        ));
+    }
+    out.push_str(&lights);
+    out
+}
+
 #[must_use]
 pub fn builders() -> Vec<Builder> {
     vec![
@@ -1615,6 +1827,7 @@ pub fn builders() -> Vec<Builder> {
         ("hall_straight_threshold", hall_straight_threshold),
         ("hall_step_platform", hall_step_platform),
         ("hall_dais_monument", hall_dais_monument),
+        ("hall_arena_monolith", hall_arena_monolith),
         ("hall_gallery_infinite", hall_gallery_infinite),
         ("hall_cap", hall_cap),
         ("hall_turn_60", hall_turn_60),
