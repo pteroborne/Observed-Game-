@@ -512,6 +512,20 @@ mod tests {
         // reordered, so all 66 committed towers reproduce exactly and the diff
         // is 105 new files and nothing else.
         //
+        // Moved by five tiles that are ideas rather than decorations: a
+        // transom (sight without traversal), a drop (walls and no floor
+        // between them), a false depth (four frames receding faster than
+        // perspective would take them, in a recess fifty units deep), a bore
+        // (a hole through material rather than a room), and a reliquary (a
+        // shelf carrying a model of the room the shelf is in).
+        //
+        // One of them records a gap rather than filling it. The transom's
+        // aperture stops at the seam plane, and the contract allowed it because
+        // a sealed face is only checked for the canonical door band - so it is
+        // a very good-looking alcove until there is a `PortClass::Sight` for
+        // the far side to match. That is the next real solver change worth
+        // making: "hold a room you cannot enter" is a verb the game lacks.
+        //
         // Moved by the Squint - a hall containing three blocks at three depths
         // that line up, from one floor plate and nowhere else, into the
         // outline of a doorway. Anamorphosis is four hundred years old and has
@@ -583,14 +597,14 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "7afe1a064b0fc4b9c217e2869e94e6ba0e4eb34120b40c517fd91426108ed51f";
+            "12af1c52d4e6599eac91f20d4f61ac7fbf2e1940d38b2599062577597c9c313d";
         const PROFILE_HASH: &str =
             "5c1bc69db058d4e3332e755326548f887d46f215d81fdeb454591cd9c2c0104e";
         // Folds the catalog and the profile. Both sides moved this time, which
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "82218c06a1200a1116bfea1d20ec1ed55a30cd2fbaa58e988eab70d1bcd8b884";
+            "ab8a77a6f953562502e8c023f36da2420a4f772937e4d1c7a20664d182634797";
 
         let root = committed_tiles();
         let compiled_text =
@@ -603,7 +617,7 @@ mod tests {
             .filter(|module| module.archetype == "stair_tower")
             .collect::<Vec<_>>();
         assert_eq!(compiled.simulation_content_hash, CATALOG_HASH);
-        assert_eq!(compiled.modules.len(), 251, "committed strict source count");
+        assert_eq!(compiled.modules.len(), 256, "committed strict source count");
         // 1 doorless + every one-to-four-door pattern, in three vertical
         // connectivities: (1 + 6 + 15 + 20 + 15) * 3. Was 66, when the family
         // stopped at two doors and there was no branching landing.

@@ -1961,6 +1961,463 @@ pub fn hall_squint_screen() -> String {
     out
 }
 
+// ---------------------------------------------------------------------------
+// Five tiles that are ideas rather than decorations.
+// ---------------------------------------------------------------------------
+
+/// Sill and head of a transom, above `DOOR_TOP` and below the lid.
+const TRANSOM_SILL: f64 = 84.0;
+const TRANSOM_HEAD: f64 = 108.0;
+
+/// A hall with a window into a room it has no way into.
+///
+/// Sight and traversal come apart here, and in this facility that is not a
+/// flourish - observation freezes a threshold's connection, so a body standing
+/// in this hall can *hold* the cell beyond the transom without ever being able
+/// to reach it. Every other tile in the corpus makes those two things the same
+/// thing; a doorway is both a look and a walk. This one separates them.
+///
+/// Wellshaft, because the Well is the district whose entire design is
+/// sightlines between people, and a window you cannot climb through is the
+/// purest statement of that it is possible to build.
+///
+/// # What it is not, yet
+///
+/// The aperture goes through this cell's wall to the seam plane and stops
+/// there. The neighbour's own wall is another eight units on their side, so
+/// unless they happen to carry a transom on the matching face, what you get is
+/// a deep reveal that looks like a window onto masonry. The contract permits
+/// it - a sealed face is only checked for the canonical door band - which is
+/// how this validated first time, and is also exactly why it does not yet do
+/// what it is for.
+///
+/// Making it real needs a port class: something like `PortClass::Sight`, which
+/// matches only other Sight ports, carries no traversal, and does carry
+/// observation. That is a solver change and a catalogue-wide hash move, and it
+/// is worth it, because "hold a room you cannot enter" is a verb the game does
+/// not have. Until then this tile is a very good-looking alcove.
+#[must_use]
+pub fn hall_transom_wellshaft() -> String {
+    let doors = [0usize, 3];
+    let transom = 1usize;
+
+    let mut brushes = String::from("// Floor and lid\n");
+    brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 3.0, 0.0));
+    brushes.push_str(&hex_slab(LEVEL - FLOOR_TOP, LEVEL, 0.0, 3.0));
+
+    brushes.push_str("// Envelope, with one face opened high\n");
+    for face in 0..6 {
+        if doors.contains(&face) {
+            brushes.push_str(&door_wall(face, 0.0, LEVEL, FLOOR_TOP, DOOR_TOP, 10.0, 8.0));
+        } else if face == transom {
+            brushes.push_str(&door_wall(
+                face,
+                0.0,
+                LEVEL,
+                TRANSOM_SILL,
+                TRANSOM_HEAD,
+                4.0,
+                6.0,
+            ));
+        } else {
+            brushes.push_str(&wall(face, 0.0, LEVEL));
+        }
+    }
+
+    // A shelf under the transom, at the height a forearm goes. Nothing makes a
+    // window read as a window like something to lean on.
+    brushes.push_str("// The cill\n");
+    brushes.push_str(&band(
+        transom,
+        WALL,
+        WALL + 14.0,
+        TRANSOM_SILL - 10.0,
+        TRANSOM_SILL,
+    ));
+
+    let mut lights = String::new();
+    for x in [-40.0, 40.0] {
+        let (fixture, source) = ceiling_fixture(x, 0.0, LEVEL - FLOOR_TOP, 12.0, 8.0);
+        brushes.push_str(&fixture);
+        lights.push_str(&source);
+    }
+
+    let mut out =
+        String::from("// The Transom, Wellshaft: a window into a room you cannot enter.\n");
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell("authored/hall_transom_wellshaft", "hall_transom", 0, 1, 8)
+            .with_register_scope("wellshaft")
+            .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    for face in doors {
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{}_port", FACE_NAMES[face]),
+            0,
+            0,
+            0,
+        ));
+    }
+    out.push_str(&lights);
+    out
+}
+
+/// How far in from each aperture a body has floor to stand on.
+const DROP_SILL: f64 = 26.0;
+
+/// A cell with walls and nothing else.
+///
+/// No floor and no lid: six faces, two apertures, and a lip of floor inside
+/// each so there is somewhere to stand while you decide. Everything past the
+/// lip is the storey below.
+///
+/// It is the gallery's opposite and its necessary partner. The gallery made a
+/// stack into one volume you can see through; this makes the same volume
+/// something you can fall down. A shaft with a walkway at every level is tall.
+/// A shaft with a walkway at *some* levels is dangerous, and the difference is
+/// entirely this tile.
+///
+/// Megastructure, where storeys are already missing out of the middle of
+/// stacks. In the Unwitnessed a floor is not a thing you are entitled to.
+#[must_use]
+pub fn hall_drop_megastructure() -> String {
+    let doors = [0usize, 3];
+
+    let mut brushes = String::from("// No floor and no lid. That is the tile\n");
+    brushes.push_str("// Envelope\n");
+    for face in 0..6 {
+        if doors.contains(&face) {
+            brushes.push_str(&door_wall(face, 0.0, LEVEL, FLOOR_TOP, DOOR_TOP, 8.0, 6.0));
+        } else {
+            brushes.push_str(&wall(face, 0.0, LEVEL));
+        }
+    }
+
+    brushes.push_str("// A lip inside each aperture: somewhere to stand and think\n");
+    for &face in &doors {
+        brushes.push_str(&band(face, WALL, WALL + DROP_SILL, 0.0, FLOOR_TOP));
+    }
+
+    let mut lights = String::new();
+    for &face in &doors {
+        let (fixture, source) = wall_fixture(face, 0.5, 96.0, 16.0);
+        brushes.push_str(&fixture);
+        lights.push_str(&source);
+    }
+
+    let mut out = String::from("// The Drop, Megastructure: walls, and no floor between them.\n");
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell("authored/hall_drop_megastructure", "hall_drop", 0, 1, 8)
+            .with_register_scope("megastructure")
+            .emit(),
+    );
+    out.push_str(&tile_cell(0, 0, 0, 1, "open"));
+    for face in doors {
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{}_port", FACE_NAMES[face]),
+            0,
+            0,
+            0,
+        ));
+    }
+    out.push_str(&lights);
+    out
+}
+
+/// A dead end that reads as a corridor running away from you.
+///
+/// Four arch frames step back into a recess barely fifty units deep, each
+/// noticeably smaller and closer to the one before it than real perspective
+/// would make it, with the floor rising and the soffit falling to meet them.
+/// Scamozzi built this at the Teatro Olimpico in 1585 and Borromini built it
+/// again at the Palazzo Spada; both of them were selling a street that was not
+/// there.
+///
+/// Liminal Grid, and the choice is the cruel one. The Back is the district that
+/// grows while nobody watches, so its occupants already cannot tell whether a
+/// corridor was always there. A hall you are certain you walked down, that
+/// turns out to be a wall with four holes in it, is that doubt made permanent -
+/// and the tile is *not* lying about anything a player could have checked. It
+/// is a wall. It was always a wall.
+#[must_use]
+pub fn hall_false_depth_liminal() -> String {
+    const MOUTH: f64 = -40.0;
+    const STEP: f64 = 13.0;
+
+    let mut brushes = hall_shell(&[0]);
+    brushes.push_str("// Four frames, receding faster than they have any right to\n");
+    for index in 0..4 {
+        #[allow(clippy::cast_precision_loss)]
+        let t = f64::from(index);
+        let x = MOUTH - t * STEP;
+        let half = 38.0 - t * 6.0;
+        let head = 76.0 - t * 9.0;
+        let sill = FLOOR_TOP + t * 3.0;
+        // Jambs.
+        for side in [-1.0, 1.0] {
+            brushes.push_str(&boxed(
+                (x - 6.0, side * half, sill),
+                (x, side * (half + 14.0), head),
+            ));
+        }
+        // Head.
+        brushes.push_str(&boxed(
+            (x - 6.0, -(half + 14.0), head),
+            (x, half + 14.0, head + 12.0),
+        ));
+    }
+
+    // The floor climbs and the soffit drops. Neither move is large; both are
+    // in the direction distance would take them, and the eye supplies the rest.
+    brushes.push_str("// The rake\n");
+    brushes.push_str(&sloped_prism(
+        &[
+            (MOUTH, -52.0),
+            (MOUTH - 3.0 * STEP - 8.0, -52.0),
+            (MOUTH - 3.0 * STEP - 8.0, 52.0),
+            (MOUTH, 52.0),
+        ],
+        0.0,
+        [
+            (MOUTH, -52.0, FLOOR_TOP),
+            (MOUTH - 3.0 * STEP - 8.0, -52.0, FLOOR_TOP + 14.0),
+            (MOUTH, 52.0, FLOOR_TOP),
+        ],
+        None,
+    ));
+
+    let mut lights = String::new();
+    // One source, deep in the throat, so the last frame is the brightest thing
+    // in the room and the eye goes to it.
+    let (fixture, source) = ceiling_fixture(MOUTH - 3.0 * STEP, 0.0, 64.0, 8.0, 8.0);
+    brushes.push_str(&fixture);
+    lights.push_str(&source);
+
+    let mut out = String::from("// False Depth, Liminal Grid: a hall that is a wall.\n");
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell(
+            "authored/hall_false_depth_liminal",
+            "hall_false_depth",
+            0,
+            1,
+            8,
+        )
+        .with_register_scope("liminal_grid")
+        .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    out.push_str(&lateral_port(0, "door", "east_port", 0, 0, 0));
+    out.push_str(&lights);
+    out
+}
+
+/// A cell with no room in it.
+///
+/// `hall_shell` already fills every undoored sector solid, so a two-door cell
+/// is a channel through mass; this narrows that channel to a little over two
+/// metres and drops its ceiling to five, and what you get is not a corridor but
+/// a hole bored through something.
+///
+/// It is the cheapest way to make the facility feel like it has mass. Every
+/// other tile is a surface with space behind it; between two large rooms, this
+/// one is eight metres of *material*, and the walk through it is long enough
+/// that you arrive somewhere having been nowhere.
+///
+/// Monolith, obviously. One mass, undivided.
+#[must_use]
+pub fn hall_bore_monolith() -> String {
+    let doors = [0usize, 3];
+    let mut brushes = hall_shell(&doors);
+
+    brushes.push_str("// Narrow the channel. It stays canonical at the seam and closes inboard\n");
+    for &face in &doors {
+        let (a, b) = edge(face);
+        let (ia, ib) = offset_inward(a, b, WALL);
+        let u = ((ib.0 - ia.0), (ib.1 - ia.1));
+        let length = u.0.hypot(u.1);
+        let u = (u.0 / length, u.1 / length);
+        let mid = ((ia.0 + ib.0) * 0.5, (ia.1 + ib.1) * 0.5);
+        let inward = (-mid.0 / mid.0.hypot(mid.1), -mid.1 / mid.0.hypot(mid.1));
+        for side in [-1.0, 1.0] {
+            let near = (
+                mid.0 + u.0 * side * DOOR_HALF_WIDTH,
+                mid.1 + u.1 * side * DOOR_HALF_WIDTH,
+            );
+            let far = (
+                mid.0 + u.0 * side * 34.0 + inward.0 * 56.0,
+                mid.1 + u.1 * side * 34.0 + inward.1 * 56.0,
+            );
+            let far_in = (
+                mid.0 + u.0 * side * 60.0 + inward.0 * 56.0,
+                mid.1 + u.1 * side * 60.0 + inward.1 * 56.0,
+            );
+            let near_out = (mid.0 + u.0 * side * 60.0, mid.1 + u.1 * side * 60.0);
+            brushes.push_str(&prism(
+                &[near, far, far_in, near_out],
+                0.0,
+                LEVEL,
+                None,
+                0.0,
+                0.0,
+            ));
+        }
+    }
+
+    brushes.push_str("// Drop the ceiling over the middle to five metres\n");
+    brushes.push_str(&prism(
+        &regular_polygon(58.0, 6, 0.0),
+        80.0,
+        LEVEL - FLOOR_TOP,
+        Some((0.0, 0.0)),
+        0.0,
+        6.0,
+    ));
+
+    let mut lights = String::new();
+    let (fixture, source) = ceiling_fixture(0.0, 0.0, 80.0, 10.0, 10.0);
+    brushes.push_str(&fixture);
+    lights.push_str(&source);
+
+    let mut out = String::from("// The Bore, Monolith: a hole through something, not a room.\n");
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell("authored/hall_bore_monolith", "hall_bore", 0, 1, 8)
+            .with_register_scope("monolith")
+            .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    for face in doors {
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{}_port", FACE_NAMES[face]),
+            0,
+            0,
+            0,
+        ));
+    }
+    out.push_str(&lights);
+    out
+}
+
+/// The shelf that holds a model of the room the shelf is in.
+///
+/// Five courses of shelving on three walls, and on the middle course of the
+/// middle wall, a plinth carrying a hexagonal cell at one-sixteenth: the same
+/// apothem, the same storey height, the same open middle, small enough to pick
+/// up.
+///
+/// The Index believed a described room is an observed room and that an observed
+/// room holds. This is that belief taken all the way down - the surveyors got
+/// as far as modelling the room they were standing in, which means the model
+/// contains a shelf, which means the shelf on the model contains a model. They
+/// stopped there because the next one would have been too small to carve, not
+/// because they saw the problem.
+///
+/// The model is the only geometry in the corpus deliberately off the eight-unit
+/// grid. It is at a different scale; the grid is a property of the building,
+/// and the model is not the building.
+#[must_use]
+pub fn hall_reliquary_infinite() -> String {
+    let doors = [0usize, 3];
+    let shelved = [1usize, 2, 4];
+
+    let mut brushes = String::from("// Floor and lid\n");
+    brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 3.0, 0.0));
+    brushes.push_str(&hex_slab(LEVEL - FLOOR_TOP, LEVEL, 0.0, 3.0));
+
+    brushes.push_str("// Envelope\n");
+    for face in 0..6 {
+        if doors.contains(&face) {
+            brushes.push_str(&door_wall(face, 0.0, LEVEL, FLOOR_TOP, DOOR_TOP, 8.0, 6.0));
+        } else {
+            brushes.push_str(&wall(face, 0.0, LEVEL));
+        }
+    }
+
+    brushes.push_str("// Twenty shelves: five to a side, on the three sealed walls\n");
+    for &face in &shelved {
+        for course in 0..5 {
+            #[allow(clippy::cast_precision_loss)]
+            let z = FLOOR_TOP + 16.0 + f64::from(course) * 20.0;
+            brushes.push_str(&band(face, WALL, WALL + 16.0, z, z + 4.0));
+        }
+    }
+
+    // The plinth and the model. Face 2's middle course.
+    let mid = face_mid(2);
+    let reach = mid.0.hypot(mid.1);
+    let stand = (
+        mid.0 / reach * (reach - 26.0),
+        mid.1 / reach * (reach - 26.0),
+    );
+    let base = FLOOR_TOP + 16.0 + 2.0 * 20.0 + 4.0;
+    brushes.push_str("// The plinth\n");
+    brushes.push_str(&translate(
+        &pylon(13.0, base, base + 3.0, 0.0, 1.0, 0.0),
+        stand.0,
+        stand.1,
+        0.0,
+    ));
+    brushes.push_str("// The cell, at one sixteenth. Apothem seven, storey eight\n");
+    for (radius, z0, z1) in [(8.1, 0.0, 0.5), (8.1, 0.5, 8.0), (4.1, 0.5, 8.0)] {
+        let phase = if radius > 6.0 { 30.0 } else { 0.0 };
+        brushes.push_str(&translate(
+            &pylon(radius, base + 3.0 + z0, base + 3.0 + z1, phase, 0.2, 0.0),
+            stand.0,
+            stand.1,
+            0.0,
+        ));
+    }
+
+    let mut lights = String::new();
+    let (fixture, source) = wall_fixture(2, 0.5, 108.0, 22.0);
+    brushes.push_str(&fixture);
+    lights.push_str(&source);
+    let (high, high_source) = ceiling_fixture(30.0, 0.0, LEVEL - FLOOR_TOP, 12.0, 8.0);
+    brushes.push_str(&high);
+    lights.push_str(&high_source);
+
+    let mut out = String::from("// The Reliquary, Infinite Gallery: a shelf holding this room.\n");
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell(
+            "authored/hall_reliquary_infinite",
+            "hall_reliquary",
+            0,
+            1,
+            8,
+        )
+        .with_register_scope("infinite_gallery")
+        .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    for face in doors {
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{}_port", FACE_NAMES[face]),
+            0,
+            0,
+            0,
+        ));
+    }
+    out.push_str(&lights);
+    out
+}
+
 #[must_use]
 pub fn builders() -> Vec<Builder> {
     vec![
@@ -1979,6 +2436,11 @@ pub fn builders() -> Vec<Builder> {
         ("hall_dais_monument", hall_dais_monument),
         ("hall_arena_monolith", hall_arena_monolith),
         ("hall_squint_screen", hall_squint_screen),
+        ("hall_transom_wellshaft", hall_transom_wellshaft),
+        ("hall_drop_megastructure", hall_drop_megastructure),
+        ("hall_false_depth_liminal", hall_false_depth_liminal),
+        ("hall_bore_monolith", hall_bore_monolith),
+        ("hall_reliquary_infinite", hall_reliquary_infinite),
         ("hall_gallery_infinite", hall_gallery_infinite),
         ("hall_cap", hall_cap),
         ("hall_turn_60", hall_turn_60),
