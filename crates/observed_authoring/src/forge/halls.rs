@@ -9,8 +9,8 @@ use super::entities::{
     worldspawn,
 };
 use super::geometry::{
-    DOOR_HALF_WIDTH, DOOR_TOP, FACE_NAMES, FLOOR_TOP, LEVEL, P2, WALL, band, centroid, corners,
-    door_wall, edge, face_mid, hex_slab, offset_inward, prism, pylon, regular_polygon,
+    DOOR_HALF_WIDTH, DOOR_TOP, FACE_NAMES, FLOOR_TOP, LEVEL, P2, WALL, band, boxed, centroid,
+    corners, door_wall, edge, face_mid, hex_slab, offset_inward, prism, pylon, regular_polygon,
     sloped_prism, translate, wall,
 };
 use super::{Builder, GENERATED_NOTE};
@@ -1811,6 +1811,156 @@ pub fn hall_arena_monolith() -> String {
     out
 }
 
+// ---------------------------------------------------------------------------
+// The Squint - a doorway that is only there from one place.
+// ---------------------------------------------------------------------------
+//
+// Three blocks hang in this room at three different distances, at three
+// different sizes, apparently unrelated. Stand on the plate just inside the
+// east door and they line up into the outline of a doorway: two posts and a
+// lintel, framing the far wall.
+//
+// Take one step off the plate and it falls apart again.
+//
+// Anamorphosis is a four-hundred-year-old trick - Holbein's skull, Borromini's
+// colonnade at the Palazzo Spada - and it has never had a better home than a
+// facility that only holds its shape where somebody is looking. The room
+// contains a door that exists exactly as long as it is observed from the one
+// place it can be observed from, which is the game's whole premise stated as
+// masonry.
+//
+// The maths is one line, applied three times. A piece meant to read at image
+// rectangle `(y0..y1, z0..z1)` at reference distance `D` from eye `E`, placed
+// at depth `d`, is that rectangle scaled by `d / D` about the eye. Nearer
+// pieces are proportionally smaller, so all three subtend the same angles and
+// the silhouette closes. Everything else about the room is ordinary.
+
+/// Where a body must stand for the doorway to be there. Just inside the east
+/// aperture, on the plate.
+const SQUINT_EYE: (f64, f64, f64) = (84.0, 0.0, 34.0);
+/// Reference distance the portal is described at.
+const SQUINT_REFERENCE: f64 = 190.0;
+
+/// One block of the illusion.
+///
+/// `y0..y1` and `z0..z1` describe the piece as it should *appear*, in the plane
+/// at `SQUINT_REFERENCE`; `depth` is how far from the eye it actually sits.
+fn squint_piece(depth: f64, y0: f64, y1: f64, z0: f64, z1: f64, thick: f64) -> String {
+    let (ex, ey, ez) = SQUINT_EYE;
+    let scale = depth / SQUINT_REFERENCE;
+    let x = ex - depth;
+    boxed(
+        (x - thick * 0.5, ey + y0 * scale, ez + (z0 - ez) * scale),
+        (x + thick * 0.5, ey + y1 * scale, ez + (z1 - ez) * scale),
+    )
+}
+
+/// A room with a doorway in it that is not there.
+///
+/// Shadow Screen, because the register is thin members and what is between you
+/// and the light, and this room is entirely about what happens to be in front
+/// of what.
+///
+/// # The walk
+///
+/// Almost nobody will ever see this. It is a through-hall: east door, west
+/// door, three odd blocks and a floor plate, and a body crossing it at speed
+/// registers a slightly cluttered room and keeps going. The plate is the only
+/// invitation, and it is the sort of invitation you have to already be the kind
+/// of person who accepts.
+///
+/// That is deliberate. A secret that announces itself is a landmark; this one
+/// is a reward for the specific act the facility runs on, which is stopping and
+/// looking properly at something.
+#[must_use]
+pub fn hall_squint_screen() -> String {
+    let doors = [0usize, 3];
+
+    let mut brushes = String::from("// Floor and lid\n");
+    brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 3.0, 0.0));
+    brushes.push_str(&hex_slab(LEVEL - FLOOR_TOP, LEVEL, 0.0, 3.0));
+
+    brushes.push_str("// Envelope\n");
+    for face in 0..6 {
+        if doors.contains(&face) {
+            brushes.push_str(&door_wall(face, 0.0, LEVEL, FLOOR_TOP, DOOR_TOP, 10.0, 6.0));
+        } else {
+            brushes.push_str(&wall(face, 0.0, LEVEL));
+        }
+    }
+
+    brushes.push_str("// Base course on the sealed walls\n");
+    for face in [1usize, 2, 4, 5] {
+        brushes.push_str(&band(face, WALL, WALL + 4.0, FLOOR_TOP, FLOOR_TOP + 20.0));
+    }
+
+    // The three pieces. Read the numbers as the portal they describe: posts
+    // twenty wide down each side of a hundred-and-twelve-unit opening, a lintel
+    // across the top of it. Then read the depths, which are what makes them
+    // look like nothing at all from anywhere else in the room.
+    brushes.push_str("// The near post, a stub column two paces in\n");
+    brushes.push_str(&squint_piece(66.0, -56.0, -36.0, FLOOR_TOP, 104.0, 12.0));
+    brushes.push_str("// The far post, a pilaster against the west wall\n");
+    brushes.push_str(&squint_piece(178.0, 36.0, 56.0, FLOOR_TOP, 104.0, 20.0));
+    brushes.push_str("// The lintel, hung in the middle of the room on two rods\n");
+    brushes.push_str(&squint_piece(122.0, -56.0, 56.0, 84.0, 104.0, 16.0));
+    for side in [-1.0, 1.0] {
+        let scale = 122.0 / SQUINT_REFERENCE;
+        let y = 40.0 * side * scale;
+        let top = SQUINT_EYE.2 + (104.0 - SQUINT_EYE.2) * scale;
+        brushes.push_str(&boxed(
+            (SQUINT_EYE.0 - 124.0, y - 3.0, top - 2.0),
+            (SQUINT_EYE.0 - 120.0, y + 3.0, LEVEL - FLOOR_TOP),
+        ));
+    }
+
+    // The plate. Without it the room is three lumps of nothing; with it, it is
+    // a question. Twenty-four units across, two proud of the floor, exactly
+    // where a body's feet go.
+    brushes.push_str("// The plate: stand here\n");
+    brushes.push_str(&translate(
+        &pylon(18.0, FLOOR_TOP, FLOOR_TOP + 2.0, 0.0, 1.0, 0.0),
+        SQUINT_EYE.0,
+        SQUINT_EYE.1,
+        0.0,
+    ));
+
+    // Light from behind the lintel, so the pieces are silhouettes rather than
+    // objects - which is both the register's whole name and the only way an
+    // outline made of three separate blocks reads as one outline.
+    let mut lights = String::new();
+    let (far, far_source) = wall_fixture(3, 0.5, 100.0, 28.0);
+    brushes.push_str(&far);
+    lights.push_str(&far_source);
+    let (near, near_source) = ceiling_fixture(60.0, 0.0, LEVEL - FLOOR_TOP, 14.0, 10.0);
+    brushes.push_str(&near);
+    lights.push_str(&near_source);
+
+    let mut out = String::from(
+        "// The Squint, Shadow Screen: a doorway that is only there from one place.\n",
+    );
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell("authored/hall_squint_screen", "hall_squint", 0, 1, 8)
+            .with_register_scope("shadow_screen")
+            .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    for face in doors {
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{}_port", FACE_NAMES[face]),
+            0,
+            0,
+            0,
+        ));
+    }
+    out.push_str(&lights);
+    out
+}
+
 #[must_use]
 pub fn builders() -> Vec<Builder> {
     vec![
@@ -1828,6 +1978,7 @@ pub fn builders() -> Vec<Builder> {
         ("hall_step_platform", hall_step_platform),
         ("hall_dais_monument", hall_dais_monument),
         ("hall_arena_monolith", hall_arena_monolith),
+        ("hall_squint_screen", hall_squint_screen),
         ("hall_gallery_infinite", hall_gallery_infinite),
         ("hall_cap", hall_cap),
         ("hall_turn_60", hall_turn_60),

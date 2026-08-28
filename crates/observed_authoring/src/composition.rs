@@ -512,6 +512,13 @@ mod tests {
         // reordered, so all 66 committed towers reproduce exactly and the diff
         // is 105 new files and nothing else.
         //
+        // Moved by the Squint - a hall containing three blocks at three depths
+        // that line up, from one floor plate and nowhere else, into the
+        // outline of a doorway. Anamorphosis is four hundred years old and has
+        // never had a better home than a facility that holds its shape only
+        // where somebody is looking: the room contains a door that exists
+        // exactly as long as it is observed from the one place it can be.
+        //
         // Moved by the Vestry - one authored room, Monolith-scoped, that no
         // district plan asked for. It is a deathmatch room: a spiral of two
         // ramps onto a gallery that crosses over one of its own doorways, cover
@@ -576,14 +583,14 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "278509fe286b04546a5a315c4046614b50968f4e5b47d46b55450151f805f4f8";
+            "7afe1a064b0fc4b9c217e2869e94e6ba0e4eb34120b40c517fd91426108ed51f";
         const PROFILE_HASH: &str =
             "5c1bc69db058d4e3332e755326548f887d46f215d81fdeb454591cd9c2c0104e";
         // Folds the catalog and the profile. Both sides moved this time, which
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "a904d284bd7840f7e763cff6f19498e92dc80173175ae9706c1124d444000ad0";
+            "82218c06a1200a1116bfea1d20ec1ed55a30cd2fbaa58e988eab70d1bcd8b884";
 
         let root = committed_tiles();
         let compiled_text =
@@ -596,7 +603,7 @@ mod tests {
             .filter(|module| module.archetype == "stair_tower")
             .collect::<Vec<_>>();
         assert_eq!(compiled.simulation_content_hash, CATALOG_HASH);
-        assert_eq!(compiled.modules.len(), 250, "committed strict source count");
+        assert_eq!(compiled.modules.len(), 251, "committed strict source count");
         // 1 doorless + every one-to-four-door pattern, in three vertical
         // connectivities: (1 + 6 + 15 + 20 + 15) * 3. Was 66, when the family
         // stopped at two doors and there was no branching landing.
