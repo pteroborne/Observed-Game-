@@ -10,7 +10,7 @@ use super::entities::{
 };
 use super::geometry::{
     DOOR_HALF_WIDTH, DOOR_TOP, FACE_NAMES, FLOOR_TOP, LEVEL, P2, WALL, band, centroid, corners,
-    door_wall, edge, face_mid, hex_slab, prism, pylon, wall,
+    door_wall, edge, face_mid, hex_slab, prism, pylon, regular_polygon, translate, wall,
 };
 use super::{Builder, GENERATED_NOTE};
 
@@ -1094,7 +1094,46 @@ const GALLERY_INNER: f64 = 66.0;
 /// A parapet stands at the lip. It is not decoration - without it the first
 /// thing that happens on a gallery is a body walking off the inside edge.
 #[must_use]
-fn hall_gallery(name: &str, register: &str, variant: i32, doors: &[usize]) -> String {
+/// Everything one gallery differs from another by.
+///
+/// Four tiles come out of one function because the differences between them
+/// are data, not code: the Index's rail is low, the Unwitnessed's walkway is
+/// missing two of its wedges, the Well's has a landing over the drop. Writing
+/// four builders would have made those three facts look unrelated.
+struct GallerySpec<'a> {
+    name: &'a str,
+    register: &'a str,
+    /// Distinguishes galleries that share an archetype *and* a register. The
+    /// Unwitnessed has two, and so does the Well; without this they collide at
+    /// variant 0 and a composition gets whichever one resolution happens to
+    /// find first.
+    variant: i32,
+    doors: &'a [usize],
+    /// Which of the six floor wedges exist. A missing wedge leaves the walkway
+    /// ending in a raw edge over the void.
+    wedges: &'a [usize],
+    /// Height of the parapet above the walkway. Borges' "very low railing" is
+    /// the whole of the Index's vertigo, and it is one number.
+    parapet: f64,
+    /// Faces whose wedge extends inward as a landing over the void.
+    cantilever: &'a [usize],
+}
+
+impl<'a> GallerySpec<'a> {
+    const fn plain(name: &'a str, register: &'a str, doors: &'a [usize]) -> Self {
+        Self {
+            name,
+            register,
+            variant: 0,
+            doors,
+            wedges: &[0, 1, 2, 3, 4, 5],
+            parapet: 20.0,
+            cantilever: &[],
+        }
+    }
+}
+
+fn hall_gallery(spec: &GallerySpec<'_>) -> String {
     let hex: Vec<P2> = corners().to_vec();
     let inner: Vec<P2> = (0..6)
         .map(|index| {
@@ -1105,27 +1144,47 @@ fn hall_gallery(name: &str, register: &str, variant: i32, doors: &[usize]) -> St
         .collect();
 
     let mut brushes = String::from("// Walkway ring: floor everywhere but the middle\n");
-    for index in 0..6 {
+    for &index in spec.wedges {
         let (a, b) = (hex[index], hex[(index + 1) % 6]);
         let (c, d) = (inner[(index + 1) % 6], inner[index]);
         brushes.push_str(&prism(&[a, b, c, d], 0.0, FLOOR_TOP, None, 2.0, 0.0));
     }
-    brushes.push_str("// Parapet at the lip - the reason a body stays on the walkway\n");
-    for index in 0..6 {
-        let (a, b) = (inner[index], inner[(index + 1) % 6]);
-        let shrink = |p: P2| (p.0 * 0.90, p.1 * 0.90);
+    brushes.push_str("// Landings out over the drop - the good addresses\n");
+    for &face in spec.cantilever {
+        let (a, b) = (inner[face], inner[(face + 1) % 6]);
+        let reach = |p: P2| (p.0 * 0.32, p.1 * 0.32);
         brushes.push_str(&prism(
-            &[a, b, shrink(b), shrink(a)],
+            &[a, b, reach(b), reach(a)],
+            0.0,
             FLOOR_TOP,
-            FLOOR_TOP + 20.0,
             None,
             2.0,
             0.0,
         ));
     }
+    if spec.parapet > 0.0 {
+        brushes.push_str("// Parapet at the lip - the reason a body stays on the walkway\n");
+        for index in 0..6 {
+            // A missing wedge leaves nothing to stand on, so it gets no rail:
+            // the edge is meant to be raw.
+            if !spec.wedges.contains(&index) {
+                continue;
+            }
+            let (a, b) = (inner[index], inner[(index + 1) % 6]);
+            let shrink = |p: P2| (p.0 * 0.90, p.1 * 0.90);
+            brushes.push_str(&prism(
+                &[a, b, shrink(b), shrink(a)],
+                FLOOR_TOP,
+                FLOOR_TOP + spec.parapet,
+                None,
+                2.0,
+                0.0,
+            ));
+        }
+    }
     brushes.push_str("// Envelope: doors where the gallery is entered, wall elsewhere\n");
     for face in 0..6 {
-        if doors.contains(&face) {
+        if spec.doors.contains(&face) {
             brushes.push_str(&door_wall(face, 0.0, LEVEL, FLOOR_TOP, DOOR_TOP, 10.0, 8.0));
         } else {
             brushes.push_str(&wall(face, 0.0, LEVEL));
@@ -1145,12 +1204,18 @@ fn hall_gallery(name: &str, register: &str, variant: i32, doors: &[usize]) -> St
     out.push_str(GENERATED_NOTE);
     out.push_str(&worldspawn(&brushes));
     out.push_str(
-        &Meta::cell(&format!("authored/{name}"), "hall_gallery", variant, 1, 8)
-            .with_register_scope(register)
-            .emit(),
+        &Meta::cell(
+            &format!("authored/{}", spec.name),
+            "hall_gallery",
+            spec.variant,
+            1,
+            8,
+        )
+        .with_register_scope(spec.register)
+        .emit(),
     );
     out.push_str(&tile_cell(0, 0, 0, 1, "open"));
-    for &face in doors {
+    for &face in spec.doors {
         let short = if face == 0 || face == 3 {
             FACE_NAMES[face]
         } else {
@@ -1172,25 +1237,366 @@ fn hall_gallery(name: &str, register: &str, variant: i32, doors: &[usize]) -> St
 /// The Megastructure gallery: two opposed doors, so a run of them rings a shaft.
 #[must_use]
 pub fn hall_gallery_megastructure() -> String {
-    hall_gallery("hall_gallery_megastructure", "megastructure", 0, &[0, 3])
+    hall_gallery(&GallerySpec::plain(
+        "hall_gallery_megastructure",
+        "megastructure",
+        &[0, 3],
+    ))
 }
 
 /// The Wellshaft gallery: the same walkway, in the register that is *about* a
 /// well. Two doors, because a silo is entered on one side and left on the other.
 #[must_use]
 pub fn hall_gallery_wellshaft() -> String {
-    hall_gallery("hall_gallery_wellshaft", "wellshaft", 0, &[0, 3])
+    hall_gallery(&GallerySpec::plain(
+        "hall_gallery_wellshaft",
+        "wellshaft",
+        &[0, 3],
+    ))
 }
 
-/// The Infinite Gallery gallery: doors on every other face.
+/// The Infinite Gallery gallery: doors on every other face, and a rail so low
+/// it is more of an insult than a precaution.
 ///
 /// Babel's cell is not a corridor with a hole in it - it is a landing that
 /// every neighbouring landing can be reached from, and the identical landing
 /// above and below. Three doors is what makes a storey read as a *floor of the
 /// library* rather than a link in a route.
+///
+/// The rail was 20 units and is now 8. Borges specifies "very low", and low is
+/// the word doing the work: the Index is a district that believed writing
+/// things down was safety, and it guarded its shafts accordingly.
 #[must_use]
 pub fn hall_gallery_infinite() -> String {
-    hall_gallery("hall_gallery_infinite", "infinite_gallery", 0, &[0, 2, 4])
+    hall_gallery(&GallerySpec {
+        parapet: 8.0,
+        ..GallerySpec::plain("hall_gallery_infinite", "infinite_gallery", &[0, 2, 4])
+    })
+}
+
+/// The Unwitnessed gallery: two wedges of the walkway are simply not there.
+///
+/// Not broken - *finished*, the way a sentence stops when the speaker loses
+/// interest. The composition that staggers shaft heights already reads as
+/// incoherent; this is what makes it read as having been left rather than as
+/// having gone wrong. The missing wedges get no parapet, because a rail on an
+/// absent floor is a different and much sadder building.
+#[must_use]
+pub fn hall_gallery_broken() -> String {
+    hall_gallery(&GallerySpec {
+        variant: 1,
+        wedges: &[0, 1, 2, 3],
+        ..GallerySpec::plain("hall_gallery_broken", "megastructure", &[0, 3])
+    })
+}
+
+/// The Well's good address: a landing projecting out over the drop.
+///
+/// Every design decision in the Well is about sightlines between people, and
+/// this is the one that says so out loud - a platform whose only purpose is to
+/// put a body where the most levels can see it, and where it can see the most
+/// levels.
+#[must_use]
+pub fn hall_gallery_cantilever() -> String {
+    hall_gallery(&GallerySpec {
+        variant: 1,
+        cantilever: &[1],
+        ..GallerySpec::plain("hall_gallery_cantilever", "wellshaft", &[0, 3])
+    })
+}
+
+/// How wide the Noon's dropped lid is, either side of the corridor axis.
+///
+/// Eight units narrower than the aperture, so a slot of light runs the whole
+/// length of both walls. The first attempt made the lid a centred hexagon on
+/// the theory that a turn has no single run - but `hall_shell` fills every
+/// undoored sector solid, so there is no "round" for a slot to go round, and
+/// the lid was buried in mass. A corridor's soffit follows the corridor.
+const SOFFIT_HALF_WIDTH: f64 = 28.0;
+
+/// How far short of the face the lid stops, so the aperture keeps full height.
+const SOFFIT_REVEAL: f64 = 18.0;
+
+fn soffit_arm(face: usize) -> String {
+    let mid = face_mid(face);
+    let length = mid.0.hypot(mid.1);
+    let u = (mid.0 / length, mid.1 / length);
+    let perp = (-u.1, u.0);
+    let reach = length - SOFFIT_REVEAL;
+    let point = |along: f64, side: f64| {
+        (
+            u.0 * along + perp.0 * side * SOFFIT_HALF_WIDTH,
+            u.1 * along + perp.1 * side * SOFFIT_HALF_WIDTH,
+        )
+    };
+    prism(
+        &[
+            point(-12.0, 1.0),
+            point(reach, 1.0),
+            point(reach, -1.0),
+            point(-12.0, -1.0),
+        ],
+        SOFFIT_UNDERSIDE,
+        LEVEL - FLOOR_TOP,
+        None,
+        0.0,
+        4.0,
+    )
+}
+
+fn hall_turn_soffit(name: &str, second_face: usize) -> String {
+    let mut brushes = hall_shell(&[0, second_face]);
+    brushes.push_str("// The lid, dropped and narrower than the hall it covers\n");
+    for face in [0usize, second_face] {
+        brushes.push_str(&soffit_arm(face));
+    }
+
+    let mut lights = String::new();
+    // Under the lid rather than above it. A Noon cell has no visible fitting
+    // from the middle of the floor; you find them by looking up into the slot,
+    // and by then you have already stopped being able to say which way you
+    // came in.
+    for face in [0usize, second_face] {
+        let mid = face_mid(face);
+        let (fixture, source) =
+            ceiling_fixture(mid.0 * 0.52, mid.1 * 0.52, SOFFIT_UNDERSIDE, 11.0, 11.0);
+        brushes.push_str(&fixture);
+        lights.push_str(&source);
+    }
+
+    let mut out =
+        String::from("// Turn, Overlit Grid: a dropped lid with a slot of light either side.\n");
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell(&format!("authored/{name}"), name, 0, 1, 8)
+            .with_register_scope("overlit_grid")
+            .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    for face in [0usize, second_face] {
+        let short = if face == 0 || face == 3 {
+            FACE_NAMES[face]
+        } else {
+            PORT_SHORT[face]
+        };
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{short}_port"),
+            0,
+            0,
+            0,
+        ));
+    }
+    out.push_str(&lights);
+    out
+}
+
+/// The Noon's 60-degree turn.
+#[must_use]
+pub fn hall_turn_60_soffit() -> String {
+    hall_turn_soffit("hall_turn_60_soffit", 5)
+}
+
+/// The Noon's 120-degree turn.
+#[must_use]
+pub fn hall_turn_120_soffit() -> String {
+    hall_turn_soffit("hall_turn_120_soffit", 4)
+}
+
+/// The Back's opening: the wall simply stops.
+///
+/// `door_wall` with zero splay and zero lintel bevel. Every other tile in the
+/// corpus reveals its apertures - a splayed jamb, a chamfered head - because a
+/// framed opening reads as *intended*. Service space was never drawn by
+/// anybody, so nothing about it was intended, and the absence of a frame is the
+/// only thing that says so. It costs nothing: two numbers set to nought.
+#[must_use]
+pub fn hall_straight_threshold() -> String {
+    let mut brushes = String::from("// Floor and lid\n");
+    brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 3.0, 0.0));
+    brushes.push_str(&hex_slab(LEVEL - FLOOR_TOP, LEVEL, 0.0, 3.0));
+    brushes.push_str("// Envelope: unframed apertures east and west\n");
+    for face in 0..6 {
+        if face == 0 || face == 3 {
+            brushes.push_str(&door_wall(face, 0.0, LEVEL, FLOOR_TOP, DOOR_TOP, 0.0, 0.0));
+        } else {
+            brushes.push_str(&wall(face, 0.0, LEVEL));
+        }
+    }
+    let mut lights = String::new();
+    for x in [-46.0, 46.0] {
+        let (fixture, source) = ceiling_fixture(x, 0.0, LEVEL - FLOOR_TOP, 16.0, 9.0);
+        brushes.push_str(&fixture);
+        lights.push_str(&source);
+    }
+
+    let mut out = String::from("// Straight hall, Liminal Grid: openings with no frame at all.\n");
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell(
+            "authored/hall_straight_threshold",
+            "hall_straight_threshold",
+            0,
+            1,
+            8,
+        )
+        .with_register_scope("liminal_grid")
+        .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    for face in [0usize, 3] {
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{}_port", FACE_NAMES[face]),
+            0,
+            0,
+            0,
+        ));
+    }
+    out.push_str(&lights);
+    out
+}
+
+/// How far the Thin's floor rises across a threshold: one step, half a metre.
+///
+/// A hand's height is what the fiction asks for and half a metre is what a body
+/// can climb. Eight units is also exactly the floor slab's own thickness, so
+/// the raised half reads as *one more floor laid on top* rather than as a
+/// plinth - which is what a raised timber deck actually is.
+const STEP_RISE: f64 = 8.0;
+
+/// The Thin's divider: a change of floor level, and nothing else.
+///
+/// Every other tile separates space with a wall. This one separates it with
+/// half a metre, and the separation is entirely in the body: you cannot cross
+/// without your knee knowing about it. The Thin's builders had watched walls
+/// fail - a wall is mostly a thing that can be moved - and this is what they
+/// used instead.
+#[must_use]
+pub fn hall_step_platform() -> String {
+    let mut brushes = hall_shell(&[0, 3]);
+    brushes.push_str("// The raised half. The threshold is the step, not a door\n");
+    let hex = corners();
+    brushes.push_str(&prism(
+        &[(0.0, hex[5].1), hex[0], hex[1], (0.0, hex[2].1)],
+        FLOOR_TOP,
+        FLOOR_TOP + STEP_RISE,
+        None,
+        2.0,
+        0.0,
+    ));
+
+    let mut lights = String::new();
+    for face in [0usize, 3] {
+        let mid = face_mid(face);
+        let (fixture, source) =
+            ceiling_fixture(mid.0 * 0.5, mid.1 * 0.5, LEVEL - FLOOR_TOP, 12.0, 8.0);
+        brushes.push_str(&fixture);
+        lights.push_str(&source);
+    }
+
+    let mut out =
+        String::from("// Straight hall, Thinning: the floor steps, and that is the wall.\n");
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell("authored/hall_step_platform", "hall_step_platform", 0, 1, 8)
+            .with_register_scope("thinning")
+            .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    for face in [0usize, 3] {
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{}_port", FACE_NAMES[face]),
+            0,
+            0,
+            0,
+        ));
+    }
+    out.push_str(&lights);
+    out
+}
+
+/// How far from the cell centre the dais stands, toward the sealed end.
+const DAIS_OFFSET: f64 = -46.0;
+
+/// The Welcome's terminus: a stepped dais with nothing on it.
+///
+/// One door, because the Welcome was never built to be travelled - it was built
+/// to be arrived at. Three courses rising to a flat top, and the top is empty:
+/// not "nothing left on it", nothing was ever on it. The dais is a place to be
+/// seen standing, by a guest who did not come.
+#[must_use]
+pub fn hall_dais_monument() -> String {
+    // An envelope, not a channel. `hall_shell` fills every undoored sector
+    // solid, which makes a one-door cell a corridor stub - and the Welcome's
+    // terminus is not a stub, it is a chamber. A perimeter wall with one
+    // aperture leaves the whole hex open, which is what you have come into.
+    let mut brushes = String::from("// Floor and lid\n");
+    brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 3.0, 0.0));
+    brushes.push_str(&hex_slab(LEVEL - FLOOR_TOP, LEVEL, 0.0, 3.0));
+    brushes.push_str("// Envelope: one aperture, five faces of wall\n");
+    for face in 0..6 {
+        if face == 0 {
+            brushes.push_str(&door_wall(
+                face, 0.0, LEVEL, FLOOR_TOP, DOOR_TOP, 14.0, 10.0,
+            ));
+        } else {
+            brushes.push_str(&wall(face, 0.0, LEVEL));
+        }
+    }
+    // Three courses at the far end, not in the middle. A dais over the cell
+    // centre reads to the contract as a low ceiling above the floor - which is
+    // exactly what it is, from the doorway - and it is the wrong building
+    // anyway: you enter at one end and the thing you have come to see stands at
+    // the other. Being made to cross the room is most of the ceremony.
+    brushes.push_str("// Three courses, each stepped back from the one below\n");
+    for (step, radius) in [(0.0, 56.0), (1.0, 42.0), (2.0, 28.0)] {
+        let z0 = FLOOR_TOP + step * STEP_RISE;
+        brushes.push_str(&translate(
+            &prism(
+                &regular_polygon(radius, 6, 30.0),
+                z0,
+                z0 + STEP_RISE,
+                Some((0.0, 0.0)),
+                2.0,
+                0.0,
+            ),
+            DAIS_OFFSET,
+            0.0,
+            0.0,
+        ));
+    }
+
+    let mut lights = String::new();
+    // Four fittings low on the walls, aimed across the dais rather than at it.
+    // The Welcome does not light its objects; it lights the space an object
+    // would occupy.
+    for face in [1usize, 2, 4, 5] {
+        let (fixture, source) = wall_fixture(face, 0.5, 84.0, 20.0);
+        brushes.push_str(&fixture);
+        lights.push_str(&source);
+    }
+
+    let mut out =
+        String::from("// Cap, Facet Monument: the axis arrives at a dais with nothing on it.\n");
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell("authored/hall_dais_monument", "hall_dais", 0, 1, 8)
+            .with_register_scope("facet_monument")
+            .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    out.push_str(&lateral_port(0, "door", "east_port", 0, 0, 0));
+    out.push_str(&lights);
+    out
 }
 
 #[must_use]
@@ -1202,6 +1608,13 @@ pub fn builders() -> Vec<Builder> {
         ("hall_straight_soffit", hall_straight_soffit),
         ("hall_gallery_megastructure", hall_gallery_megastructure),
         ("hall_gallery_wellshaft", hall_gallery_wellshaft),
+        ("hall_gallery_broken", hall_gallery_broken),
+        ("hall_gallery_cantilever", hall_gallery_cantilever),
+        ("hall_turn_60_soffit", hall_turn_60_soffit),
+        ("hall_turn_120_soffit", hall_turn_120_soffit),
+        ("hall_straight_threshold", hall_straight_threshold),
+        ("hall_step_platform", hall_step_platform),
+        ("hall_dais_monument", hall_dais_monument),
         ("hall_gallery_infinite", hall_gallery_infinite),
         ("hall_cap", hall_cap),
         ("hall_turn_60", hall_turn_60),

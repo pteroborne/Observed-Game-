@@ -75,6 +75,7 @@
 ( 57.1577 33.0000 6 ) ( 57.1577 -33.0000 6 ) ( 55.1577 -0.0000 8 ) __TB_empty 0 0 0 1 1
 ( 57.1577 -33.0000 6 ) ( 0 128 6 ) ( 30.4636 48.1691 8 ) __TB_empty 0 0 0 1 1
 }
+// Landings out over the drop - the good addresses
 // Parapet at the lip - the reason a body stays on the walkway
 {
 ( 57.1577 33.0000 8 ) ( 57.1577 33.0000 72 ) ( 0.0000 66 8 ) __TB_empty 0 0 0 1 1

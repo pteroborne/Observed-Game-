@@ -76,6 +76,18 @@
 ( 57.1577 -33.0000 6 ) ( 0 128 6 ) ( 30.4636 48.1691 8 ) __TB_empty 0 0 0 1 1
 }
 // Landings out over the drop - the good addresses
+{
+( 0.0000 66 0 ) ( 0.0000 66 64 ) ( -57.1577 33.0000 0 ) __TB_empty 0 0 0 1 1
+( -57.1577 33.0000 0 ) ( -57.1577 33.0000 64 ) ( -18.2905 10.5600 0 ) __TB_empty 0 0 0 1 1
+( -18.2905 10.5600 0 ) ( -18.2905 10.5600 64 ) ( 0.0000 21.1200 0 ) __TB_empty 0 0 0 1 1
+( 0.0000 21.1200 0 ) ( 0.0000 21.1200 64 ) ( 0.0000 66 0 ) __TB_empty 0 0 0 1 1
+( 0 0 0 ) ( 64 0 0 ) ( 0 64 0 ) __TB_empty 0 0 0 1 1
+( 0 0 8 ) ( 0 64 8 ) ( 64 0 8 ) __TB_empty 0 0 0 1 1
+( 0.0000 66 6 ) ( -27.5788 47.7679 8 ) ( -57.1577 33.0000 6 ) __TB_empty 0 0 0 1 1
+( -57.1577 33.0000 6 ) ( -36.7241 23.5121 8 ) ( -18.2905 10.5600 6 ) __TB_empty 0 0 0 1 1
+( -18.2905 10.5600 6 ) ( -10.1452 17.5721 8 ) ( 0.0000 21.1200 6 ) __TB_empty 0 0 0 1 1
+( 0.0000 21.1200 6 ) ( -2.0000 43.5600 8 ) ( 0.0000 66 6 ) __TB_empty 0 0 0 1 1
+}
 // Parapet at the lip - the reason a body stays on the walkway
 {
 ( 57.1577 33.0000 8 ) ( 57.1577 33.0000 72 ) ( 0.0000 66 8 ) __TB_empty 0 0 0 1 1
@@ -276,12 +288,12 @@
 {
 "classname" "tile_meta"
 "authoring_version" "2"
-"id" "authored/hall_gallery_megastructure"
+"id" "authored/hall_gallery_cantilever"
 "kind" "cell"
 "archetype" "hall_gallery"
 "register" "generic"
-"register_scope" "megastructure"
-"variant" "0"
+"register_scope" "wellshaft"
+"variant" "1"
 "levels" "1"
 "rotation_policy" "sixfold"
 "weight" "8"

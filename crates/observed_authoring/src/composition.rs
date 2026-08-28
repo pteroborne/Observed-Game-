@@ -512,6 +512,19 @@ mod tests {
         // reordered, so all 66 committed towers reproduce exactly and the diff
         // is 105 new files and nothing else.
         //
+        // Moved by Wave 1 of the district geometry plan - eight tiles, one per
+        // district, each the cheapest thing that makes its fiction legible.
+        // Four of them come out of one generalised gallery builder, because
+        // the Index's low rail, the Unwitnessed's missing wedges and the Well's
+        // landing over the drop are data, not code, and three builders would
+        // have made those three facts look unrelated.
+        //
+        // The Index's parapet went from 20 units to 8 in the same move. Borges
+        // says "very low", low is the word doing the work, and a tile whose
+        // fiction is one number is a tile that should carry that number.
+        //
+        // Catalog side only again; the profile is unchanged at 5c1bc69d.
+        //
         // Moved by three authored galleries - `hall_gallery` in the
         // Megastructure, Wellshaft and Infinite Gallery registers. A gallery is
         // a walkway round an open middle with no ceiling over the void, and it
@@ -556,14 +569,14 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "26de4f666aa6afb49039ac2d62bd44991362a2d94842b0076ec844dc408e07ab";
+            "921cd90a26ff4f85c4744f4bf827e1a400be185e407d91870378d3762eed2653";
         const PROFILE_HASH: &str =
             "5c1bc69db058d4e3332e755326548f887d46f215d81fdeb454591cd9c2c0104e";
         // Folds the catalog and the profile. Both sides moved this time, which
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "1a04e299b6d372d2acee57a7bb94cf2b455e3fef099073a05a024ece8a2ccc9e";
+            "4264d673768812a00767705cd3ffb07988e2194135bdee253923eab2a246e9e1";
 
         let root = committed_tiles();
         let compiled_text =
@@ -576,7 +589,7 @@ mod tests {
             .filter(|module| module.archetype == "stair_tower")
             .collect::<Vec<_>>();
         assert_eq!(compiled.simulation_content_hash, CATALOG_HASH);
-        assert_eq!(compiled.modules.len(), 242, "committed strict source count");
+        assert_eq!(compiled.modules.len(), 249, "committed strict source count");
         // 1 doorless + every one-to-four-door pattern, in three vertical
         // connectivities: (1 + 6 + 15 + 20 + 15) * 3. Was 66, when the family
         // stopped at two doors and there was no branching landing.
