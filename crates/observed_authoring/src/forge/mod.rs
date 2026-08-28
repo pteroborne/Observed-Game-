@@ -11,6 +11,7 @@ pub mod halls;
 pub mod liminal;
 pub mod perimeter;
 pub mod probe;
+pub mod program;
 pub mod recipe;
 pub mod rooms;
 pub mod silos;
@@ -45,6 +46,7 @@ pub fn builders() -> Vec<Builder> {
     let mut all = halls::builders();
     all.extend(silos::builders());
     all.extend(rooms::builders());
+    all.extend(program::builders());
     all
 }
 

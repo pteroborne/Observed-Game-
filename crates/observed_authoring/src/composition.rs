@@ -512,6 +512,19 @@ mod tests {
         // reordered, so all 66 committed towers reproduce exactly and the diff
         // is 105 new files and nothing else.
         //
+        // Moved by the first program tile, and by the module it opens.
+        // `forge::program` is for the mundane fittings a facility is emptied
+        // *of* - a liminal space is a lived-in space missing its living, and
+        // every district so far is architecture that has never been used for
+        // anything. The restroom is first because no room in a building is more
+        // completely determined by bodies, so one with no bodies in it is the
+        // shape of an absence rather than an empty box.
+        //
+        // It also supplies the thing all seven districts deliberately withhold.
+        // A basin is 850 mm off the floor in every building ever made; one run
+        // of them gives the facility a scale, and every space that refuses to
+        // have one starts refusing it *against* something.
+        //
         // Moved by five tiles that are ideas rather than decorations: a
         // transom (sight without traversal), a drop (walls and no floor
         // between them), a false depth (four frames receding faster than
@@ -597,14 +610,14 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "12af1c52d4e6599eac91f20d4f61ac7fbf2e1940d38b2599062577597c9c313d";
+            "839d95f999049e68b5c9f3a5d604340a86a99eff1321431497fd4fe3b52eedd2";
         const PROFILE_HASH: &str =
             "5c1bc69db058d4e3332e755326548f887d46f215d81fdeb454591cd9c2c0104e";
         // Folds the catalog and the profile. Both sides moved this time, which
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "ab8a77a6f953562502e8c023f36da2420a4f772937e4d1c7a20664d182634797";
+            "c86a8c04881d3642fa6faf9cd8da936bc49d73599a8c3a5a046e53d0aff50a22";
 
         let root = committed_tiles();
         let compiled_text =
@@ -617,7 +630,7 @@ mod tests {
             .filter(|module| module.archetype == "stair_tower")
             .collect::<Vec<_>>();
         assert_eq!(compiled.simulation_content_hash, CATALOG_HASH);
-        assert_eq!(compiled.modules.len(), 256, "committed strict source count");
+        assert_eq!(compiled.modules.len(), 257, "committed strict source count");
         // 1 doorless + every one-to-four-door pattern, in three vertical
         // connectivities: (1 + 6 + 15 + 20 + 15) * 3. Was 66, when the family
         // stopped at two doors and there was no branching landing.
