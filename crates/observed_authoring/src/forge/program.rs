@@ -427,7 +427,8 @@ macro_rules! program_tiles {
     (
         $(($afn:ident, $astem:literal, $adialect:expr)),* $(,)? ;
         $(($rfn:ident, $rstem:literal, $rspec:expr)),* $(,)? ;
-        $(($lfn:ident, $lstem:literal, $lspec:expr)),* $(,)?
+        $(($lfn:ident, $lstem:literal, $lspec:expr)),* $(,)? ;
+        $(($wfn:ident, $wstem:literal, $wspec:expr)),* $(,)?
     ) => {
         $(
             #[must_use]
@@ -447,6 +448,12 @@ macro_rules! program_tiles {
                 lockers(&$lspec)
             }
         )*
+        $(
+            #[must_use]
+            pub fn $wfn() -> String {
+                waiting(&$wspec)
+            }
+        )*
 
         #[must_use]
         pub fn builders() -> Vec<Builder> {
@@ -454,6 +461,7 @@ macro_rules! program_tiles {
                 $(($astem, $afn as fn() -> String),)*
                 $(($rstem, $rfn as fn() -> String),)*
                 $(($lstem, $lfn as fn() -> String),)*
+                $(($wstem, $wfn as fn() -> String),)*
             ]
         }
     };
@@ -648,6 +656,56 @@ program_tiles![
         hall_lockers_liminal_grid,
         "hall_lockers_liminal_grid",
         Lockers { dado: 18.0, ..bank("liminal_grid") }
+    );
+    (
+        hall_waiting_shadow_screen,
+        "hall_waiting_shadow_screen",
+        Waiting { screen: Screen::Grille, ..queue("shadow_screen") }
+    ),
+    (
+        hall_waiting_monolith,
+        "hall_waiting_monolith",
+        Waiting { screen: Screen::Open, rows: 2, queue: false, dado: 16.0, ..queue("monolith") }
+    ),
+    (
+        hall_waiting_overlit_grid,
+        "hall_waiting_overlit_grid",
+        Waiting { screen: Screen::Open, dado: 2.0, ..queue("overlit_grid") }
+    ),
+    (
+        hall_waiting_institutional,
+        "hall_waiting_institutional",
+        queue("institutional")
+    ),
+    (
+        hall_waiting_facet_monument,
+        "hall_waiting_facet_monument",
+        Waiting { plinth: true, counter: FLOOR_TOP + H_COUNTER + 4.0, rows: 2, dado: 12.0, ..queue("facet_monument") }
+    ),
+    (
+        hall_waiting_megastructure,
+        "hall_waiting_megastructure",
+        Waiting { counter: FLOOR_TOP + H_COUNTER + 8.0, rows: 2, dado: 26.0, ..queue("megastructure") }
+    ),
+    (
+        hall_waiting_wellshaft,
+        "hall_waiting_wellshaft",
+        Waiting { seating: Seating::Opposed, screen: Screen::Open, queue: false, dado: 10.0, ..queue("wellshaft") }
+    ),
+    (
+        hall_waiting_infinite_gallery,
+        "hall_waiting_infinite_gallery",
+        Waiting { seating: Seating::Ledge, ..queue("infinite_gallery") }
+    ),
+    (
+        hall_waiting_thinning,
+        "hall_waiting_thinning",
+        Waiting { seating: Seating::None, screen: Screen::Open, queue: false, ..queue("thinning") }
+    ),
+    (
+        hall_waiting_liminal_grid,
+        "hall_waiting_liminal_grid",
+        Waiting { dado: 18.0, ..queue("liminal_grid") }
     ),
 ];
 
@@ -1129,6 +1187,288 @@ const fn bank(register: &'static str) -> Lockers {
         shut: true,
         courses: false,
         bench: true,
+        dado: 0.0,
+    }
+}
+
+/// What stands between you and whoever was behind the counter.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Screen {
+    /// A plane above the counter with a gap in it. You talk through a hole.
+    Glazed,
+    /// Thin verticals. You talk through a gap between bars.
+    Grille,
+    /// Nothing. The counter is open to the room.
+    Open,
+}
+
+/// Where the waiting happened.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Seating {
+    /// Rows facing the counter. Everyone looks the same way, at the same shut
+    /// window.
+    Facing,
+    /// Two runs down opposite walls, facing each other across the room.
+    Opposed,
+    /// A continuous ledge. You wait standing, leaning.
+    Ledge,
+    /// Nowhere. You wait on your feet.
+    None,
+}
+
+/// One district's waiting area.
+struct Waiting {
+    register: &'static str,
+    counter: f64,
+    screen: Screen,
+    seating: Seating,
+    rows: usize,
+    /// A barrier defining where the queue went.
+    queue: bool,
+    plinth: bool,
+    dado: f64,
+}
+
+/// The waiting area: seats, a barrier, and a window that is shut.
+///
+/// # Why this is the most liminal room there is
+///
+/// Every other room in a building is *for* something — you eat here, you wash
+/// here, you keep your coat here. This one is for **delay**. Its entire purpose
+/// is the interval between arriving and being dealt with, which means it was
+/// already, when full, a room nobody wanted to be in and everybody was in
+/// anyway. Emptying it does not change what it is for. It just removes the only
+/// thing that ever ended the wait.
+///
+/// # The seats are still here, and that is the point
+///
+/// Everywhere else in this module the furniture was taken and the fixings are
+/// the evidence. Waiting-room seating is beam-mounted steel bolted to the slab,
+/// which is exactly why it is the one kind of furniture that survives an
+/// evacuation: nobody could carry it and nobody wanted it. So this room is not
+/// the shape of absent seating. It is **rows of seats with nobody in them**,
+/// facing a shut window, which is worse.
+///
+/// Three things say waiting room and none of them is a chair:
+///
+/// 1. **The window with a gap in it.** A counter you speak through rather than
+///    across. It is the only fitting in a building that is explicitly a barrier
+///    to the person it serves.
+/// 2. **The queue barrier.** Nothing but a queue has one, and it is still
+///    standing, still defining a route to a window nobody is behind.
+/// 3. **Rows.** All facing one way, at one thing.
+fn waiting(spec: &Waiting) -> String {
+    const DESK: usize = 4;
+    let doors = [0usize, 3];
+    let seat = FLOOR_TOP + H_SEAT;
+    let screen_head = spec.counter + 26.0;
+
+    let mut brushes = String::from("// Floor and lid\n");
+    brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 3.0, 0.0));
+    brushes.push_str(&hex_slab(LEVEL - FLOOR_TOP, LEVEL, 0.0, 3.0));
+
+    brushes.push_str("// Envelope. A waiting area is a widening of a route\n");
+    for face in 0..6 {
+        if doors.contains(&face) {
+            brushes.push_str(&door_wall(face, 0.0, LEVEL, FLOOR_TOP, DOOR_TOP, 8.0, 6.0));
+        } else {
+            brushes.push_str(&wall(face, 0.0, LEVEL));
+        }
+    }
+
+    if spec.dado > 0.0 {
+        for face in [1usize, 2] {
+            brushes.push_str(&band(
+                face,
+                WALL,
+                WALL + 4.0,
+                FLOOR_TOP,
+                FLOOR_TOP + spec.dado,
+            ));
+        }
+    }
+
+    if spec.plinth {
+        brushes.push_str("// The desk on a plinth. You are received, not served\n");
+        brushes.push_str(&band(DESK, WALL, WALL + 26.0, FLOOR_TOP, FLOOR_TOP + 4.0));
+    }
+
+    brushes.push_str("// The counter\n");
+    brushes.push_str(&band(
+        DESK,
+        WALL,
+        WALL + 22.0,
+        spec.counter,
+        spec.counter + 4.0,
+    ));
+
+    match spec.screen {
+        Screen::Glazed => {
+            brushes.push_str("// The screen, and the gap you had to speak through\n");
+            for (a0, a1) in [(0.10, 0.44), (0.56, 0.90)] {
+                brushes.push_str(&panel(
+                    DESK,
+                    a0,
+                    a1,
+                    WALL + 8.0,
+                    WALL + 11.0,
+                    spec.counter + 4.0,
+                    screen_head,
+                ));
+            }
+            brushes.push_str(&panel(
+                DESK,
+                0.44,
+                0.56,
+                WALL + 8.0,
+                WALL + 11.0,
+                spec.counter + 12.0,
+                screen_head,
+            ));
+        }
+        Screen::Grille => {
+            brushes.push_str("// Bars. You spoke between them\n");
+            for index in 0..5 {
+                #[allow(clippy::cast_precision_loss)]
+                let t = 0.12 + f64::from(index) * 0.19;
+                brushes.push_str(&panel(
+                    DESK,
+                    t,
+                    t + 0.03,
+                    WALL + 8.0,
+                    WALL + 11.0,
+                    spec.counter + 4.0,
+                    screen_head,
+                ));
+            }
+        }
+        Screen::Open => {}
+    }
+
+    brushes.push_str("// The bracket the numbers were called on\n");
+    brushes.push_str(&panel(
+        DESK,
+        0.40,
+        0.60,
+        WALL,
+        WALL + 6.0,
+        screen_head + 8.0,
+        screen_head + 14.0,
+    ));
+
+    if spec.queue {
+        brushes.push_str("// The barrier. Still defining a route to a shut window\n");
+        for (a0, a1, depth) in [(0.04, 0.62, 30.0), (0.38, 0.96, 42.0)] {
+            brushes.push_str(&panel(
+                DESK,
+                a0,
+                a1,
+                WALL + depth,
+                WALL + depth + 3.0,
+                FLOOR_TOP + 14.0,
+                FLOOR_TOP + 17.0,
+            ));
+        }
+    }
+
+    match spec.seating {
+        Seating::Facing => {
+            brushes.push_str("// Rows, all looking the same way, at the same shut window\n");
+            for row in 0..spec.rows {
+                #[allow(clippy::cast_precision_loss)]
+                let depth = WALL + 56.0 + f64::from(u16::try_from(row).unwrap_or(0)) * 24.0;
+                brushes.push_str(&panel(
+                    DESK,
+                    0.16,
+                    0.84,
+                    depth,
+                    depth + 8.0,
+                    seat,
+                    seat + 3.0,
+                ));
+                brushes.push_str(&panel(
+                    DESK,
+                    0.26,
+                    0.74,
+                    depth + 2.0,
+                    depth + 6.0,
+                    FLOOR_TOP,
+                    seat,
+                ));
+            }
+        }
+        Seating::Opposed => {
+            brushes.push_str("// Two runs, facing each other. Nobody here faced a window\n");
+            for face in [1usize, 2] {
+                brushes.push_str(&band(face, WALL, WALL + 14.0, seat, seat + 3.0));
+                brushes.push_str(&band(face, WALL + 3.0, WALL + 11.0, FLOOR_TOP, seat));
+            }
+        }
+        Seating::Ledge => {
+            brushes.push_str("// A ledge. You waited standing, and you read\n");
+            brushes.push_str(&band(
+                2,
+                WALL,
+                WALL + 14.0,
+                spec.counter,
+                spec.counter + 3.0,
+            ));
+            for course in 0..2 {
+                #[allow(clippy::cast_precision_loss)]
+                let z = spec.counter + 10.0 + f64::from(course) * 9.0;
+                brushes.push_str(&band(2, WALL, WALL + 12.0, z, z + 2.0));
+            }
+        }
+        Seating::None => {}
+    }
+
+    let mut lights = String::new();
+    let (over, over_source) = ceiling_fixture(-44.0, -30.0, LEVEL - FLOOR_TOP, 20.0, 8.0);
+    brushes.push_str(&over);
+    lights.push_str(&over_source);
+    let (room, room_source) = ceiling_fixture(30.0, 20.0, LEVEL - FLOOR_TOP, 24.0, 8.0);
+    brushes.push_str(&room);
+    lights.push_str(&room_source);
+
+    let mut out = format!("// Waiting, {}: the window is shut.\n", spec.register);
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell(
+            &format!("authored/hall_waiting_{}", spec.register),
+            "hall_waiting",
+            0,
+            1,
+            8,
+        )
+        .with_register_scope(spec.register)
+        .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    for face in doors {
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{}_port", FACE_NAMES[face]),
+            0,
+            0,
+            0,
+        ));
+    }
+    out.push_str(&lights);
+    out
+}
+
+/// The template: a glazed screen with a gap, a barrier, three rows facing it.
+const fn queue(register: &'static str) -> Waiting {
+    Waiting {
+        register,
+        counter: FLOOR_TOP + H_COUNTER,
+        screen: Screen::Glazed,
+        seating: Seating::Facing,
+        rows: 3,
+        queue: true,
+        plinth: false,
         dado: 0.0,
     }
 }
