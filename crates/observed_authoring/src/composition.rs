@@ -512,6 +512,26 @@ mod tests {
         // reordered, so all 66 committed towers reproduce exactly and the diff
         // is 105 new files and nothing else.
         //
+        // Moved by the locker corridor in ten registers, and by a correction
+        // to the two program families already here.
+        //
+        // The correction first, because it is the larger fact. The restroom and
+        // the refectory were authored with a counter at 48 units and a dado at
+        // 44 - a counter two and a half metres off the floor, a dado at two and
+        // a quarter, both picked by eye against a wall 128 units tall and both
+        // wrong by a factor of about two and a half. The entire argument for
+        // the program layer is that a basin is 850 mm in every building anyone
+        // has ever built, so fittings that are not at that height are not doing
+        // the job they were added to do.
+        //
+        // Correcting it says what the layer was groping toward. The facility is
+        // built at roughly 1.6x a body - four-metre doorways, eight-metre
+        // storeys - so true-scale fittings read as *small* in it. The locker
+        // bank stands in the bottom quarter of the wall and the rest of the
+        // wall runs up past it to nothing. The building is not at the scale of
+        // the people who used it, and the fittings are the only evidence of
+        // that, because they are the only things in the corpus made for a body.
+        //
         // Moved by the refectory, in the same ten registers. Three things say
         // canteen and none of them is furniture: a tray rail, whose only
         // purpose is that something slides along it; a shutter, which is the
@@ -639,14 +659,14 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "600057dec45244e28668d489204bc5f0f14677ac52a2c935d942b6eb2a288566";
+            "25b625dbcf5ee1b4cd884f4500c5547b338575553fd7b64a1fa4f2b7de5a96fb";
         const PROFILE_HASH: &str =
             "5c1bc69db058d4e3332e755326548f887d46f215d81fdeb454591cd9c2c0104e";
         // Folds the catalog and the profile. Both sides moved this time, which
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "f9d29fd6d51a7b0208111d0a2d53333d2570199cf13cfe44f2ac67960260743e";
+            "c12f8b1f0df6790c601e80bc1e96cdbc42458527f312aa89abad1d2a59bf4e59";
 
         let root = committed_tiles();
         let compiled_text =
@@ -659,7 +679,7 @@ mod tests {
             .filter(|module| module.archetype == "stair_tower")
             .collect::<Vec<_>>();
         assert_eq!(compiled.simulation_content_hash, CATALOG_HASH);
-        assert_eq!(compiled.modules.len(), 276, "committed strict source count");
+        assert_eq!(compiled.modules.len(), 286, "committed strict source count");
         // 1 doorless + every one-to-four-door pattern, in three vertical
         // connectivities: (1 + 6 + 15 + 20 + 15) * 3. Was 66, when the family
         // stopped at two doors and there was no branching landing.

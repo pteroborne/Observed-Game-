@@ -55,10 +55,37 @@ use super::{Builder, GENERATED_NOTE};
 /// canonical aperture. Three metres against the corridor's four and a half.
 const ROOM_HALF_WIDTH: f64 = 24.0;
 
-/// Height of a tiled dado. Chest high, and the single most institutional line
-/// available: nobody tiles a wall to this height for any reason but cleaning up
-/// after people.
-const DADO: f64 = 44.0;
+// Human dimensions, in units *above the floor surface*, at sixteen units to
+// the metre. Add `FLOOR_TOP` for an absolute z.
+//
+// # The scale mistake, and what it turned out to mean
+//
+// The restroom and the refectory were first authored with a counter at 48 and a
+// dado at 44 - which is a counter two and a half metres off the floor and a
+// dado at two and a quarter. Both were picked by eye against a wall 128 units
+// tall, and both were wrong by a factor of about two and a half. The whole
+// argument for this module is that *a basin is 850 mm in every building anyone
+// has ever built*, so fittings that are not at that height are not doing the
+// one job they were added to do.
+//
+// Correcting it says something the module was groping toward. The facility is
+// built at roughly 1.6x a body: four-metre doorways, eight-metre storeys. Put
+// true-scale fittings in it and they read as *small* - a locker bank a quarter
+// of the way up the wall, a bench you could miss. That mismatch is not an
+// awkwardness to design around. **The building is not at the scale of the
+// people who used it**, and the fittings are the only evidence of that, because
+// they are the only things in the corpus that were made for a body.
+const H_COUNTER: f64 = 14.0;
+const H_DADO: f64 = 20.0;
+const H_MIRROR: f64 = 23.0;
+const H_STALL_HEAD: f64 = 29.0;
+const H_STALL_FOOT: f64 = 5.0;
+const H_SEAT: f64 = 7.0;
+const H_LOCKER_HEAD: f64 = 29.0;
+const H_LOCKER_PLINTH: f64 = 4.0;
+
+/// Height of a tiled dado, absolute.
+const DADO: f64 = H_DADO;
 
 /// Two jamb blocks that narrow `face`'s aperture behind the seam plane.
 fn narrowed(face: usize) -> String {
@@ -168,7 +195,7 @@ struct Dialect {
     plinth: bool,
 }
 
-const STALL_HEAD: f64 = 96.0;
+const STALL_HEAD: f64 = FLOOR_TOP + H_STALL_HEAD;
 const STALL_DEPTH: f64 = 62.0;
 
 /// The same restroom, ten times.
@@ -218,8 +245,8 @@ fn ablutions(dialect: &Dialect) -> String {
         brushes.push_str("// Shelf courses. Everything gets catalogued, including this\n");
         for course in 0..3 {
             #[allow(clippy::cast_precision_loss)]
-            let z = FLOOR_TOP + 20.0 + f64::from(course) * 22.0;
-            brushes.push_str(&band(2, WALL, WALL + 14.0, z, z + 4.0));
+            let z = FLOOR_TOP + 10.0 + f64::from(course) * 10.0;
+            brushes.push_str(&band(2, WALL, WALL + 14.0, z, z + 2.0));
         }
     } else if dialect.dado > 0.0 {
         brushes.push_str("// Tiled dado. Nobody tiles to this height for any reason but people\n");
@@ -277,7 +304,7 @@ fn ablutions(dialect: &Dialect) -> String {
                     brushes.push_str(&leaf(len * 0.58, len, 2.0, dialect.stall_foot, STALL_HEAD));
                 }
                 Stall::Pier => {
-                    brushes.push_str(&leaf(0.0, len, 7.0, FLOOR_TOP, STALL_HEAD + 12.0));
+                    brushes.push_str(&leaf(0.0, len, 7.0, FLOOR_TOP, STALL_HEAD + 6.0));
                 }
                 Stall::Posts => {
                     brushes.push_str(&leaf(len - 9.0, len, 4.0, FLOOR_TOP, STALL_HEAD));
@@ -311,8 +338,8 @@ fn ablutions(dialect: &Dialect) -> String {
     brushes.push_str("// The counter and its splashback\n");
     if dialect.plinth {
         for (step, depth) in [(0.0, 34.0), (1.0, 30.0)] {
-            let z = FLOOR_TOP + step * 8.0;
-            brushes.push_str(&band(3, WALL, WALL + depth, z, z + 8.0));
+            let z = FLOOR_TOP + step * 4.0;
+            brushes.push_str(&band(3, WALL, WALL + depth, z, z + 4.0));
         }
     }
     brushes.push_str(&band(
@@ -320,14 +347,14 @@ fn ablutions(dialect: &Dialect) -> String {
         WALL,
         WALL + 26.0,
         dialect.counter,
-        dialect.counter + 8.0,
+        dialect.counter + 4.0,
     ));
     brushes.push_str(&band(
         3,
         WALL,
         WALL + 8.0,
-        dialect.counter + 8.0,
-        dialect.counter + 16.0,
+        dialect.counter + 4.0,
+        dialect.counter + 12.0,
     ));
     if dialect.mirror {
         brushes.push_str("// The line the mirrors were on\n");
@@ -335,8 +362,8 @@ fn ablutions(dialect: &Dialect) -> String {
             3,
             WALL + 2.0,
             WALL + 6.0,
-            dialect.counter + 28.0,
-            dialect.counter + 30.0,
+            FLOOR_TOP + H_MIRROR,
+            FLOOR_TOP + H_MIRROR + 2.0,
         ));
     }
 
@@ -386,10 +413,10 @@ const fn plain(register: &'static str) -> Dialect {
     Dialect {
         register,
         stall: Stall::Panel,
-        stall_foot: 16.0,
+        stall_foot: FLOOR_TOP + H_STALL_FOOT,
         dado: DADO,
         shelves: false,
-        counter: 48.0,
+        counter: FLOOR_TOP + H_COUNTER,
         mirror: true,
         soffit: false,
         plinth: false,
@@ -399,7 +426,8 @@ const fn plain(register: &'static str) -> Dialect {
 macro_rules! program_tiles {
     (
         $(($afn:ident, $astem:literal, $adialect:expr)),* $(,)? ;
-        $(($rfn:ident, $rstem:literal, $rspec:expr)),* $(,)?
+        $(($rfn:ident, $rstem:literal, $rspec:expr)),* $(,)? ;
+        $(($lfn:ident, $lstem:literal, $lspec:expr)),* $(,)?
     ) => {
         $(
             #[must_use]
@@ -413,12 +441,19 @@ macro_rules! program_tiles {
                 refectory(&$rspec)
             }
         )*
+        $(
+            #[must_use]
+            pub fn $lfn() -> String {
+                lockers(&$lspec)
+            }
+        )*
 
         #[must_use]
         pub fn builders() -> Vec<Builder> {
             vec![
                 $(($astem, $afn as fn() -> String),)*
                 $(($rstem, $rfn as fn() -> String),)*
+                $(($lstem, $lfn as fn() -> String),)*
             ]
         }
     };
@@ -438,7 +473,7 @@ program_tiles![
         "hall_ablutions_monolith",
         Dialect {
             stall: Stall::Pier,
-            dado: 32.0,
+            dado: 16.0,
             mirror: false,
             ..plain("monolith")
         }
@@ -447,10 +482,10 @@ program_tiles![
         hall_ablutions_overlit_grid,
         "hall_ablutions_overlit_grid",
         Dialect {
-            dado: 4.0,
+            dado: 2.0,
             mirror: false,
             soffit: true,
-            stall_foot: 20.0,
+            stall_foot: FLOOR_TOP + 7.0,
             ..plain("overlit_grid")
         }
     ),
@@ -463,9 +498,9 @@ program_tiles![
         hall_ablutions_facet_monument,
         "hall_ablutions_facet_monument",
         Dialect {
-            dado: 24.0,
+            dado: 12.0,
             plinth: true,
-            counter: 64.0,
+            counter: FLOOR_TOP + H_COUNTER + 8.0,
             ..plain("facet_monument")
         }
     ),
@@ -473,9 +508,9 @@ program_tiles![
         hall_ablutions_megastructure,
         "hall_ablutions_megastructure",
         Dialect {
-            dado: 48.0,
-            counter: 72.0,
-            stall_foot: 26.0,
+            dado: 26.0,
+            counter: FLOOR_TOP + H_COUNTER + 8.0,
+            stall_foot: FLOOR_TOP + 9.0,
             ..plain("megastructure")
         }
     ),
@@ -484,7 +519,7 @@ program_tiles![
         "hall_ablutions_wellshaft",
         Dialect {
             stall: Stall::Absent,
-            dado: 20.0,
+            dado: 10.0,
             ..plain("wellshaft")
         }
     ),
@@ -510,7 +545,7 @@ program_tiles![
         hall_ablutions_liminal_grid,
         "hall_ablutions_liminal_grid",
         Dialect {
-            dado: 40.0,
+            dado: 18.0,
             ..plain("liminal_grid")
         }
     );
@@ -522,12 +557,12 @@ program_tiles![
     (
         hall_refectory_monolith,
         "hall_refectory_monolith",
-        Refectory { shutter: Shutter::Absent, dado: 32.0, ..canteen("monolith") }
+        Refectory { shutter: Shutter::Absent, dado: 16.0, ..canteen("monolith") }
     ),
     (
         hall_refectory_overlit_grid,
         "hall_refectory_overlit_grid",
-        Refectory { shutter: Shutter::Absent, dado: 4.0, ..canteen("overlit_grid") }
+        Refectory { shutter: Shutter::Absent, dado: 2.0, ..canteen("overlit_grid") }
     ),
     (
         hall_refectory_institutional,
@@ -537,17 +572,17 @@ program_tiles![
     (
         hall_refectory_facet_monument,
         "hall_refectory_facet_monument",
-        Refectory { plinth: true, counter: 56.0, dado: 24.0, ..canteen("facet_monument") }
+        Refectory { plinth: true, counter: FLOOR_TOP + H_COUNTER + 4.0, dado: 12.0, ..canteen("facet_monument") }
     ),
     (
         hall_refectory_megastructure,
         "hall_refectory_megastructure",
-        Refectory { counter: 72.0, dado: 48.0, ..canteen("megastructure") }
+        Refectory { counter: FLOOR_TOP + H_COUNTER + 8.0, dado: 26.0, ..canteen("megastructure") }
     ),
     (
         hall_refectory_wellshaft,
         "hall_refectory_wellshaft",
-        Refectory { pads: Pads::Row, shutter: Shutter::Absent, dado: 20.0, ..canteen("wellshaft") }
+        Refectory { pads: Pads::Row, shutter: Shutter::Absent, dado: 10.0, ..canteen("wellshaft") }
     ),
     (
         hall_refectory_infinite_gallery,
@@ -562,7 +597,57 @@ program_tiles![
     (
         hall_refectory_liminal_grid,
         "hall_refectory_liminal_grid",
-        Refectory { shutter: Shutter::Mixed, dado: 40.0, ..canteen("liminal_grid") }
+        Refectory { shutter: Shutter::Mixed, dado: 18.0, ..canteen("liminal_grid") }
+    );
+    (
+        hall_lockers_shadow_screen,
+        "hall_lockers_shadow_screen",
+        Lockers { bays: 10, divider: 0.008, ..bank("shadow_screen") }
+    ),
+    (
+        hall_lockers_monolith,
+        "hall_lockers_monolith",
+        Lockers { bays: 4, divider: 0.03, depth: 26.0, plinth: false, head: Head::Bare, ..bank("monolith") }
+    ),
+    (
+        hall_lockers_overlit_grid,
+        "hall_lockers_overlit_grid",
+        Lockers { head: Head::Soffit, shut: false, ..bank("overlit_grid") }
+    ),
+    (
+        hall_lockers_institutional,
+        "hall_lockers_institutional",
+        bank("institutional")
+    ),
+    (
+        hall_lockers_facet_monument,
+        "hall_lockers_facet_monument",
+        Lockers { bays: 5, divider: 0.022, dado: 12.0, ..bank("facet_monument") }
+    ),
+    (
+        hall_lockers_megastructure,
+        "hall_lockers_megastructure",
+        Lockers { bays: 3, divider: 0.03, depth: 26.0, dado: 26.0, ..bank("megastructure") }
+    ),
+    (
+        hall_lockers_wellshaft,
+        "hall_lockers_wellshaft",
+        Lockers { bays: 0, shut: false, dado: 10.0, ..bank("wellshaft") }
+    ),
+    (
+        hall_lockers_infinite_gallery,
+        "hall_lockers_infinite_gallery",
+        Lockers { courses: true, shut: false, ..bank("infinite_gallery") }
+    ),
+    (
+        hall_lockers_thinning,
+        "hall_lockers_thinning",
+        Lockers { bays: 0, plinth: false, shut: false, ..bank("thinning") }
+    ),
+    (
+        hall_lockers_liminal_grid,
+        "hall_lockers_liminal_grid",
+        Lockers { dado: 18.0, ..bank("liminal_grid") }
     ),
 ];
 
@@ -632,7 +717,12 @@ fn refectory(spec: &Refectory) -> String {
     const SERVERY: usize = 4;
     const COUNTER_DEPTH: f64 = 30.0;
     let doors = [0usize, 3];
-    let soffit = LEVEL - FLOOR_TOP - 28.0;
+    // The servery opening is human even though the room is not: counter at
+    // 850 mm, an opening a metre and a half above it, and a bulkhead over that.
+    // A shutter that came down from an eight-metre ceiling would not be a
+    // shutter, it would be a wall.
+    let head = spec.counter + 24.0;
+    let soffit = head + 24.0;
 
     let mut brushes = String::from("// Floor and lid\n");
     brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 3.0, 0.0));
@@ -667,7 +757,7 @@ fn refectory(spec: &Refectory) -> String {
             WALL,
             WALL + COUNTER_DEPTH + 8.0,
             FLOOR_TOP,
-            FLOOR_TOP + 8.0,
+            FLOOR_TOP + 4.0,
         ));
     }
 
@@ -677,33 +767,27 @@ fn refectory(spec: &Refectory) -> String {
         WALL,
         WALL + COUNTER_DEPTH,
         spec.counter,
-        spec.counter + 8.0,
+        spec.counter + 4.0,
     ));
     brushes.push_str(&band(
         SERVERY,
         WALL + COUNTER_DEPTH,
         WALL + COUNTER_DEPTH + 4.0,
-        spec.counter - 12.0,
         spec.counter - 6.0,
+        spec.counter - 3.0,
     ));
     if spec.shelves {
         for course in 0..2 {
             #[allow(clippy::cast_precision_loss)]
-            let z = spec.counter + 20.0 + f64::from(course) * 18.0;
-            brushes.push_str(&band(SERVERY, WALL, WALL + 12.0, z, z + 4.0));
+            let z = spec.counter + 8.0 + f64::from(course) * 9.0;
+            brushes.push_str(&band(SERVERY, WALL, WALL + 12.0, z, z + 2.0));
         }
     } else {
         // The Unwitnessed's counter is high enough that the hot cupboard behind
         // it would grow through the soffit, and a brush whose top is under its
         // bottom is not a brush. Clamped rather than special-cased: a district
         // is allowed to build this too big, and the room is still a room.
-        brushes.push_str(&band(
-            SERVERY,
-            WALL,
-            WALL + 12.0,
-            spec.counter + 8.0,
-            (spec.counter + 30.0).min(soffit - 8.0),
-        ));
+        brushes.push_str(&band(SERVERY, WALL, WALL + 12.0, spec.counter + 4.0, head));
     }
 
     brushes.push_str("// The soffit over the line\n");
@@ -750,8 +834,8 @@ fn refectory(spec: &Refectory) -> String {
                 t + 0.035,
                 WALL + COUNTER_DEPTH - 4.0,
                 WALL + COUNTER_DEPTH,
-                spec.counter + 8.0,
-                soffit,
+                spec.counter + 4.0,
+                head,
             ));
         }
     }
@@ -784,7 +868,7 @@ fn refectory(spec: &Refectory) -> String {
     }
 
     let mut lights = String::new();
-    let (line, line_source) = ceiling_fixture(-52.0, 0.0, soffit, 26.0, 8.0);
+    let (line, line_source) = ceiling_fixture(-52.0, 0.0, LEVEL - FLOOR_TOP, 26.0, 8.0);
     brushes.push_str(&line);
     lights.push_str(&line_source);
     for y in [-40.0, 40.0] {
@@ -826,12 +910,225 @@ fn refectory(spec: &Refectory) -> String {
 const fn canteen(register: &'static str) -> Refectory {
     Refectory {
         register,
-        counter: 48.0,
+        counter: FLOOR_TOP + H_COUNTER,
         shutter: Shutter::Down,
         pads: Pads::Grid,
         screen: false,
         plinth: false,
         shelves: false,
         dado: DADO,
+    }
+}
+
+/// What tops a locker bank.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Head {
+    /// A capping rail. The bank stops, and above it is wall.
+    Rail,
+    /// A soffit running up to the ceiling, so the bank has no top edge.
+    Soffit,
+    /// Nothing. The dividers just end.
+    Bare,
+}
+
+/// One district's locker run.
+struct Lockers {
+    register: &'static str,
+    /// How many bays. Zero means an open shelf run with no divisions at all.
+    bays: usize,
+    /// Half-width of a divider, as a fraction of the wall.
+    divider: f64,
+    depth: f64,
+    plinth: bool,
+    head: Head,
+    /// One bay still has its door on.
+    shut: bool,
+    /// Shelf courses crossing the bays, turning lockers into pigeonholes.
+    courses: bool,
+    bench: bool,
+    dado: f64,
+}
+
+/// The locker corridor: a bank of open bays at body pitch, and a bench.
+///
+/// The cheapest statement in the whole module, and possibly the loudest. A
+/// locker is the only fitting in a building whose entire purpose is that a
+/// specific person keeps specific things in it, so a wall of them, all open,
+/// is not "storage is absent" — it is *eleven people are absent*, and it can be
+/// counted off the wall.
+///
+/// One bay still has its door on. That is the tile.
+///
+/// It is also where the building's scale stops being an abstraction. The bank
+/// is 1.8 m tall against a wall of eight metres, so it sits in the bottom
+/// quarter and the rest of the wall runs up past it to nothing. Everything else
+/// in the corpus is sized to the facility. This is sized to a person, and the
+/// gap between the two is visible in one glance.
+fn lockers(spec: &Lockers) -> String {
+    const BANK: usize = 4;
+    const BENCH: usize = 1;
+    let doors = [0usize, 3];
+    let plinth_top = FLOOR_TOP + if spec.plinth { H_LOCKER_PLINTH } else { 0.0 };
+    let head_z = FLOOR_TOP + H_LOCKER_HEAD;
+
+    let mut brushes = String::from("// Floor and lid\n");
+    brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 3.0, 0.0));
+    brushes.push_str(&hex_slab(LEVEL - FLOOR_TOP, LEVEL, 0.0, 3.0));
+
+    brushes.push_str("// Envelope. Lockers line a route; you pass them\n");
+    for face in 0..6 {
+        if doors.contains(&face) {
+            brushes.push_str(&door_wall(face, 0.0, LEVEL, FLOOR_TOP, DOOR_TOP, 8.0, 6.0));
+        } else {
+            brushes.push_str(&wall(face, 0.0, LEVEL));
+        }
+    }
+
+    if spec.dado > 0.0 {
+        brushes.push_str(&band(
+            BENCH,
+            WALL,
+            WALL + 4.0,
+            FLOOR_TOP,
+            FLOOR_TOP + spec.dado,
+        ));
+    }
+
+    if spec.plinth {
+        brushes.push_str("// The bank stands on a plinth, so the floor sweeps under it\n");
+        brushes.push_str(&band(BANK, WALL, WALL + spec.depth, FLOOR_TOP, plinth_top));
+    }
+
+    brushes.push_str("// The carcass. The doors are gone; the divisions are not\n");
+    for index in 0..=spec.bays {
+        #[allow(clippy::cast_precision_loss)]
+        let t = f64::from(u16::try_from(index).unwrap_or(0)) / spec.bays.max(1) as f64;
+        let a0 = (t - spec.divider).max(0.0);
+        let a1 = (t + spec.divider).min(1.0);
+        brushes.push_str(&panel(
+            BANK,
+            a0,
+            a1,
+            WALL,
+            WALL + spec.depth,
+            plinth_top,
+            head_z,
+        ));
+    }
+    if spec.bays == 0 {
+        // No divisions at all: a shelf, not lockers. Nothing here was yours.
+        brushes.push_str(&band(BANK, WALL, WALL + spec.depth, head_z - 4.0, head_z));
+    }
+
+    if spec.courses {
+        brushes.push_str("// Shelf courses across the bays. Pigeonholes, not lockers\n");
+        for course in 1..3 {
+            #[allow(clippy::cast_precision_loss)]
+            let z = plinth_top + f64::from(course) * (head_z - plinth_top) / 3.0;
+            brushes.push_str(&band(BANK, WALL, WALL + spec.depth, z, z + 2.0));
+        }
+    }
+
+    match spec.head {
+        Head::Rail => {
+            brushes.push_str(&band(
+                BANK,
+                WALL,
+                WALL + spec.depth + 2.0,
+                head_z,
+                head_z + 4.0,
+            ));
+        }
+        Head::Soffit => {
+            brushes.push_str(&band(
+                BANK,
+                WALL,
+                WALL + spec.depth + 2.0,
+                LEVEL - FLOOR_TOP - 20.0,
+                LEVEL - FLOOR_TOP,
+            ));
+        }
+        Head::Bare => {}
+    }
+
+    if spec.shut && spec.bays > 1 {
+        brushes.push_str("// One of them still has its door on\n");
+        #[allow(clippy::cast_precision_loss)]
+        let step = 1.0 / spec.bays as f64;
+        let index = (spec.bays / 2) as f64;
+        brushes.push_str(&panel(
+            BANK,
+            index * step + spec.divider,
+            (index + 1.0) * step - spec.divider,
+            WALL + spec.depth - 3.0,
+            WALL + spec.depth,
+            plinth_top,
+            head_z,
+        ));
+    }
+
+    if spec.bench {
+        brushes.push_str("// The bench. Four hundred and fifty millimetres, as always\n");
+        brushes.push_str(&band(
+            BENCH,
+            WALL,
+            WALL + 16.0,
+            FLOOR_TOP + H_SEAT,
+            FLOOR_TOP + H_SEAT + 3.0,
+        ));
+    }
+
+    let mut lights = String::new();
+    for x in [-40.0, 40.0] {
+        let (fixture, source) = ceiling_fixture(x, 0.0, LEVEL - FLOOR_TOP, 22.0, 8.0);
+        brushes.push_str(&fixture);
+        lights.push_str(&source);
+    }
+
+    let mut out = format!(
+        "// Lockers, {}: one of them is still shut.\n",
+        spec.register
+    );
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell(
+            &format!("authored/hall_lockers_{}", spec.register),
+            "hall_lockers",
+            0,
+            1,
+            8,
+        )
+        .with_register_scope(spec.register)
+        .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    for face in doors {
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{}_port", FACE_NAMES[face]),
+            0,
+            0,
+            0,
+        ));
+    }
+    out.push_str(&lights);
+    out
+}
+
+/// The template: eight bays, a plinth, a capping rail, one door left on.
+const fn bank(register: &'static str) -> Lockers {
+    Lockers {
+        register,
+        bays: 8,
+        divider: 0.012,
+        depth: 20.0,
+        plinth: true,
+        head: Head::Rail,
+        shut: true,
+        courses: false,
+        bench: true,
+        dado: 0.0,
     }
 }
