@@ -428,7 +428,8 @@ macro_rules! program_tiles {
         $(($afn:ident, $astem:literal, $adialect:expr)),* $(,)? ;
         $(($rfn:ident, $rstem:literal, $rspec:expr)),* $(,)? ;
         $(($lfn:ident, $lstem:literal, $lspec:expr)),* $(,)? ;
-        $(($wfn:ident, $wstem:literal, $wspec:expr)),* $(,)?
+        $(($wfn:ident, $wstem:literal, $wspec:expr)),* $(,)? ;
+        $(($cfn:ident, $cstem:literal, $cspec:expr)),* $(,)?
     ) => {
         $(
             #[must_use]
@@ -454,6 +455,12 @@ macro_rules! program_tiles {
                 waiting(&$wspec)
             }
         )*
+        $(
+            #[must_use]
+            pub fn $cfn() -> String {
+                classroom(&$cspec)
+            }
+        )*
 
         #[must_use]
         pub fn builders() -> Vec<Builder> {
@@ -462,6 +469,7 @@ macro_rules! program_tiles {
                 $(($rstem, $rfn as fn() -> String),)*
                 $(($lstem, $lfn as fn() -> String),)*
                 $(($wstem, $wfn as fn() -> String),)*
+                $(($cstem, $cfn as fn() -> String),)*
             ]
         }
     };
@@ -706,6 +714,56 @@ program_tiles![
         hall_waiting_liminal_grid,
         "hall_waiting_liminal_grid",
         Waiting { dado: 18.0, ..queue("liminal_grid") }
+    );
+    (
+        hall_classroom_shadow_screen,
+        "hall_classroom_shadow_screen",
+        Classroom { recess: Recess::Slatted, ..taught("shadow_screen") }
+    ),
+    (
+        hall_classroom_monolith,
+        "hall_classroom_monolith",
+        Classroom { dais: 0, rake: 0, rows: 2, dado: 16.0, ..taught("monolith") }
+    ),
+    (
+        hall_classroom_overlit_grid,
+        "hall_classroom_overlit_grid",
+        Classroom { recess: Recess::Blank, rake: 0, dado: 2.0, ..taught("overlit_grid") }
+    ),
+    (
+        hall_classroom_institutional,
+        "hall_classroom_institutional",
+        taught("institutional")
+    ),
+    (
+        hall_classroom_facet_monument,
+        "hall_classroom_facet_monument",
+        Classroom { dais: 3, rows: 2, dado: 12.0, ..taught("facet_monument") }
+    ),
+    (
+        hall_classroom_megastructure,
+        "hall_classroom_megastructure",
+        Classroom { rake: 1, rows: 2, dado: 26.0, ..taught("megastructure") }
+    ),
+    (
+        hall_classroom_wellshaft,
+        "hall_classroom_wellshaft",
+        Classroom { ring: true, dais: 0, rake: 0, recess: Recess::Blank, dado: 10.0, ..taught("wellshaft") }
+    ),
+    (
+        hall_classroom_infinite_gallery,
+        "hall_classroom_infinite_gallery",
+        Classroom { recess: Recess::Shelved, ..taught("infinite_gallery") }
+    ),
+    (
+        hall_classroom_thinning,
+        "hall_classroom_thinning",
+        Classroom { rake: 0, rows: 0, recess: Recess::Blank, ..taught("thinning") }
+    ),
+    (
+        hall_classroom_liminal_grid,
+        "hall_classroom_liminal_grid",
+        Classroom { dado: 18.0, ..taught("liminal_grid") }
     ),
 ];
 
@@ -1469,6 +1527,285 @@ const fn queue(register: &'static str) -> Waiting {
         rows: 3,
         queue: true,
         plinth: false,
+        dado: 0.0,
+    }
+}
+
+/// What is left of the surface that was written on.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Recess {
+    /// A framed opening in the wall. The board was screwed into it and is gone;
+    /// the frame is masonry and is not.
+    Framed,
+    /// Thin verticals across it. Taught from behind bars.
+    Slatted,
+    /// Shelf courses. The wall you consult rather than the wall you write on.
+    Shelved,
+    /// Nothing. No surface, and so nothing that could have been said here.
+    Blank,
+}
+
+/// One district's teaching room.
+struct Classroom {
+    register: &'static str,
+    /// Steps up to the dais. Zero means the floor does not change.
+    dais: usize,
+    /// Tiers the floor rises in, away from the dais.
+    rake: usize,
+    /// Rows of desk-and-bench.
+    rows: usize,
+    recess: Recess,
+    /// Desks round the walls facing each other instead of rows facing a front.
+    ring: bool,
+    dado: f64,
+}
+
+/// Height of a writing surface: 730 mm. The number that makes a desk a desk
+/// rather than a bench, because it is the one a forearm needs.
+const H_DESK: f64 = 12.0;
+/// Rise of one dais step or one tier of rake.
+const STEP: f64 = 4.0;
+
+/// The classroom: everything in it aimed at a place nobody is standing.
+///
+/// # The only room here that points
+///
+/// The other three program rooms are shaped by an activity that is not
+/// happening — you cannot wash, you cannot eat, you cannot wait for anything.
+/// This one is shaped by a *person* who is not there. The floor rakes toward
+/// one end, the desks face that end, the framed recess is centred on it, and on
+/// the dais there is a bolt pad where the lectern stood. Every line in the plan
+/// converges on a rectangle of empty platform about the size of a body.
+///
+/// That is a different kind of absence and a sharper one. A canteen with no
+/// food in it is disused. A room in which forty seats and a raked floor are all
+/// still carefully aimed at one unoccupied square metre is *waiting*, and it is
+/// the only thing in the corpus that looks like it expects someone.
+///
+/// # Two heights, not one
+///
+/// A waiting room's seating is one height. A classroom's is two: a bench at
+/// 450 mm and a writing surface at 730. That pair is what distinguishes this
+/// from every other row of fixed seating in a building, at a glance, from the
+/// door — and it is the reason the desks are drawn as two members rather than
+/// one, which costs a brush a row and is worth it.
+fn classroom(spec: &Classroom) -> String {
+    const FRONT: usize = 4;
+    let doors = [0usize, 3];
+
+    let mut brushes = String::from("// Floor and lid\n");
+    brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 3.0, 0.0));
+    brushes.push_str(&hex_slab(LEVEL - FLOOR_TOP, LEVEL, 0.0, 3.0));
+
+    brushes.push_str("// Envelope\n");
+    for face in 0..6 {
+        if doors.contains(&face) {
+            brushes.push_str(&door_wall(face, 0.0, LEVEL, FLOOR_TOP, DOOR_TOP, 8.0, 6.0));
+        } else {
+            brushes.push_str(&wall(face, 0.0, LEVEL));
+        }
+    }
+
+    if spec.dado > 0.0 {
+        for face in [1usize, 2] {
+            brushes.push_str(&band(
+                face,
+                WALL,
+                WALL + 4.0,
+                FLOOR_TOP,
+                FLOOR_TOP + spec.dado,
+            ));
+        }
+    }
+
+    // The dais, and the pad where the lectern was bolted.
+    let dais_top = FLOOR_TOP + STEP * spec.dais as f64;
+    if spec.dais > 0 {
+        brushes.push_str("// The dais. One step is enough to make a room point\n");
+        for step in 0..spec.dais {
+            #[allow(clippy::cast_precision_loss)]
+            let inset = f64::from(u16::try_from(step).unwrap_or(0)) * 8.0;
+            brushes.push_str(&panel(
+                FRONT,
+                0.06,
+                0.94,
+                WALL,
+                WALL + 36.0 - inset,
+                FLOOR_TOP,
+                FLOOR_TOP + STEP * (f64::from(u16::try_from(step).unwrap_or(0)) + 1.0),
+            ));
+        }
+        brushes.push_str("// Where the lectern was bolted. A body's worth of nothing\n");
+        brushes.push_str(&panel(
+            FRONT,
+            0.44,
+            0.58,
+            WALL + 14.0,
+            WALL + 26.0,
+            dais_top,
+            dais_top + 2.0,
+        ));
+    }
+
+    // The wall that was written on.
+    let board_low = dais_top + 16.0;
+    let board_high = dais_top + 38.0;
+    match spec.recess {
+        Recess::Framed => {
+            brushes.push_str("// The frame the board was screwed into\n");
+            for (a0, a1) in [(0.06, 0.16), (0.84, 0.94)] {
+                brushes.push_str(&panel(
+                    FRONT,
+                    a0,
+                    a1,
+                    WALL,
+                    WALL + 5.0,
+                    board_low,
+                    board_high,
+                ));
+            }
+            brushes.push_str(&panel(
+                FRONT,
+                0.06,
+                0.94,
+                WALL,
+                WALL + 5.0,
+                board_high,
+                board_high + 4.0,
+            ));
+        }
+        Recess::Slatted => {
+            for index in 0..6 {
+                #[allow(clippy::cast_precision_loss)]
+                let t = 0.10 + f64::from(index) * 0.14;
+                brushes.push_str(&panel(
+                    FRONT,
+                    t,
+                    t + 0.03,
+                    WALL,
+                    WALL + 5.0,
+                    board_low,
+                    board_high,
+                ));
+            }
+        }
+        Recess::Shelved => {
+            for course in 0..3 {
+                #[allow(clippy::cast_precision_loss)]
+                let z = board_low + f64::from(course) * 8.0;
+                brushes.push_str(&band(FRONT, WALL, WALL + 12.0, z, z + 2.0));
+            }
+        }
+        Recess::Blank => {}
+    }
+
+    if spec.ring {
+        brushes.push_str("// Desks round the walls. Nobody here was taught from the front\n");
+        for face in [1usize, 2, 5] {
+            brushes.push_str(&band(
+                face,
+                WALL,
+                WALL + 14.0,
+                FLOOR_TOP + H_DESK,
+                FLOOR_TOP + H_DESK + 2.0,
+            ));
+            brushes.push_str(&band(
+                face,
+                WALL + 16.0,
+                WALL + 26.0,
+                FLOOR_TOP + H_SEAT,
+                FLOOR_TOP + H_SEAT + 3.0,
+            ));
+        }
+    } else {
+        for tier in 0..spec.rake {
+            #[allow(clippy::cast_precision_loss)]
+            let index = f64::from(u16::try_from(tier).unwrap_or(0));
+            let near = WALL + 58.0 + index * 34.0;
+            brushes.push_str(&panel(
+                FRONT,
+                0.10 - index * 0.02,
+                0.90 + index * 0.02,
+                near,
+                near + 34.0,
+                FLOOR_TOP,
+                FLOOR_TOP + STEP * (index + 1.0),
+            ));
+        }
+        brushes.push_str("// Desk and bench: two heights, which is what makes it a desk\n");
+        for row in 0..spec.rows {
+            #[allow(clippy::cast_precision_loss)]
+            let index = f64::from(u16::try_from(row).unwrap_or(0));
+            let base = FLOOR_TOP + STEP * index.min(spec.rake as f64);
+            let near = WALL + 42.0 + index * 34.0;
+            brushes.push_str(&panel(
+                FRONT,
+                0.14,
+                0.86,
+                near,
+                near + 9.0,
+                base + H_DESK,
+                base + H_DESK + 2.0,
+            ));
+            brushes.push_str(&panel(
+                FRONT,
+                0.18,
+                0.82,
+                near + 11.0,
+                near + 18.0,
+                base + H_SEAT,
+                base + H_SEAT + 3.0,
+            ));
+        }
+    }
+
+    let mut lights = String::new();
+    let (front, front_source) = ceiling_fixture(-46.0, -34.0, LEVEL - FLOOR_TOP, 22.0, 8.0);
+    brushes.push_str(&front);
+    lights.push_str(&front_source);
+    let (back, back_source) = ceiling_fixture(28.0, 22.0, LEVEL - FLOOR_TOP, 24.0, 8.0);
+    brushes.push_str(&back);
+    lights.push_str(&back_source);
+
+    let mut out = format!("// Classroom, {}: aimed at nobody.\n", spec.register);
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell(
+            &format!("authored/hall_classroom_{}", spec.register),
+            "hall_classroom",
+            0,
+            1,
+            8,
+        )
+        .with_register_scope(spec.register)
+        .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    for face in doors {
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{}_port", FACE_NAMES[face]),
+            0,
+            0,
+            0,
+        ));
+    }
+    out.push_str(&lights);
+    out
+}
+
+/// The template: one step of dais, two tiers of rake, three rows, a framed
+/// recess where the board was.
+const fn taught(register: &'static str) -> Classroom {
+    Classroom {
+        register,
+        dais: 1,
+        rake: 2,
+        rows: 3,
+        recess: Recess::Framed,
+        ring: false,
         dado: 0.0,
     }
 }
