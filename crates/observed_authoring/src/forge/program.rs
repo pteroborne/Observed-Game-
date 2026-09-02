@@ -100,6 +100,32 @@ fn narrowed(face: usize) -> String {
     out
 }
 
+/// A rectangle of wall-parallel mass on `face`: `a0..a1` along it, `in0..in1`
+/// inward of the face plane, `z0..z1` up.
+///
+/// `band` is this with `a0..a1` fixed at the whole face, which is right for a
+/// dado and wrong for everything that comes in bays - a servery hatch, a
+/// shutter, a run of lockers. Program is mostly things that come in bays.
+fn panel(face: usize, a0: f64, a1: f64, in0: f64, in1: f64, z0: f64, z1: f64) -> String {
+    let (a, b) = edge(face);
+    let (oa, ob) = offset_inward(a, b, in0);
+    let (ia, ib) = offset_inward(a, b, in1);
+    let at = |p: (f64, f64), q: (f64, f64), t: f64| (p.0 + (q.0 - p.0) * t, p.1 + (q.1 - p.1) * t);
+    prism(
+        &[
+            at(oa, ob, a0),
+            at(oa, ob, a1),
+            at(ia, ib, a1),
+            at(ia, ib, a0),
+        ],
+        z0,
+        z1,
+        None,
+        0.0,
+        0.0,
+    )
+}
+
 /// What a stall partition is, in a given district.
 ///
 /// The stalls are the load-bearing part of the sentence: a row of vertical
@@ -370,23 +396,35 @@ const fn plain(register: &'static str) -> Dialect {
     }
 }
 
-macro_rules! ablution_tiles {
-    ($(($fname:ident, $stem:literal, $dialect:expr)),* $(,)?) => {
+macro_rules! program_tiles {
+    (
+        $(($afn:ident, $astem:literal, $adialect:expr)),* $(,)? ;
+        $(($rfn:ident, $rstem:literal, $rspec:expr)),* $(,)?
+    ) => {
         $(
             #[must_use]
-            pub fn $fname() -> String {
-                ablutions(&$dialect)
+            pub fn $afn() -> String {
+                ablutions(&$adialect)
+            }
+        )*
+        $(
+            #[must_use]
+            pub fn $rfn() -> String {
+                refectory(&$rspec)
             }
         )*
 
         #[must_use]
         pub fn builders() -> Vec<Builder> {
-            vec![$(($stem, $fname as fn() -> String)),*]
+            vec![
+                $(($astem, $afn as fn() -> String),)*
+                $(($rstem, $rfn as fn() -> String),)*
+            ]
         }
     };
 }
 
-ablution_tiles![
+program_tiles![
     (
         hall_ablutions_shadow_screen,
         "hall_ablutions_shadow_screen",
@@ -475,5 +513,325 @@ ablution_tiles![
             dado: 40.0,
             ..plain("liminal_grid")
         }
+    );
+    (
+        hall_refectory_shadow_screen,
+        "hall_refectory_shadow_screen",
+        Refectory { screen: true, shutter: Shutter::Absent, ..canteen("shadow_screen") }
+    ),
+    (
+        hall_refectory_monolith,
+        "hall_refectory_monolith",
+        Refectory { shutter: Shutter::Absent, dado: 32.0, ..canteen("monolith") }
+    ),
+    (
+        hall_refectory_overlit_grid,
+        "hall_refectory_overlit_grid",
+        Refectory { shutter: Shutter::Absent, dado: 4.0, ..canteen("overlit_grid") }
+    ),
+    (
+        hall_refectory_institutional,
+        "hall_refectory_institutional",
+        Refectory { shutter: Shutter::Mixed, ..canteen("institutional") }
+    ),
+    (
+        hall_refectory_facet_monument,
+        "hall_refectory_facet_monument",
+        Refectory { plinth: true, counter: 56.0, dado: 24.0, ..canteen("facet_monument") }
+    ),
+    (
+        hall_refectory_megastructure,
+        "hall_refectory_megastructure",
+        Refectory { counter: 72.0, dado: 48.0, ..canteen("megastructure") }
+    ),
+    (
+        hall_refectory_wellshaft,
+        "hall_refectory_wellshaft",
+        Refectory { pads: Pads::Row, shutter: Shutter::Absent, dado: 20.0, ..canteen("wellshaft") }
+    ),
+    (
+        hall_refectory_infinite_gallery,
+        "hall_refectory_infinite_gallery",
+        Refectory { shelves: true, dado: 0.0, ..canteen("infinite_gallery") }
+    ),
+    (
+        hall_refectory_thinning,
+        "hall_refectory_thinning",
+        Refectory { shutter: Shutter::Absent, dado: 0.0, pads: Pads::Row, ..canteen("thinning") }
+    ),
+    (
+        hall_refectory_liminal_grid,
+        "hall_refectory_liminal_grid",
+        Refectory { shutter: Shutter::Mixed, dado: 40.0, ..canteen("liminal_grid") }
     ),
 ];
+
+/// What became of the serving hatches.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Shutter {
+    /// All three down. Closed properly, by someone who expected to come back.
+    Down,
+    /// Two down and one still up. Nobody closed this room; it was left.
+    Mixed,
+    /// No shutters. A district that does not do moving parts, or does not do
+    /// concealment.
+    Absent,
+}
+
+/// How the seating was arranged, read from what is left of its fixings.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Pads {
+    /// Two rows of three: tables, on an institutional grid.
+    Grid,
+    /// One long line: a refectory bench, everyone facing everyone.
+    Row,
+}
+
+/// One district's refectory.
+struct Refectory {
+    register: &'static str,
+    counter: f64,
+    shutter: Shutter,
+    pads: Pads,
+    /// Thin verticals across the servery. You queue at a grille.
+    screen: bool,
+    /// A stepped plinth under the servery.
+    plinth: bool,
+    /// Shelf courses behind the line instead of a hot cupboard.
+    shelves: bool,
+    dado: f64,
+}
+
+/// The refectory: a servery, a shutter, and the fixings of the furniture.
+///
+/// # Why this one has two doors
+///
+/// The module's second rule is that program cells are leaves, and this tile
+/// breaks it deliberately. A restroom you can walk out the far side of is a
+/// corridor with basins in it; a *canteen* you can walk through is a canteen,
+/// because that is what a canteen was. It is the one room in any institution
+/// that is both a destination and a route, which is exactly why it is where
+/// everyone met, and a version of it you had to double back out of would be a
+/// different building with the same fittings in it.
+///
+/// # What says canteen
+///
+/// Not the counter — a counter could be anything. Three things together, and
+/// none of them is furniture:
+///
+/// 1. **The tray rail.** A bar on the front of the counter at knee-to-waist
+///    height, whose only purpose is that something slides along it. Nothing
+///    else in a building has one.
+/// 2. **The shutter.** A closed servery is the most complete statement of "this
+///    is over" that architecture has, and leaving one of three still raised is
+///    the difference between a room that was closed and a room that was left.
+/// 3. **The pads.** Six of them, in rows, at table pitch. Three pads is an
+///    absence; six in a grid is a *seating plan*, and a seating plan is a
+///    number of people.
+fn refectory(spec: &Refectory) -> String {
+    const SERVERY: usize = 4;
+    const COUNTER_DEPTH: f64 = 30.0;
+    let doors = [0usize, 3];
+    let soffit = LEVEL - FLOOR_TOP - 28.0;
+
+    let mut brushes = String::from("// Floor and lid\n");
+    brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 3.0, 0.0));
+    brushes.push_str(&hex_slab(LEVEL - FLOOR_TOP, LEVEL, 0.0, 3.0));
+
+    brushes.push_str("// Envelope. Two doors: you pass through a canteen\n");
+    for face in 0..6 {
+        if doors.contains(&face) {
+            brushes.push_str(&door_wall(face, 0.0, LEVEL, FLOOR_TOP, DOOR_TOP, 8.0, 6.0));
+        } else {
+            brushes.push_str(&wall(face, 0.0, LEVEL));
+        }
+    }
+
+    if spec.dado > 0.0 {
+        brushes.push_str("// Dado, on the two walls the seating stood against\n");
+        for face in [1usize, 2] {
+            brushes.push_str(&band(
+                face,
+                WALL,
+                WALL + 4.0,
+                FLOOR_TOP,
+                FLOOR_TOP + spec.dado,
+            ));
+        }
+    }
+
+    if spec.plinth {
+        brushes.push_str("// The servery on a plinth. Even lunch is approached\n");
+        brushes.push_str(&band(
+            SERVERY,
+            WALL,
+            WALL + COUNTER_DEPTH + 8.0,
+            FLOOR_TOP,
+            FLOOR_TOP + 8.0,
+        ));
+    }
+
+    brushes.push_str("// The servery: counter, tray rail, and the line behind it\n");
+    brushes.push_str(&band(
+        SERVERY,
+        WALL,
+        WALL + COUNTER_DEPTH,
+        spec.counter,
+        spec.counter + 8.0,
+    ));
+    brushes.push_str(&band(
+        SERVERY,
+        WALL + COUNTER_DEPTH,
+        WALL + COUNTER_DEPTH + 4.0,
+        spec.counter - 12.0,
+        spec.counter - 6.0,
+    ));
+    if spec.shelves {
+        for course in 0..2 {
+            #[allow(clippy::cast_precision_loss)]
+            let z = spec.counter + 20.0 + f64::from(course) * 18.0;
+            brushes.push_str(&band(SERVERY, WALL, WALL + 12.0, z, z + 4.0));
+        }
+    } else {
+        // The Unwitnessed's counter is high enough that the hot cupboard behind
+        // it would grow through the soffit, and a brush whose top is under its
+        // bottom is not a brush. Clamped rather than special-cased: a district
+        // is allowed to build this too big, and the room is still a room.
+        brushes.push_str(&band(
+            SERVERY,
+            WALL,
+            WALL + 12.0,
+            spec.counter + 8.0,
+            (spec.counter + 30.0).min(soffit - 8.0),
+        ));
+    }
+
+    brushes.push_str("// The soffit over the line\n");
+    brushes.push_str(&band(
+        SERVERY,
+        WALL,
+        WALL + COUNTER_DEPTH + 10.0,
+        soffit,
+        LEVEL - FLOOR_TOP,
+    ));
+
+    if spec.shutter != Shutter::Absent {
+        brushes.push_str("// The shutters. Two were pulled down; one was not\n");
+        for (index, (a0, a1)) in [(0.08, 0.32), (0.38, 0.62), (0.68, 0.92)]
+            .iter()
+            .enumerate()
+        {
+            let raised = spec.shutter == Shutter::Mixed && index == 1;
+            let bottom = if raised {
+                soffit - 12.0
+            } else {
+                (spec.counter + 30.0).min(soffit - 16.0)
+            };
+            brushes.push_str(&panel(
+                SERVERY,
+                *a0,
+                *a1,
+                WALL + 4.0,
+                WALL + 10.0,
+                bottom,
+                soffit,
+            ));
+        }
+    }
+
+    if spec.screen {
+        brushes.push_str("// Thin verticals across the line. You queue at a grille\n");
+        for index in 0..4 {
+            #[allow(clippy::cast_precision_loss)]
+            let t = 0.14 + f64::from(index) * 0.24;
+            brushes.push_str(&panel(
+                SERVERY,
+                t,
+                t + 0.035,
+                WALL + COUNTER_DEPTH - 4.0,
+                WALL + COUNTER_DEPTH,
+                spec.counter + 8.0,
+                soffit,
+            ));
+        }
+    }
+
+    brushes.push_str("// The fixings of the furniture. Six of them is a seating plan\n");
+    let pads: Vec<(f64, f64)> = match spec.pads {
+        Pads::Grid => vec![
+            (-4.0, -46.0),
+            (-4.0, 0.0),
+            (-4.0, 46.0),
+            (52.0, -46.0),
+            (52.0, 0.0),
+            (52.0, 46.0),
+        ],
+        Pads::Row => (0..6)
+            .map(|index| {
+                #[allow(clippy::cast_precision_loss)]
+                let t = f64::from(index) - 2.5;
+                (24.0, t * 26.0)
+            })
+            .collect(),
+    };
+    for (x, y) in pads {
+        brushes.push_str(&translate(
+            &boxed((-11.0, -11.0, FLOOR_TOP), (11.0, 11.0, FLOOR_TOP + 2.0)),
+            x,
+            y,
+            0.0,
+        ));
+    }
+
+    let mut lights = String::new();
+    let (line, line_source) = ceiling_fixture(-52.0, 0.0, soffit, 26.0, 8.0);
+    brushes.push_str(&line);
+    lights.push_str(&line_source);
+    for y in [-40.0, 40.0] {
+        let (fixture, source) = ceiling_fixture(26.0, y, LEVEL - FLOOR_TOP, 22.0, 8.0);
+        brushes.push_str(&fixture);
+        lights.push_str(&source);
+    }
+
+    let mut out = format!("// Refectory, {}: the servery is shut.\n", spec.register);
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell(
+            &format!("authored/hall_refectory_{}", spec.register),
+            "hall_refectory",
+            0,
+            1,
+            8,
+        )
+        .with_register_scope(spec.register)
+        .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    for face in doors {
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{}_port", FACE_NAMES[face]),
+            0,
+            0,
+            0,
+        ));
+    }
+    out.push_str(&lights);
+    out
+}
+
+/// The template: counter at 850 mm, three shutters down, tables on a grid.
+const fn canteen(register: &'static str) -> Refectory {
+    Refectory {
+        register,
+        counter: 48.0,
+        shutter: Shutter::Down,
+        pads: Pads::Grid,
+        screen: false,
+        plinth: false,
+        shelves: false,
+        dado: DADO,
+    }
+}

@@ -512,6 +512,20 @@ mod tests {
         // reordered, so all 66 committed towers reproduce exactly and the diff
         // is 105 new files and nothing else.
         //
+        // Moved by the refectory, in the same ten registers. Three things say
+        // canteen and none of them is furniture: a tray rail, whose only
+        // purpose is that something slides along it; a shutter, which is the
+        // most complete statement of "this is over" that architecture has; and
+        // six floor pads in rows, because three pads is an absence and six on a
+        // grid is a seating plan, which is a number of people.
+        //
+        // It is also the one program room with two doors, on purpose. A
+        // restroom you can walk out the far side of is a corridor with basins
+        // in it; a canteen you can walk through is a canteen, because that is
+        // what a canteen was - the one room in an institution that is both a
+        // destination and a route, which is exactly why it is where everyone
+        // met.
+        //
         // Moved by the same restroom in all ten registers. Everything that
         // says *restroom* is fixed and identical across the set - four stalls
         // at the same pitch on the same wall, a counter, a splashback, three
@@ -625,14 +639,14 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "c9e60ed60d3c2a92d972890df4cadb5c8db007f4abb7ae3a8215615881eefcfb";
+            "600057dec45244e28668d489204bc5f0f14677ac52a2c935d942b6eb2a288566";
         const PROFILE_HASH: &str =
             "5c1bc69db058d4e3332e755326548f887d46f215d81fdeb454591cd9c2c0104e";
         // Folds the catalog and the profile. Both sides moved this time, which
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "345bdb3195152ec0f5fa2a237179fa148c8755a9ca63f058bc36ae1654de9071";
+            "f9d29fd6d51a7b0208111d0a2d53333d2570199cf13cfe44f2ac67960260743e";
 
         let root = committed_tiles();
         let compiled_text =
@@ -645,7 +659,7 @@ mod tests {
             .filter(|module| module.archetype == "stair_tower")
             .collect::<Vec<_>>();
         assert_eq!(compiled.simulation_content_hash, CATALOG_HASH);
-        assert_eq!(compiled.modules.len(), 266, "committed strict source count");
+        assert_eq!(compiled.modules.len(), 276, "committed strict source count");
         // 1 doorless + every one-to-four-door pattern, in three vertical
         // connectivities: (1 + 6 + 15 + 20 + 15) * 3. Was 66, when the family
         // stopped at two doors and there was no branching landing.
