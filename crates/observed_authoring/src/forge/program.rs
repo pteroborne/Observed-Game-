@@ -47,7 +47,7 @@
 use super::entities::{Meta, ceiling_fixture, lateral_port, tile_cell_default, worldspawn};
 use super::geometry::{
     DOOR_HALF_WIDTH, DOOR_TOP, FACE_NAMES, FLOOR_TOP, LEVEL, WALL, band, boxed, door_wall, edge,
-    hex_slab, offset_inward, prism, translate, wall,
+    hex_slab, offset_inward, prism, pylon, translate, wall,
 };
 use super::{Builder, GENERATED_NOTE};
 
@@ -429,7 +429,9 @@ macro_rules! program_tiles {
         $(($rfn:ident, $rstem:literal, $rspec:expr)),* $(,)? ;
         $(($lfn:ident, $lstem:literal, $lspec:expr)),* $(,)? ;
         $(($wfn:ident, $wstem:literal, $wspec:expr)),* $(,)? ;
-        $(($cfn:ident, $cstem:literal, $cspec:expr)),* $(,)?
+        $(($cfn:ident, $cstem:literal, $cspec:expr)),* $(,)? ;
+        $(($ofn:ident, $ostem:literal, $ospec:expr)),* $(,)? ;
+        $(($pfn:ident, $pstem:literal, $pspec:expr)),* $(,)?
     ) => {
         $(
             #[must_use]
@@ -461,6 +463,18 @@ macro_rules! program_tiles {
                 classroom(&$cspec)
             }
         )*
+        $(
+            #[must_use]
+            pub fn $ofn() -> String {
+                office(&$ospec)
+            }
+        )*
+        $(
+            #[must_use]
+            pub fn $pfn() -> String {
+                plant(&$pspec)
+            }
+        )*
 
         #[must_use]
         pub fn builders() -> Vec<Builder> {
@@ -470,6 +484,8 @@ macro_rules! program_tiles {
                 $(($lstem, $lfn as fn() -> String),)*
                 $(($wstem, $wfn as fn() -> String),)*
                 $(($cstem, $cfn as fn() -> String),)*
+                $(($ostem, $ofn as fn() -> String),)*
+                $(($pstem, $pfn as fn() -> String),)*
             ]
         }
     };
@@ -764,6 +780,106 @@ program_tiles![
         hall_classroom_liminal_grid,
         "hall_classroom_liminal_grid",
         Classroom { dado: 18.0, ..taught("liminal_grid") }
+    );
+    (
+        hall_office_shadow_screen,
+        "hall_office_shadow_screen",
+        Office { cubicles: Cubicles::Slatted, bays: 5, ..desks("shadow_screen") }
+    ),
+    (
+        hall_office_monolith,
+        "hall_office_monolith",
+        Office { cubicles: Cubicles::Piers, bays: 2, access_floor: false, suspended: false, ..desks("monolith") }
+    ),
+    (
+        hall_office_overlit_grid,
+        "hall_office_overlit_grid",
+        Office { lifted: 0, ..desks("overlit_grid") }
+    ),
+    (
+        hall_office_institutional,
+        "hall_office_institutional",
+        desks("institutional")
+    ),
+    (
+        hall_office_facet_monument,
+        "hall_office_facet_monument",
+        Office { bays: 2, lifted: 1, ..desks("facet_monument") }
+    ),
+    (
+        hall_office_megastructure,
+        "hall_office_megastructure",
+        Office { bays: 2, lifted: 1, column: true, ..desks("megastructure") }
+    ),
+    (
+        hall_office_wellshaft,
+        "hall_office_wellshaft",
+        Office { cubicles: Cubicles::None, ..desks("wellshaft") }
+    ),
+    (
+        hall_office_infinite_gallery,
+        "hall_office_infinite_gallery",
+        Office { cubicles: Cubicles::Shelved, ..desks("infinite_gallery") }
+    ),
+    (
+        hall_office_thinning,
+        "hall_office_thinning",
+        Office { cubicles: Cubicles::None, access_floor: false, suspended: false, ..desks("thinning") }
+    ),
+    (
+        hall_office_liminal_grid,
+        "hall_office_liminal_grid",
+        Office { bays: 4, ..desks("liminal_grid") }
+    );
+    (
+        hall_plant_shadow_screen,
+        "hall_plant_shadow_screen",
+        Plant { pipes: 6, pipe_half: 0.03, ..machinery("shadow_screen") }
+    ),
+    (
+        hall_plant_monolith,
+        "hall_plant_monolith",
+        Plant { plinths: 2, pipes: 2, pipe_half: 0.08, gantry: false, ..machinery("monolith") }
+    ),
+    (
+        hall_plant_overlit_grid,
+        "hall_plant_overlit_grid",
+        Plant { pipes: 5, ..machinery("overlit_grid") }
+    ),
+    (
+        hall_plant_institutional,
+        "hall_plant_institutional",
+        machinery("institutional")
+    ),
+    (
+        hall_plant_facet_monument,
+        "hall_plant_facet_monument",
+        Plant { stepped: true, plinths: 2, ..machinery("facet_monument") }
+    ),
+    (
+        hall_plant_megastructure,
+        "hall_plant_megastructure",
+        Plant { plinths: 1, pipes: 3, pipe_half: 0.09, ..machinery("megastructure") }
+    ),
+    (
+        hall_plant_wellshaft,
+        "hall_plant_wellshaft",
+        Plant { gallery: true, gantry: false, ..machinery("wellshaft") }
+    ),
+    (
+        hall_plant_infinite_gallery,
+        "hall_plant_infinite_gallery",
+        Plant { shelved: true, ..machinery("infinite_gallery") }
+    ),
+    (
+        hall_plant_thinning,
+        "hall_plant_thinning",
+        Plant { pipes: 0, gantry: false, plinths: 2, ..machinery("thinning") }
+    ),
+    (
+        hall_plant_liminal_grid,
+        "hall_plant_liminal_grid",
+        machinery("liminal_grid")
     ),
 ];
 
@@ -1807,5 +1923,380 @@ const fn taught(register: &'static str) -> Classroom {
         recess: Recess::Framed,
         ring: false,
         dado: 0.0,
+    }
+}
+
+/// What is left of the partitions.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Cubicles {
+    /// Stub bases at 1.2 m. The upper panels were carried off.
+    Stubs,
+    /// Thin slatted screens instead of solid bases.
+    Slatted,
+    /// Full-depth piers. A district that will not build in panels.
+    Piers,
+    /// Shelf runs where the divisions were.
+    Shelved,
+    /// Open plan, and always was.
+    None,
+}
+
+/// One district's office floor.
+struct Office {
+    register: &'static str,
+    cubicles: Cubicles,
+    bays: usize,
+    /// A raised access floor, with panels lifted out of it.
+    access_floor: bool,
+    /// A suspended ceiling grid, with panels missing.
+    suspended: bool,
+    /// How many panels are out, top and bottom.
+    lifted: usize,
+    column: bool,
+}
+
+/// The office floor: a room with its lid and its floor both open.
+///
+/// The one program room where the *fabric* is what has been disturbed rather
+/// than the furniture. An office is the only place in a building with two
+/// removable surfaces — a ceiling you push a tile out of and a floor you lift a
+/// panel out of — and both exist so that somebody can get at the services
+/// behind them. A tile pushed aside and never put back is the most ordinary
+/// sight in any working building and the most final one in an empty building:
+/// somebody was mid-job here, and did not finish it.
+///
+/// So the tile is not really about desks. It is about the two voids, and the
+/// cable tray you can see lying in the floor with nothing plugged into it.
+fn office(spec: &Office) -> String {
+    const RUN: usize = 4;
+    let doors = [0usize, 3];
+    let raised = FLOOR_TOP + 6.0;
+    let grid = LEVEL - FLOOR_TOP - 22.0;
+
+    let mut brushes = String::from("// Structural floor and lid. Neither is the one you see\n");
+    brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 3.0, 0.0));
+    brushes.push_str(&hex_slab(LEVEL - FLOOR_TOP, LEVEL, 0.0, 3.0));
+
+    brushes.push_str("// Envelope\n");
+    for face in 0..6 {
+        if doors.contains(&face) {
+            brushes.push_str(&door_wall(face, 0.0, LEVEL, FLOOR_TOP, DOOR_TOP, 8.0, 6.0));
+        } else {
+            brushes.push_str(&wall(face, 0.0, LEVEL));
+        }
+    }
+
+    if spec.access_floor {
+        brushes.push_str("// Access floor, in panels, with some of them out\n");
+        let runs: &[(f64, f64)] = if spec.lifted >= 2 {
+            &[(0.04, 0.30), (0.44, 0.70), (0.78, 0.96)]
+        } else {
+            &[(0.04, 0.46), (0.54, 0.96)]
+        };
+        for (a0, a1) in runs {
+            brushes.push_str(&panel(RUN, *a0, *a1, WALL, WALL + 128.0, FLOOR_TOP, raised));
+        }
+        brushes.push_str("// The tray in the void, with nothing plugged into it\n");
+        brushes.push_str(&panel(
+            RUN,
+            0.33,
+            0.41,
+            WALL + 30.0,
+            WALL + 110.0,
+            FLOOR_TOP + 1.0,
+            FLOOR_TOP + 3.0,
+        ));
+    }
+
+    if spec.suspended {
+        brushes.push_str("// Suspended grid, with a tile pushed aside and left\n");
+        for (a0, a1) in [(0.04, 0.34), (0.46, 0.96)] {
+            brushes.push_str(&panel(RUN, a0, a1, WALL, WALL + 128.0, grid, grid + 4.0));
+        }
+        brushes.push_str(&panel(
+            RUN,
+            0.36,
+            0.44,
+            WALL + 40.0,
+            WALL + 74.0,
+            grid + 4.0,
+            grid + 10.0,
+        ));
+    }
+
+    match spec.cubicles {
+        Cubicles::None => {}
+        kind => {
+            brushes.push_str("// What is left of the partitions\n");
+            for bay in 0..spec.bays {
+                #[allow(clippy::cast_precision_loss)]
+                let index = f64::from(u16::try_from(bay).unwrap_or(0));
+                let depth = WALL + 40.0 + index * 30.0;
+                let (top, half) = match kind {
+                    Cubicles::Piers => (FLOOR_TOP + 42.0, 8.0),
+                    Cubicles::Slatted => (raised + 20.0, 2.0),
+                    _ => (raised + 20.0, 4.0),
+                };
+                if kind == Cubicles::Shelved {
+                    for course in 0..2 {
+                        #[allow(clippy::cast_precision_loss)]
+                        let c = f64::from(u16::try_from(course).unwrap_or(0));
+                        brushes.push_str(&panel(
+                            RUN,
+                            0.18,
+                            0.82,
+                            depth,
+                            depth + 10.0,
+                            FLOOR_TOP,
+                            raised + 8.0 + c * 10.0,
+                        ));
+                    }
+                } else {
+                    brushes.push_str(&panel(RUN, 0.18, 0.82, depth, depth + half, FLOOR_TOP, top));
+                }
+            }
+        }
+    }
+
+    if spec.column {
+        brushes.push_str("// The column, in the wrong place, as always\n");
+        brushes.push_str(&translate(
+            &pylon(14.0, FLOOR_TOP, LEVEL - FLOOR_TOP, 0.0, 3.0, 0.0),
+            18.0,
+            -22.0,
+            0.0,
+        ));
+    }
+
+    let mut lights = String::new();
+    for (x, y) in [(-40.0, -28.0), (30.0, 24.0)] {
+        let (fixture, source) = ceiling_fixture(x, y, grid, 22.0, 8.0);
+        brushes.push_str(&fixture);
+        lights.push_str(&source);
+    }
+
+    let mut out = format!(
+        "// Office, {}: the lid and the floor are both open.\n",
+        spec.register
+    );
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell(
+            &format!("authored/hall_office_{}", spec.register),
+            "hall_office",
+            0,
+            1,
+            8,
+        )
+        .with_register_scope(spec.register)
+        .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    for face in doors {
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{}_port", FACE_NAMES[face]),
+            0,
+            0,
+            0,
+        ));
+    }
+    out.push_str(&lights);
+    out
+}
+
+/// The template: access floor and suspended grid, both with panels out, four
+/// stub bases and a column in the wrong place.
+const fn desks(register: &'static str) -> Office {
+    Office {
+        register,
+        cubicles: Cubicles::Stubs,
+        bays: 3,
+        access_floor: true,
+        suspended: true,
+        lifted: 2,
+        column: true,
+    }
+}
+
+/// One district's plant room.
+struct Plant {
+    register: &'static str,
+    /// Inertia bases, with the machines gone off the top of them.
+    plinths: usize,
+    /// Services crossing overhead.
+    pipes: usize,
+    pipe_half: f64,
+    /// An access platform along one side.
+    gantry: bool,
+    /// The gantry runs the whole way round instead.
+    gallery: bool,
+    /// Stepped plinths.
+    stepped: bool,
+    /// Labelling courses on the wall.
+    shelved: bool,
+}
+
+/// The plant room: the one room that was always empty.
+///
+/// # Why this is the control
+///
+/// Everything else in this module is a room that had people in it and does not
+/// now, and the whole craft of it is making that difference visible. A plant
+/// room never had anybody in it. Somebody came in twice a year, looked at a
+/// gauge, and left. Strip the machines out and it is *the same room* — bare
+/// slab, holding-down bolts, services overhead, a drain in the floor, no
+/// finishes because there was never anyone to finish it for.
+///
+/// That makes it the measuring stick. Walk out of the classroom, which is a
+/// room aimed at somebody, into this, which is a room that never expected
+/// anyone, and the difference between the two kinds of emptiness is the whole
+/// subject of the module stated in one threshold. It is also the only program
+/// room whose emptiness is *original* rather than acquired, and the only one
+/// that will look exactly the same in a thousand years.
+///
+/// What is gone is the machines. What is left is what they stood on: inertia
+/// bases with bolts in them and nothing above, which is the same evidence the
+/// canteen floor gives, at four times the size.
+fn plant(spec: &Plant) -> String {
+    const RUN: usize = 4;
+    let doors = [0usize, 3];
+
+    let mut brushes =
+        String::from("// Slab and soffit. No finishes: there was nobody to finish for\n");
+    brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 3.0, 0.0));
+    brushes.push_str(&hex_slab(LEVEL - FLOOR_TOP, LEVEL, 0.0, 3.0));
+
+    brushes.push_str("// Envelope\n");
+    for face in 0..6 {
+        if doors.contains(&face) {
+            brushes.push_str(&door_wall(face, 0.0, LEVEL, FLOOR_TOP, DOOR_TOP, 6.0, 4.0));
+        } else {
+            brushes.push_str(&wall(face, 0.0, LEVEL));
+        }
+    }
+
+    brushes.push_str("// Inertia bases. The bolts are still in them\n");
+    for index in 0..spec.plinths {
+        #[allow(clippy::cast_precision_loss)]
+        let step = f64::from(u16::try_from(index).unwrap_or(0));
+        let depth = WALL + 46.0 + step * 40.0;
+        let courses = if spec.stepped { 2 } else { 1 };
+        for course in 0..courses {
+            #[allow(clippy::cast_precision_loss)]
+            let c = f64::from(u16::try_from(course).unwrap_or(0));
+            brushes.push_str(&panel(
+                RUN,
+                0.22 + c * 0.04,
+                0.66 - c * 0.04,
+                depth + c * 4.0,
+                depth + 28.0 - c * 4.0,
+                FLOOR_TOP,
+                FLOOR_TOP + (c + 1.0) * 5.0,
+            ));
+        }
+    }
+
+    brushes.push_str("// The drain the floor falls to\n");
+    brushes.push_str(&panel(
+        RUN,
+        0.74,
+        0.80,
+        WALL + 30.0,
+        WALL + 116.0,
+        FLOOR_TOP - 2.0,
+        FLOOR_TOP,
+    ));
+
+    if spec.pipes > 0 {
+        brushes.push_str("// Services overhead. They enter one wall and leave another\n");
+        for index in 0..spec.pipes {
+            #[allow(clippy::cast_precision_loss)]
+            let t = 0.24 + f64::from(u16::try_from(index).unwrap_or(0)) * 0.13;
+            brushes.push_str(&panel(
+                RUN,
+                t,
+                t + spec.pipe_half,
+                WALL,
+                WALL + 132.0,
+                LEVEL - FLOOR_TOP - 26.0,
+                LEVEL - FLOOR_TOP - 26.0 + spec.pipe_half * 90.0,
+            ));
+        }
+    }
+
+    if spec.gallery {
+        brushes.push_str("// A walkway the whole way round. Somebody watched from up here\n");
+        for face in [1usize, 2, 5] {
+            brushes.push_str(&band(face, WALL, WALL + 20.0, 44.0, 48.0));
+            brushes.push_str(&band(face, WALL + 16.0, WALL + 20.0, 48.0, 62.0));
+        }
+    } else if spec.gantry {
+        brushes.push_str("// An access platform along one side\n");
+        brushes.push_str(&band(2, WALL, WALL + 24.0, 44.0, 48.0));
+        brushes.push_str(&band(2, WALL + 20.0, WALL + 24.0, 48.0, 62.0));
+        brushes.push_str(&band(2, WALL + 4.0, WALL + 10.0, FLOOR_TOP, 44.0));
+    }
+
+    if spec.shelved {
+        for course in 0..2 {
+            #[allow(clippy::cast_precision_loss)]
+            let z = FLOOR_TOP + 18.0 + f64::from(course) * 12.0;
+            brushes.push_str(&band(1, WALL, WALL + 10.0, z, z + 2.0));
+        }
+    }
+
+    let mut lights = String::new();
+    for (x, y) in [(-34.0, -24.0), (26.0, 18.0)] {
+        let (fixture, source) = ceiling_fixture(x, y, LEVEL - FLOOR_TOP, 14.0, 6.0);
+        brushes.push_str(&fixture);
+        lights.push_str(&source);
+    }
+
+    let mut out = format!(
+        "// Plant, {}: the room that was always empty.\n",
+        spec.register
+    );
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell(
+            &format!("authored/hall_plant_{}", spec.register),
+            "hall_plant",
+            0,
+            1,
+            8,
+        )
+        .with_register_scope(spec.register)
+        .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    for face in doors {
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{}_port", FACE_NAMES[face]),
+            0,
+            0,
+            0,
+        ));
+    }
+    out.push_str(&lights);
+    out
+}
+
+/// The template: two bases, four services overhead, one gantry.
+const fn machinery(register: &'static str) -> Plant {
+    Plant {
+        register,
+        plinths: 2,
+        pipes: 4,
+        pipe_half: 0.05,
+        gantry: true,
+        gallery: false,
+        stepped: false,
+        shelved: false,
     }
 }

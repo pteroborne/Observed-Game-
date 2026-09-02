@@ -512,6 +512,34 @@ mod tests {
         // reordered, so all 66 committed towers reproduce exactly and the diff
         // is 105 new files and nothing else.
         //
+        // Moved by the office floor and the plant room - the sixth and seventh
+        // program families, and the two ends of the module's range.
+        //
+        // The office is the one room where the *fabric* was disturbed rather
+        // than the furniture. It is the only place in a building with two
+        // removable surfaces - a ceiling you push a tile out of and a floor you
+        // lift a panel out of - and both exist so somebody can get at the
+        // services behind them. A tile pushed aside and never put back is the
+        // most ordinary sight in a working building and the most final one in
+        // an empty building: somebody was mid-job, and did not finish.
+        //
+        // The plant room is the control. Everything else here had people in it
+        // and does not now, and the craft is making that difference visible. A
+        // plant room never had anybody in it - somebody came twice a year,
+        // looked at a gauge, and left. Strip the machines and it is the same
+        // room: bare slab, holding-down bolts, services overhead, a drain, no
+        // finishes because there was never anyone to finish it for. Walk from
+        // the classroom, which is aimed at somebody, into this, which never
+        // expected anyone, and the two kinds of emptiness are stated in one
+        // threshold.
+        //
+        // Both families found the same contract edge the Welcome's dais did:
+        // anything standing on something else that covers the cell centre reads
+        // as a low ceiling over the floor. Partitions now go down to the
+        // structural slab rather than sitting on the access floor, and stepped
+        // plinths are nested blocks rather than stacked ones. Both are what the
+        // real things do.
+        //
         // Moved by the classroom in ten registers - the fifth program family,
         // and the only room in the corpus that *points*.
         //
@@ -693,14 +721,14 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "2491252b18340f0cd780e17b8b678601186878f0dd76694106dee5f3d3abe09f";
+            "764a6edd9c730a8bec05c9788ed373a7a3b10355e1e783eb81a7f4d59065829a";
         const PROFILE_HASH: &str =
             "5c1bc69db058d4e3332e755326548f887d46f215d81fdeb454591cd9c2c0104e";
         // Folds the catalog and the profile. Both sides moved this time, which
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "15e76c13bbfab5fb2fccca657b918f2e4fbf495608b95637fdbb424357b883e1";
+            "1c8258b5723b40fa2b4235c16bcba5e6470585f767f92c5a414e9009df851766";
 
         let root = committed_tiles();
         let compiled_text =
@@ -713,7 +741,7 @@ mod tests {
             .filter(|module| module.archetype == "stair_tower")
             .collect::<Vec<_>>();
         assert_eq!(compiled.simulation_content_hash, CATALOG_HASH);
-        assert_eq!(compiled.modules.len(), 306, "committed strict source count");
+        assert_eq!(compiled.modules.len(), 326, "committed strict source count");
         // 1 doorless + every one-to-four-door pattern, in three vertical
         // connectivities: (1 + 6 + 15 + 20 + 15) * 3. Was 66, when the family
         // stopped at two doors and there was no branching landing.
