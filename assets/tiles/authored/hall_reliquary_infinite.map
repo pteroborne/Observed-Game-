@@ -347,13 +347,13 @@
 "authoring_version" "2"
 "id" "authored/hall_reliquary_infinite"
 "kind" "cell"
-"archetype" "hall_reliquary"
+"archetype" "hall_straight"
 "register" "generic"
 "register_scope" "infinite_gallery"
-"variant" "0"
+"variant" "10"
 "levels" "1"
 "rotation_policy" "sixfold"
-"weight" "8"
+"weight" "2"
 }
 {
 "classname" "tile_cell"

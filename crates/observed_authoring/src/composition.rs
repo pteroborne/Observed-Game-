@@ -512,6 +512,37 @@ mod tests {
         // reordered, so all 66 committed towers reproduce exactly and the diff
         // is 105 new files and nothing else.
         //
+        // Moved by the archetype sweep: the reclassification that makes the
+        // authored corpus reachable at all.
+        //
+        // `placement_tile_archetype` is a closed match on eight names, so a
+        // module whose archetype is not one of them can be authored, validated,
+        // committed and shipped and the solver will still never ask for it. By
+        // the last commit that was 117 of 326 modules - every gallery, every
+        // one-off, and all seventy program tiles. A library the solver does not
+        // shop from.
+        //
+        // A district dialect of an existing shape is a *variant* of that shape.
+        // `hall_straight_soffit` had this right by accident and has been
+        // placeable all along at `hall_straight` variant 3. Everything with the
+        // same port signature now follows it: two opposed doors and sealed wall
+        // elsewhere *is* `hall_straight`, whether the room is a corridor, a
+        // canteen or a plant room. 278 of 326 reachable, from 209.
+        //
+        // The forty-eight left out are left out on purpose. One-door leaves
+        // have no reachable archetype to be a variant of, and a gallery with no
+        // lid is a shape the solver has no way to describe. Calling either a
+        // `hall_straight` would be a lie about its geometry.
+        //
+        // The sweep also paid for itself immediately. Making a room a corridor
+        // holds it to the corridor traversal gate, and the waiting area failed
+        // it: a body could enter from the east and not from the west, because a
+        // strip of benches parallel to a diagonal wall lay across the western
+        // approach while clearing the eastern one. Every through-room now keeps
+        // its fittings within `AISLE_DEPTH` of their own wall. That is a real
+        // defect the tiles carried for six commits and only reachability
+        // exposed.
+        //
         // Moved by the office floor and the plant room - the sixth and seventh
         // program families, and the two ends of the module's range.
         //
@@ -721,14 +752,14 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "764a6edd9c730a8bec05c9788ed373a7a3b10355e1e783eb81a7f4d59065829a";
+            "6a471ec6969000973109c28c2f7088c5b8885df696184bd6e95ff272dc6fb5c4";
         const PROFILE_HASH: &str =
             "5c1bc69db058d4e3332e755326548f887d46f215d81fdeb454591cd9c2c0104e";
         // Folds the catalog and the profile. Both sides moved this time, which
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "1c8258b5723b40fa2b4235c16bcba5e6470585f767f92c5a414e9009df851766";
+            "932968e9f2abbf97ced1d348f6b5da98c51c809ebd3931c27fe867638219b440";
 
         let root = committed_tiles();
         let compiled_text =

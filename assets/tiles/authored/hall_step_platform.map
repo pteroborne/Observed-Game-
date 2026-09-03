@@ -168,13 +168,13 @@
 "authoring_version" "2"
 "id" "authored/hall_step_platform"
 "kind" "cell"
-"archetype" "hall_step_platform"
+"archetype" "hall_straight"
 "register" "generic"
 "register_scope" "thinning"
-"variant" "0"
+"variant" "5"
 "levels" "1"
 "rotation_policy" "sixfold"
-"weight" "8"
+"weight" "6"
 }
 {
 "classname" "tile_cell"

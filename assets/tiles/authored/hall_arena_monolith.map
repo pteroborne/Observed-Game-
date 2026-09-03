@@ -321,13 +321,13 @@
 "authoring_version" "2"
 "id" "authored/hall_arena_monolith"
 "kind" "cell"
-"archetype" "hall_arena"
+"archetype" "hall_straight"
 "register" "generic"
 "register_scope" "monolith"
-"variant" "0"
+"variant" "9"
 "levels" "1"
 "rotation_policy" "sixfold"
-"weight" "8"
+"weight" "2"
 }
 {
 "classname" "tile_cell"

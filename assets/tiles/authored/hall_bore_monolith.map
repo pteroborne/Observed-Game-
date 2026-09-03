@@ -197,13 +197,13 @@
 "authoring_version" "2"
 "id" "authored/hall_bore_monolith"
 "kind" "cell"
-"archetype" "hall_bore"
+"archetype" "hall_straight"
 "register" "generic"
 "register_scope" "monolith"
-"variant" "0"
+"variant" "6"
 "levels" "1"
 "rotation_policy" "sixfold"
-"weight" "8"
+"weight" "4"
 }
 {
 "classname" "tile_cell"

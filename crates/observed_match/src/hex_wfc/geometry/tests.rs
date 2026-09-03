@@ -268,6 +268,19 @@ fn selected_tiles(snapshot: &HexWfcGeometrySnapshot) -> BTreeMap<HexCoord, TileK
 /// | --- | --- | --- |
 /// | seed 1 | `0x080fe5f632e2aae6` | `0xa1b63d6430817c7b` |
 /// | seed 10000031 | `0xca66060faa6ab9aa` | `0x67aba9266a6b3789` |
+///
+/// Moved again by the archetype sweep, and this time the move *is* the result.
+/// Both counts are unchanged - 293 and 238 - and both tower digests are
+/// identical bit for bit, because the sweep added no cells and touched nothing
+/// vertical. What changed is which module the weighted draw returned in cells
+/// that were already there, which is the first evidence that authored program
+/// rooms and district dialects are being placed in a solved facility rather
+/// than sitting in the catalogue unreachable.
+///
+/// | | before | after |
+/// | --- | --- | --- |
+/// | seed 1 | `0xa1b63d6430817c7b` | `0x598eeee703c6ca82` |
+/// | seed 10000031 | `0x67aba9266a6b3789` | `0x9318b4ffadb83e31` |
 #[test]
 fn production_catalog_selection_is_pinned_for_spectator_seeds() {
     let catalog = crate::hex_wfc::test_catalog();
@@ -275,14 +288,14 @@ fn production_catalog_selection_is_pinned_for_spectator_seeds() {
         (
             1u64,
             293usize,
-            0xa1b6_3d64_3081_7c7bu64,
+            0x598e_eee7_03c6_ca82u64,
             45usize,
             0x95e0_1b87_e452_104cu64,
         ),
         (
             10_000_031u64,
             238usize,
-            0x67ab_a926_6a6b_3789u64,
+            0x9318_b4ff_adb8_3e31u64,
             29usize,
             0xe5db_a473_4a53_b1a3u64,
         ),

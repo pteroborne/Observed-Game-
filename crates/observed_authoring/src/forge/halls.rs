@@ -1345,6 +1345,22 @@ fn soffit_arm(face: usize) -> String {
     )
 }
 
+/// The archetype a two-door turn *is*, so the solver can ask for it.
+///
+/// A district's dialect of an existing shape is a **variant** of that shape,
+/// not a new one. `placement_tile_archetype` is a closed match on eight names;
+/// anything outside it can be authored, validated, committed and shipped and
+/// will still never be placed. `hall_straight_soffit` got this right by
+/// accident - it is `hall_straight` variant 3 and has been placeable all along
+/// - and these two got it wrong, which is most of what the archetype sweep is.
+fn turn_archetype(second_face: usize) -> &'static str {
+    if second_face == 5 {
+        "hall_turn_60"
+    } else {
+        "hall_turn_120"
+    }
+}
+
 fn hall_turn_soffit(name: &str, second_face: usize) -> String {
     let mut brushes = hall_shell(&[0, second_face]);
     brushes.push_str("// The lid, dropped and narrower than the hall it covers\n");
@@ -1370,9 +1386,15 @@ fn hall_turn_soffit(name: &str, second_face: usize) -> String {
     out.push_str(GENERATED_NOTE);
     out.push_str(&worldspawn(&brushes));
     out.push_str(
-        &Meta::cell(&format!("authored/{name}"), name, 0, 1, 8)
-            .with_register_scope("overlit_grid")
-            .emit(),
+        &Meta::cell(
+            &format!("authored/{name}"),
+            turn_archetype(second_face),
+            1,
+            1,
+            8,
+        )
+        .with_register_scope("overlit_grid")
+        .emit(),
     );
     out.push_str(&tile_cell_default());
     for face in [0usize, second_face] {
@@ -1439,10 +1461,10 @@ pub fn hall_straight_threshold() -> String {
     out.push_str(
         &Meta::cell(
             "authored/hall_straight_threshold",
-            "hall_straight_threshold",
-            0,
+            "hall_straight",
+            4,
             1,
-            8,
+            10,
         )
         .with_register_scope("liminal_grid")
         .emit(),
@@ -1505,7 +1527,7 @@ pub fn hall_step_platform() -> String {
     out.push_str(GENERATED_NOTE);
     out.push_str(&worldspawn(&brushes));
     out.push_str(
-        &Meta::cell("authored/hall_step_platform", "hall_step_platform", 0, 1, 8)
+        &Meta::cell("authored/hall_step_platform", "hall_straight", 5, 1, 6)
             .with_register_scope("thinning")
             .emit(),
     );
@@ -1792,7 +1814,7 @@ pub fn hall_arena_monolith() -> String {
     out.push_str(GENERATED_NOTE);
     out.push_str(&worldspawn(&brushes));
     out.push_str(
-        &Meta::cell("authored/hall_arena_monolith", "hall_arena", 0, 1, 8)
+        &Meta::cell("authored/hall_arena_monolith", "hall_straight", 9, 1, 2)
             .with_register_scope("monolith")
             .emit(),
     );
@@ -1942,7 +1964,7 @@ pub fn hall_squint_screen() -> String {
     out.push_str(GENERATED_NOTE);
     out.push_str(&worldspawn(&brushes));
     out.push_str(
-        &Meta::cell("authored/hall_squint_screen", "hall_squint", 0, 1, 8)
+        &Meta::cell("authored/hall_squint_screen", "hall_straight", 7, 1, 1)
             .with_register_scope("shadow_screen")
             .emit(),
     );
@@ -2047,7 +2069,7 @@ pub fn hall_transom_wellshaft() -> String {
     out.push_str(GENERATED_NOTE);
     out.push_str(&worldspawn(&brushes));
     out.push_str(
-        &Meta::cell("authored/hall_transom_wellshaft", "hall_transom", 0, 1, 8)
+        &Meta::cell("authored/hall_transom_wellshaft", "hall_straight", 8, 1, 2)
             .with_register_scope("wellshaft")
             .emit(),
     );
@@ -2292,7 +2314,7 @@ pub fn hall_bore_monolith() -> String {
     out.push_str(GENERATED_NOTE);
     out.push_str(&worldspawn(&brushes));
     out.push_str(
-        &Meta::cell("authored/hall_bore_monolith", "hall_bore", 0, 1, 8)
+        &Meta::cell("authored/hall_bore_monolith", "hall_straight", 6, 1, 4)
             .with_register_scope("monolith")
             .emit(),
     );
@@ -2395,10 +2417,10 @@ pub fn hall_reliquary_infinite() -> String {
     out.push_str(
         &Meta::cell(
             "authored/hall_reliquary_infinite",
-            "hall_reliquary",
-            0,
+            "hall_straight",
+            10,
             1,
-            8,
+            2,
         )
         .with_register_scope("infinite_gallery")
         .emit(),

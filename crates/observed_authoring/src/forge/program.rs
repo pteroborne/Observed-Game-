@@ -153,6 +153,95 @@ fn panel(face: usize, a0: f64, a1: f64, in0: f64, in1: f64, z0: f64, z1: f64) ->
     )
 }
 
+// # The aisle
+//
+// A two-door program room is a corridor as far as the solver is concerned, and
+// `every_liminal_horizontal_variant_is_capsule_traversable_between_entrances`
+// holds it to that: a body must reach the cell centre from every entrance. The
+// first archetype sweep failed it immediately - the waiting area's back row of
+// benches sat seven units off the centre, so the room became a dead end with
+// seats in it.
+//
+// Every fitting in a through-room now keeps two clearances: it stays on its own
+// side of the cell centre, and it stops short along its wall to leave an aisle.
+// Both are what the real rooms do - a canteen has a route past the tables, a
+// lecture room has a door at the back and an aisle to reach it - and the
+// constraint arrived as a test failure rather than as taste, which is the
+// better way round.
+
+/// Deepest a fitting may reach from its wall before it fouls the through-route.
+///
+/// Sixty-four, and the number is not the cell's half-width. A fitting parallel
+/// to one of the four diagonal walls is at sixty degrees to the east-west route
+/// through the cell, so a strip that reaches far enough inward crosses that
+/// route *even though both its ends are still on its own side of the middle*.
+/// The capsule test found this the hard way: at eighty-four the waiting area
+/// could be entered from the east and not from the west, because the deepest
+/// row of benches lay across the western approach and nowhere near the eastern
+/// one. Geometry that looks symmetrical in a hexagon usually is not.
+const AISLE_DEPTH: f64 = 64.0;
+/// Fittings stop here along their wall, leaving the rest as an aisle.
+const AISLE_EDGE: f64 = 0.64;
+
+/// Selection weight for a program room, against corridor weights of three to
+/// ten.
+///
+/// One. A district's corridor kit outweighs its program by roughly three to
+/// one, which puts a program room behind about one straight in four in Liminal
+/// Grid and fewer elsewhere. This is the single number deciding whether the
+/// facility is a building with rooms in it or a building made of rooms, and it
+/// is meant to be turned once somebody has walked a solved one.
+const PROGRAM_WEIGHT: u32 = 1;
+
+/// Where a family's variants start, so two program families scoped to the same
+/// district never land on the same variant of `hall_straight`.
+const REFECTORY_BASE: i32 = 11;
+const LOCKERS_BASE: i32 = 21;
+const WAITING_BASE: i32 = 31;
+const CLASSROOM_BASE: i32 = 41;
+const OFFICE_BASE: i32 = 51;
+const PLANT_BASE: i32 = 61;
+
+/// The ten registers, in the order their variants are allocated.
+const REGISTER_ORDER: [&str; 10] = [
+    "shadow_screen",
+    "monolith",
+    "overlit_grid",
+    "institutional",
+    "facet_monument",
+    "megastructure",
+    "wellshaft",
+    "infinite_gallery",
+    "thinning",
+    "liminal_grid",
+];
+
+/// Variant for one register within a family's block.
+fn register_variant(base: i32, register: &str) -> i32 {
+    let index = REGISTER_ORDER
+        .iter()
+        .position(|slug| *slug == register)
+        .unwrap_or(0);
+    base + i32::try_from(index).unwrap_or(0)
+}
+
+/// The archetype a two-door program room *is*, as far as the solver is
+/// concerned.
+///
+/// A refectory presents a door on two opposed faces and sealed wall on the
+/// other four, which is the definition of `hall_straight` — the name means a
+/// port signature, not a corridor. Authoring these under archetypes of their
+/// own made every one of them unreachable: `placement_tile_archetype` is a
+/// closed match on eight names and nothing outside it is ever requested, so
+/// seventy validated modules sat in the shipped catalogue that the solver had
+/// no way to ask for.
+///
+/// The one-door rooms stay outside it. `hall_ablutions` is a leaf and there is
+/// no reachable one-door archetype to be a variant of, so making it a
+/// `hall_straight` would be a lie about its shape. Leaves need the solver to
+/// learn what a spur is; that is real work and is not this.
+const PROGRAM_ARCHETYPE: &str = "hall_straight";
+
 /// What a stall partition is, in a given district.
 ///
 /// The stalls are the load-bearing part of the sentence: a row of vertical
@@ -1115,10 +1204,10 @@ fn refectory(spec: &Refectory) -> String {
     out.push_str(
         &Meta::cell(
             &format!("authored/hall_refectory_{}", spec.register),
-            "hall_refectory",
-            0,
+            PROGRAM_ARCHETYPE,
+            register_variant(REFECTORY_BASE, spec.register),
             1,
-            8,
+            PROGRAM_WEIGHT,
         )
         .with_register_scope(spec.register)
         .emit(),
@@ -1326,10 +1415,10 @@ fn lockers(spec: &Lockers) -> String {
     out.push_str(
         &Meta::cell(
             &format!("authored/hall_lockers_{}", spec.register),
-            "hall_lockers",
-            0,
+            PROGRAM_ARCHETYPE,
+            register_variant(LOCKERS_BASE, spec.register),
             1,
-            8,
+            PROGRAM_WEIGHT,
         )
         .with_register_scope(spec.register)
         .emit(),
@@ -1532,7 +1621,7 @@ fn waiting(spec: &Waiting) -> String {
 
     if spec.queue {
         brushes.push_str("// The barrier. Still defining a route to a shut window\n");
-        for (a0, a1, depth) in [(0.04, 0.62, 30.0), (0.38, 0.96, 42.0)] {
+        for (a0, a1, depth) in [(0.04, 0.42, 18.0), (0.28, AISLE_EDGE, 26.0)] {
             brushes.push_str(&panel(
                 DESK,
                 a0,
@@ -1550,11 +1639,12 @@ fn waiting(spec: &Waiting) -> String {
             brushes.push_str("// Rows, all looking the same way, at the same shut window\n");
             for row in 0..spec.rows {
                 #[allow(clippy::cast_precision_loss)]
-                let depth = WALL + 56.0 + f64::from(u16::try_from(row).unwrap_or(0)) * 24.0;
+                let depth = (WALL + 30.0 + f64::from(u16::try_from(row).unwrap_or(0)) * 16.0)
+                    .min(AISLE_DEPTH);
                 brushes.push_str(&panel(
                     DESK,
-                    0.16,
-                    0.84,
+                    0.08,
+                    AISLE_EDGE,
                     depth,
                     depth + 8.0,
                     seat,
@@ -1562,8 +1652,8 @@ fn waiting(spec: &Waiting) -> String {
                 ));
                 brushes.push_str(&panel(
                     DESK,
-                    0.26,
-                    0.74,
+                    0.16,
+                    AISLE_EDGE - 0.08,
                     depth + 2.0,
                     depth + 6.0,
                     FLOOR_TOP,
@@ -1610,10 +1700,10 @@ fn waiting(spec: &Waiting) -> String {
     out.push_str(
         &Meta::cell(
             &format!("authored/hall_waiting_{}", spec.register),
-            "hall_waiting",
-            0,
+            PROGRAM_ARCHETYPE,
+            register_variant(WAITING_BASE, spec.register),
             1,
-            8,
+            PROGRAM_WEIGHT,
         )
         .with_register_scope(spec.register)
         .emit(),
@@ -1837,13 +1927,13 @@ fn classroom(spec: &Classroom) -> String {
         for tier in 0..spec.rake {
             #[allow(clippy::cast_precision_loss)]
             let index = f64::from(u16::try_from(tier).unwrap_or(0));
-            let near = WALL + 58.0 + index * 34.0;
+            let near = WALL + 34.0 + index * 15.0;
             brushes.push_str(&panel(
                 FRONT,
-                0.10 - index * 0.02,
-                0.90 + index * 0.02,
+                0.06,
+                AISLE_EDGE,
                 near,
-                near + 34.0,
+                near + 15.0,
                 FLOOR_TOP,
                 FLOOR_TOP + STEP * (index + 1.0),
             ));
@@ -1853,11 +1943,11 @@ fn classroom(spec: &Classroom) -> String {
             #[allow(clippy::cast_precision_loss)]
             let index = f64::from(u16::try_from(row).unwrap_or(0));
             let base = FLOOR_TOP + STEP * index.min(spec.rake as f64);
-            let near = WALL + 42.0 + index * 34.0;
+            let near = (WALL + 24.0 + index * 15.0).min(AISLE_DEPTH);
             brushes.push_str(&panel(
                 FRONT,
-                0.14,
-                0.86,
+                0.12,
+                AISLE_EDGE,
                 near,
                 near + 9.0,
                 base + H_DESK,
@@ -1865,8 +1955,8 @@ fn classroom(spec: &Classroom) -> String {
             ));
             brushes.push_str(&panel(
                 FRONT,
-                0.18,
-                0.82,
+                0.16,
+                AISLE_EDGE - 0.04,
                 near + 11.0,
                 near + 18.0,
                 base + H_SEAT,
@@ -1889,10 +1979,10 @@ fn classroom(spec: &Classroom) -> String {
     out.push_str(
         &Meta::cell(
             &format!("authored/hall_classroom_{}", spec.register),
-            "hall_classroom",
-            0,
+            PROGRAM_ARCHETYPE,
+            register_variant(CLASSROOM_BASE, spec.register),
             1,
-            8,
+            PROGRAM_WEIGHT,
         )
         .with_register_scope(spec.register)
         .emit(),
@@ -2031,7 +2121,7 @@ fn office(spec: &Office) -> String {
             for bay in 0..spec.bays {
                 #[allow(clippy::cast_precision_loss)]
                 let index = f64::from(u16::try_from(bay).unwrap_or(0));
-                let depth = WALL + 40.0 + index * 30.0;
+                let depth = (WALL + 26.0 + index * 16.0).min(AISLE_DEPTH);
                 let (top, half) = match kind {
                     Cubicles::Piers => (FLOOR_TOP + 42.0, 8.0),
                     Cubicles::Slatted => (raised + 20.0, 2.0),
@@ -2043,8 +2133,8 @@ fn office(spec: &Office) -> String {
                         let c = f64::from(u16::try_from(course).unwrap_or(0));
                         brushes.push_str(&panel(
                             RUN,
-                            0.18,
-                            0.82,
+                            0.16,
+                            AISLE_EDGE,
                             depth,
                             depth + 10.0,
                             FLOOR_TOP,
@@ -2052,7 +2142,15 @@ fn office(spec: &Office) -> String {
                         ));
                     }
                 } else {
-                    brushes.push_str(&panel(RUN, 0.18, 0.82, depth, depth + half, FLOOR_TOP, top));
+                    brushes.push_str(&panel(
+                        RUN,
+                        0.16,
+                        AISLE_EDGE,
+                        depth,
+                        depth + half,
+                        FLOOR_TOP,
+                        top,
+                    ));
                 }
             }
         }
@@ -2084,10 +2182,10 @@ fn office(spec: &Office) -> String {
     out.push_str(
         &Meta::cell(
             &format!("authored/hall_office_{}", spec.register),
-            "hall_office",
-            0,
+            PROGRAM_ARCHETYPE,
+            register_variant(OFFICE_BASE, spec.register),
             1,
-            8,
+            PROGRAM_WEIGHT,
         )
         .with_register_scope(spec.register)
         .emit(),
@@ -2182,7 +2280,7 @@ fn plant(spec: &Plant) -> String {
     for index in 0..spec.plinths {
         #[allow(clippy::cast_precision_loss)]
         let step = f64::from(u16::try_from(index).unwrap_or(0));
-        let depth = WALL + 46.0 + step * 40.0;
+        let depth = (WALL + 30.0 + step * 26.0).min(AISLE_DEPTH);
         let courses = if spec.stepped { 2 } else { 1 };
         for course in 0..courses {
             #[allow(clippy::cast_precision_loss)]
@@ -2264,10 +2362,10 @@ fn plant(spec: &Plant) -> String {
     out.push_str(
         &Meta::cell(
             &format!("authored/hall_plant_{}", spec.register),
-            "hall_plant",
-            0,
+            PROGRAM_ARCHETYPE,
+            register_variant(PLANT_BASE, spec.register),
             1,
-            8,
+            PROGRAM_WEIGHT,
         )
         .with_register_scope(spec.register)
         .emit(),

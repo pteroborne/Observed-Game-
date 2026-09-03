@@ -223,13 +223,13 @@
 "authoring_version" "2"
 "id" "authored/hall_waiting_wellshaft"
 "kind" "cell"
-"archetype" "hall_waiting"
+"archetype" "hall_straight"
 "register" "generic"
 "register_scope" "wellshaft"
-"variant" "0"
+"variant" "37"
 "levels" "1"
 "rotation_policy" "sixfold"
-"weight" "8"
+"weight" "1"
 }
 {
 "classname" "tile_cell"

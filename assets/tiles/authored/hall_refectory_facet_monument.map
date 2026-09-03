@@ -298,13 +298,13 @@
 "authoring_version" "2"
 "id" "authored/hall_refectory_facet_monument"
 "kind" "cell"
-"archetype" "hall_refectory"
+"archetype" "hall_straight"
 "register" "generic"
 "register_scope" "facet_monument"
-"variant" "0"
+"variant" "15"
 "levels" "1"
 "rotation_policy" "sixfold"
-"weight" "8"
+"weight" "1"
 }
 {
 "classname" "tile_cell"
