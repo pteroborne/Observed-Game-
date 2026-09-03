@@ -500,3 +500,29 @@ amount of surface treatment would have separated them.
 
 None of these are solver output. They are what the solver would have to be
 taught to produce, stated in a form that can be looked at first.
+
+## Does program clutter fight the Legibility Contract?
+
+No, and the reason is worth writing down because the worry was the wrong shape.
+
+`docs/evidence/hex_style/` holds two frames of the shipped hex facility in the
+game's own palettes (`OBSERVED2_CAPTURE_HEX_WFC_STYLE`), Liminal Grid, with the
+production signal set in frame. Structure — walls, floor, pillars, the stub
+partitions and benches this arc added — renders **dark and desaturated**.
+Signal — the lantern lozenges, the pad markers, a body — renders **saturated
+and bright**. Nothing structural competes, because the palette does not let it:
+a fitting is a wall, and walls are the dark band.
+
+So the concern that a room full of chest-high furniture would read as noise
+against signal does not survive contact. Program fittings add **silhouette**
+without adding **contrast**, which is precisely what the neon-noir direction is
+built to allow.
+
+The real cost of the program layer is on a different axis, and it is one the
+existing gates do not cover. Benches, locker banks and queue barriers are
+*cover*: waist-high, dark, and directly in a route somebody is running. The
+capsule traversal gate proves a body can cross a program room; it says nothing
+about crossing it **at speed without snagging**, which is the thing a race
+actually cares about. That is a tuning question rather than a rendering one,
+and in a game where players cannot shoot each other, cover that costs a step
+may well be a feature. It should be decided on purpose rather than inherited.
