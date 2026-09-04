@@ -993,6 +993,69 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
     palette
 }
 
+/// What a district's shell is *made of*: floor, wall and ceiling albedo.
+///
+/// For most of the project's life only Liminal Grid had bespoke surfaces and the
+/// other nine fell through to one shared structural treatment. Since
+/// [`palette_tint_for_surface`] blends 28% treatment with 72% palette, that made
+/// the treatment half a *constant* across nine districts, leaving only light and
+/// ambient to separate them - and two pairs share a key light exactly. Measured
+/// on what a wall actually renders as, most of the ten sat within one
+/// just-noticeable difference of each other, and Liminal Grid, the one district
+/// with its own material, was the only one anybody could name on sight.
+///
+/// Each district now has the material its own fiction implies. They look
+/// unusually saturated for neon-noir structure because they never arrive on
+/// screen at this strength: the palette blend takes 28% of them and
+/// `HEX_SHELL_ALBEDO_SCALE` takes 0.38 of that. The saturation here is the
+/// budget the pipeline spends, not the colour it renders.
+fn architecture_material(register: observed_content::ArchitectureRegister) -> [[f32; 3]; 3] {
+    use observed_content::ArchitectureRegister as Register;
+    match register {
+        // Slatted timber, stained dark: the district is what stands between you
+        // and the light, so its material is the thing doing the casting.
+        Register::ShadowScreen => [[0.11, 0.09, 0.08], [0.26, 0.20, 0.17], [0.19, 0.16, 0.15]],
+        // Poured concrete, undivided, no hue at all. The heaviest answer.
+        Register::Monolith => [[0.14, 0.14, 0.14], [0.34, 0.34, 0.33], [0.24, 0.24, 0.24]],
+        // Always noon: not bright, *even*. Near-white with barely any hue, so
+        // nothing in the room casts or catches. The one pale district.
+        Register::OverlitGrid => [[0.42, 0.43, 0.42], [0.80, 0.82, 0.80], [0.74, 0.76, 0.75]],
+        // Pale green-grey: the colour of every corridor built to be cleaned
+        // rather than looked at.
+        Register::Institutional => [[0.17, 0.19, 0.17], [0.46, 0.52, 0.46], [0.36, 0.40, 0.36]],
+        // Faceted limestone, warm and ceremonial. Built for a guest.
+        Register::FacetMonument => [[0.22, 0.19, 0.14], [0.64, 0.55, 0.40], [0.48, 0.43, 0.34]],
+        // Cold structural concrete at a scale nobody finished.
+        Register::Megastructure => [[0.10, 0.12, 0.14], [0.28, 0.32, 0.37], [0.20, 0.23, 0.26]],
+        // Painted steel and oxide. The Well is the one district that was ever
+        // maintained, and rust is what maintenance looks like when it stops.
+        Register::Wellshaft => [[0.16, 0.09, 0.06], [0.42, 0.24, 0.16], [0.30, 0.20, 0.15]],
+        // Timber shelving wall to wall: a library is a building made of its own
+        // contents.
+        Register::InfiniteGallery => [[0.16, 0.12, 0.07], [0.44, 0.32, 0.19], [0.33, 0.26, 0.18]],
+        // Pale timber and paper. Almost nothing, by name - the lightest material
+        // that is still a material.
+        Register::Thinning => [[0.26, 0.25, 0.22], [0.68, 0.66, 0.60], [0.58, 0.57, 0.53]],
+        // Served by the bespoke block below; listed so a new register cannot
+        // silently inherit somebody else's material.
+        Register::LiminalGrid => [[0.18, 0.13, 0.035], [0.58, 0.50, 0.12], [0.54, 0.50, 0.35]],
+    }
+}
+
+/// A structural treatment from an albedo and how much of it glows.
+fn shell_treatment(rgb: [f32; 3], emissive_fraction: f32) -> Treatment {
+    Treatment {
+        base_color: Color::srgb(rgb[0], rgb[1], rgb[2]),
+        emissive: LinearRgba::rgb(
+            rgb[0] * emissive_fraction,
+            rgb[1] * emissive_fraction,
+            rgb[2] * emissive_fraction,
+        ),
+        signal: false,
+        edge: None,
+    }
+}
+
 /// Style-owned material treatment for ordinary authored structure.
 ///
 /// Liminal Grid owns a deliberately yellow/olive material family. Other
@@ -1033,10 +1096,11 @@ pub fn architecture_surface(
             },
         };
     }
+    let [floor, wall, ceiling] = architecture_material(register);
     match role {
-        ArchitectureSurfaceRole::Floor => surface(SurfaceRole::Plain),
-        ArchitectureSurfaceRole::Wall => surface(SurfaceRole::Wall),
-        ArchitectureSurfaceRole::Ceiling => surface(SurfaceRole::Ceiling),
+        ArchitectureSurfaceRole::Floor => shell_treatment(floor, 0.03),
+        ArchitectureSurfaceRole::Wall => shell_treatment(wall, 0.03),
+        ArchitectureSurfaceRole::Ceiling => shell_treatment(ceiling, 0.14),
         ArchitectureSurfaceRole::PracticalFixture => Treatment {
             base_color: Color::srgb(0.16, 0.18, 0.20),
             emissive: architecture(register).accent * 0.35,
@@ -1454,8 +1518,58 @@ pub struct HexSurfaceLook {
 /// neon-noir atmosphere tier rather than reading as lit plaster. Liminal Grid
 /// is the exception by design: it is the one district whose identity *is*
 /// brightness.
-const HEX_SHELL_ALBEDO_SCALE: f32 = 0.38;
 const HEX_SHELL_ALBEDO_SCALE_LIMINAL: f32 = 0.82;
+
+/// How bright a district's shell is allowed to be.
+///
+/// # Why this is per district and not a constant
+///
+/// It used to be two numbers: 0.38 for everybody and 0.82 for Liminal Grid,
+/// and only the second one survives - as one entry in the ladder below rather
+/// than as an exception to it. A
+/// flythrough of a solved facility measured what that produced, and the answer
+/// was blunt - eight districts rendered their walls between 0.04 and 0.09 per
+/// channel, which is *black*, and Liminal Grid rendered at 0.35, which is four
+/// to five times brighter. At 0.05 no hue survives, so no material can tell two
+/// districts apart no matter how different it is; giving the other nine bespoke
+/// materials moved the closest pair from 0.3 to 0.7 dE and no further.
+///
+/// Liminal Grid being the only district anybody could name on sight was never
+/// about its yellow. It was about its exemption.
+///
+/// So brightness joins the palette as something a district *has*, and every
+/// value below is what that district's own fiction asks for. The Noon is always
+/// noon and is now the brightest thing in the facility; the Unwitnessed is the
+/// null hypothesis and is the darkest. The spread does the separating that hue
+/// cannot do down at the bottom of the range - and it costs nothing against the
+/// Legibility Contract, because signal is emissive and unlit while all of this
+/// is albedo under the same lights.
+fn hex_shell_albedo(register: observed_content::ArchitectureRegister) -> f32 {
+    use observed_content::ArchitectureRegister as Register;
+    match register {
+        // Always noon. Not bright - *even* - and evenness at this scale reads
+        // as the brightest surface in the building.
+        Register::OverlitGrid => 0.95,
+        // Unchanged, and now one of a family rather than an exception.
+        Register::LiminalGrid => HEX_SHELL_ALBEDO_SCALE_LIMINAL,
+        // Pale timber and paper: almost nothing, but what there is, is light.
+        Register::Thinning => 0.70,
+        // Built to be cleaned, which means built to show dirt, which means pale.
+        Register::Institutional => 0.62,
+        // Limestone lit for a guest who never came.
+        Register::FacetMonument => 0.54,
+        // Timber and paper, deeper in shadow than the Thin's.
+        Register::InfiniteGallery => 0.47,
+        // Painted steel under working light.
+        Register::Wellshaft => 0.40,
+        // One mass, and mass does not reflect.
+        Register::Monolith => 0.33,
+        // The district is literally what stands between you and the light.
+        Register::ShadowScreen => 0.27,
+        // The longest unobserved. Nothing has lit this in a very long time.
+        Register::Megastructure => 0.22,
+    }
+}
 /// Structural surfaces are lit, never light sources; this is what is left of a
 /// treatment's own glow after the district has spoken.
 const HEX_SHELL_EMISSIVE_SCALE: f32 = 0.35;
@@ -1515,11 +1629,7 @@ pub fn hex_shell_look(
 ) -> HexSurfaceLook {
     let palette = architecture(register);
     let tint = palette_tint_for_surface(treatment, &palette).to_srgba();
-    let scale = if register == observed_content::ArchitectureRegister::LiminalGrid {
-        HEX_SHELL_ALBEDO_SCALE_LIMINAL
-    } else {
-        HEX_SHELL_ALBEDO_SCALE
-    };
+    let scale = hex_shell_albedo(register);
     HexSurfaceLook {
         base_color: Color::srgba(
             tint.red * scale,
@@ -2201,6 +2311,16 @@ mod tests {
             }
         }
         worst.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        for (r, c) in &all {
+            let c = c.to_srgba();
+            eprintln!(
+                "SPREAD rgb {:<18} {:.3} {:.3} {:.3}",
+                r.slug(),
+                c.red,
+                c.green,
+                c.blue
+            );
+        }
         eprintln!("SPREAD closest pairs by wall-shell dE:");
         for (d, a, b) in worst.iter().take(10) {
             eprintln!("SPREAD   {d:6.1}  {a} / {b}");
