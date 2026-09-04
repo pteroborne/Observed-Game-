@@ -2113,6 +2113,78 @@ mod tests {
         }
     }
 
+    /// How far apart the ten architecture registers actually are, in key light.
+    ///
+    /// A survey, not a gate, because the answer is a design decision rather
+    /// than a bug: at the time of writing two pairs are **identical**.
+    ///
+    /// ```text
+    ///   0.0  Monolith / Wellshaft
+    ///   0.0  Overlit Grid / Facet Monument
+    ///  13.4  Thinning / Liminal Grid
+    ///  13.8  Monolith / Megastructure
+    ///  16.1  Shadow Screen / Institutional
+    ///  ...
+    ///  81.2  widest
+    /// ```
+    ///
+    /// CIE76 dE, where ~2.3 is a just-noticeable difference and 10 or so reads
+    /// as clearly a different colour. So eight of the ten registers are
+    /// distinguishable and four of them are two pairs of twins.
+    ///
+    /// `district_palettes_are_distinct` does not catch this and never could:
+    /// it surveys `District`, the gameplay zone palette, and asserts only that
+    /// some field differs by some amount. The architecture registers - the
+    /// thing that actually paints a facility's walls - have no distinctness
+    /// gate at all, and a `!=` would not be one anyway. Distinguishable is a
+    /// distance, not an inequality.
+    #[test]
+    #[ignore = "survey: prints the register spread, asserts nothing"]
+    fn measure_architecture_register_spread() {
+        fn lab(c: Color) -> (f32, f32, f32) {
+            let s = c.to_linear();
+            let f = |v: f32| {
+                if v > 0.008_856 {
+                    v.cbrt()
+                } else {
+                    7.787 * v + 16.0 / 116.0
+                }
+            };
+            let (x, y, z) = (
+                0.4124 * s.red + 0.3576 * s.green + 0.1805 * s.blue,
+                0.2126 * s.red + 0.7152 * s.green + 0.0722 * s.blue,
+                0.0193 * s.red + 0.1192 * s.green + 0.9505 * s.blue,
+            );
+            let (fx, fy, fz) = (f(x / 0.9505), f(y), f(z / 1.089));
+            (116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz))
+        }
+        fn de(a: Color, b: Color) -> f32 {
+            let (l1, a1, b1) = lab(a);
+            let (l2, a2, b2) = lab(b);
+            ((l1 - l2).powi(2) + (a1 - a2).powi(2) + (b1 - b2).powi(2)).sqrt()
+        }
+        let all: Vec<_> = observed_content::ArchitectureRegister::ALL
+            .iter()
+            .map(|r| (*r, architecture(*r)))
+            .collect();
+        let mut worst: Vec<(f32, &str, &str)> = Vec::new();
+        for i in 0..all.len() {
+            for j in (i + 1)..all.len() {
+                worst.push((
+                    de(all[i].1.light_color, all[j].1.light_color),
+                    all[i].0.label(),
+                    all[j].0.label(),
+                ));
+            }
+        }
+        worst.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        eprintln!("SPREAD closest pairs by key-light dE:");
+        for (d, a, b) in worst.iter().take(10) {
+            eprintln!("SPREAD   {d:6.1}  {a} / {b}");
+        }
+        eprintln!("SPREAD widest {:6.1}", worst.last().unwrap().0);
+    }
+
     #[test]
     fn district_palettes_are_distinct() {
         let pals: Vec<DistrictPalette> = District::ALL.iter().map(|d| district(*d)).collect();

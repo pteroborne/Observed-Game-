@@ -41,8 +41,25 @@ pub(super) fn rebuild_geometry(
         let Some(mesh) = piece_mesh(piece) else {
             continue;
         };
+        // The district this cell belongs to, and the shell look that follows
+        // from it.
+        //
+        // Without this the facility view paints every register the same, which
+        // makes the one question a flythrough exists to answer - *do the
+        // districts read as different places?* - unanswerable by construction.
+        // `hex_shell_look` already carries the warning, written when the tile
+        // lab had the same bug: a preview that reproduces the facility's
+        // lighting and then paints it with its own colours is previewing a
+        // different building.
+        let register = world
+            .world
+            .architecture
+            .get(&piece.source_cell)
+            .copied()
+            .unwrap_or(observed_content::ArchitectureRegister::Institutional);
         let treatment = observed_style::surface(surface_role(piece.role));
-        let semantic_color = treatment.edge.unwrap_or(treatment.base_color);
+        let look = observed_style::hex_shell_look(&treatment, register);
+        let semantic_color = look.base_color;
         let material = if state.collider_view {
             StandardMaterial {
                 // Both tones are style-owned. Alternating by stable ID makes
@@ -63,8 +80,9 @@ pub(super) fn rebuild_geometry(
             StandardMaterial {
                 base_color: semantic_color,
                 // The authored hulls have no baked lightmaps. Keep their
-                // semantic treatment legible at first-person scale.
-                emissive: treatment.emissive * 0.12,
+                // semantic treatment legible at first-person scale, in the
+                // district's own emissive rather than a neutral one.
+                emissive: look.emissive,
                 perceptual_roughness: 0.91,
                 ..default()
             }
