@@ -2113,31 +2113,47 @@ mod tests {
         }
     }
 
-    /// How far apart the ten architecture registers actually are, in key light.
+    /// How far apart the ten architecture registers actually look, measured on
+    /// the surface a wall actually renders as.
     ///
-    /// A survey, not a gate, because the answer is a design decision rather
-    /// than a bug: at the time of writing two pairs are **identical**.
+    /// A survey, not a gate, because the answer is a design decision.
     ///
     /// ```text
-    ///   0.0  Monolith / Wellshaft
-    ///   0.0  Overlit Grid / Facet Monument
-    ///  13.4  Thinning / Liminal Grid
-    ///  13.8  Monolith / Megastructure
-    ///  16.1  Shadow Screen / Institutional
-    ///  ...
-    ///  81.2  widest
+    ///   0.3  Monolith / Wellshaft
+    ///   0.6  Megastructure / Wellshaft
+    ///   0.8  Monolith / Megastructure
+    ///   1.8  Shadow Screen / Facet Monument
+    ///   3.5  Shadow Screen / Megastructure
+    ///  42.3  widest
     /// ```
     ///
-    /// CIE76 dE, where ~2.3 is a just-noticeable difference and 10 or so reads
-    /// as clearly a different colour. So eight of the ten registers are
-    /// distinguishable and four of them are two pairs of twins.
+    /// CIE76 dE, where ~2.3 is a just-noticeable difference. Most of the ten
+    /// sit *below* one JND of each other.
     ///
-    /// `district_palettes_are_distinct` does not catch this and never could:
-    /// it surveys `District`, the gameplay zone palette, and asserts only that
-    /// some field differs by some amount. The architecture registers - the
-    /// thing that actually paints a facility's walls - have no distinctness
-    /// gate at all, and a `!=` would not be one anyway. Distinguishable is a
-    /// distance, not an inequality.
+    /// # Where it comes from
+    ///
+    /// [`architecture_surface`] special-cases `LiminalGrid` and falls the other
+    /// nine through to `surface(SurfaceRole::Wall)` and friends - one shared
+    /// structural treatment for nine districts. So the treatment half of
+    /// [`palette_tint_for_surface`]'s 28/72 blend is *identical* across those
+    /// nine, and everything separating them is the palette's light and ambient.
+    /// Two pairs share a key light exactly, which is how Monolith and Wellshaft
+    /// end up 0.3 apart.
+    ///
+    /// So the districts differ in **geometry** and in **light**, and - with one
+    /// exception - not in **surface**. Liminal Grid is the exception and is also
+    /// the only district anybody has ever described as instantly recognisable,
+    /// which is not a coincidence.
+    ///
+    /// # A correction worth keeping
+    ///
+    /// The first version of this survey measured `light_color` and reported two
+    /// pairs at exactly 0.0, which read as "these districts are identical". A
+    /// flythrough said otherwise - one cool grey, one ochre against teal - and
+    /// the difference turned out to be structural *role*, not district. Neither
+    /// the number nor the picture was wrong; they were answering different
+    /// questions. Measuring what the wall renders as is the one that answers
+    /// this one.
     #[test]
     #[ignore = "survey: prints the register spread, asserts nothing"]
     fn measure_architecture_register_spread() {
@@ -2163,22 +2179,29 @@ mod tests {
             let (l2, a2, b2) = lab(b);
             ((l1 - l2).powi(2) + (a1 - a2).powi(2) + (b1 - b2).powi(2)).sqrt()
         }
+        // The *shell* colour, which is what a wall actually renders as - not the
+        // key light. Measuring the light was the first attempt and it was
+        // wrong: it reported Monolith and Wellshaft as identical, and a
+        // flythrough shows one cool grey and the other ochre against teal. Two
+        // districts can share a key and still not look remotely alike, because
+        // the albedo tint is doing the work.
         let all: Vec<_> = observed_content::ArchitectureRegister::ALL
             .iter()
-            .map(|r| (*r, architecture(*r)))
+            .map(|r| {
+                (
+                    *r,
+                    hex_shell_surface(*r, ArchitectureSurfaceRole::Wall).base_color,
+                )
+            })
             .collect();
         let mut worst: Vec<(f32, &str, &str)> = Vec::new();
         for i in 0..all.len() {
             for j in (i + 1)..all.len() {
-                worst.push((
-                    de(all[i].1.light_color, all[j].1.light_color),
-                    all[i].0.label(),
-                    all[j].0.label(),
-                ));
+                worst.push((de(all[i].1, all[j].1), all[i].0.label(), all[j].0.label()));
             }
         }
         worst.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        eprintln!("SPREAD closest pairs by key-light dE:");
+        eprintln!("SPREAD closest pairs by wall-shell dE:");
         for (d, a, b) in worst.iter().take(10) {
             eprintln!("SPREAD   {d:6.1}  {a} / {b}");
         }

@@ -1,0 +1,19 @@
+{
+  "capture": "district_tour",
+  "districts_visited": [
+    "institutional",
+    "liminal_grid",
+    "monolith",
+    "megastructure",
+    "wellshaft",
+    "shadow_screen",
+    "facet_monument",
+    "thinning",
+    "infinite_gallery",
+    "overlit_grid",
+    "exit"
+  ],
+  "frames": 217,
+  "lab": "hex_wfc_lab",
+  "seed": "0xa11c000000000000"
+}

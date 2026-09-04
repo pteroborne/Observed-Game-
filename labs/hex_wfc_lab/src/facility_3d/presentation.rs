@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use observed_facility::hex_wfc::{HexSpace, HexWfcWorld};
 use observed_hex::{HexFace, face_edge, hex_origin};
 use observed_match::hex_wfc::{HexStructurePiece, HexStructureRole};
-use observed_style::SurfaceRole;
+use observed_style::{ArchitectureSurfaceRole, SurfaceRole};
 use observed_traversal::ColliderShape;
 use rapier3d::prelude::{SharedShape, Vector as RapierVector};
 
@@ -58,7 +58,19 @@ pub(super) fn rebuild_geometry(
             .copied()
             .unwrap_or(observed_content::ArchitectureRegister::Institutional);
         let treatment = observed_style::surface(surface_role(piece.role));
-        let look = observed_style::hex_shell_look(&treatment, register);
+        // `hex_shell_surface` rather than `hex_shell_look` on the generic
+        // structural treatment, and the difference is the whole point.
+        //
+        // `palette_tint_for_surface` blends 28% treatment with 72% palette. Pass
+        // the *generic* treatment for a role and that 28% is identical in every
+        // district, so the only thing separating two registers is their light
+        // and ambient - and two pairs of registers share a key light exactly.
+        // Measured that way the ten districts sit within 0.3 to 3.5 dE of each
+        // other: a flythrough shows role variation wearing a faint district
+        // wash. `architecture_surface(register, role)` is the per-register
+        // treatment the palette was designed to be blended with, and it is what
+        // makes Liminal Grid ochre rather than a slightly warmer grey.
+        let look = observed_style::hex_shell_surface(register, architecture_role(piece.role));
         let semantic_color = look.base_color;
         let material = if state.collider_view {
             StandardMaterial {
@@ -184,6 +196,20 @@ fn atlas_mesh(world: &HexWfcWorld, space: HexSpace) -> Option<Mesh> {
         .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
         .with_inserted_indices(Indices::U32(indices)),
     )
+}
+
+/// The architectural surface a structural piece presents.
+///
+/// Halls and rooms are what a body walks past, so they read as wall; a ramp is
+/// what it walks on; the boundary shell is the lid over everything.
+fn architecture_role(role: HexStructureRole) -> ArchitectureSurfaceRole {
+    match role {
+        HexStructureRole::Room | HexStructureRole::Hall | HexStructureRole::Shaft => {
+            ArchitectureSurfaceRole::Wall
+        }
+        HexStructureRole::Ramp => ArchitectureSurfaceRole::Floor,
+        HexStructureRole::Boundary => ArchitectureSurfaceRole::Ceiling,
+    }
 }
 
 fn surface_role(role: HexStructureRole) -> SurfaceRole {

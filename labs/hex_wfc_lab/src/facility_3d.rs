@@ -2,6 +2,7 @@
 mod bot_pov;
 mod capture;
 mod controls;
+mod district_tour;
 mod landmarks;
 mod presentation;
 use std::path::{Path, PathBuf};
@@ -170,6 +171,10 @@ pub(crate) fn register(app: &mut App) {
     if let Ok(path) = std::env::var("OBSERVED2_HEX_3D_CAPTURE") {
         app.insert_resource(capture::CaptureRun::new(path))
             .add_systems(Update, capture::capture_progress.after(sync_camera));
+    }
+    if std::env::var("OBSERVED2_HEX_DISTRICT_TOUR").is_ok() {
+        app.add_systems(Startup, district_tour::setup.after(setup))
+            .add_systems(Update, district_tour::run.after(sync_camera));
     }
     if std::env::var("OBSERVED2_HEX_BOT_POV").is_ok() {
         app.add_systems(Startup, bot_pov::setup.after(setup))
