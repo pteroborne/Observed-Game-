@@ -177,6 +177,29 @@ pub(crate) struct RegisterStyle {
     pub support_rhythm: usize,
     /// Inboard ceiling relief.
     pub ceiling: geometry::CeilingForm,
+    /// Where this district hangs its practicals, as a height in units above the
+    /// cell floor.
+    ///
+    /// # Why this is a district property
+    ///
+    /// Every generated tile used to place its practicals at `h - 32` - two
+    /// metres under the lid - in all ten districts. In a facility whose walls
+    /// render between 0.02 and 0.09 albedo, **the lit patch is the visible
+    /// form**: you do not see a wall, you see where light lands on it. So the
+    /// height of the source is doing more identity work than the colour of the
+    /// surface, and it was the one thing held constant everywhere.
+    ///
+    /// The Thin is the clearest case. Put its practicals at skirting height and
+    /// the district is lit *from below*, which nowhere else in the corpus is,
+    /// and it becomes identifiable from a single frame at any distance in the
+    /// dark without reading a colour at all.
+    pub light_height: f64,
+    /// True where the district lights a cell with one source rather than two.
+    ///
+    /// A single source casts a single shadow, which is what makes a room read
+    /// as one mass rather than as a lit volume. Two sources are the ordinary
+    /// case and wash each other's shadows out.
+    pub single_practical: bool,
 }
 
 /// The form vocabulary of one district.
@@ -188,6 +211,7 @@ pub(crate) struct RegisterStyle {
 /// `DOOR_HALF_WIDTH` and the floor slab are shared and stay shared.
 pub(crate) fn register_style(register: &str) -> RegisterStyle {
     use geometry::{CeilingForm, ColumnForm};
+    let (light_height, single_practical) = practical_placement(register);
     let (trim_height, pylon_radius, column, support_rhythm, ceiling) = match register {
         // Slatted screens between you and the light: many thin members.
         "shadow_screen" => (16.0, 10.0, ColumnForm::Square, 4, CeilingForm::Grid),
@@ -217,6 +241,39 @@ pub(crate) fn register_style(register: &str) -> RegisterStyle {
         column,
         support_rhythm,
         ceiling,
+        light_height,
+        single_practical,
+    }
+}
+
+/// Where a district hangs its light, and whether it hangs one or two.
+///
+/// Heights are above the cell floor, against a 128-unit storey whose lid sits
+/// at 120. Each is what the district's own fiction asks for:
+fn practical_placement(register: &str) -> (f64, bool) {
+    match register {
+        // Above the soffit line, so the slot glows and the fitting never shows.
+        // The Noon has no visible source by construction.
+        "overlit_grid" => (108.0, false),
+        // The fluorescent grid, unchanged: the metronome is the point.
+        "liminal_grid" => (96.0, false),
+        // In the reveal courses. Light comes out of the joints, not from lamps.
+        "facet_monument" => (40.0, false),
+        // Shelf-top, washing the shelves. Borges' lamp on each side.
+        "infinite_gallery" => (48.0, false),
+        // Walkway height, spilling down the shaft rather than across the floor.
+        "wellshaft" => (56.0, false),
+        // Skirting. The Thin is lit from below and nothing else in the corpus
+        // is, which makes it legible in one frame from any distance.
+        "thinning" => (20.0, false),
+        // Raking low behind the members, so the room reads as striped.
+        "shadow_screen" => (32.0, false),
+        // One source, high and central: one mass, one shadow.
+        "monolith" => (112.0, true),
+        // Nothing has lit this in a long time. One failing source, high.
+        "megastructure" => (100.0, true),
+        // The control: ordinary ceiling practicals.
+        _ => (96.0, false),
     }
 }
 

@@ -37,14 +37,18 @@ use super::{CameraMode, FacilityCamera, FacilityState, FacilityStatus, LabViewMo
 /// The same pinned seed the bot-POV capture uses, so the two are comparable.
 const TOUR_SEED: u64 = 0xa11c_0000_0000_0000;
 /// Frames spent travelling between two neighbouring cells.
-const FRAMES_PER_STEP: u32 = 3;
+const FRAMES_PER_STEP: u32 = 7;
 /// Frames held on arrival at a district, panning, before moving on.
-const HOLD_FRAMES: u32 = 10;
+///
+/// The pan is deliberately less than a full turn. Sweeping a whole circle over
+/// a short hold spins fast enough to be unreadable, and the hold exists to let
+/// somebody *look* at the district rather than to prove the camera can rotate.
+const HOLD_FRAMES: u32 = 22;
 /// Camera height above the cell floor. Eye level: the question is what a player
 /// sees, not what a map sees.
 const EYE: f32 = 2.1;
 /// Hard cap so an unexpected path still terminates.
-const MAX_FRAMES: u32 = 900;
+const MAX_FRAMES: u32 = 1200;
 
 pub(crate) fn tour_config() -> HexWfcConfig {
     HexWfcConfig {
@@ -257,7 +261,7 @@ pub(crate) fn run(
     // On the hold, sweep the view so the district is seen rather than passed.
     if tour.hold > 0 {
         #[allow(clippy::cast_precision_loss)]
-        let sweep = (tour.hold as f32 / HOLD_FRAMES as f32) * std::f32::consts::TAU;
+        let sweep = (tour.hold as f32 / HOLD_FRAMES as f32) * std::f32::consts::TAU * 0.5;
         facility.fly_yaw += sweep;
     }
 

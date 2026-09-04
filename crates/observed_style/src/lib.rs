@@ -901,7 +901,9 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
     let mut palette = district(district_for_architecture(register));
     match register {
         Register::ShadowScreen => {
-            palette.ambient_brightness = DISTRICT_MIN_AMBIENT_BRIGHTNESS;
+            // Dark, but there is light *behind* the screens - it is the members
+            // that are dark, not the district.
+            palette.ambient_brightness = 48.0;
             palette.fog_start = 9.0;
             palette.fog_end = 30.0;
             palette.key_shadows_enabled = true;
@@ -917,8 +919,10 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
             palette.pools_rhythm = true;
         }
         Register::Monolith => {
-            palette.ambient_brightness = 42.0;
-            palette.fog_end = 32.0;
+            // Heavy, and lit to be read as heavy: mass needs enough fill to
+            // show its own bulk, and enough depth of view to show its extent.
+            palette.ambient_brightness = 56.0;
+            palette.fog_end = 36.0;
         }
         Register::OverlitGrid => {
             palette.ambient_brightness = 140.0;
@@ -944,13 +948,20 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
             palette.pools_rhythm = false;
         }
         Register::FacetMonument => {
-            palette.ambient_brightness = DISTRICT_MIN_AMBIENT_BRIGHTNESS;
-            palette.fog_start = DISTRICT_MIN_FOG_START;
-            palette.fog_end = 34.0;
+            // Lit for a guest. One axis held for eleven cells only works if you
+            // can see down it, so this is the second-longest view in the
+            // facility after the Thin's.
+            palette.ambient_brightness = 88.0;
+            palette.fog_start = 14.0;
+            palette.fog_end = 50.0;
             palette.key_intensity = 95_000_000.0;
             palette.key_range = 64.0;
         }
         Register::Megastructure => {
+            // The floor value, and it keeps it: longest unobserved, least lit.
+            // Its close fog stays too - `fog_end <= 31` is pinned by a test and
+            // is a deliberate claim that the Unwitnessed is *illegible* rather
+            // than vast-and-readable. Not overturned here.
             palette.ambient_brightness = DISTRICT_MIN_AMBIENT_BRIGHTNESS;
             palette.fog_start = DISTRICT_MIN_FOG_START;
             palette.fog_end = 31.0;
@@ -958,7 +969,9 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
             palette.pools_rhythm = true;
         }
         Register::Wellshaft => {
-            palette.ambient_brightness = DISTRICT_MIN_AMBIENT_BRIGHTNESS;
+            // The one district that was ever maintained, and the one whose
+            // whole design is people seeing each other. Working light.
+            palette.ambient_brightness = 66.0;
             palette.fog_start = 14.0;
             palette.fog_end = 40.0;
             palette.pools_rhythm = true;
@@ -969,9 +982,13 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
             palette.pools_rhythm = true;
         }
         Register::Thinning => {
-            palette.ambient_brightness = DISTRICT_MIN_AMBIENT_BRIGHTNESS;
-            palette.fog_start = 8.0;
-            palette.fog_end = 34.0;
+            // "Sightlines are perfect and cover is nonexistent. You will see
+            // them coming and they will see you." A district whose fiction is
+            // that sentence cannot have the tightest fog in the facility, which
+            // is what it had. Pale, open, and the longest view of any district.
+            palette.ambient_brightness = 78.0;
+            palette.fog_start = 16.0;
+            palette.fog_end = 54.0;
         }
         Register::LiminalGrid => {
             palette.ambient_color = Color::srgb(0.62, 0.58, 0.38);
@@ -987,6 +1004,14 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
             palette.key_shadows_enabled = false;
             palette.key_intensity = 72_000_000.0;
             palette.key_range = 44.0;
+            // Stated, not inherited. The base district is keyless and carries
+            // zero cone angles; this register switches the key back on, and a
+            // zero outer angle is a zero-width cone that emits nothing - the
+            // exact trap the Shadow Screen block warns about above. Liminal
+            // Grid has been paying 72M lumens for no light. Wide and shallow,
+            // because a fluorescent grid has no dramatic direction.
+            palette.key_outer_angle = 0.95;
+            palette.key_inner_angle = 0.80;
             palette.pools_rhythm = false;
         }
     }

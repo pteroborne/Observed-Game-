@@ -132,8 +132,13 @@ pub fn hall_straight_map(register: &str, interior: u16, face: HexFace) -> String
     out += &tile_meta("hall_straight", register, variant, 1);
     out += &tile_port(face_name(face), "door");
     out += &tile_port(face_name(opposite), "door");
-    for [x, y] in rotate_points(&[[-48.0, 0.0], [48.0, 0.0]], face_angle_deg(face)) {
-        out += &tile_light(x, y, h - 32.0);
+    let lit: &[[f64; 2]] = if style.single_practical {
+        &[[0.0, 0.0]]
+    } else {
+        &[[-48.0, 0.0], [48.0, 0.0]]
+    };
+    for [x, y] in rotate_points(lit, face_angle_deg(face)) {
+        out += &tile_light(x, y, style.light_height);
     }
     out
 }
@@ -189,7 +194,7 @@ pub fn hall_cap_map(register: &str, door_face: HexFace) -> String {
     out += &tile_meta("hall_cap", register, door_face.index() as u16, 1);
     out += &tile_port(face_name(door_face), "door");
     let [x, y] = rotate_points(&[[-48.0, 0.0]], angle)[0];
-    out += &tile_light(x, y, h - 32.0);
+    out += &tile_light(x, y, style.light_height);
     out
 }
 
@@ -286,7 +291,7 @@ pub fn hall_corner_map(register: &str, reading: u16, f1: HexFace, f2: HexFace) -
     out += &tile_meta("hall_corner", register, variant, 1);
     out += &tile_port(face_name(f1), "door");
     out += &tile_port(face_name(f2), "door");
-    out += &tile_light(0.0, 0.0, h - 32.0);
+    out += &tile_light(0.0, 0.0, style.light_height);
     out
 }
 
@@ -407,8 +412,12 @@ pub fn expanse_map(register: &str, reading: u16, open_faces: &[HexFace]) -> Stri
     }
     // Two practicals well apart, so a merged run of expanses is lit as one
     // volume rather than as a string of separately-lit cells.
-    out += &tile_light(-56.0, 0.0, h - 24.0);
-    out += &tile_light(56.0, 0.0, h - 24.0);
+    if style.single_practical {
+        out += &tile_light(0.0, 0.0, style.light_height);
+    } else {
+        out += &tile_light(-56.0, 0.0, style.light_height);
+        out += &tile_light(56.0, 0.0, style.light_height);
+    }
     out
 }
 
@@ -471,7 +480,11 @@ pub fn hall_junction_map(register: &str, reading: u16, open_faces: &[HexFace]) -
     for &face in open_faces {
         out += &tile_port(face_name(face), "door");
     }
-    out += &tile_light(-48.0, 0.0, h - 32.0);
-    out += &tile_light(48.0, 0.0, h - 32.0);
+    if style.single_practical {
+        out += &tile_light(0.0, 0.0, style.light_height);
+    } else {
+        out += &tile_light(-48.0, 0.0, style.light_height);
+        out += &tile_light(48.0, 0.0, style.light_height);
+    }
     out
 }
