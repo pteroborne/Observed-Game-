@@ -281,6 +281,16 @@ fn selected_tiles(snapshot: &HexWfcGeometrySnapshot) -> BTreeMap<HexCoord, TileK
 /// | --- | --- | --- |
 /// | seed 1 | `0xa1b63d6430817c7b` | `0x598eeee703c6ca82` |
 /// | seed 10000031 | `0x67aba9266a6b3789` | `0x9318b4ffadb83e31` |
+///
+/// Moved once more by the twenty open halls, and the shape of the move is the
+/// same as last time: both counts unchanged at 293 and 238, both tower digests
+/// identical bit for bit, only the module chosen in cells that were already
+/// there. Four districts now route through rooms rather than channels.
+///
+/// | | before | after |
+/// | --- | --- | --- |
+/// | seed 1 | `0x598eeee703c6ca82` | `0x0ab420fab0783b4a` |
+/// | seed 10000031 | `0x9318b4ffadb83e31` | `0x873fec8e95dc7f56` |
 /// # What a solved facility actually contains, measured
 ///
 /// Instrumented once, here, over these two seeds:
@@ -311,14 +321,14 @@ fn production_catalog_selection_is_pinned_for_spectator_seeds() {
         (
             1u64,
             293usize,
-            0x598e_eee7_03c6_ca82u64,
+            0x0ab4_20fa_b078_3b4au64,
             45usize,
             0x95e0_1b87_e452_104cu64,
         ),
         (
             10_000_031u64,
             238usize,
-            0x9318_b4ff_adb8_3e31u64,
+            0x873f_ec8e_95dc_7f56u64,
             29usize,
             0xe5db_a473_4a53_b1a3u64,
         ),

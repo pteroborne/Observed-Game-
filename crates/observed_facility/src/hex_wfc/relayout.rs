@@ -868,6 +868,62 @@ fn protected_with_halo(
     protected
 }
 
+/// How many bits of the pocket hash the district bias sits above.
+///
+/// Three, so a district's offset is a step of roughly an eighth of the hash
+/// range and the bands overlap heavily. A reluctant district is *less likely*
+/// to be chosen as a re-collapse seed at a given distance, not excluded: the
+/// Welcome that never changes would be a promise the facility cannot keep, and
+/// an absolute rule here would also make the re-collapse target predictable,
+/// which is exactly what a game about unobserved change must not be.
+const CHURN_SHIFT: u32 = 3;
+
+/// How reluctant a district is to be re-collapsed, as an offset on the seed
+/// ordering.
+///
+/// # Why this is a district property
+///
+/// The seven districts are seven answers to *how do you make a building stay
+/// put*, and until now the building ignored all of them: the region to
+/// re-collapse was chosen by distance and a hash, so the Welcome - built to
+/// hold perfectly for a guest who never came - churned exactly as fast as the
+/// Unwitnessed, which is the null hypothesis of nobody watching anything.
+///
+/// Making churn a district property turns fiction into a *rule a player can
+/// learn*. "Route the keystone carrier through the Welcome, it holds" is a real
+/// plan, available only because the district is recognisable and its behaviour
+/// is consistent - which is the pair the corpus and the palette work exist to
+/// deliver. It also gives the tac-map something worth remembering that survives
+/// the thing that invalidates everything else.
+fn district_reluctance(register: observed_content::ArchitectureRegister) -> u64 {
+    use observed_content::ArchitectureRegister as Register;
+    const STEP: u64 = u64::MAX >> CHURN_SHIFT >> 3;
+    match register {
+        // The null hypothesis: uninterrupted growth, no observer, compounding.
+        Register::Megastructure => 0,
+        // Service space that grows because it is uniform enough to copy and
+        // unloved enough that nobody stands in it.
+        Register::LiminalGrid => STEP,
+        // Screens are the least load-bearing thing anybody ever built.
+        Register::ShadowScreen => STEP * 2,
+        // Ordinary building, ordinary answer.
+        Register::Institutional => STEP * 3,
+        // Held by people, and the people are gone.
+        Register::Wellshaft => STEP * 4,
+        // Described, which was supposed to be enough. It half was.
+        Register::InfiniteGallery => STEP * 5,
+        // Almost nothing to take hold of - which was the entire point.
+        Register::Thinning => STEP * 6,
+        // One mass, undivided. Mass is slow.
+        Register::Monolith => STEP * 6,
+        // No landmark, no shadow, no feature: the process is offered nothing.
+        Register::OverlitGrid => STEP * 7,
+        // "The building has been holding its breath ever since, and it holds
+        // perfectly."
+        Register::FacetMonument => STEP * 7,
+    }
+}
+
 fn select_region(
     world: &HexWfcWorld,
     frontier: &BTreeSet<HexCoord>,
@@ -913,8 +969,14 @@ fn select_region(
             .map(|known| travel_distance(*coord, *known))
             .min()
             .unwrap_or(u32::MAX);
-        let mixed = pocket_hash(world.seed, world.generation.wrapping_add(1), *coord);
-        (frontier_distance, mixed, *coord)
+        let mixed =
+            pocket_hash(world.seed, world.generation.wrapping_add(1), *coord) >> CHURN_SHIFT;
+        let reluctance = world
+            .architecture
+            .get(coord)
+            .copied()
+            .map_or(0, district_reluctance);
+        (frontier_distance, mixed.wrapping_add(reluctance), *coord)
     });
 
     let mut best = BTreeSet::new();

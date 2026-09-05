@@ -2479,6 +2479,133 @@ pub fn builders() -> Vec<Builder> {
     ]
 }
 
+// ---------------------------------------------------------------------------
+// Open districts: the same route, through a room instead of a channel.
+// ---------------------------------------------------------------------------
+//
+// `hall_shell` fills every undoored sector solid, so a two-door cell built with
+// it is a *channel* two and a quarter metres wide through fourteen metres of
+// mass. That is the right reading for a district whose answer was weight, and
+// the wrong one for four of the ten:
+//
+// - the Back is a **field**, not a route, and a corridor contradicts it;
+// - the Unwitnessed is vast by definition and cannot be narrow;
+// - the Noon erased every landmark, and a channel is a landmark - it tells you
+//   which way you came in;
+// - the Thin has no load-bearing walls at all, only posts.
+//
+// The alternative recipe has been in this file all session: an eight-unit
+// perimeter wall with apertures, leaving the whole hex open. Same ports, same
+// seam, same signature - the solver cannot tell them apart and does not need
+// to. What changes is that you walk *through a room* rather than along a slot,
+// and at fourteen metres across that is the largest single spatial difference
+// available inside the contract.
+
+/// The registers whose halls are rooms rather than channels, and the variant
+/// block they occupy.
+const OPEN_REGISTERS: [&str; 4] = ["overlit_grid", "megastructure", "thinning", "liminal_grid"];
+/// Variant base for open halls, clear of every other family in this corpus.
+const OPEN_BASE: i32 = 90;
+
+fn open_variant(register: &str) -> i32 {
+    OPEN_BASE
+        + i32::try_from(
+            OPEN_REGISTERS
+                .iter()
+                .position(|slug| *slug == register)
+                .unwrap_or(0),
+        )
+        .unwrap_or(0)
+}
+
+/// A hall that is a room: perimeter wall, apertures where the ports are, and
+/// nothing in the middle.
+fn hall_open(name: &str, archetype: &str, register: &str, doors: &[usize]) -> String {
+    let mut brushes = String::from("// Floor and lid\n");
+    brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 3.0, 0.0));
+    brushes.push_str(&hex_slab(LEVEL - FLOOR_TOP, LEVEL, 0.0, 3.0));
+    brushes.push_str("// Perimeter only. The middle of the cell is the cell\n");
+    for face in 0..6 {
+        if doors.contains(&face) {
+            brushes.push_str(&door_wall(face, 0.0, LEVEL, FLOOR_TOP, DOOR_TOP, 8.0, 6.0));
+        } else {
+            brushes.push_str(&wall(face, 0.0, LEVEL));
+        }
+    }
+
+    let mut lights = String::new();
+    // Two practicals well apart: an open cell lit from one point reads as a
+    // pool in a void rather than as a room.
+    for face in [doors[0], doors[doors.len() - 1]] {
+        let mid = face_mid(face);
+        let reach = mid.0.hypot(mid.1);
+        let (fixture, source) = ceiling_fixture(
+            mid.0 / reach * 44.0,
+            mid.1 / reach * 44.0,
+            LEVEL - FLOOR_TOP,
+            18.0,
+            10.0,
+        );
+        brushes.push_str(&fixture);
+        lights.push_str(&source);
+    }
+
+    let mut out = format!("// {archetype}, {register}: a room on the route, not a channel.\n");
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell(
+            &format!("authored/{name}"),
+            archetype,
+            open_variant(register),
+            1,
+            6,
+        )
+        .with_register_scope(register)
+        .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    for &face in doors {
+        let short = if face == 0 || face == 3 {
+            FACE_NAMES[face]
+        } else {
+            PORT_SHORT[face]
+        };
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{short}_port"),
+            0,
+            0,
+            0,
+        ));
+    }
+    out.push_str(&lights);
+    out
+}
+
+/// The five shapes an open district needs, so a whole route can run through
+/// rooms rather than switching to channels at every corner.
+const OPEN_SHAPES: [(&str, &[usize]); 5] = [
+    ("hall_straight", &[0, 3]),
+    ("hall_turn_60", &[0, 5]),
+    ("hall_turn_120", &[0, 4]),
+    ("hall_junction_3way", &[0, 3, 5]),
+    ("hall_junction_4way", &[0, 2, 3, 5]),
+];
+
+#[must_use]
+pub fn open_builders() -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for register in OPEN_REGISTERS {
+        for (archetype, doors) in OPEN_SHAPES {
+            let name = format!("{archetype}_open_{register}");
+            out.push((name.clone(), hall_open(&name, archetype, register, doors)));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

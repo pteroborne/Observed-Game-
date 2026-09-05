@@ -58,6 +58,7 @@ pub fn generate_all() -> Vec<(String, String)> {
         .map(|(name, build)| (name.to_string(), build()))
         .collect();
     out.extend(liminal::generated());
+    out.extend(halls::open_builders());
     out.extend(perimeter::builders());
     out.extend(tower::builders());
     out.sort_by(|a, b| a.0.cmp(&b.0));

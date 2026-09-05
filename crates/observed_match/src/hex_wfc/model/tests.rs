@@ -698,14 +698,22 @@ fn headless_gate_bot_walks_ramps_and_stairs_deterministically() {
     // choice was free. A gate that exercises more verticality is worth more
     // ticks.
     assert_eq!(a, 13_066, "TR-10 pins the declared-ramp completion tick");
-    // Teleport plates moved this digest (0x02dd_ea8d_c8d2_ac4a -> below) without
-    // moving the tick above, and that pairing is the proof it was a
+    // Moved again by twenty open halls and by churn becoming a district
+    // property, and again *without* moving the tick above - the same pairing,
+    // and the same proof. The bot's route through the gate seed is tick for
+    // tick what it was; what changed is which module the weighted draw returned
+    // in cells it was already walking through. Note also what this gate does
+    // *not* cover: it never triggers a relayout, so district churn bias is
+    // unexercised here and is pinned by nothing.
+    //
+    // Teleport plates moved this digest (0x02dd_ea8d_c8d2_ac4a -> 0x2718_448f_7a71_5601)
+    // without moving the tick either, and that pairing was the proof it was a
     // representation change and not a behavioural one: the snapshot now folds
     // carried plates, placed plates and the re-arm clock, while this bot never
     // presses the button, so its route is tick-for-tick what it was.
     assert_eq!(
         first.snapshot().digest,
-        0x2718_448f_7a71_5601,
+        0x6c57_5514_722f_6934,
         "TR-10 pins the declared-ramp final snapshot digest"
     );
 }
