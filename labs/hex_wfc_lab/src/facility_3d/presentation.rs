@@ -95,7 +95,7 @@ pub(super) fn rebuild_geometry(
                 // semantic treatment legible at first-person scale, in the
                 // district's own emissive rather than a neutral one.
                 emissive: look.emissive,
-                perceptual_roughness: 0.91,
+                perceptual_roughness: observed_style::architecture(register).surface_roughness,
                 ..default()
             }
         };

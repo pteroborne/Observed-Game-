@@ -27,10 +27,6 @@ use crate::hex_wfc::sim::HexWfcRuntime;
 const PRACTICAL_BASE_INTENSITY: f32 = 720_000.0;
 const PRACTICAL_RANGE: f32 = 14.0;
 const PRACTICAL_HEIGHT: f32 = 5.6;
-/// Connective halls on `pools_rhythm` registers still read a touch dimmer than the lit
-/// places, preserving the register identity — but every tile stays clearly lit.
-const HALL_RHYTHM_DIM: f32 = 0.7;
-
 /// Lightweight, presentation-only lookup into the authoritative geometry vectors.
 ///
 /// Keeping indices rather than cloning pieces makes the resident renderer cheap to
@@ -371,7 +367,7 @@ fn spawn_cell_practicals(
         observed_style::HexComposition::Hall => 0.85,
     };
     let rhythm_dim = if palette.pools_rhythm && !is_place {
-        HALL_RHYTHM_DIM
+        palette.hall_rhythm_dim
     } else {
         1.0
     };

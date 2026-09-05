@@ -1015,6 +1015,43 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
             palette.pools_rhythm = false;
         }
     }
+    // Microsurface and pool depth, per district.
+    //
+    // Both were single shared values. Roughness had never been varied at all -
+    // one float, and the one that decides whether light returns as a spread or
+    // as a highlight, which the eye reads at any distance and in any darkness.
+    // The rhythm dim was one constant for every district staging pools, so
+    // "pools in dark" was a bit rather than a rhythm.
+    let (roughness, rhythm) = match register {
+        // Poured concrete, chalky and absolute. The least specular thing here.
+        Register::Monolith => (0.97, 0.62),
+        // Screens and dust. Matte, and the deepest dark between pools of any
+        // district: the gaps are what the members are for.
+        Register::ShadowScreen => (0.95, 0.45),
+        // Nothing has been cleaned here in a very long time.
+        Register::Megastructure => (0.96, 0.34),
+        // Painted steel, wiped by hands for years. The only district with a
+        // sheen, and shallow gaps because people needed to see each other.
+        Register::Wellshaft => (0.62, 0.80),
+        // Sealed institutional floor: semi-gloss, and the source of that
+        // particular squeak.
+        Register::Institutional => (0.70, 0.88),
+        // Waxed timber and paper. Soft, warm, slightly polished.
+        Register::Thinning => (0.74, 0.90),
+        // Cut stone, honed rather than polished: monumental surfaces are matte
+        // so the facets read as form rather than as glare.
+        Register::FacetMonument => (0.88, 0.72),
+        // Old timber and cloth bindings. The most light-absorbent surface in
+        // the facility.
+        Register::InfiniteGallery => (0.93, 0.58),
+        // Everything even, including the reflections. Flat by construction.
+        Register::OverlitGrid => (0.90, 0.95),
+        // Vinyl and gloss paint under fluorescent light: the specific sheen of
+        // a room nobody was meant to look at closely.
+        Register::LiminalGrid => (0.66, 0.92),
+    };
+    palette.surface_roughness = roughness;
+    palette.hall_rhythm_dim = rhythm;
     palette
 }
 
@@ -1263,6 +1300,22 @@ pub struct DistrictPalette {
     pub key_shadows_enabled: bool,
     /// Spacing mode: pools rhythm (creates dark gaps).
     pub pools_rhythm: bool,
+    /// How dim a connective hall runs between pools, as a fraction of a lit
+    /// place. Only consulted where `pools_rhythm` is set.
+    ///
+    /// This was one shared constant for every district that staged pools, which
+    /// made "pools in dark" a single bit: on or off. The gap between pools is
+    /// the district's rhythm, and rhythm is one of the few identity axes that
+    /// survives a facility whose walls are nearly black.
+    pub hall_rhythm_dim: f32,
+    /// Microsurface of the district's structural shell.
+    ///
+    /// Never varied before, and it is one float. A polished floor and a chalky
+    /// one return the same light in completely different shapes, which is a
+    /// difference the eye reads instantly and at any distance - and unlike hue
+    /// it survives the dark, because it changes *where* the light is rather
+    /// than how much of it there is.
+    pub surface_roughness: f32,
 }
 
 /// The schematic register: a facility diagram as a ship's console would draw it.
@@ -1802,6 +1855,8 @@ pub fn district(d: District) -> DistrictPalette {
             key_outer_angle: 0.9,
             key_shadows_enabled: true,
             pools_rhythm: false,
+            hall_rhythm_dim: 0.7,
+            surface_roughness: 0.92,
         },
         District::Reactor => DistrictPalette {
             ambient_color: Color::srgb(0.52, 0.38, 0.28),
@@ -1819,6 +1874,8 @@ pub fn district(d: District) -> DistrictPalette {
             key_outer_angle: 0.7,
             key_shadows_enabled: true,
             pools_rhythm: false,
+            hall_rhythm_dim: 0.7,
+            surface_roughness: 0.92,
         },
         District::Atrium => DistrictPalette {
             ambient_color: Color::srgb(0.30, 0.46, 0.34),
@@ -1836,6 +1893,8 @@ pub fn district(d: District) -> DistrictPalette {
             key_outer_angle: 0.6,
             key_shadows_enabled: true,
             pools_rhythm: false,
+            hall_rhythm_dim: 0.7,
+            surface_roughness: 0.92,
         },
         District::Foundry => DistrictPalette {
             ambient_color: Color::srgb(0.50, 0.36, 0.26),
@@ -1853,6 +1912,8 @@ pub fn district(d: District) -> DistrictPalette {
             key_outer_angle: 0.6,
             key_shadows_enabled: true,
             pools_rhythm: false,
+            hall_rhythm_dim: 0.7,
+            surface_roughness: 0.92,
         },
         District::Hollow => DistrictPalette {
             ambient_color: Color::srgb(0.68, 0.70, 0.74),
@@ -1870,6 +1931,8 @@ pub fn district(d: District) -> DistrictPalette {
             key_outer_angle: 0.0,
             key_shadows_enabled: false,
             pools_rhythm: false,
+            hall_rhythm_dim: 0.7,
+            surface_roughness: 0.92,
         },
         District::Spillway => DistrictPalette {
             ambient_color: Color::srgb(0.26, 0.46, 0.50),
@@ -1887,6 +1950,8 @@ pub fn district(d: District) -> DistrictPalette {
             key_outer_angle: 0.5,
             key_shadows_enabled: true,
             pools_rhythm: true,
+            hall_rhythm_dim: 0.7,
+            surface_roughness: 0.92,
         },
     }
 }
@@ -1944,6 +2009,9 @@ pub fn drained(palette: &DistrictPalette) -> DistrictPalette {
         accent: scale(palette.accent, 0.55),
         key_color: desaturate(palette.key_color),
         key_intensity: palette.key_intensity * 0.55,
+        // The klaxon dims and desaturates a district; it does not resurface it.
+        hall_rhythm_dim: palette.hall_rhythm_dim,
+        surface_roughness: palette.surface_roughness,
         key_range: palette.key_range,
         key_radius: palette.key_radius,
         key_outer_angle: palette.key_outer_angle,

@@ -94,6 +94,11 @@ impl HexWfcVisualAssets {
                     material.base_color = look.base_color;
                     material.emissive = look.emissive;
                     material.unlit = look.unlit;
+                    // Microsurface is the district's too. It had never been
+                    // varied, and it is the one surface property that survives
+                    // near-black albedo: it changes *where* the light goes back,
+                    // not how much of it there is.
+                    material.perceptual_roughness = palette.surface_roughness;
                     materials.add(material)
                 };
                 RegisterMaterials {
