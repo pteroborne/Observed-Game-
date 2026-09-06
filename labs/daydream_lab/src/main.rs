@@ -23,18 +23,38 @@
 //! twice - once upright, once scaled `-1` in Y - which cost a second copy of
 //! every draw and could only ever reflect what had been duplicated.
 //!
-//! # Shadows are off on purpose
+//! # Two hours, not one setting
+//!
+//! `OBSERVED2_DAYDREAM_HOUR` chooses between two pictures of the same room.
+//! `noon` is ambient-led and shadowless, opening onto a cold white void.
+//! `late` collapses the ambient and rakes one warm sun across the colonnade,
+//! so the piers stripe the aisle. Neither is a variation on the other.
+//!
+//! # What volumetric light shafts ran into
+//!
+//! Shafts were tried and taken back out. Bevy will draw them - `FogVolume`
+//! plus `VolumetricLight` plus `VolumetricFog` on the camera - but this
+//! building cannot produce them, because the nave has no side walls. The
+//! aisles are open, so the sun arrives as an unbroken wash rather than
+//! through openings, and there is nothing to cut it into bars of lit air.
+//! Every density that made the air visible also filled the arch with murk.
+//! Shafts here would need a clerestory first: a solid upper wall with holes
+//! in it. That is an architectural change, not a lighting one.
+//!
+//! # Shadows are off at noon on purpose
 //!
 //! A cascade boundary drew a hard seam across the hall, and everything past it
-//! blew out. Losing shadows cost nothing, because the look is ambient-led:
-//! form comes from which way a face is turned, not from what is thrown onto
-//! it.
+//! blew out. Losing shadows cost nothing at noon, because that look is
+//! ambient-led: form comes from which way a face is turned, not from what is
+//! thrown onto it. `late` needs them, and gets cascades long enough to reach
+//! past the far wall so the seam has nowhere to fall.
 
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::visibility::RenderLayers;
 use bevy::camera::{Hdr, RenderTarget};
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor};
+use bevy::light::CascadeShadowConfigBuilder;
 use bevy::math::reflection_matrix;
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::post_process::bloom::Bloom;
@@ -45,8 +65,53 @@ use bevy::render::render_resource::{
 use bevy::shader::ShaderRef;
 use bevy::window::{PrimaryWindow, WindowResized, WindowResolution};
 
-/// Pale haze. Clear colour and fog share it, so the opening has no far side.
-const HAZE: Color = Color::srgb(0.80, 0.86, 0.92);
+/// Everything about the light, which is the only thing that changes between
+/// the two paintings this hall can be.
+///
+/// `noon` is the scene as first built: ambient-led, shadowless, opening onto a
+/// cold white void. `late` is the same architecture at the end of the day -
+/// the ambient collapses, one warm sun rakes across the colonnade, and the
+/// piers cut it into bars of lit air. Neither is a variation on the other;
+/// they are different pictures of the same room.
+struct Hour {
+    /// Fills the clear colour, the distance fog, and the water's far fade, so
+    /// the opening in the far wall has no far side.
+    haze: Color,
+    ambient_color: Color,
+    ambient: f32,
+    sun_color: Color,
+    sun_lux: f32,
+    /// The sun is a direction, but it is easier to author as two points.
+    sun_from: Vec3,
+    sun_to: Vec3,
+    /// Off unless the light needs to be blocked by something to read.
+    shadows: bool,
+}
+
+fn hour() -> Hour {
+    match std::env::var("OBSERVED2_DAYDREAM_HOUR").as_deref() {
+        Ok("late") => Hour {
+            haze: Color::srgb(0.98, 0.87, 0.74),
+            ambient_color: Color::srgb(0.46, 0.52, 0.68),
+            ambient: 235.0,
+            sun_color: Color::srgb(1.0, 0.87, 0.66),
+            sun_lux: 15_000.0,
+            sun_from: Vec3::new(34.0, 16.0, -14.0),
+            sun_to: Vec3::new(0.0, 3.4, -20.0),
+            shadows: true,
+        },
+        _ => Hour {
+            haze: Color::srgb(0.80, 0.86, 0.92),
+            ambient_color: Color::srgb(0.88, 0.87, 0.92),
+            ambient: 560.0,
+            sun_color: Color::srgb(1.0, 0.95, 0.88),
+            sun_lux: 3_400.0,
+            sun_from: Vec3::new(14.0, 26.0, 8.0),
+            sun_to: Vec3::new(0.0, 0.0, -22.0),
+            shadows: false,
+        },
+    }
+}
 /// The warm mass everything is cut from.
 const SALMON: Color = Color::srgb(0.87, 0.37, 0.28);
 /// The same mass in shadow, for the reveals.
@@ -89,10 +154,10 @@ fn main() {
         ..default()
     }))
     .add_plugins(MaterialPlugin::<WaterMaterial>::default())
-    .insert_resource(ClearColor(HAZE))
+    .insert_resource(ClearColor(hour().haze))
     .insert_resource(GlobalAmbientLight {
-        color: Color::srgb(0.88, 0.87, 0.92),
-        brightness: 560.0,
+        color: hour().ambient_color,
+        brightness: hour().ambient,
         ..default()
     })
     .add_systems(Startup, setup)
@@ -236,9 +301,9 @@ fn checkered(width: f32, depth: f32) -> bevy::math::Affine2 {
 
 /// The same fog on every camera, so the reflected hall fades exactly as the
 /// real one does.
-fn haze() -> DistanceFog {
+fn haze(hour: &Hour) -> DistanceFog {
     DistanceFog {
-        color: HAZE,
+        color: hour.haze,
         falloff: FogFalloff::Linear {
             start: FOG_START,
             end: FOG_END,
@@ -284,6 +349,7 @@ fn setup(
     mut images: ResMut<Assets<Image>>,
     windows: Query<&Window, With<PrimaryWindow>>,
 ) {
+    let hour = hour();
     let (eye, focus) = view();
     let camera_transform = Transform::from_translation(eye).looking_at(focus, Vec3::Y);
     let projection = PerspectiveProjection::default();
@@ -299,7 +365,7 @@ fn setup(
         },
         Projection::Perspective(projection.clone()),
         camera_transform,
-        haze(),
+        haze(&hour),
         RenderLayers::from_layers(&[0, WATER_LAYER]),
         MainCamera,
     ));
@@ -318,7 +384,7 @@ fn setup(
             // Reflecting the world flips the winding of every triangle, so
             // backface culling has to be inverted to match.
             invert_culling: true,
-            clear_color: ClearColorConfig::Custom(HAZE),
+            clear_color: ClearColorConfig::Custom(hour.haze),
             ..default()
         },
         // The water shader samples this texture and hands the result to the
@@ -327,20 +393,38 @@ fn setup(
         RenderTarget::Image(reflection.clone().into()),
         reflect_transform,
         reflect_projection,
-        haze(),
+        haze(&hour),
         RenderLayers::layer(0),
         ReflectionCamera,
     ));
 
-    // One distant source, high and soft, casting nothing.
+    // One distant source, raking across the colonnade rather than down it,
+    // so the piers cut the light into bars.
+    //
+    // Shadows are back on, but only because the shafts need them - a
+    // volumetric light has to know what it is blocked by. The seam that made
+    // them unusable before was a cascade boundary falling inside the hall;
+    // the cascades below reach past the far wall, so there is no boundary
+    // left to see.
     commands.spawn((
         DirectionalLight {
-            color: Color::srgb(1.0, 0.95, 0.88),
-            illuminance: 3_400.0,
-            shadow_maps_enabled: false,
+            color: hour.sun_color,
+            illuminance: hour.sun_lux,
+            shadow_maps_enabled: hour.shadows,
             ..default()
         },
-        Transform::from_xyz(14.0, 26.0, 8.0).looking_at(Vec3::new(0.0, 0.0, -22.0), Vec3::Y),
+        // Cascades that reach past the far wall. The seam that made
+        // shadows unusable at first was a cascade boundary falling inside
+        // the hall, with everything past it unshadowed and blown out.
+        CascadeShadowConfigBuilder {
+            num_cascades: 4,
+            minimum_distance: 0.4,
+            first_cascade_far_bound: 24.0,
+            maximum_distance: 190.0,
+            overlap_proportion: 0.2,
+        }
+        .build(),
+        Transform::from_translation(hour.sun_from).looking_at(hour.sun_to, Vec3::Y),
     ));
 
     let floor_tex = checkerboard(&mut images, [224, 180, 162], [186, 118, 100]);
@@ -460,7 +544,7 @@ fn setup(
         MeshMaterial3d(water_materials.add(WaterMaterial {
             settings: WaterSettings {
                 tint: linear(Color::srgb(0.07, 0.30, 0.34)),
-                haze: linear(HAZE),
+                haze: linear(hour.haze),
                 params: Vec4::new(FOG_START, FOG_END, 0.10, 0.0075),
             },
             reflection,
