@@ -1,0 +1,8 @@
+[package]
+name = "daydream_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.19", default-features = false, features = ["ui", "3d", "png"] }

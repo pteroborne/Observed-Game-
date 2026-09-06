@@ -154,6 +154,7 @@ The prototype labs in `labs/` are independent Bevy applications designed to isol
 ### Presentation & Asset Integration
 - `oga_25d_lab`: Proof surface for the 2.5D OpenGameArt intake metadata pipeline, showcasing directional actors, gameplay objects, animated decorations, and LAB texture samples with a debug metadata overlay and billboard vs directional toggle.
 - `lighting_lab`: Nine static procedural dioramas isolating liminal registers (directionality, brightness, scale, repetition, fog, bloom, shadow quality) for lighting design validation and relative-luminance corridor audits.
+- `daydream_lab`: A single scene built with every authoring contract switched off - no seam, no port signature, no hull budget, no Legibility Contract. It exists to answer whether the saturated, shadowless, mirror-pool architectural-painting look is worth wanting before anyone tries to make the tile system produce it. Two hues at full chroma, a roofed nave over open aisles, a geometrically mirrored copy of the hall under the waterline, and an arch that opens onto the clear colour itself.
 
 ---
 

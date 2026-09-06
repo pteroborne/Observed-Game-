@@ -1,0 +1,28 @@
+[package]
+name = "mechanic_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# A mechanic bench: a fixed turn pipeline whose every stage is a swappable
+# strategy, so two rule sets can be compared without editing the lab that
+# implements them. See `docs/mechanic_lab_plan.md`.
+#
+# The simulation is deliberately Bevy-free and depends only on `observed_hex`,
+# which is itself dependency-free. Presentation crates arrive with the view.
+[dependencies]
+# The simulation depends only on `observed_hex`; everything below is used by
+# `view` alone and never reaches `sim`.
+observed_hex = { path = "../../crates/observed_hex" }
+# Colours come from the production style crate, never invented locally.
+observed_style = { path = "../../crates/observed_style" }
+bevy = { version = "0.19", default-features = false, features = [
+    "2d",
+    # 0.18's `2d` included `ui`; 0.19's does not, and the loss is silent — the
+    # canvas still accepts input and simply clears black. `run` asserts on the
+    # plugin so removing this feature is a failure you can see.
+    "ui",
+    "bevy_ui_widgets",
+    "default_font",
+    "webgl2",
+] }

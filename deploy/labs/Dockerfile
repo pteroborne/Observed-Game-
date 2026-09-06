@@ -15,6 +15,7 @@ COPY deploy/labs/nginx.conf /etc/nginx/conf.d/default.conf
 COPY deploy/labs/site/index.html /usr/share/nginx/html/index.html
 COPY web-dist/tactics-lab/ /usr/share/nginx/html/tactics/
 COPY web-dist/composition-studio/ /usr/share/nginx/html/composition/
+COPY web-dist/mechanic-lab/ /usr/share/nginx/html/mechanic/
 
 # Nginx serves the precompressed files when the browser advertises gzip. The
 # original files remain available to clients that do not.
