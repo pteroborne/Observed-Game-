@@ -19,6 +19,8 @@ use observed_style::{
     ColorVisionMode, MarkerRole, TacticsRole, marker, simulate_color_vision, tactics, team,
 };
 
+use super::animate::Pulse;
+use super::art::{ArtAtlas, Icon};
 use crate::sim::board::Edge;
 use crate::sim::rules::LockSet;
 use crate::sim::state::MatchState;
@@ -168,21 +170,15 @@ const Z_WALL: f32 = 4.0;
 const Z_ACTOR: f32 = 5.0;
 const Z_FACING: f32 = 6.0;
 
-/// Meshes reused every redraw. Silhouette is the primary identifier, so this
-/// list is effectively the visual vocabulary.
+/// The few primitives that survived the move to authored icons: washes, rings
+/// and hatches that belong to the *floor* rather than to a thing standing on
+/// it. Everything with an identity is an SVG in `art/`.
 struct Kit {
     hex: Handle<Mesh>,
     hex_ring: Handle<Mesh>,
     disc: Handle<Mesh>,
     ring: Handle<Mesh>,
     inner_ring: Handle<Mesh>,
-    diamond: Handle<Mesh>,
-    triangle: Handle<Mesh>,
-    pentagon: Handle<Mesh>,
-    square: Handle<Mesh>,
-    bar: Handle<Mesh>,
-    ghost_bar: Handle<Mesh>,
-    wedge: Handle<Mesh>,
     hatch: Handle<Mesh>,
 }
 
@@ -195,17 +191,6 @@ impl Kit {
             disc: meshes.add(Circle::new(r * 0.30)),
             ring: meshes.add(Annulus::new(r * 0.19, r * 0.30)),
             inner_ring: meshes.add(Annulus::new(r * 0.50, r * 0.60)),
-            diamond: meshes.add(RegularPolygon::new(r * 0.36, 4)),
-            triangle: meshes.add(RegularPolygon::new(r * 0.38, 3)),
-            pentagon: meshes.add(RegularPolygon::new(r * 0.34, 5)),
-            square: meshes.add(Rectangle::new(r * 0.62, r * 0.62)),
-            bar: meshes.add(Rectangle::new(r * 0.96, r * 0.17)),
-            ghost_bar: meshes.add(Rectangle::new(r * 0.96, r * 0.09)),
-            wedge: meshes.add(Triangle2d::new(
-                Vec2::new(0.0, r * 0.34),
-                Vec2::new(-r * 0.22, -r * 0.10),
-                Vec2::new(r * 0.22, -r * 0.10),
-            )),
             hatch: meshes.add(Rectangle::new(r * 1.2, r * 0.06)),
         }
     }
@@ -214,6 +199,7 @@ impl Kit {
 struct Painter<'a> {
     commands: Commands<'a, 'a>,
     materials: &'a mut Assets<ColorMaterial>,
+    atlas: &'a ArtAtlas,
     vision: ColorVisionMode,
 }
 
@@ -232,6 +218,44 @@ impl Painter<'_> {
                 .with_rotation(Quat::from_rotation_z(turn))
                 .with_scale(Vec3::splat(scale)),
         ));
+    }
+}
+
+impl Painter<'_> {
+    /// A mesh mark that breathes. Used for the cell wash under a telegraphed
+    /// boundary, where a sprite would be the wrong shape.
+    fn put_pulsing(&mut self, mesh: &Handle<Mesh>, color: Color, at: Vec2, z: f32, pulse: Pulse) {
+        let seen: Color = simulate_color_vision(color, self.vision).into();
+        let mut adjusted = seen;
+        adjusted.set_alpha(color.alpha());
+        self.commands.spawn((
+            BoardVisual,
+            pulse,
+            Mesh2d(mesh.clone()),
+            MeshMaterial2d(self.materials.add(ColorMaterial::from(adjusted))),
+            Transform::from_translation(at.extend(z)),
+        ));
+    }
+
+    /// Draw an authored icon. Silhouette does the identifying, so these are
+    /// left at their authored colours rather than tinted — the vision
+    /// simulation is baked into the texture instead.
+    fn icon(&mut self, icon: Icon, at: Vec2, z: f32, turn: f32, size: f32, pulse: Option<Pulse>) {
+        let Some(image) = self.atlas.get(icon, self.vision) else {
+            return;
+        };
+        let mut entity = self.commands.spawn((
+            BoardVisual,
+            Sprite {
+                image,
+                custom_size: Some(Vec2::splat(size)),
+                ..default()
+            },
+            Transform::from_translation(at.extend(z)).with_rotation(Quat::from_rotation_z(turn)),
+        ));
+        if let Some(pulse) = pulse {
+            entity.insert(pulse);
+        }
     }
 }
 
@@ -257,6 +281,7 @@ fn edge_pose(state: &MatchState, edge: Edge) -> (Vec2, f32) {
 pub fn redraw(
     commands: Commands,
     session: Res<Session>,
+    atlas: Res<ArtAtlas>,
     existing: Query<Entity, With<BoardVisual>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
@@ -268,6 +293,7 @@ pub fn redraw(
     let mut p = Painter {
         commands,
         materials: &mut materials,
+        atlas: &atlas,
         vision: session.vision,
     };
     for entity in &existing {
@@ -349,39 +375,29 @@ pub fn redraw(
         );
     }
     for &prison in &state.prisons {
-        p.put(
-            &kit.square,
-            MarkPaint::Prison.color().with_alpha(0.55),
+        p.icon(
+            Icon::Prison,
             world_of(state, prison),
             Z_ROLE,
             0.0,
-            1.0,
+            HEX_RADIUS * 1.25,
+            None,
         );
     }
     for flag in &state.flags {
-        let (mesh, color) = match flag.planted_by {
-            Some(team_id) => (
-                &kit.pentagon,
-                if team_id == session.human {
-                    MarkPaint::Pawn.color()
-                } else {
-                    MarkPaint::Rival.color()
-                },
-            ),
-            None => (&kit.pentagon, MarkPaint::Flag.color()),
+        let icon = if flag.planted_by.is_some() {
+            Icon::FlagPlanted
+        } else {
+            Icon::Flag
         };
-        let at = world_of(state, flag.at);
-        p.put(mesh, color, at, Z_ROLE + 0.1, 0.0, 1.0);
-        if flag.planted_by.is_none() {
-            p.put(
-                &kit.disc,
-                CellPaint::Open.color(),
-                at,
-                Z_ROLE + 0.2,
-                0.0,
-                0.7,
-            );
-        }
+        p.icon(
+            icon,
+            world_of(state, flag.at),
+            Z_ROLE + 0.1,
+            0.0,
+            HEX_RADIUS * 1.35,
+            None,
+        );
     }
 
     // Declared orders.
@@ -417,7 +433,7 @@ pub fn redraw(
             let rim = !neighbour.is_some_and(|other| state.board.on_board(other));
             if rim || state.board.port(edge) != PortClass::Door {
                 let (at, turn) = edge_pose(state, edge);
-                p.put(&kit.bar, MarkPaint::Wall.color(), at, Z_WALL, turn, 1.0);
+                p.icon(Icon::Wall, at, Z_WALL, turn, HEX_RADIUS * 1.05, None);
             }
         }
     }
@@ -427,36 +443,61 @@ pub fn redraw(
     if session.spec.preview != MutationPreview::Hidden {
         for change in &state.telegraph {
             let (at, turn) = edge_pose(state, change.edge);
-            let paint = match session.spec.preview {
-                MutationPreview::Outcome if change.to == PortClass::Sealed => {
-                    MarkPaint::WallClosing
-                }
-                MutationPreview::Outcome => MarkPaint::WallOpening,
-                _ => MarkPaint::ChangePending,
+            // Rhythm carries the outcome: a boundary about to wall up flashes
+            // hard and fast, one about to open breathes slowly. Strip the
+            // colour away entirely and the two are still told apart, which is
+            // the point — motion is the one channel hue cannot take.
+            let pulse = match session.spec.preview {
+                MutationPreview::Outcome if change.to == PortClass::Sealed => Pulse::closing(1.0),
+                MutationPreview::Outcome => Pulse::opening(1.0),
+                _ => Pulse::pending(1.0),
             };
-            p.put(&kit.ghost_bar, paint.color(), at, Z_WALL + 0.1, turn, 1.0);
-            // A second, offset bar so a pending change reads as a dashed line
-            // rather than a thin solid one — shape, not just colour.
-            p.put(
-                &kit.ghost_bar,
-                paint.color().with_alpha(0.55),
+            p.icon(
+                Icon::Ghost,
                 at,
-                Z_WALL + 0.1,
+                Z_WALL + 0.2,
                 turn,
-                0.55,
+                HEX_RADIUS * 1.05,
+                Some(pulse),
             );
+            // Both cells the boundary joins breathe too, because a bar on an
+            // edge is a small thing to notice on a phone.
+            for cell in [
+                Some(change.edge.cell),
+                state
+                    .board
+                    .size()
+                    .neighbor(change.edge.cell, change.edge.face),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                if !state.board.on_board(cell) {
+                    continue;
+                }
+                p.put_pulsing(
+                    &kit.hex,
+                    MarkPaint::ChangePending.color().with_alpha(0.5),
+                    world_of(state, cell),
+                    Z_CONE + 0.1,
+                    Pulse {
+                        scale: (0.9, 1.0),
+                        ..pulse
+                    },
+                );
+            }
         }
     }
 
     // Actors, each with its own silhouette.
     for guardian in &state.guardians {
-        p.put(
-            &kit.triangle,
-            MarkPaint::Guardian.color(),
+        p.icon(
+            Icon::Guardian,
             world_of(state, guardian.at),
             Z_ACTOR,
             0.0,
-            1.0,
+            HEX_RADIUS * 1.35,
+            None,
         );
     }
     for pawn in &state.pawns {
@@ -480,12 +521,12 @@ pub fn redraw(
                 1.55,
             );
         }
-        let (mesh, color) = match (pawn.jailed, mine) {
-            (true, _) => (&kit.ring, MarkPaint::Held.color()),
-            (false, true) => (&kit.disc, MarkPaint::Pawn.color()),
-            (false, false) => (&kit.diamond, MarkPaint::Rival.color()),
+        let icon = match (pawn.jailed, mine) {
+            (true, _) => Icon::Held,
+            (false, true) => Icon::Pawn,
+            (false, false) => Icon::Rival,
         };
-        p.put(mesh, color, at, Z_ACTOR, 0.0, 1.0);
+        p.icon(icon, at, Z_ACTOR, 0.0, HEX_RADIUS * 1.30, None);
 
         if !pawn.jailed {
             // Facing as a wedge on the faced edge: big enough to read at a
@@ -499,17 +540,15 @@ pub fn redraw(
                 },
             );
             let toward = (edge_at - at).normalize_or_zero();
-            p.put(
-                &kit.wedge,
-                if mine {
-                    MarkPaint::Selected.color()
-                } else {
-                    MarkPaint::Rival.color()
-                },
-                at + toward * HEX_RADIUS * 0.44,
+            // The arrow art points up at rotation zero, so it needs the pose
+            // turned back by a quarter to point along the faced direction.
+            p.icon(
+                Icon::Facing,
+                at + toward * HEX_RADIUS * 0.50,
                 Z_FACING,
-                turn,
-                1.0,
+                turn - std::f32::consts::FRAC_PI_2,
+                HEX_RADIUS * 0.62,
+                None,
             );
         }
     }

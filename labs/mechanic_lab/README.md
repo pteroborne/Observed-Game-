@@ -252,6 +252,48 @@ Neither is tuned away, because tuning them silently would hide the finding. The
 levers are on the table: turn limit, `PlantRule`, `PlantWin::Majority` for a
 single team, guardian cadence and count.
 
+## Art
+
+Icons are authored as real SVG under `art/`, `include_str!`d into the binary and
+rasterized at startup with `usvg` + `tiny-skia`. No asset server, no runtime
+fetches, one file still ships to the browser — but the art is a vector file any
+tool can open and any review can diff, which is what makes iterating on it
+cheap. `agents.md` prefers code-as-art over authored assets; SVG text in the
+repository is the reading of that which keeps the art editable without
+introducing a binary asset pipeline.
+
+The direction is Chip's Challenge: chunky, pictographic, hard black outlines,
+flat fills, one unmistakable silhouette per thing. That direction was chosen for
+legibility rather than nostalgia — a heavy-outlined silhouette survives any
+colour-vision deficiency, and reads at the size a 37-cell board leaves you on a
+phone.
+
+**The vision simulation reaches the pixels.** Each icon is rasterized once per
+`ColorVisionMode` at startup, with `simulate_color_vision` applied per pixel, so
+the `Vision` control shows a simulated board with simulated art on it. Tinting
+the sprite instead would have left the control lying about the artwork, which is
+worse than not offering it.
+
+## Motion, the channel colour cannot take
+
+A telegraphed boundary **breathes**, and the rhythm carries the outcome:
+
+| About to | Rhythm |
+| --- | --- |
+| wall up | fast, hard flash — it takes a route away |
+| open | slow, soft breath — it is an offer, not a loss |
+| change, outcome hidden | a neutral middle pulse |
+
+Both cells the boundary joins pulse with it, because a bar on an edge is a small
+thing to notice on a phone. Strip every colour out and closing is still
+distinguishable from opening, which is the point: motion reads identically under
+every colour-vision deficiency, at any palette, on any screen. It is the
+strongest signal available for the thing a player most needs to notice.
+
+The animation is a separate system from the board redraw. The redraw only runs
+when the match changes; an animation that forced a full respawn every frame
+would be paying entity churn for a sine wave.
+
 ## Reading the board without colour
 
 Every distinction is carried by **shape first**, colour second. That is not a
@@ -261,19 +303,19 @@ Legibility Contract forbids an unlabelled coloured marker.
 
 | Thing | Shape |
 | --- | --- |
-| wall | solid bar on the boundary |
+| wall | brick bar across the boundary |
 | doorway | the absence of one |
-| boundary about to change | dashed ghost bar in the same place |
-| your pawn | filled disc |
+| boundary about to change | dashed ghost bar, breathing |
+| your pawn | round helm |
 | rival pawn | diamond |
-| pawn in prison | hollow ring |
-| guardian | triangle |
-| flag | pentagon, hollow until planted |
-| prison | square |
-| base | hexagon ring |
-| observed cell | inner ring |
+| pawn in prison | broken ring, crossed out |
+| guardian | triangle with an eye |
+| flag | pennant, hollow until planted |
+| prison | barred box |
+| base | hexagon ring with a tick |
+| observed cell | inner ring on quiet floor |
 | isolated cell | hatched |
-| facing | wedge on the faced edge |
+| facing | arrow on the faced edge |
 
 The **Vision** control cycles all five `ColorVisionMode` simulations over the
 live board, not a swatch page — every colour is routed through

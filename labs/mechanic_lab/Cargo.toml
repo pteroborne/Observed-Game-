@@ -26,3 +26,11 @@ bevy = { version = "0.19", default-features = false, features = [
     "default_font",
     "webgl2",
 ] }
+# Icons are authored as real SVG files under `art/` and rasterized at startup.
+# `usvg` parses, `tiny-skia` fills — both pure Rust, both fine on wasm, and no
+# asset server is involved: the SVG text is `include_str!`d into the binary, so
+# the browser build still ships as one file with no runtime fetches.
+usvg = { version = "0.45", default-features = false }
+resvg = { version = "0.45", default-features = false }
+tiny-skia = "0.11"
+

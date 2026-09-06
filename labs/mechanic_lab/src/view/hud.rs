@@ -90,8 +90,8 @@ pub fn spawn(mut commands: Commands) {
                 Node {
                     width: percent(100.0),
                     flex_direction: FlexDirection::Column,
-                    padding: UiRect::all(px(10.0)),
-                    row_gap: px(4.0),
+                    padding: UiRect::all(px(7.0)),
+                    row_gap: px(2.0),
                     ..default()
                 },
                 BackgroundColor(PANEL),
@@ -102,7 +102,7 @@ pub fn spawn(mut commands: Commands) {
                     ModeText,
                     Text::new(""),
                     TextFont {
-                        font_size: FontSize::Px(15.0),
+                        font_size: FontSize::Px(13.0),
                         ..default()
                     },
                     TextColor(Color::srgb(1.0, 0.62, 0.2)),
@@ -112,7 +112,7 @@ pub fn spawn(mut commands: Commands) {
                     StatusText,
                     Text::new(""),
                     TextFont {
-                        font_size: FontSize::Px(13.0),
+                        font_size: FontSize::Px(12.0),
                         ..default()
                     },
                     TextColor(INK),
@@ -215,9 +215,9 @@ pub fn spawn(mut commands: Commands) {
                     width: percent(100.0),
                     flex_direction: FlexDirection::Row,
                     flex_wrap: FlexWrap::Wrap,
-                    padding: UiRect::all(px(8.0)),
-                    column_gap: px(6.0),
-                    row_gap: px(6.0),
+                    padding: UiRect::all(px(6.0)),
+                    column_gap: px(4.0),
+                    row_gap: px(4.0),
                     ..default()
                 },
                 BackgroundColor(PANEL),
@@ -281,9 +281,9 @@ fn control(parent: &mut ChildSpawnerCommands, button: HudButton) {
             button,
             Button,
             Node {
-                min_width: px(84.0),
-                height: px(46.0),
-                padding: UiRect::horizontal(px(10.0)),
+                min_width: px(62.0),
+                height: px(40.0),
+                padding: UiRect::horizontal(px(7.0)),
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
                 ..default()
@@ -294,7 +294,7 @@ fn control(parent: &mut ChildSpawnerCommands, button: HudButton) {
             face.spawn((
                 Text::new(button.label()),
                 TextFont {
-                    font_size: FontSize::Px(13.0),
+                    font_size: FontSize::Px(11.0),
                     ..default()
                 },
                 TextColor(INK),
@@ -315,11 +315,10 @@ pub fn sync(
     let state = &session.state;
     if let Ok(mut text) = mode.single_mut() {
         **text = format!(
-            "{}   preview:{:?}   vision:{}\n{}",
+            "{}  ·  preview {:?}  ·  vision {}",
             session.spec.name,
             session.spec.preview,
             session.vision.label(),
-            session.rules.summary(),
         );
     }
     if let Ok(mut text) = status.single_mut() {

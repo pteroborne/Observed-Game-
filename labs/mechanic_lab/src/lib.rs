@@ -26,7 +26,14 @@ pub fn run() {
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
             title: "Observed - Mechanic Lab".to_string(),
-            resolution: WindowResolution::new(900, 1000),
+            // Pin the scale factor to 1. `fit_canvas_to_parent` sizes the
+            // backing store to the element's CSS pixels, but the window still
+            // reports the display's device pixel ratio, so Bevy's *logical*
+            // viewport came out at half the CSS width — 187px on a phone. Every
+            // `px` in the HUD then meant two, the dock stacked one control per
+            // row, and the board was squeezed behind it. With the override,
+            // one UI pixel is one CSS pixel and the layout means what it says.
+            resolution: WindowResolution::new(900, 1000).with_scale_factor_override(1.0),
             present_mode: PresentMode::AutoVsync,
             canvas: Some("#mechanic-canvas".to_string()),
             fit_canvas_to_parent: true,
@@ -53,7 +60,7 @@ pub fn run() {
 pub fn configure(app: &mut App) {
     app.insert_resource(ClearColor(Color::srgb(0.024, 0.031, 0.043)))
         .insert_resource(Session::new(ModeSpec::presets(), 0))
-        .add_systems(Startup, (spawn_camera, view::hud::spawn))
+        .add_systems(Startup, (spawn_camera, view::art::load, view::hud::spawn))
         .add_systems(
             Update,
             (
@@ -65,7 +72,11 @@ pub fn configure(app: &mut App) {
                 view::hud::sync_menu,
             )
                 .chain(),
-        );
+        )
+        // Separate from the board redraw on purpose: the redraw only runs when
+        // the match changes, and an animation that forced a full respawn every
+        // frame would be paying entity churn for a sine wave.
+        .add_systems(Update, view::animate::pulse);
 }
 
 fn spawn_camera(mut commands: Commands) {

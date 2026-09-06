@@ -5,6 +5,8 @@
 //! pan/zoom/pose layer `tactics_lab` needed and is what makes the touch build
 //! tractable: there is no gesture that can lose the board.
 
+pub mod animate;
+pub mod art;
 pub mod board;
 pub mod hud;
 pub mod input;
