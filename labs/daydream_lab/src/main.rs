@@ -16,20 +16,34 @@
 //! the same pale value, so the arch opens onto a distance that never resolves.
 //! Nothing is modelled beyond the wall.
 //!
-//! **The water is a mirror made of geometry.** Bevy has no cheap planar
-//! reflection, so the colonnade is built twice - once upright and once scaled
-//! `-1` in Y - with a translucent sheet at the waterline between them. It is
-//! the oldest trick there is and it costs one extra draw per reflected object.
+//! **The water is a real planar reflection.** A second camera sits at the main
+//! camera's position reflected through the plane `y = 0`, renders the hall to
+//! a texture, and the water shader samples that texture at each fragment's
+//! screen position. It replaced an earlier trick that built the whole hall
+//! twice - once upright, once scaled `-1` in Y - which cost a second copy of
+//! every draw and could only ever reflect what had been duplicated.
+//!
+//! # Shadows are off on purpose
+//!
+//! A cascade boundary drew a hard seam across the hall, and everything past it
+//! blew out. Losing shadows cost nothing, because the look is ambient-led:
+//! form comes from which way a face is turned, not from what is thrown onto
+//! it.
 
 use bevy::asset::RenderAssetUsages;
-use bevy::camera::Hdr;
+use bevy::camera::visibility::RenderLayers;
+use bevy::camera::{Hdr, RenderTarget};
+use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor};
+use bevy::math::reflection_matrix;
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
-use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
-use bevy::render::view::screenshot::{Screenshot, save_to_disk};
-use bevy::window::WindowResolution;
+use bevy::render::render_resource::{
+    AsBindGroup, Extent3d, ShaderType, TextureDimension, TextureFormat, TextureUsages,
+};
+use bevy::shader::ShaderRef;
+use bevy::window::{PrimaryWindow, WindowResized, WindowResolution};
 
 /// Pale haze. Clear colour and fog share it, so the opening has no far side.
 const HAZE: Color = Color::srgb(0.80, 0.86, 0.92);
@@ -37,7 +51,7 @@ const HAZE: Color = Color::srgb(0.80, 0.86, 0.92);
 const SALMON: Color = Color::srgb(0.87, 0.37, 0.28);
 /// The same mass in shadow, for the reveals.
 const SALMON_DEEP: Color = Color::srgb(0.60, 0.21, 0.18);
-/// The cool half of the palette: water, and the wall beyond the arch.
+/// The cool half of the palette: water, pier feet, and the wall beyond the arch.
 const TEAL: Color = Color::srgb(0.10, 0.40, 0.46);
 /// The one object that is neither wall nor water.
 const CREAM: Color = Color::srgb(0.93, 0.86, 0.74);
@@ -56,6 +70,14 @@ const ARCH_R: f32 = 3.4;
 /// so the colonnade is backlit and the haze leaks in between the piers.
 const NAVE: f32 = 5.9;
 
+const FOG_START: f32 = 40.0;
+const FOG_END: f32 = 130.0;
+
+/// The water is the only thing on this layer, so the reflection camera - which
+/// draws everything *else* - can be told to skip it. Without that the mirror
+/// would be trying to reflect itself.
+const WATER_LAYER: usize = 1;
+
 fn main() {
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -66,6 +88,7 @@ fn main() {
         }),
         ..default()
     }))
+    .add_plugins(MaterialPlugin::<WaterMaterial>::default())
     .insert_resource(ClearColor(HAZE))
     .insert_resource(GlobalAmbientLight {
         color: Color::srgb(0.88, 0.87, 0.92),
@@ -73,8 +96,65 @@ fn main() {
         ..default()
     })
     .add_systems(Startup, setup)
+    .add_systems(Update, (follow_with_reflection, refit_reflection_target))
     .add_systems(Update, shoot);
     app.run();
+}
+
+/// Everything the water shader needs in one uniform.
+///
+/// These have to travel as a single `ShaderType` rather than as three fields
+/// each tagged `#[uniform(0)]` - separate fields all claiming binding zero
+/// collide, and only one of them survives to reach the shader.
+#[derive(Clone, ShaderType)]
+struct WaterSettings {
+    /// The colour of the water itself, seen through the reflection.
+    tint: Vec4,
+    /// The colour everything fades to. Matches the fog and the clear colour.
+    haze: Vec4,
+    /// x: fog start, y: fog end, z: reflectance head-on, w: ripple amplitude.
+    params: Vec4,
+}
+
+/// The water surface. See `assets/shaders/daydream_water.wgsl`.
+#[derive(Asset, TypePath, AsBindGroup, Clone)]
+struct WaterMaterial {
+    #[uniform(0)]
+    settings: WaterSettings,
+    #[texture(1)]
+    #[sampler(2)]
+    reflection: Handle<Image>,
+}
+
+impl Material for WaterMaterial {
+    fn fragment_shader() -> ShaderRef {
+        "shaders/daydream_water.wgsl".into()
+    }
+}
+
+/// Marks the camera that renders the reflected world into the water's texture.
+#[derive(Component)]
+struct ReflectionCamera;
+
+/// Marks the camera the player is actually looking through.
+#[derive(Component)]
+struct MainCamera;
+
+/// The texture the reflection is rendered into, kept so it can be resized with
+/// the window.
+#[derive(Resource)]
+struct ReflectionTarget(Handle<Image>);
+
+/// Where to stand. `OBSERVED2_DAYDREAM_VIEW` picks one of three; the default
+/// is the one down the axis, which is the composition the scene was built for.
+fn view() -> (Vec3, Vec3) {
+    match std::env::var("OBSERVED2_DAYDREAM_VIEW").as_deref() {
+        // Down at the waterline, where the reflection is longer than the hall.
+        Ok("low") => (Vec3::new(0.0, 1.35, 17.0), Vec3::new(0.0, 4.8, FAR)),
+        // From an aisle, so the colonnade is read across rather than through.
+        Ok("aisle") => (Vec3::new(10.5, 3.2, 7.0), Vec3::new(-2.0, 4.6, -20.0)),
+        _ => (Vec3::new(0.0, 2.7, 20.0), Vec3::new(0.0, 5.2, FAR)),
+    }
 }
 
 /// A two-tone checkerboard, generated rather than loaded. Cells are drawn a
@@ -114,16 +194,35 @@ fn checkerboard(images: &mut Assets<Image>, a: [u8; 3], b: [u8; 3]) -> Handle<Im
     images.add(image)
 }
 
-/// Mirroring through the waterline flips the winding of every triangle, so
-/// the reflected copy of the hall needs its own materials with culling off.
-/// Without this the water reflects nothing and reads as a hole in the floor.
-fn matte(color: Color, mirrored: bool) -> StandardMaterial {
+/// The texture the reflection camera draws into. It matches the window, so the
+/// water shader can sample it at the fragment's own screen position.
+fn reflection_image(images: &mut Assets<Image>, size: UVec2) -> Handle<Image> {
+    let mut image = Image::new_uninit(
+        Extent3d {
+            width: size.x.max(1),
+            height: size.y.max(1),
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        TextureFormat::Bgra8UnormSrgb,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    );
+    image.texture_descriptor.usage |=
+        TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT;
+    images.add(image)
+}
+
+/// A colour as the shader wants it: linear, not sRGB.
+fn linear(color: Color) -> Vec4 {
+    let c = LinearRgba::from(color);
+    Vec4::new(c.red, c.green, c.blue, c.alpha)
+}
+
+fn matte(color: Color) -> StandardMaterial {
     StandardMaterial {
         base_color: color,
         perceptual_roughness: 1.0,
         reflectance: 0.02,
-        double_sided: mirrored,
-        cull_mode: if mirrored { None } else { default() },
         ..default()
     }
 }
@@ -135,16 +234,45 @@ fn checkered(width: f32, depth: f32) -> bevy::math::Affine2 {
     bevy::math::Affine2::from_scale(Vec2::new(width / (CELL * 8.0), depth / (CELL * 8.0)))
 }
 
-/// Where to stand. `OBSERVED2_DAYDREAM_VIEW` picks one of three; the default
-/// is the one down the axis, which is the composition the scene was built for.
-fn view() -> (Vec3, Vec3) {
-    match std::env::var("OBSERVED2_DAYDREAM_VIEW").as_deref() {
-        // Down at the waterline, where the reflection is longer than the hall.
-        Ok("low") => (Vec3::new(0.0, 0.7, 17.0), Vec3::new(0.0, 4.6, FAR)),
-        // From an aisle, so the colonnade is read across rather than through.
-        Ok("aisle") => (Vec3::new(10.5, 3.2, 7.0), Vec3::new(-2.0, 4.6, -20.0)),
-        _ => (Vec3::new(0.0, 2.7, 20.0), Vec3::new(0.0, 5.2, FAR)),
+/// The same fog on every camera, so the reflected hall fades exactly as the
+/// real one does.
+fn haze() -> DistanceFog {
+    DistanceFog {
+        color: HAZE,
+        falloff: FogFalloff::Linear {
+            start: FOG_START,
+            end: FOG_END,
+        },
+        ..default()
     }
+}
+
+/// Place a camera at `main` reflected through the waterline, and skew its near
+/// plane onto that same plane so nothing below the water is drawn into the
+/// reflection.
+///
+/// The reflection has to be composed as a matrix and only then turned back
+/// into a `Transform`. Reflection carries a negative determinant, and
+/// composing `Transform`s cannot represent that.
+fn reflected(main: &Transform, projection: &PerspectiveProjection) -> (Transform, Projection) {
+    let transform =
+        Transform::from_matrix(Mat4::from_mat3a(reflection_matrix(Vec3::Y)) * main.to_matrix());
+
+    // Signed distance from the camera to the waterline, and the waterline's
+    // normal expressed in the main camera's view space: together they are the
+    // oblique near plane.
+    let to_plane = InfinitePlane3d::new(Vec3::Y)
+        .signed_distance(Isometry3d::IDENTITY, Vec3::ZERO - main.translation);
+    let view_from_world = main.compute_affine().matrix3.inverse();
+    let normal = (view_from_world * Vec3::NEG_Y).normalize();
+
+    (
+        transform,
+        Projection::Perspective(PerspectiveProjection {
+            near_clip_plane: normal.extend(to_plane),
+            ..projection.clone()
+        }),
+    )
 }
 
 #[allow(clippy::too_many_lines)]
@@ -152,9 +280,14 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut water_materials: ResMut<Assets<WaterMaterial>>,
     mut images: ResMut<Assets<Image>>,
+    windows: Query<&Window, With<PrimaryWindow>>,
 ) {
     let (eye, focus) = view();
+    let camera_transform = Transform::from_translation(eye).looking_at(focus, Vec3::Y);
+    let projection = PerspectiveProjection::default();
+
     commands.spawn((
         Camera3d::default(),
         Hdr,
@@ -164,21 +297,42 @@ fn setup(
             intensity: 0.16,
             ..Bloom::NATURAL
         },
-        Transform::from_translation(eye).looking_at(focus, Vec3::Y),
-        DistanceFog {
-            color: HAZE,
-            falloff: FogFalloff::Linear {
-                start: 40.0,
-                end: 130.0,
-            },
-            ..default()
-        },
+        Projection::Perspective(projection.clone()),
+        camera_transform,
+        haze(),
+        RenderLayers::from_layers(&[0, WATER_LAYER]),
+        MainCamera,
     ));
 
-    // One distant source, high and soft, casting nothing. Shadows were the
-    // first thing to go: a cascade boundary put a hard seam across the hall,
-    // and the look this is chasing is shadowless anyway - form comes from
-    // which way a face is turned, not from what is thrown onto it.
+    let size = windows.iter().next().map_or(UVec2::new(1600, 900), |w| {
+        UVec2::new(w.physical_width(), w.physical_height())
+    });
+    let reflection = reflection_image(&mut images, size);
+    commands.insert_resource(ReflectionTarget(reflection.clone()));
+
+    let (reflect_transform, reflect_projection) = reflected(&camera_transform, &projection);
+    commands.spawn((
+        Camera3d::default(),
+        Camera {
+            order: -1,
+            // Reflecting the world flips the winding of every triangle, so
+            // backface culling has to be inverted to match.
+            invert_culling: true,
+            clear_color: ClearColorConfig::Custom(HAZE),
+            ..default()
+        },
+        // The water shader samples this texture and hands the result to the
+        // main camera's own tonemapping, so it must not be tonemapped twice.
+        Tonemapping::None,
+        RenderTarget::Image(reflection.clone().into()),
+        reflect_transform,
+        reflect_projection,
+        haze(),
+        RenderLayers::layer(0),
+        ReflectionCamera,
+    ));
+
+    // One distant source, high and soft, casting nothing.
     commands.spawn((
         DirectionalLight {
             color: Color::srgb(1.0, 0.95, 0.88),
@@ -190,168 +344,179 @@ fn setup(
     ));
 
     let floor_tex = checkerboard(&mut images, [224, 180, 162], [186, 118, 100]);
-    let mut hue = |c: Color| {
-        [
-            materials.add(matte(c, false)),
-            materials.add(matte(c, true)),
-        ]
-    };
-    let salmon_pair = hue(SALMON);
-    let salmon_deep_pair = hue(SALMON_DEEP);
-    let teal_pair = hue(TEAL);
-    let cream_pair = hue(CREAM);
+    let salmon = materials.add(matte(SALMON));
+    let salmon_deep = materials.add(matte(SALMON_DEEP));
+    let teal = materials.add(matte(TEAL));
+    let cream = materials.add(matte(CREAM));
 
-    // Everything is built twice: once upright, once mirrored through y = 0, so
-    // the sheet of water at the waterline has something to reflect. There is
-    // no floor over the channel - if there were, it would bury the mirror.
     let deck = meshes.add(Cuboid::new(HALL_HALF - CHANNEL, 0.4, 150.0));
-    let deck_uv = checkered(HALL_HALF - CHANNEL, 150.0);
+    let floor_mat = materials.add(StandardMaterial {
+        base_color_texture: Some(floor_tex),
+        perceptual_roughness: 0.96,
+        reflectance: 0.03,
+        uv_transform: checkered(HALL_HALF - CHANNEL, 150.0),
+        ..default()
+    });
+    for side in [-1.0_f32, 1.0] {
+        commands.spawn((
+            Mesh3d(deck.clone()),
+            MeshMaterial3d(floor_mat.clone()),
+            Transform::from_xyz(side * (CHANNEL + (HALL_HALF - CHANNEL) * 0.5), -0.2, -45.0),
+        ));
+    }
+
+    // The nave is roofed; the aisles are not. Everything overhead is a
+    // silhouette against the haze that comes in from the sides.
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(NAVE * 2.0, 0.6, 150.0))),
+        MeshMaterial3d(salmon_deep.clone()),
+        Transform::from_xyz(0.0, 11.15, -45.0),
+    ));
+
+    // The colonnades, and the beams that tie them across.
     let pier = meshes.add(Cuboid::new(1.4, 9.6, 1.4));
     let cap = meshes.add(Cuboid::new(1.9, 0.5, 1.9));
     let base = meshes.add(Cuboid::new(1.8, 1.1, 1.8));
     let beam = meshes.add(Cuboid::new(NAVE * 2.0, 0.7, 1.1));
-    let roof = meshes.add(Cuboid::new(NAVE * 2.0, 0.6, 150.0));
-    let voussoir = meshes.add(Cuboid::new(0.66, 1.05, 1.3));
-    let wall_block = meshes.add(Cuboid::new(5.0, 15.0, 1.2));
-    let plinth = meshes.add(Cuboid::new(1.7, 2.4, 1.7));
-    let orb = meshes.add(Sphere::new(1.05).mesh().ico(5).unwrap());
-
-    for (index, mirror) in [1.0_f32, -1.0].into_iter().enumerate() {
-        let m = mirror;
-        let salmon = &salmon_pair[index];
-        let salmon_deep = &salmon_deep_pair[index];
-        let teal = &teal_pair[index];
-        let cream = &cream_pair[index];
-        let at = move |x: f32, y: f32, z: f32| Transform {
-            translation: Vec3::new(x, y * m, z),
-            rotation: Quat::IDENTITY,
-            scale: Vec3::new(1.0, m, 1.0),
-        };
-
-        let floor_mat = materials.add(StandardMaterial {
-            base_color_texture: Some(floor_tex.clone()),
-            perceptual_roughness: 0.96,
-            reflectance: 0.03,
-            uv_transform: deck_uv,
-            double_sided: mirror < 0.0,
-            cull_mode: if mirror < 0.0 { None } else { default() },
-            ..default()
-        });
-        // The decks are horizontal and sit at the waterline, so a mirrored
-        // copy would only stack a second slab on the first.
-        if mirror > 0.0 {
-            for side in [-1.0_f32, 1.0] {
-                commands.spawn((
-                    Mesh3d(deck.clone()),
-                    MeshMaterial3d(floor_mat.clone()),
-                    at(side * (CHANNEL + (HALL_HALF - CHANNEL) * 0.5), -0.2, -45.0),
-                ));
-            }
+    for i in 0..9 {
+        let z = 2.0 - i as f32 * 4.6;
+        for side in [-1.0_f32, 1.0] {
+            let x = side * 4.4;
+            commands.spawn((
+                Mesh3d(pier.clone()),
+                MeshMaterial3d(salmon.clone()),
+                Transform::from_xyz(x, 4.8, z),
+            ));
+            commands.spawn((
+                Mesh3d(cap.clone()),
+                MeshMaterial3d(salmon_deep.clone()),
+                Transform::from_xyz(x, 9.85, z),
+            ));
+            // A cool block at the foot of every pier. Two hues at full chroma
+            // is the whole colour scheme; the third is the haze.
+            commands.spawn((
+                Mesh3d(base.clone()),
+                MeshMaterial3d(teal.clone()),
+                Transform::from_xyz(x, 0.55, z),
+            ));
         }
-
-        // The colonnades, and the beams that tie them across. The beams are
-        // what make this an interior rather than a ruin.
-        // The nave is roofed; the aisles are not. Everything overhead is a
-        // silhouette against the haze that comes in from the sides.
         commands.spawn((
-            Mesh3d(roof.clone()),
+            Mesh3d(beam.clone()),
             MeshMaterial3d(salmon_deep.clone()),
-            at(0.0, 11.15, -45.0),
-        ));
-        for i in 0..9 {
-            let z = 2.0 - i as f32 * 4.6;
-            for side in [-1.0_f32, 1.0] {
-                let x = side * 4.4;
-                commands.spawn((
-                    Mesh3d(pier.clone()),
-                    MeshMaterial3d(salmon.clone()),
-                    at(x, 4.8, z),
-                ));
-                commands.spawn((
-                    Mesh3d(cap.clone()),
-                    MeshMaterial3d(salmon_deep.clone()),
-                    at(x, 9.85, z),
-                ));
-                // A cool block at the foot of every pier. Two hues at full
-                // chroma is the whole colour scheme; the third is the haze.
-                commands.spawn((
-                    Mesh3d(base.clone()),
-                    MeshMaterial3d(teal.clone()),
-                    at(x, 0.55, z),
-                ));
-            }
-            commands.spawn((
-                Mesh3d(beam.clone()),
-                MeshMaterial3d(salmon_deep.clone()),
-                at(0.0, 10.45, z),
-            ));
-        }
-
-        // The far wall, and the arch cut into it. Nothing is modelled beyond
-        // the opening - what shows through is the clear colour, which is the
-        // fog colour, so the distance never resolves.
-        for side in [-1.0_f32, 1.0] {
-            commands.spawn((
-                Mesh3d(wall_block.clone()),
-                MeshMaterial3d(teal.clone()),
-                at(side * (ARCH_R + 2.5), 7.5, FAR),
-            ));
-        }
-        commands.spawn((
-            Mesh3d(meshes.add(Cuboid::new(ARCH_R * 2.0 + 2.0, 5.6, 1.2))),
-            MeshMaterial3d(teal.clone()),
-            at(0.0, SPRING + ARCH_R + 2.8, FAR),
-        ));
-        for side in [-1.0_f32, 1.0] {
-            commands.spawn((
-                Mesh3d(meshes.add(Cuboid::new(1.0, SPRING, 1.2))),
-                MeshMaterial3d(teal.clone()),
-                at(side * (ARCH_R + 0.5), SPRING * 0.5, FAR),
-            ));
-        }
-        // The arch ring: short chords swept over a half circle.
-        for i in 0..17 {
-            let t = i as f32 / 16.0;
-            let a = std::f32::consts::PI * t;
-            commands.spawn((
-                Mesh3d(voussoir.clone()),
-                MeshMaterial3d(salmon_deep.clone()),
-                Transform {
-                    translation: Vec3::new(-a.cos() * ARCH_R, (SPRING + a.sin() * ARCH_R) * m, FAR),
-                    rotation: Quat::from_rotation_z((-a + std::f32::consts::FRAC_PI_2) * m),
-                    scale: Vec3::new(1.0, m, 1.0),
-                },
-            ));
-        }
-
-        // The one object in the room, standing in the water on the axis so
-        // that its reflection hangs directly under it.
-        commands.spawn((
-            Mesh3d(plinth.clone()),
-            MeshMaterial3d(teal.clone()),
-            at(-2.1, 1.2, -6.5),
-        ));
-        commands.spawn((
-            Mesh3d(orb.clone()),
-            MeshMaterial3d(cream.clone()),
-            at(-2.1, 3.5, -6.5),
+            Transform::from_xyz(0.0, 10.45, z),
         ));
     }
 
-    // The waterline itself: dark, smooth, and translucent enough that the
-    // mirrored half reads as a reflection rather than as a basement.
+    // The far wall, and the arch cut into it. Nothing is modelled beyond the
+    // opening - what shows through is the clear colour, which is the fog
+    // colour, so the distance never resolves.
+    let wall_block = meshes.add(Cuboid::new(5.0, 15.0, 1.2));
+    for side in [-1.0_f32, 1.0] {
+        commands.spawn((
+            Mesh3d(wall_block.clone()),
+            MeshMaterial3d(teal.clone()),
+            Transform::from_xyz(side * (ARCH_R + 2.5), 7.5, FAR),
+        ));
+        commands.spawn((
+            Mesh3d(meshes.add(Cuboid::new(1.0, SPRING, 1.2))),
+            MeshMaterial3d(teal.clone()),
+            Transform::from_xyz(side * (ARCH_R + 0.5), SPRING * 0.5, FAR),
+        ));
+    }
     commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(CHANNEL * 2.0, 0.02, 150.0))),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgba(0.05, 0.19, 0.25, 0.45),
-            perceptual_roughness: 0.04,
-            metallic: 0.4,
-            reflectance: 0.7,
-            alpha_mode: AlphaMode::Blend,
-            ..default()
+        Mesh3d(meshes.add(Cuboid::new(ARCH_R * 2.0 + 2.0, 5.6, 1.2))),
+        MeshMaterial3d(teal.clone()),
+        Transform::from_xyz(0.0, SPRING + ARCH_R + 2.8, FAR),
+    ));
+    // The arch ring: short chords swept over a half circle.
+    let voussoir = meshes.add(Cuboid::new(0.66, 1.05, 1.3));
+    for i in 0..17 {
+        let t = i as f32 / 16.0;
+        let a = std::f32::consts::PI * t;
+        commands.spawn((
+            Mesh3d(voussoir.clone()),
+            MeshMaterial3d(salmon_deep.clone()),
+            Transform::from_xyz(-a.cos() * ARCH_R, SPRING + a.sin() * ARCH_R, FAR)
+                .with_rotation(Quat::from_rotation_z(-a + std::f32::consts::FRAC_PI_2)),
+        ));
+    }
+
+    // The one object in the room, standing in the water off the axis so that
+    // it does not block the opening and its reflection hangs under it.
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(1.7, 2.4, 1.7))),
+        MeshMaterial3d(teal.clone()),
+        Transform::from_xyz(-2.1, 1.2, -6.5),
+    ));
+    commands.spawn((
+        Mesh3d(meshes.add(Sphere::new(1.05).mesh().ico(5).unwrap())),
+        MeshMaterial3d(cream.clone()),
+        Transform::from_xyz(-2.1, 3.5, -6.5),
+    ));
+
+    // The waterline itself, alone on its own render layer.
+    commands.spawn((
+        Mesh3d(meshes.add(Plane3d::default().mesh().size(CHANNEL * 2.0, 150.0))),
+        MeshMaterial3d(water_materials.add(WaterMaterial {
+            settings: WaterSettings {
+                tint: linear(Color::srgb(0.07, 0.30, 0.34)),
+                haze: linear(HAZE),
+                params: Vec4::new(FOG_START, FOG_END, 0.10, 0.0075),
+            },
+            reflection,
         })),
         Transform::from_xyz(0.0, 0.0, -45.0),
+        RenderLayers::layer(WATER_LAYER),
     ));
+}
+
+/// The main camera's pose and lens, borrowed disjointly from the reflection
+/// camera's.
+type MainCameraQuery<'w, 's> = Query<
+    'w,
+    's,
+    (&'static Transform, &'static Projection),
+    (With<MainCamera>, Without<ReflectionCamera>),
+>;
+
+/// Keep the reflection camera pinned to the main camera's mirror image.
+fn follow_with_reflection(
+    main: MainCameraQuery,
+    mut reflection: Query<(&mut Transform, &mut Projection), With<ReflectionCamera>>,
+) {
+    let Ok((main_transform, Projection::Perspective(main_projection))) = main.single() else {
+        return;
+    };
+    let Ok((mut transform, mut projection)) = reflection.single_mut() else {
+        return;
+    };
+    let (next_transform, next_projection) = reflected(main_transform, main_projection);
+    *transform = next_transform;
+    *projection = next_projection;
+}
+
+/// The water samples the reflection at screen position, so the reflection
+/// texture has to stay the same size as the window.
+fn refit_reflection_target(
+    mut resized: MessageReader<WindowResized>,
+    target: Res<ReflectionTarget>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    if resized.read().last().is_none() {
+        return;
+    }
+    let Some(window) = windows.iter().next() else {
+        return;
+    };
+    let Some(mut image) = images.get_mut(&target.0) else {
+        return;
+    };
+    image.resize(Extent3d {
+        width: window.physical_width().max(1),
+        height: window.physical_height().max(1),
+        depth_or_array_layers: 1,
+    });
 }
 
 fn shoot(mut commands: Commands, mut done: Local<bool>, mut frames: Local<u32>) {
@@ -362,6 +527,6 @@ fn shoot(mut commands: Commands, mut done: Local<bool>, mut frames: Local<u32>) 
     *done = true;
     let path = std::env::var("OBSERVED2_CAPTURE").unwrap_or_else(|_| "daydream.png".to_string());
     commands
-        .spawn(Screenshot::primary_window())
-        .observe(save_to_disk(path));
+        .spawn(bevy::render::view::screenshot::Screenshot::primary_window())
+        .observe(bevy::render::view::screenshot::save_to_disk(path));
 }
