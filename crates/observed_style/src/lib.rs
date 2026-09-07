@@ -1635,17 +1635,17 @@ fn hex_shell_albedo(register: observed_content::ArchitectureRegister) -> f32 {
         // Built to be cleaned, which means built to show dirt, which means pale.
         Register::Institutional => 0.62,
         // Limestone lit for a guest who never came.
-        Register::FacetMonument => 0.54,
+        Register::FacetMonument => 0.58,
         // Timber and paper, deeper in shadow than the Thin's.
-        Register::InfiniteGallery => 0.47,
+        Register::InfiniteGallery => 0.52,
         // Painted steel under working light.
-        Register::Wellshaft => 0.40,
+        Register::Wellshaft => 0.45,
         // One mass, and mass does not reflect.
-        Register::Monolith => 0.33,
+        Register::Monolith => 0.38,
         // The district is literally what stands between you and the light.
-        Register::ShadowScreen => 0.27,
+        Register::ShadowScreen => 0.30,
         // The longest unobserved. Nothing has lit this in a very long time.
-        Register::Megastructure => 0.22,
+        Register::Megastructure => 0.13,
     }
 }
 /// Structural surfaces are lit, never light sources; this is what is left of a
@@ -2322,31 +2322,53 @@ mod tests {
     /// A survey, not a gate, because the answer is a design decision.
     ///
     /// ```text
-    ///   0.3  Monolith / Wellshaft
-    ///   0.6  Megastructure / Wellshaft
-    ///   0.8  Monolith / Megastructure
-    ///   1.8  Shadow Screen / Facet Monument
-    ///   3.5  Shadow Screen / Megastructure
-    ///  42.3  widest
+    ///   4.1  Shadow Screen / Megastructure
+    ///   5.8  Shadow Screen / Monolith
+    ///   6.0  Monolith / Wellshaft
+    ///   7.8  Monolith / Megastructure
+    ///   9.5  Institutional / Thinning
+    ///  45.7  widest
     /// ```
     ///
-    /// CIE76 dE, where ~2.3 is a just-noticeable difference. Most of the ten
-    /// sit *below* one JND of each other.
+    /// CIE76 dE, where ~2.3 is a just-noticeable difference. The tight end used
+    /// to sit below one JND; it now sits near two.
     ///
-    /// # Where it comes from
+    /// # What the tight end actually is
     ///
-    /// [`architecture_surface`] special-cases `LiminalGrid` and falls the other
-    /// nine through to `surface(SurfaceRole::Wall)` and friends - one shared
-    /// structural treatment for nine districts. So the treatment half of
-    /// [`palette_tint_for_surface`]'s 28/72 blend is *identical* across those
-    /// nine, and everything separating them is the palette's light and ambient.
-    /// Two pairs share a key light exactly, which is how Monolith and Wellshaft
-    /// end up 0.3 apart.
+    /// The four registers that crowd each other - Shadow Screen, Megastructure,
+    /// Monolith, Wellshaft - are the four dark ones, and their problem is
+    /// luminance rather than hue. Below about L\* 6 there is no room left for
+    /// chroma to separate anything: two surfaces can be authored a warm brown
+    /// and a cold blue, render as 0.06 and 0.04 grey, and measure 2.7 apart.
     ///
-    /// So the districts differ in **geometry** and in **light**, and - with one
-    /// exception - not in **surface**. Liminal Grid is the exception and is also
-    /// the only district anybody has ever described as instantly recognisable,
-    /// which is not a coincidence.
+    /// # A hypothesis that failed, kept because it was expensive
+    ///
+    /// [`palette_tint_for_surface`] blends the authored material at 0.28
+    /// against the district's light at 0.72, which erases most of the material.
+    /// Shadow Screen is authored a warm `[0.26, 0.20, 0.17]` and renders
+    /// neutral; Megastructure is authored a cold `[0.28, 0.32, 0.37]` and
+    /// renders warm. Both hues are inverted by the light on top of them, so
+    /// raising the material's share to 0.55 looked obviously correct.
+    ///
+    /// It made the tight end *worse* - Shadow Screen / Megastructure fell from
+    /// 2.7 to 1.4 - because the thing the palette was contributing to those two
+    /// was not hue but a luminance difference, and the authored materials are
+    /// closer in luminance than the lights are. The blend is unchanged.
+    ///
+    /// # What did work
+    ///
+    /// Re-spacing the dark half of [`hex_shell_albedo`]. Three registers were
+    /// packed into 0.11 of albedo; spreading them moved every tight pair up by
+    /// 1.2 to 3.0 dE without touching the widest.
+    ///
+    /// # What is still owed
+    ///
+    /// Shadow Screen is not a dark district and should stop being modelled as
+    /// one. It is a *high-contrast* district - near-black timber against paper
+    /// with the sun behind it - and its identity is the ratio, not the value.
+    /// Giving it a near-black floor and a strongly emissive wall would separate
+    /// it from Megastructure, which is uniformly dead and should stay that way,
+    /// on an axis that no amount of albedo tuning reaches.
     ///
     /// # A correction worth keeping
     ///
