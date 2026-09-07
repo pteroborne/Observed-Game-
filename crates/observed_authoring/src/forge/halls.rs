@@ -1998,6 +1998,96 @@ pub fn hall_gate_monument() -> String {
     out
 }
 
+/// The Noon's pocket: a hall you cannot see the end of, without a single door.
+///
+/// The Overlit Grid's whole claim is that it is neither open nor closed. Every
+/// sightline ends on a stub with a gap beside it, and the gap leads somewhere
+/// identical - so a room that is entirely traversable still refuses to tell you
+/// where you are. That is a *plan*, not a surface, which is why this one ports
+/// out of the lab without needing anything from the material system.
+///
+/// # Why the stubs are offset rather than paired
+///
+/// Two baffles facing each other across the axis make a gate, and a gate is a
+/// thing you can see through the middle of. Two offset from opposite walls make
+/// a dogleg: the eye is stopped at both ends and the body still walks straight
+/// past. The capsule never turns more than a few degrees; only the view does.
+///
+/// # The skirting is doing real work
+///
+/// `horizontal_surface` classifies each hull by its height extent - under
+/// 0.75 m is floor, over 7.25 m is ceiling, everything between is wall - so a
+/// four-unit plinth at the foot of each stub is the one part of it that renders
+/// in the floor's material rather than the wall's. That dark line where a
+/// partition meets the carpet is most of what makes a space read as an office
+/// rather than as a box, and it is the only trim this register gets.
+pub fn hall_pocket_overlit() -> String {
+    let doors = [0usize, 3];
+    /// Where the skirting stops. Anything below 0.75 m renders as floor, and
+    /// twelve units is 0.75 m exactly.
+    const SKIRT_TOP: f64 = 12.0;
+    // (x0, x1, y0, y1) for each stub, in cell units. Two from one wall, two
+    // from the other, none of them opposite anything.
+    // A hexagon narrows as you go out along the axis: at |x| the furthest a
+    // corner may sit is 64 + (112 - |x|) * 64 / 112, and the skirting adds two
+    // units to every side of that. The outermost stub is the short one for
+    // exactly that reason, not for composition.
+    const STUBS: [(f64, f64, f64, f64); 4] = [
+        (-52.0, -36.0, -88.0, -16.0),
+        (-8.0, 8.0, 26.0, 100.0),
+        (36.0, 52.0, -88.0, -20.0),
+        (76.0, 92.0, 28.0, 68.0),
+    ];
+
+    let mut brushes = String::from("// Floor and lid\n");
+    brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 3.0, 0.0));
+    brushes.push_str(&hex_slab(LEVEL - FLOOR_TOP, LEVEL, 0.0, 3.0));
+
+    brushes.push_str("// Envelope\n");
+    for face in 0..6 {
+        if doors.contains(&face) {
+            brushes.push_str(&door_wall(face, 0.0, LEVEL, FLOOR_TOP, DOOR_TOP, 8.0, 4.0));
+        } else {
+            brushes.push_str(&wall(face, 0.0, LEVEL));
+        }
+    }
+
+    brushes.push_str("// Stubs: full height, so they stop the eye rather than the body\n");
+    for (x0, x1, y0, y1) in STUBS {
+        brushes.push_str(&boxed((x0, y0, FLOOR_TOP), (x1, y1, LEVEL - FLOOR_TOP)));
+    }
+    brushes.push_str("// Skirting, which is the only thing here that reads as floor\n");
+    for (x0, x1, y0, y1) in STUBS {
+        brushes.push_str(&boxed(
+            (x0 - 2.0, y0 - 2.0, FLOOR_TOP),
+            (x1 + 2.0, y1 + 2.0, SKIRT_TOP),
+        ));
+    }
+
+    let mut out = String::from(
+        "// Straight, Overlit Grid: every sightline ends on a stub with a gap beside it.\n",
+    );
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell("authored/hall_pocket_overlit", "hall_straight", 0, 1, 6)
+            .with_register_scope("overlit_grid")
+            .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    for face in doors {
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{}_port", FACE_NAMES[face]),
+            0,
+            0,
+            0,
+        ));
+    }
+    out
+}
+
 pub fn hall_squint_screen() -> String {
     let doors = [0usize, 3];
 
@@ -2562,6 +2652,7 @@ pub fn builders() -> Vec<Builder> {
         ("hall_arena_monolith", hall_arena_monolith),
         ("hall_squint_screen", hall_squint_screen),
         ("hall_gate_monument", hall_gate_monument),
+        ("hall_pocket_overlit", hall_pocket_overlit),
         ("hall_transom_wellshaft", hall_transom_wellshaft),
         ("hall_drop_megastructure", hall_drop_megastructure),
         ("hall_false_depth_liminal", hall_false_depth_liminal),
