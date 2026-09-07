@@ -321,14 +321,14 @@ fn production_catalog_selection_is_pinned_for_spectator_seeds() {
         (
             1u64,
             293usize,
-            0x7b28_78b5_d4d8_4d29u64,
+            0xb0ce_e8ce_2f80_5676u64,
             45usize,
             0x95e0_1b87_e452_104cu64,
         ),
         (
             10_000_031u64,
             238usize,
-            0xf05b_adc3_3564_2e2eu64,
+            0x1322_7c7c_fac1_9426u64,
             29usize,
             0xe5db_a473_4a53_b1a3u64,
         ),

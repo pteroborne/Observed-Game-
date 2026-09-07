@@ -2260,6 +2260,208 @@ pub fn hall_bay_monument() -> String {
     out
 }
 
+/// The Welcome's elbow: an axis that turns without breaking.
+///
+/// A family is only a family if its members agree at the seam. The gate and
+/// the bay carry two reveal courses at the same two heights for exactly that
+/// reason, and a turn that dropped them would put a step in the wall at the
+/// one cell where the eye is already being asked to follow a corner.
+pub fn hall_turn_monument() -> String {
+    let mut brushes = hall_shell(&[0, 5]);
+    brushes.push_str("// The family's two courses, carried round the elbow\n");
+    for face in [1usize, 2, 3, 4] {
+        brushes.push_str(&band(face, WALL, WALL + 7.0, FLOOR_TOP, 44.0));
+        brushes.push_str(&band(face, WALL, WALL + 4.0, 56.0, 82.0));
+    }
+    // One coffer, set across the corner rather than along either leg, so the
+    // turn is a place rather than a join between two corridors.
+    brushes.push_str("// A coffer over the elbow\n");
+    brushes.push_str(&boxed(
+        (-46.0, -46.0, DOOR_TOP + 30.0),
+        (46.0, 46.0, DOOR_TOP + 44.0),
+    ));
+
+    let mut out =
+        String::from("// Turn, Facet Monument: the axis changes direction and nothing else.\n");
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell("authored/hall_turn_monument", "hall_turn_60", 0, 1, 7)
+            .with_register_scope("facet_monument")
+            .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    for face in [0usize, 5] {
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{}_port", FACE_NAMES[face]),
+            0,
+            0,
+            0,
+        ));
+    }
+    out
+}
+
+/// The Shadow Screen's elbow, with its rails carried round.
+///
+/// Same argument as [`hall_turn_monument`] and a sharper consequence: this
+/// district's rails are the *only* horizontal it has, because its vertical
+/// structure lives in the register's weave rather than in brushes. Drop them
+/// at a corner and the corner is bare paper.
+pub fn hall_turn_shoji() -> String {
+    let mut brushes = hall_shell(&[0, 5]);
+    brushes.push_str("// The screen's rails, carried round the elbow\n");
+    for face in [1usize, 2, 3, 4] {
+        for (z0, z1) in [
+            (FLOOR_TOP, FLOOR_TOP + 7.0),
+            (44.0, 52.0),
+            (DOOR_TOP + 5.0, DOOR_TOP + 14.0),
+            (106.0, 114.0),
+        ] {
+            brushes.push_str(&band(face, WALL, WALL + 6.0, z0, z1));
+        }
+    }
+
+    let mut out =
+        String::from("// Turn, Shadow Screen: the rails continue, because nothing else would.\n");
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell("authored/hall_turn_shoji", "hall_turn_60", 0, 1, 7)
+            .with_register_scope("shadow_screen")
+            .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    for face in [0usize, 5] {
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{}_port", FACE_NAMES[face]),
+            0,
+            0,
+            0,
+        ));
+    }
+    out
+}
+
+/// A second arrangement of the Noon's stubs.
+///
+/// One pocket tile is a pocket; a run of the same pocket tile is wallpaper,
+/// and this district's whole claim is that you cannot tell where you are.
+/// Repeating an identical plan is the one thing that would let you.
+pub fn hall_pocket_overlit_b() -> String {
+    let doors = [0usize, 3];
+    const SKIRT_TOP: f64 = 12.0;
+    // Mirrored and re-spaced against the first pocket rather than reshuffled,
+    // so the two read as the same building rather than two ideas about it.
+    const STUBS: [(f64, f64, f64, f64); 4] = [
+        (-88.0, -72.0, -30.0, 34.0),
+        (-30.0, -14.0, -96.0, -22.0),
+        (18.0, 34.0, 24.0, 98.0),
+        (66.0, 82.0, -70.0, -24.0),
+    ];
+
+    let mut brushes = String::from("// Floor and lid\n");
+    brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 3.0, 0.0));
+    brushes.push_str(&hex_slab(LEVEL - FLOOR_TOP, LEVEL, 0.0, 3.0));
+    brushes.push_str("// Envelope\n");
+    for face in 0..6 {
+        if doors.contains(&face) {
+            brushes.push_str(&door_wall(face, 0.0, LEVEL, FLOOR_TOP, DOOR_TOP, 8.0, 4.0));
+        } else {
+            brushes.push_str(&wall(face, 0.0, LEVEL));
+        }
+    }
+    brushes.push_str("// Stubs\n");
+    for (x0, x1, y0, y1) in STUBS {
+        brushes.push_str(&boxed((x0, y0, FLOOR_TOP), (x1, y1, LEVEL - FLOOR_TOP)));
+    }
+    brushes.push_str("// Skirting\n");
+    for (x0, x1, y0, y1) in STUBS {
+        brushes.push_str(&boxed(
+            (x0 - 2.0, y0 - 2.0, FLOOR_TOP),
+            (x1 + 2.0, y1 + 2.0, SKIRT_TOP),
+        ));
+    }
+
+    let mut out =
+        String::from("// Straight, Overlit Grid: the same room again, arranged differently.\n");
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell("authored/hall_pocket_overlit_b", "hall_straight", 0, 1, 6)
+            .with_register_scope("overlit_grid")
+            .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    for face in doors {
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{}_port", FACE_NAMES[face]),
+            0,
+            0,
+            0,
+        ));
+    }
+    out
+}
+
+/// The Well's landing: the first thing in this facility that is a deck.
+///
+/// Nothing here had a walkway, and the reason was never authoring. A hull took
+/// its material from how high it sat, so anything at waist height rendered as
+/// wall - which in a lit district would have been a glowing floor. A thin, wide
+/// hull now reads as a deck, and this is the first tile to spend that.
+///
+/// It is a gallery down one side, not a bridge across the middle. The Well is a
+/// place you go around the edge of, and a plate through the centre of a cell
+/// would also be a plate through the middle of the only route.
+pub fn hall_landing_wellshaft() -> String {
+    let doors = [0usize, 3];
+    let mut brushes = hall_shell(&doors);
+
+    brushes.push_str("// Plate courses, one to a level of the shaft\n");
+    for face in [1usize, 2, 4, 5] {
+        brushes.push_str(&band(face, WALL, WALL + 5.0, 34.0, 42.0));
+        brushes.push_str(&band(face, WALL, WALL + 5.0, 92.0, 100.0));
+    }
+
+    // Thin against its own run by twenty to one, which is what earns it the
+    // floor's oxide rather than the wall's.
+    brushes.push_str("// The landing, cantilevered off one side\n");
+    brushes.push_str(&boxed((-80.0, 30.0, 60.0), (80.0, 80.0, 68.0)));
+    brushes.push_str("// Brackets under it\n");
+    for x in [-62.0, -20.0, 22.0, 62.0] {
+        brushes.push_str(&boxed((x - 5.0, 54.0, 44.0), (x + 5.0, 78.0, 60.0)));
+    }
+
+    let mut out =
+        String::from("// Straight, Wellshaft: a gallery down one side, at waist height.\n");
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell("authored/hall_landing_wellshaft", "hall_straight", 0, 1, 6)
+            .with_register_scope("wellshaft")
+            .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    for face in doors {
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{}_port", FACE_NAMES[face]),
+            0,
+            0,
+            0,
+        ));
+    }
+    out
+}
+
 pub fn hall_squint_screen() -> String {
     let doors = [0usize, 3];
 
@@ -2827,6 +3029,10 @@ pub fn builders() -> Vec<Builder> {
         ("hall_pocket_overlit", hall_pocket_overlit),
         ("hall_screen_shoji", hall_screen_shoji),
         ("hall_bay_monument", hall_bay_monument),
+        ("hall_turn_monument", hall_turn_monument),
+        ("hall_turn_shoji", hall_turn_shoji),
+        ("hall_pocket_overlit_b", hall_pocket_overlit_b),
+        ("hall_landing_wellshaft", hall_landing_wellshaft),
         ("hall_transom_wellshaft", hall_transom_wellshaft),
         ("hall_drop_megastructure", hall_drop_megastructure),
         ("hall_false_depth_liminal", hall_false_depth_liminal),
