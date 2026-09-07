@@ -8,9 +8,12 @@ use observed_hex::{HexFace, face_edge, hex_origin};
 use observed_match::hex_wfc::{HexStructurePiece, HexStructureRole};
 use observed_style::{ArchitectureSurfaceRole, SurfaceRole};
 use observed_traversal::ColliderShape;
-use rapier3d::prelude::{SharedShape, Vector as RapierVector};
 
 use super::{FacilityState, FacilityVisual, landmarks};
+use bevy::image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor};
+use bevy::platform::collections::HashMap;
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+
 use crate::LabState;
 
 pub(super) fn rebuild_geometry(
@@ -19,6 +22,7 @@ pub(super) fn rebuild_geometry(
     mut state: ResMut<FacilityState>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
     visuals: Query<Entity, (With<FacilityVisual>, Without<DirectionalLight>)>,
 ) {
     if !state.dirty {
@@ -27,6 +31,9 @@ pub(super) fn rebuild_geometry(
     for entity in &visuals {
         commands.entity(entity).despawn();
     }
+    // One image per register for the whole rebuild, not one per hull.
+    let mut weaves: HashMap<observed_content::ArchitectureRegister, Option<Handle<Image>>> =
+        HashMap::new();
     // The production atlas can contain tens of thousands of authored hulls.
     // Retain the complete projection, but only instantiate the camera-local
     // streaming window as Bevy mesh entities.
@@ -91,6 +98,13 @@ pub(super) fn rebuild_geometry(
         } else {
             StandardMaterial {
                 base_color: semantic_color,
+                // The register's weave, on the same terms the shell uses it.
+                // This preview exists to reproduce the shell rather than invent
+                // its own greys, and it had drifted: the game gained a drawn
+                // per-register surface and this still painted flat colour, so
+                // a flythrough could no longer show the one axis the districts
+                // had just been given.
+                base_color_texture: weave(&mut images, &mut weaves, register),
                 // The authored hulls have no baked lightmaps. Keep their
                 // semantic treatment legible at first-person scale, in the
                 // district's own emissive rather than a neutral one.
@@ -202,6 +216,62 @@ fn atlas_mesh(world: &HexWfcWorld, space: HexSpace) -> Option<Mesh> {
 ///
 /// Halls and rooms are what a body walks past, so they read as wall; a ramp is
 /// what it walks on; the boundary shell is the lid over everything.
+/// The register's weave as a repeating tile: a white field with darker lines
+/// through it, multiplying the palette tint exactly as the shell's own albedo
+/// does. `SurfaceWeave::None` draws nothing and the surface stays flat, which
+/// is the Monolith's actual answer rather than a missing case.
+fn weave(
+    images: &mut Assets<Image>,
+    cache: &mut HashMap<observed_content::ArchitectureRegister, Option<Handle<Image>>>,
+    register: observed_content::ArchitectureRegister,
+) -> Option<Handle<Image>> {
+    if let Some(existing) = cache.get(&register) {
+        return existing.clone();
+    }
+    let pattern = observed_style::architecture_weave(register);
+    let made = if pattern.weave == observed_style::SurfaceWeave::None || pattern.lines == 0 {
+        None
+    } else {
+        const N: usize = 128;
+        let pitch = N as f32 / pattern.lines as f32;
+        let half = (pitch * pattern.weight * 0.5).max(0.6);
+        let on_line = |v: usize| ((v as f32 % pitch) - pitch * 0.5).abs() <= half;
+        let struck_value = ((1.0 - pattern.depth) * 255.0).clamp(0.0, 255.0) as u8;
+        let mut data = Vec::with_capacity(N * N * 4);
+        for y in 0..N {
+            for x in 0..N {
+                let struck = match pattern.weave {
+                    observed_style::SurfaceWeave::Courses => on_line(y),
+                    observed_style::SurfaceWeave::Staves => on_line(x),
+                    observed_style::SurfaceWeave::Grid => on_line(x) || on_line(y),
+                    observed_style::SurfaceWeave::None => false,
+                };
+                let v = if struck { struck_value } else { 255 };
+                data.extend_from_slice(&[v, v, v, 255]);
+            }
+        }
+        let mut image = Image::new(
+            Extent3d {
+                width: N as u32,
+                height: N as u32,
+                depth_or_array_layers: 1,
+            },
+            TextureDimension::D2,
+            data,
+            TextureFormat::Rgba8UnormSrgb,
+            RenderAssetUsages::RENDER_WORLD,
+        );
+        image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+            address_mode_u: ImageAddressMode::Repeat,
+            address_mode_v: ImageAddressMode::Repeat,
+            ..default()
+        });
+        Some(images.add(image))
+    };
+    cache.insert(register, made.clone());
+    made
+}
+
 fn architecture_role(role: HexStructureRole) -> ArchitectureSurfaceRole {
     match role {
         HexStructureRole::Room | HexStructureRole::Hall | HexStructureRole::Shaft => {
@@ -229,25 +299,25 @@ fn piece_mesh(piece: &HexStructurePiece) -> Option<Mesh> {
     }
 }
 
+/// The same convex hull the shell draws, built by the same code.
+///
+/// This used to hand-roll its own trimesh out of rapier and insert positions
+/// and nothing else - no UVs. That was invisible for as long as the shell
+/// painted flat colour, and became load-bearing the moment registers gained a
+/// drawn surface: a texture on a mesh with no texture coordinates samples one
+/// texel and the weave disappears. `ConvexRenderMesh` is what the game already
+/// uses and it carries normals and UVs, so the preview now differs from the
+/// shell in nothing that matters.
 fn hull_mesh(hull: &[Vec3]) -> Option<Mesh> {
-    let points: Vec<_> = hull
-        .iter()
-        .map(|point| RapierVector::new(point.x, point.y, point.z))
-        .collect();
-    let shape = SharedShape::convex_hull(&points)?;
-    let (vertices, indices) = shape.as_convex_polyhedron()?.to_trimesh();
-    let positions: Vec<[f32; 3]> = vertices
-        .iter()
-        .map(|point| [point.x, point.y, point.z])
-        .collect();
+    let data = observed_traversal::ConvexRenderMesh::from_convex_hull(hull)?;
     Some(
         Mesh::new(
             PrimitiveTopology::TriangleList,
             RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
         )
-        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-        .with_inserted_indices(Indices::U32(indices.into_iter().flatten().collect()))
-        .with_duplicated_vertices()
-        .with_computed_flat_normals(),
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, data.positions)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, data.uvs)
+        .with_inserted_indices(Indices::U32(data.indices)),
     )
 }
