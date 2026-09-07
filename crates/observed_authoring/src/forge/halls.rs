@@ -2088,6 +2088,93 @@ pub fn hall_pocket_overlit() -> String {
     out
 }
 
+/// The Shadow Screen's wall: timber rails in front of lit paper.
+///
+/// This tile could not be authored a day ago and the reason is worth keeping,
+/// because it was never an authoring problem. The district's identity is a
+/// dark frame standing in front of a bright surface - but the shell picks a
+/// material per hull by height, everything at mid height took the *wall*, and
+/// Shadow Screen's wall is the lit one. Every rail would have glowed like the
+/// paper it is supposed to divide.
+///
+/// Two changes elsewhere make it buildable. A thin, wide hull at mid height now
+/// renders as floor rather than wall, so a rail across a screen comes out in
+/// the district's near-black timber. And the register carries its own weave, so
+/// the fine kumiko lattice is drawn into the wall's image instead of costing
+/// forty brushes it does not have.
+///
+/// That split - horizontals modelled, the grid drawn - is the one the daydream
+/// lab arrived at independently, where a hundred cells to a panel was far past
+/// the point of modelling each bar and only the stiles that *cast* were built.
+///
+/// # Why there are no posts
+///
+/// A post is thin and tall, which is a wall by any reading of the classifier,
+/// so it would come out lit. Vertical structure here is the weave's job. The
+/// tile contributes only what runs horizontally, which is also - conveniently -
+/// what a shoji screen's heavy members actually are.
+pub fn hall_screen_shoji() -> String {
+    let doors = [0usize, 3];
+    /// Rails as (z0, z1). Every one is half a metre deep against an eight-metre
+    /// run, and that ratio is exactly what earns it the floor's timber: a deck
+    /// is thin and wide, a pier is not.
+    const RAILS: [(f64, f64); 4] = [
+        // The sill, at the foot of the paper.
+        (FLOOR_TOP, FLOOR_TOP + 7.0),
+        // The waist rail, where a hand goes.
+        (44.0, 52.0),
+        // The kamoi: the head of the screen, and the heaviest line in the room.
+        (DOOR_TOP + 5.0, DOOR_TOP + 14.0),
+        // The top of the transom, just under the lid.
+        (106.0, 114.0),
+    ];
+
+    let mut brushes = String::from("// Floor and lid\n");
+    brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 3.0, 0.0));
+    brushes.push_str(&hex_slab(LEVEL - FLOOR_TOP, LEVEL, 0.0, 3.0));
+
+    brushes.push_str("// Envelope\n");
+    for face in 0..6 {
+        if doors.contains(&face) {
+            brushes.push_str(&door_wall(face, 0.0, LEVEL, FLOOR_TOP, DOOR_TOP, 10.0, 6.0));
+        } else {
+            brushes.push_str(&wall(face, 0.0, LEVEL));
+        }
+    }
+
+    // Only the sealed faces are screened. A rail across a doorway is a barrier,
+    // and the seam is not this tile's to argue with.
+    brushes.push_str("// Rails, proud of the paper\n");
+    for face in [1usize, 2, 4, 5] {
+        for (z0, z1) in RAILS {
+            brushes.push_str(&band(face, WALL, WALL + 6.0, z0, z1));
+        }
+    }
+
+    let mut out = String::from(
+        "// Straight, Shadow Screen: horizontal timber, and the grid is in the surface.\n",
+    );
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell("authored/hall_screen_shoji", "hall_straight", 0, 1, 6)
+            .with_register_scope("shadow_screen")
+            .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    for face in doors {
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{}_port", FACE_NAMES[face]),
+            0,
+            0,
+            0,
+        ));
+    }
+    out
+}
+
 pub fn hall_squint_screen() -> String {
     let doors = [0usize, 3];
 
@@ -2653,6 +2740,7 @@ pub fn builders() -> Vec<Builder> {
         ("hall_squint_screen", hall_squint_screen),
         ("hall_gate_monument", hall_gate_monument),
         ("hall_pocket_overlit", hall_pocket_overlit),
+        ("hall_screen_shoji", hall_screen_shoji),
         ("hall_transom_wellshaft", hall_transom_wellshaft),
         ("hall_drop_megastructure", hall_drop_megastructure),
         ("hall_false_depth_liminal", hall_false_depth_liminal),
