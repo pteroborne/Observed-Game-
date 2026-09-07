@@ -264,12 +264,41 @@ fn horizontal_surface(piece: &HexStructurePiece) -> HorizontalSurface {
         .map(|point| point.y)
         .fold(f32::NEG_INFINITY, f32::max);
     if maximum <= 0.75 {
-        HorizontalSurface::Floor
-    } else if minimum >= observed_hex::TILE_LEVEL_HEIGHT - 0.75 {
-        HorizontalSurface::Ceiling
-    } else {
-        HorizontalSurface::Wall
+        return HorizontalSurface::Floor;
     }
+    if minimum >= observed_hex::TILE_LEVEL_HEIGHT - 0.75 {
+        return HorizontalSurface::Ceiling;
+    }
+    // A slab standing off the ground is still something you walk on, and it
+    // had been rendering as wall for the same reason a balcony is not at floor
+    // level: the test was where the hull sits rather than what shape it is.
+    //
+    // That is why the facility has no gantries, no mezzanines, no balconies
+    // and no dais tops - every one of them would have come out in the wall's
+    // material, which in a district like Shadow Screen is the *lit* surface.
+    // A deck is thin and wide; a pier is not, and the ratio separates them
+    // without needing to know which cell either is in.
+    let span = points
+        .iter()
+        .map(|point| point.x)
+        .fold(f32::NEG_INFINITY, f32::max)
+        - points
+            .iter()
+            .map(|point| point.x)
+            .fold(f32::INFINITY, f32::min);
+    let reach = points
+        .iter()
+        .map(|point| point.z)
+        .fold(f32::NEG_INFINITY, f32::max)
+        - points
+            .iter()
+            .map(|point| point.z)
+            .fold(f32::INFINITY, f32::min);
+    let thickness = maximum - minimum;
+    if thickness <= 0.9 && span.max(reach) >= thickness * 3.0 {
+        return HorizontalSurface::Floor;
+    }
+    HorizontalSurface::Wall
 }
 
 #[cfg(test)]
@@ -306,6 +335,32 @@ mod tests {
                 Vec3::Y * observed_hex::TILE_LEVEL_HEIGHT,
             ])),
             HorizontalSurface::Ceiling
+        );
+    }
+
+    /// A balcony is a floor. It had been a wall, because it is three metres up
+    /// and the classifier only asked how high the hull was.
+    #[test]
+    fn a_thin_slab_off_the_ground_is_a_deck_rather_than_a_wall() {
+        assert_eq!(
+            horizontal_surface(&piece(vec![
+                Vec3::new(-2.0, 3.0, -1.5),
+                Vec3::new(2.0, 3.4, 1.5),
+            ])),
+            HorizontalSurface::Floor
+        );
+    }
+
+    /// And a pier is still a wall, at any height. Thickness alone would call a
+    /// short post a deck, so the test is the ratio rather than the thickness.
+    #[test]
+    fn a_stub_at_the_same_height_is_still_a_wall() {
+        assert_eq!(
+            horizontal_surface(&piece(vec![
+                Vec3::new(-0.3, 1.0, -0.3),
+                Vec3::new(0.3, 4.0, 0.3),
+            ])),
+            HorizontalSurface::Wall
         );
     }
 }
