@@ -17,6 +17,7 @@
 //! - [`hall`] - a colonnade standing in water, two arched walls deep.
 //! - [`shaft`] - the same tools pointed straight up a hexagonal well.
 //! - [`monument`] - eleven cells of held axis, ending on an empty dais.
+//! - [`backrooms`] - no axis at all, and a ceiling you could touch.
 //!
 //! # Two tricks carry every scene
 //!
@@ -35,6 +36,7 @@
 //! Every scene's mirror is the plane `y = 0`. That is the one thing the rig
 //! insists on.
 
+mod backrooms;
 mod hall;
 mod monument;
 mod shaft;
@@ -77,6 +79,10 @@ pub struct Staging {
     pub ambient: f32,
     pub fog_start: f32,
     pub fog_end: f32,
+    /// Vertical field of view. A room whose ceiling is at head height needs a
+    /// wider lens than a hall does, or it reads as a corridor - the width is
+    /// the only thing making it oppressive rather than merely narrow.
+    pub fov: f32,
     /// A scene without water gets no reflection camera at all.
     pub water: Option<WaterPlan>,
 }
@@ -97,6 +103,7 @@ fn scene() -> &'static str {
     match std::env::var("OBSERVED2_DAYDREAM_SCENE").as_deref() {
         Ok("shaft") => "shaft",
         Ok("monument") => "monument",
+        Ok("backrooms") => "backrooms",
         _ => "hall",
     }
 }
@@ -344,6 +351,7 @@ fn setup(
     let staging = match scene() {
         "shaft" => shaft::build(&mut commands, &mut meshes, &mut materials),
         "monument" => monument::build(&mut commands, &mut meshes, &mut materials),
+        "backrooms" => backrooms::build(&mut commands, &mut meshes, &mut materials, &mut images),
         _ => hall::build(&mut commands, &mut meshes, &mut materials, &mut images),
     };
 
@@ -356,7 +364,10 @@ fn setup(
 
     let camera_transform =
         Transform::from_translation(staging.eye).looking_at(staging.focus, Vec3::Y);
-    let projection = PerspectiveProjection::default();
+    let projection = PerspectiveProjection {
+        fov: staging.fov,
+        ..default()
+    };
 
     commands.spawn((
         Camera3d::default(),

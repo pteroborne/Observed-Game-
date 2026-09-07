@@ -364,6 +364,7 @@ pub fn build(
         zenith: hour.zenith,
         ambient_color: hour.ambient_color,
         ambient: hour.ambient,
+        fov: std::f32::consts::FRAC_PI_4,
         fog_start: 52.0,
         fog_end: 240.0,
         water: Some(WaterPlan {
