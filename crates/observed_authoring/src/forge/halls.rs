@@ -1895,6 +1895,109 @@ fn squint_piece(depth: f64, y0: f64, y1: f64, z0: f64, z1: f64, thick: f64) -> S
 /// is a reward for the specific act the facility runs on, which is stopping and
 /// looking properly at something.
 #[must_use]
+/// The Welcome's gate: the axis passes under something, not merely through it.
+///
+/// The geometry plan has been asking for this one since the district was
+/// written - "ceremony is entirely about how you pass through a threshold" -
+/// and it is buildable without touching the seam, because everything it adds
+/// sits *inboard* of the face plane. The doorway the solver sees is unchanged;
+/// what changes is that you walk under a lintel to reach it.
+///
+/// # Why the piers step instead of tapering
+///
+/// The first sketch of this leaned the piers, which is what Forerunner
+/// architecture looks like from memory. Reference frames say otherwise: the
+/// legs batter outward at the floor and step *in courses* as they rise, three
+/// to a leg, each narrower and shallower than the one below. A smooth taper
+/// reads as a buttress; a stepped one reads as a thing assembled by somebody
+/// with an opinion about permanence. It is also the only version a brush can
+/// build, which is a happy coincidence rather than the reason.
+///
+/// Scale reads from the number of steps and from nothing else - there is no
+/// object in here of a known size, which is the district's whole claim.
+pub fn hall_gate_monument() -> String {
+    let doors = [0usize, 3];
+    // Courses, base upward: (z0, z1, |y| inner, |y| outer, depth inboard from
+    // the face plane at its shallowest and deepest).
+    const COURSES: [(f64, f64, f64, f64, f64, f64); 3] = [
+        (FLOOR_TOP, 46.0, 40.0, 70.0, 16.0, 36.0),
+        (46.0, 84.0, 43.0, 66.0, 16.0, 30.0),
+        (84.0, 112.0, 46.0, 62.0, 16.0, 25.0),
+    ];
+    /// The face plane. Everything here is measured back from it so the seam
+    /// itself is never touched.
+    const FACE: f64 = 112.0;
+
+    let mut brushes = String::from("// Floor and lid\n");
+    brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 3.0, 0.0));
+    brushes.push_str(&hex_slab(LEVEL - FLOOR_TOP, LEVEL, 0.0, 3.0));
+
+    brushes.push_str("// Envelope\n");
+    for face in 0..6 {
+        if doors.contains(&face) {
+            brushes.push_str(&door_wall(face, 0.0, LEVEL, FLOOR_TOP, DOOR_TOP, 12.0, 8.0));
+        } else {
+            brushes.push_str(&wall(face, 0.0, LEVEL));
+        }
+    }
+
+    // Faces 0 and 3 are the +x and -x faces, so a gate is built once in x and
+    // mirrored. No rotation, and no chance of the two ends disagreeing.
+    for sign in [1.0_f64, -1.0] {
+        brushes.push_str("// A gate, inboard of the face plane\n");
+        for (z0, z1, y_in, y_out, deep, shallow) in COURSES {
+            let (x0, x1) = ((FACE - shallow) * sign, (FACE - deep) * sign);
+            for side in [-1.0_f64, 1.0] {
+                brushes.push_str(&boxed(
+                    (x0.min(x1), (y_in * side).min(y_out * side), z0),
+                    (x0.max(x1), (y_in * side).max(y_out * side), z1),
+                ));
+            }
+        }
+        // The lintel, clear of the door aperture by twenty-four units. A gate
+        // whose head is inside the doorway is a doorway; a gate whose head is
+        // above it is a gate.
+        let (x0, x1) = ((FACE - 28.0) * sign, (FACE - 16.0) * sign);
+        brushes.push_str(&boxed(
+            (x0.min(x1), -58.0, DOOR_TOP + 24.0),
+            (x0.max(x1), 58.0, DOOR_TOP + 44.0),
+        ));
+    }
+
+    // One reveal course on the sealed faces, not the two the district would
+    // like. With both, this cell lands on exactly thirty-six hulls - the budget
+    // to the unit, with no room for anyone to ever add anything. The stepped
+    // gate is the move the district is actually named for; a second dado is
+    // not, so the dado is what gets cut.
+    brushes.push_str("// Stepped reveal on the sealed faces\n");
+    for face in [1usize, 2, 4, 5] {
+        brushes.push_str(&band(face, WALL, WALL + 7.0, FLOOR_TOP, 44.0));
+    }
+
+    let mut out = String::from(
+        "// Straight, Facet Monument: the axis passes under a gate rather than through a hole.\n",
+    );
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell("authored/hall_gate_monument", "hall_straight", 0, 1, 6)
+            .with_register_scope("facet_monument")
+            .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    for face in doors {
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{}_port", FACE_NAMES[face]),
+            0,
+            0,
+            0,
+        ));
+    }
+    out
+}
+
 pub fn hall_squint_screen() -> String {
     let doors = [0usize, 3];
 
@@ -2458,6 +2561,7 @@ pub fn builders() -> Vec<Builder> {
         ("hall_dais_monument", hall_dais_monument),
         ("hall_arena_monolith", hall_arena_monolith),
         ("hall_squint_screen", hall_squint_screen),
+        ("hall_gate_monument", hall_gate_monument),
         ("hall_transom_wellshaft", hall_transom_wellshaft),
         ("hall_drop_megastructure", hall_drop_megastructure),
         ("hall_false_depth_liminal", hall_false_depth_liminal),

@@ -1158,6 +1158,49 @@ pub fn architecture_surface(
             },
         };
     }
+    if register == Register::ShadowScreen {
+        // Shadow Screen is not a dark district and had been modelled as one,
+        // which is how it ended up 2.7 dE from Megastructure - two registers
+        // whose only shared property is that neither of them reflects much.
+        //
+        // It is a *high-contrast* district. Near-black stained timber standing
+        // in front of paper with the sun behind it: the identity is the ratio,
+        // not the value, and no albedo tuning reaches a ratio.
+        //
+        // The wall's emissive here is roughly fourteen times the strongest
+        // structural glow anywhere else in the facility, and it is still legal.
+        // `SIGNAL_MIN_LUMINANCE` is 2.0 and the most recognisable district in
+        // the building authors a ceiling at 0.084, so the contract that says
+        // structure must not masquerade as a signal has about twenty-four times
+        // more headroom in it than anybody has ever spent. Nothing had to be
+        // overridden to light this; the values were simply timid.
+        return match role {
+            ArchitectureSurfaceRole::Floor => Treatment {
+                base_color: Color::srgb(0.055, 0.043, 0.036),
+                emissive: LinearRgba::rgb(0.002, 0.0015, 0.001),
+                signal: false,
+                edge: None,
+            },
+            ArchitectureSurfaceRole::Wall => Treatment {
+                base_color: Color::srgb(0.66, 0.60, 0.47),
+                emissive: LinearRgba::rgb(1.30, 1.15, 0.80),
+                signal: false,
+                edge: None,
+            },
+            ArchitectureSurfaceRole::Ceiling => Treatment {
+                base_color: Color::srgb(0.095, 0.078, 0.066),
+                emissive: LinearRgba::rgb(0.004, 0.003, 0.002),
+                signal: false,
+                edge: None,
+            },
+            ArchitectureSurfaceRole::PracticalFixture => Treatment {
+                base_color: Color::srgb(0.72, 0.64, 0.46),
+                emissive: LinearRgba::rgb(1.05, 0.82, 0.44),
+                signal: false,
+                edge: None,
+            },
+        };
+    }
     let [floor, wall, ceiling] = architecture_material(register);
     match role {
         ArchitectureSurfaceRole::Floor => shell_treatment(floor, 0.03),
