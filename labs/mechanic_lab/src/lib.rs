@@ -9,15 +9,15 @@
 //! rule that keeps the framework from eating the lab: **a trait ships with two
 //! implementations or it is not a trait yet.**
 
-pub mod sim;
-pub mod spec;
 pub mod view;
+
+pub use observed_mechanics::spec;
 
 use bevy::camera::ScalingMode;
 use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResolution};
 
-use crate::spec::ModeSpec;
+use observed_mechanics::spec::ModeSpec;
 use crate::view::Session;
 
 /// Launch the lab.

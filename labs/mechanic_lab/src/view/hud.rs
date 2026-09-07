@@ -12,8 +12,8 @@ use bevy::text::FontSize;
 use bevy::ui::{percent, px};
 use observed_style::ColorVisionMode;
 
-use crate::sim::state::Outcome;
-use crate::spec::{ModeSpec, Rules};
+use observed_mechanics::state::Outcome;
+use observed_mechanics::spec::{ModeSpec, Rules};
 
 use super::Session;
 use super::board::{CellPaint, MarkPaint};

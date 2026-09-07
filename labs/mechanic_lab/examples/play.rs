@@ -17,11 +17,11 @@
 //! `@FACE` sets the facing separately, which is how you arrive looking
 //! somewhere other than the way you walked.
 
-use mechanic_lab::sim::board::Edge;
-use mechanic_lab::sim::state::{Action, ChangeSource, Intent, MatchState, PawnId};
-use mechanic_lab::sim::tiles::{TilePlay, TileShape};
-use mechanic_lab::sim::{bot, step::step};
-use mechanic_lab::spec::{ModeSpec, Rules, deal};
+use observed_mechanics::board::Edge;
+use observed_mechanics::state::{Action, ChangeSource, Intent, MatchState, PawnId};
+use observed_mechanics::tiles::{TilePlay, TileShape};
+use observed_mechanics::{bot, step::step};
+use observed_mechanics::spec::{ModeSpec, Rules, deal};
 use observed_hex::coords::HexCoord;
 use observed_hex::faces::HexFace;
 use observed_hex::ports::PortClass;
@@ -325,7 +325,7 @@ fn main() {
         println!("guardian {index} at {:?}", (guardian.at.q, guardian.at.r));
     }
 
-    if let Some(hand) = state.hand_of(mechanic_lab::sim::state::TeamId(0))
+    if let Some(hand) = state.hand_of(observed_mechanics::state::TeamId(0))
         && !hand.cards.is_empty()
     {
         let cards: Vec<&str> = hand.cards.iter().map(|card| card.label()).collect();

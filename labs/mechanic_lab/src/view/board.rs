@@ -21,10 +21,10 @@ use observed_style::{
 
 use super::animate::{Glide, Pulse};
 use super::art::{ArtAtlas, Icon};
-use crate::sim::board::Edge;
-use crate::sim::rules::LockSet;
-use crate::sim::state::MatchState;
-use crate::spec::MutationPreview;
+use observed_mechanics::board::Edge;
+use observed_mechanics::rules::LockSet;
+use observed_mechanics::state::MatchState;
+use observed_mechanics::spec::MutationPreview;
 
 use super::{HEX_RADIUS, Session, world_of};
 
@@ -442,7 +442,7 @@ pub fn redraw(
             continue;
         }
         let aim = match intent.action {
-            crate::sim::state::Action::Step(face) => state
+            observed_mechanics::state::Action::Step(face) => state
                 .board
                 .size()
                 .neighbor(pawn.at, face)

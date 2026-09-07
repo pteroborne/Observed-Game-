@@ -8,9 +8,9 @@
 use bevy::prelude::*;
 use observed_hex::faces::HexFace;
 
-use crate::sim::state::{Action, Intent, PawnId};
-use crate::sim::{bot, step::step};
-use crate::spec::Stacking;
+use observed_mechanics::state::{Action, Intent, PawnId};
+use observed_mechanics::{bot, step::step};
+use observed_mechanics::spec::Stacking;
 
 use super::hud::{HudButton, ModeChoice};
 use super::{Session, cell_at};

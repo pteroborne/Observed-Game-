@@ -14,6 +14,9 @@ publish = false
 # The simulation depends only on `observed_hex`; everything below is used by
 # `view` alone and never reaches `sim`.
 observed_hex = { path = "../../crates/observed_hex" }
+# The rules kernel, extracted once a second lab needed the same match behind a
+# different pair of screens.
+observed_mechanics = { path = "../../crates/observed_mechanics" }
 # Colours come from the production style crate, never invented locally.
 observed_style = { path = "../../crates/observed_style" }
 bevy = { version = "0.19", default-features = false, features = [
