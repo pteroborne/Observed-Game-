@@ -54,6 +54,8 @@ impl Setback for Prison {
                 pawn.left_base_at = turn;
                 state.report.released.push(id);
             }
+            // Going in after your own is worth something.
+            state.earn(team, 2);
         }
     }
 }

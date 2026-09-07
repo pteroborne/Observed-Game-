@@ -222,6 +222,165 @@ crate the solver and importer also use. The sim carries its own SplitMix64, so
 no `rand`/`getrandom` and none of the wasm entropy workaround `tactics_lab`
 needs.
 
+## The architect: a player as the facility
+
+`ModeSpec::architect` hands one team's mutation to a player. That it required no
+new subsystem is the point — `Mutation` was always the strategy answering "what
+does the facility do when nobody is looking", and the answer here is "whatever
+somebody decided". A player *is* a `Mutation` implementation.
+
+The rogue churn keeps running beside it, because the question this slice exists
+to answer is not whether a player can lay tiles but **whether the other players
+can tell a deliberate play from background noise**. An architect with the board
+to itself would never test that.
+
+A tile is a cell's whole port signature — `Sealed`, `DeadEnd`, `Corridor`,
+`Bend`, `Junction`, `Hall`, `Room` — with a rotation. That is the WFC unit, and
+it is what makes a hand mean something: a corridor and a junction are different
+offers. Boundary-level plays would have been simpler and tested nothing, since
+every play would be the same play. It also gives the model rooms-versus-
+corridors, which a lattice of identical cells cannot express.
+
+**The hand is the cadence throttle, and it is the fix for a problem this lab
+already measured.** Unbounded churn produced fifty-odd changes a turn and read
+as noise. A player holding four tiles cannot flood the board even wanting to, so
+what lands is always few enough to read as intent.
+
+**Held ground refuses architecture** — observe-to-freeze from the other side of
+the table. An architect may not rebuild what the operatives are holding,
+*including their own team's*: their attention is the price of their safety, and
+it is paid to their own architect as much as to the enemy's. In practice the
+architect can only build two or more hexes clear of its squad, which mechanically
+enforces the division the design wants:
+
+> **The architect builds the future. Observation protects the present.**
+
+Every accepted play is checked for solvability, exhaustively in test: seven
+shapes by six rotations by thirty-seven cells, asserting the flags and the squad
+stay mutually reachable. An architect who can wall the objective off by accident
+is worse than one who cannot play at all.
+
+```powershell
+cargo run -p mechanic_lab --example play -- architect "0:H 1:H 2:H A:4,4,corridor,1"
+```
+
+Orders are `A:q,r,shape,rotation`. Refusals are printed with their reason,
+because refusals are where an architect's skill lives.
+
+### The squad earns the architect's cards
+
+**Nothing refills on a clock.** A card arrives because somebody earned it:
+
+| Operatives do | Architect draws |
+| --- | --- |
+| plant a flag | 3 |
+| free a teammate from prison | 2 |
+| hold ground and refuse a rogue rewire | 1 each |
+
+That points the dependency the right way round — operatives generate the
+resource, the architect spends it on their behalf — and it makes the loop close
+on itself: *observation earns architecture*. Attention spent holding ground
+against the facility becomes the material the architect rebuilds it with. A free
+trickle would have made the architect self-sufficient and the operatives
+optional, which is the failure mode asymmetric designs die of.
+
+A test asserts the end state rather than assuming it: an architect spending
+tiles for an idle squad runs dry.
+
+### The look-away trade
+
+Playing the architect alongside operatives surfaces a tension on the first turn
+that no amount of reasoning about the rules had predicted:
+
+**To let your architect build, your operatives must look away — and looking away
+is exactly what exposes them to the guardians.**
+
+Held ground refuses architecture, and a pawn's cone is three faces wide, so a
+squad watching its surroundings closes off most of the ground its own architect
+wants. Turning to face elsewhere opens the site *and* drops the teammate shield
+that keeps guardians out. The two mechanics were designed independently and pull
+against each other through a third: attention is a single currency spent on
+safety, on holding structure, and on permitting your own architect to work.
+
+That is the asymmetric design earning its place. Neither seat can act without
+costing the other something, which is a far better dependency than a rule
+saying two pawns must stand together.
+
+### The economy bites immediately
+
+Two turns of architect play emptied a four-card hand, because the squad had
+earned nothing back. That is the intended shape working faster than expected:
+an architect cannot simply build, it must build *toward things that pay*, and
+the operatives are the only source of payment.
+
+It also changes what a request means. Asking the architect for a route is
+asking it to spend a limited resource that only you can replace, so "can you
+open me a path" becomes a negotiation rather than an order — which is exactly
+the dependency the asymmetric design is for.
+
+### The architect cannot fix the problem in front of you
+
+The sharpest limitation the duel exposed. An operative reached the flag's
+doorstep while the rest of the squad was cut off from it by a single wall — and
+that wall was the one thing the architect could not touch, because pawns stood
+on both sides of it. The request "open the boundary between the two cells my
+squad is standing in" is precisely the request the rules forbid.
+
+So the architect is at its most useless exactly where the squad most wants help,
+and its usefulness is greatest where nobody is yet looking. Whether that reads
+as a satisfying division of labour or as a frustrating one is the thing a human
+in the operative seat has to judge; it cannot be settled from the rules.
+
+### The loop closed
+
+Played end to end against a Haiku architect, the full cycle ran in six turns:
+
+1. I asked in prose for a route to the flag at `(0,6)`.
+2. The architect spent a card on a junction at `(1,5)` whose SW doorway opened
+   onto it — geometry answering a sentence.
+3. My squad turned away from the site so the tile could land, then walked the
+   route it had made.
+4. Planting the flag paid the architect three cards, taking a hand that had run
+   down to two unusable tiles back up to four.
+
+Neither seat could have done any part of that alone, and the payment arrived
+because the *other* seat succeeded. That is the asymmetric design doing the one
+thing it exists to do.
+
+### Not built yet
+
+The architect is **headless only**. The browser build has no tile-laying UI, so
+`--example play` is the whole interface. A second architect for the rival team,
+and any of the first-person half, are also unbuilt — this slice tests whether
+the *rules* work, not whether the seat is fun to sit in.
+
+## The shield is a teammate mechanic
+
+`ConeInteraction::Blocked` protects the cells a pawn is **looking at**, not the
+cell it stands in. That distinction is the whole rule.
+
+The first version consulted the full lock set, and a pawn's own cell is always
+held — so no guardian could ever enter a cell containing a pawn, every pawn was
+permanently invulnerable, and both guardians spent an entire hand-played match
+parked next to the squad doing nothing at all. `LockSet` now separates *held*
+(by occupancy, which stops the floor rewiring) from *covered* (by sight, which
+is what shields), and the guardians read the second.
+
+So **looking after yourself is not a defence — somebody else has to be watching
+you.** That is the co-operation within a team the north star asks for, and it
+gives facing a job beyond holding structure: face the guardian and your
+teammate lives, turn away and they do not.
+
+## Everything unobserved is in play
+
+`Scope::AllUnobserved` telegraphs *every* boundary nobody is holding, rather
+than a capped handful. It is the strongest reading of observe-to-freeze: the
+only stable architecture is the architecture somebody has their eyes on. A
+capped churn lets a player ignore the facility for turns at a time; this one
+never does. `Scope::Capped` remains as a preset, and the seam tests use it —
+under a full churn the board reshapes faster than a drive can express anything,
+so every variant ends the same way and the other seams stop being measurable.
+
 ## What walls changed
 
 Boundaries carry passability now: every cell is floor, and what mutates is the
@@ -258,6 +417,33 @@ count measured. The seam is real; the board was hiding it.
 **The digest was missing the outcome**, so a won match and a lost one could
 fingerprint identically. Found by a seam test that should have failed and did
 not.
+
+## What a played duel found
+
+Two players — me on team 0, a Haiku agent on team 1 — through
+`--example play -- base "<orders>" --duel`, which replays the whole order log
+from the seed each invocation and so needs no saved state.
+
+**Team 1 won on turn 7 while losing 1-0 on flags.** My last free pawn was
+caught, team 0 had nobody standing, and elimination decided it. The bot sweep
+hinted at this; two thinking players confirm it. **While guardians are live the
+flag objective is decorative** — attrition settles every match.
+
+**The lone-pawn spiral has no floor.** Since only a *different* pawn's cone
+shields you, a team down to one free pawn can never be shielded again: that
+pawn is certain to fall, and the only recovery is walking to the prison alone
+and unshielded. Both sides hit it, neither escaped.
+
+**Recency never fired once.** Every pawn spent the match at `left_base_at = 0`
+because the trip home costs more than it buys, so every contact was a standoff —
+two rival pawns shared a hex with nothing happening. Stink base is currently
+inert, and the cheap-refresh options from its design note are unspent.
+
+**Both players lost pawns to guardians in the same way**: moving into a hex on
+the turn a guardian steps onto it, with nobody looking. The shield works — a
+guardian sat beside a covered flag-planter for two turns and could not take it —
+but using it means predicting a simultaneous move *and* having a teammate
+already facing the right way.
 
 ## What the first sweep found
 

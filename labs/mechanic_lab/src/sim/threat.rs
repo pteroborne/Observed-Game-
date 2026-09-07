@@ -29,9 +29,17 @@ pub enum GuardianTarget {
 pub enum ConeInteraction {
     /// Observation holds structure and nothing else. A pawn is never safe
     /// merely by facing the right way.
-    #[default]
     Ignores,
-    /// A guardian may not enter an observed cell. Facing is a shield.
+    /// A guardian may not enter a cell somebody is *looking at*. Facing is a
+    /// shield — and only a shield in the direction you point it, so turning
+    /// away from a guardian is a real risk and facing it is a real defence.
+    ///
+    /// **The shipped rule.** Without it a walled board is a guardian trap:
+    /// corridors remove the room to evade, and the squad was being wiped in six
+    /// turns with no counterplay. Making the cone a shield gives facing
+    /// something to do besides hold structure, and turns "where is everyone
+    /// looking" into the squad's actual defence.
+    #[default]
     Blocked,
     /// A guardian may enter an observed cell but takes nobody that turn.
     /// Facing buys time, not safety.
@@ -57,7 +65,7 @@ impl Default for Guardians {
     fn default() -> Self {
         Self {
             target: GuardianTarget::NearestPawn,
-            cone: ConeInteraction::Ignores,
+            cone: ConeInteraction::Blocked,
             cadence: 2,
         }
     }
@@ -115,7 +123,12 @@ impl Threat for Guardians {
             match self.cone {
                 ConeInteraction::Ignores => state.guardians[index].at = step,
                 ConeInteraction::Blocked => {
-                    if !locks.is_held(step) {
+                    // `is_covered`, not `is_held`: you are shielded where you
+                    // are *looking*, not where you happen to stand. Holding the
+                    // cell you occupy made every pawn permanently unreachable
+                    // and left the guardians parked next to the squad for a
+                    // whole match doing nothing at all.
+                    if !locks.is_covered(step) {
                         state.guardians[index].at = step;
                     } else {
                         // Route around rather than simply stalling: the nearest
@@ -123,7 +136,7 @@ impl Threat for Guardians {
                         let detour = state
                             .board
                             .open_neighbours(at)
-                            .filter(|&(_, cell)| !locks.is_held(cell))
+                            .filter(|&(_, cell)| !locks.is_covered(cell))
                             .min_by_key(|&(_, cell)| lateral_distance(cell, goal));
                         if let Some((_, cell)) = detour
                             && lateral_distance(cell, goal) < lateral_distance(at, goal)
@@ -134,7 +147,7 @@ impl Threat for Guardians {
                 }
                 ConeInteraction::Slowed => {
                     state.guardians[index].at = step;
-                    if locks.is_held(step) {
+                    if locks.is_covered(step) {
                         state.guardians[index].stalled = true;
                     }
                 }

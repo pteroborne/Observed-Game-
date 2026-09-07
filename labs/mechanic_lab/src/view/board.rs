@@ -322,6 +322,8 @@ pub fn redraw(
     let state = &session.state;
     let now = time.elapsed_secs();
     let locks = session.rules.vision.locks(state);
+    // See the note beside the telegraph draw below.
+    let flooded = state.telegraph.len() > 12;
 
     // Floor, then the state markings that ride on it.
     for cell in state.board.cells() {
@@ -329,14 +331,28 @@ pub fn redraw(
         let paint = paint(state, &locks, cell);
         p.put(&kit.hex, paint.color(), at, Z_CELL, 0.0, 1.0);
         match paint {
-            CellPaint::Observed => p.put(
-                &kit.inner_ring,
-                MarkPaint::Cone.color(),
-                at,
-                Z_CELL + 0.1,
-                0.0,
-                1.0,
-            ),
+            CellPaint::Observed => {
+                p.put(
+                    &kit.inner_ring,
+                    MarkPaint::Cone.color(),
+                    at,
+                    Z_CELL + 0.1,
+                    0.0,
+                    1.0,
+                );
+                // A second, outer ring when the rest of the board is churning:
+                // held ground is the scarce thing, so it gets the emphasis.
+                if flooded {
+                    p.put(
+                        &kit.hex_ring,
+                        MarkPaint::Cone.color().with_alpha(0.75),
+                        at,
+                        Z_CELL + 0.15,
+                        0.0,
+                        1.12,
+                    );
+                }
+            }
             CellPaint::Isolated => {
                 for i in 0..3 {
                     p.put(
@@ -459,6 +475,14 @@ pub fn redraw(
 
     // The telegraph, drawn as ghost geometry: what the facility will do to
     // itself, in the same visual language as what it has already done.
+    // When almost everything is changing, marking what changes says nothing.
+    //
+    // Under `Scope::AllUnobserved` the telegraph routinely runs to fifty-odd
+    // boundaries and the per-cell wash covers the whole board in one colour —
+    // at which point the *stable* ground is the information and the churn is
+    // just the background. Above the threshold the wash is dropped and only the
+    // edge ghosts remain: thin, positional, and still readable, while the
+    // observed cells keep their rings and become what stands out.
     if session.spec.preview != MutationPreview::Hidden {
         for change in &state.telegraph {
             let (at, turn) = edge_pose(state, change.edge);
@@ -480,7 +504,16 @@ pub fn redraw(
                 Some(pulse),
             );
             // Both cells the boundary joins breathe too, because a bar on an
-            // edge is a small thing to notice on a phone.
+            // edge is a small thing to notice on a phone — but only while the
+            // churn is small enough for that to mean something. Under
+            // `Scope::AllUnobserved` the telegraph runs to fifty-odd boundaries
+            // and this wash covers the entire board in one colour, at which
+            // point it is no longer marking anything: the *stable* ground is
+            // the information. Above the threshold only the thin edge ghosts
+            // remain, and the held cells keep their rings and stand out.
+            if flooded {
+                continue;
+            }
             for cell in [
                 Some(change.edge.cell),
                 state
