@@ -4,9 +4,9 @@
 //! changes. `cargo run -p mechanic_lab --example sweep`
 
 use observed_mechanics::objective::{PlantRule, PlantWin};
+use observed_mechanics::spec::{ModeSpec, ObjectiveKind, Rules, ThreatKind, deal};
 use observed_mechanics::threat::ConeInteraction;
 use observed_mechanics::{bot, step::step};
-use observed_mechanics::spec::{ModeSpec, ObjectiveKind, Rules, ThreatKind, deal};
 
 fn play(label: &str, spec: &ModeSpec) {
     let rules = Rules::from_spec(spec);

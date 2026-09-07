@@ -17,14 +17,14 @@
 //! `@FACE` sets the facing separately, which is how you arrive looking
 //! somewhere other than the way you walked.
 
-use observed_mechanics::board::Edge;
-use observed_mechanics::state::{Action, ChangeSource, Intent, MatchState, PawnId};
-use observed_mechanics::tiles::{TilePlay, TileShape};
-use observed_mechanics::{bot, step::step};
-use observed_mechanics::spec::{ModeSpec, Rules, deal};
 use observed_hex::coords::HexCoord;
 use observed_hex::faces::HexFace;
 use observed_hex::ports::PortClass;
+use observed_mechanics::board::Edge;
+use observed_mechanics::spec::{ModeSpec, Rules, deal};
+use observed_mechanics::state::{Action, ChangeSource, Intent, MatchState, PawnId};
+use observed_mechanics::tiles::{TilePlay, TileShape};
+use observed_mechanics::{bot, step::step};
 
 fn face_of(token: &str) -> Option<HexFace> {
     Some(match token.to_ascii_uppercase().as_str() {

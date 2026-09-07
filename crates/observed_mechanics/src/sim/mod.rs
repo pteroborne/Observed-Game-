@@ -4,8 +4,8 @@
 
 pub mod architect;
 pub mod board;
-pub mod knowledge;
 pub mod bot;
+pub mod knowledge;
 pub mod mutation;
 pub mod objective;
 pub mod prng;

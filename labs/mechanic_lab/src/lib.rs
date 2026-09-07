@@ -17,8 +17,8 @@ use bevy::camera::ScalingMode;
 use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResolution};
 
-use observed_mechanics::spec::ModeSpec;
 use crate::view::Session;
+use observed_mechanics::spec::ModeSpec;
 
 /// Launch the lab.
 pub fn run() {

@@ -16,8 +16,8 @@ use observed_hex::coords::HexCoord;
 use observed_hex::faces::HexFace;
 use observed_style::ColorVisionMode;
 
-use observed_mechanics::state::{Intent, MatchState, PawnId, TeamId};
 use observed_mechanics::spec::{ModeSpec, Rules, deal};
+use observed_mechanics::state::{Intent, MatchState, PawnId, TeamId};
 
 /// Everything the running lab is: which mode, its rules, the match, and the
 /// orders the human has declared but not yet resolved.

@@ -1551,5 +1551,8 @@ fn knowledge_goes_stale_when_the_facility_moves_behind_you() {
     // Somewhere the squad has never been stays unknown entirely, however many
     // turns go by.
     let far = at(6, 3);
-    assert!(!known.known(far), "the far side of the board is not knowledge");
+    assert!(
+        !known.known(far),
+        "the far side of the board is not knowledge"
+    );
 }

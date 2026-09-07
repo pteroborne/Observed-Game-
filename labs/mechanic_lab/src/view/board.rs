@@ -23,8 +23,8 @@ use super::animate::{Glide, Pulse};
 use super::art::{ArtAtlas, Icon};
 use observed_mechanics::board::Edge;
 use observed_mechanics::rules::LockSet;
-use observed_mechanics::state::MatchState;
 use observed_mechanics::spec::MutationPreview;
+use observed_mechanics::state::MatchState;
 
 use super::{HEX_RADIUS, Session, world_of};
 
