@@ -1488,3 +1488,68 @@ fn an_idle_squad_starves_its_architect() {
         state.hands[0].cards
     );
 }
+
+// --- what a team knows -----------------------------------------------------
+
+#[test]
+fn a_squad_learns_only_what_it_looks_at() {
+    use crate::sim::knowledge::Knowledge;
+
+    let spec = still_spec();
+    let rules = Rules::from_spec(&spec);
+    let state = deal(&spec);
+
+    let mut known = Knowledge::blank(state.board.size());
+    assert_eq!(known.known_count(), 0, "a squad starts knowing nothing");
+
+    known.observe(&state, rules.vision.as_ref(), TeamId(0));
+    let learned = known.known_count();
+    assert!(learned > 0, "standing somewhere is a kind of looking");
+    assert!(
+        learned < state.board.cells().count(),
+        "but a cone is not the whole board"
+    );
+    for pawn in state.free_pawns() {
+        assert!(known.known(pawn.at), "a pawn knows where it stands");
+    }
+}
+
+#[test]
+fn knowledge_goes_stale_when_the_facility_moves_behind_you() {
+    // The operator's picture is a memory, not a feed. An architect rewires
+    // ground nobody is watching, so a squad that trusted its map would walk
+    // into a wall that was a doorway when it last looked — which is exactly the
+    // pressure the two-seat design runs on.
+    use crate::sim::knowledge::Knowledge;
+
+    let spec = ModeSpec {
+        threats: vec![ThreatKind::None],
+        ..ModeSpec::plant()
+    };
+    let rules = Rules::from_spec(&spec);
+    let mut state = deal(&spec);
+
+    let mut known = Knowledge::blank(state.board.size());
+    known.observe(&state, rules.vision.as_ref(), TeamId(0));
+    let watched = state.pawn(PawnId(0)).at;
+    assert!(!known.stale(watched, state.turn), "just seen is not stale");
+
+    let hold: Vec<Intent> = state
+        .free_pawns()
+        .map(|pawn| Intent {
+            pawn: pawn.id,
+            facing: pawn.facing,
+            action: Action::Hold,
+        })
+        .collect();
+    step(&mut state, &rules, &hold);
+
+    assert!(
+        known.stale(watched, state.turn),
+        "a turn passed without re-observing, so the memory is old"
+    );
+    // Somewhere the squad has never been stays unknown entirely, however many
+    // turns go by.
+    let far = at(6, 3);
+    assert!(!known.known(far), "the far side of the board is not knowledge");
+}

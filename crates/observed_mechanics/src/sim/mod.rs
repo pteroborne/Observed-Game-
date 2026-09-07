@@ -4,6 +4,7 @@
 
 pub mod architect;
 pub mod board;
+pub mod knowledge;
 pub mod bot;
 pub mod mutation;
 pub mod objective;

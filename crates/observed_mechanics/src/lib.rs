@@ -24,7 +24,7 @@
 mod sim;
 
 pub use sim::{
-    architect, board, bot, mutation, objective, prng, resolution, rules, setback, state, step,
+    architect, board, bot, knowledge, mutation, objective, prng, resolution, rules, setback, state, step,
     threat, tiles, vision,
 };
 
