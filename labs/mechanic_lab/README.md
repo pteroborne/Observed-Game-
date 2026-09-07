@@ -54,9 +54,11 @@ be changed. That is also what makes it work with one thumb.
 | tap a neighbour | step there, facing that way |
 | `Turn in place` then tap | set facing without moving |
 | `Hold` / `Plant` | order the selected pawn to stand, or to plant |
-| `Next pawn` | cycle selection; walks a stacked cell before leaving it |
+| `Next` | cycle selection; walks a stacked cell before leaving it |
+| `Watch` | hand both sides to the driver and let it play on a clock |
 | `< Turn` / `Turn >` | rotate the selected pawn one face, keeping its move |
-| `Resolve turn` | your orders and the bot's resolve together |
+| `Resolve` | your orders and the bot's resolve together |
+| `More` | Modes, Step, Vision, Legend, Restart |
 | `< Mode` / `Mode >` | swap the whole rule set and deal a fresh match |
 | `Legend` | what every mark on the board means |
 
@@ -74,6 +76,14 @@ facing, because facing costs no action.
 standing.** Answering it from the cell the pawn is about to leave shows the
 consequence of a facing it is no longer going to have, which is worse than
 showing nothing. The status line names the projected pose for the same reason.
+
+### The dock
+
+Three rows of full-width controls rather than a wrap of small ones. The first
+version packed eleven 62x40 buttons into a 375px screen, which is under every
+published minimum for a touch target and felt like it. Common controls are now
+54px tall and share the row width evenly; the four that are consulted rather
+than used — Modes, Vision, Legend, Restart — live behind `More`.
 
 ### Stacking
 
@@ -318,6 +328,24 @@ strongest signal available for the thing a player most needs to notice.
 The animation is a separate system from the board redraw. The redraw only runs
 when the match changes; an animation that forced a full respawn every frame
 would be paying entity churn for a sine wave.
+
+## Watching two drivers play
+
+`Watch` hands both sides to the scripted driver and advances a turn every 1.25
+seconds — comfortably longer than the movement glide, so each turn resolves,
+settles, and sits readable for a moment before the next begins. `Step` under
+`More` advances exactly one turn.
+
+The point is not a demo. A match you *watch* is the cheapest way to see whether
+a mode has a shape at all: whether turns differ from one another, whether
+anything ever gets held, whether the objective is reachable. `--example sweep`
+answers that as a number; this answers it as something you can look at, which is
+the only kind of answer that closes a question about fun.
+
+Its clock is a separate resource rather than a field on `Session`, and that is
+load-bearing: the board only redraws when `Session` changes, so a timer ticking
+inside it would mark the session changed every frame, respawn every entity, and
+restart each glide from zero — nothing would ever appear to move.
 
 ## Movement is animated, because simultaneous resolution hides itself
 

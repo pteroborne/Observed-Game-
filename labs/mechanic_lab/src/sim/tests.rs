@@ -987,3 +987,50 @@ fn a_stacked_cell_reports_everyone_standing_in_it() {
     assert_eq!(state.occupants(at(3, 3)), vec![PawnId(0), PawnId(1)]);
     assert_eq!(state.occupants(at(0, 3)), vec![PawnId(2)]);
 }
+
+// --- watching it play ------------------------------------------------------
+
+#[test]
+fn two_bots_play_every_shipped_mode_to_a_verdict() {
+    // Spectate is the cheapest way to see whether a mode has a shape, so every
+    // preset has to survive being driven from both sides — including the ones
+    // with two teams, where an earlier driver planned both squads as one and
+    // had team 1 escorting team 0's planter.
+    for spec in ModeSpec::presets() {
+        let rules = Rules::from_spec(&spec);
+        let mut state = deal(&spec);
+        let mut turns = 0;
+        while state.outcome.is_none() && turns < spec.turn_limit + 1 {
+            let mut intents = Vec::new();
+            for team in state.teams() {
+                intents.extend(bot::team_intents(&state, team));
+            }
+            intents.sort_by_key(|intent| intent.pawn);
+            step(&mut state, &rules, &intents);
+            turns += 1;
+        }
+        assert!(
+            state.outcome.is_some(),
+            "{} never reached a verdict in {turns} turns",
+            spec.name
+        );
+    }
+}
+
+#[test]
+fn a_driven_team_only_ever_orders_its_own_pawns() {
+    // The bug that made two-team play look broken: one plan for every free
+    // pawn on the board, regardless of side.
+    let spec = ModeSpec::base();
+    let state = deal(&spec);
+    for team in state.teams() {
+        for intent in bot::team_intents(&state, team) {
+            assert_eq!(
+                state.pawn(intent.pawn).team,
+                team,
+                "team {} was given an order for someone else's pawn",
+                team.0
+            );
+        }
+    }
+}

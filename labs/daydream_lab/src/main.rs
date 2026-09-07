@@ -18,6 +18,7 @@
 //! - [`shaft`] - the same tools pointed straight up a hexagonal well.
 //! - [`monument`] - eleven cells of held axis, ending on an empty dais.
 //! - [`backrooms`] - no axis at all, and a ceiling you could touch.
+//! - [`screen`] - one wall of lit paper, and the outside only as its shadow.
 //!
 //! # Two tricks carry every scene
 //!
@@ -39,6 +40,7 @@
 mod backrooms;
 mod hall;
 mod monument;
+mod screen;
 mod shaft;
 
 use bevy::anti_alias::taa::TemporalAntiAliasing;
@@ -104,6 +106,7 @@ fn scene() -> &'static str {
         Ok("shaft") => "shaft",
         Ok("monument") => "monument",
         Ok("backrooms") => "backrooms",
+        Ok("screen" | "shoji") => "screen",
         _ => "hall",
     }
 }
@@ -288,6 +291,16 @@ fn linear(color: Color) -> Vec4 {
     Vec4::new(c.red, c.green, c.blue, c.alpha)
 }
 
+/// A cheap deterministic hash. Scenes use it to scatter things irregularly
+/// without ever scattering them differently between two runs.
+pub fn scramble(x: i32, y: i32, salt: u32) -> u32 {
+    let mut h = (x as u32).wrapping_mul(0x9E37_79B9) ^ (y as u32).wrapping_mul(0x85EB_CA6B) ^ salt;
+    h ^= h >> 15;
+    h = h.wrapping_mul(0x2545_F491);
+    h ^= h >> 13;
+    h
+}
+
 pub fn matte(color: Color) -> StandardMaterial {
     StandardMaterial {
         base_color: color,
@@ -352,6 +365,7 @@ fn setup(
         "shaft" => shaft::build(&mut commands, &mut meshes, &mut materials),
         "monument" => monument::build(&mut commands, &mut meshes, &mut materials),
         "backrooms" => backrooms::build(&mut commands, &mut meshes, &mut materials, &mut images),
+        "screen" => screen::build(&mut commands, &mut meshes, &mut materials, &mut images),
         _ => hall::build(&mut commands, &mut meshes, &mut materials, &mut images),
     };
 

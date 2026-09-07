@@ -40,6 +40,15 @@ pub struct Session {
     /// page — and it is the tool for telling me which marks still collide.
     pub vision: ColorVisionMode,
     pub menu_open: bool,
+    pub more_open: bool,
+    /// Both sides driven by the scripted driver, advancing on a clock.
+    ///
+    /// The point is not a demo. A match you *watch* is the cheapest way to see
+    /// whether a mode has a shape: whether turns differ from one another,
+    /// whether anything ever gets held, whether the objective is reachable at
+    /// all. The sweep answers that as a number; this answers it as a thing you
+    /// can look at.
+    pub watching: bool,
     pub notice: String,
 }
 
@@ -61,6 +70,8 @@ impl Session {
             human: TeamId(0),
             vision: ColorVisionMode::Normal,
             menu_open: false,
+            more_open: false,
+            watching: false,
             notice: String::new(),
         }
     }
@@ -76,6 +87,21 @@ impl Session {
         self.queued.clear();
         self.selected = None;
         self.notice.clear();
+    }
+
+    /// Advance one turn with every team driven by the scripted driver.
+    pub fn play_one_turn(&mut self) {
+        if self.state.outcome.is_some() {
+            return;
+        }
+        let mut intents = Vec::new();
+        for team in self.state.teams() {
+            intents.extend(crate::sim::bot::team_intents(&self.state, team));
+        }
+        intents.sort_by_key(|intent| intent.pawn);
+        let Session { state, rules, .. } = self;
+        crate::sim::step::step(state, rules, &intents);
+        self.queued.clear();
     }
 
     pub fn load_mode(&mut self, index: usize) {

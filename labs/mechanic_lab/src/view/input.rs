@@ -161,6 +161,20 @@ pub fn buttons(
             HudButton::Resolve => resolve(&mut session),
             HudButton::Restart => session.restart(),
             HudButton::Next => next_pawn(&mut session),
+            HudButton::More => session.more_open = !session.more_open,
+            HudButton::Watch => {
+                session.watching = !session.watching;
+                session.selected = None;
+                session.notice = if session.watching {
+                    "watching both sides play".to_string()
+                } else {
+                    "you have the controls again".to_string()
+                };
+            }
+            HudButton::Step => {
+                session.play_one_turn();
+                session.notice = report(&session);
+            }
             HudButton::Modes => session.menu_open = !session.menu_open,
             HudButton::Vision => {
                 session.vision = session.vision.next();
@@ -319,4 +333,36 @@ fn report(session: &Session) -> String {
         parts.push(format!("{} planted", report.planted.len()));
     }
     parts.join(", ")
+}
+
+/// How long a spectated turn is left on screen.
+///
+/// Comfortably longer than the movement glide, so a turn resolves, settles, and
+/// is readable for a moment before the next one starts. Faster than this and
+/// two bots playing is a blur rather than something you can learn from.
+const WATCH_INTERVAL: f32 = 1.25;
+
+/// The spectate clock.
+///
+/// Deliberately **not** a field on `Session`: the board only redraws when
+/// `Session` changes, and a timer ticking inside it would mark it changed every
+/// frame — respawning every entity, and restarting each glide from zero so
+/// nothing ever appeared to move.
+#[derive(Resource, Default)]
+pub struct WatchClock {
+    elapsed: f32,
+}
+
+pub fn spectate(time: Res<Time>, mut clock: ResMut<WatchClock>, mut session: ResMut<Session>) {
+    if !session.watching || session.state.outcome.is_some() {
+        clock.elapsed = 0.0;
+        return;
+    }
+    clock.elapsed += time.delta_secs();
+    if clock.elapsed < WATCH_INTERVAL {
+        return;
+    }
+    clock.elapsed = 0.0;
+    session.play_one_turn();
+    session.notice = report(&session);
 }

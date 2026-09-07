@@ -60,10 +60,12 @@ pub fn run() {
 pub fn configure(app: &mut App) {
     app.insert_resource(ClearColor(Color::srgb(0.024, 0.031, 0.043)))
         .insert_resource(Session::new(ModeSpec::presets(), 0))
+        .init_resource::<view::input::WatchClock>()
         .add_systems(Startup, (spawn_camera, view::art::load, view::hud::spawn))
         .add_systems(
             Update,
             (
+                view::input::spectate,
                 view::input::board_taps,
                 view::input::buttons,
                 view::input::mode_choices,

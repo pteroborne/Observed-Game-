@@ -33,6 +33,9 @@ pub struct LegendPanel;
 #[derive(Component)]
 pub struct ModeMenu;
 
+#[derive(Component)]
+pub struct MorePanel;
+
 /// One row of the mode menu, carrying the preset it loads.
 #[derive(Component, Clone, Copy)]
 pub struct ModeChoice(pub usize);
@@ -46,6 +49,9 @@ pub enum HudButton {
     FaceOnly,
     Plant,
     Hold,
+    Watch,
+    Step,
+    More,
     Restart,
     Modes,
     Vision,
@@ -55,16 +61,19 @@ pub enum HudButton {
 impl HudButton {
     const fn label(self) -> &'static str {
         match self {
-            HudButton::Resolve => "Resolve turn",
-            HudButton::FaceOnly => "Turn in place",
+            HudButton::Resolve => "Resolve",
+            HudButton::FaceOnly => "Face only",
             HudButton::Plant => "Plant",
             HudButton::Hold => "Hold",
             HudButton::Restart => "Restart",
-            HudButton::Next => "Next pawn",
+            HudButton::Next => "Next",
             HudButton::RotateLeft => "< Turn",
             HudButton::RotateRight => "Turn >",
             HudButton::Modes => "Modes",
             HudButton::Vision => "Vision",
+            HudButton::Watch => "Watch",
+            HudButton::Step => "Step",
+            HudButton::More => "More",
             HudButton::Legend => "Legend",
         }
     }
@@ -211,35 +220,73 @@ pub fn spawn(mut commands: Commands) {
                 control(menu, HudButton::Modes);
             });
 
-            // Bottom dock. Everything reachable with a thumb.
+            // The dock, sized for thumbs.
+            //
+            // Three rows of full-width controls rather than a wrap of small
+            // ones. The previous version packed eleven 62x40 buttons into a
+            // 375px screen, which is under every published minimum for a touch
+            // target and felt like it: the common controls are now 54 tall and
+            // share the width evenly, and the four that are consulted rather
+            // than used live behind `More`.
             root.spawn((
                 Node {
                     width: percent(100.0),
-                    flex_direction: FlexDirection::Row,
-                    flex_wrap: FlexWrap::Wrap,
+                    flex_direction: FlexDirection::Column,
                     padding: UiRect::all(px(6.0)),
-                    column_gap: px(4.0),
-                    row_gap: px(4.0),
+                    row_gap: px(6.0),
                     ..default()
                 },
                 BackgroundColor(PANEL),
                 Pickable::IGNORE,
             ))
             .with_children(|dock| {
-                for button in [
-                    HudButton::Resolve,
-                    HudButton::Next,
-                    HudButton::RotateLeft,
-                    HudButton::RotateRight,
-                    HudButton::Hold,
-                    HudButton::Plant,
-                    HudButton::FaceOnly,
-                    HudButton::Modes,
-                    HudButton::Restart,
-                    HudButton::Vision,
-                    HudButton::Legend,
+                // Consulted, not used: hidden until asked for.
+                dock.spawn((
+                    MorePanel,
+                    Node {
+                        width: percent(100.0),
+                        display: Display::None,
+                        flex_direction: FlexDirection::Row,
+                        column_gap: px(6.0),
+                        ..default()
+                    },
+                    Pickable::IGNORE,
+                ))
+                .with_children(|row| {
+                    for button in [
+                        HudButton::Modes,
+                        HudButton::Step,
+                        HudButton::Vision,
+                        HudButton::Legend,
+                        HudButton::Restart,
+                    ] {
+                        control(row, button);
+                    }
+                });
+
+                for group in [
+                    [
+                        HudButton::RotateLeft,
+                        HudButton::Next,
+                        HudButton::RotateRight,
+                    ],
+                    [HudButton::Hold, HudButton::Plant, HudButton::FaceOnly],
+                    [HudButton::Resolve, HudButton::Watch, HudButton::More],
                 ] {
-                    control(dock, button);
+                    dock.spawn((
+                        Node {
+                            width: percent(100.0),
+                            flex_direction: FlexDirection::Row,
+                            column_gap: px(6.0),
+                            ..default()
+                        },
+                        Pickable::IGNORE,
+                    ))
+                    .with_children(|row| {
+                        for button in group {
+                            control(row, button);
+                        }
+                    });
                 }
             });
         });
@@ -284,9 +331,10 @@ fn control(parent: &mut ChildSpawnerCommands, button: HudButton) {
             button,
             Button,
             Node {
-                min_width: px(62.0),
-                height: px(40.0),
-                padding: UiRect::horizontal(px(7.0)),
+                flex_grow: 1.0,
+                flex_basis: px(0.0),
+                height: px(54.0),
+                padding: UiRect::horizontal(px(4.0)),
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
                 ..default()
@@ -297,7 +345,7 @@ fn control(parent: &mut ChildSpawnerCommands, button: HudButton) {
             face.spawn((
                 Text::new(button.label()),
                 TextFont {
-                    font_size: FontSize::Px(11.0),
+                    font_size: FontSize::Px(14.0),
                     ..default()
                 },
                 TextColor(INK),
@@ -360,6 +408,8 @@ pub fn sync(
     for (button, mut background) in &mut buttons {
         let lit = match button {
             HudButton::FaceOnly => session.face_only,
+            HudButton::Watch => session.watching,
+            HudButton::More => session.more_open,
             HudButton::Modes => session.menu_open,
             HudButton::Vision => session.vision != ColorVisionMode::Normal,
             HudButton::Resolve => session.queued.len() == session.commandable().len(),
@@ -373,12 +423,23 @@ pub fn sync(
     }
 }
 
-pub fn sync_menu(session: Res<Session>, mut menu: Query<&mut Node, With<ModeMenu>>) {
+pub fn sync_menu(
+    session: Res<Session>,
+    mut menu: Query<&mut Node, (With<ModeMenu>, Without<MorePanel>)>,
+    mut more: Query<&mut Node, With<MorePanel>>,
+) {
     if !session.is_changed() {
         return;
     }
     if let Ok(mut node) = menu.single_mut() {
         node.display = if session.menu_open {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+    if let Ok(mut node) = more.single_mut() {
+        node.display = if session.more_open {
             Display::Flex
         } else {
             Display::None

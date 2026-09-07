@@ -34,7 +34,7 @@ use bevy::image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
-use crate::{Staging, matte};
+use crate::{Staging, matte, scramble};
 
 /// Half-extent of the floor plate. There is no reason for it to stop here
 /// other than that the fog does.
@@ -93,16 +93,6 @@ fn view() -> (Vec3, Vec3) {
         Ok("low") => (Vec3::new(0.0, 0.55, 12.0), Vec3::new(-2.0, 1.30, -14.0)),
         _ => (Vec3::new(1.5, 1.62, 13.0), Vec3::new(-4.0, 1.34, -14.0)),
     }
-}
-
-/// A cheap deterministic hash, so the plan is irregular but the same irregular
-/// every run. Nothing here should look designed, and nothing should move.
-fn scramble(x: i32, y: i32, salt: u32) -> u32 {
-    let mut h = (x as u32).wrapping_mul(0x9E37_79B9) ^ (y as u32).wrapping_mul(0x85EB_CA6B) ^ salt;
-    h ^= h >> 15;
-    h = h.wrapping_mul(0x2545_F491);
-    h ^= h >> 13;
-    h
 }
 
 /// A flat field with a little value noise in it: carpet, mostly. Generated
