@@ -2175,6 +2175,91 @@ pub fn hall_screen_shoji() -> String {
     out
 }
 
+/// The Welcome between its gates: a bay, so a run of cells reads as one axis.
+///
+/// This tile exists because of what a multi-cell composition turned out to
+/// cost. Rooms that span several hexes go through `RoomBlueprint`, keyed by a
+/// closed `RoomRole` enum in the solver - Start, Exit, Keystone, Monitor,
+/// Recovery - which is a vocabulary of *gameplay* roles. "An eleven-cell
+/// ceremonial axis" is not one of those and putting it there would be a
+/// category error, quite apart from moving the simulation hash and needing
+/// placement logic of its own.
+///
+/// The wave function collapse already does this, and does it better. Register
+/// scope confines a tile to its district, so a straight run through a Facet
+/// Monument district draws only Facet Monument tiles - and a held axis is what
+/// you get when consecutive cells continue each other rather than each
+/// announcing itself. [`hall_gate_monument`] announces itself, which is right
+/// once and wrong four times in a row. This is what belongs between them.
+///
+/// # What continues, and what does not
+///
+/// The reveals run at the same two heights as the gate's, so a wall crosses a
+/// seam without a step in it. The coffers overhead are the only thing this bay
+/// adds, and they are deliberately at three spacings rather than one: an axis
+/// that repeats exactly reads as a corridor tiled by a machine, which is what
+/// it is, and the whole business of the district is to hide that.
+pub fn hall_bay_monument() -> String {
+    let doors = [0usize, 3];
+    // Coffers across the axis, at (x0, x1, |y|). The hexagon narrows as you go
+    // out along x, so the outer pair are shorter - which also happens to be the
+    // spacing irregularity the bay wants.
+    const COFFERS: [(f64, f64, f64); 3] =
+        [(-58.0, -42.0, 88.0), (-8.0, 8.0, 104.0), (44.0, 60.0, 86.0)];
+
+    let mut brushes = String::from("// Floor and lid\n");
+    brushes.push_str(&hex_slab(0.0, FLOOR_TOP, 3.0, 0.0));
+    brushes.push_str(&hex_slab(LEVEL - FLOOR_TOP, LEVEL, 0.0, 3.0));
+
+    brushes.push_str("// Envelope\n");
+    for face in 0..6 {
+        if doors.contains(&face) {
+            brushes.push_str(&door_wall(face, 0.0, LEVEL, FLOOR_TOP, DOOR_TOP, 12.0, 8.0));
+        } else {
+            brushes.push_str(&wall(face, 0.0, LEVEL));
+        }
+    }
+
+    // The same two courses the gate carries, at the same heights, so the wall
+    // does not step where two cells meet.
+    brushes.push_str("// Stepped reveals, continuous with the gate's\n");
+    for face in [1usize, 2, 4, 5] {
+        brushes.push_str(&band(face, WALL, WALL + 7.0, FLOOR_TOP, 44.0));
+        brushes.push_str(&band(face, WALL, WALL + 4.0, 56.0, 82.0));
+    }
+
+    brushes.push_str("// Coffers, clear of the doorway by a level's quarter\n");
+    for (x0, x1, reach) in COFFERS {
+        brushes.push_str(&boxed(
+            (x0, -reach, DOOR_TOP + 28.0),
+            (x1, reach, DOOR_TOP + 44.0),
+        ));
+    }
+
+    let mut out = String::from(
+        "// Straight, Facet Monument: the bay that lets an axis be longer than a cell.\n",
+    );
+    out.push_str(GENERATED_NOTE);
+    out.push_str(&worldspawn(&brushes));
+    out.push_str(
+        &Meta::cell("authored/hall_bay_monument", "hall_straight", 0, 1, 9)
+            .with_register_scope("facet_monument")
+            .emit(),
+    );
+    out.push_str(&tile_cell_default());
+    for face in doors {
+        out.push_str(&lateral_port(
+            face,
+            "door",
+            &format!("{}_port", FACE_NAMES[face]),
+            0,
+            0,
+            0,
+        ));
+    }
+    out
+}
+
 pub fn hall_squint_screen() -> String {
     let doors = [0usize, 3];
 
@@ -2741,6 +2826,7 @@ pub fn builders() -> Vec<Builder> {
         ("hall_gate_monument", hall_gate_monument),
         ("hall_pocket_overlit", hall_pocket_overlit),
         ("hall_screen_shoji", hall_screen_shoji),
+        ("hall_bay_monument", hall_bay_monument),
         ("hall_transom_wellshaft", hall_transom_wellshaft),
         ("hall_drop_megastructure", hall_drop_megastructure),
         ("hall_false_depth_liminal", hall_false_depth_liminal),
