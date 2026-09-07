@@ -19,7 +19,7 @@ use observed_style::{
     ColorVisionMode, MarkerRole, TacticsRole, marker, simulate_color_vision, tactics, team,
 };
 
-use super::animate::Pulse;
+use super::animate::{Glide, Pulse};
 use super::art::{ArtAtlas, Icon};
 use crate::sim::board::Edge;
 use crate::sim::rules::LockSet;
@@ -241,6 +241,21 @@ impl Painter<'_> {
     /// left at their authored colours rather than tinted — the vision
     /// simulation is baked into the texture instead.
     fn icon(&mut self, icon: Icon, at: Vec2, z: f32, turn: f32, size: f32, pulse: Option<Pulse>) {
+        self.icon_gliding(icon, at, z, turn, size, pulse, None);
+    }
+
+    /// As [`Painter::icon`], but sliding in from somewhere else.
+    #[expect(clippy::too_many_arguments, reason = "one draw call, all of it pose")]
+    fn icon_gliding(
+        &mut self,
+        icon: Icon,
+        at: Vec2,
+        z: f32,
+        turn: f32,
+        size: f32,
+        pulse: Option<Pulse>,
+        glide: Option<Glide>,
+    ) {
         let Some(image) = self.atlas.get(icon, self.vision) else {
             return;
         };
@@ -255,6 +270,9 @@ impl Painter<'_> {
         ));
         if let Some(pulse) = pulse {
             entity.insert(pulse);
+        }
+        if let Some(glide) = glide {
+            entity.insert(glide);
         }
     }
 }
@@ -282,6 +300,7 @@ pub fn redraw(
     commands: Commands,
     session: Res<Session>,
     atlas: Res<ArtAtlas>,
+    time: Res<Time>,
     existing: Query<Entity, With<BoardVisual>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
@@ -301,6 +320,7 @@ pub fn redraw(
     }
 
     let state = &session.state;
+    let now = time.elapsed_secs();
     let locks = session.rules.vision.locks(state);
 
     // Floor, then the state markings that ride on it.
@@ -338,14 +358,13 @@ pub fn redraw(
     if let Some(selected) = session.selected
         && !state.pawn(selected).jailed
     {
-        let pawn = state.pawn(selected);
+        // From the *destination*, not from here. Facing is chosen with the Turn
+        // controls after a move is declared, and a cone drawn from the cell the
+        // pawn is about to leave answers the wrong question entirely — you
+        // cannot pick a facing you cannot see the consequence of.
+        let (from, facing) = session.projected_pose(selected);
         for cell in state.board.cells() {
-            if cell != pawn.at
-                && session
-                    .rules
-                    .vision
-                    .covers(state, pawn.at, pawn.facing, cell)
-            {
+            if cell != from && session.rules.vision.covers(state, from, facing, cell) {
                 p.put(
                     &kit.hex,
                     MarkPaint::Cone.color().with_alpha(0.20),
@@ -491,17 +510,32 @@ pub fn redraw(
 
     // Actors, each with its own silhouette.
     for guardian in &state.guardians {
-        p.icon(
+        let at = world_of(state, guardian.at);
+        let glide = (guardian.prev_at != guardian.at)
+            .then(|| Glide::new(world_of(state, guardian.prev_at), at, now));
+        p.icon_gliding(
             Icon::Guardian,
-            world_of(state, guardian.at),
+            at,
             Z_ACTOR,
             0.0,
             HEX_RADIUS * 1.35,
             None,
+            glide,
         );
     }
     for pawn in &state.pawns {
-        let at = world_of(state, pawn.at);
+        // Teammates sharing a cell fan out around its centre, so a stack reads
+        // as several pawns rather than as one pawn drawn twice.
+        let sharing = state.occupants(pawn.at);
+        let fan = if sharing.len() > 1 {
+            let index = sharing.iter().position(|id| *id == pawn.id).unwrap_or(0);
+            let step = std::f32::consts::TAU / sharing.len() as f32;
+            let angle = step * index as f32;
+            Vec2::new(angle.cos(), angle.sin()) * HEX_RADIUS * 0.26
+        } else {
+            Vec2::ZERO
+        };
+        let at = world_of(state, pawn.at) + fan;
         let mine = pawn.team == session.human;
         p.put(
             &kit.disc,
@@ -526,7 +560,14 @@ pub fn redraw(
             (false, true) => Icon::Pawn,
             (false, false) => Icon::Rival,
         };
-        p.icon(icon, at, Z_ACTOR, 0.0, HEX_RADIUS * 1.30, None);
+        let size = if sharing.len() > 1 {
+            HEX_RADIUS * 1.02
+        } else {
+            HEX_RADIUS * 1.30
+        };
+        let glide = (pawn.prev_at != pawn.at)
+            .then(|| Glide::new(world_of(state, pawn.prev_at) + fan, at, now));
+        p.icon_gliding(icon, at, Z_ACTOR, 0.0, size, None, glide);
 
         if !pawn.jailed {
             // Facing as a wedge on the faced edge: big enough to read at a

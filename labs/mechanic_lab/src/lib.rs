@@ -76,7 +76,7 @@ pub fn configure(app: &mut App) {
         // Separate from the board redraw on purpose: the redraw only runs when
         // the match changes, and an animation that forced a full respawn every
         // frame would be paying entity churn for a sine wave.
-        .add_systems(Update, view::animate::pulse);
+        .add_systems(Update, (view::animate::pulse, view::animate::glide));
 }
 
 fn spawn_camera(mut commands: Commands) {

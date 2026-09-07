@@ -40,6 +40,7 @@ pub struct ModeChoice(pub usize);
 #[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HudButton {
     Resolve,
+    Next,
     RotateLeft,
     RotateRight,
     FaceOnly,
@@ -59,6 +60,7 @@ impl HudButton {
             HudButton::Plant => "Plant",
             HudButton::Hold => "Hold",
             HudButton::Restart => "Restart",
+            HudButton::Next => "Next pawn",
             HudButton::RotateLeft => "< Turn",
             HudButton::RotateRight => "Turn >",
             HudButton::Modes => "Modes",
@@ -226,6 +228,7 @@ pub fn spawn(mut commands: Commands) {
             .with_children(|dock| {
                 for button in [
                     HudButton::Resolve,
+                    HudButton::Next,
                     HudButton::RotateLeft,
                     HudButton::RotateRight,
                     HudButton::Hold,
@@ -315,7 +318,7 @@ pub fn sync(
     let state = &session.state;
     if let Ok(mut text) = mode.single_mut() {
         **text = format!(
-            "{}  ·  preview {:?}  ·  vision {}",
+            "{}  |  preview {:?}  |  vision {}",
             session.spec.name,
             session.spec.preview,
             session.vision.label(),
@@ -336,8 +339,17 @@ pub fn sync(
         };
         let ordered = session.queued.len();
         let commandable = session.commandable().len();
+        let order = session.selected.map_or_else(String::new, |id| {
+            let (at, facing) = session.projected_pose(id);
+            let moving = at != state.pawn(id).at;
+            format!(
+                "  |  pawn {}: {} facing {facing:?}",
+                id.0,
+                if moving { "moving" } else { "holding" },
+            )
+        });
         **text = format!(
-            "turn {}/{}   flags {}   orders {ordered}/{commandable}   changing {}{verdict}\n{}",
+            "turn {}/{}   flags {}   orders {ordered}/{commandable}   changing {}{verdict}{order}\n{}",
             state.turn,
             session.spec.turn_limit,
             planted.join(" "),

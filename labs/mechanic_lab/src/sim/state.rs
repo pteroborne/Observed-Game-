@@ -45,6 +45,9 @@ pub struct Pawn {
 #[derive(Clone, Copy, Debug)]
 pub struct Guardian {
     pub at: HexCoord,
+    /// Where it stood at the top of the turn. Read by the view to animate the
+    /// step, and by nothing in the simulation.
+    pub prev_at: HexCoord,
     /// Set when `ConeInteraction::Slowed` let it enter an observed cell. A
     /// stalled guardian moved but takes nobody this turn.
     pub stalled: bool,
@@ -190,10 +193,18 @@ impl MatchState {
 
     #[must_use]
     pub fn occupant(&self, coord: HexCoord) -> Option<PawnId> {
+        self.occupants(coord).first().copied()
+    }
+
+    /// Everyone standing here, in id order. More than one only when the mode
+    /// allows a team to stack.
+    #[must_use]
+    pub fn occupants(&self, coord: HexCoord) -> Vec<PawnId> {
         self.pawns
             .iter()
-            .find(|pawn| !pawn.jailed && pawn.at == coord)
+            .filter(|pawn| !pawn.jailed && pawn.at == coord)
             .map(|pawn| pawn.id)
+            .collect()
     }
 
     pub fn unplanted_flags(&self) -> impl Iterator<Item = &Flag> + '_ {

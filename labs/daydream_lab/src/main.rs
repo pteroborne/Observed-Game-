@@ -16,6 +16,7 @@
 //!
 //! - [`hall`] - a colonnade standing in water, two arched walls deep.
 //! - [`shaft`] - the same tools pointed straight up a hexagonal well.
+//! - [`monument`] - eleven cells of held axis, ending on an empty dais.
 //!
 //! # Two tricks carry every scene
 //!
@@ -35,6 +36,7 @@
 //! insists on.
 
 mod hall;
+mod monument;
 mod shaft;
 
 use bevy::anti_alias::taa::TemporalAntiAliasing;
@@ -94,6 +96,7 @@ pub struct WaterPlan {
 fn scene() -> &'static str {
     match std::env::var("OBSERVED2_DAYDREAM_SCENE").as_deref() {
         Ok("shaft") => "shaft",
+        Ok("monument") => "monument",
         _ => "hall",
     }
 }
@@ -340,6 +343,7 @@ fn setup(
     // tells the rig where to stand and what colour the air is.
     let staging = match scene() {
         "shaft" => shaft::build(&mut commands, &mut meshes, &mut materials),
+        "monument" => monument::build(&mut commands, &mut meshes, &mut materials),
         _ => hall::build(&mut commands, &mut meshes, &mut materials, &mut images),
     };
 

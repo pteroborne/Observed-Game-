@@ -9,10 +9,13 @@ use observed_hex::coords::HexCoord;
 
 use crate::sim::rules::Resolution;
 use crate::sim::state::{MatchState, PawnId};
+use crate::spec::Stacking;
 
 /// Everyone commits blind and the board settles once.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Simultaneous;
+pub struct Simultaneous {
+    pub stacking: Stacking,
+}
 
 impl Resolution for Simultaneous {
     fn name(&self) -> &'static str {
@@ -33,6 +36,9 @@ impl Resolution for Simultaneous {
         // stage adjudicates by recency — refusing it here would mean rival
         // pawns could never meet.
         let team: Vec<_> = desired.iter().map(|&(id, _)| state.pawn(id).team).collect();
+        // With stacking allowed nobody contends for space at all: teammates may
+        // pile up and rivals were always free to meet.
+        let contends = self.stacking == Stacking::Forbidden;
         let mut accepted: Vec<HexCoord> = desired.iter().map(|&(_, to)| to).collect();
 
         // Every pass compares against a snapshot and applies its refusals
@@ -49,30 +55,38 @@ impl Resolution for Simultaneous {
                 }
                 // Two pawns wanting the same empty hex are *both* refused.
                 // Symmetric, and it declines to invent a priority nobody can see.
-                if snapshot
-                    .iter()
-                    .enumerate()
-                    .any(|(j, &to)| j != i && team[j] == team[i] && to == snapshot[i])
+                if contends
+                    && snapshot
+                        .iter()
+                        .enumerate()
+                        .any(|(j, &to)| j != i && team[j] == team[i] && to == snapshot[i])
                 {
                     refuse[i] = true;
                     continue;
                 }
                 // Bodies do not pass through each other, so a straight swap is
                 // refused. A longer cycle is consistent and stands.
-                if snapshot.iter().enumerate().any(|(j, &to)| {
-                    j != i && team[j] == team[i] && to == origin[i].1 && snapshot[i] == origin[j].1
-                }) {
+                if contends
+                    && snapshot.iter().enumerate().any(|(j, &to)| {
+                        j != i
+                            && team[j] == team[i]
+                            && to == origin[i].1
+                            && snapshot[i] == origin[j].1
+                    })
+                {
                     refuse[i] = true;
                     continue;
                 }
                 // A pawn may follow one that is leaving, so a destination is
                 // blocked only by a pawn that stays put.
-                if (0..snapshot.len()).any(|j| {
-                    j != i
-                        && team[j] == team[i]
-                        && snapshot[j] == origin[j].1
-                        && origin[j].1 == snapshot[i]
-                }) {
+                if contends
+                    && (0..snapshot.len()).any(|j| {
+                        j != i
+                            && team[j] == team[i]
+                            && snapshot[j] == origin[j].1
+                            && origin[j].1 == snapshot[i]
+                    })
+                {
                     refuse[i] = true;
                 }
             }
@@ -99,7 +113,9 @@ impl Resolution for Simultaneous {
 
 /// Each pawn moves fully before the next is considered, in pawn id order.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Sequential;
+pub struct Sequential {
+    pub stacking: Stacking,
+}
 
 impl Resolution for Sequential {
     fn name(&self) -> &'static str {

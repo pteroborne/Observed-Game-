@@ -13,6 +13,7 @@ pub mod input;
 
 use bevy::prelude::*;
 use observed_hex::coords::HexCoord;
+use observed_hex::faces::HexFace;
 use observed_style::ColorVisionMode;
 
 use crate::sim::state::{Intent, MatchState, PawnId, TeamId};
@@ -93,13 +94,45 @@ impl Session {
         self.queued.push(intent);
     }
 
+    /// Where a pawn will stand and which way it will look once this turn
+    /// resolves, given the order it currently has.
+    ///
+    /// This is what the cone preview draws from. Answering it from the pawn's
+    /// *current* cell would show the player the consequence of a facing they
+    /// are no longer going to have, which is worse than showing nothing.
+    #[must_use]
+    pub fn projected_pose(&self, pawn: PawnId) -> (HexCoord, HexFace) {
+        let actor = self.state.pawn(pawn);
+        let Some(intent) = self.order_for(pawn) else {
+            return (actor.at, actor.facing);
+        };
+        let at = match intent.action {
+            crate::sim::state::Action::Step(face) => self
+                .state
+                .board
+                .passable(actor.at, face)
+                .then(|| self.state.board.size().neighbor(actor.at, face))
+                .flatten()
+                .unwrap_or(actor.at),
+            _ => actor.at,
+        };
+        (at, intent.facing)
+    }
+
     /// Pawns of the human team that can still be given an order.
     pub fn commandable(&self) -> Vec<PawnId> {
-        self.state
+        let mut order: Vec<PawnId> = self
+            .state
             .free_pawns()
             .filter(|pawn| pawn.team == self.human)
             .map(|pawn| pawn.id)
-            .collect()
+            .collect();
+        // Group by cell so `Next` walks a stack before leaving it.
+        order.sort_by_key(|id| {
+            let at = self.state.pawn(*id).at;
+            (self.state.board.size().index(at), *id)
+        });
+        order
     }
 }
 

@@ -8,8 +8,9 @@
 use bevy::prelude::*;
 use observed_hex::faces::HexFace;
 
-use crate::sim::state::{Action, Intent};
+use crate::sim::state::{Action, Intent, PawnId};
 use crate::sim::{bot, step::step};
+use crate::spec::Stacking;
 
 use super::hud::{HudButton, ModeChoice};
 use super::{Session, cell_at};
@@ -55,32 +56,61 @@ pub fn board_taps(
         return;
     };
 
-    // Tapping one of your own pawns selects it, whatever else is going on.
-    if let Some(id) = session.state.occupant(cell)
-        && session.state.pawn(id).team == session.human
-    {
-        session.selected = Some(id);
-        session.notice = format!("pawn {} selected", id.0);
-        return;
-    }
+    // What a tap means depends on whether it lands next to the selected pawn.
+    //
+    // The old rule — "a tap on your own pawn selects it" — made ordering a move
+    // onto a teammate impossible: the tap selected them instead, so the order
+    // silently became a selection change. Adjacency decides it now, and `Next`
+    // cycles selection when several pawns share one cell.
+    let selected = session
+        .selected
+        .filter(|id| !session.state.pawn(*id).jailed);
+    let adjacent = selected.and_then(|id| {
+        let from = session.state.pawn(id).at;
+        HexFace::LATERAL
+            .into_iter()
+            .find(|&face| session.state.board.size().neighbor(from, face) == Some(cell))
+            .map(|face| (id, from, face))
+    });
 
-    let Some(selected) = session.selected else {
-        session.notice = "tap one of your pawns first".to_string();
-        return;
-    };
-    let from = session.state.pawn(selected).at;
-    let Some(face) = HexFace::LATERAL
-        .into_iter()
-        .find(|&face| session.state.board.size().neighbor(from, face) == Some(cell))
-    else {
-        session.notice = "that cell is not adjacent".to_string();
+    let Some((selected, from, face)) = adjacent else {
+        // Not adjacent: this is a selection.
+        let mine: Vec<_> = session
+            .state
+            .occupants(cell)
+            .into_iter()
+            .filter(|id| session.state.pawn(*id).team == session.human)
+            .collect();
+        match mine.first() {
+            Some(&id) => {
+                session.selected = Some(id);
+                session.notice = if mine.len() > 1 {
+                    format!(
+                        "pawn {} selected - {} here, Next to cycle",
+                        id.0,
+                        mine.len()
+                    )
+                } else {
+                    format!("pawn {} selected", id.0)
+                };
+            }
+            None => session.notice = "tap one of your pawns, then a neighbour".to_string(),
+        }
         return;
     };
 
     // A tap through a wall can only ever mean "look that way": the pawn cannot
     // go there, and refusing the tap outright would just feel broken.
     let blocked = !session.state.board.passable(from, face);
-    let action = if session.face_only || blocked {
+    // Teammates block a move only when the mode forbids stacking.
+    let teammate = session
+        .state
+        .occupants(cell)
+        .into_iter()
+        .any(|id| session.state.pawn(id).team == session.human);
+    let crowded = teammate && session.spec.stacking == Stacking::Forbidden;
+
+    let action = if session.face_only || blocked || crowded {
         Action::Hold
     } else {
         Action::Step(face)
@@ -90,9 +120,15 @@ pub fn board_taps(
         facing: face,
         action,
     });
-    session.notice = match (action, blocked) {
-        (Action::Hold, true) => format!("wall that way - pawn {} faces it", selected.0),
-        (Action::Hold, false) => format!("pawn {} turns to face {face:?}", selected.0),
+    session.notice = match (action, blocked, crowded) {
+        (Action::Hold, true, _) => format!("wall that way - pawn {} faces it", selected.0),
+        (Action::Hold, _, true) => {
+            format!(
+                "teammate there - pawn {} faces it, no room to stack",
+                selected.0
+            )
+        }
+        (Action::Hold, _, _) => format!("pawn {} turns to face {face:?}", selected.0),
         _ => format!("pawn {} steps {face:?}", selected.0),
     };
 }
@@ -124,6 +160,7 @@ pub fn buttons(
         match button {
             HudButton::Resolve => resolve(&mut session),
             HudButton::Restart => session.restart(),
+            HudButton::Next => next_pawn(&mut session),
             HudButton::Modes => session.menu_open = !session.menu_open,
             HudButton::Vision => {
                 session.vision = session.vision.next();
@@ -170,6 +207,31 @@ pub fn buttons(
             }
         }
     }
+}
+
+/// Cycle selection. Pawns sharing a cell come first, so a stack is walked
+/// through before moving on — without this there is no way to reach the pawn
+/// underneath one that is standing on top of it.
+fn next_pawn(session: &mut Session) {
+    let order: Vec<PawnId> = session.commandable();
+    if order.is_empty() {
+        session.notice = "no pawn can act".to_string();
+        return;
+    }
+    let next = match session.selected {
+        Some(current) => {
+            let index = order.iter().position(|id| *id == current).unwrap_or(0);
+            order[(index + 1) % order.len()]
+        }
+        None => order[0],
+    };
+    session.selected = Some(next);
+    let sharing = session.state.occupants(session.state.pawn(next).at).len();
+    session.notice = if sharing > 1 {
+        format!("pawn {} selected - {sharing} in this cell", next.0)
+    } else {
+        format!("pawn {} selected", next.0)
+    };
 }
 
 /// Turn the selected pawn one face and declare it, so the cone updates live

@@ -902,3 +902,88 @@ fn the_telegraph_says_what_each_boundary_will_become() {
         assert!(matches!(change.to, PortClass::Door | PortClass::Sealed));
     }
 }
+
+// --- stacking -------------------------------------------------------------
+
+/// Two teammates ordered onto one cell, under a given stacking rule.
+fn crowd(stacking: crate::spec::Stacking) -> Vec<HexCoord> {
+    let spec = ModeSpec {
+        stacking,
+        ..still_spec()
+    };
+    let rules = Rules::from_spec(&spec);
+    let mut state = deal(&spec);
+    place(&mut state, &[(0, at(2, 3)), (1, at(4, 3)), (2, at(0, 3))]);
+    for face in [HexFace::East, HexFace::West] {
+        let edge = Edge {
+            cell: at(3, 3),
+            face,
+        };
+        state.board.set_port(edge, PortClass::Door);
+    }
+
+    step(
+        &mut state,
+        &rules,
+        &[intent(0, HexFace::East), intent(1, HexFace::West)],
+    );
+    vec![state.pawn(PawnId(0)).at, state.pawn(PawnId(1)).at]
+}
+
+#[test]
+fn teammates_share_a_cell_only_when_the_mode_allows_it() {
+    use crate::spec::Stacking;
+
+    assert_eq!(
+        crowd(Stacking::Forbidden),
+        vec![at(2, 3), at(4, 3)],
+        "both refused, as the conflict table says"
+    );
+    assert_eq!(
+        crowd(Stacking::Allowed),
+        vec![at(3, 3), at(3, 3)],
+        "both arrive and pile up"
+    );
+}
+
+#[test]
+fn stacking_is_a_seam_that_changes_the_match() {
+    use crate::spec::Stacking;
+
+    let base = ModeSpec {
+        pawns_per_team: 5,
+        guardian_count: 1,
+        turn_limit: 24,
+        objective: ObjectiveKind::PlantFlags {
+            rule: PlantRule::StandOnly,
+            win: PlantWin::All,
+        },
+        ..ModeSpec::plant()
+    };
+    assert_ne!(
+        drive(
+            &ModeSpec {
+                stacking: Stacking::Allowed,
+                ..base.clone()
+            },
+            24
+        ),
+        drive(&base, 24),
+    );
+}
+
+#[test]
+fn a_stacked_cell_reports_everyone_standing_in_it() {
+    // The view fans a stack and `Next` walks it, so both need the full list —
+    // an `occupant` that answers with only the first pawn leaves the ones
+    // underneath unreachable.
+    use crate::spec::Stacking;
+    let spec = ModeSpec {
+        stacking: Stacking::Allowed,
+        ..still_spec()
+    };
+    let mut state = deal(&spec);
+    place(&mut state, &[(0, at(3, 3)), (1, at(3, 3)), (2, at(0, 3))]);
+    assert_eq!(state.occupants(at(3, 3)), vec![PawnId(0), PawnId(1)]);
+    assert_eq!(state.occupants(at(0, 3)), vec![PawnId(2)]);
+}

@@ -99,6 +99,7 @@ impl Threat for Guardians {
         let moves = self.cadence <= 1 || state.turn.is_multiple_of(self.cadence);
 
         for index in 0..state.guardians.len() {
+            state.guardians[index].prev_at = state.guardians[index].at;
             if !moves {
                 state.guardians[index].stalled = false;
                 continue;

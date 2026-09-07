@@ -54,12 +54,37 @@ be changed. That is also what makes it work with one thumb.
 | tap a neighbour | step there, facing that way |
 | `Turn in place` then tap | set facing without moving |
 | `Hold` / `Plant` | order the selected pawn to stand, or to plant |
+| `Next pawn` | cycle selection; walks a stacked cell before leaving it |
+| `< Turn` / `Turn >` | rotate the selected pawn one face, keeping its move |
 | `Resolve turn` | your orders and the bot's resolve together |
 | `< Mode` / `Mode >` | swap the whole rule set and deal a fresh match |
 | `Legend` | what every mark on the board means |
 
-The facing pip on each pawn is drawn always, not only when selected: cone vision
+The facing arrow is drawn on every pawn, not only the selected one: cone vision
 is the mechanic, so where a pawn is looking has to be readable at a glance.
+
+### Choosing a facing for after the move
+
+Tapping a neighbour sets the step *and* points the pawn that way, which is the
+common case. To arrive facing somewhere else, declare the move and then press
+`< Turn` / `Turn >` — rotation keeps the queued action and only changes the
+facing, because facing costs no action.
+
+**The cone preview draws from the destination, not from where the pawn is
+standing.** Answering it from the cell the pawn is about to leave shows the
+consequence of a facing it is no longer going to have, which is worse than
+showing nothing. The status line names the projected pose for the same reason.
+
+### Stacking
+
+`Stacking` is a seam, not a decision. Forbidden (the default) makes a narrow
+doorway a real bottleneck for your own squad; Allowed lets a squad move as one
+body and makes overwatch far easier to satisfy. Rivals were never affected —
+cross-team contact is what recency adjudicates.
+
+Two presets in the mode list run with it Allowed. A stacked cell fans its pawns
+around the centre and `Next pawn` walks them, so nobody ends up unreachable
+under someone else.
 
 ## The rule that keeps the framework from eating the lab
 
@@ -293,6 +318,14 @@ strongest signal available for the thing a player most needs to notice.
 The animation is a separate system from the board redraw. The redraw only runs
 when the match changes; an animation that forced a full respawn every frame
 would be paying entity churn for a sine wave.
+
+## Movement is animated, because simultaneous resolution hides itself
+
+Everything moves at once, and everything moving at once is exactly what a
+teleport conceals: three pawns, two guardians and a rewired wall all changing
+between one frame and the next is not a turn anyone can read. Actors slide from
+where they were to where they are over about a third of a second — long enough
+to see who went where, short enough never to become a wait.
 
 ## Reading the board without colour
 

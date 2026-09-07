@@ -68,6 +68,23 @@ pub enum MutationPreview {
     Outcome,
 }
 
+/// Whether teammates may share a cell.
+///
+/// A seam rather than a decision, because the two play differently enough to be
+/// worth measuring: forbidding it makes corridors genuinely scarce and turns a
+/// narrow doorway into a real bottleneck for your own squad, while allowing it
+/// makes a squad able to move as one body and makes the overwatch rule much
+/// easier to satisfy. Rivals are never affected — cross-team contact is what
+/// recency adjudicates, and that has always been allowed.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Stacking {
+    /// One pawn per cell. Teammates block each other.
+    #[default]
+    Forbidden,
+    /// Teammates may pile up.
+    Allowed,
+}
+
 /// When the cone is sampled.
 ///
 /// This is not a branch inside a strategy — it relocates the `vision.locks`
@@ -297,6 +314,7 @@ pub struct ModeSpec {
     /// Presentation only — how much of the telegraph a player is shown.
     pub preview: MutationPreview,
     pub resolution: ResolutionKind,
+    pub stacking: Stacking,
     pub vision: VisionKind,
     pub cone_timing: ConeTiming,
     /// Threats run in listed order each turn. Mode 2 lists both.
@@ -326,6 +344,7 @@ impl ModeSpec {
             walls: 22,
             preview: MutationPreview::Outcome,
             resolution: ResolutionKind::Simultaneous,
+            stacking: Stacking::Forbidden,
             vision: VisionKind::default(),
             cone_timing: ConeTiming::PostMove,
             threats: vec![ThreatKind::Guardians],
@@ -400,6 +419,16 @@ impl ModeSpec {
                 ..Self::base()
             },
             Self {
+                name: "Base: squad may stack".to_string(),
+                stacking: Stacking::Allowed,
+                ..Self::base()
+            },
+            Self {
+                name: "Plant: squad may stack".to_string(),
+                stacking: Stacking::Allowed,
+                ..Self::plant()
+            },
+            Self {
                 name: "Plant: solo, no rivals".to_string(),
                 objective: ObjectiveKind::PlantFlags {
                     rule: PlantRule::StandOnly,
@@ -427,8 +456,12 @@ impl Rules {
     #[must_use]
     pub fn from_spec(spec: &ModeSpec) -> Self {
         let resolution: Box<dyn Resolution> = match spec.resolution {
-            ResolutionKind::Simultaneous => Box::new(Simultaneous),
-            ResolutionKind::Sequential => Box::new(Sequential),
+            ResolutionKind::Simultaneous => Box::new(Simultaneous {
+                stacking: spec.stacking,
+            }),
+            ResolutionKind::Sequential => Box::new(Sequential {
+                stacking: spec.stacking,
+            }),
         };
         let vision: Box<dyn Vision> = match spec.vision {
             VisionKind::Cone {
@@ -566,6 +599,7 @@ fn deal_board(spec: &ModeSpec) -> MatchState {
     let guardians = (0..spec.guardian_count)
         .map(|i| Guardian {
             at: spec.board.guardian_posts[i as usize % spec.board.guardian_posts.len()],
+            prev_at: spec.board.guardian_posts[i as usize % spec.board.guardian_posts.len()],
             stalled: false,
         })
         .collect();

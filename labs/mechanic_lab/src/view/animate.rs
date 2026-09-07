@@ -28,13 +28,18 @@ pub struct Pulse {
 }
 
 impl Pulse {
-    /// About to wall up: fast and hard, because it takes a route away.
+    /// About to wall up: the faster of the two, because it takes a route away.
+    ///
+    /// Both rhythms are deliberately unhurried. A board where several marks
+    /// blink quickly is a board that is hard to look at while thinking, and
+    /// thinking is what the turn is for — the pulse has to be noticeable
+    /// without being a distraction you have to work around.
     #[must_use]
     pub const fn closing(base_scale: f32) -> Self {
         Self {
-            period: 0.62,
-            scale: (0.85, 1.5),
-            alpha: (0.35, 1.0),
+            period: 1.5,
+            scale: (0.88, 1.35),
+            alpha: (0.40, 1.0),
             base_scale,
             sharp: true,
         }
@@ -44,9 +49,9 @@ impl Pulse {
     #[must_use]
     pub const fn opening(base_scale: f32) -> Self {
         Self {
-            period: 1.7,
-            scale: (0.8, 1.25),
-            alpha: (0.25, 0.85),
+            period: 3.2,
+            scale: (0.85, 1.2),
+            alpha: (0.28, 0.85),
             base_scale,
             sharp: false,
         }
@@ -56,9 +61,9 @@ impl Pulse {
     #[must_use]
     pub const fn pending(base_scale: f32) -> Self {
         Self {
-            period: 1.05,
-            scale: (0.85, 1.3),
-            alpha: (0.3, 0.9),
+            period: 2.3,
+            scale: (0.88, 1.25),
+            alpha: (0.32, 0.9),
             base_scale,
             sharp: false,
         }
@@ -67,10 +72,10 @@ impl Pulse {
     fn wave(self, seconds: f32) -> f32 {
         let phase = (seconds / self.period).fract();
         if self.sharp {
-            // A rounded square: mostly at one end or the other, so it reads as
-            // a flash rather than a drift.
+            // Squared off, but gently: enough to read as a beat rather than a
+            // drift, not so much that it strobes.
             let sine = (phase * std::f32::consts::TAU).sin();
-            (sine * 3.0).clamp(-1.0, 1.0) * 0.5 + 0.5
+            (sine * 1.8).clamp(-1.0, 1.0) * 0.5 + 0.5
         } else {
             (phase * std::f32::consts::TAU).sin() * 0.5 + 0.5
         }
@@ -105,5 +110,46 @@ pub fn pulse(
             color.set_alpha(lerp(pulse.alpha, pulse.wave(seconds)));
             material.color = color;
         }
+    }
+}
+
+/// A mark that slides from where it was to where it is.
+///
+/// Simultaneous resolution means everything moves at once, and everything
+/// moving at once is exactly what a teleport hides: three pawns, two guardians
+/// and a rewired wall all changing between one frame and the next is not a turn
+/// you can read. The glide is short on purpose — long enough to see who went
+/// where, short enough that it never becomes a wait.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct Glide {
+    pub from: Vec2,
+    pub to: Vec2,
+    /// Seconds on the clock when the slide began.
+    pub start: f32,
+    pub duration: f32,
+}
+
+impl Glide {
+    #[must_use]
+    pub fn new(from: Vec2, to: Vec2, now: f32) -> Self {
+        Self {
+            from,
+            to,
+            start: now,
+            duration: 0.34,
+        }
+    }
+}
+
+/// Slide everything that moved this turn into place.
+pub fn glide(time: Res<Time>, mut moving: Query<(&Glide, &mut Transform)>) {
+    let now = time.elapsed_secs();
+    for (glide, mut transform) in &mut moving {
+        let raw = ((now - glide.start) / glide.duration).clamp(0.0, 1.0);
+        // Ease out: quick off the mark, settling rather than stopping dead.
+        let t = 1.0 - (1.0 - raw).powi(3);
+        let at = glide.from.lerp(glide.to, t);
+        transform.translation.x = at.x;
+        transform.translation.y = at.y;
     }
 }

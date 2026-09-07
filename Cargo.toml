@@ -128,9 +128,23 @@ opt-level = 1
 # file and line in the backtrace - and drop the variable and type data a
 # step-debugger would want. Set `debug = 2` locally when you need one.
 debug = "line-tables-only"
+# Incremental caches are the other half of the same problem. Measured on this
+# workspace they reach 9.8 GB - roughly a third of the whole debug directory -
+# and they are what turns a build that would have fitted into one that fills
+# the partition mid-link, which fails as `No space left on device` from
+# whichever crate happened to be linking at the time rather than as anything
+# legible. Sixty-odd leaf labs rebuild fast enough from cold that the cache is
+# not buying much; the crates where it would are the ones whose dependents all
+# rebuild anyway. Set `CARGO_INCREMENTAL=1` for a session of tight edits to one
+# deep crate.
+incremental = false
 
 [profile.dev.package."*"]
 opt-level = 3
+debug = false
+
+# Build scripts and proc macros run once and are never stepped through.
+[profile.dev.build-override]
 debug = false
 
 # Browser builds trade some compile time for a substantially smaller download.

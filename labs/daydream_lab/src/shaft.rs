@@ -10,9 +10,27 @@
 //!
 //! Eight metres to a level and seven metres from the centre of a cell to a
 //! wall face are the seam constants the hex catalogue actually obeys, and the
-//! plan here is a hexagon for the same reason. Nothing in this lab is
-//! required to honour them - that is the whole point of the lab - but a shaft
-//! is the one place where the contract and good proportion happen to agree.
+//! plan here is a hexagon for the same reason - two cells across, twelve
+//! levels deep. Nothing in this lab is required to honour them; a shaft is
+//! simply the one place where the contract and good proportion agree.
+//!
+//! # What the reference photographs changed
+//!
+//! The first version was an empty tube, and empty was the whole problem. A
+//! silo is three things this had none of.
+//!
+//! **A great stair.** One helix wrapping the entire shaft, a full turn to a
+//! level, so every floor is reached by walking around the whole building. It
+//! is the spine, and without it the shaft is a hole rather than a place.
+//!
+//! **An inhabited wall.** Windows in every bay, some lit and some not. A tube
+//! is infrastructure; a shaft with lit windows down it is somewhere people
+//! are, seen from outside their rooms.
+//!
+//! **Tungsten against concrete.** Standing lamps on every bay, emissive and
+//! never dimmed with depth, so a lamp ninety metres down burns as hard as one
+//! at the top. That warm/cold pair is the entire colour scheme, and it is
+//! what makes the bottom of a dark shaft legible at all.
 //!
 //! # The darkness is painted, not lit
 //!
@@ -30,14 +48,31 @@ use crate::{Staging, WaterPlan, matte};
 
 /// Eight metres to a level, seven from the centre to a wall face.
 const LEVEL: f32 = 8.0;
-const APOTHEM: f32 = 7.0;
+/// Two cells across rather than one. Seven metres is the catalogue's own
+/// apothem, and at that width the great stair fills the shaft instead of
+/// hanging in it - the reference silos are wide enough that the stair reads as
+/// a ribbon against a far wall.
+const APOTHEM: f32 = 14.0;
 const LEVELS: i32 = 12;
 /// The side of a hexagon with that apothem, which is the width of one wall.
 const SIDE: f32 = APOTHEM * 1.154_700_5;
+/// Treads to a full turn of the great stair, which climbs exactly one level
+/// per revolution.
+const STEPS_PER_TURN: i32 = 26;
 
-const CONCRETE: Color = Color::srgb(0.62, 0.66, 0.63);
-const RUST: Color = Color::srgb(0.78, 0.39, 0.15);
-const RUST_DEEP: Color = Color::srgb(0.45, 0.22, 0.11);
+const CONCRETE: Color = Color::srgb(0.56, 0.58, 0.55);
+/// Soffits, string courses, the underside of everything.
+const CONCRETE_DEEP: Color = Color::srgb(0.36, 0.38, 0.37);
+/// Stair parapets, brackets, rails.
+const IRON: Color = Color::srgb(0.25, 0.27, 0.29);
+/// The one warm thing in the building, and the only thing that is not dimmed
+/// with depth: a lamp ninety metres down is as bright as a lamp at the top.
+/// Everything else here is grey, so the whole colour scheme is concrete
+/// against tungsten.
+const LAMP: LinearRgba = LinearRgba::new(8.5, 4.2, 1.4, 1.0);
+/// Windows are the same light seen through something, so they are dimmer and
+/// a shade further into the orange.
+const WINDOW: LinearRgba = LinearRgba::new(3.4, 1.9, 0.75, 1.0);
 /// What every surface tends toward as it goes down. Depth is cold as well as
 /// dark, and only the second of those is something a light could do.
 const DROWNED: Color = Color::srgb(0.09, 0.14, 0.24);
@@ -63,7 +98,7 @@ fn hour() -> Hour {
             haze: Color::srgb(0.95, 0.84, 0.71),
             zenith: Color::srgb(0.20, 0.25, 0.58),
             ambient_color: Color::srgb(0.38, 0.45, 0.72),
-            ambient: 260.0,
+            ambient: 250.0,
             sun_color: Color::srgb(1.0, 0.86, 0.64),
             sun_lux: 9_000.0,
             sun_from: Vec3::new(90.0, 110.0, 34.0),
@@ -73,7 +108,7 @@ fn hour() -> Hour {
             haze: Color::srgb(0.86, 0.90, 0.94),
             zenith: Color::srgb(0.12, 0.31, 0.72),
             ambient_color: Color::srgb(0.60, 0.71, 0.90),
-            ambient: 470.0,
+            ambient: 430.0,
             sun_color: Color::srgb(1.0, 0.97, 0.90),
             sun_lux: 8_000.0,
             // Off the vertical by enough that the beam strikes a wall
@@ -95,10 +130,13 @@ fn view() -> (Vec3, Vec3) {
         // metres from the surface, which is more than a lens can span - so
         // the reflection is the only way to see the whole of it at once,
         // upside down.
-        Ok("low" | "pool") => (Vec3::new(1.1, 7.2, 1.1), Vec3::ZERO),
+        Ok("low" | "pool") => (Vec3::new(2.0, 11.0, 2.0), Vec3::ZERO),
         // Out on a landing a third of the way up, looking back down.
-        Ok("landing") => (Vec3::new(3.9, 26.4, 2.9), Vec3::new(-2.4, 4.0, -2.6)),
-        _ => (Vec3::new(0.0, 2.0, 2.6), Vec3::new(0.0, 40.0, -1.0)),
+        // High up and out over the void, looking down across the shaft. The
+        // camera has to stay inside the stair's radius or it ends up buried
+        // in a tread.
+        Ok("landing") => (Vec3::new(6.2, 33.0, 4.8), Vec3::new(-4.5, 9.0, -5.0)),
+        _ => (Vec3::new(2.2, 2.6, 2.6), Vec3::new(0.0, 44.0, -0.6)),
     }
 }
 
@@ -107,7 +145,7 @@ fn view() -> (Vec3, Vec3) {
 /// bottom away quickly, which is how a shaft actually reads.
 fn reach(level: i32) -> f32 {
     let t = level as f32 / (LEVELS - 1) as f32;
-    0.30 + 0.70 * t.powf(1.5)
+    0.22 + 0.78 * t.powf(1.4)
 }
 
 /// A colour at depth: dimmed toward black and pulled toward the cold that
@@ -178,26 +216,35 @@ pub fn build(
     ));
 
     let panel = meshes.add(Cuboid::new(SIDE, LEVEL, 0.8));
-    let jamb = meshes.add(Cuboid::new(SIDE * 0.32, LEVEL, 0.8));
-    let head = meshes.add(Cuboid::new(SIDE * 0.36, LEVEL * 0.34, 0.8));
     let course = meshes.add(Cuboid::new(SIDE + 0.5, 0.5, 1.6));
+    let pier = meshes.add(Cuboid::new(1.3, LEVEL, 1.3));
     let plate = meshes.add(Cuboid::new(SIDE * 1.45, 0.35, 3.4));
+    let parapet = meshes.add(Cuboid::new(SIDE * 1.45, 1.05, 0.22));
     let bracket = meshes.add(Cuboid::new(0.35, 1.5, 2.6));
-    let stile = meshes.add(Cuboid::new(0.16, LEVEL, 0.16));
-    let rung = meshes.add(Cuboid::new(1.0, 0.1, 0.12));
+    let frame = meshes.add(Cuboid::new(1.5, 1.05, 0.3));
+    let pane = meshes.add(Cuboid::new(1.12, 0.64, 0.16));
+    let fixture = meshes.add(Cuboid::new(0.18, 1.9, 0.18));
+
+    // Light is not dimmed with depth. A lamp at the bottom is as bright as a
+    // lamp at the top, which is the only reason the bottom is legible at all.
+    let lamp = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.9, 0.8, 0.6),
+        emissive: LAMP,
+        ..default()
+    });
+    let window_lit = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.7, 0.6, 0.45),
+        emissive: WINDOW,
+        ..default()
+    });
+    let window_dark = materials.add(matte(Color::srgb(0.06, 0.07, 0.09)));
 
     for level in 0..LEVELS {
         let y = level as f32 * LEVEL;
         let lit = reach(level);
         let wall = materials.add(matte(drowned(CONCRETE, lit)));
-        // What an opening shows. Left unbacked, a hole in the wall looks
-        // straight through to the sky sphere and reads as a blazing white
-        // rectangle at the bottom of a dark shaft - the exact opposite of a
-        // doorway. A panel a metre behind it turns the hole back into a
-        // room that is simply unlit.
-        let beyond = materials.add(matte(drowned(Color::srgb(0.10, 0.11, 0.13), lit * 0.5)));
-        let trim = materials.add(matte(drowned(RUST, lit)));
-        let iron = materials.add(matte(drowned(RUST_DEEP, lit)));
+        let deep = materials.add(matte(drowned(CONCRETE_DEEP, lit)));
+        let iron = materials.add(matte(drowned(IRON, lit)));
 
         for face in 0..6 {
             let angle = face as f32 * FRAC_PI_3;
@@ -205,52 +252,72 @@ pub fn build(
             let turn = Quat::from_rotation_y(angle);
             let mid = out * APOTHEM + Vec3::Y * (y + LEVEL * 0.5);
 
-            // Some faces are pierced. The openings lead nowhere - they are
-            // black rectangles onto nothing - but they are what stops the
-            // shaft reading as a tube rather than as a building seen from
-            // the inside of its one empty column.
-            if level > 0 && (level * 2 + face) % 5 == 0 {
-                for side in [-1.0_f32, 1.0] {
-                    commands.spawn((
-                        Mesh3d(jamb.clone()),
-                        MeshMaterial3d(wall.clone()),
-                        Transform::from_translation(mid + turn * Vec3::X * (side * SIDE * 0.34))
-                            .with_rotation(turn),
-                    ));
-                }
+            commands.spawn((
+                Mesh3d(panel.clone()),
+                MeshMaterial3d(wall.clone()),
+                Transform::from_translation(mid).with_rotation(turn),
+            ));
+
+            // Three windows to a bay. Some are lit and some are not, which is
+            // the whole difference between a shaft and a tube: a tube is
+            // infrastructure, a shaft with lit windows in it is somewhere
+            // people are, seen from outside their rooms.
+            for slot in -2..3 {
+                let across = turn * Vec3::X * (slot as f32 * SIDE * 0.175);
                 commands.spawn((
-                    Mesh3d(head.clone()),
-                    MeshMaterial3d(wall.clone()),
-                    Transform::from_translation(mid + Vec3::Y * (LEVEL * 0.33)).with_rotation(turn),
+                    Mesh3d(frame.clone()),
+                    MeshMaterial3d(deep.clone()),
+                    Transform::from_translation(mid + across - out * 0.42).with_rotation(turn),
                 ));
+                let occupied = (level * 7 + face * 3 + (slot + 2)) % 4 != 0;
                 commands.spawn((
-                    Mesh3d(panel.clone()),
-                    MeshMaterial3d(beyond.clone()),
-                    Transform::from_translation(
-                        out * (APOTHEM + 1.4) + Vec3::Y * (y + LEVEL * 0.5),
-                    )
-                    .with_rotation(turn),
-                ));
-            } else {
-                commands.spawn((
-                    Mesh3d(panel.clone()),
-                    MeshMaterial3d(wall.clone()),
-                    Transform::from_translation(mid).with_rotation(turn),
+                    Mesh3d(pane.clone()),
+                    MeshMaterial3d(if occupied {
+                        window_lit.clone()
+                    } else {
+                        window_dark.clone()
+                    }),
+                    Transform::from_translation(mid + across - out * 0.56).with_rotation(turn),
                 ));
             }
 
-            // A band at every level line. Twelve of them stacked is what
-            // gives the eye something to count the depth with.
+            // A pair of standing lamps on every bay. Twelve levels of them
+            // receding is what gives the depth a rhythm to be counted in.
+            for side in [-1.0_f32, 1.0] {
+                commands.spawn((
+                    Mesh3d(fixture.clone()),
+                    MeshMaterial3d(lamp.clone()),
+                    Transform::from_translation(
+                        mid + turn * Vec3::X * (side * SIDE * 0.44) - out * 0.62
+                            + Vec3::Y * (LEVEL * 0.1),
+                    )
+                    .with_rotation(turn),
+                ));
+            }
+
             commands.spawn((
                 Mesh3d(course.clone()),
-                MeshMaterial3d(trim.clone()),
+                MeshMaterial3d(deep.clone()),
                 Transform::from_translation(out * (APOTHEM - 0.45) + Vec3::Y * y)
                     .with_rotation(turn),
             ));
+
+            // A pier on every corner, running the full height of the level.
+            // For a regular hexagon the side and the circumradius are the same
+            // number, so SIDE places these without any further arithmetic.
+            let corner = angle + FRAC_PI_3 * 0.5;
+            commands.spawn((
+                Mesh3d(pier.clone()),
+                MeshMaterial3d(deep.clone()),
+                Transform::from_translation(
+                    Vec3::new(corner.sin(), 0.0, corner.cos()) * (SIDE - 0.5)
+                        + Vec3::Y * (y + LEVEL * 0.5),
+                )
+                .with_rotation(Quat::from_rotation_y(corner)),
+            ));
         }
 
-        // One landing per level, stepping around the hexagon a face at a
-        // time, so the way down is a spiral rather than a stack.
+        // One balcony per level, stepping around the hexagon a face at a time.
         if level > 0 {
             let angle = (level % 6) as f32 * FRAC_PI_3;
             let out = Vec3::new(angle.sin(), 0.0, angle.cos());
@@ -261,10 +328,19 @@ pub fn build(
                 Transform::from_translation(out * (APOTHEM - 1.7) + Vec3::Y * y)
                     .with_rotation(turn),
             ));
+            // Solid, not a rail. Every balcony in the reference is a wall you
+            // lean on rather than a fence you see through, and it reads as
+            // mass at this distance where a railing would disappear.
+            commands.spawn((
+                Mesh3d(parapet.clone()),
+                MeshMaterial3d(deep.clone()),
+                Transform::from_translation(out * (APOTHEM - 3.3) + Vec3::Y * (y + 0.5))
+                    .with_rotation(turn),
+            ));
             for side in [-1.0_f32, 1.0] {
                 commands.spawn((
                     Mesh3d(bracket.clone()),
-                    MeshMaterial3d(iron.clone()),
+                    MeshMaterial3d(deep.clone()),
                     Transform::from_translation(
                         out * (APOTHEM - 1.2)
                             + Vec3::Y * (y - 0.9)
@@ -273,27 +349,50 @@ pub fn build(
                     .with_rotation(turn),
                 ));
             }
-
-            // And the ladder that serves it, on the same face, climbing the
-            // level below.
-            let ladder = out * (APOTHEM - 0.42) + Vec3::Y * (y - LEVEL * 0.5);
-            for side in [-1.0_f32, 1.0] {
-                commands.spawn((
-                    Mesh3d(stile.clone()),
-                    MeshMaterial3d(iron.clone()),
-                    Transform::from_translation(ladder + turn * Vec3::X * (side * 0.45))
-                        .with_rotation(turn),
-                ));
-            }
-            for step in 0..6 {
-                let rise = (step as f32 + 0.5) * (LEVEL / 6.0) - LEVEL * 0.5;
-                commands.spawn((
-                    Mesh3d(rung.clone()),
-                    MeshMaterial3d(iron.clone()),
-                    Transform::from_translation(ladder + Vec3::Y * rise).with_rotation(turn),
-                ));
-            }
+            // One real light per level, so the lamps actually put something
+            // warm onto the concrete instead of only glowing.
+            commands.spawn((
+                PointLight {
+                    color: Color::srgb(1.0, 0.72, 0.42),
+                    intensity: 520_000.0,
+                    range: 26.0,
+                    shadow_maps_enabled: false,
+                    ..default()
+                },
+                Transform::from_translation(out * (APOTHEM - 2.2) + Vec3::Y * (y + 2.2)),
+            ));
         }
+    }
+
+    // The great stair. It is the one thing that makes this a silo rather than
+    // a hole: a single helix wrapping the whole shaft, one turn to a level, so
+    // that every floor is reached by walking around the entire building.
+    let tread = meshes.add(Cuboid::new(2.9, 0.20, 2.5));
+    // Wider than a tread on purpose: consecutive parapets have to overlap
+    // or the outer edge of the stair reads as a ring of separate plates
+    // rather than as one continuous ribbon winding down the wall.
+    let riser = meshes.add(Cuboid::new(3.3, 1.30, 0.26));
+    let radius = APOTHEM - 2.6;
+    for step in 0..(STEPS_PER_TURN * LEVELS) {
+        let turns = step as f32 / STEPS_PER_TURN as f32;
+        let theta = turns * std::f32::consts::TAU;
+        let y = turns * LEVEL;
+        let lit = reach((y / LEVEL) as i32);
+        let spin = Quat::from_rotation_y(theta);
+        let at = Vec3::new(theta.sin(), 0.0, theta.cos()) * radius + Vec3::Y * y;
+        commands.spawn((
+            Mesh3d(tread.clone()),
+            MeshMaterial3d(materials.add(matte(drowned(CONCRETE, lit)))),
+            Transform::from_translation(at).with_rotation(spin),
+        ));
+        commands.spawn((
+            Mesh3d(riser.clone()),
+            MeshMaterial3d(materials.add(matte(drowned(IRON, lit)))),
+            Transform::from_translation(
+                at + Vec3::new(theta.sin(), 0.0, theta.cos()) * 1.35 + Vec3::Y * 0.55,
+            )
+            .with_rotation(spin),
+        ));
     }
 
     Staging {
