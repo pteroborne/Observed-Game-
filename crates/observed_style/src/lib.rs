@@ -1104,6 +1104,86 @@ fn architecture_material(register: observed_content::ArchitectureRegister) -> [[
     }
 }
 
+/// Which way a register's structural surface is divided.
+///
+/// The survey in this crate has been saying for a while that the ten districts
+/// "differ in geometry and in light, and - with one exception - not in
+/// surface", and that the one exception is the only district anybody describes
+/// as instantly recognisable. This is the missing axis. It is deliberately not
+/// a texture path: there is one `wall.png` in the repository and there is not
+/// going to be a pipeline for ten, so a register says what its surface is
+/// *divided by* and the view draws it.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum SurfaceWeave {
+    /// Undivided. A poured, continuous surface, and a real answer rather than
+    /// an absence - the Monolith is supposed to have no seams in it.
+    None,
+    /// Lines running with the floor: board-formed shuttering, plate seams,
+    /// string courses, a dado.
+    Courses,
+    /// Lines running up: shelving, panelling, wallpaper, mullions.
+    Staves,
+    /// Both, which is a lattice rather than two sets of lines.
+    Grid,
+}
+
+/// How a register's structural surface is divided.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SurfacePattern {
+    pub weave: SurfaceWeave,
+    /// Lines across one tile of the generated image. The shell repeats that
+    /// tile at whatever rate a mesh's own UVs ask for, so this is a density
+    /// rather than a measurement in metres - which is honest about the fact
+    /// that nothing here knows how big the wall it lands on is.
+    pub lines: u32,
+    /// How much of the gap between lines the line itself occupies.
+    pub weight: f32,
+    /// How far a line pulls its surface down. Zero is invisible and one is
+    /// black; these stay well below one because the whole shell is already
+    /// dark and a hard line would read as a signal rather than as a joint.
+    pub depth: f32,
+}
+
+/// What each register's structural surface is divided by.
+#[must_use]
+pub fn architecture_weave(register: observed_content::ArchitectureRegister) -> SurfacePattern {
+    use observed_content::ArchitectureRegister as Register;
+    let pattern = |weave, lines, weight, depth| SurfacePattern {
+        weave,
+        lines,
+        weight,
+        depth,
+    };
+    match register {
+        // Kumiko. The district's identity is a fine lattice standing in front
+        // of a lit surface, and it is the one register whose pattern is the
+        // whole point rather than a detail.
+        Register::ShadowScreen => pattern(SurfaceWeave::Grid, 9, 0.14, 0.70),
+        // Poured, and undivided on purpose. Mass does not have joints.
+        Register::Monolith => pattern(SurfaceWeave::None, 0, 0.0, 0.0),
+        // Wallpaper: a stripe so faint you would not name it, which is exactly
+        // what makes a room feel like an office rather than a box.
+        Register::OverlitGrid => pattern(SurfaceWeave::Staves, 16, 0.08, 0.11),
+        // Two lines at hand height. Everything built to be cleaned has a dado.
+        Register::Institutional => pattern(SurfaceWeave::Courses, 3, 0.10, 0.34),
+        // Inscribed panelling, large and shallow. It is what stops a
+        // twelve-metre wall reading as a twelve-metre box.
+        Register::FacetMonument => pattern(SurfaceWeave::Grid, 3, 0.07, 0.30),
+        // Board-formed concrete keeps the shuttering it was poured against.
+        Register::Megastructure => pattern(SurfaceWeave::Courses, 6, 0.06, 0.22),
+        // Plate seams and string courses, one to a level.
+        Register::Wellshaft => pattern(SurfaceWeave::Courses, 5, 0.13, 0.40),
+        // Shelving, wall to wall: a library is a building made of its own
+        // contents, so the contents are the surface.
+        Register::InfiniteGallery => pattern(SurfaceWeave::Staves, 12, 0.20, 0.46),
+        // Pale timber and paper. Almost nothing, which is the register's name.
+        Register::Thinning => pattern(SurfaceWeave::Staves, 5, 0.05, 0.12),
+        // The one district that already had a surface of its own keeps it, and
+        // now says so in the same vocabulary as the other nine.
+        Register::LiminalGrid => pattern(SurfaceWeave::Staves, 20, 0.06, 0.14),
+    }
+}
+
 /// A structural treatment from an albedo and how much of it glows.
 fn shell_treatment(rgb: [f32; 3], emissive_fraction: f32) -> Treatment {
     Treatment {
@@ -2782,6 +2862,46 @@ mod tests {
         assert!(architecture(ArchitectureRegister::Wellshaft).pools_rhythm);
         assert!(architecture(ArchitectureRegister::Megastructure).fog_end <= 31.0);
         assert!(!architecture(ArchitectureRegister::OverlitGrid).key_shadows_enabled);
+    }
+
+    /// The weave exists because nine of ten registers shared one structural
+    /// surface. Nothing stops that happening again except a test that says two
+    /// registers may not be divided the same way, so this is that test.
+    #[test]
+    fn every_register_is_divided_differently_from_every_other() {
+        use observed_content::ArchitectureRegister;
+
+        let mut seen: Vec<(ArchitectureRegister, SurfacePattern)> = Vec::new();
+        for register in ArchitectureRegister::ALL {
+            let pattern = architecture_weave(register);
+            assert!(
+                (0.0..=0.35).contains(&pattern.weight),
+                "{} weave is too heavy to be a joint: {}",
+                register.slug(),
+                pattern.weight,
+            );
+            assert!(
+                (0.0..=0.85).contains(&pattern.depth),
+                "{} weave is too dark to be structure: {}",
+                register.slug(),
+                pattern.depth,
+            );
+            if pattern.weave == SurfaceWeave::None {
+                assert_eq!(pattern.lines, 0, "{} draws nothing", register.slug());
+            } else {
+                assert!(pattern.lines > 0, "{} draws nothing", register.slug());
+            }
+            for (other, seen_pattern) in &seen {
+                assert_ne!(
+                    (pattern.weave, pattern.lines),
+                    (seen_pattern.weave, seen_pattern.lines),
+                    "{} and {} are divided identically",
+                    register.slug(),
+                    other.slug(),
+                );
+            }
+            seen.push((register, pattern));
+        }
     }
 
     #[test]

@@ -75,6 +75,7 @@ impl HexWfcVisualAssets {
     pub(in crate::hex_wfc) fn load(
         asset_server: &AssetServer,
         materials: &mut Assets<StandardMaterial>,
+        images: &mut Assets<Image>,
         content: &observed_content::ContentManifest,
     ) -> Self {
         let wall_texture = load_repeating_texture(asset_server, observed_assets::WALL.path);
@@ -88,6 +89,13 @@ impl HexWfcVisualAssets {
                 // lives in `observed_style::hex_shell_surface`, so a preview can
                 // reproduce it instead of inventing its own greys. The scaling
                 // that used to be written out here is that function's body.
+                // The register's own weave, drawn rather than loaded. There is
+                // one `wall.png` in the repository and there is not going to be
+                // a pipeline for ten, so a register says how its surface is
+                // divided and this makes the image. A register with no weave
+                // keeps the shared albedo, which is a real answer for the
+                // Monolith rather than a fallback.
+                let weave = weave_texture(images, style::architecture_weave(register));
                 let mut tinted = |treatment: style::Treatment, texture: Option<Handle<Image>>| {
                     let mut material = palette_tinted_neon_material(&treatment, &palette, texture);
                     let look = style::hex_shell_look(&treatment, register);
@@ -108,7 +116,7 @@ impl HexWfcVisualAssets {
                     ),
                     wall: tinted(
                         style::architecture_surface(register, ArchitectureSurfaceRole::Wall),
-                        wall_texture.clone(),
+                        weave.clone().or_else(|| wall_texture.clone()),
                     ),
                     ceiling: tinted(
                         style::architecture_surface(register, ArchitectureSurfaceRole::Ceiling),
@@ -249,6 +257,66 @@ pub(super) fn hull_mesh(hull: &[Vec3]) -> Option<Mesh> {
         .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, data.uvs)
         .with_inserted_indices(Indices::U32(data.indices)),
     )
+}
+
+/// Draw a register's weave as a repeating tile.
+///
+/// A white field with darker lines through it, which multiplies the palette
+/// tint the same way the shared `wall.png` does - so a weave darkens a surface
+/// where its joints are and leaves the district's own colour everywhere else.
+/// `SurfaceWeave::None` returns nothing, and the caller falls back to the
+/// shared albedo.
+fn weave_texture(
+    images: &mut Assets<Image>,
+    pattern: style::SurfacePattern,
+) -> Option<Handle<Image>> {
+    use bevy::asset::RenderAssetUsages;
+    use bevy::image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor};
+    use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+    use style::SurfaceWeave;
+
+    if pattern.weave == SurfaceWeave::None || pattern.lines == 0 {
+        return None;
+    }
+    const N: usize = 128;
+    let pitch = N as f32 / pattern.lines as f32;
+    // Always at least one texel, or a fine weave vanishes instead of thinning.
+    let half = (pitch * pattern.weight * 0.5).max(0.6);
+    let on_line = |v: usize| {
+        let phase = (v as f32 % pitch) - pitch * 0.5;
+        phase.abs() <= half
+    };
+    let floor_value = ((1.0 - pattern.depth) * 255.0).clamp(0.0, 255.0) as u8;
+    let mut data = Vec::with_capacity(N * N * 4);
+    for y in 0..N {
+        for x in 0..N {
+            let struck = match pattern.weave {
+                SurfaceWeave::Courses => on_line(y),
+                SurfaceWeave::Staves => on_line(x),
+                SurfaceWeave::Grid => on_line(x) || on_line(y),
+                SurfaceWeave::None => false,
+            };
+            let v = if struck { floor_value } else { 255 };
+            data.extend_from_slice(&[v, v, v, 255]);
+        }
+    }
+    let mut image = Image::new(
+        Extent3d {
+            width: N as u32,
+            height: N as u32,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        data,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+        address_mode_u: ImageAddressMode::Repeat,
+        address_mode_v: ImageAddressMode::Repeat,
+        ..default()
+    });
+    Some(images.add(image))
 }
 
 fn horizontal_surface(piece: &HexStructurePiece) -> HorizontalSurface {

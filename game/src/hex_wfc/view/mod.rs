@@ -117,6 +117,7 @@ pub(super) fn setup_view(
     asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
     runtime: Res<HexWfcRuntime>,
     content: Res<crate::content::GameContent>,
     settings: Res<Settings>,
@@ -190,7 +191,12 @@ pub(super) fn setup_view(
     // and both semantic lights have their exact initial values. Entry projects only a
     // safe local neighborhood; the production-sized logical snapshot remains resident
     // in simulation without synchronously creating its ~100k presentation pieces.
-    let mut assets = HexWfcVisualAssets::load(&asset_server, &mut materials, &content.manifest);
+    let mut assets = HexWfcVisualAssets::load(
+        &asset_server,
+        &mut materials,
+        &mut images,
+        &content.manifest,
+    );
     let catalog = shell::HexGeometryCatalog::build(&runtime);
     shell::spawn_boundary(&mut commands, &mut assets, &mut meshes, &runtime, &catalog);
     thresholds::spawn_thresholds(&mut commands, &mut assets, &mut meshes, &runtime);
