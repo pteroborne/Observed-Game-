@@ -3,12 +3,74 @@
 This document outlines the current active development goals, completed milestones, and upcoming phases for the game.
 
 ## Current Goals (North Star)
-1. **Make a fun game:** Establish tension↔release rhythms between decision-making Rooms (cooperative, puzzle-solving) and hazard-filled Corridors (traversal, risk).
-2. **Develop effectively with agents:** Focus on reusable modules, code-as-art neon-noir procedural aesthetics, and clear evidence-gathering pipelines.
+1. **Prove Architect Ascent:** Teams of one dedicated Architect and one-to-three
+   first-person Observers build and climb a shared multi-floor facility while
+   observation, anchors, doors, WFC contradictions, Guardians, jail, collapse, and
+   the player-operated Rogue AI contest their routes.
+2. **Develop effectively with agents:** Focus on reusable modules, code-as-art
+   geometric neon-noir aesthetics, deterministic LAN simulation, and clear
+   evidence-gathering pipelines.
 
 ---
 
 ## Active & Upcoming Phases
+
+> **Canonical direction reset (2026-09-07).** The new governing design is
+> [Architect Ascent](docs/architect_ascent_design.md). It supersedes the
+> precomposed facility race as the final game while retaining the continuous hex
+> WFC, observation, traversal, Guardian, equipment, schematic/cutaway, content,
+> and authoritative LAN work as its foundation. Completed arcs below remain true
+> implementation records. Their open human gates remain useful evidence, but no
+> conflicting old objective or roster rule governs new production work.
+
+**Architect Ascent — Card-Built Facility Prototype** `[ ]` (canonical rules:
+[docs/architect_ascent_design.md](docs/architect_ascent_design.md)). This is the next
+engineering arc; no production integration begins before its dedicated lab proves
+the combined loop.
+
+1. **Rogue Architect pressure loop:** add resettable `architect_lab` from the Rogue
+   perspective on the real hex WFC solver. One human Rogue Architect uses the seeded
+   five-card disruption hand to place tiles and doors that help autonomous Guardians
+   find, isolate, and jail autonomous Observers. Two district floors and the vertical
+   prison core prove known-target placement and replacement, rotation, the shared
+   five-second cooldown, locally valid contradictions, three-second staged
+   retraction, Guardian route assistance, capture, and the all-jailed outcome.
+2. **Deterministic behavior trees:** every non-human Observer and Guardian chooses
+   intent through an explicit, fixed-tick behavior tree. An optional Rogue Architect
+   tree replaces the human through a lab setting and emits the exact same legal card
+   commands for unattended soak and comparison. Keep the runner lab-local until two
+   roles demonstrably share control nodes; do not rewrite the existing flat hex bot
+   or build a speculative workspace AI framework. Reuse `mechanic_lab` prison and
+   capture findings as evidence without mistaking its abstract board for WFC proof.
+3. **First-person pressure loop:** prove the verbs that make the Observer seat worth
+   sitting in. A per-floor disturbance meter releases waves of minor Guardians that
+   observation does *not* freeze; a per-floor generator gates recharge, doors, ascent,
+   pads, and observation range; a short-range kinetic tool answers minors by
+   committing them to void or off unrailed geometry, drawing finite charge from
+   Architect-placed stations that only work while the floor has power. Prove the
+   economy abstractly inside `architect_lab` where the behavior trees can soak it, and
+   the feel in a first-person lab (`guardian_ai_lab`, `hazard_lab`, `equipment_lab`,
+   `lighting_lab` carry the precedents). Shoves are fixed-tick simulation, never
+   authored physics. No direct player damage, and no promotion before step 5.
+4. **Loyal construction loop:** add the human loyal Architect, variable team size,
+   team-scoped knowledge, ascent, prison escape and teammate rescue, unsafe falls,
+   irreversible Rogue conversion, and loyal victory. A loyal bot Architect must use
+   the same command-producing tree boundary proven by the Rogue bot.
+5. **Simulation promotion:** move only proven rules into pure `observed_match` state
+   with stable role, faction, card, door, stability, floor, command, and outcome
+   identities. Keep presentation and knowledge filtering downstream of authoritative
+   simulation snapshots.
+6. **LAN vertical slice:** run two teams of one Architect plus one Observer under the
+   dedicated server; version card commands, snapshots, replay, and compatibility
+   together; prove deterministic rejection, reconnect, replay, and digest equality.
+7. **Content and roster expansion:** add more floors, districts, special rooms,
+   hazards, Guardians, and players only after the small match passes its human gate.
+
+**First human gate:** while playing the Rogue Architect, a person can explain how a
+card changes Guardian access, predict which Observer it pressures, and deliberately
+cause a capture without hidden assistance. The optional bot Architect must complete
+the same loop through the same commands. Later gates add loyal construction, rescue,
+and ascent rather than burdening the first proof with the whole game.
 
 > **Where things actually stand (2026-08-08).** Three arcs are open — Q, P and O
 > — and **every one of them is open on a human gate, not on code**: Phase 123's

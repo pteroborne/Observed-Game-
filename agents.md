@@ -2,9 +2,16 @@
 
 ## Project Overview
 
-This repository contains an experimental PC game built with **Rust and Bevy**.
+This repository contains an experimental multi-team LAN game built with **Rust and
+Bevy**.
 
-The long-term concept is a competitive traversal game set inside an out-of-control megastructure. Multiple teams navigate architecture whose connections can change when unobserved. Players cannot directly harm opponents, but can manipulate shared machinery, routes, equipment, and environmental systems.
+Teams ascend a shared, out-of-control megastructure whose architecture is played
+and rewritten by dedicated Architect players while first-person Observers explore
+it. Connections may change when unobserved, Guardians jail exposed Observers, and
+falling through the surviving facility into true void turns a player into an
+operator for the Rogue AI. Players cannot directly harm opponents; competition is
+expressed through architecture, observation, doors, equipment, traversal, and
+environmental systems.
 
 ## Project Structure Catalogue
 
@@ -12,35 +19,132 @@ Before selecting files to change, review [Catalogue.md](Catalogue.md) for the cu
 
 ## North Star
 
-The 2D foundation, the higher-level systems, the first-person / Hybrid-maze arcs, and the assembled `game` are all built (see [ROADMAP.md](ROADMAP.md)). The two active goals are:
+**Canonical direction changed 2026-09-07.** The assembled race, its labs, and its
+LAN/WFC infrastructure remain the technical foundation, but the game now being
+built is **Architect Ascent**. The complete rules are in
+[docs/architect_ascent_design.md](docs/architect_ascent_design.md); where an older
+gameplay plan conflicts with that document, the new design governs. The two active
+goals are:
 
 ### Goal 1 — Make a *fun* game
 
-Fun here is a specific combination, not a vibe: **cooperative *and* competitive** play expressed through three pillars —
+Fun here is a specific combination, not a vibe: **cooperative *and* competitive**
+play expressed through four interlocking roles and pressures —
 
-* **Exploration** — the megastructure is genuinely unknown and changes when unobserved; discovering and re-reading it is the point. Do not pre-solve the player's path for them.
-* **Puzzle solving** — readable, manipulable systems (observe-to-freeze, route cables, shared machinery) that teams reason about together.
-* **Traversal** — movement itself is a challenge (climb, grapple, elevation, carry), not just walking a corridor.
+* **Architect play** — one dedicated player per team holds five cards and adds or
+  replaces known, mutable facility tiles. Card topology, district, orientation,
+  placement cooldowns, and WFC constraints turn route construction into the main
+  strategic game.
+* **Observation** — first-person teammates discover the board their Architect may
+  use and temporarily protect tiles and Guardians by looking at them. Do not
+  pre-solve or globally reveal the facility.
+* **Traversal and rescue** — height, unsafe architecture, physical equipment,
+  imprisonment, and team rescues make movement itself consequential rather than a
+  walk between decisions.
+* **Instability and opposition** — locally legal card plays may create WFC
+  contradictions that visibly retract a floor toward void. Rival Architects,
+  shared doors, Guardians, and the player-operated Rogue AI contest every route
+  without direct combat.
 
-The competitive frame is teams racing; the cooperative frame is coordinating *within* a team (and against shared hazards) to out-traverse the others. Most of this depth is already proven in the labs — the work is **integrating it into the played game**, not inventing it.
+The competitive frame is a race to bring every remaining loyal Observer to the
+summit. The cooperative frame is the information loop between an Architect and
+one-to-three Observers: explore, report, build, hold, rescue, and ascend. Existing
+WFC, observation, traversal, Guardian, equipment, map, and LAN systems are proven
+ingredients, but the combined card-driven loop must be proven in a dedicated lab
+before production integration. The first proof is Rogue-first: one human Rogue
+Architect places tiles to help autonomous Guardians reach autonomous Observers.
+Every non-human decision-maker uses a deterministic behavior tree, and an optional
+Rogue Architect tree can replace the human for unattended runs while emitting the
+same card commands.
 
-#### Nodes and edges (rooms vs corridors)
+#### The shared facility
 
-Rooms (graph nodes) and corridors (graph edges) have **distinct, non-overlapping jobs**, so play has a tension↔release rhythm instead of uniform mush:
+All teams build and traverse one continuous, multi-floor WFC facility. Every floor
+has one district, and higher floors draw increasingly unsafe authored tiles. A
+district-matching ascent-room card creates access to the next floor. A vertical,
+central prison core crosses every floor and never collapses.
 
-* **Rooms = decide / observe / co-operate.** Where you choose which threshold to commit to, hold a connection through player observation or anchor it durably, operate a mechanism (seize, route cable, the two-operator hazard), and regroup. The comparatively safe "decision" beat.
-* **Corridors = traverse / risk / mystery.** Where you move (elevation, the risky shortcut vs the safe bypass), face time-pressure danger (pressure gates, the encroaching collapse, a route refactoring), and meet the unknown (changing openings, dead-ends). The committed, tense beat. Full-WFC corridors may expose two to four exits; those branches are traversal/risk choices, never room-style machinery puzzles.
+Rooms remain decision, cooperation, rescue, and machinery beats; corridors and
+unsafe tiles remain traversal, commitment, and risk beats. This tension/release
+distinction still governs authored content, but card placement and contradiction
+pressure—not a precomposed objective route—now drive the match.
 
-Keep them separated: **puzzles live in rooms, twitch-dangers live in corridors** (the one hybrid that belongs in a room is the co-op coordination hazard).
+#### Observation, anchors, and doors
 
-**Always-open threshold frames are the diegetic face of observe/decohere.** The canonical game is the continuous full-WFC facility: rooms and halls occupy one stable world-space lattice and crossing a threshold is physical, not a portal teleport. A player's observation of a threshold temporarily freezes its visible connection and geometry, but does **not** change the frame's indicator light. A placed anchor freezes the connection durably, and the frame light reports that anchor lock. Only geometry that is neither player-observed, occupied, landmark-pinned, equipment-pinned, nor anchored may refactor. Teleportation is reserved for explicit gameplay actions such as team pads and Guardian setbacks. The former isolated-Place/preview match is **deprecated, sunsetted, and archived**; it remains only as a regression testing fixture for unit/integration tests and must not be referenced for new features or production systems.
+Base thresholds remain open physical connections. Observation temporarily freezes
+tiles, connections, and visible Guardians; occupancy protects the occupied tile; an
+anchor freezes its exact connection durably. Only geometry that is neither
+observed, occupied, anchored, nor part of the prison core is a legal rewrite target.
+
+A door is separate deployable equipment placed from the Architect's mixed hand.
+Any loyal Observer may operate any deployed door. Open doors are traversable, pin
+their current connection, and permit observation through them. Closed doors block
+passage and sight, release the hidden side to mutation and Guardian action, and are
+lost if a rewrite removes their host threshold. An open door is contestable; an
+anchor remains the unattended permanent lock.
+
+Teleportation remains explicit equipment or room functionality. Team pads and
+stations require both endpoints to be reached physically and never reveal or skip
+an unexplored floor. The former isolated-Place/preview match remains a deprecated
+regression fixture and must not be used for new production features.
+
+#### Pressure, power, and the Observer's hands
+
+Observation alone leaves the first-person seat passive — look, stand, anchor,
+operate, walk. Three canon mechanics ([the design
+doc](docs/architect_ascent_design.md)) give it active verbs:
+
+* **Disturbance releases minor Guardians.** Architecture changes raise a per-floor
+  disturbance meter that decays with time and releases a wave at each threshold.
+  Contradictions and retractions raise it far more than clean placement, and height
+  raises the ceiling. It is a budget the Architect spends, never a per-placement fine.
+* **Minor Guardians are not frozen by observation.** That immunity is deliberate:
+  majors are a *looking* problem, minors are a *doing* problem. Minors belong to the
+  facility, obey no Rogue directive, and chase the nearest detected Observer of any
+  team.
+* **Each floor has one contested generator.** Unpowered, a floor loses recharge, door
+  operation, ascent rooms, pads, and — decisively — observation *range*: what cannot
+  be seen cannot be frozen, so an unpowered floor is nearly all mutable and its
+  majors nearly all awake. The Legibility Contract still binds. Darkness costs range,
+  never legibility, and critical signals keep a documented self-lit minimum.
+* **The kinetic tool, not a gun.** Observers carry a short-range push/pull that
+  damages nothing and cannot touch a rival. It kills minors with the architecture —
+  void, ledges, retracting tiles — so the Architect stays central to first-person
+  survival. Charge is finite and restored only at Architect-placed stations on a
+  powered floor: generator → station → tool → the only answer to the horde. Shove
+  resolution is fixed-tick simulation, never authored physics.
+
+An **emergency requisition** card refills a hand instantly and publicly, at the price
+of one major Guardian on the floor its Observers occupy. The redraw *room* remains the
+free version, earned by Observers reaching it in person.
+
+#### Collapse, jail, and the Rogue AI
+
+A card play need only fit its selected boundary locally. Wider WFC contradictions
+are accepted and telegraphed, then retract implicated tiles toward void until a
+compatible play repairs the constraint. A completely retracted floor is permanently
+closed to new placement; only the prison core remains.
+
+Guardian catches send Observers into the prison maze. Prisoners may find its hard
+internal exit, while teammates can create an easier door or portal rescue after
+physically reaching the core. A fall lands on lower surviving geometry when
+possible. Falling through the entire surviving stack into true void irreversibly
+converts the Observer into a shared Rogue operator with a disruption hand and
+cooldown. Loyal teams win at the summit; the Rogue faction wins when every remaining
+loyal Observer is simultaneously jailed.
 
 ### Goal 2 — Develop effectively *with agents*
 
 Lean into what an LLM agent is good at and away from what it is not.
 
 * **Reusable, testable modules.** Keep the lab discipline: break each concept into a small pure module that is simple to code, understand, test, and reuse (the way `observed_core` and `player_input` are shared). Protect it.
-* **Code-as-art over authored assets.** Visual identity is **generated from code**: geometry from primitives, with **color / emission / light / fog as a deliberate visual language**. The chosen direction is **neon-noir** (dark facility, neon edges, fog and bloom, high contrast) — striking, fully procedural, and verifiable through the existing `OBSERVED2_CAPTURE` screenshot loop.
+* **Code-as-art over authored assets.** Visual identity is **generated from code**:
+  geometry from primitives, with **color / emission / light / fog as a deliberate
+  visual language**. The chosen direction remains neon-noir, now organized around
+  original geometric constructs: spherical eye Observers, pyramidal Guardians,
+  and primitive-based structural decoration. "Modron" is an inspiration reference,
+  not shipped terminology or copied design. The result stays verifiable through the
+  existing `OBSERVED2_CAPTURE` screenshot loop.
 * **The Legibility Contract (a hard rule).** Atmosphere never hides information. Gameplay-critical signals — your path, threats, interactables, and other actors — must always punch through the neon-noir fog/bloom at a guaranteed brightness and contrast. Every on-screen state must have a documented meaning (a legend); no unlabeled coloured markers.
 
 The visual language lives in **one shared, tested module** — the `style` module, proven in `style_lab` — that maps *semantic state → visual treatment*. Presentation code asks the module how to draw a thing; it never invents ad-hoc colours.
