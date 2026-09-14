@@ -1,0 +1,14 @@
+[package]
+name = "kinetic_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy = { version = "0.19", default-features = false, features = [
+    "ui",
+    "2d",
+    "png",
+] }
+observed_core = { path = "../../crates/observed_core" }
+observed_hex = { path = "../../crates/observed_hex" }

@@ -1,0 +1,1173 @@
+//! Pure fixed-tick model for the Observer's kinetic tool.
+//!
+//! The lab's one technical question: **is a shove that commits a minor Guardian
+//! to void deterministic, readable, and fair?**
+//!
+//! Three canon rules shape everything here (see `docs/architect_ascent_design.md`):
+//!
+//! 1. The tool deals no damage. A shove only *moves* things; what kills is
+//!    always the architecture the target lands in.
+//! 2. Minor Guardians are not frozen by observation; major Guardians are. This
+//!    module keeps one of each so the asymmetry is testable rather than
+//!    asserted.
+//! 3. Shove resolution is fixed-tick simulation, never authored physics. Travel
+//!    is a discrete walk along hex faces, so an identical snapshot and intent
+//!    reproduce an identical impulse, destination, and destroyed actor.
+//!
+//! Charge is finite and restored only at a station on a powered floor, which
+//! makes the generator -> station -> tool dependency observable in one lab.
+
+// `Resource` is the only Bevy item this module touches: it lets the app hold the
+// world without a wrapper type. No camera, sprite, asset, or system appears
+// here, and the model is fully exercisable without an `App`.
+use bevy::prelude::Resource;
+use observed_core::{PlayerId, SplitMix};
+use observed_hex::{
+    coords::{HexCoord, HexGridSize, lateral_distance},
+    faces::HexFace,
+};
+
+/// Simulation rate. Every duration in this module is a fixed-tick count so that
+/// a replay of the same intents reproduces the same match.
+pub const TICKS_PER_SECOND: u32 = 60;
+
+/// Charge capacity of one Observer's tool.
+pub const MAX_CHARGE: u8 = 6;
+/// A push costs more than a pull: committing something to void is the strong
+/// verb, and dragging it one cell closer is the cheap setup.
+pub const PUSH_COST: u8 = 2;
+pub const PULL_COST: u8 = 1;
+/// Ticks a powered station needs to restore a single charge.
+pub const RECHARGE_TICKS: u32 = 30;
+/// Cells a push drives its target along the Observer's facing.
+pub const PUSH_IMPULSE: u32 = 3;
+/// Cells a pull drags its target back toward the Observer.
+pub const PULL_IMPULSE: u32 = 1;
+/// How far down its facing lane the tool finds a target.
+pub const TOOL_RANGE: u32 = 3;
+/// Ticks a minor Guardian spends recovering after surviving a shove.
+pub const STAGGER_TICKS: u32 = 45;
+/// Ticks between minor Guardian steps.
+pub const MINOR_STEP_TICKS: u32 = 24;
+/// Ticks between major Guardian steps. Majors are slower and far more dangerous.
+pub const MAJOR_STEP_TICKS: u32 = 36;
+/// How far an Observer sees down their facing lane. Observation freezes a major
+/// Guardian and does nothing whatsoever to a minor one.
+pub const OBSERVATION_RANGE: u32 = 4;
+/// Upper bound on cells one shove may traverse. Ledges do not consume impulse,
+/// so a closed ring of ledge cells would otherwise loop forever. No authored
+/// board approaches this; it exists so the invariant is enforced, not assumed.
+const MAX_TRAVEL_CELLS: u32 = 64;
+
+/// Stable identity for a minor Guardian. Bevy entities reference this; they
+/// never replace it.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MinorGuardianId(pub u32);
+
+/// Stable identity for a recharge station.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct StationId(pub u32);
+
+/// What one cell of the lab floor is made of.
+///
+/// This is the whole "architecture kills, the tool does not" rule expressed as
+/// data: every lethal outcome below is a property of the destination cell.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub enum CellKind {
+    /// Ordinary floor. Stops a shoved actor and holds it.
+    #[default]
+    Solid,
+    /// Unrailed geometry. An actor crossing it keeps its momentum, so a ledge
+    /// does not consume impulse and a ledge run leads somewhere.
+    Ledge,
+    /// Open air. Anything that enters is committed to void.
+    Void,
+    /// A tile mid-retraction. It still carries an actor, and becomes void when
+    /// its countdown commits, so shoving something here kills on a delay.
+    Retracting { ticks_remaining: u32 },
+    /// Structure the tool cannot move anything through.
+    Wall,
+}
+
+impl CellKind {
+    /// Whether an actor may occupy this cell at rest.
+    #[must_use]
+    pub const fn is_standable(self) -> bool {
+        matches!(
+            self,
+            CellKind::Solid | CellKind::Ledge | CellKind::Retracting { .. }
+        )
+    }
+
+    /// Whether the tool may move an actor through this cell at all.
+    #[must_use]
+    pub const fn blocks_travel(self) -> bool {
+        matches!(self, CellKind::Wall)
+    }
+}
+
+/// An Observer: the first-person seat holding the tool.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Observer {
+    pub id: PlayerId,
+    pub cell: HexCoord,
+    pub facing: HexFace,
+    pub charge: u8,
+    /// Ticks accumulated toward the next charge while standing on a live
+    /// station. Reset the moment the station stops supplying.
+    pub recharge_progress: u32,
+    pub jailed: bool,
+}
+
+/// A minor Guardian: released by disturbance, immune to observation, removed
+/// only by the architecture.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MinorGuardian {
+    pub id: MinorGuardianId,
+    pub cell: HexCoord,
+    /// Ticks left recovering from a shove. A staggered minor does not pursue.
+    pub stagger: u32,
+    /// Ticks accumulated toward its next step.
+    pub step_progress: u32,
+    pub alive: bool,
+}
+
+/// A major Guardian, present purely so the observation asymmetry is provable in
+/// the same board: this one *does* freeze when an Observer looks at it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MajorGuardian {
+    pub cell: HexCoord,
+    pub step_progress: u32,
+    /// Recomputed every tick from current observation; presentation reads it
+    /// rather than deriving its own.
+    pub frozen: bool,
+}
+
+/// A recharge station: Architect-placed equipment that is inert without floor
+/// power.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Station {
+    pub id: StationId,
+    pub cell: HexCoord,
+}
+
+/// One Observer's abstract intent for a tick. Input systems produce these;
+/// nothing in this module reads a key or a mouse.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum KineticIntent {
+    #[default]
+    Idle,
+    /// Turn to look down a different face without moving.
+    Face(HexFace),
+    /// Walk one cell along a face, if the destination is standable.
+    Step(HexFace),
+    /// Drive the first target in the facing lane away from the Observer.
+    Push,
+    /// Drag the first target in the facing lane toward the Observer.
+    Pull,
+    /// Operate the floor generator. Only legal while standing on it.
+    ToggleGenerator,
+}
+
+/// Why a shove ended where it did. Presentation and tests both read this rather
+/// than re-deriving the outcome from positions.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShoveFate {
+    /// Came to rest on standable floor.
+    Rest,
+    /// Entered void and was destroyed immediately.
+    Void,
+    /// Came to rest on a retracting tile: destroyed when that tile commits.
+    Doomed,
+    /// Ran into structure, the lattice boundary, or another actor.
+    Blocked,
+}
+
+/// Everything a shove resolved to, in one value.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ShoveResolution {
+    pub guardian: MinorGuardianId,
+    pub from: HexCoord,
+    pub to: HexCoord,
+    pub face: HexFace,
+    pub cells_travelled: u32,
+    pub fate: ShoveFate,
+}
+
+/// Why the tool refused to fire. A refusal is never silent: the lab shows it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ToolRefusal {
+    NoTargetInLane,
+    NotEnoughCharge,
+    NotOnGenerator,
+}
+
+/// Observable transitions for one tick, in resolution order.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum KineticEvent {
+    Shoved(ShoveResolution),
+    /// A minor Guardian left play. Always caused by a cell, never by the tool.
+    GuardianDestroyed {
+        id: MinorGuardianId,
+        cell: HexCoord,
+        by_retraction: bool,
+    },
+    ToolRefused {
+        observer: PlayerId,
+        refusal: ToolRefusal,
+    },
+    ChargeRestored {
+        observer: PlayerId,
+        station: StationId,
+        charge: u8,
+    },
+    GeneratorToggled {
+        observer: PlayerId,
+        powered: bool,
+    },
+    TileRetracted {
+        cell: HexCoord,
+    },
+    ObserverCaptured {
+        observer: PlayerId,
+        by_major: bool,
+    },
+}
+
+/// The whole lab world. Pure data: no Bevy entity, camera, or asset appears
+/// anywhere in this module.
+#[derive(Clone, Debug, PartialEq, Resource)]
+pub struct KineticWorld {
+    pub grid: HexGridSize,
+    cells: Vec<CellKind>,
+    pub observers: Vec<Observer>,
+    pub minors: Vec<MinorGuardian>,
+    pub major: MajorGuardian,
+    pub stations: Vec<Station>,
+    /// Floor power. False kills recharge and shortens observation to the cell
+    /// the Observer occupies.
+    pub powered: bool,
+    pub generator: HexCoord,
+    pub tick: u32,
+    pub events: Vec<KineticEvent>,
+}
+
+impl KineticWorld {
+    /// The authored proving board: a solid approach, a ledge run ending over
+    /// void, one retracting tile, a station, and the generator that powers it.
+    #[must_use]
+    pub fn authored() -> Self {
+        let grid = HexGridSize {
+            cols: 9,
+            rows: 7,
+            levels: 1,
+        };
+        let mut cells = vec![CellKind::Solid; grid.cell_count()];
+        let mut set = |q: u16, r: u16, kind: CellKind| {
+            let coord = HexCoord { q, r, level: 0 };
+            cells[grid.index(coord)] = kind;
+        };
+
+        // A rim of void around the floor: the board has real edges to shove
+        // things over, and no shove can leave the lattice silently.
+        for q in 0..grid.cols {
+            set(q, 0, CellKind::Void);
+            set(q, grid.rows - 1, CellKind::Void);
+        }
+        for r in 0..grid.rows {
+            set(0, r, CellKind::Void);
+            set(grid.cols - 1, r, CellKind::Void);
+        }
+
+        // An unrailed run reaching east toward the rim. Momentum carries across
+        // it, so a push landing on the first ledge continues over the edge.
+        set(5, 3, CellKind::Ledge);
+        set(6, 3, CellKind::Ledge);
+        set(7, 3, CellKind::Ledge);
+
+        // One tile already retracting, to prove the delayed kill.
+        set(
+            3,
+            5,
+            CellKind::Retracting {
+                ticks_remaining: 180,
+            },
+        );
+
+        // Structure that stops a shove dead, to prove Blocked.
+        set(2, 2, CellKind::Wall);
+
+        Self {
+            grid,
+            cells,
+            observers: vec![Observer {
+                id: PlayerId(0),
+                cell: HexCoord {
+                    q: 3,
+                    r: 3,
+                    level: 0,
+                },
+                facing: HexFace::East,
+                charge: MAX_CHARGE,
+                recharge_progress: 0,
+                jailed: false,
+            }],
+            minors: vec![
+                MinorGuardian {
+                    id: MinorGuardianId(0),
+                    cell: HexCoord {
+                        q: 4,
+                        r: 3,
+                        level: 0,
+                    },
+                    stagger: 0,
+                    step_progress: 0,
+                    alive: true,
+                },
+                MinorGuardian {
+                    id: MinorGuardianId(1),
+                    cell: HexCoord {
+                        q: 3,
+                        r: 4,
+                        level: 0,
+                    },
+                    stagger: 0,
+                    step_progress: 0,
+                    alive: true,
+                },
+            ],
+            major: MajorGuardian {
+                cell: HexCoord {
+                    q: 6,
+                    r: 5,
+                    level: 0,
+                },
+                step_progress: 0,
+                frozen: false,
+            },
+            stations: vec![Station {
+                id: StationId(0),
+                cell: HexCoord {
+                    q: 2,
+                    r: 4,
+                    level: 0,
+                },
+            }],
+            powered: true,
+            generator: HexCoord {
+                q: 1,
+                r: 1,
+                level: 0,
+            },
+            tick: 0,
+            events: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn cell(&self, coord: HexCoord) -> CellKind {
+        if !self.grid.contains(coord) {
+            return CellKind::Wall;
+        }
+        self.cells[self.grid.index(coord)]
+    }
+
+    #[must_use]
+    pub fn observer(&self, id: PlayerId) -> Option<&Observer> {
+        self.observers.iter().find(|observer| observer.id == id)
+    }
+
+    #[must_use]
+    pub fn minor(&self, id: MinorGuardianId) -> Option<&MinorGuardian> {
+        self.minors.iter().find(|minor| minor.id == id)
+    }
+
+    #[must_use]
+    pub fn living_minors(&self) -> usize {
+        self.minors.iter().filter(|minor| minor.alive).count()
+    }
+
+    /// Whether any Observer currently sees `coord`.
+    ///
+    /// Sight runs down the facing lane and stops at a wall. Unpowered, it
+    /// collapses to the Observer's own cell: what cannot be seen cannot be
+    /// frozen. This costs *range*, never legibility — the presentation layer
+    /// still draws every critical signal at its documented minimum.
+    #[must_use]
+    pub fn is_observed(&self, coord: HexCoord) -> bool {
+        self.observers
+            .iter()
+            .filter(|observer| !observer.jailed)
+            .any(|observer| {
+                if observer.cell == coord {
+                    return true;
+                }
+                if !self.powered {
+                    return false;
+                }
+                let mut cursor = observer.cell;
+                for _ in 0..OBSERVATION_RANGE {
+                    let Some(next) = self.grid.neighbor(cursor, observer.facing) else {
+                        return false;
+                    };
+                    if self.cell(next).blocks_travel() {
+                        return false;
+                    }
+                    if next == coord {
+                        return true;
+                    }
+                    cursor = next;
+                }
+                false
+            })
+    }
+
+    fn actor_occupies(&self, coord: HexCoord) -> bool {
+        self.minors
+            .iter()
+            .any(|minor| minor.alive && minor.cell == coord)
+            || self
+                .observers
+                .iter()
+                .any(|observer| !observer.jailed && observer.cell == coord)
+            || self.major.cell == coord
+    }
+
+    /// The first living minor Guardian down an Observer's facing lane.
+    #[must_use]
+    pub fn target_in_lane(&self, observer: &Observer) -> Option<MinorGuardianId> {
+        let mut cursor = observer.cell;
+        for _ in 0..TOOL_RANGE {
+            let next = self.grid.neighbor(cursor, observer.facing)?;
+            if self.cell(next).blocks_travel() {
+                return None;
+            }
+            if let Some(minor) = self
+                .minors
+                .iter()
+                .find(|minor| minor.alive && minor.cell == next)
+            {
+                return Some(minor.id);
+            }
+            cursor = next;
+        }
+        None
+    }
+
+    /// Resolve a shove without applying it.
+    ///
+    /// Pure and total: the same world, target, face and impulse always produce
+    /// the same resolution. Ledge cells do not consume impulse, which is how
+    /// "shoved off unrailed geometry" becomes a rule rather than a physics
+    /// accident.
+    #[must_use]
+    pub fn resolve_shove(
+        &self,
+        id: MinorGuardianId,
+        face: HexFace,
+        impulse: u32,
+    ) -> Option<ShoveResolution> {
+        let minor = self.minor(id).filter(|minor| minor.alive)?;
+        let from = minor.cell;
+        let mut cell = from;
+        let mut remaining = impulse;
+        let mut travelled = 0;
+        let mut fate = ShoveFate::Rest;
+
+        while travelled < MAX_TRAVEL_CELLS {
+            // Momentum is spent only once the target is on railed floor.
+            if remaining == 0 && self.cell(cell) != CellKind::Ledge {
+                fate = ShoveFate::Rest;
+                break;
+            }
+            let Some(next) = self.grid.neighbor(cell, face) else {
+                fate = ShoveFate::Blocked;
+                break;
+            };
+            let kind = self.cell(next);
+            if kind.blocks_travel() || (self.actor_occupies(next) && next != from) {
+                fate = ShoveFate::Blocked;
+                break;
+            }
+            cell = next;
+            travelled += 1;
+            remaining = remaining.saturating_sub(1);
+
+            match kind {
+                CellKind::Void => {
+                    fate = ShoveFate::Void;
+                    break;
+                }
+                CellKind::Retracting { .. } => {
+                    fate = ShoveFate::Doomed;
+                    break;
+                }
+                // A ledge neither stops the target nor spends its momentum.
+                CellKind::Ledge => continue,
+                CellKind::Solid => {
+                    if remaining == 0 {
+                        fate = ShoveFate::Rest;
+                        break;
+                    }
+                }
+                CellKind::Wall => unreachable!("walls are rejected above"),
+            }
+        }
+
+        Some(ShoveResolution {
+            guardian: id,
+            from,
+            to: cell,
+            face,
+            cells_travelled: travelled,
+            fate,
+        })
+    }
+
+    /// Advance one fixed tick.
+    ///
+    /// Resolution order is part of the determinism contract: Observer intents,
+    /// recharge, retraction, Guardian movement, capture. Events are emitted in
+    /// that same order.
+    pub fn step(&mut self, intents: &[(PlayerId, KineticIntent)]) {
+        self.events.clear();
+        self.apply_intents(intents);
+        self.apply_recharge();
+        self.apply_retraction();
+        self.move_guardians();
+        self.resolve_captures();
+        self.tick += 1;
+    }
+
+    fn apply_intents(&mut self, intents: &[(PlayerId, KineticIntent)]) {
+        for &(id, intent) in intents {
+            let Some(index) = self
+                .observers
+                .iter()
+                .position(|observer| observer.id == id && !observer.jailed)
+            else {
+                continue;
+            };
+            match intent {
+                KineticIntent::Idle => {}
+                KineticIntent::Face(face) => self.observers[index].facing = face,
+                KineticIntent::Step(face) => {
+                    let observer = self.observers[index];
+                    if let Some(next) = self.grid.neighbor(observer.cell, face)
+                        && self.cell(next).is_standable()
+                        && !self.actor_occupies(next)
+                    {
+                        self.observers[index].cell = next;
+                        self.observers[index].recharge_progress = 0;
+                    }
+                    self.observers[index].facing = face;
+                }
+                KineticIntent::Push => self.fire(index, PUSH_COST, PUSH_IMPULSE, true),
+                KineticIntent::Pull => self.fire(index, PULL_COST, PULL_IMPULSE, false),
+                KineticIntent::ToggleGenerator => {
+                    let observer = self.observers[index];
+                    if observer.cell == self.generator {
+                        self.powered = !self.powered;
+                        self.events.push(KineticEvent::GeneratorToggled {
+                            observer: observer.id,
+                            powered: self.powered,
+                        });
+                    } else {
+                        self.events.push(KineticEvent::ToolRefused {
+                            observer: observer.id,
+                            refusal: ToolRefusal::NotOnGenerator,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    /// Fire the tool. `away` pushes down the facing lane; otherwise the target
+    /// is dragged back along it.
+    fn fire(&mut self, index: usize, cost: u8, impulse: u32, away: bool) {
+        let observer = self.observers[index];
+        let Some(target) = self.target_in_lane(&observer) else {
+            self.events.push(KineticEvent::ToolRefused {
+                observer: observer.id,
+                refusal: ToolRefusal::NoTargetInLane,
+            });
+            return;
+        };
+        if observer.charge < cost {
+            self.events.push(KineticEvent::ToolRefused {
+                observer: observer.id,
+                refusal: ToolRefusal::NotEnoughCharge,
+            });
+            return;
+        }
+        let face = if away {
+            observer.facing
+        } else {
+            observer.facing.opposite()
+        };
+        let Some(resolution) = self.resolve_shove(target, face, impulse) else {
+            return;
+        };
+
+        self.observers[index].charge -= cost;
+        if let Some(minor) = self.minors.iter_mut().find(|minor| minor.id == target) {
+            minor.cell = resolution.to;
+            minor.stagger = STAGGER_TICKS;
+            minor.step_progress = 0;
+        }
+        self.events.push(KineticEvent::Shoved(resolution));
+
+        // The tool did not kill this: the destination did.
+        if resolution.fate == ShoveFate::Void {
+            self.destroy_minor(target, resolution.to, false);
+        }
+    }
+
+    fn destroy_minor(&mut self, id: MinorGuardianId, cell: HexCoord, by_retraction: bool) {
+        if let Some(minor) = self
+            .minors
+            .iter_mut()
+            .find(|minor| minor.id == id && minor.alive)
+        {
+            minor.alive = false;
+            self.events.push(KineticEvent::GuardianDestroyed {
+                id,
+                cell,
+                by_retraction,
+            });
+        }
+    }
+
+    fn apply_recharge(&mut self) {
+        for index in 0..self.observers.len() {
+            let observer = self.observers[index];
+            let station = self
+                .stations
+                .iter()
+                .find(|station| station.cell == observer.cell)
+                .copied();
+            // A station without floor power is inert, and progress toward the
+            // next charge does not survive the outage.
+            let Some(station) = station.filter(|_| self.powered && !observer.jailed) else {
+                self.observers[index].recharge_progress = 0;
+                continue;
+            };
+            if observer.charge >= MAX_CHARGE {
+                self.observers[index].recharge_progress = 0;
+                continue;
+            }
+            let progress = observer.recharge_progress + 1;
+            if progress >= RECHARGE_TICKS {
+                self.observers[index].recharge_progress = 0;
+                self.observers[index].charge += 1;
+                let charge = self.observers[index].charge;
+                self.events.push(KineticEvent::ChargeRestored {
+                    observer: observer.id,
+                    station: station.id,
+                    charge,
+                });
+            } else {
+                self.observers[index].recharge_progress = progress;
+            }
+        }
+    }
+
+    fn apply_retraction(&mut self) {
+        let mut committed = Vec::new();
+        for index in 0..self.cells.len() {
+            if let CellKind::Retracting { ticks_remaining } = self.cells[index] {
+                let remaining = ticks_remaining.saturating_sub(1);
+                if remaining == 0 {
+                    self.cells[index] = CellKind::Void;
+                    committed.push(self.grid.coord(index));
+                } else {
+                    self.cells[index] = CellKind::Retracting {
+                        ticks_remaining: remaining,
+                    };
+                }
+            }
+        }
+        for cell in committed {
+            self.events.push(KineticEvent::TileRetracted { cell });
+            let doomed: Vec<MinorGuardianId> = self
+                .minors
+                .iter()
+                .filter(|minor| minor.alive && minor.cell == cell)
+                .map(|minor| minor.id)
+                .collect();
+            for id in doomed {
+                self.destroy_minor(id, cell, true);
+            }
+        }
+    }
+
+    /// Step toward the nearest Observer along the lateral face that reduces
+    /// distance most, breaking ties by `HexFace::LATERAL` order.
+    fn pursuit_step(&self, from: HexCoord) -> Option<HexCoord> {
+        let target = self
+            .observers
+            .iter()
+            .filter(|observer| !observer.jailed)
+            .min_by_key(|observer| (lateral_distance(from, observer.cell), observer.id.0))?
+            .cell;
+        let mut best: Option<(u32, HexCoord)> = None;
+        for face in HexFace::LATERAL {
+            let Some(next) = self.grid.neighbor(from, face) else {
+                continue;
+            };
+            // A Guardian will not walk itself into void, and cannot enter an
+            // occupied cell or structure.
+            if !self.cell(next).is_standable() || self.actor_occupies(next) {
+                continue;
+            }
+            let distance = lateral_distance(next, target);
+            if best.is_none_or(|(best_distance, _)| distance < best_distance) {
+                best = Some((distance, next));
+            }
+        }
+        let (distance, next) = best?;
+        (distance < lateral_distance(from, target)).then_some(next)
+    }
+
+    fn move_guardians(&mut self) {
+        // Minors first, in id order, so the tick's movement is reproducible.
+        for index in 0..self.minors.len() {
+            let minor = self.minors[index];
+            if !minor.alive {
+                continue;
+            }
+            if minor.stagger > 0 {
+                self.minors[index].stagger = minor.stagger - 1;
+                continue;
+            }
+            // Deliberately unconditional: observation does not reach minors.
+            let progress = minor.step_progress + 1;
+            if progress < MINOR_STEP_TICKS {
+                self.minors[index].step_progress = progress;
+                continue;
+            }
+            self.minors[index].step_progress = 0;
+            if let Some(next) = self.pursuit_step(minor.cell) {
+                self.minors[index].cell = next;
+            }
+        }
+
+        // The major freezes under observation. This is the contrast the lab
+        // exists to make visible.
+        self.major.frozen = self.is_observed(self.major.cell);
+        if self.major.frozen {
+            return;
+        }
+        let progress = self.major.step_progress + 1;
+        if progress < MAJOR_STEP_TICKS {
+            self.major.step_progress = progress;
+            return;
+        }
+        self.major.step_progress = 0;
+        if let Some(next) = self.pursuit_step(self.major.cell) {
+            self.major.cell = next;
+        }
+    }
+
+    fn resolve_captures(&mut self) {
+        for index in 0..self.observers.len() {
+            let observer = self.observers[index];
+            if observer.jailed {
+                continue;
+            }
+            let by_major = self.major.cell == observer.cell;
+            let touched = by_major
+                || self
+                    .minors
+                    .iter()
+                    .any(|minor| minor.alive && minor.cell == observer.cell);
+            if touched {
+                self.observers[index].jailed = true;
+                self.events.push(KineticEvent::ObserverCaptured {
+                    observer: observer.id,
+                    by_major,
+                });
+            }
+        }
+    }
+
+    /// Order-sensitive digest of authoritative state.
+    ///
+    /// Two runs fed the same intents must agree here on every tick. The lab's
+    /// determinism test compares digests rather than fields so that a new piece
+    /// of state cannot quietly escape the contract.
+    #[must_use]
+    pub fn digest(&self) -> u64 {
+        let mut hash = SplitMix::new(0x0B5E_2FED ^ u64::from(self.tick));
+        let mut mix = |value: u64| {
+            hash.0 ^= value;
+            hash.next_u64()
+        };
+        let mut acc = mix(u64::from(self.powered));
+        for cell in &self.cells {
+            acc ^= mix(match cell {
+                CellKind::Solid => 1,
+                CellKind::Ledge => 2,
+                CellKind::Void => 3,
+                CellKind::Wall => 4,
+                CellKind::Retracting { ticks_remaining } => 5 + u64::from(*ticks_remaining) * 8,
+            });
+        }
+        for observer in &self.observers {
+            acc ^= mix(coord_key(observer.cell));
+            acc ^= mix(observer.facing.index() as u64);
+            acc ^= mix(u64::from(observer.charge));
+            acc ^= mix(u64::from(observer.recharge_progress));
+            acc ^= mix(u64::from(observer.jailed));
+        }
+        for minor in &self.minors {
+            acc ^= mix(coord_key(minor.cell));
+            acc ^= mix(u64::from(minor.stagger));
+            acc ^= mix(u64::from(minor.step_progress));
+            acc ^= mix(u64::from(minor.alive));
+        }
+        acc ^= mix(coord_key(self.major.cell));
+        acc ^= mix(u64::from(self.major.step_progress));
+        acc ^= mix(u64::from(self.major.frozen));
+        acc
+    }
+}
+
+fn coord_key(coord: HexCoord) -> u64 {
+    u64::from(coord.q) | (u64::from(coord.r) << 16) | (u64::from(coord.level) << 32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn coord(q: u16, r: u16) -> HexCoord {
+        HexCoord { q, r, level: 0 }
+    }
+
+    /// Place one minor at `cell` and nothing else in the way.
+    fn board_with_minor(cell: HexCoord) -> KineticWorld {
+        let mut world = KineticWorld::authored();
+        world.minors.truncate(1);
+        world.minors[0].cell = cell;
+        world.major.cell = coord(7, 5);
+        world
+    }
+
+    #[test]
+    fn a_push_into_the_rim_commits_the_target_to_void() {
+        let mut world = board_with_minor(coord(4, 1));
+        world.observers[0].cell = coord(4, 2);
+        world.observers[0].facing = HexFace::NorthWest;
+
+        world.step(&[(PlayerId(0), KineticIntent::Push)]);
+
+        let resolution = world
+            .events
+            .iter()
+            .find_map(|event| match event {
+                KineticEvent::Shoved(resolution) => Some(*resolution),
+                _ => None,
+            })
+            .expect("the push resolved");
+        assert_eq!(resolution.fate, ShoveFate::Void);
+        assert_eq!(world.living_minors(), 0);
+        assert!(world.events.iter().any(|event| matches!(
+            event,
+            KineticEvent::GuardianDestroyed {
+                by_retraction: false,
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn momentum_carries_across_a_ledge_run_and_over_the_edge() {
+        // The minor starts west of the ledge run at (5..7, 3); the rim is at
+        // q == 8. A three-cell impulse alone would stop on (7, 3), but ledges
+        // do not spend impulse, so the target keeps going into the rim.
+        let mut world = board_with_minor(coord(4, 3));
+        world.observers[0].cell = coord(3, 3);
+        world.observers[0].facing = HexFace::East;
+
+        let resolution = world
+            .resolve_shove(MinorGuardianId(0), HexFace::East, PUSH_IMPULSE)
+            .expect("the shove resolved");
+        assert_eq!(resolution.fate, ShoveFate::Void);
+        assert_eq!(resolution.to, coord(8, 3));
+        assert!(resolution.cells_travelled > PUSH_IMPULSE);
+    }
+
+    #[test]
+    fn a_push_onto_solid_floor_leaves_the_target_alive_and_staggered() {
+        let mut world = board_with_minor(coord(4, 4));
+        world.observers[0].cell = coord(3, 4);
+        world.observers[0].facing = HexFace::East;
+
+        world.step(&[(PlayerId(0), KineticIntent::Push)]);
+
+        let minor = world.minor(MinorGuardianId(0)).expect("minor still exists");
+        assert!(minor.alive, "solid floor is not lethal");
+        assert_eq!(minor.cell, coord(7, 4));
+        // Stagger is set during the intent phase and starts running down in the
+        // same tick's movement phase, so one tick has already been spent.
+        assert_eq!(minor.stagger, STAGGER_TICKS - 1);
+    }
+
+    #[test]
+    fn a_shove_onto_a_retracting_tile_kills_only_when_the_tile_commits() {
+        let mut world = board_with_minor(coord(3, 5));
+        let resolution = world
+            .resolve_shove(MinorGuardianId(0), HexFace::East, 0)
+            .expect("resolved");
+        assert_eq!(resolution.fate, ShoveFate::Rest);
+
+        // Standing on the retracting tile, the minor survives until the
+        // countdown commits, then dies to the tile rather than to the tool.
+        // The countdown is shortened below one pursuit step so the minor cannot
+        // simply walk off the tile before the point under test.
+        let index = world.grid.index(coord(3, 5));
+        world.cells[index] = CellKind::Retracting {
+            ticks_remaining: 10,
+        };
+        world.minors[0].cell = coord(3, 5);
+        for _ in 0..9 {
+            world.step(&[]);
+        }
+        assert_eq!(world.living_minors(), 1);
+        world.step(&[]);
+        assert_eq!(world.living_minors(), 0);
+        assert!(world.events.iter().any(|event| matches!(
+            event,
+            KineticEvent::GuardianDestroyed {
+                by_retraction: true,
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn structure_blocks_a_shove_without_destroying_anything() {
+        let world = board_with_minor(coord(3, 2));
+        let resolution = world
+            .resolve_shove(MinorGuardianId(0), HexFace::West, PUSH_IMPULSE)
+            .expect("resolved");
+        assert_eq!(resolution.fate, ShoveFate::Blocked);
+        assert_eq!(resolution.to, coord(3, 2), "a blocked target does not move");
+        assert_eq!(world.living_minors(), 1);
+    }
+
+    #[test]
+    fn observation_freezes_a_major_guardian() {
+        let mut world = KineticWorld::authored();
+        world.minors.clear();
+        world.observers[0].cell = coord(4, 4);
+        world.observers[0].facing = HexFace::East;
+        world.major.cell = coord(5, 4);
+
+        for _ in 0..MAJOR_STEP_TICKS + 4 {
+            world.step(&[]);
+        }
+
+        assert!(world.major.frozen, "a looked-at major holds still");
+        assert_eq!(world.major.cell, coord(5, 4));
+    }
+
+    #[test]
+    fn observation_does_nothing_at_all_to_a_minor_guardian() {
+        let mut world = KineticWorld::authored();
+        world.minors.truncate(1);
+        world.observers[0].cell = coord(4, 4);
+        world.observers[0].facing = HexFace::East;
+        world.minors[0].cell = coord(6, 4);
+        // Parked well clear: a major standing in the minor's path would block
+        // the step under test and prove nothing about observation.
+        world.major.cell = coord(1, 2);
+
+        assert!(
+            world.is_observed(coord(6, 4)),
+            "the minor is squarely in the observation lane"
+        );
+        for _ in 0..MINOR_STEP_TICKS {
+            world.step(&[]);
+        }
+
+        assert_eq!(
+            world.minors[0].cell,
+            coord(5, 4),
+            "a looked-at minor keeps coming"
+        );
+    }
+
+    #[test]
+    fn cutting_power_costs_observation_range_and_wakes_the_major() {
+        let mut world = KineticWorld::authored();
+        world.observers[0].cell = coord(4, 4);
+        world.observers[0].facing = HexFace::East;
+        world.major.cell = coord(5, 4);
+
+        world.step(&[]);
+        assert!(world.major.frozen);
+
+        world.powered = false;
+        world.step(&[]);
+        assert!(!world.major.frozen, "darkness releases what cannot be seen");
+        assert!(
+            world.is_observed(world.observers[0].cell),
+            "an Observer still sees their own cell"
+        );
+    }
+
+    #[test]
+    fn charge_is_finite_and_restored_only_by_a_powered_station() {
+        let mut world = KineticWorld::authored();
+        let station = world.stations[0].cell;
+        world.observers[0].cell = station;
+        world.observers[0].charge = 0;
+
+        // Unpowered, the station is inert no matter how long you stand on it.
+        world.powered = false;
+        for _ in 0..RECHARGE_TICKS * 2 {
+            world.step(&[]);
+        }
+        assert_eq!(world.observers[0].charge, 0);
+        assert_eq!(world.observers[0].recharge_progress, 0);
+
+        world.powered = true;
+        for _ in 0..RECHARGE_TICKS {
+            world.step(&[]);
+        }
+        assert_eq!(world.observers[0].charge, 1);
+        assert!(
+            world
+                .events
+                .iter()
+                .any(|event| matches!(event, KineticEvent::ChargeRestored { charge: 1, .. }))
+        );
+    }
+
+    #[test]
+    fn the_tool_refuses_rather_than_firing_on_an_empty_lane_or_empty_charge() {
+        let mut world = board_with_minor(coord(4, 4));
+        world.observers[0].cell = coord(3, 4);
+        world.observers[0].facing = HexFace::West;
+        world.step(&[(PlayerId(0), KineticIntent::Push)]);
+        assert!(world.events.iter().any(|event| matches!(
+            event,
+            KineticEvent::ToolRefused {
+                refusal: ToolRefusal::NoTargetInLane,
+                ..
+            }
+        )));
+
+        world.observers[0].facing = HexFace::East;
+        world.observers[0].charge = PUSH_COST - 1;
+        world.step(&[(PlayerId(0), KineticIntent::Push)]);
+        assert!(world.events.iter().any(|event| matches!(
+            event,
+            KineticEvent::ToolRefused {
+                refusal: ToolRefusal::NotEnoughCharge,
+                ..
+            }
+        )));
+        assert_eq!(world.living_minors(), 1, "a refusal moves nothing");
+    }
+
+    #[test]
+    fn a_pull_drags_the_target_one_cell_back_toward_the_observer() {
+        let mut world = board_with_minor(coord(5, 4));
+        world.observers[0].cell = coord(3, 4);
+        world.observers[0].facing = HexFace::East;
+
+        world.step(&[(PlayerId(0), KineticIntent::Pull)]);
+
+        assert_eq!(world.minors[0].cell, coord(4, 4));
+        assert_eq!(world.observers[0].charge, MAX_CHARGE - PULL_COST);
+    }
+
+    #[test]
+    fn the_generator_only_answers_an_observer_standing_on_it() {
+        let mut world = KineticWorld::authored();
+        world.step(&[(PlayerId(0), KineticIntent::ToggleGenerator)]);
+        assert!(world.powered, "a remote toggle changes nothing");
+        assert!(world.events.iter().any(|event| matches!(
+            event,
+            KineticEvent::ToolRefused {
+                refusal: ToolRefusal::NotOnGenerator,
+                ..
+            }
+        )));
+
+        world.observers[0].cell = world.generator;
+        world.step(&[(PlayerId(0), KineticIntent::ToggleGenerator)]);
+        assert!(!world.powered);
+    }
+
+    #[test]
+    fn identical_intents_reproduce_identical_state_every_tick() {
+        let script = |tick: u32| -> KineticIntent {
+            match tick % 7 {
+                0 => KineticIntent::Face(HexFace::East),
+                1 => KineticIntent::Step(HexFace::East),
+                2 => KineticIntent::Push,
+                3 => KineticIntent::Pull,
+                4 => KineticIntent::Step(HexFace::SouthWest),
+                5 => KineticIntent::ToggleGenerator,
+                _ => KineticIntent::Idle,
+            }
+        };
+
+        let mut left = KineticWorld::authored();
+        let mut right = KineticWorld::authored();
+        for tick in 0..600 {
+            let intents = [(PlayerId(0), script(tick))];
+            left.step(&intents);
+            right.step(&intents);
+            assert_eq!(
+                left.digest(),
+                right.digest(),
+                "divergence at tick {tick}: {:?} vs {:?}",
+                left.events,
+                right.events
+            );
+        }
+        assert_eq!(left, right);
+    }
+
+    #[test]
+    fn resolving_a_shove_never_mutates_the_world() {
+        let world = KineticWorld::authored();
+        let before = world.clone();
+        for face in HexFace::LATERAL {
+            for impulse in 0..=PUSH_IMPULSE {
+                let _ = world.resolve_shove(MinorGuardianId(0), face, impulse);
+            }
+        }
+        assert_eq!(world, before);
+    }
+
+    #[test]
+    fn a_ledge_ring_cannot_spin_a_shove_forever() {
+        // Ring the whole interior with ledge so momentum never settles, then
+        // confirm the travel cap ends the walk instead of hanging the tick.
+        let mut world = KineticWorld::authored();
+        for q in 1..world.grid.cols - 1 {
+            for r in 1..world.grid.rows - 1 {
+                let index = world.grid.index(coord(q, r));
+                world.cells[index] = CellKind::Ledge;
+            }
+        }
+        world.minors.truncate(1);
+        world.minors[0].cell = coord(4, 3);
+        world.major.cell = coord(1, 1);
+        world.observers[0].cell = coord(1, 2);
+
+        let resolution = world
+            .resolve_shove(MinorGuardianId(0), HexFace::East, PUSH_IMPULSE)
+            .expect("resolved");
+        // It runs east across ledge until the rim, which is void.
+        assert_eq!(resolution.fate, ShoveFate::Void);
+        assert!(resolution.cells_travelled <= MAX_TRAVEL_CELLS);
+    }
+}

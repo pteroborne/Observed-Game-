@@ -114,6 +114,7 @@ members = [
     "labs/mechanic_lab",
     "labs/tactics_lab",
     "labs/architect_lab",
+    "labs/kinetic_lab",
     "tools/content_baker",
     "tools/composition_studio",
     "server",
