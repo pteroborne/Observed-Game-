@@ -12,7 +12,20 @@
 //! Architect's hand live at cell level in `architect_lab`. This lab holds one
 //! Observer, a fixed pair of minors and one major, and asks only whether the
 //! tool itself reads honestly.
+//!
+//! ## Two views, one model
+//!
+//! - `cargo dev-run -p kinetic_lab --bin kinetic_lab` — the top-down schematic.
+//!   Discrete steps, the whole board visible at once. Best for reading the rules.
+//! - `cargo dev-run -p kinetic_lab --bin kinetic_fps` — first person. Continuous
+//!   movement and mouse aim over the identical [`model::KineticWorld`].
+//!
+//! Neither view owns a rule, and the second one was the point of building the
+//! first: the schematic proved the rules are legible, and the first-person view
+//! asks whether a shove is *satisfying*, which a top-down board cannot answer.
 
+pub mod embodied;
+mod fps;
 mod lab;
 pub mod model;
 
@@ -25,11 +38,128 @@ use bevy::{
 };
 use observed_hex::{coords::HexCoord, faces::HexFace};
 
+pub use embodied::{Embodiment, ToolRequest};
+pub use fps::FpsRuntime;
 pub use lab::KineticRuntime;
 pub use model::{
     CellKind, KineticEvent, KineticIntent, KineticWorld, MajorGuardian, MinorGuardian,
     MinorGuardianId, Observer, ShoveFate, ShoveResolution, Station, StationId, ToolRefusal,
 };
+
+/// The first-person view. Simulation runs in `FixedUpdate` at exactly the
+/// model's tick rate; everything in `Update` is presentation.
+pub struct KineticFpsPlugin;
+
+impl Plugin for KineticFpsPlugin {
+    fn build(&self, app: &mut App) {
+        let world = KineticWorld::authored();
+        let embodiment = Embodiment::new(&world);
+        app.insert_resource(world)
+            .insert_resource(embodiment)
+            .init_resource::<FpsRuntime>()
+            .insert_resource(Time::<Fixed>::from_hz(f64::from(model::TICKS_PER_SECOND)))
+            .add_systems(Startup, (fps::setup_scene, fps::grab_cursor).chain())
+            .add_systems(FixedUpdate, fps::simulate)
+            .add_systems(
+                Update,
+                (
+                    fps::gather_requests.after(InputSystems),
+                    fps::toggle_grab,
+                    fps::perform_reset,
+                    fps::sync_camera,
+                    fps::present_plates,
+                    fps::present_guardians,
+                    fps::present_stations,
+                    fps::present_preview,
+                    fps::draw_lane,
+                    fps::update_hud,
+                )
+                    .chain(),
+            );
+    }
+}
+
+pub fn run_fps() {
+    let mut app = App::new();
+    app.insert_resource(ClearColor(Color::srgb(0.004, 0.006, 0.010)))
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Observed 2 — Kinetic Tool (first person)".to_string(),
+                resolution: WindowResolution::new(1440, 900),
+                present_mode: PresentMode::AutoVsync,
+                resizable: true,
+                ..default()
+            }),
+            ..default()
+        }))
+        .add_plugins(KineticFpsPlugin);
+
+    if let Ok(path) = std::env::var("OBSERVED2_CAPTURE") {
+        app.insert_resource(FpsCaptureRequest { path, phase: 0 })
+            .add_systems(Update, fps_capture_progress);
+    }
+
+    app.run();
+}
+
+#[derive(Resource)]
+struct FpsCaptureRequest {
+    path: String,
+    phase: u8,
+}
+
+/// Stand the body where the ledge run and the void rim are both in frame with a
+/// minor Guardian in the lane, so the capture shows a live preview.
+fn fps_capture_progress(
+    time: Res<Time>,
+    mut request: ResMut<FpsCaptureRequest>,
+    mut runtime: ResMut<FpsRuntime>,
+    mut world: ResMut<KineticWorld>,
+    mut embodiment: ResMut<Embodiment>,
+    mut commands: Commands,
+    mut exit: MessageWriter<AppExit>,
+) {
+    let elapsed = time.elapsed_secs();
+    if request.phase == 0 {
+        // Freeze the board: a minor Guardian one plate away would otherwise
+        // walk onto the Observer and jail them before the shutter opened.
+        runtime.paused = true;
+        let stand = embodied::plate_center(HexCoord {
+            q: 3,
+            r: 3,
+            level: 0,
+        });
+        embodiment.body.position = Vec3::new(
+            stand.x,
+            embodied::FLOOR_TOP + embodiment.config.half_height,
+            stand.z,
+        );
+        embodiment.body.velocity = Vec3::ZERO;
+        // Look east, down the ledge run.
+        embodiment.body.yaw = std::f32::consts::FRAC_PI_2;
+        embodiment.body.pitch = -0.12;
+        embodiment.facing = HexFace::East;
+        world.observers[0].cell = HexCoord {
+            q: 3,
+            r: 3,
+            level: 0,
+        };
+        world.observers[0].facing = HexFace::East;
+        world.minors[0].cell = HexCoord {
+            q: 4,
+            r: 3,
+            level: 0,
+        };
+        request.phase = 1;
+    } else if request.phase == 1 && elapsed >= 0.9 {
+        commands
+            .spawn(Screenshot::primary_window())
+            .observe(save_to_disk(request.path.clone()));
+        request.phase = 2;
+    } else if request.phase == 2 && elapsed >= 1.8 {
+        exit.write(AppExit::Success);
+    }
+}
 
 pub struct KineticLabPlugin;
 

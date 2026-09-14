@@ -54,6 +54,45 @@ The panel above reads `lane: Void after 4 cells` against a three-cell impulse:
 the ledge run carried the target one cell further than the push itself could.
 See [the evidence note](../../docs/evidence/kinetic_lab/README.md).
 
+## First person
+
+```bash
+cargo dev-run -p kinetic_lab --bin kinetic_fps
+```
+
+![First-person lane](../../docs/evidence/kinetic_lab/fps-lane.png)
+
+The same board, the same rules, standing on the floor instead of looking down at
+it. `WASD` move, `SHIFT` run, `SPACE` jump, `LMB` push, `RMB` pull, `E` operate
+the generator, `P` pause, `R` reset, `ESC` release the cursor.
+
+**The split that makes this safe.** `model.rs` owns every rule on whole lattice
+cells and is untouched by embodiment. `embodied.rs` owns where the body
+physically is, and each tick reports exactly two derived facts back: the cell it
+stands on, and the face it looks down. Nothing else crosses. The shove therefore
+still resolves in fixed-tick simulation on the lattice, never by a physics query,
+while the player walks and aims continuously. The controller
+(`observed_traversal::step_body`) is already pure and already runs at `FIXED_DT`,
+which *is* this model's tick, so embodiment adds no new nondeterminism —
+`identical_inputs_reproduce_identical_bodies_and_boards` holds both the board
+digest and the body itself equal across 600 scripted ticks.
+
+**Shape language.** Canon: original geometric constructs, with "Modron" a mood
+reference only, never shipped terminology and never a copied design. What the
+mood contributes is a principle that stands on its own — **rank reads as the
+order of the solid**. A minor Guardian is a cube; the major is a tetrahedron,
+the pyramidal silhouette canon already fixed. Everything of the facility crosses
+between cells in a snap and then holds, because Guardians already moved in
+quantised steps for determinism's sake. A compile-time assert keeps the snap
+shorter than the step interval, so tuning one without the other cannot quietly
+turn the clockwork into a glide.
+
+**Floor plates are rectangles on purpose.** The lattice tiles exactly with 14x12
+plates sheared 7 per row — no gaps, no overlaps, and void leaves an exact hole to
+fall through. The hex lattice stays the connectivity and targeting structure. An
+authored tile's geometry was never required to be a hex prism, and rendering
+exactly what you collide with is what the Legibility Contract demands.
+
 ## What this lab is not
 
 It is not the economy proof. Disturbance waves, the Architect's hand, card
@@ -61,11 +100,12 @@ legality, and the wave/charge budget live at cell level in `architect_lab`; this
 lab holds one Observer, a fixed pair of minors and one major, and asks only
 whether the tool itself reads honestly.
 
-It also does not yet answer *feel* in the sense the design doc means: this is a
-top-down schematic with discrete steps, not a first-person body with a mouse. It
-proves the rules are legible and reproducible; whether a shove is **satisfying**
-at the moment of contact needs the first-person controller and is the next
-increment.
+And it does not close the *feel* question by itself. The first-person view puts
+a body and a mouse behind the tool, which is what the design doc's step B asks
+for, but whether a shove is **satisfying** is decided by a person at the keyboard
+and remains the open human gate. What the two views establish is narrower and
+still worth having: the rules are legible, reproducible, and identical across two
+independent presentations of one simulation.
 
 ## Shoves are simulation, not physics
 

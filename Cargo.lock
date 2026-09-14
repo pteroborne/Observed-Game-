@@ -5906,6 +5906,8 @@ dependencies = [
  "bevy 0.19.1",
  "observed_core",
  "observed_hex",
+ "observed_traversal",
+ "player_input",
 ]
 
 [[package]]

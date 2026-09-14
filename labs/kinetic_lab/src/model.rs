@@ -422,15 +422,27 @@ impl KineticWorld {
             })
     }
 
-    fn actor_occupies(&self, coord: HexCoord) -> bool {
+    /// Whether a Guardian stands here. Guardians do not walk through each other.
+    fn guardian_occupies(&self, coord: HexCoord) -> bool {
         self.minors
             .iter()
             .any(|minor| minor.alive && minor.cell == coord)
+            || self.major.cell == coord
+    }
+
+    /// Whether any actor stands here.
+    ///
+    /// Used where a body is genuinely in the way — a shove cannot drive its
+    /// target through someone, and an Observer cannot walk into an occupied
+    /// cell. Pursuit deliberately does *not* use this: a Guardian reaching an
+    /// Observer's cell is the capture, so treating an Observer as an obstacle
+    /// would make capture unreachable.
+    fn actor_occupies(&self, coord: HexCoord) -> bool {
+        self.guardian_occupies(coord)
             || self
                 .observers
                 .iter()
                 .any(|observer| !observer.jailed && observer.cell == coord)
-            || self.major.cell == coord
     }
 
     /// The first living minor Guardian down an Observer's facing lane.
@@ -716,9 +728,10 @@ impl KineticWorld {
             let Some(next) = self.grid.neighbor(from, face) else {
                 continue;
             };
-            // A Guardian will not walk itself into void, and cannot enter an
-            // occupied cell or structure.
-            if !self.cell(next).is_standable() || self.actor_occupies(next) {
+            // A Guardian will not walk itself into void or structure, and will
+            // not displace another Guardian — but an Observer's cell is a legal
+            // destination, because arriving there is the capture.
+            if !self.cell(next).is_standable() || self.guardian_occupies(next) {
                 continue;
             }
             let distance = lateral_distance(next, target);
@@ -1022,6 +1035,10 @@ mod tests {
     #[test]
     fn charge_is_finite_and_restored_only_by_a_powered_station() {
         let mut world = KineticWorld::authored();
+        // Isolate recharge: live Guardians would jail the Observer standing
+        // still on the station long before the countdown finished.
+        world.minors.clear();
+        world.major.cell = coord(7, 1);
         let station = world.stations[0].cell;
         world.observers[0].cell = station;
         world.observers[0].charge = 0;
@@ -1102,6 +1119,60 @@ mod tests {
         world.observers[0].cell = world.generator;
         world.step(&[(PlayerId(0), KineticIntent::ToggleGenerator)]);
         assert!(!world.powered);
+    }
+
+    #[test]
+    fn a_minor_guardian_can_actually_reach_and_jail_an_observer() {
+        // Regression: pursuit once treated an Observer as an obstacle, so a
+        // Guardian could close to an adjacent cell and never arrive. Capture was
+        // unreachable and `resolve_captures` was dead code.
+        let mut world = KineticWorld::authored();
+        world.minors.truncate(1);
+        world.observers[0].cell = coord(4, 4);
+        world.observers[0].facing = HexFace::West;
+        world.minors[0].cell = coord(6, 4);
+        world.major.cell = coord(1, 2);
+
+        // Events are per-tick, so the capture must be caught as it happens.
+        let mut captures = Vec::new();
+        for _ in 0..MINOR_STEP_TICKS * 3 {
+            world.step(&[]);
+            captures.extend(world.events.iter().copied().filter(|event| {
+                matches!(
+                    event,
+                    KineticEvent::ObserverCaptured {
+                        by_major: false,
+                        ..
+                    }
+                )
+            }));
+        }
+
+        assert_eq!(
+            world.minors[0].cell,
+            coord(4, 4),
+            "it arrives on the target"
+        );
+        assert!(world.observers[0].jailed);
+        assert_eq!(captures.len(), 1, "captured once, not once per tick");
+    }
+
+    #[test]
+    fn guardians_still_refuse_to_walk_through_each_other() {
+        let mut world = KineticWorld::authored();
+        world.observers[0].cell = coord(4, 4);
+        world.minors[0].cell = coord(6, 4);
+        world.minors[1].cell = coord(5, 4);
+        world.major.cell = coord(1, 2);
+
+        for _ in 0..MINOR_STEP_TICKS {
+            world.step(&[]);
+        }
+
+        assert_ne!(
+            world.minors[0].cell, world.minors[1].cell,
+            "two Guardians never share a cell"
+        );
     }
 
     #[test]

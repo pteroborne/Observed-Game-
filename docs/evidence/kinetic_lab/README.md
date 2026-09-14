@@ -42,9 +42,44 @@ retracting, red that structure blocks the shove.
 | Amber hexes | `(5..7, 3)` | The unrailed ledge run |
 | Pink square | `(6, 5)` | Major Guardian, drawn awake because it is outside the lane |
 
+## First person, same board
+
+![First-person lane](fps-lane.png)
+
+```bash
+OBSERVED2_CAPTURE=docs/evidence/kinetic_lab/fps-lane.png \
+  cargo run -p kinetic_lab --bin kinetic_fps
+```
+
+The same `KineticWorld`, the same `resolve_shove`, the same `lane: Void after 4
+cells` — now standing on the floor rather than looking down at it. The capture
+pauses the board first, because with capture working a Guardian one plate away
+jails you in 24 ticks.
+
+**Shape language.** Rank reads as the order of the solid. The orange **cube** is
+a minor Guardian, the pink **tetrahedron** the major — a rarer solid for a rarer
+thing. Both hold whole lattice cells and cross between them in a crisp snap that
+finishes well inside their step interval, then wait. That clockwork read is not
+decoration: Guardians move in quantised steps because the determinism contract
+required it, and the presentation simply stopped apologising for it.
+
+**The green beam** marks where a push would send the target. It is a beam and
+not a floor decal because the lethal destination here is void about seventy
+metres out, where a flat marker is both invisible and hidden behind the very
+Guardian being aimed at. The amber plates between are the unrailed ledge run,
+and the beam standing past their far end is the ledge rule stated in world
+space: momentum outlives the three cells a push pays for.
+
+Plate geometry is rectangular rather than hexagonal, and that is deliberate. The
+lattice tiles exactly with 14x12 plates offset 7 per row, so they meet with no
+gap and no overlap and a void cell leaves an exact hole. The hex lattice remains
+the connectivity and targeting structure; an authored tile's *geometry* was
+never required to be a hex prism, and rendering what you collide with is what
+the Legibility Contract actually asks for.
+
 ## Caveat
 
-This is a top-down schematic with discrete steps. It demonstrates that the rules
-are legible and reproducible; it does **not** answer whether a shove is
-*satisfying* at the moment of contact, which needs the first-person controller
-and is the next increment.
+Neither view answers whether a shove is *satisfying* in the sense a playtest
+means — that needs a person at the keyboard, and it is the open human gate. What
+these frames establish is that the rules are legible, reproducible, and identical
+across two independent presentations of the same simulation.

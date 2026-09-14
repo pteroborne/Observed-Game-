@@ -5,10 +5,25 @@ edition = "2024"
 publish = false
 
 [dependencies]
+# "2d" drives the schematic view, "3d" the first-person view. Both read the same
+# model; neither owns a rule.
 bevy = { version = "0.19", default-features = false, features = [
     "ui",
     "2d",
+    "3d",
     "png",
 ] }
 observed_core = { path = "../../crates/observed_core" }
 observed_hex = { path = "../../crates/observed_hex" }
+# The deterministic fixed-tick character controller. Already pure, already
+# stepped at FIXED_DT, so embodiment introduces no new nondeterminism.
+observed_traversal = { path = "../../crates/observed_traversal" }
+player_input = { path = "../../crates/player_input" }
+
+[[bin]]
+name = "kinetic_lab"
+path = "src/main.rs"
+
+[[bin]]
+name = "kinetic_fps"
+path = "src/bin/fps.rs"
