@@ -16,7 +16,7 @@ use observed_match::hex_wfc::{HexStructurePiece, HexStructureRole, HexTrimKind};
 use observed_style::{self as style, ArchitectureSurfaceRole, SurfaceRole};
 use observed_traversal::{ColliderShape, ConvexRenderMesh};
 
-use crate::view::assets::{ContentScene, palette_tinted_neon_material};
+use crate::view::assets::ContentScene;
 use crate::view::environment::{cuboid_mesh, load_content_scene, load_repeating_texture};
 
 #[derive(Clone)]
@@ -96,42 +96,51 @@ impl HexWfcVisualAssets {
                 // keeps the shared albedo, which is a real answer for the
                 // Monolith rather than a fallback.
                 let weave = weave_texture(images, style::architecture_weave(register));
-                let mut tinted = |treatment: style::Treatment, texture: Option<Handle<Image>>| {
-                    let mut material = palette_tinted_neon_material(&treatment, &palette, texture);
-                    let look = style::hex_shell_look(&treatment, register);
-                    material.base_color = look.base_color;
-                    material.emissive = look.emissive;
-                    material.unlit = look.unlit;
-                    // Microsurface is the district's too. It had never been
-                    // varied, and it is the one surface property that survives
-                    // near-black albedo: it changes *where* the light goes back,
-                    // not how much of it there is.
-                    material.perceptual_roughness = palette.surface_roughness;
-                    materials.add(material)
+                let mut tinted = |look: style::HexSurfaceLook, texture: Option<Handle<Image>>| {
+                    materials.add(StandardMaterial {
+                        base_color: look.base_color,
+                        emissive: look.emissive,
+                        unlit: look.unlit,
+                        base_color_texture: if look.textured { texture } else { None },
+                        perceptual_roughness: palette.surface_roughness,
+                        ..default()
+                    })
                 };
                 RegisterMaterials {
                     floor: tinted(
-                        style::architecture_surface(register, ArchitectureSurfaceRole::Floor),
+                        style::hex_shell_surface(register, ArchitectureSurfaceRole::Floor),
                         floor_texture.clone(),
                     ),
                     wall: tinted(
-                        style::architecture_surface(register, ArchitectureSurfaceRole::Wall),
+                        style::hex_shell_surface(register, ArchitectureSurfaceRole::Wall),
                         weave.clone().or_else(|| wall_texture.clone()),
                     ),
                     ceiling: tinted(
-                        style::architecture_surface(register, ArchitectureSurfaceRole::Ceiling),
+                        style::hex_shell_surface(register, ArchitectureSurfaceRole::Ceiling),
                         wall_texture.clone(),
                     ),
-                    fixture: tinted(style::architecture_practical_fixture(register), None),
+                    fixture: tinted(
+                        style::hex_shell_surface(
+                            register,
+                            ArchitectureSurfaceRole::PracticalFixture,
+                        ),
+                        None,
+                    ),
                     ramp: tinted(
-                        style::surface(SurfaceRole::SafeBypass),
+                        style::hex_shell_look(&style::surface(SurfaceRole::SafeBypass), register),
                         floor_texture.clone(),
                     ),
                     shaft: tinted(
-                        style::surface(SurfaceRole::WellshaftStone),
+                        style::hex_shell_look(
+                            &style::surface(SurfaceRole::WellshaftStone),
+                            register,
+                        ),
                         wall_texture.clone(),
                     ),
-                    boundary: tinted(style::surface(SurfaceRole::Wall), wall_texture.clone()),
+                    boundary: tinted(
+                        style::hex_shell_look(&style::surface(SurfaceRole::Wall), register),
+                        wall_texture.clone(),
+                    ),
                 }
             })
             .collect();
@@ -155,6 +164,13 @@ impl HexWfcVisualAssets {
         register: ArchitectureRegister,
         piece: &HexStructurePiece,
     ) -> Handle<StandardMaterial> {
+        if register == ArchitectureRegister::OverlitGrid
+            && matches!(piece.role, HexStructureRole::Room | HexStructureRole::Hall)
+            && let ColliderShape::ConvexHull { points } = &piece.shape
+            && observed_traversal::render_mesh::is_overhead_slab(points)
+        {
+            return self.register(register).ceiling.clone();
+        }
         self.register(register)
             .for_piece(piece.role, horizontal_surface(piece))
     }

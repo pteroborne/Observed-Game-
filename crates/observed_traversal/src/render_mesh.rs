@@ -15,6 +15,26 @@ pub const DEFAULT_SMOOTH_CREASE_COS: f32 = 0.70;
 /// Box-projected texture repetition in cycles per world metre.
 pub const DEFAULT_UV_REPEATS_PER_METER: f32 = 0.25;
 
+/// A broad, thin horizontal panel above standing door height, in tile-local
+/// metres. Used to assign ceiling material to suspended rafts without removing
+/// them as outer roofs. Shelves, low decks and vertical walls do not qualify.
+#[must_use]
+pub fn is_overhead_slab(points: &[Vec3]) -> bool {
+    if points.len() < 4 {
+        return false;
+    }
+    let min = points
+        .iter()
+        .copied()
+        .fold(Vec3::splat(f32::INFINITY), Vec3::min);
+    let max = points
+        .iter()
+        .copied()
+        .fold(Vec3::splat(f32::NEG_INFINITY), Vec3::max);
+    let size = max - min;
+    min.y >= 4.5 && size.y <= 0.75 && size.x >= 4.5 && size.z >= 4.5
+}
+
 /// Engine-independent triangle mesh for one convex render/collision hull.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ConvexRenderMesh {
@@ -234,6 +254,21 @@ pub fn structural_edges(hulls: &[Vec<Vec3>]) -> Vec<(Vec3, Vec3)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn overhead_slabs_exclude_shelves_decks_and_walls() {
+        let slab = |half: Vec3, height: f32| {
+            cube()
+                .into_iter()
+                .map(|p| p * half + Vec3::Y * height)
+                .collect::<Vec<_>>()
+        };
+        assert!(is_overhead_slab(&slab(Vec3::new(5.0, 0.25, 5.0), 5.25)));
+        assert!(!is_overhead_slab(&slab(Vec3::new(5.0, 0.25, 5.0), 3.25)));
+        assert!(!is_overhead_slab(&slab(Vec3::new(5.0, 0.1, 0.5), 5.25)));
+        assert!(!is_overhead_slab(&slab(Vec3::new(5.0, 3.0, 0.25), 5.25)));
+        assert!(!is_overhead_slab(&[]));
+    }
 
     fn cube() -> Vec<Vec3> {
         [-1.0, 1.0]

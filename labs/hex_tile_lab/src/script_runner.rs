@@ -5,6 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use bevy::app::AppExit;
+use bevy::camera::Exposure;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use observed_content::ArchitectureRegister;
@@ -28,6 +29,9 @@ pub struct ViewScript {
     /// Architecture register 1-10 (1-9 use the matching digit; 10 uses 0).
     pub register: Option<u8>,
     pub camera_pos: Option<[f32; 3]>,
+    /// Photographic exposure for inspection captures; ignored in facility lighting.
+    /// Omit to retain Bevy's default camera exposure.
+    pub exposure_ev100: Option<f32>,
     pub camera_target: Option<[f32; 3]>,
     pub orbit_yaw: Option<f32>,
     pub orbit_pitch: Option<f32>,
@@ -77,6 +81,9 @@ pub struct ViewScript {
     /// not ship. Every one of those makes a tile easier to look at and makes
     /// the capture a worse answer to "how will this read in the game".
     pub facility_lighting: Option<bool>,
+    /// Keep the full geometry while using inspection fill and shared district materials.
+    /// Facility lighting takes precedence when both are requested.
+    pub inspection_fill: Option<bool>,
     /// Capture this many frames instead of one, `frame_interval` ticks apart.
     pub frames: Option<u32>,
     pub frame_interval: Option<u32>,
@@ -170,13 +177,14 @@ fn composition_position(state: &LabState, needle: &str, variant: Option<u16>) ->
     })
 }
 
-pub fn run_script_system(
+pub(super) fn run_script_system(
     time: Res<Time>,
     mut state: ResMut<LabState>,
     mut menu_state: ResMut<crate::LabMenuState>,
     mut exec: ResMut<ScriptExecution>,
     mut commands: Commands,
     mut app_exit: MessageWriter<AppExit>,
+    cameras: Query<Entity, With<crate::EyeCamera>>,
 ) {
     let Some(ref script) = exec.script.clone() else {
         return;
@@ -254,6 +262,14 @@ pub fn run_script_system(
         }
         state.scripted_walk = script.walk == Some(true);
         state.facility_lighting = script.facility_lighting == Some(true);
+        state.inspection_fill = script.inspection_fill == Some(true);
+        if !state.facility_lighting
+            && let Some(ev100) = script.exposure_ev100
+        {
+            for camera in &cameras {
+                commands.entity(camera).insert(Exposure { ev100 });
+            }
+        }
 
         if let Some(ref mode_str) = script.view_mode {
             match mode_str.to_lowercase().as_str() {
@@ -311,7 +327,9 @@ pub fn run_script_system(
             if let Some(cut) = SectionCut::parse(name) {
                 state.section = cut;
             } else {
-                eprintln!("unknown section {name:?}; expected none, plan, quarter or half");
+                eprintln!(
+                    "unknown section {name:?}; expected none, plan, quarter, half, quarter_volume or half_volume"
+                );
             }
         }
         if let Some(degrees) = script.section_axis {

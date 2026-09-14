@@ -1,0 +1,42 @@
+{
+  "layout": [
+    {
+      "tile": "stair_tower:234",
+      "q": 4,
+      "r": 4,
+      "level": 0,
+      "turn": 0
+    },
+    {
+      "tile": "stair_tower:240",
+      "q": 4,
+      "r": 4,
+      "level": 1,
+      "turn": 0
+    }
+  ],
+  "register": 8,
+  "view_mode": "orbit",
+  "render_mode": "lit",
+  "hide_menu": true,
+  "volumetrics": false,
+  "inspection_fill": true,
+  "camera_target": [
+    84,
+    7,
+    48
+  ],
+  "section": "half_volume",
+  "section_axis": 180,
+  "orbit_yaw": 3.14159,
+  "orbit_pitch": 0.1,
+  "radius": 34,
+  "height": 0,
+  "output_image": "docs/evidence/missing_rooms/spiral.png",
+  "facility_lighting": false,
+  "camera_pos": [
+    80,
+    2.15,
+    47
+  ]
+}

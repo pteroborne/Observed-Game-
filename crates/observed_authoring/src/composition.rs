@@ -476,6 +476,10 @@ mod tests {
     /// one on this catalog will not play together, by design.
     #[test]
     fn committed_arc_s_catalog_identity_is_pinned() {
+        // The six district benchmarks add forty-seven modules: fifteen Wellshaft,
+        // six Thinning, nine Facet Monument, six Infinite Gallery, four Overlit
+        // Grid, seven Megastructure (354 -> 401).
+        // Profile unchanged.
         // Moved a fifth time by three authored tiles, and the profile side did
         // not move at all - which is the shape of an Arc T corpus change. 230 to
         // 239 modules. The last is `hall_straight_soffit`, and it is the first
@@ -770,14 +774,14 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "65b5a1108b22347b30775b94083b6bbb8d2d31645b61c341429453b39bad2681";
+            "979edfc624eac36c8a2273d01c76bb483b2c545bbf189ba3be58d096859603cc";
         const PROFILE_HASH: &str =
             "5c1bc69db058d4e3332e755326548f887d46f215d81fdeb454591cd9c2c0104e";
         // Folds the catalog and the profile. Both sides moved this time, which
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "c97d4932be5693134153f2a794b2bbb4319061628069640b3c4ab87b3654b0e0";
+            "f714af331e449a5f3dd8161c06f80fe54785c00f8ae48b036d213e500f5ba5d5";
 
         let root = committed_tiles();
         let compiled_text =
@@ -790,7 +794,7 @@ mod tests {
             .filter(|module| module.archetype == "stair_tower")
             .collect::<Vec<_>>();
         assert_eq!(compiled.simulation_content_hash, CATALOG_HASH);
-        assert_eq!(compiled.modules.len(), 354, "committed strict source count");
+        assert_eq!(compiled.modules.len(), 401, "committed strict source count");
         // 1 doorless + every one-to-four-door pattern, in three vertical
         // connectivities: (1 + 6 + 15 + 20 + 15) * 3. Was 66, when the family
         // stopped at two doors and there was no branching landing.

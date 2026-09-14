@@ -112,6 +112,14 @@ order; interactive hotkeys use 1-9 for the original registers and 0 for Liminal
 Grid. Legacy `dev_mode` / `strong_wireframe` booleans still map to clay /
 xray.
 
+For dense interiors, `section: "quarter_volume"` clips a quadrant through all
+rendered geometry, including shelves and floor slabs, and removes practicals in
+that quadrant. `half_volume` makes the equivalent cut through a half-space.
+`section_axis` rotates the cut in degrees. This is a display-only
+section; collision and connectivity remain intact. Use `plan` for the complete
+layout with roofs removed, or `none` for an uncut first-person capture. The older
+`quarter` and `half` modes remove wall shells while preserving slabs.
+
 ## Why the forge exists
 
 A `.map` brush is a convex intersection of half-spaces written as plane
@@ -394,6 +402,17 @@ lab capture is lit by exactly the thing the game deleted.
 `"facility_lighting": true` on a view script switches all five to the shipped
 values. Keep it **off** when inspecting geometry, where the fill is the point,
 and **on** for anything that answers "how will this read in the game".
+
+For roofed compositions, `"inspection_fill": true` reuses the lab's inspection
+lights without requiring a section cut. Pair it with `"section": "none"` to keep
+the roofs intact. This mode uses the shared district surface materials; it is
+still an inspection image. `facility_lighting` takes precedence over this flag.
+See `docs/compositions/last_courtyard/hero.json` for an example.
+
+`"exposure_ev100": 7.7` sets photographic exposure for an inspection capture;
+lower values brighten the image. Omit it for the default camera exposure.
+Facility-lighting scripts ignore this override. The Unfinished Crossing hero
+uses it to photograph the dark structure without changing district lighting.
 
 Four things that will otherwise cost an afternoon:
 

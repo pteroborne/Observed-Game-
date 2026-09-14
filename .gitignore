@@ -17,6 +17,8 @@ docs/evidence/hex_wfc/relayout/frame_*.png
 docs/evidence/debug_coercion*/
 docs/evidence/visual_audit_camera_rooms/
 docs/evidence/visual_audit_topdown/
+# Raw per-frame capture that encodes to the tracked docs/evidence/district_tour.mp4.
+docs/evidence/district_tour/
 we-need-to-come-tidy-emerson.md
 
 # Python bytecode from tools/tileforge.py

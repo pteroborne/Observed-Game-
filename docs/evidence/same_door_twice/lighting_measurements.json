@@ -1,0 +1,21 @@
+{
+  "method": "Whole-frame RGB means, same uncut first-person view; display measurements, not physical illuminance.",
+  "captures": {
+    "before": {
+      "mean_rgb_0_255": [
+        48.17,
+        66.0,
+        87.04
+      ],
+      "mean_blue_minus_red": 38.86
+    },
+    "after": {
+      "mean_rgb_0_255": [
+        191.18,
+        189.01,
+        182.32
+      ],
+      "mean_blue_minus_red": -8.86
+    }
+  }
+}

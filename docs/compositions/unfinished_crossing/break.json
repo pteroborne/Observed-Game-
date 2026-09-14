@@ -1,0 +1,143 @@
+{
+  "layout": [
+    {
+      "tile": "hall_straight:966",
+      "q": 0,
+      "r": 4,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_straight:960",
+      "q": 1,
+      "r": 4,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_junction_3way:960",
+      "q": 2,
+      "r": 4,
+      "turn": 1,
+      "level": 0
+    },
+    {
+      "tile": "hall_junction_3way:960",
+      "q": 4,
+      "r": 4,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_turn_120:960",
+      "q": 3,
+      "r": 5,
+      "turn": 3,
+      "level": 0
+    },
+    {
+      "tile": "hall_turn_120:960",
+      "q": 2,
+      "r": 5,
+      "turn": 4,
+      "level": 0
+    },
+    {
+      "tile": "hall_turn_120:960",
+      "q": 3,
+      "r": 3,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_turn_120:960",
+      "q": 4,
+      "r": 3,
+      "turn": 1,
+      "level": 0
+    },
+    {
+      "tile": "hall_junction_3way:960",
+      "q": 5,
+      "r": 4,
+      "turn": 1,
+      "level": 0
+    },
+    {
+      "tile": "hall_straight:960",
+      "q": 5,
+      "r": 5,
+      "turn": 1,
+      "level": 0
+    },
+    {
+      "tile": "hall_turn_60:960",
+      "q": 5,
+      "r": 6,
+      "turn": 4,
+      "level": 0
+    },
+    {
+      "tile": "hall_ramp:960",
+      "q": 6,
+      "r": 3,
+      "turn": 5,
+      "level": 0
+    },
+    {
+      "tile": "hall_turn_120:960",
+      "q": 7,
+      "r": 2,
+      "turn": 2,
+      "level": 1
+    },
+    {
+      "tile": "hall_ramp:960",
+      "q": 7,
+      "r": 1,
+      "turn": 4,
+      "level": 1
+    },
+    {
+      "tile": "hall_turn_120:966",
+      "q": 7,
+      "r": 0,
+      "turn": 1,
+      "level": 2
+    },
+    {
+      "tile": "hall_straight:960",
+      "q": 6,
+      "r": 0,
+      "turn": 0,
+      "level": 2
+    },
+    {
+      "tile": "hall_straight:966",
+      "q": 5,
+      "r": 0,
+      "turn": 0,
+      "level": 2
+    }
+  ],
+  "register": 6,
+  "view_mode": "orbit",
+  "render_mode": "lit",
+  "hide_menu": true,
+  "volumetrics": false,
+  "inspection_fill": false,
+  "camera_target": [
+    112,
+    1,
+    72
+  ],
+  "section": "plan",
+  "section_axis": 90,
+  "orbit_yaw": 2.3,
+  "orbit_pitch": 0.9,
+  "radius": 28,
+  "height": 4,
+  "output_image": "docs/evidence/unfinished_crossing/break.png",
+  "strong_wireframe": false,
+  "exposure_ev100": 9.0
+}

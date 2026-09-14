@@ -5,10 +5,14 @@
 //! the same brush math. See [`geometry`] for why that mattered and how the port
 //! is gated.
 
+pub mod audience;
+pub mod courtyard;
 pub mod entities;
 pub mod geometry;
 pub mod halls;
+pub mod index;
 pub mod liminal;
+pub mod noon;
 pub mod perimeter;
 pub mod probe;
 pub mod program;
@@ -16,6 +20,8 @@ pub mod recipe;
 pub mod rooms;
 pub mod silos;
 pub mod tower;
+pub mod unwitnessed;
+pub mod witness;
 
 /// A builder, paired with the file stem it must reproduce.
 pub type Builder = (&'static str, fn() -> String);
@@ -47,6 +53,12 @@ pub fn builders() -> Vec<Builder> {
     all.extend(silos::builders());
     all.extend(rooms::builders());
     all.extend(program::builders());
+    all.extend(witness::builders());
+    all.extend(courtyard::builders());
+    all.extend(audience::builders());
+    all.extend(index::builders());
+    all.extend(noon::builders());
+    all.extend(unwitnessed::builders());
     all
 }
 

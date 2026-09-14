@@ -1,0 +1,15 @@
+{
+  "tile_id": "hall_turn_120",
+  "variant": 666,
+  "register": 7,
+  "view_mode": "orbit",
+  "render_mode": "lit",
+  "hide_menu": true,
+  "section": "none",
+  "orbit_yaw": 3.55,
+  "orbit_pitch": 0.24,
+  "radius": 19,
+  "height": 4,
+  "volumetrics": false,
+  "output_image": "docs/evidence/witness_exchange/gate.png"
+}

@@ -1,0 +1,126 @@
+{
+  "layout": [
+    {
+      "tile": "hall_straight:840",
+      "q": 2,
+      "r": 4,
+      "level": 0,
+      "turn": 0
+    },
+    {
+      "tile": "stair_tower:234",
+      "q": 4,
+      "r": 4,
+      "level": 0,
+      "turn": 0
+    },
+    {
+      "tile": "hall_junction_4way:840",
+      "q": 5,
+      "r": 4,
+      "level": 0,
+      "turn": 3
+    },
+    {
+      "tile": "hall_turn_120:840",
+      "q": 4,
+      "r": 5,
+      "level": 0,
+      "turn": 3
+    },
+    {
+      "tile": "hall_turn_120:846",
+      "q": 3,
+      "r": 5,
+      "level": 0,
+      "turn": 4
+    },
+    {
+      "tile": "hall_junction_4way:846",
+      "q": 3,
+      "r": 4,
+      "level": 0,
+      "turn": 0
+    },
+    {
+      "tile": "hall_turn_120:840",
+      "q": 4,
+      "r": 3,
+      "level": 0,
+      "turn": 0
+    },
+    {
+      "tile": "hall_turn_120:846",
+      "q": 5,
+      "r": 3,
+      "level": 0,
+      "turn": 1
+    },
+    {
+      "tile": "stair_tower:240",
+      "q": 4,
+      "r": 4,
+      "level": 1,
+      "turn": 0
+    },
+    {
+      "tile": "hall_junction_3way:840",
+      "q": 5,
+      "r": 4,
+      "level": 1,
+      "turn": 3
+    },
+    {
+      "tile": "hall_turn_120:840",
+      "q": 4,
+      "r": 5,
+      "level": 1,
+      "turn": 3
+    },
+    {
+      "tile": "hall_turn_120:846",
+      "q": 3,
+      "r": 5,
+      "level": 1,
+      "turn": 4
+    },
+    {
+      "tile": "hall_turn_120:840",
+      "q": 4,
+      "r": 3,
+      "level": 1,
+      "turn": 0
+    },
+    {
+      "tile": "hall_turn_120:846",
+      "q": 5,
+      "r": 3,
+      "level": 1,
+      "turn": 1
+    }
+  ],
+  "register": 8,
+  "view_mode": "firstperson",
+  "render_mode": "lit",
+  "hide_menu": true,
+  "volumetrics": false,
+  "inspection_fill": false,
+  "camera_target": [
+    94,
+    11,
+    65
+  ],
+  "section": "none",
+  "section_axis": 120,
+  "orbit_yaw": 3.8,
+  "orbit_pitch": 0.58,
+  "radius": 57,
+  "height": 6,
+  "facility_lighting": true,
+  "camera_pos": [
+    91,
+    10.15,
+    57
+  ],
+  "output_image": "docs/evidence/missing_rooms/reading.png"
+}

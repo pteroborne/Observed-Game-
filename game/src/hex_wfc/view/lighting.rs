@@ -94,6 +94,16 @@ pub(in crate::hex_wfc) fn sync_practical_shadow_budget(
     // Nearest fixtures by squared distance to the runner (small budget → cheap select).
     let mut ranked: Vec<(f32, Entity)> = practicals
         .iter()
+        .filter(|(_, practical, _)| {
+            let register = runtime
+                .match_state
+                .facility
+                .architecture
+                .get(&practical.0)
+                .copied()
+                .unwrap_or(ArchitectureRegister::ALL[0]);
+            style::hex_practical_light(register, HexComposition::Hall, 1).shadows_allowed
+        })
         .map(|(entity, practical, _)| {
             (
                 Vec3::from_array(hex_origin(practical.0)).distance_squared(focus),
@@ -268,6 +278,65 @@ mod tests {
     use super::*;
     use observed_content::ArchitectureRegister;
     use observed_style::{self as style, HexComposition};
+
+    #[test]
+    fn nearby_shadow_budget_does_not_enable_noon_practical_shadows() {
+        use observed_match::hex_wfc::{HexBotDriver, HexMatchConfig, HexWfcMatch};
+        use std::collections::{BTreeMap, BTreeSet};
+        let mut game = HexWfcMatch::new(
+            44,
+            HexMatchConfig::default(),
+            &crate::hex_wfc::sim::load_prototypes(),
+        )
+        .expect("fixture solves");
+        let local_player = *game.players.keys().next().expect("player");
+        let noon = game.players[&local_player].cell;
+        let other = observed_hex::HexCoord {
+            q: noon.q + 1,
+            ..noon
+        };
+        game.facility
+            .architecture
+            .insert(noon, ArchitectureRegister::OverlitGrid);
+        game.facility
+            .architecture
+            .insert(other, ArchitectureRegister::Monolith);
+        let mut app = App::new();
+        app.insert_resource(HexWfcRuntime {
+            match_state: game,
+            bot_driver: HexBotDriver::new(),
+            local_player,
+            pending_visual_cells: BTreeSet::new(),
+            presented_revisions: BTreeMap::new(),
+            status: String::new(),
+            map_open: false,
+            map_level: noon.level,
+            results_delay_frames: 0,
+            networked: false,
+            resync_attempts: 0,
+        })
+        .add_systems(Update, sync_practical_shadow_budget);
+        for _ in 0..4 {
+            app.world_mut()
+                .spawn((HexPractical(noon), PointLight::default()));
+        }
+        app.world_mut()
+            .spawn((HexPractical(other), PointLight::default()));
+        for current in [noon, other] {
+            app.world_mut()
+                .resource_mut::<HexWfcRuntime>()
+                .match_state
+                .players
+                .get_mut(&local_player)
+                .expect("player")
+                .cell = current;
+            app.update();
+            let world = app.world_mut();
+            for (fixture, light) in world.query::<(&HexPractical, &PointLight)>().iter(world) {
+                assert_eq!(light.shadow_maps_enabled, fixture.0 == other);
+            }
+        }
+    }
 
     #[test]
     fn initial_key_values_are_style_owned_targets() {

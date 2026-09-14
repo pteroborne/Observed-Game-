@@ -925,7 +925,13 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
             palette.fog_end = 36.0;
         }
         Register::OverlitGrid => {
-            palette.ambient_brightness = 140.0;
+            // The Noon owns neutral daylight, not the Archive's blue cast.
+            palette.ambient_color = Color::srgb(1.0, 0.995, 0.97);
+            palette.ambient_brightness = 180.0;
+            palette.light_color = Color::srgb(1.0, 0.995, 0.97);
+            palette.key_color = palette.light_color;
+            palette.accent = LinearRgba::rgb(0.36, 0.33, 0.27);
+            palette.fog_color = Color::srgb(0.015, 0.014, 0.012);
             palette.fog_start = 18.0;
             palette.fog_end = 48.0;
             palette.key_shadows_enabled = false;
@@ -1081,7 +1087,7 @@ fn architecture_material(register: observed_content::ArchitectureRegister) -> [[
         Register::Monolith => [[0.14, 0.14, 0.14], [0.34, 0.34, 0.33], [0.24, 0.24, 0.24]],
         // Always noon: not bright, *even*. Near-white with barely any hue, so
         // nothing in the room casts or catches. The one pale district.
-        Register::OverlitGrid => [[0.42, 0.43, 0.42], [0.80, 0.82, 0.80], [0.74, 0.76, 0.75]],
+        Register::OverlitGrid => [[0.72, 0.71, 0.68], [0.90, 0.89, 0.86], [0.92, 0.91, 0.88]],
         // Pale green-grey: the colour of every corridor built to be cleaned
         // rather than looked at.
         Register::Institutional => [[0.17, 0.19, 0.17], [0.46, 0.52, 0.46], [0.36, 0.40, 0.36]],
@@ -1208,6 +1214,15 @@ pub fn architecture_surface(
     role: ArchitectureSurfaceRole,
 ) -> Treatment {
     use observed_content::ArchitectureRegister as Register;
+    if register == Register::OverlitGrid {
+        let [floor, wall, ceiling] = architecture_material(register);
+        return match role {
+            ArchitectureSurfaceRole::Floor => shell_treatment(floor, 0.10),
+            ArchitectureSurfaceRole::Wall => shell_treatment(wall, 0.15),
+            ArchitectureSurfaceRole::Ceiling => shell_treatment(ceiling, 0.65),
+            ArchitectureSurfaceRole::PracticalFixture => shell_treatment([1.0, 0.995, 0.97], 1.2),
+        };
+    }
     if register == Register::LiminalGrid {
         return match role {
             ArchitectureSurfaceRole::Floor => Treatment {
@@ -1710,6 +1725,9 @@ pub struct HexSurfaceLook {
     /// Signal treatments render unlit so a gameplay cue cannot be dimmed by the
     /// room it is standing in.
     pub unlit: bool,
+    /// Apply the renderer's albedo texture. The Noon's sealed plaster is plain;
+    /// multiplying it by the shared mineral texture destroys its even light.
+    pub textured: bool,
 }
 
 /// How far hex shell albedo is pulled down from the palette tint.
@@ -1840,6 +1858,7 @@ pub fn hex_shell_look(
         ),
         emissive: palette_emissive_for_surface(treatment, &palette) * HEX_SHELL_EMISSIVE_SCALE,
         unlit: treatment.signal,
+        textured: true,
     }
 }
 
@@ -1850,7 +1869,19 @@ pub fn hex_shell_surface(
     register: observed_content::ArchitectureRegister,
     role: ArchitectureSurfaceRole,
 ) -> HexSurfaceLook {
-    hex_shell_look(&architecture_surface(register, role), register)
+    let treatment = architecture_surface(register, role);
+    if register == observed_content::ArchitectureRegister::OverlitGrid {
+        // Already a district-owned albedo. The generic palette blend would
+        // darken near-white plaster before lighting even reaches it. A small
+        // bounded emission approximates diffuse bounce without making it unlit.
+        return HexSurfaceLook {
+            base_color: treatment.base_color,
+            emissive: treatment.emissive,
+            unlit: false,
+            textured: false,
+        };
+    }
+    hex_shell_look(&treatment, register)
 }
 
 /// How far the hex facility trims the district key spotlight.
@@ -1866,6 +1897,46 @@ pub fn hex_shell_surface(
 /// needs the same number or it is previewing a different building. It lived in
 /// `game/src/hex_wfc/view/lighting.rs` while the game was its only reader.
 pub const HEX_KEY_INTENSITY_SCALE: f32 = 0.62;
+
+/// One authored practical's presentation budget, shared by the game and lab.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HexPracticalLight {
+    pub color: Color,
+    pub intensity: f32,
+    pub range: f32,
+    pub radius: f32,
+    pub shadows_allowed: bool,
+}
+
+#[must_use]
+pub fn hex_practical_light(
+    register: observed_content::ArchitectureRegister,
+    composition: HexComposition,
+    source_count: usize,
+) -> HexPracticalLight {
+    let palette = architecture_for_composition(register, composition);
+    let role_scale = match composition {
+        HexComposition::Room => 1.0,
+        HexComposition::Vertical => 1.05,
+        HexComposition::Hall => 0.85,
+    };
+    let rhythm = if palette.pools_rhythm && composition == HexComposition::Hall {
+        palette.hall_rhythm_dim
+    } else {
+        1.0
+    };
+    let per_source = (source_count.max(1) as f32).sqrt().recip().clamp(0.55, 1.0);
+    let noon = register == observed_content::ArchitectureRegister::OverlitGrid;
+    HexPracticalLight {
+        color: palette.light_color,
+        intensity: (if noon { 3_000_000.0 } else { 720_000.0 }) * role_scale * rhythm * per_source,
+        range: 14.0,
+        // A broad source softens the near-fixture specular response. Shadowless
+        // fill is deliberate for the Noon's concealed, indirect fixtures.
+        radius: if noon { 2.0 } else { 0.0 },
+        shadows_allowed: !noon,
+    }
+}
 
 /// Composition-aware atmosphere for the canonical hex facility.
 ///
@@ -2935,6 +3006,74 @@ mod tests {
                 ArchitectureSurfaceRole::PracticalFixture
             )
         );
+    }
+
+    #[test]
+    fn noon_is_pale_neutral_lit_structure_with_a_bounded_ceiling_fill() {
+        use observed_content::ArchitectureRegister as R;
+        let palette = architecture(R::OverlitGrid);
+        let light = palette.light_color.to_srgba();
+        assert!((light.red - light.blue).abs() < 0.04);
+        for role in [
+            ArchitectureSurfaceRole::Floor,
+            ArchitectureSurfaceRole::Wall,
+            ArchitectureSurfaceRole::Ceiling,
+        ] {
+            let look = hex_shell_surface(R::OverlitGrid, role);
+            assert!(!look.unlit && !look.textured);
+            let color = look.base_color.to_srgba();
+            assert!(color.red >= 0.7 && (color.red - color.blue).abs() < 0.05);
+            assert!(luminance(look.emissive) < SIGNAL_MIN_LUMINANCE * 0.5);
+        }
+        assert!(
+            luminance(hex_shell_surface(R::OverlitGrid, ArchitectureSurfaceRole::Ceiling).emissive)
+                > luminance(
+                    hex_shell_surface(R::OverlitGrid, ArchitectureSurfaceRole::Wall).emissive
+                )
+        );
+        for register in R::ALL {
+            if register != R::OverlitGrid {
+                assert!(hex_shell_surface(register, ArchitectureSurfaceRole::Wall).textured);
+            }
+        }
+    }
+
+    #[test]
+    fn noon_practicals_remain_broad_shadowless_and_budgeted() {
+        use observed_content::ArchitectureRegister as R;
+        for composition in [
+            HexComposition::Hall,
+            HexComposition::Room,
+            HexComposition::Vertical,
+        ] {
+            let single = hex_practical_light(R::OverlitGrid, composition, 1);
+            let group = hex_practical_light(R::OverlitGrid, composition, 4);
+            assert!(!group.shadows_allowed && group.radius >= 1.0);
+            assert!(group.intensity > 0.0 && group.intensity < single.intensity);
+            assert!(group.range >= 14.0);
+        }
+        let shadow = hex_practical_light(R::ShadowScreen, HexComposition::Hall, 4);
+        assert!(shadow.shadows_allowed);
+        assert!(
+            shadow.intensity
+                < hex_practical_light(R::ShadowScreen, HexComposition::Room, 4).intensity
+        );
+        assert!(
+            hex_practical_light(R::OverlitGrid, HexComposition::Hall, 0)
+                .intensity
+                .is_finite()
+        );
+    }
+
+    #[test]
+    fn noon_plaster_does_not_replace_semantic_route_accents() {
+        let route = hex_shell_look(
+            &surface(SurfaceRole::SafeBypass),
+            observed_content::ArchitectureRegister::OverlitGrid,
+        );
+        assert!(route.textured);
+        assert!(route.emissive.blue > route.emissive.red * 2.0);
+        assert!(luminance(route.emissive) < SIGNAL_MIN_LUMINANCE * 0.1);
     }
 
     #[test]

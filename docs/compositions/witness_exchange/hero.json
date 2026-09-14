@@ -1,0 +1,188 @@
+{
+  "layout": [
+    {
+      "tile": "hall_straight:666",
+      "q": 4,
+      "r": 4,
+      "level": 0,
+      "turn": 0
+    },
+    {
+      "tile": "hall_junction_4way:660",
+      "q": 5,
+      "r": 4,
+      "level": 0,
+      "turn": 0
+    },
+    {
+      "tile": "hall_junction_3way:660",
+      "q": 3,
+      "r": 4,
+      "level": 0,
+      "turn": 5
+    },
+    {
+      "tile": "hall_turn_120:660",
+      "q": 4,
+      "r": 5,
+      "level": 0,
+      "turn": 5
+    },
+    {
+      "tile": "hall_turn_120:660",
+      "q": 3,
+      "r": 5,
+      "level": 0,
+      "turn": 0
+    },
+    {
+      "tile": "hall_turn_120:660",
+      "q": 4,
+      "r": 3,
+      "level": 0,
+      "turn": 2
+    },
+    {
+      "tile": "hall_turn_120:660",
+      "q": 5,
+      "r": 3,
+      "level": 0,
+      "turn": 3
+    },
+    {
+      "tile": "hall_straight:660",
+      "q": 4,
+      "r": 4,
+      "level": 1,
+      "turn": 0
+    },
+    {
+      "tile": "hall_junction_4way:684",
+      "q": 5,
+      "r": 4,
+      "level": 1,
+      "turn": 2
+    },
+    {
+      "tile": "hall_junction_4way:678",
+      "q": 3,
+      "r": 4,
+      "level": 1,
+      "turn": 3
+    },
+    {
+      "tile": "hall_turn_120:660",
+      "q": 4,
+      "r": 3,
+      "level": 1,
+      "turn": 2
+    },
+    {
+      "tile": "hall_turn_120:660",
+      "q": 5,
+      "r": 3,
+      "level": 1,
+      "turn": 3
+    },
+    {
+      "tile": "hall_junction_3way:666",
+      "q": 5,
+      "r": 4,
+      "level": 2,
+      "turn": 2
+    },
+    {
+      "tile": "hall_junction_4way:690",
+      "q": 3,
+      "r": 4,
+      "level": 2,
+      "turn": 0
+    },
+    {
+      "tile": "hall_turn_120:666",
+      "q": 4,
+      "r": 3,
+      "level": 2,
+      "turn": 0
+    },
+    {
+      "tile": "hall_turn_120:672",
+      "q": 5,
+      "r": 3,
+      "level": 2,
+      "turn": 3
+    },
+    {
+      "tile": "hall_ramp:660",
+      "q": 6,
+      "r": 4,
+      "level": 0,
+      "turn": 0
+    },
+    {
+      "tile": "hall_turn_60:660",
+      "q": 7,
+      "r": 4,
+      "level": 1,
+      "turn": 4
+    },
+    {
+      "tile": "hall_turn_120:660",
+      "q": 7,
+      "r": 3,
+      "level": 1,
+      "turn": 3
+    },
+    {
+      "tile": "hall_turn_120:660",
+      "q": 6,
+      "r": 3,
+      "level": 1,
+      "turn": 2
+    },
+    {
+      "tile": "hall_ramp:660",
+      "q": 2,
+      "r": 4,
+      "level": 1,
+      "turn": 3
+    },
+    {
+      "tile": "hall_turn_60:660",
+      "q": 1,
+      "r": 4,
+      "level": 2,
+      "turn": 0
+    },
+    {
+      "tile": "hall_turn_120:660",
+      "q": 2,
+      "r": 3,
+      "level": 2,
+      "turn": 2
+    },
+    {
+      "tile": "hall_turn_120:660",
+      "q": 3,
+      "r": 3,
+      "level": 2,
+      "turn": 3
+    }
+  ],
+  "register": 7,
+  "view_mode": "orbit",
+  "render_mode": "lit",
+  "hide_menu": true,
+  "volumetrics": false,
+  "camera_target": [
+    84,
+    10,
+    45
+  ],
+  "section": "plan",
+  "output_image": "docs/evidence/witness_exchange/hero.png",
+  "orbit_yaw": 1.8,
+  "orbit_pitch": 0.45,
+  "radius": 88,
+  "height": 12
+}

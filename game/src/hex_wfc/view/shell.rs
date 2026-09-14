@@ -24,8 +24,6 @@ use crate::hex_wfc::sim::HexWfcRuntime;
 /// person, not just a floor disc. Every non-boundary cell gets one; the shadow budget
 /// ([`super::sync_practical_shadow_budget`]) turns a few of them into cast-shadow sources
 /// near the runner, which is where the contrast comes from.
-const PRACTICAL_BASE_INTENSITY: f32 = 720_000.0;
-const PRACTICAL_RANGE: f32 = 14.0;
 const PRACTICAL_HEIGHT: f32 = 5.6;
 /// Lightweight, presentation-only lookup into the authoritative geometry vectors.
 ///
@@ -359,18 +357,6 @@ fn spawn_cell_practicals(
     if role == HexStructureRole::Boundary {
         return 0;
     }
-    let palette = observed_style::architecture_for_composition(architecture, composition);
-    let is_place = composition != observed_style::HexComposition::Hall;
-    let role_scale = match composition {
-        observed_style::HexComposition::Room => 1.0,
-        observed_style::HexComposition::Vertical => 1.05,
-        observed_style::HexComposition::Hall => 0.85,
-    };
-    let rhythm_dim = if palette.pools_rhythm && !is_place {
-        palette.hall_rhythm_dim
-    } else {
-        1.0
-    };
     let has_authored_lights = !authored_lights.is_empty();
     let positions: Vec<Vec3> = if !has_authored_lights {
         // Defensive fallback: one fixture per footprint cell, not just the
@@ -388,7 +374,7 @@ fn spawn_cell_practicals(
             .map(|source| source.position)
             .collect()
     };
-    let per_source_scale = (positions.len() as f32).sqrt().recip().clamp(0.55, 1.0);
+    let practical = observed_style::hex_practical_light(architecture, composition, positions.len());
     let mut child_pieces = 0;
     for position in positions {
         if has_authored_lights && matches!(role, HexStructureRole::Room | HexStructureRole::Hall) {
@@ -425,9 +411,10 @@ fn spawn_cell_practicals(
         commands.spawn((
             HexPractical(coord),
             PointLight {
-                color: palette.light_color,
-                intensity: PRACTICAL_BASE_INTENSITY * role_scale * rhythm_dim * per_source_scale,
-                range: PRACTICAL_RANGE,
+                color: practical.color,
+                intensity: practical.intensity,
+                range: practical.range,
+                radius: practical.radius,
                 shadow_maps_enabled: false,
                 ..default()
             },

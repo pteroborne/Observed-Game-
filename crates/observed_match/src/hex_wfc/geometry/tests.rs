@@ -316,19 +316,21 @@ fn selected_tiles(snapshot: &HexWfcGeometrySnapshot) -> BTreeMap<HexCoord, TileK
 /// optimises the wrong thing.
 #[test]
 fn production_catalog_selection_is_pinned_for_spectator_seeds() {
+    // The six district benchmarks add catalogue candidates. Re-pin content;
+    // placement counts and the unchanged stair-tower family remain exact gates.
     let catalog = crate::hex_wfc::test_catalog();
     let cases = [
         (
             1u64,
             293usize,
-            0xb0ce_e8ce_2f80_5676u64,
+            0xa1d1_9004_358b_1ea5u64,
             45usize,
             0x95e0_1b87_e452_104cu64,
         ),
         (
             10_000_031u64,
             238usize,
-            0x1322_7c7c_fac1_9426u64,
+            0xef98_03ba_e19a_cb2eu64,
             29usize,
             0xe5db_a473_4a53_b1a3u64,
         ),

@@ -129,10 +129,21 @@ pub enum SectionCut {
     /// Roof off, the near half of the walls gone. Storeys stack and you see
     /// into all of them at once - the only view that shows a shaft as a shaft.
     Half,
+    /// Slice a quadrant through all geometry, including shelves and floor slabs.
+    QuarterVolume,
+    /// Slice through all geometry on the near side of a vertical plane.
+    HalfVolume,
 }
 
 impl SectionCut {
-    pub const ALL: [Self; 4] = [Self::None, Self::Plan, Self::Quarter, Self::Half];
+    pub const ALL: [Self; 6] = [
+        Self::None,
+        Self::Plan,
+        Self::Quarter,
+        Self::Half,
+        Self::QuarterVolume,
+        Self::HalfVolume,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -140,6 +151,8 @@ impl SectionCut {
             Self::Plan => "Plan (no roof)",
             Self::Quarter => "Quarter (dollhouse)",
             Self::Half => "Half (section)",
+            Self::QuarterVolume => "Quarter volume",
+            Self::HalfVolume => "Half volume",
         }
     }
 
@@ -154,7 +167,9 @@ impl SectionCut {
             Self::None => Self::Plan,
             Self::Plan => Self::Quarter,
             Self::Quarter => Self::Half,
-            Self::Half => Self::None,
+            Self::Half => Self::QuarterVolume,
+            Self::QuarterVolume => Self::HalfVolume,
+            Self::HalfVolume => Self::None,
         }
     }
 
@@ -165,6 +180,8 @@ impl SectionCut {
             "plan" | "no_ceiling" | "noceiling" => Some(Self::Plan),
             "quarter" | "dollhouse" => Some(Self::Quarter),
             "half" | "section" => Some(Self::Half),
+            "quarter_volume" => Some(Self::QuarterVolume),
+            "half_volume" => Some(Self::HalfVolume),
             _ => None,
         }
     }
@@ -515,6 +532,8 @@ pub struct LabState {
     /// Light the scene exactly as the shipped facility lights it, instead of
     /// with the lab's inspection fill. See `apply_facility_lighting`.
     pub facility_lighting: bool,
+    /// Use the existing inspection rig without cutting away authored roofs.
+    pub inspection_fill: bool,
     // Scripted walk for capture
     pub scripted_walk: bool,
     /// Cell centres of the current run, in order, for the scripted walk to
@@ -722,6 +741,7 @@ impl LabState {
             auto_orbit: false,
 
             facility_lighting: false,
+            inspection_fill: false,
             scripted_walk: false,
             walk_path: Vec::new(),
             walk_index: 0,
@@ -1659,10 +1679,22 @@ fn sync_render_env(
     }
 }
 
+/// A capped module can reserve more height than its visible envelope: a tower
+/// head reserves two cells for compatibility but its lid is one storey high.
+/// Open climbs retain their reservation height so a landing is never cut as a lid.
+fn tile_ceiling_height(tile: &TilePrototype) -> f32 {
+    let reserved = f32::from(tile.levels) * TILE_LEVEL_HEIGHT;
+    if tile.signature.port(HexFace::Up) != PortClass::Sealed {
+        return reserved;
+    }
+    let geometry_top = tile.hulls.iter().flatten().map(|p| p.y).fold(0.0, f32::max);
+    reserved.min((geometry_top / TILE_LEVEL_HEIGHT).ceil() * TILE_LEVEL_HEIGHT)
+}
+
 /// A hull counts as ceiling for the cutaway when it sits entirely in the top
 /// band of the composition's vertical extent.
 fn is_ceiling(hull: &[Vec3], top_y: f32) -> bool {
-    hull.iter().all(|point| point.y >= top_y - 1.5)
+    hull.iter().all(|point| point.y >= top_y - 0.75)
 }
 
 /// A hull tall enough to be a wall shell rather than a slab, in metres.
@@ -1680,8 +1712,9 @@ const SECTION_EPS: f32 = 1.5;
 /// shaft photographed as a closed box: the one view that needed a wall opened
 /// was the one view that never opened one.
 ///
-/// Only wall shells are cut. Floors and landings stay in every mode, because
-/// a section that removed the slabs would remove the thing it exists to show.
+/// Ordinary sections preserve floors and landings. QuarterVolume deliberately
+/// clips all geometry at the quadrant planes, so fittings do not float after their
+/// backing walls disappear. It is a display cut; collision geometry is untouched.
 fn section_hides(
     hull: &[Vec3],
     top_y: f32,
@@ -1702,7 +1735,9 @@ fn section_hides(
     let (min_y, max_y) = hull.iter().fold((f32::MAX, f32::MIN), |(lo, hi), p| {
         (lo.min(p.y), hi.max(p.y))
     });
-    if max_y - min_y < WALL_SHELL_MIN {
+    if !matches!(cut, SectionCut::QuarterVolume | SectionCut::HalfVolume)
+        && max_y - min_y < WALL_SHELL_MIN
+    {
         return false;
     }
     #[allow(clippy::cast_precision_loss)]
@@ -1711,15 +1746,81 @@ fn section_hides(
         .map(|p| transform.transform_point(*p))
         .sum::<Vec3>()
         / hull.len() as f32;
-    let delta = mid - center;
+    if matches!(cut, SectionCut::QuarterVolume | SectionCut::HalfVolume) {
+        hull.iter()
+            .all(|p| section_point_hidden(transform.transform_point(*p), center, cut, axis))
+    } else {
+        section_point_hidden(mid, center, cut, axis)
+    }
+}
+
+fn section_point_hidden(point: Vec3, center: Vec3, cut: SectionCut, axis: f32) -> bool {
+    let delta = point - center;
     let (sin, cos) = axis.sin_cos();
     let toward = delta.x * cos + delta.z * sin;
     let across = delta.z * cos - delta.x * sin;
     match cut {
-        SectionCut::Half => toward > SECTION_EPS,
-        SectionCut::Quarter => toward > SECTION_EPS && across > SECTION_EPS,
+        SectionCut::Half | SectionCut::HalfVolume => toward > SECTION_EPS,
+        SectionCut::Quarter | SectionCut::QuarterVolume => {
+            toward > SECTION_EPS && across > SECTION_EPS
+        }
         SectionCut::None | SectionCut::Plan => false,
     }
+}
+
+/// Clip convex points to a half-space. Pairwise crossings include every true
+/// edge intersection; extra crossings lie inside the same convex result.
+fn clipped_hull(hull: &[Vec3], distance: impl Fn(Vec3) -> f32) -> Vec<Vec3> {
+    let distances: Vec<_> = hull.iter().map(|p| distance(*p)).collect();
+    let mut points: Vec<_> = hull
+        .iter()
+        .zip(&distances)
+        .filter_map(|(p, d)| (*d <= 0.0).then_some(*p))
+        .collect();
+    for (i, &a) in hull.iter().enumerate() {
+        for (j, &b) in hull.iter().enumerate().skip(i + 1) {
+            if (distances[i] < 0.0 && distances[j] > 0.0)
+                || (distances[j] < 0.0 && distances[i] > 0.0)
+            {
+                let p = a.lerp(b, distances[i] / (distances[i] - distances[j]));
+                if points
+                    .iter()
+                    .all(|other| other.distance_squared(p) > 0.000_001)
+                {
+                    points.push(p);
+                }
+            }
+        }
+    }
+    points
+}
+
+fn half_volume_hull(hull: &[Vec3], transform: &Transform, center: Vec3, axis: f32) -> Vec<Vec3> {
+    let (sin, cos) = axis.sin_cos();
+    clipped_hull(hull, |p| {
+        let p = transform.transform_point(p) - center;
+        p.x * cos + p.z * sin - SECTION_EPS
+    })
+}
+
+fn volume_section_pieces(
+    hull: &[Vec3],
+    transform: &Transform,
+    center: Vec3,
+    axis: f32,
+) -> [Vec<Vec3>; 2] {
+    let (sin, cos) = axis.sin_cos();
+    let toward = |p: Vec3| {
+        let p = transform.transform_point(p) - center;
+        p.x * cos + p.z * sin - SECTION_EPS
+    };
+    let across = |p: Vec3| {
+        let p = transform.transform_point(p) - center;
+        p.z * cos - p.x * sin - SECTION_EPS
+    };
+    let far = clipped_hull(hull, toward);
+    let near = clipped_hull(hull, |p| -toward(p));
+    [far, clipped_hull(&near, across)]
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1757,6 +1858,34 @@ fn hull_mesh(hull: &[Vec3]) -> Option<Mesh> {
         .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, data.uvs)
         .with_inserted_indices(Indices::U32(data.indices)),
     )
+}
+
+struct PreviewPractical {
+    position: Vec3,
+    light: style::HexPracticalLight,
+}
+
+fn preview_practicals(
+    tile: &TilePrototype,
+    transform: Transform,
+    register: ArchitectureRegister,
+    composition: style::HexComposition,
+) -> Vec<PreviewPractical> {
+    let positions: Vec<Vec3> = if tile.lights.is_empty() {
+        (0..tile.levels)
+            .map(|level| Vec3::Y * (f32::from(level) * TILE_LEVEL_HEIGHT + 5.6))
+            .collect()
+    } else {
+        tile.lights.iter().map(|light| light.position).collect()
+    };
+    let light = style::hex_practical_light(register, composition, positions.len());
+    positions
+        .into_iter()
+        .map(|position| PreviewPractical {
+            position: transform.transform_point(position),
+            light,
+        })
+        .collect()
 }
 
 fn rebuild_visuals(
@@ -1802,7 +1931,7 @@ fn rebuild_visuals(
         RenderMode::Lit => {
             // Cutaway views are inspection views: open roofs read as caves
             // without a stronger fill, so the ambient floor rises with it.
-            let floor = if state.section.is_open() {
+            let floor = if state.section.is_open() || state.inspection_fill {
                 340.0
             } else {
                 200.0
@@ -1833,6 +1962,7 @@ fn rebuild_visuals(
     }
 
     let facility_lighting = state.facility_lighting;
+    let inspection_fill = state.inspection_fill && !facility_lighting;
     let mut get_surface_material = |kind: SurfaceKind| -> Handle<StandardMaterial> {
         match mode {
             RenderMode::Xray => {
@@ -1874,7 +2004,11 @@ fn rebuild_visuals(
                     ..default()
                 })
             }
-            RenderMode::Lit if facility_lighting => {
+            RenderMode::Lit
+                if facility_lighting
+                    || inspection_fill
+                    || register == ArchitectureRegister::OverlitGrid =>
+            {
                 // The facility's own shell look, from the one function the game
                 // paints with. The branch below hardcodes neutral greys for
                 // eight of the ten registers, so a Lit capture said nothing
@@ -1895,10 +2029,10 @@ fn rebuild_visuals(
                 };
                 materials.add(StandardMaterial {
                     base_color: look.base_color,
-                    base_color_texture: Some(tex),
+                    base_color_texture: look.textured.then_some(tex),
                     emissive: look.emissive,
                     unlit: look.unlit,
-                    perceptual_roughness: 0.85,
+                    perceptual_roughness: palette.surface_roughness,
                     ..default()
                 })
             }
@@ -1982,7 +2116,7 @@ fn rebuild_visuals(
 
     // Authored practical positions accumulate with the exact geometry
     // transforms. Only source data without explicit lights uses a centered fallback.
-    let mut pool_origins: Vec<Vec3> = Vec::new();
+    let mut pool_origins: Vec<PreviewPractical> = Vec::new();
 
     let mut spawn_hull_entity = |commands: &mut Commands,
                                  meshes: &mut ResMut<Assets<Mesh>>,
@@ -1990,16 +2124,33 @@ fn rebuild_visuals(
                                  transform: Transform,
                                  top_y: f32,
                                  name: String| {
-        let kind = hull_surface_kind(hull, top_y);
+        let kind = if register == ArchitectureRegister::OverlitGrid
+            && observed_traversal::render_mesh::is_overhead_slab(hull)
+        {
+            SurfaceKind::Ceiling
+        } else {
+            hull_surface_kind(hull, top_y)
+        };
         let mat = get_surface_material(kind);
-        if let Some(mesh) = hull_mesh(hull) {
-            commands.spawn((
-                TileVisual,
-                Mesh3d(meshes.add(mesh)),
-                MeshMaterial3d(mat),
-                transform,
-                Name::new(name),
-            ));
+        let pieces = if section == SectionCut::HalfVolume {
+            vec![half_volume_hull(hull, &transform, center, section_axis)]
+        } else if section == SectionCut::QuarterVolume {
+            volume_section_pieces(hull, &transform, center, section_axis).to_vec()
+        } else {
+            vec![hull.to_vec()]
+        };
+        for piece in pieces {
+            if piece.len() >= 4
+                && let Some(mesh) = hull_mesh(&piece)
+            {
+                commands.spawn((
+                    TileVisual,
+                    Mesh3d(meshes.add(mesh)),
+                    MeshMaterial3d(mat.clone()),
+                    transform,
+                    Name::new(name.clone()),
+                ));
+            }
         }
     };
 
@@ -2010,14 +2161,13 @@ fn rebuild_visuals(
         } => {
             if let Some(tile) = resolve_tile(&state.tiles, archetype, variant, register.slug()) {
                 let tile = tile.clone();
-                let top_y = f32::from(tile.levels) * TILE_LEVEL_HEIGHT;
-                if tile.lights.is_empty() {
-                    for level in 0..tile.levels {
-                        pool_origins.push(Vec3::Y * (f32::from(level) * TILE_LEVEL_HEIGHT + 5.4));
-                    }
-                } else {
-                    pool_origins.extend(tile.lights.iter().map(|light| light.position));
-                }
+                let top_y = tile_ceiling_height(&tile);
+                pool_origins.extend(preview_practicals(
+                    &tile,
+                    Transform::IDENTITY,
+                    register,
+                    facility_composition(archetype),
+                ));
                 for hull in &tile.hulls {
                     if section_hides(
                         hull,
@@ -2053,13 +2203,13 @@ fn rebuild_visuals(
                     && let Some(tile) = resolve_tile(&state.tiles, archetype, 0, register.slug())
                 {
                     let tile = tile.clone();
-                    let top_y = f32::from(tile.levels) * TILE_LEVEL_HEIGHT;
-                    if tile.lights.is_empty() {
-                        pool_origins.push(origin + Vec3::Y * 5.4);
-                    } else {
-                        pool_origins
-                            .extend(tile.lights.iter().map(|light| origin + light.position));
-                    }
+                    let top_y = tile_ceiling_height(&tile);
+                    pool_origins.extend(preview_practicals(
+                        &tile,
+                        Transform::from_translation(origin),
+                        register,
+                        style::HexComposition::Room,
+                    ));
                     for hull in &tile.hulls {
                         if section_hides(
                             hull,
@@ -2086,13 +2236,14 @@ fn rebuild_visuals(
         Composition::Layout { ref cells } => {
             for (tile, origin, rotation) in layout_placements(&state.tiles, register.slug(), cells)
             {
-                let top_y = f32::from(tile.levels) * TILE_LEVEL_HEIGHT;
+                let top_y = tile_ceiling_height(&tile);
                 let transform = Transform::from_translation(origin).with_rotation(rotation);
-                pool_origins.extend(
-                    tile.lights
-                        .iter()
-                        .map(|light| origin + rotation * light.position),
-                );
+                pool_origins.extend(preview_practicals(
+                    &tile,
+                    transform,
+                    register,
+                    facility_composition(&tile.key.archetype),
+                ));
                 for hull in &tile.hulls {
                     if section_hides(hull, top_y, &transform, center, section, section_axis) {
                         continue;
@@ -2110,13 +2261,14 @@ fn rebuild_visuals(
         }
         Composition::Run { ref steps } => {
             for (tile, origin, rotation) in run_placements(&state.tiles, register.slug(), steps) {
-                let top_y = f32::from(tile.levels) * TILE_LEVEL_HEIGHT;
+                let top_y = tile_ceiling_height(&tile);
                 let transform = Transform::from_translation(origin).with_rotation(rotation);
-                pool_origins.extend(
-                    tile.lights
-                        .iter()
-                        .map(|light| origin + rotation * light.position),
-                );
+                pool_origins.extend(preview_practicals(
+                    &tile,
+                    transform,
+                    register,
+                    facility_composition(&tile.key.archetype),
+                ));
                 for hull in &tile.hulls {
                     if section_hides(hull, top_y, &transform, center, section, section_axis) {
                         continue;
@@ -2134,13 +2286,14 @@ fn rebuild_visuals(
         }
         Composition::SiloWellshaft => {
             for (tile, origin, rotation) in silo_placements(&state.tiles, register.slug()) {
-                let top_y = f32::from(tile.levels) * TILE_LEVEL_HEIGHT;
+                let top_y = tile_ceiling_height(&tile);
                 let transform = Transform::from_translation(origin).with_rotation(rotation);
-                pool_origins.extend(
-                    tile.lights
-                        .iter()
-                        .map(|light| origin + rotation * light.position),
-                );
+                pool_origins.extend(preview_practicals(
+                    &tile,
+                    transform,
+                    register,
+                    facility_composition(&tile.key.archetype),
+                ));
                 for hull in &tile.hulls {
                     // The core is the subject of this composition, so it is
                     // never cut; everything round it obeys the same rule as
@@ -2161,6 +2314,11 @@ fn rebuild_visuals(
                 }
             }
         }
+    }
+
+    if matches!(section, SectionCut::QuarterVolume | SectionCut::HalfVolume) {
+        pool_origins
+            .retain(|point| !section_point_hidden(point.position, center, section, section_axis));
     }
 
     if mode == RenderMode::Clay {
@@ -2191,7 +2349,7 @@ fn rebuild_visuals(
         ));
     }
 
-    if mode == RenderMode::Lit && cross_section {
+    if mode == RenderMode::Lit && (cross_section || inspection_fill) {
         // Inspection fill for open-roof views: soft, shadowless, just enough
         // to keep backfaces out of pure black without flattening the mood.
         // The second, lower-angle fill catches vertical faces (pylons).
@@ -2203,7 +2361,11 @@ fn rebuild_visuals(
                 TileVisual,
                 DirectionalLight {
                     illuminance,
-                    color: Color::srgb(0.85, 0.90, 1.0),
+                    color: if register == ArchitectureRegister::OverlitGrid {
+                        palette.light_color
+                    } else {
+                        Color::srgb(0.85, 0.90, 1.0)
+                    },
                     shadow_maps_enabled: false,
                     ..default()
                 },
@@ -2223,24 +2385,32 @@ fn rebuild_visuals(
             perceptual_roughness: 0.72,
             ..default()
         });
-        for origin in &pool_origins {
+        for practical in &pool_origins {
+            let origin = practical.position;
+            let light = practical.light;
             commands.spawn((
                 TileVisual,
                 Mesh3d(fixture_mesh.clone()),
                 MeshMaterial3d(fixture_material.clone()),
-                Transform::from_translation(*origin - Vec3::Y * 0.06),
+                Transform::from_translation(origin - Vec3::Y * 0.06),
                 Name::new("Style-owned practical diffuser"),
             ));
             commands.spawn((
                 TileVisual,
                 PointLight {
-                    color: palette.light_color,
-                    intensity: 900_000.0,
-                    range: 14.0,
+                    color: light.color,
+                    intensity: if facility_lighting || register == ArchitectureRegister::OverlitGrid
+                    {
+                        light.intensity
+                    } else {
+                        900_000.0
+                    },
+                    range: light.range,
+                    radius: light.radius,
                     shadow_maps_enabled: false,
                     ..default()
                 },
-                Transform::from_translation(*origin),
+                Transform::from_translation(origin),
                 Name::new("Authored practical"),
             ));
         }
@@ -2250,8 +2420,12 @@ fn rebuild_visuals(
         // spot enclosed with a tall central occluder renders the occluder
         // pitch black behind a tall central occluder, and inspection is
         // the point of a cutaway anyway.
-        let key_height = pool_origins.iter().map(|o| o.y).fold(0.0_f32, f32::max) + 14.0;
-        if !cross_section {
+        let key_height = pool_origins
+            .iter()
+            .map(|o| o.position.y)
+            .fold(0.0_f32, f32::max)
+            + 14.0;
+        if !cross_section && !inspection_fill {
             if register == ArchitectureRegister::Monolith {
                 commands.spawn((
                     TileVisual,
@@ -2452,6 +2626,74 @@ mod tests {
     use super::*;
 
     #[test]
+    fn noon_practicals_and_overhead_materials_survive_visual_resets() {
+        let mut state = LabState::load();
+        state.register_index = 2;
+        state.compositions.push(Composition::SingleTile {
+            archetype: "hall_straight".to_string(),
+            variant: 900,
+        });
+        state.current_composition = state.compositions.len() - 1;
+        state.render_mode = RenderMode::Lit;
+        state.facility_lighting = true;
+        state.dirty = true;
+        let tile = state.tile().expect("Noon source");
+        let panels: Vec<_> = tile
+            .hulls
+            .iter()
+            .filter(|h| observed_traversal::render_mesh::is_overhead_slab(h))
+            .collect();
+        assert_eq!(panels.len(), 2, "outer roof and suspended raft");
+        assert_eq!(
+            panels.iter().filter(|h| is_ceiling(h, 8.0)).count(),
+            1,
+            "roof cutting must preserve the raft"
+        );
+        let expected = preview_practicals(
+            tile,
+            Transform::IDENTITY,
+            ArchitectureRegister::OverlitGrid,
+            style::HexComposition::Hall,
+        );
+        assert_eq!(expected.len(), 4);
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            bevy::asset::AssetPlugin {
+                file_path: format!("{}/assets", env!("CARGO_MANIFEST_DIR")),
+                ..default()
+            },
+            bevy::image::ImagePlugin::default(),
+        ))
+        .init_asset::<Mesh>()
+        .init_asset::<StandardMaterial>()
+        .insert_resource(state)
+        .add_systems(Update, rebuild_visuals);
+        let mut count = None;
+        for _ in 0..3 {
+            app.world_mut().resource_mut::<LabState>().dirty = true;
+            app.update();
+            let world = app.world_mut();
+            let actual = world
+                .query_filtered::<Entity, With<TileVisual>>()
+                .iter(world)
+                .count();
+            assert_eq!(
+                *count.get_or_insert(actual),
+                actual,
+                "visuals accumulate on reset"
+            );
+            let lights: Vec<_> = world.query::<&PointLight>().iter(world).collect();
+            assert_eq!(lights.len(), 4);
+            for light in lights {
+                assert_eq!(light.intensity, expected[0].light.intensity);
+                assert_eq!(light.radius, expected[0].light.radius);
+                assert!(!light.shadow_maps_enabled);
+            }
+        }
+    }
+
+    #[test]
     fn lab_state_loads_and_compositions_are_deduplicated() {
         let state = LabState::load();
         assert!(!state.tiles.is_empty());
@@ -2566,5 +2808,299 @@ mod tests {
             .position(|register| *register == ArchitectureRegister::LiminalGrid)
             .expect("liminal register");
         assert!(state.composition_available(liminal_only));
+    }
+
+    fn assert_layout_resolves_mates_connects_and_resets(
+        source: &str,
+        register_index: usize,
+        register: &str,
+        count: usize,
+    ) {
+        use observed_authoring::rotation::rotate_signature;
+        use observed_hex::{PortClass, PortSignature, ports_compatible};
+        use std::collections::{BTreeMap, BTreeSet};
+
+        let script: script_runner::ViewScript =
+            serde_json::from_str(source).expect("benchmark script parses");
+        let cells: Vec<LayoutCell> = script
+            .layout
+            .expect("explicit benchmark layout")
+            .into_iter()
+            .map(|entry| {
+                let (archetype, variant) = entry.tile.split_once(':').expect("explicit variant");
+                LayoutCell {
+                    archetype: archetype.to_string(),
+                    variant: variant.parse().expect("variant"),
+                    coord: HexCoord {
+                        q: entry.q,
+                        r: entry.r,
+                        level: entry.level,
+                    },
+                    turn: entry.turn,
+                    register: entry.register,
+                }
+            })
+            .collect();
+        let mut state = LabState::load();
+        state.register_index = register_index;
+        let placements = layout_placements(&state.tiles, register, &cells);
+        assert_eq!(
+            placements.len(),
+            count,
+            "the complete benchmark must resolve"
+        );
+        assert_eq!(placements.len(), cells.len());
+        let mut signatures = BTreeMap::new();
+        for (cell, (tile, _, _)) in cells.iter().zip(&placements) {
+            assert!(
+                signatures
+                    .insert(cell.coord, rotate_signature(tile.signature, cell.turn))
+                    .is_none()
+            );
+            if tile.key.archetype == "hall_ramp" {
+                // The solver represents the upper half separately as RampHead;
+                // the lab renders both halves using the lower prefab.
+                let mut ports = [PortClass::Sealed; 8];
+                ports[HexFace::East.index()] = PortClass::Door;
+                ports[HexFace::Down.index()] = PortClass::RampOpen;
+                let head = PortSignature::try_from_ports(ports).expect("ramp head");
+                let upper = HexCoord {
+                    level: cell.coord.level + 1,
+                    ..cell.coord
+                };
+                assert!(
+                    signatures
+                        .insert(upper, rotate_signature(head, cell.turn))
+                        .is_none()
+                );
+            }
+        }
+        let grid = HexGridSize {
+            cols: 10,
+            rows: 10,
+            levels: 4,
+        };
+        for (&cell, signature) in &signatures {
+            for face in HexFace::ALL {
+                if let Some(neighbor) = grid.neighbor(cell, face)
+                    && let Some(other) = signatures.get(&neighbor)
+                {
+                    assert!(
+                        ports_compatible(signature.port(face), other.port(face.opposite())),
+                        "unmatched {cell:?} {face:?} -> {neighbor:?}"
+                    );
+                }
+            }
+        }
+        let mut seen = BTreeSet::new();
+        let mut pending = vec![cells[0].coord];
+        while let Some(cell) = pending.pop() {
+            if !seen.insert(cell) {
+                continue;
+            }
+            for face in HexFace::ALL {
+                if signatures[&cell].port(face) != PortClass::Sealed
+                    && let Some(next) = grid.neighbor(cell, face)
+                    && signatures.contains_key(&next)
+                {
+                    pending.push(next);
+                }
+            }
+        }
+        assert_eq!(
+            seen.len(),
+            signatures.len(),
+            "all tiers must be reachable through authored ports"
+        );
+        state.compositions.push(Composition::Layout { cells });
+        let index = state.compositions.len() - 1;
+        state.switch(index);
+        let colliders = state.scene.collider_count();
+        let spawn = state.body.position;
+        for _ in 0..3 {
+            state.body.position = Vec3::ZERO;
+            state.switch(index);
+            assert_eq!(state.scene.collider_count(), colliders);
+            assert_eq!(state.body.position, spawn);
+        }
+    }
+    #[test]
+    fn witness_exchange_resolves_mates_connects_and_resets() {
+        assert_layout_resolves_mates_connects_and_resets(
+            include_str!("../../../docs/compositions/witness_exchange/hero.json"),
+            6,
+            "wellshaft",
+            24,
+        );
+    }
+
+    #[test]
+    fn last_courtyard_resolves_mates_connects_and_resets() {
+        assert_layout_resolves_mates_connects_and_resets(
+            include_str!("../../../docs/compositions/last_courtyard/hero.json"),
+            8,
+            "thinning",
+            9,
+        );
+    }
+    #[test]
+    fn empty_audience_resolves_mates_connects_and_resets() {
+        assert_layout_resolves_mates_connects_and_resets(
+            include_str!("../../../docs/compositions/empty_audience/hero.json"),
+            4,
+            "facet_monument",
+            11,
+        );
+    }
+    #[test]
+    fn missing_rooms_resolves_mates_connects_and_resets() {
+        assert_layout_resolves_mates_connects_and_resets(
+            include_str!("../../../docs/compositions/missing_rooms/hero.json"),
+            7,
+            "infinite_gallery",
+            14,
+        );
+    }
+
+    #[test]
+    fn a_capped_tower_loses_its_lid_in_section_but_an_open_climb_keeps_its_landing() {
+        let state = LabState::load();
+        let cap =
+            resolve_tile(&state.tiles, "stair_tower", 240, "infinite_gallery").expect("shaft head");
+        let base =
+            resolve_tile(&state.tiles, "stair_tower", 234, "infinite_gallery").expect("shaft foot");
+        assert_eq!(tile_ceiling_height(cap), 8.0);
+        assert_eq!(tile_ceiling_height(base), 16.0);
+        let cap_roofs = cap
+            .hulls
+            .iter()
+            .filter(|h| {
+                section_hides(
+                    h,
+                    tile_ceiling_height(cap),
+                    &Transform::IDENTITY,
+                    Vec3::ZERO,
+                    SectionCut::Plan,
+                    0.0,
+                )
+            })
+            .count();
+        assert_eq!(cap_roofs, 1, "only the actual lid should disappear");
+        assert!(base.hulls.iter().all(|h| !section_hides(
+            h,
+            tile_ceiling_height(base),
+            &Transform::IDENTITY,
+            Vec3::ZERO,
+            SectionCut::Plan,
+            0.0
+        )));
+    }
+    #[test]
+    fn volume_section_removes_shelves_and_their_lights_with_the_cut_quadrant() {
+        let shelf = vec![Vec3::new(3.0, 2.0, 3.0), Vec3::new(5.0, 2.2, 5.0)];
+        assert!(!section_hides(
+            &shelf,
+            8.0,
+            &Transform::IDENTITY,
+            Vec3::ZERO,
+            SectionCut::Quarter,
+            0.0
+        ));
+        assert!(section_hides(
+            &shelf,
+            8.0,
+            &Transform::IDENTITY,
+            Vec3::ZERO,
+            SectionCut::QuarterVolume,
+            0.0
+        ));
+        assert!(section_point_hidden(
+            Vec3::new(4.0, 3.0, 4.0),
+            Vec3::ZERO,
+            SectionCut::QuarterVolume,
+            0.0
+        ));
+        assert!(!section_point_hidden(
+            Vec3::new(-4.0, 3.0, 4.0),
+            Vec3::ZERO,
+            SectionCut::QuarterVolume,
+            0.0
+        ));
+        assert_eq!(
+            SectionCut::parse("quarter_volume"),
+            Some(SectionCut::QuarterVolume)
+        );
+    }
+    #[test]
+    fn volume_section_clips_a_crossing_floor_instead_of_discarding_the_whole_slab() {
+        let mut cube = Vec::new();
+        for x in [-4.0, 4.0] {
+            for y in [0.0, 0.5] {
+                for z in [-4.0, 4.0] {
+                    cube.push(Vec3::new(x, y, z));
+                }
+            }
+        }
+        let half = half_volume_hull(&cube, &Transform::IDENTITY, Vec3::ZERO, 0.0);
+        assert!(half.iter().all(|p| p.x <= SECTION_EPS + 0.001));
+        assert!(hull_mesh(&half).is_some());
+        let pieces = volume_section_pieces(&cube, &Transform::IDENTITY, Vec3::ZERO, 0.0);
+        assert!(
+            pieces
+                .iter()
+                .all(|piece| piece.len() >= 8 && hull_mesh(piece).is_some())
+        );
+        assert!(pieces[0].iter().all(|p| p.x <= SECTION_EPS + 0.001));
+        assert!(
+            pieces[1]
+                .iter()
+                .all(|p| p.x >= SECTION_EPS - 0.001 && p.z <= SECTION_EPS + 0.001)
+        );
+        assert!(
+            pieces
+                .iter()
+                .flatten()
+                .any(|p| (p.x - SECTION_EPS).abs() < 0.001)
+        );
+    }
+    #[test]
+    fn roof_removal_preserves_all_twenty_reading_room_shelves() {
+        let state = LabState::load();
+        let tile = resolve_tile(&state.tiles, "hall_turn_120", 840, "infinite_gallery")
+            .expect("reading room");
+        let hidden = tile
+            .hulls
+            .iter()
+            .filter(|h| {
+                section_hides(
+                    h,
+                    tile_ceiling_height(tile),
+                    &Transform::IDENTITY,
+                    Vec3::ZERO,
+                    SectionCut::Plan,
+                    0.0,
+                )
+            })
+            .count();
+        assert_eq!(hidden, 1, "remove the roof, not the upper shelf courses");
+    }
+    #[test]
+    fn unfinished_crossing_resolves_mates_connects_and_resets() {
+        assert_layout_resolves_mates_connects_and_resets(
+            include_str!("../../../docs/compositions/unfinished_crossing/hero.json"),
+            5,
+            "megastructure",
+            17,
+        );
+    }
+
+    #[test]
+    fn same_door_twice_resolves_mates_connects_and_resets() {
+        assert_layout_resolves_mates_connects_and_resets(
+            include_str!("../../../docs/compositions/same_door_twice/hero.json"),
+            2,
+            "overlit_grid",
+            15,
+        );
     }
 }

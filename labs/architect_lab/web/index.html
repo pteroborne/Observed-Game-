@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#101413" />
+    <title>Rogue Architect — Observed</title>
+    <link rel="stylesheet" href="./style.css?v=__BUILD__" />
+  </head>
+  <body>
+    <div id="loading" role="status">
+      <div class="loading-mark">◈</div>
+      <h1>Rogue Architect</h1>
+      <p>Building your hunting ground…</p>
+      <small>The facility is generated on your device.</small>
+    </div>
+    <main id="app" hidden>
+      <header class="topbar">
+        <div class="wordmark">
+          <span class="brand-mark">◈</span>
+          <div>
+            <span class="eyebrow">OBSERVED / PLAYABLE EXPERIMENT</span>
+            <h1>Rogue Architect</h1>
+          </div>
+        </div>
+        <div class="top-actions">
+          <button id="help" class="icon-button" aria-label="How to play">
+            ?</button
+          ><button id="pause" class="quiet">Begin hunt</button>
+        </div>
+      </header>
+      <section class="mission" aria-label="Hunt status">
+        <div>
+          <span class="status-dot"></span
+          ><span id="phase">Take your time. Make a plan.</span>
+        </div>
+        <div class="score">
+          <span id="caught">0 / 2</span> <span class="muted">captured</span>
+        </div>
+        <span id="elapsed" class="mono">0:00</span>
+      </section>
+      <section id="arena" aria-label="Facility map">
+        <div class="map-toolbar">
+          <div id="floors" role="group" aria-label="Visible floor"></div>
+          <div>
+            <button id="show-tiles" class="quiet small">Tiles</button>
+            <button id="fit" class="quiet small">Fit map</button>
+          </div>
+        </div>
+        <svg
+          id="board"
+          role="group"
+          aria-label="Hunting ground. Select a tile to preview a card."
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <defs>
+            <pattern
+              id="dots"
+              width="28"
+              height="28"
+              patternUnits="userSpaceOnUse"
+            >
+              <circle cx="1" cy="1" r="0.7" fill="currentColor" opacity=".18" />
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#dots)" />
+          <g id="map-content"></g>
+        </svg>
+        <div id="map-note" class="map-note">
+          Tap a tile · drag to pan · pinch to zoom
+        </div>
+        <div class="legend">
+          <span><i class="legend-eye">◉</i> Observer</span
+          ><span><i class="legend-guardian">▲</i> Guardian</span
+          ><span><i class="legend-held">◌</i> Watched</span
+          ><span><i class="legend-warning">!</i> Unstable</span>
+        </div>
+        <div id="collapse" class="collapse-banner" hidden></div>
+      </section>
+      <aside class="command-panel">
+        <div class="panel-heading">
+          <div>
+            <span class="eyebrow">YOUR NEXT MOVE</span>
+            <h2 id="move-title">Choose a card</h2>
+          </div>
+          <span id="charge-label" class="tag">Ready</span>
+        </div>
+        <div class="charge-track"><div id="charge"></div></div>
+        <div id="hand" role="group" aria-label="Your five cards"></div>
+        <div class="selection-copy">
+          <span id="target-label" class="eyebrow"
+            >1. PICK A CARD · 2. TAP A TILE</span
+          >
+          <p id="effect">Glowing dots mark places your card can change.</p>
+          <p id="consequence" class="muted">
+            You can inspect and rotate before committing.
+          </p>
+        </div>
+        <div class="play-controls">
+          <button
+            id="rotate"
+            class="quiet"
+            aria-label="Rotate selected card clockwise"
+          >
+            ↻ <span>Rotate</span></button
+          ><button id="play" class="primary" disabled>Choose a tile</button>
+        </div>
+        <p id="feedback" role="status" aria-live="polite">
+          Open a route. Break their cover. Let the Guardian hunt.
+        </p>
+        <details class="field-notes">
+          <summary>Field notes <span id="event-count"></span></summary>
+          <ol id="events"></ol>
+          <p>
+            Only Observers detected along a Guardian’s sightline appear. Dotted
+            routes show current pursuit; previews do not predict future
+            movement.
+          </p>
+        </details>
+      </aside>
+      <footer>
+        <span>Architecture is your weapon.</span>
+        <div>
+          <label class="sr-only" for="scenario">Scenario</label
+          ><select id="scenario">
+            <option value="0">Pocket Pursuit</option>
+            <option value="1">Quick Climb · 2 floors</option>
+            <option value="2">Full Ascent · 2 floors</option></select
+          ><button id="demo" class="quiet small">Watch a demo</button
+          ><button id="restart" class="quiet small">Restart</button>
+        </div>
+      </footer>
+    </main>
+    <dialog id="guide" aria-labelledby="guide-title">
+      <form method="dialog">
+        <span class="eyebrow">YOU ARE THE ROGUE ARCHITECT</span>
+        <h2 id="guide-title">Build the trap.<br />Let them walk into it.</h2>
+        <p>
+          Your Guardian hunts the two Observers. You control the connections
+          between them.
+        </p>
+        <ol class="guide-steps">
+          <li>
+            <b>Choose a card, then a tile.</b
+            ><span
+              >Glowing dots mark legal targets. Rotate to change the
+              connections.</span
+            >
+          </li>
+          <li>
+            <b>Preview the consequence.</b
+            ><span
+              >A new route can help the Guardian. An unmatched connection starts
+              a visible collapse.</span
+            >
+          </li>
+          <li>
+            <b>Play it. Watch the hunt.</b
+            ><span
+              >Cards recharge in five seconds. Cyan rings mark protected,
+              watched tiles. Hidden Observers appear when your Guardian sees
+              them. Capture both to win.</span
+            >
+          </li>
+        </ol>
+        <p class="guide-tip">
+          Use <b>Plan</b> whenever you want a breather. The hunt starts only
+          when you press <b>Begin hunt</b>.
+        </p>
+        <button class="primary" value="close">Let me try</button>
+      </form>
+    </dialog>
+    <dialog id="result" aria-labelledby="result-title">
+      <span class="eyebrow">THE HUNT IS OVER</span>
+      <h2 id="result-title">The facility is yours.</h2>
+      <p id="result-copy"></p>
+      <div class="result-actions">
+        <button id="again" class="primary">Hunt again</button
+        ><button id="inspect" class="quiet">Inspect the board</button>
+      </div>
+    </dialog>
+    <dialog id="tiles" aria-labelledby="tiles-title">
+      <span class="eyebrow">INK, STONE &amp; MISCHIEF</span>
+      <h2 id="tiles-title">The dungeon on your table.</h2>
+      <p>
+        Five painted tile studies. Every opening follows the actual game
+        connections; each turn moves it to the next clockwise edge.
+      </p>
+      <div id="tile-gallery"></div>
+      <div class="gallery-controls">
+        <button id="gallery-rotate" class="quiet">↻ Turn all tiles</button
+        ><span id="gallery-angle" class="mono"></span>
+      </div>
+      <p class="muted">
+        E → SE → SW → W → NW → NE. Door cards target one edge; prison openings
+        follow the room beneath them.
+      </p>
+      <form method="dialog">
+        <button class="primary">Back to the hunt</button>
+      </form>
+    </dialog>
+    <script type="module" src="./app.js?v=__BUILD__"></script>
+  </body>
+</html>

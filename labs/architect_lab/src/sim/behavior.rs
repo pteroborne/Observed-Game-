@@ -1,0 +1,355 @@
+//! Deterministic role selectors. Trees choose intents; application remains in
+//! the authoritative simulation.
+
+use observed_hex::{HexCoord, travel_distance};
+
+use super::{
+    ArchitectCommand, ArchitectLab, BehaviorTrace, DoorState, GuardianId, ObserverId,
+    ObserverState, ThresholdKey, command_key, face_between, threshold_touches,
+};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum ObserverIntent {
+    Hold,
+    HoldGuardian,
+    Step(HexCoord),
+    SetDoor(ThresholdKey, DoorState),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum GuardianIntent {
+    Hold,
+    Step(HexCoord, Option<HexCoord>),
+    Capture(ObserverId),
+}
+
+impl ArchitectLab {
+    pub(super) fn observer_intent(&self, id: ObserverId) -> (ObserverIntent, BehaviorTrace) {
+        let observer = &self.observers[&id];
+        let mut trace = BehaviorTrace::default();
+        if trace.test("held in prison", observer.state == ObserverState::Jailed) {
+            return (ObserverIntent::Hold, trace);
+        }
+        let visible_guardian = self.guardians.values().find(|guardian| {
+            guardian.cell == observer.cell
+                || self.step_through(observer.cell, observer.facing) == Some(guardian.cell)
+        });
+        if trace.test(
+            "hold visible Guardian",
+            visible_guardian.is_some() && observer.hold_beats < 2,
+        ) {
+            return (ObserverIntent::HoldGuardian, trace);
+        }
+        if let Some(guardian) = visible_guardian
+            && let Some(key) = self.threshold_between(observer.cell, guardian.cell)
+            && self.doors.get(&key) == Some(&DoorState::Open)
+        {
+            trace.visited.push("close door on Guardian");
+            trace.selected = Some("close door on Guardian");
+            return (ObserverIntent::SetDoor(key, DoorState::Closed), trace);
+        }
+        let danger = self
+            .guardians
+            .values()
+            .any(|guardian| travel_distance(observer.cell, guardian.cell) <= 2);
+        if trace.test("evade immediate danger", danger)
+            && let Some(next) = self.safest_exit(observer.cell)
+        {
+            return (ObserverIntent::Step(next), trace);
+        }
+        let summit = self.world.config.exit();
+        if trace.test("advance summit", observer.cell != summit) {
+            if let Some(next) = self
+                .route(observer.cell, summit)
+                .and_then(|path| path.get(1).copied())
+            {
+                return (ObserverIntent::Step(next), trace);
+            }
+            if let Some(key) = self.closed_door_restoring_route(observer.cell, summit) {
+                trace.visited.push("open door toward summit");
+                trace.selected = Some("open door toward summit");
+                return (ObserverIntent::SetDoor(key, DoorState::Open), trace);
+            }
+        }
+        trace.test("watch another approach", true);
+        (ObserverIntent::Hold, trace)
+    }
+
+    fn safest_exit(&self, from: HexCoord) -> Option<HexCoord> {
+        self.exits(from).into_iter().max_by_key(|&candidate| {
+            let nearest = self
+                .guardians
+                .values()
+                .filter_map(|guardian| self.route(candidate, guardian.cell).map(|path| path.len()))
+                .min()
+                .unwrap_or(usize::MAX);
+            (nearest, std::cmp::Reverse(candidate))
+        })
+    }
+
+    pub(super) fn apply_observer_intent(&mut self, id: ObserverId, intent: ObserverIntent) {
+        let observer = self.observers.get_mut(&id).expect("known Observer");
+        match intent {
+            ObserverIntent::HoldGuardian => observer.hold_beats += 1,
+            ObserverIntent::Hold => {
+                observer.hold_beats = 0;
+                observer.facing = super::lateral_face((observer.facing.index() as u8 + 1) % 6);
+            }
+            ObserverIntent::Step(next) => {
+                if let Some(face) = face_between(self.world.config, observer.cell, next) {
+                    observer.facing = face;
+                }
+                observer.cell = next;
+                observer.hold_beats = 0;
+            }
+            ObserverIntent::SetDoor(key, state) => {
+                self.doors.insert(key, state);
+                observer.hold_beats = 0;
+            }
+        }
+    }
+
+    pub(super) fn threshold_between(&self, from: HexCoord, to: HexCoord) -> Option<ThresholdKey> {
+        let face = face_between(self.world.config, from, to)?;
+        self.threshold_key(from, face)
+    }
+
+    fn closed_door_restoring_route(&self, from: HexCoord, goal: HexCoord) -> Option<ThresholdKey> {
+        self.doors
+            .iter()
+            .filter(|(_, state)| **state == DoorState::Closed)
+            .filter(|(key, _)| threshold_touches(**key, from, &self.world))
+            .map(|(&key, _)| key)
+            .find(|&key| {
+                let mut preview = self.clone();
+                preview.doors.insert(key, DoorState::Open);
+                preview.route(from, goal).is_some()
+            })
+    }
+
+    pub(super) fn guardian_intent(&self, id: GuardianId) -> (GuardianIntent, BehaviorTrace) {
+        let guardian = &self.guardians[&id];
+        let mut trace = BehaviorTrace::default();
+        if trace.test(
+            "frozen while observed",
+            self.observed.contains(&guardian.cell),
+        ) {
+            return (GuardianIntent::Hold, trace);
+        }
+        if let Some(observer) = self.observers.values().find(|observer| {
+            observer.state == ObserverState::Active && observer.cell == guardian.cell
+        }) {
+            trace.test("capture adjacent", true);
+            return (GuardianIntent::Capture(observer.id), trace);
+        }
+        trace.test("capture adjacent", false);
+        let detected = self.detected_observers();
+        let target = self
+            .observers
+            .values()
+            .filter(|observer| {
+                observer.state == ObserverState::Active && detected.contains(&observer.id)
+            })
+            .filter_map(|observer| {
+                self.route(guardian.cell, observer.cell)
+                    .map(|path| (path.len(), observer.id, observer.cell, path))
+            })
+            .min_by_key(|(len, id, _, _)| (*len, *id));
+        if trace.test("pursue detected", target.is_some()) {
+            let (_, _, target_cell, path) = target.expect("branch proved target");
+            if path.len() <= 1 {
+                let observer = self
+                    .observers
+                    .values()
+                    .find(|observer| {
+                        observer.state == ObserverState::Active && observer.cell == target_cell
+                    })
+                    .expect("target is active");
+                return (GuardianIntent::Capture(observer.id), trace);
+            }
+            return (GuardianIntent::Step(path[1], Some(target_cell)), trace);
+        }
+        if trace.test("obey Rogue directive", self.rogue_directive.is_some())
+            && let Some(next) = self
+                .rogue_directive
+                .and_then(|target| self.route(guardian.cell, target))
+                .and_then(|path| path.get(1).copied())
+        {
+            return (GuardianIntent::Step(next, None), trace);
+        }
+        if trace.test(
+            "investigate last detection",
+            guardian.last_detection.is_some(),
+        ) && let Some(next) = guardian
+            .last_detection
+            .and_then(|target| self.route(guardian.cell, target))
+            .and_then(|path| path.get(1).copied())
+        {
+            return (GuardianIntent::Step(next, None), trace);
+        }
+        trace.test("patrol", true);
+        (
+            self.exits(guardian.cell)
+                .into_iter()
+                .min_by_key(|cell| {
+                    (
+                        self.guardian_visits.get(&(id, *cell)).copied().unwrap_or(0),
+                        *cell,
+                    )
+                })
+                .map_or(GuardianIntent::Hold, |next| {
+                    GuardianIntent::Step(next, None)
+                }),
+            trace,
+        )
+    }
+
+    pub(super) fn apply_guardian_intent(&mut self, id: GuardianId, intent: GuardianIntent) {
+        match intent {
+            GuardianIntent::Hold => {}
+            GuardianIntent::Step(next, detection) => {
+                let guardian = self.guardians.get_mut(&id).expect("known Guardian");
+                guardian.cell = next;
+                *self.guardian_visits.entry((id, next)).or_default() += 1;
+                if self.rogue_directive == Some(next) {
+                    self.rogue_directive = None;
+                }
+                if guardian.last_detection == Some(next) {
+                    guardian.last_detection = None;
+                }
+                if detection.is_some() {
+                    guardian.last_detection = detection;
+                }
+                self.capture_on_cell(id);
+            }
+            GuardianIntent::Capture(observer) => self.jail(observer),
+        }
+    }
+
+    fn capture_on_cell(&mut self, guardian: GuardianId) {
+        let cell = self.guardians[&guardian].cell;
+        if let Some(observer) = self
+            .observers
+            .values()
+            .find(|observer| observer.state == ObserverState::Active && observer.cell == cell)
+            .map(|observer| observer.id)
+        {
+            self.jail(observer);
+        }
+    }
+
+    pub(super) fn jail(&mut self, observer: ObserverId) {
+        let prison = self
+            .prison_core
+            .iter()
+            .find(|cell| cell.level == 0)
+            .copied()
+            .expect("floor zero prison core exists");
+        let observer = self.observers.get_mut(&observer).expect("known Observer");
+        observer.cell = prison;
+        observer.state = ObserverState::Jailed;
+        self.record_event(
+            super::LabEventKind::Captured,
+            Some(prison),
+            "Observer captured. Sent to the protected prison core.",
+        );
+    }
+
+    pub(super) fn architect_intent(&self) -> (Option<ArchitectCommand>, BehaviorTrace) {
+        let mut trace = BehaviorTrace::default();
+        if trace.test("wait for cooldown", self.cooldown > 0) {
+            return (None, trace);
+        }
+        let commands = self.legal_commands();
+        if commands.is_empty() {
+            trace.test("hold card", true);
+            return (None, trace);
+        }
+        let baseline = self.guardian_route_score();
+        let mut scored: Vec<_> = commands
+            .iter()
+            .copied()
+            .map(|command| {
+                let mut preview = self.clone();
+                preview.bot_architect = false;
+                preview
+                    .submit(command)
+                    .expect("enumerated command is legal");
+                (
+                    preview.guardian_route_score(),
+                    preview.contradictions.len(),
+                    command,
+                )
+            })
+            .collect();
+        scored.sort_by_key(|(score, _, command)| (*score, command_key(*command)));
+        let best = scored.first().copied();
+        if trace.test(
+            "shorten Guardian route",
+            best.is_some_and(|(score, _, _)| score < baseline),
+        ) {
+            return (best.map(|(_, _, command)| command), trace);
+        }
+        // Explore facility truth without consulting undetected Observer positions.
+        let baseline_reach = self.guardian_reachable().len();
+        let progress = scored
+            .iter()
+            .filter_map(|(_, contradictions, command)| {
+                let mut preview = self.clone();
+                preview.submit(*command).ok()?;
+                let reach = preview.guardian_reachable().len();
+                (reach > baseline_reach).then_some((
+                    *contradictions,
+                    std::cmp::Reverse(reach),
+                    command_key(*command),
+                    *command,
+                ))
+            })
+            .min_by_key(|(contradictions, reach, key, _)| (*contradictions, *reach, *key));
+        if trace.test("extend Guardian route", progress.is_some()) {
+            return (progress.map(|(_, _, _, command)| command), trace);
+        }
+        trace.test("hold card", true);
+        (None, trace)
+    }
+
+    #[must_use]
+    pub fn legal_commands(&self) -> Vec<ArchitectCommand> {
+        let mut out = Vec::new();
+        for card in &self.deck.hand {
+            for target in self.mutable_targets() {
+                for rotation in 0..6 {
+                    let command = ArchitectCommand::Play {
+                        card: card.id,
+                        target,
+                        rotation,
+                    };
+                    if self.refusal(command).is_none() {
+                        out.push(command);
+                    }
+                }
+            }
+        }
+        out.sort_by_key(|command| command_key(*command));
+        out
+    }
+
+    pub fn guardian_route_score(&self) -> usize {
+        let detected = self.detected_observers();
+        self.guardians
+            .values()
+            .flat_map(|guardian| {
+                self.observers
+                    .values()
+                    .filter(|observer| {
+                        observer.state == ObserverState::Active && detected.contains(&observer.id)
+                    })
+                    .map(move |observer| {
+                        self.route(guardian.cell, observer.cell)
+                            .map_or(usize::MAX / 4, |path| path.len())
+                    })
+            })
+            .min()
+            .unwrap_or(0)
+    }
+}

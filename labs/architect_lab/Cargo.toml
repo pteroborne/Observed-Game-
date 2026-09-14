@@ -1,0 +1,34 @@
+[package]
+name = "architect_lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[[bin]]
+name = "architect_lab"
+path = "src/main.rs"
+required-features = ["desktop"]
+
+[features]
+default = ["desktop"]
+desktop = ["dep:bevy", "dep:observed_ui"]
+web = ["dep:wasm-bindgen", "dep:serde_json"]
+
+[dependencies]
+bevy = { version = "0.19", optional = true, default-features = false, features = [
+    "2d",
+    "ui",
+    "bevy_ui_widgets",
+    "default_font",
+    "png",
+] }
+observed_content = { path = "../../crates/observed_content" }
+observed_facility = { path = "../../crates/observed_facility", default-features = false }
+observed_hex = { path = "../../crates/observed_hex" }
+observed_style = { path = "../../crates/observed_style" }
+observed_ui = { path = "../../crates/observed_ui", optional = true }
+wasm-bindgen = { version = "0.2.125", optional = true }
+serde_json = { version = "1", optional = true }

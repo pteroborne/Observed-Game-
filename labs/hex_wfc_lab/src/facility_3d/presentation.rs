@@ -104,7 +104,11 @@ pub(super) fn rebuild_geometry(
                 // per-register surface and this still painted flat colour, so
                 // a flythrough could no longer show the one axis the districts
                 // had just been given.
-                base_color_texture: weave(&mut images, &mut weaves, register),
+                base_color_texture: if look.textured {
+                    weave(&mut images, &mut weaves, register)
+                } else {
+                    None
+                },
                 // The authored hulls have no baked lightmaps. Keep their
                 // semantic treatment legible at first-person scale, in the
                 // district's own emissive rather than a neutral one.
