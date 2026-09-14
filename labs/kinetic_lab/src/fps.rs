@@ -46,6 +46,21 @@ use crate::model::{
 /// How long a Guardian's move between cells takes to play, in seconds. Well
 /// under its step interval, so the hold between moves is what you mostly see.
 const SNAP_SECONDS: f32 = 0.16;
+/// Metres per second a body crosses the lattice at.
+///
+/// A fixed duration is right for a one-cell step and badly wrong for a shove: a
+/// four-cell push covers 56 metres, and at a flat 0.16s that is 350 m/s, which
+/// reads as the target vanishing rather than being thrown. Constant *speed*
+/// keeps the one-cell snap crisp while giving a long shove a flight you can
+/// actually watch.
+const SNAP_SPEED: f32 = 55.0;
+/// Longest a single crossing may take, so nothing ever floats.
+const SNAP_SECONDS_MAX: f32 = 1.3;
+/// Presentation-only gravity for a Guardian that has gone over the edge. The
+/// simulation has already removed it; this is just how it leaves the screen.
+const VOID_GRAVITY: f32 = 22.0;
+/// How long a destroyed Guardian keeps falling before its mesh is retired.
+const VOID_FALL_SECONDS: f32 = 2.4;
 
 const COLOR_PLATE: Color = Color::srgb(0.20, 0.25, 0.32);
 const COLOR_PLATE_LEDGE: Color = Color::srgb(0.46, 0.34, 0.10);
@@ -74,7 +89,14 @@ pub(crate) struct Clockwork {
     pub from: Vec3,
     pub to: Vec3,
     pub elapsed: f32,
+    /// How long this particular crossing takes, from its distance.
+    pub duration: f32,
     pub yaw: f32,
+    /// Seconds spent falling since the simulation declared this Guardian gone.
+    /// The model kills it the instant it enters void; hiding the mesh on that
+    /// same tick would make it blink out of existence instead of going over the
+    /// edge, which is precisely the moment the lab exists to show.
+    pub falling: f32,
 }
 
 impl Clockwork {
@@ -83,7 +105,9 @@ impl Clockwork {
             from: position,
             to: position,
             elapsed: SNAP_SECONDS,
+            duration: SNAP_SECONDS,
             yaw: 0.0,
+            falling: 0.0,
         }
     }
 
@@ -96,6 +120,7 @@ impl Clockwork {
         self.to = target;
         self.elapsed = 0.0;
         let delta = self.to - self.from;
+        self.duration = (delta.length() / SNAP_SPEED).clamp(SNAP_SECONDS, SNAP_SECONDS_MAX);
         if delta.length_squared() > 1e-4 {
             // Land on the lattice face travelled, not a free angle. A mesh's
             // forward is -Z, so facing `delta` needs the negated components;
@@ -105,10 +130,14 @@ impl Clockwork {
     }
 
     fn current(&self) -> Vec3 {
-        let t = (self.elapsed / SNAP_SECONDS).clamp(0.0, 1.0);
+        let t = (self.elapsed / self.duration).clamp(0.0, 1.0);
         // Crisp in, crisp out: a machine starting and stopping, not drifting.
         let eased = t * t * (3.0 - 2.0 * t);
-        self.from.lerp(self.to, eased)
+        let mut position = self.from.lerp(self.to, eased);
+        // Once it is over the edge it stops being clockwork and starts being
+        // an object: it crosses to the void plate, then simply falls.
+        position.y -= 0.5 * VOID_GRAVITY * self.falling * self.falling;
+        position
     }
 }
 
@@ -139,6 +168,10 @@ pub struct FpsRuntime {
     /// Freeze the board without freezing the camera, so a stance can be studied
     /// (and photographed) without a Guardian walking onto you mid-look.
     pub paused: bool,
+    /// When set, this replaces live input for one tick. The demo tape uses it to
+    /// drive the lab down the *same* path a player's hands take — intents in,
+    /// rules out — so a recording is a real run rather than a puppet show.
+    pub scripted: Option<(PlayerIntent, ToolRequest)>,
     pub last_note: String,
 }
 
@@ -149,6 +182,7 @@ impl Default for FpsRuntime {
             reset_requested: false,
             reset_count: 0,
             paused: false,
+            scripted: None,
             last_note: "Look down a lane and push something off the edge.".to_string(),
         }
     }
@@ -518,6 +552,15 @@ pub(crate) fn simulate(
     if runtime.paused {
         return;
     }
+
+    // A scripted tick takes the identical path as a played one: same intent
+    // type, same tool request, same `Embodiment::step`.
+    if let Some((intent, request)) = runtime.scripted.take() {
+        embodiment.step(&mut world, intent, request);
+        after_step(&mut runtime, &world, &embodiment);
+        return;
+    }
+
     let mouse = mouse_motion.map_or(Vec2::ZERO, |motion| motion.delta);
     let mut movement = Vec2::ZERO;
     if keys.pressed(KeyCode::KeyW) {
@@ -541,24 +584,31 @@ pub(crate) fn simulate(
     };
 
     let request = std::mem::take(&mut runtime.request);
-    let before_cells = world.grid.cell_count();
     embodiment.step(&mut world, intent, request);
-    debug_assert_eq!(before_cells, world.grid.cell_count());
+    after_step(&mut runtime, &world, &embodiment);
+}
 
-    // A committed retraction removes a plate, so the arena has to follow or the
-    // player keeps standing on a floor the simulation says is gone.
+/// Bookkeeping every tick needs, whether it came from hands or from a tape.
+fn after_step(runtime: &mut FpsRuntime, world: &KineticWorld, embodiment: &Embodiment) {
+    if embodiment.fell_into_void {
+        runtime.last_note = "You fell into true void. Recovered to spawn.".to_string();
+    } else if let Some(note) = describe(world) {
+        runtime.last_note = note;
+    }
+}
+
+/// A committed retraction removes a plate, so the arena has to follow or the
+/// player keeps standing on a floor the simulation says is gone.
+pub(crate) fn refresh_arena_after_retraction(
+    world: Res<KineticWorld>,
+    mut embodiment: ResMut<Embodiment>,
+) {
     if world
         .events
         .iter()
         .any(|event| matches!(event, KineticEvent::TileRetracted { .. }))
     {
         embodiment.refresh_arena(&world);
-    }
-
-    if embodiment.fell_into_void {
-        runtime.last_note = "You fell into true void. Recovered to spawn.".to_string();
-    } else if let Some(note) = describe(&world) {
-        runtime.last_note = note;
     }
 }
 
@@ -695,19 +745,40 @@ pub(crate) fn present_guardians(
         let Some(minor) = world.minor(shell.0) else {
             continue;
         };
-        *visibility = if minor.alive {
+        if minor.alive {
+            clockwork.falling = 0.0;
+        } else if clockwork.elapsed >= clockwork.duration {
+            // Fall only after the throw lands. Dropping during the flight would
+            // sink it through the very ledge plates it is being thrown across.
+            clockwork.falling += delta;
+        }
+        // A destroyed Guardian keeps its mesh long enough to be seen leaving:
+        // it crosses to the void plate, then drops out of the world.
+        *visibility = if minor.alive || clockwork.falling < VOID_FALL_SECONDS {
             Visibility::Inherited
         } else {
             Visibility::Hidden
         };
+
         let center = plate_center(minor.cell);
         clockwork.retarget(Vec3::new(center.x, FLOOR_TOP + 1.1, center.z));
         clockwork.elapsed += delta;
         transform.translation = clockwork.current();
+
         // Yaw snaps to the face travelled; a staggered Guardian tips, so being
-        // shoved reads on the body and not only in the log.
-        let tip = if minor.stagger > 0 { 0.5 } else { 0.0 };
-        transform.rotation = Quat::from_euler(EulerRot::YXZ, clockwork.yaw, tip, 0.0);
+        // shoved reads on the body and not only in the log. One going over the
+        // edge tumbles: order breaks down exactly when the facility loses it.
+        let tip = if minor.alive {
+            if minor.stagger > 0 { 0.5 } else { 0.0 }
+        } else {
+            clockwork.falling * 3.2
+        };
+        let roll = if minor.alive {
+            0.0
+        } else {
+            clockwork.falling * 2.1
+        };
+        transform.rotation = Quat::from_euler(EulerRot::YXZ, clockwork.yaw, tip, roll);
     }
 
     if let Ok((mut clockwork, mut transform, mut material)) = major.single_mut() {

@@ -48,9 +48,18 @@ pub const TOOL_RANGE: u32 = 3;
 /// Ticks a minor Guardian spends recovering after surviving a shove.
 pub const STAGGER_TICKS: u32 = 45;
 /// Ticks between minor Guardian steps.
-pub const MINOR_STEP_TICKS: u32 = 24;
-/// Ticks between major Guardian steps. Majors are slower and far more dangerous.
-pub const MAJOR_STEP_TICKS: u32 = 36;
+///
+/// Scale matters here and the first value did not respect it. A cell is 14
+/// metres across, so a 24-tick step is 35 m/s — against an Observer who walks
+/// at 4.6 and sprints at 7.0. On the schematic board that read as "brisk"; in
+/// first person it meant an adjacent Guardian jailed you before you finished
+/// turning, and no chase existed at all. At 150 ticks a minor makes about
+/// 5.6 m/s: it gains on a walking Observer and loses to a sprinting one, which
+/// is the pressure the horde is supposed to apply.
+pub const MINOR_STEP_TICKS: u32 = 150;
+/// Ticks between major Guardian steps. Majors are slower and far more dangerous:
+/// roughly 3.5 m/s, so one can be outrun but not ignored.
+pub const MAJOR_STEP_TICKS: u32 = 240;
 /// How far an Observer sees down their facing lane. Observation freezes a major
 /// Guardian and does nothing whatsoever to a minor one.
 pub const OBSERVATION_RANGE: u32 = 4;

@@ -93,6 +93,24 @@ fall through. The hex lattice stays the connectivity and targeting structure. An
 authored tile's geometry was never required to be a hex prism, and rendering
 exactly what you collide with is what the Legibility Contract demands.
 
+## Recording the demo
+
+```bash
+OBSERVED2_CAPTURE_SEQUENCE=docs/evidence/kinetic_lab/frames \
+  cargo run -p kinetic_lab --bin kinetic_fps
+ffmpeg -y -framerate 60 -i docs/evidence/kinetic_lab/frames/frame_%04d.png \
+  -c:v libx264 -pix_fmt yuv420p -crf 20 -movflags +faststart \
+  docs/evidence/kinetic_lab/kinetic_shove.mp4
+```
+
+Result: [kinetic_shove.mp4](../../docs/evidence/kinetic_lab/kinetic_shove.mp4).
+The scenario's opening positions are staged; every tick after that is a scripted
+`PlayerIntent` + `ToolRequest` through the ordinary `Embodiment::step`, so the
+video records the rules running rather than an animation of them, and the
+deterministic model reproduces it frame for frame. Capture parks `FixedUpdate`
+and advances one tick per rendered frame, because saving a PNG per frame is much
+slower than the simulation and fixed-step catch-up would otherwise skip state.
+
 ## What this lab is not
 
 It is not the economy proof. Disturbance waves, the Architect's hand, card

@@ -19,6 +19,8 @@ docs/evidence/visual_audit_camera_rooms/
 docs/evidence/visual_audit_topdown/
 # Raw per-frame capture that encodes to the tracked docs/evidence/district_tour.mp4.
 docs/evidence/district_tour/
+# Likewise for the kinetic lab's demo recording; the tracked artefact is the mp4.
+docs/evidence/kinetic_lab/frames/
 we-need-to-come-tidy-emerson.md
 
 # Python bytecode from tools/tileforge.py

@@ -77,6 +77,35 @@ the connectivity and targeting structure; an authored tile's *geometry* was
 never required to be a hex prism, and rendering what you collide with is what
 the Legibility Contract actually asks for.
 
+## The shove in motion
+
+[`kinetic_shove.mp4`](kinetic_shove.mp4) — 7 seconds, 1440x900, 60 fps.
+
+```bash
+OBSERVED2_CAPTURE_SEQUENCE=docs/evidence/kinetic_lab/frames \
+  cargo run -p kinetic_lab --bin kinetic_fps
+ffmpeg -y -framerate 60 -i docs/evidence/kinetic_lab/frames/frame_%04d.png \
+  -c:v libx264 -pix_fmt yuv420p -crf 20 -movflags +faststart \
+  docs/evidence/kinetic_lab/kinetic_shove.mp4
+```
+
+The frame directory is gitignored; the mp4 is the tracked artefact, exactly as
+for `district_tour.mp4`.
+
+The run holds on the lane for a second and a half with the preview beam already
+up, pushes at tick 90, follows the target down as it crosses the ledge run and
+goes over the rim, then walks. Two things only a recording can show: the
+clockwork snap-and-hold of a Guardian between plates, and a shove actually
+*leaving* — the target flies, tumbles, and drops, rather than blinking out.
+
+**The recording is a real run, not an animation.** Starting positions and
+heading are staged, then every tick after that is driven by `PlayerIntent` and
+`ToolRequest` through the same `Embodiment::step` a player's hands use. Because
+the model is deterministic, the tape reproduces frame for frame. Capture parks
+`FixedUpdate` and advances exactly one tick per rendered frame, so saving a PNG
+per frame — far slower than the simulation — cannot let catch-up skip state; the
+file is a true 60 Hz record rather than sampled moments.
+
 ## Caveat
 
 Neither view answers whether a shove is *satisfying* in the sense a playtest

@@ -37,6 +37,7 @@ use bevy::{
     window::{PresentMode, WindowResolution},
 };
 use observed_hex::{coords::HexCoord, faces::HexFace};
+use player_input::PlayerIntent;
 
 pub use embodied::{Embodiment, ToolRequest};
 pub use fps::FpsRuntime;
@@ -59,7 +60,10 @@ impl Plugin for KineticFpsPlugin {
             .init_resource::<FpsRuntime>()
             .insert_resource(Time::<Fixed>::from_hz(f64::from(model::TICKS_PER_SECOND)))
             .add_systems(Startup, (fps::setup_scene, fps::grab_cursor).chain())
-            .add_systems(FixedUpdate, fps::simulate)
+            .add_systems(
+                FixedUpdate,
+                (fps::simulate, fps::refresh_arena_after_retraction).chain(),
+            )
             .add_systems(
                 Update,
                 (
@@ -99,7 +103,142 @@ pub fn run_fps() {
             .add_systems(Update, fps_capture_progress);
     }
 
+    // A frame sequence for video. Stills cannot show the two things this lab is
+    // actually about: the clockwork snap, and a Guardian going over an edge.
+    if let Ok(dir) = std::env::var("OBSERVED2_CAPTURE_SEQUENCE") {
+        std::fs::create_dir_all(&dir).expect("sequence capture directory");
+        app.insert_resource(SequenceCapture {
+            dir,
+            tick: 0,
+            captured_tick: None,
+            frame: 0,
+        })
+        // Saving a PNG per frame is far slower than the simulation, so leaving
+        // this on the fixed timestep lets catch-up run several ticks between
+        // renders and the recording skips state. Park `FixedUpdate` and advance
+        // exactly one tick per rendered frame instead: the video is then a
+        // faithful 60 Hz record rather than a stutter of sampled moments.
+        .insert_resource(Time::<Fixed>::from_seconds(3600.0))
+        .add_systems(
+            Update,
+            (
+                drive_demo,
+                fps::simulate,
+                fps::refresh_arena_after_retraction,
+            )
+                .chain()
+                .before(fps::gather_requests),
+        )
+        .add_systems(Update, capture_sequence_frame.after(fps::update_hud))
+        .add_systems(Startup, stage_demo.after(fps::setup_scene));
+    }
+
     app.run();
+}
+
+/// One frame per simulated tick, so the sequence encodes at 60 fps as a
+/// true-rate record of the run.
+const SEQUENCE_STRIDE: u32 = 1;
+/// Total ticks the scripted demo runs.
+const DEMO_TICKS: u32 = 420;
+
+#[derive(Resource)]
+struct SequenceCapture {
+    dir: String,
+    /// Advanced by the fixed-step demo, read by the per-frame capture, so the
+    /// two schedules cannot drift apart and drop or duplicate a frame.
+    tick: u32,
+    captured_tick: Option<u32>,
+    frame: u32,
+}
+
+/// The demo tape.
+///
+/// Deliberately expressed as intents rather than as poses: the recording drives
+/// the lab through the same boundary a player's hands do, so what it shows is a
+/// real run of the rules and not an animation of them. Because the model is
+/// deterministic, this tape reproduces frame for frame.
+/// Place the actors for the recording.
+///
+/// This stages a *scenario* — starting positions and a heading — exactly as the
+/// still capture does. Everything after this point is driven by intents through
+/// the ordinary command path, so what the video shows is the rules running, not
+/// an animation of them.
+fn stage_demo(mut world: ResMut<KineticWorld>, mut embodiment: ResMut<Embodiment>) {
+    let cell = |q, r| HexCoord { q, r, level: 0 };
+    let stand = embodied::plate_center(cell(3, 3));
+    embodiment.body.position = Vec3::new(
+        stand.x,
+        embodied::FLOOR_TOP + embodiment.config.half_height,
+        stand.z,
+    );
+    embodiment.body.velocity = Vec3::ZERO;
+    // Already looking down the ledge run, so the recording opens on the shot
+    // that matters instead of on three quarters of a second of turning.
+    embodiment.body.yaw = std::f32::consts::FRAC_PI_2;
+    embodiment.facing = HexFace::East;
+
+    world.observers[0].cell = cell(3, 3);
+    world.observers[0].facing = HexFace::East;
+    world.minors[0].cell = cell(4, 3);
+    // The second Guardian starts far enough south to arrive during the run
+    // rather than on top of the Observer at the first step.
+    world.minors[1].cell = cell(2, 5);
+}
+
+fn demo_intent(tick: u32) -> (PlayerIntent, ToolRequest) {
+    let mut intent = PlayerIntent::default();
+    let mut request = ToolRequest::None;
+
+    match tick {
+        // Hold. The preview beam is already up, stating the outcome before
+        // anything has been committed.
+        0..=89 => {}
+        // Commit.
+        90 => request = ToolRequest::Push,
+        // Follow it down as it goes over the rim.
+        91..=150 => intent.look = Vec2::new(0.0, 0.30),
+        // Watch the empty ledge run it crossed.
+        151..=240 => {}
+        // Level back up, then walk, so the plates read in motion rather than as
+        // a frozen diagram.
+        241..=270 => intent.look = Vec2::new(0.0, -0.30),
+        271..=DEMO_TICKS => intent.movement = Vec2::new(0.0, 1.0),
+        _ => {}
+    }
+
+    (intent, request)
+}
+
+fn drive_demo(mut capture: ResMut<SequenceCapture>, mut runtime: ResMut<FpsRuntime>) {
+    if capture.tick <= DEMO_TICKS {
+        runtime.scripted = Some(demo_intent(capture.tick));
+    }
+    capture.tick += 1;
+}
+
+fn capture_sequence_frame(
+    mut capture: ResMut<SequenceCapture>,
+    mut commands: Commands,
+    mut exit: MessageWriter<AppExit>,
+) {
+    let tick = capture.tick;
+    if tick > DEMO_TICKS {
+        exit.write(AppExit::Success);
+        return;
+    }
+    // One frame per simulated tick at most, so a frame is never written twice
+    // for the same state or skipped when two ticks land in one render frame.
+    if capture.captured_tick == Some(tick) || !tick.is_multiple_of(SEQUENCE_STRIDE) {
+        return;
+    }
+    capture.captured_tick = Some(tick);
+
+    let path = format!("{}/frame_{:04}.png", capture.dir, capture.frame);
+    capture.frame += 1;
+    commands
+        .spawn(Screenshot::primary_window())
+        .observe(save_to_disk(path));
 }
 
 #[derive(Resource)]
