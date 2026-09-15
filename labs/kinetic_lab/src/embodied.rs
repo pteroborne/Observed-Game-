@@ -112,6 +112,80 @@ pub fn face_for_yaw(yaw: f32) -> HexFace {
     best.1
 }
 
+/// How thick a wall between two plates is.
+pub const WALL_THICKNESS: f32 = 0.7;
+
+/// The slab that seals one lateral face of a plate, as `(centre, half extents)`
+/// relative to the plate centre.
+///
+/// The rectangle has four edges and the lattice has six faces, which sounds like
+/// a mismatch and is not: East and West take the whole x edges, while each z
+/// edge is split in half between its two diagonal neighbours. That split is
+/// exact for this tiling, so the six slabs cover the plate's boundary with no
+/// gap and no overlap.
+#[must_use]
+pub fn wall_slab(face: HexFace) -> Option<(Vec3, Vec3)> {
+    let half_height = WALL_HEIGHT / 2.0;
+    let y = FLOOR_TOP + half_height;
+    let t = WALL_THICKNESS / 2.0;
+    let quarter = PLATE_HALF_X / 2.0;
+    Some(match face {
+        HexFace::East => (
+            Vec3::new(PLATE_HALF_X - t, y, 0.0),
+            Vec3::new(t, half_height, PLATE_HALF_Z),
+        ),
+        HexFace::West => (
+            Vec3::new(-PLATE_HALF_X + t, y, 0.0),
+            Vec3::new(t, half_height, PLATE_HALF_Z),
+        ),
+        HexFace::SouthEast => (
+            Vec3::new(quarter, y, PLATE_HALF_Z - t),
+            Vec3::new(quarter, half_height, t),
+        ),
+        HexFace::SouthWest => (
+            Vec3::new(-quarter, y, PLATE_HALF_Z - t),
+            Vec3::new(quarter, half_height, t),
+        ),
+        HexFace::NorthEast => (
+            Vec3::new(quarter, y, -PLATE_HALF_Z + t),
+            Vec3::new(quarter, half_height, t),
+        ),
+        HexFace::NorthWest => (
+            Vec3::new(-quarter, y, -PLATE_HALF_Z + t),
+            Vec3::new(quarter, half_height, t),
+        ),
+        _ => return None,
+    })
+}
+
+/// Every wall this board needs, as `(cell, face)` pairs.
+///
+/// A face is walled when it is sealed and there is floor on this side to stand
+/// on. Sealing the edge of the world too would box the facility in with
+/// invisible walls where the player should simply be able to fall off.
+#[must_use]
+pub fn wall_faces(world: &KineticWorld) -> Vec<(HexCoord, HexFace)> {
+    let mut walls = Vec::new();
+    for index in 0..world.grid.cell_count() {
+        let coord = world.grid.coord(index);
+        if !world.cell(coord).is_standable() {
+            continue;
+        }
+        for face in HexFace::LATERAL {
+            if world.connected(coord, face) {
+                continue;
+            }
+            // Only wall a face that has something on the other side. An opening
+            // onto void is a ledge, and falling off it is the point.
+            let beyond = world.grid.neighbor(coord, face);
+            if beyond.is_some_and(|next| world.cell(next).is_standable()) {
+                walls.push((coord, face));
+            }
+        }
+    }
+    walls
+}
+
 /// Build the physical arena from the board.
 ///
 /// Every standable cell contributes one plate; void cells contribute nothing,
@@ -134,6 +208,18 @@ pub fn build_arena(world: &KineticWorld) -> FpsArena {
                 Vec3::new(center.x, FLOOR_TOP - PLATE_THICKNESS / 2.0, center.z),
                 Vec3::new(PLATE_HALF_X, PLATE_THICKNESS / 2.0, PLATE_HALF_Z),
             )),
+        }
+    }
+
+    // Walls between plates. A solved facility's rooms and corridors only mean
+    // something if you cannot walk through the walls between them.
+    for (coord, face) in wall_faces(world) {
+        let center = plate_center(coord);
+        if let Some((offset, half)) = wall_slab(face) {
+            solids.push(Aabb3::from_center_half(
+                Vec3::new(center.x + offset.x, offset.y, center.z + offset.z),
+                half,
+            ));
         }
     }
 

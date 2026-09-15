@@ -93,6 +93,38 @@ fall through. The hex lattice stays the connectivity and targeting structure. An
 authored tile's geometry was never required to be a hex prism, and rendering
 exactly what you collide with is what the Legibility Contract demands.
 
+## The siege: a real facility, and a clock
+
+```bash
+cargo dev-run -p kinetic_lab --bin kinetic_fps -- --siege
+cargo dev-run -p kinetic_lab --bin kinetic_fps -- --siege --minutes=5 --no-jail
+```
+
+![The siege facility](../../docs/evidence/kinetic_lab/siege-facility.png)
+
+Waves of minor Guardians on a clock, inside a board the **production WFC solver**
+produced rather than the authored rectangle.
+
+**What is real:** the layout. Cell occupancy, the void between structures, and
+the per-face door mask all come from `HexWfcWorld` at a pinned seed, so walls are
+where the solver put walls. That is not cosmetic — every rule now goes through
+`KineticWorld::passable_neighbor`, so a shove stops at a wall, sight stops at a
+wall, and a Guardian has to come through a doorway like everything else. The
+authored board leaves every face open, which is exactly why it plays as an open
+plain and why the screenshot above looks nothing like it.
+
+**What is not real:** the geometry. Plates are still flat rectangles and walls
+are face slabs on the six lattice faces. Projecting the authored tile *hulls*
+needs a mesh collider and is separate work. Saying so here is cheaper than a
+reader inferring otherwise from the picture.
+
+The siege itself: a wave every 12 seconds after a 6-second grace, growing one
+Guardian every second wave up to six, capped at `MAX_LIVE_MINORS` so presentation
+can hold a fixed pool of shells rather than spawning entities mid-match. Spawns
+are at least four plates away, never in void, never on top of you, and seeded per
+wave so the same run reproduces. Outlast the clock and the overlay reads
+SURVIVED with your wave and kill count; get caught and it reads OVERRUN.
+
 ## Launch flags
 
 Both binaries take the same flags. Pass them after `--`:
@@ -109,6 +141,8 @@ cargo dev-run -p kinetic_lab --bin kinetic_fps -- --help
 | `--no-major` | The major Guardian is out of play: never moves, never captures, never drawn, never blocks a shove |
 | `--no-guardians` | Both of the above |
 | `--no-jail` | A Guardian reaching you no longer ends the run |
+| `--siege` | A solved WFC facility, and waves of Guardians to outlast |
+| `--minutes=N` | How long the siege lasts (default 3) |
 
 These are **authoritative**, not presentation toggles: they live on
 `KineticWorld::rules`, ride in the determinism digest, and are obeyed identically

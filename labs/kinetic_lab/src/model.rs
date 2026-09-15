@@ -67,6 +67,8 @@ pub const OBSERVATION_RANGE: u32 = 4;
 /// so a closed ring of ledge cells would otherwise loop forever. No authored
 /// board approaches this; it exists so the invariant is enforced, not assumed.
 const MAX_TRAVEL_CELLS: u32 = 64;
+/// Every lateral face open — the authored board's "no walls anywhere".
+const ALL_LATERAL_DOORS: u8 = 0b0011_1111;
 
 /// Stable identity for a minor Guardian. Bevy entities reference this; they
 /// never replace it.
@@ -162,7 +164,7 @@ pub struct MajorGuardian {
 /// it with the pressure removed and then put it back. These are authoritative —
 /// they live in the world, ride in the digest, and are obeyed identically by the
 /// schematic view, the first-person view, and the headless runner.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct KineticRules {
     /// Release the minor Guardians — the horde that observation does not stop.
     pub minors: bool,
@@ -174,6 +176,10 @@ pub struct KineticRules {
     /// running and a Guardian becomes a thing to be shoved rather than a fail
     /// state. This is the flag for studying the tool without a clock on you.
     pub jail: bool,
+    /// Play the timed siege in a solved facility instead of the authored board.
+    pub siege: bool,
+    /// How long that siege lasts.
+    pub siege_minutes: f32,
 }
 
 impl Default for KineticRules {
@@ -182,6 +188,8 @@ impl Default for KineticRules {
             minors: true,
             major: true,
             jail: true,
+            siege: false,
+            siege_minutes: 3.0,
         }
     }
 }
@@ -207,7 +215,15 @@ impl KineticRules {
                     rules.major = false;
                 }
                 "--no-jail" => rules.jail = false,
-                _ => {}
+                "--siege" => rules.siege = true,
+                other => {
+                    if let Some(value) = other.strip_prefix("--minutes=")
+                        && let Ok(minutes) = value.parse::<f32>()
+                        && minutes > 0.0
+                    {
+                        rules.siege_minutes = minutes;
+                    }
+                }
             }
         }
         rules
@@ -226,12 +242,85 @@ impl KineticRules {
         if !self.jail {
             off.push("jail");
         }
-        if off.is_empty() {
+        let base = if off.is_empty() {
             "all on".to_string()
         } else {
             format!("off: {}", off.join(", "))
+        };
+        if self.siege {
+            format!("siege {:.0}m, {base}", self.siege_minutes)
+        } else {
+            base
         }
     }
+
+    /// The siege schedule these rules ask for.
+    #[must_use]
+    pub fn siege_rules(self) -> SiegeRules {
+        SiegeRules {
+            enabled: self.siege,
+            duration_ticks: (self.siege_minutes * 60.0 * TICKS_PER_SECOND as f32) as u32,
+            ..SiegeRules::default()
+        }
+    }
+}
+
+/// Most minor Guardians that may be alive at once.
+///
+/// A hard ceiling rather than a soft one: presentation keeps a fixed pool of
+/// shells, and a siege that outgrew the pool would start dropping Guardians from
+/// the screen while they still hunted you in the simulation.
+pub const MAX_LIVE_MINORS: usize = 40;
+
+/// A timed siege: waves of minor Guardians, and a clock to outlast.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SiegeRules {
+    pub enabled: bool,
+    /// How long the Observer has to survive.
+    pub duration_ticks: u32,
+    /// When the first wave arrives, so there is time to get your bearings.
+    pub first_wave_tick: u32,
+    /// Ticks between waves.
+    pub wave_interval_ticks: u32,
+    /// Waves per size increment. Every `n` waves, one more Guardian arrives.
+    pub waves_per_increment: u32,
+    /// Largest single wave.
+    pub max_wave_size: u32,
+    /// Nothing spawns nearer than this, in plates.
+    pub min_spawn_distance: u32,
+}
+
+impl Default for SiegeRules {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            duration_ticks: 180 * TICKS_PER_SECOND,
+            first_wave_tick: 6 * TICKS_PER_SECOND,
+            wave_interval_ticks: 12 * TICKS_PER_SECOND,
+            waves_per_increment: 2,
+            max_wave_size: 6,
+            min_spawn_distance: 4,
+        }
+    }
+}
+
+impl SiegeRules {
+    /// How many Guardians wave `index` brings.
+    #[must_use]
+    pub fn wave_size(self, index: u32) -> u32 {
+        (1 + index / self.waves_per_increment.max(1)).min(self.max_wave_size)
+    }
+}
+
+/// How a siege ended.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum MatchOutcome {
+    #[default]
+    Running,
+    /// The clock ran out with the Observer still free.
+    Survived,
+    /// A Guardian reached the Observer.
+    Lost,
 }
 
 /// The flags this lab understands, for `--help` and for the READMEs.
@@ -239,7 +328,9 @@ pub const RULES_HELP: &str = concat!(
     "  --no-minors      leave the minor Guardians out of play\n",
     "  --no-major       leave the major Guardian out of play\n",
     "  --no-guardians   both of the above\n",
-    "  --no-jail        a Guardian reaching you no longer ends the run",
+    "  --no-jail        a Guardian reaching you no longer ends the run\n",
+    "  --siege          a solved WFC facility, and waves of Guardians to outlast\n",
+    "  --minutes=N      how long the siege lasts (default 3)",
 );
 
 /// A recharge station: Architect-placed equipment that is inert without floor
@@ -331,6 +422,18 @@ pub enum KineticEvent {
         observer: PlayerId,
         by_major: bool,
     },
+    /// A siege wave arrived.
+    WaveReleased {
+        index: u32,
+        size: u32,
+    },
+    MinorReleased {
+        id: MinorGuardianId,
+        cell: HexCoord,
+    },
+    SiegeEnded {
+        outcome: MatchOutcome,
+    },
 }
 
 /// The whole lab world. Pure data: no Bevy entity, camera, or asset appears
@@ -339,6 +442,13 @@ pub enum KineticEvent {
 pub struct KineticWorld {
     pub grid: HexGridSize,
     cells: Vec<CellKind>,
+    /// Lateral door mask per cell, bit `face.index()`.
+    ///
+    /// A face without its bit is a **wall**: nothing walks, shoves, sees or
+    /// pursues through it. The authored rectangle leaves every face open, which
+    /// is why it plays as an open plain; a facility solved by the real WFC has
+    /// rooms and corridors, and this is what makes them mean something.
+    doors: Vec<u8>,
     pub observers: Vec<Observer>,
     pub minors: Vec<MinorGuardian>,
     pub major: MajorGuardian,
@@ -349,6 +459,15 @@ pub struct KineticWorld {
     pub generator: HexCoord,
     /// Which parts of the opposition are switched on for this run.
     pub rules: KineticRules,
+    /// The siege schedule, if this is a timed run.
+    pub siege: SiegeRules,
+    pub outcome: MatchOutcome,
+    /// Waves released so far.
+    pub waves_released: u32,
+    /// Minor Guardians destroyed. The only score this lab keeps.
+    pub kills: u32,
+    /// Seed for wave placement, advanced per wave so spawns are reproducible.
+    pub spawn_seed: u64,
     pub tick: u32,
     pub events: Vec<KineticEvent>,
 }
@@ -358,6 +477,77 @@ impl KineticWorld {
     #[must_use]
     pub fn authored() -> Self {
         Self::authored_with(KineticRules::default())
+    }
+
+    /// Build a board from a solved facility.
+    ///
+    /// The authored rectangle exists to make one rule visible at a time; it is
+    /// deliberately an open plain, and it plays like one. This takes the real
+    /// solver's output instead: `Void` cells are holes, `Room` and `Hall` cells
+    /// are floor, and the per-cell door mask becomes walls, so a shove stops at
+    /// a wall, sight stops at a wall, and a Guardian has to come through a
+    /// doorway like everything else.
+    ///
+    /// What it does *not* take is the authored tile geometry. Plates stay flat
+    /// rectangles and walls are face slabs, so this is the solver's **layout**,
+    /// not its hulls. Projecting real hulls needs a mesh collider and is a
+    /// separate piece of work; saying so here is cheaper than a reader
+    /// discovering it from the screenshots.
+    #[must_use]
+    pub fn from_placements(
+        grid: HexGridSize,
+        level: u8,
+        placement_at: &dyn Fn(HexCoord) -> Option<(bool, u8)>,
+        rules: KineticRules,
+    ) -> Self {
+        let mut world = Self::authored_with(rules);
+        world.grid = grid;
+        world.cells = vec![CellKind::Void; grid.cell_count()];
+        world.doors = vec![0; grid.cell_count()];
+        world.stations.clear();
+
+        for index in 0..grid.cell_count() {
+            let coord = grid.coord(index);
+            if coord.level != level {
+                continue;
+            }
+            let Some((solid, doors)) = placement_at(coord) else {
+                continue;
+            };
+            world.cells[index] = if solid {
+                CellKind::Solid
+            } else {
+                CellKind::Void
+            };
+            world.doors[index] = doors & ALL_LATERAL_DOORS;
+        }
+
+        // A door is only a door if both sides agree. The solver already
+        // guarantees that, but a lab that trusted it silently would produce a
+        // one-way wall the first time a placement was edited by hand.
+        for index in 0..grid.cell_count() {
+            let coord = grid.coord(index);
+            for face in HexFace::LATERAL {
+                let open = world.doors[index] & (1 << face.index()) != 0;
+                let mutual = grid.neighbor(coord, face).is_some_and(|next| {
+                    world.doors[grid.index(next)] & (1 << face.opposite().index()) != 0
+                });
+                if open && !mutual {
+                    world.doors[index] &= !(1 << face.index());
+                }
+            }
+        }
+
+        world
+    }
+
+    /// Every cell an actor could stand on.
+    #[must_use]
+    pub fn standable_cells(&self) -> Vec<HexCoord> {
+        (0..self.grid.cell_count())
+            .map(|index| self.grid.coord(index))
+            .filter(|coord| self.cell(*coord).is_standable())
+            .collect()
     }
 
     /// The authored proving board: a solid approach, a ledge run ending over
@@ -407,6 +597,9 @@ impl KineticWorld {
         Self {
             grid,
             cells,
+            // The authored board is an open plain: every lateral face is a
+            // doorway, so this behaves exactly as it did before walls existed.
+            doors: vec![ALL_LATERAL_DOORS; grid.cell_count()],
             observers: vec![Observer {
                 id: PlayerId(0),
                 cell: HexCoord {
@@ -476,6 +669,11 @@ impl KineticWorld {
                 level: 0,
             },
             rules,
+            siege: SiegeRules::default(),
+            outcome: MatchOutcome::Running,
+            waves_released: 0,
+            kills: 0,
+            spawn_seed: 0x51E6_E5EE_D000,
             tick: 0,
             events: Vec::new(),
         }
@@ -487,6 +685,28 @@ impl KineticWorld {
             return CellKind::Wall;
         }
         self.cells[self.grid.index(coord)]
+    }
+
+    /// Whether `face` of `coord` is a doorway rather than a wall.
+    #[must_use]
+    pub fn connected(&self, coord: HexCoord, face: HexFace) -> bool {
+        if !face.is_lateral() || !self.grid.contains(coord) {
+            return false;
+        }
+        self.doors[self.grid.index(coord)] & (1 << face.index()) != 0
+    }
+
+    /// The neighbour behind `face`, but only if the face is open.
+    ///
+    /// Every rule that used to walk the raw lattice goes through this now:
+    /// sight, the targeting lane, shove travel, pursuit and the schematic
+    /// view's step. That single change is what turns a solved facility from a
+    /// coloured floor plan into somewhere with rooms.
+    #[must_use]
+    pub fn passable_neighbor(&self, coord: HexCoord, face: HexFace) -> Option<HexCoord> {
+        self.connected(coord, face)
+            .then(|| self.grid.neighbor(coord, face))
+            .flatten()
     }
 
     #[must_use]
@@ -524,7 +744,7 @@ impl KineticWorld {
                 }
                 let mut cursor = observer.cell;
                 for _ in 0..OBSERVATION_RANGE {
-                    let Some(next) = self.grid.neighbor(cursor, observer.facing) else {
+                    let Some(next) = self.passable_neighbor(cursor, observer.facing) else {
                         return false;
                     };
                     if self.cell(next).blocks_travel() {
@@ -569,7 +789,7 @@ impl KineticWorld {
     pub fn target_in_lane(&self, observer: &Observer) -> Option<MinorGuardianId> {
         let mut cursor = observer.cell;
         for _ in 0..TOOL_RANGE {
-            let next = self.grid.neighbor(cursor, observer.facing)?;
+            let next = self.passable_neighbor(cursor, observer.facing)?;
             if self.cell(next).blocks_travel() {
                 return None;
             }
@@ -611,7 +831,7 @@ impl KineticWorld {
                 fate = ShoveFate::Rest;
                 break;
             }
-            let Some(next) = self.grid.neighbor(cell, face) else {
+            let Some(next) = self.passable_neighbor(cell, face) else {
                 fate = ShoveFate::Blocked;
                 break;
             };
@@ -665,9 +885,118 @@ impl KineticWorld {
         self.apply_intents(intents);
         self.apply_recharge();
         self.apply_retraction();
+        self.release_waves();
         self.move_guardians();
         self.resolve_captures();
+        self.resolve_siege_clock();
         self.tick += 1;
+    }
+
+    /// Release this tick's wave, if the siege schedule calls for one.
+    fn release_waves(&mut self) {
+        if !self.siege.enabled || self.outcome != MatchOutcome::Running {
+            return;
+        }
+        let due = self.tick >= self.siege.first_wave_tick
+            && (self.tick - self.siege.first_wave_tick)
+                .is_multiple_of(self.siege.wave_interval_ticks.max(1));
+        if !due {
+            return;
+        }
+
+        let index = self.waves_released;
+        self.waves_released += 1;
+        let size = self.siege.wave_size(index);
+
+        let Some(observer) = self
+            .observers
+            .iter()
+            .find(|observer| !observer.jailed)
+            .copied()
+        else {
+            return;
+        };
+
+        // Spawn far enough away to be seen coming, never on top of anyone, and
+        // never inside a sealed pocket the Observer could not be reached from.
+        let candidates: Vec<HexCoord> = self
+            .standable_cells()
+            .into_iter()
+            .filter(|coord| {
+                lateral_distance(*coord, observer.cell) >= self.siege.min_spawn_distance
+                    && !self.actor_occupies(*coord)
+            })
+            .collect();
+        if candidates.is_empty() {
+            return;
+        }
+
+        let mut rng = SplitMix::new(self.spawn_seed ^ u64::from(index).wrapping_mul(0x9E37_79B9));
+        let mut released = 0;
+        for _ in 0..size {
+            if self.living_minors() >= MAX_LIVE_MINORS {
+                break;
+            }
+            let cell = candidates[rng.below(candidates.len())];
+            if self.actor_occupies(cell) {
+                continue;
+            }
+            let id = self.spawn_minor(cell);
+            self.events.push(KineticEvent::MinorReleased { id, cell });
+            released += 1;
+        }
+
+        if released > 0 {
+            self.events.push(KineticEvent::WaveReleased {
+                index,
+                size: released,
+            });
+        }
+    }
+
+    /// Put one minor Guardian into play, reusing a dead slot when there is one.
+    ///
+    /// Reuse keeps `minors` bounded, which is what lets presentation hold a
+    /// fixed pool of shells instead of spawning entities mid-match.
+    fn spawn_minor(&mut self, cell: HexCoord) -> MinorGuardianId {
+        let fresh = MinorGuardian {
+            id: MinorGuardianId(0),
+            cell,
+            stagger: 0,
+            step_progress: 0,
+            alive: true,
+        };
+        if let Some(slot) = self.minors.iter().position(|minor| !minor.alive) {
+            let id = self.minors[slot].id;
+            self.minors[slot] = MinorGuardian { id, ..fresh };
+            return id;
+        }
+        let id = MinorGuardianId(self.minors.len() as u32);
+        self.minors.push(MinorGuardian { id, ..fresh });
+        id
+    }
+
+    fn resolve_siege_clock(&mut self) {
+        if !self.siege.enabled || self.outcome != MatchOutcome::Running {
+            return;
+        }
+        if self.observers.iter().all(|observer| observer.jailed) {
+            self.outcome = MatchOutcome::Lost;
+            self.events.push(KineticEvent::SiegeEnded {
+                outcome: MatchOutcome::Lost,
+            });
+        } else if self.tick + 1 >= self.siege.duration_ticks {
+            self.outcome = MatchOutcome::Survived;
+            self.events.push(KineticEvent::SiegeEnded {
+                outcome: MatchOutcome::Survived,
+            });
+        }
+    }
+
+    /// Ticks left on the siege clock.
+    #[must_use]
+    pub fn siege_remaining(&self) -> u32 {
+        self.siege.duration_ticks.saturating_sub(self.tick)
     }
 
     fn apply_intents(&mut self, intents: &[(PlayerId, KineticIntent)]) {
@@ -684,7 +1013,7 @@ impl KineticWorld {
                 KineticIntent::Face(face) => self.observers[index].facing = face,
                 KineticIntent::Step(face) => {
                     let observer = self.observers[index];
-                    if let Some(next) = self.grid.neighbor(observer.cell, face)
+                    if let Some(next) = self.passable_neighbor(observer.cell, face)
                         && self.cell(next).is_standable()
                         && !self.actor_occupies(next)
                     {
@@ -762,6 +1091,7 @@ impl KineticWorld {
             .find(|minor| minor.id == id && minor.alive)
         {
             minor.alive = false;
+            self.kills += 1;
             self.events.push(KineticEvent::GuardianDestroyed {
                 id,
                 cell,
@@ -844,7 +1174,7 @@ impl KineticWorld {
             .cell;
         let mut best: Option<(u32, HexCoord)> = None;
         for face in HexFace::LATERAL {
-            let Some(next) = self.grid.neighbor(from, face) else {
+            let Some(next) = self.passable_neighbor(from, face) else {
                 continue;
             };
             // A Guardian will not walk itself into void or structure, and will
@@ -1425,9 +1755,19 @@ mod tests {
                 minors: false,
                 major: false,
                 jail: false,
+                ..Default::default()
             }
             .summary(),
             "off: minors, major, jail"
+        );
+        assert_eq!(
+            KineticRules {
+                siege: true,
+                siege_minutes: 2.0,
+                ..Default::default()
+            }
+            .summary(),
+            "siege 2m, all on"
         );
     }
 

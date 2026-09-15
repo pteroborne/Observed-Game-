@@ -14,6 +14,10 @@ bevy = { version = "0.19", default-features = false, features = [
     "png",
 ] }
 observed_core = { path = "../../crates/observed_core" }
+# The real hex WFC solver. The siege facility is a solved `HexWfcWorld` at a
+# pinned seed rather than an authored rectangle, so the lab's walls, doorways and
+# void are the ones the production solver actually produces.
+observed_facility = { path = "../../crates/observed_facility" }
 observed_hex = { path = "../../crates/observed_hex" }
 # The deterministic fixed-tick character controller. Already pure, already
 # stepped at FIXED_DT, so embodiment introduces no new nondeterminism.

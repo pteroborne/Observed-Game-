@@ -29,6 +29,7 @@ pub mod embodied;
 mod fps;
 mod lab;
 pub mod model;
+pub mod siege;
 
 use bevy::{
     app::AppExit,
@@ -62,6 +63,21 @@ fn rules_from_command_line(view: &str) -> KineticRules {
     rules
 }
 
+/// The board these rules ask for: the authored proving rectangle, or a solved
+/// facility with a siege running in it.
+///
+/// A solver failure is fatal rather than a silent fall back to the authored
+/// board, because falling back would mean the lab quietly claimed to be testing
+/// a real facility while testing a hand-drawn plain.
+#[must_use]
+pub fn build_world(rules: KineticRules) -> KineticWorld {
+    if rules.siege {
+        siege::facility(rules, rules.siege_rules()).expect("the pinned siege facility seed solves")
+    } else {
+        KineticWorld::authored_with(rules)
+    }
+}
+
 /// The first-person view. Simulation runs in `FixedUpdate` at exactly the
 /// model's tick rate; everything in `Update` is presentation.
 #[derive(Default)]
@@ -71,7 +87,7 @@ pub struct KineticFpsPlugin {
 
 impl Plugin for KineticFpsPlugin {
     fn build(&self, app: &mut App) {
-        let world = KineticWorld::authored_with(self.rules);
+        let world = build_world(self.rules);
         let embodiment = Embodiment::new(&world);
         app.insert_resource(world)
             .insert_resource(embodiment)
@@ -326,6 +342,31 @@ fn fps_capture_progress(
         // Freeze the board: a minor Guardian one plate away would otherwise
         // walk onto the Observer and jail them before the shutter opened.
         runtime.paused = true;
+
+        // The pose below is the authored board's shot: stand on (3,3), look
+        // down the ledge run. In a solved facility that coordinate is wherever
+        // the solver happened to put it — usually void — so a siege capture
+        // keeps the spawn it was given and simply turns to face the building
+        // rather than out across the void it happens to spawn beside.
+        if world.siege.enabled {
+            let standable = world.standable_cells();
+            if !standable.is_empty() {
+                let mut sum = Vec3::ZERO;
+                for coord in &standable {
+                    sum += embodied::plate_center(*coord);
+                }
+                let centre = sum / standable.len() as f32;
+                let here = embodied::plate_center(world.observers[0].cell);
+                let to_centre = Vec2::new(centre.x - here.x, centre.z - here.z);
+                if to_centre.length_squared() > 1.0 {
+                    // Invert `FpsBody::forward`, which is (sin yaw, -cos yaw).
+                    embodiment.body.yaw = to_centre.x.atan2(-to_centre.y);
+                    embodiment.body.pitch = -0.05;
+                }
+            }
+            request.phase = 1;
+            return;
+        }
         let stand = embodied::plate_center(HexCoord {
             q: 3,
             r: 3,

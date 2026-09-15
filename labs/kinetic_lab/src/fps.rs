@@ -39,8 +39,8 @@ use crate::embodied::{
     plate_center,
 };
 use crate::model::{
-    CellKind, KineticEvent, KineticWorld, MAX_CHARGE, MinorGuardianId, PUSH_IMPULSE, ShoveFate,
-    ToolRefusal,
+    CellKind, KineticEvent, KineticWorld, MAX_CHARGE, MatchOutcome, MinorGuardianId, PUSH_IMPULSE,
+    ShoveFate, ToolRefusal,
 };
 
 /// How long a Guardian's move between cells takes to play, in seconds. Well
@@ -70,7 +70,7 @@ const VOID_FALL_SECONDS: f32 = 2.4;
 const COLOR_PLATE: Color = Color::srgb(0.20, 0.25, 0.32);
 const COLOR_PLATE_LEDGE: Color = Color::srgb(0.46, 0.34, 0.10);
 const COLOR_PLATE_RETRACTING: Color = Color::srgb(0.38, 0.11, 0.09);
-const COLOR_PLATE_WALL: Color = Color::srgb(0.22, 0.25, 0.30);
+const COLOR_PLATE_WALL: Color = Color::srgb(0.30, 0.35, 0.44);
 const COLOR_MINOR: Color = Color::srgb(1.0, 0.40, 0.26);
 const COLOR_MAJOR_AWAKE: Color = Color::srgb(1.0, 0.14, 0.40);
 const COLOR_MAJOR_FROZEN: Color = Color::srgb(0.36, 0.54, 0.72);
@@ -168,6 +168,9 @@ pub(crate) struct Crosshair;
 pub(crate) struct JailOverlay;
 
 #[derive(Component)]
+pub(crate) struct JailText;
+
+#[derive(Component)]
 pub(crate) struct FpsUiRoot;
 
 #[derive(Component)]
@@ -261,7 +264,11 @@ pub(crate) fn setup_scene(
         plate: emissive_material(&mut materials, COLOR_PLATE, 0.30),
         ledge: emissive_material(&mut materials, COLOR_PLATE_LEDGE, 1.3),
         retracting: emissive_material(&mut materials, COLOR_PLATE_RETRACTING, 1.8),
-        wall: emissive_material(&mut materials, COLOR_PLATE_WALL, 0.35),
+        // Walls carry their own light. With one key light and no shadow maps, a
+        // wall face pointing away from it falls to ambient and reads as a void
+        // hole rather than as a surface — which in a lab about edges is the one
+        // confusion that must not happen.
+        wall: emissive_material(&mut materials, COLOR_PLATE_WALL, 1.6),
         minor: emissive_material(&mut materials, COLOR_MINOR, 2.6),
         major_awake: emissive_material(&mut materials, COLOR_MAJOR_AWAKE, 3.2),
         major_frozen: emissive_material(&mut materials, COLOR_MAJOR_FROZEN, 1.1),
@@ -369,6 +376,22 @@ pub(crate) fn setup_scene(
         ));
     }
 
+    // Walls between plates, from the solver's door mask. On the authored board
+    // there are none, which is exactly why it plays as an open plain.
+    for (coord, face) in crate::embodied::wall_faces(&world) {
+        let Some((offset, half)) = crate::embodied::wall_slab(face) else {
+            continue;
+        };
+        let center = plate_center(coord);
+        commands.spawn((
+            FpsOwned,
+            Mesh3d(meshes.add(Cuboid::new(half.x * 2.0, half.y * 2.0, half.z * 2.0))),
+            MeshMaterial3d(palette.wall.clone()),
+            Transform::from_xyz(center.x + offset.x, offset.y, center.z + offset.z),
+            Name::new(format!("Wall {},{} {face:?}", coord.q, coord.r)),
+        ));
+    }
+
     for station in &world.stations {
         let center = plate_center(station.cell);
         commands.spawn((
@@ -390,17 +413,22 @@ pub(crate) fn setup_scene(
         Name::new("Generator"),
     ));
 
-    for minor in &world.minors {
-        let center = plate_center(minor.cell);
-        let position = Vec3::new(center.x, FLOOR_TOP + 1.1, center.z);
+    // A fixed pool, not one shell per starting Guardian: a siege spawns waves,
+    // and `MAX_LIVE_MINORS` is the ceiling the model enforces so this pool can
+    // exist at all. Spawning entities mid-match instead would put entity
+    // lifetime on the hot path and give the reset-leak test something to fail on.
+    for slot in 0..crate::model::MAX_LIVE_MINORS {
+        let id = MinorGuardianId(slot as u32);
+        let position = Vec3::new(0.0, FLOOR_TOP + 1.1, 0.0);
         commands.spawn((
             FpsOwned,
-            MinorShell(minor.id),
+            MinorShell(id),
             Clockwork::at(position),
             Mesh3d(minor_mesh.clone()),
             MeshMaterial3d(palette.minor.clone()),
             Transform::from_translation(position),
-            Name::new(format!("Minor Guardian {}", minor.id.0)),
+            Visibility::Hidden,
+            Name::new(format!("Minor Guardian {slot}")),
         ));
     }
 
@@ -514,6 +542,7 @@ fn spawn_ui(commands: &mut Commands) {
         Visibility::Hidden,
         Name::new("Jail Overlay"),
         children![(
+            JailText,
             Text::new("JAILED\n\nA Guardian reached you.\nPress R to reset."),
             TextFont {
                 font_size: FontSize::Px(34.0),
@@ -545,17 +574,42 @@ fn spawn_ui(commands: &mut Commands) {
 
 pub(crate) fn present_jail_overlay(
     world: Res<KineticWorld>,
-    mut overlay: Query<&mut Visibility, With<JailOverlay>>,
+    mut overlay: Query<(&mut Visibility, &mut BackgroundColor), With<JailOverlay>>,
+    mut text: Query<&mut Text, With<JailText>>,
 ) {
     let jailed = world
         .observers
         .first()
         .is_some_and(|observer| observer.jailed);
-    if let Ok(mut visibility) = overlay.single_mut() {
-        *visibility = if jailed {
+    let survived = world.outcome == MatchOutcome::Survived;
+
+    if let Ok((mut visibility, mut color)) = overlay.single_mut() {
+        *visibility = if jailed || survived {
             Visibility::Inherited
         } else {
             Visibility::Hidden
+        };
+        // Outlasting a siege earns a different colour from losing one: the
+        // same red panel for both would make a win read as a failure.
+        color.0 = if survived {
+            Color::srgba(0.02, 0.24, 0.16, 0.45)
+        } else {
+            Color::srgba(0.35, 0.02, 0.10, 0.45)
+        };
+    }
+    if let Ok(mut text) = text.single_mut() {
+        **text = if survived {
+            format!(
+                "SURVIVED\n\nYou outlasted {} waves.\n{} Guardians into the void.\nPress R to reset.",
+                world.waves_released, world.kills
+            )
+        } else if world.siege.enabled {
+            format!(
+                "OVERRUN\n\nA Guardian reached you on wave {}.\n{} Guardians into the void.\nPress R to reset.",
+                world.waves_released, world.kills
+            )
+        } else {
+            "JAILED\n\nA Guardian reached you.\nPress R to reset.".to_string()
         };
     }
 }
@@ -655,7 +709,10 @@ pub(crate) fn perform_reset(
         reset_count,
         ..default()
     };
-    *world = KineticWorld::authored();
+    // Rebuild the board this run actually asked for. Resetting to the authored
+    // rectangle would drop a siege back onto the proving plain.
+    let rules = world.rules;
+    *world = crate::build_world(rules);
     *embodiment = Embodiment::new(&world);
 }
 
@@ -787,6 +844,16 @@ fn describe(world: &KineticWorld) -> Option<String> {
             }
         }
         KineticEvent::TileRetracted { .. } => "A plate finished retracting.".to_string(),
+        KineticEvent::WaveReleased { index, size } => {
+            format!("Wave {} incoming: {size} Guardians.", index + 1)
+        }
+        // Individually uninteresting next to the wave line that follows it.
+        KineticEvent::MinorReleased { .. } => String::new(),
+        KineticEvent::SiegeEnded { outcome } => match outcome {
+            MatchOutcome::Survived => "You outlasted the siege.".to_string(),
+            MatchOutcome::Lost => "The siege took you.".to_string(),
+            MatchOutcome::Running => String::new(),
+        },
     })
 }
 
@@ -868,7 +935,10 @@ pub(crate) fn present_guardians(
     let delta = time.delta_secs();
 
     for (shell, mut clockwork, mut transform, mut visibility) in &mut minors {
+        // The pool is bigger than the population: a slot with no Guardian in it
+        // yet simply stays hidden until a wave fills it.
         let Some(minor) = world.minor(shell.0) else {
+            *visibility = Visibility::Hidden;
             continue;
         };
         if minor.alive {
@@ -1054,6 +1124,24 @@ pub(crate) fn draw_lane(world: Res<KineticWorld>, mut gizmos: Gizmos) {
     }
 }
 
+/// The siege clock, wave count and kills — the only score this lab keeps.
+///
+/// Empty when there is no siege, so the ordinary board's HUD is unchanged.
+fn siege_line(world: &KineticWorld) -> String {
+    if !world.siege.enabled {
+        return String::new();
+    }
+    let remaining = world.siege_remaining();
+    let seconds = remaining / crate::model::TICKS_PER_SECOND;
+    format!(
+        "SIEGE  {:01}:{:02} left   |   wave {}   |   killed {}\n",
+        seconds / 60,
+        seconds % 60,
+        world.waves_released,
+        world.kills,
+    )
+}
+
 pub(crate) fn update_hud(
     world: Res<KineticWorld>,
     runtime: Res<FpsRuntime>,
@@ -1080,12 +1168,13 @@ pub(crate) fn update_hud(
         );
 
     **text = format!(
-        "tick {}   |   cell {},{}   |   facing {:?}\n\
+        "{}tick {}   |   cell {},{}   |   facing {:?}\n\
          charge {}/{}   |   power {}   |   rules {}\n\
          minors alive {}   |   major {}\n\
          lane: {}\n\
          resets {}   |   {}\n\
          {}",
+        siege_line(&world),
         world.tick,
         observer.cell.q,
         observer.cell.r,

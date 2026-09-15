@@ -16,8 +16,8 @@ use observed_hex::{
 };
 
 use crate::model::{
-    CellKind, KineticEvent, KineticIntent, KineticWorld, MAX_CHARGE, MinorGuardianId, PUSH_COST,
-    PUSH_IMPULSE, ShoveFate, TICKS_PER_SECOND, ToolRefusal,
+    CellKind, KineticEvent, KineticIntent, KineticWorld, MAX_CHARGE, MatchOutcome, MinorGuardianId,
+    PUSH_COST, PUSH_IMPULSE, ShoveFate, TICKS_PER_SECOND, ToolRefusal,
 };
 
 /// Screen pixels per lattice meter. Sized so the authored board fills most of a
@@ -341,7 +341,9 @@ pub(crate) fn perform_reset(mut runtime: ResMut<KineticRuntime>, mut world: ResM
         reset_count,
         ..default()
     };
-    *world = KineticWorld::authored();
+    // Rebuild the board this run actually asked for, not always the authored one.
+    let rules = world.rules;
+    *world = crate::build_world(rules);
 }
 
 /// Drive the fixed-tick model from real time, or one tick at a time when
@@ -428,6 +430,15 @@ fn describe(world: &KineticWorld) -> Option<String> {
             "Captured by a minor Guardian.".to_string()
         }),
         KineticEvent::TileRetracted { .. } => None,
+        KineticEvent::WaveReleased { index, size } => {
+            Some(format!("Wave {} incoming: {size} Guardians.", index + 1))
+        }
+        KineticEvent::MinorReleased { .. } => None,
+        KineticEvent::SiegeEnded { outcome } => match outcome {
+            MatchOutcome::Survived => Some("You outlasted the siege.".to_string()),
+            MatchOutcome::Lost => Some("The siege took you.".to_string()),
+            MatchOutcome::Running => None,
+        },
     })
 }
 
