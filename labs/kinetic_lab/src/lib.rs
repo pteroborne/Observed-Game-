@@ -219,7 +219,7 @@ fn stage_demo(mut world: ResMut<KineticWorld>, mut embodiment: ResMut<Embodiment
     embodiment.facing = HexFace::East;
 
     world.observers[0].cell = cell(3, 3);
-    world.observers[0].facing = HexFace::East;
+    world.observers[0].look(HexFace::East);
     // Three plates east: inside `TOOL_RANGE`, with the ledge run and the void
     // rim behind it, and 450 ticks of walking before it could reach the spawn.
     world.minors[0].cell = cell(6, 3);
@@ -387,7 +387,7 @@ fn fps_capture_progress(
             r: 3,
             level: 0,
         };
-        world.observers[0].facing = HexFace::East;
+        world.observers[0].look(HexFace::East);
         world.minors[0].cell = HexCoord {
             q: 4,
             r: 3,
@@ -494,7 +494,7 @@ fn capture_progress(
             r: 3,
             level: 0,
         };
-        world.observers[0].facing = HexFace::East;
+        world.observers[0].look(HexFace::East);
         world.minors[0].cell = HexCoord {
             q: 4,
             r: 3,
@@ -572,7 +572,7 @@ mod tests {
                 r: 4,
                 level: 0,
             };
-            world.observers[0].facing = HexFace::East;
+            world.observers[0].look(HexFace::East);
             world.minors[0].cell = HexCoord {
                 q: 4,
                 r: 4,
@@ -636,7 +636,7 @@ mod tests {
                 r: 2,
                 level: 0,
             };
-            world.observers[0].facing = HexFace::NorthWest;
+            world.observers[0].look(HexFace::NorthWest);
             world.minors[0].cell = HexCoord {
                 q: 4,
                 r: 1,

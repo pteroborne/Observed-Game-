@@ -21,6 +21,8 @@
 // world without a wrapper type. No camera, sprite, asset, or system appears
 // here, and the model is fully exercisable without an `App`.
 use bevy::prelude::Resource;
+use std::collections::{BTreeMap, VecDeque};
+
 use observed_core::{PlayerId, SplitMix};
 use observed_hex::{
     coords::{HexCoord, HexGridSize, lateral_distance},
@@ -43,8 +45,16 @@ pub const RECHARGE_TICKS: u32 = 30;
 pub const PUSH_IMPULSE: u32 = 3;
 /// Cells a pull drags its target back toward the Observer.
 pub const PULL_IMPULSE: u32 = 1;
-/// How far down its facing lane the tool finds a target.
+/// How far the tool reaches, in plates.
 pub const TOOL_RANGE: u32 = 3;
+/// Half-angle of the selection cone, in degrees.
+///
+/// Narrow enough that "the thing I am looking at" is unambiguous, wide enough
+/// that a Guardian a plate off-axis at forty metres is still grabbable without
+/// pixel-perfect aim. The lattice's own faces are sixty degrees apart, so
+/// anything approaching thirty here would put two Guardians in the cone as often
+/// as one.
+pub const TOOL_CONE_DEGREES: f32 = 22.0;
 /// Ticks a minor Guardian spends recovering after surviving a shove.
 pub const STAGGER_TICKS: u32 = 45;
 /// Ticks between minor Guardian steps.
@@ -118,16 +128,42 @@ impl CellKind {
 }
 
 /// An Observer: the first-person seat holding the tool.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Observer {
     pub id: PlayerId,
     pub cell: HexCoord,
+    /// The lattice face this Observer is nearest to looking down.
+    ///
+    /// Still the *resolution* axis — a shove travels along a face, which is what
+    /// keeps it a discrete deterministic walk — but no longer the *selection*
+    /// axis. See [`Observer::aim`].
     pub facing: HexFace,
+    /// Continuous plan-space aim direction, `(x, z)`.
+    ///
+    /// Selection used to be "the first Guardian down the facing lane", where the
+    /// lane was one of six sixty-degree buckets. In a first-person game with a
+    /// mouse that made the crosshair decorative: you could look straight at a
+    /// Guardian and be refused, or shove one thirty degrees off-screen. Aim is
+    /// what the eye is actually doing, and the tool selects against it.
+    pub aim: [f32; 2],
     pub charge: u8,
     /// Ticks accumulated toward the next charge while standing on a live
     /// station. Reset the moment the station stops supplying.
     pub recharge_progress: u32,
     pub jailed: bool,
+}
+
+impl Observer {
+    /// Look down a lattice face, setting both the resolution axis and the aim.
+    ///
+    /// These two must agree, and nothing good happens when they do not: aim
+    /// selects the target, `facing` draws the lane and resolves the shove, so a
+    /// stale aim means the tool grabs something other than what the lane shows.
+    /// Setting them through one call is the only way to keep that impossible.
+    pub fn look(&mut self, face: HexFace) {
+        self.facing = face;
+        self.aim = face_direction(face);
+    }
 }
 
 /// A minor Guardian: released by disturbance, immune to observation, removed
@@ -180,6 +216,8 @@ pub struct KineticRules {
     pub siege: bool,
     /// How long that siege lasts.
     pub siege_minutes: f32,
+    /// Which facility to solve. `None` uses the pinned preset.
+    pub facility_seed: Option<u64>,
 }
 
 impl Default for KineticRules {
@@ -190,6 +228,7 @@ impl Default for KineticRules {
             jail: true,
             siege: false,
             siege_minutes: 3.0,
+            facility_seed: None,
         }
     }
 }
@@ -222,6 +261,13 @@ impl KineticRules {
                         && minutes > 0.0
                     {
                         rules.siege_minutes = minutes;
+                    }
+                    // A different seed is a different building, for free. The
+                    // pinned default is one arbitrary solve, not a good one.
+                    if let Some(value) = other.strip_prefix("--seed=")
+                        && let Ok(seed) = value.parse::<u64>()
+                    {
+                        rules.facility_seed = Some(seed);
                     }
                 }
             }
@@ -330,7 +376,8 @@ pub const RULES_HELP: &str = concat!(
     "  --no-guardians   both of the above\n",
     "  --no-jail        a Guardian reaching you no longer ends the run\n",
     "  --siege          a solved WFC facility, and waves of Guardians to outlast\n",
-    "  --minutes=N      how long the siege lasts (default 3)",
+    "  --minutes=N      how long the siege lasts (default 3)\n",
+    "  --seed=N         solve a different facility",
 );
 
 /// A recharge station: Architect-placed equipment that is inert without floor
@@ -541,6 +588,111 @@ impl KineticWorld {
         world
     }
 
+    /// Wall off one face, from both sides.
+    ///
+    /// Always mutual. A one-sided seal is a face you can walk through in one
+    /// direction and not the other, which is the kind of thing that survives
+    /// review because nobody thinks to look for it.
+    pub fn seal_face(&mut self, coord: HexCoord, face: HexFace) {
+        if !face.is_lateral() || !self.grid.contains(coord) {
+            return;
+        }
+        let index = self.grid.index(coord);
+        self.doors[index] &= !(1 << face.index());
+        if let Some(next) = self.grid.neighbor(coord, face) {
+            let back = self.grid.index(next);
+            self.doors[back] &= !(1 << face.opposite().index());
+        }
+    }
+
+    /// Make every plate on the structure's edge an unrailed ledge.
+    ///
+    /// Canon has upper floors admitting "open ledges, narrow bridges, unrailed
+    /// balconies", and this is that rule applied to a solved facility: where the
+    /// floor stops, there is no rail.
+    ///
+    /// It is also what makes the tool work at all in a real building. A solved
+    /// facility is Solid or Void and nothing else, so the only lethal geometry
+    /// is the rim — and a `Solid` rim plate *stops* a shove dead on it rather
+    /// than letting the target carry over. With the rim unrailed, momentum does
+    /// what momentum does.
+    pub fn mark_unrailed_edges(&mut self) {
+        for index in 0..self.cells.len() {
+            let coord = self.grid.coord(index);
+            if self.cells[index] != CellKind::Solid {
+                continue;
+            }
+            let on_edge = HexFace::LATERAL.iter().any(|face| {
+                self.grid
+                    .neighbor(coord, *face)
+                    .is_none_or(|next| !self.cell(next).is_standable())
+            });
+            if on_edge {
+                self.cells[index] = CellKind::Ledge;
+            }
+        }
+    }
+
+    /// The next plate on a shortest route from `from` to `to`.
+    ///
+    /// Breadth-first over open faces, so it goes around walls. Pursuit used to
+    /// be greedy — take whichever neighbouring plate reduces the distance most —
+    /// which is correct on an open board and useless in a building: the first
+    /// corridor that runs the wrong way before it runs the right way is a local
+    /// minimum a greedy walker never leaves. On the solved facility that meant
+    /// Guardians milled about near their spawn and the siege was won by standing
+    /// still, which looked like the siege working and was the opposite.
+    ///
+    /// Blocked plates are passed in rather than assumed, so a caller can forbid
+    /// standing on other Guardians while still allowing the Observer's plate,
+    /// which is the capture.
+    #[must_use]
+    pub fn route_step(
+        &self,
+        from: HexCoord,
+        to: HexCoord,
+        blocked: &dyn Fn(HexCoord) -> bool,
+    ) -> Option<HexCoord> {
+        if from == to {
+            return None;
+        }
+        let mut came_from: BTreeMap<HexCoord, HexCoord> = BTreeMap::new();
+        let mut queue = VecDeque::new();
+        queue.push_back(from);
+        came_from.insert(from, from);
+
+        while let Some(cursor) = queue.pop_front() {
+            if cursor == to {
+                let mut step = cursor;
+                loop {
+                    let parent = *came_from.get(&step)?;
+                    if parent == from {
+                        return Some(step);
+                    }
+                    step = parent;
+                }
+            }
+            // `HexFace::LATERAL` order is the determinism contract: two routes of
+            // equal length must always resolve the same way.
+            for face in HexFace::LATERAL {
+                let Some(next) = self.passable_neighbor(cursor, face) else {
+                    continue;
+                };
+                if came_from.contains_key(&next) || !self.cell(next).is_standable() {
+                    continue;
+                }
+                // The destination is always enterable; that is what makes a
+                // capture possible.
+                if next != to && blocked(next) {
+                    continue;
+                }
+                came_from.insert(next, cursor);
+                queue.push_back(next);
+            }
+        }
+        None
+    }
+
     /// Every cell an actor could stand on.
     #[must_use]
     pub fn standable_cells(&self) -> Vec<HexCoord> {
@@ -608,6 +760,7 @@ impl KineticWorld {
                     level: 0,
                 },
                 facing: HexFace::East,
+                aim: face_direction(HexFace::East),
                 charge: MAX_CHARGE,
                 recharge_progress: 0,
                 jailed: false,
@@ -784,25 +937,102 @@ impl KineticWorld {
                 .any(|observer| !observer.jailed && observer.cell == coord)
     }
 
-    /// The first living minor Guardian down an Observer's facing lane.
+    /// The Guardian this Observer is looking at.
+    ///
+    /// Selection is continuous — the smallest angle to the aim direction inside
+    /// [`TOOL_CONE_DEGREES`], within [`TOOL_RANGE`] plates, with a path that is
+    /// not through a wall. Resolution stays discrete: see [`Self::face_toward`].
+    /// Selection continuous, resolution discrete, is the whole trick — it makes
+    /// the crosshair mean what it looks like it means without giving up the
+    /// deterministic lattice walk a shove has to be.
     #[must_use]
-    pub fn target_in_lane(&self, observer: &Observer) -> Option<MinorGuardianId> {
-        let mut cursor = observer.cell;
-        for _ in 0..TOOL_RANGE {
-            let next = self.passable_neighbor(cursor, observer.facing)?;
-            if self.cell(next).blocks_travel() {
-                return None;
+    pub fn target_in_cone(&self, observer: &Observer) -> Option<MinorGuardianId> {
+        let aim = normalize(observer.aim)?;
+        let from = plan_of(observer.cell);
+        let limit = TOOL_CONE_DEGREES.to_radians().cos();
+
+        let mut best: Option<(f32, MinorGuardianId)> = None;
+        for minor in self.minors.iter().filter(|minor| minor.alive) {
+            if lateral_distance(minor.cell, observer.cell) > TOOL_RANGE {
+                continue;
             }
-            if let Some(minor) = self
-                .minors
-                .iter()
-                .find(|minor| minor.alive && minor.cell == next)
-            {
-                return Some(minor.id);
+            let Some(direction) = normalize(delta(from, plan_of(minor.cell))) else {
+                continue;
+            };
+            let alignment = aim[0] * direction[0] + aim[1] * direction[1];
+            if alignment < limit {
+                continue;
+            }
+            if !self.has_clear_line(observer.cell, minor.cell) {
+                continue;
+            }
+            // Best alignment wins, ties broken by id so the choice is stable.
+            if best.is_none_or(|(score, id)| {
+                alignment > score || (alignment == score && minor.id < id)
+            }) {
+                best = Some((alignment, minor.id));
+            }
+        }
+        best.map(|(_, id)| id)
+    }
+
+    /// What a push would do right now, selection and all.
+    ///
+    /// Presentation calls exactly this, and [`Self::fire`] takes the same two
+    /// steps in the same order, so the preview cannot describe a different shot
+    /// from the one the trigger produces.
+    #[must_use]
+    pub fn preview_push(&self, observer: &Observer) -> Option<ShoveResolution> {
+        let id = self.target_in_cone(observer)?;
+        let minor = self.minor(id)?;
+        let face = self.face_toward(observer.cell, minor.cell)?;
+        self.resolve_shove(id, face, PUSH_IMPULSE)
+    }
+
+    /// The lateral face a shove from `from` toward `to` travels along.
+    ///
+    /// This is where continuous selection becomes a discrete resolution: whatever
+    /// the eye picked, the push itself still walks the lattice.
+    #[must_use]
+    pub fn face_toward(&self, from: HexCoord, to: HexCoord) -> Option<HexFace> {
+        let direction = normalize(delta(plan_of(from), plan_of(to)))?;
+        HexFace::LATERAL
+            .into_iter()
+            .filter_map(|face| {
+                let axis = normalize(face_direction(face))?;
+                Some((face, direction[0] * axis[0] + direction[1] * axis[1]))
+            })
+            .max_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(face, _)| face)
+    }
+
+    /// Whether a target can be reached without going through a wall.
+    ///
+    /// A greedy walk along passable faces rather than a true line trace: cheap,
+    /// deterministic, and exactly as accurate as the lattice the shove will
+    /// travel on anyway.
+    #[must_use]
+    pub fn has_clear_line(&self, from: HexCoord, to: HexCoord) -> bool {
+        if from == to {
+            return true;
+        }
+        let mut cursor = from;
+        for _ in 0..=TOOL_RANGE {
+            let Some(face) = self.face_toward(cursor, to) else {
+                return false;
+            };
+            let Some(next) = self.passable_neighbor(cursor, face) else {
+                return false;
+            };
+            if next == to {
+                return true;
+            }
+            if !self.cell(next).is_standable() {
+                return false;
             }
             cursor = next;
         }
-        None
+        false
     }
 
     /// Resolve a shove without applying it.
@@ -1010,7 +1240,11 @@ impl KineticWorld {
             };
             match intent {
                 KineticIntent::Idle => {}
-                KineticIntent::Face(face) => self.observers[index].facing = face,
+                KineticIntent::Face(face) => {
+                    // The schematic view has no continuous aim of its own, so a
+                    // face *is* its aim. One selection path serves both views.
+                    self.observers[index].look(face);
+                }
                 KineticIntent::Step(face) => {
                     let observer = self.observers[index];
                     if let Some(next) = self.passable_neighbor(observer.cell, face)
@@ -1020,7 +1254,7 @@ impl KineticWorld {
                         self.observers[index].cell = next;
                         self.observers[index].recharge_progress = 0;
                     }
-                    self.observers[index].facing = face;
+                    self.observers[index].look(face);
                 }
                 KineticIntent::Push => self.fire(index, PUSH_COST, PUSH_IMPULSE, true),
                 KineticIntent::Pull => self.fire(index, PULL_COST, PULL_IMPULSE, false),
@@ -1047,7 +1281,7 @@ impl KineticWorld {
     /// is dragged back along it.
     fn fire(&mut self, index: usize, cost: u8, impulse: u32, away: bool) {
         let observer = self.observers[index];
-        let Some(target) = self.target_in_lane(&observer) else {
+        let Some(target) = self.target_in_cone(&observer) else {
             self.events.push(KineticEvent::ToolRefused {
                 observer: observer.id,
                 refusal: ToolRefusal::NoTargetInLane,
@@ -1061,11 +1295,16 @@ impl KineticWorld {
             });
             return;
         }
-        let face = if away {
-            observer.facing
-        } else {
-            observer.facing.opposite()
+        // Resolution is discrete even though selection was not: the shove
+        // travels along whichever lattice face points at the thing that was
+        // picked, so the walk stays the deterministic one canon requires.
+        let Some(toward) = self
+            .minor(target)
+            .and_then(|minor| self.face_toward(observer.cell, minor.cell))
+        else {
+            return;
         };
+        let face = if away { toward } else { toward.opposite() };
         let Some(resolution) = self.resolve_shove(target, face, impulse) else {
             return;
         };
@@ -1172,24 +1411,9 @@ impl KineticWorld {
             .filter(|observer| !observer.jailed)
             .min_by_key(|observer| (lateral_distance(from, observer.cell), observer.id.0))?
             .cell;
-        let mut best: Option<(u32, HexCoord)> = None;
-        for face in HexFace::LATERAL {
-            let Some(next) = self.passable_neighbor(from, face) else {
-                continue;
-            };
-            // A Guardian will not walk itself into void or structure, and will
-            // not displace another Guardian — but an Observer's cell is a legal
-            // destination, because arriving there is the capture.
-            if !self.cell(next).is_standable() || self.guardian_occupies(next) {
-                continue;
-            }
-            let distance = lateral_distance(next, target);
-            if best.is_none_or(|(best_distance, _)| distance < best_distance) {
-                best = Some((distance, next));
-            }
-        }
-        let (distance, next) = best?;
-        (distance < lateral_distance(from, target)).then_some(next)
+        // A Guardian will not displace another Guardian, but an Observer's plate
+        // is always a legal destination, because arriving there is the capture.
+        self.route_step(from, target, &|cell| self.guardian_occupies(cell))
     }
 
     fn move_guardians(&mut self) {
@@ -1310,6 +1534,37 @@ impl KineticWorld {
     }
 }
 
+/// Plan-space centre of a cell, `(x, z)` in metres.
+fn plan_of(coord: HexCoord) -> [f32; 2] {
+    let (x, z) = observed_hex::metrics::hex_origin_plan(coord);
+    [x as f32, z as f32]
+}
+
+fn delta(from: [f32; 2], to: [f32; 2]) -> [f32; 2] {
+    [to[0] - from[0], to[1] - from[1]]
+}
+
+fn normalize(v: [f32; 2]) -> Option<[f32; 2]> {
+    let length = (v[0] * v[0] + v[1] * v[1]).sqrt();
+    (length > 1e-4).then(|| [v[0] / length, v[1] / length])
+}
+
+/// Plan-space direction of one lateral face.
+fn face_direction(face: HexFace) -> [f32; 2] {
+    let (dq, dr, _) = face.delta();
+    let step = HexCoord {
+        q: (1 + dq) as u16,
+        r: (1 + dr) as u16,
+        level: 0,
+    };
+    let origin = HexCoord {
+        q: 1,
+        r: 1,
+        level: 0,
+    };
+    delta(plan_of(origin), plan_of(step))
+}
+
 fn coord_key(coord: HexCoord) -> u64 {
     u64::from(coord.q) | (u64::from(coord.r) << 16) | (u64::from(coord.level) << 32)
 }
@@ -1335,7 +1590,7 @@ mod tests {
     fn a_push_into_the_rim_commits_the_target_to_void() {
         let mut world = board_with_minor(coord(4, 1));
         world.observers[0].cell = coord(4, 2);
-        world.observers[0].facing = HexFace::NorthWest;
+        world.observers[0].look(HexFace::NorthWest);
 
         world.step(&[(PlayerId(0), KineticIntent::Push)]);
 
@@ -1365,7 +1620,7 @@ mod tests {
         // do not spend impulse, so the target keeps going into the rim.
         let mut world = board_with_minor(coord(4, 3));
         world.observers[0].cell = coord(3, 3);
-        world.observers[0].facing = HexFace::East;
+        world.observers[0].look(HexFace::East);
 
         let resolution = world
             .resolve_shove(MinorGuardianId(0), HexFace::East, PUSH_IMPULSE)
@@ -1379,7 +1634,7 @@ mod tests {
     fn a_push_onto_solid_floor_leaves_the_target_alive_and_staggered() {
         let mut world = board_with_minor(coord(4, 4));
         world.observers[0].cell = coord(3, 4);
-        world.observers[0].facing = HexFace::East;
+        world.observers[0].look(HexFace::East);
 
         world.step(&[(PlayerId(0), KineticIntent::Push)]);
 
@@ -1439,7 +1694,7 @@ mod tests {
         let mut world = KineticWorld::authored();
         world.minors.clear();
         world.observers[0].cell = coord(4, 4);
-        world.observers[0].facing = HexFace::East;
+        world.observers[0].look(HexFace::East);
         world.major.cell = coord(5, 4);
 
         for _ in 0..MAJOR_STEP_TICKS + 4 {
@@ -1455,7 +1710,7 @@ mod tests {
         let mut world = KineticWorld::authored();
         world.minors.truncate(1);
         world.observers[0].cell = coord(4, 4);
-        world.observers[0].facing = HexFace::East;
+        world.observers[0].look(HexFace::East);
         world.minors[0].cell = coord(6, 4);
         // Parked well clear: a major standing in the minor's path would block
         // the step under test and prove nothing about observation.
@@ -1480,7 +1735,7 @@ mod tests {
     fn cutting_power_costs_observation_range_and_wakes_the_major() {
         let mut world = KineticWorld::authored();
         world.observers[0].cell = coord(4, 4);
-        world.observers[0].facing = HexFace::East;
+        world.observers[0].look(HexFace::East);
         world.major.cell = coord(5, 4);
 
         world.step(&[]);
@@ -1531,7 +1786,7 @@ mod tests {
     fn the_tool_refuses_rather_than_firing_on_an_empty_lane_or_empty_charge() {
         let mut world = board_with_minor(coord(4, 4));
         world.observers[0].cell = coord(3, 4);
-        world.observers[0].facing = HexFace::West;
+        world.observers[0].look(HexFace::West);
         world.step(&[(PlayerId(0), KineticIntent::Push)]);
         assert!(world.events.iter().any(|event| matches!(
             event,
@@ -1541,7 +1796,7 @@ mod tests {
             }
         )));
 
-        world.observers[0].facing = HexFace::East;
+        world.observers[0].look(HexFace::East);
         world.observers[0].charge = PUSH_COST - 1;
         world.step(&[(PlayerId(0), KineticIntent::Push)]);
         assert!(world.events.iter().any(|event| matches!(
@@ -1558,7 +1813,7 @@ mod tests {
     fn a_pull_drags_the_target_one_cell_back_toward_the_observer() {
         let mut world = board_with_minor(coord(5, 4));
         world.observers[0].cell = coord(3, 4);
-        world.observers[0].facing = HexFace::East;
+        world.observers[0].look(HexFace::East);
 
         world.step(&[(PlayerId(0), KineticIntent::Pull)]);
 
@@ -1592,7 +1847,7 @@ mod tests {
         let mut world = KineticWorld::authored();
         world.minors.truncate(1);
         world.observers[0].cell = coord(4, 4);
-        world.observers[0].facing = HexFace::West;
+        world.observers[0].look(HexFace::West);
         world.minors[0].cell = coord(6, 4);
         world.major.cell = coord(1, 2);
 
@@ -1636,6 +1891,151 @@ mod tests {
             world.minors[0].cell, world.minors[1].cell,
             "two Guardians never share a cell"
         );
+    }
+
+    /// Aim the Observer at a cell, the way a mouse would.
+    fn aim_at(world: &mut KineticWorld, target: HexCoord) {
+        let from = plan_of(world.observers[0].cell);
+        let to = plan_of(target);
+        world.observers[0].aim = normalize(delta(from, to)).expect("a direction");
+        world.observers[0].facing = world
+            .face_toward(world.observers[0].cell, target)
+            .expect("a face");
+    }
+
+    /// The defect the rework exists to fix: a Guardian plainly in view, but off
+    /// the six-way lane axis, used to be unselectable.
+    #[test]
+    fn a_guardian_off_the_lattice_axis_is_still_selectable() {
+        let mut world = KineticWorld::authored();
+        world.minors.truncate(1);
+        world.observers[0].cell = coord(3, 3);
+        world.major.cell = coord(1, 1);
+        // (5,4) is not on any lateral axis from (3,3): the old lane selection
+        // could never reach it however squarely you looked at it.
+        world.minors[0].cell = coord(5, 4);
+        assert!(
+            world.face_toward(coord(3, 3), coord(5, 4)).is_some(),
+            "there is a nearest face"
+        );
+
+        aim_at(&mut world, coord(5, 4));
+        assert_eq!(
+            world.target_in_cone(&world.observers[0]),
+            Some(MinorGuardianId(0)),
+            "looking straight at a Guardian must select it"
+        );
+    }
+
+    /// And the other half: looking away must *not* select it, or the cone is
+    /// just "anything nearby" wearing a different name.
+    #[test]
+    fn looking_away_selects_nothing() {
+        let mut world = KineticWorld::authored();
+        world.minors.truncate(1);
+        world.observers[0].cell = coord(3, 3);
+        world.major.cell = coord(1, 1);
+        world.minors[0].cell = coord(5, 4);
+
+        aim_at(&mut world, coord(5, 4));
+        // Spin 180 degrees.
+        let aim = world.observers[0].aim;
+        world.observers[0].aim = [-aim[0], -aim[1]];
+        assert_eq!(world.target_in_cone(&world.observers[0]), None);
+    }
+
+    /// Selection is continuous; resolution is not. Whatever the eye picked, the
+    /// shove still travels along a lattice face.
+    #[test]
+    fn an_off_axis_push_still_resolves_along_a_face() {
+        let mut world = KineticWorld::authored();
+        world.minors.truncate(1);
+        world.observers[0].cell = coord(3, 3);
+        world.major.cell = coord(1, 1);
+        world.minors[0].cell = coord(5, 4);
+        aim_at(&mut world, coord(5, 4));
+
+        let preview = world
+            .preview_push(&world.observers[0])
+            .expect("an off-axis target still previews");
+        assert!(
+            HexFace::LATERAL.contains(&preview.face),
+            "a shove must resolve along a lattice face, got {:?}",
+            preview.face
+        );
+        assert_eq!(preview.from, coord(5, 4));
+
+        world.step(&[(PlayerId(0), KineticIntent::Push)]);
+        let fired = world
+            .events
+            .iter()
+            .find_map(|event| match event {
+                KineticEvent::Shoved(resolution) => Some(*resolution),
+                _ => None,
+            })
+            .expect("the push fired");
+        assert_eq!(
+            fired, preview,
+            "the preview described a different shot from the one that fired"
+        );
+    }
+
+    /// Nothing may be grabbed through a wall.
+    #[test]
+    fn a_wall_between_you_blocks_selection() {
+        let mut world = KineticWorld::authored();
+        world.minors.truncate(1);
+        world.observers[0].cell = coord(3, 3);
+        world.major.cell = coord(1, 1);
+        world.minors[0].cell = coord(5, 3);
+        aim_at(&mut world, coord(5, 3));
+        assert_eq!(
+            world.target_in_cone(&world.observers[0]),
+            Some(MinorGuardianId(0)),
+            "with no wall it is selectable"
+        );
+
+        // Seal the face between, from both sides.
+        let a = world.grid.index(coord(4, 3));
+        world.doors[a] &= !(1 << HexFace::East.index());
+        let b = world.grid.index(coord(5, 3));
+        world.doors[b] &= !(1 << HexFace::West.index());
+
+        assert_eq!(
+            world.target_in_cone(&world.observers[0]),
+            None,
+            "a wall between you must block the grab"
+        );
+    }
+
+    #[test]
+    fn nothing_beyond_tool_range_is_selectable() {
+        let mut world = KineticWorld::authored();
+        world.minors.truncate(1);
+        world.observers[0].cell = coord(1, 3);
+        world.major.cell = coord(1, 1);
+        world.minors[0].cell = coord(7, 3);
+        aim_at(&mut world, coord(7, 3));
+        assert!(lateral_distance(coord(1, 3), coord(7, 3)) > TOOL_RANGE);
+        assert_eq!(world.target_in_cone(&world.observers[0]), None);
+    }
+
+    /// Every lateral face must be the answer for something, or one direction of
+    /// travel would be unreachable.
+    #[test]
+    fn face_toward_covers_every_lateral_face() {
+        let world = KineticWorld::authored();
+        let from = coord(4, 3);
+        let mut seen = Vec::new();
+        for face in HexFace::LATERAL {
+            let to = world.grid.neighbor(from, face).expect("a neighbour");
+            let resolved = world.face_toward(from, to).expect("a face");
+            assert_eq!(resolved, face, "stepping {face:?} should resolve to it");
+            seen.push(resolved.index());
+        }
+        seen.sort_unstable();
+        seen.dedup();
+        assert_eq!(seen.len(), 6);
     }
 
     #[test]

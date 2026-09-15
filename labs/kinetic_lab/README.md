@@ -36,6 +36,18 @@ A single floor, each feature present to make one rule visible:
 | `P` / `N` | Pause / advance exactly one tick |
 | `R` | Reset |
 
+## Aiming: selection continuous, resolution discrete
+
+The tool selects **what you are looking at** — the smallest angle to your aim
+inside a 22-degree cone, within `TOOL_RANGE`, with no wall in between — and then
+resolves the shove along the lattice face that points at it.
+
+That split is the whole trick. Selection by the six 60-degree lattice faces made
+the crosshair decorative: you could look straight at a Guardian and be refused,
+or shove one thirty degrees off screen, because your yaw happened to fall in a
+different bucket. Resolution stays discrete, so the shove is still the
+deterministic lattice walk canon requires.
+
 ## The preview is the fairness argument
 
 `KineticWorld::resolve_shove` is pure and side-effect free, so the lab runs the
@@ -143,6 +155,7 @@ cargo dev-run -p kinetic_lab --bin kinetic_fps -- --help
 | `--no-jail` | A Guardian reaching you no longer ends the run |
 | `--siege` | A solved WFC facility, and waves of Guardians to outlast |
 | `--minutes=N` | How long the siege lasts (default 3) |
+| `--seed=N` | Solve a different facility — a different building, for free |
 
 These are **authoritative**, not presentation toggles: they live on
 `KineticWorld::rules`, ride in the determinism digest, and are obeyed identically

@@ -52,7 +52,7 @@ pub const FACILITY_SEED: u64 = 0x0B5E_51E6;
 /// while testing a hand-drawn plain.
 pub fn facility(rules: KineticRules, siege: SiegeRules) -> Result<KineticWorld, HexWfcError> {
     let config = facility_config();
-    let solved = HexWfcWorld::generate(FACILITY_SEED, config)?;
+    let solved = HexWfcWorld::generate(rules.facility_seed.unwrap_or(FACILITY_SEED), config)?;
     Ok(from_solved(&solved, rules, siege))
 }
 
@@ -80,16 +80,24 @@ pub fn from_solved(solved: &HexWfcWorld, rules: KineticRules, siege: SiegeRules)
 
     let mut world = KineticWorld::from_placements(grid, 0, &placement_at, rules);
     world.siege = siege;
+    world.mark_unrailed_edges();
 
     // Stand the Observer somewhere with room around it, and put the generator
     // and a station on real floor rather than at the authored coordinates,
     // which almost certainly landed in void.
     let standable = world.standable_cells();
-    let spawn = most_connected(&world, &standable).unwrap_or_default();
+    let spawn = fighting_post(&world, &standable).unwrap_or_default();
     world.observers[0].cell = spawn;
 
     world.generator = farthest_from(&standable, spawn).unwrap_or(spawn);
-    world.stations = midpoint_from(&standable, spawn, world.generator)
+    // The station sits next door, not halfway across the building. A siege is a
+    // stand, and a refill you cannot reach without abandoning the position is
+    // the same as no refill at all — the first cut put it at the midpoint and
+    // the run simply went dry after three shoves and never recovered.
+    world.stations = HexFace::LATERAL
+        .into_iter()
+        .filter_map(|face| world.passable_neighbor(spawn, face))
+        .find(|cell| world.cell(*cell).is_standable())
         .map(|cell| {
             vec![Station {
                 id: StationId(0),
@@ -110,17 +118,32 @@ pub fn from_solved(solved: &HexWfcWorld, rules: KineticRules, siege: SiegeRules)
     world
 }
 
-/// The standable cell with the most open faces — the least cramped place to
-/// start, and the one most likely to be a room rather than a dead-end corridor.
-fn most_connected(world: &KineticWorld, cells: &[HexCoord]) -> Option<HexCoord> {
+/// Where to make a stand.
+///
+/// Not simply the roomiest cell. The tool kills by putting things into the
+/// architecture, so a position with no void within a push of it cannot kill
+/// anything — the first cut spawned in the middle of the structure and every
+/// single shove landed `Rest` on more floor. A fighting post is a cell with
+/// open ground to retreat through *and* a hole beside it to shove things into.
+fn fighting_post(world: &KineticWorld, cells: &[HexCoord]) -> Option<HexCoord> {
     cells.iter().copied().max_by_key(|coord| {
         let open = HexFace::LATERAL
             .iter()
             .filter(|face| world.passable_neighbor(*coord, **face).is_some())
             .count();
+        // A face that opens onto nothing is an edge to shove things over.
+        let edges = HexFace::LATERAL
+            .iter()
+            .filter(|face| {
+                world
+                    .grid
+                    .neighbor(*coord, **face)
+                    .is_none_or(|next| !world.cell(next).is_standable())
+            })
+            .count();
         // Ties break on coordinate so a re-solve of the same seed picks the
-        // same spawn.
-        (open, std::cmp::Reverse((coord.r, coord.q)))
+        // same post.
+        (edges.min(3), open, std::cmp::Reverse((coord.r, coord.q)))
     })
 }
 
@@ -132,30 +155,50 @@ fn farthest_from(cells: &[HexCoord], from: HexCoord) -> Option<HexCoord> {
         .max_by_key(|coord| (lateral_distance(*coord, from), coord.r, coord.q))
 }
 
-/// A cell roughly between two others, for the recharge station: far enough from
-/// spawn to be a trip, not so far that it is never worth making.
-fn midpoint_from(cells: &[HexCoord], from: HexCoord, to: HexCoord) -> Option<HexCoord> {
-    let span = lateral_distance(from, to).max(1);
-    cells
-        .iter()
-        .copied()
-        .filter(|coord| *coord != from && *coord != to)
-        .min_by_key(|coord| {
-            let a = lateral_distance(*coord, from) as i64;
-            let b = lateral_distance(*coord, to) as i64;
-            // Closest to equidistant, then stable by coordinate.
-            (
-                (a - b).abs(),
-                (a + b - span as i64).abs(),
-                coord.r as i64,
-                coord.q as i64,
-            )
-        })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    const fn coord(q: u16, r: u16) -> HexCoord {
+        HexCoord { q, r, level: 0 }
+    }
+
+    #[test]
+    #[ignore = "diagnostic: cargo test -p kinetic_lab -- --ignored --nocapture facility_shape"]
+    fn facility_shape() {
+        let world = facility(KineticRules::default(), SiegeRules::default()).expect("solved");
+        let standable = world.standable_cells();
+        let mut histogram = [0usize; 7];
+        for coord in &standable {
+            let open = HexFace::LATERAL
+                .iter()
+                .filter(|face| world.connected(*coord, **face))
+                .count();
+            histogram[open] += 1;
+        }
+        println!("standable plates: {}", standable.len());
+        println!("of {} cells total", world.grid.cell_count());
+        for (open, count) in histogram.iter().enumerate() {
+            println!("  {open} open faces: {count} plates");
+        }
+        let longest = standable
+            .iter()
+            .flat_map(|coord| HexFace::LATERAL.map(move |face| (*coord, face)))
+            .map(|(coord, face)| {
+                let mut run = 0;
+                let mut cursor = coord;
+                while let Some(next) = world.passable_neighbor(cursor, face) {
+                    run += 1;
+                    cursor = next;
+                    if run > 20 {
+                        break;
+                    }
+                }
+                run
+            })
+            .max()
+            .unwrap_or(0);
+        println!("longest unobstructed run: {longest} plates");
+    }
 
     #[test]
     fn the_preset_facility_solves() {
@@ -272,11 +315,64 @@ mod tests {
     }
 
     /// Standing still with jail on must lose, and the outcome must say so.
+    ///
+    /// This is the test that catches a Guardian which cannot navigate. Pursuit
+    /// was greedy — take the neighbouring plate that reduces the distance most —
+    /// which works on an open board and strands a Guardian in the first corridor
+    /// that runs the wrong way before it runs the right way. On this facility
+    /// that meant the waves milled about near their spawns and an Observer who
+    /// never moved *won*, which looks exactly like a working siege until you
+    /// watch one.
     #[test]
     fn standing_still_loses_the_siege() {
         let world = besiege(3.0, true);
         assert_eq!(world.outcome, crate::model::MatchOutcome::Lost);
         assert!(world.observers[0].jailed);
+    }
+
+    /// Every plate must be able to route to every other, or some spawn is a
+    /// pocket nothing can leave.
+    #[test]
+    fn the_facility_is_navigable_from_everywhere() {
+        let world = facility(KineticRules::default(), SiegeRules::default()).expect("solved");
+        let standable = world.standable_cells();
+        let home = world.observers[0].cell;
+        let stranded: Vec<_> = standable
+            .iter()
+            .copied()
+            .filter(|coord| *coord != home)
+            .filter(|coord| world.route_step(*coord, home, &|_| false).is_none())
+            .collect();
+        assert!(
+            stranded.is_empty(),
+            "{} plates cannot reach the Observer at all: {stranded:?}",
+            stranded.len()
+        );
+    }
+
+    /// Routing must go *around* a wall, not give up at it.
+    #[test]
+    fn a_route_goes_around_a_sealed_face() {
+        let mut world = KineticWorld::authored();
+        let from = coord(3, 3);
+        let to = coord(5, 3);
+        assert_eq!(
+            world.route_step(from, to, &|_| false),
+            Some(coord(4, 3)),
+            "with no wall the route is the straight one"
+        );
+
+        // Seal the direct corridor.
+        world.seal_face(coord(3, 3), HexFace::East);
+        world.seal_face(coord(4, 3), HexFace::East);
+
+        let step = world
+            .route_step(from, to, &|_| false)
+            .expect("a walled corridor has a way around, and routing must find it");
+        assert_ne!(step, coord(4, 3), "that step is through the wall");
+        assert!(
+            world.passable_neighbor(from, world.face_toward(from, step).unwrap()) == Some(step)
+        );
     }
 
     /// Surviving the clock must be reachable, and must be reported as a win

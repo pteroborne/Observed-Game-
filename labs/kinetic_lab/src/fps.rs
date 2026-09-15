@@ -39,8 +39,8 @@ use crate::embodied::{
     plate_center,
 };
 use crate::model::{
-    CellKind, KineticEvent, KineticWorld, MAX_CHARGE, MatchOutcome, MinorGuardianId, PUSH_IMPULSE,
-    ShoveFate, ToolRefusal,
+    CellKind, KineticEvent, KineticWorld, MAX_CHARGE, MatchOutcome, MinorGuardianId, ShoveFate,
+    ToolRefusal,
 };
 
 /// How long a Guardian's move between cells takes to play, in seconds. Well
@@ -622,11 +622,10 @@ pub(crate) fn present_crosshair(
     let Ok((mut color, mut node)) = crosshair.single_mut() else {
         return;
     };
-    let resolved = world.observers.first().and_then(|observer| {
-        world
-            .target_in_lane(observer)
-            .and_then(|id| world.resolve_shove(id, observer.facing, PUSH_IMPULSE))
-    });
+    let resolved = world
+        .observers
+        .first()
+        .and_then(|observer| world.preview_push(observer));
     let (wanted, size) = match resolved {
         Some(resolution) if matches!(resolution.fate, ShoveFate::Void | ShoveFate::Doomed) => {
             (CROSSHAIR_LETHAL, 12.0)
@@ -1036,11 +1035,10 @@ pub(crate) fn present_preview(
     let Ok((mut transform, mut visibility, mut material)) = preview.single_mut() else {
         return;
     };
-    let resolved = world.observers.first().and_then(|observer| {
-        world
-            .target_in_lane(observer)
-            .and_then(|id| world.resolve_shove(id, observer.facing, PUSH_IMPULSE))
-    });
+    let resolved = world
+        .observers
+        .first()
+        .and_then(|observer| world.preview_push(observer));
     let Some(resolution) = resolved else {
         *visibility = Visibility::Hidden;
         return;
@@ -1091,10 +1089,7 @@ pub(crate) fn draw_lane(world: Res<KineticWorld>, mut gizmos: Gizmos) {
         cursor = next;
     }
 
-    let Some(resolution) = world
-        .target_in_lane(observer)
-        .and_then(|id| world.resolve_shove(id, observer.facing, PUSH_IMPULSE))
-    else {
+    let Some(resolution) = world.preview_push(observer) else {
         return;
     };
 
@@ -1154,18 +1149,15 @@ pub(crate) fn update_hud(
     let Some(observer) = world.observers.first() else {
         return;
     };
-    let lane = world
-        .target_in_lane(observer)
-        .and_then(|id| world.resolve_shove(id, observer.facing, PUSH_IMPULSE))
-        .map_or_else(
-            || "no target in lane".to_string(),
-            |resolution| {
-                format!(
-                    "{:?} after {} cells",
-                    resolution.fate, resolution.cells_travelled
-                )
-            },
-        );
+    let lane = world.preview_push(observer).map_or_else(
+        || "no target in lane".to_string(),
+        |resolution| {
+            format!(
+                "{:?} after {} cells",
+                resolution.fate, resolution.cells_travelled
+            )
+        },
+    );
 
     **text = format!(
         "{}tick {}   |   cell {},{}   |   facing {:?}\n\

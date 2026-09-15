@@ -360,6 +360,12 @@ impl Embodiment {
                 world.observers[index].cell = cell;
             }
             world.observers[index].facing = self.facing;
+            // Three derived facts now, not two. `facing` is the lattice face the
+            // shove will resolve along; `aim` is where the eye is actually
+            // pointing, which is what the tool selects against. Without this the
+            // crosshair is decorative and the tool picks by 60-degree bucket.
+            let forward = self.body.forward();
+            world.observers[index].aim = [forward.x, forward.z];
         }
 
         let intents = [(self.id, request.as_intent())];

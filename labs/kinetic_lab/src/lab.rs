@@ -17,7 +17,7 @@ use observed_hex::{
 
 use crate::model::{
     CellKind, KineticEvent, KineticIntent, KineticWorld, MAX_CHARGE, MatchOutcome, MinorGuardianId,
-    PUSH_COST, PUSH_IMPULSE, ShoveFate, TICKS_PER_SECOND, ToolRefusal,
+    PUSH_COST, ShoveFate, TICKS_PER_SECOND, ToolRefusal,
 };
 
 /// Screen pixels per lattice meter. Sized so the authored board fills most of a
@@ -596,9 +596,7 @@ pub(crate) fn draw_debug(world: Res<KineticWorld>, mut gizmos: Gizmos) {
 
     // The preview. `resolve_shove` is pure, so this is the same computation the
     // tick would run — not an estimate of it.
-    if let Some(target) = world.target_in_lane(observer)
-        && let Some(preview) = world.resolve_shove(target, observer.facing, PUSH_IMPULSE)
-    {
+    if let Some(preview) = world.preview_push(observer) {
         let affordable = observer.charge >= PUSH_COST;
         let color = match preview.fate {
             ShoveFate::Void => Color::srgb(0.30, 1.0, 0.55),
@@ -639,9 +637,7 @@ pub(crate) fn update_debug_text(
     let Some(observer) = world.observers.first() else {
         return;
     };
-    let target = world
-        .target_in_lane(observer)
-        .and_then(|id| world.resolve_shove(id, observer.facing, PUSH_IMPULSE));
+    let target = world.preview_push(observer);
     let preview = match target {
         Some(resolution) => format!(
             "{:?} after {} cells",

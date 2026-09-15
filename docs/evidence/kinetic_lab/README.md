@@ -172,6 +172,48 @@ the way" has to be measured in ticks, not in distance. The board is nine plates
 wide and a minor crosses one every 150 ticks, which means every corner is within
 reach of a seventy-second recording.
 
+## The siege, and what it exposed
+
+[`kinetic_siege.mp4`](kinetic_siege.mp4) — 72 seconds, a one-minute siege in the
+solved facility.
+
+```bash
+OBSERVED2_CAPTURE_SEQUENCE=docs/evidence/kinetic_lab/frames \
+  cargo run -p kinetic_lab --bin kinetic_fps -- --siege --minutes=1
+```
+
+The run ends **OVERRUN on wave 5**, with the line that matters underneath it:
+*0 Guardians into the void.* A full minute of siege and the tool killed nothing.
+That is not a broken recording. It is the finding.
+
+**The kinetic tool is close to inert in a corridor facility.** It was designed
+and tuned on the authored board, which is an open plain with a void rim — there,
+a push carries three plates and usually ends in nothing. In a building, a shove
+travels along a lattice face and stops at the first wall, which in a corridor is
+right there. Measured on the pinned facility: most plates have exactly two open
+faces, and the overwhelming majority of shoves resolve `Blocked` after a plate or
+less. The tool staggers things against walls instead of removing them.
+`the_tool_is_weak_in_a_corridor_facility` pins that ratio so it cannot drift
+without somebody noticing.
+
+Two fixes were needed before the siege was even a game, and both were invisible
+on the open board:
+
+- **Pursuit was greedy.** Guardians took whichever neighbouring plate reduced
+  the distance most, which is correct on a plain and strands them in the first
+  corridor that runs the wrong way before it runs the right way. They milled
+  about near their spawns and an Observer who never moved *won* — which looks
+  exactly like a working siege until you watch one. Pursuit is breadth-first now.
+- **The recording bot walked into walls**, for the same reason, and one whole cut
+  was a single grey rectangle. It holds its post now and lets them come, which is
+  what a siege is anyway.
+
+What to take from the video: the facility reads, the waves arrive and grow, the
+clock creates real pressure, and the tool does not answer it. That is a design
+question — more open geometry, a different verb, or accepting that the tool's job
+is crowd control rather than kills — and it is better to have it now than after
+the thing is promoted anywhere near production.
+
 ## Caveat
 
 Neither view answers whether a shove is *satisfying* in the sense a playtest

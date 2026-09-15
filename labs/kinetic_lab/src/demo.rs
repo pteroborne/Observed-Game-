@@ -72,6 +72,15 @@ pub enum Beat {
     PlaceMajor {
         cell: HexCoord,
     },
+    /// Fight for a while: face the nearest Guardian, shove it, and go recharge
+    /// when the tool runs dry.
+    ///
+    /// The other beats are choreography. This one is a small bot, because a
+    /// siege cannot be choreographed — waves arrive on their own schedule from
+    /// seeded positions, so the only honest way to record one is to play it.
+    Fight {
+        ticks: u32,
+    },
     Reset,
 }
 
@@ -95,6 +104,9 @@ const fn cell(q: u16, r: u16) -> HexCoord {
 /// first, then the two shove outcomes, then the systems that gate the tool, then
 /// the two ways a run ends.
 pub fn script(rules: KineticRules) -> Vec<Scene> {
+    if rules.siege {
+        return siege_script(rules);
+    }
     let mut scenes = vec![
         // The lethal push comes first on purpose. A Guardian in the lane is
         // *walking toward you the whole time* — three plates away is 450 ticks
@@ -275,11 +287,42 @@ pub fn script(rules: KineticRules) -> Vec<Scene> {
     scenes
 }
 
+/// The siege recording.
+///
+/// Almost none of this is choreography, because a siege cannot be
+/// choreographed: waves arrive on a schedule from seeded positions the script
+/// does not choose. So after a short introduction it hands over to the fighting
+/// bot and lets the clock decide how it ends.
+fn siege_script(rules: KineticRules) -> Vec<Scene> {
+    let duration = (rules.siege_minutes * 60.0 * 60.0) as u32;
+    vec![
+        scene("Siege: a facility the WFC solver built", Beat::Hold(70)),
+        scene(
+            "Walls, doorways and void are the solver's, not hand-placed",
+            Beat::Hold(110),
+        ),
+        scene("Waves of Guardians, on a clock", Beat::Hold(120)),
+        scene(
+            "Shove them off the architecture before it runs out",
+            // Past the clock, so the recording holds on whatever the outcome is.
+            Beat::Fight {
+                ticks: duration + 240,
+            },
+        ),
+        scene("", Beat::Hold(180)),
+    ]
+}
+
 /// Place the actors for the recording.
 ///
 /// Shared by the renderer and the headless runner so the video and the test can
 /// never diverge on where things started.
 pub fn stage(world: &mut KineticWorld, body: &mut Embodiment) {
+    // A solved facility places its own Observer, fixtures and Guardians; the
+    // authored board's coordinates mean nothing there.
+    if world.siege.enabled {
+        return;
+    }
     let stand = plate_center(cell(3, 3));
     body.body.position = Vec3::new(
         stand.x,
@@ -295,7 +338,7 @@ pub fn stage(world: &mut KineticWorld, body: &mut Embodiment) {
     body.facing = observed_hex::faces::HexFace::East;
 
     world.observers[0].cell = cell(3, 3);
-    world.observers[0].facing = observed_hex::faces::HexFace::East;
+    world.observers[0].look(observed_hex::faces::HexFace::East);
     // Three plates east: inside `TOOL_RANGE`, with the ledge run and the void
     // rim behind it, and 450 ticks of walking before it could reach the spawn.
     world.minors[0].cell = cell(6, 3);
@@ -329,7 +372,7 @@ pub struct Logged {
 /// seventy-second recording can be checked in milliseconds and a broken beat
 /// names itself instead of having to be spotted in a frame.
 pub fn run_headless(max_ticks: u32, rules: KineticRules) -> Vec<Logged> {
-    let mut world = KineticWorld::authored_with(rules);
+    let mut world = crate::build_world(rules);
     let mut body = Embodiment::new(&world);
     stage(&mut world, &mut body);
 
@@ -356,7 +399,7 @@ pub fn run_headless(max_ticks: u32, rules: KineticRules) -> Vec<Logged> {
             world.major.step_progress = 0;
         }
         if decision.reset {
-            world = KineticWorld::authored_with(rules);
+            world = crate::build_world(rules);
             body = Embodiment::new(&world);
             log.push(Logged {
                 tick,
@@ -522,6 +565,12 @@ impl Director {
                 out.stage_major = Some(cell);
                 self.advance();
             }
+            Beat::Fight { ticks } => {
+                self.fight(&mut out, world, body);
+                if self.elapsed >= ticks {
+                    self.advance();
+                }
+            }
             Beat::Reset => {
                 out.reset = true;
                 self.advance();
@@ -529,6 +578,155 @@ impl Director {
         }
 
         out
+    }
+
+    /// One tick of fighting the siege.
+    ///
+    /// Priorities, in order: refill if the tool is dry and a station exists,
+    /// otherwise face the nearest Guardian and shove it. Deliberately simple —
+    /// it is a camera operator that happens to be armed, not an attempt at good
+    /// play, and it must never look better than a person could.
+    fn fight(&self, out: &mut DirectorTick, world: &KineticWorld, body: &Embodiment) {
+        let Some(observer) = world.observers.first() else {
+            return;
+        };
+        if observer.jailed {
+            return;
+        }
+
+        // Dry: walk to a station rather than clicking an empty tool at things.
+        if observer.charge < crate::model::PUSH_COST
+            && let Some(station) = world.stations.first()
+        {
+            if observer.cell != station.cell {
+                let aligned = self.steer_along(out, world, body, station.cell);
+                if aligned {
+                    out.intent.movement = Vec2::new(0.0, 1.0);
+                }
+            }
+            return;
+        }
+
+        let in_reach = || {
+            world
+                .minors
+                .iter()
+                .filter(|minor| minor.alive)
+                .filter(|minor| {
+                    observed_hex::coords::lateral_distance(minor.cell, observer.cell)
+                        <= crate::model::TOOL_RANGE
+                })
+        };
+
+        // Prefer a Guardian the architecture will actually finish. Shoving the
+        // nearest one regardless mostly lands it on more floor, which staggers
+        // it and kills nothing — a real finding about the tool rather than a bug
+        // in the bot, and the reason a player has to fight near an edge.
+        let lethal = in_reach()
+            .filter(|minor| {
+                world
+                    .face_toward(observer.cell, minor.cell)
+                    .and_then(|face| {
+                        world.resolve_shove(minor.id, face, crate::model::PUSH_IMPULSE)
+                    })
+                    .is_some_and(|resolution| {
+                        matches!(
+                            resolution.fate,
+                            crate::model::ShoveFate::Void | crate::model::ShoveFate::Doomed
+                        )
+                    })
+            })
+            .min_by_key(|minor| minor.id.0);
+
+        let nearest = world
+            .minors
+            .iter()
+            .filter(|minor| minor.alive)
+            .min_by_key(|minor| {
+                (
+                    observed_hex::coords::lateral_distance(minor.cell, observer.cell),
+                    minor.id.0,
+                )
+            });
+
+        let Some(target) = lethal.or(nearest) else {
+            return;
+        };
+
+        let aligned = self.steer(out, world, body, target.cell, false);
+        let reachable = world.target_in_cone(observer).is_some();
+        if aligned && reachable {
+            // Space the shots out. Firing every tick would spend the whole
+            // charge into one Guardian and read as a stutter rather than a shove.
+            if self.elapsed.is_multiple_of(24) {
+                out.request = ToolRequest::Push;
+            }
+        }
+        // Deliberately no chasing. An earlier cut walked toward distant
+        // Guardians, which meant the steering overwrote its own aim every tick
+        // and it never settled on anything long enough to fire — and in a
+        // building it walked into walls besides. A siege is a stand: hold the
+        // post, turn to face what arrives, and let them come to you.
+        let _ = reachable;
+    }
+
+    /// The next plate to walk to on the way to `to`, or `None` if unreachable.
+    ///
+    /// Breadth-first over passable faces. The director used to steer straight at
+    /// its destination, which is fine on an open plain and useless in a
+    /// building: in the solved facility it walked into a wall and stayed there,
+    /// and a whole recording was one grey rectangle. Walls are the thing this
+    /// lab added; the bot has to respect them like everything else does.
+    fn route_step(world: &KineticWorld, from: HexCoord, to: HexCoord) -> Option<HexCoord> {
+        if from == to {
+            return None;
+        }
+        let mut came_from: std::collections::HashMap<HexCoord, HexCoord> =
+            std::collections::HashMap::new();
+        let mut queue = std::collections::VecDeque::new();
+        queue.push_back(from);
+        came_from.insert(from, from);
+
+        while let Some(cursor) = queue.pop_front() {
+            if cursor == to {
+                // Walk the chain back to the first step away from `from`.
+                let mut step = cursor;
+                while came_from.get(&step).copied() != Some(from) {
+                    step = *came_from.get(&step)?;
+                    if step == from {
+                        return None;
+                    }
+                }
+                return Some(step);
+            }
+            for face in observed_hex::faces::HexFace::LATERAL {
+                let Some(next) = world.passable_neighbor(cursor, face) else {
+                    continue;
+                };
+                if !world.cell(next).is_standable() || came_from.contains_key(&next) {
+                    continue;
+                }
+                came_from.insert(next, cursor);
+                queue.push_back(next);
+            }
+        }
+        None
+    }
+
+    /// Steer along a route rather than straight at the destination.
+    fn steer_along(
+        &self,
+        out: &mut DirectorTick,
+        world: &KineticWorld,
+        body: &Embodiment,
+        target: HexCoord,
+    ) -> bool {
+        let here = world
+            .observers
+            .first()
+            .map_or(target, |observer| observer.cell);
+        let waypoint = Self::route_step(world, here, target).unwrap_or(target);
+        self.steer(out, world, body, waypoint, true)
     }
 
     /// Turn toward `target`, returning whether the body is now looking at it.
@@ -737,6 +935,87 @@ mod tests {
                 .iter()
                 .any(|scene| scene.caption.contains("ends the run")),
             "the lenient cut must not claim the run ends"
+        );
+    }
+
+    #[test]
+    #[ignore = "diagnostic: cargo test -p kinetic_lab -- --ignored --nocapture siege_log"]
+    fn siege_log() {
+        let rules = KineticRules {
+            siege: true,
+            siege_minutes: 1.0,
+            ..Default::default()
+        };
+        for entry in run_headless(30_000, rules) {
+            println!("{:>6}  {}", entry.tick, entry.event);
+        }
+    }
+
+    /// The siege recording must actually be a fight.
+    ///
+    /// A recording of a bot standing still while a clock runs out would satisfy
+    /// "it ran to completion" and show nothing, so this asserts the parts that
+    /// make it worth watching: waves arrive, the tool is fired, Guardians die,
+    /// and the run reaches a real outcome.
+    #[test]
+    fn the_siege_recording_is_a_fight() {
+        let rules = KineticRules {
+            siege: true,
+            siege_minutes: 1.0,
+            ..Default::default()
+        };
+        let log = run_headless(30_000, rules);
+        let has = |needle: &str| log.iter().any(|entry| entry.event.contains(needle));
+
+        assert!(has("WaveReleased"), "no wave ever arrived");
+        assert!(has("Shoved"), "the bot never fired the tool");
+        assert!(has("SiegeEnded"), "the siege never resolved");
+
+        // Deliberately *not* asserted: that anything died. In the solved
+        // facility it usually does not, and that is a finding rather than a
+        // broken demo — see `the_tool_is_weak_in_a_corridor_facility`. An
+        // assertion here would only tempt a future change to rig the bot until
+        // the recording flattered the design.
+    }
+
+    /// The finding, pinned so it cannot quietly change without somebody noticing.
+    ///
+    /// On the authored plain a push carries three plates and usually ends in
+    /// void. In the solved facility most shoves are `Blocked` after a plate or
+    /// less, because a corridor's next wall is right there. The kinetic tool was
+    /// designed and tuned on an open board and is close to inert in a building:
+    /// it staggers things against walls instead of removing them.
+    ///
+    /// That is worth knowing before the tool is promoted anywhere near
+    /// production. The fix is a design decision — more open geometry, a
+    /// different verb, or accepting that its job is crowd control rather than
+    /// kills — and not something to paper over in the demo bot.
+    #[test]
+    fn the_tool_is_weak_in_a_corridor_facility() {
+        let rules = KineticRules {
+            siege: true,
+            siege_minutes: 1.0,
+            ..Default::default()
+        };
+        let log = run_headless(30_000, rules);
+
+        let shoves = log
+            .iter()
+            .filter(|entry| entry.event.contains("Shoved"))
+            .count();
+        let lethal = log
+            .iter()
+            .filter(|entry| {
+                entry.event.contains("Shoved")
+                    && (entry.event.contains("fate: Void") || entry.event.contains("fate: Doomed"))
+            })
+            .count();
+        assert!(shoves > 0, "the bot never fired, so this measures nothing");
+        assert!(
+            lethal * 2 <= shoves,
+            "the tool has become good in a corridor facility ({lethal} of {shoves} shoves lethal) \
+             — that is good news, but it means this finding is stale and the READMEs that cite it \
+             need rewriting"
         );
     }
 
