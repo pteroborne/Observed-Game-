@@ -24,6 +24,7 @@
 //! first: the schematic proved the rules are legible, and the first-person view
 //! asks whether a shove is *satisfying*, which a top-down board cannot answer.
 
+pub mod demo;
 pub mod embodied;
 mod fps;
 mod lab;
@@ -37,7 +38,6 @@ use bevy::{
     window::{PresentMode, WindowResolution},
 };
 use observed_hex::{coords::HexCoord, faces::HexFace};
-use player_input::PlayerIntent;
 
 pub use embodied::{Embodiment, ToolRequest};
 pub use fps::FpsRuntime;
@@ -114,7 +114,9 @@ pub fn run_fps() {
             tick: 0,
             captured_tick: None,
             frame: 0,
+            finished: false,
         })
+        .init_resource::<demo::Director>()
         // Saving a PNG per frame is far slower than the simulation, so leaving
         // this on the fixed timestep lets catch-up run several ticks between
         // renders and the recording skips state. Park `FixedUpdate` and advance
@@ -131,8 +133,13 @@ pub fn run_fps() {
                 .chain()
                 .before(fps::gather_requests),
         )
-        .add_systems(Update, capture_sequence_frame.after(fps::update_hud))
-        .add_systems(Startup, stage_demo.after(fps::setup_scene));
+        .add_systems(
+            Update,
+            (update_caption, capture_sequence_frame)
+                .chain()
+                .after(fps::update_hud),
+        )
+        .add_systems(Startup, (stage_demo, spawn_caption).after(fps::setup_scene));
     }
 
     app.run();
@@ -141,8 +148,6 @@ pub fn run_fps() {
 /// One frame per simulated tick, so the sequence encodes at 60 fps as a
 /// true-rate record of the run.
 const SEQUENCE_STRIDE: u32 = 1;
-/// Total ticks the scripted demo runs.
-const DEMO_TICKS: u32 = 420;
 
 #[derive(Resource)]
 struct SequenceCapture {
@@ -152,20 +157,16 @@ struct SequenceCapture {
     tick: u32,
     captured_tick: Option<u32>,
     frame: u32,
+    /// The director ran out of script; stop after this frame.
+    finished: bool,
 }
 
-/// The demo tape.
-///
-/// Deliberately expressed as intents rather than as poses: the recording drives
-/// the lab through the same boundary a player's hands do, so what it shows is a
-/// real run of the rules and not an animation of them. Because the model is
-/// deterministic, this tape reproduces frame for frame.
 /// Place the actors for the recording.
 ///
 /// This stages a *scenario* — starting positions and a heading — exactly as the
-/// still capture does. Everything after this point is driven by intents through
-/// the ordinary command path, so what the video shows is the rules running, not
-/// an animation of them.
+/// still capture does. Everything after this point is driven by the director
+/// through the ordinary command path, so what the video shows is the rules
+/// running, not an animation of them.
 fn stage_demo(mut world: ResMut<KineticWorld>, mut embodiment: ResMut<Embodiment>) {
     let cell = |q, r| HexCoord { q, r, level: 0 };
     let stand = embodied::plate_center(cell(3, 3));
@@ -182,41 +183,80 @@ fn stage_demo(mut world: ResMut<KineticWorld>, mut embodiment: ResMut<Embodiment
 
     world.observers[0].cell = cell(3, 3);
     world.observers[0].facing = HexFace::East;
-    world.minors[0].cell = cell(4, 3);
-    // The second Guardian starts far enough south to arrive during the run
-    // rather than on top of the Observer at the first step.
-    world.minors[1].cell = cell(2, 5);
+    // Three plates east: inside `TOOL_RANGE`, with the ledge run and the void
+    // rim behind it, and 450 ticks of walking before it could reach the spawn.
+    world.minors[0].cell = cell(6, 3);
+    // Parked well out of the way; the script brings it in when it needs it.
+    world.minors[1].cell = cell(1, 5);
 }
 
-fn demo_intent(tick: u32) -> (PlayerIntent, ToolRequest) {
-    let mut intent = PlayerIntent::default();
-    let mut request = ToolRequest::None;
-
-    match tick {
-        // Hold. The preview beam is already up, stating the outcome before
-        // anything has been committed.
-        0..=89 => {}
-        // Commit.
-        90 => request = ToolRequest::Push,
-        // Follow it down as it goes over the rim.
-        91..=150 => intent.look = Vec2::new(0.0, 0.30),
-        // Watch the empty ledge run it crossed.
-        151..=240 => {}
-        // Level back up, then walk, so the plates read in motion rather than as
-        // a frozen diagram.
-        241..=270 => intent.look = Vec2::new(0.0, -0.30),
-        271..=DEMO_TICKS => intent.movement = Vec2::new(0.0, 1.0),
-        _ => {}
+/// Run one beat of the script and hand its intent to the ordinary simulate path.
+fn drive_demo(
+    mut capture: ResMut<SequenceCapture>,
+    mut director: ResMut<demo::Director>,
+    mut runtime: ResMut<FpsRuntime>,
+    mut world: ResMut<KineticWorld>,
+    embodiment: Res<Embodiment>,
+) {
+    if director.finished {
+        capture.finished = true;
+        return;
     }
-
-    (intent, request)
-}
-
-fn drive_demo(mut capture: ResMut<SequenceCapture>, mut runtime: ResMut<FpsRuntime>) {
-    if capture.tick <= DEMO_TICKS {
-        runtime.scripted = Some(demo_intent(capture.tick));
+    let decision = director.tick(&world, &embodiment);
+    if let Some((index, cell, stagger)) = decision.stage
+        && let Some(minor) = world.minors.get_mut(index)
+    {
+        minor.cell = cell;
+        minor.alive = true;
+        minor.stagger = stagger;
+        minor.step_progress = 0;
     }
+    if let Some(cell) = decision.stage_major {
+        world.major.cell = cell;
+        world.major.step_progress = 0;
+    }
+    if decision.reset {
+        runtime.reset_requested = true;
+    }
+    runtime.scripted = Some((decision.intent, decision.request));
     capture.tick += 1;
+}
+
+/// Draw the director's caption, so the recording states its own claims.
+fn update_caption(director: Res<demo::Director>, mut text: Query<&mut Text, With<DemoCaption>>) {
+    if let Ok(mut text) = text.single_mut() {
+        **text = director.caption.clone();
+    }
+}
+
+#[derive(Component)]
+struct DemoCaption;
+
+fn spawn_caption(mut commands: Commands) {
+    commands.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            bottom: percent(8),
+            left: percent(50),
+            margin: UiRect::left(px(-380.0)),
+            width: px(760),
+            justify_content: JustifyContent::Center,
+            padding: UiRect::all(px(12)),
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.01, 0.02, 0.03, 0.82)),
+        GlobalZIndex(40),
+        Name::new("Demo Caption"),
+        children![(
+            DemoCaption,
+            Text::new(""),
+            TextFont {
+                font_size: FontSize::Px(22.0),
+                ..default()
+            },
+            TextColor(Color::srgb(0.92, 0.97, 1.0)),
+        )],
+    ));
 }
 
 fn capture_sequence_frame(
@@ -225,7 +265,7 @@ fn capture_sequence_frame(
     mut exit: MessageWriter<AppExit>,
 ) {
     let tick = capture.tick;
-    if tick > DEMO_TICKS {
+    if capture.finished {
         exit.write(AppExit::Success);
         return;
     }

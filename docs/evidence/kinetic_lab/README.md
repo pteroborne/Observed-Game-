@@ -106,6 +106,48 @@ the model is deterministic, the tape reproduces frame for frame. Capture parks
 per frame — far slower than the simulation — cannot let catch-up skip state; the
 file is a true 60 Hz record rather than sampled moments.
 
+## The full tour
+
+[`kinetic_tour.mp4`](kinetic_tour.mp4) — 73 seconds, 1440x900, 60 fps, captioned.
+
+```bash
+OBSERVED2_CAPTURE_SEQUENCE=docs/evidence/kinetic_lab/frames \
+  cargo run -p kinetic_lab --bin kinetic_fps
+ffmpeg -y -framerate 60 -i docs/evidence/kinetic_lab/frames/frame_%04d.png \
+  -c:v libx264 -pix_fmt yuv420p -crf 21 -movflags +faststart \
+  docs/evidence/kinetic_lab/kinetic_tour.mp4
+```
+
+It demonstrates, in order: the lane drawn with and without a target; the
+crosshair's three states; a lethal push carrying past the impulse into void; a
+refused push and a refused generator, each announced; a pull; a push onto solid
+floor that only staggers; recharging at a live station; cutting and restoring
+power; a jump; walking off the rim into void and respawning; being jailed; and a
+reset.
+
+**It is driven, not animated.** A closed-loop director reads authoritative state
+and emits `PlayerIntent` and `ToolRequest` through the same `Embodiment::step` a
+player's hands use. Starting positions and a handful of mid-run Guardian
+placements are staged, and every one of those is captioned "Staged:" on screen
+as it happens.
+
+### The headless counterpart
+
+`demo::run_headless` plays the identical script with no window and no frame
+timing, and `the_scripted_demo_demonstrates_every_claim_it_makes` asserts that
+each captioned claim actually occurred, in order, and that the Observer is not
+jailed before the finale.
+
+That test exists because it was needed. Four cuts of this script were silently
+broken — jailed at tick 299, then 982, then 1685, and one that stopped a single
+stride short of the rim so the last third of the tour never ran. Each was found
+in milliseconds by the headless log rather than by watching frames, and each was
+invisible in a still. The recurring cause is worth keeping in mind when writing
+any scripted scenario here: **Guardians pursue continuously**, so "parked out of
+the way" has to be measured in ticks, not in distance. The board is nine plates
+wide and a minor crosses one every 150 ticks, which means every corner is within
+reach of a seventy-second recording.
+
 ## Caveat
 
 Neither view answers whether a shove is *satisfying* in the sense a playtest
