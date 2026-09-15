@@ -93,6 +93,35 @@ fall through. The hex lattice stays the connectivity and targeting structure. An
 authored tile's geometry was never required to be a hex prism, and rendering
 exactly what you collide with is what the Legibility Contract demands.
 
+## Launch flags
+
+Both binaries take the same flags. Pass them after `--`:
+
+```bash
+cargo dev-run -p kinetic_lab --bin kinetic_fps -- --no-jail
+cargo dev-run -p kinetic_lab --bin kinetic_fps -- --no-guardians
+cargo dev-run -p kinetic_lab --bin kinetic_fps -- --help
+```
+
+| Flag | Effect |
+| --- | --- |
+| `--no-minors` | The minor Guardians are never spawned |
+| `--no-major` | The major Guardian is out of play: never moves, never captures, never drawn, never blocks a shove |
+| `--no-guardians` | Both of the above |
+| `--no-jail` | A Guardian reaching you no longer ends the run |
+
+These are **authoritative**, not presentation toggles: they live on
+`KineticWorld::rules`, ride in the determinism digest, and are obeyed identically
+by the schematic view, the first-person view, and the headless runner. The HUD
+names whatever is switched off, so a screenshot taken with the pressure removed
+cannot be mistaken for one taken with it on.
+
+They exist because feel is tuned by taking things away. `--no-jail` is the one to
+reach for when studying the tool itself — a Guardian becomes something to shove
+rather than a fail state, and you can stand in the open and watch a shove land
+without a clock on you. `--no-guardians` leaves an empty facility, which is the
+honest way to judge whether the board is too big.
+
 ## Recording the demo
 
 ```bash

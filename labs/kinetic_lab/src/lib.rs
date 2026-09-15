@@ -43,17 +43,35 @@ pub use embodied::{Embodiment, ToolRequest};
 pub use fps::FpsRuntime;
 pub use lab::KineticRuntime;
 pub use model::{
-    CellKind, KineticEvent, KineticIntent, KineticWorld, MajorGuardian, MinorGuardian,
-    MinorGuardianId, Observer, ShoveFate, ShoveResolution, Station, StationId, ToolRefusal,
+    CellKind, KineticEvent, KineticIntent, KineticRules, KineticWorld, MajorGuardian,
+    MinorGuardian, MinorGuardianId, Observer, RULES_HELP, ShoveFate, ShoveResolution, Station,
+    StationId, ToolRefusal,
 };
+
+/// Read this run's rules from the command line, and answer `--help`.
+fn rules_from_command_line(view: &str) -> KineticRules {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
+        println!("kinetic_lab ({view})\n\n{RULES_HELP}\n");
+        std::process::exit(0);
+    }
+    let rules = KineticRules::from_args(&args);
+    if rules != KineticRules::default() {
+        println!("kinetic_lab rules: {}", rules.summary());
+    }
+    rules
+}
 
 /// The first-person view. Simulation runs in `FixedUpdate` at exactly the
 /// model's tick rate; everything in `Update` is presentation.
-pub struct KineticFpsPlugin;
+#[derive(Default)]
+pub struct KineticFpsPlugin {
+    pub rules: KineticRules,
+}
 
 impl Plugin for KineticFpsPlugin {
     fn build(&self, app: &mut App) {
-        let world = KineticWorld::authored();
+        let world = KineticWorld::authored_with(self.rules);
         let embodiment = Embodiment::new(&world);
         app.insert_resource(world)
             .insert_resource(embodiment)
@@ -86,6 +104,9 @@ impl Plugin for KineticFpsPlugin {
 }
 
 pub fn run_fps() {
+    // Before the App, so `--help` answers without spinning up a GPU and a window.
+    let rules = rules_from_command_line("first person");
+
     let mut app = App::new();
     app.insert_resource(ClearColor(Color::srgb(0.004, 0.006, 0.010)))
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -98,7 +119,7 @@ pub fn run_fps() {
             }),
             ..default()
         }))
-        .add_plugins(KineticFpsPlugin);
+        .add_plugins(KineticFpsPlugin { rules });
 
     if let Ok(path) = std::env::var("OBSERVED2_CAPTURE") {
         app.insert_resource(FpsCaptureRequest { path, phase: 0 })
@@ -342,11 +363,14 @@ fn fps_capture_progress(
     }
 }
 
-pub struct KineticLabPlugin;
+#[derive(Default)]
+pub struct KineticLabPlugin {
+    pub rules: KineticRules,
+}
 
 impl Plugin for KineticLabPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(KineticWorld::authored())
+        app.insert_resource(KineticWorld::authored_with(self.rules))
             .init_resource::<KineticRuntime>()
             .add_systems(Startup, (setup_camera, lab::setup_lab))
             .add_systems(
@@ -377,6 +401,9 @@ fn setup_camera(mut commands: Commands) {
 }
 
 pub fn run() {
+    // Before the App, so `--help` answers without spinning up a GPU and a window.
+    let rules = rules_from_command_line("schematic");
+
     let mut app = App::new();
     app.insert_resource(ClearColor(Color::srgb(0.008, 0.012, 0.018)))
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -389,7 +416,7 @@ pub fn run() {
             }),
             ..default()
         }))
-        .add_plugins(KineticLabPlugin);
+        .add_plugins(KineticLabPlugin { rules });
 
     if let Ok(path) = std::env::var("OBSERVED2_CAPTURE") {
         app.insert_resource(CaptureRequest { path, phase: 0 })
@@ -460,7 +487,7 @@ mod tests {
             GizmoPlugin,
         ))
         .insert_resource(ClearColor(Color::BLACK))
-        .add_plugins(KineticLabPlugin);
+        .add_plugins(KineticLabPlugin::default());
         app.update();
         app
     }

@@ -456,7 +456,11 @@ type MinorQuery<'w, 's> = Query<
 type MajorQuery<'w, 's> = Query<
     'w,
     's,
-    (&'static mut Transform, &'static mut Sprite),
+    (
+        &'static mut Transform,
+        &'static mut Sprite,
+        &'static mut Visibility,
+    ),
     (With<MajorBody>, Without<ObserverBody>),
 >;
 type ObserverQuery<'w, 's> =
@@ -500,7 +504,13 @@ pub(crate) fn present(world: Res<KineticWorld>, mut bodies: BodyQueries) {
         };
     }
 
-    if let Ok((mut transform, mut sprite)) = bodies.major.single_mut() {
+    if let Ok((mut transform, mut sprite, mut visibility)) = bodies.major.single_mut() {
+        // Switched off by `--no-major`: out of play, so out of sight.
+        *visibility = if world.major.enabled {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
         transform.translation = cell_position(world.major.cell).extend(3.0);
         sprite.color = if world.major.frozen {
             COLOR_MAJOR_FROZEN

@@ -150,7 +150,97 @@ pub struct MajorGuardian {
     /// Recomputed every tick from current observation; presentation reads it
     /// rather than deriving its own.
     pub frozen: bool,
+    /// Whether this Guardian is in play at all. A disabled major never moves,
+    /// never captures, and is not drawn.
+    pub enabled: bool,
 }
+
+/// Which parts of the opposition are switched on.
+///
+/// Feel is tuned by taking things away, not by reading numbers: the only honest
+/// way to answer "is the shove satisfying" or "is this board too big" is to walk
+/// it with the pressure removed and then put it back. These are authoritative —
+/// they live in the world, ride in the digest, and are obeyed identically by the
+/// schematic view, the first-person view, and the headless runner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct KineticRules {
+    /// Release the minor Guardians — the horde that observation does not stop.
+    pub minors: bool,
+    /// Release the major Guardian, the one that freezes when looked at.
+    pub major: bool,
+    /// Whether a Guardian reaching an Observer ends the run.
+    ///
+    /// With this off a capture simply does not resolve, so the board keeps
+    /// running and a Guardian becomes a thing to be shoved rather than a fail
+    /// state. This is the flag for studying the tool without a clock on you.
+    pub jail: bool,
+}
+
+impl Default for KineticRules {
+    fn default() -> Self {
+        Self {
+            minors: true,
+            major: true,
+            jail: true,
+        }
+    }
+}
+
+impl KineticRules {
+    /// Parse launch flags, ignoring anything that is not ours.
+    ///
+    /// Bevy and cargo both put their own arguments on this command line, so an
+    /// unknown argument is never an error.
+    #[must_use]
+    pub fn from_args<I, S>(args: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let mut rules = Self::default();
+        for arg in args {
+            match arg.as_ref() {
+                "--no-minors" => rules.minors = false,
+                "--no-major" => rules.major = false,
+                "--no-guardians" => {
+                    rules.minors = false;
+                    rules.major = false;
+                }
+                "--no-jail" => rules.jail = false,
+                _ => {}
+            }
+        }
+        rules
+    }
+
+    /// One line for the HUD, naming only what has been switched off.
+    #[must_use]
+    pub fn summary(self) -> String {
+        let mut off = Vec::new();
+        if !self.minors {
+            off.push("minors");
+        }
+        if !self.major {
+            off.push("major");
+        }
+        if !self.jail {
+            off.push("jail");
+        }
+        if off.is_empty() {
+            "all on".to_string()
+        } else {
+            format!("off: {}", off.join(", "))
+        }
+    }
+}
+
+/// The flags this lab understands, for `--help` and for the READMEs.
+pub const RULES_HELP: &str = concat!(
+    "  --no-minors      leave the minor Guardians out of play\n",
+    "  --no-major       leave the major Guardian out of play\n",
+    "  --no-guardians   both of the above\n",
+    "  --no-jail        a Guardian reaching you no longer ends the run",
+);
 
 /// A recharge station: Architect-placed equipment that is inert without floor
 /// power.
@@ -257,15 +347,23 @@ pub struct KineticWorld {
     /// the Observer occupies.
     pub powered: bool,
     pub generator: HexCoord,
+    /// Which parts of the opposition are switched on for this run.
+    pub rules: KineticRules,
     pub tick: u32,
     pub events: Vec<KineticEvent>,
 }
 
 impl KineticWorld {
+    /// The authored proving board with every rule switched on.
+    #[must_use]
+    pub fn authored() -> Self {
+        Self::authored_with(KineticRules::default())
+    }
+
     /// The authored proving board: a solid approach, a ledge run ending over
     /// void, one retracting tile, a station, and the generator that powers it.
     #[must_use]
-    pub fn authored() -> Self {
+    pub fn authored_with(rules: KineticRules) -> Self {
         let grid = HexGridSize {
             cols: 9,
             rows: 7,
@@ -325,30 +423,34 @@ impl KineticWorld {
             // so one stepped onto the spawn 150 ticks — two and a half seconds —
             // after launch and jailed the player before they had finished
             // reading the controls. A Guardian should have to cross the room.
-            minors: vec![
-                MinorGuardian {
-                    id: MinorGuardianId(0),
-                    cell: HexCoord {
-                        q: 7,
-                        r: 1,
-                        level: 0,
+            minors: if rules.minors {
+                vec![
+                    MinorGuardian {
+                        id: MinorGuardianId(0),
+                        cell: HexCoord {
+                            q: 7,
+                            r: 1,
+                            level: 0,
+                        },
+                        stagger: 0,
+                        step_progress: 0,
+                        alive: true,
                     },
-                    stagger: 0,
-                    step_progress: 0,
-                    alive: true,
-                },
-                MinorGuardian {
-                    id: MinorGuardianId(1),
-                    cell: HexCoord {
-                        q: 1,
-                        r: 5,
-                        level: 0,
+                    MinorGuardian {
+                        id: MinorGuardianId(1),
+                        cell: HexCoord {
+                            q: 1,
+                            r: 5,
+                            level: 0,
+                        },
+                        stagger: 0,
+                        step_progress: 0,
+                        alive: true,
                     },
-                    stagger: 0,
-                    step_progress: 0,
-                    alive: true,
-                },
-            ],
+                ]
+            } else {
+                Vec::new()
+            },
             major: MajorGuardian {
                 cell: HexCoord {
                     q: 6,
@@ -357,6 +459,7 @@ impl KineticWorld {
                 },
                 step_progress: 0,
                 frozen: false,
+                enabled: rules.major,
             },
             stations: vec![Station {
                 id: StationId(0),
@@ -372,6 +475,7 @@ impl KineticWorld {
                 r: 1,
                 level: 0,
             },
+            rules,
             tick: 0,
             events: Vec::new(),
         }
@@ -440,7 +544,9 @@ impl KineticWorld {
         self.minors
             .iter()
             .any(|minor| minor.alive && minor.cell == coord)
-            || self.major.cell == coord
+            // A disabled major is out of play entirely: it must not block a
+            // shove or a pursuit from somewhere it is not really standing.
+            || (self.major.enabled && self.major.cell == coord)
     }
 
     /// Whether any actor stands here.
@@ -779,6 +885,9 @@ impl KineticWorld {
             }
         }
 
+        if !self.major.enabled {
+            return;
+        }
         // The major freezes under observation. This is the contrast the lab
         // exists to make visible.
         self.major.frozen = self.is_observed(self.major.cell);
@@ -797,12 +906,17 @@ impl KineticWorld {
     }
 
     fn resolve_captures(&mut self) {
+        // With jail switched off a Guardian may share your plate and nothing
+        // happens: it becomes something to shove rather than a fail state.
+        if !self.rules.jail {
+            return;
+        }
         for index in 0..self.observers.len() {
             let observer = self.observers[index];
             if observer.jailed {
                 continue;
             }
-            let by_major = self.major.cell == observer.cell;
+            let by_major = self.major.enabled && self.major.cell == observer.cell;
             let touched = by_major
                 || self
                     .minors
@@ -831,6 +945,11 @@ impl KineticWorld {
             hash.next_u64()
         };
         let mut acc = mix(u64::from(self.powered));
+        // The rules change what the same inputs produce, so they are part of
+        // the state a replay has to agree on.
+        acc ^= mix(u64::from(self.rules.minors));
+        acc ^= mix(u64::from(self.rules.major));
+        acc ^= mix(u64::from(self.rules.jail));
         for cell in &self.cells {
             acc ^= mix(match cell {
                 CellKind::Solid => 1,
@@ -856,6 +975,7 @@ impl KineticWorld {
         acc ^= mix(coord_key(self.major.cell));
         acc ^= mix(u64::from(self.major.step_progress));
         acc ^= mix(u64::from(self.major.frozen));
+        acc ^= mix(u64::from(self.major.enabled));
         acc
     }
 }
@@ -1185,6 +1305,129 @@ mod tests {
         assert_ne!(
             world.minors[0].cell, world.minors[1].cell,
             "two Guardians never share a cell"
+        );
+    }
+
+    #[test]
+    fn launch_flags_parse_and_ignore_everything_else() {
+        assert_eq!(
+            KineticRules::from_args::<[&str; 0], _>([]),
+            KineticRules::default()
+        );
+
+        let rules = KineticRules::from_args(["--no-jail"]);
+        assert!(rules.minors && rules.major && !rules.jail);
+
+        let rules = KineticRules::from_args(["--no-guardians"]);
+        assert!(!rules.minors && !rules.major && rules.jail);
+
+        let rules = KineticRules::from_args(["--no-minors", "--no-jail"]);
+        assert!(!rules.minors && rules.major && !rules.jail);
+
+        // Bevy, cargo and the capture harness all put their own arguments on
+        // this command line, so an unknown one is never an error.
+        let rules = KineticRules::from_args(["target/debug/kinetic_fps", "--verbose", "-Zfoo"]);
+        assert_eq!(rules, KineticRules::default());
+    }
+
+    #[test]
+    fn no_minors_leaves_none_in_play() {
+        let world = KineticWorld::authored_with(KineticRules {
+            minors: false,
+            ..Default::default()
+        });
+        assert_eq!(world.living_minors(), 0);
+        assert!(world.minors.is_empty());
+    }
+
+    /// A disabled major must be *out of play*, not merely invisible: it cannot
+    /// move, cannot capture, and cannot block a shove from a plate it is not
+    /// really standing on.
+    #[test]
+    fn no_major_takes_it_out_of_play_entirely() {
+        let mut world = KineticWorld::authored_with(KineticRules {
+            major: false,
+            ..Default::default()
+        });
+        world.minors.clear();
+        world.observers[0].cell = coord(4, 4);
+        let parked = coord(5, 4);
+        world.major.cell = parked;
+
+        for _ in 0..MAJOR_STEP_TICKS * 4 {
+            world.step(&[]);
+        }
+        assert_eq!(world.major.cell, parked, "a disabled major moved");
+        assert!(!world.observers[0].jailed, "a disabled major captured");
+
+        // And it does not stand in the way of a shove passing through its cell.
+        world.minors.push(MinorGuardian {
+            id: MinorGuardianId(9),
+            cell: coord(5, 4),
+            stagger: 0,
+            step_progress: 0,
+            alive: true,
+        });
+        world.major.cell = coord(6, 4);
+        let resolution = world
+            .resolve_shove(MinorGuardianId(9), HexFace::East, PUSH_IMPULSE)
+            .expect("resolved");
+        assert_ne!(
+            resolution.fate,
+            ShoveFate::Blocked,
+            "a disabled major blocked a shove"
+        );
+    }
+
+    /// The point of `--no-jail`: a Guardian may reach you and the run continues.
+    #[test]
+    fn no_jail_lets_a_guardian_reach_you_without_ending_the_run() {
+        let mut world = KineticWorld::authored_with(KineticRules {
+            jail: false,
+            ..Default::default()
+        });
+        world.minors.truncate(1);
+        world.observers[0].cell = coord(4, 4);
+        world.minors[0].cell = coord(6, 4);
+        world.major.cell = coord(1, 2);
+
+        for _ in 0..MINOR_STEP_TICKS * 4 {
+            world.step(&[]);
+            assert!(
+                !world.observers[0].jailed,
+                "jail was switched off and the run ended anyway"
+            );
+            assert!(
+                !world
+                    .events
+                    .iter()
+                    .any(|event| matches!(event, KineticEvent::ObserverCaptured { .. })),
+                "jail was switched off and a capture still resolved"
+            );
+        }
+        // It really did arrive — otherwise this proves nothing.
+        assert_eq!(world.minors[0].cell, coord(4, 4));
+    }
+
+    #[test]
+    fn the_rules_summary_names_only_what_is_off() {
+        assert_eq!(KineticRules::default().summary(), "all on");
+        assert_eq!(
+            KineticRules {
+                jail: false,
+                ..Default::default()
+            }
+            .summary(),
+            "off: jail"
+        );
+        assert_eq!(
+            KineticRules {
+                minors: false,
+                major: false,
+                jail: false,
+            }
+            .summary(),
+            "off: minors, major, jail"
         );
     }
 

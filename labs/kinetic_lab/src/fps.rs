@@ -853,6 +853,7 @@ type MajorQuery<'w, 's> = Query<
         &'static mut Clockwork,
         &'static mut Transform,
         &'static mut MeshMaterial3d<StandardMaterial>,
+        &'static mut Visibility,
     ),
     With<MajorShell>,
 >;
@@ -906,7 +907,13 @@ pub(crate) fn present_guardians(
         transform.rotation = Quat::from_euler(EulerRot::YXZ, clockwork.yaw, tip, roll);
     }
 
-    if let Ok((mut clockwork, mut transform, mut material)) = major.single_mut() {
+    if let Ok((mut clockwork, mut transform, mut material, mut visibility)) = major.single_mut() {
+        // Switched off by `--no-major`: out of play, so out of sight.
+        *visibility = if world.major.enabled {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
         let center = plate_center(world.major.cell);
         clockwork.retarget(Vec3::new(center.x, FLOOR_TOP + 1.6, center.z));
         clockwork.elapsed += delta;
@@ -1074,7 +1081,7 @@ pub(crate) fn update_hud(
 
     **text = format!(
         "tick {}   |   cell {},{}   |   facing {:?}\n\
-         charge {}/{}   |   power {}\n\
+         charge {}/{}   |   power {}   |   rules {}\n\
          minors alive {}   |   major {}\n\
          lane: {}\n\
          resets {}   |   {}\n\
@@ -1086,6 +1093,7 @@ pub(crate) fn update_hud(
         observer.charge,
         MAX_CHARGE,
         if world.powered { "ON" } else { "OUT" },
+        world.rules.summary(),
         world.living_minors(),
         if world.major.frozen {
             "FROZEN (observed)"
