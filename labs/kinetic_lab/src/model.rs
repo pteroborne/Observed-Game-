@@ -321,12 +321,16 @@ impl KineticWorld {
                 recharge_progress: 0,
                 jailed: false,
             }],
+            // Both of these used to start on plates *adjacent* to the Observer,
+            // so one stepped onto the spawn 150 ticks — two and a half seconds —
+            // after launch and jailed the player before they had finished
+            // reading the controls. A Guardian should have to cross the room.
             minors: vec![
                 MinorGuardian {
                     id: MinorGuardianId(0),
                     cell: HexCoord {
-                        q: 4,
-                        r: 3,
+                        q: 7,
+                        r: 1,
                         level: 0,
                     },
                     stagger: 0,
@@ -336,8 +340,8 @@ impl KineticWorld {
                 MinorGuardian {
                     id: MinorGuardianId(1),
                     cell: HexCoord {
-                        q: 3,
-                        r: 4,
+                        q: 1,
+                        r: 5,
                         level: 0,
                     },
                     stagger: 0,

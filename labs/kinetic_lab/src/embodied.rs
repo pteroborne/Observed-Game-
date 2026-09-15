@@ -52,6 +52,11 @@ pub const PLATE_THICKNESS: f32 = 2.0;
 pub const WALL_HEIGHT: f32 = 7.0;
 /// Top surface of every plate.
 pub const FLOOR_TOP: f32 = 0.0;
+/// How far below the floor an Observer must fall before the void claims them.
+///
+/// Roughly a second and a half of falling: long enough to understand what just
+/// happened, short enough not to be a punishment.
+pub const VOID_DEATH_DROP: f32 = 22.0;
 
 /// Plan position of a cell's centre in world metres.
 #[must_use]
@@ -136,7 +141,14 @@ pub fn build_arena(world: &KineticWorld) -> FpsArena {
     let far_z = f32::from(world.grid.rows) * ROW_PITCH_Z;
     FpsArena {
         solids,
-        floor_y: FLOOR_TOP,
+        // `FpsArena::floor_y` is an UNBOUNDED ground plane, not a bounded floor:
+        // `step_body` grants support whenever the feet reach it, with no x/z
+        // test at all. Setting it to `FLOOR_TOP` — the exact height of every
+        // plate's top — laid an invisible floor across the whole world, so the
+        // void was not a hole, nothing could fall, and an Observer standing on
+        // a void cell became unreachable by any Guardian. Park the plane far
+        // below everything and let `VOID_DEATH_DROP` own the fall instead.
+        floor_y: FLOOR_TOP - 10_000.0,
         // Generous, because the respawn bound is a square centred on the origin
         // while the board is a sheared parallelogram in the positive quadrant.
         floor_half: far_x.max(far_z) + COL_PITCH_X,
@@ -212,6 +224,17 @@ impl Embodiment {
         self.arena = build_arena(world);
     }
 
+    /// Move the body without advancing the board.
+    ///
+    /// What "pause" means here: the facility holds still and you do not. Used by
+    /// the pause key and the screenshot path, so a stance can be lined up
+    /// without a Guardian walking onto you mid-look.
+    pub fn step_body_only(&mut self, intent: PlayerIntent) -> FpsStep {
+        let report = step_body(&mut self.body, intent, &self.arena, &self.config, FIXED_DT);
+        self.facing = face_for_yaw(self.body.yaw);
+        report
+    }
+
     /// Advance the body and the board by exactly one fixed tick.
     ///
     /// Order matters and is part of the contract: move the body, derive cell
@@ -224,14 +247,22 @@ impl Embodiment {
         intent: PlayerIntent,
         request: ToolRequest,
     ) -> FpsStep {
-        let report = step_body(
-            &mut self.body,
-            intent.sanitized(),
-            &self.arena,
-            &self.config,
-            FIXED_DT,
-        );
+        // Pass the intent through untouched. `PlayerIntent::sanitized` clamps
+        // `look` to unit length as well as `movement`, and `step_body`'s own
+        // comment warns against exactly that: it caps the turn at
+        // `look_step` radians per tick no matter how far the mouse moved, so a
+        // two-pixel nudge and a full flick turn at the identical ~120 deg/s and
+        // all sensitivity is lost. `step_body` already clamps `movement`
+        // itself, which is the only clamp that was ever wanted.
+        let report = step_body(&mut self.body, intent, &self.arena, &self.config, FIXED_DT);
+
+        // The arena's ground plane is parked far below the board, so a body over
+        // a hole really does fall. This is what ends that fall.
         self.fell_into_void = report.recovered;
+        if self.body.position.y < FLOOR_TOP - VOID_DEATH_DROP {
+            self.body.reset();
+            self.fell_into_void = true;
+        }
 
         self.facing = face_for_yaw(self.body.yaw);
         if let Some(index) = world
@@ -339,6 +370,64 @@ mod tests {
                 "camera points {agreement} along the {face:?} lane it should face"
             );
         }
+    }
+
+    /// A body standing over void must fall and be claimed.
+    ///
+    /// Regression for the worst bug this lab had: `FpsArena::floor_y` is an
+    /// *unbounded* ground plane, and it was set to `FLOOR_TOP`, the exact height
+    /// of every plate's top. That laid an invisible floor across the entire
+    /// world. The void was not a hole, nothing could ever fall, and an Observer
+    /// standing on a void cell was unreachable by any Guardian — free
+    /// invulnerability in a lab whose whole premise is that the architecture
+    /// kills. The old test for this asserted a *count of colliders* and passed
+    /// happily throughout.
+    #[test]
+    fn a_body_over_the_void_falls_and_is_claimed() {
+        let mut world = KineticWorld::authored();
+        world.minors.clear();
+        world.major.cell = coord(1, 1);
+        let rim = coord(8, 3);
+        assert_eq!(world.cell(rim), CellKind::Void, "the rim is void");
+
+        let mut body = Embodiment::new(&world);
+        let center = plate_center(rim);
+        body.body.position = Vec3::new(center.x, FLOOR_TOP + body.config.half_height, center.z);
+        body.body.velocity = Vec3::ZERO;
+        body.body.grounded = false;
+
+        let mut claimed = false;
+        for _ in 0..600 {
+            body.step(&mut world, PlayerIntent::default(), ToolRequest::None);
+            if body.fell_into_void {
+                claimed = true;
+                break;
+            }
+        }
+        assert!(claimed, "a body left standing in the void never fell");
+    }
+
+    /// The companion half: solid floor must still hold you up. Without this, the
+    /// test above passes trivially if everything falls forever.
+    #[test]
+    fn a_body_on_a_plate_stays_on_it() {
+        let mut world = KineticWorld::authored();
+        world.minors.clear();
+        world.major.cell = coord(1, 1);
+        let mut body = Embodiment::new(&world);
+
+        for _ in 0..600 {
+            body.step(&mut world, PlayerIntent::default(), ToolRequest::None);
+            assert!(
+                !body.fell_into_void,
+                "a body standing on a plate fell through it"
+            );
+        }
+        assert!(
+            (body.body.position.y - (FLOOR_TOP + body.config.half_height)).abs() < 0.2,
+            "a resting body drifted off its plate: y = {}",
+            body.body.position.y
+        );
     }
 
     #[test]

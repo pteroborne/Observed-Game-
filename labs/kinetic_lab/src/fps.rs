@@ -56,6 +56,11 @@ const SNAP_SECONDS: f32 = 0.16;
 const SNAP_SPEED: f32 = 55.0;
 /// Longest a single crossing may take, so nothing ever floats.
 const SNAP_SECONDS_MAX: f32 = 1.3;
+/// Raw mouse pixels to look units, matching the other first-person labs in this
+/// workspace (`fps_maze_lab`). The controller multiplies by `look_step`, and the
+/// product must stay proportional to the actual mouse movement — the whole point
+/// is that a flick turns further than a nudge.
+const MOUSE_SENSITIVITY: f32 = 0.075;
 /// Presentation-only gravity for a Guardian that has gone over the edge. The
 /// simulation has already removed it; this is just how it leaves the screen.
 const VOID_GRAVITY: f32 = 22.0;
@@ -72,6 +77,9 @@ const COLOR_MAJOR_FROZEN: Color = Color::srgb(0.36, 0.54, 0.72);
 const COLOR_STATION: Color = Color::srgb(0.30, 1.0, 0.68);
 const COLOR_STATION_DEAD: Color = Color::srgb(0.20, 0.30, 0.26);
 const COLOR_GENERATOR: Color = Color::srgb(1.0, 0.84, 0.30);
+const CROSSHAIR_IDLE: Color = Color::srgba(0.7, 0.95, 1.0, 0.55);
+const CROSSHAIR_TARGET: Color = Color::srgb(0.85, 0.92, 1.0);
+const CROSSHAIR_LETHAL: Color = Color::srgb(0.30, 1.0, 0.55);
 
 #[derive(Component)]
 pub(crate) struct FpsOwned;
@@ -154,6 +162,12 @@ pub(crate) struct StationShell;
 pub(crate) struct PreviewShell;
 
 #[derive(Component)]
+pub(crate) struct Crosshair;
+
+#[derive(Component)]
+pub(crate) struct JailOverlay;
+
+#[derive(Component)]
 pub(crate) struct FpsUiRoot;
 
 #[derive(Component)]
@@ -163,9 +177,18 @@ pub(crate) struct FpsDebugText;
 #[derive(Resource, Clone, Debug)]
 pub struct FpsRuntime {
     pub request: ToolRequest,
+    /// Input latched in `Update` and drained by the fixed tick.
+    ///
+    /// `AccumulatedMouseMotion` and `just_pressed` are *per-frame* signals, and
+    /// `FixedUpdate` runs zero, one, or several times per frame. Sampling them
+    /// from the fixed tick threw away most of the mouse on a 144 Hz display and
+    /// silently ate jumps. Everything edge-triggered is accumulated here first
+    /// so no press and no pixel of motion can fall between the schedules.
+    pub pending_look: Vec2,
+    pub pending_jump: bool,
     pub reset_requested: bool,
     pub reset_count: u32,
-    /// Freeze the board without freezing the camera, so a stance can be studied
+    /// Freeze the board. The camera keeps moving, so a stance can be studied
     /// (and photographed) without a Guardian walking onto you mid-look.
     pub paused: bool,
     /// When set, this replaces live input for one tick. The demo tape uses it to
@@ -179,6 +202,8 @@ impl Default for FpsRuntime {
     fn default() -> Self {
         Self {
             request: ToolRequest::None,
+            pending_look: Vec2::ZERO,
+            pending_jump: false,
             reset_requested: false,
             reset_count: 0,
             paused: false,
@@ -247,15 +272,20 @@ pub(crate) fn setup_scene(
         preview_safe: emissive_material(&mut materials, Color::srgb(0.6, 0.66, 0.74), 1.6),
     };
 
+    // Exactly the collider's footprint. These used to be 25 cm narrower "for a
+    // seam", which meant you stood a hand's width past every visible edge on
+    // invisible floor — while the docs claimed rendering matched collision
+    // exactly. The seam now comes from the plate outlines, which cost nothing
+    // and cannot lie about where the floor ends.
     let plate_mesh = meshes.add(Cuboid::new(
-        PLATE_HALF_X * 2.0 - 0.25,
+        PLATE_HALF_X * 2.0,
         PLATE_THICKNESS,
-        PLATE_HALF_Z * 2.0 - 0.25,
+        PLATE_HALF_Z * 2.0,
     ));
     let wall_mesh = meshes.add(Cuboid::new(
-        PLATE_HALF_X * 2.0 - 0.25,
+        PLATE_HALF_X * 2.0,
         WALL_HEIGHT,
-        PLATE_HALF_Z * 2.0 - 0.25,
+        PLATE_HALF_Z * 2.0,
     ));
     // Rank reads as order of the solid: a cube for the many, a tetrahedron for
     // the rare one.
@@ -449,7 +479,9 @@ fn spawn_ui(commands: &mut Commands) {
                     Text::new(
                         "WASD move   SHIFT run   SPACE jump\n\
                          LMB push   RMB pull   E generator\n\
-                         R reset    ESC free the cursor",
+                         P pause    R reset    ESC free the cursor\n\
+                         crosshair: dim = no target, white = target,\n\
+                         green = this push kills",
                     ),
                     TextFont {
                         font_size: FontSize::Px(13.0),
@@ -460,10 +492,43 @@ fn spawn_ui(commands: &mut Commands) {
             ));
         });
 
-    // Crosshair: the tool aims down the lane the eye is looking, so the centre
-    // of the screen has to be marked.
+    // Jail is a terminal state: the model stops accepting tool intents from a
+    // jailed Observer and every Guardian stops moving, so the run is over. It
+    // used to announce itself by changing one word inside a debug blob, which
+    // is indistinguishable from the controls having broken. Say it plainly.
     commands.spawn((
         FpsOwned,
+        JailOverlay,
+        Node {
+            position_type: PositionType::Absolute,
+            left: percent(0),
+            top: percent(0),
+            width: percent(100),
+            height: percent(100),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.35, 0.02, 0.10, 0.45)),
+        GlobalZIndex(30),
+        Visibility::Hidden,
+        Name::new("Jail Overlay"),
+        children![(
+            Text::new("JAILED\n\nA Guardian reached you.\nPress R to reset."),
+            TextFont {
+                font_size: FontSize::Px(34.0),
+                ..default()
+            },
+            TextColor(Color::srgb(1.0, 0.86, 0.88)),
+        )],
+    ));
+
+    // Crosshair. It has to report whether the tool actually has a target: a
+    // reticle that looks identical whether a push will fire or be refused is
+    // what makes a working trigger feel like a dead one.
+    commands.spawn((
+        FpsOwned,
+        Crosshair,
         Node {
             position_type: PositionType::Absolute,
             left: percent(50),
@@ -472,10 +537,52 @@ fn spawn_ui(commands: &mut Commands) {
             height: px(6),
             ..default()
         },
-        BackgroundColor(Color::srgba(0.7, 0.95, 1.0, 0.85)),
+        BackgroundColor(CROSSHAIR_IDLE),
         GlobalZIndex(21),
         Name::new("Crosshair"),
     ));
+}
+
+pub(crate) fn present_jail_overlay(
+    world: Res<KineticWorld>,
+    mut overlay: Query<&mut Visibility, With<JailOverlay>>,
+) {
+    let jailed = world
+        .observers
+        .first()
+        .is_some_and(|observer| observer.jailed);
+    if let Ok(mut visibility) = overlay.single_mut() {
+        *visibility = if jailed {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
+    }
+}
+
+/// Colour the crosshair by what the trigger would actually do right now.
+pub(crate) fn present_crosshair(
+    world: Res<KineticWorld>,
+    mut crosshair: Query<(&mut BackgroundColor, &mut Node), With<Crosshair>>,
+) {
+    let Ok((mut color, mut node)) = crosshair.single_mut() else {
+        return;
+    };
+    let resolved = world.observers.first().and_then(|observer| {
+        world
+            .target_in_lane(observer)
+            .and_then(|id| world.resolve_shove(id, observer.facing, PUSH_IMPULSE))
+    });
+    let (wanted, size) = match resolved {
+        Some(resolution) if matches!(resolution.fate, ShoveFate::Void | ShoveFate::Doomed) => {
+            (CROSSHAIR_LETHAL, 12.0)
+        }
+        Some(_) => (CROSSHAIR_TARGET, 10.0),
+        None => (CROSSHAIR_IDLE, 6.0),
+    };
+    color.0 = wanted;
+    node.width = px(size);
+    node.height = px(size);
 }
 
 pub(crate) fn grab_cursor(mut cursors: Query<&mut CursorOptions, With<PrimaryWindow>>) {
@@ -503,12 +610,23 @@ pub(crate) fn toggle_grab(
     }
 }
 
-/// Latch tool presses in `Update` so a click between fixed ticks is never lost.
+/// Latch every edge-triggered input in `Update`, where it is sampled once per
+/// frame, so nothing can be lost or doubled by the fixed tick's cadence.
 pub(crate) fn gather_requests(
     keys: Res<ButtonInput<KeyCode>>,
     buttons: Res<ButtonInput<MouseButton>>,
+    mouse_motion: Option<Res<AccumulatedMouseMotion>>,
     mut runtime: ResMut<FpsRuntime>,
 ) {
+    // Accumulate rather than overwrite: several frames may pass between ticks,
+    // and every pixel of them is part of the same turn.
+    if let Some(motion) = mouse_motion {
+        runtime.pending_look += motion.delta * MOUSE_SENSITIVITY;
+    }
+    if keys.just_pressed(KeyCode::Space) {
+        runtime.pending_jump = true;
+    }
+
     if buttons.just_pressed(MouseButton::Left) {
         runtime.request = ToolRequest::Push;
     } else if buttons.just_pressed(MouseButton::Right) {
@@ -544,15 +662,10 @@ pub(crate) fn perform_reset(
 /// One fixed tick: body, then board.
 pub(crate) fn simulate(
     keys: Res<ButtonInput<KeyCode>>,
-    mouse_motion: Option<Res<AccumulatedMouseMotion>>,
     mut runtime: ResMut<FpsRuntime>,
     mut world: ResMut<KineticWorld>,
     mut embodiment: ResMut<Embodiment>,
 ) {
-    if runtime.paused {
-        return;
-    }
-
     // A scripted tick takes the identical path as a played one: same intent
     // type, same tool request, same `Embodiment::step`.
     if let Some((intent, request)) = runtime.scripted.take() {
@@ -561,7 +674,12 @@ pub(crate) fn simulate(
         return;
     }
 
-    let mouse = mouse_motion.map_or(Vec2::ZERO, |motion| motion.delta);
+    // Drain the latched look and jump whether or not the board is paused, so
+    // pausing stops the *world* and not the camera. Leaving them latched would
+    // also mean a paused second of mouse movement snapped the view on resume.
+    let mouse = std::mem::take(&mut runtime.pending_look);
+    let jumped = std::mem::take(&mut runtime.pending_jump);
+
     let mut movement = Vec2::ZERO;
     if keys.pressed(KeyCode::KeyW) {
         movement.y += 1.0;
@@ -578,10 +696,17 @@ pub(crate) fn simulate(
     let intent = PlayerIntent {
         movement,
         look: mouse,
-        jump_pressed: keys.just_pressed(KeyCode::Space),
+        jump_pressed: jumped,
         sprint_held: keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight),
         ..default()
     };
+
+    if runtime.paused {
+        // Move the body so look and walk still work, but hold the board: no
+        // Guardian steps, no retraction, no capture.
+        embodiment.step_body_only(intent);
+        return;
+    }
 
     let request = std::mem::take(&mut runtime.request);
     embodiment.step(&mut world, intent, request);
@@ -866,6 +991,29 @@ pub(crate) fn draw_lane(world: Res<KineticWorld>, mut gizmos: Gizmos) {
     let Some(observer) = world.observers.first() else {
         return;
     };
+
+    // Always draw the reachable lane, target or not. The schematic view already
+    // did this and said why; the first-person view — the one actually played —
+    // drew nothing when the lane was empty, so the player stood inside an
+    // invisible 60-degree wedge with no way to tell where it pointed. An empty
+    // lane has to look empty, not look like nothing.
+    let mut cursor = observer.cell;
+    let height = FLOOR_TOP + 1.1;
+    let lane_color = Color::srgba(0.45, 0.92, 1.0, 0.30);
+    for _ in 0..crate::model::TOOL_RANGE {
+        let Some(next) = world.grid.neighbor(cursor, observer.facing) else {
+            break;
+        };
+        let a = plate_center(cursor);
+        let b = plate_center(next);
+        gizmos.line(
+            Vec3::new(a.x, height, a.z),
+            Vec3::new(b.x, height, b.z),
+            lane_color,
+        );
+        cursor = next;
+    }
+
     let Some(resolution) = world
         .target_in_lane(observer)
         .and_then(|id| world.resolve_shove(id, observer.facing, PUSH_IMPULSE))

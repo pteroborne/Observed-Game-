@@ -203,11 +203,7 @@ pub(crate) fn setup_lab(mut commands: Commands, world: Res<KineticWorld>) {
                 TextColor(Color::srgb(0.86, 0.95, 1.0)),
             ));
             panel.spawn((
-                Text::new(
-                    "W/S/A/D/Q/E step along the six faces   |   Z/C turn in place\n\
-                     SPACE push   |   F pull   |   G operate generator\n\
-                     P pause   |   N single tick   |   R reset",
-                ),
+                Text::new(help_text()),
                 TextFont {
                     font_size: FontSize::Px(13.0),
                     ..default()
@@ -217,27 +213,101 @@ pub(crate) fn setup_lab(mut commands: Commands, world: Res<KineticWorld>) {
         });
 }
 
+/// The six lateral faces, laid out as a hex pad under one hand: `Q`/`E` are the
+/// upper diagonals, `A`/`D` the flats, `Z`/`C` the lower diagonals.
+///
+/// There is deliberately no `W` or `S`: a flat-topped hex has no north or south
+/// face. The on-screen help used to claim otherwise, which meant the first two
+/// keys anyone presses did nothing at all.
+pub(crate) const STEP_KEYS: [(KeyCode, HexFace); 6] = [
+    (KeyCode::KeyQ, HexFace::NorthWest),
+    (KeyCode::KeyE, HexFace::NorthEast),
+    (KeyCode::KeyA, HexFace::West),
+    (KeyCode::KeyD, HexFace::East),
+    (KeyCode::KeyZ, HexFace::SouthWest),
+    (KeyCode::KeyC, HexFace::SouthEast),
+];
+
+/// Turn in place, without spending a step.
+///
+/// `KineticIntent::Face` existed in the model from the beginning and no input
+/// path ever produced it, so the only way to aim was to walk into the shot — on
+/// a 14 metre lattice, at the cost of a plate of position every time.
+pub(crate) const TURN_KEYS: [(KeyCode, i8); 2] =
+    [(KeyCode::ArrowLeft, 1), (KeyCode::ArrowRight, -1)];
+
+/// Rotate a lateral face by `steps` sixths. `HexFace::LATERAL` is ordered
+/// counterclockwise, so a positive step turns left.
+pub(crate) fn rotated(face: HexFace, steps: i8) -> HexFace {
+    let index = (face.index() as i8 + steps).rem_euclid(6) as usize;
+    HexFace::LATERAL[index]
+}
+
+fn key_label(key: KeyCode) -> &'static str {
+    match key {
+        KeyCode::KeyQ => "Q",
+        KeyCode::KeyE => "E",
+        KeyCode::KeyA => "A",
+        KeyCode::KeyD => "D",
+        KeyCode::KeyZ => "Z",
+        KeyCode::KeyC => "C",
+        KeyCode::ArrowLeft => "LEFT",
+        KeyCode::ArrowRight => "RIGHT",
+        _ => "?",
+    }
+}
+
+/// Build the help text *from the binding tables*, so the two cannot drift.
+///
+/// The previous help was a hand-written string that disagreed with the code on
+/// half the gameplay keys. Generating it makes that class of bug impossible
+/// rather than merely tested for.
+pub(crate) fn help_text() -> String {
+    let steps = STEP_KEYS
+        .iter()
+        .map(|(key, face)| format!("{} {face:?}", key_label(*key)))
+        .collect::<Vec<_>>()
+        .join("   ");
+    let turns = TURN_KEYS
+        .iter()
+        .map(|(key, steps)| {
+            format!(
+                "{} turn {}",
+                key_label(*key),
+                if *steps > 0 { "left" } else { "right" }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("   ");
+    format!(
+        "step:  {steps}\n\
+         {turns}\n\
+         SPACE push   |   F pull   |   G operate generator\n\
+         P pause   |   N single tick   |   R reset"
+    )
+}
+
 /// Keyboard to abstract intent. This is the only place a key is read, and it
 /// produces a [`KineticIntent`] rather than touching the world.
 pub(crate) fn handle_input(
     keyboard: Res<ButtonInput<KeyCode>>,
+    world: Res<KineticWorld>,
     mut runtime: ResMut<KineticRuntime>,
 ) {
-    // The six lateral faces, laid out so forward/back and the four diagonals
-    // fall under one hand.
-    const STEPS: [(KeyCode, HexFace); 6] = [
-        (KeyCode::KeyD, HexFace::East),
-        (KeyCode::KeyC, HexFace::SouthEast),
-        (KeyCode::KeyZ, HexFace::SouthWest),
-        (KeyCode::KeyA, HexFace::West),
-        (KeyCode::KeyQ, HexFace::NorthWest),
-        (KeyCode::KeyE, HexFace::NorthEast),
-    ];
+    let facing = world
+        .observers
+        .first()
+        .map_or(HexFace::East, |observer| observer.facing);
 
     let mut intent = KineticIntent::Idle;
-    for (key, face) in STEPS {
+    for (key, face) in STEP_KEYS {
         if keyboard.just_pressed(key) {
             intent = KineticIntent::Step(face);
+        }
+    }
+    for (key, steps) in TURN_KEYS {
+        if keyboard.just_pressed(key) {
+            intent = KineticIntent::Face(rotated(facing, steps));
         }
     }
     if keyboard.just_pressed(KeyCode::Space) {
@@ -583,4 +653,89 @@ pub(crate) fn update_debug_text(
         if observer.jailed { "JAILED" } else { "free" },
         runtime.last_note,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every bound key is distinct and every lateral face is reachable.
+    #[test]
+    fn the_step_bindings_cover_all_six_faces_exactly_once() {
+        let mut faces: Vec<usize> = STEP_KEYS.iter().map(|(_, face)| face.index()).collect();
+        faces.sort_unstable();
+        faces.dedup();
+        assert_eq!(faces.len(), 6, "a face is bound twice or not at all");
+
+        let mut keys: Vec<KeyCode> = STEP_KEYS
+            .iter()
+            .map(|(key, _)| *key)
+            .chain(TURN_KEYS.iter().map(|(key, _)| *key))
+            .collect();
+        let before = keys.len();
+        keys.sort();
+        keys.dedup();
+        assert_eq!(before, keys.len(), "a key is bound to two actions");
+    }
+
+    /// Regression for the defect behind "none of the keys worked": the
+    /// on-screen help advertised `W` and `S` as step keys and called `Z`/`C`
+    /// "turn in place", while the code bound neither that way. The help is now
+    /// generated from the tables, so this guards the generator.
+    #[test]
+    fn the_help_text_describes_exactly_the_keys_that_are_bound() {
+        let help = help_text();
+        for (key, face) in STEP_KEYS {
+            let label = key_label(key);
+            assert!(
+                help.contains(label),
+                "help never mentions bound step key {label}"
+            );
+            assert!(
+                help.contains(&format!("{face:?}")),
+                "help never mentions face {face:?}"
+            );
+        }
+        for (key, _) in TURN_KEYS {
+            assert!(
+                help.contains(key_label(key)),
+                "help never mentions bound turn key {}",
+                key_label(key)
+            );
+        }
+    }
+
+    /// A flat-topped hex has no north or south face, so these two are
+    /// deliberately unbound — and the help must not promise them.
+    #[test]
+    fn w_and_s_are_unbound_and_unadvertised() {
+        for key in [KeyCode::KeyW, KeyCode::KeyS] {
+            assert!(
+                !STEP_KEYS.iter().any(|(bound, _)| *bound == key),
+                "{key:?} is bound after all"
+            );
+        }
+        let steps_line = help_text()
+            .lines()
+            .next()
+            .expect("help has a step line")
+            .to_string();
+        assert!(
+            !steps_line.contains(" W ") && !steps_line.contains(" S "),
+            "the step line advertises an unbound key: {steps_line}"
+        );
+    }
+
+    #[test]
+    fn turning_six_times_returns_to_the_same_face() {
+        for face in HexFace::LATERAL {
+            let mut left = face;
+            for _ in 0..6 {
+                left = rotated(left, 1);
+            }
+            assert_eq!(left, face);
+            assert_eq!(rotated(rotated(face, 1), -1), face);
+            assert_ne!(rotated(face, 1), face);
+        }
+    }
 }

@@ -75,6 +75,8 @@ impl Plugin for KineticFpsPlugin {
                     fps::present_guardians,
                     fps::present_stations,
                     fps::present_preview,
+                    fps::present_crosshair,
+                    fps::present_jail_overlay,
                     fps::draw_lane,
                     fps::update_hud,
                 )
