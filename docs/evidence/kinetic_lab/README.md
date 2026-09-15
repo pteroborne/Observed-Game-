@@ -131,6 +131,30 @@ player's hands use. Starting positions and a handful of mid-run Guardian
 placements are staged, and every one of those is captioned "Staged:" on screen
 as it happens.
 
+### The same tour with `--no-jail`
+
+[`kinetic_tour_nojail.mp4`](kinetic_tour_nojail.mp4) — 74 seconds.
+
+```bash
+OBSERVED2_CAPTURE_SEQUENCE=docs/evidence/kinetic_lab/frames \
+  cargo run -p kinetic_lab --bin kinetic_fps -- --no-jail
+```
+
+Identical script, except the finale. The HUD carries `rules off: jail`
+throughout, so the two recordings can never be confused for one another.
+
+The ending is the interesting part. The same event happens — a Guardian walks
+onto the Observer's plate — and the run simply continues: no overlay, no capture,
+`free` in the HUD, and the crosshair sitting green on the cube now standing on
+top of you. That is the flag's whole argument in one shot: with jail off a
+Guardian stops being a fail state and becomes a thing in your way.
+
+The script chooses its own finale from the rules rather than being captioned by
+hand, because a caption reading "ends the run" over a run that does not end is
+exactly the class of claim this lab has already been caught making.
+`the_finale_caption_matches_the_rules` asserts that the jailing cut never
+mentions the flag and the lenient cut never claims a jail.
+
 ### The headless counterpart
 
 `demo::run_headless` plays the identical script with no window and no frame

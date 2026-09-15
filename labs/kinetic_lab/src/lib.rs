@@ -137,7 +137,7 @@ pub fn run_fps() {
             frame: 0,
             finished: false,
         })
-        .init_resource::<demo::Director>()
+        .insert_resource(demo::Director::new(rules))
         // Saving a PNG per frame is far slower than the simulation, so leaving
         // this on the fixed timestep lets catch-up run several ticks between
         // renders and the recording skips state. Park `FixedUpdate` and advance

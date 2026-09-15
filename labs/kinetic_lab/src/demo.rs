@@ -22,7 +22,7 @@ use observed_hex::coords::HexCoord;
 use player_input::PlayerIntent;
 
 use crate::embodied::{Embodiment, ToolRequest, plate_center};
-use crate::model::KineticWorld;
+use crate::model::{KineticRules, KineticWorld};
 
 /// Radians per tick the driver will turn. Comfortably readable on camera.
 const TURN_RATE: f32 = 0.045;
@@ -94,8 +94,8 @@ const fn cell(q: u16, r: u16) -> HexCoord {
 /// Ordered so each claim is visible before it is relied on: aiming feedback
 /// first, then the two shove outcomes, then the systems that gate the tool, then
 /// the two ways a run ends.
-pub fn script() -> Vec<Scene> {
-    vec![
+pub fn script(rules: KineticRules) -> Vec<Scene> {
+    let mut scenes = vec![
         // The lethal push comes first on purpose. A Guardian in the lane is
         // *walking toward you the whole time* — three plates away is 450 ticks
         // of grace, and an earlier draft spent all of it on preamble and got
@@ -246,11 +246,33 @@ pub fn script() -> Vec<Scene> {
                 stagger: 0,
             },
         ),
-        scene("A Guardian reaching you ends the run", Beat::Hold(200)),
-        scene("JAILED - no longer a silent freeze", Beat::Hold(120)),
+    ];
+
+    // The finale depends on the rules, because a caption that describes a run
+    // ending is a lie when `--no-jail` is in force. Both endings show the same
+    // thing happening — a Guardian walks onto your plate — and differ only in
+    // what the board does about it.
+    scenes.extend(if rules.jail {
+        vec![
+            scene("A Guardian reaching you ends the run", Beat::Hold(220)),
+            scene("JAILED - no longer a silent freeze", Beat::Hold(120)),
+        ]
+    } else {
+        vec![
+            scene("--no-jail: a Guardian reaches you...", Beat::Hold(220)),
+            scene(
+                "...and nothing happens. It is just something to shove.",
+                Beat::Hold(150),
+            ),
+        ]
+    });
+
+    scenes.extend(vec![
         scene("R resets the board", Beat::Reset),
         scene("Everything restored", Beat::Hold(120)),
-    ]
+    ]);
+
+    scenes
 }
 
 /// Place the actors for the recording.
@@ -306,12 +328,12 @@ pub struct Logged {
 /// director, the model and the body are all pure enough to run flat out, so a
 /// seventy-second recording can be checked in milliseconds and a broken beat
 /// names itself instead of having to be spotted in a frame.
-pub fn run_headless(max_ticks: u32) -> Vec<Logged> {
-    let mut world = KineticWorld::authored();
+pub fn run_headless(max_ticks: u32, rules: KineticRules) -> Vec<Logged> {
+    let mut world = KineticWorld::authored_with(rules);
     let mut body = Embodiment::new(&world);
     stage(&mut world, &mut body);
 
-    let mut director = Director::default();
+    let mut director = Director::new(rules);
     let mut log = Vec::new();
 
     for tick in 0..max_ticks {
@@ -334,7 +356,7 @@ pub fn run_headless(max_ticks: u32) -> Vec<Logged> {
             world.major.step_progress = 0;
         }
         if decision.reset {
-            world = KineticWorld::authored();
+            world = KineticWorld::authored_with(rules);
             body = Embodiment::new(&world);
             log.push(Logged {
                 tick,
@@ -375,9 +397,10 @@ pub struct Director {
     pub finished: bool,
 }
 
-impl Default for Director {
-    fn default() -> Self {
-        let scenes = script();
+impl Director {
+    #[must_use]
+    pub fn new(rules: KineticRules) -> Self {
+        let scenes = script(rules);
         let caption = scenes
             .first()
             .map_or(String::new(), |scene| scene.caption.to_string());
@@ -388,6 +411,12 @@ impl Default for Director {
             caption,
             finished: false,
         }
+    }
+}
+
+impl Default for Director {
+    fn default() -> Self {
+        Self::new(KineticRules::default())
     }
 }
 
@@ -568,7 +597,7 @@ mod tests {
     #[test]
     #[ignore = "diagnostic: cargo test -p kinetic_lab -- --ignored --nocapture script_log"]
     fn script_log() {
-        for entry in run_headless(30_000) {
+        for entry in run_headless(30_000, KineticRules::default()) {
             println!("{:>6}  {:<58}  {}", entry.tick, entry.caption, entry.event);
         }
     }
@@ -584,7 +613,7 @@ mod tests {
     /// here in milliseconds rather than by watching seventy seconds of frames.
     #[test]
     fn the_scripted_demo_demonstrates_every_claim_it_makes() {
-        let log = run_headless(30_000);
+        let log = run_headless(30_000, KineticRules::default());
         let events: Vec<&str> = log.iter().map(|entry| entry.event.as_str()).collect();
 
         let find = |from: usize, needle: &str| -> Option<usize> {
@@ -636,11 +665,86 @@ mod tests {
         );
     }
 
+    /// The `--no-jail` cut demonstrates the flag rather than lying about it.
+    ///
+    /// The finale is the same event either way — a Guardian walks onto your
+    /// plate — so the only thing that can go wrong is the caption describing an
+    /// outcome that did not happen. Assert the Guardian really does arrive and
+    /// that no capture resolves.
+    #[test]
+    fn the_no_jail_cut_shows_a_guardian_arriving_and_nothing_happening() {
+        let rules = KineticRules {
+            jail: false,
+            ..Default::default()
+        };
+        let log = run_headless(30_000, rules);
+
+        assert!(
+            log.iter()
+                .all(|entry| !entry.event.contains("ObserverCaptured")),
+            "jail was switched off and a capture still resolved"
+        );
+        // The rest of the tour must still happen, or "nothing happened" would be
+        // true for uninteresting reasons.
+        for needle in [
+            "fate: Void",
+            "NoTargetInLane",
+            "ChargeRestored",
+            "FellIntoVoid",
+        ] {
+            assert!(
+                log.iter().any(|entry| entry.event.contains(needle)),
+                "the no-jail cut never demonstrates {needle}"
+            );
+        }
+        assert!(
+            log.last().is_some_and(|entry| entry.event == "Reset"),
+            "the no-jail cut must still end on a reset"
+        );
+    }
+
+    /// Both cuts must describe the ending they actually produce.
+    #[test]
+    fn the_finale_caption_matches_the_rules() {
+        let jailing = script(KineticRules::default());
+        assert!(
+            jailing.iter().any(|scene| scene.caption.contains("JAILED")),
+            "the jailing cut should announce the jail"
+        );
+        assert!(
+            !jailing
+                .iter()
+                .any(|scene| scene.caption.contains("--no-jail")),
+            "the jailing cut should not mention a flag that is not in force"
+        );
+
+        let lenient = script(KineticRules {
+            jail: false,
+            ..Default::default()
+        });
+        assert!(
+            lenient
+                .iter()
+                .any(|scene| scene.caption.contains("--no-jail")),
+            "the lenient cut should name the flag it is demonstrating"
+        );
+        assert!(
+            !lenient.iter().any(|scene| scene.caption.contains("JAILED")),
+            "the lenient cut must not claim a jail that cannot happen"
+        );
+        assert!(
+            !lenient
+                .iter()
+                .any(|scene| scene.caption.contains("ends the run")),
+            "the lenient cut must not claim the run ends"
+        );
+    }
+
     /// The script must terminate on its own: every navigation beat has a
     /// timeout, so a blocked path cannot strand a recording forever.
     #[test]
     fn every_navigation_beat_is_bounded() {
-        for scene in script() {
+        for scene in script(KineticRules::default()) {
             match scene.beat {
                 Beat::WalkTo { .. } | Beat::LookAt(_) => {}
                 Beat::WalkOff { ticks, .. } => assert!(ticks > 0),
@@ -648,6 +752,6 @@ mod tests {
                 _ => {}
             }
         }
-        assert!(!script().is_empty());
+        assert!(!script(KineticRules::default()).is_empty());
     }
 }
