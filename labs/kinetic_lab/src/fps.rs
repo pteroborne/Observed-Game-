@@ -600,12 +600,12 @@ pub(crate) fn present_jail_overlay(
     if let Ok(mut text) = text.single_mut() {
         **text = if survived {
             format!(
-                "SURVIVED\n\nYou outlasted {} waves.\n{} Guardians into the void.\nPress R to reset.",
+                "SURVIVED\n\nYou outlasted {} waves.\n{} Guardians put into the architecture.\nPress R to reset.",
                 world.waves_released, world.kills
             )
         } else if world.siege.enabled {
             format!(
-                "OVERRUN\n\nA Guardian reached you on wave {}.\n{} Guardians into the void.\nPress R to reset.",
+                "OVERRUN\n\nA Guardian reached you on wave {}.\n{} Guardians put into the architecture.\nPress R to reset.",
                 world.waves_released, world.kills
             )
         } else {
@@ -622,16 +622,17 @@ pub(crate) fn present_crosshair(
     let Ok((mut color, mut node)) = crosshair.single_mut() else {
         return;
     };
-    let resolved = world
-        .observers
-        .first()
-        .and_then(|observer| world.preview_push(observer));
-    let (wanted, size) = match resolved {
-        Some(resolution) if matches!(resolution.fate, ShoveFate::Void | ShoveFate::Doomed) => {
-            (CROSSHAIR_LETHAL, 12.0)
-        }
-        Some(_) => (CROSSHAIR_TARGET, 10.0),
-        None => (CROSSHAIR_IDLE, 6.0),
+    let Some(observer) = world.observers.first() else {
+        return;
+    };
+    // Size reports the size of the *shot*, not merely that there is one. A push
+    // that takes three Guardians down a corridor should not look identical to
+    // one that staggers a single Guardian against a wall it will survive.
+    let kills = world.preview_kills(observer);
+    let (wanted, size) = match (world.preview_push(observer), kills) {
+        (None, _) => (CROSSHAIR_IDLE, 6.0),
+        (Some(_), 0) => (CROSSHAIR_TARGET, 10.0),
+        (Some(_), n) => (CROSSHAIR_LETHAL, 12.0 + 5.0 * (n.min(4) - 1) as f32),
     };
     color.0 = wanted;
     node.width = px(size);
@@ -811,7 +812,9 @@ fn describe(world: &KineticWorld) -> Option<String> {
                 "Shoved {} cells onto solid floor. Alive, staggered.",
                 resolution.cells_travelled
             ),
-            ShoveFate::Blocked => "Blocked by structure - nothing moved.".to_string(),
+            ShoveFate::Slammed => "SLAM - driven into the wall.".to_string(),
+            ShoveFate::Transferred => "Struck another Guardian - momentum carries on.".to_string(),
+            ShoveFate::Blocked => "Out of momentum against structure.".to_string(),
         },
         KineticEvent::GuardianDestroyed { by_retraction, .. } => {
             if *by_retraction {
@@ -1093,12 +1096,7 @@ pub(crate) fn draw_lane(world: Res<KineticWorld>, mut gizmos: Gizmos) {
         return;
     };
 
-    let color = match resolution.fate {
-        ShoveFate::Void => Color::srgb(0.25, 1.0, 0.5),
-        ShoveFate::Doomed => Color::srgb(1.0, 0.72, 0.22),
-        ShoveFate::Rest => Color::srgb(0.6, 0.66, 0.74),
-        ShoveFate::Blocked => Color::srgb(1.0, 0.28, 0.24),
-    };
+    let color = fate_color(resolution.fate);
 
     // Walk the same faces the resolution walked, so the drawn path is the
     // resolved path rather than a straight line that might cut a corner.
@@ -1116,6 +1114,18 @@ pub(crate) fn draw_lane(world: Res<KineticWorld>, mut gizmos: Gizmos) {
             color,
         );
         cursor = next;
+    }
+}
+
+/// One colour per outcome. Green always means "this removes it".
+fn fate_color(fate: ShoveFate) -> Color {
+    match fate {
+        ShoveFate::Void => Color::srgb(0.25, 1.0, 0.5),
+        ShoveFate::Slammed => Color::srgb(0.45, 1.0, 0.35),
+        ShoveFate::Doomed => Color::srgb(1.0, 0.72, 0.22),
+        ShoveFate::Transferred => Color::srgb(0.55, 0.85, 1.0),
+        ShoveFate::Rest => Color::srgb(0.6, 0.66, 0.74),
+        ShoveFate::Blocked => Color::srgb(1.0, 0.28, 0.24),
     }
 }
 

@@ -182,19 +182,23 @@ OBSERVED2_CAPTURE_SEQUENCE=docs/evidence/kinetic_lab/frames \
   cargo run -p kinetic_lab --bin kinetic_fps -- --siege --minutes=1
 ```
 
-The run ends **OVERRUN on wave 5**, with the line that matters underneath it:
-*0 Guardians into the void.* A full minute of siege and the tool killed nothing.
-That is not a broken recording. It is the finding.
+The run ends **SURVIVED**: five waves outlasted, five Guardians put into the
+architecture.
 
-**The kinetic tool is close to inert in a corridor facility.** It was designed
-and tuned on the authored board, which is an open plain with a void rim — there,
-a push carries three plates and usually ends in nothing. In a building, a shove
-travels along a lattice face and stops at the first wall, which in a corridor is
-right there. Measured on the pinned facility: most plates have exactly two open
-faces, and the overwhelming majority of shoves resolve `Blocked` after a plate or
-less. The tool staggers things against walls instead of removing them.
-`the_tool_is_weak_in_a_corridor_facility` pins that ratio so it cannot drift
-without somebody noticing.
+The first cut of this exact recording — same seed, same script, same minute —
+ended **OVERRUN on wave 5 with zero kills**. Nothing about the facility, the
+waves or the bot changed between the two. What changed is that a wall became
+lethal.
+
+**The tool used to be inert indoors.** It was designed and tuned on the authored
+board, an open plain with a void rim, where a push carries three plates and ends
+in nothing. In a building a shove stops at the first wall, and in a corridor that
+wall is right there: measured on the pinned facility, most plates have exactly
+two open faces and essentially every push was a no-op that still cost charge.
+Now a shove that arrives at structure *with momentum left* is killed by it, and
+the most abundant feature in a facility went from the reason the tool failed to
+the reason it works. `the_tool_is_effective_in_a_corridor_facility` keeps the
+measurement, pointed the other way, so it cannot quietly regress.
 
 Two fixes were needed before the siege was even a game, and both were invisible
 on the open board:
@@ -209,10 +213,8 @@ on the open board:
   what a siege is anyway.
 
 What to take from the video: the facility reads, the waves arrive and grow, the
-clock creates real pressure, and the tool does not answer it. That is a design
-question — more open geometry, a different verb, or accepting that the tool's job
-is crowd control rather than kills — and it is better to have it now than after
-the thing is promoted anywhere near production.
+clock creates real pressure, and the tool now answers it — using the building
+rather than in spite of it.
 
 ## Caveat
 

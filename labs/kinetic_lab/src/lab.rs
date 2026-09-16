@@ -404,7 +404,9 @@ fn describe(world: &KineticWorld) -> Option<String> {
                 "Shoved {} cells onto solid floor. Still alive, staggered.",
                 resolution.cells_travelled
             ),
-            ShoveFate::Blocked => "Blocked by structure - nothing moved.".to_string(),
+            ShoveFate::Slammed => "SLAM - driven into the wall.".to_string(),
+            ShoveFate::Transferred => "Struck another Guardian - momentum carries on.".to_string(),
+            ShoveFate::Blocked => "Out of momentum against structure.".to_string(),
         }),
         KineticEvent::GuardianDestroyed { by_retraction, .. } => Some(if *by_retraction {
             "A retracting tile committed and took its passenger.".to_string()
@@ -600,7 +602,9 @@ pub(crate) fn draw_debug(world: Res<KineticWorld>, mut gizmos: Gizmos) {
         let affordable = observer.charge >= PUSH_COST;
         let color = match preview.fate {
             ShoveFate::Void => Color::srgb(0.30, 1.0, 0.55),
+            ShoveFate::Slammed => Color::srgb(0.45, 1.0, 0.35),
             ShoveFate::Doomed => Color::srgb(1.0, 0.72, 0.22),
+            ShoveFate::Transferred => Color::srgb(0.55, 0.85, 1.0),
             ShoveFate::Rest => Color::srgb(0.55, 0.62, 0.70),
             ShoveFate::Blocked => Color::srgb(1.0, 0.28, 0.24),
         };

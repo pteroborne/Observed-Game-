@@ -970,28 +970,26 @@ mod tests {
         assert!(has("WaveReleased"), "no wave ever arrived");
         assert!(has("Shoved"), "the bot never fired the tool");
         assert!(has("SiegeEnded"), "the siege never resolved");
-
-        // Deliberately *not* asserted: that anything died. In the solved
-        // facility it usually does not, and that is a finding rather than a
-        // broken demo — see `the_tool_is_weak_in_a_corridor_facility`. An
-        // assertion here would only tempt a future change to rig the bot until
-        // the recording flattered the design.
+        assert!(
+            has("GuardianDestroyed"),
+            "nothing died all siege — the tool is back to being inert indoors"
+        );
     }
 
-    /// The finding, pinned so it cannot quietly change without somebody noticing.
+    /// The tool has to be worth firing indoors.
     ///
-    /// On the authored plain a push carries three plates and usually ends in
-    /// void. In the solved facility most shoves are `Blocked` after a plate or
-    /// less, because a corridor's next wall is right there. The kinetic tool was
-    /// designed and tuned on an open board and is close to inert in a building:
-    /// it staggers things against walls instead of removing them.
+    /// This test used to assert the opposite, and was right to. Before the wall
+    /// slam, a shove in the solved facility stopped at the corridor's next wall
+    /// and did nothing at all: a measured **zero** kills across a full siege,
+    /// every push a no-op that still cost charge. The tool had been designed and
+    /// tuned on an open plain with a void rim and was inert in a building.
     ///
-    /// That is worth knowing before the tool is promoted anywhere near
-    /// production. The fix is a design decision — more open geometry, a
-    /// different verb, or accepting that its job is crowd control rather than
-    /// kills — and not something to paper over in the demo bot.
+    /// Making structure lethal at speed inverted it — the wall is the most
+    /// abundant thing in a facility, so it went from the reason the tool failed
+    /// to the reason it works. Keeping the measurement here, pointed the other
+    /// way, is what stops it quietly regressing to a no-op again.
     #[test]
-    fn the_tool_is_weak_in_a_corridor_facility() {
+    fn the_tool_is_effective_in_a_corridor_facility() {
         let rules = KineticRules {
             siege: true,
             siege_minutes: 1.0,
@@ -1007,15 +1005,22 @@ mod tests {
             .iter()
             .filter(|entry| {
                 entry.event.contains("Shoved")
-                    && (entry.event.contains("fate: Void") || entry.event.contains("fate: Doomed"))
+                    && (entry.event.contains("fate: Void")
+                        || entry.event.contains("fate: Doomed")
+                        || entry.event.contains("fate: Slammed"))
             })
             .count();
         assert!(shoves > 0, "the bot never fired, so this measures nothing");
         assert!(
-            lethal * 2 <= shoves,
-            "the tool has become good in a corridor facility ({lethal} of {shoves} shoves lethal) \
-             — that is good news, but it means this finding is stale and the READMEs that cite it \
-             need rewriting"
+            lethal > 0,
+            "not one of {shoves} shoves removed anything: the tool is inert indoors again"
+        );
+        // A quarter is a low bar on purpose. The bot is a camera operator that
+        // happens to be armed, not a good player, and this is a floor under a
+        // regression rather than a target to tune against.
+        assert!(
+            lethal * 4 >= shoves,
+            "only {lethal} of {shoves} shoves removed anything indoors"
         );
     }
 

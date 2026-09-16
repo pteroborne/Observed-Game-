@@ -416,8 +416,34 @@ pub enum ShoveFate {
     Void,
     /// Came to rest on a retracting tile: destroyed when that tile commits.
     Doomed,
-    /// Ran into structure, the lattice boundary, or another actor.
+    /// Driven into structure while still carrying momentum, and destroyed by it.
+    ///
+    /// This is what makes the tool work indoors. A facility is mostly corridor,
+    /// a corridor's next wall is always right there, and a shove that merely
+    /// *stopped* at it did nothing at all — measured on the solved facility,
+    /// almost every push was a no-op that still cost charge. The wall was
+    /// already the most abundant piece of architecture in the building; now it
+    /// is also the most useful. Canon is untouched: the tool still deals no
+    /// damage, and what kills is still the architecture.
+    Slammed,
+    /// Ran out of momentum against something without enough force to matter.
     Blocked,
+    /// Handed its remaining momentum to another Guardian and stopped.
+    ///
+    /// A corridor packs the horde single file, which was the worst thing about
+    /// fighting in one. It is now the setup for the best shot in the game.
+    Transferred,
+}
+
+impl ShoveFate {
+    /// Whether this outcome removes the target from play, now or shortly.
+    #[must_use]
+    pub const fn is_lethal(self) -> bool {
+        matches!(
+            self,
+            ShoveFate::Void | ShoveFate::Doomed | ShoveFate::Slammed
+        )
+    }
 }
 
 /// Everything a shove resolved to, in one value.
@@ -429,6 +455,11 @@ pub struct ShoveResolution {
     pub face: HexFace,
     pub cells_travelled: u32,
     pub fate: ShoveFate,
+    /// The Guardian this one ran into, which takes the rest of the momentum.
+    pub struck: Option<MinorGuardianId>,
+    /// Momentum left at the moment it stopped. Nonzero into structure is a slam;
+    /// nonzero into another Guardian is a chain.
+    pub remaining: u32,
 }
 
 /// Why the tool refused to fire. A refusal is never silent: the lab shows it.
@@ -983,10 +1014,31 @@ impl KineticWorld {
     /// from the one the trigger produces.
     #[must_use]
     pub fn preview_push(&self, observer: &Observer) -> Option<ShoveResolution> {
-        let id = self.target_in_cone(observer)?;
-        let minor = self.minor(id)?;
-        let face = self.face_toward(observer.cell, minor.cell)?;
-        self.resolve_shove(id, face, PUSH_IMPULSE)
+        self.preview_chain(observer).into_iter().next()
+    }
+
+    /// The whole chain a push would set off.
+    #[must_use]
+    pub fn preview_chain(&self, observer: &Observer) -> Vec<ShoveResolution> {
+        let Some(id) = self.target_in_cone(observer) else {
+            return Vec::new();
+        };
+        let Some(face) = self
+            .minor(id)
+            .and_then(|minor| self.face_toward(observer.cell, minor.cell))
+        else {
+            return Vec::new();
+        };
+        self.resolve_chain(id, face, PUSH_IMPULSE)
+    }
+
+    /// How many Guardians a push would remove. What the crosshair reports.
+    #[must_use]
+    pub fn preview_kills(&self, observer: &Observer) -> usize {
+        self.preview_chain(observer)
+            .iter()
+            .filter(|resolution| resolution.fate.is_lethal())
+            .count()
     }
 
     /// The lateral face a shove from `from` toward `to` travels along.
@@ -1054,6 +1106,7 @@ impl KineticWorld {
         let mut remaining = impulse;
         let mut travelled = 0;
         let mut fate = ShoveFate::Rest;
+        let mut struck = None;
 
         while travelled < MAX_TRAVEL_CELLS {
             // Momentum is spent only once the target is on railed floor.
@@ -1061,12 +1114,43 @@ impl KineticWorld {
                 fate = ShoveFate::Rest;
                 break;
             }
+
+            // Anything still carrying momentum that meets a Guardian hands the
+            // rest of it over and stops. The corridor is the bowling alley.
+            if let Some(next) = self.grid.neighbor(cell, face)
+                && remaining > 0
+                && next != from
+                && let Some(hit) = self
+                    .minors
+                    .iter()
+                    .find(|other| other.alive && other.cell == next && other.id != id)
+                && self.connected(cell, face)
+            {
+                struck = Some(hit.id);
+                fate = ShoveFate::Transferred;
+                break;
+            }
+
+            let blocked_by_structure = self
+                .passable_neighbor(cell, face)
+                .is_none_or(|next| self.cell(next).blocks_travel());
+            if blocked_by_structure {
+                // Driven into structure with momentum left: the wall does it.
+                // Arriving spent is just a body against a wall.
+                fate = if remaining > 0 {
+                    ShoveFate::Slammed
+                } else {
+                    ShoveFate::Blocked
+                };
+                break;
+            }
             let Some(next) = self.passable_neighbor(cell, face) else {
                 fate = ShoveFate::Blocked;
                 break;
             };
             let kind = self.cell(next);
-            if kind.blocks_travel() || (self.actor_occupies(next) && next != from) {
+            if self.actor_occupies(next) && next != from {
+                // An Observer, or a Guardian the branch above declined to chain.
                 fate = ShoveFate::Blocked;
                 break;
             }
@@ -1102,7 +1186,44 @@ impl KineticWorld {
             face,
             cells_travelled: travelled,
             fate,
+            struck,
+            remaining,
         })
+    }
+
+    /// Resolve a shove and everything it sets off, in order.
+    ///
+    /// Pure, like the single-hop version, so the preview can show the whole
+    /// chain rather than only its first link — a push that will knock three
+    /// Guardians down a corridor should *look* like one before it is paid for.
+    #[must_use]
+    pub fn resolve_chain(
+        &self,
+        id: MinorGuardianId,
+        face: HexFace,
+        impulse: u32,
+    ) -> Vec<ShoveResolution> {
+        let mut chain = Vec::new();
+        let mut current = Some((id, impulse));
+        // Bounded by the population: each Guardian is struck at most once, and a
+        // cycle would otherwise be a hang rather than a bug report.
+        let mut seen = Vec::new();
+
+        while let Some((target, force)) = current {
+            if seen.contains(&target) {
+                break;
+            }
+            seen.push(target);
+            let Some(resolution) = self.resolve_shove(target, face, force) else {
+                break;
+            };
+            current = resolution
+                .struck
+                .map(|next| (next, resolution.remaining.saturating_sub(1)))
+                .filter(|(_, force)| *force > 0);
+            chain.push(resolution);
+        }
+        chain
     }
 
     /// Advance one fixed tick.
@@ -1305,21 +1426,29 @@ impl KineticWorld {
             return;
         };
         let face = if away { toward } else { toward.opposite() };
-        let Some(resolution) = self.resolve_shove(target, face, impulse) else {
+        let chain = self.resolve_chain(target, face, impulse);
+        if chain.is_empty() {
             return;
-        };
+        }
 
         self.observers[index].charge -= cost;
-        if let Some(minor) = self.minors.iter_mut().find(|minor| minor.id == target) {
-            minor.cell = resolution.to;
-            minor.stagger = STAGGER_TICKS;
-            minor.step_progress = 0;
-        }
-        self.events.push(KineticEvent::Shoved(resolution));
+        for resolution in chain {
+            if let Some(minor) = self
+                .minors
+                .iter_mut()
+                .find(|minor| minor.id == resolution.guardian)
+            {
+                minor.cell = resolution.to;
+                minor.stagger = STAGGER_TICKS;
+                minor.step_progress = 0;
+            }
+            self.events.push(KineticEvent::Shoved(resolution));
 
-        // The tool did not kill this: the destination did.
-        if resolution.fate == ShoveFate::Void {
-            self.destroy_minor(target, resolution.to, false);
+            // The tool still kills nothing. Void, a committing plate and a wall
+            // are all the architecture; the tool only supplied the momentum.
+            if resolution.fate.is_lethal() && resolution.fate != ShoveFate::Doomed {
+                self.destroy_minor(resolution.guardian, resolution.to, false);
+            }
         }
     }
 
@@ -1678,15 +1807,90 @@ mod tests {
         )));
     }
 
+    /// A wall is lethal when you hit it hard, and inert when you do not.
+    ///
+    /// Both halves matter. Without the first, the tool is a no-op in a building
+    /// — measured on the solved facility, nearly every push simply stopped at
+    /// the next wall and cost charge for nothing. Without the second, momentum
+    /// stops meaning anything and every shove into structure kills regardless of
+    /// how much force was left.
     #[test]
-    fn structure_blocks_a_shove_without_destroying_anything() {
+    fn a_wall_kills_at_speed_and_does_nothing_at_rest() {
         let world = board_with_minor(coord(3, 2));
-        let resolution = world
+
+        let slam = world
             .resolve_shove(MinorGuardianId(0), HexFace::West, PUSH_IMPULSE)
             .expect("resolved");
-        assert_eq!(resolution.fate, ShoveFate::Blocked);
-        assert_eq!(resolution.to, coord(3, 2), "a blocked target does not move");
-        assert_eq!(world.living_minors(), 1);
+        assert_eq!(slam.fate, ShoveFate::Slammed, "full force into the wall");
+        assert!(slam.fate.is_lethal());
+        assert_eq!(
+            slam.to,
+            coord(3, 2),
+            "a slammed target does not pass through"
+        );
+
+        let spent = world
+            .resolve_shove(MinorGuardianId(0), HexFace::West, 0)
+            .expect("resolved");
+        assert_eq!(
+            spent.fate,
+            ShoveFate::Rest,
+            "no momentum, no slam: it is just standing next to a wall"
+        );
+        assert!(!spent.fate.is_lethal());
+    }
+
+    /// A push that reaches a Guardian hands the rest of its momentum on.
+    ///
+    /// This is what makes a corridor the best place to fight instead of the
+    /// worst: the horde arrives single file, and single file is a line of
+    /// dominoes.
+    #[test]
+    fn momentum_carries_through_a_line_of_guardians() {
+        let mut world = KineticWorld::authored();
+        world.observers[0].cell = coord(1, 4);
+        world.major.cell = coord(1, 1);
+        // Three in a row along the east lane, with the far rim behind them.
+        world.minors.truncate(2);
+        world.minors[0].cell = coord(5, 4);
+        world.minors[1].cell = coord(6, 4);
+
+        let chain = world.resolve_chain(MinorGuardianId(0), HexFace::East, PUSH_IMPULSE);
+        assert!(
+            chain.len() >= 2,
+            "the strike should have carried on, got {chain:#?}"
+        );
+        assert_eq!(chain[0].guardian, MinorGuardianId(0));
+        assert_eq!(chain[0].fate, ShoveFate::Transferred);
+        assert_eq!(chain[0].struck, Some(MinorGuardianId(1)));
+        assert_eq!(chain[1].guardian, MinorGuardianId(1));
+        assert!(
+            chain[1].cells_travelled > 0,
+            "the struck Guardian must actually move"
+        );
+    }
+
+    /// A chain cannot loop forever however the board is arranged.
+    #[test]
+    fn a_chain_terminates() {
+        let mut world = KineticWorld::authored();
+        world.observers[0].cell = coord(1, 1);
+        world.major.cell = coord(1, 2);
+        world.minors.truncate(2);
+        world.minors[0].cell = coord(4, 4);
+        world.minors[1].cell = coord(5, 4);
+
+        let chain = world.resolve_chain(MinorGuardianId(0), HexFace::East, PUSH_IMPULSE);
+        assert!(chain.len() <= world.minors.len() + 1);
+        let mut ids: Vec<_> = chain.iter().map(|link| link.guardian).collect();
+        let before = ids.len();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(
+            before,
+            ids.len(),
+            "a Guardian was struck twice in one chain"
+        );
     }
 
     #[test]

@@ -48,6 +48,31 @@ or shove one thirty degrees off screen, because your yaw happened to fall in a
 different bucket. Resolution stays discrete, so the shove is still the
 deterministic lattice walk canon requires.
 
+## What a shove can end in
+
+| Fate | Meaning |
+| --- | --- |
+| `Void` | Over an edge. Gone. |
+| `Slammed` | Driven into structure **with momentum left**. The wall kills it. |
+| `Doomed` | Landed on a plate that is already retracting. Dies when it commits. |
+| `Transferred` | Reached another Guardian and handed the rest of its momentum on. |
+| `Rest` | Ran out of momentum on floor. Alive, staggered. |
+| `Blocked` | Arrived at structure already spent. Just a body against a wall. |
+
+`Slammed` and `Transferred` are why the tool works indoors. A facility is mostly
+corridor; a corridor's next wall is always right there, and a shove that merely
+*stopped* at it did nothing — measured on the solved facility, a full siege
+produced **zero** kills and every push was a no-op that still cost charge. Making
+structure lethal at speed turned the most abundant thing in a building from the
+reason the tool failed into the reason it works.
+
+Chains are the other half. A corridor packs the horde single file, which used to
+be the worst thing about fighting in one: the front Guardian absorbed the shove
+and the rest walked over it. Now momentum carries down the line, and the crosshair
+grows with the number of Guardians a push would take, so a three-for-one is
+visible *before* you pay for it. Canon is untouched throughout — the tool still
+deals no damage, and what kills is still the architecture.
+
 ## The preview is the fairness argument
 
 `KineticWorld::resolve_shove` is pure and side-effect free, so the lab runs the
