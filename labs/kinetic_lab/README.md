@@ -1,294 +1,120 @@
-# Kinetic Tool
+# Kinetic / The Impulse Chamber
 
-The first-person half of Architect Ascent's step B proof. One question:
-
-> **Is a shove that commits a minor Guardian to void deterministic, readable,
-> and fair?**
+A first-person playground for immediate push/pull, continuous momentum, and
+eliminations caused by the environment. The old discrete schematic and generated
+siege are replaced. Their implementation remains in Git history.
 
 ```bash
 cargo dev-run -p kinetic_lab
+cargo dev-run -p kinetic_lab --bin kinetic_fps  # same experience
+cargo dev-run -p kinetic_lab -- --encounter
 ```
 
-## What the board is for
+Start with **Practice**. Resume with `P`, then click the chamber to capture the
+mouse. Line up a framed cube, push it, and watch where it actually goes. Try pulling
+it back, moving a crate into another body, and walking up the staircase to the
+unrailed catwalk. The lower shelf catches a fall; open void does not.
 
-A single floor, each feature present to make one rule visible:
-
-| Feature | The rule it proves |
-| --- | --- |
-| Void rim | A shove over the edge kills. The **edge** kills — the tool never does. |
-| Ledge run (`5..7, 3`) | Unrailed geometry does not spend momentum, so a three-cell impulse carries a target past three cells and over the rim. |
-| Retracting tile (`3, 5`) | A shove onto a doomed tile kills on a delay, not on contact. |
-| Wall (`2, 2`) | Structure blocks a shove outright, and a blocked target does not move. |
-| Recharge station (`2, 4`) | Charge returns only here, and only while the floor has power. |
-| Generator (`1, 1`) | Cutting power kills the station and collapses observation to your own cell. |
-| One major, two minors | The major freezes when you look at it. The minors do not care that you are looking. |
+![The practice chamber](../../docs/evidence/kinetic_lab/overhaul/chamber.png)
 
 ## Controls
 
-`W`/`S` are absent on purpose: the lattice is hex, so movement is six-faced.
+| Input | Action |
+|---|---|
+| WASD / Shift / Space | Move / sprint / jump |
+| Mouse | Look; the crosshair ray selects the first visible body |
+| LMB / RMB | One immediate push / pull per press |
+| E | Operate the nearby generator or bridge control |
+| 1 / 2 | Reset into practice / encounter |
+| R | Reset the current mode, all bodies, and the bridge |
+| P / Escape | Pause or resume / pause and release the cursor |
+| F3 / N | Toggle diagnostics / advance one paused tick |
 
-| Key | Action |
-| --- | --- |
-| `D` `C` `Z` `A` `Q` `E` | Step along East / SouthEast / SouthWest / West / NorthWest / NorthEast |
-| `Space` | Push the minor Guardian under the crosshair |
-| `F` | Pull it one cell back toward you |
-| `G` | Operate the generator (only while standing on it) |
-| `P` / `N` | Pause / advance exactly one tick |
-| `R` | Reset |
+The bottom buttons expose mode selection, reset, pause, and diagnostics without
+requiring their keyboard shortcuts. Losing window focus pauses the simulation and
+clears queued actions. Pausing freezes movement as well as opposition.
 
-## Aiming: selection continuous, resolution discrete
+## Rules
 
-**You do not fire down a lane.** The tool selects **what you are looking at** —
-the smallest angle to your aim inside a 45-degree cone, within `TOOL_RANGE`,
-with no wall in between — and then resolves the shove along the lattice face
-that points at it.
+The tool casts an eight-metre ray from the eye. It never selects an off-centre
+body or reaches through architecture. Push follows the full three-dimensional
+look direction; pull accelerates the selected body toward the eye. Both apply a
+mass-scaled impulse, with nominal velocity changes of 10 m/s and 7 m/s respectively.
+One press means one attempt; misses and refusals never spend charge. Cooldown is
+15 fixed ticks (250 ms).
 
-That split is the whole trick. Selection by the six 60-degree lattice faces made
-the crosshair decorative: you could look straight at a Guardian and be refused,
-or shove one thirty degrees off screen, because your yaw happened to fall in a
-different bucket. Resolution stays discrete, so the shove is still the
-deterministic lattice walk canon requires.
+Minors and crates collide with the actual room and each other. Fast contact can
+stagger a minor and transfer momentum, but ordinary walls and props never kill.
+A minor remains disabled from pursuit for at least 27 ticks after a shove and
+cannot resume pursuit until supported. Minors do not freeze when observed.
+There are no major Guardians in this lab.
 
-The cone is the *only* thing that widened. A push still travels one of six
-faces, still costs the same charge, and still resolves in the fixed tick. What
-changed is that pointing at a Guardian is now sufficient to grab it.
+The bridge control starts a two-second warning. When it expires, both the bridge
+mesh and its collider disappear, and navigation loses that crossing. Falling
+onto surviving geometry is survivable. Crossing the true-void boundary at y=-12
+removes the body; an Observer fall ends an encounter and resets the body in practice.
+There is no ordinary-impact damage, health pool, or instant visual-only death.
 
-### The reticle reports range and capability separately
+- **Practice:** Stationary targets, unlimited charge, no capture. Reset restores
+  the scene. The HUD explicitly labels the unlimited charge rule.
+- **Encounter:** Three waves of two, three, then four pursuing minors. Five seconds
+  precede the first wave and separate cleared waves. Clear all three to win;
+  an active, supported minor catching the Observer ends the attempt.
+- **Charge:** Encounter starts at 100. Each successful push or pull costs 10.
+  Standing within 2.2 metres of a visible powered station restores 25 per second.
+  The generator is operable within 2.5 metres. No passive regeneration exists.
 
-`KineticWorld::aim_state` answers one question — what would the trigger do — in
-one value, and both views read it. Three situations that used to collapse into
-an identical dim dot are now distinct, because "walk closer", "look elsewhere"
-and "there is nothing there" call for opposite reactions:
+## What owns the truth
 
-| Reticle | `AimState` | Meaning |
-| --- | --- | --- |
-| Open, dim | `Empty` | Nothing in the cone at any distance |
-| Open, amber | `OutOfReach` | Seen, too far. The gap closes as you walk in — it is a distance meter |
-| Open, red | `Occluded` | In the cone and in range, with architecture in the way. Moving closer will not help |
-| Shut, white | `Reach { kills: 0 }` | Grabbed. This push lands but nothing dies |
-| Shut, green | `Reach { kills: n }` | Grabbed, and the arms lengthen with the number of Guardians the chain takes |
+`model` owns commands, target queries, fixed-tick rules, snapshots, events, and
+stable actor IDs. `arena` supplies one authored list of cuboids to rendering and
+collision. Navigation uses authored waypoints with wall, support, and step checks.
+A traced priority behavior tree selects practice, stagger, airborne, pursuit, or
+capture behavior; movement still resolves against geometry.
 
-Range lives in the gap and capability in the colour, so the two readings never
-have to compete for the same channel. `the_reticle_says_range_and_capability_separately`
-and `the_gap_closes_as_the_target_comes_into_reach` hold that apart in tests,
-because a reticle that lies about range is not something a screenshot proves.
+`physics` owns raw Rapier 0.34 with `enhanced-determinism`. The lab explicitly
+steps it at 60 Hz, with CCD on dynamic targets and stable insertion order. The
+player uses the shared production controller through its query-based entry point,
+so movement and kinetic objects share the same collision scene. Rapier's disposable
+pipeline scratch is rebuilt; durable solver/contact state is cloned with snapshots.
 
-Two more channels back it up. The floor outlines every plate the tool can reach,
-which is a stable footprint rather than a wedge that swings with the mouse, and
-it stops at walls for the same reason the crosshair goes red. A ring lands under
-whichever Guardian the cone actually selected, coloured by the fate of the shot —
-with a 45-degree cone the crosshair alone no longer says *which* one is about to
-be grabbed.
+A `KineticWorld` clone is an in-memory continuation snapshot. `digest()` fingerprints
+rules, tuning, geometry, actor and player state. Replaying commands and restoring a
+mid-flight snapshot are tested for per-tick equality. This is a local repeatability
+proof, not a claim of newly certified cross-platform networking.
 
-## What a shove can end in
+`runtime` consumes abstract movement and tool commands, queues one-shot events
+across frame catch-up, and owns pause/reset scheduling. `view` interpolates poses
+and provides sound, recoil, muzzle/contact flashes, target brackets, and diagnostics.
+The reticle reports the current selection and capability; it never promises a
+future kill in a moving scene.
 
-| Fate | Meaning |
-| --- | --- |
-| `Void` | Over an edge. Gone. |
-| `Slammed` | Driven into structure **with momentum left**. The wall kills it. |
-| `Doomed` | Landed on a plate that is already retracting. Dies when it commits. |
-| `Transferred` | Reached another Guardian and handed the rest of its momentum on. |
-| `Rest` | Ran out of momentum on floor. Alive, staggered. |
-| `Blocked` | Arrived at structure already spent. Just a body against a wall. |
+All colors come from `observed_style::kinetic`. Lit edges distinguish minors;
+crates have contrasting structural bands; target brackets identify the selected
+body. Broken edge stripes mean unsafe geometry, and the lower landing has its own
+treatment. Generator loss changes recharge, while critical signals keep their
+emission. Device labels name the generator, station, and bridge control.
 
-`Slammed` and `Transferred` are why the tool works indoors. A facility is mostly
-corridor; a corridor's next wall is always right there, and a shove that merely
-*stopped* at it did nothing — measured on the solved facility, a full siege
-produced **zero** kills and every push was a no-op that still cost charge. Making
-structure lethal at speed turned the most abundant thing in a building from the
-reason the tool failed into the reason it works.
-
-Chains are the other half. A corridor packs the horde single file, which used to
-be the worst thing about fighting in one: the front Guardian absorbed the shove
-and the rest walked over it. Now momentum carries down the line, and the crosshair
-grows with the number of Guardians a push would take, so a three-for-one is
-visible *before* you pay for it. Canon is untouched throughout — the tool still
-deals no damage, and what kills is still the architecture.
-
-## The preview is the fairness argument
-
-`KineticWorld::resolve_shove` is pure and side-effect free, so the lab runs the
-*same* computation a tick would run and draws the result before the trigger is
-pulled: the destination cell, the path to it, and the fate. Green means the
-target ends in void, amber means it ends on a tile that is already retracting,
-grey means it survives, red means structure blocks the shove. A lethal
-destination also gets a second ring, so the outcome never rides on hue alone.
-
-If the preview and the outcome ever disagree, that is a bug in the model, not a
-rendering artifact — they are the same function.
-
-![Shove preview](../../docs/evidence/kinetic_lab/shove-preview.png)
-
-The panel above reads `aim: Void after 4 cells` against a three-cell impulse:
-the ledge run carried the target one cell further than the push itself could.
-See [the evidence note](../../docs/evidence/kinetic_lab/README.md).
-
-## First person
-
-```bash
-cargo dev-run -p kinetic_lab --bin kinetic_fps
-```
-
-![First person, with the reach footprint drawn](../../docs/evidence/kinetic_lab/fps-reach.png)
-
-The same board, the same rules, standing on the floor instead of looking down at
-it. `WASD` move, `SHIFT` run, `SPACE` jump, `LMB` push, `RMB` pull, `E` operate
-the generator, `P` pause, `R` reset, `ESC` release the cursor.
-
-**Firing has a body.** A held tool recoils, its emitter flashes, a light of the
-shot's own fate colour flares where the shot landed, and a cue plays — a
-different one for a shove, a kill, a refusal, a recharge and a capture. Every
-cue is an existing CC0 `.ogg` from `assets/sounds`, generated in-repo by
-`tools/generate_audio.py` from no external source material, so the placeholders
-need nothing downloaded and nothing licensed. `every_cue_has_a_file_behind_it`
-checks each slot resolves to a real file: a missing asset is not an error a
-player ever sees, it is a sound that silently never plays, and one of these was
-exactly that for its whole first pass.
-
-**The split that makes this safe.** `model.rs` owns every rule on whole lattice
-cells and is untouched by embodiment. `embodied.rs` owns where the body
-physically is, and each tick reports exactly two derived facts back: the cell it
-stands on, and the face it looks down. Nothing else crosses. The shove therefore
-still resolves in fixed-tick simulation on the lattice, never by a physics query,
-while the player walks and aims continuously. The controller
-(`observed_traversal::step_body`) is already pure and already runs at `FIXED_DT`,
-which *is* this model's tick, so embodiment adds no new nondeterminism —
-`identical_inputs_reproduce_identical_bodies_and_boards` holds both the board
-digest and the body itself equal across 600 scripted ticks.
-
-**Shape language.** Canon: original geometric constructs, with "Modron" a mood
-reference only, never shipped terminology and never a copied design. What the
-mood contributes is a principle that stands on its own — **rank reads as the
-order of the solid**. A minor Guardian is a cube; the major is a tetrahedron,
-the pyramidal silhouette canon already fixed. Everything of the facility crosses
-between cells in a snap and then holds, because Guardians already moved in
-quantised steps for determinism's sake. A compile-time assert keeps the snap
-shorter than the step interval, so tuning one without the other cannot quietly
-turn the clockwork into a glide.
-
-**Floor plates are rectangles on purpose.** The lattice tiles exactly with 14x12
-plates sheared 7 per row — no gaps, no overlaps, and void leaves an exact hole to
-fall through. The hex lattice stays the connectivity and targeting structure. An
-authored tile's geometry was never required to be a hex prism, and rendering
-exactly what you collide with is what the Legibility Contract demands.
-
-## The siege: a real facility, and a clock
-
-```bash
-cargo dev-run -p kinetic_lab --bin kinetic_fps -- --siege
-cargo dev-run -p kinetic_lab --bin kinetic_fps -- --siege --minutes=5 --no-jail
-```
-
-![The siege facility](../../docs/evidence/kinetic_lab/siege-facility.png)
-
-Waves of minor Guardians on a clock, inside a board the **production WFC solver**
-produced rather than the authored rectangle.
-
-**What is real:** the layout. Cell occupancy, the void between structures, and
-the per-face door mask all come from `HexWfcWorld` at a pinned seed, so walls are
-where the solver put walls. That is not cosmetic — every rule now goes through
-`KineticWorld::passable_neighbor`, so a shove stops at a wall, sight stops at a
-wall, and a Guardian has to come through a doorway like everything else. The
-authored board leaves every face open, which is exactly why it plays as an open
-plain and why the screenshot above looks nothing like it.
-
-**What is not real:** the geometry. Plates are still flat rectangles and walls
-are face slabs on the six lattice faces. Projecting the authored tile *hulls*
-needs a mesh collider and is separate work. Saying so here is cheaper than a
-reader inferring otherwise from the picture.
-
-The siege itself: a wave every 12 seconds after a 6-second grace, growing one
-Guardian every second wave up to six, capped at `MAX_LIVE_MINORS` so presentation
-can hold a fixed pool of shells rather than spawning entities mid-match. Spawns
-are at least four plates away, never in void, never on top of you, and seeded per
-wave so the same run reproduces. Outlast the clock and the overlay reads
-SURVIVED with your wave and kill count; get caught and it reads OVERRUN.
-
-## Launch flags
-
-Both binaries take the same flags. Pass them after `--`:
-
-```bash
-cargo dev-run -p kinetic_lab --bin kinetic_fps -- --no-jail
-cargo dev-run -p kinetic_lab --bin kinetic_fps -- --no-guardians
-cargo dev-run -p kinetic_lab --bin kinetic_fps -- --help
-```
-
-| Flag | Effect |
-| --- | --- |
-| `--no-minors` | The minor Guardians are never spawned |
-| `--no-major` | The major Guardian is out of play: never moves, never captures, never drawn, never blocks a shove |
-| `--no-guardians` | Both of the above |
-| `--no-jail` | A Guardian reaching you no longer ends the run |
-| `--siege` | A solved WFC facility, and waves of Guardians to outlast |
-| `--minutes=N` | How long the siege lasts (default 3) |
-| `--seed=N` | Solve a different facility — a different building, for free |
-
-These are **authoritative**, not presentation toggles: they live on
-`KineticWorld::rules`, ride in the determinism digest, and are obeyed identically
-by the schematic view, the first-person view, and the headless runner. The HUD
-names whatever is switched off, so a screenshot taken with the pressure removed
-cannot be mistaken for one taken with it on.
-
-They exist because feel is tuned by taking things away. `--no-jail` is the one to
-reach for when studying the tool itself — a Guardian becomes something to shove
-rather than a fail state, and you can stand in the open and watch a shove land
-without a clock on you. `--no-guardians` leaves an empty facility, which is the
-honest way to judge whether the board is too big.
-
-## Recording the demo
-
-```bash
-OBSERVED2_CAPTURE_SEQUENCE=docs/evidence/kinetic_lab/frames \
-  cargo run -p kinetic_lab --bin kinetic_fps
-ffmpeg -y -framerate 60 -i docs/evidence/kinetic_lab/frames/frame_%04d.png \
-  -c:v libx264 -pix_fmt yuv420p -crf 20 -movflags +faststart \
-  docs/evidence/kinetic_lab/kinetic_shove.mp4
-```
-
-Result: [kinetic_shove.mp4](../../docs/evidence/kinetic_lab/kinetic_shove.mp4).
-The scenario's opening positions are staged; every tick after that is a scripted
-`PlayerIntent` + `ToolRequest` through the ordinary `Embodiment::step`, so the
-video records the rules running rather than an animation of them, and the
-deterministic model reproduces it frame for frame. Capture parks `FixedUpdate`
-and advances one tick per rendered frame, because saving a PNG per frame is much
-slower than the simulation and fixed-step catch-up would otherwise skip state.
-
-## What this lab is not
-
-It is not the economy proof. Disturbance waves, the Architect's hand, card
-legality, and the wave/charge budget live at cell level in `architect_lab`; this
-lab holds one Observer, a fixed pair of minors and one major, and asks only
-whether the tool itself reads honestly.
-
-And it does not close the *feel* question by itself. The first-person view puts
-a body and a mouse behind the tool, which is what the design doc's step B asks
-for, but whether a shove is **satisfying** is decided by a person at the keyboard
-and remains the open human gate. What the two views establish is narrower and
-still worth having: the rules are legible, reproducible, and identical across two
-independent presentations of one simulation.
-
-## Shoves are simulation, not physics
-
-Travel is a discrete walk along hex faces inside the fixed-tick model, so an
-identical snapshot and intent reproduce an identical impulse, destination, and
-destroyed actor. Nothing here consults a physics engine, and nothing may start
-to — see `rapier_determinism_lab` for why that boundary is drawn where it is.
-`identical_intents_reproduce_identical_state_every_tick` compares a state digest
-on all 600 ticks of a scripted run, so new state cannot quietly escape the
-contract.
-
-## Verification
+## Verification and evidence
 
 ```bash
 cargo fmt --all
 cargo dev-clippy
 cargo dev-test
-cargo run -p kinetic_lab   # OBSERVED2_CAPTURE=<path> writes a preview screenshot
+OBSERVED2_CAPTURE=docs/evidence/kinetic_lab/overhaul/chamber.png cargo dev-run -p kinetic_lab
+OBSERVED2_CAPTURE_SEQUENCE=/tmp/kinetic-frames cargo dev-run -p kinetic_lab
 ```
 
-Rust coverage includes every shove fate (void, ledge carry, rest, delayed
-retraction kill, blocked), the observation asymmetry in both directions, power
-gating on recharge and sight, tool refusals, pull, generator operation,
-preview purity, the ledge-ring travel cap, single-keypress-single-shove through
-the real Bevy schedule, and ten consecutive resets with no entity leak.
+The capture sequence stages five initial snapshots and then submits ordinary
+movement, aiming, and tool commands. It demonstrates prop contact, pull, a
+recoverable player fall, a void shove, and bridge retraction. Its tests require
+those physical outcomes. The generated `verification.txt` records events and final
+digests; screenshots advance one tick per rendered frame and are sampled at 15 fps.
+
+See [evidence and verification](../../docs/evidence/kinetic_lab/overhaul/README.md).
+The automated checks establish physical behavior, replay, and lifecycle correctness.
+Whether the tool feels satisfying still requires a person playing at the keyboard.
+
+This lab does not integrate WFC, majors, teammate boosts, equipment manipulation,
+Architect gameplay, or production multiplayer. Old siege, seed, and opposition
+flags now fail explicitly with a pointer to `--help`.

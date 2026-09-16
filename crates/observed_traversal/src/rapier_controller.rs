@@ -345,6 +345,41 @@ pub fn step_character_with_settings(
     rapier: RapierKinematicSettings,
     dt: f32,
 ) -> FpsStep {
+    let active = |handle: ColliderHandle, collider: &Collider| {
+        scene
+            .stable_handles
+            .get(&super::StableColliderId(collider.user_data as u32))
+            == Some(&handle)
+    };
+    let query = scene.broad_phase.as_query_pipeline(
+        scene.narrow_phase.query_dispatcher(),
+        &scene.bodies,
+        &scene.colliders,
+        QueryFilter::default().predicate(&active),
+    );
+    step_character_in_query(
+        &query,
+        body,
+        intent,
+        config,
+        rapier,
+        dt,
+        (scene.safety_center, scene.safety_half),
+    )
+}
+
+/// Run the production controller against a caller-owned collision world.
+/// The query must exclude the controlled body's own collider. Bounds retain the
+/// existing recovery contract; callers receive `recovered` before deciding fate.
+pub fn step_character_in_query(
+    query: &QueryPipeline<'_>,
+    body: &mut FpsBody,
+    intent: PlayerIntent,
+    config: &FpsConfig,
+    rapier: RapierKinematicSettings,
+    dt: f32,
+    bounds: (Vec3, Vec3),
+) -> FpsStep {
     let mut intent = intent;
     if intent.movement.length_squared() > 1.0 {
         intent.movement = intent.movement.normalize_or_zero();
@@ -401,23 +436,11 @@ pub fn step_character_with_settings(
         min_slope_slide_angle: rapier.minimum_slope_slide_degrees.to_radians(),
         ..Default::default()
     };
-    let active = |handle: ColliderHandle, collider: &Collider| {
-        scene
-            .stable_handles
-            .get(&super::StableColliderId(collider.user_data as u32))
-            == Some(&handle)
-    };
-    let query = scene.broad_phase.as_query_pipeline(
-        scene.narrow_phase.query_dispatcher(),
-        &scene.bodies,
-        &scene.colliders,
-        QueryFilter::default().predicate(&active),
-    );
     let pose = Pose::translation(body.position.x, body.position.y, body.position.z);
     let desired = body.velocity * dt;
     let movement = controller.move_shape(
         dt,
-        &query,
+        query,
         &capsule,
         &pose,
         Vector::new(desired.x, desired.y, desired.z),
@@ -436,10 +459,10 @@ pub fn step_character_with_settings(
         body.velocity.y = 0.0;
     }
 
-    let safety_delta = body.position - scene.safety_center;
-    if safety_delta.x.abs() > scene.safety_half.x
-        || safety_delta.y.abs() > scene.safety_half.y
-        || safety_delta.z.abs() > scene.safety_half.z
+    let safety_delta = body.position - bounds.0;
+    if safety_delta.x.abs() > bounds.1.x
+        || safety_delta.y.abs() > bounds.1.y
+        || safety_delta.z.abs() > bounds.1.z
     {
         let (spawn, yaw) = (body.spawn, body.spawn_yaw);
         *body = FpsBody::spawned(spawn, yaw);

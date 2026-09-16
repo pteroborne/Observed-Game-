@@ -5904,12 +5904,11 @@ name = "kinetic_lab"
 version = "0.1.0"
 dependencies = [
  "bevy 0.19.1",
- "observed_assets",
- "observed_core",
- "observed_facility",
- "observed_hex",
+ "glam 0.32.1",
+ "observed_style",
  "observed_traversal",
  "player_input",
+ "rapier3d",
 ]
 
 [[package]]

@@ -4,33 +4,15 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
+default-run = "kinetic_lab"
+
 [dependencies]
-# "2d" drives the schematic view, "3d" the first-person view. Both read the same
-# model; neither owns a rule.
-bevy = { version = "0.19", default-features = false, features = [
-    "ui",
-    "2d",
-    "3d",
-    "png",
-    # Firing a tool that makes no sound is the single biggest missing piece of
-    # feedback. The cues are the repo's own CC0 one-shots.
-    "bevy_audio",
-    "vorbis",
-] }
-observed_core = { path = "../../crates/observed_core" }
-# The audio slot table. These `.ogg` files are CC0 and generated in-repo by
-# `tools/generate_audio.py` from no external source material, so using them as
-# placeholders needs no third-party licence and nothing downloaded.
-observed_assets = { path = "../../crates/observed_assets" }
-# The real hex WFC solver. The siege facility is a solved `HexWfcWorld` at a
-# pinned seed rather than an authored rectangle, so the lab's walls, doorways and
-# void are the ones the production solver actually produces.
-observed_facility = { path = "../../crates/observed_facility" }
-observed_hex = { path = "../../crates/observed_hex" }
-# The deterministic fixed-tick character controller. Already pure, already
-# stepped at FIXED_DT, so embodiment introduces no new nondeterminism.
+glam = "0.32"
+bevy = { version = "0.19", default-features = false, features = ["ui", "3d", "png", "bevy_audio", "vorbis"] }
 observed_traversal = { path = "../../crates/observed_traversal" }
+observed_style = { path = "../../crates/observed_style" }
 player_input = { path = "../../crates/player_input" }
+rapier3d = { version = "0.34", features = ["enhanced-determinism"] }
 
 [[bin]]
 name = "kinetic_lab"

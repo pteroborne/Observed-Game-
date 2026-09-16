@@ -16,6 +16,7 @@
 //! tests live here.
 
 pub mod iso;
+pub mod kinetic;
 
 use bevy::color::{Color, LinearRgba};
 
