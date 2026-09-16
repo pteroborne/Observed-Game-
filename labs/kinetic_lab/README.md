@@ -30,7 +30,7 @@ A single floor, each feature present to make one rule visible:
 | Key | Action |
 | --- | --- |
 | `D` `C` `Z` `A` `Q` `E` | Step along East / SouthEast / SouthWest / West / NorthWest / NorthEast |
-| `Space` | Push the first minor Guardian in the facing lane |
+| `Space` | Push the minor Guardian under the crosshair |
 | `F` | Pull it one cell back toward you |
 | `G` | Operate the generator (only while standing on it) |
 | `P` / `N` | Pause / advance exactly one tick |
@@ -38,15 +38,47 @@ A single floor, each feature present to make one rule visible:
 
 ## Aiming: selection continuous, resolution discrete
 
-The tool selects **what you are looking at** — the smallest angle to your aim
-inside a 22-degree cone, within `TOOL_RANGE`, with no wall in between — and then
-resolves the shove along the lattice face that points at it.
+**You do not fire down a lane.** The tool selects **what you are looking at** —
+the smallest angle to your aim inside a 45-degree cone, within `TOOL_RANGE`,
+with no wall in between — and then resolves the shove along the lattice face
+that points at it.
 
 That split is the whole trick. Selection by the six 60-degree lattice faces made
 the crosshair decorative: you could look straight at a Guardian and be refused,
 or shove one thirty degrees off screen, because your yaw happened to fall in a
 different bucket. Resolution stays discrete, so the shove is still the
 deterministic lattice walk canon requires.
+
+The cone is the *only* thing that widened. A push still travels one of six
+faces, still costs the same charge, and still resolves in the fixed tick. What
+changed is that pointing at a Guardian is now sufficient to grab it.
+
+### The reticle reports range and capability separately
+
+`KineticWorld::aim_state` answers one question — what would the trigger do — in
+one value, and both views read it. Three situations that used to collapse into
+an identical dim dot are now distinct, because "walk closer", "look elsewhere"
+and "there is nothing there" call for opposite reactions:
+
+| Reticle | `AimState` | Meaning |
+| --- | --- | --- |
+| Open, dim | `Empty` | Nothing in the cone at any distance |
+| Open, amber | `OutOfReach` | Seen, too far. The gap closes as you walk in — it is a distance meter |
+| Open, red | `Occluded` | In the cone and in range, with architecture in the way. Moving closer will not help |
+| Shut, white | `Reach { kills: 0 }` | Grabbed. This push lands but nothing dies |
+| Shut, green | `Reach { kills: n }` | Grabbed, and the arms lengthen with the number of Guardians the chain takes |
+
+Range lives in the gap and capability in the colour, so the two readings never
+have to compete for the same channel. `the_reticle_says_range_and_capability_separately`
+and `the_gap_closes_as_the_target_comes_into_reach` hold that apart in tests,
+because a reticle that lies about range is not something a screenshot proves.
+
+Two more channels back it up. The floor outlines every plate the tool can reach,
+which is a stable footprint rather than a wedge that swings with the mouse, and
+it stops at walls for the same reason the crosshair goes red. A ring lands under
+whichever Guardian the cone actually selected, coloured by the fate of the shot —
+with a 45-degree cone the crosshair alone no longer says *which* one is about to
+be grabbed.
 
 ## What a shove can end in
 
@@ -87,7 +119,7 @@ rendering artifact — they are the same function.
 
 ![Shove preview](../../docs/evidence/kinetic_lab/shove-preview.png)
 
-The panel above reads `lane: Void after 4 cells` against a three-cell impulse:
+The panel above reads `aim: Void after 4 cells` against a three-cell impulse:
 the ledge run carried the target one cell further than the push itself could.
 See [the evidence note](../../docs/evidence/kinetic_lab/README.md).
 
@@ -97,11 +129,21 @@ See [the evidence note](../../docs/evidence/kinetic_lab/README.md).
 cargo dev-run -p kinetic_lab --bin kinetic_fps
 ```
 
-![First-person lane](../../docs/evidence/kinetic_lab/fps-lane.png)
+![First person, with the reach footprint drawn](../../docs/evidence/kinetic_lab/fps-reach.png)
 
 The same board, the same rules, standing on the floor instead of looking down at
 it. `WASD` move, `SHIFT` run, `SPACE` jump, `LMB` push, `RMB` pull, `E` operate
 the generator, `P` pause, `R` reset, `ESC` release the cursor.
+
+**Firing has a body.** A held tool recoils, its emitter flashes, a light of the
+shot's own fate colour flares where the shot landed, and a cue plays — a
+different one for a shove, a kill, a refusal, a recharge and a capture. Every
+cue is an existing CC0 `.ogg` from `assets/sounds`, generated in-repo by
+`tools/generate_audio.py` from no external source material, so the placeholders
+need nothing downloaded and nothing licensed. `every_cue_has_a_file_behind_it`
+checks each slot resolves to a real file: a missing asset is not an error a
+player ever sees, it is a sound that silently never plays, and one of these was
+exactly that for its whole first pass.
 
 **The split that makes this safe.** `model.rs` owns every rule on whole lattice
 cells and is untouched by embodiment. `embodied.rs` owns where the body

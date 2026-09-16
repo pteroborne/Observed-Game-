@@ -9,14 +9,14 @@ OBSERVED2_CAPTURE=docs/evidence/kinetic_lab/shove-preview.png cargo run -p kinet
 ```
 
 The capture pauses time and stands the Observer west of the ledge run with a
-minor Guardian in the lane, so the frame shows a live preview rather than an
-idle board.
+minor Guardian squarely in view, so the frame shows a live preview rather than
+an idle board.
 
 ## What the frame proves
 
 The green line runs from the minor Guardian at `(4, 3)`, across the three amber
 **ledge** cells at `(5..7, 3)`, to a double ring on the void rim at `(8, 3)`, and
-the panel reads `lane: Void after 4 cells`.
+the panel reads `aim: Void after 4 cells`.
 
 That number is the point. A push carries `PUSH_IMPULSE = 3` cells, but ledges do
 not consume impulse, so the target travels **four** and leaves the floor. The
@@ -36,25 +36,56 @@ retracting, red that structure blocks the shove.
 | Yellow square | `(1, 1)` | Generator — cut power here and sight collapses to your own cell |
 | Grey hex | `(2, 2)` | Wall — a shove into it is `Blocked` and nothing moves |
 | Green ringed square | `(2, 4)` | Recharge station, drawn live because the floor has power |
-| Cyan square | `(3, 3)` | Observer, with the facing lane drawn east |
+| Cyan square | `(3, 3)` | Observer, ringed by every plate the tool can reach |
 | Orange squares | `(4, 3)`, `(3, 4)` | Minor Guardians — neither freezes when looked at |
 | Dark red hex | `(3, 5)` | Retracting tile, fading toward void as its countdown runs |
 | Amber hexes | `(5..7, 3)` | The unrailed ledge run |
-| Pink square | `(6, 5)` | Major Guardian, drawn awake because it is outside the lane |
+| Pink square | `(6, 5)` | Major Guardian, drawn awake because nothing is looking at it |
 
 ## First person, same board
 
-![First-person lane](fps-lane.png)
+![First person, with the reach footprint drawn](fps-reach.png)
 
 ```bash
-OBSERVED2_CAPTURE=docs/evidence/kinetic_lab/fps-lane.png \
+OBSERVED2_CAPTURE=docs/evidence/kinetic_lab/fps-reach.png \
   cargo run -p kinetic_lab --bin kinetic_fps
 ```
 
-The same `KineticWorld`, the same `resolve_shove`, the same `lane: Void after 4
+The same `KineticWorld`, the same `resolve_shove`, the same `aim: Void after 4
 cells` — now standing on the floor rather than looking down at it. The capture
 pauses the board first, because with capture working a Guardian one plate away
 jails you in 24 ticks.
+
+**The cyan grid on the floor is the tool's reach**, one outline per plate within
+`TOOL_RANGE` that has a clear line to it. It answers the question the old
+recording provoked — *do I have to fire down a lane?* — in the only place an
+answer is worth anything, which is on the floor in front of the player: the
+footprint is a blob of two dozen plates in every direction, not a row.
+
+It replaced a single line drawn down the Observer's facing face, a leftover from
+lane targeting that survived the rework and went on teaching the rule the rework
+removed. Two things are worth recording about why the replacement is plates and
+not a swept wedge. A wedge drawn from the aim vector swings with every mouse
+movement, which is noise rather than information. And a ground arc at the tool's
+42-metre reach sits within two degrees of eye level in a first-person view: the
+first cut of this footprint drew exactly that and read as a stray horizon line,
+which is also how the bug behind it was found — the outlines had been placed
+`PLATE_THICKNESS / 2` above the floor, on the assumption that the constant was a
+surface offset, when it is how far a plate hangs *below* `FLOOR_TOP`.
+
+**The reticle** is four arms around a dot, and it carries two readings at once.
+The gap is range: it closes as a Guardian comes toward `TOOL_RANGE` and snaps
+shut the moment the tool can actually grab it. Colour and arm length are
+capability: amber for seen-but-too-far, red for a wall in the way, white for a
+grab that only staggers, green with longer arms for a chain that kills, and the
+arms grow with the number of Guardians the chain takes. The HUD's `aim:` line
+says the same thing in words, so the two can be checked against each other in a
+single frame.
+
+**A ring lands under the selected Guardian**, coloured by the fate of the shot.
+With a 45-degree cone the crosshair alone no longer says *which* Guardian is
+about to be grabbed; this says it on the Guardian, where the player is already
+looking.
 
 **Shape language.** Rank reads as the order of the solid. The orange **cube** is
 a minor Guardian, the pink **tetrahedron** the major — a rarer solid for a rarer
@@ -92,7 +123,7 @@ ffmpeg -y -framerate 60 -i docs/evidence/kinetic_lab/frames/frame_%04d.png \
 The frame directory is gitignored; the mp4 is the tracked artefact, exactly as
 for `district_tour.mp4`.
 
-The run holds on the lane for a second and a half with the preview beam already
+The run holds on the target for a second and a half with the preview beam already
 up, pushes at tick 90, follows the target down as it crosses the ledge run and
 goes over the rim, then walks. Two things only a recording can show: the
 clockwork snap-and-hold of a Guardian between plates, and a shove actually
@@ -118,8 +149,8 @@ ffmpeg -y -framerate 60 -i docs/evidence/kinetic_lab/frames/frame_%04d.png \
   docs/evidence/kinetic_lab/kinetic_tour.mp4
 ```
 
-It demonstrates, in order: the lane drawn with and without a target; the
-crosshair's three states; a lethal push carrying past the impulse into void; a
+It demonstrates, in order: the reach footprint drawn with and without a target;
+the reticle's five states; a lethal push carrying past the impulse into void; a
 refused push and a refused generator, each announced; a pull; a push onto solid
 floor that only staggers; recharging at a live station; cutting and restoring
 power; a jump; walking off the rim into void and respawning; being jailed; and a
@@ -182,8 +213,23 @@ OBSERVED2_CAPTURE_SEQUENCE=docs/evidence/kinetic_lab/frames \
   cargo run -p kinetic_lab --bin kinetic_fps -- --siege --minutes=1
 ```
 
-The run ends **SURVIVED**: five waves outlasted, five Guardians put into the
+The run ends **SURVIVED**: five waves outlasted, six Guardians put into the
 architecture.
+
+It reads **six** rather than the five it read on the first cut, and nothing about
+the facility, the waves or the clock changed. Widening the selection cone to 45
+degrees and then fixing the recording bot to fire on the target the cone actually
+picked — it had been firing on a lethal Guardian that was not the one the cone
+selected — is worth one extra kill a minute, which is a fair summary of how much
+of "the tool is ineffective" was really "the tool was hard to point".
+
+The last frame is also worth a look for a reason that has nothing to do with the
+tool. It used to carry **SURVIVED** on the overlay and **JAILED** in the HUD in
+the same frame: the clock ran out, the match was won, and the Guardians kept
+walking for another eleven seconds until one reached the Observer. Two
+authoritative readings of one moment, flatly contradicting each other. A decided
+siege now freezes its opposition, and `outlasting_the_clock_survives` and
+`winning_cannot_be_taken_back_by_a_guardian` hold it there.
 
 The first cut of this exact recording — same seed, same script, same minute —
 ended **OVERRUN on wave 5 with zero kills**. Nothing about the facility, the

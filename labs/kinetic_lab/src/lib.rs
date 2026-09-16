@@ -33,6 +33,7 @@ pub mod siege;
 
 use bevy::{
     app::AppExit,
+    asset::AssetPlugin,
     input::InputSystems,
     prelude::*,
     render::view::screenshot::{Screenshot, save_to_disk},
@@ -93,10 +94,18 @@ impl Plugin for KineticFpsPlugin {
             .insert_resource(embodiment)
             .init_resource::<FpsRuntime>()
             .insert_resource(Time::<Fixed>::from_hz(f64::from(model::TICKS_PER_SECOND)))
-            .add_systems(Startup, (fps::setup_scene, fps::grab_cursor).chain())
+            .add_systems(
+                Startup,
+                (fps::load_cues, fps::setup_scene, fps::grab_cursor).chain(),
+            )
             .add_systems(
                 FixedUpdate,
-                (fps::simulate, fps::refresh_arena_after_retraction).chain(),
+                (
+                    fps::simulate,
+                    fps::play_cues,
+                    fps::refresh_arena_after_retraction,
+                )
+                    .chain(),
             )
             .add_systems(
                 Update,
@@ -109,9 +118,11 @@ impl Plugin for KineticFpsPlugin {
                     fps::present_guardians,
                     fps::present_stations,
                     fps::present_preview,
+                    fps::present_target_ring,
+                    fps::present_shot_feedback,
                     fps::present_crosshair,
                     fps::present_jail_overlay,
-                    fps::draw_lane,
+                    fps::draw_reach,
                     fps::update_hud,
                 )
                     .chain(),
@@ -125,16 +136,30 @@ pub fn run_fps() {
 
     let mut app = App::new();
     app.insert_resource(ClearColor(Color::srgb(0.004, 0.006, 0.010)))
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Observed 2 — Kinetic Tool (first person)".to_string(),
-                resolution: WindowResolution::new(1440, 900),
-                present_mode: PresentMode::AutoVsync,
-                resizable: true,
-                ..default()
-            }),
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                // A lab binary's default asset root is its own crate directory,
+                // which has no `assets/`. Every cue loaded silently as a "Path
+                // not found" error and the tool stayed mute — exactly the
+                // missing feedback this pass is about. The game resolves the
+                // workspace root through the same helper.
+                .set(AssetPlugin {
+                    file_path: observed_assets::assets_root()
+                        .to_string_lossy()
+                        .into_owned(),
+                    ..default()
+                })
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "Observed 2 — Kinetic Tool (first person)".to_string(),
+                        resolution: WindowResolution::new(1440, 900),
+                        present_mode: PresentMode::AutoVsync,
+                        resizable: true,
+                        ..default()
+                    }),
+                    ..default()
+                }),
+        )
         .add_plugins(KineticFpsPlugin { rules });
 
     if let Ok(path) = std::env::var("OBSERVED2_CAPTURE") {
@@ -327,7 +352,7 @@ struct FpsCaptureRequest {
 }
 
 /// Stand the body where the ledge run and the void rim are both in frame with a
-/// minor Guardian in the lane, so the capture shows a live preview.
+/// minor Guardian squarely in view, so the capture shows a live preview.
 fn fps_capture_progress(
     time: Res<Time>,
     mut request: ResMut<FpsCaptureRequest>,
@@ -488,7 +513,7 @@ fn capture_progress(
     if request.phase == 0 {
         runtime.paused = true;
         // Stand west of the ledge run, facing along it, with a minor Guardian
-        // in the lane: the preview then shows a live lethal outcome.
+        // in view: the preview then shows a live lethal outcome.
         world.observers[0].cell = HexCoord {
             q: 3,
             r: 3,

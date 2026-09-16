@@ -10,14 +10,14 @@
 use bevy::{ecs::system::SystemParam, prelude::*};
 use observed_core::PlayerId;
 use observed_hex::{
-    coords::HexCoord,
+    coords::{HexCoord, lateral_distance},
     faces::HexFace,
     metrics::{CORNERS, hex_origin_plan},
 };
 
 use crate::model::{
-    CellKind, KineticEvent, KineticIntent, KineticWorld, MAX_CHARGE, MatchOutcome, MinorGuardianId,
-    PUSH_COST, ShoveFate, TICKS_PER_SECOND, ToolRefusal,
+    AimState, CellKind, KineticEvent, KineticIntent, KineticWorld, MAX_CHARGE, MatchOutcome,
+    MinorGuardianId, PUSH_COST, ShoveFate, TICKS_PER_SECOND, ToolRefusal,
 };
 
 /// Screen pixels per lattice meter. Sized so the authored board fills most of a
@@ -414,7 +414,7 @@ fn describe(world: &KineticWorld) -> Option<String> {
             "Minor Guardian committed to void.".to_string()
         }),
         KineticEvent::ToolRefused { refusal, .. } => Some(match refusal {
-            ToolRefusal::NoTargetInLane => "Nothing in the lane.".to_string(),
+            ToolRefusal::NoTarget => "No Guardian under the crosshair.".to_string(),
             ToolRefusal::NotEnoughCharge => "Not enough charge.".to_string(),
             ToolRefusal::NotOnGenerator => "Stand on the generator to operate it.".to_string(),
         }),
@@ -581,19 +581,20 @@ pub(crate) fn draw_debug(world: Res<KineticWorld>, mut gizmos: Gizmos) {
     };
     let origin = offset + cell_position(observer.cell);
 
-    // The facing lane: what the tool can reach, drawn whether or not something
-    // is in it, so an empty lane is visibly empty rather than silently so.
-    let mut cursor = observer.cell;
-    for _ in 0..crate::model::TOOL_RANGE {
-        let Some(next) = world.grid.neighbor(cursor, observer.facing) else {
-            break;
-        };
-        gizmos.line_2d(
-            offset + cell_position(cursor),
-            offset + cell_position(next),
-            COLOR_LANE,
-        );
-        cursor = next;
+    // What the tool can reach: every cell within range with a line to it,
+    // drawn whether or not anything stands there. This used to be a line down
+    // the facing face, left over from when selection *was* a lane. It has been
+    // a 45-degree cone against real Guardian positions for two commits, and a
+    // schematic that still drew the old rule made the two views disagree about
+    // the model they share.
+    for cell in world.standable_cells() {
+        if lateral_distance(cell, observer.cell) > crate::model::TOOL_RANGE {
+            continue;
+        }
+        if !world.has_clear_line(observer.cell, cell) {
+            continue;
+        }
+        gizmos.circle_2d(offset + cell_position(cell), 5.0 * CELL_SCALE, COLOR_LANE);
     }
 
     // The preview. `resolve_shove` is pure, so this is the same computation the
@@ -624,7 +625,8 @@ pub(crate) fn draw_debug(world: Res<KineticWorld>, mut gizmos: Gizmos) {
         }
     }
 
-    // Facing indicator, so the lane's direction is unambiguous at a glance.
+    // Facing indicator: the face a shove would resolve along, which is still
+    // discrete even though selection is not.
     if let Some(ahead) = world.grid.neighbor(observer.cell, observer.facing) {
         gizmos.line_2d(origin, offset + cell_position(ahead), COLOR_OBSERVER);
     }
@@ -642,19 +644,29 @@ pub(crate) fn update_debug_text(
         return;
     };
     let target = world.preview_push(observer);
-    let preview = match target {
-        Some(resolution) => format!(
-            "{:?} after {} cells",
-            resolution.fate, resolution.cells_travelled
+    let preview = match world.aim_state(observer) {
+        AimState::Empty => "nothing in view".to_string(),
+        AimState::OutOfReach { cells } => format!(
+            "out of reach ({cells} plates, tool reaches {})",
+            crate::model::TOOL_RANGE
         ),
-        None => "no target in lane".to_string(),
+        AimState::Occluded => "blocked by architecture".to_string(),
+        AimState::Reach { .. } => target.map_or_else(
+            || "target".to_string(),
+            |resolution| {
+                format!(
+                    "{:?} after {} cells",
+                    resolution.fate, resolution.cells_travelled
+                )
+            },
+        ),
     };
 
     **text = format!(
         "tick {}   |   {}\n\
          charge {}/{}   |   power {}   |   facing {:?}\n\
          minors alive {}   |   major {}\n\
-         lane: {}\n\
+         aim: {}\n\
          resets {}   |   {}\n\
          {}",
         world.tick,

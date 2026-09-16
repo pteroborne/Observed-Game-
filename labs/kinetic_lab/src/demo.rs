@@ -108,28 +108,25 @@ pub fn script(rules: KineticRules) -> Vec<Scene> {
         return siege_script(rules);
     }
     let mut scenes = vec![
-        // The lethal push comes first on purpose. A Guardian in the lane is
+        // The lethal push comes first on purpose. A Guardian under the crosshair is
         // *walking toward you the whole time* — three plates away is 450 ticks
         // of grace, and an earlier draft spent all of it on preamble and got
         // jailed before it ever pulled the trigger. Demonstrate the shot while
         // the target is still there, then take the slow beats afterwards.
         scene("Kinetic tool lab - first person", Beat::Hold(45)),
-        scene(
-            "Target in the lane: crosshair green - this push kills",
-            Beat::Hold(85),
-        ),
+        scene("Crosshair shut and green: this push kills", Beat::Hold(85)),
         scene("PUSH", Beat::Push),
         scene(
             "Momentum outlived the impulse: past the ledges, into void",
             Beat::Hold(220),
         ),
         scene(
-            "Turn away: the lane is still drawn, with no target in it",
+            "Turn away: the reach stays drawn, with nothing in it",
             Beat::LookAt(cell(3, 1)),
         ),
-        scene("Crosshair dim - nothing to push", Beat::Hold(90)),
+        scene("Crosshair open and dim - nothing to push", Beat::Hold(90)),
         scene("A refused push says so", Beat::Push),
-        scene("...'Nothing in the lane.'", Beat::Hold(90)),
+        scene("...'No Guardian under the crosshair.'", Beat::Hold(90)),
         // First re-park. Six plates buys 1440 ticks and act one runs to roughly
         // 1700, so without this the major walks into the back of the recharge
         // demonstration and ends the run fifteen ticks before its own parking
@@ -162,7 +159,7 @@ pub fn script(rules: KineticRules) -> Vec<Scene> {
             Beat::LookAt(cell(5, 4)),
         ),
         // Pull first. A push lands it three plates out, which is past
-        // `TOOL_RANGE`, so pulling afterwards finds nothing in the lane.
+        // `TOOL_RANGE`, so pulling afterwards finds nothing to grab.
         scene("PULL drags it one plate closer", Beat::Pull),
         scene("", Beat::Hold(110)),
         scene("PUSH onto solid floor", Beat::Push),
@@ -197,7 +194,7 @@ pub fn script(rules: KineticRules) -> Vec<Scene> {
             },
         ),
         scene(
-            "Same tool, a lethal lane this time",
+            "Same tool, a lethal answer this time",
             Beat::LookAt(cell(1, 4)),
         ),
         scene("PUSH", Beat::Push),
@@ -654,8 +651,23 @@ impl Director {
         };
 
         let aligned = self.steer(out, world, body, target.cell, false);
-        let reachable = world.target_in_cone(observer).is_some();
-        if aligned && reachable {
+
+        // Fire on what the tool has actually *selected*, not on what the bot
+        // happens to be pointing at. With a 45-degree cone those are often
+        // different Guardians, and an earlier cut fired on intent: it aimed at
+        // the one it had judged lethal, the cone grabbed a better-aligned
+        // neighbour, and the lethal fraction fell from a third to a sixth. A
+        // player reads the target ring to resolve this; the bot reads the same
+        // selection the ring is drawn from.
+        let worthwhile = world.preview_kills(observer) > 0;
+        // Something on your own plate is worth shoving regardless of outcome:
+        // staggering it buys the room a player would use to reposition.
+        let crowding = world
+            .minors
+            .iter()
+            .any(|minor| minor.alive && minor.cell == observer.cell);
+
+        if aligned && (worthwhile || crowding) {
             // Space the shots out. Firing every tick would spend the whole
             // charge into one Guardian and read as a stutter rather than a shove.
             if self.elapsed.is_multiple_of(24) {
@@ -667,7 +679,6 @@ impl Director {
         // and it never settled on anything long enough to fire — and in a
         // building it walked into walls besides. A siege is a stand: hold the
         // post, turn to face what arrives, and let them come to you.
-        let _ = reachable;
     }
 
     /// The next plate to walk to on the way to `to`, or `None` if unreachable.
@@ -830,7 +841,7 @@ mod tests {
         for needle in [
             "fate: Void",
             "GuardianDestroyed",
-            "NoTargetInLane",
+            "NoTarget",
             "face: West, cells_travelled: 1, fate: Rest",
             "fate: Rest",
             "NotOnGenerator",
@@ -884,12 +895,7 @@ mod tests {
         );
         // The rest of the tour must still happen, or "nothing happened" would be
         // true for uninteresting reasons.
-        for needle in [
-            "fate: Void",
-            "NoTargetInLane",
-            "ChargeRestored",
-            "FellIntoVoid",
-        ] {
+        for needle in ["fate: Void", "NoTarget", "ChargeRestored", "FellIntoVoid"] {
             assert!(
                 log.iter().any(|entry| entry.event.contains(needle)),
                 "the no-jail cut never demonstrates {needle}"

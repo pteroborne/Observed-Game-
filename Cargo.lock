@@ -5904,6 +5904,7 @@ name = "kinetic_lab"
 version = "0.1.0"
 dependencies = [
  "bevy 0.19.1",
+ "observed_assets",
  "observed_core",
  "observed_facility",
  "observed_hex",

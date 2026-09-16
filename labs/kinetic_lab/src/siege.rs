@@ -383,14 +383,55 @@ mod tests {
         assert_eq!(world.outcome, crate::model::MatchOutcome::Survived);
         assert!(!world.observers[0].jailed);
 
-        // The outcome is terminal: more ticks must not un-win it, and no
-        // further waves may arrive after the clock has stopped.
+        // The outcome is terminal: more ticks must not un-win it, no further
+        // waves may arrive, and — the part this missed — the Guardians already
+        // on the board must stop. A recorded run ended with SURVIVED on the
+        // overlay and JAILED in the HUD in the same frame, eleven seconds after
+        // the clock ran out, because they kept walking.
         let waves = world.waves_released;
+        let before: Vec<_> = world.minors.iter().map(|minor| minor.cell).collect();
         for _ in 0..600 {
             world.step(&[]);
         }
+        let after: Vec<_> = world.minors.iter().map(|minor| minor.cell).collect();
         assert_eq!(world.outcome, crate::model::MatchOutcome::Survived);
         assert_eq!(world.waves_released, waves, "a wave arrived after the end");
+        assert_eq!(before, after, "a decided siege must freeze its Guardians");
+    }
+
+    /// And with jail *on*, the same freeze is what stops a win turning into a
+    /// capture. `besiege(_, false)` cannot see this, because nothing can jail
+    /// anyone there in the first place.
+    #[test]
+    fn winning_cannot_be_taken_back_by_a_guardian() {
+        // A short clock, so it runs out before a wave can cross the facility:
+        // `besiege(1.0, true)` is a *loss*, which is its own test.
+        let mut world = besiege(0.1, true);
+        assert_eq!(world.outcome, crate::model::MatchOutcome::Survived);
+        assert!(!world.observers[0].jailed, "the bot survived the clock");
+
+        // Put a Guardian directly on top of the Observer. Before the freeze
+        // this was an immediate capture.
+        let cell = world.observers[0].cell;
+        match world.minors.iter_mut().find(|minor| minor.alive) {
+            Some(minor) => minor.cell = cell,
+            None => world.minors.push(crate::model::MinorGuardian {
+                id: crate::model::MinorGuardianId(0),
+                cell,
+                stagger: 0,
+                step_progress: 0,
+                alive: true,
+            }),
+        }
+
+        for _ in 0..120 {
+            world.step(&[]);
+        }
+        assert!(
+            !world.observers[0].jailed,
+            "a won siege must not be able to jail you afterwards"
+        );
+        assert_eq!(world.outcome, crate::model::MatchOutcome::Survived);
     }
 
     /// A siege is only reproducible if its spawns are.

@@ -31,7 +31,8 @@ use bevy::{
     prelude::*,
     window::{CursorGrabMode, CursorOptions, PrimaryWindow},
 };
-use observed_hex::coords::HexCoord;
+use observed_assets::AssetSlot;
+use observed_hex::{coords::HexCoord, coords::lateral_distance};
 use player_input::PlayerIntent;
 
 use crate::embodied::{
@@ -39,8 +40,8 @@ use crate::embodied::{
     plate_center,
 };
 use crate::model::{
-    CellKind, KineticEvent, KineticWorld, MAX_CHARGE, MatchOutcome, MinorGuardianId, ShoveFate,
-    ToolRefusal,
+    AimState, CellKind, KineticEvent, KineticWorld, MAX_CHARGE, MatchOutcome, MinorGuardianId,
+    ShoveFate, TOOL_RANGE, ToolRefusal,
 };
 
 /// How long a Guardian's move between cells takes to play, in seconds. Well
@@ -66,6 +67,20 @@ const MOUSE_SENSITIVITY: f32 = 0.075;
 const VOID_GRAVITY: f32 = 22.0;
 /// How long a destroyed Guardian keeps falling before its mesh is retired.
 const VOID_FALL_SECONDS: f32 = 2.4;
+/// Rest pose of the tool in camera space: low right, angled inward.
+// Far enough out that the tool reads as held rather than pressed against the
+// lens. At 0.62 metres it covered most of the lower-right quadrant and hid the
+// plate the player was about to be pushed off; worse, a body that long at a
+// fixed height splays *downward* as it approaches the camera, because the near
+// end is magnified, so it ran off the bottom of the frame. The fix is distance
+// plus a shorter body, not a smaller one.
+const VIEWMODEL_HOME: Vec3 = Vec3::new(0.32, -0.24, -1.00);
+/// Half-extents of the tool body, in metres. Kept short in Z for the reason
+/// above.
+const VIEWMODEL_SIZE: Vec3 = Vec3::new(0.16, 0.12, 0.42);
+/// How far the tool kicks back when fired, and how long the whole flash lasts.
+const RECOIL_DISTANCE: f32 = 0.16;
+const FLASH_SECONDS: f32 = 0.28;
 
 const COLOR_PLATE: Color = Color::srgb(0.20, 0.25, 0.32);
 const COLOR_PLATE_LEDGE: Color = Color::srgb(0.46, 0.34, 0.10);
@@ -80,6 +95,21 @@ const COLOR_GENERATOR: Color = Color::srgb(1.0, 0.84, 0.30);
 const CROSSHAIR_IDLE: Color = Color::srgba(0.7, 0.95, 1.0, 0.55);
 const CROSSHAIR_TARGET: Color = Color::srgb(0.85, 0.92, 1.0);
 const CROSSHAIR_LETHAL: Color = Color::srgb(0.30, 1.0, 0.55);
+/// Seen, but too far to grab. Distinct from idle, because "walk closer" and
+/// "there is nothing there" call for opposite reactions.
+const CROSSHAIR_FAR: Color = Color::srgb(1.0, 0.72, 0.25);
+/// In range, in the cone, and behind a wall. Moving closer will not help.
+const CROSSHAIR_BLOCKED: Color = Color::srgb(0.96, 0.36, 0.34);
+/// Half-length of one reticle arm, in pixels, before a kill count lengthens it.
+const CROSSHAIR_ARM: f32 = 11.0;
+/// Arm thickness, in pixels.
+const CROSSHAIR_THICKNESS: f32 = 3.0;
+/// Gap between the centre and the inner end of each arm once the tool can
+/// actually grab what it is looking at. The reticle *shuts* on a target.
+const CROSSHAIR_GAP_SHUT: f32 = 6.0;
+/// Widest the reticle ever opens, so a Guardian across the facility does not
+/// push the arms off screen.
+const CROSSHAIR_GAP_MAX: f32 = 20.0;
 
 #[derive(Component)]
 pub(crate) struct FpsOwned;
@@ -161,8 +191,101 @@ pub(crate) struct StationShell;
 #[derive(Component)]
 pub(crate) struct PreviewShell;
 
+/// The ring that sits on whatever the tool has actually selected.
+///
+/// The cone is wide enough now that "what am I about to grab" stops being
+/// obvious from the crosshair alone. This answers it directly, on the Guardian,
+/// where the player is already looking.
+#[derive(Component)]
+pub(crate) struct TargetRing;
+
+/// The tool itself, held in view. Recoils when fired.
+#[derive(Component)]
+pub(crate) struct ViewModel {
+    /// Rest pose in camera space.
+    pub home: Vec3,
+}
+
+/// The light that flashes at the muzzle when the tool goes off.
+#[derive(Component)]
+pub(crate) struct MuzzleFlash;
+
+/// The light that flashes where a shot landed.
+#[derive(Component)]
+pub(crate) struct ImpactFlash;
+
+/// The reticle's centre dot. Always visible, so the screen centre is never
+/// ambiguous even when the arms are wide open.
 #[derive(Component)]
 pub(crate) struct Crosshair;
+
+/// One of the reticle's four arms.
+///
+/// The arms carry two independent readings at once: their *gap* from centre is
+/// range — it closes as the target comes within [`TOOL_RANGE`] and snaps shut
+/// when the tool can grab it — and their *colour and length* are capability,
+/// what the trigger would actually do.
+#[derive(Component, Clone, Copy)]
+pub(crate) struct CrosshairArm {
+    /// Unit direction from the centre: one of the four axis-aligned offsets.
+    dir: (f32, f32),
+}
+
+impl CrosshairArm {
+    /// Where this arm sits for a given gap and length, in pixels relative to
+    /// the screen centre.
+    fn layout(self, gap: f32, length: f32) -> (f32, f32, f32, f32) {
+        let half = CROSSHAIR_THICKNESS / 2.0;
+        let (width, height) = if self.dir.0 == 0.0 {
+            (CROSSHAIR_THICKNESS, length)
+        } else {
+            (length, CROSSHAIR_THICKNESS)
+        };
+        let axis = |d: f32, span: f32| {
+            if d > 0.0 {
+                gap
+            } else if d < 0.0 {
+                -(gap + span)
+            } else {
+                -half
+            }
+        };
+        (
+            axis(self.dir.0, width),
+            axis(self.dir.1, height),
+            width,
+            height,
+        )
+    }
+}
+
+/// The reticle's look, derived from [`AimState`] alone.
+///
+/// Split out from the system so the mapping can be tested without a window:
+/// a reticle that lies about range is exactly the bug this whole pass exists
+/// to fix, and it is not something a screenshot proves.
+#[must_use]
+pub(crate) fn crosshair_look(state: AimState) -> (Color, f32, f32) {
+    match state {
+        AimState::Empty => (CROSSHAIR_IDLE, CROSSHAIR_GAP_MAX, CROSSHAIR_ARM),
+        // The gap closes as you walk in, so the reticle is a distance meter you
+        // read without taking your eyes off the Guardian.
+        AimState::OutOfReach { cells } => {
+            let over = cells.saturating_sub(TOOL_RANGE) as f32;
+            let gap = (CROSSHAIR_GAP_SHUT + 4.0 * over).min(CROSSHAIR_GAP_MAX);
+            (CROSSHAIR_FAR, gap, CROSSHAIR_ARM)
+        }
+        // Wide open: closing the distance is not the answer here.
+        AimState::Occluded => (CROSSHAIR_BLOCKED, CROSSHAIR_GAP_MAX, CROSSHAIR_ARM),
+        AimState::Reach { kills: 0 } => (CROSSHAIR_TARGET, CROSSHAIR_GAP_SHUT, CROSSHAIR_ARM),
+        AimState::Reach { kills } => (
+            CROSSHAIR_LETHAL,
+            CROSSHAIR_GAP_SHUT,
+            // One extra pixel of reach per Guardian the chain takes.
+            CROSSHAIR_ARM + 4.0 * (kills.min(4) - 1) as f32,
+        ),
+    }
+}
 
 #[derive(Component)]
 pub(crate) struct JailOverlay;
@@ -199,6 +322,24 @@ pub struct FpsRuntime {
     /// rules out — so a recording is a real run rather than a puppet show.
     pub scripted: Option<(PlayerIntent, ToolRequest)>,
     pub last_note: String,
+    /// The last shot, latched for presentation.
+    ///
+    /// Simulation events live for exactly one tick and presentation runs in
+    /// `Update`, so a flash driven straight off `world.events` would fire on
+    /// some frames and be missed on others. Latching it here is what lets the
+    /// muzzle, the impact light and the recoil all read from one fact.
+    pub last_shot: Option<ShotFeedback>,
+}
+
+/// What presentation needs to know about the shot that just happened.
+#[derive(Clone, Copy, Debug)]
+pub struct ShotFeedback {
+    pub at: Vec3,
+    pub fate: ShoveFate,
+    /// Seconds since it happened. Every effect fades on this one clock.
+    pub age: f32,
+    /// A refusal is a shot too, and has to look like one.
+    pub refused: bool,
 }
 
 impl Default for FpsRuntime {
@@ -211,7 +352,8 @@ impl Default for FpsRuntime {
             reset_count: 0,
             paused: false,
             scripted: None,
-            last_note: "Look down a lane and push something off the edge.".to_string(),
+            last_note: "Look at a Guardian and put it into the architecture.".to_string(),
+            last_shot: None,
         }
     }
 }
@@ -305,29 +447,83 @@ pub(crate) fn setup_scene(
     // behind the very Guardian being aimed at.
     let preview_mesh = meshes.add(Cuboid::new(1.1, 9.0, 1.1));
 
-    commands.spawn((
-        FpsOwned,
-        PlayerCam,
-        Camera3d::default(),
-        Hdr,
-        Bloom {
-            intensity: 0.20,
-            ..Bloom::NATURAL
-        },
-        // Fog is what makes an unlit plate fall away into the dark, so the void
-        // rim reads as an edge rather than as a wall. The Legibility Contract
-        // still binds: emissive actors punch through it at every distance.
-        DistanceFog {
-            color: Color::srgb(0.006, 0.010, 0.018),
-            falloff: FogFalloff::Linear {
-                start: 34.0,
-                end: 210.0,
+    // Everything held in view is a child of the camera, so it inherits the look
+    // for free and the recoil is a local offset rather than a world calculation.
+    let view_tool = commands
+        .spawn((
+            FpsOwned,
+            ViewModel {
+                home: VIEWMODEL_HOME,
             },
-            ..default()
-        },
-        Transform::from_translation(embodiment.body.eye(&embodiment.config)),
-        Name::new("Kinetic FPS Camera"),
-    ));
+            Mesh3d(meshes.add(Cuboid::new(
+                VIEWMODEL_SIZE.x,
+                VIEWMODEL_SIZE.y,
+                VIEWMODEL_SIZE.z,
+            ))),
+            MeshMaterial3d(emissive_material(
+                &mut materials,
+                Color::srgb(0.42, 0.78, 0.95),
+                1.1,
+            )),
+            Transform::from_translation(VIEWMODEL_HOME).with_rotation(Quat::from_rotation_y(-0.20)),
+            Name::new("Kinetic Tool"),
+        ))
+        .with_children(|tool| {
+            // An emitter ring at the business end, so the thing reads as a tool
+            // pointed somewhere rather than a floating brick.
+            tool.spawn((
+                Mesh3d(meshes.add(Cylinder::new(0.085, 0.05))),
+                MeshMaterial3d(emissive_material(
+                    &mut materials,
+                    Color::srgb(0.55, 1.0, 0.95),
+                    5.0,
+                )),
+                Transform::from_xyz(0.0, 0.0, -VIEWMODEL_SIZE.z / 2.0 - 0.02)
+                    .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+                Name::new("Emitter"),
+            ));
+            tool.spawn((
+                MuzzleFlash,
+                PointLight {
+                    color: Color::srgb(0.6, 1.0, 0.95),
+                    intensity: 0.0,
+                    range: 14.0,
+                    ..default()
+                },
+                Transform::from_xyz(0.0, 0.0, -VIEWMODEL_SIZE.z / 2.0 - 0.10),
+                Name::new("Muzzle Flash"),
+            ));
+        })
+        .id();
+
+    let camera = commands
+        .spawn((
+            FpsOwned,
+            PlayerCam,
+            Camera3d::default(),
+            Hdr,
+            Bloom {
+                intensity: 0.20,
+                ..Bloom::NATURAL
+            },
+            // Fog is what makes an unlit plate fall away into the dark, so the void
+            // rim reads as an edge rather than as a wall. The Legibility Contract
+            // still binds: emissive actors punch through it at every distance.
+            DistanceFog {
+                color: Color::srgb(0.006, 0.010, 0.018),
+                falloff: FogFalloff::Linear {
+                    start: 34.0,
+                    end: 210.0,
+                },
+                ..default()
+            },
+            Transform::from_translation(embodiment.body.eye(&embodiment.config)),
+            Name::new("Kinetic FPS Camera"),
+        ))
+        .id();
+    // Hang the tool off the camera so it inherits the look for free and recoil
+    // stays a local offset rather than a world-space calculation.
+    commands.entity(camera).add_child(view_tool);
 
     // Neon-noir: almost no fill, so the emissive solids carry the room.
     commands.insert_resource(GlobalAmbientLight {
@@ -446,6 +642,30 @@ pub(crate) fn setup_scene(
 
     commands.spawn((
         FpsOwned,
+        TargetRing,
+        Mesh3d(meshes.add(Cylinder::new(1.5, 0.08))),
+        MeshMaterial3d(palette.preview_safe.clone()),
+        Transform::from_xyz(0.0, FLOOR_TOP + 0.15, 0.0),
+        Visibility::Hidden,
+        Name::new("Target Ring"),
+    ));
+
+    commands.spawn((
+        FpsOwned,
+        ImpactFlash,
+        PointLight {
+            color: Color::srgb(0.5, 1.0, 0.7),
+            intensity: 0.0,
+            range: 26.0,
+
+            ..default()
+        },
+        Transform::from_xyz(0.0, FLOOR_TOP + 1.5, 0.0),
+        Name::new("Impact Flash"),
+    ));
+
+    commands.spawn((
+        FpsOwned,
         PreviewShell,
         Mesh3d(preview_mesh.clone()),
         MeshMaterial3d(palette.preview_safe.clone()),
@@ -496,7 +716,7 @@ fn spawn_ui(commands: &mut Commands) {
             ));
             root.spawn((
                 Node {
-                    width: px(330),
+                    width: px(400),
                     padding: UiRect::all(px(14)),
                     border: UiRect::all(px(1)),
                     ..default()
@@ -507,9 +727,15 @@ fn spawn_ui(commands: &mut Commands) {
                     Text::new(
                         "WASD move   SHIFT run   SPACE jump\n\
                          LMB push   RMB pull   E generator\n\
-                         P pause    R reset    ESC free the cursor\n\
-                         crosshair: dim = no target, white = target,\n\
-                         green = this push kills",
+                         P pause   R reset   ESC free the cursor\n\
+                         \n\
+                         Aim anywhere. Look at a Guardian, not down a row.\n\
+                         The outlined plates are what the tool can reach.\n\
+                         \n\
+                         crosshair open, amber: seen, too far to grab\n\
+                         crosshair open, red: a wall is in the way\n\
+                         crosshair shut, white: grabbed\n\
+                         crosshair shut, green: this push kills",
                     ),
                     TextFont {
                         font_size: FontSize::Px(13.0),
@@ -554,22 +780,56 @@ fn spawn_ui(commands: &mut Commands) {
 
     // Crosshair. It has to report whether the tool actually has a target: a
     // reticle that looks identical whether a push will fire or be refused is
-    // what makes a working trigger feel like a dead one.
-    commands.spawn((
-        FpsOwned,
-        Crosshair,
-        Node {
-            position_type: PositionType::Absolute,
-            left: percent(50),
-            top: percent(50),
-            width: px(6),
-            height: px(6),
-            ..default()
-        },
-        BackgroundColor(CROSSHAIR_IDLE),
-        GlobalZIndex(21),
-        Name::new("Crosshair"),
-    ));
+    // what makes a working trigger feel like a dead one. A single square could
+    // only say "target / no target"; four arms around a dot can say range and
+    // capability at the same time, in the spread-and-colour language every
+    // player already reads.
+    commands
+        .spawn((
+            FpsOwned,
+            Node {
+                position_type: PositionType::Absolute,
+                left: percent(50),
+                top: percent(50),
+                width: px(0),
+                height: px(0),
+                ..default()
+            },
+            GlobalZIndex(21),
+            Name::new("Reticle"),
+        ))
+        .with_children(|reticle| {
+            reticle.spawn((
+                Crosshair,
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: px(-CROSSHAIR_THICKNESS / 2.0),
+                    top: px(-CROSSHAIR_THICKNESS / 2.0),
+                    width: px(CROSSHAIR_THICKNESS),
+                    height: px(CROSSHAIR_THICKNESS),
+                    ..default()
+                },
+                BackgroundColor(CROSSHAIR_IDLE),
+                Name::new("Crosshair Dot"),
+            ));
+            for dir in [(0.0, -1.0), (0.0, 1.0), (-1.0, 0.0), (1.0, 0.0)] {
+                let arm = CrosshairArm { dir };
+                let (left, top, width, height) = arm.layout(CROSSHAIR_GAP_MAX, CROSSHAIR_ARM);
+                reticle.spawn((
+                    arm,
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: px(left),
+                        top: px(top),
+                        width: px(width),
+                        height: px(height),
+                        ..default()
+                    },
+                    BackgroundColor(CROSSHAIR_IDLE),
+                    Name::new("Crosshair Arm"),
+                ));
+            }
+        });
 }
 
 pub(crate) fn present_jail_overlay(
@@ -614,29 +874,28 @@ pub(crate) fn present_jail_overlay(
     }
 }
 
-/// Colour the crosshair by what the trigger would actually do right now.
+/// Spread and colour the reticle by what the trigger would actually do.
 pub(crate) fn present_crosshair(
     world: Res<KineticWorld>,
-    mut crosshair: Query<(&mut BackgroundColor, &mut Node), With<Crosshair>>,
+    mut dot: Query<&mut BackgroundColor, (With<Crosshair>, Without<CrosshairArm>)>,
+    mut arms: Query<(&CrosshairArm, &mut BackgroundColor, &mut Node)>,
 ) {
-    let Ok((mut color, mut node)) = crosshair.single_mut() else {
-        return;
-    };
     let Some(observer) = world.observers.first() else {
         return;
     };
-    // Size reports the size of the *shot*, not merely that there is one. A push
-    // that takes three Guardians down a corridor should not look identical to
-    // one that staggers a single Guardian against a wall it will survive.
-    let kills = world.preview_kills(observer);
-    let (wanted, size) = match (world.preview_push(observer), kills) {
-        (None, _) => (CROSSHAIR_IDLE, 6.0),
-        (Some(_), 0) => (CROSSHAIR_TARGET, 10.0),
-        (Some(_), n) => (CROSSHAIR_LETHAL, 12.0 + 5.0 * (n.min(4) - 1) as f32),
-    };
-    color.0 = wanted;
-    node.width = px(size);
-    node.height = px(size);
+    let (color, gap, length) = crosshair_look(world.aim_state(observer));
+
+    if let Ok(mut dot) = dot.single_mut() {
+        dot.0 = color;
+    }
+    for (arm, mut background, mut node) in &mut arms {
+        let (left, top, width, height) = arm.layout(gap, length);
+        background.0 = color;
+        node.left = px(left);
+        node.top = px(top);
+        node.width = px(width);
+        node.height = px(height);
+    }
 }
 
 pub(crate) fn grab_cursor(mut cursors: Query<&mut CursorOptions, With<PrimaryWindow>>) {
@@ -777,6 +1036,33 @@ fn after_step(runtime: &mut FpsRuntime, world: &KineticWorld, embodiment: &Embod
     } else if let Some(note) = describe(world) {
         runtime.last_note = note;
     }
+
+    // Latch the shot. The *last* link of a chain is the interesting one — it is
+    // where the cascade ended — but any link firing at all means the tool went
+    // off, so the muzzle reads from the same latch.
+    for event in &world.events {
+        match event {
+            KineticEvent::Shoved(resolution) => {
+                let center = plate_center(resolution.to);
+                runtime.last_shot = Some(ShotFeedback {
+                    at: Vec3::new(center.x, FLOOR_TOP + 1.2, center.z),
+                    fate: resolution.fate,
+                    age: 0.0,
+                    refused: false,
+                });
+            }
+            KineticEvent::ToolRefused { .. } => {
+                let eye = embodiment.body.eye(&embodiment.config);
+                runtime.last_shot = Some(ShotFeedback {
+                    at: eye + embodiment.body.look_dir() * 3.0,
+                    fate: ShoveFate::Blocked,
+                    age: 0.0,
+                    refused: true,
+                });
+            }
+            _ => {}
+        }
+    }
 }
 
 /// A committed retraction removes a plate, so the arena has to follow or the
@@ -824,7 +1110,7 @@ fn describe(world: &KineticWorld) -> Option<String> {
             }
         }
         KineticEvent::ToolRefused { refusal, .. } => match refusal {
-            ToolRefusal::NoTargetInLane => "Nothing in the lane.".to_string(),
+            ToolRefusal::NoTarget => "No Guardian under the crosshair.".to_string(),
             ToolRefusal::NotEnoughCharge => "Not enough charge.".to_string(),
             ToolRefusal::NotOnGenerator => "Stand on the generator to operate it.".to_string(),
         },
@@ -1060,36 +1346,52 @@ pub(crate) fn present_preview(
     }
 }
 
-/// Draw the path the target would travel, plate by plate.
+/// Outline every plate the tool can reach, and draw where a shot would land.
 ///
-/// The beam says *where it ends*; this says *how it gets there*, which is what
-/// makes the ledge rule legible — the line visibly runs past the three cells a
-/// push pays for and keeps going.
-pub(crate) fn draw_lane(world: Res<KineticWorld>, mut gizmos: Gizmos) {
+/// This replaced a line drawn straight down the Observer's facing face, which
+/// was a leftover from lane targeting and actively taught the wrong rule: it
+/// said "shots go this way" when selection has been a 45-degree cone against
+/// real Guardian positions for two commits.
+///
+/// The reach is drawn as *plates*, not as a wedge swept from the aim vector,
+/// for two reasons. It is stable — a footprint that swung with every mouse
+/// movement would be noise rather than information — and a ground arc 42 metres
+/// out sits within a couple of degrees of eye level in a first-person view,
+/// where it reads as a horizon line and says nothing. Outlined plates lie under
+/// the player's feet and ahead of them, at every depth, and answer the actual
+/// question: *anything standing on one of these can be grabbed.* The crosshair
+/// covers the other half, which is where within that footprint you are pointing.
+pub(crate) fn draw_reach(world: Res<KineticWorld>, mut gizmos: Gizmos) {
     let Some(observer) = world.observers.first() else {
         return;
     };
 
-    // Always draw the reachable lane, target or not. The schematic view already
-    // did this and said why; the first-person view — the one actually played —
-    // drew nothing when the lane was empty, so the player stood inside an
-    // invisible 60-degree wedge with no way to tell where it pointed. An empty
-    // lane has to look empty, not look like nothing.
-    let mut cursor = observer.cell;
-    let height = FLOOR_TOP + 1.1;
-    let lane_color = Color::srgba(0.45, 0.92, 1.0, 0.30);
-    for _ in 0..crate::model::TOOL_RANGE {
-        let Some(next) = world.grid.neighbor(cursor, observer.facing) else {
-            break;
-        };
-        let a = plate_center(cursor);
-        let b = plate_center(next);
-        gizmos.line(
-            Vec3::new(a.x, height, a.z),
-            Vec3::new(b.x, height, b.z),
-            lane_color,
-        );
-        cursor = next;
+    // A hand's width over the plate surface. `PLATE_THICKNESS` is how far a
+    // plate hangs *below* `FLOOR_TOP`, not a surface offset — reading it as one
+    // floated these lines 1.08 metres up, half a metre under the eye, where
+    // every plate past about fifteen metres folded onto the horizon and the
+    // whole footprint read as a stray skyline.
+    let height = FLOOR_TOP + 0.05;
+    let reach = Color::srgba(0.45, 0.92, 1.0, 0.5);
+
+    for cell in world.standable_cells() {
+        if lateral_distance(cell, observer.cell) > TOOL_RANGE {
+            continue;
+        }
+        // A plate behind a wall is not reachable, and drawing it as if it were
+        // would be the Legibility Contract broken in the player's favour and
+        // then against it a second later.
+        if !world.has_clear_line(observer.cell, cell) {
+            continue;
+        }
+        let center = plate_center(cell);
+        // Inset a little so neighbouring plates read as two edges, not one.
+        let (x, z) = (PLATE_HALF_X - 0.45, PLATE_HALF_Z - 0.45);
+        let corner = |dx: f32, dz: f32| Vec3::new(center.x + dx, height, center.z + dz);
+        let corners = [corner(-x, -z), corner(x, -z), corner(x, z), corner(-x, z)];
+        for pair in 0..4 {
+            gizmos.line(corners[pair], corners[(pair + 1) % 4], reach);
+        }
     }
 
     let Some(resolution) = world.preview_push(observer) else {
@@ -1099,9 +1401,10 @@ pub(crate) fn draw_lane(world: Res<KineticWorld>, mut gizmos: Gizmos) {
     let color = fate_color(resolution.fate);
 
     // Walk the same faces the resolution walked, so the drawn path is the
-    // resolved path rather than a straight line that might cut a corner.
+    // resolved path rather than a straight line that might cut a corner. Drawn
+    // just above the reach outlines so a shove reads over its own footprint.
     let mut cursor = resolution.from;
-    let height = FLOOR_TOP + 1.1;
+    let height = FLOOR_TOP + 0.12;
     for _ in 0..resolution.cells_travelled {
         let Some(next) = world.grid.neighbor(cursor, resolution.face) else {
             break;
@@ -1114,6 +1417,180 @@ pub(crate) fn draw_lane(world: Res<KineticWorld>, mut gizmos: Gizmos) {
             color,
         );
         cursor = next;
+    }
+}
+
+/// The lab's cues.
+///
+/// Every one of these is an existing CC0 `.ogg` from `assets/sounds`, generated
+/// in-repo by `tools/generate_audio.py` from no external source material. They
+/// are placeholders in the sense that they were authored for other events, not
+/// in the sense that anything needs licensing or downloading.
+#[derive(Resource)]
+pub(crate) struct KineticCues {
+    fire: Handle<AudioSource>,
+    kill: Handle<AudioSource>,
+    refused: Handle<AudioSource>,
+    recharge: Handle<AudioSource>,
+    jailed: Handle<AudioSource>,
+}
+
+/// Which generated `.ogg` stands in for each event.
+///
+/// Named as consts rather than written inline at the `load` calls so a test can
+/// check every one has a file behind it. A missing asset is not an error the
+/// player ever sees: Bevy logs a line and the sound simply never plays, which
+/// is indistinguishable from the cue not having been written.
+const CUE_FIRE: AssetSlot = observed_assets::TOOL_INTERACT;
+const CUE_KILL: AssetSlot = observed_assets::COLLAPSE_STING;
+const CUE_REFUSED: AssetSlot = observed_assets::UI_CLICK;
+/// Not `CHIME`: that slot is declared but nothing was ever generated into it,
+/// so the tool went quiet exactly when it had good news. `KEYSTONE` is a real
+/// pickup signal and reads the same way.
+const CUE_RECHARGE: AssetSlot = observed_assets::KEYSTONE;
+const CUE_JAILED: AssetSlot = observed_assets::KLAXON;
+#[cfg_attr(not(test), expect(dead_code, reason = "the test is the only consumer"))]
+const CUE_SLOTS: [AssetSlot; 5] = [CUE_FIRE, CUE_KILL, CUE_REFUSED, CUE_RECHARGE, CUE_JAILED];
+
+pub(crate) fn load_cues(mut commands: Commands, assets: Res<AssetServer>) {
+    commands.insert_resource(KineticCues {
+        fire: assets.load(CUE_FIRE.path),
+        kill: assets.load(CUE_KILL.path),
+        refused: assets.load(CUE_REFUSED.path),
+        recharge: assets.load(CUE_RECHARGE.path),
+        jailed: assets.load(CUE_JAILED.path),
+    });
+}
+
+/// Sound the tick's events.
+///
+/// Reads `world.events` in the same schedule that produced them, so nothing is
+/// missed between a fixed tick and a rendered frame.
+pub(crate) fn play_cues(mut commands: Commands, world: Res<KineticWorld>, cues: Res<KineticCues>) {
+    for event in &world.events {
+        let (source, volume) = match event {
+            // The shove itself, then a separate sting if it actually removed
+            // something — so a kill is audibly different from a stagger without
+            // needing two different shove sounds.
+            KineticEvent::Shoved(resolution) => {
+                if resolution.fate == ShoveFate::Transferred {
+                    // A link in a chain, not a trigger pull. Silent: the first
+                    // link already fired and a burst of these is a mess.
+                    continue;
+                }
+                (cues.fire.clone(), 0.55)
+            }
+            KineticEvent::GuardianDestroyed { .. } => (cues.kill.clone(), 0.7),
+            KineticEvent::ToolRefused { .. } => (cues.refused.clone(), 0.45),
+            KineticEvent::ChargeRestored { .. } => (cues.recharge.clone(), 0.3),
+            KineticEvent::ObserverCaptured { .. } => (cues.jailed.clone(), 0.8),
+            _ => continue,
+        };
+        commands.spawn((
+            FpsOwned,
+            AudioPlayer(source),
+            PlaybackSettings {
+                mode: bevy::audio::PlaybackMode::Despawn,
+                volume: bevy::audio::Volume::Linear(volume),
+                ..PlaybackSettings::DESPAWN
+            },
+            Name::new("Kinetic Cue"),
+        ));
+    }
+}
+
+/// Put a ring under whatever the tool has selected.
+///
+/// With a 45-degree cone the crosshair alone no longer says *which* Guardian is
+/// about to be grabbed. This says it on the Guardian, where the player is
+/// already looking, and colours it by what the shot would do.
+pub(crate) fn present_target_ring(
+    world: Res<KineticWorld>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut ring: Query<
+        (
+            &mut Transform,
+            &mut Visibility,
+            &mut MeshMaterial3d<StandardMaterial>,
+        ),
+        With<TargetRing>,
+    >,
+) {
+    let Ok((mut transform, mut visibility, mut material)) = ring.single_mut() else {
+        return;
+    };
+    let selected = world.observers.first().and_then(|observer| {
+        let id = world.target_in_cone(observer)?;
+        let minor = world.minor(id)?;
+        Some((minor.cell, world.preview_push(observer)))
+    });
+    let Some((cell, preview)) = selected else {
+        *visibility = Visibility::Hidden;
+        return;
+    };
+    *visibility = Visibility::Inherited;
+    let center = plate_center(cell);
+    transform.translation = Vec3::new(center.x, FLOOR_TOP + 0.15, center.z);
+
+    let color = preview.map_or(Color::srgb(0.6, 0.66, 0.74), |shot| fate_color(shot.fate));
+    material.0 = emissive_material(&mut materials, color, 3.0);
+}
+
+// The disjointness filters are what let one system hold all three at once.
+type ToolQuery<'w, 's> =
+    Query<'w, 's, (&'static ViewModel, &'static mut Transform), Without<MuzzleFlash>>;
+type MuzzleQuery<'w, 's> =
+    Query<'w, 's, &'static mut PointLight, (With<MuzzleFlash>, Without<ImpactFlash>)>;
+type ImpactQuery<'w, 's> = Query<
+    'w,
+    's,
+    (&'static mut PointLight, &'static mut Transform),
+    (With<ImpactFlash>, Without<ViewModel>),
+>;
+
+/// Drive the recoil, the muzzle and the impact light off the latched shot.
+pub(crate) fn present_shot_feedback(
+    time: Res<Time>,
+    mut runtime: ResMut<FpsRuntime>,
+    mut tool: ToolQuery,
+    mut muzzle: MuzzleQuery,
+    mut impact: ImpactQuery,
+) {
+    let delta = time.delta_secs();
+    if let Some(shot) = runtime.last_shot.as_mut() {
+        shot.age += delta;
+    }
+    let shot = runtime.last_shot;
+    // 1 at the instant of firing, 0 once the flash has run its course.
+    let intensity = shot.map_or(0.0, |shot| {
+        (1.0 - (shot.age / FLASH_SECONDS).clamp(0.0, 1.0)).powi(2)
+    });
+    let refused = shot.is_some_and(|shot| shot.refused);
+
+    if let Ok((model, mut transform)) = tool.single_mut() {
+        // A refusal twitches rather than kicks: the tool did something, and it
+        // was not a shot.
+        let kick = if refused {
+            RECOIL_DISTANCE * 0.25
+        } else {
+            RECOIL_DISTANCE
+        };
+        transform.translation = model.home + Vec3::new(0.0, 0.0, kick * intensity);
+    }
+
+    if let Ok(mut light) = muzzle.single_mut() {
+        light.intensity = if refused { 0.0 } else { 120_000.0 * intensity };
+    }
+
+    if let Ok((mut light, mut transform)) = impact.single_mut() {
+        match shot {
+            Some(shot) if !shot.refused => {
+                transform.translation = shot.at;
+                light.color = fate_color(shot.fate);
+                light.intensity = 220_000.0 * intensity;
+            }
+            _ => light.intensity = 0.0,
+        }
     }
 }
 
@@ -1159,21 +1636,30 @@ pub(crate) fn update_hud(
     let Some(observer) = world.observers.first() else {
         return;
     };
-    let lane = world.preview_push(observer).map_or_else(
-        || "no target in lane".to_string(),
-        |resolution| {
-            format!(
-                "{:?} after {} cells",
-                resolution.fate, resolution.cells_travelled
-            )
-        },
-    );
+    // What the reticle is saying, in words, so a screenshot of the HUD and a
+    // screenshot of the crosshair can be checked against each other.
+    let aim = match world.aim_state(observer) {
+        AimState::Empty => "nothing in view".to_string(),
+        AimState::OutOfReach { cells } => {
+            format!("out of reach ({cells} plates, tool reaches {TOOL_RANGE})")
+        }
+        AimState::Occluded => "blocked by architecture".to_string(),
+        AimState::Reach { .. } => world.preview_push(observer).map_or_else(
+            || "target".to_string(),
+            |resolution| {
+                format!(
+                    "{:?} after {} cells",
+                    resolution.fate, resolution.cells_travelled
+                )
+            },
+        ),
+    };
 
     **text = format!(
         "{}tick {}   |   cell {},{}   |   facing {:?}\n\
          charge {}/{}   |   power {}   |   rules {}\n\
          minors alive {}   |   major {}\n\
-         lane: {}\n\
+         aim: {}\n\
          resets {}   |   {}\n\
          {}",
         siege_line(&world),
@@ -1191,7 +1677,7 @@ pub(crate) fn update_hud(
         } else {
             "awake"
         },
-        lane,
+        aim,
         runtime.reset_count,
         if observer.jailed { "JAILED" } else { "free" },
         runtime.last_note,
@@ -1202,3 +1688,100 @@ pub(crate) fn update_hud(
 /// read turns into a glide. Enforced at compile time so tuning one without the
 /// other cannot quietly soften the whole shape language.
 const _: () = assert!(SNAP_SECONDS * 60.0 < crate::model::MINOR_STEP_TICKS as f32);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A cue with no file behind it is a silent failure: the tool just never
+    /// makes that sound. `CHIME` was exactly this for the whole first pass.
+    #[test]
+    fn every_cue_has_a_file_behind_it() {
+        let root = observed_assets::assets_root();
+        for slot in CUE_SLOTS {
+            let path = root.join(slot.path);
+            assert!(
+                path.is_file(),
+                "cue `{}` points at {} which does not exist",
+                slot.name,
+                path.display()
+            );
+        }
+    }
+
+    /// The reticle's two readings must stay independent: range lives in the
+    /// gap, capability in the colour. If a state got both from the same source
+    /// the player would have no way to tell "walk closer" from "look elsewhere".
+    #[test]
+    fn the_reticle_says_range_and_capability_separately() {
+        let (empty, empty_gap, _) = crosshair_look(AimState::Empty);
+        let (blocked, blocked_gap, _) = crosshair_look(AimState::Occluded);
+        let (target, target_gap, _) = crosshair_look(AimState::Reach { kills: 0 });
+
+        assert_eq!(
+            (empty_gap, blocked_gap),
+            (CROSSHAIR_GAP_MAX, CROSSHAIR_GAP_MAX),
+            "with nothing grabbable the reticle stays open"
+        );
+        assert_eq!(
+            target_gap, CROSSHAIR_GAP_SHUT,
+            "the reticle shuts the moment the tool can grab"
+        );
+        assert_ne!(
+            empty, blocked,
+            "an empty cone and a wall in the way must not look identical"
+        );
+        assert_ne!(empty, target);
+    }
+
+    /// Range is the gap, and it has to close monotonically as you walk in, or
+    /// it is decoration rather than a meter.
+    #[test]
+    fn the_gap_closes_as_the_target_comes_into_reach() {
+        let gap = |cells| crosshair_look(AimState::OutOfReach { cells }).1;
+        let far = gap(TOOL_RANGE + 6);
+        let near = gap(TOOL_RANGE + 1);
+        assert!(
+            far > near,
+            "walking closer must tighten the reticle: {far} then {near}"
+        );
+        assert!(
+            near > crosshair_look(AimState::Reach { kills: 0 }).1,
+            "in reach must be tighter than merely nearly in reach"
+        );
+        assert_eq!(far, CROSSHAIR_GAP_MAX, "and it is clamped, not unbounded");
+    }
+
+    /// A bigger shot reads as a bigger reticle, not merely a differently
+    /// coloured one.
+    #[test]
+    fn a_chain_lengthens_the_arms() {
+        let arm = |kills| crosshair_look(AimState::Reach { kills }).2;
+        assert_eq!(arm(1), CROSSHAIR_ARM);
+        assert!(arm(3) > arm(1));
+        assert_eq!(arm(9), arm(4), "and it is clamped so it cannot run away");
+    }
+
+    /// The four arms must be a symmetric cross. An off-by-one here puts the
+    /// centre of aim somewhere other than the centre of the screen.
+    #[test]
+    fn the_four_arms_are_symmetric_about_the_centre() {
+        let gap = 7.0;
+        let length = 9.0;
+        let up = CrosshairArm { dir: (0.0, -1.0) }.layout(gap, length);
+        let down = CrosshairArm { dir: (0.0, 1.0) }.layout(gap, length);
+        let left = CrosshairArm { dir: (-1.0, 0.0) }.layout(gap, length);
+        let right = CrosshairArm { dir: (1.0, 0.0) }.layout(gap, length);
+
+        assert_eq!(up.1, -(gap + length));
+        assert_eq!(down.1, gap);
+        assert_eq!(left.0, -(gap + length));
+        assert_eq!(right.0, gap);
+        // Vertical arms are tall and thin, horizontal ones wide and thin.
+        assert_eq!((up.2, up.3), (CROSSHAIR_THICKNESS, length));
+        assert_eq!((right.2, right.3), (length, CROSSHAIR_THICKNESS));
+        // And the cross axis is centred on the screen centre in both.
+        assert_eq!(up.0, -CROSSHAIR_THICKNESS / 2.0);
+        assert_eq!(right.1, -CROSSHAIR_THICKNESS / 2.0);
+    }
+}

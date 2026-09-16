@@ -49,12 +49,17 @@ pub const PULL_IMPULSE: u32 = 1;
 pub const TOOL_RANGE: u32 = 3;
 /// Half-angle of the selection cone, in degrees.
 ///
-/// Narrow enough that "the thing I am looking at" is unambiguous, wide enough
-/// that a Guardian a plate off-axis at forty metres is still grabbable without
-/// pixel-perfect aim. The lattice's own faces are sixty degrees apart, so
-/// anything approaching thirty here would put two Guardians in the cone as often
-/// as one.
-pub const TOOL_CONE_DEGREES: f32 = 22.0;
+/// Roughly the screen. The tool grabs what you are looking at, and the only
+/// things it will not take are behind you and out of range — you should never
+/// have to line yourself up with the lattice to fire.
+///
+/// It was 22 degrees, which was still narrow enough to feel like aiming down a
+/// lane: a Guardian plainly on screen and a plate off-axis was refused, and
+/// since the on-screen lane was drawn along the *resolution* face it looked like
+/// the refusal was the rule rather than a threshold. Widening it puts the burden
+/// where it belongs — on telling the player which Guardian is selected, which is
+/// what the target highlight is for.
+pub const TOOL_CONE_DEGREES: f32 = 45.0;
 /// Ticks a minor Guardian spends recovering after surviving a shove.
 pub const STAGGER_TICKS: u32 = 45;
 /// Ticks between minor Guardian steps.
@@ -157,8 +162,8 @@ impl Observer {
     /// Look down a lattice face, setting both the resolution axis and the aim.
     ///
     /// These two must agree, and nothing good happens when they do not: aim
-    /// selects the target, `facing` draws the lane and resolves the shove, so a
-    /// stale aim means the tool grabs something other than what the lane shows.
+    /// selects the target and `facing` resolves the shove, so a stale aim means
+    /// the tool grabs something other than what the crosshair shows.
     /// Setting them through one call is the only way to keep that impossible.
     pub fn look(&mut self, face: HexFace) {
         self.facing = face;
@@ -398,12 +403,42 @@ pub enum KineticIntent {
     Face(HexFace),
     /// Walk one cell along a face, if the destination is standable.
     Step(HexFace),
-    /// Drive the first target in the facing lane away from the Observer.
+    /// Shove the Guardian under the crosshair away from the Observer.
     Push,
-    /// Drag the first target in the facing lane toward the Observer.
+    /// Drag the Guardian under the crosshair toward the Observer.
     Pull,
     /// Operate the floor generator. Only legal while standing on it.
     ToggleGenerator,
+}
+
+/// What the tool can see right now — the reticle's whole vocabulary.
+///
+/// Ordered by how close the player is to a shot, which is also the order the
+/// crosshair tightens in.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AimState {
+    /// No Guardian anywhere in the cone, at any distance.
+    Empty,
+    /// One is in the cone but further than [`TOOL_RANGE`] plates. Walk closer.
+    OutOfReach {
+        /// Lateral distance in plates, so the HUD can say how much closer.
+        cells: u32,
+    },
+    /// In the cone and in range, but the line to it runs through architecture.
+    Occluded,
+    /// The trigger will fire. `kills` is how many Guardians the chain removes.
+    Reach {
+        /// Zero means the push lands but nothing dies — a stagger, not a kill.
+        kills: usize,
+    },
+}
+
+impl AimState {
+    /// Whether a push would resolve at all.
+    #[must_use]
+    pub fn has_target(self) -> bool {
+        matches!(self, Self::Reach { .. })
+    }
 }
 
 /// Why a shove ended where it did. Presentation and tests both read this rather
@@ -465,7 +500,7 @@ pub struct ShoveResolution {
 /// Why the tool refused to fire. A refusal is never silent: the lab shows it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ToolRefusal {
-    NoTargetInLane,
+    NoTarget,
     NotEnoughCharge,
     NotOnGenerator,
 }
@@ -1007,6 +1042,55 @@ impl KineticWorld {
         best.map(|(_, id)| id)
     }
 
+    /// Why the trigger would or would not do something, in one value.
+    ///
+    /// The crosshair used to have exactly two things to say: "a push resolves"
+    /// and "it does not". Those collapse three very different situations — no
+    /// Guardian is being looked at, one is but it is out of reach, one is in
+    /// reach but behind a wall — into a single dim dot, which reads as a broken
+    /// trigger. Separating them is what lets the reticle report *range* rather
+    /// than only capability.
+    #[must_use]
+    pub fn aim_state(&self, observer: &Observer) -> AimState {
+        if self.target_in_cone(observer).is_some() {
+            return AimState::Reach {
+                kills: self.preview_kills(observer),
+            };
+        }
+
+        // Nothing selectable. Find the best-aligned Guardian inside the cone at
+        // *any* distance and report what disqualified it.
+        let Some(aim) = normalize(observer.aim) else {
+            return AimState::Empty;
+        };
+        let from = plan_of(observer.cell);
+        let limit = TOOL_CONE_DEGREES.to_radians().cos();
+
+        let mut best: Option<(f32, u32, bool)> = None;
+        for minor in self.minors.iter().filter(|minor| minor.alive) {
+            let Some(direction) = normalize(delta(from, plan_of(minor.cell))) else {
+                continue;
+            };
+            let alignment = aim[0] * direction[0] + aim[1] * direction[1];
+            if alignment < limit {
+                continue;
+            }
+            let cells = lateral_distance(minor.cell, observer.cell);
+            let in_range = cells <= TOOL_RANGE;
+            if best.is_none_or(|(score, _, _)| alignment > score) {
+                best = Some((alignment, cells, in_range));
+            }
+        }
+
+        match best {
+            // In range and in the cone, yet `target_in_cone` rejected it: the
+            // only remaining filter is line of sight.
+            Some((_, _, true)) => AimState::Occluded,
+            Some((_, cells, false)) => AimState::OutOfReach { cells },
+            None => AimState::Empty,
+        }
+    }
+
     /// What a push would do right now, selection and all.
     ///
     /// Presentation calls exactly this, and [`Self::fire`] takes the same two
@@ -1237,15 +1321,29 @@ impl KineticWorld {
         self.apply_recharge();
         self.apply_retraction();
         self.release_waves();
-        self.move_guardians();
+        if !self.decided() {
+            self.move_guardians();
+        }
         self.resolve_captures();
         self.resolve_siege_clock();
         self.tick += 1;
     }
 
+    /// Whether the siege has already been won or lost.
+    ///
+    /// A decided match must stop producing opposition. Without this the clock
+    /// could run out, the overlay could say SURVIVED, and eleven seconds later
+    /// a Guardian could still walk onto the Observer's plate and put `JAILED`
+    /// in the HUD underneath a win — two authoritative readings of the same
+    /// moment that flatly contradict each other.
+    #[must_use]
+    fn decided(&self) -> bool {
+        self.siege.enabled && self.outcome != MatchOutcome::Running
+    }
+
     /// Release this tick's wave, if the siege schedule calls for one.
     fn release_waves(&mut self) {
-        if !self.siege.enabled || self.outcome != MatchOutcome::Running {
+        if self.decided() || !self.siege.enabled {
             return;
         }
         let due = self.tick >= self.siege.first_wave_tick
@@ -1405,7 +1503,7 @@ impl KineticWorld {
         let Some(target) = self.target_in_cone(&observer) else {
             self.events.push(KineticEvent::ToolRefused {
                 observer: observer.id,
-                refusal: ToolRefusal::NoTargetInLane,
+                refusal: ToolRefusal::NoTarget,
             });
             return;
         };
@@ -1591,7 +1689,7 @@ impl KineticWorld {
     fn resolve_captures(&mut self) {
         // With jail switched off a Guardian may share your plate and nothing
         // happens: it becomes something to shove rather than a fail state.
-        if !self.rules.jail {
+        if !self.rules.jail || self.decided() {
             return;
         }
         for index in 0..self.observers.len() {
@@ -1987,7 +2085,7 @@ mod tests {
     }
 
     #[test]
-    fn the_tool_refuses_rather_than_firing_on_an_empty_lane_or_empty_charge() {
+    fn the_tool_refuses_rather_than_firing_with_no_target_or_no_charge() {
         let mut world = board_with_minor(coord(4, 4));
         world.observers[0].cell = coord(3, 4);
         world.observers[0].look(HexFace::West);
@@ -1995,7 +2093,7 @@ mod tests {
         assert!(world.events.iter().any(|event| matches!(
             event,
             KineticEvent::ToolRefused {
-                refusal: ToolRefusal::NoTargetInLane,
+                refusal: ToolRefusal::NoTarget,
                 ..
             }
         )));
@@ -2222,6 +2320,78 @@ mod tests {
         aim_at(&mut world, coord(7, 3));
         assert!(lateral_distance(coord(1, 3), coord(7, 3)) > TOOL_RANGE);
         assert_eq!(world.target_in_cone(&world.observers[0]), None);
+    }
+
+    /// The reticle has to tell "there is nothing there" apart from "it is too
+    /// far" and "it is behind a wall". All three used to look like a dead
+    /// trigger.
+    #[test]
+    fn aim_state_names_the_reason_the_trigger_is_dead() {
+        let mut world = KineticWorld::authored();
+        world.minors.truncate(1);
+        world.major.cell = coord(1, 1);
+
+        // Too far: in the cone, six plates away.
+        world.observers[0].cell = coord(1, 3);
+        world.minors[0].cell = coord(7, 3);
+        aim_at(&mut world, coord(7, 3));
+        assert_eq!(
+            world.aim_state(&world.observers[0]),
+            AimState::OutOfReach { cells: 6 },
+            "a Guardian in view but out of reach must say so"
+        );
+
+        // Nothing at all: same Guardian, facing away from it.
+        let aim = world.observers[0].aim;
+        world.observers[0].aim = [-aim[0], -aim[1]];
+        assert_eq!(world.aim_state(&world.observers[0]), AimState::Empty);
+
+        // In reach.
+        world.observers[0].cell = coord(3, 3);
+        world.minors[0].cell = coord(5, 4);
+        aim_at(&mut world, coord(5, 4));
+        assert!(
+            world.aim_state(&world.observers[0]).has_target(),
+            "a Guardian two plates away and squarely in view is a shot"
+        );
+
+        // Behind a wall: in the cone, in range, no line.
+        world.minors[0].cell = coord(5, 3);
+        aim_at(&mut world, coord(5, 3));
+        assert!(world.aim_state(&world.observers[0]).has_target());
+        let a = world.grid.index(coord(4, 3));
+        world.doors[a] &= !(1 << HexFace::East.index());
+        let b = world.grid.index(coord(5, 3));
+        world.doors[b] &= !(1 << HexFace::West.index());
+        assert_eq!(
+            world.aim_state(&world.observers[0]),
+            AimState::Occluded,
+            "a wall in the way is not the same as an empty cone"
+        );
+    }
+
+    /// `aim_state` and the trigger must never disagree: a reticle that promises
+    /// a shot the tool then refuses is worse than no reticle.
+    #[test]
+    fn aim_state_agrees_with_what_the_trigger_does() {
+        let mut world = KineticWorld::authored();
+        world.minors.truncate(1);
+        world.major.cell = coord(1, 1);
+        world.observers[0].cell = coord(3, 3);
+        world.minors[0].cell = coord(5, 4);
+
+        for face in HexFace::LATERAL {
+            world.observers[0].look(face);
+            let state = world.aim_state(&world.observers[0]);
+            assert_eq!(
+                state.has_target(),
+                world.preview_push(&world.observers[0]).is_some(),
+                "facing {face:?}: reticle said {state:?}"
+            );
+            if let AimState::Reach { kills } = state {
+                assert_eq!(kills, world.preview_kills(&world.observers[0]));
+            }
+        }
     }
 
     /// Every lateral face must be the answer for something, or one direction of
