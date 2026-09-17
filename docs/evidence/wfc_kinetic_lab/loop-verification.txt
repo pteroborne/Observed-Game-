@@ -1,0 +1,26 @@
+seed 8 (requested 8)
+plan .HR/.HH/RxH
+cells 7 voids 2 ledges 0 hulls 159
+retracting (1, 0)
+
+GAMEPLAY LOOP / one encounter, played by the director
+tick 301: Wave(1)
+tick 527: Retracting
+tick 647: Retracted(HexCoord { q: 1, r: 0, level: 0 })
+tick 823: Fired(Push, ActorId(1003), Vec3(28.567862, 1.5978808, 11.219113))
+tick 971: Fired(Push, ActorId(1002), Vec3(28.414783, 1.599437, 12.679128))
+tick 987: Fired(Push, ActorId(1002), Vec3(25.875229, 1.5725721, 11.104893))
+tick 1003: Fired(Push, ActorId(1002), Vec3(23.422941, 1.5556223, 8.969096))
+tick 1048: Fired(Push, ActorId(1003), Vec3(20.173737, 1.5518918, 9.630873))
+tick 1113: Eliminated(ActorId(1002), Some(HexCoord { q: 1, r: 0, level: 0 }))
+tick 1133: Fired(Push, ActorId(1003), Vec3(19.15704, 1.5899541, 9.027226))
+tick 1214: Fired(Push, ActorId(1003), Vec3(18.647598, 1.5789385, 8.693964))
+tick 1280: Recharge
+tick 1287: Fired(Push, ActorId(1003), Vec3(18.410404, 1.5983195, 8.50673))
+tick 1304: Fired(Push, ActorId(1003), Vec3(16.461056, 1.5759132, 6.8511577))
+tick 1376: Eliminated(ActorId(1003), Some(HexCoord { q: 1, r: 0, level: 0 }))
+tick 1455: Recharge
+tick 1676: Wave(2)
+tick 1805: Ended(Captured)
+ended Captured after 1805 ticks, removed 2, wave 2
+final digest 0e1cf61a11f4ad85

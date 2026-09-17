@@ -251,3 +251,142 @@ pub fn command(
     };
     Command { movement, action }
 }
+
+/// How long a recorded gameplay loop runs, in fixed ticks.
+pub const LOOP_TICKS: u32 = 2_640;
+
+/// A deterministic Observer playing the encounter, for recorded evidence.
+///
+/// It is a fixed priority policy rather than a scripted sequence: every tick it
+/// reads the world and chooses, so the recording is a thing that happened. It
+/// emits the same `Command` a keyboard does and reaches into nothing.
+///
+/// The order of its priorities is the loop this floor actually has. A solved
+/// floor seals every edge, so until a tile is retracted there is no way to
+/// remove a minor at all — the tool only staggers them and the wave never
+/// clears. So: make the hole first, then work minors into it, and top the tool
+/// up when it runs dry.
+pub fn loop_command(world: &WfcKineticWorld, tick: u32) -> Command {
+    let feet = world.player.position - Vec3::Y * world.player_config.half_height;
+    let eye = world.eye();
+
+    // 1. Make the hole. Nothing else is worth doing before this.
+    if world.cell_present {
+        let panel = world.site.panel;
+        if world.retract_warning.is_some() {
+            // Back off and watch it go.
+            return go(
+                world,
+                feet + (feet - panel).with_y(0.).normalize_or_zero() * 4.0,
+                panel,
+            );
+        }
+        let interact = world.interaction() == Some("Retract tile");
+        let mut command = go(world, panel, panel + Vec3::Y * 1.2);
+        if interact {
+            command.movement.movement = Vec2::ZERO;
+            command.action = Action::Interact;
+        }
+        return command;
+    }
+
+    // 2. Keep the tool fed. Below a third, walking to the station beats
+    //    standing next to a minor you cannot move.
+    let station = world.site.station;
+    let charging = world.charge < world.config.cost * 3.0;
+    if charging && feet.distance(station) > 1.8 {
+        return go(world, station, station + Vec3::Y * 1.2);
+    }
+
+    // 3. Work the nearest minor toward the hole.
+    let hole = Vec3::from_array(hex_origin(world.site.retracting));
+    let Some((id, position)) = nearest_minor(world, feet) else {
+        // Between waves: stand where the next one has to come through.
+        return go(world, station, hole + Vec3::Y * 1.5);
+    };
+    // Stand on the far side of the minor from the hole, so the shove that
+    // follows points through the doorway rather than along the wall.
+    let away = (position - hole).with_y(0.).normalize_or_zero();
+    let post = position + away * 4.6;
+    let mut command = go(world, post, position + AIM_LIFT);
+
+    // Fire when the shot is actually lined up on the hole, not merely on a
+    // minor. `fire_ready` covers reach, cooldown and charge.
+    let to_target = (position - eye).with_y(0.).normalize_or_zero();
+    let to_hole = (hole - position).with_y(0.).normalize_or_zero();
+    let lined_up = to_target.dot(to_hole) > 0.87;
+    if lined_up
+        && world
+            .fire_ready()
+            .is_ok_and(|target| target.id == id && target.distance > 2.2)
+    {
+        command.action = Action::Push;
+        command.movement.movement = Vec2::ZERO;
+    }
+    // A slow sidestep while closing keeps the camera from locking rigid.
+    if tick % 240 < 120 {
+        command.movement.movement.x += 0.25;
+    }
+    command
+}
+
+/// The nearest live minor, if the floor has one.
+fn nearest_minor(world: &WfcKineticWorld, feet: Vec3) -> Option<(ActorId, Vec3)> {
+    world
+        .actors
+        .values()
+        .filter(|actor| actor.alive && actor.kind == Kind::Minor)
+        .map(|actor| (actor.id, world.pose(actor.id).position))
+        .min_by(|a, b| {
+            feet.distance_squared(a.1)
+                .total_cmp(&feet.distance_squared(b.1))
+        })
+}
+
+/// Walk toward `destination` while looking at `at`, as ordinary intent.
+///
+/// The walk is routed through the navigation graph. Walking straight at a
+/// destination is how the first director spent its whole recording pressed
+/// against a wall the solver had put between it and the panel.
+fn go(world: &WfcKineticWorld, destination: Vec3, at: Vec3) -> Command {
+    const LOOK_STEP: f32 = 0.035;
+    let feet = world.player.position - Vec3::Y * world.player_config.half_height;
+    let mut movement = PlayerIntent::default();
+
+    let to_target = (at - world.eye()).normalize_or_zero();
+    let wanted_yaw = to_target.x.atan2(-to_target.z);
+    let wanted_pitch = to_target.y.asin();
+    let yaw_error = (wanted_yaw - world.player.yaw + std::f32::consts::PI)
+        .rem_euclid(std::f32::consts::TAU)
+        - std::f32::consts::PI;
+    movement.look = Vec2::new(
+        (yaw_error / LOOK_STEP).clamp(-1., 1.),
+        ((world.player.pitch - wanted_pitch) / LOOK_STEP).clamp(-1., 1.),
+    );
+
+    // Movement is in the body's own frame, so the walk is expressed the way a
+    // keyboard expresses it rather than as a world-space nudge.
+    let offset = (destination - feet).with_y(0.);
+    if offset.length() > 0.9 {
+        // The graph gets you to the right cell; it does not get you to a device
+        // standing in the middle of one. Once the route runs out — which it does
+        // as soon as the nearest waypoint *is* the destination's — walk the last
+        // few metres straight, or the director stalls two metres short of the
+        // panel with nothing left to do.
+        let routed = world.direction_toward(feet, destination);
+        let direction = if routed.length_squared() > 0.01 {
+            routed
+        } else {
+            offset.normalize_or_zero()
+        };
+        movement.movement = Vec2::new(
+            direction.dot(world.player.right()),
+            direction.dot(world.player.forward()),
+        )
+        .clamp_length_max(1.0);
+    }
+    Command {
+        movement,
+        action: Action::None,
+    }
+}

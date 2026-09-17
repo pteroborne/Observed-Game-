@@ -559,3 +559,53 @@ fn a_full_wave_of_minors_fits_inside_a_frame() {
         "rebuilding navigation took {rebuild:.1} ms; it used to be 134 and was visible"
     );
 }
+
+/// The recorded loop has to be a loop, not an Observer wandering a floor.
+///
+/// This is what makes the capture worth rendering: it asserts the director
+/// reaches every beat the floor actually has — make the hole, then use it.
+#[test]
+fn the_director_plays_the_loop() {
+    let mut world = WfcKineticWorld::new(site(), Mode::Encounter);
+    let mut retracted_at = None;
+    let mut first_kill = None;
+    for tick in 0..crate::demo::LOOP_TICKS {
+        let command = crate::demo::loop_command(&world, tick);
+        world.step(command);
+        for event in &world.events {
+            match event {
+                Event::Retracted(_) if retracted_at.is_none() => retracted_at = Some(tick),
+                Event::Eliminated(..) if first_kill.is_none() => first_kill = Some(tick),
+                _ => {}
+            }
+        }
+        if world.outcome != Outcome::Playing {
+            break;
+        }
+    }
+    let retracted_at = retracted_at.expect("the director never made the hole");
+    // Crossing a 40 m floor on foot and standing through the two-second
+    // warning is most of this. What matters is that it happens early enough to
+    // leave the recording a fight.
+    assert!(
+        retracted_at < 900,
+        "the hole took {retracted_at} ticks; nothing can be removed before it exists"
+    );
+    let first_kill = first_kill.unwrap_or_else(|| {
+        panic!(
+            "the director never removed a minor in {} ticks (outcome {:?}, wave {}, kills {})",
+            crate::demo::LOOP_TICKS,
+            world.outcome,
+            world.wave,
+            world.kills
+        )
+    });
+    assert!(first_kill > retracted_at);
+    assert!(
+        world.kills >= 2,
+        "only {} minor(s) removed; outcome {:?} at wave {}",
+        world.kills,
+        world.outcome,
+        world.wave
+    );
+}

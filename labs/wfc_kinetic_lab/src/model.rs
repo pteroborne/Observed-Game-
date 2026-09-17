@@ -883,6 +883,20 @@ impl WfcKineticWorld {
         previous
     }
 
+    /// A horizontal walking direction from `from` toward `to`, routed through
+    /// the navigation graph rather than straight through the architecture.
+    ///
+    /// Solves its own breadth-first search, so this is for one caller a tick —
+    /// the recorded director — not for the minors, which share one solve.
+    #[must_use]
+    pub fn direction_toward(&self, from: Vec3, to: Vec3) -> Vec3 {
+        let Some(goal) = self.nearest_waypoint(to) else {
+            return (to - from).with_y(0.).normalize_or_zero();
+        };
+        let parents = self.breadth_first(goal);
+        self.steer(from, to, Some(&parents))
+    }
+
     /// Which way a minor should walk this tick.
     ///
     /// `toward_goal` is the shared breadth-first solve rooted at the Observer's

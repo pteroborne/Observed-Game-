@@ -158,7 +158,17 @@ cargo dev-clippy
 cargo dev-test
 OBSERVED2_CAPTURE=docs/evidence/wfc_kinetic_lab/floor.png cargo dev-run -p wfc_kinetic_lab
 OBSERVED2_CAPTURE_SEQUENCE=/tmp/wfc-kinetic-frames cargo dev-run -p wfc_kinetic_lab
+OBSERVED2_CAPTURE_LOOP=/tmp/wfc-kinetic-loop cargo dev-run -p wfc_kinetic_lab
+ffmpeg -y -framerate 30 -i /tmp/wfc-kinetic-loop/frame_%04d.png \
+  -c:v libx264 -pix_fmt yuv420p -crf 20 -preset slow -movflags +faststart \
+  docs/evidence/wfc_kinetic_lab/gameplay-loop.mp4
 ```
+
+`OBSERVED2_CAPTURE_LOOP` records one continuous encounter played by a
+deterministic director rather than five staged moments — see
+[the gameplay loop](#the-gameplay-loop) below. It captures every second tick, so
+30 fps plays back in real time, and it stops shortly after the encounter
+resolves rather than holding on a finished world.
 
 The capture sequence stages five snapshots and then submits ordinary movement,
 aiming and tool commands — nothing reaches into the simulation mid-scene, so a
@@ -172,6 +182,30 @@ the events and final digests.
 Automated checks establish the geometry, the physical outcomes, replay and
 lifecycle correctness. Whether the tool *feels* good in solver-built space still
 requires a person at the keyboard.
+
+## The gameplay loop
+
+On a solved floor the loop has a shape the authored chamber does not, and it
+falls out of the parapet finding: **until a tile is retracted there is no way to
+remove a minor at all.** The tool only staggers them, the wave never clears, and
+the encounter cannot progress. So the loop is: make the hole, then work minors
+into it, and feed the tool between waves.
+
+The recorded director is a fixed priority policy in those terms — retract, then
+recharge below a third, then stand on the far side of the nearest minor from the
+hole and shove when the shot actually lines up on it. It emits the same
+`Command` a keyboard does and reads nothing it could not see, so the recording
+is a thing that happened.
+
+[gameplay-loop.mp4](../../docs/evidence/wfc_kinetic_lab/gameplay-loop.mp4) is
+one such encounter, 33 seconds, ending the way it ended: wave one lands, the
+panel is operated at 0:09, two minors go through the doorway into the hole at
+0:19 and 0:23 with a recharge between them, and wave two catches the Observer at
+0:30. Losing is a legitimate outcome and the director is deliberately simple —
+it is a floor with one hole in it and no teammates.
+
+`the_director_plays_the_loop` asserts the beats before any of it is rendered, so
+a recording cannot quietly become footage of somebody walking around.
 
 ## Not in scope
 

@@ -46,7 +46,8 @@ Kinetic / 02 — The Solved Floor
 WASD move / Shift sprint / Space jump / LMB push / RMB pull / E operate
 F3 diagnostics / N one paused tick
 
-OBSERVED2_CAPTURE=<png> or OBSERVED2_CAPTURE_SEQUENCE=<directory>
+OBSERVED2_CAPTURE=<png>, OBSERVED2_CAPTURE_SEQUENCE=<dir> (staged scenes),
+OBSERVED2_CAPTURE_LOOP=<dir> (one encounter, played by the director)
 ";
 
 struct Options {
@@ -132,10 +133,12 @@ pub fn run() {
     .insert_resource(Runtime::new(site, options.mode))
     .add_systems(FixedUpdate, runtime::fixed_step);
 
-    for (variable, sequence) in [
-        ("OBSERVED2_CAPTURE", false),
-        ("OBSERVED2_CAPTURE_SEQUENCE", true),
+    for (variable, mode) in [
+        ("OBSERVED2_CAPTURE", evidence::Mode2::Still),
+        ("OBSERVED2_CAPTURE_SEQUENCE", evidence::Mode2::Scenes),
+        ("OBSERVED2_CAPTURE_LOOP", evidence::Mode2::Loop),
     ] {
+        let sequence = mode != evidence::Mode2::Still;
         if let Ok(destination) = std::env::var(variable) {
             let parent = if sequence {
                 std::path::Path::new(&destination)
@@ -148,9 +151,11 @@ pub fn run() {
             app.insert_resource(evidence::Capture {
                 destination,
                 sequence,
+                mode,
                 frame: 0,
                 target: None,
                 report: String::new(),
+                settled: None,
             });
             break;
         }
