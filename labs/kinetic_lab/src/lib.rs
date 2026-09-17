@@ -6,7 +6,7 @@ pub mod guardian;
 pub mod model;
 pub mod physics;
 mod runtime;
-mod sound;
+pub mod sound;
 mod view;
 
 use bevy::{

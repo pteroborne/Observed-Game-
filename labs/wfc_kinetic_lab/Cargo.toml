@@ -8,7 +8,13 @@ default-run = "wfc_kinetic_lab"
 
 [dependencies]
 glam = "0.32"
-bevy = { version = "0.19", default-features = false, features = ["ui", "3d", "png"] }
+bevy = { version = "0.19", default-features = false, features = [
+    "ui",
+    "3d",
+    "png",
+    "bevy_audio",
+    "vorbis",
+] }
 # The solver, the tile catalog, and the geometry projection that turns one into
 # the other. This lab exists to put the kinetic tool inside their output.
 observed_authoring = { path = "../../crates/observed_authoring" }

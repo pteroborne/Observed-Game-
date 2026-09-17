@@ -66,6 +66,25 @@ built cells a moment earlier, and it is exactly the loop the design asks for:
 
 ![A minor shoved through a doorway onto a tile that is no longer there](../../docs/evidence/wfc_kinetic_lab/doorway-shove.png)
 
+## Sound
+
+The lab uses the shared `kinetic_lab::sound` design rather than a second copy:
+the palette, the distance falloff, the occlusion damping, the motion cues and
+the mixer all live there, behind a `SoundWorld` a lab implements for its own
+simulation. What belongs here is only what is particular to a solved floor —
+which of this lab's events map to which cue, and where in the facility each one
+happens.
+
+That last part is the difference worth having. The authored chamber plays its
+retraction at a bridge control; here the warning plays at the panel and the
+retraction plays *at the tile*, so a floor losing a cell is heard where the cell
+was. A body committed to void is heard at the cell it went over, which is the
+same cell the event reports.
+
+The ear rides the camera, so a Guardian behind a wall is behind it. `M` mutes.
+`playing_the_loop_spawns_voices` drives the recorded encounter and counts the
+voices it produces, so the lab cannot go quietly silent.
+
 ## Guardians
 
 Minors wear the shared `kinetic_lab::guardian` rig — the pyramidal body, lidded
@@ -90,6 +109,7 @@ feet stay inside the existing collision envelope.
 | `-` / `=` | Slow / speed up pursuing minors |
 | P / Escape | Pause or resume / pause and release the cursor |
 | F3 / N | Toggle diagnostics / advance one paused tick |
+| M | Mute |
 
 ## Rules
 
@@ -209,8 +229,7 @@ a recording cannot quietly become footage of somebody walking around.
 
 ## Not in scope
 
-Audio (`kinetic_lab` owns the kinetic sound bank; this lab is silent), majors,
-teammate boosts, equipment, Architect card play, multiple floors, ascent,
+Majors, teammate boosts, equipment, Architect card play, multiple floors, ascent,
 and production multiplayer. Retraction here deletes one cell's projected
 geometry; it does not run the solver's observation-safe relayout, so the floor
 never re-collapses around the hole.

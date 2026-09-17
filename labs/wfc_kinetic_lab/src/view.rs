@@ -33,8 +33,9 @@ use crate::runtime::Runtime;
 struct Eye;
 #[derive(Component)]
 struct Tool;
+/// Everything a rebuild or a reset sweeps away, sound included.
 #[derive(Component)]
-struct FacilityVisual;
+pub struct FacilityVisual;
 /// A visual belonging to one lattice cell, so a retraction can hide exactly it.
 #[derive(Component)]
 struct CellVisual(HexCoord);
@@ -70,6 +71,9 @@ enum UiAction {
     ForceDown,
     MinorFaster,
     MinorSlower,
+    /// Handled in the sound mixer, which owns the mute flag; the button exists
+    /// so the control is discoverable without the keyboard.
+    Mute,
 }
 
 const ROLES: [Role; 14] = [
@@ -130,7 +134,15 @@ fn font(size: f32) -> TextFont {
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<ViewState>()
-        .add_systems(Startup, (setup, kinetic_lab::guardian::setup))
+        .init_resource::<kinetic_lab::sound::SoundState>()
+        .add_systems(
+            Startup,
+            (
+                setup,
+                kinetic_lab::guardian::setup,
+                kinetic_lab::sound::setup,
+            ),
+        )
         .add_systems(
             Update,
             (
@@ -144,6 +156,8 @@ pub fn plugin(app: &mut App) {
                 warn_retraction,
                 draw,
                 events,
+                crate::sound::motion,
+                crate::sound::mix,
                 feedback,
                 labels,
                 hud,
@@ -175,6 +189,8 @@ fn setup(
     };
     commands.spawn((
         Eye,
+        // The ear rides the camera, so a Guardian behind a wall is behind it.
+        bevy::audio::SpatialListener::new(0.3),
         Camera3d::default(),
         Hdr,
         Bloom::NATURAL,
@@ -293,6 +309,7 @@ fn setup(
             button("G  NEXT FLOOR", UiAction::NextFloor),
             button("[ ]  FORCE", UiAction::ForceUp),
             button("-  =  SPEED", UiAction::MinorFaster),
+            button("M  MUTE", UiAction::Mute),
         ],
     ));
     commands.insert_resource(art);
@@ -329,6 +346,7 @@ fn apply(action: UiAction, runtime: &mut Runtime) {
         UiAction::Debug => runtime.diagnostics = !runtime.diagnostics,
         // Tuning is live because the lab exists to find these numbers. They
         // survive a reset so a value can be tried across several attempts.
+        UiAction::Mute => {}
         UiAction::ForceUp => runtime.tuning.scale_force(1.12),
         UiAction::ForceDown => runtime.tuning.scale_force(1. / 1.12),
         UiAction::MinorFaster => runtime.tuning.scale_minor_speed(1.12),
@@ -780,12 +798,19 @@ fn draw(runtime: Res<Runtime>, mut gizmos: Gizmos) {
     }
 }
 
-fn events(mut runtime: ResMut<Runtime>, mut view: ResMut<ViewState>) {
+fn events(
+    mut commands: Commands,
+    mut runtime: ResMut<Runtime>,
+    mut view: ResMut<ViewState>,
+    bank: Res<kinetic_lab::sound::Bank>,
+    mut sound: ResMut<kinetic_lab::sound::SoundState>,
+) {
     let tick = runtime.world.tick;
     // The queue survives FixedUpdate catch-up, so no feedback is lost between
     // rendered frames.
     let queued = std::mem::take(&mut runtime.events);
     for event in queued {
+        crate::sound::event(&mut commands, &bank, &mut sound, &runtime, &event);
         let message = match &event {
             Event::Fired(action, _, point) => {
                 view.kick = 1.;

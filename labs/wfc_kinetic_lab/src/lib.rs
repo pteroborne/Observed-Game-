@@ -13,6 +13,7 @@ pub mod evidence;
 pub mod model;
 pub mod runtime;
 pub mod site;
+pub mod sound;
 mod view;
 
 use std::sync::Arc;
