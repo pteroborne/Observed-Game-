@@ -93,6 +93,38 @@ The ear rides the camera, so a Guardian behind a wall is behind it. `M` mutes.
 `playing_the_loop_spawns_voices` drives the recorded encounter and counts the
 voices it produces, so the lab cannot go quietly silent.
 
+## The plumb
+
+A second tool, promoted from [`plumb_lab`](../plumb_lab/README.md), which
+established that a redirected gravity is cheap for anything that is not the
+Observer: Rapier gives per-body gravity, and its character controller takes
+`up` as a vector rather than an assumption.
+
+Arming is separate from firing, and deliberately so. `Q` points the plumb along
+the current look direction; `F` commits it to whatever the crosshair has. You
+decide which way down will be *before* you commit it to something — fold the two
+together and it is a shove with extra steps. The armed vector is on the HUD and
+drawn at the muzzle, and every plumbed body carries an arrow along its own down,
+because a body falling sideways is otherwise indistinguishable from a body that
+was thrown.
+
+It costs 25 against the shove's 10, holds for four seconds, and takes the body
+out of world gravity entirely for that time. A plumbed minor is physics-owned
+and stops pursuing: this lab's pursuit is a Y-up navigation graph, and a minor
+whose down points at a wall has no business being steered by it. Plumbed bodies
+are also allowed to tumble, which locked-upright minors are not.
+
+What it buys is reach. A shove has to be lined up through a minor *at* the hole
+and carries a body about three metres; a plumb only has to reach the minor, and
+then gravity does the work from wherever it happens to be standing. The
+walkthrough's last scene is exactly that: a minor in the doorway the retraction
+opened, a down pointed through it, and a body that agrees.
+
+![A minor under a committed plumb](../../docs/evidence/wfc_kinetic_lab/plumb.png)
+
+It is not a wall-walking tool for the opposition, and that is a scope decision
+rather than an oversight — see `plumb_lab` for what an up-aware walker costs.
+
 ## Two verbs, and why both
 
 **Decoherence is the legal one.** Operating the panel telegraphs a pocket and
@@ -141,6 +173,8 @@ feet stay inside the existing collision envelope.
 | WASD / Shift / Space | Move / sprint / jump |
 | Mouse | Look; the crosshair ray selects the first visible body |
 | LMB / RMB | One immediate push / pull per press |
+| Q | Arm the plumb along the current look direction |
+| F / MMB | Commit the armed plumb to whatever the crosshair has |
 | E | Operate the nearby generator or tile control |
 | 1 / 2 | Reset into practice / encounter |
 | R / G | Reset this floor / solve the next one |
@@ -271,7 +305,8 @@ a recording cannot quietly become footage of somebody walking around.
 ## Not in scope
 
 Majors, teammate boosts, equipment, Architect card play, multiple floors, ascent,
-and production multiplayer. The recorded gameplay loop and its MP4 are **stale**: they were cut on the
-seven-cell arena, and the director's simple policy reaches the demolition
-control on this floor but gets caught crossing it before it clears a wave.
+and production multiplayer. The staged walkthrough is current and includes the plumb. The **recorded
+gameplay loop** (`gameplay-loop.mp4`) is still stale: it was cut on the
+seven-cell arena, and the director reaches the demolition control on this floor
+but gets caught crossing it before it clears a wave.
 `the_director_reaches_the_beats_the_floor_has` pins what it does still do.

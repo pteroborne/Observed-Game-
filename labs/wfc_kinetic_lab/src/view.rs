@@ -314,6 +314,7 @@ fn setup(
             button("[ ]  FORCE", UiAction::ForceUp),
             button("-  =  SPEED", UiAction::MinorFaster),
             button("M  MUTE", UiAction::Mute),
+            button("Q ARM / F PLUMB", UiAction::Mute),
         ],
     ));
     commands.insert_resource(art);
@@ -446,6 +447,11 @@ fn input(
     for (pressed, action) in [
         (mouse.just_pressed(MouseButton::Left), Action::Push),
         (mouse.just_pressed(MouseButton::Right), Action::Pull),
+        (
+            mouse.just_pressed(MouseButton::Middle) || keys.just_pressed(KeyCode::KeyF),
+            Action::Plumb,
+        ),
+        (keys.just_pressed(KeyCode::KeyQ), Action::Arm),
         (keys.just_pressed(KeyCode::KeyE), Action::Interact),
     ] {
         if pressed {
@@ -762,6 +768,25 @@ fn draw(runtime: Res<Runtime>, mut gizmos: Gizmos) {
             color(Role::Target),
         );
     }
+    // Every plumbed body carries an arrow along its own down. This is a
+    // Legibility Contract signal rather than a debug one: a body falling
+    // sideways is otherwise indistinguishable from a body being thrown.
+    for (id, actor) in &world.actors {
+        let (Some(plumb), true) = (actor.lash, actor.alive) else {
+            continue;
+        };
+        let at = world.pose(*id).position;
+        let tip = at + plumb.direction * 1.8;
+        gizmos.line(at, tip, color(Role::Pull));
+        let side = plumb.direction.any_orthonormal_vector() * 0.3;
+        gizmos.line(tip, tip - plumb.direction * 0.5 + side, color(Role::Pull));
+        gizmos.line(tip, tip - plumb.direction * 0.5 - side, color(Role::Pull));
+    }
+    // The armed direction, drawn just in front of the eye so the Observer can
+    // see what they are about to commit without opening a menu.
+    let muzzle = world.eye() + world.player.look_dir() * 1.4;
+    gizmos.line(muzzle, muzzle + world.armed * 0.6, color(Role::Pull));
+
     // Unsafe edges are a permanent signal, not a debug one: a face that opens
     // onto void is the tool's answer to the horde and has to be findable.
     for ledge in &runtime.site.ledges {
@@ -844,6 +869,12 @@ fn events(
             Event::Relaid(cell) => Some(format!("({}, {}) re-collapsed", cell.q, cell.r)),
             Event::Held => Some("the floor held — you were watching".to_string()),
             Event::Inert => Some("nothing here will move".to_string()),
+            Event::Armed(direction) => Some(format!(
+                "plumb armed  {:.2} {:.2} {:.2}",
+                direction.x, direction.y, direction.z
+            )),
+            Event::Plumbed(..) => Some("plumb committed".to_string()),
+            Event::Unplumbed(_) => None,
             Event::Retracted(cell) => {
                 Some(format!("({}, {}) retracted toward void", cell.q, cell.r))
             }
@@ -946,7 +977,7 @@ fn hud(runtime: Res<Runtime>, view: Res<ViewState>, mut texts: Query<(&mut Text,
                     format!("{:.0}", world.charge)
                 };
                 format!(
-                    "SEED {}  ({} requested)\nPLAN {}\nCHARGE {}\nWAVE {} / 3    REMOVED {}\nGENERATOR {}\n\nFORCE {:.1} / {:.1}  [ ]\nMINOR SPEED {:.1}  - =",
+                    "SEED {}  ({} requested)\nPLAN {}\nCHARGE {}\nWAVE {} / 3    REMOVED {}\nGENERATOR {}\n\nFORCE {:.1} / {:.1}  [ ]\nMINOR SPEED {:.1}  - =\n\nPLUMB  down {:>5.2} {:>5.2} {:>5.2}   Q arms\n       {}",
                     site.seed,
                     site.requested_seed,
                     site.plan(),
@@ -957,6 +988,13 @@ fn hud(runtime: Res<Runtime>, view: Res<ViewState>, mut texts: Query<(&mut Text,
                     world.config.push,
                     world.config.pull,
                     world.config.minor_speed,
+                    world.armed.x,
+                    world.armed.y,
+                    world.armed.z,
+                    match world.plumb_ready() {
+                        Ok(_) => "ready".to_string(),
+                        Err(reason) => refusal(reason).to_string(),
+                    },
                 )
             }
             HudField::Aim => match world.fire_ready() {

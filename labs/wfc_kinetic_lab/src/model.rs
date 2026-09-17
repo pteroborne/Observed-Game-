@@ -56,6 +56,10 @@ pub enum Action {
     None,
     Push,
     Pull,
+    /// Impart the armed plumb to whatever the crosshair has.
+    Plumb,
+    /// Point the armed plumb along the current look direction.
+    Arm,
     Interact,
 }
 
@@ -73,6 +77,9 @@ pub enum Refusal {
     Cooldown,
     EmptyCharge,
 }
+
+/// A redirected gravity riding on one body.
+pub use plumb_lab::model::Plumb;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Target {
@@ -105,6 +112,12 @@ pub enum Event {
     Wave(u8),
     Ended(Outcome),
     Recharge,
+    /// A plumb landed on a body, and which way it now falls.
+    Plumbed(ActorId, Vec3),
+    /// A plumb wore off.
+    Unplumbed(ActorId),
+    /// The armed direction changed.
+    Armed(Vec3),
 }
 
 /// Tool and opposition tuning, adjustable at runtime so the lab can be used to
@@ -130,6 +143,15 @@ pub struct Config {
     pub minor_speed: f32,
     /// How hard it accelerates toward that speed, in m/s^2.
     pub minor_accel: f32,
+    /// What a plumb costs from the pool. More than a shove: it does not move a
+    /// body once, it owns which way the body falls for four seconds.
+    pub plumb_cost: f32,
+    /// The acceleration a plumb imparts, in m/s^2.
+    pub plumb_strength: f32,
+    /// How long a plumb lasts, in ticks.
+    pub plumb_ticks: u32,
+    /// Ticks before the plumb can be used again.
+    pub plumb_cooldown: u32,
 }
 
 impl Default for Config {
@@ -143,6 +165,10 @@ impl Default for Config {
             stagger: 27,
             minor_speed: 2.5,
             minor_accel: 15.,
+            plumb_cost: 25.,
+            plumb_strength: 20.,
+            plumb_ticks: 240,
+            plumb_cooldown: 45,
         }
     }
 }
@@ -167,6 +193,10 @@ pub enum Behavior {
     Airborne,
     Pursue,
     Capture,
+    /// Under a plumb. Physics owns the body: this lab's pursuit is a Y-up
+    /// navigation graph, and a minor whose down points at a wall has no
+    /// business being steered by it.
+    Plumbed,
 }
 
 #[derive(Clone, Debug)]
@@ -179,6 +209,8 @@ pub struct Actor {
     pub stagger: u32,
     pub behavior: Behavior,
     pub grounded: bool,
+    /// The redirected gravity riding on this body, if any.
+    pub lash: Option<Plumb>,
     /// The last cell this body was supported over.
     ///
     /// Reported when it leaves the facility, because that is the interesting
@@ -211,6 +243,10 @@ pub struct WfcKineticWorld {
     pub charge: f32,
     pub powered: bool,
     pub cooldown: u32,
+    /// Ticks before the plumb is ready again.
+    pub plumb_cooldown: u32,
+    /// Which way the armed plumb currently points.
+    pub armed: Vec3,
     pub wave: u8,
     pub wave_delay: u32,
     /// The live facility. A relayout mutates this rather than the site, which
@@ -303,6 +339,10 @@ impl WfcKineticWorld {
             charge: 100.,
             powered: true,
             cooldown: 0,
+            plumb_cooldown: 0,
+            // Armed straight up by default: the most obviously *not* gravity
+            // direction, so the first shot reads as the tool doing something.
+            armed: Vec3::Y,
             wave: 0,
             wave_delay: 300,
             world: facility,
@@ -380,6 +420,7 @@ impl WfcKineticWorld {
                 stagger: 0,
                 behavior: Behavior::Practice,
                 grounded: false,
+                lash: None,
                 last_cell: None,
             },
         );
@@ -466,6 +507,107 @@ impl WfcKineticWorld {
                 self.events
                     .push(Event::Fired(action, target.id, target.point));
             }
+        }
+    }
+
+    /// Point the armed plumb where the Observer is looking.
+    ///
+    /// Arming is deliberately separate from firing. The tool's whole idea is
+    /// that you decide which way down will be *before* you commit it to
+    /// something, and folding the two together would make it a shove with extra
+    /// steps.
+    fn arm(&mut self) {
+        let direction = self.player.look_dir().normalize_or(Vec3::Y);
+        self.armed = direction;
+        self.events.push(Event::Armed(direction));
+    }
+
+    /// Whether the plumb could be fired right now, and at what.
+    pub fn plumb_ready(&self) -> Result<Target, Refusal> {
+        let target = self.target()?;
+        if self.plumb_cooldown > 0 {
+            return Err(Refusal::Cooldown);
+        }
+        if self.mode == Mode::Encounter && self.charge < self.config.plumb_cost {
+            return Err(Refusal::EmptyCharge);
+        }
+        Ok(target)
+    }
+
+    /// Commit the armed direction to whatever the crosshair has.
+    fn fire_plumb(&mut self) {
+        match self.plumb_ready() {
+            Err(reason) => self.events.push(Event::Refused(reason)),
+            Ok(target) => {
+                let plumb = Plumb::new(
+                    self.armed,
+                    self.config.plumb_strength,
+                    self.config.plumb_ticks,
+                );
+                self.attach(target.id, plumb);
+                if self.mode == Mode::Encounter {
+                    self.charge -= self.config.plumb_cost;
+                }
+                self.plumb_cooldown = self.config.plumb_cooldown;
+                self.events.push(Event::Plumbed(target.id, plumb.direction));
+            }
+        }
+    }
+
+    /// Put a body under a redirected gravity.
+    ///
+    /// The body leaves world gravity entirely and a user force supplies the
+    /// replacement. Rapier keeps that force until it is reset, so this is
+    /// applied once rather than every tick.
+    fn attach(&mut self, id: ActorId, plumb: Plumb) {
+        let Some(actor) = self.actors.get(&id) else {
+            return;
+        };
+        let handle = actor.body;
+        let mass = self.physics.bodies[handle].mass();
+        let body = &mut self.physics.bodies[handle];
+        body.set_gravity_scale(0., true);
+        body.reset_forces(true);
+        body.add_force(rv(plumb.direction * plumb.strength * mass), true);
+        // A plumbed body is allowed to tumble: locked upright while falling
+        // sideways reads as a bug rather than as a body under strange gravity.
+        body.set_enabled_rotations(true, true, true, true);
+        if let Some(actor) = self.actors.get_mut(&id) {
+            actor.lash = Some(plumb);
+            actor.stagger = actor.stagger.max(self.config.stagger);
+        }
+    }
+
+    /// Tick every live plumb down, and hand expired bodies back to the world.
+    fn expire_plumbs(&mut self) {
+        let expiring: Vec<ActorId> = self
+            .actors
+            .iter_mut()
+            .filter_map(|(id, actor)| {
+                let plumb = actor.lash.as_mut()?;
+                if plumb.ticks <= 1 {
+                    actor.lash = None;
+                    Some(*id)
+                } else {
+                    plumb.ticks -= 1;
+                    None
+                }
+            })
+            .collect();
+        for id in expiring {
+            if let Some(actor) = self.actors.get(&id) {
+                let handle = actor.body;
+                let kind = actor.kind;
+                let body = &mut self.physics.bodies[handle];
+                body.reset_forces(true);
+                body.set_gravity_scale(1., true);
+                if kind == Kind::Minor {
+                    // Minors stand upright again, because the pursuit they are
+                    // about to resume is a Y-up one.
+                    body.set_enabled_rotations(false, false, false, true);
+                }
+            }
+            self.events.push(Event::Unplumbed(id));
         }
     }
 
@@ -711,7 +853,7 @@ impl WfcKineticWorld {
     /// doors pointing into it is not a layout the solver would ever produce and
     /// feeding one back to it would corrupt every relayout after. The lab
     /// tracks the retraction beside the facility instead.
-    fn retract(&mut self) {
+    pub(crate) fn retract(&mut self) {
         let cell = self.site.retracting;
         // Never the floor underfoot. The control stands beside its tile, but a
         // rule is cheaper than trusting that, and an Observer who deletes the
@@ -796,6 +938,8 @@ impl WfcKineticWorld {
         }
         self.tick += 1;
         self.cooldown = self.cooldown.saturating_sub(1);
+        self.plumb_cooldown = self.plumb_cooldown.saturating_sub(1);
+        self.expire_plumbs();
         // Hazards commit before movement so every query this tick sees the same
         // support the player is about to be resolved against.
         if let Some((left, _)) = &self.telegraph {
@@ -828,6 +972,8 @@ impl WfcKineticWorld {
         }
         match command.action {
             Action::Push | Action::Pull => self.fire(command.action),
+            Action::Plumb => self.fire_plumb(),
+            Action::Arm => self.arm(),
             Action::Interact => self.interact(),
             Action::None => {}
         }
@@ -1004,7 +1150,9 @@ impl WfcKineticWorld {
                 continue;
             }
             let actor = &self.actors[&id];
-            let behavior = if actor.stagger > 0 {
+            let behavior = if actor.lash.is_some() {
+                Behavior::Plumbed
+            } else if actor.stagger > 0 {
                 Behavior::Staggered
             } else if !actor.grounded {
                 Behavior::Airborne
@@ -1187,6 +1335,18 @@ impl WfcKineticWorld {
         }
     }
 
+    /// Test hook: retract without walking to the control.
+    #[cfg(test)]
+    pub fn retract_warning_for_tests(&mut self) {
+        self.retract();
+    }
+
+    /// Test hook: attach a plumb directly.
+    #[cfg(test)]
+    pub fn attach_for_tests(&mut self, id: ActorId, plumb: Plumb) {
+        self.attach(id, plumb);
+    }
+
     /// Test hook: the bounded rebuild one relayout causes.
     #[cfg(test)]
     pub fn rebuild_navigation_for_profiling(&mut self, changed: &BTreeSet<HexCoord>) {
@@ -1327,6 +1487,7 @@ impl WfcKineticWorld {
             self.retracted.len() as u64,
             self.world.generation as u64,
             u64::from(self.cooldown),
+            u64::from(self.plumb_cooldown),
             u64::from(self.kills),
             u64::from(self.next_id),
             u64::from(self.config.cooldown),
@@ -1341,6 +1502,10 @@ impl WfcKineticWorld {
             self.config.pull,
             self.config.minor_speed,
             self.config.minor_accel,
+            self.config.plumb_strength,
+            self.armed.x,
+            self.armed.y,
+            self.armed.z,
             self.player.position.x,
             self.player.position.y,
             self.player.position.z,
@@ -1355,6 +1520,13 @@ impl WfcKineticWorld {
             add(u64::from(actor.stagger));
             add(actor.behavior as u64);
             add(u64::from(actor.grounded));
+            add(actor.lash.map_or(0, |plumb| u64::from(plumb.ticks)));
+            for value in actor
+                .lash
+                .map_or([0., 0., 0.], |plumb| plumb.direction.to_array())
+            {
+                add(u64::from(value.to_bits()));
+            }
             let body = &self.physics.bodies[actor.body];
             for value in [
                 body.translation().x,

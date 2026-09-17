@@ -7,8 +7,10 @@ catalogue, at seed 8, with 662 projected hulls. It was a seven-cell arena until
 observation-safe relayout needed somewhere to happen; the lab README carries the
 measurements.
 
-**The scene stills, the walkthrough GIF and the gameplay MP4 below were cut on
-the seven-cell arena and are stale.** The floor they show is real and the
+**The gameplay MP4 below was cut on the seven-cell arena and is stale.** The
+walkthrough and its stills are current.
+
+Older note, still true of `gameplay-loop.mp4` only: The floor they show is real and the
 findings they record still hold, but they are not this floor.
 
 | | |
@@ -17,7 +19,8 @@ findings they record still hold, but they are not this floor.
 | [guardians.png](guardians.png) | A minor wearing the shared Guardian rig |
 | [retraction.png](retraction.png) | The tile control, mid-warning |
 | [doorway-shove.png](doorway-shove.png) | A minor bracketed in a doorway that no longer leads anywhere |
-| [walkthrough.gif](walkthrough.gif) | All five staged scenes |
+| [walkthrough.gif](walkthrough.gif) / [.mp4](walkthrough.mp4) | All six staged scenes, including the plumb |
+| [plumb.png](plumb.png) | A minor under a committed plumb |
 | [gameplay-loop.mp4](gameplay-loop.mp4) | One continuous encounter, 33 s, played by the director (silent — see below) |
 
 ![All five scenes](walkthrough.gif)

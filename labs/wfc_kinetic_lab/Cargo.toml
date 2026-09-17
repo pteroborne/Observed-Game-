@@ -31,6 +31,9 @@ rapier3d = { version = "0.34", features = ["enhanced-determinism"] }
 # query are already proven next door. Reuse them rather than keeping a second
 # copy of the same fixed-tick physics adapter in sync.
 kinetic_lab = { path = "../kinetic_lab" }
+# The plumb's value type and its tangent helper. `plumb_lab` established what a
+# redirected gravity means; this lab should not restate it slightly differently.
+plumb_lab = { path = "../plumb_lab" }
 
 [[bin]]
 name = "wfc_kinetic_lab"

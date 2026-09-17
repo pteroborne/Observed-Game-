@@ -9505,6 +9505,7 @@ dependencies = [
  "observed_style",
  "observed_traversal",
  "player_input",
+ "plumb_lab",
  "rapier3d",
 ]
 

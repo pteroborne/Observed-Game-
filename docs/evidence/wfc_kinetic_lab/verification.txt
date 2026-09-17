@@ -1,25 +1,31 @@
 seed 8 (requested 8)
-plan .HR/.HH/RxH
-cells 7 voids 2 ledges 0 hulls 159
+plan HHHHHHR/HHHHHHH/HHHHHH./HHHRHHH/RxHRRHH
+cells 34 voids 1 ledges 0 hulls 662
 retracting (1, 0)
 
 THE SOLVED FLOOR / seven cells the solver placed
-final digest 87d2dc7fdc94807a, removed 0, player Vec3(6.692833, 1.4472228, -0.07838604)
+final digest df272672831df0b6, removed 0, player Vec3(6.692833, 1.4472228, -0.07838604)
 
 ARCHITECTURE / a wall the solver chose stops the ray
 tick 90: Refused(Blocked)
-final digest c835f90d3fd77850, removed 0, player Vec3(0.0, 1.4472222, 0.0)
+final digest 6a20234ed91e0b0d, removed 0, player Vec3(2.7209039, 1.4472222, 4.6644063)
 
 THE PARAPET / every face onto void comes back railed
-tick 90: Fired(Push, ActorId(1005), Vec3(2.4000702, 1.1779989, 4.114406))
-final digest 6dea9eb29d181e78, removed 0, player Vec3(0.0, 1.4472222, 0.0)
+tick 90: Fired(Push, ActorId(1005), Vec3(-2.400071, 1.1779989, 4.1144056))
+final digest add3cb34166d33d8, removed 0, player Vec3(0.0, 1.4472222, 0.0)
 
-RETRACTION / the Architect makes the hole
-tick 60: Retracting
-tick 180: Retracted(HexCoord { q: 1, r: 0, level: 0 })
-final digest 0a5af273dfdfc40f, removed 0, player Vec3(36.2, 1.4472222, 12.0)
+DECOHERENCE / look away and the pocket re-collapses
+tick 60: Decohering(HexCoord { q: 0, r: 3, level: 0 })
+tick 180: Relaid(HexCoord { q: 0, r: 3, level: 0 })
+final digest f5307d9ec3a3ea37, removed 0, player Vec3(103.2, 1.4472222, 36.0)
 
-THE DOORWAY / and the Observer shoves a minor through it
-tick 90: Fired(Push, ActorId(1005), Vec3(5.45, 1.1495675, 2.3822706e-7))
-tick 168: Eliminated(ActorId(1005), Some(HexCoord { q: 1, r: 0, level: 0 }))
-final digest da2f117847a12980, removed 1, player Vec3(0.0, 1.4472222, 0.0)
+OBSERVATION / look at it and the floor holds
+tick 60: Decohering(HexCoord { q: 0, r: 3, level: 0 })
+tick 180: Relaid(HexCoord { q: 0, r: 3, level: 0 })
+final digest 32094fdf506b26e6, removed 0, player Vec3(103.2, 1.4472222, 36.0)
+
+PLUMB / down becomes the hole, and the minor agrees
+tick 55: Armed(Vec3(0.8944272, -0.44721365, 3.9096655e-8))
+tick 90: Plumbed(ActorId(1005), Vec3(0.8944272, -0.44721365, 3.9096655e-8))
+tick 233: Eliminated(ActorId(1005), Some(HexCoord { q: 0, r: 0, level: 0 }))
+final digest 11c76a35023e98fb, removed 1, player Vec3(0.0, 1.4472222, 0.0)

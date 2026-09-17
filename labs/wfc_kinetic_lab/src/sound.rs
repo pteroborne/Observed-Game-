@@ -94,6 +94,12 @@ pub fn cue(event: &Event) -> Cue {
         Event::Held => Cue::PowerOff,
         Event::Inert => Cue::Miss,
         Event::Retracted(_) => Cue::Retract,
+        // The bank has no plumb of its own yet. Pull is the closest thing in
+        // it — a sustained draw rather than an impact — and arming borrows the
+        // charge tick, which is already the sound of the tool getting ready.
+        Event::Plumbed(..) => Cue::Pull,
+        Event::Unplumbed(_) => Cue::ChargeTick,
+        Event::Armed(_) => Cue::ChargeTick,
         Event::Wave(_) => Cue::Wave,
         Event::Ended(Outcome::Cleared) => Cue::Clear,
         Event::Ended(Outcome::Fell) => Cue::Void,
@@ -120,6 +126,14 @@ pub fn origin(runtime: &Runtime, event: &Event) -> Option<Vec3> {
             Some(Vec3::from_array(hex_origin(*cell)) + Vec3::Y)
         }
         Event::Recharge => Some(site.station + Vec3::Y),
+        // Heard where the body is, not at the Observer: the point of the plumb
+        // is that something over there is now falling a different way.
+        Event::Plumbed(id, _) | Event::Unplumbed(id) => runtime
+            .world
+            .actors
+            .get(id)
+            .filter(|actor| actor.alive)
+            .map(|actor| runtime.world.pose(actor.id).position),
         _ => None,
     }
 }

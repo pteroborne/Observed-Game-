@@ -14,12 +14,13 @@ use player_input::PlayerIntent;
 use crate::model::{Action, ActorId, Command, Kind, Mode, WfcKineticWorld};
 use crate::site::Site;
 
-pub const SCENES: [&str; 5] = [
+pub const SCENES: [&str; 6] = [
     "THE SOLVED FLOOR / seven cells the solver placed",
     "ARCHITECTURE / a wall the solver chose stops the ray",
     "THE PARAPET / every face onto void comes back railed",
     "DECOHERENCE / look away and the pocket re-collapses",
     "OBSERVATION / look at it and the floor holds",
+    "PLUMB / down becomes the hole, and the minor agrees",
 ];
 pub const SCENE_TICKS: u32 = 240;
 
@@ -177,6 +178,37 @@ pub fn stage(index: usize, site: &Arc<Site>) -> Demo {
                 aim_from(&mut world, stand, launch + Vec3::Y * 0.6 + AIM_LIFT);
             }
         }
+        // The plumb: a retracted tile, a minor in the doorway onto it, and a
+        // gravity that points through the opening.
+        5 => {
+            empty(&mut world);
+            world.retract();
+            if let Some((cell, face)) = world.open_thresholds().first().copied()
+                && let Some(hole) = crate::site::config().grid().neighbor(cell, face)
+            {
+                let inside = Vec3::from_array(hex_origin(cell));
+                let centre = Vec3::from_array(hex_origin(hole));
+                let outward = (centre - inside).with_y(0.).normalize_or(Vec3::X);
+                let ideal = inside + outward * 5.0;
+                let stand = site
+                    .nav
+                    .iter()
+                    .copied()
+                    .filter(|point| world.standable(*point))
+                    .min_by(|a, b| {
+                        a.distance_squared(ideal)
+                            .total_cmp(&b.distance_squared(ideal))
+                    })
+                    .unwrap_or(ideal);
+                target = Some(world.spawn(Kind::Minor, stand + Vec3::Y * 0.6));
+                let behind = stand - outward * 5.5;
+                aim_from(
+                    &mut world,
+                    standable_near(site, behind, 4.0).unwrap_or(behind),
+                    stand + AIM_LIFT,
+                );
+            }
+        }
         // The panel, the warning, and a pocket that re-collapses because
         // nobody was looking at it.
         //
@@ -236,6 +268,19 @@ pub fn command(
     if scene == 0 && (40..200).contains(&tick) {
         movement.movement = Vec2::new(0., 0.55);
     }
+    // The plumb scene looks at the down it is about to arm, then back at the
+    // minor to commit it.
+    if scene == 5 {
+        let wanted = plumb_down(world, target);
+        let at = if tick < 65 {
+            world.eye() + wanted * 8.0
+        } else {
+            target
+                .and_then(|id| world.actors.get(&id).map(|_| world.pose(id).position))
+                .map_or(world.eye() + wanted * 8.0, |at| at + AIM_LIFT)
+        };
+        movement.look = turn_toward(world, at);
+    }
     // Three looks away from what it just telegraphed and loses the pocket;
     // four stares at it and keeps the floor.
     if let (3 | 4, Some((_, candidate))) = (scene, world.telegraph.as_ref())
@@ -249,6 +294,9 @@ pub fn command(
     let action = match (scene, tick) {
         (1, 90) | (2, 90) => Action::Push,
         (3 | 4, 60) => Action::Interact,
+        // Arm the direction, then commit it. Two presses, as at the keyboard.
+        (5, 55) => Action::Arm,
+        (5, 90) => Action::Plumb,
         _ => Action::None,
     };
     Command { movement, action }
@@ -337,25 +385,63 @@ pub fn loop_command(world: &WfcKineticWorld, tick: u32) -> Command {
         return go(world, post, position + AIM_LIFT);
     }
 
-    // In range. Which verb depends on which side of the hole the minor is,
-    // and that is not a detail — it is the thing the floor decides for you.
+    // In range. The plumb first, because it is the verb this floor actually
+    // rewards: a shove has to be lined up through the minor at the hole and
+    // carries a body three metres, while a plumb only has to *reach* the minor
+    // and then gravity does the work from wherever it is standing.
+    //
+    // Arming is a separate action that reads the look direction, so this is a
+    // short dance: look at the down you want, arm it, look back, fire.
+    let wanted_down =
+        ((hole - position).with_y(0.).normalize_or(Vec3::X) * 2.0 + Vec3::NEG_Y).normalize();
+    // Hysteresis, because the wanted direction drifts as the minor walks. One
+    // threshold and the director re-arms every tick chasing a moving target and
+    // never gets round to firing, which is exactly what it did.
+    const ARM_BELOW: f32 = 0.80;
+    const FIRE_ABOVE: f32 = 0.70;
+    let aligned = world.armed.dot(wanted_down);
+    if aligned < ARM_BELOW {
+        // Look at the direction being armed, then arm it.
+        let look_at = eye + wanted_down * 8.0;
+        let mut command = go(world, post_beside(world, hole, Some(position)), look_at);
+        command.movement.movement = Vec2::ZERO;
+        if turn_toward(world, look_at).length() < 0.35 {
+            command.action = Action::Arm;
+        }
+        return command;
+    }
+    if aligned > FIRE_ABOVE {
+        let mut command = go(
+            world,
+            post_beside(world, hole, Some(position)),
+            position + AIM_LIFT,
+        );
+        if world
+            .plumb_ready()
+            .is_ok_and(|target| target.id == id && target.distance > 1.6)
+        {
+            command.action = Action::Plumb;
+            command.movement.movement = Vec2::ZERO;
+        }
+        return command;
+    }
+
+    // Otherwise fall back on the shove, and which verb depends on which side of
+    // the hole the minor is.
     //
     // A pursuing minor walks at the Observer and *stops at the hole*, because
     // the navigation graph has no edges across one. So it arrives on the far
     // side, facing across, and a push sends it further away. Pull drags it
-    // toward the eye, which is over the hole. The director spent fifty seconds
-    // lining up shoves that were all pointing the wrong way before this.
-    let to_target = (position - eye).with_y(0.).normalize_or_zero();
-    let to_hole = (hole - position).with_y(0.).normalize_or_zero();
+    // toward the eye, which is over the hole.
+    let to_target = (position - eye).with_y(0.).normalize_or(Vec3::X);
+    let to_hole = (hole - position).with_y(0.).normalize_or(Vec3::X);
     let alignment = to_target.dot(to_hole);
     let post = if alignment < 0. {
-        // Hole between us: hold position and pull it across.
         post_beside(world, hole, Some(position))
     } else {
-        // Minor between us and the hole: get behind it and push.
         snap_post(
             world,
-            position + (position - hole).with_y(0.).normalize_or_zero() * 4.6,
+            position + (position - hole).with_y(0.).normalize_or(Vec3::X) * 4.6,
             hole,
         )
     };
@@ -447,6 +533,23 @@ fn nearest_hole(world: &WfcKineticWorld, feet: Vec3) -> Option<Vec3> {
             feet.distance_squared(*a)
                 .total_cmp(&feet.distance_squared(*b))
         })
+}
+
+/// Which way the plumb scene wants "down" to be: through the doorway the
+/// retraction opened, and then onward.
+fn plumb_down(world: &WfcKineticWorld, target: Option<ActorId>) -> Vec3 {
+    let Some((cell, face)) = world.open_thresholds().first().copied() else {
+        return Vec3::NEG_Y;
+    };
+    let Some(hole) = crate::site::config().grid().neighbor(cell, face) else {
+        return Vec3::NEG_Y;
+    };
+    let centre = Vec3::from_array(hex_origin(hole));
+    let from = target.map_or_else(
+        || Vec3::from_array(hex_origin(cell)),
+        |id| world.pose(id).position,
+    );
+    ((centre - from).with_y(0.).normalize_or(Vec3::X) * 2.0 + Vec3::NEG_Y).normalize()
 }
 
 /// A look delta that turns toward a world point, as a mouse movement.

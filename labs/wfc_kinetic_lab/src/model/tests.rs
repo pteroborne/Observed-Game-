@@ -565,3 +565,187 @@ fn occupying_a_pocket_holds_the_floor() {
         "a held floor changed anyway"
     );
 }
+
+/// Put a body in front of the crosshair and return its id.
+fn staged_target(world: &mut WfcKineticWorld, kind: Kind) -> ActorId {
+    let existing: Vec<ActorId> = world.actors.keys().copied().collect();
+    for id in existing {
+        let actor = world.actors.get_mut(&id).expect("listed");
+        actor.alive = false;
+        world.physics.bodies[actor.body].set_enabled(false);
+        world.physics.colliders[actor.collider].set_enabled(false);
+    }
+    let feet = world.site.spawn;
+    let ahead = feet + world.site.spawn_facing * 4.0 + Vec3::Y * 0.6;
+    let id = world.spawn(kind, ahead);
+    crate::demo::aim_from(world, feet, ahead);
+    world.physics.step();
+    for _ in 0..20 {
+        world.step(idle());
+    }
+    let settled = world.pose(id).position;
+    crate::demo::aim_from(world, feet, settled);
+    id
+}
+
+#[test]
+fn a_plumb_commits_the_armed_direction_to_what_the_crosshair_has() {
+    let mut world = world(Mode::Encounter);
+    let id = staged_target(&mut world, Kind::Prop);
+    assert_eq!(
+        world.target().map(|target| target.id),
+        Ok(id),
+        "the staged body is not in the crosshair"
+    );
+
+    // Arm straight up by looking at the ceiling, then commit it.
+    world.player.pitch = 1.2;
+    world.step(Command {
+        action: Action::Arm,
+        ..idle()
+    });
+    assert!(
+        world.armed.y > 0.8,
+        "arming did not take the look direction"
+    );
+    // Look back at the target to fire.
+    let (from, at) = (world.site.spawn, world.pose(id).position);
+    crate::demo::aim_from(&mut world, from, at);
+
+    let before = world.charge;
+    world.step(Command {
+        action: Action::Plumb,
+        ..idle()
+    });
+    assert!(
+        world
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::Plumbed(who, _) if *who == id)),
+        "the plumb did not land: {:?}",
+        world.events
+    );
+    assert_eq!(world.charge, before - world.config.plumb_cost);
+    let lash = world.actors[&id].lash.expect("the body carries the plumb");
+    assert!(lash.direction.y > 0.8);
+
+    // And it actually falls that way: up, off the floor it was resting on.
+    let height = world.pose(id).position.y;
+    for _ in 0..90 {
+        world.step(idle());
+    }
+    assert!(
+        world.pose(id).position.y > height + 1.5,
+        "a body plumbed upward only rose {:.2} m",
+        world.pose(id).position.y - height
+    );
+}
+
+#[test]
+fn a_plumb_wears_off_and_hands_the_body_back_to_the_world() {
+    let mut world = world(Mode::Practice);
+    let id = staged_target(&mut world, Kind::Prop);
+    world.armed = Vec3::Y;
+    world.step(Command {
+        action: Action::Plumb,
+        ..idle()
+    });
+    assert!(world.actors[&id].lash.is_some());
+
+    let mut released = None;
+    for tick in 0..world.config.plumb_ticks + 120 {
+        world.step(idle());
+        if world
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::Unplumbed(who) if *who == id))
+        {
+            released = Some(tick);
+            break;
+        }
+    }
+    let released = released.expect("the plumb never wore off");
+    assert!(released <= world.config.plumb_ticks);
+    assert!(world.actors[&id].lash.is_none());
+
+    // Back under the world's gravity: it comes down again.
+    let height = world.pose(id).position.y;
+    for _ in 0..180 {
+        world.step(idle());
+    }
+    assert!(
+        world.pose(id).position.y < height,
+        "the body kept rising after the plumb expired"
+    );
+}
+
+/// The reason the tool is worth a slot: it reaches a hole a shove cannot.
+#[test]
+fn a_minor_plumbed_toward_a_hole_falls_into_it() {
+    let site = site();
+    let mut world = WfcKineticWorld::new(Arc::clone(&site), Mode::Practice);
+    // Make the hole first, the way the floor requires.
+    world.retract_warning_for_tests();
+    world.step(idle());
+
+    // And work it from the doorway that now opens onto nothing. A hole is only
+    // reachable through a threshold — that is the whole parapet finding — and
+    // the floor's *original* void cells are sealed, so picking one of those
+    // just plumbs a body into a wall.
+    let (cell, face) = *world
+        .open_thresholds()
+        .first()
+        .expect("the retraction left a doorway onto the hole");
+    let inside = Vec3::from_array(hex_origin(cell));
+    let centre = Vec3::from_array(hex_origin(
+        crate::site::config()
+            .grid()
+            .neighbor(cell, face)
+            .expect("the doorway leads somewhere"),
+    ));
+
+    let existing: Vec<ActorId> = world.actors.keys().copied().collect();
+    for id in existing {
+        let actor = world.actors.get_mut(&id).expect("listed");
+        actor.alive = false;
+        world.physics.bodies[actor.body].set_enabled(false);
+        world.physics.colliders[actor.collider].set_enabled(false);
+    }
+    let toward_hole = (centre - inside).with_y(0.).normalize_or(Vec3::X);
+    let ideal = inside + toward_hole * 5.0;
+    let nav = world.site.nav.clone();
+    let stand = nav
+        .iter()
+        .copied()
+        .filter(|point| world.standable(*point))
+        .min_by(|a, b| {
+            a.distance_squared(ideal)
+                .total_cmp(&b.distance_squared(ideal))
+        })
+        .expect("somewhere in the doorway");
+    let id = world.spawn(Kind::Minor, stand + Vec3::Y * 0.6);
+    for _ in 0..20 {
+        world.step(idle());
+    }
+    assert!(
+        world.actors[&id].alive,
+        "the minor fell before it was plumbed"
+    );
+
+    // Down becomes "through the doorway, and then keep going".
+    let toward = (toward_hole * 2.0 + Vec3::NEG_Y).normalize();
+    world.armed = toward;
+    let plumb = Plumb::new(toward, world.config.plumb_strength, 600);
+    world.attach_for_tests(id, plumb);
+
+    for _ in 0..600 {
+        world.step(idle());
+        if !world.actors[&id].alive {
+            return;
+        }
+    }
+    panic!(
+        "a minor plumbed through the doorway survived at {:?}",
+        world.pose(id).position
+    );
+}
