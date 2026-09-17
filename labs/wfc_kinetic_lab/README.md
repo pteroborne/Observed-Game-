@@ -122,8 +122,12 @@ opened, a down pointed through it, and a body that agrees.
 
 ![A minor under a committed plumb](../../docs/evidence/wfc_kinetic_lab/plumb.png)
 
-It is not a wall-walking tool for the opposition, and that is a scope decision
-rather than an oversight — see `plumb_lab` for what an up-aware walker costs.
+It is not a wall-walking tool for the opposition, and it cannot be turned on the
+Observer, and both are scope decisions rather than oversights. Self-plumb is the
+next arc and is recorded in [ROADMAP.md](../../ROADMAP.md) under step 3: Rapier
+would take it, but -Y is baked into the shared controller and into this lab's
+support rays, navigation bands and void rule. `plumb_lab` is where the cost was
+measured.
 
 ## Two verbs, and why both
 
@@ -230,6 +234,17 @@ lab that reproduced the solver's geometry and then painted it in its own greys
 would be previewing a different building. Light budgets come from
 `observed_style::hex_practical_light`; the kinetic legend's colours come from
 `observed_style::kinetic`.
+
+Atmosphere follows the game's shell rather than being invented here, and that is
+a correction: this lab used to light the facility with a neutral ambient and a
+directional sun, which reads flat and faintly outdoors and loses the hue that
+separates one district from another. There is no sun in a facility. The shell
+zeroes it, `daydream_lab` — where the tiles' look was developed — never had one,
+and every photon comes from the district's ambient, its distance fog, one key
+spotlight over the Observer's own cell, and the tiles' authored practicals. All
+four now come from `observed_style::architecture_for_composition` for whichever
+cell the Observer is standing in, eased on a district change and snapped on the
+first frame of a floor, because an initial state is not a transition.
 
 Sight, support and navigation query the broad phase through a predicate that
 sees only tagged structural colliders. That is not an optimisation detail so

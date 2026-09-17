@@ -7,12 +7,17 @@
 
 use std::collections::BTreeMap;
 
+use bevy::anti_alias::fxaa::Fxaa;
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::Hdr;
 use bevy::camera::visibility::Visibility;
+use bevy::core_pipeline::prepass::{DepthPrepass, NormalPrepass};
 use bevy::image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::mesh::{Indices, PrimitiveTopology};
+use bevy::pbr::{
+    DistanceFog, FogFalloff, ScreenSpaceAmbientOcclusion, ScreenSpaceAmbientOcclusionQualityLevel,
+};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
@@ -47,6 +52,15 @@ struct CellVisual;
 struct ActorVisual(ActorId);
 #[derive(Component)]
 struct PowerPart;
+/// The single key light, which follows the Observer's cell the way the game's
+/// does rather than there being one per tile.
+#[derive(Component)]
+struct KeyLight;
+/// One authored tile fixture, and whether its register lets it cast.
+#[derive(Component)]
+struct Practical {
+    shadows_allowed: bool,
+}
 #[derive(Component)]
 struct DeviceLabel {
     position: Vec3,
@@ -157,6 +171,8 @@ pub fn plugin(app: &mut App) {
                 spawn_actors,
                 sync,
                 animate_guardians,
+                atmosphere,
+                practical_shadows,
                 warn_retraction,
                 draw,
                 events,
@@ -197,7 +213,38 @@ fn setup(
         bevy::audio::SpatialListener::new(0.3),
         Camera3d::default(),
         Hdr,
-        Bloom::NATURAL,
+        Bloom {
+            intensity: 0.08,
+            ..Bloom::NATURAL
+        },
+        // Atmosphere is not decoration here. The tiles' look was developed in
+        // `daydream_lab` and is shipped by the game's shell, and both light a
+        // facility with district ambient, district fog and one key — the shell
+        // explicitly zeroes the sun. Painting the same hulls with a neutral
+        // ambient and a directional light, which is what this lab did, reads
+        // flat and faintly outdoors and loses the hue that separates one
+        // district from another.
+        DistanceFog {
+            color: color(Role::Panel),
+            falloff: FogFalloff::Linear {
+                start: 10.0,
+                end: 28.0,
+            },
+            ..default()
+        },
+        // Ambient occlusion, and the prepasses it needs. Without it these
+        // flat-shaded authored hulls have no contact darkening at all and the
+        // whole facility reads as one milky wash — which is exactly what it
+        // did. The game's shell runs it at Low for the same reason and on the
+        // same geometry.
+        Msaa::Off,
+        Fxaa::default(),
+        DepthPrepass,
+        NormalPrepass,
+        ScreenSpaceAmbientOcclusion {
+            quality_level: ScreenSpaceAmbientOcclusionQualityLevel::Low,
+            ..default()
+        },
         Transform::default(),
         children![(
             Tool,
@@ -507,7 +554,15 @@ fn rebuild(
             } else {
                 None
             },
-            emissive: look.emissive,
+            // No emissive, and this is the whole reason the floor used to look
+            // washed out. `hex_shell_surface` carries one, and `hex_wfc_lab`
+            // uses it deliberately — it is a *preview* affordance that keeps
+            // authored hulls legible in a lab with no real lighting. Put it on
+            // top of district ambient, fog, a key and forty-nine practicals and
+            // every surface self-illuminates to the same value whatever way it
+            // faces, which is a flat brown wash with the lighting doing nothing.
+            // The game's shell sets no emissive on hulls at all.
+            emissive: bevy::color::LinearRgba::BLACK,
             perceptual_roughness: observed_style::architecture(register).surface_roughness,
             ..default()
         };
@@ -544,6 +599,9 @@ fn rebuild(
         commands.spawn((
             FacilityVisual,
             CellVisual,
+            Practical {
+                shadows_allowed: practical.shadows_allowed,
+            },
             PointLight {
                 color: practical.color,
                 intensity: practical.intensity,
@@ -557,22 +615,17 @@ fn rebuild(
         ));
     }
 
-    // An unpowered floor costs range, never legibility, so the fill light stays
-    // above the atmosphere ceiling and the devices below keep their emission.
+    // No sun. The facility has none: every photon comes from the district
+    // ambient, the fog, the key and the authored practicals, and adding a
+    // directional light is what made this floor look like an overcast
+    // afternoon. `atmosphere` drives the rest each frame.
     commands.spawn((
         FacilityVisual,
-        DirectionalLight {
-            illuminance: 900.,
-            shadow_maps_enabled: true,
-            ..default()
-        },
-        Transform::from_xyz(-18., 34., 12.).looking_at(Vec3::ZERO, Vec3::Y),
+        KeyLight,
+        SpotLight::default(),
+        Transform::default(),
+        Name::new("district key light"),
     ));
-    commands.insert_resource(GlobalAmbientLight {
-        color: color(Role::Text),
-        brightness: 46.,
-        ..default()
-    });
 
     // Devices. These are lab equipment, not solver output, so they are drawn in
     // the kinetic legend's own colours rather than the district's.
@@ -963,6 +1016,125 @@ fn refusal(reason: Refusal) -> &'static str {
         Refusal::Cooldown => "tool recovering",
         Refusal::EmptyCharge => "recharge at the station",
     }
+}
+
+/// Cast shadows from the handful of fixtures nearest the Observer.
+///
+/// Every practical used to be shadowless, which left the key as the only
+/// caster in the whole facility: every surface took the same flat
+/// omnidirectional fill whatever way it faced, and the result was the milky
+/// brown wash this lab had. Shadow maps are what give these authored hulls
+/// value range, and they are also the expensive part — forty-nine fixtures is
+/// too many to cast, and eight is plenty when only the ones around you can be
+/// seen to cast at all. The game budgets them the same way.
+fn practical_shadows(
+    runtime: Res<Runtime>,
+    mut last: Local<Option<observed_hex::HexCoord>>,
+    mut practicals: Query<(&Practical, &GlobalTransform, &mut PointLight)>,
+) {
+    const BUDGET: usize = 8;
+    let cell = runtime.site.cell_containing(runtime.world.player.position);
+    if *last == cell && cell.is_some() {
+        return;
+    }
+    *last = cell;
+    let eye = runtime.world.eye();
+    let mut ranked: Vec<(f32, bool)> = practicals
+        .iter()
+        .map(|(practical, at, _)| {
+            (
+                at.translation().distance_squared(eye),
+                practical.shadows_allowed,
+            )
+        })
+        .collect();
+    ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let cutoff = ranked
+        .iter()
+        .filter(|(_, allowed)| *allowed)
+        .nth(BUDGET)
+        .map_or(f32::MAX, |(distance, _)| *distance);
+    for (practical, at, mut light) in &mut practicals {
+        light.shadow_maps_enabled =
+            practical.shadows_allowed && at.translation().distance_squared(eye) < cutoff;
+    }
+}
+
+/// Ease ambient, fog and the key toward the district the Observer is standing
+/// in, exactly as the game's shell does.
+fn atmosphere(
+    runtime: Res<Runtime>,
+    time: Res<Time>,
+    mut ambient: ResMut<GlobalAmbientLight>,
+    mut clear: ResMut<ClearColor>,
+    mut fog: Query<&mut DistanceFog, With<Eye>>,
+    mut key: Query<(&mut SpotLight, &mut Transform), With<KeyLight>>,
+    mut primed: Local<Option<u32>>,
+) {
+    const BLEND_RATE: f32 = 2.0;
+    let world = &runtime.world;
+    let Some(cell) = runtime.site.cell_containing(world.player.position) else {
+        return;
+    };
+    let register = world
+        .world
+        .architecture
+        .get(&cell)
+        .copied()
+        .unwrap_or(ArchitectureRegister::Institutional);
+    let palette = observed_style::architecture_for_composition(register, composition(world, cell));
+    // Initial state is not a transition. Easing in from a neutral grey makes
+    // the first visible second of every floor the wrong district, so the first
+    // frame of a run — and of each newly dealt floor — snaps to the target.
+    let fresh = *primed != Some(runtime.generation);
+    *primed = Some(runtime.generation);
+    let blend = if fresh {
+        1.0
+    } else {
+        (time.delta_secs() * BLEND_RATE).clamp(0.0, 1.0)
+    };
+
+    ambient.color = lerp_color(ambient.color, palette.ambient_color, blend);
+    ambient.brightness = lerp(ambient.brightness, palette.ambient_brightness, blend);
+    clear.0 = lerp_color(clear.0, palette.fog_color, blend);
+    for mut fog in &mut fog {
+        fog.color = lerp_color(fog.color, palette.fog_color, blend);
+        fog.falloff = FogFalloff::Linear {
+            start: palette.fog_start,
+            end: palette.fog_end,
+        };
+    }
+    // The key hangs over the Observer's own cell, angled across it.
+    let origin = Vec3::from_array(hex_origin(cell));
+    let at = origin + Vec3::new(2.6, 6.4, 2.6);
+    for (mut light, mut transform) in &mut key {
+        light.color = lerp_color(light.color, palette.key_color, blend);
+        light.intensity = lerp(
+            light.intensity,
+            palette.key_intensity * observed_style::HEX_KEY_INTENSITY_SCALE,
+            blend,
+        );
+        light.range = palette.key_range;
+        light.radius = palette.key_radius;
+        light.inner_angle = palette.key_inner_angle;
+        light.outer_angle = palette.key_outer_angle;
+        light.shadow_maps_enabled = palette.key_shadows_enabled;
+        *transform = Transform::from_translation(at)
+            .looking_at(origin + Vec3::new(-1.0, 0.2, -1.0), Vec3::Y);
+    }
+}
+
+fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
+
+fn lerp_color(a: Color, b: Color, t: f32) -> Color {
+    let (a, b) = (a.to_srgba(), b.to_srgba());
+    Color::srgb(
+        lerp(a.red, b.red, t),
+        lerp(a.green, b.green, t),
+        lerp(a.blue, b.blue, t),
+    )
 }
 
 fn hud(runtime: Res<Runtime>, view: Res<ViewState>, mut texts: Query<(&mut Text, &HudField)>) {

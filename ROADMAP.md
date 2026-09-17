@@ -52,6 +52,21 @@ the combined loop.
    the feel in a first-person lab (`guardian_ai_lab`, `hazard_lab`, `equipment_lab`,
    `lighting_lab` carry the precedents). Shoves are fixed-tick simulation, never
    authored physics. No direct player damage, and no promotion before step 5.
+
+   **Next, and deliberately recorded here: the plumb on the Observer.** A second
+   Observer tool that redirects one body's gravity for a few seconds is proven and
+   playable — `plumb_lab` establishes that a body falls to any surface, stands on it
+   and walks along it, and `wfc_kinetic_lab` carries it as a tool with its own arm,
+   commit, cost and cooldown. It works on everything *except* the player. Rapier's
+   character controller takes `up` as a vector, but `observed_traversal`'s wrapper does
+   not expose it, and -Y is baked into `FpsBody::right`, the eye offset, jump, the
+   gravity integrator and its fall clamp, the fall-out test, and downstream into the
+   kinetic labs' support and walkability rays, the navigation graph's height bands and
+   the void rule. Self-plumb therefore means putting a body-frame up into the shared
+   controller and auditing everything that reads `.y` — an arc, not an afternoon. It is
+   also the one that opens first-person traversal puzzles, and the reason to do it
+   before step 4 rather than after is that teammate rescue and unsafe falls are the
+   same machinery.
 4. **Loyal construction loop:** add the human loyal Architect, variable team size,
    team-scoped knowledge, ascent, prison escape and teammate rescue, unsafe falls,
    irreversible Rogue conversion, and loyal victory. A loyal bot Architect must use
