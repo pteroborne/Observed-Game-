@@ -1,0 +1,25 @@
+seed 8 (requested 8)
+plan .HR/.HH/RxH
+cells 7 voids 2 ledges 0 hulls 142
+retracting (1, 0)
+
+THE SOLVED FLOOR / seven cells the solver placed
+final digest 972c1dfe2fbcb005, removed 0, player Vec3(6.692833, 1.4472228, -0.07838604)
+
+ARCHITECTURE / a wall the solver chose stops the ray
+tick 90: Refused(Blocked)
+final digest d0f8c54d0d3919fb, removed 0, player Vec3(0.0, 1.4472222, 0.0)
+
+THE PARAPET / every face onto void comes back railed
+tick 90: Fired(Push, ActorId(1005), Vec3(2.4000702, 1.1779989, 4.114406))
+final digest e8ced421237cea92, removed 0, player Vec3(0.0, 1.4472222, 0.0)
+
+RETRACTION / the Architect makes the hole
+tick 60: Retracting
+tick 180: Retracted(HexCoord { q: 1, r: 0, level: 0 })
+final digest fd720506670569d8, removed 0, player Vec3(33.2, 1.4472222, 12.0)
+
+THE DOORWAY / and the Observer shoves a minor through it
+tick 90: Fired(Push, ActorId(1005), Vec3(5.45, 1.1495675, 2.3822706e-7))
+tick 174: Eliminated(ActorId(1005), Some(HexCoord { q: 1, r: 0, level: 0 }))
+final digest a9d0368cafda930b, removed 1, player Vec3(0.0, 1.4472222, 0.0)
