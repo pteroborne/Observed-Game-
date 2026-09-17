@@ -731,9 +731,18 @@ impl WfcKineticWorld {
             .filter(|piece| piece.source_cell == cell)
             .map(|piece| piece.id.0)
             .collect();
+        // Removed, not merely disabled. Disabling leaves the collider in the
+        // broad phase until the next step, and the navigation rebuild happens
+        // in this one — so the graph kept its edges across the hole, and the
+        // Observer walked confidently into a cell that no longer had a floor.
         for id in doomed {
-            if let Some(handle) = self.structural.get(&id) {
-                self.physics.colliders[*handle].set_enabled(false);
+            if let Some(handle) = self.structural.remove(&id) {
+                self.physics.colliders.remove(
+                    handle,
+                    &mut self.physics.islands,
+                    &mut self.physics.bodies,
+                    false,
+                );
             }
         }
         self.geometry_generation += 1;
@@ -930,22 +939,45 @@ impl WfcKineticWorld {
         self.wave += 1;
         self.wave_delay = 300;
         let count = self.wave as usize + 1;
+        // Muster near the fight, not at the far end of the floor.
+        //
+        // This used to take the cells *furthest* from the Observer, which on a
+        // seven-cell arena meant twenty metres and on this floor means ninety:
+        // a wave spent fifty seconds walking before anything happened, which is
+        // dead air for a player and was fatal for the recorded director, whose
+        // charge and patience both ran out first. Far enough not to appear on
+        // top of somebody, near enough to be a wave.
+        let feet = self.player.position - Vec3::Y * self.player_config.half_height;
+        let ideal = (MUSTER_MIN + MUSTER_MAX) * 0.5;
         let mut choices: Vec<Vec3> = self
             .site
             .muster
             .iter()
             .copied()
-            .filter(|feet| feet.distance(self.player.position) > 6.)
+            .filter(|at| {
+                let distance = at.distance(feet);
+                (MUSTER_MIN..=MUSTER_MAX).contains(&distance)
+            })
             .collect();
+        if choices.is_empty() {
+            choices = self
+                .site
+                .muster
+                .iter()
+                .copied()
+                .filter(|at| at.distance(feet) > MUSTER_MIN)
+                .collect();
+        }
         if choices.is_empty() {
             choices = self.site.muster.clone();
         }
         choices.sort_by(|a, b| {
-            b.distance_squared(self.player.position)
-                .total_cmp(&a.distance_squared(self.player.position))
+            (a.distance(feet) - ideal)
+                .abs()
+                .total_cmp(&(b.distance(feet) - ideal).abs())
         });
-        // A seven-cell floor has fewer standable cells than a late wave has
-        // minors, so muster points cycle rather than capping the wave.
+        // A floor has fewer standable cells than a late wave has minors, so
+        // muster points cycle rather than capping the wave.
         for index in 0..count {
             let feet = choices[index % choices.len()];
             let jitter = Vec3::new((index % 3) as f32 * 0.8 - 0.8, 0., (index / 3) as f32 * 0.8);
@@ -1067,6 +1099,16 @@ impl WfcKineticWorld {
 
     fn supported(&self, feet: Vec3) -> bool {
         self.support_height(feet).is_some()
+    }
+
+    /// Whether a body could stand here *now*.
+    ///
+    /// Waypoints outlive the floor they were sampled on: retraction takes the
+    /// geometry away and leaves the graph's nodes hanging in the air over the
+    /// hole. Anything choosing somewhere to walk has to ask.
+    #[must_use]
+    pub fn standable(&self, feet: Vec3) -> bool {
+        self.supported(feet)
     }
 
     fn walkable(&self, a: Vec3, b: Vec3) -> bool {
@@ -1363,6 +1405,10 @@ impl Device {
         }
     }
 }
+
+/// How near an Observer a wave may muster, and how far.
+const MUSTER_MIN: f32 = 12.0;
+const MUSTER_MAX: f32 = 34.0;
 
 /// How far apart two waypoints may be and still be linked.
 const NAV_LINK_RANGE: f32 = 8.0;

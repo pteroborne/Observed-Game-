@@ -339,11 +339,18 @@ impl Site {
             .ok_or("no standable floor for the decoherence control")?;
         // Devices must not land on the cell that is about to be retracted, or
         // operating the panel would delete the thing that operates it.
-        if [generator, station]
+        // Verified with the same lookup the simulation uses, after snapping.
+        // Deriving a device from a neighbouring cell is not enough: the ring
+        // search and the snap to a waypoint can each carry it over a boundary,
+        // and a demolition control standing inside its own target deletes the
+        // floor under whoever operates it. The director found this by falling
+        // through the hole it had just made, at the same tick every run.
+        let in_target = |at: Vec3| cell_containing_in(at) == Some(retracting);
+        if [generator, station, panel, demolition]
             .iter()
-            .any(|p| cell_at(*p) == Some(retracting))
+            .any(|at| in_target(*at))
         {
-            return Err("a device landed on the retracting cell");
+            return Err("a device landed on the cell the demolition retracts");
         }
 
         // Face the way out. A room on this lattice often has exactly one open
@@ -499,6 +506,14 @@ fn offset_in(coord: HexCoord, face: HexFace, distance: f32) -> Vec3 {
     #[allow(clippy::cast_precision_loss)]
     let mid = Vec3::new((a.0 + b.0) as f32 * 0.5, 0.0, (a.1 + b.1) as f32 * 0.5);
     center(coord) + mid.normalize_or_zero() * distance
+}
+
+/// Free-function form of [`Site::cell_containing`], for use while a site is
+/// still being assembled.
+fn cell_containing_in(point: Vec3) -> Option<HexCoord> {
+    let cell = cell_at(point)?;
+    (center(cell).with_y(point.y).distance(point) <= observed_hex::ACROSS_CORNERS * 0.5)
+        .then_some(cell)
 }
 
 /// Which lattice cell a world point sits in, if any. Plan-view nearest centre.

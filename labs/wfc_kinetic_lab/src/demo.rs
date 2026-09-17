@@ -255,7 +255,7 @@ pub fn command(
 }
 
 /// How long a recorded gameplay loop runs, in fixed ticks.
-pub const LOOP_TICKS: u32 = 2_640;
+pub const LOOP_TICKS: u32 = 3_600;
 
 /// A deterministic Observer playing the encounter, for recorded evidence.
 ///
@@ -309,7 +309,13 @@ pub fn loop_command(world: &WfcKineticWorld, tick: u32) -> Command {
         return go(world, station, station + Vec3::Y * 1.2);
     }
 
-    // 3. Work the nearest minor toward a hole.
+    // 3. Hold the hole.
+    //
+    //    On a thirty-cell floor there is one hole and the minors arrive from
+    //    everywhere, so chasing them is a losing errand: the director used to
+    //    walk out to whichever minor was nearest and get caught crossing the
+    //    floor without ever having somewhere to put it. Minors pursue, so the
+    //    Observer does not have to. Stand by the hole and let them come.
     let Some(hole) = nearest_hole(world, feet) else {
         return go(
             world,
@@ -318,26 +324,56 @@ pub fn loop_command(world: &WfcKineticWorld, tick: u32) -> Command {
         );
     };
     let Some((id, position)) = nearest_minor(world, feet) else {
-        // Between waves: stand where the next one has to come through.
-        return go(world, station, hole + Vec3::Y * 1.5);
+        // Between waves: take the post and watch the approach.
+        return go(world, post_beside(world, hole, None), hole + Vec3::Y * 1.5);
     };
-    // Stand on the far side of the minor from the hole, so the shove that
-    // follows points through the doorway rather than along the wall.
-    let away = (position - hole).with_y(0.).normalize_or_zero();
-    let post = position + away * 4.6;
-    let mut command = go(world, post, position + AIM_LIFT);
 
-    // Fire when the shot is actually lined up on the hole, not merely on a
-    // minor. `fire_ready` covers reach, cooldown and charge.
+    // Out of range of the hole, the shot is not worth taking at any angle: a
+    // shove carries a body a few metres, not across a floor. Wait at the post
+    // and keep the minor in view while it closes.
+    let approach = position.with_y(hole.y).distance(hole);
+    if approach > ENGAGE_RANGE {
+        let post = post_beside(world, hole, Some(position));
+        return go(world, post, position + AIM_LIFT);
+    }
+
+    // In range. Which verb depends on which side of the hole the minor is,
+    // and that is not a detail — it is the thing the floor decides for you.
+    //
+    // A pursuing minor walks at the Observer and *stops at the hole*, because
+    // the navigation graph has no edges across one. So it arrives on the far
+    // side, facing across, and a push sends it further away. Pull drags it
+    // toward the eye, which is over the hole. The director spent fifty seconds
+    // lining up shoves that were all pointing the wrong way before this.
     let to_target = (position - eye).with_y(0.).normalize_or_zero();
     let to_hole = (hole - position).with_y(0.).normalize_or_zero();
-    let lined_up = to_target.dot(to_hole) > 0.87;
-    if lined_up
+    let alignment = to_target.dot(to_hole);
+    let post = if alignment < 0. {
+        // Hole between us: hold position and pull it across.
+        post_beside(world, hole, Some(position))
+    } else {
+        // Minor between us and the hole: get behind it and push.
+        snap_post(
+            world,
+            position + (position - hole).with_y(0.).normalize_or_zero() * 4.6,
+            hole,
+        )
+    };
+    let mut command = go(world, post, position + AIM_LIFT);
+
+    let verb = if alignment > 0.82 {
+        Some(Action::Push)
+    } else if alignment < -0.82 {
+        Some(Action::Pull)
+    } else {
+        None
+    };
+    if let Some(verb) = verb
         && world
             .fire_ready()
             .is_ok_and(|target| target.id == id && target.distance > 2.2)
     {
-        command.action = Action::Push;
+        command.action = verb;
         command.movement.movement = Vec2::ZERO;
     }
     // A slow sidestep while closing keeps the camera from locking rigid.
@@ -346,6 +382,57 @@ pub fn loop_command(world: &WfcKineticWorld, tick: u32) -> Command {
     }
     command
 }
+
+/// How near a hole a minor has to be before a shove is worth spending.
+const ENGAGE_RANGE: f32 = 10.0;
+
+/// Somewhere to stand beside the hole, preferring the side away from whoever
+/// is coming, so an arriving minor ends up between the Observer and the drop.
+fn post_beside(world: &WfcKineticWorld, hole: Vec3, minor: Option<Vec3>) -> Vec3 {
+    let away = minor
+        .map(|at| (hole - at).with_y(0.).normalize_or_zero())
+        .filter(|direction| direction.length_squared() > 0.01)
+        .unwrap_or(Vec3::X);
+    snap_post(world, hole + away * 4.5, hole)
+}
+
+/// The nearest place to `ideal` that is standable now, clear of the hole, and
+/// somewhere the Observer can actually walk to.
+///
+/// Every post goes through here. A post computed as pure geometry is how the
+/// director walked into its own demolition twice: once aiming at a waypoint
+/// left hanging over the retracted tile, and once at a point derived from a
+/// minor's position that happened to sit over the same hole.
+fn snap_post(world: &WfcKineticWorld, ideal: Vec3, hole: Vec3) -> Vec3 {
+    let feet = world.player.position - Vec3::Y * world.player_config.half_height;
+    let mut candidates: Vec<Vec3> = world
+        .site
+        .nav
+        .iter()
+        .copied()
+        // Standable *now*: the waypoints inside a retracted tile are still in
+        // the graph, hanging over the hole. Walking to one is how the director
+        // first killed itself with its own demolition.
+        .filter(|point| world.standable(*point))
+        .filter(|point| point.with_y(hole.y).distance(hole) > 2.5)
+        .collect();
+    candidates.sort_by(|a, b| {
+        a.distance_squared(ideal)
+            .total_cmp(&b.distance_squared(ideal))
+    });
+    // And reachable. The retracted tile is chosen as the floor's cut vertex, so
+    // removing it severs the far side: the best post by distance is routinely
+    // one the Observer can no longer walk to, and aiming at it just stops them
+    // dead eleven metres from the fight.
+    candidates
+        .into_iter()
+        .take(POST_CANDIDATES)
+        .find(|point| world.navigable(feet, *point))
+        .unwrap_or(ideal)
+}
+
+/// How many posts to test for reachability before giving up.
+const POST_CANDIDATES: usize = 12;
 
 /// The centre of the hole the floor currently offers, preferring one with a
 /// doorway pointing into it — a body can only be put through an opening.
@@ -424,7 +511,16 @@ fn go(world: &WfcKineticWorld, destination: Vec3, at: Vec3) -> Command {
         let direction = if routed.length_squared() > 0.01 {
             routed
         } else {
-            offset.normalize_or_zero()
+            // The last few metres may be walked without a route — the graph
+            // gets you to the cell, not to a device in the middle of one — but
+            // only over ground that is actually there. Walking blind at a post
+            // with a hole in between is how the director kept stepping into
+            // its own demolition.
+            let straight = offset.normalize_or_zero();
+            let clear = offset.length() < 6.0
+                && world.standable(feet + straight * 1.5)
+                && world.standable(feet + straight * 3.0);
+            if clear { straight } else { Vec3::ZERO }
         };
         movement.movement = Vec2::new(
             direction.dot(world.player.right()),
