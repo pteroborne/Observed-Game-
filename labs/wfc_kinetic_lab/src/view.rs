@@ -36,9 +36,13 @@ struct Tool;
 /// Everything a rebuild or a reset sweeps away, sound included.
 #[derive(Component)]
 pub struct FacilityVisual;
-/// A visual belonging to one lattice cell, so a retraction can hide exactly it.
+/// A visual belonging to the facility's cells, as opposed to an actor.
+///
+/// A marker rather than the cell it came from: geometry is rebuilt wholesale
+/// when the floor changes, so nothing needs to find one cell's meshes and hide
+/// them any more.
 #[derive(Component)]
-struct CellVisual(HexCoord);
+struct CellVisual;
 #[derive(Component)]
 struct ActorVisual(ActorId);
 #[derive(Component)]
@@ -111,7 +115,7 @@ impl Art {
 
 #[derive(Resource, Default)]
 struct ViewState {
-    generation: Option<u32>,
+    generation: Option<(u32, u32)>,
     actors: BTreeMap<ActorId, Entity>,
     kick: f32,
     pulse: f32,
@@ -463,23 +467,32 @@ fn rebuild(
     visuals: Query<Entity, With<FacilityVisual>>,
     labels: Query<Entity, With<DeviceLabel>>,
 ) {
-    if view.generation == Some(runtime.generation) {
+    // A relayout changes geometry without resetting the lab, so the trigger is
+    // both: which attempt this is, and how many times the floor has moved.
+    let stamp = (runtime.generation, runtime.world.geometry_generation);
+    if view.generation == Some(stamp) {
         return;
     }
-    view.generation = Some(runtime.generation);
+    view.generation = Some(stamp);
     view.actors.clear();
     for entity in visuals.iter().chain(labels.iter()) {
         commands.entity(entity).despawn();
     }
     let site = &runtime.site;
+    let facility = &runtime.world;
 
     // One weave image per register for the whole rebuild, not one per hull.
     let mut weaves: BTreeMap<ArchitectureRegister, Option<Handle<Image>>> = BTreeMap::new();
-    for piece in &site.snapshot.pieces {
+    for piece in &facility.snapshot.pieces {
         let Some(mesh) = piece_mesh(piece) else {
             continue;
         };
-        let register = site.register(piece.source_cell);
+        let register = facility
+            .world
+            .architecture
+            .get(&piece.source_cell)
+            .copied()
+            .unwrap_or(ArchitectureRegister::Institutional);
         let look = observed_style::hex_shell_surface(register, architecture_role(piece.role));
         let material = StandardMaterial {
             base_color: look.base_color,
@@ -494,7 +507,7 @@ fn rebuild(
         };
         commands.spawn((
             FacilityVisual,
-            CellVisual(piece.source_cell),
+            CellVisual,
             Mesh3d(meshes.add(mesh)),
             MeshMaterial3d(materials.add(material)),
             Transform::from_translation(piece.center)
@@ -507,19 +520,24 @@ fn rebuild(
     // gives them. Colour, intensity and shadow policy are style-owned; this
     // lab only says where the fixtures are and how many share a cell.
     let mut per_cell: BTreeMap<HexCoord, usize> = BTreeMap::new();
-    for light in &site.snapshot.lights {
+    for light in &facility.snapshot.lights {
         *per_cell.entry(light.source_cell).or_default() += 1;
     }
-    for light in &site.snapshot.lights {
-        let register = site.register(light.source_cell);
+    for light in &facility.snapshot.lights {
+        let register = facility
+            .world
+            .architecture
+            .get(&light.source_cell)
+            .copied()
+            .unwrap_or(ArchitectureRegister::Institutional);
         let practical = observed_style::hex_practical_light(
             register,
-            composition(site, light.source_cell),
+            composition(facility, light.source_cell),
             per_cell.get(&light.source_cell).copied().unwrap_or(1),
         );
         commands.spawn((
             FacilityVisual,
-            CellVisual(light.source_cell),
+            CellVisual,
             PointLight {
                 color: practical.color,
                 intensity: practical.intensity,
@@ -555,7 +573,8 @@ fn rebuild(
     for (position, role, label) in [
         (site.generator, Role::Powered, "GENERATOR / E"),
         (site.station, Role::Powered, "RECHARGE STATION"),
-        (site.panel, Role::Hazard, "TILE CONTROL / E"),
+        (site.panel, Role::Hazard, "DECOHERENCE / E"),
+        (site.demolition, Role::Hazard, "RETRACT TILE / E"),
     ] {
         let mut device = commands.spawn((
             FacilityVisual,
@@ -659,9 +678,6 @@ type ActorPoses<'w, 's> = Query<
 /// The camera, filtered off both visual families it shares `Transform` with.
 type EyePose<'w, 's> =
     Query<'w, 's, &'static mut Transform, (With<Eye>, Without<ActorVisual>, Without<CellVisual>)>;
-/// Per-cell visibility, so a retraction can hide exactly one tile.
-type CellVisibility<'w, 's> =
-    Query<'w, 's, (&'static CellVisual, &'static mut Visibility), Without<ActorVisual>>;
 
 fn sync(
     runtime: Res<Runtime>,
@@ -669,7 +685,6 @@ fn sync(
     time: Res<Time<Fixed>>,
     mut bodies: ActorPoses,
     mut camera: EyePose,
-    mut cells: CellVisibility,
     mut power: Query<&mut MeshMaterial3d<StandardMaterial>, With<PowerPart>>,
 ) {
     let alpha = if runtime.paused {
@@ -698,15 +713,6 @@ fn sync(
         *transform = Transform::from_translation(body.eye(&world.player_config))
             .looking_to(world.player.look_dir(), Vec3::Y);
     }
-    // A retracted tile stops being drawn on the tick its colliders go away.
-    if !runtime.world.cell_present {
-        let retracted = runtime.site.retracting;
-        for (cell, mut visible) in &mut cells {
-            if cell.0 == retracted {
-                *visible = Visibility::Hidden;
-            }
-        }
-    }
     for mut material in &mut power {
         material.0 = art.material(if runtime.world.powered {
             Role::Powered
@@ -717,9 +723,9 @@ fn sync(
 }
 
 fn warn_retraction(runtime: Res<Runtime>, mut gizmos: Gizmos) {
-    if runtime.world.retract_warning.is_none() || !runtime.world.cell_present {
+    let Some((_, candidate)) = runtime.world.telegraph.as_ref() else {
         return;
-    }
+    };
     // The tile that is about to stop existing, outlined in the hazard stripe on
     // a one-second blink. This is a Legibility Contract signal: it must read
     // from across the floor and through the fog.
@@ -728,7 +734,11 @@ fn warn_retraction(runtime: Res<Runtime>, mut gizmos: Gizmos) {
     } else {
         Role::Text
     };
-    outline_cell(&mut gizmos, runtime.site.retracting, color(role), 0.2);
+    // Outline what is about to be re-collapsed. Looking at it is what saves it,
+    // so the telegraph has to say exactly which cells are at stake.
+    for cell in &candidate.region.cells {
+        outline_cell(&mut gizmos, *cell, color(role), 0.2);
+    }
 }
 
 /// Draw a cell's hexagonal footprint at a height above its floor.
@@ -827,8 +837,16 @@ fn events(
             Event::Eliminated(_, None) => Some("minor committed to void".to_string()),
             Event::Power(true) => Some("generator on".to_string()),
             Event::Power(false) => Some("generator off — the station is dead".to_string()),
-            Event::Retracting => Some("tile retracting in two seconds".to_string()),
-            Event::Retracted(cell) => Some(format!("tile ({}, {}) is gone", cell.q, cell.r)),
+            Event::Decohering(cell) => Some(format!(
+                "({}, {}) decohering — look at it to hold it",
+                cell.q, cell.r
+            )),
+            Event::Relaid(cell) => Some(format!("({}, {}) re-collapsed", cell.q, cell.r)),
+            Event::Held => Some("the floor held — you were watching".to_string()),
+            Event::Inert => Some("nothing here will move".to_string()),
+            Event::Retracted(cell) => {
+                Some(format!("({}, {}) retracted toward void", cell.q, cell.r))
+            }
             Event::Wave(wave) => Some(format!("wave {wave}")),
             Event::Recharge => Some("charge full".to_string()),
             Event::Ended(outcome) => Some(
@@ -954,8 +972,8 @@ fn hud(runtime: Res<Runtime>, view: Res<ViewState>, mut texts: Query<(&mut Text,
                         format!("{:?} — 1 or 2 to start again", world.outcome)
                     });
                 }
-                if let Some(prompt) = world.interaction() {
-                    lines.push(format!("E  {prompt}"));
+                if let Some(device) = world.interaction() {
+                    lines.push(format!("E  {}", device.label()));
                 }
                 if world.tick < view.message_until && !view.message.is_empty() {
                     lines.push(view.message.clone());
@@ -972,18 +990,18 @@ fn hud(runtime: Res<Runtime>, view: Res<ViewState>, mut texts: Query<(&mut Text,
                         .filter(|actor| actor.alive && actor.behavior == Behavior::Pursue)
                         .count();
                     format!(
-                        "tick {}  digest {:016x}\ncells {}  voids {}  ledges {}\nhulls {}  waypoints {}\npursuing {}  tile present {}\nretracting ({}, {})",
+                        "tick {}  digest {:016x}\ncells {}  holes {}  thresholds onto void {}\nhulls {}  waypoints {}\npursuing {}  observing {}\nrelayouts {}  facility generation {}",
                         world.tick,
                         world.digest(),
                         site.cells.len(),
-                        site.voids.len(),
-                        site.ledges.len(),
-                        site.colliders().len(),
+                        world.holes().len(),
+                        world.open_thresholds().len(),
+                        world.snapshot.pieces.len(),
                         site.nav.len(),
                         pursuing,
-                        world.cell_present,
-                        site.retracting.q,
-                        site.retracting.r,
+                        world.observation().visible_cells.len(),
+                        world.geometry_generation,
+                        world.world.generation,
                     )
                 }
             }
@@ -993,8 +1011,11 @@ fn hud(runtime: Res<Runtime>, view: Res<ViewState>, mut texts: Query<(&mut Text,
 
 /// How a reader perceives a cell: a place, a way between places, or a joint
 /// that changes floor. Style owns the light budget that follows from it.
-fn composition(site: &crate::site::Site, cell: HexCoord) -> observed_style::HexComposition {
-    let Some(placement) = site.placement(cell) else {
+fn composition(
+    facility: &crate::model::WfcKineticWorld,
+    cell: HexCoord,
+) -> observed_style::HexComposition {
+    let Some(placement) = facility.world.placements.get(&cell) else {
         return observed_style::HexComposition::Hall;
     };
     match placement.archetype {

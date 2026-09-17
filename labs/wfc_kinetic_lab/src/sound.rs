@@ -86,7 +86,13 @@ pub fn cue(event: &Event) -> Cue {
         Event::Eliminated(..) => Cue::Void,
         Event::Power(true) => Cue::PowerOn,
         Event::Power(false) => Cue::PowerOff,
-        Event::Retracting => Cue::Warning,
+        Event::Decohering(_) => Cue::Warning,
+        Event::Relaid(_) => Cue::Retract,
+        // The floor refusing to change is the Observer's doing. It gets the
+        // power cue rather than the retraction one: something switched off,
+        // and nothing fell.
+        Event::Held => Cue::PowerOff,
+        Event::Inert => Cue::Miss,
         Event::Retracted(_) => Cue::Retract,
         Event::Wave(_) => Cue::Wave,
         Event::Ended(Outcome::Cleared) => Cue::Clear,
@@ -108,8 +114,11 @@ pub fn origin(runtime: &Runtime, event: &Event) -> Option<Vec3> {
             Some(Vec3::from_array(hex_origin(*cell)) + Vec3::Y * 0.5)
         }
         Event::Power(_) => Some(site.generator + Vec3::Y),
-        Event::Retracting => Some(site.panel + Vec3::Y),
-        Event::Retracted(cell) => Some(Vec3::from_array(hex_origin(*cell)) + Vec3::Y),
+        // The warning is heard at the pocket that is about to go, not at the
+        // panel: what matters is which way to look to save it.
+        Event::Decohering(cell) | Event::Relaid(cell) | Event::Retracted(cell) => {
+            Some(Vec3::from_array(hex_origin(*cell)) + Vec3::Y)
+        }
         Event::Recharge => Some(site.station + Vec3::Y),
         _ => None,
     }
@@ -270,7 +279,9 @@ mod tests {
             cue(&Event::Refused(Refusal::Blocked))
         );
         // The retraction beats are placed at the tile, not at the Observer.
-        assert!(matches!(cue(&Event::Retracting), Cue::Warning));
-        assert!(matches!(cue(&Event::Retracted(cell)), Cue::Retract));
+        assert!(matches!(cue(&Event::Decohering(cell)), Cue::Warning));
+        assert!(matches!(cue(&Event::Relaid(cell)), Cue::Retract));
+        // Holding the floor and losing it must not sound the same.
+        assert_ne!(cue(&Event::Held), cue(&Event::Relaid(cell)));
     }
 }

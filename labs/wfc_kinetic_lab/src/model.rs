@@ -10,13 +10,20 @@ use std::sync::Arc;
 
 use glam::{Quat, Vec3};
 use kinetic_lab::physics::{Physics, gv, rv};
-use observed_hex::HexCoord;
+use observed_core::PlayerId;
+use observed_facility::hex_wfc::{
+    HexInfluenceField, HexObservationFrame, HexRelayoutCandidate, HexRelayoutProgress, HexSpace,
+    HexWfcError, HexWfcWorld,
+};
+use observed_hex::{HexCoord, HexFace, hex_origin};
+use observed_match::hex_wfc::HexWfcGeometrySnapshot;
 use observed_traversal::{
     FIXED_DT, FpsBody, FpsConfig, RapierKinematicSettings,
     rapier_controller::step_character_in_query,
 };
 use player_input::PlayerIntent;
 use rapier3d::prelude::*;
+use std::collections::BTreeSet;
 
 use crate::site::{Site, VOID_Y, build_collider};
 
@@ -82,7 +89,18 @@ pub enum Event {
     /// started inside the lattice.
     Eliminated(ActorId, Option<HexCoord>),
     Power(bool),
-    Retracting,
+    /// A pocket has been selected and telegraphed. It can still be saved.
+    Decohering(HexCoord),
+    /// The pocket re-collapsed. The cell is where it happened.
+    Relaid(HexCoord),
+    /// The commit was refused because the Observer was watching or standing in
+    /// the pocket. This is a result, not a failure.
+    Held,
+    /// Nothing reachable from here would re-collapse into anything else. Walk
+    /// somewhere else and try again.
+    Inert,
+    /// A tile was retracted toward void, leaving the doorways into it opening
+    /// onto nothing.
     Retracted(HexCoord),
     Wave(u8),
     Ended(Outcome),
@@ -195,9 +213,25 @@ pub struct WfcKineticWorld {
     pub cooldown: u32,
     pub wave: u8,
     pub wave_delay: u32,
-    pub retract_warning: Option<u32>,
-    /// Whether the retracting cell's geometry is still present.
-    pub cell_present: bool,
+    /// The live facility. A relayout mutates this rather than the site, which
+    /// stays the floor as it was dealt.
+    pub world: HexWfcWorld,
+    pub snapshot: HexWfcGeometrySnapshot,
+    /// Bumped whenever geometry changes, so presentation knows to rebuild.
+    pub geometry_generation: u32,
+    /// A telegraphed pocket, its warning, and the candidate that will be
+    /// offered to the solver when the warning expires.
+    pub telegraph: Option<(u32, HexRelayoutCandidate)>,
+    /// Cells retracted toward void.
+    ///
+    /// Retraction is a different verb from relayout and the lab needs both.
+    /// A legal relayout can never open a door onto void — that is precisely the
+    /// invariant the corpus enforces, and it holds after a rewrite exactly as
+    /// it held before — so rewriting alone can never produce a hole a body can
+    /// be put through. Canon already separates them: contradictions "retract
+    /// implicated tiles toward void until a compatible play repairs the
+    /// constraint". This is that, and it is deliberately not a legal state.
+    pub retracted: BTreeSet<HexCoord>,
     pub kills: u32,
     pub events: Vec<Event>,
     pub actors: BTreeMap<ActorId, Actor>,
@@ -206,9 +240,7 @@ pub struct WfcKineticWorld {
     pub player_collider: ColliderHandle,
     /// Projected structural colliders by stable ID.
     structural: BTreeMap<u32, ColliderHandle>,
-    /// Which stable collider IDs belong to which lattice cell, so a retraction
-    /// can remove exactly one tile's geometry and nothing else.
-    cell_colliders: BTreeMap<HexCoord, Vec<u32>>,
+
     next_id: u32,
     nav: Vec<Vec3>,
     edges: Vec<Vec<usize>>,
@@ -231,14 +263,6 @@ impl WfcKineticWorld {
             collider.user_data = STRUCTURAL_TAG | u128::from(spec.id.0);
             structural.insert(spec.id.0, physics.colliders.insert(collider));
         }
-        let mut cell_colliders: BTreeMap<HexCoord, Vec<u32>> = BTreeMap::new();
-        for piece in &site.snapshot.pieces {
-            cell_colliders
-                .entry(piece.source_cell)
-                .or_default()
-                .push(piece.id.0);
-        }
-
         let player_config = FpsConfig::deliberate_rapier();
         // Stand the Observer up facing the way out. Spawning at yaw zero
         // pointed at whichever wall the solver happened to put there.
@@ -267,6 +291,7 @@ impl WfcKineticWorld {
         );
 
         let nav = site.nav.clone();
+        let (facility, snapshot) = (site.world.clone(), site.snapshot.clone());
         let mut world = Self {
             site,
             config: Config::default(),
@@ -280,8 +305,11 @@ impl WfcKineticWorld {
             cooldown: 0,
             wave: 0,
             wave_delay: 300,
-            retract_warning: None,
-            cell_present: true,
+            world: facility,
+            snapshot,
+            geometry_generation: 0,
+            telegraph: None,
+            retracted: BTreeSet::new(),
             kills: 0,
             events: Vec::new(),
             actors: BTreeMap::new(),
@@ -289,7 +317,6 @@ impl WfcKineticWorld {
             player_handle,
             player_collider,
             structural,
-            cell_colliders,
             next_id: 1000,
             nav,
             edges: Vec::new(),
@@ -444,11 +471,12 @@ impl WfcKineticWorld {
 
     /// The device within reach, if any.
     #[must_use]
-    pub fn interaction(&self) -> Option<&'static str> {
+    pub fn interaction(&self) -> Option<Device> {
         let feet = self.player.position - Vec3::Y * self.player_config.half_height;
         [
-            (self.site.generator, "Toggle generator"),
-            (self.site.panel, "Retract tile"),
+            (self.site.generator, Device::Generator),
+            (self.site.panel, Device::Decoherence),
+            (self.site.demolition, Device::Demolition),
         ]
         .into_iter()
         .filter(|(at, _)| feet.distance(*at) < 2.5)
@@ -457,38 +485,299 @@ impl WfcKineticWorld {
             feet.distance_squared(*a)
                 .total_cmp(&feet.distance_squared(*b))
         })
-        .map(|(_, label)| label)
+        .map(|(_, device)| device)
     }
 
     fn interact(&mut self) {
         match self.interaction() {
-            Some("Toggle generator") => {
+            Some(Device::Generator) => {
                 self.powered = !self.powered;
                 self.events.push(Event::Power(self.powered));
             }
-            Some("Retract tile") if self.cell_present && self.retract_warning.is_none() => {
-                self.retract_warning = Some(120);
-                self.events.push(Event::Retracting);
-            }
-            _ => {}
+            Some(Device::Decoherence) if self.telegraph.is_none() => self.telegraph(),
+            Some(Device::Decoherence) => {}
+            Some(Device::Demolition) => self.retract(),
+            None => {}
         }
     }
 
-    /// Remove one tile's geometry. Everything standing on it loses its floor on
-    /// the same tick, which is the whole point of retraction being a tile
-    /// rather than a plank.
-    fn retract(&mut self) {
-        let cell = self.site.retracting;
-        if let Some(ids) = self.cell_colliders.get(&cell).cloned() {
-            for id in ids {
-                if let Some(handle) = self.structural.get(&id) {
-                    self.physics.colliders[*handle].set_enabled(false);
+    /// What the Observer can currently see, in the solver's own terms.
+    ///
+    /// This is the whole mechanic in one function. The solver already refuses
+    /// to rewrite cells that are observed or occupied; first person is what
+    /// makes that a *verb*, because what you can see is now a consequence of
+    /// where you stand and which way you are facing.
+    #[must_use]
+    pub fn observation(&self) -> HexObservationFrame {
+        let eye = self.eye();
+        let look = self.player.look_dir().with_y(0.).normalize_or_zero();
+        let mut visible = BTreeSet::new();
+        for cell in self.world.placements.keys().copied() {
+            if self.world.placements[&cell].space == HexSpace::Void {
+                continue;
+            }
+            let centre = Vec3::from_array(hex_origin(cell)) + Vec3::Y * 1.2;
+            let offset = (centre - eye).with_y(0.);
+            let distance = offset.length();
+            if distance > OBSERVATION_RANGE {
+                continue;
+            }
+            // The cell you are standing in counts as seen however you face.
+            let facing =
+                distance < 1.0 || offset.normalize_or_zero().dot(look) > OBSERVATION_COSINE;
+            if facing && self.line_clear(eye, centre) {
+                visible.insert(cell);
+            }
+        }
+        let mut occupied = BTreeMap::new();
+        if let Some(cell) = self.site.cell_containing(self.player.position) {
+            occupied.insert(PlayerId(0), cell);
+        }
+        HexObservationFrame {
+            visible_cells: visible,
+            visible_thresholds: BTreeSet::new(),
+            occupied_cells: occupied,
+            // The devices are the floor's fixed points. An Architect may
+            // rewrite the architecture around them; a lab that let a relayout
+            // delete the station out from under its own recharge rule would be
+            // testing a different thing.
+            landmark_cells: [self.site.generator, self.site.station, self.site.panel]
+                .into_iter()
+                .filter_map(|at| self.site.cell_containing(at))
+                .collect(),
+            objective_cells: BTreeSet::new(),
+        }
+    }
+
+    /// Select and telegraph a pocket. Nothing changes yet.
+    ///
+    /// Keeps looking until it finds a pocket that would actually differ from
+    /// what is already there. Roughly half the pockets a small floor offers
+    /// re-collapse to themselves — a run of void re-collapses faithfully into
+    /// void, and a cell bounded by frozen neighbours often has one legal
+    /// answer — and telegraphing one of those spends the warning, the sound and
+    /// the player's attention on a floor that was never going to move.
+    pub fn telegraph(&mut self) {
+        let observation = self.observation();
+        let influence = HexInfluenceField::encourage_decay();
+        for frontier in self.frontiers(&observation) {
+            let mut work = self.world.begin_frontier_relayout_sized(
+                &observation,
+                &frontier,
+                crate::site::POCKET_TARGET_CELLS,
+                crate::site::POCKET_MAX_CELLS,
+            );
+            for _ in 0..crate::site::POCKET_ATTEMPTS {
+                match self.world.advance_driven_relayout(work, &influence) {
+                    Ok(HexRelayoutProgress::Pending(next)) => work = next,
+                    Ok(HexRelayoutProgress::Ready(candidate)) => {
+                        if candidate.changed_cells.is_empty() {
+                            break;
+                        }
+                        let Some(cell) = candidate.region.cells.iter().next().copied() else {
+                            break;
+                        };
+                        self.telegraph = Some((DECOHERENCE_WARNING, candidate));
+                        self.events.push(Event::Decohering(cell));
+                        return;
+                    }
+                    Err(_) => break,
                 }
             }
         }
-        self.cell_present = false;
-        self.rebuild_navigation();
+        // Every frontier has been tried and none of them would move.
+        self.events.push(Event::Inert);
+    }
+
+    /// Where to look for a pocket, nearest the Observer first.
+    ///
+    /// The frontier decides what the pocket is chosen *near*. Passing only the
+    /// visible set selects nothing when the Observer faces a wall, and the
+    /// pocket lands in the empty part of the lattice where nothing can change.
+    fn frontiers(&self, observation: &HexObservationFrame) -> Vec<BTreeSet<HexCoord>> {
+        let here = self.site.cell_containing(self.player.position);
+        let mut anchored = observation.visible_cells.clone();
+        anchored.extend(observation.occupied_cells.values().copied());
+        anchored.extend(here);
+
+        let mut built: Vec<HexCoord> = self
+            .world
+            .placements
+            .iter()
+            .filter(|(_, placement)| placement.space != HexSpace::Void)
+            .map(|(cell, _)| *cell)
+            .collect();
+        let origin = here.unwrap_or(self.site.cells[0]);
+        built.sort_by_key(|cell| {
+            (
+                observed_hex::lateral_distance(origin, *cell),
+                cell.q,
+                cell.r,
+            )
+        });
+
+        let mut frontiers = Vec::new();
+        if !anchored.is_empty() {
+            frontiers.push(anchored);
+        }
+        frontiers.extend(built.into_iter().map(|cell| BTreeSet::from([cell])));
+        frontiers
+    }
+
+    /// Offer the telegraphed pocket to the solver against the observation the
+    /// Observer actually finished the warning with.
+    ///
+    /// The refusal is the point. `commit_relayout_delta` re-derives the
+    /// protected set from this frame, so walking into the pocket or simply
+    /// turning to look at it saves the floor.
+    fn commit(&mut self) {
+        let Some((_, candidate)) = self.telegraph.take() else {
+            return;
+        };
+        let cell = candidate.region.cells.iter().next().copied();
+        let latest = self.observation();
+        match self.world.commit_relayout_delta(candidate, &latest) {
+            Ok(delta) if delta.changed_cells.is_empty() => self.events.push(Event::Held),
+            Ok(delta) => {
+                let geometry = self.snapshot.project_delta_with_rooms(
+                    &self.world,
+                    &delta,
+                    self.site.content.cells(),
+                    self.site.content.rooms(),
+                );
+                match geometry {
+                    Ok(geometry) => {
+                        self.apply_geometry(&geometry);
+                        if let Some(cell) = cell {
+                            self.events.push(Event::Relaid(cell));
+                        }
+                    }
+                    // The logical floor moved and its geometry did not, which
+                    // would leave the two disagreeing. Nothing in this lab can
+                    // repair that, so say so rather than play on.
+                    Err(error) => panic!("projected relayout failed: {error:?}"),
+                }
+            }
+            // Every refusal here is the facility being held, which is what the
+            // Observer was trying to do. The variants differ in why, and none
+            // of them is worth a different word on screen.
+            Err(HexWfcError::UnsafeChange(_) | HexWfcError::StaleCandidate) => {
+                self.events.push(Event::Held);
+            }
+            Err(_) => self.events.push(Event::Held),
+        }
+    }
+
+    /// Swap the changed cells' geometry into the live collision world.
+    fn apply_geometry(&mut self, geometry: &observed_match::hex_wfc::HexGeometryDelta) {
+        for id in &geometry.colliders.removed {
+            if let Some(handle) = self.structural.remove(&id.0) {
+                self.physics.colliders.remove(
+                    handle,
+                    &mut self.physics.islands,
+                    &mut self.physics.bodies,
+                    false,
+                );
+            }
+        }
+        for spec in &geometry.colliders.upserted {
+            // An upsert replaces a collider with the same stable ID.
+            if let Some(handle) = self.structural.remove(&spec.id.0) {
+                self.physics.colliders.remove(
+                    handle,
+                    &mut self.physics.islands,
+                    &mut self.physics.bodies,
+                    false,
+                );
+            }
+            let Some(collider) = build_collider(spec) else {
+                continue;
+            };
+            let mut collider = collider;
+            collider.user_data = STRUCTURAL_TAG | u128::from(spec.id.0);
+            self.structural
+                .insert(spec.id.0, self.physics.colliders.insert(collider));
+        }
+        self.snapshot
+            .apply_delta(geometry)
+            .expect("the delta was projected from this snapshot");
+        self.geometry_generation += 1;
+        self.rebuild_navigation_near(&geometry.changed_cells);
+    }
+
+    /// Retract the tile the demolition control overlooks, toward void.
+    ///
+    /// Geometry only: the solver's world is left alone, because a cell with
+    /// doors pointing into it is not a layout the solver would ever produce and
+    /// feeding one back to it would corrupt every relayout after. The lab
+    /// tracks the retraction beside the facility instead.
+    fn retract(&mut self) {
+        let cell = self.site.retracting;
+        // Never the floor underfoot. The control stands beside its tile, but a
+        // rule is cheaper than trusting that, and an Observer who deletes the
+        // ground they are standing on has found a bug rather than a play.
+        if self.site.cell_containing(self.player.position) == Some(cell) {
+            self.events.push(Event::Inert);
+            return;
+        }
+        if !self.retracted.insert(cell) {
+            self.events.push(Event::Inert);
+            return;
+        }
+        let doomed: Vec<u32> = self
+            .snapshot
+            .pieces
+            .iter()
+            .filter(|piece| piece.source_cell == cell)
+            .map(|piece| piece.id.0)
+            .collect();
+        for id in doomed {
+            if let Some(handle) = self.structural.get(&id) {
+                self.physics.colliders[*handle].set_enabled(false);
+            }
+        }
+        self.geometry_generation += 1;
+        self.rebuild_navigation_near(&BTreeSet::from([cell]));
         self.events.push(Event::Retracted(cell));
+    }
+
+    /// The cells the live floor has no floor in — the holes the tool needs.
+    #[must_use]
+    pub fn holes(&self) -> Vec<HexCoord> {
+        (0..crate::site::config().cols)
+            .flat_map(|q| (0..crate::site::config().rows).map(move |r| HexCoord { q, r, level: 0 }))
+            .filter(|cell| {
+                self.retracted.contains(cell)
+                    || self
+                        .world
+                        .placements
+                        .get(cell)
+                        .is_none_or(|placement| placement.space == HexSpace::Void)
+            })
+            .collect()
+    }
+
+    /// Doorways that currently open onto a hole.
+    #[must_use]
+    pub fn open_thresholds(&self) -> Vec<(HexCoord, HexFace)> {
+        let grid = crate::site::config().grid();
+        let holes: BTreeSet<HexCoord> = self.holes().into_iter().collect();
+        let mut found = Vec::new();
+        for (cell, placement) in &self.world.placements {
+            if placement.space == HexSpace::Void || self.retracted.contains(cell) {
+                continue;
+            }
+            for face in HexFace::LATERAL {
+                if placement.is_open(face)
+                    && grid
+                        .neighbor(*cell, face)
+                        .is_some_and(|n| holes.contains(&n))
+                {
+                    found.push((*cell, face));
+                }
+            }
+        }
+        found
     }
 
     pub fn step(&mut self, command: Command) {
@@ -500,12 +789,11 @@ impl WfcKineticWorld {
         self.cooldown = self.cooldown.saturating_sub(1);
         // Hazards commit before movement so every query this tick sees the same
         // support the player is about to be resolved against.
-        if let Some(left) = self.retract_warning {
-            if left <= 1 {
-                self.retract_warning = None;
-                self.retract();
-            } else {
-                self.retract_warning = Some(left - 1);
+        if let Some((left, _)) = &self.telegraph {
+            if *left <= 1 {
+                self.commit();
+            } else if let Some((left, _)) = &mut self.telegraph {
+                *left -= 1;
             }
         }
         let report = step_character_in_query(
@@ -814,10 +1102,53 @@ impl WfcKineticWorld {
         true
     }
 
-    /// Test hook: force the graph rebuild a retraction would cause.
+    /// Recompute only the navigation a bounded change could have altered.
+    ///
+    /// A whole-graph rebuild costs about 95 ms on this floor, which is a
+    /// visible hitch, and relayout makes it happen often. Walkability can only
+    /// have changed near the cells that changed, so only those waypoints are
+    /// re-linked.
+    fn rebuild_navigation_near(&mut self, changed: &BTreeSet<HexCoord>) {
+        let reach = observed_hex::ACROSS_CORNERS * 0.5 + NAV_LINK_RANGE;
+        let centres: Vec<Vec3> = changed
+            .iter()
+            .map(|cell| Vec3::from_array(hex_origin(*cell)))
+            .collect();
+        let affected: Vec<usize> = (0..self.nav.len())
+            .filter(|index| {
+                let at = self.nav[*index];
+                centres
+                    .iter()
+                    .any(|centre| centre.with_y(at.y).distance(at) < reach)
+            })
+            .collect();
+        // Unlink them in both directions first, so a link that has stopped
+        // being walkable actually disappears.
+        for &index in &affected {
+            for other in std::mem::take(&mut self.edges[index]) {
+                self.edges[other].retain(|candidate| *candidate != index);
+            }
+        }
+        for &index in &affected {
+            for other in 0..self.nav.len() {
+                if index == other || self.edges[index].contains(&other) {
+                    continue;
+                }
+                if (self.nav[index].y - self.nav[other].y).abs() <= 0.42
+                    && self.nav[index].distance(self.nav[other]) < NAV_LINK_RANGE
+                    && self.walkable(self.nav[index], self.nav[other])
+                {
+                    self.edges[index].push(other);
+                    self.edges[other].push(index);
+                }
+            }
+        }
+    }
+
+    /// Test hook: the bounded rebuild one relayout causes.
     #[cfg(test)]
-    pub fn rebuild_navigation_for_profiling(&mut self) {
-        self.rebuild_navigation();
+    pub fn rebuild_navigation_for_profiling(&mut self, changed: &BTreeSet<HexCoord>) {
+        self.rebuild_navigation_near(changed);
     }
 
     fn rebuild_navigation(&mut self) {
@@ -825,7 +1156,7 @@ impl WfcKineticWorld {
         for a in 0..self.nav.len() {
             for b in a + 1..self.nav.len() {
                 if (self.nav[a].y - self.nav[b].y).abs() <= 0.42
-                    && self.nav[a].distance(self.nav[b]) < 8.0
+                    && self.nav[a].distance(self.nav[b]) < NAV_LINK_RANGE
                     && self.walkable(self.nav[a], self.nav[b])
                 {
                     self.edges[a].push(b);
@@ -949,8 +1280,10 @@ impl WfcKineticWorld {
             u64::from(self.powered),
             u64::from(self.wave),
             u64::from(self.wave_delay),
-            u64::from(self.retract_warning.unwrap_or(u32::MAX)),
-            u64::from(self.cell_present),
+            u64::from(self.telegraph.as_ref().map_or(u32::MAX, |(left, _)| *left)),
+            u64::from(self.geometry_generation),
+            self.retracted.len() as u64,
+            self.world.generation as u64,
             u64::from(self.cooldown),
             u64::from(self.kills),
             u64::from(self.next_id),
@@ -1005,6 +1338,41 @@ impl WfcKineticWorld {
 
 /// Stable local Observer identity in collider user data.
 const PLAYER_USER_DATA: u128 = 999;
+
+/// A thing an Observer can operate at the tile.
+///
+/// An enum rather than the label itself. These used to be matched as strings,
+/// and renaming one prompt updated the side that advertises it and not the side
+/// that acts on it: the control read "Retract the tile ahead", the handler
+/// still waited for "Retract this tile", and pressing E did nothing at all for
+/// as long as it took to find.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Device {
+    Generator,
+    Decoherence,
+    Demolition,
+}
+
+impl Device {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Generator => "Toggle generator",
+            Self::Decoherence => "Decohere a pocket",
+            Self::Demolition => "Retract the tile ahead",
+        }
+    }
+}
+
+/// How far apart two waypoints may be and still be linked.
+const NAV_LINK_RANGE: f32 = 8.0;
+
+/// How far an Observer's look protects a cell from being rewritten.
+const OBSERVATION_RANGE: f32 = 26.0;
+/// Roughly a 100-degree cone: `cos(50 degrees)`.
+const OBSERVATION_COSINE: f32 = 0.64;
+/// Two seconds of warning before a pocket re-collapses.
+const DECOHERENCE_WARNING: u32 = 120;
 
 /// Marks a collider as part of the projected architecture rather than an actor.
 /// Set high so actor identities keep their small, stable values.

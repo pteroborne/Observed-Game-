@@ -2,9 +2,14 @@
 
 Evidence for [`labs/wfc_kinetic_lab`](../../../labs/wfc_kinetic_lab/README.md).
 
-The floor is seven cells of a real solve of the production tile catalogue, at
-seed 8: two rooms, five halls, and two cells the collapse declined to build.
-159 projected hulls.
+The floor is about thirty cells of a real 7x5 solve of the production tile
+catalogue, at seed 8, with 662 projected hulls. It was a seven-cell arena until
+observation-safe relayout needed somewhere to happen; the lab README carries the
+measurements.
+
+**The scene stills, the walkthrough GIF and the gameplay MP4 below were cut on
+the seven-cell arena and are stale.** The floor they show is real and the
+findings they record still hold, but they are not this floor.
 
 | | |
 |---|---|

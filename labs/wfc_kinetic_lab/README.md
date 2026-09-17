@@ -17,13 +17,21 @@ cargo dev-run -p wfc_kinetic_lab -- --seed 1234
 
 ## The floor
 
-Seven cells, from a real solve of the production tile catalogue.
+Around thirty cells on a 7×5 lattice, from a real solve of the production tile
+catalogue. The holes are the point: not cells the solver failed to fill but
+floor-less volume the collapse declined to build, placed by the same pass that
+placed the walls around them.
 
-A 3×3 rhombus is the smallest lattice the solver accepts (`cols >= 3`,
-`rows >= 3`, `min_rooms >= 2`). Asking it for seven of those nine cells leaves
-exactly two holes, and the holes are the point: they are not cells the solver
-failed to fill but floor-less volume the collapse declined to build, placed by
-the same pass that placed the walls around them.
+It began as a seven-cell arena and grew for one measured reason — **bounded
+relayout needs somewhere to happen.** The solver permanently pins `spawn` and
+`exit`, gives *every* pin a one-cell halo, and adds a pin for each cell the
+Observer occupies or can see. On a small board that saturates: a 3×3 floor never
+offered a selectable pocket at all, and a 4×4 floor protected fourteen of its
+sixteen cells with one cell visible, leaving only a void cell whose re-collapse
+faithfully produced void. Pockets that actually change something, over
+twenty-five seeds — 6×5: eleven, 7×5: fifteen, 8×6: seventeen.
+
+That trade is worth knowing before anyone designs a room around the mechanic.
 
 `site.rs` solves, projects, and derives every gameplay anchor from the result.
 Nothing in this lab authors a room. The two rooms become the Observer's spawn
@@ -85,6 +93,37 @@ The ear rides the camera, so a Guardian behind a wall is behind it. `M` mutes.
 `playing_the_loop_spawns_voices` drives the recorded encounter and counts the
 voices it produces, so the lab cannot go quietly silent.
 
+## Two verbs, and why both
+
+**Decoherence is the legal one.** Operating the panel telegraphs a pocket and
+then asks the solver to re-collapse it — `begin_frontier_relayout_sized`,
+`advance_driven_relayout` under an `encourage_decay` bias, and
+`commit_relayout_delta` against the observation frame at commit time. The
+geometry delta is projected from the same catalogue the solve used and swapped
+into the live collision world, the snapshot and the navigation graph.
+
+The refusal is the mechanic. `commit_relayout_delta` re-derives what is
+protected from the *latest* frame, so **walking into the pocket, or simply
+turning to look at it, saves the floor.** That is observation-freezing made into
+a first-person verb, and it is the thing a 2D lab structurally cannot ask.
+
+A telegraph only fires on a pocket that would actually differ. Roughly half the
+pockets a floor offers re-collapse into themselves — a run of void re-collapses
+faithfully into void, and a cell bounded by frozen neighbours often has exactly
+one legal answer — and spending the warning, the sound and the player's
+attention on a floor that was never going to move is worse than saying so.
+`Inert` says so.
+
+**Retraction is the illegal one, and the lab needs it.** A legal relayout can
+*never* open a door onto void: that is precisely the invariant the corpus
+enforces, and it holds after a rewrite exactly as it held before. So rewriting
+alone can never produce a hole a body can be put through — the recorded director
+decohered eleven pockets in a row without ever creating one. Canon already
+separates the two: contradictions "retract implicated tiles toward void until a
+compatible play repairs the constraint". Retraction is that, it is deliberately
+not a state the solver would produce, and it is why the lab tracks retracted
+cells beside the facility rather than feeding them back into it.
+
 ## Guardians
 
 Minors wear the shared `kinetic_lab::guardian` rig — the pyramidal body, lidded
@@ -132,18 +171,20 @@ difference in feel is still the architecture talking.
   only within 2.2 m of a visible powered station.
 - **Generator:** operable at the tile by anyone. With it off the station supplies
   nothing; there is no passive regeneration.
-- **Tile control:** a two-second warning, then one cell's geometry is removed —
-  mesh, colliders and all. Anything standing on it loses its floor on the same
-  tick, and the navigation graph loses the crossing. The cell is chosen so that
-  removing it actually severs the route between the spawn room and the generator
-  where the floor has such a cell.
+- **Decoherence control:** telegraphs a pocket of one to six cells, waits two
+  seconds, then offers it to the solver against the observation the Observer
+  actually finished the warning with. See below.
+- **Demolition control:** retracts its tile toward void — geometry only, mesh
+  and colliders together. Anything standing on it loses its floor on the same
+  tick, and the doorways into it start opening onto nothing.
 - Crossing y = −12 removes a body. An Observer's fall ends an encounter and
   resets the body in practice.
 
 ## What owns the truth
 
-`site` owns the solve, the projection and the anchors, and is immutable once
-built. `model` owns commands, fixed-tick rules, snapshots, events and stable
+`site` owns the deal — the solve, its projection and the anchors — and is
+immutable once built. The live facility lives in the model, because relayout
+changes it; `site` stays the floor as it was dealt. `model` owns commands, fixed-tick rules, snapshots, events and stable
 actor IDs; it reads the projected colliders and never the renderer. `runtime`
 adapts Bevy scheduling; `view` interpolates and draws, and decides nothing.
 
@@ -230,6 +271,7 @@ a recording cannot quietly become footage of somebody walking around.
 ## Not in scope
 
 Majors, teammate boosts, equipment, Architect card play, multiple floors, ascent,
-and production multiplayer. Retraction here deletes one cell's projected
-geometry; it does not run the solver's observation-safe relayout, so the floor
-never re-collapses around the hole.
+and production multiplayer. The recorded gameplay loop and its MP4 are **stale**: they were cut on the
+seven-cell arena, and the director's simple policy reaches the demolition
+control on this floor but gets caught crossing it before it clears a wave.
+`the_director_reaches_the_beats_the_floor_has` pins what it does still do.

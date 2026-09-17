@@ -5,27 +5,44 @@
 //! authors a room. The lab's whole claim is that the architecture came out of
 //! the production solver, so the only geometry it may invent is none.
 
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::sync::Arc;
 
 use glam::Vec3;
 use observed_content::ArchitectureRegister;
+use observed_core::PlayerId;
 use observed_facility::hex_wfc::{
-    HexCompositionProfile, HexPlacement, HexSpace, HexWfcConfig, HexWfcWorld,
+    HexCompositionProfile, HexInfluenceField, HexObservationFrame, HexPlacement,
+    HexRelayoutProgress, HexSpace, HexWfcConfig, HexWfcWorld,
 };
 use observed_hex::{HexCoord, HexFace, face_edge, hex_origin};
 use observed_match::hex_wfc::{HexMatchContent, HexWfcGeometrySnapshot};
 use observed_traversal::{ColliderShape, ColliderSpec};
 use rapier3d::prelude::*;
 
-/// The seven-cell area this lab exists to fight inside.
+/// How much floor this lab wants: a small area with holes in it.
 ///
-/// Seven is the whole scope decision. A 3x3 rhombus is the smallest lattice the
-/// solver accepts (`cols >= 3 && rows >= 3`), and asking it for seven of those
-/// nine cells leaves exactly two holes — which is the point. The two void cells
-/// are not scenery the solver failed to fill; they are the floor-less volume a
-/// shoved minor falls through, and they are placed by the same collapse that
-/// placed the walls around them.
-pub const CELL_COUNT: usize = 7;
+/// The void cells are the point. They are not scenery the solver failed to
+/// fill; they are the floor-less volume a shoved minor falls through, placed by
+/// the same collapse that placed the walls around them.
+///
+/// The board is 7x5, and it is this big for one measured reason: bounded
+/// relayout needs somewhere to happen.
+///
+/// The solver permanently pins `spawn` and `exit`, gives *every* pin a full
+/// one-cell halo, and adds a pin for each cell the Observer occupies or can
+/// see. On a small board that saturates. Measured: a 3x3 floor never offered a
+/// selectable pocket at all, and a 4x4 floor protected fourteen of its sixteen
+/// cells even with one cell visible, leaving only a void cell whose re-collapse
+/// faithfully produced void. Pockets that actually change something, over
+/// twenty-five seeds: 6x5 eleven times, 7x5 fifteen, 8x6 seventeen.
+///
+/// So this lab is a floor rather than the seven-cell arena it started as. That
+/// is the trade observation-safe relayout costs, and it is worth knowing before
+/// anyone designs a room around the mechanic.
+pub const MIN_CELLS: usize = 22;
+/// Above this the floor stops being one floor and starts being a building.
+pub const MAX_CELLS: usize = 38;
 
 /// Cells below this have left the facility. The lowest authored floor sits near
 /// `FLOOR_SLAB_TOP`, so this is far enough below the deepest cell that nothing
@@ -66,6 +83,9 @@ pub struct Site {
     pub seed: u64,
     pub world: HexWfcWorld,
     pub snapshot: HexWfcGeometrySnapshot,
+    /// The tile catalogue this floor was projected from. Kept because a
+    /// relayout has to project its delta from the same corpus the solve used.
+    pub content: Arc<HexMatchContent>,
     /// The seven occupied cells, in lattice order.
     pub cells: Vec<HexCoord>,
     /// The two holes.
@@ -84,6 +104,8 @@ pub struct Site {
     pub generator: Vec3,
     pub station: Vec3,
     pub panel: Vec3,
+    /// Where the Observer can retract the tile they are standing on.
+    pub demolition: Vec3,
     /// The hall cell the panel retracts. Chosen so that removing it actually
     /// severs a crossing rather than cosmetically deleting a floor.
     pub retracting: HexCoord,
@@ -110,7 +132,7 @@ impl std::fmt::Display for SiteError {
         match self {
             Self::NoSevenCellSolve { searched, last } => write!(
                 f,
-                "no usable seven-cell solve in {searched} seeds (last rejection: {last})"
+                "no usable floor in {searched} seeds (last rejection: {last})"
             ),
         }
     }
@@ -128,8 +150,8 @@ impl std::fmt::Display for SiteError {
 #[must_use]
 pub fn config() -> HexWfcConfig {
     HexWfcConfig {
-        cols: 3,
-        rows: 3,
+        cols: 7,
+        rows: 5,
         levels: 1,
         // The solver's floor. Both rooms are load-bearing here: one is where
         // the Observer stands up and one is where the generator lives, so the
@@ -159,9 +181,9 @@ impl Site {
     /// Solve, project, and derive every gameplay anchor from the result.
     ///
     /// Searches forward from `requested_seed` for the first solve with exactly
-    /// [`CELL_COUNT`] occupied cells and at least one ledge, so that any seed a
+    /// a usable number of occupied cells, so that any seed a
     /// player types produces a playable floor rather than an error.
-    pub fn solve(requested_seed: u64, content: &HexMatchContent) -> Result<Self, SiteError> {
+    pub fn solve(requested_seed: u64, content: &Arc<HexMatchContent>) -> Result<Self, SiteError> {
         let config = config();
         let profile = profile();
         let mut last = "no solve reached assembly";
@@ -176,7 +198,7 @@ impl Site {
                 .filter(|(_, placement)| placement.space != HexSpace::Void)
                 .map(|(coord, _)| *coord)
                 .collect();
-            if cells.len() != CELL_COUNT {
+            if !(MIN_CELLS..=MAX_CELLS).contains(&cells.len()) {
                 continue;
             }
             let Ok(snapshot) = HexWfcGeometrySnapshot::project_with_rooms(
@@ -186,7 +208,14 @@ impl Site {
             ) else {
                 continue;
             };
-            match Self::assemble(requested_seed, seed, world, snapshot, cells) {
+            match Self::assemble(
+                requested_seed,
+                seed,
+                world,
+                snapshot,
+                Arc::clone(content),
+                cells,
+            ) {
                 Ok(site) => return Ok(site),
                 Err(reason) => last = reason,
             }
@@ -202,6 +231,7 @@ impl Site {
         seed: u64,
         world: HexWfcWorld,
         snapshot: HexWfcGeometrySnapshot,
+        content: Arc<HexMatchContent>,
         cells: Vec<HexCoord>,
     ) -> Result<Self, &'static str> {
         let probe = Probe::new(&snapshot.arena.colliders);
@@ -210,6 +240,16 @@ impl Site {
             .flat_map(|q| (0..config().rows).map(move |r| HexCoord { q, r, level: 0 }))
             .filter(|coord| !occupied.contains(coord))
             .collect();
+
+        // A floor this lab can use is one the Architect can actually change.
+        // Roughly half of them cannot: a pocket of void re-collapses faithfully
+        // into void, and cells bounded by frozen neighbours often have exactly
+        // one legal answer. Telegraphing on such a floor spends the warning and
+        // the sound on something that was never going to move, so those seeds
+        // are skipped at deal time instead.
+        if !can_decohere(&world) {
+            return Err("no pocket on this floor would re-collapse into anything else");
+        }
 
         let ledges = ledges(&occupied, &probe);
         // A floor with no ledge is still usable: see the parapet finding in
@@ -281,12 +321,25 @@ impl Site {
         let station = probe
             .stand_near(station_cell)
             .ok_or("station hall has no standable floor")?;
-        let panel = probe
+        // The demolition control stands *beside* what it retracts, never on it:
+        // operating it from the doomed tile deletes the floor underfoot, which
+        // the director discovered by falling out of the facility seventy ticks
+        // after pressing it.
+        let demolition = probe
             .stand_near(panel_cell)
-            .ok_or("panel hall has no standable floor")?;
+            .ok_or("no standable floor beside the retracting tile")?;
+        let decohere_cell = available
+            .iter()
+            .copied()
+            .filter(|cell| *cell != station_cell && *cell != panel_cell)
+            .max_by_key(|cell| lattice_steps(&world, panel_cell, *cell).unwrap_or(0))
+            .unwrap_or(station_cell);
+        let panel = probe
+            .stand_near(decohere_cell)
+            .ok_or("no standable floor for the decoherence control")?;
         // Devices must not land on the cell that is about to be retracted, or
         // operating the panel would delete the thing that operates it.
-        if [generator, station, panel]
+        if [generator, station]
             .iter()
             .any(|p| cell_at(*p) == Some(retracting))
         {
@@ -327,8 +380,26 @@ impl Site {
             .collect();
 
         let nav = waypoints(&world, &occupied, &probe);
+        // Devices sit on navigation waypoints rather than on any standable
+        // point. A point can be standable and still be unreachable — behind a
+        // column, inside an alcove the controller cannot enter — and a device
+        // nobody can walk up to is a device that does not exist. The director
+        // found this by standing two metres from a control it could never
+        // operate, for two thousand ticks.
+        let snap = |at: Vec3| {
+            nav.iter()
+                .copied()
+                .min_by(|a, b| at.distance_squared(*a).total_cmp(&at.distance_squared(*b)))
+                .unwrap_or(at)
+        };
+        let (generator, station, panel, demolition) = (
+            snap(generator),
+            snap(station),
+            snap(panel),
+            snap(demolition),
+        );
         let muster = muster(&world, &occupied, &probe, spawn_cell);
-        if nav.len() < CELL_COUNT {
+        if nav.len() < MIN_CELLS {
             return Err("too few standable waypoints");
         }
         if muster.is_empty() {
@@ -340,6 +411,7 @@ impl Site {
             seed,
             world,
             snapshot,
+            content,
             cells,
             voids,
             ledges,
@@ -348,6 +420,7 @@ impl Site {
             generator,
             station,
             panel,
+            demolition,
             retracting,
             thresholds,
             nav,
@@ -753,16 +826,73 @@ pub fn build_collider(spec: &ColliderSpec) -> Option<Collider> {
 ///
 /// The lab is a claim about the production corpus, so it reads the same
 /// compiled catalogue the game does rather than a fixture.
-pub fn load_content() -> HexMatchContent {
+pub fn load_content() -> Arc<HexMatchContent> {
     let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tiles");
     let slugs = ArchitectureRegister::ALL.map(ArchitectureRegister::slug);
-    HexMatchContent::load(&base, &slugs).expect("committed runtime tile catalogue loads")
+    Arc::new(HexMatchContent::load(&base, &slugs).expect("committed runtime tile catalogue loads"))
 }
 
 /// The neighbour behind a face, on the lab's lattice.
 fn grid_neighbor(cell: HexCoord, face: HexFace) -> Option<HexCoord> {
     config().grid().neighbor(cell, face)
 }
+
+/// Whether some pocket of this floor would re-collapse into something else.
+///
+/// Mirrors what the panel does at runtime, with the Observer assumed to be
+/// standing at the spawn: enough to reject a floor that can never move, cheap
+/// enough to run on every candidate seed.
+fn can_decohere(world: &HexWfcWorld) -> bool {
+    let influence = HexInfluenceField::encourage_decay();
+    let built: Vec<HexCoord> = world
+        .placements
+        .iter()
+        .filter(|(_, placement)| placement.space != HexSpace::Void)
+        .map(|(cell, _)| *cell)
+        .collect();
+    let mut observation = HexObservationFrame {
+        visible_cells: BTreeSet::new(),
+        visible_thresholds: BTreeSet::new(),
+        occupied_cells: BTreeMap::new(),
+        landmark_cells: BTreeSet::new(),
+        objective_cells: BTreeSet::new(),
+    };
+    observation
+        .occupied_cells
+        .insert(PlayerId(0), world.config.spawn());
+    // A handful of anchors, not every built cell: this runs for every candidate
+    // seed, and a whole-floor sweep of pocket collapses is not worth the deal.
+    for anchor in built.iter().take(DEAL_CHECK_ANCHORS) {
+        let frontier = BTreeSet::from([*anchor]);
+        let mut work = world.begin_frontier_relayout_sized(
+            &observation,
+            &frontier,
+            POCKET_TARGET_CELLS,
+            POCKET_MAX_CELLS,
+        );
+        for _ in 0..POCKET_ATTEMPTS {
+            match world.advance_driven_relayout(work, &influence) {
+                Ok(HexRelayoutProgress::Pending(next)) => work = next,
+                Ok(HexRelayoutProgress::Ready(candidate)) => {
+                    if !candidate.changed_cells.is_empty() {
+                        return true;
+                    }
+                    break;
+                }
+                Err(_) => break,
+            }
+        }
+    }
+    false
+}
+
+/// Pocket bounds, shared by the deal-time check and the runtime panel.
+pub const POCKET_TARGET_CELLS: usize = 3;
+pub const POCKET_MAX_CELLS: usize = 6;
+/// Topological attempts one telegraph will spend on a single frontier.
+pub const POCKET_ATTEMPTS: u32 = 24;
+/// How many anchors the deal-time decoherence check samples.
+const DEAL_CHECK_ANCHORS: usize = 8;
 
 /// Whether two occupied cells share an open door.
 fn adjacent(world: &HexWfcWorld, from: HexCoord, to: HexCoord) -> bool {

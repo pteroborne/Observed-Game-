@@ -18,8 +18,8 @@ pub const SCENES: [&str; 5] = [
     "THE SOLVED FLOOR / seven cells the solver placed",
     "ARCHITECTURE / a wall the solver chose stops the ray",
     "THE PARAPET / every face onto void comes back railed",
-    "RETRACTION / the Architect makes the hole",
-    "THE DOORWAY / and the Observer shoves a minor through it",
+    "DECOHERENCE / look away and the pocket re-collapses",
+    "OBSERVATION / look at it and the floor holds",
 ];
 pub const SCENE_TICKS: u32 = 240;
 
@@ -177,23 +177,15 @@ pub fn stage(index: usize, site: &Arc<Site>) -> Demo {
                 aim_from(&mut world, stand, launch + Vec3::Y * 0.6 + AIM_LIFT);
             }
         }
-        // The panel, the warning, and the tile that stops existing.
-        3 => {
-            empty(&mut world);
-            place_player(&mut world, site.panel - Vec3::new(1.8, 0., 0.), Vec3::X);
-        }
-        // The hole the Architect just made, used as a hole.
+        // The panel, the warning, and a pocket that re-collapses because
+        // nobody was looking at it.
+        //
+        // Scene four is the same setup with the Observer facing the pocket
+        // instead, and the floor survives. Between them they are the whole
+        // mechanic: observation is what makes a rewrite illegal.
         _ => {
             empty(&mut world);
-            if let Some(threshold) = site.thresholds.first().copied() {
-                let (stand, launch) = ledge_stage(site, threshold);
-                target = Some(world.spawn(Kind::Minor, launch + Vec3::Y * 0.6));
-                aim_from(&mut world, stand, launch + Vec3::Y * 0.6 + AIM_LIFT);
-                // Retract first: this scene is about what the tool can do once
-                // the floor has a hole in it, not about making the hole.
-                world.retract_warning = Some(1);
-                world.step(Command::default());
-            }
+            place_player(&mut world, site.panel - Vec3::new(1.8, 0., 0.), Vec3::X);
         }
     }
     world.physics.step();
@@ -244,9 +236,19 @@ pub fn command(
     if scene == 0 && (40..200).contains(&tick) {
         movement.movement = Vec2::new(0., 0.55);
     }
+    // Three looks away from what it just telegraphed and loses the pocket;
+    // four stares at it and keeps the floor.
+    if let (3 | 4, Some((_, candidate))) = (scene, world.telegraph.as_ref())
+        && let Some(cell) = candidate.region.cells.iter().next()
+    {
+        let at = Vec3::from_array(hex_origin(*cell)) + Vec3::Y * 1.2;
+        let toward = (at - world.eye()).with_y(0.).normalize_or_zero();
+        let wanted = if scene == 4 { toward } else { -toward };
+        movement.look = turn_toward(world, world.eye() + wanted * 10.);
+    }
     let action = match (scene, tick) {
-        (1, 90) | (2, 90) | (4, 90) => Action::Push,
-        (3, 60) => Action::Interact,
+        (1, 90) | (2, 90) => Action::Push,
+        (3 | 4, 60) => Action::Interact,
         _ => Action::None,
     };
     Command { movement, action }
@@ -270,20 +272,29 @@ pub fn loop_command(world: &WfcKineticWorld, tick: u32) -> Command {
     let feet = world.player.position - Vec3::Y * world.player_config.half_height;
     let eye = world.eye();
 
-    // 1. Make the hole. Nothing else is worth doing before this.
-    if world.cell_present {
-        let panel = world.site.panel;
-        if world.retract_warning.is_some() {
-            // Back off and watch it go.
-            return go(
-                world,
-                feet + (feet - panel).with_y(0.).normalize_or_zero() * 4.0,
-                panel,
-            );
+    // 1. Make a hole a body can actually be put through. The floor is dealt
+    //    with two of its own, but the corpus seals them: without a doorway
+    //    onto one, a hole is scenery.
+    let thresholds = world.open_thresholds();
+    if thresholds.is_empty() {
+        if world.telegraph.is_some()
+            && let Some((_, candidate)) = world.telegraph.as_ref()
+        {
+            // Look away from what was just telegraphed. Watching it is what
+            // saves it, and the director is trying to lose this pocket.
+            let cell = candidate.region.cells.iter().next().copied();
+            let at = cell.map_or(feet + Vec3::X, |cell| {
+                Vec3::from_array(hex_origin(cell)) + Vec3::Y * 1.2
+            });
+            let away = (feet - at).with_y(0.).normalize_or_zero();
+            return go(world, feet, feet + away * 10.0 + Vec3::Y * 1.5);
         }
-        let interact = world.interaction() == Some("Retract tile");
-        let mut command = go(world, panel, panel + Vec3::Y * 1.2);
-        if interact {
+        // Retraction, not decoherence. A legal relayout can never point a door
+        // at void, so rewriting the floor forever would never produce a hole a
+        // body can be put through; retracting a tile is the verb that does.
+        let control = world.site.demolition;
+        let mut command = go(world, control, control + Vec3::Y * 1.2);
+        if world.interaction() == Some(crate::model::Device::Demolition) {
             command.movement.movement = Vec2::ZERO;
             command.action = Action::Interact;
         }
@@ -298,8 +309,14 @@ pub fn loop_command(world: &WfcKineticWorld, tick: u32) -> Command {
         return go(world, station, station + Vec3::Y * 1.2);
     }
 
-    // 3. Work the nearest minor toward the hole.
-    let hole = Vec3::from_array(hex_origin(world.site.retracting));
+    // 3. Work the nearest minor toward a hole.
+    let Some(hole) = nearest_hole(world, feet) else {
+        return go(
+            world,
+            world.site.station,
+            world.site.station + Vec3::Y * 1.2,
+        );
+    };
     let Some((id, position)) = nearest_minor(world, feet) else {
         // Between waves: stand where the next one has to come through.
         return go(world, station, hole + Vec3::Y * 1.5);
@@ -328,6 +345,36 @@ pub fn loop_command(world: &WfcKineticWorld, tick: u32) -> Command {
         command.movement.movement.x += 0.25;
     }
     command
+}
+
+/// The centre of the hole the floor currently offers, preferring one with a
+/// doorway pointing into it — a body can only be put through an opening.
+fn nearest_hole(world: &WfcKineticWorld, feet: Vec3) -> Option<Vec3> {
+    let grid = crate::site::config().grid();
+    world
+        .open_thresholds()
+        .into_iter()
+        .filter_map(|(cell, face)| grid.neighbor(cell, face))
+        .map(|hole| Vec3::from_array(hex_origin(hole)))
+        .min_by(|a, b| {
+            feet.distance_squared(*a)
+                .total_cmp(&feet.distance_squared(*b))
+        })
+}
+
+/// A look delta that turns toward a world point, as a mouse movement.
+fn turn_toward(world: &WfcKineticWorld, at: Vec3) -> Vec2 {
+    const LOOK_STEP: f32 = 0.035;
+    let to_target = (at - world.eye()).normalize_or_zero();
+    let wanted_yaw = to_target.x.atan2(-to_target.z);
+    let wanted_pitch = to_target.y.asin();
+    let yaw_error = (wanted_yaw - world.player.yaw + std::f32::consts::PI)
+        .rem_euclid(std::f32::consts::TAU)
+        - std::f32::consts::PI;
+    Vec2::new(
+        (yaw_error / LOOK_STEP).clamp(-1., 1.),
+        ((world.player.pitch - wanted_pitch) / LOOK_STEP).clamp(-1., 1.),
+    )
 }
 
 /// The nearest live minor, if the floor has one.
