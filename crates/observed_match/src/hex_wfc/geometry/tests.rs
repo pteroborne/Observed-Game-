@@ -316,28 +316,27 @@ fn selected_tiles(snapshot: &HexWfcGeometrySnapshot) -> BTreeMap<HexCoord, TileK
 /// optimises the wrong thing.
 #[test]
 fn production_catalog_selection_is_pinned_for_spectator_seeds() {
-    // The six district benchmarks add catalogue candidates. Re-pin content;
+    // The ten district benchmarks add catalogue candidates. Re-pin content;
     // placement counts and the unchanged stair-tower family remain exact gates.
     let catalog = crate::hex_wfc::test_catalog();
     let cases = [
         (
             1u64,
             293usize,
-            0xa1d1_9004_358b_1ea5u64,
+            0x6a0d_29cb_6617_c6e9u64,
             45usize,
             0x95e0_1b87_e452_104cu64,
         ),
         (
             10_000_031u64,
             238usize,
-            0xef98_03ba_e19a_cb2eu64,
+            0xbe6f_2c6f_e704_12c1u64,
             29usize,
             0xe5db_a473_4a53_b1a3u64,
         ),
     ];
-    for (seed, expected_count, expected_digest, expected_tower_count, expected_tower_digest) in
-        cases
-    {
+    let mut actual = Vec::new();
+    for (seed, _, _, _, _) in cases {
         let world = HexWfcWorld::generate_with_profile(
             seed,
             HexWfcConfig {
@@ -364,11 +363,11 @@ fn production_catalog_selection_is_pinned_for_spectator_seeds() {
             selections.len(),
             towers.len()
         );
-        assert_eq!(selections.len(), expected_count);
-        assert_eq!(digest, expected_digest);
-        assert_eq!(towers.len(), expected_tower_count);
-        assert_eq!(tower_digest, expected_tower_digest);
+        actual.push((seed, selections.len(), digest, towers.len(), tower_digest));
     }
+    // Report both seeds together when an intentional content addition moves
+    // the selection pin; every count and tower digest remains part of it.
+    assert_eq!(actual.as_slice(), &cases);
 }
 
 /// Compatibility content still has no family, and this is what that costs.
@@ -1942,7 +1941,12 @@ fn projected_face_extent(
     coord: HexCoord,
     face: HexFace,
 ) -> Option<(f32, f32)> {
-    const BOUNDARY_EPSILON: f32 = 0.05;
+    // The nominal hex is quantized to x=7, z=4/8. A 60-degree turn of
+    // its corner differs from the nominal corner by about 0.0718 m. The
+    // source audit sees unrotated geometry; this projection audit must admit
+    // that known plan-space rounding or it misses a rotated floor entirely
+    // and reports the next lintel as the floor. Height tolerance stays 0.05 m.
+    const BOUNDARY_EPSILON: f32 = 0.08;
 
     let [(ax, az), (bx, bz)] = observed_hex::metrics::face_edge(face);
     #[allow(clippy::cast_precision_loss)]

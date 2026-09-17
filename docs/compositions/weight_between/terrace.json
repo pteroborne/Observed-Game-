@@ -1,0 +1,117 @@
+{
+  "layout": [
+    {
+      "tile": "hall_straight:1146",
+      "q": 1,
+      "r": 4,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_straight:1158",
+      "q": 2,
+      "r": 4,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_junction_4way:1140",
+      "q": 3,
+      "r": 4,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_straight:1140",
+      "q": 4,
+      "r": 4,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_junction_4way:1140",
+      "q": 5,
+      "r": 4,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_straight:1158",
+      "q": 6,
+      "r": 4,
+      "turn": 3,
+      "level": 0
+    },
+    {
+      "tile": "hall_straight:1146",
+      "q": 7,
+      "r": 4,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_turn_60:1140",
+      "q": 3,
+      "r": 3,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_straight:1152",
+      "q": 4,
+      "r": 3,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_turn_120:1140",
+      "q": 5,
+      "r": 3,
+      "turn": 1,
+      "level": 0
+    },
+    {
+      "tile": "hall_turn_60:1140",
+      "q": 2,
+      "r": 5,
+      "turn": 5,
+      "level": 0
+    },
+    {
+      "tile": "hall_straight:1152",
+      "q": 3,
+      "r": 5,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_turn_120:1140",
+      "q": 4,
+      "r": 5,
+      "turn": 3,
+      "level": 0
+    }
+  ],
+  "register": 2,
+  "view_mode": "orbit",
+  "render_mode": "lit",
+  "hide_menu": true,
+  "volumetrics": false,
+  "inspection_fill": true,
+  "inspection_shadows": true,
+  "camera_target": [
+    56,
+    1,
+    48
+  ],
+  "section": "plan",
+  "section_axis": 90,
+  "section_roof_height": 4.4,
+  "section_roof_front": false,
+  "orbit_yaw": 1.15,
+  "orbit_pitch": 0.85,
+  "radius": 24,
+  "height": 4,
+  "exposure_ev100": 5.5,
+  "output_image": "docs/evidence/weight_between/terrace.png"
+}

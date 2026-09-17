@@ -1,0 +1,103 @@
+{
+  "layout": [
+    {
+      "tile": "hall_straight:1092",
+      "q": 2,
+      "r": 4,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_junction_4way:1080",
+      "q": 3,
+      "r": 4,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_straight:1080",
+      "q": 4,
+      "r": 4,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_junction_4way:1080",
+      "q": 5,
+      "r": 4,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_straight:1092",
+      "q": 6,
+      "r": 4,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_turn_60:1080",
+      "q": 3,
+      "r": 3,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_straight:1086",
+      "q": 4,
+      "r": 3,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_turn_120:1080",
+      "q": 5,
+      "r": 3,
+      "turn": 1,
+      "level": 0
+    },
+    {
+      "tile": "hall_turn_60:1080",
+      "q": 2,
+      "r": 5,
+      "turn": 5,
+      "level": 0
+    },
+    {
+      "tile": "hall_straight:1086",
+      "q": 3,
+      "r": 5,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_turn_120:1080",
+      "q": 4,
+      "r": 5,
+      "turn": 3,
+      "level": 0
+    }
+  ],
+  "register": 1,
+  "view_mode": "orbit",
+  "render_mode": "lit",
+  "hide_menu": true,
+  "volumetrics": false,
+  "inspection_fill": true,
+  "camera_target": [
+    84,
+    -3,
+    43
+  ],
+  "section": "half",
+  "section_axis": 90,
+  "section_roof_height": 7.25,
+  "section_roof_front": true,
+  "orbit_yaw": 0.55,
+  "orbit_pitch": 0.65,
+  "radius": 85,
+  "height": 4,
+  "exposure_ev100": 7,
+  "output_image": "docs/evidence/borrowed_view/hero.png",
+  "inspection_shadows": true
+}

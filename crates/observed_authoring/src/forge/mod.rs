@@ -6,11 +6,14 @@
 //! is gated.
 
 pub mod audience;
+pub mod back;
+pub mod borrowed;
 pub mod courtyard;
 pub mod entities;
 pub mod geometry;
 pub mod halls;
 pub mod index;
+pub mod intake;
 pub mod liminal;
 pub mod noon;
 pub mod perimeter;
@@ -21,6 +24,7 @@ pub mod rooms;
 pub mod silos;
 pub mod tower;
 pub mod unwitnessed;
+pub mod weight;
 pub mod witness;
 
 /// A builder, paired with the file stem it must reproduce.
@@ -59,6 +63,10 @@ pub fn builders() -> Vec<Builder> {
     all.extend(index::builders());
     all.extend(noon::builders());
     all.extend(unwitnessed::builders());
+    all.extend(back::builders());
+    all.extend(borrowed::builders());
+    all.extend(weight::builders());
+    all.extend(intake::builders());
     all
 }
 
@@ -237,9 +245,11 @@ mod tests {
                 worst = (module.prototype.hulls.len(), name);
             }
         }
+        // The Borrowed View fork ties the existing tower maximum and sorts
+        // first. The stylistic ceiling remains exactly 36 hulls.
         assert_eq!(
             worst,
-            (36, "stair_tower_helix_0123".to_string()),
+            (36, "borrowed_fork".to_string()),
             "the most expensive cell in the corpus moved"
         );
     }

@@ -922,8 +922,15 @@ pub fn architecture(register: observed_content::ArchitectureRegister) -> Distric
         Register::Monolith => {
             // Heavy, and lit to be read as heavy: mass needs enough fill to
             // show its own bulk, and enough depth of view to show its extent.
+            // Concrete has no hue here. Reactor's inherited amber rig tinted
+            // both the material blend and every practical like warm metal.
+            palette.ambient_color = Color::srgb(0.62, 0.65, 0.70);
             palette.ambient_brightness = 56.0;
+            palette.fog_color = Color::srgb(0.018, 0.020, 0.023);
             palette.fog_end = 36.0;
+            palette.light_color = Color::srgb(1.0, 0.99, 0.97);
+            palette.key_color = palette.light_color;
+            palette.accent = LinearRgba::rgb(0.30, 0.30, 0.30);
         }
         Register::OverlitGrid => {
             // The Noon owns neutral daylight, not the Archive's blue cast.
@@ -1149,6 +1156,41 @@ pub struct SurfacePattern {
     /// black; these stay well below one because the whole shell is already
     /// dark and a hard line would read as a signal rather than as a joint.
     pub depth: f32,
+}
+
+/// Pixel dimensions of the shared repeating architectural weave.
+pub const SURFACE_WEAVE_SIZE: u32 = 128;
+
+/// Renderer-independent RGBA mask used by both the facility and tile lab.
+/// White is the paper field; darker lines multiply the district's albedo.
+#[must_use]
+pub fn surface_weave_rgba(pattern: SurfacePattern) -> Option<Vec<u8>> {
+    if pattern.weave == SurfaceWeave::None || pattern.lines == 0 {
+        return None;
+    }
+    const N: usize = SURFACE_WEAVE_SIZE as usize;
+    let pitch = N as f32 / pattern.lines as f32;
+    // Always at least one texel, or a fine weave vanishes instead of thinning.
+    let half = (pitch * pattern.weight * 0.5).max(0.6);
+    let on_line = |v: usize| {
+        let phase = (v as f32 % pitch) - pitch * 0.5;
+        phase.abs() <= half
+    };
+    let floor_value = ((1.0 - pattern.depth) * 255.0).clamp(0.0, 255.0) as u8;
+    let mut data = Vec::with_capacity(N * N * 4);
+    for y in 0..N {
+        for x in 0..N {
+            let struck = match pattern.weave {
+                SurfaceWeave::Courses => on_line(y),
+                SurfaceWeave::Staves => on_line(x),
+                SurfaceWeave::Grid => on_line(x) || on_line(y),
+                SurfaceWeave::None => false,
+            };
+            let v = if struck { floor_value } else { 255 };
+            data.extend_from_slice(&[v, v, v, 255]);
+        }
+    }
+    Some(data)
 }
 
 /// What each register's structural surface is divided by.
@@ -1871,15 +1913,17 @@ pub fn hex_shell_surface(
     role: ArchitectureSurfaceRole,
 ) -> HexSurfaceLook {
     let treatment = architecture_surface(register, role);
-    if register == observed_content::ArchitectureRegister::OverlitGrid {
-        // Already a district-owned albedo. The generic palette blend would
-        // darken near-white plaster before lighting even reaches it. A small
-        // bounded emission approximates diffuse bounce without making it unlit.
+    use observed_content::ArchitectureRegister as Register;
+    if matches!(register, Register::OverlitGrid | Register::ShadowScreen) {
+        // These districts already own their albedo contrast. Generic palette
+        // mixing dims the Noon's plaster and raises Shadow Screen's near-black
+        // timber toward grey, erasing the paper/member distinction. Preserve
+        // the authored treatment; Shadow Screen also keeps its paper weave.
         return HexSurfaceLook {
             base_color: treatment.base_color,
             emissive: treatment.emissive,
             unlit: false,
-            textured: false,
+            textured: register == Register::ShadowScreen,
         };
     }
     hex_shell_look(&treatment, register)
@@ -3037,6 +3081,49 @@ mod tests {
                 assert!(hex_shell_surface(register, ArchitectureSurfaceRole::Wall).textured);
             }
         }
+    }
+
+    #[test]
+    fn monolith_is_neutral_concrete_under_a_shadow_casting_key() {
+        use observed_content::ArchitectureRegister as R;
+        let palette = architecture(R::Monolith);
+        for color in [palette.light_color, palette.key_color] {
+            let color = color.to_srgba();
+            assert!((color.red - color.blue).abs() < 0.04);
+        }
+        assert!(palette.key_shadows_enabled && palette.key_intensity > 0.0);
+        assert!(palette.surface_roughness > 0.95);
+        for role in [
+            ArchitectureSurfaceRole::Floor,
+            ArchitectureSurfaceRole::Wall,
+            ArchitectureSurfaceRole::Ceiling,
+        ] {
+            let look = hex_shell_surface(R::Monolith, role);
+            let color = look.base_color.to_srgba();
+            assert!((color.red - color.blue).abs() < 0.02);
+            assert!(!look.unlit);
+            assert!(luminance(look.emissive) < SIGNAL_MIN_LUMINANCE * 0.1);
+        }
+    }
+
+    #[test]
+    fn shadow_screen_preserves_paper_to_timber_contrast() {
+        use observed_content::ArchitectureRegister as R;
+        let floor = hex_shell_surface(R::ShadowScreen, ArchitectureSurfaceRole::Floor);
+        let wall = hex_shell_surface(R::ShadowScreen, ArchitectureSurfaceRole::Wall);
+        assert!(wall.base_color.to_srgba().red / floor.base_color.to_srgba().red > 10.0);
+        assert!(wall.emissive.red > floor.emissive.red * 100.0);
+        assert!(wall.emissive.red < SIGNAL_MIN_LUMINANCE);
+        assert!(floor.textured && wall.textured && !wall.unlit);
+        let paper = surface_weave_rgba(architecture_weave(R::ShadowScreen)).expect("paper weave");
+        assert_eq!(
+            paper.len(),
+            SURFACE_WEAVE_SIZE as usize * SURFACE_WEAVE_SIZE as usize * 4
+        );
+        assert!(paper.chunks_exact(4).all(|pixel| pixel[3] == 255));
+        assert!(paper.chunks_exact(4).any(|pixel| pixel[0] == 255));
+        assert!(paper.chunks_exact(4).any(|pixel| pixel[0] < 100));
+        assert!(surface_weave_rgba(architecture_weave(R::Monolith)).is_none());
     }
 
     #[test]

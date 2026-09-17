@@ -508,6 +508,7 @@ pub struct LabState {
     /// Which way the cut opens, in radians about Y. The default opens the
     /// quadrant the orbit camera starts in.
     pub section_axis: f32,
+    roof_section: RoofSection,
     pub volumetrics: bool,
     pub bloom: bool,
     pub overlay: bool,
@@ -534,6 +535,7 @@ pub struct LabState {
     pub facility_lighting: bool,
     /// Use the existing inspection rig without cutting away authored roofs.
     pub inspection_fill: bool,
+    pub inspection_shadows: bool,
     // Scripted walk for capture
     pub scripted_walk: bool,
     /// Cell centres of the current run, in order, for the scripted walk to
@@ -722,6 +724,7 @@ impl LabState {
             render_mode: RenderMode::default(),
             section: SectionCut::default(),
             section_axis: std::f32::consts::FRAC_PI_4,
+            roof_section: RoofSection::default(),
             volumetrics: false,
             bloom: true,
             overlay: true,
@@ -742,6 +745,7 @@ impl LabState {
 
             facility_lighting: false,
             inspection_fill: false,
+            inspection_shadows: false,
             scripted_walk: false,
             walk_path: Vec::new(),
             walk_index: 0,
@@ -1697,6 +1701,48 @@ fn is_ceiling(hull: &[Vec3], top_y: f32) -> bool {
     hull.iter().all(|point| point.y >= top_y - 0.75)
 }
 
+/// Optional photographic removal of a low suspended ceiling. Coordinates are
+/// local to each module; front-only uses the existing section axis and centre.
+#[derive(Clone, Copy, Debug, Default)]
+struct RoofSection {
+    height: Option<f32>,
+    upper: Option<f32>,
+    front_only: bool,
+}
+
+impl RoofSection {
+    fn hides(
+        self,
+        hull: &[Vec3],
+        top_y: f32,
+        transform: &Transform,
+        center: Vec3,
+        cut: SectionCut,
+        axis: f32,
+    ) -> bool {
+        if cut != SectionCut::None
+            && self
+                .upper
+                .is_some_and(|height| hull.iter().all(|p| p.y >= height))
+        {
+            return true;
+        }
+        let mut ceiling_top = self.height.map_or(top_y, |height| height + 0.75);
+        if self.front_only
+            && !section_point_hidden(transform.translation, center, SectionCut::Half, axis)
+        {
+            ceiling_top = f32::INFINITY;
+        }
+        section_hides(hull, ceiling_top, transform, center, cut, axis)
+    }
+
+    fn keeps_practical(self, position: Vec3, center: Vec3, cut: SectionCut, axis: f32) -> bool {
+        self.height.is_none()
+            || cut == SectionCut::None
+            || (self.front_only && !section_point_hidden(position, center, SectionCut::Half, axis))
+    }
+}
+
 /// A hull tall enough to be a wall shell rather than a slab, in metres.
 const WALL_SHELL_MIN: f32 = 4.0;
 /// How far past the cut plane a hull's middle must sit before it is removed.
@@ -1834,7 +1880,9 @@ enum SurfaceKind {
 fn hull_surface_kind(hull: &[Vec3], top_y: f32) -> SurfaceKind {
     if is_ceiling(hull, top_y) {
         SurfaceKind::Ceiling
-    } else if hull.iter().all(|p| p.y <= 0.4) {
+    } else if hull.iter().all(|p| p.y <= 0.5001)
+        || observed_traversal::render_mesh::is_horizontal_slab(hull)
+    {
         SurfaceKind::Floor
     } else if hull.iter().all(|p| p.y <= 4.0 && p.y >= 0.2) {
         SurfaceKind::Trim
@@ -1862,6 +1910,7 @@ fn hull_mesh(hull: &[Vec3]) -> Option<Mesh> {
 
 struct PreviewPractical {
     position: Vec3,
+    module_origin: Vec3,
     light: style::HexPracticalLight,
 }
 
@@ -1883,9 +1932,38 @@ fn preview_practicals(
         .into_iter()
         .map(|position| PreviewPractical {
             position: transform.transform_point(position),
+            module_origin: transform.translation,
             light,
         })
         .collect()
+}
+
+fn district_weave_texture(
+    images: &mut Assets<Image>,
+    register: ArchitectureRegister,
+) -> Option<Handle<Image>> {
+    use bevy::asset::RenderAssetUsages;
+    use bevy::image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor};
+    use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+    let data = style::surface_weave_rgba(style::architecture_weave(register))?;
+    let n = style::SURFACE_WEAVE_SIZE;
+    let mut image = Image::new(
+        Extent3d {
+            width: n,
+            height: n,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        data,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+        address_mode_u: ImageAddressMode::Repeat,
+        address_mode_v: ImageAddressMode::Repeat,
+        ..default()
+    });
+    Some(images.add(image))
 }
 
 fn rebuild_visuals(
@@ -1893,6 +1971,7 @@ fn rebuild_visuals(
     mut state: ResMut<LabState>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
     asset_server: Res<AssetServer>,
     visuals: Query<Entity, With<TileVisual>>,
 ) {
@@ -1903,6 +1982,7 @@ fn rebuild_visuals(
         commands.entity(entity).despawn();
     }
 
+    let roof_section = state.roof_section;
     let register = state.register();
     let palette = style::architecture(register);
     let mode = state.render_mode;
@@ -1910,6 +1990,8 @@ fn rebuild_visuals(
     let floor_tex = repeating_texture(&asset_server, observed_assets::FLOOR.path);
     let wall_tex = repeating_texture(&asset_server, observed_assets::WALL.path);
     let ceiling_tex = repeating_texture(&asset_server, observed_assets::CEILING.path);
+    let wall_weave =
+        district_weave_texture(&mut images, register).unwrap_or_else(|| wall_tex.clone());
 
     // Tier 1: the ambient legibility floor. District palettes may be moody in
     // the shipped game, but in the lab geometry legibility wins: Lit clamps
@@ -2025,10 +2107,14 @@ fn rebuild_visuals(
                 let look = style::hex_shell_surface(register, role);
                 let tex = match kind {
                     SurfaceKind::Floor => floor_tex.clone(),
-                    _ => wall_tex.clone(),
+                    SurfaceKind::Wall | SurfaceKind::Trim => wall_weave.clone(),
+                    SurfaceKind::Ceiling => wall_tex.clone(),
                 };
                 materials.add(StandardMaterial {
                     base_color: look.base_color,
+                    emissive_texture: (register == ArchitectureRegister::ShadowScreen
+                        && role == style::ArchitectureSurfaceRole::Wall)
+                        .then_some(tex.clone()),
                     base_color_texture: look.textured.then_some(tex),
                     emissive: look.emissive,
                     unlit: look.unlit,
@@ -2169,7 +2255,7 @@ fn rebuild_visuals(
                     facility_composition(archetype),
                 ));
                 for hull in &tile.hulls {
-                    if section_hides(
+                    if roof_section.hides(
                         hull,
                         top_y,
                         &Transform::IDENTITY,
@@ -2211,7 +2297,7 @@ fn rebuild_visuals(
                         style::HexComposition::Room,
                     ));
                     for hull in &tile.hulls {
-                        if section_hides(
+                        if roof_section.hides(
                             hull,
                             top_y,
                             &Transform::from_translation(origin),
@@ -2245,7 +2331,7 @@ fn rebuild_visuals(
                     facility_composition(&tile.key.archetype),
                 ));
                 for hull in &tile.hulls {
-                    if section_hides(hull, top_y, &transform, center, section, section_axis) {
+                    if roof_section.hides(hull, top_y, &transform, center, section, section_axis) {
                         continue;
                     }
                     spawn_hull_entity(
@@ -2270,7 +2356,7 @@ fn rebuild_visuals(
                     facility_composition(&tile.key.archetype),
                 ));
                 for hull in &tile.hulls {
-                    if section_hides(hull, top_y, &transform, center, section, section_axis) {
+                    if roof_section.hides(hull, top_y, &transform, center, section, section_axis) {
                         continue;
                     }
                     spawn_hull_entity(
@@ -2299,7 +2385,14 @@ fn rebuild_visuals(
                     // never cut; everything round it obeys the same rule as
                     // every other composition.
                     if tile.key.archetype != "silo_core"
-                        && section_hides(hull, top_y, &transform, center, section, section_axis)
+                        && roof_section.hides(
+                            hull,
+                            top_y,
+                            &transform,
+                            center,
+                            section,
+                            section_axis,
+                        )
                     {
                         continue;
                     }
@@ -2320,6 +2413,10 @@ fn rebuild_visuals(
         pool_origins
             .retain(|point| !section_point_hidden(point.position, center, section, section_axis));
     }
+
+    pool_origins.retain(|point| {
+        roof_section.keeps_practical(point.module_origin, center, section, section_axis)
+    });
 
     if mode == RenderMode::Clay {
         // Studio rig: two shadowless directionals. Without shadows they light
@@ -2366,7 +2463,7 @@ fn rebuild_visuals(
                     } else {
                         Color::srgb(0.85, 0.90, 1.0)
                     },
-                    shadow_maps_enabled: false,
+                    shadow_maps_enabled: state.inspection_shadows && illuminance > 2_000.0,
                     ..default()
                 },
                 Transform::default().looking_to(dir.normalize(), Vec3::Y),
@@ -3084,6 +3181,105 @@ mod tests {
             .count();
         assert_eq!(hidden, 1, "remove the roof, not the upper shelf courses");
     }
+    #[test]
+    fn a_roof_cut_removes_offset_practicals_with_their_parent_module() {
+        let tile = observed_authoring::parse_authored_module(
+            &observed_authoring::forge::borrowed::layered(),
+        )
+        .expect("valid screen source")
+        .prototype;
+        let practicals = preview_practicals(
+            &tile,
+            Transform::from_xyz(0.0, 0.0, 3.0),
+            ArchitectureRegister::ShadowScreen,
+            style::HexComposition::Hall,
+        );
+        assert!(practicals.iter().any(|light| light.position.z < 0.0));
+        let roof = RoofSection {
+            height: Some(7.25),
+            front_only: true,
+            ..default()
+        };
+        assert!(practicals.iter().all(|light| !roof.keeps_practical(
+            light.module_origin,
+            Vec3::ZERO,
+            SectionCut::Plan,
+            std::f32::consts::FRAC_PI_2
+        )));
+    }
+
+    #[test]
+    fn uncalled_number_resolves_mates_connects_and_resets() {
+        assert_layout_resolves_mates_connects_and_resets(
+            include_str!("../../../docs/compositions/uncalled_number/hero.json"),
+            3,
+            "institutional",
+            15,
+        );
+    }
+
+    #[test]
+    fn weight_between_resolves_mates_connects_and_resets() {
+        assert_layout_resolves_mates_connects_and_resets(
+            include_str!("../../../docs/compositions/weight_between/hero.json"),
+            1,
+            "monolith",
+            13,
+        );
+    }
+
+    #[test]
+    fn borrowed_view_resolves_mates_connects_and_resets() {
+        assert_layout_resolves_mates_connects_and_resets(
+            include_str!("../../../docs/compositions/borrowed_view/hero.json"),
+            0,
+            "shadow_screen",
+            11,
+        );
+    }
+
+    #[test]
+    fn third_light_resolves_mates_connects_and_resets() {
+        assert_layout_resolves_mates_connects_and_resets(
+            include_str!("../../../docs/compositions/third_light/hero.json"),
+            9,
+            "liminal_grid",
+            19,
+        );
+    }
+
+    #[test]
+    fn low_ceiling_sections_keep_rear_roofs_and_remove_front_practicals() {
+        assert_eq!(
+            hull_surface_kind(&[Vec3::ZERO, Vec3::new(7.0, 0.5, 4.0)], 8.0),
+            SurfaceKind::Floor
+        );
+        let roof = RoofSection {
+            height: Some(2.95),
+            upper: Some(4.5),
+            front_only: true,
+        };
+        let slab = vec![Vec3::new(-2.0, 3.5, -2.0), Vec3::new(2.0, 3.75, 2.0)];
+        let front = Transform::from_xyz(8.0, 0.0, 0.0);
+        let rear = Transform::from_xyz(-8.0, 0.0, 0.0);
+        assert!(roof.hides(&slab, 8.0, &front, Vec3::ZERO, SectionCut::Half, 0.0));
+        assert!(!roof.hides(&slab, 8.0, &rear, Vec3::ZERO, SectionCut::Half, 0.0));
+        assert!(!roof.hides(&slab, 8.0, &front, Vec3::ZERO, SectionCut::None, 0.0));
+        assert!(!roof.keeps_practical(front.translation, Vec3::ZERO, SectionCut::Half, 0.0));
+        assert!(roof.keeps_practical(rear.translation, Vec3::ZERO, SectionCut::Half, 0.0));
+        assert!(roof.keeps_practical(front.translation, Vec3::ZERO, SectionCut::None, 0.0));
+        let envelope = vec![Vec3::new(-2.0, 7.5, -2.0), Vec3::new(2.0, 8.0, 2.0)];
+        assert!(roof.hides(&envelope, 8.0, &rear, Vec3::ZERO, SectionCut::Plan, 0.0));
+        assert!(!roof.hides(&envelope, 8.0, &rear, Vec3::ZERO, SectionCut::None, 0.0));
+        let full = RoofSection {
+            front_only: false,
+            ..roof
+        };
+        assert!(full.hides(&slab, 8.0, &rear, Vec3::ZERO, SectionCut::Plan, 0.0));
+        let floor = vec![Vec3::ZERO, Vec3::new(2.0, 0.5, 2.0)];
+        assert!(!full.hides(&floor, 8.0, &front, Vec3::ZERO, SectionCut::Plan, 0.0));
+    }
+
     #[test]
     fn unfinished_crossing_resolves_mates_connects_and_resets() {
         assert_layout_resolves_mates_connects_and_resets(

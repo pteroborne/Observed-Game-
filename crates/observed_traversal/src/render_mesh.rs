@@ -15,6 +15,25 @@ pub const DEFAULT_SMOOTH_CREASE_COS: f32 = 0.70;
 /// Box-projected texture repetition in cycles per world metre.
 pub const DEFAULT_UV_REPEATS_PER_METER: f32 = 0.25;
 
+/// A thin, horizontally extended hull: decks and rails share this geometric
+/// class regardless of their elevation. Used by the game and inspection lab.
+#[must_use]
+pub fn is_horizontal_slab(points: &[Vec3]) -> bool {
+    if points.is_empty() {
+        return false;
+    }
+    let min = points
+        .iter()
+        .copied()
+        .fold(Vec3::splat(f32::INFINITY), Vec3::min);
+    let max = points
+        .iter()
+        .copied()
+        .fold(Vec3::splat(f32::NEG_INFINITY), Vec3::max);
+    let size = max - min;
+    size.y <= 0.9 && size.x.max(size.z) >= size.y * 3.0
+}
+
 /// A broad, thin horizontal panel above standing door height, in tile-local
 /// metres. Used to assign ceiling material to suspended rafts without removing
 /// them as outer roofs. Shelves, low decks and vertical walls do not qualify.
