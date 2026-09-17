@@ -89,17 +89,29 @@ pub enum Event {
     Recharge,
 }
 
-/// Tool tuning. These are the numbers proven in the authored chamber; the lab
-/// keeps them unchanged so that anything that feels different here is the
-/// architecture talking rather than a retuned tool.
+/// Tool and opposition tuning, adjustable at runtime so the lab can be used to
+/// find these numbers rather than to assert them.
+///
+/// The authored chamber's values did not survive the move, and that is itself a
+/// finding. That chamber is a room you can cross in a few strides; a solved
+/// floor is 14 m cells whose doorways sit 7 m from the centre. The same 10 m/s
+/// shove that sent a body clear across the chamber barely moves it out of the
+/// tile it is standing in, so push and pull are both up here. Everything else is
+/// unchanged, so a difference in feel is still the architecture talking.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Config {
     pub reach: f32,
     pub cost: f32,
+    /// Nominal velocity change of a push, in m/s.
     pub push: f32,
+    /// Nominal velocity change of a pull, in m/s.
     pub pull: f32,
     pub cooldown: u32,
     pub stagger: u32,
+    /// How fast a pursuing minor walks, in m/s.
+    pub minor_speed: f32,
+    /// How hard it accelerates toward that speed, in m/s^2.
+    pub minor_accel: f32,
 }
 
 impl Default for Config {
@@ -107,11 +119,26 @@ impl Default for Config {
         Self {
             reach: 8.,
             cost: 10.,
-            push: 10.,
-            pull: 7.,
+            push: 17.,
+            pull: 13.,
             cooldown: 15,
             stagger: 27,
+            minor_speed: 2.5,
+            minor_accel: 15.,
         }
+    }
+}
+
+impl Config {
+    /// Scale the tool's output, keeping push and pull in proportion.
+    pub fn scale_force(&mut self, factor: f32) {
+        self.push = (self.push * factor).clamp(2., 60.);
+        self.pull = (self.pull * factor).clamp(2., 60.);
+    }
+
+    /// Scale how fast minors close the distance.
+    pub fn scale_minor_speed(&mut self, factor: f32) {
+        self.minor_speed = (self.minor_speed * factor).clamp(0.4, 12.);
     }
 }
 
@@ -134,6 +161,13 @@ pub struct Actor {
     pub stagger: u32,
     pub behavior: Behavior,
     pub grounded: bool,
+    /// The last cell this body was supported over.
+    ///
+    /// Reported when it leaves the facility, because that is the interesting
+    /// fact: *where it went over*. Sampling the position at the moment it
+    /// crosses the void plane instead reports wherever a shove had carried it
+    /// on the way down, which with a strong push is a cell it never touched.
+    pub last_cell: Option<HexCoord>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -189,6 +223,12 @@ impl WfcKineticWorld {
             let Some(collider) = build_collider(spec) else {
                 continue;
             };
+            let mut collider = collider;
+            // Tag the projected architecture. Sight, support and navigation all
+            // ask "is there a wall here", never "is there a crate here", and the
+            // tag is what lets those queries run against the broad phase instead
+            // of walking every collider in the facility.
+            collider.user_data = STRUCTURAL_TAG | u128::from(spec.id.0);
             structural.insert(spec.id.0, physics.colliders.insert(collider));
         }
         let mut cell_colliders: BTreeMap<HexCoord, Vec<u32>> = BTreeMap::new();
@@ -313,6 +353,7 @@ impl WfcKineticWorld {
                 stagger: 0,
                 behavior: Behavior::Practice,
                 grounded: false,
+                last_cell: None,
             },
         );
         id
@@ -528,8 +569,11 @@ impl WfcKineticWorld {
             let position = self.pose(id).position;
             let velocity = self.velocity(id);
             if position.y < VOID_Y {
-                let cell = self.site.cell_containing(position);
+                // Where it went over, falling back to where it went out for a
+                // body that was never on the floor to begin with.
+                let dropped = self.site.cell_containing(position);
                 let actor = self.actors.get_mut(&id).expect("live actor");
+                let cell = actor.last_cell.or(dropped);
                 actor.alive = false;
                 self.physics.bodies[actor.body].set_enabled(false);
                 self.physics.colliders[actor.collider].set_enabled(false);
@@ -555,8 +599,12 @@ impl WfcKineticWorld {
                 })
                 && velocity.y.abs() < 1.5;
             let contact_visible = self.line_clear(position, self.player.position);
+            let over = self.site.cell_containing(position);
             let actor = self.actors.get_mut(&id).expect("live actor");
             actor.grounded = grounded;
+            if grounded && let Some(cell) = over {
+                actor.last_cell = Some(cell);
+            }
             if actor.kind == Kind::Minor && velocity.with_y(0.).length() > 4. && actor.stagger == 0
             {
                 actor.stagger = self.config.stagger;
@@ -622,6 +670,14 @@ impl WfcKineticWorld {
     /// Every leaf emits a desired velocity; physics remains the movement
     /// authority, so a minor cannot walk through a wall the solver built.
     fn think(&mut self) {
+        // One route solve per tick, shared by every minor, instead of a fresh
+        // breadth-first search and two graph entries per minor per tick. They
+        // are all chasing the same Observer, so they were all solving the same
+        // problem and throwing the answer away.
+        let target = self.player.position - Vec3::Y * self.player_config.half_height;
+        let goal = self.nearest_waypoint(target);
+        let toward_goal = goal.map(|node| self.breadth_first(node));
+
         let ids: Vec<_> = self.actors.keys().copied().collect();
         for id in ids {
             if !self.actors[&id].alive || self.actors[&id].kind != Kind::Minor {
@@ -638,12 +694,18 @@ impl WfcKineticWorld {
                 Behavior::Pursue
             };
             let desired = if behavior == Behavior::Pursue {
-                self.route_direction(self.pose(id).position - Vec3::Y * 0.55)
+                self.steer(
+                    self.pose(id).position - Vec3::Y * 0.55,
+                    target,
+                    toward_goal.as_deref(),
+                )
             } else {
                 Vec3::ZERO
             };
+            let speed = self.config.minor_speed;
+            let accel = self.config.minor_accel;
             let stepped = if behavior == Behavior::Pursue {
-                Some(self.physics.walk_minor(actor.body, desired * 2.5))
+                Some(self.physics.walk_minor(actor.body, desired * speed))
             } else {
                 None
             };
@@ -654,7 +716,7 @@ impl WfcKineticWorld {
                 let body = &mut self.physics.bodies[actor.body];
                 let old = body.linvel();
                 let horizontal =
-                    Vec3::new(old.x, 0., old.z).move_towards(desired * 2.5, 15. * FIXED_DT);
+                    Vec3::new(old.x, 0., old.z).move_towards(desired * speed, accel * FIXED_DT);
                 let velocity = stepped.unwrap_or(horizontal);
                 // Autostep is a collision-checked positional correction.
                 // Turning its rise into velocity would launch a body upstairs.
@@ -676,6 +738,27 @@ impl WfcKineticWorld {
         }
     }
 
+    /// Run a query against the projected architecture only, through the broad
+    /// phase.
+    ///
+    /// The linear version of this walked all ~150 structural colliders per call,
+    /// and navigation calls it tens of thousands of times a tick: it cost 18 ms
+    /// a tick with two minors on the floor and a 134 ms freeze whenever the
+    /// graph was rebuilt. The BVH already exists — it is what the character
+    /// controller steps against — so this just asks it the same question.
+    fn structural_query<R>(&self, act: impl FnOnce(&QueryPipeline<'_>) -> R) -> R {
+        let predicate = |_handle: ColliderHandle, collider: &Collider| {
+            collider.is_enabled() && collider.user_data >= STRUCTURAL_TAG
+        };
+        let query = self.physics.broad.as_query_pipeline(
+            self.physics.narrow.query_dispatcher(),
+            &self.physics.bodies,
+            &self.physics.colliders,
+            QueryFilter::default().predicate(&predicate),
+        );
+        act(&query)
+    }
+
     /// Whether nothing structural stands between two points.
     #[must_use]
     pub fn line_clear(&self, from: Vec3, to: Vec3) -> bool {
@@ -685,33 +768,13 @@ impl WfcKineticWorld {
             return true;
         }
         let ray = Ray::new(rv(from), rv(offset / distance));
-        !self.structural.values().any(|handle| {
-            let collider = &self.physics.colliders[*handle];
-            collider.is_enabled()
-                && collider
-                    .shape()
-                    .cast_ray(collider.position(), &ray, distance, true)
-                    .is_some()
-        })
+        self.structural_query(|query| query.cast_ray(&ray, distance, true).is_none())
     }
 
     fn support_height(&self, feet: Vec3) -> Option<f32> {
         let ray = Ray::new(rv(feet + Vec3::Y * 0.4), -Vector::Y);
-        self.structural
-            .values()
-            .filter_map(|handle| {
-                let collider = &self.physics.colliders[*handle];
-                collider
-                    .is_enabled()
-                    .then(|| {
-                        collider
-                            .shape()
-                            .cast_ray(collider.position(), &ray, 1.2, true)
-                    })
-                    .flatten()
-            })
-            .min_by(f32::total_cmp)
-            .map(|distance| feet.y + 0.4 - distance)
+        self.structural_query(|query| query.cast_ray(&ray, 1.2, true))
+            .map(|(_, distance)| feet.y + 0.4 - distance)
     }
 
     fn supported(&self, feet: Vec3) -> bool {
@@ -751,6 +814,12 @@ impl WfcKineticWorld {
         true
     }
 
+    /// Test hook: force the graph rebuild a retraction would cause.
+    #[cfg(test)]
+    pub fn rebuild_navigation_for_profiling(&mut self) {
+        self.rebuild_navigation();
+    }
+
     fn rebuild_navigation(&mut self) {
         self.edges = vec![Vec::new(); self.nav.len()];
         for a in 0..self.nav.len() {
@@ -777,17 +846,26 @@ impl WfcKineticWorld {
         self.breadth_first(start)[goal] != usize::MAX
     }
 
+    /// The waypoint a body should enter the graph at.
+    ///
+    /// Sorted by distance first and reachability-checked only for the closest
+    /// few. Checking every waypoint in range was the single most expensive
+    /// thing the simulation did.
     fn nearest_waypoint(&self, point: Vec3) -> Option<usize> {
-        self.nav
+        const CHECKED: usize = 4;
+        let mut candidates: Vec<(f32, usize)> = self
+            .nav
             .iter()
             .enumerate()
-            .filter(|(_, node)| point.distance(**node) < 9. && self.walkable(point, **node))
-            .min_by(|(_, a), (_, b)| {
-                point
-                    .distance_squared(**a)
-                    .total_cmp(&point.distance_squared(**b))
-            })
-            .map(|(index, _)| index)
+            .map(|(index, node)| (point.distance_squared(*node), index))
+            .filter(|(distance, _)| *distance < 81.)
+            .collect();
+        candidates.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        candidates
+            .into_iter()
+            .take(CHECKED)
+            .find(|(_, index)| self.walkable(point, self.nav[*index]))
+            .map(|(_, index)| index)
     }
 
     fn breadth_first(&self, start: usize) -> Vec<usize> {
@@ -805,34 +883,35 @@ impl WfcKineticWorld {
         previous
     }
 
-    fn route_direction(&self, feet: Vec3) -> Vec3 {
-        let target = self.player.position - Vec3::Y * self.player_config.half_height;
+    /// Which way a minor should walk this tick.
+    ///
+    /// `toward_goal` is the shared breadth-first solve rooted at the Observer's
+    /// own waypoint, so `toward_goal[n]` is the next node on the way there.
+    fn steer(&self, feet: Vec3, target: Vec3, toward_goal: Option<&[usize]>) -> Vec3 {
+        // A clear walk straight at the Observer needs no graph at all.
         if (feet.y - target.y).abs() <= 0.42 && self.walkable(feet, target) {
             return (target - feet).with_y(0.).normalize_or_zero();
         }
-        let (Some(start), Some(goal)) =
-            (self.nearest_waypoint(feet), self.nearest_waypoint(target))
-        else {
+        let (Some(parents), Some(start)) = (toward_goal, self.nearest_waypoint(feet)) else {
             return Vec3::ZERO;
         };
-        let previous = self.breadth_first(start);
-        if previous[goal] == usize::MAX {
+        if parents[start] == usize::MAX {
             return Vec3::ZERO;
         }
-        // String-pull to the furthest visible waypoint. Requiring proximity to
-        // the nearest node every tick makes an actor turn back halfway between
-        // nodes; visibility lets it make continuous progress.
-        let mut path = vec![goal];
-        let mut at = goal;
-        while at != start {
-            at = previous[at];
-            path.push(at);
-        }
-        let waypoint = path
-            .into_iter()
-            .map(|index| self.nav[index])
-            .find(|point| (point.y - feet.y).abs() <= 0.42 && self.walkable(feet, *point))
-            .unwrap_or(self.nav[start]);
+        // String-pull one hop: aim at the next node's successor when it is
+        // directly reachable, so a minor makes continuous progress instead of
+        // turning back toward whichever node it happens to be nearest.
+        let next = parents[start];
+        let after = parents[next];
+        let waypoint = if after != usize::MAX
+            && after != next
+            && (self.nav[after].y - feet.y).abs() <= 0.42
+            && self.walkable(feet, self.nav[after])
+        {
+            self.nav[after]
+        } else {
+            self.nav[next]
+        };
         (waypoint - feet).with_y(0.).normalize_or_zero()
     }
 
@@ -871,6 +950,8 @@ impl WfcKineticWorld {
             self.config.reach,
             self.config.push,
             self.config.pull,
+            self.config.minor_speed,
+            self.config.minor_accel,
             self.player.position.x,
             self.player.position.y,
             self.player.position.z,
@@ -910,6 +991,10 @@ impl WfcKineticWorld {
 
 /// Stable local Observer identity in collider user data.
 const PLAYER_USER_DATA: u128 = 999;
+
+/// Marks a collider as part of the projected architecture rather than an actor.
+/// Set high so actor identities keep their small, stable values.
+const STRUCTURAL_TAG: u128 = 1 << 100;
 
 #[cfg(test)]
 mod tests;

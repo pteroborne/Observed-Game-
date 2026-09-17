@@ -4,11 +4,12 @@ Evidence for [`labs/wfc_kinetic_lab`](../../../labs/wfc_kinetic_lab/README.md).
 
 The floor is seven cells of a real solve of the production tile catalogue, at
 seed 8: two rooms, five halls, and two cells the collapse declined to build.
-142 projected hulls.
+159 projected hulls.
 
 | | |
 |---|---|
 | [floor.png](floor.png) | Where an Observer stands up, facing the way out |
+| [guardians.png](guardians.png) | A minor wearing the shared Guardian rig |
 | [retraction.png](retraction.png) | The tile control, mid-warning |
 | [doorway-shove.png](doorway-shove.png) | A minor bracketed in a doorway that no longer leads anywhere |
 | [walkthrough.gif](walkthrough.gif) | All five staged scenes |

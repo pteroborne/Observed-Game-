@@ -6,7 +6,7 @@ use std::sync::Arc;
 use bevy::prelude::*;
 use player_input::PlayerIntent;
 
-use crate::model::{Action, ActorId, Command, Event, Mode, Pose, WfcKineticWorld};
+use crate::model::{Action, ActorId, Command, Config, Event, Mode, Pose, WfcKineticWorld};
 use crate::site::Site;
 
 #[derive(Resource)]
@@ -23,12 +23,22 @@ pub struct Runtime {
     pub previous: BTreeMap<ActorId, Pose>,
     pub previous_player: Vec3,
     pub step_once: bool,
+    /// Live tuning, applied to every world this runtime builds. Kept here
+    /// rather than in the world so a value survives the resets that trying it
+    /// out requires.
+    pub tuning: Config,
 }
 
 impl Runtime {
     #[must_use]
     pub fn new(site: Arc<Site>, mode: Mode) -> Self {
-        let world = WfcKineticWorld::new(Arc::clone(&site), mode);
+        Self::tuned(site, mode, Config::default())
+    }
+
+    #[must_use]
+    pub fn tuned(site: Arc<Site>, mode: Mode, tuning: Config) -> Self {
+        let mut world = WfcKineticWorld::new(Arc::clone(&site), mode);
+        world.config = tuning;
         let previous_player = world.player.position;
         Self {
             site,
@@ -42,6 +52,7 @@ impl Runtime {
             previous: BTreeMap::new(),
             previous_player,
             step_once: false,
+            tuning,
         }
     }
 
@@ -50,7 +61,8 @@ impl Runtime {
     pub fn reset(&mut self, mode: Mode) {
         let generation = self.generation + 1;
         let diagnostics = self.diagnostics;
-        *self = Self::new(Arc::clone(&self.site), mode);
+        let tuning = self.tuning;
+        *self = Self::tuned(Arc::clone(&self.site), mode, tuning);
         self.generation = generation;
         self.diagnostics = diagnostics;
     }
@@ -59,7 +71,8 @@ impl Runtime {
     pub fn reseat(&mut self, site: Arc<Site>, mode: Mode) {
         let generation = self.generation + 1;
         let diagnostics = self.diagnostics;
-        *self = Self::new(site, mode);
+        let tuning = self.tuning;
+        *self = Self::tuned(site, mode, tuning);
         self.generation = generation;
         self.diagnostics = diagnostics;
     }

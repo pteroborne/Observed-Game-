@@ -66,6 +66,10 @@ enum UiAction {
     Pause,
     Debug,
     NextFloor,
+    ForceUp,
+    ForceDown,
+    MinorFaster,
+    MinorSlower,
 }
 
 const ROLES: [Role; 14] = [
@@ -126,7 +130,7 @@ fn font(size: f32) -> TextFont {
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<ViewState>()
-        .add_systems(Startup, setup)
+        .add_systems(Startup, (setup, kinetic_lab::guardian::setup))
         .add_systems(
             Update,
             (
@@ -136,6 +140,7 @@ pub fn plugin(app: &mut App) {
                 rebuild,
                 spawn_actors,
                 sync,
+                animate_guardians,
                 warn_retraction,
                 draw,
                 events,
@@ -286,6 +291,8 @@ fn setup(
             button("P  RESUME / PAUSE", UiAction::Pause),
             button("F3  INSPECT", UiAction::Debug),
             button("G  NEXT FLOOR", UiAction::NextFloor),
+            button("[ ]  FORCE", UiAction::ForceUp),
+            button("-  =  SPEED", UiAction::MinorFaster),
         ],
     ));
     commands.insert_resource(art);
@@ -320,6 +327,12 @@ fn apply(action: UiAction, runtime: &mut Runtime) {
             }
         }
         UiAction::Debug => runtime.diagnostics = !runtime.diagnostics,
+        // Tuning is live because the lab exists to find these numbers. They
+        // survive a reset so a value can be tried across several attempts.
+        UiAction::ForceUp => runtime.tuning.scale_force(1.12),
+        UiAction::ForceDown => runtime.tuning.scale_force(1. / 1.12),
+        UiAction::MinorFaster => runtime.tuning.scale_minor_speed(1.12),
+        UiAction::MinorSlower => runtime.tuning.scale_minor_speed(1. / 1.12),
         UiAction::NextFloor => {
             // Solve the next floor along. This is the one control that deals a
             // different board rather than restoring this one.
@@ -365,6 +378,10 @@ fn input(
         (KeyCode::KeyP, UiAction::Pause),
         (KeyCode::F3, UiAction::Debug),
         (KeyCode::KeyG, UiAction::NextFloor),
+        (KeyCode::BracketRight, UiAction::ForceUp),
+        (KeyCode::BracketLeft, UiAction::ForceDown),
+        (KeyCode::Equal, UiAction::MinorFaster),
+        (KeyCode::Minus, UiAction::MinorSlower),
     ] {
         if keys.just_pressed(key) {
             apply(action, &mut runtime);
@@ -553,30 +570,61 @@ fn spawn_actors(
     mut commands: Commands,
     runtime: Res<Runtime>,
     art: Res<Art>,
+    guardians: Res<kinetic_lab::guardian::GuardianArt>,
     mut view: ResMut<ViewState>,
 ) {
     for (id, actor) in &runtime.world.actors {
         if view.actors.contains_key(id) {
             continue;
         }
-        let role = if actor.kind == Kind::Minor {
-            Role::Minor
-        } else {
-            Role::Prop
-        };
-        let size = if actor.kind == Kind::Minor { 1.1 } else { 0.9 };
+        if actor.kind == Kind::Minor {
+            // The shared Guardian rig, driven by this lab's simulation. It is
+            // decorative and its feet stay inside the collision envelope, so
+            // nothing about aim, motion or elimination changes.
+            let entity = commands
+                .spawn((
+                    FacilityVisual,
+                    ActorVisual(*id),
+                    Transform::default(),
+                    Visibility::default(),
+                    Name::new(format!("Minor {}", id.0)),
+                ))
+                .id();
+            kinetic_lab::guardian::spawn(&mut commands, &guardians, entity, id.0);
+            view.actors.insert(*id, entity);
+            continue;
+        }
         let entity = commands
             .spawn((
                 FacilityVisual,
                 ActorVisual(*id),
                 Mesh3d(art.cube.clone()),
-                MeshMaterial3d(art.material(role)),
-                Transform::from_scale(Vec3::splat(size)),
-                Name::new(format!("{:?} {}", actor.kind, id.0)),
+                MeshMaterial3d(art.material(Role::Prop)),
+                Transform::from_scale(Vec3::splat(0.9)),
+                Name::new(format!("Crate {}", id.0)),
             ))
             .id();
         view.actors.insert(*id, entity);
     }
+}
+
+/// Pose the Guardian rigs from this lab's own actors.
+fn animate_guardians(
+    runtime: Res<Runtime>,
+    mut rigs: kinetic_lab::guardian::Rigs,
+    mut limbs: kinetic_lab::guardian::Limbs,
+    mut lids: kinetic_lab::guardian::Lids,
+) {
+    let world = &runtime.world;
+    kinetic_lab::guardian::animate_with(world.tick, &mut rigs, &mut limbs, &mut lids, |id| {
+        let actor = world.actors.get(&ActorId(id))?;
+        actor.alive.then(|| kinetic_lab::guardian::RigSample {
+            velocity: world.velocity(actor.id),
+            toward: world.player.position - world.pose(actor.id).position,
+            grounded: actor.grounded,
+            staggered: actor.stagger > 0,
+        })
+    });
 }
 
 /// Actor transforms, filtered off the cell visuals so both can hold `Visibility`.
@@ -855,7 +903,7 @@ fn hud(runtime: Res<Runtime>, view: Res<ViewState>, mut texts: Query<(&mut Text,
                     format!("{:.0}", world.charge)
                 };
                 format!(
-                    "SEED {}  ({} requested)\nPLAN {}\nCHARGE {}\nWAVE {} / 3    REMOVED {}\nGENERATOR {}",
+                    "SEED {}  ({} requested)\nPLAN {}\nCHARGE {}\nWAVE {} / 3    REMOVED {}\nGENERATOR {}\n\nFORCE {:.1} / {:.1}  [ ]\nMINOR SPEED {:.1}  - =",
                     site.seed,
                     site.requested_seed,
                     site.plan(),
@@ -863,6 +911,9 @@ fn hud(runtime: Res<Runtime>, view: Res<ViewState>, mut texts: Query<(&mut Text,
                     world.wave,
                     world.kills,
                     if world.powered { "ON" } else { "OFF" },
+                    world.config.push,
+                    world.config.pull,
+                    world.config.minor_speed,
                 )
             }
             HudField::Aim => match world.fire_ready() {

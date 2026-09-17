@@ -511,3 +511,51 @@ fn retraction_severs_the_crossing_it_was_chosen_to_sever() {
         "the tile chosen as the floor's cut vertex was removed and the route survived"
     );
 }
+
+/// The encounter has to fit in a frame.
+///
+/// This is a regression with a story: navigation used to walk every structural
+/// collider linearly and re-solve the whole route per minor per tick, which cost
+/// 18 ms a tick with *two* minors and froze for 134 ms whenever the graph was
+/// rebuilt. Both are now broad-phase queries against one shared solve. The
+/// bound is deliberately loose — roughly fifteen times the measured cost — so it
+/// catches an algorithmic regression rather than a slow machine.
+#[test]
+fn a_full_wave_of_minors_fits_inside_a_frame() {
+    use std::time::Instant;
+    const BUDGET_MS: f64 = 8.0;
+
+    let mut world = world(Mode::Encounter);
+    // More minors than the last wave releases, all pursuing at once.
+    for feet in world.site.muster.clone().iter().cycle().take(6) {
+        world.spawn(Kind::Minor, *feet + Vec3::Y * 0.6);
+    }
+    for _ in 0..60 {
+        world.step(idle());
+    }
+    let pursuing = world
+        .actors
+        .values()
+        .filter(|actor| actor.alive && actor.kind == Kind::Minor)
+        .count();
+    assert!(pursuing >= 6, "only {pursuing} minors survived the warm-up");
+
+    let start = Instant::now();
+    for _ in 0..120 {
+        world.step(idle());
+    }
+    let per_tick = start.elapsed().as_secs_f64() * 1000.0 / 120.0;
+    assert!(
+        per_tick < BUDGET_MS,
+        "{pursuing} pursuing minors cost {per_tick:.2} ms/tick (budget {BUDGET_MS})"
+    );
+
+    // And the rebuild a retraction forces is a hitch, not a freeze.
+    let start = Instant::now();
+    world.rebuild_navigation_for_profiling();
+    let rebuild = start.elapsed().as_secs_f64() * 1000.0;
+    assert!(
+        rebuild < 60.0,
+        "rebuilding navigation took {rebuild:.1} ms; it used to be 134 and was visible"
+    );
+}

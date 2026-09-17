@@ -66,6 +66,16 @@ built cells a moment earlier, and it is exactly the loop the design asks for:
 
 ![A minor shoved through a doorway onto a tile that is no longer there](../../docs/evidence/wfc_kinetic_lab/doorway-shove.png)
 
+## Guardians
+
+Minors wear the shared `kinetic_lab::guardian` rig — the pyramidal body, lidded
+eye and three jointed limbs — rather than a second copy of it. The rig is
+decorative and stateless: it is handed a `RigSample` per Guardian each frame and
+poses itself, so it never touches aim, motion, collision or elimination, and its
+feet stay inside the existing collision envelope.
+
+![A minor on the solved floor](../../docs/evidence/wfc_kinetic_lab/guardians.png)
+
 ## Controls
 
 | Input | Action |
@@ -76,16 +86,25 @@ built cells a moment earlier, and it is exactly the loop the design asks for:
 | E | Operate the nearby generator or tile control |
 | 1 / 2 | Reset into practice / encounter |
 | R / G | Reset this floor / solve the next one |
+| `[` / `]` | Weaken / strengthen the tool, push and pull together |
+| `-` / `=` | Slow / speed up pursuing minors |
 | P / Escape | Pause or resume / pause and release the cursor |
 | F3 / N | Toggle diagnostics / advance one paused tick |
 
 ## Rules
 
-Tool tuning is unchanged from the authored chamber — eight-metre reach, nominal
-10 m/s push and 7 m/s pull, 10 charge per use, 15-tick cooldown, 27-tick stagger
-— deliberately, so that anything that feels different here is the architecture
-talking rather than a retuned tool. One press is one attempt; misses and refusals
+Eight-metre reach, nominal 17 m/s push and 13 m/s pull, 10 charge per use,
+15-tick cooldown, 27-tick stagger. One press is one attempt; misses and refusals
 never spend charge.
+
+Force and minor speed are adjustable while the lab runs (`[` `]` and `-` `=`,
+shown in the HUD and kept across resets), because finding those numbers is part
+of what the lab is for. The starting values are not the authored chamber's, and
+the difference is itself a finding: that chamber is a room you cross in a few
+strides, while a solved floor is 14 m cells whose doorways sit 7 m from the
+centre. The 10 m/s shove that sent a body clear across the chamber barely moved
+one out of the tile it was standing in. Everything else is unchanged, so a
+difference in feel is still the architecture talking.
 
 - **Practice:** stationary targets, unlimited charge, no capture.
 - **Encounter:** three waves of two, three, then four pursuing minors, mustered
@@ -116,6 +135,14 @@ lab that reproduced the solver's geometry and then painted it in its own greys
 would be previewing a different building. Light budgets come from
 `observed_style::hex_practical_light`; the kinetic legend's colours come from
 `observed_style::kinetic`.
+
+Sight, support and navigation query the broad phase through a predicate that
+sees only tagged structural colliders. That is not an optimisation detail so
+much as the difference between the lab running and not: walking the collider
+list linearly and re-solving the route per minor per tick cost 18 ms a tick with
+two minors on the floor, and froze for 134 ms whenever a retraction rebuilt the
+graph. The route is now solved once per tick and shared, and
+`a_full_wave_of_minors_fits_inside_a_frame` holds the budget.
 
 A `WfcKineticWorld` clone is an in-memory continuation snapshot, and `digest()`
 fingerprints the site, the rules and every body's physical state. Replaying
@@ -148,7 +175,8 @@ requires a person at the keyboard.
 
 ## Not in scope
 
-Majors, teammate boosts, equipment, Architect card play, multiple floors, ascent,
+Audio (`kinetic_lab` owns the kinetic sound bank; this lab is silent), majors,
+teammate boosts, equipment, Architect card play, multiple floors, ascent,
 and production multiplayer. Retraction here deletes one cell's projected
 geometry; it does not run the solver's observation-safe relayout, so the floor
 never re-collapses around the hole.
