@@ -9,6 +9,9 @@ pub enum Role {
     Landing,
     Hazard,
     Minor,
+    GuardianShell,
+    GuardianLimb,
+    GuardianEye,
     Prop,
     Target,
     Push,
@@ -35,6 +38,13 @@ pub fn treatment(role: Role) -> Treatment {
         Role::Landing => surface(SurfaceRole::Understory),
         Role::Hazard => marker(MarkerRole::Collapse),
         Role::Minor => marker(MarkerRole::Director),
+        Role::GuardianShell => material([0.66, 0.64, 0.51]),
+        Role::GuardianLimb => material([0.30, 0.28, 0.22]),
+        Role::GuardianEye => {
+            let mut t = material([0.92, 0.88, 0.70]);
+            t.emissive = bevy::color::LinearRgba::new(0.16, 0.14, 0.09, 1.);
+            t
+        }
         Role::Prop => material([0.30, 0.22, 0.12]),
         Role::Target => marker(MarkerRole::You),
         Role::Text => material([0.83, 0.91, 0.91]),

@@ -1,0 +1,97 @@
+{
+  "push": {
+    "duration": 0.46,
+    "peak_dbfs": -6.2,
+    "rms_dbfs": -20.59
+  },
+  "pull": {
+    "duration": 0.62,
+    "peak_dbfs": -7.33,
+    "rms_dbfs": -17.91
+  },
+  "miss": {
+    "duration": 0.14,
+    "peak_dbfs": -15.92,
+    "rms_dbfs": -27.22
+  },
+  "empty": {
+    "duration": 0.26,
+    "peak_dbfs": -14.42,
+    "rms_dbfs": -28.53
+  },
+  "impact": {
+    "duration": 0.35,
+    "peak_dbfs": -10.17,
+    "rms_dbfs": -28.5
+  },
+  "step": {
+    "duration": 0.16,
+    "peak_dbfs": -13.56,
+    "rms_dbfs": -27.57
+  },
+  "guardian_step": {
+    "duration": 0.19,
+    "peak_dbfs": -13.15,
+    "rms_dbfs": -30.55
+  },
+  "guardian_voice": {
+    "duration": 0.66,
+    "peak_dbfs": -13.15,
+    "rms_dbfs": -22.13
+  },
+  "void": {
+    "duration": 0.95,
+    "peak_dbfs": -10.75,
+    "rms_dbfs": -22.19
+  },
+  "warning": {
+    "duration": 1.9,
+    "peak_dbfs": -11.7,
+    "rms_dbfs": -28.82
+  },
+  "retract": {
+    "duration": 0.95,
+    "peak_dbfs": -8.64,
+    "rms_dbfs": -19.21
+  },
+  "power_on": {
+    "duration": 0.75,
+    "peak_dbfs": -12.4,
+    "rms_dbfs": -24.02
+  },
+  "power_off": {
+    "duration": 0.7,
+    "peak_dbfs": -12.77,
+    "rms_dbfs": -25.24
+  },
+  "wave": {
+    "duration": 0.85,
+    "peak_dbfs": -10.46,
+    "rms_dbfs": -22.3
+  },
+  "clear": {
+    "duration": 1.25,
+    "peak_dbfs": -10.46,
+    "rms_dbfs": -23.34
+  },
+  "capture": {
+    "duration": 0.8,
+    "peak_dbfs": -10.75,
+    "rms_dbfs": -21.13
+  },
+  "recharge": {
+    "duration": 0.6,
+    "peak_dbfs": -12.77,
+    "rms_dbfs": -24.36
+  },
+  "charge_tick": {
+    "duration": 0.17,
+    "peak_dbfs": -20.92,
+    "rms_dbfs": -29.67
+  },
+  "land": {
+    "duration": 0.26,
+    "peak_dbfs": -11.37,
+    "rms_dbfs": -27.35
+  }
+}

@@ -2,9 +2,11 @@
 pub mod arena;
 pub mod demo;
 mod evidence;
+pub mod guardian;
 pub mod model;
 pub mod physics;
 mod runtime;
+mod sound;
 mod view;
 
 use bevy::{

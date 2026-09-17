@@ -100,7 +100,11 @@ fn font(size: f32) -> TextFont {
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<ViewState>()
-        .add_systems(Startup, setup)
+        .init_resource::<crate::sound::SoundState>()
+        .add_systems(
+            Startup,
+            (setup, crate::guardian::setup, crate::sound::setup),
+        )
         .add_systems(
             Update,
             (
@@ -110,9 +114,12 @@ pub fn plugin(app: &mut App) {
                 rebuild,
                 spawn_actors,
                 sync,
+                crate::guardian::animate,
                 warn_bridge,
                 draw,
                 events,
+                crate::sound::motion,
+                crate::sound::mix,
                 feedback,
                 labels,
                 hud,
@@ -143,6 +150,7 @@ fn setup(
     };
     commands.spawn((
         Eye,
+        bevy::audio::SpatialListener::new(0.3),
         Camera3d::default(),
         Hdr,
         Bloom::NATURAL,
@@ -571,21 +579,31 @@ fn spawn_actors(
     runtime: Res<Runtime>,
     art: Res<Art>,
     mut view: ResMut<ViewState>,
+    guardians: Res<crate::guardian::GuardianArt>,
 ) {
     for (&id, actor) in &runtime.world.actors {
         if let std::collections::btree_map::Entry::Vacant(entry) = view.actors.entry(id) {
             let pose = runtime.world.pose(id);
-            let size = if actor.kind == Kind::Minor { 1.1 } else { 0.9 };
+            if actor.kind == Kind::Minor {
+                let entity = commands
+                    .spawn((
+                        Scene,
+                        ActorVisual(id),
+                        Transform::from_translation(pose.position),
+                        Visibility::default(),
+                    ))
+                    .id();
+                crate::guardian::spawn(&mut commands, &guardians, entity, id.0);
+                entry.insert(entity);
+                continue;
+            }
+            let size = 0.9;
             let entity = block(
                 &mut commands,
                 &art,
                 pose.position,
                 Vec3::splat(size),
-                if actor.kind == Kind::Minor {
-                    Role::Wall
-                } else {
-                    Role::Prop
-                },
+                Role::Prop,
             );
             commands
                 .entity(entity)
@@ -601,29 +619,11 @@ fn spawn_actors(
                                 size[axis] = 1.0;
                                 parent.spawn((
                                     Mesh3d(art.cube.clone()),
-                                    MeshMaterial3d(art.material(if actor.kind == Kind::Minor {
-                                        Role::Minor
-                                    } else {
-                                        Role::Unpowered
-                                    })),
+                                    MeshMaterial3d(art.material(Role::Unpowered)),
                                     Transform::from_translation(p).with_scale(size),
                                 ));
                             }
                         }
-                    }
-                    // A dark face with a luminous horizontal pupil distinguishes threats from crates.
-                    parent.spawn((
-                        Mesh3d(art.cube.clone()),
-                        MeshMaterial3d(art.material(Role::Wall)),
-                        Transform::from_xyz(0., 0., 0.51).with_scale(Vec3::new(0.65, 0.22, 0.04)),
-                    ));
-                    if actor.kind == Kind::Minor {
-                        parent.spawn((
-                            Mesh3d(art.cube.clone()),
-                            MeshMaterial3d(art.material(Role::Target)),
-                            Transform::from_xyz(0., 0., 0.55)
-                                .with_scale(Vec3::new(0.25, 0.06, 0.03)),
-                        ));
                     }
                 });
             entry.insert(entity);
@@ -731,11 +731,14 @@ fn events(
     mut commands: Commands,
     mut runtime: ResMut<Runtime>,
     mut view: ResMut<ViewState>,
-    assets: Res<AssetServer>,
+    bank: Res<crate::sound::Bank>,
+    mut sound: ResMut<crate::sound::SoundState>,
 ) {
     let tick = runtime.world.tick;
     // Event queue survives FixedUpdate catch-up; no sound/effect is lost between frames.
-    for event in runtime.events.drain(..) {
+    let queued = std::mem::take(&mut runtime.events);
+    for event in queued {
+        crate::sound::event(&mut commands, &bank, &mut sound, &runtime, &event);
         view.message = match event {
             Event::Fired(action, _, p) => {
                 view.kick = 1.;
@@ -758,19 +761,6 @@ fn events(
             Event::Ended(outcome) => format!("{outcome:?} / reset to try again"),
             Event::Recharge => "TOOL / fully charged".into(),
         };
-        let path = match event {
-            Event::Fired(Action::Pull, ..) => "sounds/reroute.ogg",
-            Event::Fired(..) => "sounds/tool_interact.ogg",
-            Event::Eliminated(_) => "sounds/collapse_sting.ogg",
-            Event::Refused(_) => "sounds/ui_hover.ogg",
-            Event::Ended(_) => "sounds/escape.ogg",
-            _ => "sounds/ui_click.ogg",
-        };
-        commands.spawn((
-            Scene,
-            AudioPlayer::new(assets.load(path)),
-            PlaybackSettings::DESPAWN,
-        ));
         view.message_until = tick + 150;
     }
 }
@@ -843,12 +833,17 @@ fn refusal(r: Refusal) -> &'static str {
         Refusal::EmptyCharge => "recharge at the station",
     }
 }
-fn hud(runtime: Res<Runtime>, view: Res<ViewState>, mut texts: Query<(&mut Text, &HudField)>) {
+fn hud(
+    runtime: Res<Runtime>,
+    view: Res<ViewState>,
+    sound: Res<crate::sound::SoundState>,
+    mut texts: Query<(&mut Text, &HudField)>,
+) {
     let w = &runtime.world;
     for (mut text, field) in &mut texts {
         if matches!(field, HudField::Summary) {
             text.0 = format!(
-                "{}  /  {}\n{}  /  GENERATOR {}\nWAVE {}/3    REMOVED {}",
+                "{}  /  {}\n{}  /  GENERATOR {}\nWAVE {}/3    REMOVED {}\nM / SOUND {}",
                 if w.mode == Mode::Practice {
                     "PRACTICE"
                 } else {
@@ -862,7 +857,8 @@ fn hud(runtime: Res<Runtime>, view: Res<ViewState>, mut texts: Query<(&mut Text,
                 },
                 if w.powered { "ON" } else { "OFF" },
                 w.wave,
-                w.kills
+                w.kills,
+                if sound.muted { "OFF" } else { "ON" }
             );
         }
         if matches!(field, HudField::Status) {
@@ -954,12 +950,20 @@ mod tests {
     fn app() -> App {
         let mut app = App::new();
         app.add_plugins((MinimalPlugins, AssetPlugin::default(), InputPlugin))
+            .init_asset::<AudioSource>()
             .init_asset::<Mesh>()
             .init_asset::<StandardMaterial>()
             .init_resource::<Runtime>()
             .init_resource::<ViewState>()
-            .add_systems(Startup, setup)
-            .add_systems(Update, (buttons, rebuild, spawn_actors).chain());
+            .init_resource::<crate::sound::SoundState>()
+            .add_systems(
+                Startup,
+                (setup, crate::guardian::setup, crate::sound::setup),
+            )
+            .add_systems(
+                Update,
+                (buttons, rebuild, spawn_actors, crate::guardian::animate).chain(),
+            );
         app.update();
         app
     }
@@ -990,20 +994,12 @@ mod tests {
         }
     }
     #[test]
-    fn all_event_audio_files_exist() {
-        for name in [
-            "reroute",
-            "tool_interact",
-            "collapse_sting",
-            "ui_hover",
-            "escape",
-            "ui_click",
-        ] {
-            assert!(
-                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join(format!("../../assets/sounds/{name}.ogg"))
-                    .is_file()
-            );
+    fn presentation_updates_leave_the_simulation_unchanged() {
+        let mut app = app();
+        let digest = app.world().resource::<Runtime>().world.digest();
+        for _ in 0..20 {
+            app.update();
         }
+        assert_eq!(app.world().resource::<Runtime>().world.digest(), digest);
     }
 }
