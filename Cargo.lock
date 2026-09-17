@@ -7443,6 +7443,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "plumb_lab"
+version = "0.1.0"
+dependencies = [
+ "bevy 0.19.1",
+ "glam 0.32.1",
+ "kinetic_lab",
+ "observed_style",
+ "observed_traversal",
+ "rapier3d",
+]
+
+[[package]]
 name = "png"
 version = "0.17.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"

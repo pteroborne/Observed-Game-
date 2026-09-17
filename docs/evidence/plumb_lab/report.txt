@@ -1,0 +1,11 @@
+PLUMB / feasibility
+
+phase                                                 settled    surface    walked  verdict
+DOWN / the control: a plumb that agrees with the world      16t      Floor      9.5m       ok
+EAST / down becomes a wall                                62t       Wall      9.5m       ok
+UP / down becomes the ceiling                             59t    Ceiling      9.5m       ok
+NORTH / down becomes the far wall                         51t       Wall      9.5m       ok
+RELEASE / the plumb wears off and the floor takes it back      59t      Floor      3.6m       ok
+
+A redirected gravity puts the subject on every surface of the room,
+holds it there, and it walks along each one.
