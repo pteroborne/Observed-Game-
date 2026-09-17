@@ -1,0 +1,36 @@
+The Third Light — verification completed 15 September 2026
+
+cargo fmt --all: PASS
+cargo fmt --all -- --check: PASS
+cargo dev-clippy: PASS, no warnings
+cargo dev-test -- --skip tests::a_tower_climbs_with_another_standing_on_it:
+  PASS, exit 0; 2097 passed, 37 ignored, 1 filtered out
+
+The one filtered test, tests::a_tower_climbs_with_another_standing_on_it,
+passed in the preceding unfiltered cargo dev-test run (authoring suite:
+205 passed, zero failed, 328.32 seconds). That test and its implementation
+were unchanged during the two subsequent test-only audit corrections.
+Combined verification: 2098 passed, 37 ignored, no unresolved failures.
+
+The first run exposed a game coverage test that treated selection weight 3
+as a legacy layout identity. The check now limits that historical guarantee
+to the original variant range. A later projected seam check missed rotated
+floor corners: the quantized hex has a measured 0.07179677 m corner offset.
+Its horizontal vertex search now admits 0.08 m; the floor-height tolerance
+remains 0.05 m. Both corrected checks pass in the final workspace run.
+
+Focused forge checks: 3 passed (regeneration and demand coverage, all door
+pairs, narrow crossing in both directions plus a drop into its opening).
+Lab layout/reset and low-ceiling section checks: passed in workspace run.
+Projected facility seam test: passed focused and in final workspace run.
+Source seam audit: 407 sources, 535095 valid boundary comparisons,
+zero height mismatches. This measures boundary envelopes, not apertures.
+
+All seven lab PNG captures were rendered and visually inspected.
+CAD SVG generated with tilec; PNG rasterized with rsvg-convert after the
+optional tilec JPEG converter reported missing Pillow. No CAD failure remains.
+The original image-generator concept and exact prompt are preserved.
+
+Catalogue: e620f190857c0dbb8728dd4aca238ef196c4972754970369123daf6fb3d4fe06
+Simulation: 0e08f120c345c229d2052367aeee483ad75fa6a84dbb758ade2fc6ab6bf3938e
+Profile: 5c1bc69db058d4e3332e755326548f887d46f215d81fdeb454591cd9c2c0104e

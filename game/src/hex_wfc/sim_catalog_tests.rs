@@ -57,8 +57,8 @@ fn every_district_covers_every_wfc_geometry_demand_with_its_own_geometry() {
             );
         }
 
-        // Liminal Grid is the one district with hand-authored modules, and the
-        // generated kit sits *under* them rather than replacing them. Where it
+        // Liminal Grid's legacy authored hall modules predate the generated
+        // district kits. The generated kit supplements them. Where the corpus
         // has authored layouts, both must still be reachable, or the floor has
         // quietly become the ceiling.
         //
@@ -75,11 +75,14 @@ fn every_district_covers_every_wfc_geometry_demand_with_its_own_geometry() {
                     && tile.key.register == ArchitectureRegister::LiminalGrid.slug()
             })
             .collect::<Vec<_>>();
-        // Weights 2 and 3 are how the two-layout hall families are marked; the
-        // authored ramp carries 10 and generated tiles carry 1, so seeing either
-        // marker is what says this archetype has a pair to keep.
+        // The legacy hall pairs occupy authored variants 0..=5, expanded to
+        // runtime variants 0..36, with weights 2 and 3. Restrict this historical
+        // pair check to that ID band: later benchmarks may independently use
+        // weight 3, which is a selection weight, not a family identity.
+        // The authored ramp carries 10 and generated tiles carry 1.
         let weights = liminal
             .iter()
+            .filter(|tile| tile.key.variant < 36)
             .map(|tile| tile.weight)
             .collect::<BTreeSet<_>>();
         if weights.contains(&2) || weights.contains(&3) {

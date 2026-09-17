@@ -96,10 +96,13 @@ impl HexWfcVisualAssets {
                 // keeps the shared albedo, which is a real answer for the
                 // Monolith rather than a fallback.
                 let weave = weave_texture(images, style::architecture_weave(register));
-                let mut tinted = |look: style::HexSurfaceLook, texture: Option<Handle<Image>>| {
+                let mut tinted = |look: style::HexSurfaceLook,
+                                  texture: Option<Handle<Image>>,
+                                  mask_emission: bool| {
                     materials.add(StandardMaterial {
                         base_color: look.base_color,
                         emissive: look.emissive,
+                        emissive_texture: if mask_emission { texture.clone() } else { None },
                         unlit: look.unlit,
                         base_color_texture: if look.textured { texture } else { None },
                         perceptual_roughness: palette.surface_roughness,
@@ -110,14 +113,17 @@ impl HexWfcVisualAssets {
                     floor: tinted(
                         style::hex_shell_surface(register, ArchitectureSurfaceRole::Floor),
                         floor_texture.clone(),
+                        false,
                     ),
                     wall: tinted(
                         style::hex_shell_surface(register, ArchitectureSurfaceRole::Wall),
                         weave.clone().or_else(|| wall_texture.clone()),
+                        register == ArchitectureRegister::ShadowScreen,
                     ),
                     ceiling: tinted(
                         style::hex_shell_surface(register, ArchitectureSurfaceRole::Ceiling),
                         wall_texture.clone(),
+                        false,
                     ),
                     fixture: tinted(
                         style::hex_shell_surface(
@@ -125,10 +131,12 @@ impl HexWfcVisualAssets {
                             ArchitectureSurfaceRole::PracticalFixture,
                         ),
                         None,
+                        false,
                     ),
                     ramp: tinted(
                         style::hex_shell_look(&style::surface(SurfaceRole::SafeBypass), register),
                         floor_texture.clone(),
+                        false,
                     ),
                     shaft: tinted(
                         style::hex_shell_look(
@@ -136,10 +144,12 @@ impl HexWfcVisualAssets {
                             register,
                         ),
                         wall_texture.clone(),
+                        false,
                     ),
                     boundary: tinted(
                         style::hex_shell_look(&style::surface(SurfaceRole::Wall), register),
                         wall_texture.clone(),
+                        false,
                     ),
                 }
             })
@@ -289,37 +299,13 @@ fn weave_texture(
     use bevy::asset::RenderAssetUsages;
     use bevy::image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor};
     use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
-    use style::SurfaceWeave;
 
-    if pattern.weave == SurfaceWeave::None || pattern.lines == 0 {
-        return None;
-    }
-    const N: usize = 128;
-    let pitch = N as f32 / pattern.lines as f32;
-    // Always at least one texel, or a fine weave vanishes instead of thinning.
-    let half = (pitch * pattern.weight * 0.5).max(0.6);
-    let on_line = |v: usize| {
-        let phase = (v as f32 % pitch) - pitch * 0.5;
-        phase.abs() <= half
-    };
-    let floor_value = ((1.0 - pattern.depth) * 255.0).clamp(0.0, 255.0) as u8;
-    let mut data = Vec::with_capacity(N * N * 4);
-    for y in 0..N {
-        for x in 0..N {
-            let struck = match pattern.weave {
-                SurfaceWeave::Courses => on_line(y),
-                SurfaceWeave::Staves => on_line(x),
-                SurfaceWeave::Grid => on_line(x) || on_line(y),
-                SurfaceWeave::None => false,
-            };
-            let v = if struck { floor_value } else { 255 };
-            data.extend_from_slice(&[v, v, v, 255]);
-        }
-    }
+    let data = style::surface_weave_rgba(pattern)?;
+    let n = style::SURFACE_WEAVE_SIZE;
     let mut image = Image::new(
         Extent3d {
-            width: N as u32,
-            height: N as u32,
+            width: n,
+            height: n,
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
@@ -362,24 +348,7 @@ fn horizontal_surface(piece: &HexStructurePiece) -> HorizontalSurface {
     // material, which in a district like Shadow Screen is the *lit* surface.
     // A deck is thin and wide; a pier is not, and the ratio separates them
     // without needing to know which cell either is in.
-    let span = points
-        .iter()
-        .map(|point| point.x)
-        .fold(f32::NEG_INFINITY, f32::max)
-        - points
-            .iter()
-            .map(|point| point.x)
-            .fold(f32::INFINITY, f32::min);
-    let reach = points
-        .iter()
-        .map(|point| point.z)
-        .fold(f32::NEG_INFINITY, f32::max)
-        - points
-            .iter()
-            .map(|point| point.z)
-            .fold(f32::INFINITY, f32::min);
-    let thickness = maximum - minimum;
-    if thickness <= 0.9 && span.max(reach) >= thickness * 3.0 {
+    if observed_traversal::render_mesh::is_horizontal_slab(points) {
         return HorizontalSurface::Floor;
     }
     HorizontalSurface::Wall

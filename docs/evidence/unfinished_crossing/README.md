@@ -47,7 +47,7 @@ The complete landmark is hand-composed. The WFC may select these constituent til
 - Driving beyond the cantilever drops the body below the tile. Its terminating west face has no declared exit; the two actual doorways remain walkable.
 - Lab layout resolves every placement, matches adjacent ports including the two logical RampHeads, connects all three storeys and resets three times without accumulating collision state.
 - Source seam audit: **401 sources, 505,515 valid boundary comparisons, zero height mismatches**. The audit does not compare the legacy vertical interface contracts; ramp traversal and the layout's RampHead checks are separate evidence.
-- Workspace formatting, Clippy and test results are recorded after the final verification run.
+- `cargo fmt --all`, `cargo dev-clippy` and `cargo dev-test` pass. The complete workspace run reports 2,093 passed tests and 37 ignored tests, with zero failures or warnings. `git diff --check` also passes.
 
 The rebuilt catalogue contains 401 sources. Its content hash is `979edfc624eac36c8a2273d01c76bb483b2c545bbf189ba3be58d096859603cc`; the profile is unchanged. The folded simulation hash is `f714af331e449a5f3dd8161c06f80fe54785c00f8ae48b036d213e500f5ba5d5`. Spectator selection digests were updated for the added candidates; placement counts and tower selection remain pinned unchanged.
 

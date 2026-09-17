@@ -1,0 +1,13 @@
+Verified 14 September 2026
+cargo fmt --all: PASS
+cargo fmt --all -- --check: PASS
+cargo dev-clippy: PASS, zero warnings
+cargo dev-test: PASS, 2093 passed, 37 ignored, zero failed
+All seven strict source validations: PASS
+Forge regeneration and real-demand matching: PASS
+Door pairs, ring, bridge, bidirectional ascent and under-ramp traversal: PASS
+Cantilever fall: PASS
+17-placement layout, port mating, connectivity and repeated reset: PASS
+Seam audit: 401 sources, 505515 valid boundaries, zero height mismatches
+Seven view scripts: identical placement lists, all output images inspected
+git diff --check: PASS

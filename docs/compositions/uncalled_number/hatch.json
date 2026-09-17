@@ -1,0 +1,138 @@
+{
+  "layout": [
+    {
+      "tile": "hall_turn_60:1200",
+      "q": 2,
+      "r": 3,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_straight:1212",
+      "q": 3,
+      "r": 3,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_junction_3way:1200",
+      "q": 4,
+      "r": 3,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_straight:1212",
+      "q": 5,
+      "r": 3,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_turn_120:1206",
+      "q": 6,
+      "r": 3,
+      "turn": 1,
+      "level": 0
+    },
+    {
+      "tile": "hall_turn_120:1200",
+      "q": 2,
+      "r": 4,
+      "turn": 2,
+      "level": 0
+    },
+    {
+      "tile": "hall_turn_120:1200",
+      "q": 4,
+      "r": 4,
+      "turn": 2,
+      "level": 0
+    },
+    {
+      "tile": "hall_turn_120:1200",
+      "q": 6,
+      "r": 4,
+      "turn": 2,
+      "level": 0
+    },
+    {
+      "tile": "hall_turn_60:1200",
+      "q": 1,
+      "r": 5,
+      "turn": 5,
+      "level": 0
+    },
+    {
+      "tile": "hall_straight:1206",
+      "q": 2,
+      "r": 5,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_junction_4way:1200",
+      "q": 3,
+      "r": 5,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_straight:1206",
+      "q": 4,
+      "r": 5,
+      "turn": 0,
+      "level": 0
+    },
+    {
+      "tile": "hall_turn_120:1206",
+      "q": 5,
+      "r": 5,
+      "turn": 3,
+      "level": 0
+    },
+    {
+      "tile": "hall_straight:1200",
+      "q": 3,
+      "r": 6,
+      "turn": 1,
+      "level": 0
+    },
+    {
+      "tile": "hall_straight:1200",
+      "q": 3,
+      "r": 7,
+      "turn": 1,
+      "level": 0
+    }
+  ],
+  "register": 4,
+  "view_mode": "firstperson",
+  "render_mode": "lit",
+  "hide_menu": true,
+  "volumetrics": false,
+  "inspection_fill": false,
+  "inspection_shadows": true,
+  "camera_target": [
+    81.5,
+    2.15,
+    52.3
+  ],
+  "section": "none",
+  "section_axis": 90,
+  "section_roof_height": 4.4,
+  "section_roof_upper": 7.25,
+  "section_roof_front": false,
+  "orbit_yaw": 1.25,
+  "orbit_pitch": 0.85,
+  "radius": 105,
+  "height": 4,
+  "exposure_ev100": 6.4,
+  "camera_pos": [
+    86.5,
+    2.15,
+    43.7
+  ],
+  "facility_lighting": true,
+  "output_image": "docs/evidence/uncalled_number/hatch.png"
+}

@@ -411,8 +411,26 @@ See `docs/compositions/last_courtyard/hero.json` for an example.
 
 `"exposure_ev100": 7.7` sets photographic exposure for an inspection capture;
 lower values brighten the image. Omit it for the default camera exposure.
-Facility-lighting scripts ignore this override. The Unfinished Crossing hero
-uses it to photograph the dark structure without changing district lighting.
+Facility-lighting scripts ignore this override.
+The Unfinished Crossing hero uses it to photograph the dark structure without
+changing district lighting.
+
+`"inspection_shadows": true` lets the primary inspection directional light cast
+shadows in a Lit cutaway or inspection-fill view. The secondary fill stays
+shadowless. This is a photographic option, not the facility lighting rig.
+Shadow Screen previews share the game's horizontal rail classification and
+paper lattice pixels; the lattice masks the paper's emission as well as albedo.
+Front-only roof sections remove practicals with their parent module, including
+fixtures whose positions cross the section plane.
+
+Low suspended ceilings can be photographed with `"section_roof_height": 2.95`
+(local metres) and `"section": "plan"`. This removes hulls wholly above the
+chosen height and removes their practical lights. `"section_roof_front": true`
+retains low ceilings behind the section centre, selected per module using
+`section_axis`. `"section_roof_upper": 4.5` additionally removes upper service
+roof hulls everywhere, exposing those rear suspended panels. These options only
+affect presentation, are inactive with `"section": "none"`, and preserve the
+existing section behaviour when omitted. See the Third Light scripts.
 
 Four things that will otherwise cost an afternoon:
 

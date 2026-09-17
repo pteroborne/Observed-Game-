@@ -49,6 +49,12 @@ pub struct ViewScript {
     /// Which way the cut opens, in degrees about Y. Defaults to 45, the
     /// quadrant the orbit camera starts in.
     pub section_axis: Option<f32>,
+    /// Local height above which a section removes roof/ceiling hulls.
+    pub section_roof_height: Option<f32>,
+    /// Strip the upper service envelope everywhere while retaining rear low ceilings.
+    pub section_roof_upper: Option<f32>,
+    /// Preserve the roofs behind the section centre; remove only front roofs.
+    pub section_roof_front: Option<bool>,
     pub cross_section: Option<bool>,
     pub volumetrics: Option<bool>,
     pub hide_menu: Option<bool>,
@@ -84,6 +90,8 @@ pub struct ViewScript {
     /// Keep the full geometry while using inspection fill and shared district materials.
     /// Facility lighting takes precedence when both are requested.
     pub inspection_fill: Option<bool>,
+    /// Let the primary inspection light cast shadows; defaults off.
+    pub inspection_shadows: Option<bool>,
     /// Capture this many frames instead of one, `frame_interval` ticks apart.
     pub frames: Option<u32>,
     pub frame_interval: Option<u32>,
@@ -263,6 +271,7 @@ pub(super) fn run_script_system(
         state.scripted_walk = script.walk == Some(true);
         state.facility_lighting = script.facility_lighting == Some(true);
         state.inspection_fill = script.inspection_fill == Some(true);
+        state.inspection_shadows = script.inspection_shadows == Some(true);
         if !state.facility_lighting
             && let Some(ev100) = script.exposure_ev100
         {
@@ -332,6 +341,11 @@ pub(super) fn run_script_system(
                 );
             }
         }
+        state.roof_section = crate::RoofSection {
+            height: script.section_roof_height,
+            upper: script.section_roof_upper,
+            front_only: script.section_roof_front == Some(true),
+        };
         if let Some(degrees) = script.section_axis {
             state.section_axis = degrees.to_radians();
         }
