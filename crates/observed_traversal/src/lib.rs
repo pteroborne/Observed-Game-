@@ -20,6 +20,7 @@ use std::f32::consts::TAU;
 use glam::Vec3;
 use player_input::PlayerIntent;
 
+pub mod gravity;
 pub mod follower;
 pub mod gantry;
 pub mod graph;

@@ -18,8 +18,8 @@ use observed_facility::hex_wfc::{
 use observed_hex::{HexCoord, HexFace, hex_origin};
 use observed_match::hex_wfc::HexWfcGeometrySnapshot;
 use observed_traversal::{
-    FIXED_DT, FpsBody, FpsConfig, RapierKinematicSettings,
-    rapier_controller::step_character_in_query,
+    FIXED_DT, FpsBody, FpsConfig,
+    gravity::ObserverGravity,
 };
 use player_input::PlayerIntent;
 use rapier3d::prelude::*;
@@ -60,6 +60,8 @@ pub enum Action {
     Plumb,
     /// Point the armed plumb along the current look direction.
     Arm,
+    SelfPlumb,
+    Release,
     Interact,
 }
 
@@ -76,6 +78,8 @@ pub enum Refusal {
     TooFar,
     Cooldown,
     EmptyCharge,
+    Reorienting,
+    Clearance,
 }
 
 /// A redirected gravity riding on one body.
@@ -118,6 +122,9 @@ pub enum Event {
     Unplumbed(ActorId),
     /// The armed direction changed.
     Armed(Vec3),
+    SelfPlumbed,
+    GravityReleased,
+    GravityWarning,
 }
 
 /// Tool and opposition tuning, adjustable at runtime so the lab can be used to
@@ -240,6 +247,7 @@ pub struct WfcKineticWorld {
     pub tick: u64,
     pub player: FpsBody,
     pub player_config: FpsConfig,
+    pub gravity: ObserverGravity,
     pub charge: f32,
     pub powered: bool,
     pub cooldown: u32,
@@ -336,6 +344,7 @@ impl WfcKineticWorld {
             tick: 0,
             player,
             player_config,
+            gravity: ObserverGravity::default(),
             charge: 100.,
             powered: true,
             cooldown: 0,
@@ -443,13 +452,13 @@ impl WfcKineticWorld {
 
     #[must_use]
     pub fn eye(&self) -> Vec3 {
-        self.player.eye(&self.player_config)
+        self.gravity.frame.eye(&self.player, &self.player_config)
     }
 
     /// The body the crosshair currently selects, or why it selects nothing.
     pub fn target(&self) -> Result<Target, Refusal> {
         let origin = self.eye();
-        let direction = self.player.look_dir();
+        let direction = self.look_dir();
         let Some((handle, distance)) =
             self.physics
                 .ray(origin, direction, 100., Some(self.player_collider))
@@ -472,6 +481,7 @@ impl WfcKineticWorld {
     }
 
     pub fn fire_ready(&self) -> Result<Target, Refusal> {
+        if self.gravity.transition > 0 { return Err(Refusal::Reorienting); }
         let target = self.target()?;
         if self.cooldown > 0 {
             return Err(Refusal::Cooldown);
@@ -487,7 +497,7 @@ impl WfcKineticWorld {
             Err(reason) => self.events.push(Event::Refused(reason)),
             Ok(target) => {
                 let direction = if action == Action::Push {
-                    self.player.look_dir()
+                    self.look_dir()
                 } else {
                     (self.eye() - self.pose(target.id).position).normalize_or_zero()
                 };
@@ -510,6 +520,40 @@ impl WfcKineticWorld {
         }
     }
 
+    pub fn look_dir(&self) -> Vec3 { self.gravity.frame.look(&self.player) }
+    pub fn self_plumb_ready(&self) -> Result<(), Refusal> {
+        if self.gravity.transition > 0 { return Err(Refusal::Reorienting); }
+        if self.plumb_cooldown > 0 { return Err(Refusal::Cooldown); }
+        if self.mode == Mode::Encounter && self.charge < self.config.plumb_cost { return Err(Refusal::EmptyCharge); }
+        let next = self.gravity.frame.toward(-self.armed);
+        observed_traversal::gravity::reorient(&self.physics.query(self.player_handle), &self.player, self.gravity.frame, next, &self.player_config).ok_or(Refusal::Clearance)?;
+        Ok(())
+    }
+    fn self_plumb(&mut self) {
+        if let Err(reason) = self.self_plumb_ready() { self.events.push(Event::Refused(reason)); return; }
+        if self.gravity.activate(&self.physics.query(self.player_handle), &mut self.player, &self.player_config, self.armed, 480) {
+            if self.mode == Mode::Encounter { self.charge -= self.config.plumb_cost; }
+            self.plumb_cooldown = self.config.plumb_cooldown;
+            self.events.push(Event::SelfPlumbed);
+        }
+    }
+    /// Cells intersected by the Observer and the surface bearing their weight.
+    /// A ceiling or wall contact is just as occupied as the floor under a foot.
+    pub fn protected_body_cells(&self) -> BTreeSet<HexCoord> {
+        let mut cells = BTreeSet::new();
+        let up = self.gravity.frame.up();
+        for at in [self.player.position, self.player.position + up * self.player_config.half_height, self.player.position - up * (self.player_config.half_height + 0.15)] {
+            if let Some(cell) = self.site.cell_containing(at) { cells.insert(cell); }
+        }
+        let capsule = Capsule::new_y(self.player_config.half_height - self.player_config.radius, self.player_config.radius + 0.16);
+        let query = self.physics.query(self.player_handle);
+        for (_, collider) in query.intersect_shape(self.gravity.frame.pose(self.player.position), &capsule) {
+            if collider.user_data & STRUCTURAL_TAG == 0 { continue; }
+            if let Some(piece) = self.snapshot.pieces.iter().find(|piece| u128::from(piece.id.0) == (collider.user_data & !STRUCTURAL_TAG)) { cells.insert(piece.source_cell); }
+        }
+        cells
+    }
+
     /// Point the armed plumb where the Observer is looking.
     ///
     /// Arming is deliberately separate from firing. The tool's whole idea is
@@ -517,13 +561,15 @@ impl WfcKineticWorld {
     /// something, and folding the two together would make it a shove with extra
     /// steps.
     fn arm(&mut self) {
-        let direction = self.player.look_dir().normalize_or(Vec3::Y);
+        if self.gravity.transition > 0 { self.events.push(Event::Refused(Refusal::Reorienting)); return; }
+        let direction = self.look_dir().normalize_or(Vec3::Y);
         self.armed = direction;
         self.events.push(Event::Armed(direction));
     }
 
     /// Whether the plumb could be fired right now, and at what.
     pub fn plumb_ready(&self) -> Result<Target, Refusal> {
+        if self.gravity.transition > 0 { return Err(Refusal::Reorienting); }
         let target = self.target()?;
         if self.plumb_cooldown > 0 {
             return Err(Refusal::Cooldown);
@@ -604,6 +650,8 @@ impl WfcKineticWorld {
                 if kind == Kind::Minor {
                     // Minors stand upright again, because the pursuit they are
                     // about to resume is a Y-up one.
+                    body.set_rotation(Rotation::IDENTITY, true);
+                    body.set_angvel(Vector::ZERO, true);
                     body.set_enabled_rotations(false, false, false, true);
                 }
             }
@@ -614,7 +662,7 @@ impl WfcKineticWorld {
     /// The device within reach, if any.
     #[must_use]
     pub fn interaction(&self) -> Option<Device> {
-        let feet = self.player.position - Vec3::Y * self.player_config.half_height;
+        let feet = self.player.position - self.gravity.frame.up() * self.player_config.half_height;
         [
             (self.site.generator, Device::Generator),
             (self.site.panel, Device::Decoherence),
@@ -652,14 +700,14 @@ impl WfcKineticWorld {
     #[must_use]
     pub fn observation(&self) -> HexObservationFrame {
         let eye = self.eye();
-        let look = self.player.look_dir().with_y(0.).normalize_or_zero();
+        let look = self.look_dir();
         let mut visible = BTreeSet::new();
         for cell in self.world.placements.keys().copied() {
             if self.world.placements[&cell].space == HexSpace::Void {
                 continue;
             }
             let centre = Vec3::from_array(hex_origin(cell)) + Vec3::Y * 1.2;
-            let offset = (centre - eye).with_y(0.);
+            let offset = centre - eye;
             let distance = offset.length();
             if distance > OBSERVATION_RANGE {
                 continue;
@@ -676,7 +724,7 @@ impl WfcKineticWorld {
             occupied.insert(PlayerId(0), cell);
         }
         HexObservationFrame {
-            visible_cells: visible,
+            visible_cells: visible.union(&self.protected_body_cells()).copied().collect(),
             visible_thresholds: BTreeSet::new(),
             occupied_cells: occupied,
             // The devices are the floor's fixed points. An Architect may
@@ -858,7 +906,7 @@ impl WfcKineticWorld {
         // Never the floor underfoot. The control stands beside its tile, but a
         // rule is cheaper than trusting that, and an Observer who deletes the
         // ground they are standing on has found a bug rather than a play.
-        if self.site.cell_containing(self.player.position) == Some(cell) {
+        if self.protected_body_cells().contains(&cell) {
             self.events.push(Event::Inert);
             return;
         }
@@ -949,20 +997,19 @@ impl WfcKineticWorld {
                 *left -= 1;
             }
         }
-        let report = step_character_in_query(
-            &self.physics.query(self.player_handle),
-            &mut self.player,
-            command.movement,
-            &self.player_config,
-            RapierKinematicSettings::shipped(&self.player_config),
-            FIXED_DT,
-            (Vec3::ZERO, Vec3::splat(1000.)),
+        let before = self.gravity.remaining;
+        let report = self.gravity.step(
+            &self.physics.query(self.player_handle), &mut self.player, command.movement,
+            &self.player_config, (Vec3::ZERO, Vec3::splat(1000.)),
         );
-        self.physics.bodies[self.player_handle]
-            .set_next_kinematic_translation(rv(self.player.position));
+        if before > 60 && self.gravity.remaining <= 60 { self.events.push(Event::GravityWarning); }
+        if before > 0 && self.gravity.remaining == 0 { self.events.push(Event::GravityReleased); }
+        self.physics.bodies[self.player_handle].set_next_kinematic_position(self.gravity.frame.pose(self.player.position));
         if report.recovered || self.player.position.y < VOID_Y {
             if self.mode == Mode::Practice {
                 self.player.reset();
+                self.gravity = ObserverGravity::default();
+                self.physics.bodies[self.player_handle].set_position(self.gravity.frame.pose(self.player.position), true);
                 self.physics.bodies[self.player_handle]
                     .set_translation(rv(self.player.position), true);
             } else {
@@ -974,6 +1021,8 @@ impl WfcKineticWorld {
             Action::Push | Action::Pull => self.fire(command.action),
             Action::Plumb => self.fire_plumb(),
             Action::Arm => self.arm(),
+            Action::SelfPlumb => self.self_plumb(),
+            Action::Release => { self.gravity.release(); self.events.push(Event::GravityReleased); },
             Action::Interact => self.interact(),
             Action::None => {}
         }
@@ -981,7 +1030,7 @@ impl WfcKineticWorld {
         self.physics.step();
         self.resolve_contacts();
         if self.mode == Mode::Encounter {
-            let feet = self.player.position - Vec3::Y * self.player_config.half_height;
+            let feet = self.player.position - self.gravity.frame.up() * self.player_config.half_height;
             if self.powered
                 && feet.distance(self.site.station) < 2.2
                 && self.line_clear(self.eye(), self.site.station + Vec3::Y * 1.3)
@@ -1027,6 +1076,7 @@ impl WfcKineticWorld {
                 continue;
             }
             let collider = self.actors[&id].collider;
+            let up = self.actors[&id].lash.map_or(Vec3::Y, |plumb| plumb.up());
             // A deck edge can support the front of a body while its centre
             // hangs over nothing. Use real contact normals, not a centre ray.
             let grounded = self
@@ -1037,14 +1087,21 @@ impl WfcKineticWorld {
                     let sign = if pair.collider1 == collider { -1. } else { 1. };
                     pair.manifolds.iter().any(|manifold| {
                         !manifold.data.solver_contacts.is_empty()
-                            && manifold.data.normal.y * sign > 0.5
+                            && gv(manifold.data.normal).dot(up) * sign > 0.5
                     })
                 })
-                && velocity.y.abs() < 1.5;
+                && velocity.dot(up).abs() < 1.5;
             let contact_visible = self.line_clear(position, self.player.position);
             let over = self.site.cell_containing(position);
             let actor = self.actors.get_mut(&id).expect("live actor");
             actor.grounded = grounded;
+            if grounded && actor.kind == Kind::Minor && actor.lash.is_some() {
+                let rotation = Quat::from_rotation_arc(Vec3::Y, up);
+                let body = &mut self.physics.bodies[actor.body];
+                body.set_rotation(Rotation::from_xyzw(rotation.x,rotation.y,rotation.z,rotation.w), true);
+                body.set_angvel(Vector::ZERO, true);
+                body.set_enabled_rotations(false,false,false,true);
+            }
             if grounded && let Some(cell) = over {
                 actor.last_cell = Some(cell);
             }
@@ -1055,6 +1112,7 @@ impl WfcKineticWorld {
             if self.mode == Mode::Encounter
                 && actor.kind == Kind::Minor
                 && actor.stagger == 0
+                && actor.lash.is_none()
                 && grounded
                 && contact_visible
                 && position.distance(self.player.position) < 1.15
@@ -1093,7 +1151,7 @@ impl WfcKineticWorld {
         // dead air for a player and was fatal for the recorded director, whose
         // charge and patience both ran out first. Far enough not to appear on
         // top of somebody, near enough to be a wave.
-        let feet = self.player.position - Vec3::Y * self.player_config.half_height;
+        let feet = self.player.position - self.gravity.frame.up() * self.player_config.half_height;
         let ideal = (MUSTER_MIN + MUSTER_MAX) * 0.5;
         let mut choices: Vec<Vec3> = self
             .site
@@ -1140,7 +1198,7 @@ impl WfcKineticWorld {
         // breadth-first search and two graph entries per minor per tick. They
         // are all chasing the same Observer, so they were all solving the same
         // problem and throwing the answer away.
-        let target = self.player.position - Vec3::Y * self.player_config.half_height;
+        let target = self.player.position - self.gravity.frame.up() * self.player_config.half_height;
         let goal = self.nearest_waypoint(target);
         let toward_goal = goal.map(|node| self.breadth_first(node));
 
@@ -1514,6 +1572,8 @@ impl WfcKineticWorld {
         ] {
             add(u64::from(value.to_bits()));
         }
+        for value in self.gravity.frame.rotation.to_array().into_iter().chain(self.gravity.previous.rotation.to_array()).chain(self.player.velocity.to_array()) { add(u64::from(value.to_bits())); }
+        for value in [self.gravity.remaining, self.gravity.transition, u32::from(self.gravity.returning)] { add(u64::from(value)); }
         for (id, actor) in &self.actors {
             add(u64::from(id.0));
             add(u64::from(actor.alive));
