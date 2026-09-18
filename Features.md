@@ -54,6 +54,7 @@ elimination-series standings while the camera follows the visible first-person b
 | Match HUD | Game-integrated | `game/src/screens/hud.rs` | Shows match status, gate/keystone/item state, network state, guardian/log status, and controls relevant to the current match. |
 | TAC-MAP overlay | Game-integrated | `game/src/tacmap.rs`, `game/src/screens/hud.rs` | `Tab` projects player location, rivals, collapse, semantic routes, keystones, and exit lock/open state from live sim state. |
 | Audio cues and ambience | Game-integrated | `game/src/screens/audio.rs`, `game/src/screens/match_runtime/ambience.rs` | Includes ambience, footsteps, escape/success, door/reroute cues, and route-shift feedback. |
+| Hex WFC diegetic feedback | Game-integrated | `game/src/hex_wfc/feedback.rs`, `game/src/hex_wfc/audio.rs`, `game/src/hex_wfc/cues.rs` | Replaces screen-space banners with world-space blooming torus beacons and spatialized 3D audio positioned directly at event cells. |
 | Capture scenarios | Tooling/support | `game/src/capture/` | Bot POV, tour, room, ceiling, map-audit, and event capture paths produce visual evidence. |
 
 ## Input, Identity, and Determinism
