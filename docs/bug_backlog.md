@@ -544,45 +544,6 @@ is already the clearest picture of the facility the project has produced. Look
 at: `game/src/screens/match_runtime/spectator.rs` and the cutaway handling in
 `game/src/hex_wfc/view/`.
 
-### 37. Match events are a screen-space banner, against a standing directive
-
-**Found 2026-08-09, raised from the Deck playtest.** An early and repeatedly
-restated directive says a player should be able to **see and hear** any event
-that occurs — a lantern placed, a coherence lock taken, structure changing —
-**through diegetic means**. What ships instead is a text banner reading "X rooms
-changed". This is a regression against a design rule, not a missing feature, and
-the rule is written down in several places: `agents.md` on always-open threshold
-frames as "the diegetic face of observe/decohere", the Phase 50 immersion ruling
-(`game/src/hex_wfc/hud.rs`, `game/src/evidence/tags.rs`) that normal play is
-HUD-free and communicates diegetically, and the 2026-06-27 comfort pass that
-specifically replaced shake/flash decohere feedback with diegetic cues.
-
-**Both halves are non-diegetic, and the code says so plainly.**
-- *See:* `game/src/hex_wfc/feedback.rs` opens with "Screen-space semantic event
-  feedback" and spawns an `EventBanner` — a `Text` node pinned at `top: 38px`.
-- *Hear:* `game/src/hex_wfc/audio.rs` plays cues through `AudioPlayer` with plain
-  `PlaybackSettings` — **non-spatial**. A one-shot sting at the listener is a UI
-  sound; it carries no information about where the event was.
-
-**The data needed is already flowing and is being discarded.**
-`HexMatchEvent` carries `cell: Option<HexCoord>`, so the simulation already
-reports *where* every event happened. The banner drops it and the audio never
-asks for it. This is a presentation defect, not a missing simulation capability
-— which is why it is much smaller than it looks.
-
-**The cue model itself is text-shaped and needs rethinking, not just
-re-rendering.** `game/src/hex_wfc/cues.rs` defines every event as `glyph`,
-`label`, `marker`, `sound` — literally a string to display. A diegetic vocabulary
-answers a different question: *what does the world do when this happens?* A
-coherence lock is a frame light taking a state; structure breathing is something
-audible from the direction it is happening in. Replacing the banner without
-replacing that model just moves the text somewhere else.
-
-Scheduled as **Arc T packet T-9** ([arc_t/README.md](arc_t/README.md)). Note it
-delivers the event-level half of **#31**; what remains there afterwards is the
-corpus-dependent part — telling two *layouts* apart — which is why #31 stays
-open behind #30.
-
 ## Minor / hygiene
 
 **Scheduled: Arc H Phase 61 (as-landed notes).**
@@ -591,6 +552,29 @@ open behind #30.
   "Review fixes" section).
 
 ## Fixed
+
+### 37. Match events are a screen-space banner, against a standing directive
+
+**Found 2026-08-09, raised from the Deck playtest. Fixed 2026-09-18 (Arc T packet T-9).**
+The screen-space `EventBanner` text node ("X rooms changed") and non-spatial audio one-shots
+violated the standing diegetic feedback rule (`agents.md`, Phase 50 immersion ruling,
+and the 2026-06-27 comfort pass).
+
+Fixed across `game/src/hex_wfc/`:
+- **Screen banner deleted:** Normal play in `HexWfc` spawns no screen-space `EventBanner`
+  or UI text nodes for match events.
+- **In-world visual feedback:** `EventBeacon` spawns at `Vec3::from_array(hex_origin(cell)) + Vec3::Y * 0.08`
+  with a shared torus mesh and emissive neon `StandardMaterial` matching the event's `MarkerRole`
+  via `observed_style::marker(role)` (satisfying the Legibility Contract with guaranteed signal brightness).
+  The beacon pulses up to `BEACON_PEAK_SCALE = 2.2` and despawns after 1.1s. Multi-cell mutations
+  cap at 6 beacons to bound transient entity count.
+- **Spatial audio:** A `SpatialListener` is installed on `GameCam` (`LISTENER_EAR_GAP = 0.5`).
+  Event cues with known locations spawn one-shot audio entities configured with `spatial = true`,
+  `SpatialScale(HEX_SPATIAL_SCALE = 0.15)`, and world `Transform` positioned at `hex_origin(cell) + Vec3::Y * EYE_OFFSET`.
+  Events without a single cell (`MutationWarning`, `MutationCancelled`, `MatchFinished`) play non-spatially
+  from the listener.
+- **Regression guards:** Tests in `audio.rs` and `feedback.rs` assert spatial emitter coordinates,
+  cell distinctness, animation scale progression and despawn, screen banner absence, and legibility contract styling.
 
 ### 40. A body could not walk *down* a stair tower
 
