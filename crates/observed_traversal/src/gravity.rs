@@ -19,6 +19,9 @@ impl Default for BodyFrame {
     }
 }
 impl BodyFrame {
+    pub fn is_upright(self) -> bool {
+        self.rotation.angle_between(Quat::IDENTITY) <= 0.001 || self.up().distance(Vec3::Y) <= 0.001
+    }
     pub fn up(self) -> Vec3 {
         self.rotation * Vec3::Y
     }
@@ -101,7 +104,7 @@ pub fn step(
 ) -> FpsStep {
     let dt = crate::FIXED_DT;
     let settings = RapierKinematicSettings::shipped(config);
-    if frame == BodyFrame::default() {
+    if frame.is_upright() {
         return crate::rapier_controller::step_character_in_query(
             query, body, intent, config, settings, dt, bounds,
         );
@@ -214,7 +217,7 @@ impl ObserverGravity {
     }
     pub fn release(&mut self) {
         self.remaining = 0;
-        self.returning = self.frame.up().distance(Vec3::Y) > 0.001;
+        self.returning = !self.frame.is_upright();
     }
     pub fn visual_frame(self) -> BodyFrame {
         let t = 1. - self.transition as f32 / Self::SETTLE_TICKS as f32;
@@ -241,7 +244,7 @@ impl ObserverGravity {
             }
         }
         if self.returning {
-            let next = self.frame.toward(Vec3::Y);
+            let next = BodyFrame::default();
             if let Some(position) = reorient(query, body, self.frame, next, config) {
                 body.position = position;
                 body.grounded = false;
@@ -264,4 +267,177 @@ fn rv(v: Vec3) -> Vector {
 }
 fn gv(v: Vector) -> Vec3 {
     Vec3::new(v.x, v.y, v.z)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glam::Vec3;
+
+    struct TestPhysics {
+        broad: BroadPhaseBvh,
+        narrow: NarrowPhase,
+        bodies: RigidBodySet,
+        colliders: ColliderSet,
+    }
+
+    impl TestPhysics {
+        fn new() -> Self {
+            Self {
+                broad: BroadPhaseBvh::new(),
+                narrow: NarrowPhase::new(),
+                bodies: RigidBodySet::new(),
+                colliders: ColliderSet::new(),
+            }
+        }
+
+        fn update(&mut self) {
+            let mut islands = IslandManager::new();
+            let mut joints = ImpulseJointSet::new();
+            let mut multibody = MultibodyJointSet::new();
+            let mut ccd = CCDSolver::new();
+            PhysicsPipeline::new().step(
+                Vector::ZERO,
+                &IntegrationParameters::default(),
+                &mut islands,
+                &mut self.broad,
+                &mut self.narrow,
+                &mut self.bodies,
+                &mut self.colliders,
+                &mut joints,
+                &mut multibody,
+                &mut ccd,
+                &(),
+                &(),
+            );
+        }
+
+        fn query(&self) -> QueryPipeline<'_> {
+            self.broad.as_query_pipeline(
+                self.narrow.query_dispatcher(),
+                &self.bodies,
+                &self.colliders,
+                QueryFilter::default(),
+            )
+        }
+    }
+
+    #[test]
+    fn body_frame_upright_tolerance_and_fast_path() {
+        let frame = BodyFrame::default();
+        assert!(frame.is_upright());
+
+        // Slight rotation within tolerance
+        let near = BodyFrame {
+            rotation: Quat::from_rotation_y(0.0005),
+        };
+        assert!(near.is_upright());
+
+        // Significant rotation (e.g. wall walk)
+        let wall = BodyFrame::default().toward(Vec3::X);
+        assert!(!wall.is_upright());
+
+        // Rotating back towards Y
+        let returned = wall.toward(Vec3::Y);
+        // Defect (a) test: toward(Vec3::Y) with float normalization is upright within tolerance
+        assert!(returned.is_upright());
+    }
+
+    #[test]
+    fn observer_gravity_lifecycle_activate_release_return() {
+        let mut physics = TestPhysics::new();
+        // Flat floor at y = 0
+        physics.colliders.insert(
+            ColliderBuilder::cuboid(10.0, 0.1, 10.0).translation(rv(Vec3::new(0.0, -0.1, 0.0))),
+        );
+        physics.update();
+        let query = physics.query();
+
+        let config = FpsConfig::default();
+        let mut body = FpsBody::spawned(Vec3::new(0.0, 1.0, 0.0), 0.0);
+        let mut gravity = ObserverGravity::default();
+
+        // Initially upright
+        assert!(gravity.frame.is_upright());
+        assert_eq!(gravity.remaining, 0);
+        assert!(!gravity.returning);
+
+        // Activate wall walk (down = -Vec3::X, so up = Vec3::X)
+        let activated = gravity.activate(&query, &mut body, &config, -Vec3::X, 100);
+        assert!(activated);
+        assert!(!gravity.frame.is_upright());
+        assert_eq!(gravity.remaining, 100);
+        assert_eq!(gravity.transition, ObserverGravity::SETTLE_TICKS);
+
+        // Step 40 ticks: remaining should decrease, transition should reach 0
+        let intent = PlayerIntent::default();
+        let bounds = (Vec3::ZERO, Vec3::splat(100.0));
+        for _ in 0..40 {
+            gravity.step(&query, &mut body, intent, &config, bounds);
+        }
+        assert_eq!(gravity.remaining, 60);
+        assert_eq!(gravity.transition, 0);
+
+        // Step remaining 60 ticks until expiration
+        for _ in 0..60 {
+            gravity.step(&query, &mut body, intent, &config, bounds);
+        }
+        // Step a few ticks to complete return reorient
+        for _ in 0..5 {
+            gravity.step(&query, &mut body, intent, &config, bounds);
+        }
+        assert!(gravity.frame.is_upright());
+        assert_eq!(gravity.frame, BodyFrame::default());
+        assert_eq!(gravity.remaining, 0);
+        assert!(!gravity.returning);
+    }
+
+    #[test]
+    fn reorient_refuses_when_no_clearance_and_never_crosses_geometry() {
+        let mut physics = TestPhysics::new();
+        // A tight enclosed box where the upright capsule fits, but horizontal capsule does not
+        physics.colliders.insert(
+            ColliderBuilder::cuboid(10.0, 0.1, 10.0).translation(rv(Vec3::new(0.0, -0.1, 0.0))),
+        ); // floor
+        physics.colliders.insert(
+            ColliderBuilder::cuboid(10.0, 0.1, 10.0).translation(rv(Vec3::new(0.0, 2.0, 0.0))),
+        ); // ceiling
+        physics.colliders.insert(
+            ColliderBuilder::cuboid(0.1, 10.0, 10.0).translation(rv(Vec3::new(0.6, 0.0, 0.0))),
+        ); // wall +X
+        physics.colliders.insert(
+            ColliderBuilder::cuboid(0.1, 10.0, 10.0).translation(rv(Vec3::new(-0.6, 0.0, 0.0))),
+        ); // wall -X
+        physics.update();
+        let query = physics.query();
+
+        let config = FpsConfig::default();
+        let body = FpsBody::spawned(Vec3::new(0.0, 0.9, 0.0), 0.0);
+        let from = BodyFrame::default();
+        let to = from.toward(Vec3::X);
+
+        // Reorient should refuse because there is not enough clearance for horizontal capsule
+        let result = reorient(&query, &body, from, to, &config);
+        assert!(
+            result.is_none(),
+            "reorient must refuse when space is too tight for capsule"
+        );
+
+        // Test that reorient never crosses / tunnels through geometry
+        let mut tunnel_physics = TestPhysics::new();
+        tunnel_physics.colliders.insert(
+            ColliderBuilder::cuboid(0.5, 5.0, 5.0).translation(rv(Vec3::new(1.5, 0.0, 0.0))),
+        ); // wall from x=1.0 to x=2.0
+        tunnel_physics.update();
+        let tunnel_query = tunnel_physics.query();
+
+        let body_near_wall = FpsBody::spawned(Vec3::new(0.7, 0.9, 0.0), 0.0);
+        if let Some(pos) = reorient(&tunnel_query, &body_near_wall, from, to, &config) {
+            assert!(
+                pos.x < 1.0,
+                "reorient must not cross geometry: landed at x={}",
+                pos.x
+            );
+        }
+    }
 }

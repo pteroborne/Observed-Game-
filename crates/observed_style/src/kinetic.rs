@@ -20,6 +20,7 @@ pub enum Role {
     Unpowered,
     Text,
     Panel,
+    GravityWarning,
 }
 
 fn material(rgb: [f32; 3]) -> Treatment {
@@ -53,6 +54,7 @@ pub fn treatment(role: Role) -> Treatment {
         Role::Powered => marker(MarkerRole::Control),
         Role::Unpowered => material([0.28, 0.31, 0.33]),
         Role::Panel => material([0.018, 0.027, 0.036]),
+        Role::GravityWarning => marker(MarkerRole::Collapse),
     }
 }
 pub const LEGEND: &[(Role, &str)] = &[
@@ -63,6 +65,10 @@ pub const LEGEND: &[(Role, &str)] = &[
     (Role::Landing, "LOWER DECK / survivable landing"),
     (Role::Powered, "ON / station supplies charge"),
     (Role::Unpowered, "OFF / station unavailable"),
+    (
+        Role::GravityWarning,
+        "BLINKING RETICLE / artificial gravity expiring",
+    ),
 ];
 #[cfg(test)]
 mod tests {
