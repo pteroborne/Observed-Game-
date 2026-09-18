@@ -201,4 +201,26 @@ mod tests {
             assert_eq!(runtime.world.site.seed, fresh.site.seed);
         }
     }
+
+    #[test]
+    fn reset_after_self_plumb_restores_an_upright_observer() {
+        let mut runtime = Runtime::new(site(), Mode::Practice);
+        runtime.paused = false;
+        // Directly set gravity frame to a wall
+        runtime.world.gravity.frame = observed_traversal::gravity::BodyFrame {
+            rotation: glam::Quat::from_rotation_z(std::f32::consts::FRAC_PI_2),
+        };
+        assert!(!runtime.world.gravity.frame.is_upright());
+        assert_ne!(runtime.world.gravity.frame.up(), glam::Vec3::Y);
+
+        // Reset the lab (bound to R)
+        runtime.reset(Mode::Practice);
+
+        // Verify observer is completely upright and restored to spawn
+        assert!(runtime.world.gravity.frame.is_upright());
+        assert_eq!(runtime.world.gravity.frame.up(), glam::Vec3::Y);
+        assert!(runtime.world.gravity.visual_frame().is_upright());
+        assert_eq!(runtime.world.gravity.visual_frame().up(), glam::Vec3::Y);
+        assert_eq!(runtime.world.player.position, runtime.world.player.spawn);
+    }
 }
