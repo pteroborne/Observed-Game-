@@ -175,3 +175,195 @@ fn observer_tree_opens_a_deployed_door_that_blocks_its_route() {
     assert_eq!(lab.doors.get(&key), Some(&DoorState::Open));
     assert_eq!(trace.selected, Some("open door toward summit"));
 }
+
+#[test]
+fn unreachable_minor_guardian_does_not_softlock_observer() {
+    let mut lab = lab();
+    lab.guardians.clear();
+    let obs_id = ObserverId(0);
+    let obs_cell = lab.world.config.spawn();
+    lab.observers.get_mut(&obs_id).unwrap().cell = obs_cell;
+    lab.observers.get_mut(&obs_id).unwrap().state = ObserverState::Active;
+    lab.economy.set_charge(obs_id, 100);
+
+    let adj = HexFace::LATERAL
+        .into_iter()
+        .find_map(|face| lab.world.config.grid().neighbor(obs_cell, face))
+        .expect("adjacent neighbor exists");
+
+    let key = lab
+        .threshold_between(obs_cell, adj)
+        .expect("threshold exists");
+    lab.doors.insert(key, DoorState::Closed);
+
+    let minor_id = GuardianId(1001);
+    lab.guardians.insert(
+        minor_id,
+        Guardian {
+            id: minor_id,
+            cell: adj,
+            last_detection: None,
+            kind: GuardianKind::Minor,
+        },
+    );
+    lab.observed.remove(&adj);
+
+    assert!(!lab.can_shove(obs_id, minor_id));
+
+    let (intent, trace) = lab.observer_intent(obs_id);
+    assert!(!matches!(intent, ObserverIntent::Shove(_)));
+    assert_ne!(trace.selected, Some("shove adjacent Minor Guardian"));
+
+    lab.apply_observer_intent(obs_id, ObserverIntent::Shove(minor_id));
+    assert_eq!(
+        lab.economy.charge(obs_id),
+        100,
+        "Refused shove spent no charge"
+    );
+    let (next_intent, _) = lab.observer_intent(obs_id);
+    assert!(!matches!(next_intent, ObserverIntent::Shove(_)));
+}
+
+#[test]
+fn shove_resolves_against_minor_guardian_and_displaces_or_destroys() {
+    use crate::economy::{SHOVE_COST, ShoveOutcome};
+
+    let mut lab = ArchitectLab::for_mode(ArchitectMode::Pocket).expect("pocket solves");
+    lab.guardians.clear();
+    let obs_id = ObserverId(0);
+    let obs_cell = lab.observers[&obs_id].cell;
+    lab.observers.get_mut(&obs_id).unwrap().state = ObserverState::Active;
+    lab.economy.set_charge(obs_id, 100);
+
+    let exit_cell = lab.exits(obs_cell).into_iter().next().expect("exit exists");
+    let minor_id = GuardianId(1002);
+    lab.guardians.insert(
+        minor_id,
+        Guardian {
+            id: minor_id,
+            cell: exit_cell,
+            last_detection: None,
+            kind: GuardianKind::Minor,
+        },
+    );
+    lab.observed.insert(exit_cell);
+
+    assert!(lab.can_shove(obs_id, minor_id));
+    let (intent, trace) = lab.observer_intent(obs_id);
+    assert_eq!(intent, ObserverIntent::Shove(minor_id));
+    assert_eq!(trace.selected, Some("shove adjacent Minor Guardian"));
+
+    lab.apply_observer_intent(obs_id, intent);
+    assert_eq!(lab.economy.charge(obs_id), 100 - SHOVE_COST);
+
+    // Shove toward grid boundary / void destroys Minor Guardian
+    let edge_cell = HexCoord {
+        q: 0,
+        r: 0,
+        level: 0,
+    };
+    let obs_cell2 = HexCoord {
+        q: 1,
+        r: 0,
+        level: 0,
+    };
+    if let Some(p) = lab.world.placements.get_mut(&edge_cell) {
+        p.space = HexSpace::Hall;
+        p.doors = 0b111111;
+    }
+    if let Some(p) = lab.world.placements.get_mut(&obs_cell2) {
+        p.space = HexSpace::Hall;
+        p.doors = 0b111111;
+    }
+    lab.observers.get_mut(&obs_id).unwrap().cell = obs_cell2;
+    lab.economy.set_charge(obs_id, 100);
+    let minor_id2 = GuardianId(1003);
+    lab.guardians.insert(
+        minor_id2,
+        Guardian {
+            id: minor_id2,
+            cell: edge_cell,
+            last_detection: None,
+            kind: GuardianKind::Minor,
+        },
+    );
+    let outcome = lab
+        .shove(obs_id, minor_id2)
+        .expect("shove into void succeeds");
+    assert!(
+        matches!(outcome, ShoveOutcome::CommittedToVoid { .. }),
+        "Expected CommittedToVoid, got {:?}",
+        outcome
+    );
+    assert!(
+        !lab.guardians.contains_key(&minor_id2),
+        "Minor guardian destroyed by shove into void"
+    );
+}
+
+#[test]
+fn emergency_requisition_is_reachable_under_duress() {
+    let mut lab = lab();
+    assert!(
+        lab.legal_commands()
+            .contains(&ArchitectCommand::Requisition)
+    );
+
+    lab.deck.hand.clear();
+    lab.cooldown = 0;
+
+    let (intent, trace) = lab.architect_intent();
+    assert_eq!(intent, Some(ArchitectCommand::Requisition));
+    assert_eq!(trace.selected, Some("emergency requisition"));
+
+    let target_floor = crate::requisition::target_floor(&lab.observers);
+    let majors_before = lab
+        .guardians
+        .values()
+        .filter(|g| g.kind == GuardianKind::Major && g.cell.level == target_floor)
+        .count();
+
+    lab.submit(ArchitectCommand::Requisition)
+        .expect("requisition succeeds");
+    assert_eq!(lab.deck.hand.len(), HAND_SIZE);
+    assert_eq!(lab.requisition.count, 1);
+    let majors_after = lab
+        .guardians
+        .values()
+        .filter(|g| g.kind == GuardianKind::Major && g.cell.level == target_floor)
+        .count();
+    assert_eq!(majors_after, majors_before + 1);
+}
+
+#[test]
+fn floor_power_can_be_cut_and_exercises_power_gating() {
+    let mut lab = lab();
+    lab.guardians.clear();
+    let floor = 0;
+    assert!(lab.economy.is_powered(floor));
+
+    lab.cut_floor_power(floor);
+    assert!(!lab.economy.is_powered(floor));
+
+    let door_key = ThresholdKey {
+        cell: HexCoord {
+            q: 0,
+            r: 0,
+            level: floor,
+        },
+        face: HexFace::East,
+    };
+    assert!(!lab.operate_door(door_key, DoorState::Closed));
+
+    let obs_id = ObserverId(0);
+    let gen_cell = lab.economy.generators[&floor];
+    lab.observers.get_mut(&obs_id).unwrap().cell = gen_cell;
+    lab.observers.get_mut(&obs_id).unwrap().state = ObserverState::Active;
+
+    let (intent, trace) = lab.observer_intent(obs_id);
+    assert_eq!(intent, ObserverIntent::ToggleGenerator);
+    assert_eq!(trace.selected, Some("restore floor power at generator"));
+
+    lab.apply_observer_intent(obs_id, intent);
+    assert!(lab.economy.is_powered(floor), "Power successfully restored");
+}

@@ -119,12 +119,16 @@ impl ArchitectLab {
                 Some(cell),
                 "Tile retracted. Rebuild it or close the exposed connection to stop the spread.",
             );
+            if self.economy.is_at_generator(cell) {
+                self.cut_floor_power(cell.level);
+            }
             let floor_empty = self.world.placements.iter().all(|(&other, tile)| {
                 other.level != cell.level
                     || self.prison_core.contains(&other)
                     || tile.space == HexSpace::Void
             });
             if floor_empty && self.collapsed_floors.insert(cell.level) {
+                self.cut_floor_power(cell.level);
                 self.deck.retire_district(District::for_level(cell.level));
                 self.guardians
                     .retain(|_, g| !(g.kind == GuardianKind::Minor && g.cell.level == cell.level));

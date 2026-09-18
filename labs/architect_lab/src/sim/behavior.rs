@@ -29,6 +29,21 @@ pub enum GuardianIntent {
 
 impl ArchitectLab {
     pub(crate) fn observer_intent(&self, id: ObserverId) -> (ObserverIntent, BehaviorTrace) {
+        self.observer_intent_internal(id, true)
+    }
+
+    pub(crate) fn observer_intent_excluding_shove(
+        &self,
+        id: ObserverId,
+    ) -> (ObserverIntent, BehaviorTrace) {
+        self.observer_intent_internal(id, false)
+    }
+
+    fn observer_intent_internal(
+        &self,
+        id: ObserverId,
+        allow_shove: bool,
+    ) -> (ObserverIntent, BehaviorTrace) {
         let observer = &self.observers[&id];
         let mut trace = BehaviorTrace::default();
         if trace.test("escape jail", observer.state == ObserverState::Jailed) {
@@ -44,12 +59,11 @@ impl ArchitectLab {
             return (ObserverIntent::Hold, trace);
         }
 
-        // Shove adjacent Minor Guardian if charged
-        let shove_target = if self.economy.charge(id) >= SHOVE_COST {
-            self.guardians.values().find(|guardian| {
-                guardian.kind == GuardianKind::Minor
-                    && travel_distance(observer.cell, guardian.cell) == 1
-            })
+        // Shove adjacent Minor Guardian if charged and detectable
+        let shove_target = if allow_shove {
+            self.guardians
+                .values()
+                .find(|guardian| self.can_shove(id, guardian.id))
         } else {
             None
         };
@@ -208,9 +222,25 @@ impl ArchitectLab {
                 observer.hold_beats = 0;
             }
             ObserverIntent::Shove(target_guardian) => {
-                let _ = self.shove(id, target_guardian);
-                if let Some(observer) = self.observers.get_mut(&id) {
-                    observer.hold_beats = 0;
+                match self.shove(id, target_guardian) {
+                    Ok(_) => {
+                        if let Some(observer) = self.observers.get_mut(&id) {
+                            observer.hold_beats = 0;
+                        }
+                    }
+                    Err(err) => {
+                        self.record_event(
+                            super::LabEventKind::Warning,
+                            self.observers.get(&id).map(|o| o.cell),
+                            &format!("Observer {} shove refused: {:?}", id.0, err),
+                        );
+                        // Refused intent falls through to next priority instead of livelocking
+                        let (fallback_intent, fallback_trace) =
+                            self.observer_intent_excluding_shove(id);
+                        self.traces
+                            .insert(format!("Observer {}", id.0), fallback_trace);
+                        self.apply_observer_intent(id, fallback_intent);
+                    }
                 }
             }
             ObserverIntent::ToggleGenerator => {
@@ -400,8 +430,13 @@ impl ArchitectLab {
             trace.test("hold card", true);
             return (None, trace);
         }
+        let play_commands: Vec<_> = commands
+            .iter()
+            .copied()
+            .filter(|c| matches!(c, ArchitectCommand::Play { .. }))
+            .collect();
         let baseline = self.guardian_route_score();
-        let mut scored: Vec<_> = commands
+        let mut scored: Vec<_> = play_commands
             .iter()
             .copied()
             .map(|command| {
@@ -427,7 +462,7 @@ impl ArchitectLab {
         }
 
         // Release disturbance wave if a legal command crosses threshold
-        let wave_play = commands
+        let wave_play = play_commands
             .iter()
             .copied()
             .filter(|&command| {
@@ -447,20 +482,26 @@ impl ArchitectLab {
             return (wave_play, trace);
         }
 
-        // Generator play: contest generator access by playing a door or contradiction at/near generator
-        let generator_play = commands
+        // Generator play: contest generator access by playing a door, contradiction, or tile at/near generator
+        let generator_play = play_commands
             .iter()
             .copied()
             .filter(|&command| {
                 let ArchitectCommand::Play { target, card, .. } = command else {
                     return false;
                 };
+                if !self.economy.is_powered(target.level) {
+                    return false;
+                }
                 let Some(generator_cell) = self.economy.generators.get(&target.level).copied()
                 else {
                     return false;
                 };
                 if travel_distance(target, generator_cell) > 1 {
                     return false;
+                }
+                if target == generator_cell {
+                    return true;
                 }
                 let is_door = self
                     .deck
@@ -498,6 +539,34 @@ impl ArchitectLab {
         if trace.test("extend Guardian route", progress.is_some()) {
             return (progress.map(|(_, _, _, command)| command), trace);
         }
+
+        // Emergency Requisition: taken when the hand cannot answer the board
+        let can_requisition = commands.contains(&ArchitectCommand::Requisition);
+        let target_fl = crate::requisition::target_floor(&self.observers);
+        let majors_on_target_floor = self
+            .guardians
+            .values()
+            .filter(|g| g.kind == GuardianKind::Major && g.cell.level == target_fl)
+            .count();
+        let detected = self.detected_observers();
+        let has_active_detected = self
+            .observers
+            .values()
+            .any(|o| o.state == ObserverState::Active && detected.contains(&o.id));
+        // Hand cannot answer the board:
+        // 1. Hand has no legal card plays (dead hand), OR
+        // 2. Detected active Observers exist, but existing Guardians have no path to them
+        //    (baseline >= usize::MAX / 4), while no Major Guardian is active on their floor.
+        let hand_dead_or_unanswering = play_commands.is_empty()
+            || (has_active_detected && baseline >= usize::MAX / 4 && majors_on_target_floor == 0);
+
+        if trace.test(
+            "emergency requisition",
+            can_requisition && hand_dead_or_unanswering,
+        ) {
+            return (Some(ArchitectCommand::Requisition), trace);
+        }
+
         trace.test("hold card", true);
         (None, trace)
     }
@@ -518,6 +587,9 @@ impl ArchitectLab {
                     }
                 }
             }
+        }
+        if self.refusal(ArchitectCommand::Requisition).is_none() {
+            out.push(ArchitectCommand::Requisition);
         }
         out.sort_by_key(|command| command_key(*command));
         out
