@@ -193,7 +193,7 @@ impl Deck {
         }
     }
 
-    fn refill(&mut self) {
+    pub(crate) fn refill(&mut self) {
         while self.hand.len() < HAND_SIZE {
             if self.draw.is_empty() {
                 if self.discard.is_empty() {
@@ -206,6 +206,13 @@ impl Deck {
                 self.hand.push(card);
             }
         }
+    }
+
+    pub(crate) fn emergency_refill(&mut self) {
+        if self.hand.len() == HAND_SIZE {
+            self.discard.append(&mut self.hand);
+        }
+        self.refill();
     }
 
     pub(super) fn retire_district(&mut self, district: District) {

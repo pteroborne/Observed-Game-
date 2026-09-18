@@ -9,7 +9,7 @@ use crate::sim::{ArchitectLab, ArchitectMode, CardKind, DoorState, ObserverState
 
 #[wasm_bindgen]
 pub struct RogueGame {
-    sim: ArchitectLab,
+    pub(crate) sim: ArchitectLab,
     paused: bool,
 }
 
@@ -304,7 +304,10 @@ mod tests {
         let command = game.sim.legal_commands()[0];
         let crate::sim::ArchitectCommand::Play {
             target, rotation, ..
-        } = command;
+        } = command
+        else {
+            panic!("expected play command");
+        };
         let before = game.snapshot();
         let _ = game.preview(0, target.q, target.r, target.level, rotation);
         assert_eq!(game.snapshot(), before);

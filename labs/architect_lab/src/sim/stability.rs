@@ -14,6 +14,7 @@ pub enum LabEventKind {
     Repaired,
     Captured,
     FloorClosed,
+    Requisition,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -25,7 +26,7 @@ pub struct LabEvent {
 }
 
 impl ArchitectLab {
-    pub(super) fn record_event(
+    pub(crate) fn record_event(
         &mut self,
         kind: LabEventKind,
         cell: Option<HexCoord>,

@@ -61,6 +61,10 @@ landscape uses a scrollable command rail with sticky play controls.
 - Seeded five-card deck, district matching, rotations, local attachment, refill,
   shared 300-tick cooldown, and atomic command rejection. Pocket deals only its
   own district. A no-op cannot waste a card.
+- Emergency requisition refills a depleted or dead hand to exactly five instantly
+  and publicly for the price of releasing exactly one major Guardian on the floor
+  active Observers occupy, leaving the placement cooldown untouched. Released major
+  and spawn cell selection are fully deterministic from seed and command history.
 - Scenario damage is applied to a solved facility. The first repair card is offered
   from the ordinary finite deck. Missing known cells can be rebuilt through the
   same command boundary as replacements.

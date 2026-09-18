@@ -5,11 +5,11 @@ pub mod sim;
 #[cfg(feature = "desktop")]
 mod desktop;
 #[cfg(feature = "desktop")]
-mod view;
+pub(crate) mod view;
 #[cfg(feature = "desktop")]
 pub(crate) use desktop::ArchitectAction;
 #[cfg(feature = "desktop")]
 pub use desktop::{ArchitectLabPlugin, LabSession, run};
 
 #[cfg(feature = "web")]
-mod web;
+pub(crate) mod web;
