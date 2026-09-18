@@ -615,13 +615,19 @@ impl ArchitectLab {
                     {
                         return None;
                     }
-                } else if placement.ports().port(face) == observed_hex::PortClass::Sealed
-                    || !ports_compatible(
-                        placement.ports().port(face),
-                        other.ports().port(face.opposite()),
-                    )
-                {
-                    return None;
+                } else {
+                    if !self.economy.is_powered(from.level) || !self.economy.is_powered(next.level)
+                    {
+                        return None;
+                    }
+                    if placement.ports().port(face) == observed_hex::PortClass::Sealed
+                        || !ports_compatible(
+                            placement.ports().port(face),
+                            other.ports().port(face.opposite()),
+                        )
+                    {
+                        return None;
+                    }
                 }
                 Some(next)
             })
@@ -695,7 +701,7 @@ impl ArchitectLab {
             .collect()
     }
 
-    fn refresh_observation(&mut self) {
+    pub fn refresh_observation(&mut self) {
         self.observed.clear();
         for observer in self
             .observers
@@ -703,7 +709,9 @@ impl ArchitectLab {
             .filter(|observer| observer.state == ObserverState::Active)
         {
             self.observed.insert(observer.cell);
-            if let Some(next) = self.step_through(observer.cell, observer.facing) {
+            if self.economy.is_powered(observer.cell.level)
+                && let Some(next) = self.step_through(observer.cell, observer.facing)
+            {
                 self.observed.insert(next);
             }
         }

@@ -8,6 +8,7 @@ use observed_hex::{HexCoord, HexFace, ports_compatible, travel_distance};
 
 use super::sim::{
     ArchitectLab, DoorState, GuardianId, LabEventKind, Observer, ObserverId, ObserverState,
+    ThresholdKey,
 };
 
 /// Maximum kinetic tool charge capacity per Observer.
@@ -28,6 +29,8 @@ pub struct EconomyState {
     pub stations: BTreeSet<HexCoord>,
     /// Single contested generator coordinate per floor.
     pub generators: BTreeMap<u8, HexCoord>,
+    /// Teleport and equipment pads per floor.
+    pub pads: BTreeSet<HexCoord>,
     /// Power state per floor level: `true` = powered, `false` = unpowered.
     pub power: BTreeMap<u8, bool>,
 }
@@ -47,6 +50,7 @@ impl EconomyState {
 
         let mut stations = BTreeSet::new();
         let mut generators = BTreeMap::new();
+        let mut pads = BTreeSet::new();
         let mut power = BTreeMap::new();
 
         for level in 0..world.config.levels {
@@ -70,6 +74,8 @@ impl EconomyState {
                     0
                 };
                 stations.insert(candidates[station_idx]);
+                let pad_idx = candidates.len().saturating_sub(1);
+                pads.insert(candidates[pad_idx]);
             }
         }
 
@@ -77,6 +83,7 @@ impl EconomyState {
             charges,
             stations,
             generators,
+            pads,
             power,
         }
     }
@@ -124,6 +131,32 @@ impl EconomyState {
     #[must_use]
     pub fn is_at_powered_station(&self, cell: HexCoord) -> bool {
         self.stations.contains(&cell) && self.is_powered(cell.level)
+    }
+
+    /// Check if a coordinate is at an active teleport pad whose floor has power.
+    #[must_use]
+    pub fn is_pad_active(&self, cell: HexCoord) -> bool {
+        self.pads.contains(&cell) && self.is_powered(cell.level)
+    }
+
+    /// Check if ascent functions at the given coordinate (requires floor power).
+    #[must_use]
+    pub fn is_ascent_active(&self, cell: HexCoord) -> bool {
+        self.is_powered(cell.level)
+    }
+
+    /// Toggle power on a floor level. Returns the new power state.
+    pub fn toggle_power(&mut self, level: u8) -> bool {
+        let current = self.is_powered(level);
+        let next = !current;
+        self.power.insert(level, next);
+        next
+    }
+
+    /// Check if a coordinate is the generator for its floor.
+    #[must_use]
+    pub fn is_at_generator(&self, cell: HexCoord) -> bool {
+        self.generators.get(&cell.level) == Some(&cell)
     }
 
     /// Process per-beat recharge: only active Observers at a powered station regain charge.
@@ -339,6 +372,33 @@ impl ArchitectLab {
         _target: ObserverId,
     ) -> Result<(), ShoveError> {
         Err(ShoveError::NoEffectOnObservers)
+    }
+
+    /// Human or bot operator operates a deployed door. Refused if the door's floor lacks power.
+    pub fn operate_door(&mut self, key: ThresholdKey, state: DoorState) -> bool {
+        if !self.economy.is_powered(key.cell.level) {
+            return false;
+        }
+        self.doors.insert(key, state);
+        self.refresh_observation();
+        true
+    }
+
+    /// Observer at generator room toggles floor power state.
+    pub fn toggle_generator(&mut self, observer_id: ObserverId) -> Result<bool, &'static str> {
+        let observer = self
+            .observers
+            .get(&observer_id)
+            .ok_or("observer not active")?;
+        if observer.state != ObserverState::Active {
+            return Err("observer not active");
+        }
+        if !self.economy.is_at_generator(observer.cell) {
+            return Err("observer not at generator");
+        }
+        let new_state = self.economy.toggle_power(observer.cell.level);
+        self.refresh_observation();
+        Ok(new_state)
     }
 }
 
@@ -902,5 +962,269 @@ mod tests {
             lab_a.observers, lab_b.observers,
             "both labs have identical observers after shove"
         );
+    }
+
+    #[test]
+    fn floor_power_gates_recharge() {
+        let mut lab = ArchitectLab::for_mode(ArchitectMode::Pocket).expect("pocket solves");
+        let obs_id = *lab.observers.keys().next().expect("observer exists");
+        let station_cell = *lab.economy.stations.iter().next().expect("station exists");
+        let floor = station_cell.level;
+
+        // Move observer to station with 0 charge.
+        lab.observers.get_mut(&obs_id).unwrap().cell = station_cell;
+        lab.economy.set_charge(obs_id, 0);
+        assert_eq!(lab.economy.charge(obs_id), 0);
+
+        // When floor is powered, tick_beat recharges.
+        lab.economy.set_powered(floor, true);
+        lab.economy.tick_beat(&lab.world, &lab.observers);
+        assert_eq!(
+            lab.economy.charge(obs_id),
+            RECHARGE_PER_BEAT,
+            "Powered floor recharges observer at station"
+        );
+
+        // When floor is unpowered, tick_beat supplies 0 charge.
+        lab.economy.set_powered(floor, false);
+        lab.economy.tick_beat(&lab.world, &lab.observers);
+        assert_eq!(
+            lab.economy.charge(obs_id),
+            RECHARGE_PER_BEAT,
+            "Unpowered floor does not restore charge at station"
+        );
+    }
+
+    #[test]
+    fn floor_power_gates_door_operation() {
+        let mut lab = ArchitectLab::for_mode(ArchitectMode::Pocket).expect("pocket solves");
+        let cell = *lab.world.placements.keys().next().expect("cell exists");
+        let face = HexFace::East;
+        let key = ThresholdKey { cell, face };
+
+        lab.doors.insert(key, DoorState::Closed);
+        let floor = cell.level;
+
+        // When unpowered, door operation is refused and state is unchanged.
+        lab.economy.set_powered(floor, false);
+        let res = lab.operate_door(key, DoorState::Open);
+        assert!(!res, "Door operation refused on unpowered floor");
+        assert_eq!(
+            lab.doors.get(&key),
+            Some(&DoorState::Closed),
+            "Door remains frozen in current state"
+        );
+
+        // When powered, door operation succeeds.
+        lab.economy.set_powered(floor, true);
+        let res = lab.operate_door(key, DoorState::Open);
+        assert!(res, "Door operation succeeds on powered floor");
+        assert_eq!(
+            lab.doors.get(&key),
+            Some(&DoorState::Open),
+            "Door state transitions when powered"
+        );
+    }
+
+    #[test]
+    fn floor_power_gates_ascent_and_pads() {
+        let mut lab =
+            ArchitectLab::for_mode(ArchitectMode::QuickClimb).expect("quick climb solves");
+        // Verify vertical ascent passage is gated by floor power
+        let (from_cell, to_cell) = lab
+            .world
+            .placements
+            .keys()
+            .find_map(|&c| {
+                let exits = lab.exits(c);
+                exits
+                    .into_iter()
+                    .find(|&next| next.level != c.level)
+                    .map(|next| (c, next))
+            })
+            .expect("vertical exit exists in QuickClimb");
+
+        assert!(
+            lab.exits(from_cell).contains(&to_cell),
+            "Vertical exit present when both floors powered"
+        );
+
+        // Cut power on from_cell's floor: ascent is inert
+        lab.economy.set_powered(from_cell.level, false);
+        assert!(
+            !lab.exits(from_cell).contains(&to_cell),
+            "Vertical exit disabled when origin floor is unpowered"
+        );
+
+        // Restore origin floor, cut destination floor: ascent is inert
+        lab.economy.set_powered(from_cell.level, true);
+        lab.economy.set_powered(to_cell.level, false);
+        assert!(
+            !lab.exits(from_cell).contains(&to_cell),
+            "Vertical exit disabled when destination floor is unpowered"
+        );
+
+        // Restore both: ascent functions again
+        lab.economy.set_powered(to_cell.level, true);
+        assert!(
+            lab.exits(from_cell).contains(&to_cell),
+            "Vertical exit restored when both floors are powered"
+        );
+
+        // Test pad and ascent gating helper methods
+        let pad_cell = *lab.economy.pads.iter().next().expect("pad exists");
+        lab.economy.set_powered(pad_cell.level, true);
+        assert!(lab.economy.is_pad_active(pad_cell));
+        assert!(lab.economy.is_ascent_active(pad_cell));
+
+        lab.economy.set_powered(pad_cell.level, false);
+        assert!(
+            !lab.economy.is_pad_active(pad_cell),
+            "Pad inert on unpowered floor"
+        );
+        assert!(
+            !lab.economy.is_ascent_active(pad_cell),
+            "Ascent inert on unpowered floor"
+        );
+    }
+
+    #[test]
+    fn floor_power_gates_observation_range() {
+        let mut lab = ArchitectLab::for_mode(ArchitectMode::Pocket).expect("pocket solves");
+        let obs_id = *lab.observers.keys().next().expect("observer exists");
+        let obs_cell = lab.observers[&obs_id].cell;
+        let floor = obs_cell.level;
+
+        let facing_neighbor = lab
+            .exits(obs_cell)
+            .into_iter()
+            .find_map(|next| {
+                let face = HexFace::ALL
+                    .into_iter()
+                    .find(|&f| lab.world.config.grid().neighbor(obs_cell, f) == Some(next))?;
+                Some((face, next))
+            })
+            .expect("reachable neighbor in some facing");
+
+        lab.observers.get_mut(&obs_id).unwrap().facing = facing_neighbor.0;
+        let target_cell = facing_neighbor.1;
+
+        // When powered: observation covers both observer's cell and target cell at range
+        lab.economy.set_powered(floor, true);
+        lab.refresh_observation();
+        assert!(lab.observed.contains(&obs_cell));
+        assert!(
+            lab.observed.contains(&target_cell),
+            "Observation extends at range when powered"
+        );
+
+        // When unpowered: observation fails at range, but observer's self-occupancy holds
+        lab.economy.set_powered(floor, false);
+        lab.refresh_observation();
+        assert!(
+            lab.observed.contains(&obs_cell),
+            "Observer cell self-observed under unpowered darkness"
+        );
+        assert!(
+            !lab.observed.contains(&target_cell),
+            "Observation fails at range on unpowered floor"
+        );
+    }
+
+    #[test]
+    fn major_guardians_remain_frozen_under_every_power_state_permitting_sight() {
+        let mut lab = ArchitectLab::for_mode(ArchitectMode::Pocket).expect("pocket solves");
+        let obs_id = *lab.observers.keys().next().expect("observer exists");
+        let obs_cell = lab.observers[&obs_id].cell;
+        let floor = obs_cell.level;
+
+        let (facing, target_cell) = lab
+            .exits(obs_cell)
+            .into_iter()
+            .find_map(|next| {
+                let face = HexFace::ALL
+                    .into_iter()
+                    .find(|&f| lab.world.config.grid().neighbor(obs_cell, f) == Some(next))?;
+                Some((face, next))
+            })
+            .expect("reachable neighbor");
+        lab.observers.get_mut(&obs_id).unwrap().facing = facing;
+
+        let major_id = GuardianId(801);
+        lab.guardians.insert(
+            major_id,
+            Guardian {
+                id: major_id,
+                cell: target_cell,
+                last_detection: None,
+                kind: GuardianKind::Major,
+            },
+        );
+
+        // Case 1: Powered floor -> target is in range -> Major Guardian freezes
+        lab.economy.set_powered(floor, true);
+        lab.refresh_observation();
+        let (intent_powered, trace_powered) = lab.guardian_intent(major_id);
+        assert_eq!(intent_powered, GuardianIntent::Hold);
+        assert_eq!(trace_powered.selected, Some("frozen while observed"));
+
+        // Case 2: Unpowered floor -> target is out of range -> Major Guardian does NOT freeze
+        lab.economy.set_powered(floor, false);
+        lab.refresh_observation();
+        let (_intent_dark, trace_dark) = lab.guardian_intent(major_id);
+        assert_ne!(
+            trace_dark.selected,
+            Some("frozen while observed"),
+            "Major Guardian not frozen when outside observation range in darkness"
+        );
+
+        // Case 3: Major Guardian on the observer's cell (within sight under darkness)
+        lab.guardians.get_mut(&major_id).unwrap().cell = obs_cell;
+        lab.refresh_observation();
+        let (intent_sight, trace_sight) = lab.guardian_intent(major_id);
+        assert_eq!(
+            intent_sight,
+            GuardianIntent::Hold,
+            "Major Guardian remains frozen under darkness when sight still reaches them"
+        );
+        assert_eq!(
+            trace_sight.selected,
+            Some("frozen while observed"),
+            "Major Guardian frozen while observed in darkness"
+        );
+    }
+
+    #[test]
+    fn generator_toggles_power_and_refreshes_observation() {
+        let mut lab = ArchitectLab::for_mode(ArchitectMode::Pocket).expect("pocket solves");
+        let obs_id = *lab.observers.keys().next().expect("observer exists");
+        let floor = 0;
+        let gen_cell = lab.economy.generators[&floor];
+
+        // Placing observer away from generator: toggle returns error
+        let non_gen = lab
+            .world
+            .placements
+            .keys()
+            .copied()
+            .find(|&c| c != gen_cell && lab.world.placements[&c].space != HexSpace::Void)
+            .expect("non-generator cell");
+        lab.observers.get_mut(&obs_id).unwrap().cell = non_gen;
+        assert!(
+            lab.toggle_generator(obs_id).is_err(),
+            "Observer not at generator cannot toggle power"
+        );
+
+        // Placing observer at generator: toggle flips power
+        lab.observers.get_mut(&obs_id).unwrap().cell = gen_cell;
+        assert!(lab.economy.is_powered(floor), "Initially powered");
+
+        let new_state = lab.toggle_generator(obs_id).expect("toggle succeeds");
+        assert!(!new_state, "Toggled off");
+        assert!(!lab.economy.is_powered(floor), "Floor is now unpowered");
+
+        let toggled_again = lab.toggle_generator(obs_id).expect("toggle succeeds");
+        assert!(toggled_again, "Toggled back on");
+        assert!(lab.economy.is_powered(floor), "Floor is re-powered");
     }
 }

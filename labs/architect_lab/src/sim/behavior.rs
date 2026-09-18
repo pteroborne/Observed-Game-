@@ -43,6 +43,7 @@ impl ArchitectLab {
         if let Some(guardian) = visible_guardian
             && let Some(key) = self.threshold_between(observer.cell, guardian.cell)
             && self.doors.get(&key) == Some(&DoorState::Open)
+            && self.economy.is_powered(key.cell.level)
         {
             trace.visited.push("close door on Guardian");
             trace.selected = Some("close door on Guardian");
@@ -65,7 +66,9 @@ impl ArchitectLab {
             {
                 return (ObserverIntent::Step(next), trace);
             }
-            if let Some(key) = self.closed_door_restoring_route(observer.cell, summit) {
+            if let Some(key) = self.closed_door_restoring_route(observer.cell, summit)
+                && self.economy.is_powered(key.cell.level)
+            {
                 trace.visited.push("open door toward summit");
                 trace.selected = Some("open door toward summit");
                 return (ObserverIntent::SetDoor(key, DoorState::Open), trace);
@@ -103,7 +106,9 @@ impl ArchitectLab {
                 observer.hold_beats = 0;
             }
             ObserverIntent::SetDoor(key, state) => {
-                self.doors.insert(key, state);
+                if self.economy.is_powered(key.cell.level) {
+                    self.doors.insert(key, state);
+                }
                 observer.hold_beats = 0;
             }
         }
