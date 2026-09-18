@@ -856,11 +856,10 @@ mod tests {
         let command = lab
             .legal_commands()
             .into_iter()
-            .find_map(|cmd| {
+            .find(|&cmd| {
                 let mut candidate = lab.clone();
                 candidate.submit(cmd).unwrap();
-                (!candidate.contradictions.is_empty() && candidate.next_retraction().is_some())
-                    .then_some(cmd)
+                !candidate.contradictions.is_empty() && candidate.next_retraction().is_some()
             })
             .expect("scenario admits a locally fitting, globally contradicted card");
         lab.submit(command).unwrap();
@@ -932,17 +931,14 @@ mod tests {
 
         let mut found = None;
         for face in HexFace::LATERAL {
-            if let Some(neighbor) = lab.world.config.grid().neighbor(obs_cell, face) {
-                if lab.can_detect_adjacent(obs_cell, neighbor) {
-                    if let Some(dest) = lab.world.config.grid().neighbor(neighbor, face) {
-                        if let Some(tile) = lab.world.placements.get(&dest) {
-                            if tile.space != HexSpace::Void {
-                                found = Some((neighbor, dest));
-                                break;
-                            }
-                        }
-                    }
-                }
+            if let Some(neighbor) = lab.world.config.grid().neighbor(obs_cell, face)
+                && lab.can_detect_adjacent(obs_cell, neighbor)
+                && let Some(dest) = lab.world.config.grid().neighbor(neighbor, face)
+                && let Some(tile) = lab.world.placements.get(&dest)
+                && tile.space != HexSpace::Void
+            {
+                found = Some((neighbor, dest));
+                break;
             }
         }
 
@@ -991,17 +987,14 @@ mod tests {
 
         let mut found = None;
         for face in HexFace::LATERAL {
-            if let Some(neighbor) = lab.world.config.grid().neighbor(obs_cell, face) {
-                if lab.can_detect_adjacent(obs_cell, neighbor) {
-                    if let Some(dest) = lab.world.config.grid().neighbor(neighbor, face) {
-                        if let Some(tile) = lab.world.placements.get(&dest) {
-                            if tile.space != HexSpace::Void {
-                                found = Some((neighbor, dest));
-                                break;
-                            }
-                        }
-                    }
-                }
+            if let Some(neighbor) = lab.world.config.grid().neighbor(obs_cell, face)
+                && lab.can_detect_adjacent(obs_cell, neighbor)
+                && let Some(dest) = lab.world.config.grid().neighbor(neighbor, face)
+                && let Some(tile) = lab.world.placements.get(&dest)
+                && tile.space != HexSpace::Void
+            {
+                found = Some((neighbor, dest));
+                break;
             }
         }
 
@@ -1452,8 +1445,10 @@ mod tests {
         );
 
         // Verify domination: contradiction and retraction far outweigh consistent
-        assert!(DISTURBANCE_CONTRADICTION_LOYAL >= DISTURBANCE_CONSISTENT_LOYAL * 7);
-        assert!(DISTURBANCE_RETRACTION_COMMITTED >= DISTURBANCE_CONSISTENT_LOYAL * 5);
+        const {
+            assert!(DISTURBANCE_CONTRADICTION_LOYAL >= DISTURBANCE_CONSISTENT_LOYAL * 7);
+            assert!(DISTURBANCE_RETRACTION_COMMITTED >= DISTURBANCE_CONSISTENT_LOYAL * 5);
+        }
     }
 
     #[test]
@@ -1570,5 +1565,226 @@ mod tests {
             spawned_after_collapse.is_empty(),
             "No waves release on collapsed floor"
         );
+    }
+
+    #[test]
+    fn bot_observer_shoves_adjacent_minor_guardian() {
+        let mut lab = ArchitectLab::for_mode(ArchitectMode::Pocket).expect("pocket solves");
+        let id = ObserverId(0);
+        let obs_cell = lab.observers[&id].cell;
+
+        // Place a Minor Guardian on an adjacent neighbor
+        let neighbor = lab
+            .exits(obs_cell)
+            .into_iter()
+            .next()
+            .expect("has neighbor exit");
+        let minor_id = GuardianId(888);
+        lab.guardians.insert(
+            minor_id,
+            Guardian {
+                id: minor_id,
+                cell: neighbor,
+                last_detection: None,
+                kind: GuardianKind::Minor,
+            },
+        );
+
+        let (intent, trace) = lab.observer_intent(id);
+        assert_eq!(
+            intent,
+            crate::sim::ObserverIntent::Shove(minor_id),
+            "Bot observer must choose shove intent when adjacent to Minor Guardian"
+        );
+        assert_eq!(trace.selected, Some("shove adjacent Minor Guardian"));
+
+        let before_charge = lab.economy.charge(id);
+        lab.apply_observer_intent(id, intent);
+        assert_eq!(
+            lab.economy.charge(id),
+            before_charge - SHOVE_COST,
+            "Applying shove intent deducts SHOVE_COST"
+        );
+    }
+
+    #[test]
+    fn bot_observer_seeks_recharge_when_charge_depleted_and_recharges() {
+        let mut lab = ArchitectLab::for_mode(ArchitectMode::Pocket).expect("pocket solves");
+        let id = ObserverId(0);
+        lab.guardians.clear(); // remove danger so observer seeks recharge
+
+        let station = *lab.economy.stations.iter().next().expect("station exists");
+        let non_station = lab
+            .exits(station)
+            .into_iter()
+            .find(|&c| c != station)
+            .expect("neighbor of station exists");
+
+        // Observer is not at station and has 0 charge
+        lab.observers.get_mut(&id).unwrap().cell = non_station;
+        lab.economy.set_charge(id, 0);
+
+        let (intent, trace) = lab.observer_intent(id);
+        assert_eq!(
+            trace.selected,
+            Some("seek recharge station"),
+            "Observer with depleted charge routes to powered station"
+        );
+        let crate::sim::ObserverIntent::Step(next_step) = intent else {
+            panic!("Expected Step intent toward station, got {intent:?}");
+        };
+        assert_eq!(next_step, station, "Step should lead toward station");
+
+        // Move to station and verify Hold to recharge
+        lab.observers.get_mut(&id).unwrap().cell = station;
+        let (intent_at_station, trace_at_station) = lab.observer_intent(id);
+        assert_eq!(intent_at_station, crate::sim::ObserverIntent::Hold);
+        assert_eq!(trace_at_station.selected, Some("recharge at station"));
+
+        // Step beat to recharge
+        lab.step_beat();
+        assert_eq!(
+            lab.economy.charge(id),
+            RECHARGE_PER_BEAT,
+            "Recharge beat at station increments charge"
+        );
+    }
+
+    #[test]
+    fn bot_observer_seeks_generator_and_toggles_power_when_dark() {
+        let mut lab =
+            ArchitectLab::for_mode(ArchitectMode::QuickClimb).expect("quick climb solves");
+        let id = ObserverId(0);
+        lab.guardians.clear();
+        let (non_gen, gen_cell, next_hop) = lab
+            .world
+            .placements
+            .keys()
+            .copied()
+            .filter(|&c| c.level == 0)
+            .find_map(|c| {
+                for next in lab.exits(c) {
+                    if next.level == 0 {
+                        return Some((c, next, next));
+                    }
+                }
+                None
+            })
+            .expect("connected cells on floor 0");
+
+        lab.economy.generators.insert(0, gen_cell);
+
+        // Power off floor 0
+        lab.economy.set_powered(0, false);
+        assert!(!lab.economy.is_powered(0));
+
+        lab.observers.get_mut(&id).unwrap().cell = non_gen;
+        let (intent, trace) = lab.observer_intent(id);
+        assert_eq!(
+            trace.selected,
+            Some("seek generator to restore power"),
+            "Observer seeks generator when floor is unpowered"
+        );
+        let crate::sim::ObserverIntent::Step(step) = intent else {
+            panic!("Expected step toward generator, got {intent:?}");
+        };
+        assert_eq!(step, next_hop);
+
+        // Stand at generator
+        lab.observers.get_mut(&id).unwrap().cell = gen_cell;
+        let (intent_at_gen, trace_at_gen) = lab.observer_intent(id);
+        assert_eq!(intent_at_gen, crate::sim::ObserverIntent::ToggleGenerator);
+        assert_eq!(
+            trace_at_gen.selected,
+            Some("restore floor power at generator")
+        );
+
+        lab.apply_observer_intent(id, intent_at_gen);
+        assert!(
+            lab.economy.is_powered(0),
+            "Toggling generator restores floor power"
+        );
+    }
+
+    #[test]
+    fn rogue_architect_tree_prioritizes_disturbance_wave_release() {
+        let mut lab =
+            ArchitectLab::for_mode(ArchitectMode::QuickClimb).expect("quick climb solves");
+        lab.bot_architect = true;
+        let floor = 0;
+
+        // Set disturbance right at 90 (threshold is 100)
+        lab.economy.set_disturbance(floor, 90);
+        assert_eq!(lab.economy.wave_count(floor), 0);
+
+        // When architect plays a card, disturbance crosses 100 and wave releases
+        let (cmd, trace) = lab.architect_intent();
+        assert!(cmd.is_some(), "Architect has a playable command");
+        assert_eq!(
+            trace.selected,
+            Some("release disturbance wave"),
+            "Rogue architect prioritizes crossing disturbance threshold to release waves"
+        );
+
+        lab.submit(cmd.unwrap())
+            .expect("command submits successfully");
+        assert!(
+            lab.economy.wave_count(floor) >= 1,
+            "Wave count incremented after wave release play"
+        );
+        assert!(
+            lab.guardians
+                .values()
+                .any(|g| g.kind == GuardianKind::Minor),
+            "Minor Guardians spawned from wave release"
+        );
+    }
+
+    #[test]
+    fn rogue_architect_tree_contests_generator() {
+        let mut lab = ArchitectLab::for_mode(ArchitectMode::Pocket).expect("pocket solves");
+        lab.bot_architect = true;
+        let floor = 0;
+        let gen_cell = lab.economy.generators[&floor];
+
+        // Isolate so guardian cannot shorten route, and disturbance starts at 0
+        lab.guardians.clear();
+        lab.economy.set_disturbance(floor, 0);
+
+        // Put a door card in hand targeting adjacent to generator
+        lab.deck.hand.clear();
+        lab.deck.hand.push(crate::sim::Card {
+            id: crate::sim::CardId(999),
+            kind: crate::sim::CardKind::Door,
+            district: None,
+        });
+
+        let (cmd, trace) = lab.architect_intent();
+        if let Some(cmd) = cmd {
+            let crate::sim::ArchitectCommand::Play { target, .. } = cmd;
+            if observed_hex::travel_distance(target, gen_cell) <= 1 {
+                assert_eq!(trace.selected, Some("contest generator"));
+            }
+        }
+    }
+
+    #[test]
+    fn bot_observer_and_architect_soak_with_all_economy_features() {
+        let mut a = ArchitectLab::for_mode(ArchitectMode::QuickClimb).expect("quick climb solves");
+        let mut b = ArchitectLab::for_mode(ArchitectMode::QuickClimb).expect("quick climb solves");
+        a.bot_architect = true;
+        b.bot_architect = true;
+
+        for _ in 0..40 {
+            a.step_beat();
+            b.step_beat();
+        }
+
+        assert_eq!(a.world, b.world);
+        assert_eq!(a.observers, b.observers);
+        assert_eq!(a.guardians, b.guardians);
+        assert_eq!(a.economy, b.economy);
+        assert_eq!(a.command_log, b.command_log);
+        assert_eq!(a.traces, b.traces);
     }
 }

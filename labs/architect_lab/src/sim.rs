@@ -14,7 +14,7 @@ pub use stability::{LabEvent, LabEventKind, RETRACTION_TICKS};
 mod cards;
 pub use cards::{Card, CardId, CardKind, Deck, District, TileShape};
 mod behavior;
-pub use behavior::GuardianIntent;
+pub use behavior::{GuardianIntent, ObserverIntent};
 mod command;
 pub use command::{ArchitectCommand, CommandRefusal, DoorState, ThresholdKey};
 mod mode;
