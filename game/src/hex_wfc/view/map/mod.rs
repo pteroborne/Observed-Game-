@@ -21,7 +21,10 @@
 //! through the district palette the way the Legibility Contract requires.
 
 mod build;
+#[cfg(test)]
+mod build_tests;
 pub(in crate::hex_wfc::view) mod cell;
+mod overlay;
 
 use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
@@ -261,11 +264,7 @@ pub(crate) fn heading_label(yaw: f32) -> (&'static str, f32) {
 
 /// Every channel on screen gets a named line. Atmosphere never carries meaning
 /// alone, so the counts are here in words as well as in the geometry.
-fn legend_text(
-    census: &MapCensus,
-    focus: u8,
-    heading: Option<(&'static str, f32)>,
-) -> String {
+fn legend_text(census: &MapCensus, focus: u8, heading: Option<(&'static str, f32)>) -> String {
     let known = census.traversed + census.glimpsed + census.stale;
     let floors = census
         .floors
@@ -285,7 +284,7 @@ fn legend_text(
         census.rooms.iter().cloned().collect::<Vec<_>>().join(", ")
     };
     let heading_line = match heading {
-        Some((label, deg)) => format!("facing: {label} ({deg:.0}°)"),
+        Some((label, deg)) => format!("facing: {label} ({deg:.0} deg)"),
         None => "facing: unknown".to_string(),
     };
     format!(
@@ -400,7 +399,7 @@ mod tests {
             "purple = device/held",
             "amber = room",
             "orientation: N (up-left) E (up-right) S (down-right) W (down-left)",
-            "facing: NORTH (0°)",
+            "facing: NORTH (0 deg)",
         ] {
             assert!(text.contains(channel), "legend must document {channel}");
         }
