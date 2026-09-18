@@ -29,3 +29,8 @@ tick 55: Armed(Vec3(0.8944272, -0.44721365, 3.9096655e-8))
 tick 90: Plumbed(ActorId(1005), Vec3(0.8944272, -0.44721365, 3.9096655e-8))
 tick 229: Eliminated(ActorId(1005), Some(HexCoord { q: 0, r: 0, level: 0 }))
 final digest e6da9b80ea7368d2, removed 1, player Vec3(0.0, 1.4472222, 0.0)
+
+SELF-PLUMB / the Observer takes a wall for a floor
+tick 55: Armed(Vec3(0.503871, 0.0, 0.8637789))
+tick 90: SelfPlumbed
+final digest 5b933bb8f1ba02e5, removed 0, player Vec3(2.7945771, 5.6100235, 4.778796)
