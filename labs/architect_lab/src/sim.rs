@@ -23,6 +23,8 @@ use util::{
     Prng, command_key, face_between, face_toward, key_face_from, lateral_face, threshold_touches,
 };
 
+use crate::economy::EconomyState;
+
 pub const FIXED_HZ: u32 = 60;
 pub const ACTOR_BEAT_TICKS: u32 = FIXED_HZ;
 pub const ARCHITECT_COOLDOWN_TICKS: u32 = 300;
@@ -104,6 +106,7 @@ pub struct ArchitectLab {
     pub outcome: MatchOutcome,
     pub traces: BTreeMap<String, BehaviorTrace>,
     pub command_log: Vec<(u64, ArchitectCommand)>,
+    pub economy: EconomyState,
 }
 
 impl ArchitectLab {
@@ -179,6 +182,8 @@ impl ArchitectLab {
             },
         )]);
 
+        let economy = EconomyState::new(&world, &observers, seed);
+
         let mut lab = Self {
             mode,
             tick: 0,
@@ -204,6 +209,7 @@ impl ArchitectLab {
             outcome: MatchOutcome::Running,
             traces: BTreeMap::new(),
             command_log: Vec::new(),
+            economy,
         };
         lab.refresh_observation();
         // Damage a solved facility at separated lateral handoffs. These are
@@ -460,6 +466,7 @@ impl ArchitectLab {
             self.traces.insert(format!("Observer {}", id.0), trace);
             self.apply_observer_intent(id, intent);
         }
+        self.economy.tick_beat(&self.world, &self.observers);
         self.refresh_observation();
 
         let guardian_ids: Vec<_> = self.guardians.keys().copied().collect();

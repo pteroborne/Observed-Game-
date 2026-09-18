@@ -1,4 +1,5 @@
 //! One deterministic Rogue pressure simulation, with desktop and browser views.
+pub mod economy;
 pub mod sim;
 
 #[cfg(feature = "desktop")]
