@@ -1745,13 +1745,12 @@ mod tests {
         let mut lab = ArchitectLab::for_mode(ArchitectMode::Pocket).expect("pocket solves");
         lab.bot_architect = true;
         let floor = 0;
-        let gen_cell = lab.economy.generators[&floor];
 
         // Isolate so guardian cannot shorten route, and disturbance starts at 0
         lab.guardians.clear();
         lab.economy.set_disturbance(floor, 0);
 
-        // Put a door card in hand targeting adjacent to generator
+        // Put a door card in hand
         lab.deck.hand.clear();
         lab.deck.hand.push(crate::sim::Card {
             id: crate::sim::CardId(999),
@@ -1759,12 +1758,29 @@ mod tests {
             district: None,
         });
 
+        // Find a candidate door target from legal commands and place generator at/adjacent to it
+        let candidate_target = lab
+            .legal_commands()
+            .into_iter()
+            .find_map(|cmd| match cmd {
+                crate::sim::ArchitectCommand::Play { target, .. } => Some(target),
+                _ => None,
+            })
+            .expect("must have at least one legal door placement");
+
+        let gen_cell = candidate_target;
+        lab.economy.generators.insert(floor, gen_cell);
+
         let (cmd, trace) = lab.architect_intent();
-        if let Some(crate::sim::ArchitectCommand::Play { target, .. }) = cmd
-            && observed_hex::travel_distance(target, gen_cell) <= 1
-        {
-            assert_eq!(trace.selected, Some("contest generator"));
-        }
+        let cmd = cmd.expect("architect produces a command contesting generator");
+        let crate::sim::ArchitectCommand::Play { target, .. } = cmd else {
+            panic!("expected Play command, got {cmd:?}");
+        };
+        assert!(
+            observed_hex::travel_distance(target, gen_cell) <= 1,
+            "Target {target:?} must be adjacent to or at generator {gen_cell:?}"
+        );
+        assert_eq!(trace.selected, Some("contest generator"));
     }
 
     #[test]

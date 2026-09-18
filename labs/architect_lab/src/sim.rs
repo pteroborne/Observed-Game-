@@ -95,6 +95,7 @@ pub struct ArchitectLab {
     pub observed: BTreeSet<HexCoord>,
     pub anchored: BTreeSet<HexCoord>,
     pub prison_core: BTreeSet<HexCoord>,
+    pub prison: crate::prison::PrisonState,
     pub doors: BTreeMap<ThresholdKey, DoorState>,
     pub contradictions: BTreeSet<HexCoord>,
     pub retracted: BTreeSet<HexCoord>,
@@ -136,26 +137,10 @@ impl ArchitectLab {
         let observer_a = route[route.len().saturating_mul(2) / 3];
         let observer_b = *route.last().expect("route contains its exit");
 
-        let mut prison_core = BTreeSet::new();
-        for level in 0..config.levels {
-            let center = HexCoord {
-                q: config.cols / 2,
-                r: config.rows / 2,
-                level,
-            };
-            let nearest = world
-                .placements
-                .iter()
-                .filter(|(cell, placement)| {
-                    cell.level == level && placement.space != HexSpace::Void
-                })
-                .min_by_key(|(cell, _)| travel_distance(**cell, center))
-                .map(|(&cell, _)| cell)
-                .expect("every solved floor has solid space");
-            prison_core.insert(nearest);
-        }
+        let prison = crate::prison::PrisonState::new(config, &world);
+        let prison_core = prison.cells.clone();
 
-        let known = world.placements.keys().copied().collect();
+        let mut known: BTreeSet<HexCoord> = world.placements.keys().copied().collect();
         let mut observers = BTreeMap::new();
         observers.insert(
             ObserverId(0),
@@ -188,6 +173,8 @@ impl ArchitectLab {
         )]);
 
         let economy = EconomyState::new(&world, &observers, seed);
+        prison.ensure_placements(&mut world);
+        known.extend(&prison_core);
 
         let mut lab = Self {
             mode,
@@ -200,6 +187,7 @@ impl ArchitectLab {
             observed: BTreeSet::new(),
             anchored: BTreeSet::new(),
             prison_core,
+            prison,
             doors: BTreeMap::new(),
             contradictions: BTreeSet::new(),
             retracted: BTreeSet::new(),

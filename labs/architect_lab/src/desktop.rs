@@ -140,7 +140,7 @@ impl LabSession {
             .min(self.sim.deck.hand.len().saturating_sub(1));
     }
 
-    fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         let bot_architect = self.sim.bot_architect;
         let mode = self.sim.mode;
         self.sim = ArchitectLab::for_mode(mode).expect("the pinned architect lab mode solves");

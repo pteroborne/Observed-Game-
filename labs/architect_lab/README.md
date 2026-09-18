@@ -86,6 +86,15 @@ landscape uses a scrollable command rail with sticky play controls.
   markers show detected Observers and explicitly marked stale sightings, never
   undiscovered current positions. Previews describe immediate topology, not promised
   future captures.
+- The prison core is a vertical, non-collapsing multi-level maze at the horizontal
+  center of the facility, immune to retraction and floor closure. Guardian capture
+  deposits an Observer at the lowest holding cell (level 0).
+- Jailed Observers remain embodied and loyal (no roster removal, no faction change).
+  A jailed Observer navigates the difficult internal maze route via the bot tree's
+  top-priority "escape jail" behavior, transitioning back to `Active` upon stepping
+  across the threshold into the facility.
+- All-jailed simultaneously yields immediate Rogue victory; while any Observer is
+  active, a jailed teammate can complete their multi-step self-escape traversal.
 - Unsafe falls and true-void corruption: Observers whose supporting tile is retracted
   fall downward through the vertical hex stack. If surviving structure exists on any
   lower level, the Observer lands safely. Only a fall through the entire surviving
@@ -137,7 +146,7 @@ renderer-free Bevy selection/reset lifecycle checks.
 ## Scope and human gate
 
 This remains a cell-level Rogue lab. First-person movement, authored 3D hull
-projection, loyal construction, continuous physical ragdoll falls, prison escape/rescue,
+projection, loyal construction, continuous physical ragdoll falls, teammate rescue,
 and production LAN integration belong to subsequent proofs. The native diagnostic
 view can expose full actor state; the browser filters undetected prey.
 
