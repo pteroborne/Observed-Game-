@@ -549,9 +549,10 @@ impl ArchitectLab {
             .filter(|g| g.kind == GuardianKind::Major && g.cell.level == target_fl)
             .count();
         let detected = self.detected_observers();
-        let has_active_detected = self.observers.values().any(|o| {
-            o.state == ObserverState::Active && detected.contains(&o.id)
-        });
+        let has_active_detected = self
+            .observers
+            .values()
+            .any(|o| o.state == ObserverState::Active && detected.contains(&o.id));
         // Hand cannot answer the board:
         // 1. Hand has no legal card plays (dead hand), OR
         // 2. Detected active Observers exist, but existing Guardians have no path to them
