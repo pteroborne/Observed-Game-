@@ -383,6 +383,14 @@ leaves it alive on a loading screen. On a handheld a player might describe
 either as "it died", so it is not excluded — but this is filed as a real defect
 in its own right, not as the crash.
 
+**Fixed on branch `fix/lan-server-liveness`**:
+- Added inbound `last_server_packet: Instant` to `LanClient` (set at `connect` and updated in `poll()` strictly on decoded packets from `self.server`).
+- Exposed `LanClient::server_silent_for(&self) -> Duration` without leaking the timestamp.
+- Added `HexLoadingError::LanServerSilent` with player-facing Display text matching house style.
+- Added 10-second `LAN_SERVER_SILENCE_TIMEOUT` watchdog in `poll_lan_barrier` with architectural and timing justification.
+- Verified with unit tests in `observed_net` (fresh connect near-zero silence, reset on server packet, no reset on third-party packet) and `observed_game` (barrier timeout trigger before/after threshold without sleeping).
+
+
 ### 39. A desync resyncs by solving 5600 cells on the main thread, and discards the error
 
 **Found 2026-08-10 by Arc T packet T-1. Strongest untested lead for #29 —

@@ -40,6 +40,31 @@ use super::{HexLoadingPhase, HexLoadingState};
 /// its whole duration, so nothing but an actual loss reaches this.
 pub(super) const WORKER_WATCHDOG_GRACE: Duration = Duration::from_secs(5);
 
+/// How long `poll_lan_barrier` will wait for an inbound packet from the server
+/// before declaring the server silent and failing the load.
+///
+/// Refreshed continuously during loading because `screens::lan::poll_lan` runs
+/// unconditionally in `Update` regardless of `GameState`, pumping the transport
+/// socket while `poll_lan_barrier` observes it.
+///
+/// When triggered, `HexLaunchRequest` is intentionally preserved in the world
+/// (unlike `LanLaunchWithdrawn` which auto-navigates to `GameState::Lobby`).
+/// Preserving the request keeps its `LaunchContext::Lan` visible to the loading
+/// screen, allowing `screens::loading::activate` to route the player's Cancel
+/// action back to `GameState::LanBrowser` and call `lan.leave()`.
+///
+/// Chosen generously at 10 seconds:
+/// 1. The client sends heartbeats every 500 ms and the server broadcasts lobby/launch
+///    progress every 250 ms (15 ticks at 60 Hz). 10 seconds allows for 20 dropped
+///    client heartbeats and 40 dropped server packets.
+/// 2. The server disconnects silent clients after 2 seconds (`CLIENT_TIMEOUT`), so
+///    10 seconds is 5x the server's own timeout window.
+/// 3. It comfortably accommodates multi-second transient network hiccups (e.g. Wi-Fi
+///    roaming or packet loss bursts) and potential main-thread stalls on a listen host,
+///    preventing recoverable stalls from becoming premature failure dead-ends, while
+///    still rescuing the player from hanging indefinitely if the host crashed or slept.
+pub(super) const LAN_SERVER_SILENCE_TIMEOUT: Duration = Duration::from_secs(10);
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum HexLoadingError {
     MissingRequest,
@@ -54,6 +79,7 @@ pub(crate) enum HexLoadingError {
     LanLaunchUnavailable,
     LanLaunchWithdrawn,
     LanTransport(String),
+    LanServerSilent,
 }
 
 impl std::fmt::Display for HexLoadingError {
@@ -74,6 +100,9 @@ impl std::fmt::Display for HexLoadingError {
             Self::LanLaunchWithdrawn => formatter
                 .write_str("The server returned to the lobby while players were preparing."),
             Self::LanTransport(error) => write!(formatter, "send launch readiness: {error}"),
+            Self::LanServerSilent => formatter.write_str(
+                "The server stopped responding while waiting for players. Return to Play and try again.",
+            ),
         }
     }
 }

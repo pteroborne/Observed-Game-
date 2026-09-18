@@ -894,6 +894,7 @@ pub struct LanClient {
     frames: BTreeMap<u64, WireFrame>,
     next_frame: u64,
     last_heartbeat: Instant,
+    last_server_packet: Instant,
 }
 
 impl LanClient {
@@ -926,6 +927,7 @@ impl LanClient {
             frames: BTreeMap::new(),
             next_frame: 1,
             last_heartbeat: Instant::now(),
+            last_server_packet: Instant::now(),
         };
         client.send(&LanPacket::Hello {
             account,
@@ -943,6 +945,11 @@ impl LanClient {
             match self.socket.recv_from(&mut buffer) {
                 Ok((len, address)) if address == self.server => {
                     if let Ok(packet) = LanPacket::decode(&buffer[..len]) {
+                        // Invariant: only packets genuinely from self.server refresh
+                        // this liveness signal. Accepting arbitrary inbound traffic
+                        // (such as LAN discovery probes from other hosts) would cause
+                        // the client to falsely believe its server is alive.
+                        self.last_server_packet = Instant::now();
                         self.receive(packet);
                     }
                 }
@@ -1150,6 +1157,26 @@ impl LanClient {
             && self
                 .launch
                 .is_some_and(|launch| launch.match_number == match_number)
+    }
+
+    /// How long the client has gone without receiving an accepted packet from
+    /// the connected server.
+    ///
+    /// Initialized at connect time and refreshed only when a valid [`LanPacket`]
+    /// arrives from [`self.server`]. Inbound traffic from any other network address
+    /// does not count, preventing ambient LAN broadcast traffic from masking a
+    /// silent or dead server.
+    #[must_use]
+    pub fn server_silent_for(&self) -> Duration {
+        self.last_server_packet.elapsed()
+    }
+
+    /// Backdate the server liveness timestamp for tests without sleeping.
+    #[doc(hidden)]
+    pub fn backdate_server_silence_for_test(&mut self, silence: Duration) {
+        self.last_server_packet = Instant::now()
+            .checked_sub(silence)
+            .unwrap_or(self.last_server_packet);
     }
 
     pub fn set_ready(&self, ready: bool) -> io::Result<()> {
@@ -1702,5 +1729,56 @@ mod tests {
             Some(20)
         );
         assert!(!client.launch_has_started(4));
+    }
+
+    #[test]
+    fn freshly_connected_client_reports_near_zero_silence() {
+        let client = test_client();
+        assert!(
+            client.server_silent_for() < Duration::from_millis(500),
+            "freshly connected client must report near-zero silence"
+        );
+    }
+
+    #[test]
+    fn server_packet_resets_silence_while_unrelated_address_does_not() {
+        let server_socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind server socket");
+        let server_addr = server_socket.local_addr().expect("server address");
+
+        let mut client =
+            LanClient::connect(server_addr, 7, None, None, [9; 32]).expect("loopback client binds");
+        let client_addr = client.socket.local_addr().expect("client address");
+
+        // Backdate silence so we can verify whether inbound packets reset it.
+        client.backdate_server_silence_for_test(Duration::from_secs(5));
+        assert!(client.server_silent_for() >= Duration::from_secs(5));
+
+        // 1. Packet from a different address (e.g. ambient LAN discovery probe).
+        let third_party = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind other socket");
+        let probe = LanPacket::DiscoveryProbe.encode().expect("probe encodes");
+        third_party
+            .send_to(&probe, client_addr)
+            .expect("send from third party");
+
+        client.poll();
+
+        // Invariant: Packets from non-server addresses must NOT reset server silence.
+        assert!(
+            client.server_silent_for() >= Duration::from_secs(5),
+            "packets from non-server addresses must not reset server silence signal"
+        );
+
+        // 2. Packet genuinely from the server address.
+        server_socket
+            .send_to(&probe, client_addr)
+            .expect("send from server");
+
+        client.poll();
+
+        // Server silence must be reset upon accepting a valid packet from self.server.
+        assert!(
+            client.server_silent_for() < Duration::from_millis(500),
+            "accepted packet from server must reset server silence"
+        );
     }
 }

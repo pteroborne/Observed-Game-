@@ -289,6 +289,7 @@ fn every_loading_error_says_something() {
         HexLoadingError::LanLaunchUnavailable,
         HexLoadingError::LanLaunchWithdrawn,
         HexLoadingError::LanTransport("socket closed".into()),
+        HexLoadingError::LanServerSilent,
     ] {
         assert!(
             !error.to_string().trim().is_empty(),
@@ -376,4 +377,103 @@ fn locally_prepared_lan_launch_waits_for_authoritative_start() {
 
     state.ready();
     assert_eq!(state.phase, HexLoadingPhase::Ready);
+}
+
+#[test]
+fn lan_barrier_surfaces_error_only_after_silence_window_exceeded() {
+    use std::net::{Ipv4Addr, SocketAddr};
+
+    let mut sequence = HexLaunchRequestSequence::default();
+    let mut request = request(&mut sequence);
+    request.networked = true;
+    request.spec.seed_policy = HexSeedPolicy::Exact {
+        expected_content_hash: [4; 32],
+    };
+
+    let match_number = 9;
+    let mut state = HexLoadingState::default();
+    state.begin(request.request_id, 1);
+    assert_eq!(
+        state.accept_completion(request.request_id, Ok(())),
+        CompletionAcceptance::Ready
+    );
+    state.wait_for_players(match_number);
+
+    let server_addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 47_625));
+    let mut client = observed_net::lan::LanClient::connect(server_addr, 7, None, None, [4; 32])
+        .expect("loopback UDP client binds");
+    client.launch = Some(observed_net::lan::LanLaunch {
+        seed: request.spec.requested_seed,
+        match_number,
+        config: request.spec.config,
+        simulation_content_hash: [4; 32],
+    });
+
+    let mut lan = crate::lan::LanRuntime::new();
+    lan.client = Some(client);
+
+    let mut app = App::new();
+    app.add_plugins(bevy::state::app::StatesPlugin);
+    app.init_state::<GameState>();
+    app.insert_resource(request);
+    app.insert_resource(lan);
+    app.insert_resource(state);
+    app.insert_resource(PreparedHexLaunchSlot::default());
+    app.add_systems(Update, poll_loading);
+
+    // 1. Before timeout window: silence is within threshold, barrier does NOT fail.
+    app.world_mut()
+        .resource_mut::<crate::lan::LanRuntime>()
+        .client
+        .as_mut()
+        .expect("client")
+        .backdate_server_silence_for_test(
+            super::diagnosis::LAN_SERVER_SILENCE_TIMEOUT - Duration::from_millis(50),
+        );
+
+    app.update();
+
+    let state = app.world().resource::<HexLoadingState>();
+    assert_eq!(
+        state.phase,
+        HexLoadingPhase::WaitingForPlayers,
+        "barrier must not fail before the server silence window expires"
+    );
+    assert_eq!(state.error, None);
+    assert!(
+        app.world()
+            .get_resource::<PreparedHexLaunchSlot>()
+            .is_some(),
+        "prepared launch slot must remain while still waiting"
+    );
+
+    // 2. Once timeout window is exceeded: barrier fails and reports LanServerSilent.
+    app.world_mut()
+        .resource_mut::<crate::lan::LanRuntime>()
+        .client
+        .as_mut()
+        .expect("client")
+        .backdate_server_silence_for_test(
+            super::diagnosis::LAN_SERVER_SILENCE_TIMEOUT + Duration::from_millis(50),
+        );
+
+    app.update();
+
+    let state = app.world().resource::<HexLoadingState>();
+    assert_eq!(
+        state.phase,
+        HexLoadingPhase::Failed,
+        "barrier must fail once server silence window is exceeded"
+    );
+    assert_eq!(
+        state.error,
+        Some(HexLoadingError::LanServerSilent),
+        "barrier must surface LanServerSilent error"
+    );
+    assert!(
+        app.world()
+            .get_resource::<PreparedHexLaunchSlot>()
+            .is_none(),
+        "prepared launch slot must be cleaned up on barrier failure"
+    );
 }
