@@ -34,6 +34,12 @@ impl ArchitectLab {
         if trace.test("held in prison", observer.state == ObserverState::Jailed) {
             return (ObserverIntent::Hold, trace);
         }
+        if trace.test(
+            "corrupted into Rogue faction",
+            observer.state == ObserverState::Corrupted,
+        ) {
+            return (ObserverIntent::Hold, trace);
+        }
 
         // Shove adjacent Minor Guardian if charged
         let shove_target = if self.economy.charge(id) >= SHOVE_COST {
@@ -167,6 +173,9 @@ impl ArchitectLab {
     }
 
     pub(crate) fn apply_observer_intent(&mut self, id: ObserverId, intent: ObserverIntent) {
+        if self.observers.get(&id).map(|o| o.state) == Some(ObserverState::Corrupted) {
+            return;
+        }
         match intent {
             ObserverIntent::HoldGuardian => {
                 let observer = self.observers.get_mut(&id).expect("known Observer");

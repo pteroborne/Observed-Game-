@@ -512,6 +512,9 @@ fn draw_actors(
     let observer_color = observed_style::team(1).base_color;
     let pupil_color = observed_style::schematic_screen();
     for observer in session.sim.observers.values() {
+        if observer.state == ObserverState::Corrupted {
+            continue;
+        }
         let mut at = board_position(session.sim.world.config, observer.cell);
         if observer.state == ObserverState::Jailed {
             at += Vec2::new(f32::from(observer.id.0) * 14.0 - 7.0, 0.0);

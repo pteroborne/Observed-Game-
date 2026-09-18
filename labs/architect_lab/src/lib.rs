@@ -1,5 +1,6 @@
 //! One deterministic Rogue pressure simulation, with desktop and browser views.
 pub mod economy;
+pub mod falls;
 pub mod requisition;
 pub mod sim;
 

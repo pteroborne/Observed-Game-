@@ -15,6 +15,8 @@ pub enum LabEventKind {
     Captured,
     FloorClosed,
     Requisition,
+    Fell,
+    Corrupted,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

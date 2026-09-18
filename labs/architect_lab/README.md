@@ -86,6 +86,13 @@ landscape uses a scrollable command rail with sticky play controls.
   markers show detected Observers and explicitly marked stale sightings, never
   undiscovered current positions. Previews describe immediate topology, not promised
   future captures.
+- Unsafe falls and true-void corruption: Observers whose supporting tile is retracted
+  fall downward through the vertical hex stack. If surviving structure exists on any
+  lower level, the Observer lands safely. Only a fall through the entire surviving
+  stack into true void corrupts the Observer into the Rogue AI faction. Corruption is
+  immediate, irreversible, and public (logged to the event stream and exposed in web
+  snapshots), removing the former Observer from first-person play. When every loyal
+  Observer is eliminated (all are jailed or corrupted), Rogue achieves victory.
 
 The Pocket opening stays unresolved without a card. The deterministic bot repairs
 it and wins through the ordinary command path. Larger scenarios exercise multiple
@@ -130,7 +137,7 @@ renderer-free Bevy selection/reset lifecycle checks.
 ## Scope and human gate
 
 This remains a cell-level Rogue lab. First-person movement, authored 3D hull
-projection, loyal construction, physical falls, prison escape/rescue, corruption,
+projection, loyal construction, continuous physical ragdoll falls, prison escape/rescue,
 and production LAN integration belong to subsequent proofs. The native diagnostic
 view can expose full actor state; the browser filters undetected prey.
 

@@ -41,6 +41,7 @@ pub struct GuardianId(pub u16);
 pub enum ObserverState {
     Active,
     Jailed,
+    Corrupted,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -49,7 +50,7 @@ pub struct Observer {
     pub cell: HexCoord,
     pub facing: HexFace,
     pub state: ObserverState,
-    hold_beats: u8,
+    pub(crate) hold_beats: u8,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -470,6 +471,10 @@ impl ArchitectLab {
         self.tick += 1;
         self.cooldown = self.cooldown.saturating_sub(1);
         self.advance_retraction();
+        self.resolve_falls();
+        if self.outcome != MatchOutcome::Running {
+            return;
+        }
         if !self.tick.is_multiple_of(u64::from(ACTOR_BEAT_TICKS)) {
             return;
         }
@@ -498,13 +503,18 @@ impl ArchitectLab {
             self.apply_guardian_intent(id, intent);
         }
         self.refresh_observation();
-        if self
-            .observers
-            .values()
-            .all(|observer| observer.state == ObserverState::Jailed)
+        if !self.observers.is_empty()
+            && self.observers.values().all(|observer| {
+                observer.state == ObserverState::Jailed
+                    || observer.state == ObserverState::Corrupted
+            })
         {
             self.outcome = MatchOutcome::RogueVictory;
         }
+    }
+
+    pub fn resolve_falls(&mut self) -> Vec<crate::falls::FallEvent> {
+        crate::falls::resolve_falls(self)
     }
 
     pub fn step_beat(&mut self) {

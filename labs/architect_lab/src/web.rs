@@ -159,11 +159,18 @@ impl RogueGame {
             .observers
             .values()
             .filter(|observer| {
-                observer.state == ObserverState::Jailed || detected.contains(&observer.id)
+                observer.state == ObserverState::Jailed
+                    || observer.state == ObserverState::Corrupted
+                    || detected.contains(&observer.id)
             })
             .map(|observer| {
-                json!({"id": observer.id.0, "cell": coord(observer.cell),
-            "facing": observer.facing.index(), "jailed": observer.state == ObserverState::Jailed})
+                json!({
+                    "id": observer.id.0,
+                    "cell": coord(observer.cell),
+                    "facing": observer.facing.index(),
+                    "jailed": observer.state == ObserverState::Jailed,
+                    "corrupted": observer.state == ObserverState::Corrupted,
+                })
             })
             .collect();
         let guardians: Vec<_> = sim.guardians.values().map(|guardian| json!({"id": guardian.id.0,
@@ -212,6 +219,7 @@ impl RogueGame {
             "cols": sim.world.config.cols, "rows": sim.world.config.rows,
             "cooldown": sim.cooldown, "outcome": format!("{:?}", sim.outcome),
             "caught": sim.observers.values().filter(|observer| observer.state == ObserverState::Jailed).count(),
+            "corrupted": sim.observers.values().filter(|observer| observer.state == ObserverState::Corrupted).count(),
             "total": sim.observers.len(), "detected": detected.len(), "plays": sim.command_log.len(),
             "collapse_in": sim.next_retraction_tick.map(|tick| tick.saturating_sub(sim.tick)),
             "cells": cells, "observers": observers, "guardians": guardians, "cards": cards,
