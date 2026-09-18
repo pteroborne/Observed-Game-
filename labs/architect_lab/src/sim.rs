@@ -104,6 +104,7 @@ pub struct ArchitectLab {
     pub outcome: MatchOutcome,
     pub traces: BTreeMap<String, BehaviorTrace>,
     pub command_log: Vec<(u64, ArchitectCommand)>,
+    pub requisition: crate::requisition::RequisitionState,
 }
 
 impl ArchitectLab {
@@ -204,6 +205,7 @@ impl ArchitectLab {
             outcome: MatchOutcome::Running,
             traces: BTreeMap::new(),
             command_log: Vec::new(),
+            requisition: crate::requisition::RequisitionState::new(seed),
         };
         lab.refresh_observation();
         // Damage a solved facility at separated lateral handoffs. These are
