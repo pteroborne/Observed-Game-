@@ -7,8 +7,8 @@ use observed_facility::hex_wfc::{HexSpace, HexWfcWorld};
 use observed_hex::{HexCoord, HexFace, ports_compatible, travel_distance};
 
 use super::sim::{
-    ArchitectLab, DoorState, GuardianId, LabEventKind, Observer, ObserverId, ObserverState,
-    ThresholdKey,
+    ArchitectLab, DoorState, Guardian, GuardianId, LabEventKind, Observer, ObserverId,
+    ObserverState, ThresholdKey,
 };
 
 /// Maximum kinetic tool charge capacity per Observer.
@@ -19,6 +19,30 @@ pub const SHOVE_COST: u32 = 25;
 
 /// Charge restored per actor beat at a powered recharge station.
 pub const RECHARGE_PER_BEAT: u32 = 25;
+
+/// Disturbance threshold required to release a wave of minor Guardians.
+pub const DISTURBANCE_THRESHOLD: u32 = 100;
+
+/// Disturbance added by an accepted, locally consistent loyal placement.
+pub const DISTURBANCE_CONSISTENT_LOYAL: u32 = 5;
+
+/// Disturbance added by an accepted, locally consistent Rogue placement.
+pub const DISTURBANCE_CONSISTENT_ROGUE: u32 = 10;
+
+/// Disturbance added by a loyal placement that introduces a contradiction.
+pub const DISTURBANCE_CONTRADICTION_LOYAL: u32 = 35;
+
+/// Disturbance added by a Rogue placement that introduces a contradiction.
+pub const DISTURBANCE_CONTRADICTION_ROGUE: u32 = 50;
+
+/// Disturbance added each time an implicated tile commits retraction to void.
+pub const DISTURBANCE_RETRACTION_COMMITTED: u32 = 25;
+
+/// Disturbance decay per actor beat.
+pub const DISTURBANCE_DECAY_PER_BEAT: u32 = 2;
+
+/// Disturbance decay floor per floor level (level * DECAY_FLOOR_PER_LEVEL).
+pub const DISTURBANCE_DECAY_FLOOR_PER_LEVEL: u32 = 15;
 
 /// State for the cell-level economy on the facility.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -33,6 +57,12 @@ pub struct EconomyState {
     pub pads: BTreeSet<HexCoord>,
     /// Power state per floor level: `true` = powered, `false` = unpowered.
     pub power: BTreeMap<u8, bool>,
+    /// Disturbance meter per floor level.
+    pub disturbance: BTreeMap<u8, u32>,
+    /// Number of waves released per floor level.
+    pub wave_counts: BTreeMap<u8, u32>,
+    /// Counter for allocating unique Minor Guardian IDs deterministically.
+    pub next_minor_guardian_id: u16,
 }
 
 impl EconomyState {
@@ -52,9 +82,13 @@ impl EconomyState {
         let mut generators = BTreeMap::new();
         let mut pads = BTreeSet::new();
         let mut power = BTreeMap::new();
+        let mut disturbance = BTreeMap::new();
+        let mut wave_counts = BTreeMap::new();
 
         for level in 0..world.config.levels {
             power.insert(level, true);
+            disturbance.insert(level, (level as u32) * DISTURBANCE_DECAY_FLOOR_PER_LEVEL);
+            wave_counts.insert(level, 0);
 
             let mut candidates: Vec<HexCoord> = world
                 .placements
@@ -85,6 +119,9 @@ impl EconomyState {
             generators,
             pads,
             power,
+            disturbance,
+            wave_counts,
+            next_minor_guardian_id: 1000,
         }
     }
 
@@ -159,12 +196,79 @@ impl EconomyState {
         self.generators.get(&cell.level) == Some(&cell)
     }
 
-    /// Process per-beat recharge: only active Observers at a powered station regain charge.
+    /// Query the disturbance meter on a given floor level.
+    #[must_use]
+    pub fn disturbance(&self, level: u8) -> u32 {
+        self.disturbance.get(&level).copied().unwrap_or(0)
+    }
+
+    /// Set disturbance on a floor level directly.
+    pub fn set_disturbance(&mut self, level: u8, amount: u32) {
+        self.disturbance.insert(level, amount);
+    }
+
+    /// Add disturbance to a floor level.
+    pub fn add_disturbance(&mut self, level: u8, amount: u32) {
+        *self.disturbance.entry(level).or_default() += amount;
+    }
+
+    /// Query the number of waves released on a floor level.
+    #[must_use]
+    pub fn wave_count(&self, level: u8) -> u32 {
+        self.wave_counts.get(&level).copied().unwrap_or(0)
+    }
+
+    /// Increment and return the new wave count on a floor level.
+    pub fn increment_wave_count(&mut self, level: u8) -> u32 {
+        let count = self.wave_counts.entry(level).or_default();
+        *count += 1;
+        *count
+    }
+
+    /// Consume one disturbance threshold unit from a floor level.
+    pub fn consume_disturbance_threshold(&mut self, level: u8) {
+        if let Some(dist) = self.disturbance.get_mut(&level) {
+            *dist = dist.saturating_sub(DISTURBANCE_THRESHOLD);
+        }
+    }
+
+    /// Allocate the next unique Minor Guardian ID deterministically.
+    pub fn alloc_minor_id(&mut self) -> u16 {
+        let id = self.next_minor_guardian_id;
+        self.next_minor_guardian_id = self.next_minor_guardian_id.wrapping_add(1);
+        id
+    }
+
+    /// Record disturbance contribution from a played card.
+    pub fn on_card_played(&mut self, level: u8, is_contradiction: bool, is_rogue: bool) {
+        let amount = match (is_contradiction, is_rogue) {
+            (true, true) => DISTURBANCE_CONTRADICTION_ROGUE,
+            (true, false) => DISTURBANCE_CONTRADICTION_LOYAL,
+            (false, true) => DISTURBANCE_CONSISTENT_ROGUE,
+            (false, false) => DISTURBANCE_CONSISTENT_LOYAL,
+        };
+        self.add_disturbance(level, amount);
+    }
+
+    /// Record disturbance contribution from a committed tile retraction.
+    pub fn on_retraction_committed(&mut self, level: u8) {
+        self.add_disturbance(level, DISTURBANCE_RETRACTION_COMMITTED);
+    }
+
+    /// Process per-beat recharge and disturbance decay down to height floors.
     pub fn tick_beat(&mut self, _world: &HexWfcWorld, observers: &BTreeMap<ObserverId, Observer>) {
         for (id, observer) in observers {
             if observer.state == ObserverState::Active && self.is_at_powered_station(observer.cell)
             {
                 self.recharge_observer(*id, RECHARGE_PER_BEAT);
+            }
+        }
+        for (level, dist) in &mut self.disturbance {
+            let floor_min = (*level as u32) * DISTURBANCE_DECAY_FLOOR_PER_LEVEL;
+            if *dist > floor_min {
+                *dist = (*dist)
+                    .saturating_sub(DISTURBANCE_DECAY_PER_BEAT)
+                    .max(floor_min);
             }
         }
     }
@@ -399,6 +503,84 @@ impl ArchitectLab {
         let new_state = self.economy.toggle_power(observer.cell.level);
         self.refresh_observation();
         Ok(new_state)
+    }
+
+    /// Resolve any pending disturbance waves on a floor level.
+    pub fn resolve_disturbance_waves(&mut self, level: u8) -> Vec<GuardianId> {
+        if self.collapsed_floors.contains(&level) {
+            return Vec::new();
+        }
+        let mut spawned = Vec::new();
+        while self.economy.disturbance(level) >= DISTURBANCE_THRESHOLD {
+            self.economy.consume_disturbance_threshold(level);
+            let wave_num = self.economy.increment_wave_count(level);
+            let wave_size = 1 + (level as usize);
+
+            let mut candidates: Vec<HexCoord> = self
+                .world
+                .placements
+                .iter()
+                .filter(|(coord, placement)| {
+                    coord.level == level
+                        && placement.space != HexSpace::Void
+                        && !self.prison_core.contains(coord)
+                        && !self.guardians.values().any(|g| g.cell == **coord)
+                })
+                .map(|(coord, _)| *coord)
+                .collect();
+            candidates.sort();
+
+            if candidates.is_empty() {
+                candidates = self
+                    .world
+                    .placements
+                    .iter()
+                    .filter(|(coord, placement)| {
+                        coord.level == level
+                            && placement.space != HexSpace::Void
+                            && !self.prison_core.contains(coord)
+                    })
+                    .map(|(coord, _)| *coord)
+                    .collect();
+                candidates.sort();
+            }
+
+            if candidates.is_empty() {
+                break;
+            }
+
+            for i in 0..wave_size {
+                let idx =
+                    ((wave_num as usize).wrapping_mul(17) + i.wrapping_mul(7)) % candidates.len();
+                let spawn_cell = candidates[idx];
+                let minor_id = GuardianId(self.economy.alloc_minor_id());
+                self.guardians.insert(
+                    minor_id,
+                    Guardian {
+                        id: minor_id,
+                        cell: spawn_cell,
+                        last_detection: None,
+                        kind: GuardianKind::Minor,
+                    },
+                );
+                self.record_event(
+                    LabEventKind::Warning,
+                    Some(spawn_cell),
+                    "Disturbance threshold crossed: minor Guardian wave released.",
+                );
+                spawned.push(minor_id);
+            }
+        }
+        if !spawned.is_empty() {
+            self.refresh_observation();
+        }
+        spawned
+    }
+
+    /// Add disturbance to a floor level and resolve any resulting waves.
+    pub fn add_disturbance(&mut self, level: u8, amount: u32) -> Vec<GuardianId> {
+        self.economy.add_disturbance(level, amount);
+        self.resolve_disturbance_waves(level)
     }
 }
 
@@ -1226,5 +1408,167 @@ mod tests {
         let toggled_again = lab.toggle_generator(obs_id).expect("toggle succeeds");
         assert!(toggled_again, "Toggled back on");
         assert!(lab.economy.is_powered(floor), "Floor is re-powered");
+    }
+
+    #[test]
+    fn disturbance_rises_with_uneven_contributions_dominated_by_contradictions_and_retractions() {
+        let mut lab = ArchitectLab::for_mode(ArchitectMode::Pocket).expect("pocket solves");
+        let floor = 0;
+        assert_eq!(lab.economy.disturbance(floor), 0);
+
+        // 1. Consistent loyal play: +5
+        lab.economy.on_card_played(floor, false, false);
+        assert_eq!(lab.economy.disturbance(floor), DISTURBANCE_CONSISTENT_LOYAL);
+
+        // 2. Consistent rogue play: +10
+        lab.economy.on_card_played(floor, false, true);
+        assert_eq!(
+            lab.economy.disturbance(floor),
+            DISTURBANCE_CONSISTENT_LOYAL + DISTURBANCE_CONSISTENT_ROGUE
+        );
+
+        // 3. Contradiction loyal play: +35 (sharp spike)
+        let before_contra = lab.economy.disturbance(floor);
+        lab.economy.on_card_played(floor, true, false);
+        assert_eq!(
+            lab.economy.disturbance(floor) - before_contra,
+            DISTURBANCE_CONTRADICTION_LOYAL
+        );
+
+        // 4. Contradiction rogue play: +50 (heaviest play spike)
+        let before_rogue = lab.economy.disturbance(floor);
+        lab.economy.on_card_played(floor, true, true);
+        assert_eq!(
+            lab.economy.disturbance(floor) - before_rogue,
+            DISTURBANCE_CONTRADICTION_ROGUE
+        );
+
+        // 5. Committed retraction: +25 (sharp spike)
+        let before_retract = lab.economy.disturbance(floor);
+        lab.economy.on_retraction_committed(floor);
+        assert_eq!(
+            lab.economy.disturbance(floor) - before_retract,
+            DISTURBANCE_RETRACTION_COMMITTED
+        );
+
+        // Verify domination: contradiction and retraction far outweigh consistent
+        assert!(DISTURBANCE_CONTRADICTION_LOYAL >= DISTURBANCE_CONSISTENT_LOYAL * 7);
+        assert!(DISTURBANCE_RETRACTION_COMMITTED >= DISTURBANCE_CONSISTENT_LOYAL * 5);
+    }
+
+    #[test]
+    fn disturbance_decays_per_beat_down_to_height_scaled_floor() {
+        let mut lab =
+            ArchitectLab::for_mode(ArchitectMode::QuickClimb).expect("quick climb solves");
+        // QuickClimb has floor 0 and floor 1
+        assert_eq!(lab.economy.disturbance(0), 0);
+        assert_eq!(
+            lab.economy.disturbance(1),
+            DISTURBANCE_DECAY_FLOOR_PER_LEVEL,
+            "Floor 1 decay floor is 15"
+        );
+
+        lab.economy.set_disturbance(0, 6);
+        lab.economy.set_disturbance(1, 21);
+
+        // Beat 1: floor 0 drops 6 -> 4, floor 1 drops 21 -> 19
+        lab.economy.tick_beat(&lab.world, &lab.observers);
+        assert_eq!(lab.economy.disturbance(0), 4);
+        assert_eq!(lab.economy.disturbance(1), 19);
+
+        // Beat 2: floor 0 drops 4 -> 2, floor 1 drops 19 -> 17
+        lab.economy.tick_beat(&lab.world, &lab.observers);
+        assert_eq!(lab.economy.disturbance(0), 2);
+        assert_eq!(lab.economy.disturbance(1), 17);
+
+        // Beat 3: floor 0 drops 2 -> 0, floor 1 drops 17 -> 15 (hitting floor minimum)
+        lab.economy.tick_beat(&lab.world, &lab.observers);
+        assert_eq!(lab.economy.disturbance(0), 0);
+        assert_eq!(lab.economy.disturbance(1), 15);
+
+        // Beat 4: decay does NOT reduce below floor minimum
+        lab.economy.tick_beat(&lab.world, &lab.observers);
+        assert_eq!(lab.economy.disturbance(0), 0);
+        assert_eq!(lab.economy.disturbance(1), 15);
+    }
+
+    #[test]
+    fn disturbance_threshold_release_and_subtraction() {
+        let mut lab = ArchitectLab::for_mode(ArchitectMode::Pocket).expect("pocket solves");
+        let floor = 0;
+        let initial_guardians = lab.guardians.len();
+
+        // Adding disturbance below threshold releases no waves
+        let spawned = lab.add_disturbance(floor, 95);
+        assert!(spawned.is_empty());
+        assert_eq!(lab.guardians.len(), initial_guardians);
+        assert_eq!(lab.economy.disturbance(floor), 95);
+        assert_eq!(lab.economy.wave_count(floor), 0);
+
+        // Adding 10 crosses 100 threshold (95 + 10 = 105)
+        let spawned = lab.add_disturbance(floor, 10);
+        assert_eq!(spawned.len(), 1, "Floor 0 wave size is 1");
+        assert_eq!(lab.economy.disturbance(floor), 5, "105 - 100 = 5");
+        assert_eq!(lab.economy.wave_count(floor), 1);
+        let minor = &lab.guardians[&spawned[0]];
+        assert_eq!(minor.kind, GuardianKind::Minor);
+
+        // Adding 200 crosses threshold twice (5 + 200 = 205 -> releases 2 waves)
+        let spawned_multi = lab.add_disturbance(floor, 200);
+        assert_eq!(
+            spawned_multi.len(),
+            2,
+            "Releases 2 waves of 1 minor Guardian each"
+        );
+        assert_eq!(lab.economy.disturbance(floor), 5, "205 - 200 = 5");
+        assert_eq!(lab.economy.wave_count(floor), 3);
+    }
+
+    #[test]
+    fn disturbance_waves_are_deterministic_and_reproducible() {
+        let mut lab_a =
+            ArchitectLab::for_mode(ArchitectMode::QuickClimb).expect("quick climb solves");
+        let mut lab_b = lab_a.clone();
+
+        let spawned_a_0 = lab_a.add_disturbance(0, 150);
+        let spawned_a_1 = lab_a.add_disturbance(1, 120);
+
+        let spawned_b_0 = lab_b.add_disturbance(0, 150);
+        let spawned_b_1 = lab_b.add_disturbance(1, 120);
+
+        assert_eq!(spawned_a_0, spawned_b_0, "spawned IDs match on floor 0");
+        assert_eq!(spawned_a_1, spawned_b_1, "spawned IDs match on floor 1");
+        assert_eq!(
+            lab_a.guardians, lab_b.guardians,
+            "guardians map matches exactly"
+        );
+        assert_eq!(
+            lab_a.economy, lab_b.economy,
+            "economy state matches exactly"
+        );
+    }
+
+    #[test]
+    fn disturbance_waves_respect_collapsed_floors_and_never_enter_prison() {
+        let mut lab =
+            ArchitectLab::for_mode(ArchitectMode::QuickClimb).expect("quick climb solves");
+        let floor = 0;
+
+        let spawned = lab.add_disturbance(floor, 150);
+        for id in spawned {
+            let guardian = &lab.guardians[&id];
+            assert!(
+                !lab.prison_core.contains(&guardian.cell),
+                "Minor Guardian never spawns in prison core"
+            );
+        }
+
+        // Collapse floor 0
+        lab.collapsed_floors.insert(floor);
+        let spawned_after_collapse = lab.add_disturbance(floor, 200);
+        assert!(
+            spawned_after_collapse.is_empty(),
+            "No waves release on collapsed floor"
+        );
     }
 }

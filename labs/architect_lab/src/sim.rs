@@ -436,6 +436,10 @@ impl ArchitectLab {
         self.instability_origin.get_or_insert(target);
         self.refresh_contradictions();
         self.sync_retraction_clock();
+        let is_contradiction = self.contradictions.contains(&target);
+        self.economy
+            .on_card_played(target.level, is_contradiction, self.bot_architect);
+        self.resolve_disturbance_waves(target.level);
         self.record_event(
             LabEventKind::Played,
             Some(target),
