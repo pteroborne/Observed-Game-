@@ -468,6 +468,18 @@ asserts a height. Fix in the sim, not the renderer, so the snapshot agrees:
 subtract the body half-height when recording the drop, and add a test that a
 placed plate sits on the walking surface.
 
+**Plates: fixed. Recorded 2026-09-18 during an unrelated review, because the
+entry still read as open and nearly sent an agent to redo finished work.**
+`step_pad_actions` subtracts the capsule half-height when recording the drop,
+and takes that offset from `traversal_profile().requirements()` rather than a
+literal — so the plate's idea of the floor cannot drift from the body the
+profile describes, which is more than this entry asked for. The regression guard
+exists too, as `pad_tests.rs`'s `frames` module: one test pins store-feet /
+restore-centre as a round trip, the other pins that horizontal contact stays
+height-blind, which is the property that made the original defect invisible.
+Nothing here is outstanding. **Only the lantern half below is still open**, and
+the entry stays open for it.
+
 **Lanterns: not established.** A deployed lantern's position is cell-relative
 (`hex_origin(door.room_cell) + edge_mid`, `edge_mid.y = 1.1`), so it is not the
 same bug and needs its own diagnosis. Two candidates worth checking first:
