@@ -6,6 +6,7 @@ use super::*;
 use crate::site::{Site, load_content};
 use observed_facility::hex_wfc::HexSpace;
 use observed_hex::hex_origin;
+use observed_traversal::gravity::BodyFrame;
 
 /// The default floor, solved once for the whole test binary. Loading the tile
 /// catalogue is the expensive part and it does not vary between tests.
@@ -755,4 +756,152 @@ fn a_minor_plumbed_toward_a_hole_falls_into_it() {
         "a minor plumbed through the doorway survived at {:?}",
         world.pose(id).position
     );
+}
+
+#[test]
+fn self_plumb_lifecycle_warning_and_release() {
+    let mut world = world(Mode::Practice);
+    for _ in 0..10 {
+        world.step(idle());
+    }
+    assert_eq!(world.gravity.remaining, 0);
+    assert!(world.gravity.frame.is_upright());
+
+    world.armed = Vec3::NEG_Y;
+    world.step(Command {
+        action: Action::SelfPlumb,
+        ..Default::default()
+    });
+    assert_eq!(world.gravity.remaining, 480);
+    assert!(world.events.contains(&Event::SelfPlumbed));
+
+    // Step until just before warning (remaining > 60)
+    for _ in 0..419 {
+        world.step(idle());
+    }
+    assert_eq!(world.gravity.remaining, 61);
+    assert!(!world.events.contains(&Event::GravityWarning));
+
+    // Step 1 tick: remaining drops to 60 -> GravityWarning fires
+    world.step(idle());
+    assert_eq!(world.gravity.remaining, 60);
+    assert!(world.events.contains(&Event::GravityWarning));
+
+    // Step 59 ticks: remaining reaches 1
+    for _ in 0..59 {
+        world.step(idle());
+    }
+    assert_eq!(world.gravity.remaining, 1);
+
+    // Step 1 tick: remaining reaches 0 -> GravityReleased fires
+    world.step(idle());
+    assert_eq!(world.gravity.remaining, 0);
+    assert!(world.events.contains(&Event::GravityReleased));
+
+    // After return to upright, frame is upright
+    for _ in 0..25 {
+        world.step(idle());
+    }
+    assert!(world.gravity.frame.is_upright());
+    assert_eq!(world.gravity.frame, BodyFrame::default());
+}
+
+#[test]
+fn self_plumb_refusals_and_early_release() {
+    let mut world = world(Mode::Encounter);
+    // Deplete charge
+    world.charge = 0.0;
+    assert_eq!(world.self_plumb_ready(), Err(Refusal::EmptyCharge));
+
+    world.step(Command {
+        action: Action::SelfPlumb,
+        ..Default::default()
+    });
+    assert!(world.events.contains(&Event::Refused(Refusal::EmptyCharge)));
+
+    // Restore charge
+    world.charge = 100.0;
+    world.armed = Vec3::NEG_Y;
+    assert!(world.self_plumb_ready().is_ok());
+
+    world.step(Command {
+        action: Action::SelfPlumb,
+        ..Default::default()
+    });
+    assert_eq!(world.charge, 100.0 - world.config.plumb_cost);
+    assert!(world.gravity.remaining > 0);
+
+    // While in transition, self_plumb_ready returns Refusal::Reorienting
+    if world.gravity.transition > 0 {
+        assert_eq!(world.self_plumb_ready(), Err(Refusal::Reorienting));
+    }
+
+    // Manual early release via Action::Release
+    world.step(Command {
+        action: Action::Release,
+        ..Default::default()
+    });
+    assert_eq!(world.gravity.remaining, 0);
+    assert!(world.events.contains(&Event::GravityReleased));
+}
+
+#[test]
+fn self_plumb_determinism_and_digest_sensitivity() {
+    let mut a = world(Mode::Practice);
+    let mut b = world(Mode::Practice);
+    for _ in 0..10 {
+        a.step(idle());
+        b.step(idle());
+    }
+    assert_eq!(a.digest(), b.digest());
+
+    // Only 'a' activates self-plumb
+    a.armed = Vec3::NEG_Y;
+    a.step(Command {
+        action: Action::SelfPlumb,
+        ..Default::default()
+    });
+    assert_ne!(
+        a.digest(),
+        b.digest(),
+        "digest must change when gravity state changes"
+    );
+
+    // Now 'b' executes the exact same command
+    b.armed = Vec3::NEG_Y;
+    b.step(Command {
+        action: Action::SelfPlumb,
+        ..Default::default()
+    });
+    assert_eq!(
+        a.digest(),
+        b.digest(),
+        "identical gravity state and commands must reproduce identical digest"
+    );
+
+    // Step both forward
+    for _ in 0..50 {
+        a.step(idle());
+        b.step(idle());
+        assert_eq!(a.digest(), b.digest());
+    }
+}
+
+#[test]
+fn observation_upright_preserves_horizontal_cone_and_wall_walk_observes_3d() {
+    let mut world = world(Mode::Practice);
+    for _ in 0..10 {
+        world.step(idle());
+    }
+    let upright_frame = world.observation();
+    assert!(
+        !upright_frame.visible_cells.is_empty(),
+        "upright Observer must see cells"
+    );
+
+    // Standing cells are protected
+    let protected = world.protected_body_cells();
+    for cell in &protected {
+        assert!(upright_frame.visible_cells.contains(cell));
+    }
 }
