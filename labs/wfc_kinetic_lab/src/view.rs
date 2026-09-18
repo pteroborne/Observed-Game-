@@ -26,7 +26,7 @@ use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow};
 use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::HexArchetype;
 use observed_hex::{HexCoord, face_edge, hex_origin};
-use observed_match::hex_wfc::{HexStructurePiece, HexStructureRole};
+use observed_match::hex_wfc::HexStructurePiece;
 use observed_style::ArchitectureSurfaceRole;
 use observed_style::kinetic::{self, Role};
 use observed_traversal::ColliderShape;
@@ -56,9 +56,17 @@ struct PowerPart;
 /// does rather than there being one per tile.
 #[derive(Component)]
 struct KeyLight;
-/// One authored tile fixture, and whether its register lets it cast.
+/// One authored tile fixture: where it is, and whether its register lets it
+/// cast.
+///
+/// The position is stored rather than read from `GlobalTransform`, because
+/// transform propagation runs in `PostUpdate` and these are spawned in the same
+/// `Update` chain that ranks them. Read live, every freshly spawned fixture
+/// reports the origin, all distances tie, and the budget selects none — which
+/// then latches until the Observer crosses a cell boundary.
 #[derive(Component)]
 struct Practical {
+    at: Vec3,
     shadows_allowed: bool,
 }
 #[derive(Component)]
@@ -546,7 +554,7 @@ fn rebuild(
             .get(&piece.source_cell)
             .copied()
             .unwrap_or(ArchitectureRegister::Institutional);
-        let look = observed_style::hex_shell_surface(register, architecture_role(piece.role));
+        let look = observed_style::hex_shell_surface(register, architecture_role(piece));
         let material = StandardMaterial {
             base_color: look.base_color,
             base_color_texture: if look.textured {
@@ -554,15 +562,12 @@ fn rebuild(
             } else {
                 None
             },
-            // No emissive, and this is the whole reason the floor used to look
-            // washed out. `hex_shell_surface` carries one, and `hex_wfc_lab`
-            // uses it deliberately — it is a *preview* affordance that keeps
-            // authored hulls legible in a lab with no real lighting. Put it on
-            // top of district ambient, fog, a key and forty-nine practicals and
-            // every surface self-illuminates to the same value whatever way it
-            // faces, which is a flat brown wash with the lighting doing nothing.
-            // The game's shell sets no emissive on hulls at all.
-            emissive: bevy::color::LinearRgba::BLACK,
+            // The authored emissive, as the game's own materials carry it. An
+            // earlier attempt at the wash zeroed this; it did clear the wash,
+            // but by deleting a district's identity rather than by fixing the
+            // surface classification that was misapplying it.
+            emissive: look.emissive,
+            unlit: look.unlit,
             perceptual_roughness: observed_style::architecture(register).surface_roughness,
             ..default()
         };
@@ -600,6 +605,7 @@ fn rebuild(
             FacilityVisual,
             CellVisual,
             Practical {
+                at: light.position,
                 shadows_allowed: practical.shadows_allowed,
             },
             PointLight {
@@ -612,6 +618,44 @@ fn rebuild(
             },
             Transform::from_translation(light.position),
             Name::new("Authored tile practical"),
+        ));
+    }
+
+    // A fixture for any built cell the corpus left without one. The game does
+    // this for the same reason and says so: "so a whole-room module with no
+    // authored lights still has every part of its floor lit (Legibility
+    // Contract)". Removing the directional light took away the guarantee that
+    // darkness costs range and never legibility; this puts it back.
+    for cell in &site.cells {
+        if per_cell.contains_key(cell) {
+            continue;
+        }
+        let register = facility
+            .world
+            .architecture
+            .get(cell)
+            .copied()
+            .unwrap_or(ArchitectureRegister::Institutional);
+        let practical =
+            observed_style::hex_practical_light(register, composition(facility, *cell), 1);
+        let at = Vec3::from_array(hex_origin(*cell)) + Vec3::Y * 3.2;
+        commands.spawn((
+            FacilityVisual,
+            CellVisual,
+            Practical {
+                at,
+                shadows_allowed: practical.shadows_allowed,
+            },
+            PointLight {
+                color: practical.color,
+                intensity: practical.intensity,
+                range: practical.range,
+                radius: practical.radius,
+                shadow_maps_enabled: false,
+                ..default()
+            },
+            Transform::from_translation(at),
+            Name::new("Fallback cell fill"),
         ));
     }
 
@@ -1029,21 +1073,25 @@ fn refusal(reason: Refusal) -> &'static str {
 /// seen to cast at all. The game budgets them the same way.
 fn practical_shadows(
     runtime: Res<Runtime>,
-    mut last: Local<Option<observed_hex::HexCoord>>,
-    mut practicals: Query<(&Practical, &GlobalTransform, &mut PointLight)>,
+    mut last: Local<Option<(u32, u32, Option<observed_hex::HexCoord>)>>,
+    mut practicals: Query<(&Practical, &mut PointLight)>,
 ) {
     const BUDGET: usize = 8;
     let cell = runtime.site.cell_containing(runtime.world.player.position);
-    if *last == cell && cell.is_some() {
+    // Keyed on the same stamp the geometry rebuild uses. A retraction or a
+    // relayout respawns every fixture shadowless without moving the Observer,
+    // and a cell-only guard never notices.
+    let stamp = (runtime.generation, runtime.world.geometry_generation, cell);
+    if *last == Some(stamp) {
         return;
     }
-    *last = cell;
+    *last = Some(stamp);
     let eye = runtime.world.eye();
     let mut ranked: Vec<(f32, bool)> = practicals
         .iter()
-        .map(|(practical, at, _)| {
+        .map(|(practical, _)| {
             (
-                at.translation().distance_squared(eye),
+                practical.at.distance_squared(eye),
                 practical.shadows_allowed,
             )
         })
@@ -1054,9 +1102,13 @@ fn practical_shadows(
         .filter(|(_, allowed)| *allowed)
         .nth(BUDGET)
         .map_or(f32::MAX, |(distance, _)| *distance);
-    for (practical, at, mut light) in &mut practicals {
-        light.shadow_maps_enabled =
-            practical.shadows_allowed && at.translation().distance_squared(eye) < cutoff;
+    for (practical, mut light) in &mut practicals {
+        let wanted = practical.shadows_allowed && practical.at.distance_squared(eye) < cutoff;
+        // Assign only on a change, so the steady state does not dirty every
+        // light every time this runs.
+        if light.shadow_maps_enabled != wanted {
+            light.shadow_maps_enabled = wanted;
+        }
     }
 }
 
@@ -1069,7 +1121,7 @@ fn atmosphere(
     mut clear: ResMut<ClearColor>,
     mut fog: Query<&mut DistanceFog, With<Eye>>,
     mut key: Query<(&mut SpotLight, &mut Transform), With<KeyLight>>,
-    mut primed: Local<Option<u32>>,
+    mut primed: Local<Option<(u32, u32)>>,
 ) {
     const BLEND_RATE: f32 = 2.0;
     let world = &runtime.world;
@@ -1086,8 +1138,12 @@ fn atmosphere(
     // Initial state is not a transition. Easing in from a neutral grey makes
     // the first visible second of every floor the wrong district, so the first
     // frame of a run — and of each newly dealt floor — snaps to the target.
-    let fresh = *primed != Some(runtime.generation);
-    *primed = Some(runtime.generation);
+    // Including the geometry generation, because a relayout respawns the key as
+    // a default white 1M-lumen spotlight: eased rather than snapped, it spends
+    // a second climbing to the district's colour after every retraction.
+    let stamp = (runtime.generation, runtime.world.geometry_generation);
+    let fresh = *primed != Some(stamp);
+    *primed = Some(stamp);
     let blend = if fresh {
         1.0
     } else {
@@ -1237,14 +1293,44 @@ fn composition(
     }
 }
 
-fn architecture_role(role: HexStructureRole) -> ArchitectureSurfaceRole {
-    match role {
-        HexStructureRole::Room | HexStructureRole::Hall | HexStructureRole::Shaft => {
-            ArchitectureSurfaceRole::Wall
-        }
-        HexStructureRole::Ramp => ArchitectureSurfaceRole::Floor,
-        HexStructureRole::Boundary => ArchitectureSurfaceRole::Ceiling,
+/// Which architectural surface a hull *is*, from its geometry.
+///
+/// This used to key off `HexStructureRole`, mapping Room, Hall and Shaft alike
+/// to `Wall`, and that was the real cause of the floor looking washed out.
+/// Shadow Screen's wall treatment carries an authored emissive of 1.30 — the
+/// style crate notes it is roughly fourteen times the strongest structural glow
+/// anywhere else, because in that district the wall *is* the lit surface — so
+/// painting every floor, ceiling and column of a Shadow Screen cell with the
+/// wall treatment self-illuminated the whole cell to one flat value. Ambient,
+/// fog and shadows then changed almost nothing, which is exactly how it looked.
+///
+/// The game classifies by shape instead: low hulls are floor, high hulls are
+/// ceiling, and a thin wide slab is a deck wherever it sits. A balcony is not
+/// at floor level and is still something you walk on.
+fn architecture_role(piece: &HexStructurePiece) -> ArchitectureSurfaceRole {
+    let ColliderShape::ConvexHull { points } = &piece.shape else {
+        return ArchitectureSurfaceRole::Wall;
+    };
+    let lowest = points
+        .iter()
+        .map(|point| point.y)
+        .fold(f32::INFINITY, f32::min);
+    let highest = points
+        .iter()
+        .map(|point| point.y)
+        .fold(f32::NEG_INFINITY, f32::max);
+    if highest <= 0.75 {
+        return ArchitectureSurfaceRole::Floor;
     }
+    if lowest >= observed_hex::TILE_LEVEL_HEIGHT - 0.75
+        || observed_traversal::render_mesh::is_overhead_slab(points)
+    {
+        return ArchitectureSurfaceRole::Ceiling;
+    }
+    if observed_traversal::render_mesh::is_horizontal_slab(points) {
+        return ArchitectureSurfaceRole::Floor;
+    }
+    ArchitectureSurfaceRole::Wall
 }
 
 fn piece_mesh(piece: &HexStructurePiece) -> Option<Mesh> {
