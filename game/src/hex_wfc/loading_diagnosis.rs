@@ -43,6 +43,16 @@ pub(super) const WORKER_WATCHDOG_GRACE: Duration = Duration::from_secs(5);
 /// How long `poll_lan_barrier` will wait for an inbound packet from the server
 /// before declaring the server silent and failing the load.
 ///
+/// Refreshed continuously during loading because `screens::lan::poll_lan` runs
+/// unconditionally in `Update` regardless of `GameState`, pumping the transport
+/// socket while `poll_lan_barrier` observes it.
+///
+/// When triggered, `HexLaunchRequest` is intentionally preserved in the world
+/// (unlike `LanLaunchWithdrawn` which auto-navigates to `GameState::Lobby`).
+/// Preserving the request keeps its `LaunchContext::Lan` visible to the loading
+/// screen, allowing `screens::loading::activate` to route the player's Cancel
+/// action back to `GameState::LanBrowser` and call `lan.leave()`.
+///
 /// Chosen generously at 10 seconds:
 /// 1. The client sends heartbeats every 500 ms and the server broadcasts lobby/launch
 ///    progress every 250 ms (15 ticks at 60 Hz). 10 seconds allows for 20 dropped
