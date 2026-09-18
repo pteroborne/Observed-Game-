@@ -522,11 +522,14 @@ answer the question a player opens it to ask — where am I, where is the thing 
 want, and which way do I go. It is fog-of-war over a cell lattice, and a cell
 lattice is not a mental model of a building.
 
-Look at: `game/src/hex_wfc/view/map.rs` and `HexPlayerMapKnowledge`. Worth
-deciding first whether the fix is presentational (legibility, orientation,
-landmarks) or whether the map should show *rooms and connections* rather than
-cells — which again depends on **#30**, since a map of indistinguishable places
-cannot orient anyone.
+Look at: `game/src/hex_wfc/view/map/` (`mod.rs`, `build.rs`, `cell.rs`, `overlay.rs`) and
+`HexPlayerMapKnowledge`.
+
+**Resolved 2026-09-18 (feat/deck-map-legibility).** Presentational pass completed for 7-inch Steam Deck legibility:
+- **Where am I:** 6m elevated beacon mast (`MarkerRole::You` cyan), directional heading pointer (arrow shaft + chevron barb tip tracking player yaw), and floating billboarded "YOU" text badge. Heading readout in the legend shows cardinal octant and numeric yaw.
+- **Which way is which:** 3D cardinal compass rose anchored in the NW margin with labeled N, E, S, W arms, plus screen-axis orientation notes in the legend.
+- **What do I recognise:** 7m exit landmark pillar (`MarkerRole::Exit`), 3m anchor checkpoint pins punching through cell floors (`MarkerRole::Control`), and 4.5m room landmark pillars with semantic role text badges.
+- **Finding on #30:** Presentational landmarks solve local orientation, but answering global routing ("which corridor leads to the exit") across dynamic topologies fundamentally requires #30 (room-and-corridor identity graph).
 
 ### 36. Spectator cutaway is good and needs clarity work
 

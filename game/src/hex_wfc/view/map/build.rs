@@ -8,7 +8,6 @@ use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 use observed_content::ArchitectureRegister;
 use observed_facility::hex_wfc::HexWfcWorld;
-use observed_facility::map_spec::RoomRole;
 use observed_hex::{HexCoord, HexFace, PortClass, TILE_LEVEL_HEIGHT, hex_origin, prism_hull};
 use observed_match::hex_wfc::{HexMapDiscovery, HexPlayerMapKnowledge};
 use observed_style::{HexComposition, MarkerRole, hex_link};
@@ -20,7 +19,8 @@ use crate::hex_wfc::sim::HexWfcRuntime;
 use crate::hex_wfc::view::assets::hull_mesh;
 
 use super::cell::{CellState, Stability, archetype_height, composition, marker_key, sketch};
-use super::{HexMapCell, HexMapVisual, MAP_RENDER_LAYER};
+use super::overlay::{rooms_present, spawn_orientation_frame, spawn_player_marker};
+use super::{HexMapCell, HexMapLandmark, HexMapVisual, MAP_RENDER_LAYER};
 
 /// Only the three "forward" lateral faces are walked, so each undirected edge is
 /// drawn exactly once instead of twice from opposite ends.
@@ -57,7 +57,7 @@ pub(super) struct MapCensus {
 }
 
 impl MapCensus {
-    fn see(&mut self, at: Vec3, extent: Vec3) {
+    pub(super) fn see(&mut self, at: Vec3, extent: Vec3) {
         self.bounds = Some(match self.bounds {
             None => (at - extent, at + extent),
             Some((min, max)) => (min.min(at - extent), max.max(at + extent)),
@@ -65,17 +65,17 @@ impl MapCensus {
     }
 }
 
-struct Assets<'a> {
-    meshes: &'a mut bevy::asset::Assets<Mesh>,
-    materials: &'a mut bevy::asset::Assets<StandardMaterial>,
-    prisms: BTreeMap<(u32, u32), Handle<Mesh>>,
-    bars: BTreeMap<(u32, u32, u32), Handle<Mesh>>,
-    tint: BTreeMap<(u8, u8, u8, u8), Handle<StandardMaterial>>,
-    signal: BTreeMap<u8, Handle<StandardMaterial>>,
+pub(super) struct MapAssets<'a> {
+    pub(super) meshes: &'a mut bevy::asset::Assets<Mesh>,
+    pub(super) materials: &'a mut bevy::asset::Assets<StandardMaterial>,
+    pub(super) prisms: BTreeMap<(u32, u32), Handle<Mesh>>,
+    pub(super) bars: BTreeMap<(u32, u32, u32), Handle<Mesh>>,
+    pub(super) tint: BTreeMap<(u8, u8, u8, u8), Handle<StandardMaterial>>,
+    pub(super) signal: BTreeMap<u8, Handle<StandardMaterial>>,
 }
 
-impl Assets<'_> {
-    fn prism(&mut self, height: f32, inset: f32) -> Handle<Mesh> {
+impl MapAssets<'_> {
+    pub(super) fn prism(&mut self, height: f32, inset: f32) -> Handle<Mesh> {
         self.prisms
             .entry((height.to_bits(), inset.to_bits()))
             .or_insert_with(|| {
@@ -89,14 +89,14 @@ impl Assets<'_> {
     /// Bars are cached by their dimensions. Hex neighbours sit at only two
     /// distinct pitches, so without this the map allocates one mesh asset per
     /// connection on every rebuild — and it rebuilds whenever knowledge changes.
-    fn bar(&mut self, length: f32, height: f32, width: f32) -> Handle<Mesh> {
+    pub(super) fn bar(&mut self, length: f32, height: f32, width: f32) -> Handle<Mesh> {
         self.bars
             .entry((length.to_bits(), height.to_bits(), width.to_bits()))
             .or_insert_with(|| self.meshes.add(Cuboid::new(length, height, width)))
             .clone()
     }
 
-    fn tint(
+    pub(super) fn tint(
         &mut self,
         register: ArchitectureRegister,
         state: CellState,
@@ -116,7 +116,7 @@ impl Assets<'_> {
             .clone()
     }
 
-    fn signal(&mut self, role: MarkerRole) -> Handle<StandardMaterial> {
+    pub(super) fn signal(&mut self, role: MarkerRole) -> Handle<StandardMaterial> {
         self.signal
             .entry(marker_key(role))
             .or_insert_with(|| {
@@ -134,7 +134,7 @@ impl Assets<'_> {
     /// Links are structure, not district: they read as the route between two
     /// places, so they take the spine treatment and dim with the weaker of the
     /// two endpoints rather than borrowing either endpoint's colour.
-    fn link(&mut self, confident: bool) -> Handle<StandardMaterial> {
+    pub(super) fn link(&mut self, confident: bool) -> Handle<StandardMaterial> {
         self.signal
             .entry(if confident { 200 } else { 201 })
             .or_insert_with(|| {
@@ -179,7 +179,7 @@ pub(super) fn build(
         .map(|player| player.cell)
         .collect::<BTreeSet<_>>();
 
-    let mut assets = Assets {
+    let mut assets = MapAssets {
         meshes,
         materials,
         prisms: BTreeMap::new(),
@@ -261,6 +261,21 @@ pub(super) fn build(
             Name::new(composition.label()),
         ));
 
+        if cell == exit_cell {
+            let exit_pillar = assets.bar(1.4, 7.0, 1.4);
+            let exit_material = assets.signal(MarkerRole::Exit);
+            commands.spawn((
+                HexMapVisual,
+                HexMapLandmark,
+                DespawnOnExit(GameState::HexWfc),
+                Mesh3d(exit_pillar),
+                MeshMaterial3d(exit_material),
+                RenderLayers::layer(MAP_RENDER_LAYER),
+                Transform::from_translation(origin + Vec3::Y * (height + 3.5)),
+                Name::new("Hex map exit landmark"),
+            ));
+        }
+
         if let Some(role) = stability.cap() {
             let cap = assets.prism(CAP_THICKNESS, drawn.inset * 0.62);
             let material = assets.signal(role);
@@ -274,10 +289,36 @@ pub(super) fn build(
                 Name::new(stability.label()),
             ));
         }
+
+        if known.anchored {
+            let anchor_pin = assets.bar(0.8, 3.0, 0.8);
+            let anchor_mat = assets.signal(MarkerRole::Control);
+            commands.spawn((
+                HexMapVisual,
+                HexMapLandmark,
+                DespawnOnExit(GameState::HexWfc),
+                Mesh3d(anchor_pin),
+                MeshMaterial3d(anchor_mat),
+                RenderLayers::layer(MAP_RENDER_LAYER),
+                Transform::from_translation(origin + Vec3::Y * (height + 1.5)),
+                Name::new("Hex map anchor landmark"),
+            ));
+        }
     }
 
     links(commands, knowledge, world, &mut assets, &mut census);
-    rooms_present(commands, world, knowledge, &mut census);
+    rooms_present(commands, world, knowledge, &mut assets, &mut census);
+
+    if knowledge.cells.contains_key(&you_cell) {
+        let here_height = world
+            .placements
+            .get(&you_cell)
+            .and_then(|p| archetype_height(p.archetype))
+            .unwrap_or(0.9);
+        spawn_player_marker(commands, runtime, here_height, &mut assets, &mut census);
+    }
+    spawn_orientation_frame(commands, &mut census, focus, &mut assets);
+
     census
 }
 
@@ -288,7 +329,7 @@ fn links(
     commands: &mut Commands,
     knowledge: &HexPlayerMapKnowledge,
     world: &HexWfcWorld,
-    assets: &mut Assets,
+    assets: &mut MapAssets,
     census: &mut MapCensus,
 ) {
     let grid = world.config.grid();
@@ -381,66 +422,5 @@ fn links(
             Name::new("Hex map vertical link"),
         ));
         census.vertical_links += 1;
-    }
-}
-
-/// Name the rooms the survivor has actually set foot in or seen part of. A room
-/// is one decision beat, so knowing *which* rooms are on your map is worth more
-/// than knowing how many cells they occupy.
-fn rooms_present(
-    commands: &mut Commands,
-    world: &HexWfcWorld,
-    knowledge: &HexPlayerMapKnowledge,
-    census: &mut MapCensus,
-) {
-    for blueprint in &world.blueprints {
-        let known_cell = blueprint
-            .cells
-            .iter()
-            .filter_map(|cell| {
-                knowledge
-                    .cells
-                    .get(cell)
-                    .filter(|known| known.room_role == Some(blueprint.role))
-                    .map(|_| *cell)
-            })
-            .min();
-        let Some(cell) = known_cell else { continue };
-        census.rooms.insert(blueprint.role.label().to_string());
-        commands.spawn((
-            HexMapVisual,
-            DespawnOnExit(GameState::HexWfc),
-            Text2d::new(room_label(blueprint.role)),
-            TextFont {
-                font_size: FontSize::Px(20.0),
-                ..default()
-            },
-            TextColor(observed_style::marker(MarkerRole::NextRoom).base_color),
-            RenderLayers::layer(MAP_RENDER_LAYER),
-            Transform::from_translation(Vec3::from_array(hex_origin(cell)) + Vec3::Y * 8.0)
-                .with_rotation(Quat::from_euler(
-                    EulerRot::YXZ,
-                    std::f32::consts::FRAC_PI_4,
-                    -0.615_479_7,
-                    0.0,
-                )),
-            Name::new(format!("known {} room label", blueprint.role.label())),
-        ));
-    }
-}
-
-fn room_label(role: RoomRole) -> &'static str {
-    match role {
-        RoomRole::Start => "START",
-        RoomRole::Decision => "DECIDE",
-        RoomRole::DecoherenceFork => "FORK",
-        RoomRole::Keystone => "KEY",
-        RoomRole::DualStation => "SYNC",
-        RoomRole::Monitor => "SURVEY",
-        RoomRole::AnchorCheckpoint => "ANCHOR",
-        RoomRole::GuardianControl => "GUARD",
-        RoomRole::Recovery => "RECOVER",
-        RoomRole::Exit => "EXIT",
-        RoomRole::TeleportRelay => "RELAY",
     }
 }

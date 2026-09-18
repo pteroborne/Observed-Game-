@@ -52,7 +52,7 @@ elimination-series standings while the camera follows the visible first-person b
 | In-match pause | Game-integrated | `game/src/screens.rs`, `game/src/screens/input.rs` | Releases/re-grabs cursor and allows quitting back to menu. |
 | State-scoped cleanup | Game-integrated | `DespawnOnExit` in `game/src/screens.rs` | Tests assert screen entities/resources do not leak across repeated state cycles. |
 | Match HUD | Game-integrated | `game/src/screens/hud.rs` | Shows match status, gate/keystone/item state, network state, guardian/log status, and controls relevant to the current match. |
-| TAC-MAP overlay | Game-integrated | `game/src/tacmap.rs`, `game/src/screens/hud.rs` | `Tab` projects player location, rivals, collapse, semantic routes, keystones, and exit lock/open state from live sim state. |
+| TAC-MAP overlay | Game-integrated | `game/src/tacmap.rs`, `game/src/screens/hud.rs`, `game/src/hex_wfc/view/map/` | `Tab` projects survivor knowledge. In Hex WFC matches, includes 7-inch Steam Deck legibility: 3D cardinal orientation compass, 6m player beacon pin with yaw heading pointer, and exit/anchor/room landmark pillars. |
 | Audio cues and ambience | Game-integrated | `game/src/screens/audio.rs`, `game/src/screens/match_runtime/ambience.rs` | Includes ambience, footsteps, escape/success, door/reroute cues, and route-shift feedback. |
 | Capture scenarios | Tooling/support | `game/src/capture/` | Bot POV, tour, room, ceiling, map-audit, and event capture paths produce visual evidence. |
 
