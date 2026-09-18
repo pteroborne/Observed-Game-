@@ -10,7 +10,8 @@ fn real_two_floor_world_and_five_card_hand_boot() {
     let lab = lab();
     assert_eq!(lab.world.config.levels, 2);
     assert_eq!(lab.deck.hand.len(), HAND_SIZE);
-    assert_eq!(lab.prison_core.len(), 2);
+    assert_eq!(lab.prison_core.len(), 11);
+    assert_eq!(lab.prison_core.len(), lab.prison.cells.len());
     assert_eq!(lab.observers.len(), 2);
     assert_eq!(lab.guardians.len(), 1);
 }
