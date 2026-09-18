@@ -436,6 +436,17 @@ impl ArchitectLab {
                 // A card play feeds the meter, and a contradiction feeds it hardest:
                 // instability summons the horde, clean construction does not.
                 let is_contradiction = self.contradictions.contains(&target);
+                let is_door = matches!(held.kind, CardKind::Door);
+                if self.is_contesting_generator(target)
+                    && (self.economy.is_at_generator(target) || is_contradiction || is_door)
+                    && self.cut_floor_power(target.level)
+                {
+                    self.record_event(
+                        LabEventKind::Warning,
+                        Some(target),
+                        "Generator power cut by contested generator play.",
+                    );
+                }
                 self.economy
                     .on_card_played(target.level, is_contradiction, self.bot_architect);
                 self.resolve_disturbance_waves(target.level);

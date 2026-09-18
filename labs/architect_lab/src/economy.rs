@@ -353,6 +353,46 @@ impl ArchitectLab {
         }
     }
 
+    /// Check whether an Observer can legally shove a Minor Guardian.
+    #[must_use]
+    pub fn can_shove(&self, observer_id: ObserverId, target_id: GuardianId) -> bool {
+        let Some(observer) = self.observers.get(&observer_id) else {
+            return false;
+        };
+        if observer.state != ObserverState::Active {
+            return false;
+        }
+        let Some(guardian) = self.guardians.get(&target_id) else {
+            return false;
+        };
+        if guardian.kind != GuardianKind::Minor {
+            return false;
+        }
+        let observer_cell = observer.cell;
+        let guardian_cell = guardian.cell;
+        if travel_distance(observer_cell, guardian_cell) != 1
+            || observer_cell.level != guardian_cell.level
+        {
+            return false;
+        }
+        if !self.observed.contains(&guardian_cell)
+            && !self.can_detect_adjacent(observer_cell, guardian_cell)
+        {
+            return false;
+        }
+        self.economy.charge(observer_id) >= SHOVE_COST
+    }
+
+    /// Check if a target coordinate is at or adjacent to the floor's generator room.
+    #[must_use]
+    pub fn is_contesting_generator(&self, target: HexCoord) -> bool {
+        self.economy
+            .generators
+            .get(&target.level)
+            .copied()
+            .is_some_and(|gen_cell| travel_distance(target, gen_cell) <= 1)
+    }
+
     /// Execute a fixed-tick kinetic shove from an Observer directed at a Minor Guardian.
     /// Deals no damage to any actor. Consumes [`SHOVE_COST`] charge on success.
     pub fn shove(
@@ -503,6 +543,17 @@ impl ArchitectLab {
         let new_state = self.economy.toggle_power(observer.cell.level);
         self.refresh_observation();
         Ok(new_state)
+    }
+
+    /// Cut floor power directly (e.g. via contested generator play or floor collapse).
+    pub fn cut_floor_power(&mut self, level: u8) -> bool {
+        if self.economy.is_powered(level) {
+            self.economy.power.insert(level, false);
+            self.refresh_observation();
+            true
+        } else {
+            false
+        }
     }
 
     /// Resolve any pending disturbance waves on a floor level.
