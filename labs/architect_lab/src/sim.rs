@@ -109,6 +109,7 @@ pub struct ArchitectLab {
     pub traces: BTreeMap<String, BehaviorTrace>,
     pub command_log: Vec<(u64, ArchitectCommand)>,
     pub economy: EconomyState,
+    pub requisition: crate::requisition::RequisitionState,
 }
 
 impl ArchitectLab {
@@ -213,6 +214,7 @@ impl ArchitectLab {
             traces: BTreeMap::new(),
             command_log: Vec::new(),
             economy,
+            requisition: crate::requisition::RequisitionState::new(seed),
         };
         lab.refresh_observation();
         // Damage a solved facility at separated lateral handoffs. These are
@@ -288,14 +290,19 @@ impl ArchitectLab {
         if self.outcome != MatchOutcome::Running {
             return Some(CommandRefusal::MatchFinished);
         }
-        if self.cooldown > 0 {
-            return Some(CommandRefusal::Cooldown);
-        }
-        let ArchitectCommand::Play {
-            card,
-            target,
-            rotation,
-        } = command;
+        let (card, target, rotation) = match command {
+            ArchitectCommand::Play {
+                card,
+                target,
+                rotation,
+            } => {
+                if self.cooldown > 0 {
+                    return Some(CommandRefusal::Cooldown);
+                }
+                (card, target, rotation)
+            }
+            ArchitectCommand::Requisition => return None,
+        };
         let Some(card) = self.deck.hand.iter().find(|held| held.id == card).copied() else {
             return Some(CommandRefusal::CardNotInHand);
         };
@@ -393,58 +400,66 @@ impl ArchitectLab {
         if let Some(refusal) = self.refusal(command) {
             return Err(refusal);
         }
-        let ArchitectCommand::Play {
-            card,
-            target,
-            rotation,
-        } = command;
-        let held = self
-            .deck
-            .hand
-            .iter()
-            .find(|held| held.id == card)
-            .copied()
-            .expect("legality proved the card is held");
-        match held.kind {
-            CardKind::Tile(shape) => {
-                let placement = self
-                    .world
-                    .placements
-                    .get_mut(&target)
-                    .expect("legality proved the target exists");
-                placement.space = HexSpace::Hall;
-                placement.archetype = shape.archetype();
-                placement.doors = shape.doors(rotation);
-                placement.up = observed_hex::PortClass::Sealed;
-                placement.down = observed_hex::PortClass::Sealed;
-                self.retracted.remove(&target);
-                *self.world.cell_revisions.entry(target).or_default() += 1;
-                self.doors
-                    .retain(|key, _| !threshold_touches(*key, target, &self.world));
+        match command {
+            ArchitectCommand::Play {
+                card,
+                target,
+                rotation,
+            } => {
+                let held = self
+                    .deck
+                    .hand
+                    .iter()
+                    .find(|held| held.id == card)
+                    .copied()
+                    .expect("legality proved the card is held");
+                match held.kind {
+                    CardKind::Tile(shape) => {
+                        let placement = self
+                            .world
+                            .placements
+                            .get_mut(&target)
+                            .expect("legality proved the target exists");
+                        placement.space = HexSpace::Hall;
+                        placement.archetype = shape.archetype();
+                        placement.doors = shape.doors(rotation);
+                        placement.up = observed_hex::PortClass::Sealed;
+                        placement.down = observed_hex::PortClass::Sealed;
+                        self.retracted.remove(&target);
+                        *self.world.cell_revisions.entry(target).or_default() += 1;
+                        self.doors
+                            .retain(|key, _| !threshold_touches(*key, target, &self.world));
+                    }
+                    CardKind::Door => {
+                        let key = self
+                            .threshold_key(target, lateral_face(rotation))
+                            .expect("legality proved the threshold exists");
+                        self.doors.insert(key, DoorState::Closed);
+                    }
+                }
+                assert!(self.deck.spend(card), "legality proved the card is held");
+                self.cooldown = ARCHITECT_COOLDOWN_TICKS;
+                self.rogue_directive = Some(target);
+                self.command_log.push((self.tick, command));
+                self.instability_origin.get_or_insert(target);
+                self.refresh_contradictions();
+                self.sync_retraction_clock();
+                // A card play feeds the meter, and a contradiction feeds it hardest:
+                // instability summons the horde, clean construction does not.
+                let is_contradiction = self.contradictions.contains(&target);
+                self.economy
+                    .on_card_played(target.level, is_contradiction, self.bot_architect);
+                self.resolve_disturbance_waves(target.level);
+                self.record_event(
+                    LabEventKind::Played,
+                    Some(target),
+                    "Card played. Guardian investigates this tile.",
+                );
             }
-            CardKind::Door => {
-                let key = self
-                    .threshold_key(target, lateral_face(rotation))
-                    .expect("legality proved the threshold exists");
-                self.doors.insert(key, DoorState::Closed);
+            ArchitectCommand::Requisition => {
+                crate::requisition::apply_requisition(self);
             }
         }
-        assert!(self.deck.spend(card), "legality proved the card is held");
-        self.cooldown = ARCHITECT_COOLDOWN_TICKS;
-        self.rogue_directive = Some(target);
-        self.command_log.push((self.tick, command));
-        self.instability_origin.get_or_insert(target);
-        self.refresh_contradictions();
-        self.sync_retraction_clock();
-        let is_contradiction = self.contradictions.contains(&target);
-        self.economy
-            .on_card_played(target.level, is_contradiction, self.bot_architect);
-        self.resolve_disturbance_waves(target.level);
-        self.record_event(
-            LabEventKind::Played,
-            Some(target),
-            "Card played. Guardian investigates this tile.",
-        );
         Ok(())
     }
 

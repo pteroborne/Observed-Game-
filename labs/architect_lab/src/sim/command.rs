@@ -23,6 +23,7 @@ pub enum ArchitectCommand {
         target: HexCoord,
         rotation: u8,
     },
+    Requisition,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

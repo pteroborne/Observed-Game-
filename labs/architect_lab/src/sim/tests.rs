@@ -88,7 +88,9 @@ fn successful_play_spends_refills_and_starts_cooldown() {
     let mut lab = lab();
     let before: BTreeSet<_> = lab.deck.hand.iter().map(|card| card.id).collect();
     let command = lab.legal_commands()[0];
-    let ArchitectCommand::Play { card, .. } = command;
+    let ArchitectCommand::Play { card, .. } = command else {
+        panic!("expected play command");
+    };
     lab.submit(command).expect("legal command applies");
     assert_eq!(lab.deck.hand.len(), HAND_SIZE);
     assert!(!lab.deck.hand.iter().any(|held| held.id == card));

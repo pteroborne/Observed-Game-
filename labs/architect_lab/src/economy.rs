@@ -1760,11 +1760,10 @@ mod tests {
         });
 
         let (cmd, trace) = lab.architect_intent();
-        if let Some(cmd) = cmd {
-            let crate::sim::ArchitectCommand::Play { target, .. } = cmd;
-            if observed_hex::travel_distance(target, gen_cell) <= 1 {
-                assert_eq!(trace.selected, Some("contest generator"));
-            }
+        if let Some(crate::sim::ArchitectCommand::Play { target, .. }) = cmd
+            && observed_hex::travel_distance(target, gen_cell) <= 1
+        {
+            assert_eq!(trace.selected, Some("contest generator"));
         }
     }
 

@@ -348,7 +348,10 @@ fn capture_progress(
                 card,
                 target,
                 rotation,
-            } = command;
+            } = command
+            else {
+                return;
+            };
             if let Some(index) = session
                 .sim
                 .deck

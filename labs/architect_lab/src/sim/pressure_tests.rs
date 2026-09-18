@@ -80,11 +80,14 @@ fn compatible_card_repairs_pending_collapse_and_rebuilds_removed_tiles() {
         .legal_commands()
         .into_iter()
         .find(|command| {
-            let ArchitectCommand::Play { target, .. } = command;
-            *target == opening && {
-                let mut next = sim.clone();
-                next.submit(*command).unwrap();
-                next.contradictions.is_empty()
+            if let ArchitectCommand::Play { target, .. } = command {
+                *target == opening && {
+                    let mut next = sim.clone();
+                    next.submit(*command).unwrap();
+                    next.contradictions.is_empty()
+                }
+            } else {
+                false
             }
         })
         .unwrap();

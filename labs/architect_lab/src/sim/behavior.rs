@@ -423,8 +423,10 @@ impl ArchitectLab {
             .filter(|&command| {
                 let mut preview = self.clone();
                 preview.bot_architect = true;
+                let ArchitectCommand::Play { target, .. } = command else {
+                    return false;
+                };
                 if preview.submit(command).is_ok() {
-                    let ArchitectCommand::Play { target, .. } = command;
                     preview.economy.wave_count(target.level) > self.economy.wave_count(target.level)
                 } else {
                     false
@@ -440,7 +442,9 @@ impl ArchitectLab {
             .iter()
             .copied()
             .filter(|&command| {
-                let ArchitectCommand::Play { target, card, .. } = command;
+                let ArchitectCommand::Play { target, card, .. } = command else {
+                    return false;
+                };
                 let Some(generator_cell) = self.economy.generators.get(&target.level).copied()
                 else {
                     return false;
