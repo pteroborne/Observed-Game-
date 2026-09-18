@@ -289,4 +289,162 @@ mod tests {
     fn match_finished_has_no_single_location() {
         assert!(event_cells(&event(HexMatchEventKind::MatchFinished, None), None).is_empty());
     }
+
+    #[test]
+    fn spawn_beacon_places_transform_at_exact_cell_origin() {
+        use bevy::ecs::system::RunSystemOnce;
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>();
+        app.world_mut().run_system_once(setup).unwrap();
+
+        let target_cell = cell(2, 3, 1);
+        let expected_pos = Vec3::from_array(hex_origin(target_cell)) + Vec3::Y * 0.08;
+
+        app.world_mut()
+            .run_system_once(
+                move |mut commands: Commands, assets: Res<FeedbackAssets>| {
+                    let mat = assets.next_room.clone();
+                    spawn_beacon(&mut commands, &assets, mat, target_cell);
+                },
+            )
+            .unwrap();
+
+        let mut query = app.world_mut().query::<(&EventBeacon, &Transform)>();
+        let (beacon, transform) = query.single(app.world()).unwrap();
+        assert_eq!(beacon.age, 0.0);
+        assert_eq!(transform.translation, expected_pos);
+        assert_eq!(transform.scale, Vec3::splat(BEACON_MIN_SCALE));
+    }
+
+    #[test]
+    fn different_cells_produce_different_beacon_transforms() {
+        use bevy::ecs::system::RunSystemOnce;
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>();
+        app.world_mut().run_system_once(setup).unwrap();
+
+        let cell_a = cell(0, 0, 0);
+        let cell_b = cell(3, 4, 2);
+        let pos_a = Vec3::from_array(hex_origin(cell_a)) + Vec3::Y * 0.08;
+        let pos_b = Vec3::from_array(hex_origin(cell_b)) + Vec3::Y * 0.08;
+        assert_ne!(pos_a, pos_b, "Cell positions must differ");
+
+        app.world_mut()
+            .run_system_once(
+                move |mut commands: Commands, assets: Res<FeedbackAssets>| {
+                    let mat = assets.next_room.clone();
+                    spawn_beacon(&mut commands, &assets, mat.clone(), cell_a);
+                    spawn_beacon(&mut commands, &assets, mat, cell_b);
+                },
+            )
+            .unwrap();
+
+        let mut query = app.world_mut().query::<(&EventBeacon, &Transform)>();
+        let translations: Vec<Vec3> = query
+            .iter(app.world())
+            .map(|(_, t)| t.translation)
+            .collect();
+        assert_eq!(translations.len(), 2);
+        assert_ne!(translations[0], translations[1]);
+        assert!(translations.contains(&pos_a));
+        assert!(translations.contains(&pos_b));
+    }
+
+    #[test]
+    fn animate_scales_and_despawns_beacon_over_lifetime() {
+        use bevy::ecs::system::RunSystemOnce;
+        let mut app = App::new();
+        app.init_resource::<Time>();
+
+        let entity = app
+            .world_mut()
+            .spawn((
+                EventBeacon { age: 0.0 },
+                Transform::from_translation(Vec3::ZERO).with_scale(Vec3::splat(BEACON_MIN_SCALE)),
+            ))
+            .id();
+
+        // Advance time to mid-pulse (0.55s)
+        {
+            let mut time = app.world_mut().resource_mut::<Time>();
+            time.advance_by(std::time::Duration::from_millis(550));
+        }
+        app.world_mut().run_system_once(animate).unwrap();
+
+        let transform = app
+            .world()
+            .get::<Transform>(entity)
+            .expect("Beacon still alive");
+        assert!(
+            transform.scale.x > BEACON_MIN_SCALE * 2.0,
+            "Beacon should grow significantly by mid-pulse"
+        );
+
+        // Advance past lifetime (1.2s total)
+        {
+            let mut time = app.world_mut().resource_mut::<Time>();
+            time.advance_by(std::time::Duration::from_millis(650));
+        }
+        app.world_mut().run_system_once(animate).unwrap();
+
+        assert!(
+            app.world().get_entity(entity).is_err(),
+            "Beacon must despawn after BEACON_LIFETIME"
+        );
+    }
+
+    #[test]
+    fn screen_space_event_banner_is_absent_and_beacons_are_world_meshes() {
+        use bevy::ecs::system::RunSystemOnce;
+        let mut app = App::new();
+        app.init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>();
+        app.world_mut().run_system_once(setup).unwrap();
+
+        // Setup must not spawn any UI nodes
+        let node_count = app.world_mut().query::<&Node>().iter(app.world()).count();
+        assert_eq!(
+            node_count, 0,
+            "Hex feedback setup must not spawn screen-space UI nodes"
+        );
+
+        // Spawning a beacon produces a 3D mesh entity, not a UI node
+        app.world_mut()
+            .run_system_once(
+                |mut commands: Commands, assets: Res<FeedbackAssets>| {
+                    let mat = assets.next_room.clone();
+                    spawn_beacon(&mut commands, &assets, mat, cell(1, 1, 0));
+                },
+            )
+            .unwrap();
+
+        let mut query = app
+            .world_mut()
+            .query_filtered::<Entity, (With<EventBeacon>, With<Mesh3d>, Without<Node>)>();
+        assert_eq!(
+            query.iter(app.world()).count(),
+            1,
+            "Beacon must be a world-space 3D mesh entity without screen-space Node"
+        );
+    }
+
+    #[test]
+    fn all_feedback_marker_roles_satisfy_legibility_contract() {
+        for role in MarkerRole::ALL {
+            assert!(!role.label().is_empty(), "MarkerRole must have a label");
+            let treatment = observed_style::marker(role);
+            assert!(
+                treatment.signal,
+                "MarkerRole treatment must be marked as signal tier"
+            );
+            let emissive_lum = observed_style::luminance(treatment.emissive);
+            assert!(
+                emissive_lum > 1.0,
+                "Emissive brightness must be > 1.0 to guarantee punching through fog"
+            );
+        }
+    }
 }
+
