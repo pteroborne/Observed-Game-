@@ -776,3 +776,6 @@ mod tests;
 
 #[cfg(test)]
 mod pressure_tests;
+
+#[cfg(test)]
+mod playtest_instrument;
