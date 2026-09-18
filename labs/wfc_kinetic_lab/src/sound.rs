@@ -98,6 +98,9 @@ pub fn cue(event: &Event) -> Cue {
         // it — a sustained draw rather than an impact — and arming borrows the
         // charge tick, which is already the sound of the tool getting ready.
         Event::Plumbed(..) => Cue::Pull,
+        Event::SelfPlumbed => Cue::Pull,
+        Event::GravityReleased => Cue::PowerOff,
+        Event::GravityWarning => Cue::Warning,
         Event::Unplumbed(_) => Cue::ChargeTick,
         Event::Armed(_) => Cue::ChargeTick,
         Event::Wave(_) => Cue::Wave,

@@ -750,19 +750,32 @@ impl WfcKineticWorld {
     #[must_use]
     pub fn observation(&self) -> HexObservationFrame {
         let eye = self.eye();
-        let look = self.look_dir();
+        let upright = self.gravity.frame.is_upright();
+        let look = if upright {
+            self.player.look_dir().with_y(0.).normalize_or_zero()
+        } else {
+            self.look_dir()
+        };
         let mut visible = BTreeSet::new();
         for cell in self.world.placements.keys().copied() {
             if self.world.placements[&cell].space == HexSpace::Void {
                 continue;
             }
             let centre = Vec3::from_array(hex_origin(cell)) + Vec3::Y * 1.2;
-            let offset = centre - eye;
+            let offset = if upright {
+                (centre - eye).with_y(0.)
+            } else {
+                centre - eye
+            };
             let distance = offset.length();
             if distance > OBSERVATION_RANGE {
                 continue;
             }
             // The cell you are standing in counts as seen however you face.
+            // An upright Observer keeps the horizontal cone that the shipped
+            // fog-of-war contract was proven under. When wall- or ceiling-walking,
+            // the full 3D direction and offset are used so floor and wall tiles
+            // remain observable from non-upright frames.
             let facing =
                 distance < 1.0 || offset.normalize_or_zero().dot(look) > OBSERVATION_COSINE;
             if facing && self.line_clear(eye, centre) {

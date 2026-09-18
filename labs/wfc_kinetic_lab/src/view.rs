@@ -105,7 +105,7 @@ enum UiAction {
     Inspect,
 }
 
-const ROLES: [Role; 14] = [
+const ROLES: [Role; 15] = [
     Role::Floor,
     Role::Wall,
     Role::Catwalk,
@@ -120,6 +120,7 @@ const ROLES: [Role; 14] = [
     Role::Unpowered,
     Role::Text,
     Role::Panel,
+    Role::GravityWarning,
 ];
 
 #[derive(Resource)]
@@ -526,6 +527,8 @@ fn input(
             Action::Plumb,
         ),
         (keys.just_pressed(KeyCode::KeyQ), Action::Arm),
+        (keys.just_pressed(KeyCode::KeyC), Action::SelfPlumb),
+        (keys.just_pressed(KeyCode::KeyX), Action::Release),
         (keys.just_pressed(KeyCode::KeyE), Action::Interact),
     ] {
         if pressed {
@@ -832,8 +835,9 @@ fn sync(
         let world = &runtime.world;
         let mut body = world.player;
         body.position = runtime.previous_player.lerp(body.position, alpha);
-        *transform = Transform::from_translation(body.eye(&world.player_config))
-            .looking_to(world.player.look_dir(), Vec3::Y);
+        let frame = world.gravity.visual_frame();
+        *transform = Transform::from_translation(frame.eye(&body, &world.player_config))
+            .looking_to(frame.look(&body), frame.up());
     }
     for mut material in &mut power {
         material.0 = art.material(if runtime.world.powered {
@@ -897,6 +901,38 @@ fn draw(runtime: Res<Runtime>, mut gizmos: Gizmos) {
         let side = plumb.direction.any_orthonormal_vector() * 0.3;
         gizmos.line(tip, tip - plumb.direction * 0.5 + side, color(Role::Pull));
         gizmos.line(tip, tip - plumb.direction * 0.5 - side, color(Role::Pull));
+    }
+    // The Observer's own artificial gravity, drawn along down when plumbed.
+    // When expiring (<= 60 ticks), this pulses with Role::GravityWarning.
+    if world.gravity.remaining > 0 {
+        let down = -world.gravity.frame.up();
+        let at = world.player.position;
+        let role = if world.gravity.remaining <= 60 {
+            if (world.tick / 6).is_multiple_of(2) {
+                Role::GravityWarning
+            } else {
+                Role::Text
+            }
+        } else {
+            Role::Pull
+        };
+        let tip = at + down * 1.5;
+        gizmos.line(at, tip, color(role));
+        let side = down.any_orthonormal_vector() * 0.25;
+        gizmos.line(tip, tip - down * 0.4 + side, color(role));
+        gizmos.line(tip, tip - down * 0.4 - side, color(role));
+
+        // When expiring, also draw a reticle indicator in front of the eye
+        // so the player cannot miss the warning when looking ahead.
+        if world.gravity.remaining <= 60 {
+            let visual = world.gravity.visual_frame();
+            let look = visual.look(&world.player);
+            let reticle = world.eye() + look * 1.1;
+            let up = visual.up() * 0.08;
+            let right = (visual.rotation * world.player.right()) * 0.08;
+            gizmos.line(reticle - right, reticle + right, color(role));
+            gizmos.line(reticle - up, reticle + up, color(role));
+        }
     }
     // The armed direction, drawn just in front of the eye so the Observer can
     // see what they are about to commit without opening a menu.
@@ -990,6 +1026,9 @@ fn events(
                 direction.x, direction.y, direction.z
             )),
             Event::Plumbed(..) => Some("plumb committed".to_string()),
+            Event::SelfPlumbed => Some("self-plumb engaged — wall walk active".to_string()),
+            Event::GravityReleased => Some("gravity released — returning upright".to_string()),
+            Event::GravityWarning => Some("GRAVITY EXPIRING".to_string()),
             Event::Unplumbed(_) => None,
             Event::Retracted(cell) => {
                 Some(format!("({}, {}) retracted toward void", cell.q, cell.r))
@@ -1078,6 +1117,8 @@ fn refusal(reason: Refusal) -> &'static str {
         Refusal::TooFar => "out of reach",
         Refusal::Cooldown => "tool recovering",
         Refusal::EmptyCharge => "recharge at the station",
+        Refusal::Reorienting => "reorienting — wait for settle",
+        Refusal::Clearance => "insufficient clearance to reorient",
     }
 }
 
@@ -1247,8 +1288,31 @@ fn hud(runtime: Res<Runtime>, view: Res<ViewState>, mut texts: Query<(&mut Text,
                 } else {
                     format!("{:.0}", world.charge)
                 };
+                let gravity_summary = if world.gravity.remaining > 0 {
+                    if world.gravity.remaining <= 60 {
+                        format!(
+                            "SELF-PLUMB  EXPIRING ({} ticks)  X releases",
+                            world.gravity.remaining
+                        )
+                    } else {
+                        format!(
+                            "SELF-PLUMB  active ({} ticks)  X releases",
+                            world.gravity.remaining
+                        )
+                    }
+                } else if world.gravity.returning {
+                    "SELF-PLUMB  returning upright".to_string()
+                } else {
+                    format!(
+                        "SELF-PLUMB  {}   C self-plumbs",
+                        match world.self_plumb_ready() {
+                            Ok(_) => "ready".to_string(),
+                            Err(reason) => refusal(reason).to_string(),
+                        }
+                    )
+                };
                 format!(
-                    "SEED {}  ({} requested)\nPLAN {}\nCHARGE {}\nWAVE {} / 3    REMOVED {}\nGENERATOR {}\n\nFORCE {:.1} / {:.1}  [ ]\nMINOR SPEED {:.1}  - =\n\nPLUMB  down {:>5.2} {:>5.2} {:>5.2}   Q arms\n       {}",
+                    "SEED {}  ({} requested)\nPLAN {}\nCHARGE {}\nWAVE {} / 3    REMOVED {}\nGENERATOR {}\n\nFORCE {:.1} / {:.1}  [ ]\nMINOR SPEED {:.1}  - =\n\nPLUMB  down {:>5.2} {:>5.2} {:>5.2}   Q arms\n       {}\n{}",
                     site.seed,
                     site.requested_seed,
                     site.plan(),
@@ -1266,6 +1330,7 @@ fn hud(runtime: Res<Runtime>, view: Res<ViewState>, mut texts: Query<(&mut Text,
                         Ok(_) => "ready".to_string(),
                         Err(reason) => refusal(reason).to_string(),
                     },
+                    gravity_summary,
                 )
             }
             HudField::Aim => match world.fire_ready() {
@@ -1284,6 +1349,13 @@ fn hud(runtime: Res<Runtime>, view: Res<ViewState>, mut texts: Query<(&mut Text,
                 if let Some(device) = world.interaction() {
                     lines.push(format!("E  {}", device.label()));
                 }
+                if world.gravity.remaining > 0 && world.gravity.remaining <= 60 {
+                    lines.push(if (world.tick / 6).is_multiple_of(2) {
+                        "GRAVITY EXPIRING".to_string()
+                    } else {
+                        format!("GRAVITY EXPIRING ({} TICKS)", world.gravity.remaining)
+                    });
+                }
                 if world.tick < view.message_until && !view.message.is_empty() {
                     lines.push(view.message.clone());
                 }
@@ -1299,9 +1371,15 @@ fn hud(runtime: Res<Runtime>, view: Res<ViewState>, mut texts: Query<(&mut Text,
                         .filter(|actor| actor.alive && actor.behavior == Behavior::Pursue)
                         .count();
                     format!(
-                        "tick {}  digest {:016x}\ncells {}  holes {}  thresholds onto void {}\nhulls {}  waypoints {}\npursuing {}  observing {}\nrelayouts {}  facility generation {}",
+                        "tick {}  digest {:016x}\ngravity up {:>5.2} {:>5.2} {:>5.2}  rem {}  trans {}  ret {}\ncells {}  holes {}  thresholds onto void {}\nhulls {}  waypoints {}\npursuing {}  observing {}\nrelayouts {}  facility generation {}",
                         world.tick,
                         world.digest(),
+                        world.gravity.frame.up().x,
+                        world.gravity.frame.up().y,
+                        world.gravity.frame.up().z,
+                        world.gravity.remaining,
+                        world.gravity.transition,
+                        world.gravity.returning,
                         site.cells.len(),
                         world.holes().len(),
                         world.open_thresholds().len(),
