@@ -221,6 +221,19 @@ difference in feel is still the architecture talking.
 
 ## What owns the truth
 
+The Observer stands up in the **best-lit room** on the floor, and in the pool
+rather than at the geometric centre of it. This used to be whichever room came
+first in lattice order, which on the default floor was Megastructure — the
+darkest register present, ambient 40 against the brightest's 180 — with one
+practical in the cell and the Observer six and a half metres from it. The first
+thing anyone testing the lab saw was a dark room. Rooms are interchangeable for
+every other purpose here, so choosing the lit one costs nothing.
+
+One knock-on, recorded rather than hidden: the best-lit room is not chosen for
+its proximity to anything, so the recorded director's walk to the demolition
+control grew from eleven seconds to twenty-five. That is poor pacing and is
+worth addressing when the recorded loop is next worked on.
+
 `site` owns the deal — the solve, its projection and the anchors — and is
 immutable once built. The live facility lives in the model, because relayout
 changes it; `site` stays the floor as it was dealt. `model` owns commands, fixed-tick rules, snapshots, events and stable

@@ -268,8 +268,49 @@ impl Site {
             .copied()
             .filter(|coord| world.placements[coord].space == HexSpace::Hall)
             .collect();
-        let spawn_cell = *rooms.first().ok_or("no room cell")?;
-        let generator_cell = *rooms.last().ok_or("no room cell")?;
+        // Stand the Observer up somewhere they can see.
+        //
+        // This used to take whichever room came first in lattice order, which
+        // on the default floor meant Megastructure — the darkest register
+        // present, ambient 40 against the brightest's 180 — with one practical
+        // in the cell and the Observer six and a half metres from it. The first
+        // thing anyone testing this lab saw was a dark room, which is a poor
+        // advertisement for a facility and made reviewing hard for no reason.
+        // Rooms are equivalent for every other purpose here, so this costs
+        // nothing but the choice.
+        let lit_score = |cell: &HexCoord| -> i64 {
+            let centre = center(*cell);
+            let register = world
+                .architecture
+                .get(cell)
+                .copied()
+                .unwrap_or(ArchitectureRegister::Institutional);
+            let ambient = observed_style::architecture(register).ambient_brightness;
+            let nearest = snapshot
+                .lights
+                .iter()
+                .filter(|light| light.source_cell == *cell)
+                .map(|light| light.position.distance(centre))
+                .fold(f32::INFINITY, f32::min);
+            // Ambient first, then how close the nearest fixture is to where a
+            // body would actually stand. Scaled into an integer so the ordering
+            // is total and the choice is stable across runs.
+            let reach = if nearest.is_finite() {
+                (12.0 - nearest).max(0.0)
+            } else {
+                0.0
+            };
+            ((ambient + reach * 6.0) * 100.0) as i64
+        };
+        let spawn_cell = *rooms
+            .iter()
+            .max_by_key(|cell| (lit_score(cell), cell.q, cell.r))
+            .ok_or("no room cell")?;
+        let generator_cell = *rooms
+            .iter()
+            .filter(|cell| **cell != spawn_cell)
+            .max_by_key(|cell| lateral_steps(spawn_cell, **cell))
+            .ok_or("no second room cell")?;
         if spawn_cell == generator_cell {
             return Err("only one room cell");
         }
@@ -312,9 +353,24 @@ impl Site {
             })
             .ok_or("no hall cell left for the panel")?;
 
-        let spawn = probe
-            .stand(center(spawn_cell))
-            .ok_or("spawn room centre has no standable floor")?;
+        // And stand them in the pool rather than at the geometric centre: a
+        // cell is fourteen metres across and its one fixture is rarely in the
+        // middle of it.
+        let toward_light = snapshot
+            .lights
+            .iter()
+            .filter(|light| light.source_cell == spawn_cell)
+            .map(|light| light.position)
+            .min_by(|a, b| {
+                center(spawn_cell)
+                    .distance_squared(*a)
+                    .total_cmp(&center(spawn_cell).distance_squared(*b))
+            });
+        let spawn = toward_light
+            .and_then(|at| probe.stand(center(spawn_cell).lerp(at.with_y(0.), 0.55)))
+            .or_else(|| probe.stand(center(spawn_cell)))
+            .or_else(|| probe.stand_near(spawn_cell))
+            .ok_or("spawn room has no standable floor")?;
         let generator = probe
             .stand_near(generator_cell)
             .ok_or("generator room has no standable floor")?;
@@ -586,6 +642,11 @@ fn ledges(occupied: &BTreeSet<HexCoord>, probe: &Probe) -> Vec<Ledge> {
         }
     }
     found
+}
+
+/// Plain lattice distance, for ordering rooms by separation.
+fn lateral_steps(from: HexCoord, to: HexCoord) -> u32 {
+    observed_hex::lateral_distance(from, to)
 }
 
 /// Lateral steps between two cells over open doors, or `None` if unreachable.
