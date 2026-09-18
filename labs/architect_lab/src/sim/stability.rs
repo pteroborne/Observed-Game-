@@ -2,7 +2,7 @@
 use observed_facility::hex_wfc::HexSpace;
 use observed_hex::{HexCoord, travel_distance};
 
-use super::{ArchitectLab, District, DoorState, threshold_touches};
+use super::{ArchitectLab, District, DoorState, GuardianKind, threshold_touches};
 
 pub const RETRACTION_TICKS: u64 = 180;
 
@@ -25,7 +25,7 @@ pub struct LabEvent {
 }
 
 impl ArchitectLab {
-    pub(super) fn record_event(
+    pub(crate) fn record_event(
         &mut self,
         kind: LabEventKind,
         cell: Option<HexCoord>,
@@ -87,7 +87,7 @@ impl ArchitectLab {
         }
     }
 
-    pub(super) fn advance_retraction(&mut self) {
+    pub(crate) fn advance_retraction(&mut self) {
         if !self
             .next_retraction_tick
             .is_some_and(|deadline| self.tick >= deadline)
@@ -121,6 +121,8 @@ impl ArchitectLab {
             });
             if floor_empty && self.collapsed_floors.insert(cell.level) {
                 self.deck.retire_district(District::for_level(cell.level));
+                self.guardians
+                    .retain(|_, g| !(g.kind == GuardianKind::Minor && g.cell.level == cell.level));
                 self.record_event(
                     LabEventKind::FloorClosed,
                     Some(cell),

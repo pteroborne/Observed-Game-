@@ -14,6 +14,7 @@ pub use stability::{LabEvent, LabEventKind, RETRACTION_TICKS};
 mod cards;
 pub use cards::{Card, CardId, CardKind, Deck, District, TileShape};
 mod behavior;
+pub use behavior::GuardianIntent;
 mod command;
 pub use command::{ArchitectCommand, CommandRefusal, DoorState, ThresholdKey};
 mod mode;
@@ -23,7 +24,7 @@ use util::{
     Prng, command_key, face_between, face_toward, key_face_from, lateral_face, threshold_touches,
 };
 
-use crate::economy::EconomyState;
+pub use crate::economy::{EconomyState, GuardianKind};
 
 pub const FIXED_HZ: u32 = 60;
 pub const ACTOR_BEAT_TICKS: u32 = FIXED_HZ;
@@ -56,6 +57,7 @@ pub struct Guardian {
     pub id: GuardianId,
     pub cell: HexCoord,
     pub last_detection: Option<HexCoord>,
+    pub kind: GuardianKind,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -179,6 +181,7 @@ impl ArchitectLab {
                 id: GuardianId(0),
                 cell: guardian_cell,
                 last_detection: None,
+                kind: GuardianKind::Major,
             },
         )]);
 
@@ -546,6 +549,46 @@ impl ArchitectLab {
     }
 
     #[must_use]
+    pub fn exits_minor(&self, from: HexCoord) -> Vec<HexCoord> {
+        self.exits(from)
+            .into_iter()
+            .filter(|cell| !self.prison_core.contains(cell))
+            .collect()
+    }
+
+    #[must_use]
+    pub fn route_minor(&self, from: HexCoord, to: HexCoord) -> Option<Vec<HexCoord>> {
+        if self.prison_core.contains(&to) {
+            return None;
+        }
+        if from == to {
+            return Some(vec![from]);
+        }
+        let mut parent = BTreeMap::new();
+        let mut seen = BTreeSet::from([from]);
+        let mut queue = VecDeque::from([from]);
+        while let Some(cell) = queue.pop_front() {
+            for next in self.exits_minor(cell) {
+                if seen.insert(next) {
+                    parent.insert(next, cell);
+                    if next == to {
+                        let mut path = vec![to];
+                        let mut cursor = to;
+                        while let Some(previous) = parent.get(&cursor).copied() {
+                            path.push(previous);
+                            cursor = previous;
+                        }
+                        path.reverse();
+                        return Some(path);
+                    }
+                    queue.push_back(next);
+                }
+            }
+        }
+        None
+    }
+
+    #[must_use]
     pub fn exits(&self, from: HexCoord) -> Vec<HexCoord> {
         let Some(placement) = self.world.placements.get(&from) else {
             return Vec::new();
@@ -611,7 +654,7 @@ impl ArchitectLab {
             .collect()
     }
 
-    fn threshold_key(&self, cell: HexCoord, face: HexFace) -> Option<ThresholdKey> {
+    pub(crate) fn threshold_key(&self, cell: HexCoord, face: HexFace) -> Option<ThresholdKey> {
         if !face.is_lateral() {
             return None;
         }

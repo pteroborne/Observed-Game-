@@ -4,7 +4,7 @@
 use observed_hex::{HexCoord, travel_distance};
 
 use super::{
-    ArchitectCommand, ArchitectLab, BehaviorTrace, DoorState, GuardianId, ObserverId,
+    ArchitectCommand, ArchitectLab, BehaviorTrace, DoorState, GuardianId, GuardianKind, ObserverId,
     ObserverState, ThresholdKey, command_key, face_between, threshold_touches,
 };
 
@@ -17,7 +17,7 @@ pub(super) enum ObserverIntent {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum GuardianIntent {
+pub enum GuardianIntent {
     Hold,
     Step(HexCoord, Option<HexCoord>),
     Capture(ObserverId),
@@ -127,14 +127,19 @@ impl ArchitectLab {
             })
     }
 
-    pub(super) fn guardian_intent(&self, id: GuardianId) -> (GuardianIntent, BehaviorTrace) {
+    pub(crate) fn guardian_intent(&self, id: GuardianId) -> (GuardianIntent, BehaviorTrace) {
         let guardian = &self.guardians[&id];
         let mut trace = BehaviorTrace::default();
-        if trace.test(
-            "frozen while observed",
-            self.observed.contains(&guardian.cell),
-        ) {
+        if guardian.kind == GuardianKind::Major
+            && trace.test(
+                "frozen while observed",
+                self.observed.contains(&guardian.cell),
+            )
+        {
             return (GuardianIntent::Hold, trace);
+        }
+        if guardian.kind == GuardianKind::Minor {
+            trace.test("frozen while observed", false);
         }
         if let Some(observer) = self.observers.values().find(|observer| {
             observer.state == ObserverState::Active && observer.cell == guardian.cell
@@ -151,8 +156,12 @@ impl ArchitectLab {
                 observer.state == ObserverState::Active && detected.contains(&observer.id)
             })
             .filter_map(|observer| {
-                self.route(guardian.cell, observer.cell)
-                    .map(|path| (path.len(), observer.id, observer.cell, path))
+                let path = if guardian.kind == GuardianKind::Minor {
+                    self.route_minor(guardian.cell, observer.cell)?
+                } else {
+                    self.route(guardian.cell, observer.cell)?
+                };
+                Some((path.len(), observer.id, observer.cell, path))
             })
             .min_by_key(|(len, id, _, _)| (*len, *id));
         if trace.test("pursue detected", target.is_some()) {
@@ -169,7 +178,8 @@ impl ArchitectLab {
             }
             return (GuardianIntent::Step(path[1], Some(target_cell)), trace);
         }
-        if trace.test("obey Rogue directive", self.rogue_directive.is_some())
+        if guardian.kind == GuardianKind::Major
+            && trace.test("obey Rogue directive", self.rogue_directive.is_some())
             && let Some(next) = self
                 .rogue_directive
                 .and_then(|target| self.route(guardian.cell, target))
@@ -177,19 +187,33 @@ impl ArchitectLab {
         {
             return (GuardianIntent::Step(next, None), trace);
         }
+        if guardian.kind == GuardianKind::Minor {
+            trace.test("obey Rogue directive", false);
+        }
         if trace.test(
             "investigate last detection",
             guardian.last_detection.is_some(),
         ) && let Some(next) = guardian
             .last_detection
-            .and_then(|target| self.route(guardian.cell, target))
+            .and_then(|target| {
+                if guardian.kind == GuardianKind::Minor {
+                    self.route_minor(guardian.cell, target)
+                } else {
+                    self.route(guardian.cell, target)
+                }
+            })
             .and_then(|path| path.get(1).copied())
         {
             return (GuardianIntent::Step(next, None), trace);
         }
         trace.test("patrol", true);
-        (
+        let exits = if guardian.kind == GuardianKind::Minor {
+            self.exits_minor(guardian.cell)
+        } else {
             self.exits(guardian.cell)
+        };
+        (
+            exits
                 .into_iter()
                 .min_by_key(|cell| {
                     (
@@ -209,6 +233,9 @@ impl ArchitectLab {
             GuardianIntent::Hold => {}
             GuardianIntent::Step(next, detection) => {
                 let guardian = self.guardians.get_mut(&id).expect("known Guardian");
+                if guardian.kind == GuardianKind::Minor && self.prison_core.contains(&next) {
+                    return;
+                }
                 guardian.cell = next;
                 *self.guardian_visits.entry((id, next)).or_default() += 1;
                 if self.rogue_directive == Some(next) {
