@@ -14,13 +14,14 @@ use player_input::PlayerIntent;
 use crate::model::{Action, ActorId, Command, Kind, Mode, WfcKineticWorld};
 use crate::site::Site;
 
-pub const SCENES: [&str; 6] = [
+pub const SCENES: [&str; 7] = [
     "THE SOLVED FLOOR / seven cells the solver placed",
     "ARCHITECTURE / a wall the solver chose stops the ray",
     "THE PARAPET / every face onto void comes back railed",
     "DECOHERENCE / look away and the pocket re-collapses",
     "OBSERVATION / look at it and the floor holds",
     "PLUMB / down becomes the hole, and the minor agrees",
+    "SELF-PLUMB / the Observer takes a wall for a floor",
 ];
 pub const SCENE_TICKS: u32 = 240;
 
@@ -209,6 +210,24 @@ pub fn stage(index: usize, site: &Arc<Site>) -> Demo {
                 );
             }
         }
+        // Self-plumb: a wall the solver chose, taken for a floor. This corpus
+        // offers walls in quantity and unrailed edges not at all — scene two is
+        // why — so a wall is the surface self-plumb actually buys here. The
+        // Observer stands back far enough for the sideways capsule to have room
+        // and looks straight at the face, because the armed direction is the
+        // new down and arming is just where you were already looking.
+        6 => {
+            empty(&mut world);
+            if let Some((cell, face)) = walled_pair(site) {
+                let outward = face_direction(face);
+                let inside = Vec3::from_array(hex_origin(cell));
+                let ideal = inside + outward * 3.2;
+                let stand = standable_near(site, ideal, 4.0).unwrap_or(ideal);
+                place_player(&mut world, stand, outward);
+            } else {
+                place_player(&mut world, site.spawn, site.spawn_facing);
+            }
+        }
         // The panel, the warning, and a pocket that re-collapses because
         // nobody was looking at it.
         //
@@ -291,12 +310,20 @@ pub fn command(
         let wanted = if scene == 4 { toward } else { -toward };
         movement.look = turn_toward(world, world.eye() + wanted * 10.);
     }
+    // Once the wall is underfoot, walk along it. Standing still on a wall and
+    // falling onto one look the same in a still frame; moving is the evidence.
+    if scene == 6 && tick > 130 {
+        movement.movement = Vec2::new(0., 0.5);
+    }
     let action = match (scene, tick) {
         (1, 90) | (2, 90) => Action::Push,
         (3 | 4, 60) => Action::Interact,
         // Arm the direction, then commit it. Two presses, as at the keyboard.
         (5, 55) => Action::Arm,
         (5, 90) => Action::Plumb,
+        // Same two presses, aimed at a wall instead of a hole.
+        (6, 55) => Action::Arm,
+        (6, 90) => Action::SelfPlumb,
         _ => Action::None,
     };
     Command { movement, action }

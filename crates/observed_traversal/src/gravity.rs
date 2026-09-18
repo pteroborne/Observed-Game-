@@ -202,7 +202,19 @@ impl ObserverGravity {
         down: Vec3,
         ticks: u32,
     ) -> bool {
-        let next = self.frame.toward(-down);
+        // Composing arc rotations accumulates a twist. Three chained plumbs
+        // around a closed circuit of up vectors (Y to X to Z and back to Y)
+        // return the body to up = Y carrying a yaw the arcs picked up on the
+        // way — holonomy, the enclosed solid angle. `is_upright` would then be
+        // true while the frame still rotated `look` and `eye`, so the upright
+        // fast path and the camera would disagree by that angle. Any frame that
+        // comes back upright lands on the canonical one instead.
+        let candidate = self.frame.toward(-down);
+        let next = if candidate.is_upright() {
+            BodyFrame::default()
+        } else {
+            candidate
+        };
         let Some(position) = reorient(query, body, self.frame, next, config) else {
             return false;
         };
@@ -431,13 +443,75 @@ mod tests {
         tunnel_physics.update();
         let tunnel_query = tunnel_physics.query();
 
-        let body_near_wall = FpsBody::spawned(Vec3::new(0.7, 0.9, 0.0), 0.0);
-        if let Some(pos) = reorient(&tunnel_query, &body_near_wall, from, to, &config) {
-            assert!(
-                pos.x < 1.0,
-                "reorient must not cross geometry: landed at x={}",
-                pos.x
-            );
+        // Sweep the approach to the wall. `reorient` may refuse at any of these
+        // starts, so counting the successes is what keeps this honest: an
+        // assertion reached zero times proves nothing about the no-tunnel
+        // claim, and that is exactly how this test used to pass.
+        let mut reoriented = 0;
+        for start in [0.0_f32, 0.2, 0.4, 0.6, 0.7, 0.8, 0.9] {
+            let near = FpsBody::spawned(Vec3::new(start, 0.9, 0.0), 0.0);
+            if let Some(pos) = reorient(&tunnel_query, &near, from, to, &config) {
+                reoriented += 1;
+                assert!(
+                    pos.x < 1.0,
+                    "reorient must not cross geometry: started at x={start}, landed at x={}",
+                    pos.x
+                );
+            }
         }
+        assert!(
+            reoriented > 0,
+            "no start position reoriented, so the no-tunnel assertion never ran"
+        );
+    }
+
+    /// Three plumbs around a closed circuit of up vectors come back to up = Y.
+    /// The arcs accumulate a yaw on the way, and a frame carrying that twist
+    /// would take the upright fast path while still rotating `look`.
+    #[test]
+    fn chained_plumbs_returning_to_up_y_carry_no_residual_twist() {
+        let mut physics = TestPhysics::new();
+        physics.colliders.insert(
+            ColliderBuilder::cuboid(20.0, 0.1, 20.0).translation(rv(Vec3::new(0.0, -0.1, 0.0))),
+        );
+        physics.update();
+        let query = physics.query();
+
+        let config = FpsConfig::default();
+        let mut body = FpsBody::spawned(Vec3::new(0.0, 1.0, 0.0), 0.0);
+
+        // The bare composition is what `activate` has to defend against.
+        let twisted = BodyFrame::default()
+            .toward(Vec3::X)
+            .toward(Vec3::Z)
+            .toward(Vec3::Y);
+        assert!(
+            twisted.up().distance(Vec3::Y) <= 1e-3,
+            "the circuit must return up to Y, else this proves nothing"
+        );
+        assert!(
+            twisted.rotation.angle_between(Quat::IDENTITY) > 0.1,
+            "the circuit must accumulate a real twist, else there is nothing to fix"
+        );
+
+        // Driven through `activate`, the same circuit lands on the canonical frame.
+        let mut gravity = ObserverGravity::default();
+        for down in [-Vec3::X, -Vec3::Z, -Vec3::Y] {
+            assert!(
+                gravity.activate(&query, &mut body, &config, down, 100),
+                "clearance is open in this room, so every hop should take"
+            );
+            gravity.transition = 0;
+        }
+        assert!(gravity.frame.is_upright());
+        assert_eq!(
+            gravity.frame,
+            BodyFrame::default(),
+            "an upright outcome must be the canonical frame, not a yawed one"
+        );
+        assert!(
+            gravity.frame.look(&body).distance(body.look_dir()) <= 1e-3,
+            "the upright fast path and the camera must agree on look"
+        );
     }
 }

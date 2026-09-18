@@ -61,6 +61,18 @@ the combined loop.
     signal 60 ticks before expiry, and `C`/`X` keyboard bindings. The upright fast
     path remains exact via tolerance guards and default-frame restoration.
     First-person wall-walking and ceiling traversal are fully operational.
+    Three findings review caught that the compiler could not. An exact `Quat`
+    comparison guarded the upright fast path, and a normalized `from_rotation_arc`
+    never satisfies it, so one plumb-and-release left the Observer on the gravity
+    path for good. `observation()` had quietly dropped its horizontal flattening
+    for every Observer rather than only the wall-walking one, changing a shipped
+    fog-of-war contract as a side effect. And the frames themselves carry
+    holonomy: three plumbs around a closed circuit of up vectors (Y to X to Z to
+    Y) come back to up = Y bearing a 90° yaw — the enclosed solid angle — which
+    read as upright while still rotating `look`, so the fast path and the camera
+    disagreed by exactly that much. Any frame that returns upright now lands on
+    the canonical one. The yaw is pinned by a test that fails by precisely
+    `(0, -0.7071, 0, 0.7071)` without the guard.
 4. **Loyal construction loop:** add the human loyal Architect, variable team size,
    team-scoped knowledge, ascent, prison escape and teammate rescue, unsafe falls,
    irreversible Rogue conversion, and loyal victory. A loyal bot Architect must use
