@@ -184,7 +184,10 @@ mod tests {
 
         let mut query = app.world_mut().query::<(&PlaybackSettings, &Transform)>();
         let (playback, transform) = query.single(app.world()).unwrap();
-        assert!(playback.spatial, "Spatial audio must be enabled for located cue");
+        assert!(
+            playback.spatial,
+            "Spatial audio must be enabled for located cue"
+        );
         assert_eq!(
             playback.spatial_scale.map(|s| s.0),
             Some(Vec3::splat(HEX_SPATIAL_SCALE)),
@@ -292,4 +295,3 @@ mod tests {
         assert!(listener.is_some(), "GameCam must receive SpatialListener");
     }
 }
-

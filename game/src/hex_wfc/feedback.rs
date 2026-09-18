@@ -302,12 +302,10 @@ mod tests {
         let expected_pos = Vec3::from_array(hex_origin(target_cell)) + Vec3::Y * 0.08;
 
         app.world_mut()
-            .run_system_once(
-                move |mut commands: Commands, assets: Res<FeedbackAssets>| {
-                    let mat = assets.next_room.clone();
-                    spawn_beacon(&mut commands, &assets, mat, target_cell);
-                },
-            )
+            .run_system_once(move |mut commands: Commands, assets: Res<FeedbackAssets>| {
+                let mat = assets.next_room.clone();
+                spawn_beacon(&mut commands, &assets, mat, target_cell);
+            })
             .unwrap();
 
         let mut query = app.world_mut().query::<(&EventBeacon, &Transform)>();
@@ -332,13 +330,11 @@ mod tests {
         assert_ne!(pos_a, pos_b, "Cell positions must differ");
 
         app.world_mut()
-            .run_system_once(
-                move |mut commands: Commands, assets: Res<FeedbackAssets>| {
-                    let mat = assets.next_room.clone();
-                    spawn_beacon(&mut commands, &assets, mat.clone(), cell_a);
-                    spawn_beacon(&mut commands, &assets, mat, cell_b);
-                },
-            )
+            .run_system_once(move |mut commands: Commands, assets: Res<FeedbackAssets>| {
+                let mat = assets.next_room.clone();
+                spawn_beacon(&mut commands, &assets, mat.clone(), cell_a);
+                spawn_beacon(&mut commands, &assets, mat, cell_b);
+            })
             .unwrap();
 
         let mut query = app.world_mut().query::<(&EventBeacon, &Transform)>();
@@ -412,12 +408,10 @@ mod tests {
 
         // Spawning a beacon produces a 3D mesh entity, not a UI node
         app.world_mut()
-            .run_system_once(
-                |mut commands: Commands, assets: Res<FeedbackAssets>| {
-                    let mat = assets.next_room.clone();
-                    spawn_beacon(&mut commands, &assets, mat, cell(1, 1, 0));
-                },
-            )
+            .run_system_once(|mut commands: Commands, assets: Res<FeedbackAssets>| {
+                let mat = assets.next_room.clone();
+                spawn_beacon(&mut commands, &assets, mat, cell(1, 1, 0));
+            })
             .unwrap();
 
         let mut query = app
@@ -447,4 +441,3 @@ mod tests {
         }
     }
 }
-
