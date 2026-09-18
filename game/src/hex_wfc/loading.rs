@@ -558,6 +558,11 @@ fn poll_lan_barrier(
         state.fail(HexLoadingError::LanLaunchUnavailable);
         return;
     };
+    if client.server_silent_for() >= diagnosis::LAN_SERVER_SILENCE_TIMEOUT {
+        commands.remove_resource::<PreparedHexLaunchSlot>();
+        state.fail(HexLoadingError::LanServerSilent);
+        return;
+    }
     if lan_launch_withdrawn(client, match_number) {
         commands.remove_resource::<PreparedHexLaunchSlot>();
         commands.remove_resource::<HexLaunchRequest>();
