@@ -179,6 +179,8 @@ feet stay inside the existing collision envelope.
 | LMB / RMB | One immediate push / pull per press |
 | Q | Arm the plumb along the current look direction |
 | F / MMB | Commit the armed plumb to whatever the crosshair has |
+| C | Commit the armed plumb to self (wall/ceiling walk) |
+| X | Release self-plumb early (return to upright) |
 | E | Operate the nearby generator or tile control |
 | 1 / 2 | Reset into practice / encounter |
 | R / G | Reset this floor / solve the next one |
@@ -195,15 +197,13 @@ Eight-metre reach, nominal 17 m/s push and 13 m/s pull, 10 charge per use,
 15-tick cooldown, 27-tick stagger. One press is one attempt; misses and refusals
 never spend charge.
 
-Force and minor speed are adjustable while the lab runs (`[` `]` and `-` `=`,
-shown in the HUD and kept across resets), because finding those numbers is part
-of what the lab is for. The starting values are not the authored chamber's, and
-the difference is itself a finding: that chamber is a room you cross in a few
-strides, while a solved floor is 14 m cells whose doorways sit 7 m from the
-centre. The 10 m/s shove that sent a body clear across the chamber barely moved
-one out of the tile it was standing in. Everything else is unchanged, so a
-difference in feel is still the architecture talking.
-
+- **Self-plumb:** Arming (`Q`) sets an orientation vector. Pressing `C` reorients the
+  Observer's gravity frame along the armed direction (480 ticks / 8 seconds),
+  enabling locomotion on walls and ceilings. Swept clearance checks guarantee the
+  capsule fits without crossing geometry. 60 ticks before expiry, the `GravityWarning`
+  signal pulses a high-contrast reticle indicator and down vector through fog.
+  Pressing `X` releases artificial gravity early, smoothly easing the camera back to
+  upright over 18 ticks.
 - **Practice:** stationary targets, unlimited charge, no capture.
 - **Encounter:** three waves of two, three, then four pursuing minors, mustered
   on solved cells away from the Observer. Charge starts at 100 and is restored

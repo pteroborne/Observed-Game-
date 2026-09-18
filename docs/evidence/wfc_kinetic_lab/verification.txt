@@ -4,28 +4,28 @@ cells 34 voids 1 ledges 0 hulls 662
 retracting (1, 0)
 
 THE SOLVED FLOOR / seven cells the solver placed
-final digest df272672831df0b6, removed 0, player Vec3(6.692833, 1.4472228, -0.07838604)
+final digest 07c4fbb0b4989d09, removed 0, player Vec3(105.27034, 1.4472222, 48.0)
 
 ARCHITECTURE / a wall the solver chose stops the ray
 tick 90: Refused(Blocked)
-final digest 6a20234ed91e0b0d, removed 0, player Vec3(2.7209039, 1.4472222, 4.6644063)
+final digest 1987dda5f55a85b0, removed 0, player Vec3(2.7209039, 1.4472222, 4.6644063)
 
 THE PARAPET / every face onto void comes back railed
 tick 90: Fired(Push, ActorId(1005), Vec3(-2.400071, 1.1779989, 4.1144056))
-final digest add3cb34166d33d8, removed 0, player Vec3(0.0, 1.4472222, 0.0)
+final digest febef84fd9c54d85, removed 0, player Vec3(0.0, 1.4472222, 0.0)
 
 DECOHERENCE / look away and the pocket re-collapses
-tick 60: Decohering(HexCoord { q: 0, r: 3, level: 0 })
-tick 180: Relaid(HexCoord { q: 0, r: 3, level: 0 })
-final digest f5307d9ec3a3ea37, removed 0, player Vec3(103.2, 1.4472222, 36.0)
+tick 60: Decohering(HexCoord { q: 1, r: 2, level: 0 })
+tick 180: Relaid(HexCoord { q: 1, r: 2, level: 0 })
+final digest 904f3189498ca14a, removed 0, player Vec3(103.2, 1.4472222, 36.0)
 
 OBSERVATION / look at it and the floor holds
-tick 60: Decohering(HexCoord { q: 0, r: 3, level: 0 })
-tick 180: Relaid(HexCoord { q: 0, r: 3, level: 0 })
-final digest 32094fdf506b26e6, removed 0, player Vec3(103.2, 1.4472222, 36.0)
+tick 60: Decohering(HexCoord { q: 1, r: 2, level: 0 })
+tick 180: Relaid(HexCoord { q: 1, r: 2, level: 0 })
+final digest 58be6cd34c5468ab, removed 0, player Vec3(103.2, 1.4472222, 36.0)
 
 PLUMB / down becomes the hole, and the minor agrees
 tick 55: Armed(Vec3(0.8944272, -0.44721365, 3.9096655e-8))
 tick 90: Plumbed(ActorId(1005), Vec3(0.8944272, -0.44721365, 3.9096655e-8))
-tick 233: Eliminated(ActorId(1005), Some(HexCoord { q: 0, r: 0, level: 0 }))
-final digest 11c76a35023e98fb, removed 1, player Vec3(0.0, 1.4472222, 0.0)
+tick 229: Eliminated(ActorId(1005), Some(HexCoord { q: 0, r: 0, level: 0 }))
+final digest e6da9b80ea7368d2, removed 1, player Vec3(0.0, 1.4472222, 0.0)
