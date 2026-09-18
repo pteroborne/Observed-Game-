@@ -154,3 +154,142 @@ fn play(
     }
     entity.insert(playback);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevy::ecs::system::RunSystemOnce;
+    use observed_hex::HexCoord;
+
+    #[test]
+    fn spatial_cue_sets_spatial_playback_scale_and_transform() {
+        let mut app = App::new();
+        let cell = HexCoord {
+            q: 2,
+            r: 3,
+            level: 1,
+        };
+        let pos = Vec3::from_array(hex_origin(cell)) + Vec3::Y * EYE_OFFSET;
+        app.world_mut()
+            .run_system_once(move |mut commands: Commands| {
+                play(
+                    &mut commands,
+                    Handle::default(),
+                    0.6,
+                    "Hex WFC event cue",
+                    Some(pos),
+                );
+            })
+            .unwrap();
+
+        let mut query = app.world_mut().query::<(&PlaybackSettings, &Transform)>();
+        let (playback, transform) = query.single(app.world()).unwrap();
+        assert!(playback.spatial, "Spatial audio must be enabled for located cue");
+        assert_eq!(
+            playback.spatial_scale.map(|s| s.0),
+            Some(Vec3::splat(HEX_SPATIAL_SCALE)),
+            "Spatial scale must match hex lattice scale"
+        );
+        assert_eq!(
+            transform.translation, pos,
+            "Cue transform must match cell hex origin with eye offset"
+        );
+    }
+
+    #[test]
+    fn different_cells_produce_different_cue_positions() {
+        let mut app = App::new();
+        let cell_a = HexCoord {
+            q: 0,
+            r: 0,
+            level: 0,
+        };
+        let cell_b = HexCoord {
+            q: 3,
+            r: 5,
+            level: 2,
+        };
+        let pos_a = Vec3::from_array(hex_origin(cell_a)) + Vec3::Y * EYE_OFFSET;
+        let pos_b = Vec3::from_array(hex_origin(cell_b)) + Vec3::Y * EYE_OFFSET;
+        assert_ne!(
+            pos_a, pos_b,
+            "Different cells must produce different spatial origins"
+        );
+
+        app.world_mut()
+            .run_system_once(move |mut commands: Commands| {
+                play(
+                    &mut commands,
+                    Handle::default(),
+                    0.6,
+                    "Hex WFC event cue",
+                    Some(pos_a),
+                );
+                play(
+                    &mut commands,
+                    Handle::default(),
+                    0.6,
+                    "Hex WFC event cue",
+                    Some(pos_b),
+                );
+            })
+            .unwrap();
+
+        let mut query = app.world_mut().query::<(&PlaybackSettings, &Transform)>();
+        let translations: Vec<Vec3> = query
+            .iter(app.world())
+            .map(|(_, t)| t.translation)
+            .collect();
+        assert_eq!(translations.len(), 2);
+        assert_ne!(translations[0], translations[1]);
+        assert!(translations.contains(&pos_a));
+        assert!(translations.contains(&pos_b));
+    }
+
+    #[test]
+    fn unlocated_events_play_non_spatially_without_transform() {
+        let mut app = App::new();
+        app.world_mut()
+            .run_system_once(|mut commands: Commands| {
+                play(
+                    &mut commands,
+                    Handle::default(),
+                    0.6,
+                    "Hex WFC event cue",
+                    None,
+                );
+            })
+            .unwrap();
+
+        let mut query = app.world_mut().query::<(Entity, &PlaybackSettings)>();
+        let (entity, playback) = query.single(app.world()).unwrap();
+        assert!(!playback.spatial, "Unlocated event must play non-spatially");
+        assert!(playback.spatial_scale.is_none());
+        assert!(
+            app.world().get::<Transform>(entity).is_none(),
+            "Non-spatial cue must not attach a Transform"
+        );
+    }
+
+    #[test]
+    fn setup_attaches_spatial_listener_to_game_cam() {
+        let mut app = App::new();
+        let cam = app.world_mut().spawn(GameCam).id();
+        app.world_mut()
+            .run_system_once(
+                |mut commands: Commands,
+                 camera: Query<Entity, (With<GameCam>, Without<SpatialListener>)>| {
+                    for entity in &camera {
+                        commands
+                            .entity(entity)
+                            .insert(SpatialListener::new(LISTENER_EAR_GAP));
+                    }
+                },
+            )
+            .unwrap();
+
+        let listener = app.world().get::<SpatialListener>(cam);
+        assert!(listener.is_some(), "GameCam must receive SpatialListener");
+    }
+}
+
