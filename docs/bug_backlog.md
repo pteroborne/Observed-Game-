@@ -522,11 +522,11 @@ answer the question a player opens it to ask — where am I, where is the thing 
 want, and which way do I go. It is fog-of-war over a cell lattice, and a cell
 lattice is not a mental model of a building.
 
-Look at: `game/src/hex_wfc/view/map.rs` and `HexPlayerMapKnowledge`. Worth
-deciding first whether the fix is presentational (legibility, orientation,
-landmarks) or whether the map should show *rooms and connections* rather than
-cells — which again depends on **#30**, since a map of indistinguishable places
-cannot orient anyone.
+Look at: `game/src/hex_wfc/view/map/` (`mod.rs`, `build.rs`, `cell.rs`) and
+`HexPlayerMapKnowledge`. Worth deciding first whether the fix is presentational
+(legibility, orientation, landmarks) or whether the map should show *rooms and
+connections* rather than cells — which again depends on **#30**, since a map of
+indistinguishable places cannot orient anyone.
 
 ### 36. Spectator cutaway is good and needs clarity work
 

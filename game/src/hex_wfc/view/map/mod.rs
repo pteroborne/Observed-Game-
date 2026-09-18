@@ -56,6 +56,15 @@ pub(crate) struct HexMapVisual;
 pub(crate) struct HexMapCell;
 
 #[derive(Component)]
+pub(crate) struct HexMapPlayerBeacon;
+
+#[derive(Component)]
+pub(crate) struct HexMapOrientationFrame;
+
+#[derive(Component)]
+pub(crate) struct HexMapLandmark;
+
+#[derive(Component)]
 pub(crate) struct HexMapCamera;
 
 #[derive(Component)]
@@ -190,7 +199,12 @@ pub(in crate::hex_wfc) fn sync(
     }
 
     if let Ok((_, mut text)) = legend.single_mut() {
-        **text = legend_text(&census, runtime.map_level);
+        let heading = if runtime.local().escaped {
+            None
+        } else {
+            Some(heading_label(runtime.local().yaw))
+        };
+        **text = legend_text(&census, runtime.map_level, heading);
     }
 }
 
@@ -220,9 +234,38 @@ pub(super) fn frame_map(min: Vec3, max: Vec3) -> (Transform, f32, f32) {
     (transform, scale, diagonal * 2.0)
 }
 
+/// Translate a yaw angle (where 0 is North / -Z) into a cardinal heading label and degrees.
+#[must_use]
+pub(crate) fn heading_label(yaw: f32) -> (&'static str, f32) {
+    let norm = yaw.rem_euclid(std::f32::consts::TAU);
+    let deg = norm.to_degrees();
+    let label = if (337.5..=360.0).contains(&deg) || (0.0..22.5).contains(&deg) {
+        "NORTH"
+    } else if (22.5..67.5).contains(&deg) {
+        "NORTH-EAST"
+    } else if (67.5..112.5).contains(&deg) {
+        "EAST"
+    } else if (112.5..157.5).contains(&deg) {
+        "SOUTH-EAST"
+    } else if (157.5..202.5).contains(&deg) {
+        "SOUTH"
+    } else if (202.5..247.5).contains(&deg) {
+        "SOUTH-WEST"
+    } else if (247.5..292.5).contains(&deg) {
+        "WEST"
+    } else {
+        "NORTH-WEST"
+    };
+    (label, deg)
+}
+
 /// Every channel on screen gets a named line. Atmosphere never carries meaning
 /// alone, so the counts are here in words as well as in the geometry.
-fn legend_text(census: &MapCensus, focus: u8) -> String {
+fn legend_text(
+    census: &MapCensus,
+    focus: u8,
+    heading: Option<(&'static str, f32)>,
+) -> String {
     let known = census.traversed + census.glimpsed + census.stale;
     let floors = census
         .floors
@@ -241,6 +284,10 @@ fn legend_text(census: &MapCensus, focus: u8) -> String {
     } else {
         census.rooms.iter().cloned().collect::<Vec<_>>().join(", ")
     };
+    let heading_line = match heading {
+        Some((label, deg)) => format!("facing: {label} ({deg:.0}°)"),
+        None => "facing: unknown".to_string(),
+    };
     format!(
         "SURVIVOR MAP   floor {focus}   {known} cells known   floors {floors}\n\
          what you know    {} traversed | {} glimpsed | {} stale\n\
@@ -249,7 +296,8 @@ fn legend_text(census: &MapCensus, focus: u8) -> String {
          what can change   {} hallway cells rewire | {} permanent | {} held right now\n\
          rooms and vertical links are permanent; a hallway rewires unless held\n\
          colour = district   width = room/hallway   height = archetype   capped = held by you\n\
-         text = entered or locally surveyed room function\n\
+         signals: cyan = you & facing | green = exit | purple = device/held | amber = room\n\
+         orientation: N (up-left) E (up-right) S (down-right) W (down-left)   {heading_line}\n\
          PageUp/PageDown change floor    Tab close",
         census.traversed,
         census.glimpsed,
@@ -269,10 +317,13 @@ fn legend_text(census: &MapCensus, focus: u8) -> String {
 fn signature(runtime: &HexWfcRuntime) -> u64 {
     let mut hasher = DefaultHasher::new();
     runtime.map_level.hash(&mut hasher);
-    let local = runtime.local().cell;
-    (local.q, local.r, local.level).hash(&mut hasher);
+    let local = runtime.local();
+    (local.cell.q, local.cell.r, local.cell.level).hash(&mut hasher);
+    #[allow(clippy::cast_possible_truncation)]
+    ((local.yaw * 16.0) as i32).hash(&mut hasher);
+    local.escaped.hash(&mut hasher);
     // Teammate positions drive the "held" cap, so they belong in the signature.
-    let team = runtime.local().team;
+    let team = local.team;
     for player in runtime.match_state.players.values() {
         if player.team == team {
             (player.cell.q, player.cell.r, player.cell.level).hash(&mut hasher);
@@ -336,7 +387,7 @@ mod tests {
             rooms: ["decision".to_string()].into_iter().collect(),
             ..MapCensus::default()
         };
-        let text = legend_text(&census, 1);
+        let text = legend_text(&census, 1, Some(("NORTH", 0.0)));
         // Atmosphere never carries meaning alone: every geometric channel has a
         // named counterpart in the legend.
         for channel in [
@@ -344,11 +395,25 @@ mod tests {
             "width = room/hallway",
             "height = archetype",
             "capped = held by you",
+            "cyan = you & facing",
+            "green = exit",
+            "purple = device/held",
+            "amber = room",
+            "orientation: N (up-left) E (up-right) S (down-right) W (down-left)",
+            "facing: NORTH (0°)",
         ] {
             assert!(text.contains(channel), "legend must document {channel}");
         }
         assert!(text.contains("decision"), "known rooms are named");
         assert!(text.contains("[1]"), "the focus floor is marked");
         assert!(text.contains("11 lateral"), "connections are counted");
+    }
+
+    #[test]
+    fn heading_label_maps_compass_octants() {
+        assert_eq!(heading_label(0.0).0, "NORTH");
+        assert_eq!(heading_label(std::f32::consts::FRAC_PI_2).0, "EAST");
+        assert_eq!(heading_label(std::f32::consts::PI).0, "SOUTH");
+        assert_eq!(heading_label(std::f32::consts::PI * 1.5).0, "WEST");
     }
 }
