@@ -544,6 +544,31 @@ is already the clearest picture of the facility the project has produced. Look
 at: `game/src/screens/match_runtime/spectator.rs` and the cutaway handling in
 `game/src/hex_wfc/view/`.
 
+### 41. A `composition_studio` test fails about one run in four
+
+**Found 2026-09-18 while gating an unrelated branch.** A full `cargo dev-test` reported
+`155 passed; 1 failed` in `composition_studio --lib`. Three consecutive re-runs of the
+same crate on the same commit then passed `156 passed; 0 failed`, and nothing in the
+branch under test touched that crate — the changes were docs, the survivor map, and a
+`cfg(test)` instrument in `architect_lab`.
+
+So the crate carries a **nondeterministic test**, failing roughly one run in four. The
+specific test is not yet identified: the gate output was filtered through a grep that
+kept `failures:` but dropped the line naming the test, and it has not reproduced since.
+
+**Why this matters more than one flaky test normally would.** The whole review discipline
+here rests on the gate meaning something. A suite that fails one run in four teaches
+everyone to re-run until green, which is indistinguishable from teaching them to ignore
+it — and this session already found two classes of green-but-meaningless result (tests
+whose assertions never execute, and soaks that assert only determinism). A flake is the
+third.
+
+**For whoever picks this up:** run `cargo test -p composition_studio --lib` in a loop
+until it fails and capture the full output, unfiltered, including the `failures:` block
+that names the test. Then look for the usual suspects — iteration order over a `HashMap`,
+a time or thread dependence, or a seed drawn from something ambient.
+
+
 ## Minor / hygiene
 
 **Scheduled: Arc H Phase 61 (as-landed notes).**
