@@ -187,6 +187,7 @@ feet stay inside the existing collision envelope.
 | P / Escape | Pause or resume / pause and release the cursor |
 | F3 / N | Toggle diagnostics / advance one paused tick |
 | M | Mute |
+| L | Inspection lighting — the studio's fill, for looking at the floor |
 
 ## Rules
 

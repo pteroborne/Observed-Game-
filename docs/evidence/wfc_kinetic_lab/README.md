@@ -21,6 +21,8 @@ findings they record still hold, but they are not this floor.
 | [doorway-shove.png](doorway-shove.png) | A minor bracketed in a doorway that no longer leads anywhere |
 | [walkthrough.gif](walkthrough.gif) / [.mp4](walkthrough.mp4) | All six staged scenes, including the plumb |
 | [plumb.png](plumb.png) | A minor under a committed plumb |
+| [play-dark.png](play-dark.png) | Ordinary play, wave one active — the open legibility question |
+| [inspection.png](inspection.png) | The same floor under `L`, the studio fill |
 | [gameplay-loop.mp4](gameplay-loop.mp4) | One continuous encounter, 33 s, played by the director (silent — see below) |
 
 ![All five scenes](walkthrough.gif)

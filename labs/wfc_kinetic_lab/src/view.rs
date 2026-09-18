@@ -100,6 +100,9 @@ enum UiAction {
     /// Handled in the sound mixer, which owns the mute flag; the button exists
     /// so the control is discoverable without the keyboard.
     Mute,
+    /// Swap play lighting for the studio's fill, to look at the building
+    /// rather than stand in it.
+    Inspect,
 }
 
 const ROLES: [Role; 14] = [
@@ -139,6 +142,8 @@ impl Art {
 struct ViewState {
     generation: Option<(u32, u32)>,
     actors: BTreeMap<ActorId, Entity>,
+    /// Studio lighting, for reviewing the floor.
+    inspect: bool,
     kick: f32,
     pulse: f32,
     impact: Vec3,
@@ -195,10 +200,14 @@ pub fn plugin(app: &mut App) {
 }
 
 fn setup(
+    mut view: ResMut<ViewState>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    // So a capture run can be taken under inspection lighting without a
+    // keypress, which is the only way to put the two side by side in evidence.
+    view.inspect = std::env::var("OBSERVED2_INSPECT").is_ok();
     let art = Art {
         cube: meshes.add(Cuboid::from_length(1.)),
         materials: ROLES
@@ -370,6 +379,7 @@ fn setup(
             button("-  =  SPEED", UiAction::MinorFaster),
             button("M  MUTE", UiAction::Mute),
             button("Q ARM / F PLUMB", UiAction::Mute),
+            button("L  INSPECT LIGHT", UiAction::Inspect),
         ],
     ));
     commands.insert_resource(art);
@@ -407,6 +417,7 @@ fn apply(action: UiAction, runtime: &mut Runtime) {
         // Tuning is live because the lab exists to find these numbers. They
         // survive a reset so a value can be tried across several attempts.
         UiAction::Mute => {}
+        UiAction::Inspect => {}
         UiAction::ForceUp => runtime.tuning.scale_force(1.12),
         UiAction::ForceDown => runtime.tuning.scale_force(1. / 1.12),
         UiAction::MinorFaster => runtime.tuning.scale_minor_speed(1.12),
@@ -426,10 +437,14 @@ fn apply(action: UiAction, runtime: &mut Runtime) {
 
 fn buttons(
     mut runtime: ResMut<Runtime>,
+    mut view: ResMut<ViewState>,
     mut interactions: Query<(&Interaction, &UiAction), Changed<Interaction>>,
 ) {
     for (interaction, action) in &mut interactions {
         if *interaction == Interaction::Pressed {
+            if matches!(action, UiAction::Inspect) {
+                view.inspect = !view.inspect;
+            }
             apply(*action, &mut runtime);
         }
     }
@@ -441,10 +456,14 @@ fn input(
     motion: Res<AccumulatedMouseMotion>,
     mut runtime: ResMut<Runtime>,
     mut window: Query<(&Window, &mut CursorOptions), With<PrimaryWindow>>,
+    mut view: ResMut<ViewState>,
     capture: Option<Res<crate::evidence::Capture>>,
 ) {
     if capture.is_some() {
         return;
+    }
+    if keys.just_pressed(KeyCode::KeyL) {
+        view.inspect = !view.inspect;
     }
     let Ok((window, mut cursor)) = window.single_mut() else {
         return;
@@ -1112,18 +1131,23 @@ fn practical_shadows(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 /// Ease ambient, fog and the key toward the district the Observer is standing
 /// in, exactly as the game's shell does.
 fn atmosphere(
     runtime: Res<Runtime>,
+    view: Res<ViewState>,
     time: Res<Time>,
     mut ambient: ResMut<GlobalAmbientLight>,
     mut clear: ResMut<ClearColor>,
     mut fog: Query<&mut DistanceFog, With<Eye>>,
     mut key: Query<(&mut SpotLight, &mut Transform), With<KeyLight>>,
     mut primed: Local<Option<(u32, u32)>>,
+    mut inspecting: Local<Option<bool>>,
 ) {
     const BLEND_RATE: f32 = 2.0;
+    /// How far inspection pushes the fog planes out.
+    const INSPECT_FOG: f32 = 4.0;
     let world = &runtime.world;
     let Some(cell) = runtime.site.cell_containing(world.player.position) else {
         return;
@@ -1142,23 +1166,42 @@ fn atmosphere(
     // a default white 1M-lumen spotlight: eased rather than snapped, it spends
     // a second climbing to the district's colour after every retraction.
     let stamp = (runtime.generation, runtime.world.geometry_generation);
-    let fresh = *primed != Some(stamp);
+    let fresh = *primed != Some(stamp) || *inspecting != Some(view.inspect);
     *primed = Some(stamp);
+    *inspecting = Some(view.inspect);
     let blend = if fresh {
         1.0
     } else {
         (time.delta_secs() * BLEND_RATE).clamp(0.0, 1.0)
     };
 
+    // Play lighting is tuned for a body standing inside a lit pool. Looking at
+    // a whole floor at once is a different question and the codebase already
+    // answers it: the game's overview swaps the district ambient for the
+    // studio's fill and gives fog its own scale, "the same view of the same
+    // building, so the same answer". This lab borrows both, on a key, rather
+    // than adding a sun — a directional light is what flattened the districts
+    // in the first place.
     ambient.color = lerp_color(ambient.color, palette.ambient_color, blend);
-    ambient.brightness = lerp(ambient.brightness, palette.ambient_brightness, blend);
+    ambient.brightness = if view.inspect {
+        observed_style::iso::light::AMBIENT_BRIGHTNESS
+    } else {
+        lerp(ambient.brightness, palette.ambient_brightness, blend)
+    };
     clear.0 = lerp_color(clear.0, palette.fog_color, blend);
+    let (start, end) = if view.inspect {
+        // Snapped, not eased: easing a fog plane across this much distance
+        // leaves the view blank for the second it takes to arrive.
+        (
+            palette.fog_start * INSPECT_FOG,
+            palette.fog_end * INSPECT_FOG,
+        )
+    } else {
+        (palette.fog_start, palette.fog_end)
+    };
     for mut fog in &mut fog {
         fog.color = lerp_color(fog.color, palette.fog_color, blend);
-        fog.falloff = FogFalloff::Linear {
-            start: palette.fog_start,
-            end: palette.fog_end,
-        };
+        fog.falloff = FogFalloff::Linear { start, end };
     }
     // The key hangs over the Observer's own cell, angled across it.
     let origin = Vec3::from_array(hex_origin(cell));
