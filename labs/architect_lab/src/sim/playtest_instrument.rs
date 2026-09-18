@@ -129,7 +129,7 @@ pub fn run_mode_playtest(mode: ArchitectMode, max_beats: u64) -> ModeRunStats {
         ..Default::default()
     };
 
-    for (id, _) in &sim.observers {
+    for id in sim.observers.keys() {
         let c = sim.economy.charge(*id);
         stats.initial_charge.insert(*id, c);
         stats.min_charge.insert(*id, c);
