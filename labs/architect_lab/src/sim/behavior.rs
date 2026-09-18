@@ -31,7 +31,10 @@ impl ArchitectLab {
     pub(crate) fn observer_intent(&self, id: ObserverId) -> (ObserverIntent, BehaviorTrace) {
         let observer = &self.observers[&id];
         let mut trace = BehaviorTrace::default();
-        if trace.test("held in prison", observer.state == ObserverState::Jailed) {
+        if trace.test("escape jail", observer.state == ObserverState::Jailed) {
+            if let Some(next) = self.prison.next_escape_step(observer.cell) {
+                return (ObserverIntent::Step(next), trace);
+            }
             return (ObserverIntent::Hold, trace);
         }
 
@@ -184,6 +187,9 @@ impl ArchitectLab {
                 }
                 observer.cell = next;
                 observer.hold_beats = 0;
+                if observer.state == ObserverState::Jailed && !self.prison_core.contains(&next) {
+                    observer.state = ObserverState::Active;
+                }
             }
             ObserverIntent::SetDoor(key, state) => {
                 let observer = self.observers.get_mut(&id).expect("known Observer");
@@ -363,20 +369,15 @@ impl ArchitectLab {
         }
     }
 
-    pub(super) fn jail(&mut self, observer: ObserverId) {
-        let prison = self
-            .prison_core
-            .iter()
-            .find(|cell| cell.level == 0)
-            .copied()
-            .expect("floor zero prison core exists");
+    pub(crate) fn jail(&mut self, observer: ObserverId) {
+        let prison = self.prison.lowest_cell;
         let observer = self.observers.get_mut(&observer).expect("known Observer");
         observer.cell = prison;
         observer.state = ObserverState::Jailed;
         self.record_event(
             super::LabEventKind::Captured,
             Some(prison),
-            "Observer captured. Sent to the protected prison core.",
+            "Observer captured. Sent to the lowest prison level.",
         );
     }
 
