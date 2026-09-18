@@ -1,0 +1,22 @@
+
+PROP CONTACT / walls and crates do not kill
+tick 30: Fired(Push, ActorId(1006), Vec3(-10.999993, 0.55206716, 2.4500132))
+final digest 74baded7ee58e450, removed 0, player Vec3(-11.0, 0.90009993, 6.999997)
+
+PULL / immediate impulse toward the player
+tick 30: Fired(Pull, ActorId(1005), Vec3(-11.0, 0.693395, 3.55))
+final digest d787e4ff5d265bcf, removed 0, player Vec3(-11.0, 0.90009993, 6.999997)
+
+RECOVERY / lower geometry catches a fall
+final digest c5d5151db7710fdd, removed 0, player Vec3(2.5783753, -2.0525992, -5.000034)
+
+VOID / the missing floor eliminates
+tick 30: Fired(Push, ActorId(1005), Vec3(-0.24999952, 0.68331015, 10.0))
+tick 110: Eliminated(ActorId(1005))
+final digest 3a3c17dd9015a5bf, removed 1, player Vec3(-4.0, 0.9001, 10.0)
+
+RETRACTION / warning before support disappears
+tick 30: Retracting
+tick 150: Retracted
+tick 219: Eliminated(ActorId(1005))
+final digest 32c8acc5361ef134, removed 1, player Vec3(-0.8000001, 0.9001, 8.4)

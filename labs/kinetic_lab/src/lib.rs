@@ -20,7 +20,7 @@ pub fn run() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         println!(
-            "Kinetic / The Impulse Chamber\n  --encounter   Start with finite charge and three waves\n  --help        Show this help\n\n1 practice / 2 encounter / R reset / P pause / Esc release cursor\nWASD move / Shift sprint / Space jump / LMB push / RMB pull / E operate\nF3 diagnostics / N one paused tick\n\nOBSERVED2_CAPTURE=<png> or OBSERVED2_CAPTURE_SEQUENCE=<directory>\nThe former discrete schematic, siege and opposition flags are retired."
+            "Kinetic / The Impulse Chamber\n  --encounter   Start with finite charge and three waves\n  --help        Show this help\n\n1 practice / 2 encounter / R reset / P pause / Esc release cursor\nWASD move / Shift sprint / Space jump / LMB push / RMB pull / E operate\nF3 diagnostics / N one paused tick / M mute sound\n\nOBSERVED2_CAPTURE=<png> or OBSERVED2_CAPTURE_SEQUENCE=<directory>\nThe former discrete schematic, siege and opposition flags are retired."
         );
         return;
     }

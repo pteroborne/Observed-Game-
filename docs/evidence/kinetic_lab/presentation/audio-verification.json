@@ -1,0 +1,97 @@
+{
+  "capture": {
+    "duration_seconds": 0.797,
+    "decoded_peak_dbfs": -11.09,
+    "reproduction": "identical decoded PCM"
+  },
+  "charge_tick": {
+    "duration_seconds": 0.167,
+    "decoded_peak_dbfs": -20.81,
+    "reproduction": "identical decoded PCM"
+  },
+  "clear": {
+    "duration_seconds": 1.25,
+    "decoded_peak_dbfs": -10.48,
+    "reproduction": "identical decoded PCM"
+  },
+  "empty": {
+    "duration_seconds": 0.257,
+    "decoded_peak_dbfs": -14.28,
+    "reproduction": "identical decoded PCM"
+  },
+  "guardian_step": {
+    "duration_seconds": 0.187,
+    "decoded_peak_dbfs": -13.51,
+    "reproduction": "identical decoded PCM"
+  },
+  "guardian_voice": {
+    "duration_seconds": 0.657,
+    "decoded_peak_dbfs": -13.06,
+    "reproduction": "identical decoded PCM"
+  },
+  "impact": {
+    "duration_seconds": 0.347,
+    "decoded_peak_dbfs": -10.49,
+    "reproduction": "identical decoded PCM"
+  },
+  "land": {
+    "duration_seconds": 0.257,
+    "decoded_peak_dbfs": -11.45,
+    "reproduction": "identical decoded PCM"
+  },
+  "miss": {
+    "duration_seconds": 0.137,
+    "decoded_peak_dbfs": -15.76,
+    "reproduction": "identical decoded PCM"
+  },
+  "power_off": {
+    "duration_seconds": 0.697,
+    "decoded_peak_dbfs": -12.82,
+    "reproduction": "identical decoded PCM"
+  },
+  "power_on": {
+    "duration_seconds": 0.747,
+    "decoded_peak_dbfs": -12.35,
+    "reproduction": "identical decoded PCM"
+  },
+  "pull": {
+    "duration_seconds": 0.617,
+    "decoded_peak_dbfs": -7.39,
+    "reproduction": "identical decoded PCM"
+  },
+  "push": {
+    "duration_seconds": 0.457,
+    "decoded_peak_dbfs": -6.36,
+    "reproduction": "identical decoded PCM"
+  },
+  "recharge": {
+    "duration_seconds": 0.597,
+    "decoded_peak_dbfs": -12.82,
+    "reproduction": "identical decoded PCM"
+  },
+  "retract": {
+    "duration_seconds": 0.947,
+    "decoded_peak_dbfs": -8.31,
+    "reproduction": "identical decoded PCM"
+  },
+  "step": {
+    "duration_seconds": 0.157,
+    "decoded_peak_dbfs": -13.59,
+    "reproduction": "identical decoded PCM"
+  },
+  "void": {
+    "duration_seconds": 0.947,
+    "decoded_peak_dbfs": -10.65,
+    "reproduction": "identical decoded PCM"
+  },
+  "warning": {
+    "duration_seconds": 1.9,
+    "decoded_peak_dbfs": -11.67,
+    "reproduction": "identical decoded PCM"
+  },
+  "wave": {
+    "duration_seconds": 0.847,
+    "decoded_peak_dbfs": -10.43,
+    "reproduction": "identical decoded PCM"
+  }
+}

@@ -119,6 +119,7 @@ def main():
     args.out.mkdir(parents=True, exist_ok=True)
     report = {}
     reel = []
+    labels = []
     with tempfile.TemporaryDirectory() as temp:
         for index, (name, (duration, peak)) in enumerate(CUES.items()):
             samples = synth(name, duration, peak, 9100 + index)
@@ -128,10 +129,20 @@ def main():
             write_wav(wav, samples)
             subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', str(wav), '-c:a', 'libvorbis', '-q:a', '5', str(args.out / (name + '.ogg'))], check=True)
             report[name] = {'duration': duration, 'peak_dbfs': round(20*math.log10(peak), 2), 'rms_dbfs': round(20*math.log10(math.sqrt(sum(s*s for s in samples)/len(samples))), 2)}
+            start = len(reel) / RATE
             reel.extend(samples)
             reel.extend([0.] * round(RATE * 0.4))
+            labels.append((start, len(reel) / RATE, name.replace('_', ' ').upper()))
         if args.preview:
+            args.preview.parent.mkdir(parents=True, exist_ok=True)
             write_wav(args.preview, reel)
+            def timestamp(seconds):
+                milliseconds = round(seconds * 1000)
+                return f"{milliseconds // 3600000:02}:{milliseconds // 60000 % 60:02}:{milliseconds // 1000 % 60:02},{milliseconds % 1000:03}"
+            args.preview.with_suffix('.srt').write_text('\n'.join(
+                f"{i}\n{timestamp(start)} --> {timestamp(end)}\n{name}\n"
+                for i, (start, end, name) in enumerate(labels, 1)
+            ))
     (args.out / 'manifest.json').write_text(json.dumps(report, indent=2) + '\n')
     print(f'Generated {len(report)} original cues in {args.out}')
 

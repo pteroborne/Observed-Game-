@@ -122,6 +122,19 @@ pub struct SoundState {
     charge: f32,
     charge_tick: u64,
 }
+impl SoundState {
+    fn sync_generation(&mut self, world: &impl SoundWorld) {
+        if self.generation != Some(world.generation()) {
+            *self = Self {
+                muted: self.muted,
+                generation: Some(world.generation()),
+                charge: world.charge(),
+                ..default()
+            };
+        }
+    }
+}
+
 pub fn setup(mut commands: Commands, assets: Res<AssetServer>) {
     commands.insert_resource(Bank(
         CUES.iter()
@@ -209,10 +222,10 @@ fn play(
 
 /// Whether a refusal should be heard, or is one of a burst held down on a key.
 pub fn refusal_is_audible(sound: &mut SoundState, world: &impl SoundWorld) -> bool {
-    if sound.generation == Some(world.generation())
-        && sound
-            .refused_tick
-            .is_some_and(|at| world.tick().saturating_sub(at) < 12)
+    sound.sync_generation(world);
+    if sound
+        .refused_tick
+        .is_some_and(|at| world.tick().saturating_sub(at) < 12)
     {
         return false;
     }
@@ -274,15 +287,7 @@ pub fn motion_from(
         }
     };
     let tick = world.tick();
-    if sound.generation != Some(world.generation()) {
-        let muted = sound.muted;
-        *sound = SoundState {
-            muted,
-            generation: Some(world.generation()),
-            charge: world.charge(),
-            ..default()
-        };
-    }
+    sound.sync_generation(world);
     if world.paused() || sound.tick == tick {
         return spawned;
     }
@@ -535,5 +540,94 @@ mod tests {
             event_cue(&Event::Fired(Action::Push, ActorId(1), Vec3::ZERO)),
             event_cue(&Event::Fired(Action::Pull, ActorId(1), Vec3::ZERO))
         );
+    }
+    #[test]
+    fn refusal_throttle_works_on_first_frame_and_resets_with_attempt() {
+        let mut runtime = Runtime::default();
+        let mut sound = SoundState::default();
+        assert!(refusal_is_audible(&mut sound, &runtime));
+        assert!(!refusal_is_audible(&mut sound, &runtime));
+        // Motion runs after events: it must not erase that first refusal.
+        sound.sync_generation(&runtime);
+        assert!(!refusal_is_audible(&mut sound, &runtime));
+        runtime.world.tick += 12;
+        assert!(refusal_is_audible(&mut sound, &runtime));
+        runtime.reset(crate::model::Mode::Practice);
+        assert!(refusal_is_audible(&mut sound, &runtime));
+        assert!(!refusal_is_audible(&mut sound, &runtime));
+    }
+
+    #[test]
+    fn mute_pause_and_reset_apply_before_the_audio_device_starts() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .init_resource::<Runtime>()
+            .init_resource::<SoundState>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .add_systems(Update, mix);
+        let entity = app
+            .world_mut()
+            .spawn((
+                Voice {
+                    gain: 0.6,
+                    generation: 0,
+                },
+                PlaybackSettings::DESPAWN,
+            ))
+            .id();
+        app.update();
+        assert!(app.world().get::<PlaybackSettings>(entity).unwrap().paused);
+        app.world_mut().resource_mut::<Runtime>().paused = false;
+        app.world_mut().resource_mut::<SoundState>().muted = true;
+        app.update();
+        let settings = app.world().get::<PlaybackSettings>(entity).unwrap();
+        assert!(!settings.paused);
+        assert_eq!(settings.volume, Volume::Linear(0.));
+        app.world_mut().resource_mut::<SoundState>().muted = false;
+        app.update();
+        assert_eq!(
+            app.world().get::<PlaybackSettings>(entity).unwrap().volume,
+            Volume::Linear(0.6)
+        );
+        app.world_mut()
+            .resource_mut::<Runtime>()
+            .reset(crate::model::Mode::Practice);
+        app.update();
+        assert!(app.world().get_entity(entity).is_err());
+    }
+
+    #[test]
+    fn motion_only_emits_once_per_simulation_tick_and_reset_preserves_mute() {
+        use bevy::ecs::system::RunSystemOnce;
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .init_resource::<Runtime>()
+            .init_resource::<SoundState>()
+            .insert_resource(Bank(vec![Handle::default(); CUES.len()]));
+        app.world_mut().resource_mut::<Runtime>().paused = false;
+        for _ in 0..80 {
+            let mut runtime = app.world_mut().resource_mut::<Runtime>();
+            runtime.movement.movement.y = 1.;
+            Runtime::tick(&mut runtime);
+            app.world_mut().run_system_once(motion).unwrap();
+        }
+        let count = app.world_mut().query::<&Voice>().iter(app.world()).count();
+        assert!(count > 0, "walking should produce footsteps");
+        for _ in 0..20 {
+            app.world_mut().run_system_once(motion).unwrap();
+        }
+        assert_eq!(
+            app.world_mut().query::<&Voice>().iter(app.world()).count(),
+            count
+        );
+        app.world_mut().resource_mut::<SoundState>().muted = true;
+        app.world_mut()
+            .resource_mut::<Runtime>()
+            .reset(crate::model::Mode::Practice);
+        app.world_mut().run_system_once(motion).unwrap();
+        let sound = app.world().resource::<SoundState>();
+        assert!(sound.muted);
+        assert!(sound.actors.is_empty());
+        assert!(sound.player.is_none());
     }
 }
