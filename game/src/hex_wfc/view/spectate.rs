@@ -116,7 +116,7 @@ pub(in crate::hex_wfc) struct SpectatorOverview {
 /// The studio recomputes this from its own cached hulls. The game already has
 /// the authored geometry resident, so the shared predicate is applied to what
 /// is there rather than meshing it a second time.
-#[derive(Component)]
+#[derive(Clone, Copy, Component, Debug, PartialEq)]
 pub(in crate::hex_wfc) struct Cutaway {
     /// Centroid relative to its cell's origin - what the near-wall test reads.
     pub(in crate::hex_wfc) local: Vec3,

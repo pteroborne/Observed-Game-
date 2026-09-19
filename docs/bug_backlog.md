@@ -135,6 +135,25 @@ both real refactors of `game/src/hex_wfc/view/shell.rs`:
 Measure with the harness described in #11; `post_update:visibility` is reported
 per register in `timings.json`.
 
+**Resolved 2026-09-18 (Phase 101 Gate Green).**
+Implemented Candidate 1 with role/face grouping in `game/src/hex_wfc/view/shell.rs` and `assets.rs`:
+- Grouped each cell's ~23 raw collider hulls into merged meshes by surface role (`Floor`, `Ceiling`, `Interior`, and `Perimeter(0..5)`), cached by `(TileKey, MeshGroupKey)` in `HexWfcVisualAssets`.
+- Preserves full district register material tinting and spectator cutaway accuracy while dropping structural mesh entities per cell by 60–70%.
+- Combined with bounded streaming residency (`residency.rs`), active resident pieces fell from ~636–859 down to ~461.
+- **Before/After measurements (Phase 101 gate)**:
+  - `post_update:visibility`:
+    - `institutional`: median 1,983 µs → 450 µs (4.4× faster); p95 4,365 µs → 680 µs (6.4× faster)
+    - `wellshaft`: median 2,186 µs → 498 µs (4.4× faster); p95 3,940 µs → 1,633 µs (2.4× faster)
+    - `infinite_gallery`: median 1,934 µs → 488 µs (4.0× faster); p95 4,527 µs → 748 µs (6.0× faster)
+    - `liminal_grid`: median 1,930 µs → 462 µs (4.2× faster); p95 3,914 µs → 1,251 µs (3.1× faster)
+  - `view::sync_streamed_cells`:
+    - `institutional`: median 2,521 µs → 1,152 µs (2.2× faster); p95 5,232 µs → 1,451 µs (3.6× faster)
+    - `wellshaft`: median 2,965 µs → 1,081 µs (2.7× faster); p95 6,181 µs → 1,713 µs (3.6× faster)
+  - **Phase 101 Gate Results** (`timings.json`):
+    - `gate.passed`: `false` → `true`
+    - `p95_frame_microseconds`: 42,818 µs → 13,824 µs (target ≤ 16,700 µs; 3.1× faster)
+    - `maximum_mutation_frame_microseconds`: 51,548 µs → 28,195 µs (target ≤ 33,300 µs; 1.8× faster)
+
 ### 11. Phase 101 performance gate fails on vsync headroom
 **Unscheduled; low priority — the gate is stricter than the observed experience.**
 **Found 2026-07-26.** `OBSERVED2_CAPTURE_HEX_WFC_PHASE101` fails at p95 ≈ 30 450 µs
@@ -146,6 +165,8 @@ interval and a miss costs a whole extra one. Uncapped, the same build sits at
 spikes tip over and land at 33 ms. Closing it means finding headroom in what
 remains (#10 is where it is), or deciding the threshold should be measured
 uncapped.
+
+**Resolved 2026-09-18 alongside #10.** Phase 101 gate now passes with `p95_frame_microseconds = 13,824 µs` (threshold ≤ 16,700 µs) and `maximum_mutation_frame_microseconds = 28,195 µs` (threshold ≤ 33,300 µs).
 
 **Harness note for whoever picks this up.** The evidence harness in
 `game/src/hex_wfc/perf.rs` grew several opt-in switches during the investigation,

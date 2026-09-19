@@ -254,16 +254,81 @@ fn spawn_cell(
             authored_lights: &lights,
         },
     );
-    for (index, piece) in pieces.into_iter().enumerate() {
-        child_pieces += usize::from(spawn_piece(
-            commands,
-            assets,
-            meshes,
-            piece,
-            architecture,
-            Some(cell),
-            index,
+    let origin = Vec3::from_array(hex_origin(coord));
+    let tile_key = pieces
+        .first()
+        .and_then(|p| p.tile.as_ref().map(|t| format!("{t:?}")));
+
+    struct MergedGroup<'a> {
+        hulls: Vec<&'a [Vec3]>,
+        min_y: f32,
+        max_y: f32,
+        centroid_sum: Vec3,
+        point_count: usize,
+    }
+
+    let mut groups: BTreeMap<super::assets::MeshGroupKey, MergedGroup<'_>> = BTreeMap::new();
+    for piece in &pieces {
+        let group_key = super::assets::MeshGroupKey::for_piece(piece);
+        let entry = groups.entry(group_key).or_insert_with(|| MergedGroup {
+            hulls: Vec::new(),
+            min_y: f32::INFINITY,
+            max_y: f32::NEG_INFINITY,
+            centroid_sum: Vec3::ZERO,
+            point_count: 0,
+        });
+        if let observed_traversal::ColliderShape::ConvexHull { points } = &piece.shape {
+            entry.hulls.push(points.as_slice());
+            for &pt in points {
+                entry.min_y = entry.min_y.min(pt.y);
+                entry.max_y = entry.max_y.max(pt.y);
+                entry.centroid_sum += pt;
+                entry.point_count += 1;
+            }
+        }
+    }
+
+    for (group_key, group) in groups {
+        let Some(mesh) =
+            assets.merged_mesh_for(meshes, tile_key.as_deref(), group_key, &group.hulls)
+        else {
+            continue;
+        };
+        let material = assets.material_for_group(architecture, group_key);
+        let mut entity = commands.spawn((
+            Mesh3d(mesh),
+            MeshMaterial3d(material),
+            Transform::from_translation(origin),
+            ChildOf(cell),
+            Name::new(format!("Hex cell {:?} mesh", group_key)),
         ));
+        if group_key == super::assets::MeshGroupKey::Boundary {
+            entity.insert(super::spectate::BoundaryShell);
+        } else {
+            let local = match group_key {
+                super::assets::MeshGroupKey::Floor
+                | super::assets::MeshGroupKey::Ceiling
+                | super::assets::MeshGroupKey::Interior => Vec3::ZERO,
+                super::assets::MeshGroupKey::Perimeter(_) => {
+                    if group.point_count > 0 {
+                        #[allow(clippy::cast_precision_loss)]
+                        let c = group.centroid_sum / group.point_count as f32;
+                        c
+                    } else {
+                        Vec3::ZERO
+                    }
+                }
+                _ => Vec3::ZERO,
+            };
+            entity.insert(super::spectate::Cutaway {
+                local,
+                min_y: group.min_y,
+                max_y: group.max_y,
+                origin_y: origin.y,
+                cell_level: coord.level,
+            });
+        }
+        child_pieces += 1;
     }
     for piece in trim {
         spawn_trim(commands, assets, meshes, piece, architecture, cell);

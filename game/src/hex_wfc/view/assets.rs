@@ -60,11 +60,71 @@ enum HorizontalSurface {
     Ceiling,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(in crate::hex_wfc) enum MeshGroupKey {
+    Floor,
+    Ceiling,
+    Interior,
+    Perimeter(u8),
+    Ramp,
+    Shaft,
+    Boundary,
+}
+
+impl MeshGroupKey {
+    pub(in crate::hex_wfc) fn for_piece(piece: &HexStructurePiece) -> Self {
+        match piece.role {
+            HexStructureRole::Ramp => Self::Ramp,
+            HexStructureRole::Shaft => Self::Shaft,
+            HexStructureRole::Boundary => Self::Boundary,
+            HexStructureRole::Room | HexStructureRole::Hall => {
+                let points = match &piece.shape {
+                    ColliderShape::ConvexHull { points } => points.as_slice(),
+                    ColliderShape::Cuboid { .. } => return Self::Interior,
+                };
+                if observed_traversal::render_mesh::is_overhead_slab(points) {
+                    Self::Ceiling
+                } else if observed_traversal::render_mesh::is_horizontal_slab(points) {
+                    Self::Floor
+                } else {
+                    let centroid = if points.is_empty() {
+                        Vec3::ZERO
+                    } else {
+                        #[allow(clippy::cast_precision_loss)]
+                        let sum: Vec3 = points.iter().copied().sum();
+                        #[allow(clippy::cast_precision_loss)]
+                        let c = sum / points.len() as f32;
+                        c
+                    };
+                    let plan = Vec2::new(centroid.x, centroid.z);
+                    if plan.length() < 0.5 {
+                        Self::Interior
+                    } else {
+                        let mut best_face = 0u8;
+                        let mut best_dot = f32::NEG_INFINITY;
+                        for face in observed_hex::HexFace::LATERAL {
+                            let [(ax, az), (bx, bz)] = observed_hex::metrics::face_edge(face);
+                            let mid = Vec2::new((ax + bx) as f32 * 0.5, (az + bz) as f32 * 0.5);
+                            let dot = plan.dot(mid);
+                            if dot > best_dot {
+                                best_dot = dot;
+                                best_face = face as u8;
+                            }
+                        }
+                        Self::Perimeter(best_face)
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[derive(Resource)]
 pub(in crate::hex_wfc) struct HexWfcVisualAssets {
     registers: Vec<RegisterMaterials>,
     hull_cache: HashMap<(String, usize), Handle<Mesh>>,
     cuboid_cache: HashMap<[u32; 3], Handle<Mesh>>,
+    merged_hull_cache: HashMap<(String, MeshGroupKey), Handle<Mesh>>,
     /// The doorway model stood in a named threshold. `None` when the asset is
     /// absent, which is a missing frame rather than a missing facility - the
     /// aperture is authored into the room's own geometry either way.
@@ -158,7 +218,32 @@ impl HexWfcVisualAssets {
             registers,
             hull_cache: HashMap::new(),
             cuboid_cache: HashMap::new(),
+            merged_hull_cache: HashMap::new(),
             threshold_gate: load_content_scene(asset_server, content, "kenney_gate"),
+        }
+    }
+
+    #[cfg(test)]
+    pub(in crate::hex_wfc) fn for_test(materials: &mut Assets<StandardMaterial>) -> Self {
+        let dummy = materials.add(StandardMaterial::default());
+        let registers = ArchitectureRegister::ALL
+            .into_iter()
+            .map(|_| RegisterMaterials {
+                floor: dummy.clone(),
+                wall: dummy.clone(),
+                ceiling: dummy.clone(),
+                fixture: dummy.clone(),
+                ramp: dummy.clone(),
+                shaft: dummy.clone(),
+                boundary: dummy.clone(),
+            })
+            .collect();
+        Self {
+            registers,
+            hull_cache: HashMap::new(),
+            cuboid_cache: HashMap::new(),
+            merged_hull_cache: HashMap::new(),
+            threshold_gate: None,
         }
     }
 
@@ -268,6 +353,80 @@ impl HexWfcVisualAssets {
             }
         }
     }
+
+    pub(in crate::hex_wfc) fn material_for_group(
+        &self,
+        architecture: ArchitectureRegister,
+        group: MeshGroupKey,
+    ) -> Handle<StandardMaterial> {
+        let reg = self.register(architecture);
+        match group {
+            MeshGroupKey::Floor => reg.floor.clone(),
+            MeshGroupKey::Ceiling => reg.ceiling.clone(),
+            MeshGroupKey::Interior | MeshGroupKey::Perimeter(_) => reg.wall.clone(),
+            MeshGroupKey::Ramp => reg.ramp.clone(),
+            MeshGroupKey::Shaft => reg.shaft.clone(),
+            MeshGroupKey::Boundary => reg.boundary.clone(),
+        }
+    }
+
+    pub(in crate::hex_wfc) fn merged_mesh_for(
+        &mut self,
+        meshes: &mut Assets<Mesh>,
+        tile_key: Option<&str>,
+        group: MeshGroupKey,
+        hulls: &[&[Vec3]],
+    ) -> Option<Handle<Mesh>> {
+        if let Some(key) = tile_key {
+            let cache_key = (key.to_string(), group);
+            if let Some(handle) = self.merged_hull_cache.get(&cache_key) {
+                return Some(handle.clone());
+            }
+            let mesh = build_merged_mesh(hulls)?;
+            let handle = meshes.add(mesh);
+            self.merged_hull_cache.insert(cache_key, handle.clone());
+            Some(handle)
+        } else {
+            let mesh = build_merged_mesh(hulls)?;
+            Some(meshes.add(mesh))
+        }
+    }
+}
+
+/// Convert multiple convex hulls into a single merged Bevy mesh with offset triangle indices.
+pub(super) fn build_merged_mesh(hulls: &[&[Vec3]]) -> Option<Mesh> {
+    let mut all_positions = Vec::new();
+    let mut all_normals = Vec::new();
+    let mut all_uvs = Vec::new();
+    let mut all_indices = Vec::new();
+
+    for hull in hulls {
+        let Some(data) = ConvexRenderMesh::from_convex_hull(hull) else {
+            continue;
+        };
+        let index_offset = u32::try_from(all_positions.len()).ok()?;
+        all_positions.extend(data.positions);
+        all_normals.extend(data.normals);
+        all_uvs.extend(data.uvs);
+        for idx in data.indices {
+            all_indices.push(index_offset.checked_add(idx)?);
+        }
+    }
+
+    if all_positions.is_empty() {
+        return None;
+    }
+
+    Some(
+        Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
+        )
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, all_positions)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, all_normals)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, all_uvs)
+        .with_inserted_indices(Indices::U32(all_indices)),
+    )
 }
 
 /// Convert shared engine-independent render data into Bevy's mesh format.
