@@ -895,12 +895,11 @@ impl ArchitectLab {
                 .unwrap_or_default();
 
             for observer in self.observers.values() {
-                if observer.team == team {
-                    known_obs.insert(observer.id, observer.cell);
-                } else if (prior_discovered.contains(&observer.cell)
-                    || team_observed.contains(&observer.cell))
-                    && self.observed.contains(&observer.cell)
-                {
+                let is_known = observer.team == team
+                    || ((prior_discovered.contains(&observer.cell)
+                        || team_observed.contains(&observer.cell))
+                        && self.observed.contains(&observer.cell));
+                if is_known {
                     known_obs.insert(observer.id, observer.cell);
                 }
             }
