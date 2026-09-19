@@ -296,6 +296,9 @@ impl ArchitectLab {
             ArchitectMode::Pocket => 1,
             ArchitectMode::QuickClimb => 2,
             ArchitectMode::FullAscent => 3,
+            // A taller stack is damaged proportionally, so retraction pressure
+            // scales with the vertical space it has to act in.
+            ArchitectMode::DeepStack => 5,
         };
         let mut gaps = Vec::new();
         for triple in route.windows(3) {

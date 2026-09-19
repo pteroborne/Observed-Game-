@@ -29,6 +29,8 @@ const fn default_zoom(mode: ArchitectMode) -> f32 {
         ArchitectMode::Pocket => 0.62,
         ArchitectMode::QuickClimb => 0.9,
         ArchitectMode::FullAscent => 1.12,
+        // Five stacked floors need more of the board in frame at once.
+        ArchitectMode::DeepStack => 1.30,
     }
 }
 
