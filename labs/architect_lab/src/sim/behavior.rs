@@ -230,6 +230,7 @@ impl ArchitectLab {
                 let observer = self.observers.get_mut(&id).expect("known Observer");
                 if self.economy.is_powered(key.cell.level) {
                     self.doors.insert(key, state);
+                    self.topology.mark_dirty();
                 }
                 observer.hold_beats = 0;
             }

@@ -150,6 +150,7 @@ pub struct ArchitectLab {
     pub command_log: Vec<(u64, ArchitectCommand)>,
     pub economy: EconomyState,
     pub requisition: crate::requisition::RequisitionState,
+    pub topology: crate::sim::topology::FacilityTopology,
 }
 
 impl ArchitectLab {
@@ -295,6 +296,7 @@ impl ArchitectLab {
             command_log: Vec::new(),
             economy,
             requisition: crate::requisition::RequisitionState::new(seed),
+            topology: crate::sim::topology::FacilityTopology::default(),
         };
         lab.refresh_observation();
         // Damage a solved facility at separated lateral handoffs. These are
@@ -348,6 +350,7 @@ impl ArchitectLab {
             );
         }
         lab.refresh_observation();
+        lab.sync_topology();
         Ok(lab)
     }
 
@@ -549,6 +552,7 @@ impl ArchitectLab {
                     Some(target),
                     "Card played. Guardian investigates this tile.",
                 );
+                self.topology.mark_dirty();
             }
             ArchitectCommand::Requisition => {
                 crate::requisition::apply_requisition(self);
@@ -596,6 +600,7 @@ impl ArchitectLab {
             self.apply_guardian_intent(id, intent);
         }
         self.refresh_observation();
+        self.sync_topology();
         // 1. Same-tick capture precedence: Guardian capture resolves before summit completion.
         // If all loyal observers have been eliminated (jailed or corrupted), Rogue wins.
         if !self.observers.is_empty()
@@ -748,7 +753,7 @@ impl ArchitectLab {
         let Some(placement) = self.world.placements.get(&from) else {
             return Vec::new();
         };
-        if placement.space == HexSpace::Void {
+        if placement.space == HexSpace::Void || self.retracted.contains(&from) {
             return Vec::new();
         }
         HexFace::ALL
@@ -756,7 +761,7 @@ impl ArchitectLab {
             .filter_map(|face| {
                 let next = self.world.config.grid().neighbor(from, face)?;
                 let other = self.world.placements.get(&next)?;
-                if other.space == HexSpace::Void {
+                if other.space == HexSpace::Void || self.retracted.contains(&next) {
                     return None;
                 }
                 if face.is_lateral() {
@@ -973,7 +978,8 @@ impl ArchitectLab {
         }
     }
 
-    fn step_through(&self, from: HexCoord, face: HexFace) -> Option<HexCoord> {
+    #[must_use]
+    pub fn step_through(&self, from: HexCoord, face: HexFace) -> Option<HexCoord> {
         self.exits(from)
             .into_iter()
             .find(|&next| self.world.config.grid().neighbor(from, face) == Some(next))
@@ -1007,6 +1013,40 @@ impl ArchitectLab {
                 }
             }
         }
+    }
+
+    /// Ensure the cached topology component map is up to date with simulation mutations.
+    pub fn sync_topology(&mut self) {
+        if !self.topology.dirty {
+            return;
+        }
+        let mut topology = std::mem::take(&mut self.topology);
+        topology.rebuild(self);
+        self.topology = topology;
+    }
+
+    /// Number of disjoint components in the passable facility graph.
+    #[must_use]
+    pub fn component_count(&self) -> usize {
+        self.topology.component_count()
+    }
+
+    /// Are these two cells mutually reachable through passable connections.
+    #[must_use]
+    pub fn same_component(&self, a: HexCoord, b: HexCoord) -> bool {
+        self.topology.same_component(a, b)
+    }
+
+    /// Stable canonical component ID (minimum HexCoord) for the given cell.
+    #[must_use]
+    pub fn component_of(&self, cell: HexCoord) -> Option<crate::sim::topology::ComponentId> {
+        self.topology.component_of(cell)
+    }
+
+    /// Set of cells mutually reachable from the given cell.
+    #[must_use]
+    pub fn reachable_from(&self, cell: HexCoord) -> BTreeSet<HexCoord> {
+        self.topology.reachable_from(cell)
     }
 }
 

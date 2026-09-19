@@ -524,6 +524,7 @@ impl ArchitectLab {
             return false;
         }
         self.doors.insert(key, state);
+        self.topology.mark_dirty();
         self.refresh_observation();
         true
     }
@@ -541,6 +542,7 @@ impl ArchitectLab {
             return Err("observer not at generator");
         }
         let new_state = self.economy.toggle_power(observer.cell.level);
+        self.topology.mark_dirty();
         self.refresh_observation();
         Ok(new_state)
     }
@@ -549,6 +551,7 @@ impl ArchitectLab {
     pub fn cut_floor_power(&mut self, level: u8) -> bool {
         if self.economy.is_powered(level) {
             self.economy.power.insert(level, false);
+            self.topology.mark_dirty();
             self.refresh_observation();
             true
         } else {

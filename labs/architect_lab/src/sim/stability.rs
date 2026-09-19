@@ -159,6 +159,7 @@ impl ArchitectLab {
             *self.world.cell_revisions.entry(cell).or_default() += 1;
             self.doors
                 .retain(|&key, _| !threshold_touches(key, cell, &self.world));
+            self.topology.mark_dirty();
             self.economy.on_retraction_committed(cell.level);
             self.resolve_disturbance_waves(cell.level);
             self.record_event(
