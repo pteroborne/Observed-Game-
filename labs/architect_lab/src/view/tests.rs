@@ -65,3 +65,16 @@ fn every_face_points_at_its_actual_neighbor_in_the_native_view() {
         );
     }
 }
+
+#[test]
+fn five_floors_read_as_distinct_ascending_registers_and_titles() {
+    let mut registers = std::collections::HashSet::new();
+    let mut titles = std::collections::HashSet::new();
+    for level in 0..5 {
+        let register = crate::sim::floor_register(level);
+        let title = crate::sim::floor_title(level);
+        assert!(!title.is_empty(), "floor {level} must have non-empty title");
+        assert!(registers.insert(register), "duplicate register for floor {level}");
+        assert!(titles.insert(title), "duplicate title for floor {level}");
+    }
+}

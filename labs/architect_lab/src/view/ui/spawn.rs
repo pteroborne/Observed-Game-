@@ -174,16 +174,27 @@ fn spawn_sidebar(root: &mut ChildSpawnerCommands) {
             spawn_small_button(row, UiAction::ToggleBot, "BOT [B]");
             spawn_small_button(row, UiAction::TogglePause, "PAUSE [P]");
             spawn_small_button(row, UiAction::StepBeat, "STEP [N]");
+            spawn_small_button(row, UiAction::ToggleOverlay, "OVERLAY [O]");
             spawn_small_button(row, UiAction::Reset, "RESET [R]");
         });
         spawn_rule(rail);
-        spawn_label(rail, "MAP KEY");
+        spawn_label(rail, "LEGIBILITY CONTRACT / KEY");
         rail.spawn((
             Text::new(
-                "CYAN  watched / held\nAMBER prison core\nRED    trouble / closed door\nEYE    Observer prey\nTRIANGLE Guardian hunter",
+                "FLOOR PALETTES\n\
+                • F01 Institutional   • F02 Liminal Grid\n\
+                • F03 Wellshaft       • F04 Facet Monument\n\
+                • F05 Megastructure\n\n\
+                ACTORS & CELLS\n\
+                ◉ Observer [Prey]   ▲ Guardian [Hunter]\n\
+                • Blue: Watched     • Amber: Prison Core\n\
+                • Red: Contradiction / Closed Door\n\n\
+                DEBUG OVERLAY [O]\n\
+                • v F#: Safe drop   • X VOID: Fatal drop\n\
+                • RETRACT: Timer    • [PWR]: Generator",
             ),
             TextFont {
-                font_size: FontSize::Px(11.0),
+                font_size: FontSize::Px(10.0),
                 ..default()
             },
             TextColor(chrome(ChromeRole::TextDim)),
@@ -278,6 +289,7 @@ fn spawn_map_header(root: &mut ChildSpawnerCommands) {
             Name::new("Map zoom controls"),
         ))
         .with_children(|controls| {
+            spawn_small_button(controls, UiAction::ToggleOverlay, "OVERLAY [O]");
             spawn_small_button(controls, UiAction::ZoomOut, "- OUT");
             controls.spawn((
                 DynamicText::Zoom,

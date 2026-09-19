@@ -180,7 +180,7 @@ impl ArchitectLab {
         let config = mode.config();
         let mut world = HexWfcWorld::generate(seed, config)?;
         for (&cell, register) in &mut world.architecture {
-            *register = District::for_level(cell.level).register();
+            *register = floor_register(cell.level);
         }
 
         let route = world
@@ -1000,6 +1000,30 @@ impl ArchitectLab {
                 }
             }
         }
+    }
+}
+
+/// Canonical architecture register assigned to each floor level for visual legibility.
+#[must_use]
+pub fn floor_register(level: u8) -> observed_content::ArchitectureRegister {
+    match level {
+        0 => observed_content::ArchitectureRegister::Institutional,
+        1 => observed_content::ArchitectureRegister::LiminalGrid,
+        2 => observed_content::ArchitectureRegister::Wellshaft,
+        3 => observed_content::ArchitectureRegister::FacetMonument,
+        _ => observed_content::ArchitectureRegister::Megastructure,
+    }
+}
+
+/// Distinct floor architectural title for legibility.
+#[must_use]
+pub fn floor_title(level: u8) -> &'static str {
+    match level {
+        0 => "FOUNDATION // INSTITUTIONAL",
+        1 => "CONCOURSE // LIMINAL GRID",
+        2 => "INTERIOR // WELLSHAFT",
+        3 => "GALLERY // FACET MONUMENT",
+        _ => "SUMMIT // MEGASTRUCTURE",
     }
 }
 

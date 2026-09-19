@@ -22,6 +22,7 @@ pub struct LabSession {
     pub selected_card: usize,
     pub rotation: u8,
     pub paused: bool,
+    pub debug_overlay: bool,
     pub reset_count: u32,
     pub last_message: String,
     pub(crate) dirty: bool,
@@ -29,17 +30,30 @@ pub struct LabSession {
 
 impl Default for LabSession {
     fn default() -> Self {
+        let mode = if let Ok(mode_str) = std::env::var("OBSERVED2_MODE") {
+            match mode_str.to_lowercase().as_str() {
+                "deep_stack" | "deepstack" | "deep" => ArchitectMode::DeepStack,
+                "quick_climb" | "quickclimb" | "quick" => ArchitectMode::QuickClimb,
+                "full_ascent" | "fullascent" | "full" => ArchitectMode::FullAscent,
+                _ => DEFAULT_MODE,
+            }
+        } else {
+            DEFAULT_MODE
+        };
+        let debug_overlay = std::env::var("OBSERVED2_OVERLAY").is_ok();
         Self {
-            sim: ArchitectLab::for_mode(DEFAULT_MODE)
-                .expect("the pinned architect lab mode solves"),
+            sim: ArchitectLab::for_mode(mode).expect("the pinned architect lab mode solves"),
             selected_target: 0,
             hovered_target: None,
             selected_card: 0,
             rotation: 0,
             paused: false,
+            debug_overlay,
             reset_count: 0,
-            last_message: "Pocket Pursuit ready. Pick a card and help the Guardian hunt."
-                .to_string(),
+            last_message: format!(
+                "{} ready. Pick a card and help the Guardian hunt.",
+                mode.label()
+            ),
             dirty: true,
         }
     }
@@ -113,6 +127,15 @@ impl LabSession {
             }
             ArchitectAction::Reset => self.reset(),
             ArchitectAction::CycleMode(direction) => self.cycle_mode(direction),
+            ArchitectAction::ToggleOverlay => {
+                self.debug_overlay = !self.debug_overlay;
+                self.last_message = if self.debug_overlay {
+                    "Debug overlay active: telegraph countdown, fall safety, and floor power visible."
+                        .to_string()
+                } else {
+                    "Debug overlay hidden.".to_string()
+                };
+            }
         }
         self.dirty = true;
     }
@@ -192,6 +215,7 @@ pub(crate) enum ArchitectAction {
     StepBeat,
     Reset,
     CycleMode(i8),
+    ToggleOverlay,
 }
 
 pub struct ArchitectLabPlugin;
@@ -256,6 +280,9 @@ fn handle_input(
     }
     if keys.just_pressed(KeyCode::KeyN) {
         session.apply_action(ArchitectAction::StepBeat);
+    }
+    if keys.just_pressed(KeyCode::KeyO) {
+        session.apply_action(ArchitectAction::ToggleOverlay);
     }
     if keys.just_pressed(KeyCode::BracketLeft) {
         session.apply_action(ArchitectAction::CycleMode(-1));
@@ -335,10 +362,28 @@ fn capture_progress(
     time: Res<Time>,
     mut request: ResMut<CaptureRequest>,
     mut session: ResMut<LabSession>,
+    mut camera: ResMut<view::MapCameraState>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
 ) {
     if request.phase == 0 {
+        if let Ok(mode_str) = std::env::var("OBSERVED2_MODE") {
+            let target_mode = match mode_str.to_lowercase().as_str() {
+                "deep_stack" | "deepstack" | "deep" => Some(ArchitectMode::DeepStack),
+                "quick_climb" | "quickclimb" | "quick" => Some(ArchitectMode::QuickClimb),
+                "full_ascent" | "fullascent" | "full" => Some(ArchitectMode::FullAscent),
+                "pocket" => Some(ArchitectMode::Pocket),
+                _ => None,
+            };
+            if let Some(mode) = target_mode {
+                session.sim = ArchitectLab::for_mode(mode).expect("capture mode solves");
+                camera.reset_for_mode(mode);
+            }
+        }
+        if std::env::var("OBSERVED2_OVERLAY").is_ok() {
+            session.debug_overlay = true;
+        }
+
         // Let every autonomous role establish a readable trace, then return the
         // console to the human with a legal card/target preview ready to commit.
         session.sim.bot_architect = true;

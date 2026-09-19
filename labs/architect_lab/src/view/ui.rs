@@ -55,6 +55,7 @@ pub(crate) enum UiAction {
     Recenter,
     ModePrevious,
     ModeNext,
+    ToggleOverlay,
 }
 
 #[derive(Component, Clone, Copy)]
@@ -158,6 +159,7 @@ pub fn handle_ui_actions(
                 session.apply_action(ArchitectAction::CycleMode(1));
                 camera.reset_for_mode(session.sim.mode);
             }
+            UiAction::ToggleOverlay => session.apply_action(ArchitectAction::ToggleOverlay),
         }
     }
 }
