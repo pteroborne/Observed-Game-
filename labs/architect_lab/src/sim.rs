@@ -19,6 +19,7 @@ mod command;
 pub use command::{ArchitectCommand, CommandRefusal, DoorState, ThresholdKey};
 mod mode;
 pub use mode::ArchitectMode;
+pub mod topology;
 mod util;
 use util::{
     Prng, command_key, face_between, face_toward, key_face_from, lateral_face, threshold_touches,
