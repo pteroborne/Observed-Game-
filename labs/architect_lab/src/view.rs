@@ -7,7 +7,7 @@ use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
 use bevy::prelude::*;
 use observed_hex::{HexCoord, HexFace};
 use observed_style::{MarkerRole, SchematicRole, TacticsRole};
-use observed_ui::theme::{chrome, ChromeRole};
+use observed_ui::theme::{ChromeRole, chrome};
 
 use crate::LabSession;
 use crate::sim::{ArchitectMode, CardKind, DoorState, ObserverState};
@@ -316,7 +316,9 @@ pub fn rebuild_board(
         let label_position = floor_offset(level, session.sim.world.config.levels) + Vec2::Y * 180.0;
         let is_targeted = target_floor == Some(level);
         let plate_color = if is_targeted {
-            observed_style::schematic(SchematicRole::Selected).base_color.with_alpha(0.92)
+            observed_style::schematic(SchematicRole::Selected)
+                .base_color
+                .with_alpha(0.92)
         } else {
             chrome(ChromeRole::Surface).with_alpha(0.92)
         };
@@ -499,9 +501,15 @@ pub fn rebuild_board(
             let center = board_position(session.sim.world.config, station);
             let powered = session.sim.economy.is_powered(station.level);
             let (status, color) = if powered {
-                ("GEN:ON", observed_style::schematic(SchematicRole::Pinned).base_color)
+                (
+                    "GEN:ON",
+                    observed_style::schematic(SchematicRole::Pinned).base_color,
+                )
             } else {
-                ("GEN:OFF", observed_style::tactics(TacticsRole::Blocked).base_color)
+                (
+                    "GEN:OFF",
+                    observed_style::tactics(TacticsRole::Blocked).base_color,
+                )
             };
             commands.spawn((
                 BoardVisual,
@@ -672,8 +680,7 @@ fn draw_actors(
         ));
 
         if session.debug_overlay {
-            let lower =
-                crate::falls::find_lower_surviving_structure(&session.sim, observer.cell);
+            let lower = crate::falls::find_lower_surviving_structure(&session.sim, observer.cell);
             let (fall_label, fall_color) = if observer.cell.level == 0 {
                 (
                     "GROUND",

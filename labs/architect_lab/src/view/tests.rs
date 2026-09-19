@@ -74,7 +74,10 @@ fn five_floors_read_as_distinct_ascending_registers_and_titles() {
         let register = crate::sim::floor_register(level);
         let title = crate::sim::floor_title(level);
         assert!(!title.is_empty(), "floor {level} must have non-empty title");
-        assert!(registers.insert(register), "duplicate register for floor {level}");
+        assert!(
+            registers.insert(register),
+            "duplicate register for floor {level}"
+        );
         assert!(titles.insert(title), "duplicate title for floor {level}");
     }
 }

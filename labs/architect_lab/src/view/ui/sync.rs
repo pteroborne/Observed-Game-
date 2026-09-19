@@ -179,7 +179,11 @@ pub fn sync_dynamic_text(
                     MatchOutcome::RogueVictory => "ROGUE VICTORY",
                     MatchOutcome::LoyalVictory => "LOYAL VICTORY",
                 };
-                let overlay_tag = if session.debug_overlay { " [OVERLAY]" } else { "" };
+                let overlay_tag = if session.debug_overlay {
+                    " [OVERLAY]"
+                } else {
+                    ""
+                };
                 let seconds = session.sim.cooldown.div_ceil(60);
                 format!(
                     "{status}{overlay_tag}  /  T+{:03}\nLOYAL {active}  /  CONTRADICTIONS {}\nCOOLDOWN {seconds}s",

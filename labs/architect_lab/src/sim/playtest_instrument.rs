@@ -37,7 +37,6 @@ pub struct FallDiagnostic {
     pub all_dists_observer_to_retraction: BTreeMap<u32, u64>,
 }
 
-
 #[derive(Debug)]
 pub struct ModeRunStats {
     pub mode: &'static str,
@@ -593,7 +592,8 @@ fn test_fall_reachability_across_many_seeds() {
                                                     .map(|&c| travel_distance(c, cell))
                                                     .min();
                                                 if let Some(d) = min_d {
-                                                    *aggregated_min_dists.entry(d).or_default() += 1;
+                                                    *aggregated_min_dists.entry(d).or_default() +=
+                                                        1;
                                                 }
                                             }
                                         }
@@ -621,15 +621,35 @@ fn test_fall_reachability_across_many_seeds() {
 
     println!("\nAGGREGATED OVER 40 RUNS (10 SEEDS x 4 MODES):");
     println!("  Total Retraction Commits: {}", total_retraction_commits);
-    println!("  Retractions on Occupied Cell: {}", total_retractions_on_occupied);
-    println!("  Retractions on Observed Cell: {}", total_retractions_on_observed);
-    println!("  Beats Observer on Telegraphed Cell: {}", total_beats_on_telegraphed);
-    println!("  Beats Observer on Raw Candidate Cell: {}", total_beats_on_raw_candidate);
-    println!("  Beats Observer on Any Contradiction Cell: {}", total_beats_on_contradiction);
-    println!("  Intents Chosen when on Raw Candidate: {:?}", aggregated_raw_intents);
-    println!("  Min Distance from Observer to Retracting Cell at Commit: {:?}", aggregated_min_dists);
+    println!(
+        "  Retractions on Occupied Cell: {}",
+        total_retractions_on_occupied
+    );
+    println!(
+        "  Retractions on Observed Cell: {}",
+        total_retractions_on_observed
+    );
+    println!(
+        "  Beats Observer on Telegraphed Cell: {}",
+        total_beats_on_telegraphed
+    );
+    println!(
+        "  Beats Observer on Raw Candidate Cell: {}",
+        total_beats_on_raw_candidate
+    );
+    println!(
+        "  Beats Observer on Any Contradiction Cell: {}",
+        total_beats_on_contradiction
+    );
+    println!(
+        "  Intents Chosen when on Raw Candidate: {:?}",
+        aggregated_raw_intents
+    );
+    println!(
+        "  Min Distance from Observer to Retracting Cell at Commit: {:?}",
+        aggregated_min_dists
+    );
     println!("  Total Fall Landings: {}", total_fall_landings);
     println!("  Total Corruptions: {}", total_corruptions);
     println!("====================================================================\n");
 }
-

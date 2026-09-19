@@ -542,8 +542,14 @@ fn deep_stack_solves_deterministically_and_prison_spans_floors() {
     // Verify prison maze spans multiple floors (levels 0 and 1)
     let prison_levels: BTreeSet<u8> = lab1.prison_core.iter().map(|c| c.level).collect();
     assert!(prison_levels.len() >= 2, "prison must span multiple floors");
-    assert!(prison_levels.contains(&0), "prison must have cells on level 0");
-    assert!(prison_levels.contains(&1), "prison must have cells on level 1");
+    assert!(
+        prison_levels.contains(&0),
+        "prison must have cells on level 0"
+    );
+    assert!(
+        prison_levels.contains(&1),
+        "prison must have cells on level 1"
+    );
 }
 
 #[test]
@@ -579,4 +585,3 @@ fn fall_reachability_pinned_findings() {
         );
     }
 }
-
