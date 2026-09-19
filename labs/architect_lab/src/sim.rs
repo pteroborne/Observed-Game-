@@ -115,6 +115,49 @@ pub struct RogueKnowledge {
     pub known_observers: BTreeMap<ObserverId, HexCoord>,
 }
 
+/// Rules governing whether and how floor power can be restored once cut.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PowerPolicy {
+    /// Today's behaviour: floors go out and never come back.
+    OneWay,
+    /// An Observer at a generator can bring a floor back up.
+    #[default]
+    Restorable,
+    /// Nothing ever cuts power. For isolating other variables.
+    AlwaysOn,
+}
+
+impl PowerPolicy {
+    pub const ALL: [Self; 3] = [Self::Restorable, Self::OneWay, Self::AlwaysOn];
+
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::OneWay => "One-Way",
+            Self::Restorable => "Restorable",
+            Self::AlwaysOn => "Always-On",
+        }
+    }
+
+    #[must_use]
+    pub fn next(self) -> Self {
+        match self {
+            Self::Restorable => Self::OneWay,
+            Self::OneWay => Self::AlwaysOn,
+            Self::AlwaysOn => Self::Restorable,
+        }
+    }
+
+    #[must_use]
+    pub fn previous(self) -> Self {
+        match self {
+            Self::Restorable => Self::AlwaysOn,
+            Self::OneWay => Self::Restorable,
+            Self::AlwaysOn => Self::OneWay,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ArchitectLab {
     pub mode: ArchitectMode,
@@ -163,6 +206,7 @@ pub struct ArchitectLab {
     pub command_log: Vec<(u64, ArchitectCommand)>,
     pub economy: EconomyState,
     pub requisition: crate::requisition::RequisitionState,
+    pub power_policy: PowerPolicy,
 }
 
 impl ArchitectLab {
@@ -185,6 +229,19 @@ impl ArchitectLab {
         loyal_team_size: usize,
     ) -> Result<Self, HexWfcError> {
         Self::generate_with_team_size(mode, mode.seed(), loyal_team_size)
+    }
+
+    pub fn for_mode_with_policy(
+        mode: ArchitectMode,
+        power_policy: PowerPolicy,
+    ) -> Result<Self, HexWfcError> {
+        Self::for_mode(mode).map(|lab| lab.with_power_policy(power_policy))
+    }
+
+    #[must_use]
+    pub fn with_power_policy(mut self, power_policy: PowerPolicy) -> Self {
+        self.power_policy = power_policy;
+        self
     }
 
     pub fn generate(mode: ArchitectMode, seed: u64) -> Result<Self, HexWfcError> {
@@ -312,6 +369,7 @@ impl ArchitectLab {
             command_log: Vec::new(),
             economy,
             requisition: crate::requisition::RequisitionState::new(seed),
+            power_policy: PowerPolicy::default(),
         };
         lab.refresh_observation();
         // Damage a solved facility at separated lateral handoffs. These are

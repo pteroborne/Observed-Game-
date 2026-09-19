@@ -22,7 +22,23 @@ impl RogueGame {
     }
 
     pub fn reset(&mut self, mode: u8) -> Result<(), String> {
+        let policy = self.sim.power_policy;
         *self = Self::new(mode)?;
+        self.sim.power_policy = policy;
+        Ok(())
+    }
+
+    pub fn power_policy(&self) -> String {
+        self.sim.power_policy.label().to_string()
+    }
+
+    pub fn set_power_policy(&mut self, policy: &str) -> Result<(), String> {
+        self.sim.power_policy = match policy.to_ascii_lowercase().as_str() {
+            "oneway" | "one_way" | "one-way" => crate::sim::PowerPolicy::OneWay,
+            "restorable" => crate::sim::PowerPolicy::Restorable,
+            "alwayson" | "always_on" | "always-on" => crate::sim::PowerPolicy::AlwaysOn,
+            _ => return Err(format!("unknown power policy: {policy}")),
+        };
         Ok(())
     }
 
@@ -218,6 +234,7 @@ impl RogueGame {
             .collect();
         json!({"tick": sim.tick, "paused": self.paused, "demo": sim.bot_architect,
             "mode": sim.mode.label(), "levels": sim.world.config.levels,
+            "power_policy": sim.power_policy.label(),
             "cols": sim.world.config.cols, "rows": sim.world.config.rows,
             "cooldown": sim.cooldown, "outcome": format!("{:?}", sim.outcome),
             "caught": sim.observers.values().filter(|observer| observer.state == ObserverState::Jailed).count(),
@@ -345,6 +362,16 @@ mod tests {
         game.set_demo(true);
         game.reset(0).unwrap();
         assert_eq!(game.snapshot(), initial);
+    }
+
+    #[test]
+    fn browser_power_policy_survives_reset() {
+        let mut game = RogueGame::new(0).unwrap();
+        assert_eq!(game.power_policy(), "Restorable");
+        game.set_power_policy("one_way").unwrap();
+        assert_eq!(game.power_policy(), "One-Way");
+        game.reset(0).unwrap();
+        assert_eq!(game.power_policy(), "One-Way");
     }
 
     #[test]

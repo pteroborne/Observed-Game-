@@ -7,7 +7,7 @@ use crate::economy::{MAX_CHARGE, SHOVE_COST};
 
 use super::{
     ArchitectCommand, ArchitectLab, BehaviorTrace, DoorState, GuardianId, GuardianKind, ObserverId,
-    ObserverState, ThresholdKey, command_key, face_between, threshold_touches,
+    ObserverState, PowerPolicy, ThresholdKey, command_key, face_between, threshold_touches,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -97,7 +97,8 @@ impl ArchitectLab {
         // Restore floor power if standing at an unpowered generator
         if trace.test(
             "restore floor power at generator",
-            !self.economy.is_powered(observer.cell.level)
+            self.power_policy == PowerPolicy::Restorable
+                && !self.economy.is_powered(observer.cell.level)
                 && self.economy.is_at_generator(observer.cell),
         ) {
             return (ObserverIntent::ToggleGenerator, trace);
@@ -116,7 +117,9 @@ impl ArchitectLab {
         }
 
         // Seek generator if floor is unpowered and not in immediate danger
-        let gen_step = if !self.economy.is_powered(observer.cell.level) {
+        let gen_step = if self.power_policy == PowerPolicy::Restorable
+            && !self.economy.is_powered(observer.cell.level)
+        {
             self.economy
                 .generators
                 .get(&observer.cell.level)

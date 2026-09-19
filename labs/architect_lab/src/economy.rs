@@ -8,7 +8,7 @@ use observed_hex::{HexCoord, HexFace, ports_compatible, travel_distance};
 
 use super::sim::{
     ArchitectLab, DoorState, Guardian, GuardianId, LabEventKind, Observer, ObserverId,
-    ObserverState, ThresholdKey,
+    ObserverState, PowerPolicy, ThresholdKey,
 };
 
 /// Maximum kinetic tool charge capacity per Observer.
@@ -540,6 +540,13 @@ impl ArchitectLab {
         if !self.economy.is_at_generator(observer.cell) {
             return Err("observer not at generator");
         }
+        let is_powered = self.economy.is_powered(observer.cell.level);
+        if !is_powered && self.power_policy == PowerPolicy::OneWay {
+            return Err("power cannot be restored under OneWay policy");
+        }
+        if is_powered && self.power_policy == PowerPolicy::AlwaysOn {
+            return Err("power cannot be cut under AlwaysOn policy");
+        }
         let new_state = self.economy.toggle_power(observer.cell.level);
         self.refresh_observation();
         Ok(new_state)
@@ -547,6 +554,9 @@ impl ArchitectLab {
 
     /// Cut floor power directly (e.g. via contested generator play or floor collapse).
     pub fn cut_floor_power(&mut self, level: u8) -> bool {
+        if self.power_policy == PowerPolicy::AlwaysOn {
+            return false;
+        }
         if self.economy.is_powered(level) {
             self.economy.power.insert(level, false);
             self.refresh_observation();
@@ -1455,6 +1465,75 @@ mod tests {
         let toggled_again = lab.toggle_generator(obs_id).expect("toggle succeeds");
         assert!(toggled_again, "Toggled back on");
         assert!(lab.economy.is_powered(floor), "Floor is re-powered");
+    }
+
+    #[test]
+    fn power_policy_enforcement_and_reset_invariance() {
+        // 1. AlwaysOn policy: cut_floor_power is ignored and toggle_generator refuses to cut power
+        let mut lab = ArchitectLab::for_mode(ArchitectMode::Pocket)
+            .expect("pocket solves")
+            .with_power_policy(PowerPolicy::AlwaysOn);
+        let obs_id = *lab.observers.keys().next().expect("observer exists");
+        let gen_cell = lab.economy.generators[&0];
+        lab.observers.get_mut(&obs_id).unwrap().cell = gen_cell;
+        assert!(!lab.cut_floor_power(0));
+        assert!(lab.economy.is_powered(0));
+        assert!(lab.toggle_generator(obs_id).is_err());
+        assert!(lab.economy.is_powered(0));
+
+        // 2. OneWay policy: power can be cut, but toggle_generator cannot restore it
+        let mut lab = ArchitectLab::for_mode(ArchitectMode::Pocket)
+            .expect("pocket solves")
+            .with_power_policy(PowerPolicy::OneWay);
+        lab.observers.get_mut(&obs_id).unwrap().cell = gen_cell;
+        assert!(lab.cut_floor_power(0));
+        assert!(!lab.economy.is_powered(0));
+        assert!(lab.toggle_generator(obs_id).is_err());
+        assert!(!lab.economy.is_powered(0));
+        let (intent, trace) = lab.observer_intent(obs_id);
+        assert_ne!(intent, crate::sim::ObserverIntent::ToggleGenerator);
+        assert_ne!(trace.selected, Some("restore floor power at generator"));
+
+        // 3. Restorable policy: power can be cut and restored
+        let mut lab = ArchitectLab::for_mode(ArchitectMode::Pocket)
+            .expect("pocket solves")
+            .with_power_policy(PowerPolicy::Restorable);
+        lab.observers.get_mut(&obs_id).unwrap().cell = gen_cell;
+        assert!(lab.cut_floor_power(0));
+        assert!(!lab.economy.is_powered(0));
+        lab.guardians.clear();
+        let (intent, trace) = lab.observer_intent(obs_id);
+        assert_eq!(intent, crate::sim::ObserverIntent::ToggleGenerator);
+        assert_eq!(trace.selected, Some("restore floor power at generator"));
+        assert!(lab.toggle_generator(obs_id).is_ok());
+        assert!(lab.economy.is_powered(0));
+
+        // Reset Path 1: desktop.rs (LabSession::reset and cycle_mode)
+        #[cfg(feature = "desktop")]
+        {
+            let mut session = crate::desktop::LabSession::default();
+            session.set_power_policy(PowerPolicy::OneWay);
+            session.reset();
+            assert_eq!(session.sim.power_policy, PowerPolicy::OneWay);
+        }
+
+        // Reset Path 2: view.rs (MapCameraState::reset_for_mode)
+        #[cfg(feature = "desktop")]
+        {
+            let mut camera = crate::view::MapCameraState::default();
+            camera.zoom = 2.5;
+            camera.reset_for_mode(ArchitectMode::Pocket);
+            assert!((camera.zoom - 0.62).abs() < f32::EPSILON);
+        }
+
+        // Reset Path 3: web.rs (RogueGame::reset)
+        #[cfg(feature = "web")]
+        {
+            let mut game = crate::web::RogueGame::new(0).unwrap();
+            game.set_power_policy("one_way").unwrap();
+            game.reset(0).unwrap();
+            assert_eq!(game.power_policy(), "One-Way");
+        }
     }
 
     #[test]
