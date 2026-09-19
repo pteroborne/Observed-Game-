@@ -67,8 +67,11 @@ pub struct ModeRunStats {
     pub recharge_events: u64,
 
     // Power
+    pub policy: PowerPolicy,
     pub beats_unpowered: BTreeMap<u8, u64>,
     pub power_toggles: u64,
+    pub power_cuts: u64,
+    pub power_restorations: u64,
     pub toggle_generator_intents: u64,
     pub contest_generator_intents: u64,
 
@@ -130,8 +133,11 @@ impl Default for ModeRunStats {
             final_charge: BTreeMap::new(),
             shove_diag: ShoveDiagnostic::default(),
             recharge_events: 0,
+            policy: PowerPolicy::Restorable,
             beats_unpowered: BTreeMap::new(),
             power_toggles: 0,
+            power_cuts: 0,
+            power_restorations: 0,
             toggle_generator_intents: 0,
             contest_generator_intents: 0,
             requisitions_taken: 0,
@@ -175,11 +181,20 @@ pub fn raw_next_retraction(lab: &ArchitectLab) -> Option<HexCoord> {
 }
 
 pub fn run_mode_playtest(mode: ArchitectMode, max_beats: u64) -> ModeRunStats {
-    let mut sim = ArchitectLab::for_mode(mode).expect("scenario boots");
+    run_mode_playtest_with_policy(mode, PowerPolicy::Restorable, max_beats)
+}
+
+pub fn run_mode_playtest_with_policy(
+    mode: ArchitectMode,
+    policy: PowerPolicy,
+    max_beats: u64,
+) -> ModeRunStats {
+    let mut sim = ArchitectLab::for_mode_with_policy(mode, policy).expect("scenario boots");
     sim.bot_architect = true;
 
     let mut stats = ModeRunStats {
         mode: mode.short_label(),
+        policy,
         ..Default::default()
     };
 
@@ -382,6 +397,11 @@ pub fn run_mode_playtest(mode: ArchitectMode, max_beats: u64) -> ModeRunStats {
             let curr_p = sim.economy.is_powered(level);
             if curr_p != prev_p {
                 stats.power_toggles += 1;
+                if curr_p {
+                    stats.power_restorations += 1;
+                } else {
+                    stats.power_cuts += 1;
+                }
                 prev_power.insert(level, curr_p);
             }
         }
@@ -496,82 +516,117 @@ pub fn run_mode_playtest(mode: ArchitectMode, max_beats: u64) -> ModeRunStats {
 fn playtest_instrument_runs_all_modes() {
     println!("\n=================== ARCHITECT LAB PLAYTEST ===================");
 
+    let mut all_stats = Vec::new();
+
     for mode in ArchitectMode::ALL {
-        let stats = run_mode_playtest(mode, 1000);
-        println!("\n--------------------------------------------------------------");
-        println!("MODE: {} ({:?})", stats.mode, mode);
-        println!(
-            "  Duration: {} beats ({} ticks)",
-            stats.total_beats, stats.final_tick
-        );
-        println!("  Outcome: {:?}", stats.outcome);
-        println!("  Observer Final States: {:?}", stats.observer_final_states);
-        println!(
-            "  Observer Final Positions: {:?}",
-            stats.observer_final_positions
-        );
-        println!(
-            "  Cards played: {} (contradictions: {})",
-            stats.cards_played, stats.contradiction_cards
-        );
-        println!(
-            "  Times legal commands empty: {} (empty while off cooldown: {})",
-            stats.times_legal_commands_empty, stats.times_legal_empty_while_off_cooldown
-        );
-        println!("  Cooldown waits: {}", stats.cooldown_waits);
-        println!("  Requisitions taken: {}", stats.requisitions_taken);
-        println!("  Disturbance max per floor: {:?}", stats.max_disturbance);
-        println!(
-            "  Disturbance final per floor: {:?}",
-            stats.final_disturbance
-        );
-        println!("  Waves released per floor: {:?}", stats.waves_released);
-        println!(
-            "  Minors allocated (total spawned): {}",
-            stats.total_minors_allocated
-        );
-        println!(
-            "  Peak active minors: {}, peak active majors: {}",
-            stats.peak_active_minors, stats.peak_active_majors
-        );
-        println!(
-            "  Power toggles: {}, beats unpowered: {:?}",
-            stats.power_toggles, stats.beats_unpowered
-        );
-        println!(
-            "  Toggle generator intents: {}, contest generator intents: {}",
-            stats.toggle_generator_intents, stats.contest_generator_intents
-        );
-        println!("  Initial charge: {:?}", stats.initial_charge);
-        println!("  Min charge: {:?}", stats.min_charge);
-        println!("  Final charge: {:?}", stats.final_charge);
-        println!("  Shove diagnostic: {:?}", stats.shove_diag);
-        println!("  Recharge events: {}", stats.recharge_events);
-        println!(
-            "  Jail events: {}, escape steps: {}, completed escapes: {}",
-            stats.jail_events, stats.escape_steps_taken, stats.completed_escapes
-        );
-        println!(
-            "  Fall landings: {}, Corruptions: {}",
-            stats.fall_landings, stats.corruptions
-        );
-        println!("  Fall Diagnostic: {:#?}", stats.fall_diag);
-        println!(
-            "  Darkness: {} dark beats / {} lit, longest streak {} of {} needed, completed at {:?}",
-            stats.dark_beats,
-            stats.lit_beats,
-            stats.longest_dark_streak,
-            DARKNESS_BEATS,
-            stats.darkness_completed_at
-        );
-        println!(
-            "  Dark streak distribution (length -> count): {:?}",
-            stats.dark_streak_histogram
-        );
-        println!("  Observer intents: {:?}", stats.observer_intents);
-        println!("  Architect intents: {:?}", stats.architect_intents);
+        for policy in PowerPolicy::ALL {
+            let stats = run_mode_playtest_with_policy(mode, policy, 1000);
+            println!("\n--------------------------------------------------------------");
+            println!("MODE: {} ({:?}) | POLICY: {:?}", stats.mode, mode, policy);
+            println!(
+                "  Duration: {} beats ({} ticks)",
+                stats.total_beats, stats.final_tick
+            );
+            println!("  Outcome: {:?}", stats.outcome);
+            println!("  Observer Final States: {:?}", stats.observer_final_states);
+            println!(
+                "  Observer Final Positions: {:?}",
+                stats.observer_final_positions
+            );
+            println!(
+                "  Cards played: {} (contradictions: {})",
+                stats.cards_played, stats.contradiction_cards
+            );
+            println!(
+                "  Times legal commands empty: {} (empty while off cooldown: {})",
+                stats.times_legal_commands_empty, stats.times_legal_empty_while_off_cooldown
+            );
+            println!("  Cooldown waits: {}", stats.cooldown_waits);
+            println!("  Requisitions taken: {}", stats.requisitions_taken);
+            println!("  Disturbance max per floor: {:?}", stats.max_disturbance);
+            println!(
+                "  Disturbance final per floor: {:?}",
+                stats.final_disturbance
+            );
+            println!("  Waves released per floor: {:?}", stats.waves_released);
+            println!(
+                "  Minors allocated (total spawned): {}",
+                stats.total_minors_allocated
+            );
+            println!(
+                "  Peak active minors: {}, peak active majors: {}",
+                stats.peak_active_minors, stats.peak_active_majors
+            );
+            println!(
+                "  Power cuts: {}, restorations: {}, toggles: {}, beats unpowered: {:?}",
+                stats.power_cuts,
+                stats.power_restorations,
+                stats.power_toggles,
+                stats.beats_unpowered
+            );
+            println!(
+                "  Toggle generator intents: {}, contest generator intents: {}",
+                stats.toggle_generator_intents, stats.contest_generator_intents
+            );
+            println!("  Initial charge: {:?}", stats.initial_charge);
+            println!("  Min charge: {:?}", stats.min_charge);
+            println!("  Final charge: {:?}", stats.final_charge);
+            println!("  Shove diagnostic: {:?}", stats.shove_diag);
+            println!("  Recharge events: {}", stats.recharge_events);
+            println!(
+                "  Jail events: {}, escape steps: {}, completed escapes: {}",
+                stats.jail_events, stats.escape_steps_taken, stats.completed_escapes
+            );
+            println!(
+                "  Fall landings: {}, Corruptions: {}",
+                stats.fall_landings, stats.corruptions
+            );
+            println!("  Fall Diagnostic: {:#?}", stats.fall_diag);
+            println!(
+                "  Darkness: {} dark beats / {} lit, longest streak {} of {} needed, completed at {:?}",
+                stats.dark_beats,
+                stats.lit_beats,
+                stats.longest_dark_streak,
+                DARKNESS_BEATS,
+                stats.darkness_completed_at
+            );
+            println!(
+                "  Dark streak distribution (length -> count): {:?}",
+                stats.dark_streak_histogram
+            );
+            println!("  Observer intents: {:?}", stats.observer_intents);
+            println!("  Architect intents: {:?}", stats.architect_intents);
+            all_stats.push(stats);
+        }
     }
-    println!("\n==============================================================\n");
+
+    println!("\n=================== COMPARISON TABLE ===================");
+    println!(
+        "| Mode | Policy | Outcome | Beats | Cuts | Restorations | Unpowered Beats/Floor | Dark Beats | Lit Beats | Longest Dark Streak | Darkness Completed |"
+    );
+    println!("|---|---|---|---|---|---|---|---|---|---|---|");
+    for s in &all_stats {
+        let unpowered_str = format!("{:?}", s.beats_unpowered);
+        let dark_comp_str = match s.darkness_completed_at {
+            Some(t) => format!("Tick {t}"),
+            None => "Never".to_string(),
+        };
+        println!(
+            "| {} | {:?} | {:?} | {} | {} | {} | {} | {} | {} | {} | {} |",
+            s.mode,
+            s.policy,
+            s.outcome,
+            s.total_beats,
+            s.power_cuts,
+            s.power_restorations,
+            unpowered_str,
+            s.dark_beats,
+            s.lit_beats,
+            s.longest_dark_streak,
+            dark_comp_str,
+        );
+    }
+    println!("========================================================\n");
 }
 
 #[test]
