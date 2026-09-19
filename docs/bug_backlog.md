@@ -726,12 +726,32 @@ match ever *arrives* in the powered state. Fourth instance in this project of a 
 that is individually correct and collectively unreachable — after the shove softlock,
 the survivable fall (#42) and the Pocket walkover (#43).
 
-**Two decisions, and they are separable.** Whether an Observer bot should ever seek a
-generator is a behaviour question. Whether a facility with no restoration path is the
-intended economy is a design one — a one-way blackout is *thematically* excellent for
-Architect Ascent and may well be the right game, but it should be a choice rather than
-the absence of a reverse gear. Until one of them is settled, the Darkness objective
-cannot be tuned: its threshold has only two settings, fires or never.
+**Correction, same day, after measuring instead of inferring.** The first version of this
+entry said the reverse gear was missing. It is not — `sim/behavior.rs` has both halves,
+"restore floor power at generator" (~line 97) and "seek generator to restore power"
+(~line 118). They never run because **the generator cannot be reached**. A route to the
+floor's generator fails in 95–100% of samples on an unpowered floor: 121 of 127 in Quick
+Climb, 286 of 291 in Full Ascent, 1134 of 1134 in Deep Stack.
+
+At match start, **every mode's level-0 generator sits at `(0, 0, 0)` with zero exits** — a
+sealed cell connected to nothing, reachable from no Observer start in any mode. The floor
+everybody starts on can never be restored by anyone. In Deep Stack the level-1 and level-2
+generators are unreachable as well, and one of its five recharge stations.
+
+The cause is `EconomyState::new` (`economy.rs` ~line 92): it sorts each level's non-Void
+placements and takes `candidates[0]` as the generator, `candidates[len/2]` as the station,
+`candidates[len - 1]` as the pad. Placement by coordinate sort order, with reachability
+never consulted for any of the three fixtures — and `(0, 0, level)` sorts first whenever
+it exists.
+
+Probes on the branch: `why_nobody_restores_the_power` and
+`is_the_generator_reachable_at_all`, both in the playtest instrument.
+
+**Decided 2026-09-19 (Will):** if a generator is turned back on, the lights come back —
+and the policy is a configurable option so a one-way blackout can still be tested against
+it. Being able to run both and compare is the point; a one-way blackout may yet be the
+better game. Until the fixtures are reachable the Darkness objective cannot be tuned: its
+threshold has only two settings, fires or never.
 
 
 ## Minor / hygiene
