@@ -658,6 +658,44 @@ mean strictly the same column, or any supporting cell within a step — the curr
 makes survival depend on a single cell rather than a neighbourhood.
 
 
+### 43. Loyal victory turned Pocket into a three-beat walkover
+
+**Found 2026-09-18 by re-running the playtest instrument straight after
+`MatchOutcome::LoyalVictory` landed.** The feature is correct and its unit test
+(`bot_played_loyal_victory_is_reachable`) passes honestly. The *match* it produces does
+not work.
+
+| mode | before | after |
+| --- | --- | --- |
+| Pocket | RogueVictory, 12 beats | **LoyalVictory, 3 beats** |
+| QuickClimb | RogueVictory, 76 beats | RogueVictory, 76 beats |
+| FullAscent | RogueVictory, 90 beats | RogueVictory, 90 beats |
+
+Pocket now resolves in **180 ticks** with **0 waves released, 0 jail events, 0 shove
+attempts and 0 minors spawned**. The Observers reach the summit before the Rogue
+Architect has taken a meaningful action, so none of the pressure the mode exists to
+exercise ever engages. Before this change Pocket ran twelve beats, jailed both Observers
+and tested pursuit; it is now a walkover that tests the quorum arithmetic and nothing
+else.
+
+**This is not an argument for reverting.** The loyal side genuinely needed a way to win,
+and the two larger modes still end in Rogue victories, so the race is not broken in
+general — it is Pocket specifically, whose summit sits roughly three beats from spawn.
+A one-level 6x5 facility was sized as a pursuit sandbox back when reaching the exit meant
+nothing, and giving the exit meaning silently repurposed it.
+
+**Options, in rough order of appeal.** Move Pocket's summit away from spawn so the walk
+is contested. Give the quorum a floor condition so a match cannot resolve before the
+disturbance meter has released anything. Or accept that Pocket is now an ascent test and
+add a separate small mode that is explicitly a pursuit sandbox with no reachable exit.
+The third is the honest one if Pocket's real job was always pursuit.
+
+**Method note worth keeping.** A green unit test and a working feature produced a worse
+game, and only re-running the end-to-end playtest showed it. That is the third time in
+one session that behaviour proved unreachable or degenerate while its tests passed —
+after the shove softlock and the survivable fall (#42).
+
+
 ## Minor / hygiene
 
 **Scheduled: Arc H Phase 61 (as-landed notes).**
