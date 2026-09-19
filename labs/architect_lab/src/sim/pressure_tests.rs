@@ -40,7 +40,7 @@ fn warning_precedes_retraction_and_retractions_are_spaced() {
 fn every_protection_holds_against_retraction() {
     let original = unstable();
     let target = original.next_retraction().unwrap();
-    for protection in 0..5 {
+    for protection in 0..4 {
         let mut sim = original.clone();
         match protection {
             0 => {
@@ -51,9 +51,6 @@ fn every_protection_holds_against_retraction() {
             }
             2 => {
                 sim.prison_core.insert(target);
-            }
-            3 => {
-                sim.guardians.get_mut(&GuardianId(0)).unwrap().cell = target;
             }
             _ => {
                 let face = HexFace::LATERAL
@@ -173,7 +170,7 @@ fn rejected_commands_are_atomic_and_no_op_cards_are_refused() {
     let target = sim
         .mutable_targets()
         .into_iter()
-        .find(|cell| !sim.retraction_protected(*cell))
+        .find(|cell| !sim.retraction_protected(*cell) && !sim.occupied().contains(cell))
         .unwrap();
     sim.world.placements.get_mut(&target).unwrap().space = HexSpace::Hall;
     sim.world.placements.get_mut(&target).unwrap().doors = TileShape::Corridor.doors(0);

@@ -131,6 +131,11 @@ pub struct ArchitectLab {
     pub retracted: BTreeSet<HexCoord>,
     pub collapsed_floors: BTreeSet<u8>,
     pub next_retraction_tick: Option<u64>,
+    /// A cell selected for retraction while somebody was standing on it, and the
+    /// tick it commits anyway. Occupancy used to make a tile immune; it now buys
+    /// a warning instead, so the floor can go out from under an Observer who
+    /// stayed too long but never under one who had no chance to move.
+    pub condemned: Option<(HexCoord, u64)>,
     pub instability_origin: Option<HexCoord>,
     pub events: VecDeque<LabEvent>,
     pub loyal_team_size: usize,
@@ -180,7 +185,7 @@ impl ArchitectLab {
         let config = mode.config();
         let mut world = HexWfcWorld::generate(seed, config)?;
         for (&cell, register) in &mut world.architecture {
-            *register = District::for_level(cell.level).register();
+            *register = floor_register(cell.level);
         }
 
         let route = world
@@ -275,6 +280,7 @@ impl ArchitectLab {
             retracted: BTreeSet::new(),
             collapsed_floors: BTreeSet::new(),
             next_retraction_tick: None,
+            condemned: None,
             instability_origin: None,
             events: VecDeque::new(),
             loyal_team_size,
@@ -296,6 +302,9 @@ impl ArchitectLab {
             ArchitectMode::Pocket => 1,
             ArchitectMode::QuickClimb => 2,
             ArchitectMode::FullAscent => 3,
+            // A taller stack is damaged proportionally, so retraction pressure
+            // scales with the vertical space it has to act in.
+            ArchitectMode::DeepStack => 5,
         };
         let mut gaps = Vec::new();
         for triple in route.windows(3) {
@@ -997,6 +1006,30 @@ impl ArchitectLab {
                 }
             }
         }
+    }
+}
+
+/// Canonical architecture register assigned to each floor level for visual legibility.
+#[must_use]
+pub fn floor_register(level: u8) -> observed_content::ArchitectureRegister {
+    match level {
+        0 => observed_content::ArchitectureRegister::Institutional,
+        1 => observed_content::ArchitectureRegister::LiminalGrid,
+        2 => observed_content::ArchitectureRegister::Wellshaft,
+        3 => observed_content::ArchitectureRegister::FacetMonument,
+        _ => observed_content::ArchitectureRegister::Megastructure,
+    }
+}
+
+/// Distinct floor architectural title for legibility.
+#[must_use]
+pub fn floor_title(level: u8) -> &'static str {
+    match level {
+        0 => "FOUNDATION // INSTITUTIONAL",
+        1 => "CONCOURSE // LIMINAL GRID",
+        2 => "INTERIOR // WELLSHAFT",
+        3 => "GALLERY // FACET MONUMENT",
+        _ => "SUMMIT // MEGASTRUCTURE",
     }
 }
 

@@ -617,45 +617,42 @@ a time or thread dependence, or a seed drawn from something ambient.
 
 ### 42. The survivable fall cannot happen in `architect_lab`, so corruption is the only fall
 
-**Found 2026-09-18 by reading the playtest numbers.** Across every bot run of every mode
-— 46,680 ticks before the reachability fixes and three full modes after — **fall landings
-are 0 and always have been.** One corruption fired. The design intent is the exact
-inverse: *"An ordinary fall lands on lower surviving structure when geometry permits.
-Only a fall through the whole surviving stack into true void causes corruption."*
+**Found 2026-09-18 by reading the playtest numbers. Resolved 2026-09-19 (Deep Stack investigation).**
+Across every bot run of every mode — 46,680 ticks before the reachability fixes and three full
+modes after — **fall landings were 0 and always had been.** One corruption fired. The design
+intent is the exact inverse: *"An ordinary fall lands on lower surviving structure when geometry
+permits. Only a fall through the whole surviving stack into true void causes corruption."*
 
-`falls.rs` is not wrong. `find_lower_surviving_structure` walks `(0..from.level).rev()`
-and checks the same `(q, r)` column, which is a faithful reading of falling straight down.
-The problem is the facilities it runs in:
+**Initial Hypothesis (Disproven):** The initial entry suspected that facilities were simply
+too shallow (Pocket = 1 floor, QuickClimb/FullAscent = 2 floors) and that adding a deeper mode
+would let falling Observers land safely on lower floors.
 
-| mode | levels |
-| --- | --- |
-| Pocket | **1** |
-| QuickClimb | 2 |
-| FullAscent | 2 |
+**The Real Diagnosis (Deep Stack Findings):**
+`ArchitectMode::DeepStack` introduced a 5-floor facility (8×6×5, 240 cells, levels 0 to 4).
+Running multi-seed instrumentation across 40 seeds (10 seeds each across Pocket, QuickClimb,
+FullAscent, and DeepStack; ~20,000 beats total) revealed:
+- **1,087** total retraction commits.
+- **0 (0.0%)** retractions committed on an occupied cell.
+- **0 (0.0%)** retractions committed on an observed cell.
+- **0** falls resulting from retracting floors under an actor (1 total fall occurred from an
+  escaping prisoner stepping onto a tile that had already retracted while empty).
+- **0** corruptions.
 
-On level 0 the range `(0..0)` is **empty** — nothing is examined and the fall corrupts
-immediately, because there is genuinely nothing below. Pocket has only level 0, so *every
-fall in Pocket corrupts by construction*. In the other two modes a fall can only survive
-if it starts on level 1 **and** the single cell directly beneath it survives; with a
-sparse, hole-punched floor that is rare, which is why the count is zero rather than low.
+Facility depth was **never the blocker**. Falls were **unreachable by construction**:
+1. `CommandRefusal::Occupied` (`sim.rs:398`) forbids direct card placement on occupied cells.
+2. `retraction_protected(&self, cell: HexCoord)` (`sim/stability.rs:51`) unconditionally
+   protects cells where `self.occupied().contains(&cell)`.
+3. Thus, `next_retraction()` strictly excludes any cell an actor occupies. Neither direct
+   Architect play nor scheduled retractions could ever remove the floor from under an actor.
 
-**Why this matters beyond a statistic.** The asymmetry is the feature: most falls should
-cost position, not the run, so that players take vertical risks and a floor rewriting
-itself underfoot reads as pressure rather than punishment. As configured, corruption is
-not the rare catastrophic outcome — it is the *only* outcome. The lab is teaching the
-opposite lesson to the one the design intends, and the unit tests pass because they
-construct a two-level case by hand.
-
-Production is `28 x 20 x 10`. The common case is almost certainly fine there and is simply
-unreachable in a one- or two-level lab, so this is a **coverage gap, not a gameplay
-regression** — but it means the balance of the feature has never once been observed.
-
-**For whoever picks this up:** the cheap fix is a deeper lab mode, or raising
-`FullAscent` past two levels, so the survivable fall becomes reachable under bot play.
-Then re-run the playtest instrument and check landings are the common case and
-corruptions the exception. Worth also deciding whether "lower surviving structure" should
-mean strictly the same column, or any supporting cell within a step — the current reading
-makes survival depend on a single cell rather than a neighbourhood.
+**Smallest Honest Fix Proposed:**
+- Retain `CommandRefusal::Occupied` (it is load-bearing; the Architect must never directly delete an actor).
+- Remove `self.occupied().contains(&cell)` from `retraction_protected`.
+- Contradictions selected for retraction telegraph for 180 ticks (3 beats) with visible hazard halos
+  and countdowns. Observers receive advance warning to `evade immediate danger`.
+- If an actor is trapped, cornered, or fails to evacuate within 180 ticks, the floor retracts beneath
+  them, dropping them to lower surviving structure or into the void. Pinned by unit tests in
+  `sim::tests::fall_reachability_pinned_findings`.
 
 
 ### 43. Loyal victory turned Pocket into a three-beat walkover

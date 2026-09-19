@@ -176,9 +176,10 @@ function drawMap() {
     if (!cell.solid) classes.push("void");
     if (cell.observed) classes.push("watched");
     if (cell.unstable) classes.push("unstable");
+    if (cell.condemned) classes.push("condemned");
     if (cell.prison) classes.push("prison");
     if (same(cell.cell, target)) classes.push("selected");
-    const label = `Tile ${cell.cell[0]}, ${cell.cell[1]}${cell.prison ? ", prison core" : cell.observed ? ", watched" : !cell.solid ? ", empty space" : ""}${legal.has(cellKey(cell.cell)) ? ", legal target" : ""}`;
+    const label = `Tile ${cell.cell[0]}, ${cell.cell[1]}${cell.condemned ? ", condemned" : cell.prison ? ", prison core" : cell.observed ? ", watched" : !cell.solid ? ", empty space" : ""}${legal.has(cellKey(cell.cell)) ? ", legal target" : ""}`;
     const g = svg("g", {
       class: classes.join(" "),
       transform: `translate(${x},${y})`,

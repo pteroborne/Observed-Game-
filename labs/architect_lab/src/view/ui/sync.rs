@@ -179,16 +179,29 @@ pub fn sync_dynamic_text(
                     MatchOutcome::RogueVictory => "ROGUE VICTORY",
                     MatchOutcome::LoyalVictory => "LOYAL VICTORY",
                 };
+                let overlay_tag = if session.debug_overlay {
+                    " [OVERLAY]"
+                } else {
+                    ""
+                };
                 let seconds = session.sim.cooldown.div_ceil(60);
                 format!(
-                    "{status}  /  T+{:03}\nLOYAL {active}  /  CONTRADICTIONS {}\nCOOLDOWN {seconds}s",
+                    "{status}{overlay_tag}  /  T+{:03}\nLOYAL {active}  /  CONTRADICTIONS {}\nCOOLDOWN {seconds}s",
                     session.sim.tick / 60,
                     session.sim.contradictions.len()
                 )
             }
             DynamicText::Target => target.map_or_else(
                 || "NO TARGET".to_string(),
-                |cell| format!("FLOOR {:02} / CELL {}, {}", cell.level + 1, cell.q, cell.r),
+                |cell| {
+                    format!(
+                        "FLOOR {:02} {} / CELL {}, {}",
+                        cell.level + 1,
+                        crate::sim::floor_register(cell.level).slug().to_uppercase(),
+                        cell.q,
+                        cell.r
+                    )
+                },
             ),
             DynamicText::Legality => match refusal {
                 Some(reason) => format!("HELD / {}", reason.label().to_uppercase()),
@@ -200,19 +213,48 @@ pub fn sync_dynamic_text(
                 |card| format!("{}  /  FACE {}", card_title(card), session.rotation + 1),
             ),
             DynamicText::Message => session.last_message.to_uppercase(),
-            DynamicText::Traces => session
-                .sim
-                .traces
-                .iter()
-                .map(|(role, trace)| {
-                    format!(
-                        "{:<11} {}",
-                        role.to_uppercase(),
-                        trace.selected.unwrap_or("awaiting signal").to_uppercase()
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("\n"),
+            DynamicText::Traces => {
+                let mut lines = Vec::new();
+                for (id, obs) in &session.sim.observers {
+                    let role_key = format!("observer_{}", id.0);
+                    let action = session
+                        .sim
+                        .traces
+                        .get(&role_key)
+                        .and_then(|t| t.selected)
+                        .unwrap_or(match obs.state {
+                            ObserverState::Active => "awaiting signal",
+                            ObserverState::Jailed => "jailed in core",
+                            ObserverState::Corrupted => "corrupted",
+                        });
+                    lines.push(format!(
+                        "OBS {:02} [F{:02}] {}",
+                        id.0,
+                        obs.cell.level + 1,
+                        action.to_uppercase()
+                    ));
+                }
+                for (id, grd) in &session.sim.guardians {
+                    let role_key = format!("guardian_{}", id.0);
+                    let action = session
+                        .sim
+                        .traces
+                        .get(&role_key)
+                        .and_then(|t| t.selected)
+                        .unwrap_or("hunting");
+                    lines.push(format!(
+                        "GRD {:02} [F{:02}] {}",
+                        id.0,
+                        grd.cell.level + 1,
+                        action.to_uppercase()
+                    ));
+                }
+                if lines.is_empty() {
+                    "NO ACTORS".to_string()
+                } else {
+                    lines.join("\n")
+                }
+            }
             DynamicText::HandStatus => {
                 format!("{} CARDS / DRAW AFTER PLAY", session.sim.deck.hand.len())
             }

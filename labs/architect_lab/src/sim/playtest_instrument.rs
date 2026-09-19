@@ -23,6 +23,20 @@ pub struct ShoveDiagnostic {
     pub err_other: u64,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct FallDiagnostic {
+    pub total_retraction_commits: u64,
+    pub retractions_on_occupied_cell: u64,
+    pub retractions_on_observed_cell: u64,
+    pub beats_observer_on_telegraphed: u64,
+    pub beats_observer_on_raw_candidate: u64,
+    pub beats_observer_on_contradiction: u64,
+    pub intents_on_raw_candidate: BTreeMap<String, u64>,
+    pub intents_on_contradiction: BTreeMap<String, u64>,
+    pub min_dist_observer_to_retraction: BTreeMap<u32, u64>,
+    pub all_dists_observer_to_retraction: BTreeMap<u32, u64>,
+}
+
 #[derive(Debug)]
 pub struct ModeRunStats {
     pub mode: &'static str,
@@ -69,6 +83,7 @@ pub struct ModeRunStats {
     // Falls & Corruptions
     pub fall_landings: u64,
     pub corruptions: u64,
+    pub fall_diag: FallDiagnostic,
 
     // Observer intents summary
     pub observer_intents: BTreeMap<String, u64>,
@@ -112,12 +127,33 @@ impl Default for ModeRunStats {
             completed_escapes: 0,
             fall_landings: 0,
             corruptions: 0,
+            fall_diag: FallDiagnostic::default(),
             observer_intents: BTreeMap::new(),
             architect_intents: BTreeMap::new(),
             observer_final_states: BTreeMap::new(),
             observer_final_positions: BTreeMap::new(),
         }
     }
+}
+
+pub fn raw_next_retraction(lab: &ArchitectLab) -> Option<HexCoord> {
+    lab.contradictions
+        .iter()
+        .copied()
+        .filter(|&cell| {
+            !lab.prison_core.contains(&cell)
+                && !lab.anchored.contains(&cell)
+                && !lab.doors.iter().any(|(&key, &state)| {
+                    state == DoorState::Open && threshold_touches(key, cell, &lab.world)
+                })
+        })
+        .min_by_key(|&cell| {
+            (
+                lab.instability_origin
+                    .map_or(0, |origin| travel_distance(origin, cell)),
+                cell,
+            )
+        })
 }
 
 pub fn run_mode_playtest(mode: ArchitectMode, max_beats: u64) -> ModeRunStats {
@@ -196,7 +232,89 @@ pub fn run_mode_playtest(mode: ArchitectMode, max_beats: u64) -> ModeRunStats {
             }
         }
 
-        sim.step_beat();
+        let telegraphed = sim.next_retraction();
+        let raw_telegraphed = raw_next_retraction(&sim);
+        for (&id, observer) in &sim.observers {
+            if observer.state == ObserverState::Active {
+                if Some(observer.cell) == telegraphed {
+                    stats.fall_diag.beats_observer_on_telegraphed += 1;
+                }
+                if Some(observer.cell) == raw_telegraphed {
+                    stats.fall_diag.beats_observer_on_raw_candidate += 1;
+                    let (_, trace) = sim.observer_intent(id);
+                    if let Some(selected) = trace.selected {
+                        *stats
+                            .fall_diag
+                            .intents_on_raw_candidate
+                            .entry(selected.to_string())
+                            .or_default() += 1;
+                    }
+                }
+                if sim.contradictions.contains(&observer.cell) {
+                    stats.fall_diag.beats_observer_on_contradiction += 1;
+                    let (_, trace) = sim.observer_intent(id);
+                    if let Some(selected) = trace.selected {
+                        *stats
+                            .fall_diag
+                            .intents_on_contradiction
+                            .entry(selected.to_string())
+                            .or_default() += 1;
+                    }
+                }
+            }
+        }
+
+        let target_tick = sim.tick + u64::from(ACTOR_BEAT_TICKS);
+        while sim.tick < target_tick && sim.outcome == MatchOutcome::Running {
+            let pre_obs: BTreeMap<ObserverId, HexCoord> = sim
+                .observers
+                .iter()
+                .filter(|(_, o)| o.state == ObserverState::Active)
+                .map(|(&id, o)| (id, o.cell))
+                .collect();
+            let pre_observed = sim.observed.clone();
+            let pre_tick = sim.tick;
+            sim.tick();
+            if sim.tick > pre_tick {
+                for event in &sim.events {
+                    if event.tick == sim.tick {
+                        match event.kind {
+                            LabEventKind::Retracted => {
+                                stats.fall_diag.total_retraction_commits += 1;
+                                if let Some(cell) = event.cell {
+                                    if pre_obs.values().any(|&c| c == cell) {
+                                        stats.fall_diag.retractions_on_occupied_cell += 1;
+                                    }
+                                    if pre_observed.contains(&cell) {
+                                        stats.fall_diag.retractions_on_observed_cell += 1;
+                                    }
+                                    let mut min_d = None;
+                                    for &c in pre_obs.values() {
+                                        let d = travel_distance(c, cell);
+                                        *stats
+                                            .fall_diag
+                                            .all_dists_observer_to_retraction
+                                            .entry(d)
+                                            .or_default() += 1;
+                                        min_d = Some(min_d.map_or(d, |curr: u32| curr.min(d)));
+                                    }
+                                    if let Some(d) = min_d {
+                                        *stats
+                                            .fall_diag
+                                            .min_dist_observer_to_retraction
+                                            .entry(d)
+                                            .or_default() += 1;
+                                    }
+                                }
+                            }
+                            LabEventKind::Fell => stats.fall_landings += 1,
+                            LabEventKind::Corrupted => stats.corruptions += 1,
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
         stats.total_beats = beat + 1;
         stats.final_tick = sim.tick;
 
@@ -316,16 +434,6 @@ pub fn run_mode_playtest(mode: ArchitectMode, max_beats: u64) -> ModeRunStats {
                 }
             }
         }
-
-        for event in &sim.events {
-            if event.tick == sim.tick {
-                match event.kind {
-                    LabEventKind::Fell => stats.fall_landings += 1,
-                    LabEventKind::Corrupted => stats.corruptions += 1,
-                    _ => {}
-                }
-            }
-        }
     }
 
     stats.outcome = sim.outcome;
@@ -401,8 +509,147 @@ fn playtest_instrument_runs_all_modes() {
             "  Fall landings: {}, Corruptions: {}",
             stats.fall_landings, stats.corruptions
         );
+        println!("  Fall Diagnostic: {:#?}", stats.fall_diag);
         println!("  Observer intents: {:?}", stats.observer_intents);
         println!("  Architect intents: {:?}", stats.architect_intents);
     }
     println!("\n==============================================================\n");
+}
+
+#[test]
+fn test_fall_reachability_across_many_seeds() {
+    println!("\n=================== MULTI-SEED FALL REACHABILITY ===================");
+    let mut total_retraction_commits = 0u64;
+    let mut total_retractions_on_occupied = 0u64;
+    let mut total_retractions_on_observed = 0u64;
+    let mut total_beats_on_telegraphed = 0u64;
+    let mut total_beats_on_raw_candidate = 0u64;
+    let mut total_beats_on_contradiction = 0u64;
+    let mut total_fall_landings = 0u64;
+    let mut total_corruptions = 0u64;
+    let mut aggregated_raw_intents: BTreeMap<String, u64> = BTreeMap::new();
+    let mut aggregated_min_dists: BTreeMap<u32, u64> = BTreeMap::new();
+
+    for mode in ArchitectMode::ALL {
+        let mut mode_retractions = 0u64;
+        let mut mode_falls = 0u64;
+        for seed in 1..=10 {
+            if let Ok(mut sim) = ArchitectLab::generate(mode, seed) {
+                sim.bot_architect = true;
+                for _beat in 0..500 {
+                    if sim.outcome != MatchOutcome::Running {
+                        break;
+                    }
+                    let telegraphed = sim.next_retraction();
+                    let raw_telegraphed = raw_next_retraction(&sim);
+                    for (&id, observer) in &sim.observers {
+                        if observer.state == ObserverState::Active {
+                            if Some(observer.cell) == telegraphed {
+                                total_beats_on_telegraphed += 1;
+                            }
+                            if Some(observer.cell) == raw_telegraphed {
+                                total_beats_on_raw_candidate += 1;
+                                let (_, trace) = sim.observer_intent(id);
+                                if let Some(selected) = trace.selected {
+                                    *aggregated_raw_intents
+                                        .entry(selected.to_string())
+                                        .or_default() += 1;
+                                }
+                            }
+                            if sim.contradictions.contains(&observer.cell) {
+                                total_beats_on_contradiction += 1;
+                            }
+                        }
+                    }
+
+                    let target_tick = sim.tick + u64::from(ACTOR_BEAT_TICKS);
+                    while sim.tick < target_tick && sim.outcome == MatchOutcome::Running {
+                        let pre_obs: Vec<HexCoord> = sim
+                            .observers
+                            .values()
+                            .filter(|o| o.state == ObserverState::Active)
+                            .map(|o| o.cell)
+                            .collect();
+                        let pre_observed = sim.observed.clone();
+                        let pre_tick = sim.tick;
+                        sim.tick();
+                        if sim.tick > pre_tick {
+                            for event in &sim.events {
+                                if event.tick == sim.tick {
+                                    match event.kind {
+                                        LabEventKind::Retracted => {
+                                            total_retraction_commits += 1;
+                                            mode_retractions += 1;
+                                            if let Some(cell) = event.cell {
+                                                if pre_obs.contains(&cell) {
+                                                    total_retractions_on_occupied += 1;
+                                                }
+                                                if pre_observed.contains(&cell) {
+                                                    total_retractions_on_observed += 1;
+                                                }
+                                                let min_d = pre_obs
+                                                    .iter()
+                                                    .map(|&c| travel_distance(c, cell))
+                                                    .min();
+                                                if let Some(d) = min_d {
+                                                    *aggregated_min_dists.entry(d).or_default() +=
+                                                        1;
+                                                }
+                                            }
+                                        }
+                                        LabEventKind::Fell => {
+                                            total_fall_landings += 1;
+                                            mode_falls += 1;
+                                        }
+                                        LabEventKind::Corrupted => {
+                                            total_corruptions += 1;
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        println!(
+            "Mode {:?}: retractions={}, falls={}",
+            mode, mode_retractions, mode_falls
+        );
+    }
+
+    println!("\nAGGREGATED OVER 40 RUNS (10 SEEDS x 4 MODES):");
+    println!("  Total Retraction Commits: {}", total_retraction_commits);
+    println!(
+        "  Retractions on Occupied Cell: {}",
+        total_retractions_on_occupied
+    );
+    println!(
+        "  Retractions on Observed Cell: {}",
+        total_retractions_on_observed
+    );
+    println!(
+        "  Beats Observer on Telegraphed Cell: {}",
+        total_beats_on_telegraphed
+    );
+    println!(
+        "  Beats Observer on Raw Candidate Cell: {}",
+        total_beats_on_raw_candidate
+    );
+    println!(
+        "  Beats Observer on Any Contradiction Cell: {}",
+        total_beats_on_contradiction
+    );
+    println!(
+        "  Intents Chosen when on Raw Candidate: {:?}",
+        aggregated_raw_intents
+    );
+    println!(
+        "  Min Distance from Observer to Retracting Cell at Commit: {:?}",
+        aggregated_min_dists
+    );
+    println!("  Total Fall Landings: {}", total_fall_landings);
+    println!("  Total Corruptions: {}", total_corruptions);
+    println!("====================================================================\n");
 }

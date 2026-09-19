@@ -7,7 +7,7 @@
 //! that resolves as `MatchOutcome::RogueVictory`.
 
 use observed_facility::hex_wfc::HexSpace;
-use observed_hex::HexCoord;
+use observed_hex::{HexCoord, HexFace};
 
 use crate::sim::{ArchitectLab, LabEventKind, MatchOutcome, ObserverId, ObserverState};
 
@@ -47,11 +47,16 @@ pub fn is_supporting(lab: &ArchitectLab, cell: HexCoord) -> bool {
     }
 }
 
-/// Searches downward through the surviving stack for the first solid cell directly beneath `from`.
+/// Searches downward through the surviving stack for the first solid cell beneath `from`.
 ///
 /// In hex grid coordinates, vertical columns have identical `(q, r)` across levels.
-/// Searching from `from.level - 1` down to `0` finds the immediate lower surviving structure.
-/// If no level beneath `from` has surviving structure, returns `None` (true void).
+/// Searching from `from.level - 1` down to `0`:
+/// 1. First checks the direct column `(from.q, from.r, level)`.
+/// 2. If the direct column has retracted into void, searches the 1-step lateral
+///    neighborhood on that level (canonical face order), representing an actor
+///    tumbling onto or catching the edge of surviving floor structure.
+///
+/// If no level beneath `from` has surviving structure within 1 step, returns `None` (true void).
 #[must_use]
 pub fn find_lower_surviving_structure(lab: &ArchitectLab, from: HexCoord) -> Option<HexCoord> {
     for level in (0..from.level).rev() {
@@ -62,6 +67,13 @@ pub fn find_lower_surviving_structure(lab: &ArchitectLab, from: HexCoord) -> Opt
         };
         if is_supporting(lab, candidate) {
             return Some(candidate);
+        }
+        for face in HexFace::LATERAL {
+            if let Some(neighbor) = lab.world.config.grid().neighbor(candidate, face)
+                && is_supporting(lab, neighbor)
+            {
+                return Some(neighbor);
+            }
         }
     }
     None
@@ -510,6 +522,65 @@ mod tests {
                     .all(|o| o.state == ObserverState::Active),
                 "web reset must un-corrupt all observers"
             );
+        }
+    }
+
+    #[test]
+    fn fall_lands_on_adjacent_surviving_structure_when_column_is_void() {
+        let mut sim = ArchitectLab::for_mode(ArchitectMode::QuickClimb).unwrap();
+        let obs_id = ObserverId(0);
+
+        // Find an upper cell on level 1 with a supporting neighbor on level 0,
+        // but whose direct column on level 0 is retracted into void.
+        let (upper, _lower_neighbor) = sim
+            .world
+            .placements
+            .keys()
+            .filter(|c| c.level == 1)
+            .find_map(|&upper| {
+                let direct_lower = HexCoord {
+                    q: upper.q,
+                    r: upper.r,
+                    level: 0,
+                };
+                for face in HexFace::LATERAL {
+                    if let Some(neighbor) = sim.world.config.grid().neighbor(direct_lower, face)
+                        && is_supporting(&sim, neighbor)
+                    {
+                        return Some((upper, neighbor));
+                    }
+                }
+                None
+            })
+            .expect("upper cell with neighboring lower support must exist");
+
+        let direct_lower = HexCoord {
+            q: upper.q,
+            r: upper.r,
+            level: 0,
+        };
+
+        // Retract upper and retract direct lower:
+        sim.retracted.insert(upper);
+        sim.retracted.insert(direct_lower);
+
+        let observer = sim.observers.get_mut(&obs_id).unwrap();
+        observer.cell = upper;
+        observer.state = ObserverState::Active;
+
+        let events = sim.resolve_falls();
+        assert_eq!(events.len(), 1);
+        match events[0].outcome {
+            FallOutcome::Landed { from, to } => {
+                assert_eq!(from, upper);
+                assert_eq!(to.level, 0);
+                assert!(is_supporting(&sim, to));
+                // Verifies it landed on an adjacent supporting neighbor rather than corrupting
+                assert_ne!(to, direct_lower);
+            }
+            FallOutcome::Corrupted { .. } => {
+                panic!("fall should have landed on adjacent surviving structure");
+            }
         }
     }
 }

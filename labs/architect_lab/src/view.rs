@@ -7,6 +7,7 @@ use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
 use bevy::prelude::*;
 use observed_hex::{HexCoord, HexFace};
 use observed_style::{MarkerRole, SchematicRole, TacticsRole};
+use observed_ui::theme::{ChromeRole, chrome};
 
 use crate::LabSession;
 use crate::sim::{ArchitectMode, CardKind, DoorState, ObserverState};
@@ -29,6 +30,8 @@ const fn default_zoom(mode: ArchitectMode) -> f32 {
         ArchitectMode::Pocket => 0.62,
         ArchitectMode::QuickClimb => 0.9,
         ArchitectMode::FullAscent => 1.12,
+        // Five stacked floors need more of the board in frame at once.
+        ArchitectMode::DeepStack => 1.30,
     }
 }
 
@@ -285,45 +288,75 @@ pub fn rebuild_board(
     let door_bar = meshes.add(Rectangle::new(HEX_RADIUS * 0.92, 5.0));
     let topology_arm = meshes.add(Rectangle::new(HEX_RADIUS * 0.72, 3.2));
     let preview_arm = meshes.add(Rectangle::new(HEX_RADIUS * 0.84, 6.5));
-    let ascent_line = meshes.add(Rectangle::new(134.0, 2.0));
-    let floor_label_plate = meshes.add(Rectangle::new(310.0, 34.0));
+    let floor_label_plate = meshes.add(Rectangle::new(380.0, 36.0));
     let target = session.target();
 
     if session.sim.world.config.levels > 1 {
+        let levels = session.sim.world.config.levels;
+        let p_start = floor_offset(0, levels);
+        let p_end = floor_offset(levels - 1, levels);
+        let span = p_end - p_start;
+        let length = span.length();
+        let angle = span.y.atan2(span.x);
+        let center = (p_start + p_end) * 0.5;
+        let line_mesh = meshes.add(Rectangle::new(length, 3.0));
         spawn_mesh(
             &mut commands,
             &mut materials,
-            ascent_line,
+            line_mesh,
             observed_style::schematic(SchematicRole::Grid).base_color,
-            Vec3::new(0.0, 0.0, -2.0),
-            0.73,
+            center.extend(-2.0),
+            angle,
             "Floor ascent axis".to_string(),
         );
     }
+    let target_floor = target.map(|c| c.level);
     for level in 0..session.sim.world.config.levels {
-        let district = crate::sim::District::for_level(level);
+        let register = crate::sim::floor_register(level);
         let label_position = floor_offset(level, session.sim.world.config.levels) + Vec2::Y * 180.0;
+        let is_targeted = target_floor == Some(level);
+        let plate_color = if is_targeted {
+            observed_style::schematic(SchematicRole::Selected)
+                .base_color
+                .with_alpha(0.92)
+        } else {
+            chrome(ChromeRole::Surface).with_alpha(0.92)
+        };
         spawn_mesh(
             &mut commands,
             &mut materials,
             floor_label_plate.clone(),
-            observed_ui::theme::chrome(observed_ui::theme::ChromeRole::Surface).with_alpha(0.92),
+            plate_color,
             label_position.extend(3.5),
             0.0,
             format!("Floor {} label plate", level + 1),
         );
+        let power_tag = if session.debug_overlay {
+            if session.sim.economy.is_powered(level) {
+                "  [PWR:ON]"
+            } else {
+                "  [PWR:OFF]"
+            }
+        } else {
+            ""
+        };
+        let title_color = if is_targeted {
+            chrome(ChromeRole::Surface)
+        } else {
+            observed_style::architecture_tactical(register).base_color
+        };
         commands.spawn((
             BoardVisual,
             Text2d::new(format!(
-                "FLOOR {:02}  //  {}",
+                "FLOOR {:02}  //  {}{power_tag}",
                 level + 1,
-                district.label().to_uppercase()
+                crate::sim::floor_title(level)
             )),
             TextFont {
-                font_size: FontSize::Px(18.0),
+                font_size: FontSize::Px(15.0),
                 ..default()
             },
-            TextColor(observed_style::architecture_tactical(district.register()).base_color),
+            TextColor(title_color),
             TextLayout::justify(Justify::Center),
             Transform::from_translation(label_position.extend(4.0)),
             RenderLayers::layer(MAP_RENDER_LAYER),
@@ -371,7 +404,7 @@ pub fn rebuild_board(
                 .architecture
                 .get(&cell)
                 .copied()
-                .unwrap_or_else(|| crate::sim::District::for_level(cell.level).register());
+                .unwrap_or_else(|| crate::sim::floor_register(cell.level));
             observed_style::architecture_tactical(register).base_color
         };
         spawn_mesh(
@@ -397,6 +430,132 @@ pub fn rebuild_board(
                 direction.y.atan2(direction.x),
                 format!("Topology arm {cell:?} {face:?}"),
             );
+        }
+    }
+
+    // Active condemned tile hazard halo and visible countdown (gameplay-critical, always legible):
+    if let Some((condemned_cell, commit_tick)) = session.sim.condemned {
+        let pos = board_position(session.sim.world.config, condemned_cell);
+        let ticks_left = commit_tick.saturating_sub(session.sim.tick);
+        let secs = ticks_left.div_ceil(60);
+        let hazard_color = observed_style::tactics(TacticsRole::RouteLimit).base_color;
+        spawn_mesh(
+            &mut commands,
+            &mut materials,
+            halo.clone(),
+            hazard_color,
+            pos.extend(2.8),
+            0.0,
+            format!("Condemned hazard halo {condemned_cell:?}"),
+        );
+        commands.spawn((
+            BoardVisual,
+            Text2d::new(format!("CONDEMNED\n{:02}s ({:03}t)", secs, ticks_left)),
+            TextFont {
+                font_size: FontSize::Px(10.0),
+                ..default()
+            },
+            TextColor(hazard_color),
+            TextLayout::justify(Justify::Center),
+            Transform::from_translation((pos + Vec2::new(0.0, -14.0)).extend(3.2)),
+            RenderLayers::layer(MAP_RENDER_LAYER),
+            Name::new(format!("Condemned countdown text {condemned_cell:?}")),
+        ));
+    }
+
+    if session.debug_overlay {
+        if let Some(target_cell) = session.sim.next_retraction()
+            && session.sim.condemned.is_none_or(|(c, _)| c != target_cell)
+        {
+            let target_pos = board_position(session.sim.world.config, target_cell);
+            let ticks_left = session
+                .sim
+                .next_retraction_tick
+                .unwrap_or(0)
+                .saturating_sub(session.sim.tick);
+            let secs = ticks_left.div_ceil(60);
+            spawn_mesh(
+                &mut commands,
+                &mut materials,
+                halo.clone(),
+                observed_style::tactics(TacticsRole::Blocked).base_color,
+                target_pos.extend(2.5),
+                0.0,
+                format!("Retraction telegraph halo {target_cell:?}"),
+            );
+            commands.spawn((
+                BoardVisual,
+                Text2d::new(format!("RETRACT\n{:02}s ({:03}t)", secs, ticks_left)),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(observed_style::tactics(TacticsRole::Blocked).base_color),
+                TextLayout::justify(Justify::Center),
+                Transform::from_translation((target_pos + Vec2::new(0.0, -12.0)).extend(3.0)),
+                RenderLayers::layer(MAP_RENDER_LAYER),
+                Name::new(format!("Retraction telegraph text {target_cell:?}")),
+            ));
+        }
+
+        for (&cell, placement) in &session.sim.world.placements {
+            if placement.space == observed_facility::hex_wfc::HexSpace::Void || cell.level == 0 {
+                continue;
+            }
+            let center = board_position(session.sim.world.config, cell);
+            let lower = crate::falls::find_lower_surviving_structure(&session.sim, cell);
+            let (glyph, text_color) = match lower {
+                Some(surviving) => (
+                    format!("v F{}", surviving.level + 1),
+                    observed_style::schematic(SchematicRole::Pinned).base_color,
+                ),
+                None => (
+                    "X VOID".to_string(),
+                    observed_style::tactics(TacticsRole::Blocked).base_color,
+                ),
+            };
+            commands.spawn((
+                BoardVisual,
+                Text2d::new(glyph),
+                TextFont {
+                    font_size: FontSize::Px(8.5),
+                    ..default()
+                },
+                TextColor(text_color),
+                TextLayout::justify(Justify::Center),
+                Transform::from_translation((center + Vec2::new(0.0, -10.0)).extend(1.5)),
+                RenderLayers::layer(MAP_RENDER_LAYER),
+                Name::new(format!("Fall candidate debug {cell:?}")),
+            ));
+        }
+
+        for &station in &session.sim.economy.stations {
+            let center = board_position(session.sim.world.config, station);
+            let powered = session.sim.economy.is_powered(station.level);
+            let (status, color) = if powered {
+                (
+                    "GEN:ON",
+                    observed_style::schematic(SchematicRole::Pinned).base_color,
+                )
+            } else {
+                (
+                    "GEN:OFF",
+                    observed_style::tactics(TacticsRole::Blocked).base_color,
+                )
+            };
+            commands.spawn((
+                BoardVisual,
+                Text2d::new(status),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(color),
+                TextLayout::justify(Justify::Center),
+                Transform::from_translation((center + Vec2::new(0.0, 10.0)).extend(2.0)),
+                RenderLayers::layer(MAP_RENDER_LAYER),
+                Name::new(format!("Generator debug {station:?}")),
+            ));
         }
     }
 
@@ -538,18 +697,78 @@ fn draw_actors(
             0.0,
             format!("Observer pupil {}", observer.id.0),
         );
+        commands.spawn((
+            BoardVisual,
+            Text2d::new(format!("F{}", observer.cell.level + 1)),
+            TextFont {
+                font_size: FontSize::Px(10.0),
+                ..default()
+            },
+            TextColor(chrome(ChromeRole::TextMain)),
+            TextLayout::justify(Justify::Center),
+            Transform::from_translation((at + Vec2::new(0.0, 16.0)).extend(7.0)),
+            RenderLayers::layer(MAP_RENDER_LAYER),
+            Name::new(format!("Observer {} floor tag", observer.id.0)),
+        ));
+
+        if session.debug_overlay {
+            let lower = crate::falls::find_lower_surviving_structure(&session.sim, observer.cell);
+            let (fall_label, fall_color) = if observer.cell.level == 0 {
+                (
+                    "GROUND",
+                    observed_style::schematic(SchematicRole::Pinned).base_color,
+                )
+            } else if lower.is_some() {
+                (
+                    "SAFE FALL",
+                    observed_style::schematic(SchematicRole::Pinned).base_color,
+                )
+            } else {
+                (
+                    "FATAL VOID",
+                    observed_style::tactics(TacticsRole::Blocked).base_color,
+                )
+            };
+            commands.spawn((
+                BoardVisual,
+                Text2d::new(fall_label),
+                TextFont {
+                    font_size: FontSize::Px(8.5),
+                    ..default()
+                },
+                TextColor(fall_color),
+                TextLayout::justify(Justify::Center),
+                Transform::from_translation((at + Vec2::new(0.0, -18.0)).extend(7.0)),
+                RenderLayers::layer(MAP_RENDER_LAYER),
+                Name::new(format!("Observer {} fall prognosis", observer.id.0)),
+            ));
+        }
     }
     let guardian_color = observed_style::marker(MarkerRole::Director).base_color;
     for guardian in session.sim.guardians.values() {
+        let at = board_position(session.sim.world.config, guardian.cell);
         spawn_mesh(
             commands,
             materials,
             guardian_triangle.clone(),
             guardian_color,
-            board_position(session.sim.world.config, guardian.cell).extend(5.0),
+            at.extend(5.0),
             0.0,
             format!("Guardian pyramid {}", guardian.id.0),
         );
+        commands.spawn((
+            BoardVisual,
+            Text2d::new(format!("F{}", guardian.cell.level + 1)),
+            TextFont {
+                font_size: FontSize::Px(10.0),
+                ..default()
+            },
+            TextColor(chrome(ChromeRole::TextMain)),
+            TextLayout::justify(Justify::Center),
+            Transform::from_translation((at + Vec2::new(0.0, 16.0)).extend(7.0)),
+            RenderLayers::layer(MAP_RENDER_LAYER),
+            Name::new(format!("Guardian {} floor tag", guardian.id.0)),
+        ));
     }
 }
 

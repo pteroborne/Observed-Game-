@@ -260,6 +260,9 @@ h2 {
 .legend-warning {
   color: var(--danger);
 }
+.legend-condemned {
+  color: #ffad1f;
+}
 .collapse-banner {
   position: absolute;
   left: 14px;
@@ -574,6 +577,11 @@ dialog .primary {
 .tile.unstable .hex {
   stroke: var(--danger);
   stroke-dasharray: 5 3;
+}
+.tile.condemned .hex {
+  stroke: #ffad1f;
+  stroke-width: 3;
+  stroke-dasharray: 6 3;
 }
 .tile.prison .hex {
   stroke: var(--selected);
