@@ -151,6 +151,8 @@ pub struct ArchitectLab {
     pub economy: EconomyState,
     pub requisition: crate::requisition::RequisitionState,
     pub topology: crate::sim::topology::FacilityTopology,
+    pub sever_threshold: usize,
+    pub sever_tick: Option<u64>,
 }
 
 impl ArchitectLab {
@@ -297,6 +299,8 @@ impl ArchitectLab {
             economy,
             requisition: crate::requisition::RequisitionState::new(seed),
             topology: crate::sim::topology::FacilityTopology::default(),
+            sever_threshold: 0,
+            sever_tick: None,
         };
         lab.refresh_observation();
         // Damage a solved facility at separated lateral handoffs. These are
@@ -641,6 +645,18 @@ impl ArchitectLab {
                     return;
                 }
             }
+        }
+
+        // 3. Sever victory (O8):
+        // Rogue wins if the facility has been partitioned into N or more disjoint components.
+        if self.sever_threshold > 0 && self.component_count() >= self.sever_threshold {
+            self.sever_tick = Some(self.tick);
+            self.outcome = MatchOutcome::RogueVictory;
+            self.record_event(
+                LabEventKind::Warning,
+                None,
+                "Facility severed into disjoint components: Rogue victory.",
+            );
         }
     }
 

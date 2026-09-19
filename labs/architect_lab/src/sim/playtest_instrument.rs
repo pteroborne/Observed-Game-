@@ -92,6 +92,15 @@ pub struct ModeRunStats {
     // Observer final states
     pub observer_final_states: BTreeMap<ObserverId, ObserverState>,
     pub observer_final_positions: BTreeMap<ObserverId, HexCoord>,
+
+    // Topology & Sever
+    pub max_components: usize,
+    pub final_components: usize,
+    pub beats_components_above_one: u64,
+    pub sever_completed: bool,
+    pub sever_beat: Option<u64>,
+    pub topology_rebuild_count: u64,
+    pub topology_cells_touched: u64,
 }
 
 impl Default for ModeRunStats {
@@ -132,6 +141,13 @@ impl Default for ModeRunStats {
             architect_intents: BTreeMap::new(),
             observer_final_states: BTreeMap::new(),
             observer_final_positions: BTreeMap::new(),
+            max_components: 0,
+            final_components: 0,
+            beats_components_above_one: 0,
+            sever_completed: false,
+            sever_beat: None,
+            topology_rebuild_count: 0,
+            topology_cells_touched: 0,
         }
     }
 }
@@ -318,6 +334,18 @@ pub fn run_mode_playtest(mode: ArchitectMode, max_beats: u64) -> ModeRunStats {
         stats.total_beats = beat + 1;
         stats.final_tick = sim.tick;
 
+        let comp_count = sim.component_count();
+        if comp_count > stats.max_components {
+            stats.max_components = comp_count;
+        }
+        if comp_count > 1 {
+            stats.beats_components_above_one += 1;
+        }
+        if sim.sever_tick.is_some() && stats.sever_beat.is_none() {
+            stats.sever_completed = true;
+            stats.sever_beat = Some(beat + 1);
+        }
+
         let current_commands_len = sim.command_log.len();
         if current_commands_len > prev_commands_len {
             for (_, cmd) in &sim.command_log[prev_commands_len..current_commands_len] {
@@ -443,6 +471,10 @@ pub fn run_mode_playtest(mode: ArchitectMode, max_beats: u64) -> ModeRunStats {
         stats.observer_final_positions.insert(id, o.cell);
     }
 
+    stats.final_components = sim.component_count();
+    stats.topology_rebuild_count = sim.topology.rebuild_count;
+    stats.topology_cells_touched = sim.topology.cells_touched;
+
     stats
 }
 
@@ -512,6 +544,18 @@ fn playtest_instrument_runs_all_modes() {
         println!("  Fall Diagnostic: {:#?}", stats.fall_diag);
         println!("  Observer intents: {:?}", stats.observer_intents);
         println!("  Architect intents: {:?}", stats.architect_intents);
+        println!(
+            "  Topology: max components={}, final components={}, beats above 1={}",
+            stats.max_components, stats.final_components, stats.beats_components_above_one
+        );
+        println!(
+            "  Sever: completed={}, beat={:?}",
+            stats.sever_completed, stats.sever_beat
+        );
+        println!(
+            "  Maintenance: rebuild_count={}, cells_touched={}",
+            stats.topology_rebuild_count, stats.topology_cells_touched
+        );
     }
     println!("\n==============================================================\n");
 }

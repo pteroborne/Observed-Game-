@@ -236,7 +236,7 @@ impl FacilityTopology {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::{ArchitectMode, DoorState, ObserverState};
+    use crate::sim::{ArchitectMode, DoorState, MatchOutcome, ObserverState};
 
     #[test]
     fn disjoint_set_initializes_empty_and_tracks_singletons() {
@@ -316,13 +316,12 @@ mod tests {
                 continue;
             }
             for face in HexFace::ALL {
-                if face.is_lateral() {
-                    if let Some(next) = lab.step_through(cell, face) {
-                        if let Some(key) = lab.threshold_key(cell, face) {
-                            edge = Some((cell, next, key));
-                            break;
-                        }
-                    }
+                if face.is_lateral()
+                    && let Some(next) = lab.step_through(cell, face)
+                    && let Some(key) = lab.threshold_key(cell, face)
+                {
+                    edge = Some((cell, next, key));
+                    break;
                 }
             }
             if edge.is_some() {
@@ -437,5 +436,63 @@ mod tests {
             );
             assert!(!game.sim.topology.is_dirty());
         }
+    }
+
+    #[test]
+    fn sever_objective_triggers_when_threshold_reached() {
+        let mut lab = ArchitectLab::for_mode(ArchitectMode::Pocket).unwrap();
+        let initial_components = lab.component_count();
+
+        // Sever is disabled when sever_threshold == 0
+        lab.sever_threshold = 0;
+        lab.step_beat();
+        assert_eq!(lab.outcome, MatchOutcome::Running);
+        assert_eq!(lab.sever_tick, None);
+
+        // Find a lateral edge between two connected cells
+        let mut edge = None;
+        for (&cell, placement) in &lab.world.placements {
+            if placement.space == HexSpace::Void || lab.retracted.contains(&cell) {
+                continue;
+            }
+            for face in HexFace::ALL {
+                if face.is_lateral()
+                    && let Some(next) = lab.step_through(cell, face)
+                    && let Some(key) = lab.threshold_key(cell, face)
+                {
+                    edge = Some((cell, next, key));
+                    break;
+                }
+            }
+            if edge.is_some() {
+                break;
+            }
+        }
+        let (_a, _b, key) = edge.expect("found lateral connected edge");
+
+        // Closing the door splits the connected component
+        assert!(lab.operate_door(key, DoorState::Closed));
+        lab.sync_topology();
+        let split_count = lab.component_count();
+        assert!(split_count > initial_components);
+
+        // Reopen door
+        assert!(lab.operate_door(key, DoorState::Open));
+        lab.sync_topology();
+        assert_eq!(lab.component_count(), initial_components);
+
+        // Configure sever_threshold to split_count
+        lab.sever_threshold = split_count;
+
+        // Close the door: on next beat (beat 1), Sever triggers!
+        assert!(lab.operate_door(key, DoorState::Closed));
+        lab.step_beat();
+        assert_eq!(lab.outcome, MatchOutcome::RogueVictory);
+        assert!(lab.sever_tick.is_some());
+        assert!(
+            lab.events
+                .iter()
+                .any(|e| e.message.contains("Facility severed"))
+        );
     }
 }
