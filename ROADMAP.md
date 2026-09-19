@@ -77,6 +77,15 @@ the combined loop.
    team-scoped knowledge, ascent, prison escape and teammate rescue, unsafe falls,
    irreversible Rogue conversion, and loyal victory. A loyal bot Architect must use
    the same command-producing tree boundary proven by the Rogue bot.
+
+   **Teams, variable loyal team size, team-scoped knowledge, and loyal victory implemented (2026-09):**
+   `architect_lab` introduces explicit `TeamId` identity for Observers, variable loyal team size
+   (supported and proven at 1, 2, and 3 Observers), team-scoped knowledge isolation ensuring loyal
+   knowledge never leaks unobserved structure/actors while Rogue knowledge exposes facility truth
+   without leaking undetected loyal positions, and `MatchOutcome::LoyalVictory` reachable via
+   a corruption-adjusted summit quorum where corrupted Observers leave the quorum, jailed Observers
+   remain loyal and must escape/be rescued, and same-tick Guardian capture takes precedence over
+   summit victory.
 5. **Simulation promotion:** move only proven rules into pure `observed_match` state
    with stable role, faction, card, door, stability, floor, command, and outcome
    identities. Keep presentation and knowledge filtering downstream of authoritative

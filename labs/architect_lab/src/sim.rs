@@ -54,6 +54,7 @@ pub enum ObserverState {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Observer {
     pub id: ObserverId,
+    pub team: TeamId,
     pub cell: HexCoord,
     pub facing: HexFace,
     pub state: ObserverState,
@@ -91,6 +92,27 @@ pub enum MatchOutcome {
     LoyalVictory,
 }
 
+/// Structure and actor knowledge scoped to a specific team.
+///
+/// §10: "Loyal knowledge never leaks undiscovered structure or actors."
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct TeamKnowledge {
+    pub team: TeamId,
+    pub discovered_cells: BTreeSet<HexCoord>,
+    pub known_observers: BTreeMap<ObserverId, HexCoord>,
+    pub visible_guardians: BTreeSet<GuardianId>,
+}
+
+/// Structure and actor knowledge scoped to the Rogue AI faction.
+///
+/// §10: "Rogue knowledge exposes facility truth but not undetected loyal positions."
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RogueKnowledge {
+    pub cells: BTreeSet<HexCoord>,
+    pub guardians: BTreeSet<GuardianId>,
+    pub known_observers: BTreeMap<ObserverId, HexCoord>,
+}
+
 #[derive(Clone, Debug)]
 pub struct ArchitectLab {
     pub mode: ArchitectMode,
@@ -111,6 +133,8 @@ pub struct ArchitectLab {
     pub next_retraction_tick: Option<u64>,
     pub instability_origin: Option<HexCoord>,
     pub events: VecDeque<LabEvent>,
+    pub loyal_team_size: usize,
+    pub team_knowledge: BTreeMap<TeamId, TeamKnowledge>,
     pub observers: BTreeMap<ObserverId, Observer>,
     pub guardians: BTreeMap<GuardianId, Guardian>,
     pub guardian_visits: BTreeMap<(GuardianId, HexCoord), u32>,
@@ -123,15 +147,36 @@ pub struct ArchitectLab {
 }
 
 impl ArchitectLab {
+    pub const DEFAULT_LOYAL_TEAM_SIZE: usize = 2;
+
     pub fn new(seed: u64) -> Result<Self, HexWfcError> {
-        Self::generate(ArchitectMode::FullAscent, seed)
+        Self::generate_with_team_size(
+            ArchitectMode::FullAscent,
+            seed,
+            Self::DEFAULT_LOYAL_TEAM_SIZE,
+        )
     }
 
     pub fn for_mode(mode: ArchitectMode) -> Result<Self, HexWfcError> {
-        Self::generate(mode, mode.seed())
+        Self::generate_with_team_size(mode, mode.seed(), Self::DEFAULT_LOYAL_TEAM_SIZE)
     }
 
-    fn generate(mode: ArchitectMode, seed: u64) -> Result<Self, HexWfcError> {
+    pub fn for_mode_with_team_size(
+        mode: ArchitectMode,
+        loyal_team_size: usize,
+    ) -> Result<Self, HexWfcError> {
+        Self::generate_with_team_size(mode, mode.seed(), loyal_team_size)
+    }
+
+    pub fn generate(mode: ArchitectMode, seed: u64) -> Result<Self, HexWfcError> {
+        Self::generate_with_team_size(mode, seed, Self::DEFAULT_LOYAL_TEAM_SIZE)
+    }
+
+    pub fn generate_with_team_size(
+        mode: ArchitectMode,
+        seed: u64,
+        loyal_team_size: usize,
+    ) -> Result<Self, HexWfcError> {
         let config = mode.config();
         let mut world = HexWfcWorld::generate(seed, config)?;
         for (&cell, register) in &mut world.architecture {
@@ -142,34 +187,63 @@ impl ArchitectLab {
             .route_between(config.spawn(), config.exit())
             .expect("the real solver guarantees its spawn-to-exit route");
         let guardian_cell = route[0];
-        let observer_a = route[route.len().saturating_mul(2) / 3];
+        let loyal_team_size = loyal_team_size.clamp(1, 3);
+        let route_len = route.len();
+        let idx_a = route_len.saturating_mul(2) / 3;
+        let observer_a = route[idx_a];
         let observer_b = *route.last().expect("route contains its exit");
+        let idx_c = route_len / 3;
+        let observer_c = route[idx_c];
 
         let prison = crate::prison::PrisonState::new(config, &world);
         let prison_core = prison.cells.clone();
 
         let mut known: BTreeSet<HexCoord> = world.placements.keys().copied().collect();
         let mut observers = BTreeMap::new();
-        observers.insert(
-            ObserverId(0),
-            Observer {
-                id: ObserverId(0),
-                cell: observer_a,
-                facing: face_toward(&world, observer_a, observer_b).unwrap_or(HexFace::East),
-                state: ObserverState::Active,
-                hold_beats: 0,
-            },
-        );
-        observers.insert(
-            ObserverId(1),
-            Observer {
-                id: ObserverId(1),
-                cell: observer_b,
-                facing: HexFace::West,
-                state: ObserverState::Active,
-                hold_beats: 0,
-            },
-        );
+        if loyal_team_size >= 1 {
+            let facing = if loyal_team_size > 1 {
+                face_toward(&world, observer_a, observer_b).unwrap_or(HexFace::East)
+            } else {
+                HexFace::East
+            };
+            observers.insert(
+                ObserverId(0),
+                Observer {
+                    id: ObserverId(0),
+                    team: TeamId::LOYAL,
+                    cell: observer_a,
+                    facing,
+                    state: ObserverState::Active,
+                    hold_beats: 0,
+                },
+            );
+        }
+        if loyal_team_size >= 2 {
+            observers.insert(
+                ObserverId(1),
+                Observer {
+                    id: ObserverId(1),
+                    team: TeamId::LOYAL,
+                    cell: observer_b,
+                    facing: HexFace::West,
+                    state: ObserverState::Active,
+                    hold_beats: 0,
+                },
+            );
+        }
+        if loyal_team_size >= 3 {
+            observers.insert(
+                ObserverId(2),
+                Observer {
+                    id: ObserverId(2),
+                    team: TeamId::LOYAL,
+                    cell: observer_c,
+                    facing: face_toward(&world, observer_c, observer_a).unwrap_or(HexFace::East),
+                    state: ObserverState::Active,
+                    hold_beats: 0,
+                },
+            );
+        }
         let guardians = BTreeMap::from([(
             GuardianId(0),
             Guardian {
@@ -203,6 +277,8 @@ impl ArchitectLab {
             next_retraction_tick: None,
             instability_origin: None,
             events: VecDeque::new(),
+            loyal_team_size,
+            team_knowledge: BTreeMap::new(),
             observers,
             guardians,
             guardian_visits: BTreeMap::new(),
@@ -510,6 +586,8 @@ impl ArchitectLab {
             self.apply_guardian_intent(id, intent);
         }
         self.refresh_observation();
+        // 1. Same-tick capture precedence: Guardian capture resolves before summit completion.
+        // If all loyal observers have been eliminated (jailed or corrupted), Rogue wins.
         if !self.observers.is_empty()
             && self.observers.values().all(|observer| {
                 observer.state == ObserverState::Jailed
@@ -517,6 +595,37 @@ impl ArchitectLab {
             })
         {
             self.outcome = MatchOutcome::RogueVictory;
+            return;
+        }
+
+        // 2. Corruption-adjusted summit quorum:
+        // A team achieves LoyalVictory if all of its remaining loyal (uncorrupted) Observers
+        // are active and present at the facility summit exit.
+        // - Corrupted Observers leave the quorum (lowering the required count).
+        // - Jailed Observers remain loyal, so they count toward the total required;
+        //   since they are in the prison core, victory cannot be achieved while any teammate is jailed.
+        // - Zero loyal Observers cannot achieve LoyalVictory.
+        let teams: BTreeSet<TeamId> = self.observers.values().map(|o| o.team).collect();
+        for team in teams {
+            let team_observers: Vec<&Observer> =
+                self.observers.values().filter(|o| o.team == team).collect();
+            let loyal_observers: Vec<&Observer> = team_observers
+                .into_iter()
+                .filter(|o| o.state != ObserverState::Corrupted)
+                .collect();
+            let loyal_count = loyal_observers.len();
+            if loyal_count > 0 {
+                let summit_count = loyal_observers
+                    .iter()
+                    .filter(|o| {
+                        o.state == ObserverState::Active && o.cell == self.world.config.exit()
+                    })
+                    .count();
+                if summit_count == loyal_count {
+                    self.outcome = MatchOutcome::LoyalVictory;
+                    return;
+                }
+            }
         }
     }
 
@@ -750,6 +859,108 @@ impl ArchitectLab {
             {
                 self.observed.insert(next);
             }
+        }
+        self.update_team_knowledge();
+    }
+
+    /// Updates team-scoped knowledge for all active teams.
+    ///
+    /// §10: "Loyal knowledge never leaks undiscovered structure or actors."
+    pub fn update_team_knowledge(&mut self) {
+        let teams: BTreeSet<TeamId> = self.observers.values().map(|o| o.team).collect();
+        for team in teams {
+            // 1. Structure: discover cells currently observed by active observers on this team
+            let mut newly_observed = Vec::new();
+            for observer in self
+                .observers
+                .values()
+                .filter(|o| o.team == team && o.state == ObserverState::Active)
+            {
+                newly_observed.push(observer.cell);
+                if self.economy.is_powered(observer.cell.level)
+                    && let Some(next) = self.step_through(observer.cell, observer.facing)
+                {
+                    newly_observed.push(next);
+                }
+            }
+
+            let team_observed: BTreeSet<HexCoord> = newly_observed.iter().copied().collect();
+
+            // 2. Actors: team members know each other's positions; rivals only if observed
+            let mut known_obs = BTreeMap::new();
+            let prior_discovered = self
+                .team_knowledge
+                .get(&team)
+                .map(|k| k.discovered_cells.clone())
+                .unwrap_or_default();
+
+            for observer in self.observers.values() {
+                if observer.team == team {
+                    known_obs.insert(observer.id, observer.cell);
+                } else if (prior_discovered.contains(&observer.cell)
+                    || team_observed.contains(&observer.cell))
+                    && self.observed.contains(&observer.cell)
+                {
+                    known_obs.insert(observer.id, observer.cell);
+                }
+            }
+
+            // 3. Actors: guardians are visible only if on a cell currently observed by this team
+            let visible_guardians: BTreeSet<GuardianId> = self
+                .guardians
+                .values()
+                .filter(|g| team_observed.contains(&g.cell))
+                .map(|g| g.id)
+                .collect();
+
+            let tk = self
+                .team_knowledge
+                .entry(team)
+                .or_insert_with(|| TeamKnowledge {
+                    team,
+                    ..Default::default()
+                });
+            tk.discovered_cells.extend(newly_observed);
+            tk.known_observers = known_obs;
+            tk.visible_guardians = visible_guardians;
+        }
+    }
+
+    /// Query the knowledge available to a specific loyal team.
+    #[must_use]
+    pub fn team_knowledge(&self, team: TeamId) -> TeamKnowledge {
+        self.team_knowledge
+            .get(&team)
+            .cloned()
+            .unwrap_or_else(|| TeamKnowledge {
+                team,
+                ..Default::default()
+            })
+    }
+
+    /// Query the knowledge available to Rogue AI.
+    ///
+    /// §10: "Rogue knowledge exposes facility truth but not undetected loyal positions."
+    #[must_use]
+    pub fn rogue_knowledge(&self) -> RogueKnowledge {
+        let mut cells: BTreeSet<HexCoord> = self.world.placements.keys().copied().collect();
+        cells.extend(&self.prison_core);
+        let guardians: BTreeSet<GuardianId> = self.guardians.keys().copied().collect();
+        let detected = self.detected_observers();
+        let known_observers: BTreeMap<ObserverId, HexCoord> = self
+            .observers
+            .values()
+            .filter(|o| {
+                o.state == ObserverState::Jailed
+                    || o.state == ObserverState::Corrupted
+                    || detected.contains(&o.id)
+            })
+            .map(|o| (o.id, o.cell))
+            .collect();
+        RogueKnowledge {
+            cells,
+            guardians,
+            known_observers,
         }
     }
 

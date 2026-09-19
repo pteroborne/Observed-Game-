@@ -166,6 +166,7 @@ impl RogueGame {
             .map(|observer| {
                 json!({
                     "id": observer.id.0,
+                    "team": observer.team.0,
                     "cell": coord(observer.cell),
                     "facing": observer.facing.index(),
                     "jailed": observer.state == ObserverState::Jailed,

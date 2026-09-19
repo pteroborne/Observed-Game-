@@ -688,6 +688,9 @@ mod tests {
         let summit = lab.world.config.exit();
         lab.economy.stations.insert(summit);
         lab.observers.get_mut(&id).unwrap().cell = summit;
+        if let Some(other) = lab.observers.get_mut(&ObserverId(1)) {
+            other.cell = non_station;
+        }
 
         // Station is unpowered initially.
         lab.economy.set_powered(summit.level, false);

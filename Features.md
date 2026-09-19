@@ -231,7 +231,7 @@ elimination-series standings while the camera follows the visible first-person b
 | `archie_input_lab` | Lab-proven controller/remap/haptics adapter; deferred for production input adoption. |
 | `lab_observability_lab` | Tooling proof for debug config and event traces. |
 | `inspector_lab` | Tooling proof for optional live ECS inspector. |
-| `architect_lab` | Lab-proven Rogue Architect pressure prototype with five-card deck, deterministic emergency requisition, multi-floor WFC facility, a vertical non-collapsing prison core with bot Observer self-escape, and cell-level unsafe falls with true-void corruption. |
+| `architect_lab` | Lab-proven Rogue Architect pressure prototype with five-card deck, deterministic emergency requisition, multi-floor WFC facility, a vertical non-collapsing prison core with bot Observer self-escape, cell-level unsafe falls with true-void corruption, team identity (`TeamId`), variable loyal team size (1-3 Observers), team-scoped knowledge isolation, and corruption-adjusted summit quorum for loyal victory (`MatchOutcome::LoyalVictory`). |
 
 ## Known Deferred or Partial Areas
 
