@@ -103,6 +103,106 @@ landscape uses a scrollable command rail with sticky play controls.
   snapshots), removing the former Observer from first-person play. When every loyal
   Observer is eliminated (all are jailed or corrupted), Rogue achieves victory.
 
+## Deep Stack and the 5-Floor Proof
+
+`ArchitectMode::DeepStack` scales the facility to 8×6×5 (240 cells across 5 full levels,
+0 to 4), damaged across five route handoffs. Running across 149 simulation beats (the
+longest deterministic run in the suite), it proves several critical architectural
+properties that smaller modes cannot:
+
+1. **True 5-Floor Vertical Scale**: Verifies that the hex WFC solver, lateral/vertical
+   port connectivity, and district generation scale smoothly without combinatorial blowup
+   or unsolvable dead ends.
+2. **Multi-Floor Vertical Prison Maze**: In 1- and 2-floor modes, the central prison core
+   is largely confined to floor 0. Deep Stack exercises a multi-level vertical prison maze
+   spanning floors 0 and 1, verifying that jailed Observers can solve complex 3D escape routes
+   spanning multiple floor transitions to re-enter active play.
+3. **Multi-Floor Routing and Asymmetric Pressure**: With 5 stacked floors, retraction
+   waves and disturbance thresholds test vertical isolation, floor closure, and power
+   station distribution across an expansive facility.
+
+## Fall Reachability: Rare by Design vs. Unreachable by Construction
+
+Backlog item #42 hypothesized that falls never land safely because facilities lacked
+lower floors to catch falling Observers, proposing a deeper facility as the remedy.
+Deep Stack's empirical results disproved this: in baseline runs, Deep Stack reported
+**0 fall landings and 0 corruptions** — not falls that corrupted for lack of lower floors,
+but a complete absence of falls.
+
+To determine whether falls were **rare by design** or **unreachable by construction**,
+we instrumented multi-seed simulation across 40 seeds (10 seeds each across Pocket,
+QuickClimb, FullAscent, and DeepStack):
+
+| Metric | Measured Total across 40 Seeds |
+| :--- | :--- |
+| Retractions committed | 1,087 |
+| Retractions on occupied cells | **0 (0.0%)** |
+| Retractions on observed cells | **0 (0.0%)** |
+| Actor beats on raw candidate cells | 871 beats |
+| Actor beats on telegraphed contradictions | 3,767 beats |
+| Natural fall landings | 1 (blind prison exit step) |
+| Corruptions | 0 |
+
+### The Diagnosis: Unreachable by Construction
+
+The empirical data proved that survivable falls were **unreachable by construction**
+under the original rules:
+1. `sim::stability::retraction_protected(&self, cell: HexCoord)` explicitly protected
+   `self.occupied().contains(&cell)`.
+2. Any cell containing an actor was unconditionally filtered out by `next_retraction()`.
+3. Simultaneously, direct card plays onto occupied cells are rejected with
+   `CommandRefusal::Occupied` (`sim.rs:398`).
+4. Consequently, neither direct Architect actions nor autonomous retractions could ever
+   remove the floor from beneath an actor's feet during ordinary facility play.
+
+## The Smallest Honest Change Proposal
+
+To make falls reachable without compromising game balance or the Legibility Contract,
+we propose the following minimal, honest rule refinement:
+
+- **Do NOT remove `CommandRefusal::Occupied`**: This refusal is load-bearing. An Architect
+  must never be permitted to drop a card directly onto an actor to delete them.
+- **Remove `self.occupied().contains(&cell)` from `retraction_protected`**: When an
+  unmatched connection creates a contradiction adjacent to or beneath an actor, the tile
+  begins telegraphing for 180 ticks (3 beats) with visible/audible hazard warning.
+- **Why this does not break the Occupied rule**: The Architect does not target the actor
+  directly. The actor receives 3 full behavior-tree beats (180 ticks) of advance warning.
+  Under the `evade immediate danger` tree priority, the actor has ample opportunity to
+  step off the compromised tile. Only if the actor is trapped, cornered, or chooses not
+  to evade will the scheduled retraction commit, collapsing the floor beneath them and
+  invoking `resolve_falls()`.
+
+## 5-Floor Legibility Contract & Debug Overlay
+
+Five vertically stacked floors on a single board present an acute legibility challenge.
+To satisfy the hard **Legibility Contract** (every state visually identifiable with zero
+invented colors):
+
+1. **Distinct Architectural Registers**: Each level is bound to a canonical register
+   from `observed_content::ArchitectureRegister` and styled using exact colors from
+   `observed_style::architecture_tactical`:
+   - **Floor 1**: `Institutional` (Slate cyan-grey) — *FOUNDATION*
+   - **Floor 2**: `LiminalGrid` (Olive/gold) — *CONCOURSE*
+   - **Floor 3**: `Wellshaft` (Industrial teal/amber) — *INTERIOR*
+   - **Floor 4**: `FacetMonument` (Jade/emerald) — *GALLERY*
+   - **Floor 5**: `Megastructure` (Deep rust/crimson) — *SUMMIT*
+2. **Floor Ascent Axis & Selected Highlight**: An unbroken axis line spans continuously
+   from Floor 1 to Floor 5. When a cell is targeted, its floor title plate dynamically
+   highlights in amber.
+3. **Actor Floor Badges & Traces**: Every Observer and Guardian carries an explicit
+   `F1`..`F5` badge above their glyph. The sidebar actor roster displays exact floor
+   locations for all actors (`OBS 00 [F02] ...`).
+4. **Debug Overlay (`KeyO` / `OVERLAY [O]`)**:
+   - **Retraction Countdown**: Displays remaining time and ticks (`RETRACT 02s (085t)`)
+     with a hazard halo on the next retraction target.
+   - **Fall Safety Prognosis**: Every cell on levels ≥ 1 evaluates
+     `find_lower_surviving_structure` to indicate safe lower landing (`v F#`) versus fatal
+     void drop (`X VOID`).
+   - **Per-Floor Power**: Floor headers and generator stations display live power status
+     (`[PWR:ON]` / `[PWR:OFF]` and `GEN:ON` / `GEN:OFF`).
+5. **Comprehensive In-Game Legend**: An expanded sidebar key documents every floor register,
+   actor glyph, tactical cell color, and debug overlay indicator.
+
 The Pocket opening stays unresolved without a card. The deterministic bot repairs
 it and wins through the ordinary command path. Larger scenarios exercise multiple
 repairs and floor transitions. A paused human can inspect the same choices.
