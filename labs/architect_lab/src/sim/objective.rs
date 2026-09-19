@@ -187,3 +187,149 @@ mod tests {
         assert_eq!(hold.longest, 1);
     }
 }
+
+#[cfg(test)]
+mod darkness_tests {
+    use super::*;
+    use crate::sim::{ArchitectLab, ArchitectMode, MatchOutcome, ObserverState};
+
+    /// The clause that keeps Darkness from being a second name for a match already won.
+    /// Remove `active_observers > 0` from `facility_is_dark` and this fails.
+    #[test]
+    fn an_empty_facility_is_not_dark() {
+        let mut sim = ArchitectLab::for_mode(ArchitectMode::QuickClimb).unwrap();
+        for observer in sim.observers.values_mut() {
+            observer.state = ObserverState::Jailed;
+        }
+        sim.refresh_observation();
+        assert!(sim.observed.is_empty(), "nobody left to observe anything");
+        assert_eq!(sim.active_observers, 0);
+        assert!(
+            !sim.facility_is_dark(),
+            "an emptied facility is a Purge victory, not a blackout"
+        );
+    }
+
+    /// The other half: an Observer who *is* looking somewhere keeps the lights on.
+    #[test]
+    fn one_lit_sightline_is_enough_to_break_the_dark() {
+        let mut sim = ArchitectLab::for_mode(ArchitectMode::QuickClimb).unwrap();
+        sim.refresh_observation();
+        // Construct the state rather than hoping the seed provides it: put every floor
+        // back on power and face an Observer at a neighbour it can actually see.
+        for level in 0..=sim.world.config.levels {
+            sim.economy.set_powered(level, true);
+        }
+        let id = *sim.observers.keys().next().unwrap();
+        let cell = sim.observers[&id].cell;
+        let open = observed_hex::HexFace::LATERAL
+            .into_iter()
+            .find(|&face| sim.step_through(cell, face).is_some());
+        let Some(face) = open else {
+            // Nothing to see from here; the assertion below would be vacuous.
+            return;
+        };
+        sim.observers.get_mut(&id).unwrap().facing = face;
+        sim.refresh_observation();
+        assert!(sim.lit_sightlines >= 1);
+        assert!(!sim.facility_is_dark());
+    }
+
+    /// An objective nobody selected must not end anybody's match.
+    #[test]
+    fn darkness_ends_a_match_only_when_it_is_the_objective() {
+        let dark_run = |objective: RogueObjective| {
+            let mut sim = ArchitectLab::for_mode(ArchitectMode::QuickClimb).unwrap();
+            sim.objective = objective;
+            sim.bot_architect = true;
+            for _ in 0..200 {
+                if sim.outcome != MatchOutcome::Running {
+                    break;
+                }
+                sim.step_beat();
+            }
+            (sim.outcome, sim.tick, sim.darkness.clone())
+        };
+
+        let (_, purge_tick, purge_hold) = dark_run(RogueObjective::Purge);
+        let (dark_outcome, dark_tick, dark_hold) = dark_run(RogueObjective::Darkness);
+
+        let completed = purge_hold
+            .completed_at
+            .expect("the comparison is vacuous unless the hold completes at all");
+        assert_eq!(
+            dark_hold.completed_at,
+            Some(completed),
+            "both runs are the same match up to the tick the hold completes"
+        );
+
+        // Under Purge the hold completes and nothing happens: the match runs on.
+        assert!(
+            purge_tick > completed,
+            "a hold nobody selected must not end the match ({purge_tick} vs {completed})"
+        );
+        // Under Darkness it ends there and then.
+        assert_eq!(dark_outcome, MatchOutcome::RogueVictory);
+        assert_eq!(
+            dark_tick, completed,
+            "a Rogue given Darkness wins on the tick the hold completes"
+        );
+    }
+
+    #[test]
+    fn reset_paths_clear_the_darkness_hold_without_leaks() {
+        // Path 1: desktop.rs (LabSession::reset)
+        #[cfg(feature = "desktop")]
+        {
+            use crate::desktop::{ArchitectAction, LabSession};
+            let mut session = LabSession::default();
+            session.sim.darkness.streak = 9;
+            session.sim.darkness.longest = 9;
+            session.sim.darkness.total_held = 40;
+            session.sim.darkness.completed_at = Some(600);
+            session.sim.lit_sightlines = 7;
+            session.apply_action(ArchitectAction::Reset);
+            assert_eq!(session.sim.darkness.streak, 0);
+            assert_eq!(session.sim.darkness.longest, 0);
+            assert_eq!(session.sim.darkness.total_held, 0);
+            assert_eq!(session.sim.darkness.completed_at, None);
+            assert_eq!(session.sim.darkness.required, DARKNESS_BEATS);
+        }
+
+        // Path 2: view.rs (MapCameraState::reset_for_mode) holds no simulation state; the
+        // lab it draws is rebuilt through path 1 or 3.
+
+        // Path 3: web.rs (RogueGame::reset)
+        #[cfg(feature = "web")]
+        {
+            use crate::web::RogueGame;
+            let mut game = RogueGame::new(0).unwrap();
+            game.sim.darkness.streak = 4;
+            game.sim.darkness.completed_at = Some(120);
+            game.reset(0).expect("web reset succeeds");
+            assert_eq!(game.sim.darkness.streak, 0);
+            assert_eq!(game.sim.darkness.completed_at, None);
+        }
+    }
+
+    /// §10: seed plus ordered commands reproduce everything exactly, the new state
+    /// included.
+    #[test]
+    fn the_hold_is_reproducible_from_a_seed() {
+        let run = || {
+            let mut sim = ArchitectLab::for_mode(ArchitectMode::FullAscent).unwrap();
+            sim.bot_architect = true;
+            for _ in 0..60 {
+                sim.step_beat();
+            }
+            sim.darkness.clone()
+        };
+        let a = run();
+        let b = run();
+        assert_eq!(a, b);
+        assert!(
+            a.total_held > 0,
+            "a hold that never held proves nothing about reproducing it"
+        );
+    }
+}
