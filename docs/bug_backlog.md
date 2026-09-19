@@ -594,6 +594,49 @@ that names the test. Then look for the usual suspects — iteration order over a
 a time or thread dependence, or a seed drawn from something ambient.
 
 
+### 42. The survivable fall cannot happen in `architect_lab`, so corruption is the only fall
+
+**Found 2026-09-18 by reading the playtest numbers.** Across every bot run of every mode
+— 46,680 ticks before the reachability fixes and three full modes after — **fall landings
+are 0 and always have been.** One corruption fired. The design intent is the exact
+inverse: *"An ordinary fall lands on lower surviving structure when geometry permits.
+Only a fall through the whole surviving stack into true void causes corruption."*
+
+`falls.rs` is not wrong. `find_lower_surviving_structure` walks `(0..from.level).rev()`
+and checks the same `(q, r)` column, which is a faithful reading of falling straight down.
+The problem is the facilities it runs in:
+
+| mode | levels |
+| --- | --- |
+| Pocket | **1** |
+| QuickClimb | 2 |
+| FullAscent | 2 |
+
+On level 0 the range `(0..0)` is **empty** — nothing is examined and the fall corrupts
+immediately, because there is genuinely nothing below. Pocket has only level 0, so *every
+fall in Pocket corrupts by construction*. In the other two modes a fall can only survive
+if it starts on level 1 **and** the single cell directly beneath it survives; with a
+sparse, hole-punched floor that is rare, which is why the count is zero rather than low.
+
+**Why this matters beyond a statistic.** The asymmetry is the feature: most falls should
+cost position, not the run, so that players take vertical risks and a floor rewriting
+itself underfoot reads as pressure rather than punishment. As configured, corruption is
+not the rare catastrophic outcome — it is the *only* outcome. The lab is teaching the
+opposite lesson to the one the design intends, and the unit tests pass because they
+construct a two-level case by hand.
+
+Production is `28 x 20 x 10`. The common case is almost certainly fine there and is simply
+unreachable in a one- or two-level lab, so this is a **coverage gap, not a gameplay
+regression** — but it means the balance of the feature has never once been observed.
+
+**For whoever picks this up:** the cheap fix is a deeper lab mode, or raising
+`FullAscent` past two levels, so the survivable fall becomes reachable under bot play.
+Then re-run the playtest instrument and check landings are the common case and
+corruptions the exception. Worth also deciding whether "lower surviving structure" should
+mean strictly the same column, or any supporting cell within a step — the current reading
+makes survival depend on a single cell rather than a neighbourhood.
+
+
 ## Minor / hygiene
 
 **Scheduled: Arc H Phase 61 (as-landed notes).**
