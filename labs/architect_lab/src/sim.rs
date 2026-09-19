@@ -131,6 +131,11 @@ pub struct ArchitectLab {
     pub retracted: BTreeSet<HexCoord>,
     pub collapsed_floors: BTreeSet<u8>,
     pub next_retraction_tick: Option<u64>,
+    /// A cell selected for retraction while somebody was standing on it, and the
+    /// tick it commits anyway. Occupancy used to make a tile immune; it now buys
+    /// a warning instead, so the floor can go out from under an Observer who
+    /// stayed too long but never under one who had no chance to move.
+    pub condemned: Option<(HexCoord, u64)>,
     pub instability_origin: Option<HexCoord>,
     pub events: VecDeque<LabEvent>,
     pub loyal_team_size: usize,
@@ -275,6 +280,7 @@ impl ArchitectLab {
             retracted: BTreeSet::new(),
             collapsed_floors: BTreeSet::new(),
             next_retraction_tick: None,
+            condemned: None,
             instability_origin: None,
             events: VecDeque::new(),
             loyal_team_size,

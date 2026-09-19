@@ -6,6 +6,12 @@ use super::{ArchitectLab, District, DoorState, GuardianKind, threshold_touches};
 
 pub const RETRACTION_TICKS: u64 = 180;
 
+/// How long a condemned tile telegraphs before it commits, when an actor is
+/// standing on it. Three beats at 60 ticks: long enough for the Observer tree to
+/// reach `evade immediate danger` and walk off, short enough that standing in a
+/// collapsing room is a decision rather than a formality.
+pub const CONDEMNED_GRACE_TICKS: u64 = 180;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LabEventKind {
     Played,
@@ -45,10 +51,15 @@ impl ArchitectLab {
         }
     }
 
+    /// Occupancy is deliberately **not** here. A cell somebody stands on used to
+    /// be immune, which made an ordinary fall unreachable by construction rather
+    /// than rare — see backlog #42, measured at 0 of 1,087 retractions. It is now
+    /// condemned with a grace window instead. `CommandRefusal::Occupied` still
+    /// forbids an Architect *playing* onto an actor; this is only the
+    /// consequential path, and it warns first.
     pub fn retraction_protected(&self, cell: HexCoord) -> bool {
         self.prison_core.contains(&cell)
             || self.observed.contains(&cell)
-            || self.occupied().contains(&cell)
             || self.anchored.contains(&cell)
             || self.doors.iter().any(|(&key, &state)| {
                 state == DoorState::Open && threshold_touches(key, cell, &self.world)
@@ -97,7 +108,37 @@ impl ArchitectLab {
         {
             return;
         }
-        if let Some(cell) = self.next_retraction() {
+        // A tile with somebody on it is condemned rather than taken. The warning
+        // is the whole point: a fall you could not have avoided is an ambush, and
+        // one you walked away from is a decision you made.
+        let Some(cell) = self.next_retraction() else {
+            self.next_retraction_tick = Some(self.tick + RETRACTION_TICKS);
+            self.sync_retraction_clock();
+            return;
+        };
+        if self.occupied().contains(&cell) {
+            match self.condemned {
+                Some((condemned, due)) if condemned == cell && self.tick >= due => {}
+                Some((condemned, _)) if condemned == cell => {
+                    self.next_retraction_tick = Some(self.tick + RETRACTION_TICKS);
+                    self.sync_retraction_clock();
+                    return;
+                }
+                _ => {
+                    self.condemned = Some((cell, self.tick + CONDEMNED_GRACE_TICKS));
+                    self.record_event(
+                        LabEventKind::Retracted,
+                        Some(cell),
+                        "This floor is going. Move.",
+                    );
+                    self.next_retraction_tick = Some(self.tick + RETRACTION_TICKS);
+                    self.sync_retraction_clock();
+                    return;
+                }
+            }
+        }
+        self.condemned = None;
+        {
             let tile = self
                 .world
                 .placements
