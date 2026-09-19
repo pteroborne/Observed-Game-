@@ -103,10 +103,12 @@ impl ArchitectLab {
             return (ObserverIntent::ToggleGenerator, trace);
         }
 
-        let danger = self
+        let guardian_danger = self
             .guardians
             .values()
             .any(|guardian| travel_distance(observer.cell, guardian.cell) <= 2);
+        let condemned_danger = self.condemned.is_some_and(|(c, _)| c == observer.cell);
+        let danger = guardian_danger || condemned_danger;
         if trace.test("evade immediate danger", danger)
             && let Some(next) = self.safest_exit(observer.cell)
         {
@@ -178,15 +180,25 @@ impl ArchitectLab {
     }
 
     fn safest_exit(&self, from: HexCoord) -> Option<HexCoord> {
-        self.exits(from).into_iter().max_by_key(|&candidate| {
-            let nearest = self
-                .guardians
-                .values()
-                .filter_map(|guardian| self.route(candidate, guardian.cell).map(|path| path.len()))
-                .min()
-                .unwrap_or(usize::MAX);
-            (nearest, std::cmp::Reverse(candidate))
-        })
+        let is_safe_from_condemned = |c: &HexCoord| {
+            self.condemned
+                .is_none_or(|(condemned_cell, _)| condemned_cell != *c)
+        };
+        self.exits(from)
+            .into_iter()
+            .filter(is_safe_from_condemned)
+            .max_by_key(|&candidate| {
+                let nearest = self
+                    .guardians
+                    .values()
+                    .filter_map(|guardian| {
+                        self.route(candidate, guardian.cell).map(|path| path.len())
+                    })
+                    .min()
+                    .unwrap_or(usize::MAX);
+                (nearest, std::cmp::Reverse(candidate))
+            })
+            .or_else(|| self.exits(from).into_iter().next())
     }
 
     pub(crate) fn apply_observer_intent(&mut self, id: ObserverId, intent: ObserverIntent) {

@@ -68,6 +68,12 @@ impl ArchitectLab {
 
     /// Closest exposed contradiction to the originating play; coordinate breaks ties.
     pub fn next_retraction(&self) -> Option<HexCoord> {
+        if let Some((condemned, _)) = self.condemned
+            && self.contradictions.contains(&condemned)
+            && !self.retraction_protected(condemned)
+        {
+            return Some(condemned);
+        }
         self.contradictions
             .iter()
             .copied()

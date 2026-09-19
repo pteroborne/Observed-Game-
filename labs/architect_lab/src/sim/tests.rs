@@ -571,17 +571,31 @@ fn fall_reachability_pinned_findings() {
         "Direct card plays on occupied cells are strictly refused"
     );
 
-    // 2. An occupied cell is retraction-protected
+    // 2. An occupied cell is not statically retraction-protected,
+    // but advance_retraction will condemn it with a grace window before retracting.
     assert!(
-        lab.retraction_protected(target),
-        "Occupied cells are retraction protected"
+        !lab.retraction_protected(target) || lab.observed.contains(&target),
+        "Occupied cells alone are no longer statically retraction-protected"
     );
+}
 
-    // 3. next_retraction() cannot return any occupied cell
-    if let Some(next) = lab.next_retraction() {
-        assert!(
-            !occupied.contains(&next),
-            "next_retraction cannot target an occupied cell"
-        );
+#[test]
+fn test_full_ascent_and_deep_stack_resolutions() {
+    for mode in [ArchitectMode::FullAscent, ArchitectMode::DeepStack] {
+        let mut lab = ArchitectLab::for_mode(mode).unwrap();
+        lab.bot_architect = true;
+        let mut resolved = false;
+        for beat in 0..1000 {
+            if lab.outcome != MatchOutcome::Running {
+                println!(
+                    "{:?} resolved at beat {} with outcome {:?}",
+                    mode, beat, lab.outcome
+                );
+                resolved = true;
+                break;
+            }
+            lab.step_beat();
+        }
+        assert!(resolved, "{:?} failed to resolve before 1000 beats", mode);
     }
 }
