@@ -1,10 +1,10 @@
 //! Cell-level economy for the Architect Ascent: charge pools, powered stations,
 //! power states, disturbance waves, and kinetic shove resolution.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use observed_facility::hex_wfc::{HexSpace, HexWfcWorld};
-use observed_hex::{HexCoord, HexFace, ports_compatible, travel_distance};
+use observed_hex::{HexCoord, HexFace, PortClass, ports_compatible, travel_distance};
 
 use super::sim::{
     ArchitectLab, DoorState, Guardian, GuardianId, LabEventKind, Observer, ObserverId,
@@ -65,12 +65,47 @@ pub struct EconomyState {
     pub next_minor_guardian_id: u16,
 }
 
+fn lateral_passable_neighbors(
+    world: &HexWfcWorld,
+    prison_core: &BTreeSet<HexCoord>,
+    from: HexCoord,
+) -> Vec<HexCoord> {
+    let Some(placement) = world.placements.get(&from) else {
+        return Vec::new();
+    };
+    if placement.space == HexSpace::Void || prison_core.contains(&from) {
+        return Vec::new();
+    }
+    HexFace::LATERAL
+        .into_iter()
+        .filter_map(|face| {
+            let next = world.config.grid().neighbor(from, face)?;
+            if next.level != from.level || prison_core.contains(&next) {
+                return None;
+            }
+            let other = world.placements.get(&next)?;
+            if other.space == HexSpace::Void {
+                return None;
+            }
+            if !placement.is_open(face) || !other.is_open(face.opposite()) {
+                return None;
+            }
+            Some(next)
+        })
+        .collect()
+}
+
 impl EconomyState {
     /// Initialize fresh economy state for a generated world and observer set.
+    ///
+    /// Fixtures (generator, recharge station, pad) are placed in the largest
+    /// connected component of passable lateral cells on each level to guarantee
+    /// reachability from Observer paths.
     #[must_use]
     pub fn new(
         world: &HexWfcWorld,
         observers: &BTreeMap<ObserverId, Observer>,
+        prison_core: &BTreeSet<HexCoord>,
         _seed: u64,
     ) -> Self {
         let mut charges = BTreeMap::new();
@@ -90,27 +125,140 @@ impl EconomyState {
             disturbance.insert(level, (level as u32) * DISTURBANCE_DECAY_FLOOR_PER_LEVEL);
             wave_counts.insert(level, 0);
 
-            let mut candidates: Vec<HexCoord> = world
+            let candidates: BTreeSet<HexCoord> = world
                 .placements
                 .iter()
                 .filter(|(coord, placement)| {
-                    coord.level == level && placement.space != HexSpace::Void
+                    coord.level == level
+                        && placement.space != HexSpace::Void
+                        && !prison_core.contains(coord)
                 })
                 .map(|(coord, _)| *coord)
                 .collect();
-            candidates.sort();
 
-            if !candidates.is_empty() {
-                generators.insert(level, candidates[0]);
-                let station_idx = if candidates.len() > 1 {
-                    candidates.len() / 2
-                } else {
-                    0
-                };
-                stations.insert(candidates[station_idx]);
-                let pad_idx = candidates.len().saturating_sub(1);
-                pads.insert(candidates[pad_idx]);
+            if candidates.is_empty() {
+                continue;
             }
+
+            // Partition candidate cells into lateral connected components
+            let mut visited = BTreeSet::new();
+            let mut components: Vec<Vec<HexCoord>> = Vec::new();
+            for &coord in &candidates {
+                if visited.contains(&coord) {
+                    continue;
+                }
+                let mut comp = Vec::new();
+                let mut q = VecDeque::new();
+                visited.insert(coord);
+                q.push_back(coord);
+                while let Some(c) = q.pop_front() {
+                    comp.push(c);
+                    for n in lateral_passable_neighbors(world, prison_core, c) {
+                        if visited.insert(n) {
+                            q.push_back(n);
+                        }
+                    }
+                }
+                components.push(comp);
+            }
+
+            // Pick the component that connects to the facility spine (has observer or vertical transit)
+            // and has the largest walkable area.
+            let comp_has_transit = |comp: &[HexCoord]| -> bool {
+                comp.iter().any(|&c| {
+                    observers.values().any(|o| o.cell == c) || {
+                        let Some(p) = world.placements.get(&c) else {
+                            return false;
+                        };
+                        p.up != PortClass::Sealed || p.down != PortClass::Sealed
+                    }
+                })
+            };
+
+            components.sort_by_key(|comp| (comp_has_transit(comp), comp.len()));
+            let mut best_comp = components.pop().unwrap_or_default();
+            if best_comp.is_empty() {
+                best_comp = candidates.into_iter().collect();
+            }
+
+            // Compute degrees and all-pairs shortest path distances within the component
+            let comp_set: BTreeSet<HexCoord> = best_comp.iter().copied().collect();
+            let mut deg: BTreeMap<HexCoord, usize> = BTreeMap::new();
+            let mut dists: BTreeMap<HexCoord, BTreeMap<HexCoord, usize>> = BTreeMap::new();
+            let mut total_dist: BTreeMap<HexCoord, usize> = BTreeMap::new();
+
+            for &u in &best_comp {
+                let neighbors = lateral_passable_neighbors(world, prison_core, u);
+                deg.insert(u, neighbors.len());
+
+                let mut dist = BTreeMap::new();
+                let mut q = VecDeque::new();
+                dist.insert(u, 0);
+                q.push_back(u);
+                while let Some(curr) = q.pop_front() {
+                    let d = dist[&curr];
+                    for n in lateral_passable_neighbors(world, prison_core, curr) {
+                        if comp_set.contains(&n) && !dist.contains_key(&n) {
+                            dist.insert(n, d + 1);
+                            q.push_back(n);
+                        }
+                    }
+                }
+                let tot: usize = dist.values().sum();
+                total_dist.insert(u, tot);
+                dists.insert(u, dist);
+            }
+
+            // 1. Generator: central and well-connected (degree >= 2 preferred, minimum total_dist)
+            let generator = *best_comp
+                .iter()
+                .max_by_key(|&&u| {
+                    (
+                        deg.get(&u).copied().unwrap_or(0).min(3),
+                        std::cmp::Reverse(total_dist.get(&u).copied().unwrap_or(usize::MAX)),
+                        std::cmp::Reverse(u),
+                    )
+                })
+                .unwrap_or(&best_comp[0]);
+            generators.insert(level, generator);
+
+            // 2. Recharge Station: distinct from generator, separated by path distance with good connectivity
+            let gen_dists = dists.get(&generator);
+            let station = *best_comp
+                .iter()
+                .filter(|&&u| u != generator)
+                .max_by_key(|&&u| {
+                    (
+                        gen_dists.and_then(|d| d.get(&u)).copied().unwrap_or(0),
+                        deg.get(&u).copied().unwrap_or(0),
+                        std::cmp::Reverse(u),
+                    )
+                })
+                .unwrap_or(&generator);
+            stations.insert(station);
+
+            // 3. Teleport/equipment Pad: distinct from generator and station, maximizing separation
+            let st_dists = dists.get(&station);
+            let pad = *best_comp
+                .iter()
+                .filter(|&&u| u != generator && u != station)
+                .max_by_key(|&&u| {
+                    let d_gen = gen_dists.and_then(|d| d.get(&u)).copied().unwrap_or(0);
+                    let d_st = st_dists.and_then(|d| d.get(&u)).copied().unwrap_or(0);
+                    (
+                        d_gen.min(d_st),
+                        deg.get(&u).copied().unwrap_or(0),
+                        std::cmp::Reverse(u),
+                    )
+                })
+                .unwrap_or_else(|| {
+                    if best_comp.len() > 1 {
+                        &station
+                    } else {
+                        &generator
+                    }
+                });
+            pads.insert(pad);
         }
 
         Self {

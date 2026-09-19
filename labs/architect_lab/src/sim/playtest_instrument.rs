@@ -884,6 +884,16 @@ fn is_the_generator_reachable_at_all() {
                  reachable from {reachable}/{} Observer starts",
                 starts.len()
             );
+            assert!(
+                exits > 0,
+                "mode {:?} level {level} generator has 0 exits",
+                mode
+            );
+            assert!(
+                reachable >= 1,
+                "mode {:?} level {level} generator {generator:?} unreachable from any Observer start",
+                mode
+            );
         }
         // And the same question for the other two economy fixtures, which are chosen the
         // same way and would fail the same way.
@@ -903,6 +913,20 @@ fn is_the_generator_reachable_at_all() {
             "  stations unreachable from every start: {unreachable_stations}/{}, \
              pads: {unreachable_pads}/{}",
             sim.economy.stations.len(),
+            sim.economy.pads.len()
+        );
+        assert_eq!(
+            unreachable_stations,
+            0,
+            "mode {:?} has unreachable stations: {unreachable_stations}/{}",
+            mode,
+            sim.economy.stations.len()
+        );
+        assert_eq!(
+            unreachable_pads,
+            0,
+            "mode {:?} has unreachable pads: {unreachable_pads}/{}",
+            mode,
             sim.economy.pads.len()
         );
     }

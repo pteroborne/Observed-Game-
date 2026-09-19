@@ -330,7 +330,7 @@ impl ArchitectLab {
             },
         )]);
 
-        let economy = EconomyState::new(&world, &observers, seed);
+        let economy = EconomyState::new(&world, &observers, &prison_core, seed);
         prison.ensure_placements(&mut world);
         known.extend(&prison_core);
 
@@ -422,6 +422,7 @@ impl ArchitectLab {
                 "A missing tile interrupts the hunt. Reconnect the route with a card.",
             );
         }
+        lab.economy = EconomyState::new(&lab.world, &lab.observers, &lab.prison_core, seed);
         lab.refresh_observation();
         Ok(lab)
     }
