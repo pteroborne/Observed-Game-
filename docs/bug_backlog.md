@@ -692,6 +692,47 @@ game, and only re-running the end-to-end playtest showed it. That is the third t
 one session that behaviour proved unreachable or degenerate while its tests passed —
 after the shove softlock and the survivable fall (#42).
 
+### 44. Floor power is a one-way ratchet, and the facility ends every match in the dark
+
+**Found 2026-09-19** while measuring whether the Darkness objective can fire
+(`labs/architect_lab/src/sim/objective.rs`). It fires constantly, which turned out to be
+a fact about the power economy rather than about the objective.
+
+Production code only ever **cuts** power. Three call sites, all Rogue-side:
+`sim/stability.rs:170` and `:178` (retraction and collapse) and `sim.rs:553` (a card).
+The only restore is `toggle_power`, reachable solely by an Observer standing in a
+generator room — and the Step B instrumentation has been recording
+`toggle_generator_intents: 0` since it was added. So floors go out one at a time and
+never come back.
+
+Measured over full bot matches (`why_the_facility_is_dark`, in the playtest instrument),
+sampling every Active Observer every beat:
+
+| Mode | Unpowered | Facing a wall | Lighting a cell |
+|---|---|---|---|
+| Pocket | 100.0% | 0.0% | 0.0% |
+| Quick Climb | 44.3% | 44.6% | 11.1% |
+| Full Ascent | 79.5% | 14.8% | 5.7% |
+| Deep Stack | 67.1% | 23.3% | 9.5% |
+
+An Observer lights the cell they face in **under 12% of samples in every mode**, and in
+Pocket never at all. Observation is the Observer's core verb and the thing that protects
+tiles from retraction; for almost the whole match it reaches exactly one cell, the one
+they are standing on.
+
+Nothing about this is visible in the suite. Every power test sets `set_powered` by hand
+and asserts the gate it guards, which is correct and passes; none of them asks whether a
+match ever *arrives* in the powered state. Fourth instance in this project of a mechanic
+that is individually correct and collectively unreachable — after the shove softlock,
+the survivable fall (#42) and the Pocket walkover (#43).
+
+**Two decisions, and they are separable.** Whether an Observer bot should ever seek a
+generator is a behaviour question. Whether a facility with no restoration path is the
+intended economy is a design one — a one-way blackout is *thematically* excellent for
+Architect Ascent and may well be the right game, but it should be a choice rather than
+the absence of a reverse gear. Until one of them is settled, the Darkness objective
+cannot be tuned: its threshold has only two settings, fires or never.
+
 
 ## Minor / hygiene
 
