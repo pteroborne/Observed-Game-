@@ -55,6 +55,7 @@ pub fn is_supporting(lab: &ArchitectLab, cell: HexCoord) -> bool {
 /// 2. If the direct column has retracted into void, searches the 1-step lateral
 ///    neighborhood on that level (canonical face order), representing an actor
 ///    tumbling onto or catching the edge of surviving floor structure.
+///
 /// If no level beneath `from` has surviving structure within 1 step, returns `None` (true void).
 #[must_use]
 pub fn find_lower_surviving_structure(lab: &ArchitectLab, from: HexCoord) -> Option<HexCoord> {

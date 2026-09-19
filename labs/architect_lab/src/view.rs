@@ -464,42 +464,38 @@ pub fn rebuild_board(
     }
 
     if session.debug_overlay {
-        if let Some(target_cell) = session.sim.next_retraction() {
-            if session
+        if let Some(target_cell) = session.sim.next_retraction()
+            && session.sim.condemned.is_none_or(|(c, _)| c != target_cell)
+        {
+            let target_pos = board_position(session.sim.world.config, target_cell);
+            let ticks_left = session
                 .sim
-                .condemned
-                .map_or(true, |(c, _)| c != target_cell)
-            {
-                let target_pos = board_position(session.sim.world.config, target_cell);
-                let ticks_left = session
-                    .sim
-                    .next_retraction_tick
-                    .unwrap_or(0)
-                    .saturating_sub(session.sim.tick);
-                let secs = ticks_left.div_ceil(60);
-                spawn_mesh(
-                    &mut commands,
-                    &mut materials,
-                    halo.clone(),
-                    observed_style::tactics(TacticsRole::Blocked).base_color,
-                    target_pos.extend(2.5),
-                    0.0,
-                    format!("Retraction telegraph halo {target_cell:?}"),
-                );
-                commands.spawn((
-                    BoardVisual,
-                    Text2d::new(format!("RETRACT\n{:02}s ({:03}t)", secs, ticks_left)),
-                    TextFont {
-                        font_size: FontSize::Px(9.0),
-                        ..default()
-                    },
-                    TextColor(observed_style::tactics(TacticsRole::Blocked).base_color),
-                    TextLayout::justify(Justify::Center),
-                    Transform::from_translation((target_pos + Vec2::new(0.0, -12.0)).extend(3.0)),
-                    RenderLayers::layer(MAP_RENDER_LAYER),
-                    Name::new(format!("Retraction telegraph text {target_cell:?}")),
-                ));
-            }
+                .next_retraction_tick
+                .unwrap_or(0)
+                .saturating_sub(session.sim.tick);
+            let secs = ticks_left.div_ceil(60);
+            spawn_mesh(
+                &mut commands,
+                &mut materials,
+                halo.clone(),
+                observed_style::tactics(TacticsRole::Blocked).base_color,
+                target_pos.extend(2.5),
+                0.0,
+                format!("Retraction telegraph halo {target_cell:?}"),
+            );
+            commands.spawn((
+                BoardVisual,
+                Text2d::new(format!("RETRACT\n{:02}s ({:03}t)", secs, ticks_left)),
+                TextFont {
+                    font_size: FontSize::Px(9.0),
+                    ..default()
+                },
+                TextColor(observed_style::tactics(TacticsRole::Blocked).base_color),
+                TextLayout::justify(Justify::Center),
+                Transform::from_translation((target_pos + Vec2::new(0.0, -12.0)).extend(3.0)),
+                RenderLayers::layer(MAP_RENDER_LAYER),
+                Name::new(format!("Retraction telegraph text {target_cell:?}")),
+            ));
         }
 
         for (&cell, placement) in &session.sim.world.placements {
