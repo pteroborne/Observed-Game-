@@ -149,6 +149,7 @@ impl RogueGame {
                 "doors": tile.doors, "observed": sim.observed.contains(&cell),
                 "prison": sim.prison_core.contains(&cell),
                 "unstable": sim.contradictions.contains(&cell),
+                "condemned": sim.condemned.is_some_and(|(c, _)| c == cell),
                 "retracted": sim.retracted.contains(&cell),
                 "next": next == Some(cell),
                 "held": sim.retraction_protected(cell),

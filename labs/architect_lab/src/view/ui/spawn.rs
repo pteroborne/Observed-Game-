@@ -188,7 +188,8 @@ fn spawn_sidebar(root: &mut ChildSpawnerCommands) {
                 ACTORS & CELLS\n\
                 ◉ Observer [Prey]   ▲ Guardian [Hunter]\n\
                 • Blue: Watched     • Amber: Prison Core\n\
-                • Red: Contradiction / Closed Door\n\n\
+                • Red: Contradiction / Closed Door\n\
+                • Amber Halo: Condemned Floor (Move!)\n\n\
                 DEBUG OVERLAY [O]\n\
                 • v F#: Safe drop   • X VOID: Fatal drop\n\
                 • RETRACT: Timer    • [PWR]: Generator",
