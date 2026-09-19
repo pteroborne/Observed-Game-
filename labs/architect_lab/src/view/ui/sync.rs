@@ -177,6 +177,7 @@ pub fn sync_dynamic_text(
                 let status = match session.sim.outcome {
                     MatchOutcome::Running => "LIVE",
                     MatchOutcome::RogueVictory => "ROGUE VICTORY",
+                    MatchOutcome::LoyalVictory => "LOYAL VICTORY",
                 };
                 let seconds = session.sim.cooldown.div_ceil(60);
                 format!(

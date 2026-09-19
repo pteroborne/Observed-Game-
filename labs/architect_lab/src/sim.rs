@@ -31,6 +31,13 @@ pub const ACTOR_BEAT_TICKS: u32 = FIXED_HZ;
 pub const ARCHITECT_COOLDOWN_TICKS: u32 = 300;
 pub const HAND_SIZE: usize = 5;
 
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TeamId(pub u8);
+
+impl TeamId {
+    pub const LOYAL: Self = Self(0);
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ObserverId(pub u16);
 
@@ -81,6 +88,7 @@ impl BehaviorTrace {
 pub enum MatchOutcome {
     Running,
     RogueVictory,
+    LoyalVictory,
 }
 
 #[derive(Clone, Debug)]
