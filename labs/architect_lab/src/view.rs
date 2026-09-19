@@ -441,7 +441,7 @@ pub fn rebuild_board(
                 .next_retraction_tick
                 .unwrap_or(0)
                 .saturating_sub(session.sim.tick);
-            let secs = (ticks_left + 59) / 60;
+            let secs = ticks_left.div_ceil(60);
             spawn_mesh(
                 &mut commands,
                 &mut materials,

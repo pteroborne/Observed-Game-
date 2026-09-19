@@ -581,7 +581,7 @@ fn test_fall_reachability_across_many_seeds() {
                                             total_retraction_commits += 1;
                                             mode_retractions += 1;
                                             if let Some(cell) = event.cell {
-                                                if pre_obs.iter().any(|&c| c == cell) {
+                                                if pre_obs.contains(&cell) {
                                                     total_retractions_on_occupied += 1;
                                                 }
                                                 if pre_observed.contains(&cell) {
