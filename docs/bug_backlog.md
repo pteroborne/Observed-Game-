@@ -313,6 +313,14 @@ amateur at best and confusing at worst (**#34**), which is the same reading from
 a second group of eyes. The production-corpus lab mode added for this entry is
 the right instrument; it has not yet been used to drive an authoring pass.
 
+
+**2026-09-18 desktop playtest verdict: still open perceptually.** Will ran the current
+build: *"there are too many hex tiles that just feel like individual tiles rather than a
+part of something bigger."* The sibling-face contract landed in 2026-07-28 and the
+geometry is correct, so this is now a perception result standing against a fix that is
+provably in place — which points past room topology and at #30, the corpus itself. A
+cohesive room made of interchangeable parts still reads as parts.
+
 ### 29. Multiplayer crashes between the WFC solve and the map load
 
 **Found 2026-08-09, v0.1.0 Deck-to-Deck playtest. Blocks the entire LAN mode —
@@ -436,6 +444,23 @@ player crossing a threshold can tell *where they are* and *which way they came
 from*. Look at: the authored corpus under `assets/tiles/`, the archetype quotas
 in the composition profile, and `tools/composition_studio`'s coverage tab, which
 already reports which archetypes the corpus can and cannot fill.
+
+
+**2026-09-18 desktop playtest verdict: still open, and the framing sharpened.** Will ran
+the current build and named the shape of what is missing: *"mundane passageways that
+occasionally lead to areas the player says 'wow this is neat'"*. That is tension and
+release, which [agents.md](../agents.md) already makes the governing rule for authored
+content — "rooms remain decision, cooperation, rescue and machinery beats; corridors and
+unsafe tiles remain traversal, commitment and risk beats" — so the rule is written and
+the corpus is not yet realizing it.
+
+The sharpening is the word *occasionally*. Earlier readings of this entry aimed at making
+places distinguishable from one another, which pushes toward every tile being
+interesting. The ask is the opposite and harder: most of the facility should be ordinary
+on purpose, so that the exceptional rooms land. A corpus of uniformly interesting tiles
+fails this as completely as a corpus of uniformly dull ones, because release means
+nothing without tension to release from. Design the mundane deliberately, and budget the
+payoffs.
 
 ### 31. Players cannot tell the facility is changing
 
