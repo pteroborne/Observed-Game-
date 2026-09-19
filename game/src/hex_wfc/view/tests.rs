@@ -1,5 +1,7 @@
 //! Tests for hex presentation setup, streaming residency, and teardown (see `mod.rs`).
 
+use std::collections::BTreeSet;
+
 use super::residency::{Reach, cell_in_stream_range, footprint_in_range, plan_residency};
 use super::*;
 use observed_hex::hex_origin;
@@ -257,4 +259,221 @@ fn occupied_room_footprint_is_never_retired_even_when_its_anchor_is_far() {
     );
     assert!(plan.despawn.is_empty());
     assert_eq!(plan.desired_cells, 1);
+}
+
+fn test_runtime() -> crate::hex_wfc::sim::HexWfcRuntime {
+    use std::collections::BTreeSet;
+    use crate::hex_wfc::sim::load_prototypes;
+    use observed_core::PlayerId;
+    use observed_match::hex_wfc::{HexBotDriver, HexMatchConfig, HexWfcMatch};
+
+    let prototypes = load_prototypes();
+    let game = HexWfcMatch::new(
+        44,
+        HexMatchConfig {
+            guardian: false,
+            teams: 2,
+            members_per_team: 1,
+            ..HexMatchConfig::default()
+        },
+        &prototypes,
+    )
+    .expect("match generates");
+    let local_player = PlayerId(0);
+    let map_level = game.players[&local_player].cell.level;
+    let presented_revisions = game.facility.cell_revisions.clone();
+    crate::hex_wfc::sim::HexWfcRuntime {
+        match_state: game,
+        bot_driver: HexBotDriver::new(),
+        local_player,
+        pending_visual_cells: BTreeSet::new(),
+        presented_revisions,
+        status: String::new(),
+        map_open: false,
+        map_level,
+        results_delay_frames: 0,
+        networked: false,
+        resync_attempts: 0,
+    }
+}
+
+#[test]
+fn cell_entity_count_falls_with_merged_hull_meshes() {
+    let runtime = test_runtime();
+    let catalog = shell::HexGeometryCatalog::build(&runtime);
+    let mut world = World::default();
+    let mut meshes = Assets::<Mesh>::default();
+    let mut materials = Assets::<StandardMaterial>::default();
+    let mut assets = HexWfcVisualAssets::for_test(&mut materials);
+
+    // Pick a non-trivial cell with multiple raw pieces
+    let (coord, cell_index) = catalog
+        .cells
+        .iter()
+        .find(|(_, index)| index.piece_indices.len() >= 10)
+        .expect("must have a cell with >= 10 raw pieces");
+
+    let raw_piece_count = cell_index.piece_indices.len();
+    assert!(
+        raw_piece_count >= 10,
+        "precondition: cell has multiple raw collider pieces (got {raw_piece_count})"
+    );
+
+    let requested = BTreeSet::from([*coord]);
+    let mut queue = bevy::ecs::world::CommandQueue::default();
+    let mut commands = Commands::new(&mut queue, &world);
+    let spawned = shell::spawn_cells(
+        &mut commands,
+        &mut assets,
+        &mut meshes,
+        &runtime,
+        &catalog,
+        &requested,
+    );
+    queue.apply(&mut world);
+
+    assert_eq!(spawned.len(), 1);
+    let child_pieces = spawned[0].child_pieces;
+
+    let mut query =
+        world.query::<(Entity, &ChildOf, Option<&Mesh3d>, Option<&PointLight>, &Name)>();
+    let structural_hull_mesh_count = query
+        .iter(&world)
+        .filter(|(_, child_of, mesh, _, name)| {
+            child_of.parent() == spawned[0].entity
+                && mesh.is_some()
+                && name.as_str().starts_with("Hex cell")
+        })
+        .count();
+
+    // The cell's 24 raw collider hull pieces were merged into exactly 8 mesh entities
+    // (Floor, Ceiling, and 6 perimeter walls), dropping structural hull entities by 66.7%.
+    assert_eq!(raw_piece_count, 24);
+    assert_eq!(structural_hull_mesh_count, 8);
+    assert_eq!(child_pieces, 16);
+    assert!(
+        structural_hull_mesh_count < raw_piece_count,
+        "structural hull meshes ({structural_hull_mesh_count}) must be strictly less than raw pieces ({raw_piece_count})"
+    );
+}
+
+#[test]
+fn despawned_cell_rebuilds_identically_when_re_entered() {
+    let runtime = test_runtime();
+    let catalog = shell::HexGeometryCatalog::build(&runtime);
+    let mut world = World::default();
+    let mut meshes = Assets::<Mesh>::default();
+    let mut materials = Assets::<StandardMaterial>::default();
+    let mut assets = HexWfcVisualAssets::for_test(&mut materials);
+
+    let coord = *catalog
+        .cells
+        .keys()
+        .next()
+        .expect("must have at least one cell in catalog");
+
+    let requested = BTreeSet::from([coord]);
+
+    // First spawn:
+    let mut queue = bevy::ecs::world::CommandQueue::default();
+    let mut commands = Commands::new(&mut queue, &world);
+    let spawned1 = shell::spawn_cells(
+        &mut commands,
+        &mut assets,
+        &mut meshes,
+        &runtime,
+        &catalog,
+        &requested,
+    );
+    queue.apply(&mut world);
+
+    let first_entity = spawned1[0].entity;
+    let first_count = spawned1[0].child_pieces;
+
+    // Collect child entities state:
+    let mut query = world.query::<(
+        Entity,
+        &ChildOf,
+        Option<&Mesh3d>,
+        Option<&MeshMaterial3d<StandardMaterial>>,
+        &Transform,
+        Option<&super::spectate::Cutaway>,
+        &Name,
+    )>();
+    let first_children: Vec<_> = query
+        .iter(&world)
+        .filter(|(_, child_of, ..)| child_of.parent() == first_entity)
+        .map(|(_, _, mesh, mat, trans, cut, name)| {
+            (
+                mesh.map(|m| m.0.clone()),
+                mat.map(|m| m.0.clone()),
+                *trans,
+                cut.copied(),
+                name.clone(),
+            )
+        })
+        .collect();
+
+    assert_eq!(first_children.len(), first_count);
+
+    // Despawn the cell:
+    world.entity_mut(first_entity).despawn();
+
+    // Verify all children were despawned with the parent:
+    let mut child_query = world.query::<&ChildOf>();
+    let surviving_children = child_query
+        .iter(&world)
+        .filter(|child_of| child_of.parent() == first_entity)
+        .count();
+    assert_eq!(surviving_children, 0, "all child entities must be despawned");
+
+    // Second spawn (cell re-entered):
+    let mut commands = Commands::new(&mut queue, &world);
+    let spawned2 = shell::spawn_cells(
+        &mut commands,
+        &mut assets,
+        &mut meshes,
+        &runtime,
+        &catalog,
+        &requested,
+    );
+    queue.apply(&mut world);
+
+    let second_entity = spawned2[0].entity;
+    let second_count = spawned2[0].child_pieces;
+
+    assert_eq!(
+        first_count, second_count,
+        "child piece count must match across rebuilds"
+    );
+
+    let second_children: Vec<_> = query
+        .iter(&world)
+        .filter(|(_, child_of, ..)| child_of.parent() == second_entity)
+        .map(|(_, _, mesh, mat, trans, cut, name)| {
+            (
+                mesh.map(|m| m.0.clone()),
+                mat.map(|m| m.0.clone()),
+                *trans,
+                cut.copied(),
+                name.clone(),
+            )
+        })
+        .collect();
+
+    assert_eq!(first_children.len(), second_children.len());
+    for (i, (mesh1, mat1, trans1, cut1, name1)) in first_children.iter().enumerate() {
+        let (mesh2, mat2, trans2, cut2, name2) = &second_children[i];
+        assert_eq!(
+            mesh1, mesh2,
+            "rebuilt mesh handle must match cached mesh handle at index {i}"
+        );
+        assert_eq!(mat1, mat2, "rebuilt material handle must match at index {i}");
+        assert_eq!(
+            trans1.translation, trans2.translation,
+            "rebuilt transform must match at index {i}"
+        );
+        assert_eq!(cut1, cut2, "rebuilt cutaway must match at index {i}");
+        assert_eq!(name1, name2, "rebuilt name must match at index {i}");
+    }
 }
