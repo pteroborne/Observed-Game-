@@ -85,6 +85,19 @@ pub struct ModeRunStats {
     pub corruptions: u64,
     pub fall_diag: FallDiagnostic,
 
+    // Darkness: the facility going unwitnessed
+    /// Beats on which at least one Observer was Active and none lit the cell they faced.
+    pub dark_beats: u64,
+    /// Beats on which somebody was looking outward.
+    pub lit_beats: u64,
+    /// The longest run of consecutive dark beats, completed or not.
+    pub longest_dark_streak: u64,
+    /// How often each streak length occurred, so a near miss is distinguishable from a
+    /// mechanic that cannot be reached at all. Keyed by streak length in beats.
+    pub dark_streak_histogram: BTreeMap<u64, u64>,
+    /// The tick Darkness completed its hold, whether or not it was the selected objective.
+    pub darkness_completed_at: Option<u64>,
+
     // Observer intents summary
     pub observer_intents: BTreeMap<String, u64>,
     pub architect_intents: BTreeMap<String, u64>,
@@ -128,6 +141,11 @@ impl Default for ModeRunStats {
             fall_landings: 0,
             corruptions: 0,
             fall_diag: FallDiagnostic::default(),
+            dark_beats: 0,
+            lit_beats: 0,
+            longest_dark_streak: 0,
+            dark_streak_histogram: BTreeMap::new(),
+            darkness_completed_at: None,
             observer_intents: BTreeMap::new(),
             architect_intents: BTreeMap::new(),
             observer_final_states: BTreeMap::new(),
@@ -178,6 +196,7 @@ pub fn run_mode_playtest(mode: ArchitectMode, max_beats: u64) -> ModeRunStats {
     let mut prev_requisition_count = sim.requisition.count;
     let mut prev_wave_counts = sim.economy.wave_counts.clone();
     let mut prev_power = sim.economy.power.clone();
+    let mut prev_dark_streak = sim.darkness.streak;
 
     for beat in 0..max_beats {
         if sim.outcome != MatchOutcome::Running {
@@ -434,7 +453,34 @@ pub fn run_mode_playtest(mode: ArchitectMode, max_beats: u64) -> ModeRunStats {
                 }
             }
         }
+
+        // A streak that dropped back to zero has ended; record how long it got. Without
+        // the distribution, "Darkness never fired" and "Darkness came within one beat
+        // every match" are the same line of output.
+        if sim.darkness.streak == 0 && prev_dark_streak > 0 {
+            *stats
+                .dark_streak_histogram
+                .entry(prev_dark_streak)
+                .or_default() += 1;
+        }
+        if sim.darkness.streak > prev_dark_streak {
+            stats.dark_beats += 1;
+        } else {
+            stats.lit_beats += 1;
+        }
+        prev_dark_streak = sim.darkness.streak;
     }
+
+    // A streak still running when the match ended never returns to zero, so it would
+    // otherwise be missing from the distribution entirely.
+    if prev_dark_streak > 0 {
+        *stats
+            .dark_streak_histogram
+            .entry(prev_dark_streak)
+            .or_default() += 1;
+    }
+    stats.longest_dark_streak = sim.darkness.longest;
+    stats.darkness_completed_at = sim.darkness.completed_at;
 
     stats.outcome = sim.outcome;
     stats.total_minors_allocated = sim.economy.next_minor_guardian_id.saturating_sub(1000);
@@ -510,6 +556,18 @@ fn playtest_instrument_runs_all_modes() {
             stats.fall_landings, stats.corruptions
         );
         println!("  Fall Diagnostic: {:#?}", stats.fall_diag);
+        println!(
+            "  Darkness: {} dark beats / {} lit, longest streak {} of {} needed, completed at {:?}",
+            stats.dark_beats,
+            stats.lit_beats,
+            stats.longest_dark_streak,
+            DARKNESS_BEATS,
+            stats.darkness_completed_at
+        );
+        println!(
+            "  Dark streak distribution (length -> count): {:?}",
+            stats.dark_streak_histogram
+        );
         println!("  Observer intents: {:?}", stats.observer_intents);
         println!("  Architect intents: {:?}", stats.architect_intents);
     }
@@ -652,4 +710,67 @@ fn test_fall_reachability_across_many_seeds() {
     println!("  Total Fall Landings: {}", total_fall_landings);
     println!("  Total Corruptions: {}", total_corruptions);
     println!("====================================================================\n");
+}
+
+/// Why the facility is dark: is nobody looking because the lights are off, or because
+/// every Observer is facing a wall?
+///
+/// The Darkness measurement came back at 82-92% of beats dark in every mode, which is a
+/// claim about Observers, not about the objective. This separates the two causes so the
+/// finding can be stated as a fact rather than a guess.
+#[test]
+fn why_the_facility_is_dark() {
+    println!("\n=================== DARKNESS CAUSE PROBE ===================");
+    for mode in ArchitectMode::ALL {
+        let mut sim = ArchitectLab::for_mode(mode).expect("scenario boots");
+        sim.bot_architect = true;
+
+        let mut beats = 0u64;
+        let mut active_samples = 0u64;
+        let mut unpowered = 0u64;
+        let mut facing_wall = 0u64;
+        let mut lit = 0u64;
+
+        for _ in 0..1000 {
+            if sim.outcome != MatchOutcome::Running {
+                break;
+            }
+            sim.step_beat();
+            beats += 1;
+            let snapshot: Vec<(HexCoord, HexFace)> = sim
+                .observers
+                .values()
+                .filter(|o| o.state == ObserverState::Active)
+                .map(|o| (o.cell, o.facing))
+                .collect();
+            for (cell, facing) in snapshot {
+                active_samples += 1;
+                if !sim.economy.is_powered(cell.level) {
+                    unpowered += 1;
+                } else if sim.step_through(cell, facing).is_none() {
+                    facing_wall += 1;
+                } else {
+                    lit += 1;
+                }
+            }
+        }
+
+        let pct = |n: u64| {
+            if active_samples == 0 {
+                0.0
+            } else {
+                100.0 * n as f64 / active_samples as f64
+            }
+        };
+        println!(
+            "{:>12}: {beats} beats, {active_samples} active-Observer samples -> \
+             unpowered {unpowered} ({:.1}%), facing a wall {facing_wall} ({:.1}%), \
+             lit {lit} ({:.1}%)",
+            mode.short_label(),
+            pct(unpowered),
+            pct(facing_wall),
+            pct(lit)
+        );
+    }
+    println!("============================================================\n");
 }

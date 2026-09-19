@@ -118,12 +118,21 @@ impl RogueObjective {
 /// Consecutive dark beats the Rogue needs to win by Darkness.
 ///
 /// A beat is `ACTOR_BEAT_TICKS` ticks, and observation only changes on a beat, so beats are
-/// the honest unit. The number is chosen against the measured streak distribution rather
-/// than picked: bot Observers turn to face somewhere open within a beat or two whenever
-/// they have anywhere to go, so short holds occur constantly during ordinary movement and
-/// would make Darkness fire on a turn into a dead end. Twelve beats is past that noise —
-/// it means the Observers are pinned, unlit, or both, for long enough that it is a
-/// situation rather than a step.
+/// the honest unit.
+///
+/// The number was chosen against the measured streak distribution, and the measurement
+/// says the dial has only two settings. Bot matches produce a cluster of short streaks
+/// from ordinary movement (1-10 beats) and then exactly one enormous streak per match
+/// (52, 149, 560 beats in Quick Climb, Full Ascent and Deep Stack), with nothing in
+/// between. Any threshold from 11 to 50 therefore behaves identically: it ignores the
+/// noise and fires on the blackout. Twelve sits just past the noise.
+///
+/// That is not a well-tuned objective, and the comment should not pretend otherwise. The
+/// facility is dark for 82-92% of beats in every mode, because floors lose power and
+/// nothing restores it — see `why_the_facility_is_dark` in the playtest instrument, and
+/// bug #44. Until power can come back on, Darkness fires early in every non-Pocket match
+/// regardless of this constant. The measurement is the deliverable; the dial is waiting
+/// on the economy.
 pub const DARKNESS_BEATS: u64 = 12;
 
 #[cfg(test)]
