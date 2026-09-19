@@ -180,15 +180,7 @@ pub fn raw_next_retraction(lab: &ArchitectLab) -> Option<HexCoord> {
         })
 }
 
-pub fn run_mode_playtest(mode: ArchitectMode, max_beats: u64) -> ModeRunStats {
-    run_mode_playtest_with_policy(mode, PowerPolicy::Restorable, max_beats)
-}
-
-pub fn run_mode_playtest_with_policy(
-    mode: ArchitectMode,
-    policy: PowerPolicy,
-    max_beats: u64,
-) -> ModeRunStats {
+pub fn run_mode_playtest(mode: ArchitectMode, policy: PowerPolicy, max_beats: u64) -> ModeRunStats {
     let mut sim = ArchitectLab::for_mode_with_policy(mode, policy).expect("scenario boots");
     sim.bot_architect = true;
 
@@ -520,7 +512,7 @@ fn playtest_instrument_runs_all_modes() {
 
     for mode in ArchitectMode::ALL {
         for policy in PowerPolicy::ALL {
-            let stats = run_mode_playtest_with_policy(mode, policy, 1000);
+            let stats = run_mode_playtest(mode, policy, 1000);
             println!("\n--------------------------------------------------------------");
             println!("MODE: {} ({:?}) | POLICY: {:?}", stats.mode, mode, policy);
             println!(

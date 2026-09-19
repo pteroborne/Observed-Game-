@@ -239,6 +239,11 @@ impl EconomyState {
 
             // 3. Teleport/equipment Pad: distinct from generator and station, maximizing separation
             let st_dists = dists.get(&station);
+            let fallback = if best_comp.len() > 1 {
+                &station
+            } else {
+                &generator
+            };
             let pad = *best_comp
                 .iter()
                 .filter(|&&u| u != generator && u != station)
@@ -251,13 +256,7 @@ impl EconomyState {
                         std::cmp::Reverse(u),
                     )
                 })
-                .unwrap_or_else(|| {
-                    if best_comp.len() > 1 {
-                        &station
-                    } else {
-                        &generator
-                    }
-                });
+                .unwrap_or(fallback);
             pads.insert(pad);
         }
 
