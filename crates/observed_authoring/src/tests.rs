@@ -1115,3 +1115,33 @@ fn a_tower_climbs_from_every_face_a_door_could_be_on() {
 // rather than dropped - `Extent` would need a hand, mirroring `outer` about
 // x = 0 - and it is deliberately not smuggled into the replacement, because a
 // handed pair is two climb shapes and this change is about proving one.
+
+/// Run the rebuilt passage both ways, in all six rotations and three lanes.
+/// The side lanes catch ribs that a centre-only ray would miss.
+#[test]
+fn lantern_passage_is_walkable_in_both_directions_at_every_rotation() {
+    let source = crate::parse_authored_module(&crate::forge::halls::hall_straight())
+        .expect("passage validates")
+        .prototype;
+    let config = FpsConfig::default();
+    for turn in 0..6 {
+        let mut tile = source.clone();
+        tile.hulls = crate::rotation::rotate_hulls(&source.hulls, turn);
+        let axis = face_direction(HexFace::LATERAL[usize::from(turn)]);
+        let side = Vec2::new(-axis.y, axis.x);
+        let scene = RapierTraversalScene::from_arena_spec(&tile.arena_spec());
+        for direction in [-1.0, 1.0] {
+            for lane in [-1.0, 0.0, 1.0] {
+                let start = axis * (6.5 * direction) + side * lane;
+                let finish = axis * (-6.5 * direction) + side * lane;
+                let mut body =
+                    FpsBody::spawned(Vec3::new(start.x, 0.5 + config.half_height, start.y), 0.0);
+                assert!(
+                    drive_capsule_to(&scene, &mut body, finish, &config),
+                    "blocked passage: turn {turn}, direction {direction}, lane {lane}"
+                );
+                assert!((body.position.y - config.half_height - 0.5).abs() < 0.1);
+            }
+        }
+    }
+}

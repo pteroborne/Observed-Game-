@@ -1,5 +1,3 @@
-use std::collections::BTreeSet;
-
 use observed_authoring::RuntimeHexCatalog;
 use observed_content::ArchitectureRegister;
 
@@ -57,42 +55,10 @@ fn every_district_covers_every_wfc_geometry_demand_with_its_own_geometry() {
             );
         }
 
-        // Liminal Grid's legacy authored hall modules predate the generated
-        // district kits. The generated kit supplements them. Where the corpus
-        // has authored layouts, both must still be reachable, or the floor has
-        // quietly become the ceiling.
-        //
-        // Which archetypes those are is read from the corpus rather than listed
-        // here. A list would have to grow every time the kit gains a family the
-        // authored corpus does not cover — it already would have, twice — and a
-        // stale exclusion is indistinguishable from a real gap.
-        let liminal = corpus
-            .cells()
-            .iter()
-            .filter(|tile| {
-                tile.key.archetype == demand.archetype
-                    && tile.signature == demand.signature
-                    && tile.key.register == ArchitectureRegister::LiminalGrid.slug()
-            })
-            .collect::<Vec<_>>();
-        // The legacy hall pairs occupy authored variants 0..=5, expanded to
-        // runtime variants 0..36, with weights 2 and 3. Restrict this historical
-        // pair check to that ID band: later benchmarks may independently use
-        // weight 3, which is a selection weight, not a family identity.
-        // The authored ramp carries 10 and generated tiles carry 1.
-        let weights = liminal
-            .iter()
-            .filter(|tile| tile.key.variant < 36)
-            .map(|tile| tile.weight)
-            .collect::<BTreeSet<_>>();
-        if weights.contains(&2) || weights.contains(&3) {
-            assert!(
-                weights.contains(&2) && weights.contains(&3),
-                "{} {:?} lost one of Liminal Grid's authored layouts: {weights:?}",
-                demand.archetype,
-                demand.signature
-            );
-        }
+        // The curated library deliberately retains one Liminal layout per
+        // connection pattern. Requiring both old decoration weights here would
+        // undo that decision. Authoring's curation gate checks every retired
+        // source against an active district/footprint/port-pattern counterpart.
     }
 }
 

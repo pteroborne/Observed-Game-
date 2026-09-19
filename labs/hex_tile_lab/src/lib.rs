@@ -462,11 +462,12 @@ fn resolve_tile<'a>(
 ) -> Option<&'a TilePrototype> {
     tiles
         .iter()
+        .rev()
         .find(|t| {
             t.key.archetype == archetype && t.key.register == register && t.key.variant == variant
         })
         .or_else(|| {
-            tiles.iter().find(|t| {
+            tiles.iter().rev().find(|t| {
                 t.key.archetype == archetype
                     && t.key.register == "generic"
                     && t.key.variant == variant
@@ -2723,6 +2724,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn authored_tiles_override_compatibility_in_the_preview() {
+        let tiles = load_corpus_tiles();
+        let expected = observed_authoring::parse_authored_module(
+            &observed_authoring::forge::halls::hall_straight(),
+        )
+        .expect("authored passage")
+        .prototype;
+        let selected = resolve_tile(&tiles, "hall_straight", 0, "monolith")
+            .expect("authored passage resolves");
+        assert_eq!(selected.hulls, expected.hulls);
+        assert_eq!(selected.lights, expected.lights);
+    }
+
+    #[test]
     fn noon_practicals_and_overhead_materials_survive_visual_resets() {
         let mut state = LabState::load();
         state.register_index = 2;
@@ -2881,7 +2896,7 @@ mod tests {
     }
 
     #[test]
-    fn liminal_layout_variants_are_hidden_from_other_registers() {
+    fn liminal_scoped_connections_are_hidden_from_other_registers() {
         let mut state = LabState::load();
         let liminal_only = state
             .compositions
@@ -2889,10 +2904,10 @@ mod tests {
             .enumerate()
             .find(|(_, composition)| {
                 matches!(composition, Composition::SingleTile { archetype, variant }
-                    if archetype == "hall_cap" && *variant == 6)
+                    if archetype == "hall_junction_3way" && *variant == 558)
             })
             .map(|(index, _)| index)
-            .expect("sparse Liminal cap composition exists");
+            .expect("retained Liminal open junction exists");
 
         state.register_index = ArchitectureRegister::ALL
             .iter()

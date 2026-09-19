@@ -1229,6 +1229,60 @@ mod tests {
     use super::*;
     use crate::source::FloorPolicy;
 
+    /// Retiring art may change the lottery, never the district's connection
+    /// vocabulary. Check the actual excluded sources against the compiled set.
+    #[test]
+    fn curated_catalog_preserves_retired_connection_patterns() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tiles");
+        let built = build_catalog(&root).expect("curated catalog builds");
+        let ignored = ignored_paths(&root).expect("retirement list reads");
+        assert_eq!(ignored.len(), 96);
+        assert_eq!(built.catalog.modules.len(), 332);
+        let registers = crate::tile_source::REGISTERS;
+        for path in ignored {
+            let text = std::fs::read_to_string(root.join(&path)).expect("retired source exists");
+            let source = parse_authored_module(&text).expect("retired source validates");
+            let retired = compile_module(&source, path.clone(), &text, hash_hulls(&source));
+            assert_eq!(
+                retired.kind,
+                ModuleKind::Cell,
+                "never retire gameplay rooms"
+            );
+            let ports = |module: &CompiledModule| {
+                let mut ports = module
+                    .ports
+                    .iter()
+                    .map(|p| {
+                        (
+                            p.cell.q,
+                            p.cell.r,
+                            p.cell.level,
+                            p.face.clone(),
+                            p.class.clone(),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                ports.sort();
+                ports
+            };
+            for register in expanded_registers(&retired.register_scope, registers) {
+                assert!(
+                    built.catalog.modules.iter().any(|candidate| {
+                        candidate.kind == retired.kind
+                            && candidate.archetype == retired.archetype
+                            && candidate.levels == retired.levels
+                            && candidate.footprint == retired.footprint
+                            && candidate.rotations == retired.rotations
+                            && ports(candidate) == ports(&retired)
+                            && expanded_registers(&candidate.register_scope, registers)
+                                .contains(&register)
+                    }),
+                    "{path} removes a connection pattern from {register}"
+                );
+            }
+        }
+    }
+
     fn temp_dir(name: &str) -> PathBuf {
         let nonce = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

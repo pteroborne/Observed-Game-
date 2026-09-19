@@ -27,6 +27,15 @@ $env:OBSERVED2_SCRIPT = "scratch/<name>_view.json"; cargo dev-run -p hex_tile_la
 # then read the output PNG and LOOK at it — falsifiable-evidence rule applies
 ```
 
+## Curated production library
+
+The forge owns 428 source maps; the current production catalog selects 332.
+`assets/tiles/.tileignore` retires 96 alternatives without deleting their builders.
+`gen-tiles` regenerates the source archive; `build` compiles only the active set.
+See [the curation decision and replacement order](tile_curation.md) before adding
+variants or restoring a retired source. A test preserves every retired module's
+connection pattern in each district.
+
 ## The composition profile
 
 Tiles are *what the solver may build*; the composition profile is *what it tends

@@ -165,26 +165,58 @@ fn hall_meta_and_ports(name: &str, archetype: &str, door_faces: &[usize]) -> Str
 #[must_use]
 pub fn hall_straight() -> String {
     let mut brushes = hall_shell(&[0, 3]);
-    brushes.push_str("// Colonnade: two pillar pairs flanking the walk axis\n");
-    for x in [-44.0, 44.0] {
-        for y in [-34.0, 34.0] {
-            brushes.push_str(&prism(
-                &square((x, y), 6.0),
-                FLOOR_TOP,
-                LEVEL - FLOOR_TOP,
-                None,
-                3.0,
-                0.0,
-            ));
+    // The Lantern Passage: three deep, chamfered portal ribs support a low
+    // split vault. Its recessed central light well gives the route a continuous
+    // datum without putting either decoration or a step in the walking lane.
+    // Everything ends before the seam; the canonical 4.5 m aperture survives.
+    for x in [-64.0, 0.0, 64.0] {
+        for side in [-1.0, 1.0] {
+            let plan = [
+                (x - 6.0, side * 30.0),
+                (x + 6.0, side * 30.0),
+                (x + 10.0, side * 36.0),
+                (x - 10.0, side * 36.0),
+            ];
+            brushes.push_str(&prism(&plan, FLOOR_TOP, 96.0, None, 0.0, 0.0));
         }
+        brushes.push_str(&prism(
+            &[
+                (x - 10.0, -36.0),
+                (x + 10.0, -36.0),
+                (x + 10.0, 36.0),
+                (x - 10.0, 36.0),
+            ],
+            80.0,
+            96.0,
+            None,
+            0.0,
+            8.0,
+        ));
+    }
+    for side in [-1.0, 1.0] {
+        brushes.push_str(&prism(
+            &[
+                (-96.0, side * 7.0),
+                (96.0, side * 7.0),
+                (96.0, side * 36.0),
+                (-96.0, side * 36.0),
+            ],
+            92.0,
+            LEVEL - FLOOR_TOP,
+            None,
+            0.0,
+            6.0,
+        ));
     }
     let mut lights = String::new();
-    for x in [-48.0, 48.0] {
-        let (fixture, source) = ceiling_fixture(x, 0.0, LEVEL, 18.0, 10.0);
+    for x in [-32.0, 32.0] {
+        let (fixture, source) = ceiling_fixture(x, 0.0, LEVEL - FLOOR_TOP, 26.0, 10.0);
         brushes.push_str(&fixture);
         lights.push_str(&source);
     }
-    let mut out = String::from("// Straight hall, doors east/west, colonnade interior.\n");
+    let mut out = String::from(
+        "// Lantern Passage: ribbed compression hall with a recessed axial light well.\n",
+    );
     out.push_str(GENERATED_NOTE);
     out.push_str(&worldspawn(&brushes));
     out.push_str(&hall_meta_and_ports(

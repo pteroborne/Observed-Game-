@@ -295,7 +295,7 @@ pub(super) fn run_script_system(
         if let Some(pos) = script.camera_pos {
             state.free_fly_pos = Vec3::from_array(pos);
             let dir = (state.center - state.free_fly_pos).normalize_or_zero();
-            state.free_fly_yaw = dir.x.atan2(-dir.z);
+            state.free_fly_yaw = (-dir.x).atan2(-dir.z);
             state.free_fly_pitch = dir.y.asin();
         }
         if state.view_mode == ViewMode::FirstPerson

@@ -476,6 +476,8 @@ mod tests {
     /// one on this catalog will not play together, by design.
     #[test]
     fn committed_arc_s_catalog_identity_is_pinned() {
+        // Curated production set: 96 redundant alternatives retired, 332 active.
+        // The Lantern Passage replaces the original straight at its stable ID.
         // The ten district benchmarks add seventy-four modules: fifteen Wellshaft,
         // six Thinning, nine Facet Monument, six Infinite Gallery, four Overlit
         // Grid, seven Megastructure, six Liminal Grid, six Shadow Screen and
@@ -775,14 +777,14 @@ mod tests {
         // because the *solver's output* moved, and that constant is the only
         // channel by which such a change reaches this hash at all.
         const CATALOG_HASH: &str =
-            "d473785a769222a1fe0a437460ada563b321baeedb35f00dd007353c37e0c5b8";
+            "d966523c08b29fd378b097abe6c21749b6517784a0723e8fbae08498d16dcae4";
         const PROFILE_HASH: &str =
             "5c1bc69db058d4e3332e755326548f887d46f215d81fdeb454591cd9c2c0104e";
         // Folds the catalog and the profile. Both sides moved this time, which
         // is the point: a peer on the old build now fails the handshake instead
         // of joining and generating a different facility.
         const SIMULATION_HASH: &str =
-            "f9428ac14916f0225d8a7bef349cf20f8eb6399b377885f86ead8e42f84e3ab4";
+            "ef15b076a02b2312ff732172fc6b931b441f2c60b7fa4c67f1b4981d1dcc8624";
 
         let root = committed_tiles();
         let compiled_text =
@@ -795,7 +797,7 @@ mod tests {
             .filter(|module| module.archetype == "stair_tower")
             .collect::<Vec<_>>();
         assert_eq!(compiled.simulation_content_hash, CATALOG_HASH);
-        assert_eq!(compiled.modules.len(), 428, "committed strict source count");
+        assert_eq!(compiled.modules.len(), 332, "committed strict source count");
         // 1 doorless + every one-to-four-door pattern, in three vertical
         // connectivities: (1 + 6 + 15 + 20 + 15) * 3. Was 66, when the family
         // stopped at two doors and there was no branching landing.
