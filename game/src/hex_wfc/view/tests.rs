@@ -262,10 +262,10 @@ fn occupied_room_footprint_is_never_retired_even_when_its_anchor_is_far() {
 }
 
 fn test_runtime() -> crate::hex_wfc::sim::HexWfcRuntime {
-    use std::collections::BTreeSet;
     use crate::hex_wfc::sim::load_prototypes;
     use observed_core::PlayerId;
     use observed_match::hex_wfc::{HexBotDriver, HexMatchConfig, HexWfcMatch};
+    use std::collections::BTreeSet;
 
     let prototypes = load_prototypes();
     let game = HexWfcMatch::new(
@@ -335,8 +335,13 @@ fn cell_entity_count_falls_with_merged_hull_meshes() {
     assert_eq!(spawned.len(), 1);
     let child_pieces = spawned[0].child_pieces;
 
-    let mut query =
-        world.query::<(Entity, &ChildOf, Option<&Mesh3d>, Option<&PointLight>, &Name)>();
+    let mut query = world.query::<(
+        Entity,
+        &ChildOf,
+        Option<&Mesh3d>,
+        Option<&PointLight>,
+        &Name,
+    )>();
     let structural_hull_mesh_count = query
         .iter(&world)
         .filter(|(_, child_of, mesh, _, name)| {
@@ -425,7 +430,10 @@ fn despawned_cell_rebuilds_identically_when_re_entered() {
         .iter(&world)
         .filter(|child_of| child_of.parent() == first_entity)
         .count();
-    assert_eq!(surviving_children, 0, "all child entities must be despawned");
+    assert_eq!(
+        surviving_children, 0,
+        "all child entities must be despawned"
+    );
 
     // Second spawn (cell re-entered):
     let mut commands = Commands::new(&mut queue, &world);
@@ -468,7 +476,10 @@ fn despawned_cell_rebuilds_identically_when_re_entered() {
             mesh1, mesh2,
             "rebuilt mesh handle must match cached mesh handle at index {i}"
         );
-        assert_eq!(mat1, mat2, "rebuilt material handle must match at index {i}");
+        assert_eq!(
+            mat1, mat2,
+            "rebuilt material handle must match at index {i}"
+        );
         assert_eq!(
             trans1.translation, trans2.translation,
             "rebuilt transform must match at index {i}"
