@@ -367,3 +367,160 @@ fn floor_power_can_be_cut_and_exercises_power_gating() {
     lab.apply_observer_intent(obs_id, intent);
     assert!(lab.economy.is_powered(floor), "Power successfully restored");
 }
+
+#[test]
+fn variable_loyal_team_size_1_2_3() {
+    for size in 1..=3 {
+        let lab = ArchitectLab::for_mode_with_team_size(ArchitectMode::Pocket, size)
+            .expect("solves for team size");
+        assert_eq!(lab.loyal_team_size, size);
+        assert_eq!(lab.observers.len(), size);
+        for id in 0..size {
+            let obs = &lab.observers[&ObserverId(id as u16)];
+            assert_eq!(obs.team, TeamId(0));
+            assert_eq!(obs.state, ObserverState::Active);
+        }
+        let knowledge = lab.team_knowledge(TeamId(0));
+        assert_eq!(knowledge.known_observers.len(), size);
+    }
+}
+
+#[test]
+fn corruption_adjusted_summit_quorum() {
+    let mut lab = ArchitectLab::for_mode_with_team_size(ArchitectMode::Pocket, 2).unwrap();
+    let exit = lab.world.config.exit();
+    let obs0 = ObserverId(0);
+    let obs1 = ObserverId(1);
+
+    // Place obs0 at summit, obs1 away.
+    lab.observers.get_mut(&obs0).unwrap().cell = exit;
+    let non_summit = lab
+        .world
+        .placements
+        .keys()
+        .copied()
+        .find(|&c| c != exit)
+        .unwrap();
+    lab.observers.get_mut(&obs1).unwrap().cell = non_summit;
+
+    lab.step_beat();
+    assert_eq!(
+        lab.outcome,
+        MatchOutcome::Running,
+        "quorum is 2, only 1 at summit"
+    );
+
+    // Corrupt obs1 into Rogue faction.
+    lab.observers.get_mut(&obs1).unwrap().state = ObserverState::Corrupted;
+    assert_eq!(lab.observers[&obs1].state, ObserverState::Corrupted);
+
+    // Now remaining loyal count is 1 (obs0). Obs0 is at summit -> quorum met!
+    lab.step_beat();
+    assert_eq!(
+        lab.outcome,
+        MatchOutcome::LoyalVictory,
+        "corrupted observer leaves quorum, remaining loyal at summit wins"
+    );
+}
+
+#[test]
+fn jailed_observer_remains_loyal_and_counts_in_quorum() {
+    let mut lab = ArchitectLab::for_mode_with_team_size(ArchitectMode::Pocket, 2).unwrap();
+    let exit = lab.world.config.exit();
+    let obs0 = ObserverId(0);
+    let obs1 = ObserverId(1);
+
+    // Place obs0 at summit.
+    lab.observers.get_mut(&obs0).unwrap().cell = exit;
+
+    // Jail obs1. Jailed observer is still loyal and must be rescued / escape.
+    lab.jail(obs1);
+    assert_eq!(lab.observers[&obs1].state, ObserverState::Jailed);
+
+    lab.step_beat();
+    assert_eq!(
+        lab.outcome,
+        MatchOutcome::Running,
+        "jailed observer still counts in quorum; 1 of 2 loyal is insufficient"
+    );
+
+    // Free/escape obs1 and bring to summit.
+    lab.observers.get_mut(&obs1).unwrap().state = ObserverState::Active;
+    lab.observers.get_mut(&obs1).unwrap().cell = exit;
+
+    lab.step_beat();
+    assert_eq!(
+        lab.outcome,
+        MatchOutcome::LoyalVictory,
+        "both loyal observers now at summit"
+    );
+}
+
+#[test]
+fn same_tick_capture_precedence_resolves_before_summit_quorum() {
+    let mut lab = ArchitectLab::for_mode_with_team_size(ArchitectMode::Pocket, 1).unwrap();
+    let exit = lab.world.config.exit();
+    let obs0 = ObserverId(0);
+    let guardian_id = *lab.guardians.keys().next().unwrap();
+
+    // Place observer and guardian at the summit on the exact same tick.
+    lab.observers.get_mut(&obs0).unwrap().cell = exit;
+    let guardian = lab.guardians.get_mut(&guardian_id).unwrap();
+    guardian.cell = exit;
+    guardian.kind = GuardianKind::Minor;
+
+    // Advance one beat: guardian capture resolves BEFORE summit quorum.
+    lab.step_beat();
+
+    // Guardian captures observer -> observer is jailed.
+    assert_eq!(lab.observers[&obs0].state, ObserverState::Jailed);
+    // Since the sole observer was jailed, Rogue wins (all jailed), NOT LoyalVictory.
+    assert_eq!(
+        lab.outcome,
+        MatchOutcome::RogueVictory,
+        "capture precedence executes before summit quorum, jailing the observer"
+    );
+}
+
+#[test]
+fn team_scoped_knowledge_filtering() {
+    let lab = ArchitectLab::for_mode_with_team_size(ArchitectMode::Pocket, 2).unwrap();
+    let team_k = lab.team_knowledge(TeamId(0));
+    let rogue_k = lab.rogue_knowledge();
+
+    // Loyal knowledge only contains what team 0 has observed:
+    for &cell in &team_k.discovered_cells {
+        assert!(lab.world.placements.contains_key(&cell));
+    }
+    // Facility truth has unobserved cells in Pocket:
+    assert!(lab.world.placements.len() > team_k.discovered_cells.len());
+
+    // Rogue knowledge knows full facility structure:
+    assert_eq!(rogue_k.cells.len(), lab.world.placements.len());
+    // But Rogue knowledge ONLY knows detected observers:
+    assert_eq!(
+        rogue_k
+            .known_observers
+            .keys()
+            .copied()
+            .collect::<BTreeSet<_>>(),
+        lab.detected_observers()
+    );
+}
+
+#[test]
+fn bot_played_loyal_victory_is_reachable() {
+    let mut lab = ArchitectLab::for_mode(ArchitectMode::Pocket).unwrap();
+    // In pocket mode, bot observers advance toward summit.
+    for _ in 0..90 {
+        if lab.outcome != MatchOutcome::Running {
+            break;
+        }
+        lab.step_beat();
+    }
+    assert_eq!(
+        lab.outcome,
+        MatchOutcome::LoyalVictory,
+        "bot observers can and do achieve LoyalVictory in match play"
+    );
+}

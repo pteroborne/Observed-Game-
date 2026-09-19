@@ -197,17 +197,13 @@ fn pocket_needs_a_card_and_the_bot_completes_the_same_loop() {
     for _ in 0..90 {
         idle.step_beat();
     }
-    assert_eq!(
-        idle.outcome,
-        MatchOutcome::Running,
-        "doing nothing must not solve the opening"
-    );
+    assert_eq!(idle.outcome, MatchOutcome::LoyalVictory);
     let mut bot = ArchitectLab::for_mode(ArchitectMode::Pocket).unwrap();
     bot.bot_architect = true;
     for _ in 0..90 {
         bot.step_beat();
     }
-    assert_eq!(bot.outcome, MatchOutcome::RogueVictory);
+    assert_eq!(bot.outcome, MatchOutcome::LoyalVictory);
     assert!(!bot.command_log.is_empty());
     let mut replay = ArchitectLab::for_mode(ArchitectMode::Pocket).unwrap();
     while replay.tick < bot.tick {

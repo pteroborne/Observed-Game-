@@ -143,7 +143,9 @@ impl LabSession {
     pub(crate) fn reset(&mut self) {
         let bot_architect = self.sim.bot_architect;
         let mode = self.sim.mode;
-        self.sim = ArchitectLab::for_mode(mode).expect("the pinned architect lab mode solves");
+        let loyal_team_size = self.sim.loyal_team_size;
+        self.sim = ArchitectLab::for_mode_with_team_size(mode, loyal_team_size)
+            .expect("the pinned architect lab mode solves");
         self.sim.bot_architect = bot_architect;
         self.selected_target = 0;
         self.hovered_target = None;
@@ -160,12 +162,14 @@ impl LabSession {
 
     fn cycle_mode(&mut self, direction: i8) {
         let bot_architect = self.sim.bot_architect;
+        let loyal_team_size = self.sim.loyal_team_size;
         let mode = if direction < 0 {
             self.sim.mode.previous()
         } else {
             self.sim.mode.next()
         };
-        self.sim = ArchitectLab::for_mode(mode).expect("the pinned architect lab mode solves");
+        self.sim = ArchitectLab::for_mode_with_team_size(mode, loyal_team_size)
+            .expect("the pinned architect lab mode solves");
         self.sim.bot_architect = bot_architect;
         self.selected_target = 0;
         self.hovered_target = None;
