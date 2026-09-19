@@ -22,6 +22,7 @@ fn every_mode_is_small_deterministic_and_playable() {
         (ArchitectMode::Pocket, (6, 5, 1)),
         (ArchitectMode::QuickClimb, (8, 6, 2)),
         (ArchitectMode::FullAscent, (10, 8, 2)),
+        (ArchitectMode::DeepStack, (8, 6, 5)),
     ];
     for (mode, dimensions) in expected {
         let first = ArchitectLab::for_mode(mode).expect("the pinned mode solves");
@@ -524,3 +525,58 @@ fn bot_played_loyal_victory_is_reachable() {
         "bot observers can and do achieve LoyalVictory in match play"
     );
 }
+
+#[test]
+fn deep_stack_solves_deterministically_and_prison_spans_floors() {
+    let lab1 = ArchitectLab::for_mode(ArchitectMode::DeepStack).expect("DeepStack solves");
+    let lab2 = ArchitectLab::for_mode(ArchitectMode::DeepStack).expect("DeepStack solves twice");
+
+    assert_eq!(lab1.world.config.levels, 5);
+    assert_eq!(lab1.world.config.cols, 8);
+    assert_eq!(lab1.world.config.rows, 6);
+    assert_eq!(lab1.world.placements.len(), 240);
+    assert_eq!(lab1.world, lab2.world);
+    assert_eq!(lab1.prison, lab2.prison);
+    assert_eq!(lab1.deck, lab2.deck);
+
+    // Verify prison maze spans multiple floors (levels 0 and 1)
+    let prison_levels: BTreeSet<u8> = lab1.prison_core.iter().map(|c| c.level).collect();
+    assert!(prison_levels.len() >= 2, "prison must span multiple floors");
+    assert!(prison_levels.contains(&0), "prison must have cells on level 0");
+    assert!(prison_levels.contains(&1), "prison must have cells on level 1");
+}
+
+#[test]
+fn fall_reachability_pinned_findings() {
+    let lab = ArchitectLab::for_mode(ArchitectMode::DeepStack).expect("DeepStack solves");
+
+    // 1. Architect cannot target an occupied cell with a card (Occupied rule is load-bearing)
+    let occupied = lab.occupied();
+    assert!(!occupied.is_empty());
+    let target = *occupied.iter().next().unwrap();
+    let card = lab.deck.hand[0].id;
+    assert_eq!(
+        lab.refusal(ArchitectCommand::Play {
+            card,
+            target,
+            rotation: 0,
+        }),
+        Some(CommandRefusal::Occupied),
+        "Direct card plays on occupied cells are strictly refused"
+    );
+
+    // 2. An occupied cell is retraction-protected
+    assert!(
+        lab.retraction_protected(target),
+        "Occupied cells are retraction protected"
+    );
+
+    // 3. next_retraction() cannot return any occupied cell
+    if let Some(next) = lab.next_retraction() {
+        assert!(
+            !occupied.contains(&next),
+            "next_retraction cannot target an occupied cell"
+        );
+    }
+}
+

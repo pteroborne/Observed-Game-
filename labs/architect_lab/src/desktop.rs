@@ -534,6 +534,7 @@ mod tests {
         for expected_mode in [
             ArchitectMode::QuickClimb,
             ArchitectMode::FullAscent,
+            ArchitectMode::DeepStack,
             ArchitectMode::Pocket,
         ] {
             app.world_mut()
