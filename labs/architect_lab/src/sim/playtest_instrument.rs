@@ -774,3 +774,137 @@ fn why_the_facility_is_dark() {
     }
     println!("============================================================\n");
 }
+
+/// Why the reverse gear never engages.
+///
+/// The Observer bot already has both halves of power restoration -- "restore floor power
+/// at generator" and "seek generator to restore power" in `behavior.rs` -- and the
+/// instrument has recorded zero of either. This finds out which precondition fails, by
+/// sampling every Active Observer on an unpowered floor every beat.
+#[test]
+fn why_nobody_restores_the_power() {
+    println!("\n============== POWER RESTORATION PROBE ==============");
+    for mode in ArchitectMode::ALL {
+        let mut sim = ArchitectLab::for_mode(mode).expect("scenario boots");
+        sim.bot_architect = true;
+
+        let mut on_unpowered = 0u64;
+        let mut no_generator_on_level = 0u64;
+        let mut standing_on_generator = 0u64;
+        let mut no_route_to_generator = 0u64;
+        let mut route_exists = 0u64;
+        let mut selected_a_generator_branch = 0u64;
+        let mut preempted_by: BTreeMap<String, u64> = BTreeMap::new();
+        let mut levels_seen: BTreeSet<u8> = BTreeSet::new();
+        let mut levels_with_generator: BTreeSet<u8> = BTreeSet::new();
+
+        for _ in 0..1000 {
+            if sim.outcome != MatchOutcome::Running {
+                break;
+            }
+            sim.step_beat();
+
+            let snapshot: Vec<(ObserverId, HexCoord)> = sim
+                .observers
+                .values()
+                .filter(|o| o.state == ObserverState::Active)
+                .map(|o| (o.id, o.cell))
+                .collect();
+
+            for (id, cell) in snapshot {
+                levels_seen.insert(cell.level);
+                if sim.economy.generators.contains_key(&cell.level) {
+                    levels_with_generator.insert(cell.level);
+                }
+                if sim.economy.is_powered(cell.level) {
+                    continue;
+                }
+                on_unpowered += 1;
+
+                let Some(generator) = sim.economy.generators.get(&cell.level).copied() else {
+                    no_generator_on_level += 1;
+                    continue;
+                };
+                if generator == cell {
+                    standing_on_generator += 1;
+                } else if sim.route(cell, generator).is_none() {
+                    no_route_to_generator += 1;
+                } else {
+                    route_exists += 1;
+                }
+
+                // What the bot actually chose this beat, when it had a reason to go.
+                if let Some(trace) = sim.traces.get(&format!("Observer {}", id.0))
+                    && let Some(selected) = trace.selected
+                {
+                    if selected.contains("generator") {
+                        selected_a_generator_branch += 1;
+                    } else {
+                        *preempted_by.entry(selected.to_string()).or_default() += 1;
+                    }
+                }
+            }
+        }
+
+        println!("\n{}:", mode.short_label());
+        println!(
+            "  levels occupied {levels_seen:?}, of which have a generator {levels_with_generator:?}"
+        );
+        println!("  Active-Observer samples on an unpowered floor: {on_unpowered}");
+        println!("    no generator exists on that level: {no_generator_on_level}");
+        println!("    standing on the generator already: {standing_on_generator}");
+        println!("    generator exists but no route to it: {no_route_to_generator}");
+        println!("    generator exists and is routable:   {route_exists}");
+        println!("  chose a generator branch: {selected_a_generator_branch}");
+        println!("  otherwise chose: {preempted_by:?}");
+    }
+    println!("=====================================================\n");
+}
+
+/// Is the generator even connected to the facility?
+///
+/// `EconomyState::new` picks `candidates[0]` -- the lowest-sorted non-Void coordinate on
+/// each level -- as that floor's generator, which is a choice made by coordinate order and
+/// not by reachability. This checks, at match start, whether anyone could ever walk there.
+#[test]
+fn is_the_generator_reachable_at_all() {
+    println!("\n============== GENERATOR REACHABILITY ==============");
+    for mode in ArchitectMode::ALL {
+        let sim = ArchitectLab::for_mode(mode).expect("scenario boots");
+        println!("\n{}:", mode.short_label());
+        let starts: Vec<HexCoord> = sim.observers.values().map(|o| o.cell).collect();
+        for (&level, &generator) in &sim.economy.generators {
+            let exits = sim.exits(generator).len();
+            let reachable = starts
+                .iter()
+                .filter(|&&start| sim.route(start, generator).is_some())
+                .count();
+            println!(
+                "  level {level}: generator {generator:?}, {exits} exits, \
+                 reachable from {reachable}/{} Observer starts",
+                starts.len()
+            );
+        }
+        // And the same question for the other two economy fixtures, which are chosen the
+        // same way and would fail the same way.
+        let unreachable_stations = sim
+            .economy
+            .stations
+            .iter()
+            .filter(|&&cell| !starts.iter().any(|&s| sim.route(s, cell).is_some()))
+            .count();
+        let unreachable_pads = sim
+            .economy
+            .pads
+            .iter()
+            .filter(|&&cell| !starts.iter().any(|&s| sim.route(s, cell).is_some()))
+            .count();
+        println!(
+            "  stations unreachable from every start: {unreachable_stations}/{}, \
+             pads: {unreachable_pads}/{}",
+            sim.economy.stations.len(),
+            sim.economy.pads.len()
+        );
+    }
+    println!("====================================================\n");
+}
