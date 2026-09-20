@@ -10,7 +10,9 @@ use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use bevy::window::{PresentMode, WindowResolution};
 
-use sim::{ACTOR_BEAT_TICKS, ArchitectLab, ArchitectMode, CommandRefusal, MatchOutcome};
+use sim::{
+    ACTOR_BEAT_TICKS, ArchitectLab, ArchitectMode, CommandRefusal, MatchOutcome, PowerPolicy,
+};
 
 const DEFAULT_MODE: ArchitectMode = ArchitectMode::Pocket;
 
@@ -128,7 +130,17 @@ impl LabSession {
                     "Debug overlay hidden.".to_string()
                 };
             }
+            ArchitectAction::CyclePowerPolicy => {
+                self.sim.power_policy = self.sim.power_policy.next();
+                self.last_message = format!("Power policy: {}.", self.sim.power_policy.label());
+            }
         }
+        self.dirty = true;
+    }
+
+    pub fn set_power_policy(&mut self, policy: PowerPolicy) {
+        self.sim.power_policy = policy;
+        self.last_message = format!("Power policy: {}.", self.sim.power_policy.label());
         self.dirty = true;
     }
 
@@ -159,9 +171,11 @@ impl LabSession {
         let bot_architect = self.sim.bot_architect;
         let mode = self.sim.mode;
         let loyal_team_size = self.sim.loyal_team_size;
+        let power_policy = self.sim.power_policy;
         self.sim = ArchitectLab::for_mode_with_team_size(mode, loyal_team_size)
             .expect("the pinned architect lab mode solves");
         self.sim.bot_architect = bot_architect;
+        self.sim.power_policy = power_policy;
         self.selected_target = None;
         self.hovered_target = None;
         self.selected_card = 0;
@@ -178,6 +192,7 @@ impl LabSession {
     fn cycle_mode(&mut self, direction: i8) {
         let bot_architect = self.sim.bot_architect;
         let loyal_team_size = self.sim.loyal_team_size;
+        let power_policy = self.sim.power_policy;
         let mode = if direction < 0 {
             self.sim.mode.previous()
         } else {
@@ -186,6 +201,7 @@ impl LabSession {
         self.sim = ArchitectLab::for_mode_with_team_size(mode, loyal_team_size)
             .expect("the pinned architect lab mode solves");
         self.sim.bot_architect = bot_architect;
+        self.sim.power_policy = power_policy;
         self.selected_target = None;
         self.hovered_target = None;
         self.selected_card = 0;
@@ -207,6 +223,7 @@ pub(crate) enum ArchitectAction {
     Reset,
     CycleMode(i8),
     ToggleOverlay,
+    CyclePowerPolicy,
 }
 
 pub struct ArchitectLabPlugin;
@@ -274,6 +291,9 @@ fn handle_input(
     }
     if keys.just_pressed(KeyCode::KeyO) {
         session.apply_action(ArchitectAction::ToggleOverlay);
+    }
+    if keys.just_pressed(KeyCode::KeyY) {
+        session.apply_action(ArchitectAction::CyclePowerPolicy);
     }
     if keys.just_pressed(KeyCode::BracketLeft) {
         session.apply_action(ArchitectAction::CycleMode(-1));
@@ -537,6 +557,20 @@ mod tests {
             session.sim.deck.hand,
             ArchitectLab::for_mode(DEFAULT_MODE).unwrap().deck.hand
         );
+    }
+
+    #[test]
+    fn reset_and_actions_preserve_power_policy() {
+        let mut session = LabSession::default();
+        assert_eq!(session.sim.power_policy, PowerPolicy::Restorable);
+        session.apply_action(ArchitectAction::CyclePowerPolicy);
+        assert_eq!(session.sim.power_policy, PowerPolicy::OneWay);
+        session.set_power_policy(PowerPolicy::AlwaysOn);
+        assert_eq!(session.sim.power_policy, PowerPolicy::AlwaysOn);
+        session.reset();
+        assert_eq!(session.sim.power_policy, PowerPolicy::AlwaysOn);
+        session.apply_action(ArchitectAction::CycleMode(1));
+        assert_eq!(session.sim.power_policy, PowerPolicy::AlwaysOn);
     }
 
     #[test]
