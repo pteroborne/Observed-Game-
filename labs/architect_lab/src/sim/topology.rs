@@ -496,3 +496,46 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod component_shape {
+    use super::*;
+    use crate::sim::{ArchitectLab, ArchitectMode};
+
+    /// What are the components actually made of?
+    ///
+    /// Every mode reports 9 or more components at match start and never drops to one, so
+    /// a raw component count cannot be the Sever predicate until we know whether those
+    /// are rooms or orphans.
+    #[test]
+    fn component_size_distribution_at_match_start() {
+        println!("\n============== COMPONENT SHAPE ==============");
+        for mode in ArchitectMode::ALL {
+            let lab = ArchitectLab::for_mode(mode).expect("scenario boots");
+            let mut sizes: BTreeMap<ComponentId, usize> = BTreeMap::new();
+            for (&cell, placement) in &lab.world.placements {
+                if placement.space == HexSpace::Void {
+                    continue;
+                }
+                if let Some(root) = lab.component_of(cell) {
+                    *sizes.entry(root).or_default() += 1;
+                }
+            }
+            let mut histogram: BTreeMap<usize, usize> = BTreeMap::new();
+            for &size in sizes.values() {
+                *histogram.entry(size).or_default() += 1;
+            }
+            let singletons = histogram.get(&1).copied().unwrap_or(0);
+            let largest = sizes.values().copied().max().unwrap_or(0);
+            let total: usize = sizes.values().sum();
+            println!(
+                "{:>12}: {} components over {total} passable cells; largest {largest}, \
+                 singletons {singletons}",
+                mode.short_label(),
+                sizes.len()
+            );
+            println!("              sizes (cells -> how many components): {histogram:?}");
+        }
+        println!("=============================================\n");
+    }
+}
