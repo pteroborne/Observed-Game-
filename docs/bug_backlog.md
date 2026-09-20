@@ -814,6 +814,41 @@ Do not attempt to tune or patch the balance within `feat/power-restoration`; thi
 records the rebalance so future balancing passes are not surprised by the shifted
 baselines.
 
+### 46. The reauthored processional ascent is not walkable on its side lanes
+
+**Parked 2026-09-20 on branch `codex/tile-curation-wip` (commit `e9bc4fc`).**
+
+A tile curation pass — 96 of 428 authored sources retired, an ascent pass bringing the
+active budget to 331, and a composition profile biased toward rare circulation — is
+complete except for one thing, and was reverted from `main` rather than landed red.
+
+The pass ships its own acceptance test,
+`processional_ascent_is_walkable_both_ways_in_all_rotations`
+(`crates/observed_authoring/src/tests.rs`), written in the same commit. The reauthored
+`hall_ramp` does not pass it:
+
+```
+left the flight: turn 0, direction 1, lane -1.5, height 1.5777198
+```
+
+A walker on the outer `-1.5` lane leaves the ramp surface where `0.5 + (x + 7) * 8 / 14`
+says it should be. Note the sibling `hall_straight` test walks lanes `±1.0`; this one
+reaches `±1.5`, nearer the tile edge, which is exactly the "flight that leaves its high
+sill unsupported" the test's own doc comment says it exists to catch.
+
+Two corpus tripwires also fire, and **both are correct behaviour, not bugs**:
+
+- `the_committed_profile_is_still_the_baseline` — its doc comment says "if this starts
+  failing, someone authored a real profile, which is fine, but the shipped facility
+  changed and the layout evidence needs recapturing." It did, and the evidence was
+  recaptured (`docs/compositions/ascent_curation`, before and after).
+- `committed_arc_s_catalog_identity_is_pinned` — the catalog hash moved with the corpus.
+  The module count in that test was already updated to 331 and matches.
+
+**To finish:** fix the ramp's outer-lane support so its own test passes, then re-pin both
+tripwires against the final corpus, then land `codex/tile-curation-wip`. Re-pinning first
+would pin a facility we already know a walker falls off.
+
 
 ## Minor / hygiene
 
